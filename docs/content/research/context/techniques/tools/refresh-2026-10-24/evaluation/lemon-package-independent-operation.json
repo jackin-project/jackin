@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+    "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/review_lemon_package.py",
+    "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/sources/lemoncrow-runtime-client.tar.gz",
+    "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/lemoncrow"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9",
+  "environment_overrides": {},
+  "started_utc": "2026-10-24T08:16:23.337283+00:00",
+  "ended_utc": "2026-10-24T08:16:23.760971+00:00",
+  "exit_code": 0,
+  "script_sha256": "12acd3fdc6b0785228112d06c1ffb3ec4c4479711ec62fe4e9314018d67e8c0c",
+  "stdout": "logs/lemon-package-independent.stdout",
+  "stderr": "logs/lemon-package-independent.stderr"
+}

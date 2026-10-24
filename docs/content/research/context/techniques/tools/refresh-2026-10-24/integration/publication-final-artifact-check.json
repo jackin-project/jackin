@@ -1,0 +1,54 @@
+{
+  "checked_utc": "2026-10-24T09:17:24.120296+00:00",
+  "scope": "Read-only SHA256 and declared-size comparison of all currently listed files after publication formatting and the exact missing historical probe copy. Earlier checks retain their original counts and timestamps; no historical experiment is rerun.",
+  "manifests": [
+    {
+      "manifest": "evaluation/artifact-sha256.json",
+      "manifest_sha256": "d4e37ed9b5bb9c0789e1637052a34281d3d77d30110ec6df246df4626a4cc3cd",
+      "files": 54,
+      "mismatches": 0
+    },
+    {
+      "manifest": "headroom-lemoncrow/artifact-sha256.json",
+      "manifest_sha256": "a622405ee367f3520f68dd11c3b56fe28d78f439569a9dc7c32212c8e734ddfe",
+      "files": 22,
+      "mismatches": 0
+    },
+    {
+      "manifest": "jackin-architecture/artifact-sha256.json",
+      "manifest_sha256": "acec8e9b888263b2bd04a0a0690ab5ea3ff2db1d865b0189e4c10dcf16122ebf",
+      "files": 56,
+      "mismatches": 0
+    }
+  ],
+  "files": 132,
+  "mismatches": 0,
+  "previous_checks": [
+    {
+      "checked_utc": "2026-10-24T09:12:59.143510+00:00",
+      "scope": "Read-only SHA256 and declared-size comparison of every currently listed file after documented CSV/JSON publication representation corrections; not a rerun of historical experiments.",
+      "manifests": [
+        {
+          "manifest": "evaluation/artifact-sha256.json",
+          "manifest_sha256": "d4e37ed9b5bb9c0789e1637052a34281d3d77d30110ec6df246df4626a4cc3cd",
+          "files": 54,
+          "mismatches": 0
+        },
+        {
+          "manifest": "headroom-lemoncrow/artifact-sha256.json",
+          "manifest_sha256": "a622405ee367f3520f68dd11c3b56fe28d78f439569a9dc7c32212c8e734ddfe",
+          "files": 22,
+          "mismatches": 0
+        },
+        {
+          "manifest": "jackin-architecture/artifact-sha256.json",
+          "manifest_sha256": "a8404e135d0b707a1844d6ea4efd3831627697a59ba3b82e2ef6ba1178a06d2e",
+          "files": 55,
+          "mismatches": 0
+        }
+      ],
+      "files": 131,
+      "mismatches": 0
+    }
+  ]
+}

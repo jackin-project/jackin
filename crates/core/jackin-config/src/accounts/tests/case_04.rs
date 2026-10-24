@@ -231,3 +231,198 @@ fn provider_wire_spelling_matches_canonical_slug() {
         );
     }
 }
+
+#[test]
+fn resolve_saved_launch_preserves_declared_and_synthesized_tuple_order() {
+    let (mut cfg, ws) = launch_fixture();
+    cfg.default_launch = Some(vec!["claude-b".into()]);
+    let saved = [
+        SavedLaunchInstance {
+            config_id: "codex-work@codex",
+            agent: Agent::Codex,
+            account_id: "codex-work",
+        },
+        SavedLaunchInstance {
+            config_id: "claude-a",
+            agent: Agent::Claude,
+            account_id: "claude-work",
+        },
+    ];
+
+    let resolved = resolve_saved_launch(&cfg, Some(&ws), &saved).unwrap();
+
+    assert_eq!(resolved.len(), 2);
+    assert_eq!(resolved[0].config_id, "codex-work@codex");
+    assert_eq!(resolved[0].account_id, "codex-work");
+    assert!(resolved[0].synthesized);
+    assert_eq!(resolved[1].config_id, "claude-a");
+    assert_eq!(resolved[1].account_id, "claude-work");
+    assert!(!resolved[1].synthesized);
+}
+
+#[test]
+fn resolve_saved_launch_rejects_invalid_tuples_and_declared_id_collision() {
+    let (cfg, ws) = launch_fixture();
+    let tuple = |config_id, agent, account_id| SavedLaunchInstance {
+        config_id,
+        agent,
+        account_id,
+    };
+
+    let Err(error) = resolve_saved_launch(&cfg, Some(&ws), &[]) else {
+        panic!("empty saved launch selection must be rejected");
+    };
+    assert_eq!(error.to_string(), "saved launch selection is empty");
+
+    let Err(error) = resolve_saved_launch(
+        &cfg,
+        Some(&ws),
+        &[
+            tuple("claude-a", Agent::Claude, "claude-work"),
+            tuple("claude-a", Agent::Claude, "claude-work"),
+        ],
+    ) else {
+        panic!("duplicate saved configuration must be rejected");
+    };
+    assert!(error.to_string().contains("duplicate configuration"));
+
+    let Err(error) = resolve_saved_launch(
+        &cfg,
+        Some(&ws),
+        &[tuple("claude-a", Agent::Codex, "claude-work")],
+    ) else {
+        panic!("saved agent mismatch must be rejected");
+    };
+    assert!(error.to_string().contains("saved configuration"));
+
+    let Err(error) = resolve_saved_launch(
+        &cfg,
+        Some(&ws),
+        &[tuple("claude-a", Agent::Claude, "claude-personal")],
+    ) else {
+        panic!("saved account mismatch must be rejected");
+    };
+    assert!(error.to_string().contains("saved configuration"));
+
+    let Err(error) = resolve_saved_launch(
+        &cfg,
+        Some(&ws),
+        &[tuple("not-a-synthetic-id", Agent::Claude, "claude-work")],
+    ) else {
+        panic!("malformed synthesized identifier must be rejected");
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("does not match its recorded account/agent tuple")
+    );
+
+    let mut collision = cfg.clone();
+    collision.agent_configurations.insert(
+        "claude-work@claude".into(),
+        AgentConfiguration {
+            agent: Agent::Claude,
+            account: "claude-personal".into(),
+            model: None,
+            base_url: None,
+            display_label: None,
+            invoked_via_wrapper: None,
+        },
+    );
+    let Err(error) = resolve_saved_launch(
+        &collision,
+        Some(&ws),
+        &[tuple("claude-work@claude", Agent::Claude, "claude-work")],
+    ) else {
+        panic!("declared identifier collision must not be synthesized");
+    };
+    assert!(error.to_string().contains("saved configuration"));
+}
+
+#[test]
+fn resolve_saved_launch_rechecks_current_eligibility_and_full_set_isolation() {
+    let (mut cfg, ws) = launch_fixture();
+    let tuple = |config_id, agent, account_id| SavedLaunchInstance {
+        config_id,
+        agent,
+        account_id,
+    };
+    let saved = [tuple("claude-a", Agent::Claude, "claude-work")];
+
+    cfg.accounts.get_mut("claude-work").unwrap().enabled = false;
+    let Err(error) = resolve_saved_launch(&cfg, Some(&ws), &saved) else {
+        panic!("disabled account must be rejected");
+    };
+    assert!(error.to_string().contains("not authorized"));
+
+    let (mut cfg, ws) = launch_fixture();
+    cfg.workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .accounts
+        .retain(|account| account != "claude-work");
+    let Err(error) = resolve_saved_launch(&cfg, Some(&ws), &saved) else {
+        panic!("account outside the selected workspace must be rejected");
+    };
+    assert!(error.to_string().contains("not assigned to this workspace"));
+
+    let (mut cfg, ws) = launch_fixture();
+    cfg.agent_configurations
+        .get_mut("claude-a")
+        .unwrap()
+        .invoked_via_wrapper = Some(WrapperSpec {
+        identity: "unsupported-shell-wrapper".into(),
+        args: Vec::new(),
+    });
+    let Err(error) = resolve_saved_launch(&cfg, Some(&ws), &saved) else {
+        panic!("unsupported wrapper transport must be rejected");
+    };
+    assert!(error.to_string().contains("unsupported shell wrapper"));
+
+    let (mut cfg, ws) = launch_fixture();
+    for (id, account) in [("kimi-a", "kimi-work"), ("kimi-b", "kimi-personal")] {
+        cfg.accounts.insert(
+            account.into(),
+            AccountConfig {
+                enabled: true,
+                name: account.into(),
+                provider: AiProvider::Moonshot,
+                credential: AccountCredential::Profile {
+                    agent: Agent::Kimi,
+                    directory: PathBuf::from("/profiles").join(account),
+                    xdg_roots: None,
+                    source_selector: None,
+                },
+            },
+        );
+        cfg.agent_configurations.insert(
+            id.into(),
+            AgentConfiguration {
+                agent: Agent::Kimi,
+                account: account.into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        );
+        cfg.workspaces
+            .get_mut(ws.as_str())
+            .unwrap()
+            .accounts
+            .push(account.into());
+    }
+    let error = resolve_saved_launch(
+        &cfg,
+        Some(&ws),
+        &[
+            tuple("kimi-a", Agent::Kimi, "kimi-work"),
+            tuple("kimi-b", Agent::Kimi, "kimi-personal"),
+        ],
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("no config-folder env var"),
+        "{error}"
+    );
+}

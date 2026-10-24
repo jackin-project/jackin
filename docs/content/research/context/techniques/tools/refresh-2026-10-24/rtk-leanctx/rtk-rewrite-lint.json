@@ -1,0 +1,23 @@
+{
+  "executed_utc": "2026-10-24T02:05:50.005491+00:00",
+  "binary_sha256": "38b915f2a52ce4b7ef7d6dc3966aaeccb9f754731b2933571bf85026bcba8677",
+  "source_commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+  "argv": [
+    "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-oss/rtk",
+    "rewrite",
+    "npm run lint"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk-rewrite-lint",
+  "environment_overrides": {
+    "RTK_TELEMETRY_DISABLED": "1",
+    "DO_NOT_TRACK": "1",
+    "XDG_CONFIG_HOME": "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk-rewrite-lint/config",
+    "XDG_DATA_HOME": "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk-rewrite-lint/data",
+    "XDG_STATE_HOME": "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk-rewrite-lint/state",
+    "XDG_CACHE_HOME": "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk-rewrite-lint/cache"
+  },
+  "exit_code": 3,
+  "stdout": "rtk lint",
+  "stderr": "",
+  "boundary": "Only rewrite was executed. No npm/npx/linter invocation, dependency resolution or network operation was performed."
+}

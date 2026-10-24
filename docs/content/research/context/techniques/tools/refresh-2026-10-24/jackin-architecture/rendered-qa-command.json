@@ -1,0 +1,30 @@
+{
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+    "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/render_pages.mjs",
+    "--repo",
+    "/workspace/scratch/1335a158b2a9/jackin",
+    "--manifest",
+    "/workspace/scratch/1335a158b2a9/tooling/logs/render-input-manifest.json",
+    "--browser",
+    "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/chrome-for-testing/chrome-headless-shell-linux64/chrome-headless-shell",
+    "--playwright-module",
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.js",
+    "--origin",
+    "http://127.0.0.1:4188",
+    "--out",
+    "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/run-final-main"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9",
+  "started_utc": "2026-10-24T08:48:53.083261+00:00",
+  "duration_seconds": 31.055,
+  "exit_code": 0,
+  "env_overrides": {},
+  "script_sha256": "73360d99deed684868f0c27add8b1e2535e09f922413028265e85ef98300ff54",
+  "assembled_git_context": {
+    "HEAD": "9971e26249c2a601912419c84aad99980f88d28b",
+    "MERGE_HEAD": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+    "origin/main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
+  },
+  "context_note": "Working tree includes the clean main merge not yet committed when this command started. Exact source/HTML hashes are in the result."
+}

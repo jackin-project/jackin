@@ -1,0 +1,35 @@
+hook toolchain: Rust 1.99.1; cargo=/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/cargo; rustc=/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustc; rustdoc=/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustdoc; clippy=/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/clippy-driver; rustfmt=/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustfmt
+  files - Fetching git status
+  files - Fetching staged files
+  files - Fetching staged files (28 files)
+✔ files - Fetching staged files (28 files)
+❯ gitleaks
+  gitleaks – 28 files –  – gitleaks dir --redact --verbose --no-banner .
+❯ rumdl
+  rumdl – 3 files – **/*.md **/*.markdown – rumdl check --no-cache docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/README.md …
+  rumdl – Success: No issues found in 3 files (7ms)
+✔ rumdl
+❯ kingfisher-staged
+  kingfisher-staged – 28 files –  – kingfisher scan . --staged --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml
+  kingfisher-staged –  INFO kingfisher: Launching with 8 concurrent scan jobs. Use --jobs to override.
+  kingfisher-staged –  INFO kingfisher::rule_loader: Loaded 488 rules
+  kingfisher-staged –  INFO kingfisher::scanner::rule_loading: Using Vectorscan rule cache cache_dir=/root/.cache/kingfisher/rule-cache
+  kingfisher-staged – 28 files –  – kingfisher scan . --staged --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml
+  kingfisher-staged – ==========================================
+  kingfisher-staged – Scan Summary:
+  kingfisher-staged – ==========================================
+  kingfisher-staged –  |Findings....................: 0
+  kingfisher-staged –  |__Successful Validations....: 0
+  kingfisher-staged –  |__Failed Validations........: 0
+  kingfisher-staged –  |__Skipped Validations.......: 0
+  kingfisher-staged –  |Rules Applied...............: 488
+  kingfisher-staged –  |__Blobs Scanned.............: 28
+  kingfisher-staged –  |Bytes Scanned...............: 1.27 MiB
+  kingfisher-staged –  |Scan Duration...............: 89ms 448us 840ns
+  kingfisher-staged –  |Scan Date...................: 2026-10-24 02:44:07 -07:00
+  kingfisher-staged –  |Kingfisher Version..........: 2.14.0
+  kingfisher-staged –  |__Latest Version............: Update check disabled (--no-update-check)
+✔ kingfisher-staged
+  gitleaks – 2:44AM INF scanned ~44443911 bytes (44.44 MB) in 2.16s
+  gitleaks – 2:44AM INF no leaks found
+✔ gitleaks

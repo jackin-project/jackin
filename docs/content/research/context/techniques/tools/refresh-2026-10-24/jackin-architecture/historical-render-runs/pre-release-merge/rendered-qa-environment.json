@@ -1,0 +1,97 @@
+{
+  "recorded_utc": "2026-10-24T08:46:02.103574+00:00",
+  "node": "v24.19.0",
+  "playwright_version": "1.62.1",
+  "playwright_module_actual_path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.js",
+  "browser_version_executed": "156.0.8078.47",
+  "browser_executable_actual_path": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/chrome-for-testing/chrome-headless-shell-linux64/chrome-headless-shell",
+  "first_browser_install_attempt": {
+    "argv": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/cli.js",
+      "install",
+      "chromium-headless-shell"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9",
+    "started_utc": "2026-10-24T08:23:26.689364+00:00",
+    "duration_seconds": 2.877,
+    "exit_code": 1,
+    "environment_overrides": {
+      "PLAYWRIGHT_BROWSERS_PATH": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/browsers"
+    },
+    "playwright_version": "1.62.1",
+    "log": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/browser-install.log",
+    "scope": "Task-local headless shell only; no host-global install or provider request."
+  },
+  "first_browser_install_disposition": "Task-local Playwright browser download returned unusable archive responses; installation exited1. This is an environment/acquisition failure, not a page failure. The reproduction script performs no download.",
+  "official_metadata_retrieval": {
+    "url": "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json",
+    "status": 200,
+    "final_url": "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json",
+    "accessed_utc": "2026-10-24T08:24:34.941752+00:00",
+    "sha256": "50866693a68768441ee6fff9ea14d30532d62b00fadada3a9ca3d1bbc3ea4e40",
+    "stable_version": "156.0.8078.47",
+    "headless_downloads": [
+      {
+        "platform": "linux64",
+        "url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/linux64/chrome-headless-shell-linux64.zip"
+      }
+    ]
+  },
+  "official_archive_retrieval": {
+    "url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/linux64/chrome-headless-shell-linux64.zip",
+    "final_url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/linux64/chrome-headless-shell-linux64.zip",
+    "accessed_utc": "2026-10-24T08:24:55.653149+00:00",
+    "status": 200,
+    "content_type": "application/zip",
+    "bytes": 125799226,
+    "sha256": "0d5acc62c3e213f8c87d3c298d66ffcf9a236d12ea4b9f85318bf85dbc279daa",
+    "elapsed_seconds": 1.922,
+    "declared_version": "156.0.8078.47",
+    "zip_valid": true
+  },
+  "archive_verification_limit": "Recorded SHA256 identifies the received official HTTPS archive. ZIP readability and extracted browser version were checked; no separately published checksum/signature was verified.",
+  "installation_scope": "Official headless browser extracted only under task scratch. No global installation, system package manager, model or paid provider call. Archive deleted after recording; executable retained in scratch for this verification.",
+  "server": {
+    "argv": [
+      "python3",
+      "-m",
+      "http.server",
+      "4188",
+      "--bind",
+      "127.0.0.1",
+      "--directory",
+      "/workspace/scratch/1335a158b2a9/jackin/docs/.output/public"
+    ],
+    "origin": "http://127.0.0.1:4188",
+    "bound_to_loopback": true,
+    "initial_sandbox_attempt": "Loopback bind was denied by sandbox; authorized escalated execution supplied the same loopback-only command.",
+    "cleanup": {
+      "executed_utc": "2026-10-24T08:46:18.876079+00:00",
+      "scope": "Terminate only the exact task-owned loopback static-server argv; no other processes matched or touched.",
+      "expected_argv": [
+        "python3",
+        "-m",
+        "http.server",
+        "4188",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/.output/public"
+      ],
+      "matched_pids": [
+        512010
+      ],
+      "signal": "SIGTERM",
+      "loopback_port_4188_closed": true
+    }
+  },
+  "browser_execution_scope": "Existing static files only, Chromium headless with no-sandbox/disable-dev-shm-usage arguments inside the task environment, no signed-in session, and external page requests blocked. No external page requests were observed in the final sweep.",
+  "build_inputs": {
+    "path": "rendered-build-input-manifest.json",
+    "sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+    "count": 58,
+    "before_mismatches": [],
+    "after_mismatches": []
+  }
+}

@@ -1,0 +1,144 @@
+{
+  "reviewer": "/root/caveman_ponytail",
+  "reviewed_utc": "2026-10-24T08:29:25.917768+00:00",
+  "reviewer_authored_these_pages": false,
+  "files": [
+    {
+      "document": "docs/content/research/context/index.mdx",
+      "sha256": "58b6dc219fa99c2815a559719c2d19691e729d3efa4983a0ae9588e5502d3a0b",
+      "bytes": 1913,
+      "reading": "Complete current chapter read; subsequent requested narrow wording changes inspected at final capture."
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "sha256": "a9cd2ed83bde199bbd660c1ed828b2fd0f3b51fb5aba8962840c9ead468d84c4",
+      "bytes": 8310,
+      "reading": "Complete current chapter read; subsequent requested narrow wording changes inspected at final capture."
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "sha256": "86dc6b9cf8e313bc1ce147edb0914ef24442f9b0a6a78886a24b6cb2e383e1c0",
+      "bytes": 9905,
+      "reading": "Complete current chapter read; subsequent requested narrow wording changes inspected at final capture."
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "sha256": "abe174002d0666b4eba51b4c1eb35422786a5c91ad291696f938450dd03f25bd",
+      "bytes": 9242,
+      "reading": "Complete current chapter read; subsequent requested narrow wording changes inspected at final capture."
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "sha256": "f5dc8a38f72e9b849d2d8fb65905870accd7904617bd86a82f61dc0dc5db0e54",
+      "bytes": 8739,
+      "reading": "Complete current chapter read; subsequent requested narrow wording changes inspected at final capture."
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "sha256": "39c29e600fc9d0b5d1d0fc31e6d978507cf9bc9e0ec0d51e9aebd91904f0d7f1",
+      "bytes": 6649,
+      "reading": "Complete current chapter read; subsequent requested narrow wording changes inspected at final capture."
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "sha256": "fe9d22f4883447687efc3c09de85c304721e29247ef1a196a53d6774e8f8821d",
+      "bytes": 10041,
+      "reading": "Complete current chapter read; subsequent requested narrow wording changes inspected at final capture."
+    },
+    {
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "sha256": "ec92fe0f50d134116d123b50700f23cae773c4631d5ccbd18d989d5780815e79",
+      "bytes": 20948,
+      "reading": "Complete current chapter read; subsequent requested narrow wording changes inspected at final capture."
+    },
+    {
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "sha256": "460f3449326357e92ec25c0b438944391c8c7cfd3e712f8d749d095e11431039",
+      "bytes": 15567,
+      "reading": "Complete current chapter read; subsequent requested narrow wording changes inspected at final capture."
+    },
+    {
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "sha256": "2ad96d089f5ae592003059192f1631e403c3611bf1574a6753a677948757aa6e",
+      "bytes": 13580,
+      "reading": "Complete current chapter read; subsequent requested narrow wording changes inspected at final capture."
+    }
+  ],
+  "source_registers_compared": [
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/source-register.json",
+      "sha256": "fb9c8dfeeef114983382cb0be8c76c0b0ce630dd268767cbb5ba8055d895747f"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+      "sha256": "e0cb3d00afea26022e043ec413b585eecd00d90e53c74bf28ccae6cfb538d5e5"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/caveman-sources.json",
+      "sha256": "7a3f2cdfc2fabd7e4521e8fb593a326405bf5e94139abbd657f1ff5a0ef857fa"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/ponytail-sources.json",
+      "sha256": "1a8695d99df9b896c8f8af7ef896e4f1cbcdebbc466209c5d1d0f2f4424a96c1"
+    }
+  ],
+  "live_primary_abstract_rechecks": [
+    {
+      "url": "https://arxiv.org/abs/2304.08467v3",
+      "read_scope": "Canonical versioned abstract, model/mechanism/results and version metadata; no full-paper reproduction."
+    },
+    {
+      "url": "https://arxiv.org/abs/2307.06945v4",
+      "read_scope": "Canonical versioned abstract, model/mechanism/results and version metadata; no full-paper reproduction."
+    },
+    {
+      "url": "https://arxiv.org/abs/2305.14788v2",
+      "read_scope": "Canonical versioned abstract, model/mechanism/results and version metadata; no full-paper reproduction."
+    },
+    {
+      "url": "https://arxiv.org/abs/2401.03462v3",
+      "read_scope": "Canonical versioned abstract, model/mechanism/results and version metadata; no full-paper reproduction."
+    },
+    {
+      "url": "https://arxiv.org/abs/2408.03094v1",
+      "read_scope": "Canonical versioned abstract, model/mechanism/results and version metadata; no full-paper reproduction."
+    },
+    {
+      "url": "https://arxiv.org/abs/2403.12968v2",
+      "read_scope": "Canonical versioned abstract, model/mechanism/results and version metadata; no full-paper reproduction."
+    }
+  ],
+  "findings": [
+    {
+      "id": "central-fallback",
+      "severity": "precision",
+      "requested": "Qualify raw fallback as captured authorized observation only.",
+      "resolved_in_captured_bytes": true
+    },
+    {
+      "id": "frontier-fallback-permissions",
+      "severity": "precision",
+      "requested": "K16 fallback must concern authorized captured results; preserve the actual configured permission boundary.",
+      "current_k16_excerpt": "### K16. Jackin as policy delivery\n\nJackin can deliver an inspectable versioned policy through its actual configuration paths. That does not expose every feature in every adapter or justify silently changing model, effort, auth, TTL or spend. The [integration review](/research/context/tools/11-jackin-integration/) separates registered adapters, launch dispatch and proposed controls.\n\n**Test:** effective configuration for exact host/version, native defaults, one transform owner, fallback to the already-captured authorized result, explicit root/session/epoch, deadlines and off-path conformance. Preserve native execution, editing and the actual configured permission boundary; permissive launch flags do not create approval prompts. Proposed schema fields need repository migration/validation; this research does not implement a token-policy switch.\n\nEconomics are the measured marginal effects of selected components, not the sum of K1–K15. Use proportionate checks for small native improvements and canonical quality, all-attempt cost and latency gates for a new complex runtime. [Composition](/research/context/techniques/15-composed-stacks/) covers interactions.\n\n",
+      "resolved_in_captured_bytes": true
+    },
+    {
+      "id": "economic-confidence-gate",
+      "severity": "methodological-clarification",
+      "requested": "Missing economic precision should remain provisional rather than silently waiving the upper95% cost-ratio gate.",
+      "canonical_gate_rows": [
+        "| Economics | **At least 20% lower all-attempt cost per accepted task**, with a **one-sided 95% upper confidence bound** on the candidate/baseline ratio at most **0.80**, using paired task clusters |"
+      ],
+      "chapter27_rows": [
+        "- At least 20% lower all-attempt cost per accepted task to justify added deployment/maintenance, with a one-sided 95% upper cost-ratio bound at or below 0.80 using paired task clusters. Insufficient precision leaves the optimizer experimental or provisional; default promotion cannot waive this bound."
+      ],
+      "resolved_in_captured_bytes": true
+    }
+  ],
+  "blocking_source_or_execution_contradictions_found": 0,
+  "limits": [
+    "No new model/provider/host execution.",
+    "Abstract verification is not full methods replication.",
+    "This is bounded source/contract and decision review, not an exhaustive audit."
+  ]
+}

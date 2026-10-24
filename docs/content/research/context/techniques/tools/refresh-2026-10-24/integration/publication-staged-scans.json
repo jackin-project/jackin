@@ -1,0 +1,35 @@
+{
+  "recorded_utc": "2026-10-24T09:12:59.134556+00:00",
+  "scope": "Successful scans of the exact pre-publication staged tree below, including all then-staged evidence. This record, copied scan logs and following README note were added afterward. The unmodified final required hook separately scans the completed publication tree; final PR metadata records that result.",
+  "staged_tree": "11a2091ba60657d96a654043012eb9a0481a7d1b",
+  "head_parent": "9971e26249c2a601912419c84aad99980f88d28b",
+  "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+  "passed": true,
+  "kingfisher_blobs_scanned": 385,
+  "kingfisher_findings": 0,
+  "gitleaks_exit_code": 0,
+  "scanner_configuration_changed": false,
+  "records": [
+    {
+      "artifact": "logs/publication-staged-final.json",
+      "sha256": "037d9349618cae267813220910a18223c1c2a7a7b753f3bc37bb1a814f39300a",
+      "bytes": 2493
+    },
+    {
+      "artifact": "logs/publication-staged-final-kingfisher.log",
+      "sha256": "9327697df93a6d737dacd2ba4e5221531745e150f68ebf5ebd6c944fc2faf0f2",
+      "bytes": 1093
+    },
+    {
+      "artifact": "logs/publication-staged-final-gitleaks.log",
+      "sha256": "772152af5bb1a641f62525f786f1bf029930798ef14d7808c1a249c3ec6ceee7",
+      "bytes": 111
+    },
+    {
+      "artifact": "logs/publication-staged-final-gitleaks-findings.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "bytes": 3
+    }
+  ],
+  "earlier_findings": "Documented public-digest false positives; see publication-secret-scan-review.json and publication-json-formatting.json. All failed attempts remain archived."
+}

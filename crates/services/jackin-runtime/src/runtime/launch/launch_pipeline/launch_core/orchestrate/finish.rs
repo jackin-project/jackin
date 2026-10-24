@@ -112,6 +112,7 @@ pub(crate) struct ActiveLaunch<'a, D, R> {
     pub(crate) selected_refresh_reason: Option<crate::runtime::image::ImageInvalidationReason>,
     pub(crate) resolved_env: jackin_env::ResolvedEnv,
     pub(crate) rebuild: bool,
+    pub(crate) restore_instances: Option<Vec<jackin_config::ResolvedInstance>>,
     pub(crate) git_pull_join: Option<crate::runtime::launch::launch_pipeline::DeferredGitPull>,
     pub(crate) account_revision: crate::runtime::launch::account_identity::AccountConfigRevision,
     pub(crate) admission_config: jackin_config::AppConfig,

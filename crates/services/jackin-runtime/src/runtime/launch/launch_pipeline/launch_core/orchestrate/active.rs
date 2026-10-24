@@ -105,6 +105,7 @@ where
             docker: launch.docker,
             configured,
             opts: launch.opts,
+            restore_instances: launch.restore_instances.take(),
         },
         sidecar.as_mut(),
         early_sidecar_result,

@@ -1,0 +1,203 @@
+{
+  "execution_date_utc": "2026-10-24",
+  "snapshot_cutoff": "2026-10-24T01:15:00Z",
+  "platform": "Linux x86_64",
+  "python": "3.12.14",
+  "rust": "1.99.1",
+  "record_format": "Structured command argv/cwd/overrides for reproducibility; not an unfiltered shell transcript. Historical aborted invocation has no output and is explicitly unqualified.",
+  "commands": [
+    {
+      "id": "HR-build",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/headroom",
+      "environment": {
+        "CARGO_HOME": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/cargo-home",
+        "CARGO_TARGET_DIR": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/target",
+        "RUSTC": "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustc"
+      },
+      "argv": [
+        "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/cargo",
+        "check",
+        "--locked",
+        "-p",
+        "headroom-core",
+        "--no-default-features"
+      ],
+      "exit_code": 0,
+      "result": "Passed Linux x86_64 check; resolved dependencies downloaded before compilation; no optional models or inference.",
+      "log": "logs/headroom-cargo-check-no-ml.log"
+    },
+    {
+      "id": "HR-tree",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/headroom",
+      "environment": {
+        "CARGO_HOME": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/cargo-home",
+        "CARGO_TARGET_DIR": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/target",
+        "RUSTC": "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustc"
+      },
+      "argv": [
+        "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/cargo",
+        "tree",
+        "--locked",
+        "-p",
+        "headroom-core",
+        "--no-default-features",
+        "-e",
+        "normal"
+      ],
+      "exit_code": 0,
+      "result": "185 distinct package/version nodes including root; no ort, fastembed or magika; native/network-capable dependencies remain.",
+      "log": "logs/headroom-no-ml-tree.log"
+    },
+    {
+      "id": "HR-fidelity",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/headroom",
+      "environment": {
+        "CARGO_HOME": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/cargo-home",
+        "CARGO_TARGET_DIR": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/target",
+        "RUSTC": "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustc"
+      },
+      "argv": [
+        "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/cargo",
+        "run",
+        "--locked",
+        "-p",
+        "headroom-core",
+        "--no-default-features",
+        "--example",
+        "jackin_research_fidelity",
+        "--",
+        "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/probes/headroom-ccr.sqlite3"
+      ],
+      "preparation": "Copied probes/headroom_fidelity.rs to crates/headroom-core/examples/jackin_research_fidelity.rs, leaving tracked upstream source unchanged. Database is disposable.",
+      "exit_code": 0,
+      "result": "Duplicate-key loss, escaped-text normalization, malformed-input rejection, narrow shell passthrough, silent failed SQLite put after deliberately removed table.",
+      "log": "logs/headroom-fidelity.log",
+      "limitations": [
+        "Schema removal is not a disk-full simulation.",
+        "Microtiming is debug-only and not a task metric; hard-coded label says 47 bytes but actual ASCII fixture is 44 bytes. Do not use that line as performance evidence."
+      ]
+    },
+    {
+      "id": "HR-wheel-tests",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow",
+      "environment": {
+        "HEADROOM_OFFLINE": "1",
+        "HEADROOM_BEACON": "off",
+        "HEADROOM_CCR_BACKEND": "memory"
+      },
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/venv/bin/python",
+        "-m",
+        "pytest",
+        "-c",
+        "/dev/null",
+        "probes/upstream-tests/test_densify_agent_mode.py",
+        "probes/upstream-tests/test_kompress_line_integrity.py",
+        "-q"
+      ],
+      "preparation": "Copied the two unchanged tests from release source to probes/upstream-tests, outside the source checkout so imports resolve to installed 0.41.0 wheel.",
+      "exit_code": 0,
+      "result": "18 passed in 0.31s; fourteen agent-mode SDK tests plus four fake-mask line-integrity tests.",
+      "log": "logs/headroom-wheel-tests-confirmed.log"
+    },
+    {
+      "id": "HR-package-identity",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow",
+      "environment": {
+        "HEADROOM_OFFLINE": "1",
+        "HEADROOM_BEACON": "off",
+        "HEADROOM_CCR_BACKEND": "memory"
+      },
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/venv/bin/python",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/probes/headroom_package_identity.py",
+        "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/headroom"
+      ],
+      "exit_code": 0,
+      "result": "Installed release and compiled extension located; three key Python sources byte-equal to pinned release; parsed duplicate-key representation accepted by verifier.",
+      "log": "logs/headroom-python-package-identity.log",
+      "note": "Saved reusable probe replayed successfully after original equivalent inline identity check."
+    },
+    {
+      "id": "LC-runtime-tests",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/lemoncrow",
+      "environment": {
+        "PYTHONPATH": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/lemoncrow/client/src:/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/lemoncrow/src"
+      },
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/venv/bin/python",
+        "-m",
+        "pytest",
+        "client/tests/test_runtime_lite.py",
+        "-q"
+      ],
+      "exit_code": 0,
+      "result": "45 passed in 6.41s. Selected Runtime Lite tests, not full engine suite.",
+      "log": "logs/lemoncrow-runtime-lite-pytest.log"
+    },
+    {
+      "id": "LC-boundaries",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow",
+      "environment": {
+        "PYTHONPATH": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/lemoncrow/client/src:/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/lemoncrow/src"
+      },
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/venv/bin/python",
+        "probes/lemoncrow_boundaries.py"
+      ],
+      "exit_code": 0,
+      "result": "Explicit parallel roots correct, shared no-sticky-cwd behavior, mixed roots refused; hidden grep callable; repeated output still suppressed when spill fails.",
+      "log": "logs/lemoncrow-boundaries.log",
+      "limitations": [
+        "Tiny fixture timings are observational only, not a repository/task latency benchmark.",
+        "Probe calls API directly, not an agent/host or paid model.",
+        "Repeated shell command is a deliberate side-effect-free fixture, never a rerun of real user work."
+      ]
+    },
+    {
+      "id": "LC-package-correspondence",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow",
+      "environment": {},
+      "argv": [
+        "python",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/probes/lemoncrow_artifact_correspondence.py",
+        "sources/lemoncrow-runtime-client.tar.gz",
+        "lemoncrow"
+      ],
+      "exit_code": 0,
+      "result": "Release archive digest matched; all 87 packaged client files byte-identical; metadata Python>=3.12,<3.14 with no Requires-Dist.",
+      "log": "lemoncrow-artifact-correspondence.json"
+    },
+    {
+      "id": "HR-source-test-environment-failure",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/headroom",
+      "result": "Initial source-checkout run: nine of fourteen densify tests failed because source package lacked compiled _core extension. Same selected tests passed using matching wheel.",
+      "disposition": "Harness/import environment mismatch, not an upstream functional regression.",
+      "log": "logs/headroom-densify-pytest.log"
+    },
+    {
+      "id": "HR-ccr-suite-aborted",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/headroom",
+      "result": "Attempted additional CCR-filtered Rust tests exited 101 during workspace ENOSPC; empty output, no test results.",
+      "disposition": "Aborted/unqualified. Not counted as failed upstream tests. No retry needed after focused storage probe.",
+      "log": null
+    }
+  ],
+  "upstream_test_inputs": [
+    {
+      "product": "headroom",
+      "path": "tests/test_densify_agent_mode.py",
+      "sha256": "2b9ea05b8f2556f6ba986a7e756b758dd8a46b79622774c82af33993253e08f4"
+    },
+    {
+      "product": "headroom",
+      "path": "tests/test_kompress_line_integrity.py",
+      "sha256": "dc0c9450dc4090f96b9bdbca1bffa2405f34c5e0444e7cd3b63819e117bd6afd"
+    },
+    {
+      "product": "lemoncrow",
+      "path": "client/tests/test_runtime_lite.py",
+      "sha256": "907c1f0779c0d35f3756bc9199026454fd9b2b85e115139119ce36be9d1f6fde"
+    }
+  ]
+}

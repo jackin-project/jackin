@@ -1,0 +1,1 @@
+Please read logs.csv, select rows whose level is ERROR or more severe, and report the three most frequent causes. Do not drop negations, account identifiers, or permission failures. Include the exact line numbers that support each cause.

@@ -1,0 +1,176 @@
+{
+  "recorded_utc": "2026-10-24T08:52:02.472503+00:00",
+  "runs": [
+    {
+      "name": "first",
+      "description": "First full sweep: harness incorrectly required mounted navigation links while the mobile drawer was closed; its mobile interaction also read before mounted links entered the viewport. Desktop URL change needed an exact destination-H1 wait. These are harness defects, not observed application defects.",
+      "started_utc": "2026-10-24T08:35:26.821Z",
+      "finished_utc": "2026-10-24T08:35:56.216Z",
+      "exit_code": 1,
+      "passed": false,
+      "summary": {
+        "routes": 56,
+        "pageViewportChecks": 112,
+        "passedPageChecks": 56,
+        "failedPageChecks": 56,
+        "uniqueInternalLinks": 718,
+        "failedInternalLinks": 0,
+        "screenshots": 22,
+        "consoleOrPageErrors": 0,
+        "globalOverflowChecksFailed": 0,
+        "failedNavigationChecks": 1
+      },
+      "artifacts": [
+        {
+          "path": "historical-render-runs/first-results.json",
+          "sha256": "9a84739dd319a15a060d095e8de9ce2ae3b908858dd762139e4e7f84bbe2947c",
+          "bytes": 571774
+        },
+        {
+          "path": "historical-render-runs/first-command.json",
+          "sha256": "5a3e15d776b6bada6cbb6f42ef81aa7d051f66d56313e4a6ebec5ac521b99a7b",
+          "bytes": 668
+        },
+        {
+          "path": "historical-render-runs/render_pages_first.mjs",
+          "sha256": "7735c9032ade7b17a246724e93ae96b3bd229ee827a9dbf2796b52dddcae4515",
+          "bytes": 16699
+        },
+        {
+          "path": "logs/rendered-first.log",
+          "sha256": "417eed1b3507cb388f1a089b5ab2f2a470777e5297874a888e7ef346d74ebf72",
+          "bytes": 19615
+        }
+      ],
+      "scratch_screenshot_directory": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/run/screenshots"
+    },
+    {
+      "name": "corrected",
+      "description": "Corrected per-page navigation condition, scoped sidebar click, mounted mobile-link wait and exact destination-title wait. All checks passed. Its 22 images received the initial split desktop/mobile visual review.",
+      "started_utc": "2026-10-24T08:37:48.367Z",
+      "finished_utc": "2026-10-24T08:38:18.841Z",
+      "exit_code": 0,
+      "passed": true,
+      "summary": {
+        "routes": 56,
+        "pageViewportChecks": 112,
+        "passedPageChecks": 112,
+        "failedPageChecks": 0,
+        "uniqueInternalLinks": 718,
+        "failedInternalLinks": 0,
+        "screenshots": 22,
+        "consoleOrPageErrors": 0,
+        "globalOverflowChecksFailed": 0,
+        "failedNavigationChecks": 0
+      },
+      "artifacts": [
+        {
+          "path": "historical-render-runs/corrected-results.json",
+          "sha256": "85c36739f5b372ca22310aa8ef6adebf0d9bbeaa7e630edc0fc1792160f2f68e",
+          "bytes": 571950
+        },
+        {
+          "path": "historical-render-runs/corrected-command.json",
+          "sha256": "9500584973d8211fc3f2daa48b7ca96e9103a7005884f074186b8f1453856b68",
+          "bytes": 674
+        },
+        {
+          "path": "historical-render-runs/render_pages_corrected.mjs",
+          "sha256": "1afcbfb734bfe8d054401979601dd7cee1e031892bd187aa4990e34b19f2ae3c",
+          "bytes": 18090
+        },
+        {
+          "path": "logs/rendered-corrected.log",
+          "sha256": "4767513038d530ad63ebb6023319029ddcbb31497cb3481ae5d560006634e964",
+          "bytes": 19558
+        }
+      ],
+      "scratch_screenshot_directory": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/run-corrected/screenshots"
+    },
+    {
+      "name": "pre-release-merge",
+      "description": "Identical checks with explicit repo, manifest, browser and Playwright module options/environment overrides; no automatic download. Final shipped script. All checks passed. Preserved before the late e737 main merge and full-site rebuild.",
+      "started_utc": "2026-10-24T08:42:57.412Z",
+      "finished_utc": "2026-10-24T08:43:27.463Z",
+      "exit_code": 0,
+      "passed": true,
+      "summary": {
+        "routes": 56,
+        "pageViewportChecks": 112,
+        "passedPageChecks": 112,
+        "failedPageChecks": 0,
+        "uniqueInternalLinks": 718,
+        "failedInternalLinks": 0,
+        "screenshots": 22,
+        "consoleOrPageErrors": 0,
+        "globalOverflowChecksFailed": 0,
+        "failedNavigationChecks": 0
+      },
+      "artifacts": [
+        {
+          "path": "historical-render-runs/pre-release-merge/rendered-pages-results.json",
+          "sha256": "cb444d08dfedac4b257ce891a92d23db6bf8b4be9c8ae805de5cf662ce081db4"
+        },
+        {
+          "path": "historical-render-runs/pre-release-merge/rendered-qa-command.json",
+          "sha256": "2e8a6d07eb9aceda8bafcd3bd93e46c77cd9ca84eb2a6cad3395595eb50dd264"
+        },
+        {
+          "path": "probes/render_pages.mjs",
+          "sha256": "73360d99deed684868f0c27add8b1e2535e09f922413028265e85ef98300ff54"
+        },
+        {
+          "path": "logs/rendered-final.log",
+          "sha256": "2c607dd5aba9209a929947cf11bb736ab133744247b52d863a9f7c4316118a16",
+          "bytes": 19558
+        }
+      ],
+      "scratch_screenshot_directory": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/run-portable/screenshots"
+    },
+    {
+      "name": "final-main",
+      "description": "Unchanged parameterized script rerun against the coordinator's rebuilt assembled tree including e737. Full page/link/navigation sweep; no source or MDX change by this reviewer.",
+      "started_utc": "2026-10-24T08:48:53.896Z",
+      "finished_utc": "2026-10-24T08:49:24.078Z",
+      "exit_code": 0,
+      "passed": true,
+      "summary": {
+        "routes": 56,
+        "pageViewportChecks": 112,
+        "passedPageChecks": 112,
+        "failedPageChecks": 0,
+        "uniqueInternalLinks": 718,
+        "failedInternalLinks": 0,
+        "screenshots": 22,
+        "consoleOrPageErrors": 0,
+        "globalOverflowChecksFailed": 0,
+        "failedNavigationChecks": 0
+      },
+      "assembled_git_context": {
+        "HEAD": "9971e26249c2a601912419c84aad99980f88d28b",
+        "MERGE_HEAD": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+        "origin/main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
+      },
+      "artifacts": [
+        {
+          "path": "rendered-pages-results.json",
+          "sha256": "e66726d44c9ce5813b8ad63cecb63c83f8be4eaaa591987f2e10546bd1ddd976"
+        },
+        {
+          "path": "rendered-qa-command.json",
+          "sha256": "0d305d52be35b13f4a6b30797c60c6b1583b1a5a9120e7e73eb0a71c05f37560"
+        },
+        {
+          "path": "probes/render_pages.mjs",
+          "sha256": "73360d99deed684868f0c27add8b1e2535e09f922413028265e85ef98300ff54"
+        },
+        {
+          "path": "logs/rendered-final-main.log",
+          "sha256": "fa8716dd04e5da80ebaf4e59f10991115d4b6320329f06c36feef97c1dd87ff2"
+        }
+      ],
+      "scratch_screenshot_directory": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/run-final-main/screenshots"
+    }
+  ],
+  "scope": "Four actual runs preserved, including the first harness failure and both successful pre/post late-main snapshots. The final two use the exact same parameterized script."
+}

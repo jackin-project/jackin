@@ -4,6 +4,9 @@ import rehypeJk from './scripts/rehype-jk'
 
 export const docs = defineDocs({
   dir: 'content',
+  meta: {
+    files: ['**/meta.json'],
+  },
   docs: {
     files: ['**/*.mdx'],
     postprocess: {

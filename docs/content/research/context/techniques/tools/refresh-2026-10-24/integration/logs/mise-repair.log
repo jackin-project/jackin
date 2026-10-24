@@ -1,0 +1,188 @@
+mise by @jdx – installing 6 tools
+mise cargo:cargo-fuzz@0.13.2 cargo-binstall:  INFO resolve: Resolving package: 'cargo-fuzz@=0.13.2'
+mise cargo:cargo-hack@0.6.45 cargo-binstall:  INFO resolve: Resolving package: 'cargo-hack@=0.6.45'
+mise cargo:dylint-link@6.2.0 cargo-binstall:  INFO resolve: Resolving package: 'dylint-link@=6.2.0'
+mise cargo:cargo-audit@0.22.2 cargo-binstall:  INFO resolve: Resolving package: 'cargo-audit@=0.22.2'
+mise cargo:cargo-shear@1.14.0 cargo-binstall:  INFO resolve: Resolving package: 'cargo-shear@=1.14.0'
+mise ██░░░░░░░░░░░░░░ 0/6 · 3.0s
+  zig@0.17.0                extracting  3.0s
+  cargo:cargo-audit@0.22.2  installing  3.0s
+  cargo:cargo-fuzz@0.13.2   installing  3.0s
+  cargo:cargo-hack@0.6.45   installing  3.0s
+  cargo:cargo-shear@1.14.0  installing  3.0s
+  cargo:dylint-link@6.2.0   installing  3.0s
+mise ██░░░░░░░░░░░░░░ 0/6 · 6.0s
+  zig@0.17.0                extracting  6.0s
+  cargo:cargo-audit@0.22.2  installing  6.0s
+  cargo:cargo-fuzz@0.13.2   installing  6.0s
+  cargo:cargo-hack@0.6.45   installing  6.0s
+  cargo:cargo-shear@1.14.0  installing  6.0s
+  cargo:dylint-link@6.2.0   installing  6.0s
+mise ██░░░░░░░░░░░░░░ 0/6 · 9.0s
+  zig@0.17.0                extracting  9.0s
+  cargo:cargo-audit@0.22.2  installing  9.0s
+  cargo:cargo-fuzz@0.13.2   installing  9.0s
+  cargo:cargo-hack@0.6.45   installing  9.0s
+  cargo:cargo-shear@1.14.0  installing  9.0s
+  cargo:dylint-link@6.2.0   installing  9.0s
+mise ✗ zig@0.17.0                11.4s · failed: failed to strip path components from tar archive: /workspace/scratch/1335a158b2a9/tooling/mise-data/downloads/zig/0.17.0/zig-x86_64-linux-0.17.0.tar.xz
+mise ██░░░░░░░░░░░░░░ 1/6 · 12.0s
+  cargo:cargo-audit@0.22.2  installing  12.0s
+  cargo:cargo-fuzz@0.13.2   installing  12.0s
+  cargo:cargo-hack@0.6.45   installing  12.0s
+  cargo:cargo-shear@1.14.0  installing  12.0s
+  cargo:dylint-link@6.2.0   installing  12.0s
+mise ██░░░░░░░░░░░░░░ 1/6 · 15.0s
+  cargo:cargo-audit@0.22.2  installing  15.0s
+  cargo:cargo-fuzz@0.13.2   installing  15.0s
+  cargo:cargo-hack@0.6.45   installing  15.0s
+  cargo:cargo-shear@1.14.0  installing  15.0s
+  cargo:dylint-link@6.2.0   installing  15.0s
+mise ██░░░░░░░░░░░░░░ 1/6 · 18.0s
+  cargo:cargo-audit@0.22.2  installing  18.0s
+  cargo:cargo-fuzz@0.13.2   installing  18.0s
+  cargo:cargo-hack@0.6.45   installing  18.0s
+  cargo:cargo-shear@1.14.0  installing  18.0s
+  cargo:dylint-link@6.2.0   installing  18.0s
+mise ██░░░░░░░░░░░░░░ 1/6 · 21.0s
+  cargo:cargo-audit@0.22.2  installing  21.0s
+  cargo:cargo-fuzz@0.13.2   installing  21.0s
+  cargo:cargo-hack@0.6.45   installing  21.0s
+  cargo:cargo-shear@1.14.0  installing  21.0s
+  cargo:dylint-link@6.2.0   installing  21.0s
+mise ██░░░░░░░░░░░░░░ 1/6 · 24.0s
+  cargo:cargo-audit@0.22.2  installing  24.0s
+  cargo:cargo-fuzz@0.13.2   installing  24.0s
+  cargo:cargo-hack@0.6.45   installing  24.0s
+  cargo:cargo-shear@1.14.0  installing  24.0s
+  cargo:dylint-link@6.2.0   installing  24.0s
+mise ██░░░░░░░░░░░░░░ 1/6 · 27.0s
+  cargo:cargo-audit@0.22.2  installing  27.0s
+  cargo:cargo-fuzz@0.13.2   installing  27.0s
+  cargo:cargo-hack@0.6.45   installing  27.0s
+  cargo:cargo-shear@1.14.0  installing  27.0s
+  cargo:dylint-link@6.2.0   installing  27.0s
+mise ██░░░░░░░░░░░░░░ 1/6 · 30.0s
+  cargo:cargo-audit@0.22.2  installing  30.0s
+  cargo:cargo-fuzz@0.13.2   installing  30.0s
+  cargo:cargo-hack@0.6.45   installing  30.0s
+  cargo:cargo-shear@1.14.0  installing  30.0s
+  cargo:dylint-link@6.2.0   installing  30.0s
+mise ██░░░░░░░░░░░░░░ 1/6 · 33.0s
+  cargo:cargo-audit@0.22.2  installing  33.0s
+  cargo:cargo-fuzz@0.13.2   installing  33.0s
+  cargo:cargo-hack@0.6.45   installing  33.0s
+  cargo:cargo-shear@1.14.0  installing  33.0s
+  cargo:dylint-link@6.2.0   installing  33.0s
+mise ██░░░░░░░░░░░░░░ 1/6 · 36.3s
+  cargo:cargo-audit@0.22.2  installing  36.3s
+  cargo:cargo-fuzz@0.13.2   installing  36.3s
+  cargo:cargo-hack@0.6.45   installing  36.3s
+  cargo:cargo-shear@1.14.0  installing  36.3s
+  cargo:dylint-link@6.2.0   installing  36.3s
+mise ██░░░░░░░░░░░░░░ 1/6 · 39.9s
+  cargo:cargo-audit@0.22.2  installing  39.9s
+  cargo:cargo-fuzz@0.13.2   installing  39.9s
+  cargo:cargo-hack@0.6.45   installing  39.9s
+  cargo:cargo-shear@1.14.0  installing  39.9s
+  cargo:dylint-link@6.2.0   installing  39.9s
+mise ██░░░░░░░░░░░░░░ 1/6 · 43.9s
+  cargo:cargo-audit@0.22.2  installing  43.9s
+  cargo:cargo-fuzz@0.13.2   installing  43.9s
+  cargo:cargo-hack@0.6.45   installing  43.9s
+  cargo:cargo-shear@1.14.0  installing  43.9s
+  cargo:dylint-link@6.2.0   installing  43.9s
+mise cargo:cargo-audit@0.22.2 cargo-binstall:  WARN resolve: Timeout reached while checking fetcher invalid url: deadline has elapsed
+mise cargo:cargo-shear@1.14.0 cargo-binstall:  WARN resolve: Timeout reached while checking fetcher invalid url: deadline has elapsed
+mise cargo:cargo-fuzz@0.13.2 cargo-binstall:  WARN resolve: Timeout reached while checking fetcher invalid url: deadline has elapsed
+mise cargo:cargo-hack@0.6.45 cargo-binstall:  WARN resolve: Timeout reached while checking fetcher invalid url: deadline has elapsed
+mise cargo:dylint-link@6.2.0 cargo-binstall:  WARN resolve: Timeout reached while checking fetcher invalid url: deadline has elapsed
+mise ██░░░░░░░░░░░░░░ 1/6 · 48.3s
+  cargo:cargo-audit@0.22.2  installing  48.3s
+  cargo:cargo-fuzz@0.13.2   installing  48.3s
+  cargo:cargo-hack@0.6.45   installing  48.3s
+  cargo:cargo-shear@1.14.0  installing  48.3s
+  cargo:dylint-link@6.2.0   installing  48.3s
+mise ██░░░░░░░░░░░░░░ 1/6 · 53.2s
+  cargo:cargo-audit@0.22.2  installing  53.2s
+  cargo:cargo-fuzz@0.13.2   installing  53.2s
+  cargo:cargo-hack@0.6.45   installing  53.2s
+  cargo:cargo-shear@1.14.0  installing  53.2s
+  cargo:dylint-link@6.2.0   installing  53.2s
+mise ██░░░░░░░░░░░░░░ 1/6 · 58.5s
+  cargo:cargo-audit@0.22.2  installing  58.5s
+  cargo:cargo-fuzz@0.13.2   installing  58.5s
+  cargo:cargo-hack@0.6.45   installing  58.5s
+  cargo:cargo-shear@1.14.0  installing  58.5s
+  cargo:dylint-link@6.2.0   installing  58.5s
+mise cargo:cargo-audit@0.22.2 cargo-binstall:  WARN resolve: Timeout reached while checking fetcher invalid url: deadline has elapsed
+mise cargo:cargo-audit@0.22.2 cargo-binstall: ERROR Fatal error:
+mise cargo:cargo-audit@0.22.2   × For crate cargo-audit: Fallback to cargo-install is disabled
+mise cargo:cargo-audit@0.22.2   ╰─▶ Fallback to cargo-install is disabled
+mise ERROR /workspace/scratch/1335a158b2a9/tooling/mise-data/installs/cargo-binstall/1.26.0/.mise-bins/cargo-binstall failed
+mise cargo-binstall found no prebuilt binary; falling back to cargo install
+mise cargo:cargo-shear@1.14.0 cargo-binstall:  WARN resolve: Timeout reached while checking fetcher invalid url: deadline has elapsed
+mise cargo:cargo-shear@1.14.0 cargo-binstall: ERROR Fatal error:
+mise cargo:cargo-shear@1.14.0   × For crate cargo-shear: Fallback to cargo-install is disabled
+mise cargo:cargo-shear@1.14.0   ╰─▶ Fallback to cargo-install is disabled
+mise ERROR /workspace/scratch/1335a158b2a9/tooling/mise-data/installs/cargo-binstall/1.26.0/.mise-bins/cargo-binstall failed
+mise cargo-binstall found no prebuilt binary; falling back to cargo install
+mise cargo:cargo-fuzz@0.13.2 cargo-binstall:  WARN resolve: Timeout reached while checking fetcher invalid url: deadline has elapsed
+mise cargo:cargo-fuzz@0.13.2 cargo-binstall: ERROR Fatal error:
+mise cargo:cargo-fuzz@0.13.2   × For crate cargo-fuzz: Fallback to cargo-install is disabled
+mise cargo:cargo-fuzz@0.13.2   ╰─▶ Fallback to cargo-install is disabled
+mise ERROR /workspace/scratch/1335a158b2a9/tooling/mise-data/installs/cargo-binstall/1.26.0/.mise-bins/cargo-binstall failed
+mise cargo-binstall found no prebuilt binary; falling back to cargo install
+mise cargo:cargo-hack@0.6.45 cargo-binstall:  WARN resolve: Timeout reached while checking fetcher invalid url: deadline has elapsed
+mise cargo:cargo-hack@0.6.45 cargo-binstall: ERROR Fatal error:
+mise cargo:cargo-hack@0.6.45   × For crate cargo-hack: Fallback to cargo-install is disabled
+mise cargo:cargo-hack@0.6.45   ╰─▶ Fallback to cargo-install is disabled
+mise ERROR /workspace/scratch/1335a158b2a9/tooling/mise-data/installs/cargo-binstall/1.26.0/.mise-bins/cargo-binstall failed
+mise cargo-binstall found no prebuilt binary; falling back to cargo install
+mise cargo:cargo-audit@0.22.2     Updating crates.io index
+mise cargo:cargo-audit@0.22.2 error: binary `cargo-audit` already exists in destination
+mise cargo:cargo-audit@0.22.2 Add --force to overwrite
+mise ERROR cargo failed
+mise ✗ cargo:cargo-audit@0.22.2  60.5s · failed: cargo exited with non-zero status: exit code 101; last stderr: Add --force to overwrite
+mise cargo:dylint-link@6.2.0 cargo-binstall:  WARN resolve: Timeout reached while checking fetcher invalid url: deadline has elapsed
+mise cargo:dylint-link@6.2.0 cargo-binstall: ERROR Fatal error:
+mise cargo:dylint-link@6.2.0   × For crate dylint-link: Fallback to cargo-install is disabled
+mise cargo:dylint-link@6.2.0   ╰─▶ Fallback to cargo-install is disabled
+mise ERROR /workspace/scratch/1335a158b2a9/tooling/mise-data/installs/cargo-binstall/1.26.0/.mise-bins/cargo-binstall failed
+mise cargo-binstall found no prebuilt binary; falling back to cargo install
+mise cargo:cargo-shear@1.14.0     Updating crates.io index
+mise cargo:cargo-shear@1.14.0 error: binary `cargo-shear` already exists in destination
+mise cargo:cargo-shear@1.14.0 Add --force to overwrite
+mise ERROR cargo failed
+mise ✗ cargo:cargo-shear@1.14.0  60.7s · failed: cargo exited with non-zero status: exit code 101; last stderr: Add --force to overwrite
+mise cargo:cargo-fuzz@0.13.2     Updating crates.io index
+mise cargo:cargo-fuzz@0.13.2 error: binary `cargo-fuzz` already exists in destination
+mise cargo:cargo-fuzz@0.13.2 Add --force to overwrite
+mise ERROR cargo failed
+mise ✗ cargo:cargo-fuzz@0.13.2   60.8s · failed: cargo exited with non-zero status: exit code 101; last stderr: Add --force to overwrite
+mise cargo:cargo-hack@0.6.45     Updating crates.io index
+mise cargo:cargo-hack@0.6.45 error: binary `cargo-hack` already exists in destination
+mise cargo:cargo-hack@0.6.45 Add --force to overwrite
+mise ERROR cargo failed
+mise ✗ cargo:cargo-hack@0.6.45   61.2s · failed: cargo exited with non-zero status: exit code 101; last stderr: Add --force to overwrite
+mise cargo:dylint-link@6.2.0     Updating crates.io index
+mise cargo:dylint-link@6.2.0 error: binary `dylint-link` already exists in destination
+mise cargo:dylint-link@6.2.0 Add --force to overwrite
+mise ERROR cargo failed
+mise ✗ cargo:dylint-link@6.2.0   61.3s · failed: cargo exited with non-zero status: exit code 101; last stderr: Add --force to overwrite
+mise ████████████████ 6/6 · installed 0 tools · 6 failed in 61.3s
+mise ERROR Failed to install tools: cargo:cargo-audit@0.22.2, cargo:cargo-fuzz@0.13.2, cargo:cargo-hack@0.6.45, cargo:cargo-shear@1.14.0, cargo:dylint-link@6.2.0, core:zig@0.17.0
+
+cargo:cargo-audit@0.22.2: cargo exited with non-zero status: exit code 101; last stderr: Add --force to overwrite
+
+cargo:cargo-fuzz@0.13.2: cargo exited with non-zero status: exit code 101; last stderr: Add --force to overwrite
+
+cargo:cargo-hack@0.6.45: cargo exited with non-zero status: exit code 101; last stderr: Add --force to overwrite
+
+cargo:cargo-shear@1.14.0: cargo exited with non-zero status: exit code 101; last stderr: Add --force to overwrite
+
+cargo:dylint-link@6.2.0: cargo exited with non-zero status: exit code 101; last stderr: Add --force to overwrite
+
+core:zig@0.17.0: failed to strip path components from tar archive: /workspace/scratch/1335a158b2a9/tooling/mise-data/downloads/zig/0.17.0/zig-x86_64-linux-0.17.0.tar.xz: Directory not empty (os error 39)
+mise ERROR Version: 2026.10.18 linux-x64 (2026-10-23)
+mise ERROR Run with --verbose or MISE_VERBOSE=1 for more information

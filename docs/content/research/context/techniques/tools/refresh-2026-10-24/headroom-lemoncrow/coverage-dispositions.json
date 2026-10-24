@@ -1,0 +1,234 @@
+{
+  "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+  "snapshot_cutoff": "2026-10-24T01:15:00Z",
+  "pages": [
+    {
+      "path": "docs/content/research/context/tools/02-headroom-design.mdx",
+      "old_sha256": "fe384d5235696f199622885c7c9a743b47a0e956d471d76dad8c109dfce62f8b",
+      "headings": [
+        {
+          "old_heading": "Summary",
+          "disposition": "changed",
+          "reason": "Refreshed 0.38.0 to 0.41.0; retain candidate but remove strongest/preferred presumption after concrete fidelity/recovery findings.",
+          "current_heading": "Summary"
+        },
+        {
+          "old_heading": "Question and scope",
+          "disposition": "expanded",
+          "reason": "Retain reusable-core question; separately evaluate Python densify, caller-owned tool results and whole proxy.",
+          "current_heading": "Question and scope"
+        },
+        {
+          "old_heading": "Method",
+          "disposition": "expanded",
+          "reason": "Source-only review now supplemented by no-ML build, installed-wheel checks, executed selected tests and controlled faults.",
+          "current_heading": "Method"
+        },
+        {
+          "old_heading": "Findings",
+          "disposition": "reconciled",
+          "reason": "Preserve reusable APIs and dependency cautions while adding release packaging, effective defaults and current evidence.",
+          "current_heading": "Findings"
+        },
+        {
+          "old_heading": "The Rust surface is real",
+          "disposition": "confirmed-and-expanded",
+          "reason": "Exports confirmed at 0.41.0; distinguish library/worker/proxy from Python SDK; no rewrite on language grounds.",
+          "current_heading": "Independently selectable boundaries"
+        },
+        {
+          "old_heading": "Feature and dependency reality",
+          "disposition": "confirmed-and-tested",
+          "reason": "ML remains default feature, no-default-features check passed Linux; report remaining 185 normal dependencies and MSRV discrepancy. Fidelity independently tested beyond parity.",
+          "current_heading": "No-ML build: demonstrated feasibility, substantial remaining dependencies"
+        },
+        {
+          "old_heading": "Evidence and operational interpretation",
+          "disposition": "confirmed-and-expanded",
+          "reason": "No current independent task winner; historical synthetic index table and newer one-scenario first-party study scoped separately.",
+          "current_heading": "Benchmark provenance and maintenance"
+        },
+        {
+          "old_heading": "Implications for jackin❯",
+          "disposition": "changed",
+          "reason": "Reuse-before-rewrite retained; no unconditional preferred backend. Acknowledged raw storage, typed domain and SDK comparison now required.",
+          "current_heading": "Implications for jackin❯"
+        },
+        {
+          "old_heading": "Limitations and unknowns",
+          "disposition": "changed",
+          "reason": "Previous did-not-compile claim retired by successful build; new untested platform/model/task/epoch and aborted test limits stated.",
+          "current_heading": "Limitations and unknowns"
+        },
+        {
+          "old_heading": "Sources",
+          "disposition": "expanded",
+          "reason": "Pinned release commit, 21 primary anchors plus registry/artifact/command records.",
+          "current_heading": "Sources"
+        },
+        {
+          "old_heading": "Related work",
+          "disposition": "retained",
+          "reason": "Current synthesis, composition, integration and engine links retained.",
+          "current_heading": "Related work"
+        }
+      ],
+      "old_lines_with_numerals": [
+        {
+          "old_text": "description: \"Headroom 0.38.0: reusable Rust transforms, feature and recovery boundaries, evidence, and deployment choices.\"",
+          "disposition": "Superseded current identity/date; previous release remains historical evidence only."
+        },
+        {
+          "old_text": "Cutoff: **2026-09-23 UTC**. Reviewed release: [Headroom v0.38.0](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.38.0), release commit `94206e265203acfd72a3b939e9a964e29175ad50`. Headroom is the strongest **source-level Rust transform candidate** in this comparison, not an established task-cost winner. Evaluate selected library capabilities before adopting its complete provider proxy.",
+          "disposition": "Superseded current identity/date; previous release remains historical evidence only."
+        },
+        {
+          "old_text": "The [workspace](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/Cargo.toml) includes `headroom-core`, `headroom-proxy`, Python bindings, simulators, and parity tooling under Apache-2.0. The [core exports](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/src/transforms/mod.rs) include `LogCompressor`, `SearchCompressor`, `CompressionPipelineBuilder`, `JsonMinifier`, and recovery-aware pipeline types. Describing Headroom as Python-only or requiring a wholesale Rust rewrite is incorrect.",
+          "disposition": "Claim reconciled in heading disposition; source links repinned to current release where applicable. Older release numbers are not current benchmark qualifications."
+        },
+        {
+          "old_text": "The [core manifest](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/Cargo.toml) declares internal crate version **0.1.0**, not product version 0.38.0. ML is enabled by default; `default-features = false` excludes optional ONNX/embedding/classifier dependencies. The remaining core still includes tokenizers, grammars, SQLite, and network-capable dependencies. Feature exclusion is not proof of a small binary, offline operation, or a successful build on every Jackin target.",
+          "disposition": "Claim reconciled in heading disposition; source links repinned to current release where applicable. Older release numbers are not current benchmark qualifications."
+        },
+        {
+          "old_text": "No independent accepted-task result tied to this exact release and a proposed Jackin profile was established. Payload compression counters are not a control trajectory. A proxy benchmark configured to rewrite more historical content cannot qualify a selected-transform integration, and a selected-transform test cannot qualify the whole proxy. See [evidence eligibility](/research/context/tools/07-evidence-and-claims/).",
+          "disposition": "Claim reconciled in heading disposition; source links repinned to current release where applicable. Older release numbers are not current benchmark qualifications."
+        },
+        {
+          "old_text": "- [Six-tool comparison](/research/context/tools/05-head-to-head/)",
+          "disposition": "Claim reconciled in heading disposition; source links repinned to current release where applicable. Older release numbers are not current benchmark qualifications."
+        },
+        {
+          "old_text": "- [Jackin integration](/research/context/tools/11-jackin-integration/)",
+          "disposition": "Claim reconciled in heading disposition; source links repinned to current release where applicable. Older release numbers are not current benchmark qualifications."
+        },
+        {
+          "old_text": "- [Engine reuse matrix](/research/context/engine/09-reuse-decision-matrix/)",
+          "disposition": "Claim reconciled in heading disposition; source links repinned to current release where applicable. Older release numbers are not current benchmark qualifications."
+        }
+      ],
+      "numeric_reconciliation_note": "No old compression-percentage or task-latency winner number existed on these two baseline pages. Versions/cutoff updated; internal Rust0.1.0 and full-path five-second lock retained with scope. New measured counts are explicitly component/fixture results."
+    },
+    {
+      "path": "docs/content/research/context/tools/10-lemoncrow-design.mdx",
+      "old_sha256": "7023692dfc453babcbd0edd483c81320f18a6e853951bcb2a3ac8dc8fce0f264",
+      "headings": [
+        {
+          "old_heading": "Summary",
+          "disposition": "changed",
+          "reason": "0.7.4 full-source status is historical; 0.8.0 public Runtime Lite and advanced private engine separated. No current winner.",
+          "current_heading": "Summary"
+        },
+        {
+          "old_heading": "Question and scope",
+          "disposition": "retained-and-expanded",
+          "reason": "Retain worktree/native-edit/quality question; specify restricted retrieval rather than automatically adopting complete tool replacement.",
+          "current_heading": "Question and scope"
+        },
+        {
+          "old_heading": "Method",
+          "disposition": "expanded",
+          "reason": "Added release artifact byte correspondence, 45 selected tests and independent real-worktree/spill probes.",
+          "current_heading": "Method"
+        },
+        {
+          "old_heading": "Findings",
+          "disposition": "reconciled",
+          "reason": "Current component and artifact boundaries now lead; historical fuller engine facts retain explicit scope.",
+          "current_heading": "Findings"
+        },
+        {
+          "old_heading": "Integrated rather than additive in its full configuration",
+          "disposition": "confirmed-with-scope",
+          "reason": "Full upstream tool replacement is a separate treatment; restricted Lite retrieval changes exposed schema and behavior.",
+          "current_heading": "What Runtime Lite sees and changes"
+        },
+        {
+          "old_heading": "Current source and license",
+          "disposition": "historical-claim-preserved-current-changed",
+          "reason": "0.7.4 and Sep24 publication remain Apache; 0.8.0 removes advanced internals from public mirror. Neutral pro directory presence is not advanced-engine completeness. Current Runtime wheel matched 87 source files.",
+          "current_heading": "Current components and source boundary"
+        },
+        {
+          "old_heading": "Current state handling",
+          "disposition": "split-and-tested",
+          "reason": "Five-second full-path advisory lock remains; current Lite has explicit roots/nonsticky routing and tested worktree isolation. Legacy global cwd debt remains. Failed spill and missing exposure epoch are new blockers.",
+          "current_heading": "Worktrees: improved Lite routing, a different legacy/full path"
+        },
+        {
+          "old_heading": "Evidence",
+          "disposition": "confirmed-and-expanded",
+          "reason": "Historical auto/persona task results do not qualify Lite0.8.0. Provider credit gate is a spec; stable release explicitly lacks complete G11 pass.",
+          "current_heading": "Evidence does not establish a current winner"
+        },
+        {
+          "old_heading": "Implications for jackin❯",
+          "disposition": "sharpened",
+          "reason": "Per-root retrieval candidate retained; server-side deny list and native read/edit receipts explicitly required; no language-only rejection.",
+          "current_heading": "Implications for jackin❯"
+        },
+        {
+          "old_heading": "Limitations and unknowns",
+          "disposition": "changed",
+          "reason": "Previous no multi-worktree test statement superseded by bounded executed fixtures; full build/task/host/platform claims remain unqualified.",
+          "current_heading": "Limitations and unknowns"
+        },
+        {
+          "old_heading": "Sources",
+          "disposition": "expanded",
+          "reason": "Pinned current commit, 21 primary anchors, artifact proof and executable probes.",
+          "current_heading": "Sources"
+        },
+        {
+          "old_heading": "Related work",
+          "disposition": "retained",
+          "reason": "LeanCTX/evidence/integration retained; composition cross-link added.",
+          "current_heading": "Related work"
+        }
+      ],
+      "old_lines_with_numerals": [
+        {
+          "old_text": "description: \"LemonCrow 0.7.4: integrated retrieval, current source availability, bounded state, evidence limits, and Jackin evaluation.\"",
+          "disposition": "Superseded current identity/date; previous release remains historical evidence only."
+        },
+        {
+          "old_text": "Cutoff: **2026-09-23 UTC**. Reviewed release: [LemonCrow v0.7.4](https://github.com/lemoncrow-lab/lemoncrow/releases/tag/v0.7.4). LemonCrow is a serious integrated context-runtime candidate. Its current tagged tree includes `src/lemoncrow/pro`; rejecting it as missing that source would be incorrect. It is not, however, an independently proven winner for Jackin's workloads.",
+          "disposition": "Superseded current identity/date; previous release remains historical evidence only."
+        },
+        {
+          "old_text": "The [runtime documentation](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/README.md) describes ranked code search, targeted reads, edits, shell execution, and web fetching. The full host integration aims to replace overlapping native tools rather than simply add another catalog. This can reduce exploration cycles, but also changes the agent's tool contracts and behavior.",
+          "disposition": "Claim reconciled in heading disposition; source links repinned to current release where applicable. Older release numbers are not current benchmark qualifications."
+        },
+        {
+          "old_text": "The [tagged source directory](https://github.com/lemoncrow-lab/lemoncrow/tree/v0.7.4/src/lemoncrow/pro) and [engine package](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/pro/__init__.py) are present. The [license](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/LICENSE) declares Apache-2.0 across the source, including the engine. This resolves the specific source-directory availability concern, not every reproducibility question. This review did not reproduce the release build or audit every bundled dependency.",
+          "disposition": "Claim reconciled in heading disposition; source links repinned to current release where applicable. Older release numbers are not current benchmark qualifications."
+        },
+        {
+          "old_text": "The tagged [smart-state implementation](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/gateway/adapters/mcp/smart_state.py) uses nonblocking flock attempts and a deadline, with a five-second default. It still describes cumulative state shared across sibling processes. Bounded contention is better than an unbounded wait, but hot-path advisory counters and shared state still require load tests and capsule scoping.",
+          "disposition": "Retained with fuller/legacy MCP scope; not a Lite index lock."
+        },
+        {
+          "old_text": "The maintainer [confirms the worktree fix landed](https://github.com/lemoncrow-lab/lemoncrow/pull/46#issuecomment-5570558170). The proposal's documented process-global working-directory inference is not a sufficient multi-session isolation contract for Jackin. Use an explicit per-session root, or a separate process per worktree; do not infer another session's root from its last shell command.",
+          "disposition": "Claim reconciled in heading disposition; source links repinned to current release where applicable. Older release numbers are not current benchmark qualifications."
+        },
+        {
+          "old_text": "The current [benchmark document](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/BENCHMARKS.md) links author-produced runs, data, and a combined runtime/persona treatment. Those runs do not establish an independent 0.7.4 result. A benchmark copied into a new release does not become a benchmark of that release. A single repetition cannot distinguish a regression from noise reliably. JetBrains has not validated this runtime in the three cited policy/filter articles.",
+          "disposition": "Claim reconciled in heading disposition; source links repinned to current release where applicable. Older release numbers are not current benchmark qualifications."
+        },
+        {
+          "old_text": "- [LeanCTX](/research/context/tools/04-leanctx-design/)",
+          "disposition": "Claim reconciled in heading disposition; source links repinned to current release where applicable. Older release numbers are not current benchmark qualifications."
+        },
+        {
+          "old_text": "- [Evidence](/research/context/tools/07-evidence-and-claims/)",
+          "disposition": "Claim reconciled in heading disposition; source links repinned to current release where applicable. Older release numbers are not current benchmark qualifications."
+        },
+        {
+          "old_text": "- [Jackin integration](/research/context/tools/11-jackin-integration/)",
+          "disposition": "Claim reconciled in heading disposition; source links repinned to current release where applicable. Older release numbers are not current benchmark qualifications."
+        }
+      ],
+      "numeric_reconciliation_note": "No old compression-percentage or task-latency winner number existed on these two baseline pages. Versions/cutoff updated; internal Rust0.1.0 and full-path five-second lock retained with scope. New measured counts are explicitly component/fixture results."
+    }
+  ]
+}

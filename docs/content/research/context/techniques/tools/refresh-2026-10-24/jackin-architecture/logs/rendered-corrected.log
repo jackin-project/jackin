@@ -1,0 +1,113 @@
+{"route":"/research/context/engine/03-observation-pipeline/","viewport":"desktop","passed":true,"h1":["03 — Observation pipeline"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/01-goals-and-non-goals/","viewport":"desktop","passed":true,"h1":["01 — Goals and non-goals"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/02-architecture/","viewport":"desktop","passed":true,"h1":["02 — Architecture and ownership"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/04-retrieval-layer/","viewport":"desktop","passed":true,"h1":["04 — Retrieval layer"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/05-output-and-prompt-layer/","viewport":"desktop","passed":true,"h1":["05 — Output and prompt layer"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/06-routing-and-fleet-economics/","viewport":"desktop","passed":true,"h1":["06 — Routing and fleet economics"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/07-memory-and-state/","viewport":"desktop","passed":true,"h1":["07 — Memory, recovery and context epochs"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/08-measurement-and-verification/","viewport":"desktop","passed":true,"h1":["08 — Measurement and verification"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/09-reuse-decision-matrix/","viewport":"desktop","passed":true,"h1":["09 — Reuse decision matrix"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/10-rollout-and-validation/","viewport":"desktop","passed":true,"h1":["10 — Rollout and validation"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/","viewport":"desktop","passed":true,"h1":["jackin❯ Context Engine — current design decision"],"errors":0,"overflow":false}
+{"route":"/research/context/","viewport":"desktop","passed":true,"h1":["Context & efficiency"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/00-executive-summary/","viewport":"desktop","passed":true,"h1":["00 — Executive summary"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/01-economics-and-measurement/","viewport":"desktop","passed":true,"h1":["01 — Token economics and measurement"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/02-baseline-audit/","viewport":"desktop","passed":true,"h1":["02 — Baseline audit and historical measurement reconciliation"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/03-prior-art-and-market-scan/","viewport":"desktop","passed":true,"h1":["03 — Prior art and market scan"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/04-style-and-language-compression/","viewport":"desktop","passed":true,"h1":["04 — Style and language compression"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/05-tokenizer-arbitrage/","viewport":"desktop","passed":true,"h1":["05 — Tokenizer and representation choices"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/06-context-architecture/","viewport":"desktop","passed":true,"h1":["06 — Context architecture — what enters the window at all"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/07-caching-exploitation/","viewport":"desktop","passed":true,"h1":["07 — Caching exploitation"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/08-retrieval-memory-and-state/","viewport":"desktop","passed":true,"h1":["08 — Retrieval, memory, and state offloading"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/09-output-discipline/","viewport":"desktop","passed":true,"h1":["09 — Output discipline"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/10-model-routing-and-delegation/","viewport":"desktop","passed":true,"h1":["10 — Model routing and tiered delegation"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/11-multi-agent-protocols/","viewport":"desktop","passed":true,"h1":["11 — Multi-agent protocols and subagent compression"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/12-provider-features/","viewport":"desktop","passed":true,"h1":["12 — Provider-level features, current and beta"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/13-infrastructure-level/","viewport":"desktop","passed":true,"h1":["13 — Infrastructure-level (self-hosted / gateway tier)"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/14-frontier-ideas/","viewport":"desktop","passed":true,"h1":["14 — Frontier mechanisms and feasibility"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/15-composed-stacks/","viewport":"desktop","passed":true,"h1":["15 — Composed stacks and attainable savings"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/16-validation-harness/","viewport":"desktop","passed":true,"h1":["16 — Validation harness and acceptance protocol"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/17-adoption-roadmap/","viewport":"desktop","passed":true,"h1":["17 — Adoption roadmap: native baseline to qualified defaults"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/18-extension-overview/","viewport":"desktop","passed":true,"h1":["18 — Coverage and gap map"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/19-subscription-and-quota-economics/","viewport":"desktop","passed":true,"h1":["19 — Subscription and quota economics"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/20-multimodal-token-economics/","viewport":"desktop","passed":true,"h1":["20 — Multimodal token economics"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/21-latency-and-time-economics/","viewport":"desktop","passed":true,"h1":["21 — Latency, wall-clock, and human-time economics"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/22-fleet-and-multitenant-cache/","viewport":"desktop","passed":true,"h1":["22 — Fleet, team & multi-tenant cache economics (hosted)"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/24-fresh-literature-and-market-delta/","viewport":"desktop","passed":true,"h1":["24 — Literature and market evidence map"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/23-cross-agent-portability/","viewport":"desktop","passed":true,"h1":["23 — Cross-agent / cross-provider portability matrix"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/25-meta-cost-governance-and-online-quality/","viewport":"desktop","passed":true,"h1":["25 — Optimization governance and online quality"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/26-extension-frontier/","viewport":"desktop","passed":true,"h1":["26 — Frontier mechanisms for unresolved gaps"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/27-extension-stacks-and-verdict/","viewport":"desktop","passed":true,"h1":["27 — Current verdict and stack guidance"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/28-drift-delta/","viewport":"desktop","passed":true,"h1":["28 — Provider-sensitive claim verification"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/","viewport":"desktop","passed":true,"h1":["Token-optimization techniques"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/tools/","viewport":"desktop","passed":true,"h1":["Measurement instruments"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/01-caveman-design/","viewport":"desktop","passed":true,"h1":["01 — Caveman: current design"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/02-headroom-design/","viewport":"desktop","passed":true,"h1":["02 — Headroom: current design"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/04-leanctx-design/","viewport":"desktop","passed":true,"h1":["04 — LeanCTX: current design"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/03-rtk-design/","viewport":"desktop","passed":true,"h1":["03 — RTK: current design"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/05-head-to-head/","viewport":"desktop","passed":true,"h1":["05 — Six-tool comparison"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/06-combining/","viewport":"desktop","passed":true,"h1":["06 — Composition and ownership"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/07-evidence-and-claims/","viewport":"desktop","passed":true,"h1":["07 — Evidence and acceptance protocol"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/08-current-release-register/","viewport":"desktop","passed":true,"h1":["08 — Current release register"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/09-ponytail-design/","viewport":"desktop","passed":true,"h1":["09 — Ponytail: current design"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/10-lemoncrow-design/","viewport":"desktop","passed":true,"h1":["10 — LemonCrow: current design"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/11-jackin-integration/","viewport":"desktop","passed":true,"h1":["11 — Jackin integration strategy"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/","viewport":"desktop","passed":true,"h1":["Token-optimization tools"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/12-scope-and-reconciliation/","viewport":"desktop","passed":true,"h1":["12 — Scope and evidence reconciliation"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/01-goals-and-non-goals/","viewport":"mobile","passed":true,"h1":["01 — Goals and non-goals"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/03-observation-pipeline/","viewport":"mobile","passed":true,"h1":["03 — Observation pipeline"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/02-architecture/","viewport":"mobile","passed":true,"h1":["02 — Architecture and ownership"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/04-retrieval-layer/","viewport":"mobile","passed":true,"h1":["04 — Retrieval layer"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/05-output-and-prompt-layer/","viewport":"mobile","passed":true,"h1":["05 — Output and prompt layer"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/06-routing-and-fleet-economics/","viewport":"mobile","passed":true,"h1":["06 — Routing and fleet economics"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/07-memory-and-state/","viewport":"mobile","passed":true,"h1":["07 — Memory, recovery and context epochs"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/08-measurement-and-verification/","viewport":"mobile","passed":true,"h1":["08 — Measurement and verification"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/09-reuse-decision-matrix/","viewport":"mobile","passed":true,"h1":["09 — Reuse decision matrix"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/10-rollout-and-validation/","viewport":"mobile","passed":true,"h1":["10 — Rollout and validation"],"errors":0,"overflow":false}
+{"route":"/research/context/engine/","viewport":"mobile","passed":true,"h1":["jackin❯ Context Engine — current design decision"],"errors":0,"overflow":false}
+{"route":"/research/context/","viewport":"mobile","passed":true,"h1":["Context & efficiency"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/00-executive-summary/","viewport":"mobile","passed":true,"h1":["00 — Executive summary"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/01-economics-and-measurement/","viewport":"mobile","passed":true,"h1":["01 — Token economics and measurement"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/02-baseline-audit/","viewport":"mobile","passed":true,"h1":["02 — Baseline audit and historical measurement reconciliation"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/03-prior-art-and-market-scan/","viewport":"mobile","passed":true,"h1":["03 — Prior art and market scan"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/04-style-and-language-compression/","viewport":"mobile","passed":true,"h1":["04 — Style and language compression"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/05-tokenizer-arbitrage/","viewport":"mobile","passed":true,"h1":["05 — Tokenizer and representation choices"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/06-context-architecture/","viewport":"mobile","passed":true,"h1":["06 — Context architecture — what enters the window at all"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/07-caching-exploitation/","viewport":"mobile","passed":true,"h1":["07 — Caching exploitation"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/08-retrieval-memory-and-state/","viewport":"mobile","passed":true,"h1":["08 — Retrieval, memory, and state offloading"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/09-output-discipline/","viewport":"mobile","passed":true,"h1":["09 — Output discipline"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/10-model-routing-and-delegation/","viewport":"mobile","passed":true,"h1":["10 — Model routing and tiered delegation"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/11-multi-agent-protocols/","viewport":"mobile","passed":true,"h1":["11 — Multi-agent protocols and subagent compression"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/12-provider-features/","viewport":"mobile","passed":true,"h1":["12 — Provider-level features, current and beta"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/13-infrastructure-level/","viewport":"mobile","passed":true,"h1":["13 — Infrastructure-level (self-hosted / gateway tier)"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/14-frontier-ideas/","viewport":"mobile","passed":true,"h1":["14 — Frontier mechanisms and feasibility"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/15-composed-stacks/","viewport":"mobile","passed":true,"h1":["15 — Composed stacks and attainable savings"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/16-validation-harness/","viewport":"mobile","passed":true,"h1":["16 — Validation harness and acceptance protocol"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/17-adoption-roadmap/","viewport":"mobile","passed":true,"h1":["17 — Adoption roadmap: native baseline to qualified defaults"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/18-extension-overview/","viewport":"mobile","passed":true,"h1":["18 — Coverage and gap map"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/19-subscription-and-quota-economics/","viewport":"mobile","passed":true,"h1":["19 — Subscription and quota economics"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/20-multimodal-token-economics/","viewport":"mobile","passed":true,"h1":["20 — Multimodal token economics"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/21-latency-and-time-economics/","viewport":"mobile","passed":true,"h1":["21 — Latency, wall-clock, and human-time economics"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/22-fleet-and-multitenant-cache/","viewport":"mobile","passed":true,"h1":["22 — Fleet, team & multi-tenant cache economics (hosted)"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/23-cross-agent-portability/","viewport":"mobile","passed":true,"h1":["23 — Cross-agent / cross-provider portability matrix"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/24-fresh-literature-and-market-delta/","viewport":"mobile","passed":true,"h1":["24 — Literature and market evidence map"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/25-meta-cost-governance-and-online-quality/","viewport":"mobile","passed":true,"h1":["25 — Optimization governance and online quality"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/26-extension-frontier/","viewport":"mobile","passed":true,"h1":["26 — Frontier mechanisms for unresolved gaps"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/27-extension-stacks-and-verdict/","viewport":"mobile","passed":true,"h1":["27 — Current verdict and stack guidance"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/28-drift-delta/","viewport":"mobile","passed":true,"h1":["28 — Provider-sensitive claim verification"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/","viewport":"mobile","passed":true,"h1":["Token-optimization techniques"],"errors":0,"overflow":false}
+{"route":"/research/context/techniques/tools/","viewport":"mobile","passed":true,"h1":["Measurement instruments"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/01-caveman-design/","viewport":"mobile","passed":true,"h1":["01 — Caveman: current design"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/02-headroom-design/","viewport":"mobile","passed":true,"h1":["02 — Headroom: current design"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/03-rtk-design/","viewport":"mobile","passed":true,"h1":["03 — RTK: current design"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/04-leanctx-design/","viewport":"mobile","passed":true,"h1":["04 — LeanCTX: current design"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/05-head-to-head/","viewport":"mobile","passed":true,"h1":["05 — Six-tool comparison"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/06-combining/","viewport":"mobile","passed":true,"h1":["06 — Composition and ownership"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/07-evidence-and-claims/","viewport":"mobile","passed":true,"h1":["07 — Evidence and acceptance protocol"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/08-current-release-register/","viewport":"mobile","passed":true,"h1":["08 — Current release register"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/09-ponytail-design/","viewport":"mobile","passed":true,"h1":["09 — Ponytail: current design"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/10-lemoncrow-design/","viewport":"mobile","passed":true,"h1":["10 — LemonCrow: current design"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/11-jackin-integration/","viewport":"mobile","passed":true,"h1":["11 — Jackin integration strategy"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/12-scope-and-reconciliation/","viewport":"mobile","passed":true,"h1":["12 — Scope and evidence reconciliation"],"errors":0,"overflow":false}
+{"route":"/research/context/tools/","viewport":"mobile","passed":true,"h1":["Token-optimization tools"],"errors":0,"overflow":false}
+{"summary":{"routes":56,"pageViewportChecks":112,"passedPageChecks":112,"failedPageChecks":0,"uniqueInternalLinks":718,"failedInternalLinks":0,"screenshots":22,"consoleOrPageErrors":0,"globalOverflowChecksFailed":0,"failedNavigationChecks":0},"passed":true}

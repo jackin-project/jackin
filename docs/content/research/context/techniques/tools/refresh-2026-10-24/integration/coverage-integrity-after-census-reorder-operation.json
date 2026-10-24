@@ -1,0 +1,26 @@
+{
+  "command": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+    "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/verify_coverage_reconciliation.py"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+  "environment_overrides": {
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "started_utc": "2026-10-24T09:05:52.023418+00:00",
+  "finished_utc": "2026-10-24T09:05:52.455914+00:00",
+  "duration_seconds": 0.433,
+  "exit_code": 0,
+  "input_sha256": {
+    "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv": "879d002c40b2d42dd59227009f1a053afbb7f14272083eed1dc90f63a94f1695",
+    "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv": "52a6d228042a2121526f588b4091e930e3e246d1a0aa0f71d29f74d9778e1a49",
+    "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-summary.json": "ab405cac57432700817281a33fba93ba1eb5f013cb0ec24b0b8d7265378fde31",
+    "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/reconcile_coverage.py": "a569a808b67c1e85570a5979b0510ad6d7535d9988f883033af9b674edcdcd04",
+    "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/verify_coverage_reconciliation.py": "b86b3bff05e90396875d0fb8d21fa03536dd2805c564ba822750169cf7e25285"
+  },
+  "stdout": "coverage-integrity-after-census-reorder.json",
+  "stdout_sha256": "f4919ac13baf5127a14e6246326b294ee3ed4368c82a2e543e1b8b111b3b1e9f",
+  "stderr": "logs/coverage-integrity-after-census-reorder.stderr.log",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "historical_evidence_preserved": "Earlier evaluation/coverage-integrity-results.json and its operation/logs retain their recorded prior input hashes; this rerun follows the metadata-only CSV column reorder."
+}

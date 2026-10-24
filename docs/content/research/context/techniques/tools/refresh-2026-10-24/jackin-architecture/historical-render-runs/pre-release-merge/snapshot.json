@@ -1,0 +1,38 @@
+{
+  "preserved_utc": "2026-10-24T08:47:13.223890+00:00",
+  "reason": "Preserve complete successful pre-e737 rendered snapshot before rechecking the new assembled site after the main release-plumbing merge.",
+  "files": [
+    {
+      "path": "rendered-pages-results.json",
+      "sha256": "cb444d08dfedac4b257ce891a92d23db6bf8b4be9c8ae805de5cf662ce081db4"
+    },
+    {
+      "path": "rendered-qa-command.json",
+      "sha256": "2e8a6d07eb9aceda8bafcd3bd93e46c77cd9ca84eb2a6cad3395595eb50dd264"
+    },
+    {
+      "path": "rendered-qa-environment.json",
+      "sha256": "47a714756aaed9c5028e6a3272e89e30ec32ac4f1fd873972b8dda568b89d269"
+    },
+    {
+      "path": "rendered-build-input-manifest.json",
+      "sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0"
+    },
+    {
+      "path": "rendered-qa-review.md",
+      "sha256": "07a45f9d1a908aea1087c5e4a46c360b43e3a4c64ad6bec3b17c65df89e83876"
+    },
+    {
+      "path": "rendered-qa-screenshots.json",
+      "sha256": "b867b9947f4dc3cc45b65d559334e9a95bb8a8f41dce59945ff4da50a0a7c965"
+    },
+    {
+      "path": "rendered-qa-mobile-independent-review.json",
+      "sha256": "988434e3751dcccb728d56957e6cb31ffe75217dd0f072723da2326f58364392"
+    },
+    {
+      "path": "rendered-qa-run-history.json",
+      "sha256": "906486aa3b9d7f95aa5722ea0ad87f15a5eb94ea9e333b4d255f37c414e69524"
+    }
+  ]
+}

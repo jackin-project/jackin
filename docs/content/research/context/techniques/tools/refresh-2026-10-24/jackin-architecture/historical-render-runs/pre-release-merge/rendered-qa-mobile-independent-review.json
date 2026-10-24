@@ -1,0 +1,283 @@
+{
+  "reviewer": "/root/caveman_ponytail",
+  "reviewed_utc": "2026-10-24T08:42:05.678375+00:00",
+  "scope": "Independent direct visual inspection of11mobile screenshots only; no browser launch, interaction, build or source edits.",
+  "source_directory": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/run-corrected/screenshots",
+  "files": [
+    {
+      "filename": "research__context__engine__02-architecture__mobile__table.png",
+      "sha256": "4dbe0981448fbbfa3770f80a4eb8cf145ef40463a2bef45c5804f0dd8a732bd5",
+      "bytes": 57424,
+      "viewed": true,
+      "body_or_table_findings": "No observed unreadable heading/body, text overlap or page-width spill. Table captures show bounded local clipping; scrolling was not manually exercised.",
+      "bounded_visual_review_pass": true
+    },
+    {
+      "filename": "research__context__engine__02-architecture__mobile__top.png",
+      "sha256": "9507ede96237adc79e69a94409daafb1806d27bc1ae2938c15c5ff9a16578896",
+      "bytes": 70077,
+      "viewed": true,
+      "body_or_table_findings": "No observed unreadable heading/body, text overlap or page-width spill. Table captures show bounded local clipping; scrolling was not manually exercised.",
+      "bounded_visual_review_pass": true
+    },
+    {
+      "filename": "research__context__mobile__top.png",
+      "sha256": "4a6b8ec299c915050f1884d9c1693f68445b6294cfe478be24321bbf949784e9",
+      "bytes": 74435,
+      "viewed": true,
+      "body_or_table_findings": "No observed unreadable heading/body, text overlap or page-width spill. Table captures show bounded local clipping; scrolling was not manually exercised.",
+      "bounded_visual_review_pass": true
+    },
+    {
+      "filename": "research__context__techniques__17-adoption-roadmap__mobile__table.png",
+      "sha256": "6b7627bfbccfeb4eeba48d5928c1d091bed5445b81625e3b8482e1d359469785",
+      "bytes": 52606,
+      "viewed": true,
+      "body_or_table_findings": "No observed unreadable heading/body, text overlap or page-width spill. Table captures show bounded local clipping; scrolling was not manually exercised.",
+      "bounded_visual_review_pass": true
+    },
+    {
+      "filename": "research__context__techniques__17-adoption-roadmap__mobile__top.png",
+      "sha256": "44d910266024128cc55562da90ccb0b45d7d423e7ece08897c02746a30dec5b4",
+      "bytes": 58674,
+      "viewed": true,
+      "body_or_table_findings": "No observed unreadable heading/body, text overlap or page-width spill. Table captures show bounded local clipping; scrolling was not manually exercised.",
+      "initial_review_concern": "Search icon visible; sidebar icon not visible in this capture, although both appear in the corresponding table capture.",
+      "resolution": "Withdrawn after individual image reopening and exact pixel-region comparison: both icons exist in the unchanged original image. Initial reviewer image-reading error, not a page or capture defect.",
+      "bounded_visual_review_pass": true
+    },
+    {
+      "filename": "research__context__techniques__20-multimodal-token-economics__mobile__table.png",
+      "sha256": "9ef1ed401c4039867245409358cec466bcff08557b4eda105e255963f9b92201",
+      "bytes": 83213,
+      "viewed": true,
+      "body_or_table_findings": "No observed unreadable heading/body, text overlap or page-width spill. Table captures show bounded local clipping; scrolling was not manually exercised.",
+      "bounded_visual_review_pass": true
+    },
+    {
+      "filename": "research__context__techniques__20-multimodal-token-economics__mobile__top.png",
+      "sha256": "8bec939bd53a91a1d1962287473c1018d201b65ec522dc21c79035ec109c7423",
+      "bytes": 67396,
+      "viewed": true,
+      "body_or_table_findings": "No observed unreadable heading/body, text overlap or page-width spill. Table captures show bounded local clipping; scrolling was not manually exercised.",
+      "bounded_visual_review_pass": true
+    },
+    {
+      "filename": "research__context__techniques__23-cross-agent-portability__mobile__table.png",
+      "sha256": "e6fc06f420a406af0953fffff36a0880df058720536da5533224158fc5fc7f6d",
+      "bytes": 43075,
+      "viewed": true,
+      "body_or_table_findings": "No observed unreadable heading/body, text overlap or page-width spill. Table captures show bounded local clipping; scrolling was not manually exercised.",
+      "bounded_visual_review_pass": true
+    },
+    {
+      "filename": "research__context__techniques__23-cross-agent-portability__mobile__top.png",
+      "sha256": "dc5318d9e34887e9767a6c92a93f5c6532a8f573c45010136f50ae70cd0d4795",
+      "bytes": 71568,
+      "viewed": true,
+      "body_or_table_findings": "No observed unreadable heading/body, text overlap or page-width spill. Table captures show bounded local clipping; scrolling was not manually exercised.",
+      "bounded_visual_review_pass": true
+    },
+    {
+      "filename": "research__context__tools__02-headroom-design__mobile__table.png",
+      "sha256": "24d6e55511186c30045b5d36e9bf3b15f5224ad18d7c23cb4719b32b2764092a",
+      "bytes": 66327,
+      "viewed": true,
+      "body_or_table_findings": "No observed unreadable heading/body, text overlap or page-width spill. Table captures show bounded local clipping; scrolling was not manually exercised.",
+      "bounded_visual_review_pass": true
+    },
+    {
+      "filename": "research__context__tools__02-headroom-design__mobile__top.png",
+      "sha256": "9f3d3628d7794bdaa25c6c6825e2b4dc1a28d5188390368b78107454edc52ebe",
+      "bytes": 64128,
+      "viewed": true,
+      "body_or_table_findings": "No observed unreadable heading/body, text overlap or page-width spill. Table captures show bounded local clipping; scrolling was not manually exercised.",
+      "initial_review_concern": "Search/sidebar icons not visible in this capture, although both appear in the corresponding table capture.",
+      "resolution": "Withdrawn after individual image reopening and exact pixel-region comparison: both icons exist in the unchanged original image. Initial reviewer image-reading error, not a page or capture defect.",
+      "bounded_visual_review_pass": true
+    }
+  ],
+  "findings": "All11mobile captures passed bounded static visual inspection: readable headings/body, visible navigation chrome, no observed overlap or page-width spill; wide tables remain locally bounded. Horizontal-scroll interaction was not exercised by this reviewer.",
+  "current_status": "complete; no remaining scoped visual blocker",
+  "reinspection_utc": "2026-10-24T08:43:09.610389+00:00",
+  "read_only_icon_pixel_check": [
+    {
+      "filename": "research__context__tools__02-headroom-design__mobile__top.png",
+      "regions": [
+        {
+          "region": "search",
+          "box": [
+            316,
+            15,
+            343,
+            42
+          ],
+          "bright_pixels": 44,
+          "pixel_bytes_sha256": "d7d027f2def169f393bf472ddeea7a131d0b6ab1d29a3a9865f068bd97de0792"
+        },
+        {
+          "region": "sidebar",
+          "box": [
+            350,
+            15,
+            378,
+            42
+          ],
+          "bright_pixels": 64,
+          "pixel_bytes_sha256": "5f4bbdea042f0cf3f359b4d347f9d23b1027b26780816f21370c6135fe83f182"
+        }
+      ]
+    },
+    {
+      "filename": "research__context__techniques__17-adoption-roadmap__mobile__top.png",
+      "regions": [
+        {
+          "region": "search",
+          "box": [
+            316,
+            15,
+            343,
+            42
+          ],
+          "bright_pixels": 44,
+          "pixel_bytes_sha256": "d7d027f2def169f393bf472ddeea7a131d0b6ab1d29a3a9865f068bd97de0792"
+        },
+        {
+          "region": "sidebar",
+          "box": [
+            350,
+            15,
+            378,
+            42
+          ],
+          "bright_pixels": 64,
+          "pixel_bytes_sha256": "5f4bbdea042f0cf3f359b4d347f9d23b1027b26780816f21370c6135fe83f182"
+        }
+      ]
+    },
+    {
+      "filename": "research__context__tools__02-headroom-design__mobile__table.png",
+      "regions": [
+        {
+          "region": "search",
+          "box": [
+            316,
+            15,
+            343,
+            42
+          ],
+          "bright_pixels": 44,
+          "pixel_bytes_sha256": "d7d027f2def169f393bf472ddeea7a131d0b6ab1d29a3a9865f068bd97de0792"
+        },
+        {
+          "region": "sidebar",
+          "box": [
+            350,
+            15,
+            378,
+            42
+          ],
+          "bright_pixels": 64,
+          "pixel_bytes_sha256": "5f4bbdea042f0cf3f359b4d347f9d23b1027b26780816f21370c6135fe83f182"
+        }
+      ]
+    }
+  ],
+  "pixel_check_scope": "Read existing PNG pixels and compare header-icon regions; no image edit, browser launch, new screenshot or site mutation.",
+  "final_capture_mapping": {
+    "directory": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/run-portable/screenshots",
+    "checked_utc": "2026-10-24T08:44:41.207127+00:00",
+    "files": [
+      {
+        "filename": "research__context__engine__02-architecture__mobile__table.png",
+        "original_sha256": "4dbe0981448fbbfa3770f80a4eb8cf145ef40463a2bef45c5804f0dd8a732bd5",
+        "final_sha256": "4dbe0981448fbbfa3770f80a4eb8cf145ef40463a2bef45c5804f0dd8a732bd5",
+        "byte_identical": true,
+        "visual_evidence": "Original directly reviewed image is byte-identical.",
+        "passed": true
+      },
+      {
+        "filename": "research__context__engine__02-architecture__mobile__top.png",
+        "original_sha256": "9507ede96237adc79e69a94409daafb1806d27bc1ae2938c15c5ff9a16578896",
+        "final_sha256": "9507ede96237adc79e69a94409daafb1806d27bc1ae2938c15c5ff9a16578896",
+        "byte_identical": true,
+        "visual_evidence": "Original directly reviewed image is byte-identical.",
+        "passed": true
+      },
+      {
+        "filename": "research__context__mobile__top.png",
+        "original_sha256": "4a6b8ec299c915050f1884d9c1693f68445b6294cfe478be24321bbf949784e9",
+        "final_sha256": "4a6b8ec299c915050f1884d9c1693f68445b6294cfe478be24321bbf949784e9",
+        "byte_identical": true,
+        "visual_evidence": "Original directly reviewed image is byte-identical.",
+        "passed": true
+      },
+      {
+        "filename": "research__context__techniques__17-adoption-roadmap__mobile__table.png",
+        "original_sha256": "6b7627bfbccfeb4eeba48d5928c1d091bed5445b81625e3b8482e1d359469785",
+        "final_sha256": "6b7627bfbccfeb4eeba48d5928c1d091bed5445b81625e3b8482e1d359469785",
+        "byte_identical": true,
+        "visual_evidence": "Original directly reviewed image is byte-identical.",
+        "passed": true
+      },
+      {
+        "filename": "research__context__techniques__17-adoption-roadmap__mobile__top.png",
+        "original_sha256": "44d910266024128cc55562da90ccb0b45d7d423e7ece08897c02746a30dec5b4",
+        "final_sha256": "44d910266024128cc55562da90ccb0b45d7d423e7ece08897c02746a30dec5b4",
+        "byte_identical": true,
+        "visual_evidence": "Original directly reviewed image is byte-identical.",
+        "passed": true
+      },
+      {
+        "filename": "research__context__techniques__20-multimodal-token-economics__mobile__table.png",
+        "original_sha256": "9ef1ed401c4039867245409358cec466bcff08557b4eda105e255963f9b92201",
+        "final_sha256": "9ef1ed401c4039867245409358cec466bcff08557b4eda105e255963f9b92201",
+        "byte_identical": true,
+        "visual_evidence": "Original directly reviewed image is byte-identical.",
+        "passed": true
+      },
+      {
+        "filename": "research__context__techniques__20-multimodal-token-economics__mobile__top.png",
+        "original_sha256": "8bec939bd53a91a1d1962287473c1018d201b65ec522dc21c79035ec109c7423",
+        "final_sha256": "8bec939bd53a91a1d1962287473c1018d201b65ec522dc21c79035ec109c7423",
+        "byte_identical": true,
+        "visual_evidence": "Original directly reviewed image is byte-identical.",
+        "passed": true
+      },
+      {
+        "filename": "research__context__techniques__23-cross-agent-portability__mobile__table.png",
+        "original_sha256": "e6fc06f420a406af0953fffff36a0880df058720536da5533224158fc5fc7f6d",
+        "final_sha256": "e6fc06f420a406af0953fffff36a0880df058720536da5533224158fc5fc7f6d",
+        "byte_identical": true,
+        "visual_evidence": "Original directly reviewed image is byte-identical.",
+        "passed": true
+      },
+      {
+        "filename": "research__context__techniques__23-cross-agent-portability__mobile__top.png",
+        "original_sha256": "dc5318d9e34887e9767a6c92a93f5c6532a8f573c45010136f50ae70cd0d4795",
+        "final_sha256": "dc5318d9e34887e9767a6c92a93f5c6532a8f573c45010136f50ae70cd0d4795",
+        "byte_identical": true,
+        "visual_evidence": "Original directly reviewed image is byte-identical.",
+        "passed": true
+      },
+      {
+        "filename": "research__context__tools__02-headroom-design__mobile__table.png",
+        "original_sha256": "24d6e55511186c30045b5d36e9bf3b15f5224ad18d7c23cb4719b32b2764092a",
+        "final_sha256": "b2291c07f19d4cdd60e256e714833e65f7adbe8da1223e2748d4a7472d4575b7",
+        "byte_identical": false,
+        "visual_evidence": "Final changed Headroom mobile table reopened individually with view_image; readable bounded table and no observed overlap or page-width spill.",
+        "passed": true
+      },
+      {
+        "filename": "research__context__tools__02-headroom-design__mobile__top.png",
+        "original_sha256": "9f3d3628d7794bdaa25c6c6825e2b4dc1a28d5188390368b78107454edc52ebe",
+        "final_sha256": "9f3d3628d7794bdaa25c6c6825e2b4dc1a28d5188390368b78107454edc52ebe",
+        "byte_identical": true,
+        "visual_evidence": "Original directly reviewed image is byte-identical.",
+        "passed": true
+      }
+    ],
+    "byte_identical_count": 10,
+    "new_individual_reinspection_count": 1
+  }
+}

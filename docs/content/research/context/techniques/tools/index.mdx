@@ -1,30 +1,34 @@
 ---
 title: "Measurement instruments"
-description: "Explicit-input, offline-first instruments for token-count requests and auditable Claude usage accounting."
+description: "Explicit-input offline instruments for token requests, Claude transcripts, and current OpenAI, Claude, and Gemini usage accounting."
 ---
 
 **Research state:** Current
 
-Verified **2026-10-23**, source cutoff **2026-10-23T15:31:31Z**. These research scripts prepare requests and analyze explicitly supplied files. They do not discover private transcripts, read agent OAuth stores, launch agents, or establish accepted-task savings.
+Verified **2026-10-24**, source cutoff **2026-10-24T01:15:00Z**. These research scripts prepare requests and analyze explicitly supplied files. They do not discover private transcripts, read agent OAuth stores, launch agents, or establish accepted-task savings.
 
 ## Instruments and scope
 
 | Instrument | Input and result | Limit |
 |---|---|---|
-| <RepoFile path="docs/content/research/context/techniques/tools/count_tokens.py">count_tokens.py</RepoFile> | Explicit model plus UTF-8 text, file, or labeled JSON samples; emits an offline request by default | A provider input-count estimate includes framing; it is not an output-token receipt or an invoice |
-| <RepoFile path="docs/content/research/context/techniques/tools/image_tokens.py">image_tokens.py</RepoFile> | Explicit model and synthetic PNG dimensions; prepares image-count requests | Measures neither OCR accuracy nor exact-text preservation; no inherited universal pixel formula |
-| <RepoFile path="docs/content/research/context/techniques/tools/session_cost.py">session_cost.py</RepoFile> | One or more explicit Claude JSONL paths; disjoint token classes grouped by exact model | Does not parse Codex/OpenAI receipts, discover subagents, or convert subscription usage into dollars |
-| <RepoFile path="docs/content/research/context/techniques/tools/test_measurement_tools.py">Accounting regressions</RepoFile> | Synthetic receipts, duplicate/streaming records, cache TTLs, zero costs, CRLF text, PNG headers | Offline unit evidence for the instruments, not provider or agent qualification |
+| <RepoFile path="docs/content/research/context/techniques/tools/count_tokens.py">count_tokens.py</RepoFile> | Explicit model plus UTF-8 text, file or labeled JSON samples; emits an offline request by default | Input estimate includes provider framing; not output usage or an invoice |
+| <RepoFile path="docs/content/research/context/techniques/tools/image_tokens.py">image_tokens.py</RepoFile> | Explicit model and synthetic PNG dimensions; prepares image-count requests | Neither OCR accuracy nor exact-text preservation; no inherited universal pixel formula |
+| <RepoFile path="docs/content/research/context/techniques/tools/session_cost.py">session_cost.py</RepoFile> | Explicit Claude JSONL paths; disjoint usage classes grouped by exact model and deduplicated response | Does not discover subagents, parse Codex transcripts or convert quota to dollars |
+| <RepoFile path="docs/content/research/context/techniques/tools/provider_usage.py">provider_usage.py</RepoFile> | One explicit final OpenAI Responses, Claude Messages or Gemini Interactions usage object | Contract and OpenAI write policy must be chosen; not an invoice or host-credit parser |
+| <RepoFile path="docs/content/research/context/techniques/tools/test_measurement_tools.py">Accounting regressions</RepoFile> | Seventeen offline cases covering duplicates, writes, compaction, reasoning, unknowns and exact inputs | Instrument arithmetic evidence, not provider or agent qualification |
 
 Run from this directory:
 
-```sh
+~~~sh
 python3 count_tokens.py --model EXACT_MODEL text 'public fixture'
 python3 count_tokens.py --model EXACT_MODEL file fixture.txt
 python3 image_tokens.py --model EXACT_MODEL 280x280 1000x1000
 python3 session_cost.py explicit-session.jsonl explicit-worker.jsonl
+python3 provider_usage.py response.json --contract openai-responses --cache-writes paid
+python3 provider_usage.py response.json --contract claude-messages
+python3 provider_usage.py response.json --contract gemini-interactions
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_measurement_tools.py
-```
+~~~
 
 A samples file is a JSON array of objects with <code>label</code> and <code>text</code> strings. File reads preserve CRLF and final-newline bytes before UTF-8 decoding. Offline request output contains the supplied content: retain it only where that content is authorized.
 
@@ -32,18 +36,37 @@ A samples file is a JSON array of objects with <code>label</code> and <code>text
 
 Only <code>count_tokens.py</code> and <code>image_tokens.py</code> accept <code>--execute</code>. That opt-in sends the prepared content to Anthropic using <code>ANTHROPIC_API_KEY</code>, or a named <code>--api-key-env</code> variable. It does not reuse Claude Code credentials. This refresh did **not** execute provider calls.
 
-The [official token-counting documentation](https://platform.claude.com/docs/en/build-with-claude/token-counting) is the authority for endpoint support, rate limits, and estimate semantics. Recheck the exact model before execution; the scripts deliberately have no default model or assumed tokenizer-family equality. An input-counting endpoint cannot calibrate hidden reasoning by subtraction.
+The [official counting documentation](https://platform.claude.com/docs/en/build-with-claude/token-counting) governs support, rate limits and estimate semantics. There is no default model or assumed tokenizer-family equality. An input-counting endpoint cannot calibrate hidden reasoning by subtraction or reveal a real cache hit.
 
-## Usage accounting
+## Claude transcript accounting
 
-The parser deduplicates response IDs within a session; when the session ID is absent it scopes the ID to the explicit file. Equal receipts repeat. Monotone cumulative streaming receipts replace earlier ones. Model conflicts, decreasing counts, missing response IDs, incomplete input/output receipts, and inconsistent TTL breakdowns fail visibly.
+The parser deduplicates response IDs within a session; absent a session ID, the explicit file scopes the response. Equal receipts repeat. Monotone cumulative streaming receipts replace earlier ones. Model conflicts, decreasing counts, missing response IDs, incomplete input/output and inconsistent TTL breakdowns fail visibly.
 
-Cache writes are partitioned into five-minute, one-hour, and **unknown TTL** classes. The aggregate is not added a second time. A supplied rate file must contain USD per million tokens for <code>input</code>, <code>cache_read</code>, <code>cache_write_5m</code>, <code>cache_write_1h</code>, and <code>output</code>, keyed by the exact model string. Unknown TTL or unknown model means an unknown estimate, not zero. A real zero remains zero.
+Cache writes are partitioned into five-minute, one-hour and **unknown TTL** classes. The aggregate is not added again. If final <code>usage.iterations</code> exists, its entries replace the top-level counters so compaction is counted once.
 
-Output usage includes reasoning, prose, and tool arguments as reported by the source. The script does not label a replay-count residual as measured thinking. Include all failed attempts, subagents, compaction, and repair sessions in the explicit file list; missing files remain missing evidence. Provider invoices, API list-price estimates, and subscription quotas are separate measurements.
+A <code>--prices</code> file contains USD/MTok for <code>input</code>, <code>cache_read</code>, <code>cache_write_5m</code>, <code>cache_write_1h</code> and <code>output</code>, keyed by exact model. This aggregate pricing mode is suitable only when all receipts for each model share that price profile. Separate mixed context tiers, authentication routes, service modes and dates, or price each request with the final-usage instrument first. The script does not infer those conditions from a model name.
 
-## Reproduction and provenance
+Unknown model/TTL means unknown estimate, not zero; a true zero remains zero. Output includes reported thinking, prose and tool arguments. Include failed attempts, children, compaction and repair sessions explicitly. Current SDK main-loop <code>result.usage</code> and whole-tree <code>modelUsage</code> are different summaries; this JSONL parser does not automatically reconcile both. [Agent-loop contract](https://code.claude.com/docs/en/agent-sdk/agent-loop).
 
-The dated component methods and curated result data are documented in the <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md">pinned reproduction method and provenance</RepoFile>. Each result is component evidence with its own source pins and configuration. The broader scope and remaining evidence limits are recorded in the [scope reconciliation](/research/context/tools/12-scope-and-reconciliation/).
+## Explicit final-usage contracts
 
-The earlier dossier's claim that these scripts reproduced every old number is withdrawn: the private transcripts and complete six-by-seven style corpus were not recovered. See [baseline reconciliation](/research/context/techniques/02-baseline-audit/) and the [evidence ledger](/research/context/tools/07-evidence-and-claims/).
+| Contract | Normalization | Required distinction |
+|---|---|---|
+| OpenAI Responses, paid writes | Ordinary input = input total minus cached reads minus writes; write lifetime buckets must sum | <code>--cache-writes paid</code> for the documented API profile; missing write data fails |
+| OpenAI Responses, earlier ordinary-input policy | Ordinary input = input total minus cached reads | Explicit <code>--cache-writes ordinary-input</code>; not a Codex-credit receipt adapter |
+| Claude Messages | Disjoint ordinary/read/write input; iterations counted once | Thinking is a subset of output where reported; unknown TTL is not guessed |
+| Gemini Interactions | Ordinary input = total input minus cached; generation = output plus thought | Thought and output are disjoint; missing thought or inconsistent totals fail |
+
+Optional <code>--rates</code> is a flat class-to-USD/MTok JSON object for **this one request's** exact model, context tier, date and API route. It does not fetch prices or apply subscription quotas. Non-token fees, contractual discounts, storage and tax remain outside the estimate. Missing prices return unknown. [Current economics](/research/context/techniques/01-economics-and-measurement/) explains the source contracts.
+
+## October 24 evaluation evidence
+
+The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md">evaluation artifact pack</RepoFile> contains pinned public-source metadata, extracted numeric benchmark rows, offline aggregation scripts, accounting fixtures/results, benchmark dispositions and exact limitations. Reaggregation does not repeat the paid experiments. Downloading public source is a separate explicit operation.
+
+Product component methods remain in their scoped packs: <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md">RTK / LeanCTX</RepoFile>, <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md">Caveman / Ponytail</RepoFile>, and <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md">Headroom / LemonCrow</RepoFile>. Build success, lifecycle behavior and source licensing are separate from accepted-task performance.
+
+## October 24 provider evidence
+
+The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/README.md">provider evidence pack</RepoFile> records official source URLs/hashes, current accounting classes and synthetic cache/fleet scenarios. The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-accounting-register.json">accounting register</RepoFile> is a dated lookup, not an automatically updating price service. Later provider changes require a new versioned record.
+
+The earlier assertion that these scripts reproduce every old number is withdrawn: private receipts and the complete six-by-seven style corpus were not recovered. [Baseline reconciliation](/research/context/techniques/02-baseline-audit/) and [scope reconciliation](/research/context/tools/12-scope-and-reconciliation/) retain those gaps and the actual work performed.

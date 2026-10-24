@@ -51,6 +51,7 @@ where
         reason = "deferred R4 launch-split field; read once a restore-pin consumer lands"
     )]
     pub restore_pinned_sha: Option<String>,
+    pub restore_instances: Option<Vec<jackin_config::ResolvedInstance>>,
     pub git_pull_join: Option<super::DeferredGitPull>,
     pub account_revision: super::super::account_identity::AccountConfigRevision,
     pub admission_config: AppConfig,

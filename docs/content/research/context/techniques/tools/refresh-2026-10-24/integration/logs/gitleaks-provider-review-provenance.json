@@ -1,0 +1,60 @@
+{
+  "recorded_utc": "2026-10-24T09:10:35.486971+00:00",
+  "reviewer": "/root/caveman_ponytail",
+  "scope": "Only the generic-api-key finding in evaluation/provider-representation-review.json line 7; no primary edit and no scanner configuration changes by this reviewer.",
+  "finding_metadata": {
+    "RuleID": "generic-api-key",
+    "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+    "StartLine": 7,
+    "EndLine": 7,
+    "StartColumn": 48,
+    "EndColumn": 142,
+    "File": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-representation-review.json"
+  },
+  "diagnostic_report_sha256": "5d820e4b124c97a1bf45d0eb9e73d9e59e8cea705bf0e54df04ca8e0c62060e4",
+  "classification": "False positive on the deterministic SHA256 of the reviewed tokenizer chapter; the filename used as a JSON map key creates the keyword-to-value pattern.",
+  "candidate_value_disclosed": false,
+  "candidate_value_in_proof": false,
+  "redacted_report_limit": "The report Secret field is a redaction marker, so it is not compared as a plaintext secret. The exact reported source span contains the complete recorded digest; that digest was independently recomputed from referenced file bytes.",
+  "referenced_file": "docs/content/research/context/techniques/05-tokenizer-arbitrage.mdx",
+  "referenced_file_bytes": 12560,
+  "digest_matches_exact_referenced_file": true,
+  "original_review_file": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-representation-review.json",
+  "original_review_sha256": "17fe4617a4e10c54023a25212c98462ab39ccd63c3ebf6019c42c8441724d083",
+  "original_review_bytes": 15920,
+  "proposed_file": "/workspace/scratch/1335a158b2a9/research/coordinator/gitleaks-digest-format/0.json",
+  "proposed_sha256": "4c9a5f401ea5c69ea1f511b5ed1b538de8f5779a8cc53e638f54e37380e22cf6",
+  "proposed_bytes": 16652,
+  "formatting_change": "Place each lowercase 64-hex JSON string property value on the next line at the existing property indentation plus eight spaces.",
+  "forward_transform_regex": "(?m)^([ ]*)([^\\r\\n]*?:) (\"[0-9a-f]{64}\")",
+  "forward_replacement_description": "Captured property indentation + property through colon + newline + same indentation + eight spaces + unchanged quoted digest.",
+  "changed_property_values": 51,
+  "inverse_transform_regex": ":\n[ ]+(\"[0-9a-f]{64}\")",
+  "inverse_replacement": ": \\1",
+  "inverse_replacements": 51,
+  "json_data_equal": true,
+  "exact_original_bytes_reconstructed_by_inverse": true,
+  "reviewed_files_pairs_preserved": 11,
+  "source_capture_entries_preserved": 20,
+  "original_review_time_scope_and_findings_preserved": true,
+  "review_is_historical_not_rerun": true,
+  "known_historical_source_difference": "Chapter06 currently has a later coordinator wording/reference correction. Its recorded reviewed digest is preserved; no claim that every historical review hash equals current bytes is introduced.",
+  "dependent_records": [
+    {
+      "path": "evaluation/artifact-sha256.json",
+      "json_pointer": "/files/provider-representation-review.json",
+      "disposition": "Update only the current manifest digest after applying approved formatting."
+    },
+    {
+      "path": "integration/publication-integrity-audit.json",
+      "json_pointer": "/artifact_file_references/42",
+      "disposition": "Preserve the earlier observed file digest as historical evidence. Fresh integrity verification must be a separately scoped result or explicitly renewed audit, not an invented historical rerun."
+    }
+  ],
+  "coordinator_formatter_test_record": {
+    "path": "/workspace/scratch/1335a158b2a9/tooling/logs/gitleaks-digest-format.json",
+    "sha256": "b1a96fdebee88a079685a0632e71606f0b1b541ac823748957702471763a9529",
+    "scope": "Coordinator executed the four-file Gitleaks formatting trial; reviewer independently checked this artifact\u2019s JSON equivalence and exact inverse only."
+  },
+  "no_primary_file_edit": true
+}

@@ -1,71 +1,87 @@
 ---
 title: "01 — Goals and non-goals"
-description: "Goals, exclusions, evidence thresholds, and success criteria for the jackin❯ context engine."
+description: "Accepted-task objectives, fixed-policy comparisons, qualification gates, and explicit limits for useful automatic optimization."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-The context engine should reduce tokens automatically at ingestion and retrieval boundaries while keeping every lossy transform reversible, measurable, and cache-safe.
+Snapshot **2026-10-24 01:15:00 UTC**. Optimize **resources per accepted complete task**, with no known new critical correctness, security, permission, isolation or recovery regression. The desired product installs and configures reviewed components automatically and activates qualified capabilities. It must also provide component overrides and a complete off path. This is a proposed design, not shipped optimizer behavior.
 
 ## Question and scope
 
-Which goals, exclusions, and evidence bars must constrain a jackin❯ context engine?
+Which interventions reduce unnecessary context or work while preserving the user's requirements, repository quality standards and chosen model/effort? Include input selection, output policy, observations, retrieval, compaction, memory, tool schemas, local resources and operator maintenance. Evaluate model routing and effort control separately.
 
 ## Method
 
-### Evidence bars (every feature, no exceptions)
+Reconcile the old engine goals against current product evidence, current provider/native behavior and Jackin source `6e266406b49da2ab3c55355f3b7d33d1643ee6cd`. Separate inspected implementation, executed fixtures, independent historical outcomes and proposed policy. The [evidence protocol](/research/context/tools/07-evidence-and-claims/) is the authoritative statistical specification; this chapter defines the product objective.
 
-- **Adoption bar** (from [techniques 16 — Validation Harness: the No-Quality-Loss Proof Protocol](/research/context/techniques/16-validation-harness/) + [tools hub 07 — Evidence, benchmarks, and the claim graveyard](/research/context/tools/07-evidence-and-claims/)): task/test success ≥ baseline (non-inferiority, 5pp margin, n=12 screening / n=30 confirmation); `cache_read` continuity preserved; command re-run / bounce rate not worse; **total tokens per solved task ≤ baseline by ≥20% net of the feature's own overhead** (schema rent, injected instructions, retrieval round-trips, handles).
-- **Net-of-injection accounting**: any standing prefix the engine injects is a first-class cost in its own ledger. lean-ctx's current documentation reports roughly 2.1K tokens of fixed session overhead; jackin❯ must measure and gate its own current footprint rather than inherit that number as a benchmark result.
-- **Canary gate**: the six compression-failure canaries (negation, ordering, numeric precision, don't-do-X, multi-step, caveat retention — [techniques 16 — Validation Harness: the No-Quality-Loss Proof Protocol](/research/context/techniques/16-validation-harness/) §3) run in both arms of every A/B; one Arm-B-only failure vetoes the feature regardless of savings.
-- **Quality-risk features run behind holdouts**: aggressive registers and effort downgrades ship with a headroom-style holdout control group and an online sampled canary ([techniques 25 — Meta layer: the cost of optimizing, budget governance, and online quality guarding](/research/context/techniques/25-meta-cost-governance-and-online-quality/): alarm, don't block), so the "does register compression degrade agentic success" open question finally gets an answer on live traffic.
+### Evidence bars
+
+| Question | Required evidence | What does not answer it |
+|---|---|---|
+| Does the component exist and fit? | Immutable source/package pin, license boundary, feature graph and target-specific build or explicit missing result | README badge, internal crate version or install success alone |
+| Does the intervention reach the model? | Host/version activation receipt and observation of the resulting model-bound tool content | Terminal display, asynchronous status event or appended guidance |
+| Is it faithful and recoverable? | Producer-generated/adversarial fixtures, raw acknowledgement, scoped recovery and lifecycle failures | Determinism, a hash marker or an inaccessible stored original |
+| Does it improve tasks? | Paired fixed-model/effort tasks, independent graders, all-attempt costs and uncertainty | Payload percentage, successful-runs-only totals or a nonsignificant quality difference |
+| Can it be automatic? | Stable configuration, predictable local costs, clean disable, compatible trust and security, regression ownership | A manual demo or a dashboard without an effective capability |
+
+A 12–30-task pilot can discover defects and estimate variability. It is not a confirmation sample by definition. Plan confirmation from task diversity, paired discordance and clustering; repeated runs of one task do not add independent task diversity. The former five-percentage-point quality allowance and fixed pilot counts are superseded by the shared protocol.
 
 ## Findings
 
 ### Goals
 
-1. **Out-of-box token optimization for every capsule.** A freshly launched jackin❯ container is born with the negative-cost set active (tool-search deferral intact, Edit-over-Write guards, observation filtering, subagent model/effort pins) — zero operator discipline required. This is the dossier's K16 "jackin-baked optimization pack" (ESTIMATE 20–35% integrated) made concrete.
-2. **Cover both interception points.** Write-time compression must reach shell output (RTK's slot) *and* native reads (headroom/lean-ctx's slot), because the measured Bash share of observation tokens ranged 16.5% (docs workload) to dominant (test-heavy workloads). One engine, both boundaries, exactly one shell-rewrite path per capsule.
-3. **Reversible by default.** Every lossy transform leaves a content-addressed verbatim copy retrievable by handle on *all* exit codes — fixing RTK's success-path gap and adopting headroom-CCR/lean-ctx-archive semantics. Recovery hints ride on every compressed payload (lean-ctx #625 doctrine: agents fight irreversible compression; undiscoverable escape hatches are the root cause of "too compressed" failures).
-4. **Deterministic core, no ML in the hot path.** Typed deterministic transforms (filters, crushers, outlines, extractive prose scoring) only. This is now the *converged* industry position: headroom itself is demoting its ModernBERT stage after timeout cascades, and CompressionAttack (arXiv 2510.22963, ≤80% ASR) turned hot-path ML compressors into a security finding, not just a latency cost.
-5. **Cache-safety by construction.** All input-side work happens at content-ingestion time (append-only), never by rewriting history or the cached prefix. The engine ships the prefix-stability regression tests headroom pioneered and surfaces `cache_read` continuity as a monitored invariant.
-6. **Retrieval before reading.** Bounded, task-shaped retrieval (outline → section/symbol → span) replaces whole-file reads only when a current implementation-specific benchmark shows a net win; small files remain whole. Current alternatives are tracked in the [rising and retrieval-tools comparison](/research/context/tools/06-combining/).
-7. **Fleet-aware economics.** Spawn staggering, prefix pre-warm, `excludeDynamicSections`, batch-lane routing, effort tiering, and advisor escalation are orchestrator-enforced. Dual cost model: dollars *and* tasks-per-cap, selected by the capsule's auth mode.
-8. **Prove it or lose it.** Every layer reports through one bounce-netted, Claude-tokenizer-honest ledger; features that fail the acceptance bar (below) get disabled per role, automatically. The engine is its own validation harness.
-9. **Agent-agnostic by layer.** ~80% of the stack ports as discipline across Claude Code/Codex/other runtimes ([techniques 23 — Cross-agent / cross-provider portability matrix](/research/context/techniques/23-cross-agent-portability/)); the engine abstracts effort tier, routing, rules-file compilation, output caps, and cache-stability per `Agent` adapter, and degrades gracefully where a runtime lacks a hook surface (Codex: instructions-only).
+**Preserve the native baseline before adding machinery.** Existing caching, compaction, tool discovery, bounded reads and edit operations may already solve part of the problem. Record which are active for each host/version/auth route, then compare each new treatment against that baseline. A “raw” arm is the native authorized observation, not an invented unbounded agent. [Native-feature assessment](/research/context/techniques/23-cross-agent-portability/).
+
+**Make useful optimization automatic after qualification.** The target `auto` profile packages a small owned policy and a qualified transform/retrieval selection. The first proposed low-impact work is duplicate-free delivery of Jackin-owned instructions and concise narration that retains all requirements and tests. A pinned RTK OSS `pipe --filter <named-family>` subprocess, initially for one qualified test/diagnostic format, is the first substantial automatic-filter candidate; other backends remain comparators. No whole external product is presently qualified for default activation. [Rollout](/research/context/engine/10-rollout-and-validation/).
+
+**Reduce avoidable work before relying on lossy text.** Exact path/symbol/section retrieval, complete affected-caller discovery and edit-over-rewrite can prevent irrelevant reads. These are not guaranteed savings: bad ranking, extra schemas, indexing and missed dependencies can increase turns or damage quality. Preserve an exact-read escape and the host's native edit prerequisites. [Retrieval](/research/context/engine/04-retrieval-layer/).
+
+**Make every lossy observation accountable.** Capture the already-authorized observation once, retain bytes and completeness, acknowledge durable recovery, select one transform, then record what was delivered. Missing recovery, transform timeouts and malformed replacement must not rerun the original command. An authorization, redaction or integrity failure is a stop condition, never a raw-output bypass. [Observation pipeline](/research/context/engine/03-observation-pipeline/).
+
+**Protect prefixes and consumer memory separately.** Avoid rewriting an established provider history without a provider-specific contract. A compact observation before first exposure is different from rewriting earlier conversation content. A source index being fresh does not prove a resumed or compacted model has seen its contents. Exposure needs session/context-epoch identity; unknown continuity disables omission-based stubs. [State](/research/context/engine/07-memory-and-state/).
+
+**Keep the configured model, effort and authority.** Compression comparisons retain model, reasoning effort, instructions, permissions, timeouts and authentication. A cheaper model, lower reasoning level or changed approval regime is a separate treatment. Current Jackin launch flags are permissive within its configured isolation; the optimizer does not reinterpret that as permission to weaken credential or filesystem controls. [Current entrypoint](https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/docker/runtime/entrypoint.sh).
+
+**Account for complete economics.** Measure fresh/cache-read/cache-write/output/reasoning classes where available, accepted tasks, all failed attempts, retries, recovery, latency and local resources. API bills, subscription windows, context pressure and developer time are separate outcomes. Unknown quota weights remain unknown. Do not add overlapping savings or transfer self-hosted KV-cache throughput to hosted billed-token claims. [Measurement](/research/context/engine/08-measurement-and-verification/).
+
+**Prefer reuse with a bounded owner.** Compare native behavior, public library, pinned process, instruction asset, upstream API contribution, narrow fork and Jackin implementation for each capability. Rust is preferred for Jackin-owned control code; language alone cannot reject a better Python or Go backend. Licenses apply to the selected component/distribution, not an old product label. [Reuse matrix](/research/context/engine/09-reuse-decision-matrix/).
 
 ## Implications for jackin❯
 
-These findings define the goals and non-goals contract for jackin❯; any implementation must preserve the acceptance gates and boundaries above.
+The proposed promotion gate for a new complex optimizer is zero observed new critical failures, a one-sided 95% acceptance bound above a loss of one percentage point, and an upper 95% all-attempt cost-per-accepted-task ratio at or below 0.80 where that economic arm applies. The acceptance margin limits statistical uncertainty; it does not authorize a known correctness loss. The proposed p95 task-latency allowance is at most 10%, with explicit absolute cold/warm and resource budgets. Subscription arms instead use actual accepted tasks per observed usage window. These are design thresholds, not measured qualification results. [Canonical protocol](/research/context/tools/07-evidence-and-claims/).
+
+Preserving native optimizations or making a low-impact duplicate-delivery correction does not require manufacturing a 20% benefit. Such changes still need direct functional evidence and no lost policy content. A qualified automatic capability is selected narrowly by host/version/content; an experimental feature is visibly identified and can be disabled independently.
 
 ## Limitations and unknowns
 
-### Non-goals (the graveyard, enforced)
+No current evidence establishes a universal task multiplier or rules one out for every workload. The old workload decompositions, fixed output-cost ceilings, “20–35% default” forecasts, universal cached-input discounts and claimed portability percentages are retired unless their original data and current treatment can be reconstructed. The [techniques dossier](/research/context/techniques/) owns fresh scenario-specific economics.
 
-Each entry below was killed by the research with evidence; the engine treats these as tripwires in review, not options:
+### Non-goals and separately gated interventions
 
-| Non-goal | Killed by |
+| Intervention | Current design decision |
 |---|---|
-| Whole-prompt / mid-stream proxy compression in front of an agent | It rewrites cacheable history and expands the trusted path. Any exception must pass the current bake-off and cache-continuity gates ([current comparison](/research/context/tools/05-head-to-head/)). |
-| Cache-aligned text-to-image re-encoding as a **default** | Model-specific legibility, lossy exact-text handling, and provider-dependent image accounting make pxpipe-class representation suitable only for an allowlisted current-model experiment ([current rising-tools comparison](/research/context/tools/06-combining/)). |
-| ML compression model in the hot path | CompressionAttack ≤80% ASR; headroom P99 4.17 s + executor-saturation outages; deterministic TextCrusher-class reaches ~94% retention (13-reuse ch.) |
-| API gateway that re-serializes requests | Custom `ANTHROPIC_BASE_URL` disables tool-search deferral; one nondeterministic serializer = broken cache = ~3.8× session cost ([techniques 06 — Context architecture — what enters the window at all](/research/context/techniques/06-context-architecture/), 13) |
-| Semantic response caching for coding traffic | Zero published coding hit rates; repetition lives in the prefix already priced 0.1×; 3–7% confidently-wrong on code ([techniques 08 — Retrieval, memory, and state offloading](/research/context/techniques/08-retrieval-memory-and-state/), 13) |
-| base64/gzip/glyph-DSL/wenyan "compression" | base64 = 4.33× MORE tokens; gzip+base64 = 2.68× MORE; glyphs 3.9–4.9 tok each with 26% instruction-fidelity; wenyan char/token illusion ([techniques 04 — Style and Language Compression — Beyond Caveman](/research/context/techniques/04-style-and-language-compression/), 05, 13) |
-| Cache-keepalive pinger on the interactive main loop | Subscription main loop already 1h-TTL; 1h break-even ~19 h idle ([techniques 14 — Frontier — unrealistic but maybe real](/research/context/techniques/14-frontier-ideas/) K13) — only SDK/API fleet lanes with sub-40-min gaps qualify |
-| Vector DB / embeddings for **code navigation** as default | Current retrieval alternatives still lack a release-specific result clearing jackin❯ acceptance gates over exact symbol/lexical tools ([current retrieval-tools comparison](/research/context/tools/06-combining/)). |
-| A second memory store, a second shell-rewrite path, a second output policy | Doubling rules from the combining page: pure overhead, double-compression risk ([tools hub 06 — Combining them: is there one product?](/research/context/tools/06-combining/)) |
-| Renaming existing identifiers for token shape | Cache bust + blame destruction; design-time-only lever ([techniques 05 — Tokenizer arbitrage](/research/context/techniques/05-tokenizer-arbitrage/)) |
-| KV-cache eviction/quantization, soft prompts, speculative decoding | Self-host-only; no hosted API channel ([techniques 24 — Fresh literature & market delta (clean-room re-sweep)](/research/context/techniques/24-fresh-literature-and-market-delta/), 14 K1/K2) |
-| Trusting per-payload percentages as savings | Per-payload ≠ whole-bill: the correction that killed every vendor headline ([tools hub 07 — Evidence, benchmarks, and the claim graveyard](/research/context/tools/07-evidence-and-claims/)) |
-| `max_tokens` as a spend governor | Truncates `tool_use`, bills the attempt, forces retry at higher cap ([techniques 09 — Output discipline and structured generation](/research/context/techniques/09-output-discipline/), 25) |
+| Full provider-history proxy | Experimental, separately qualified for authentication, streaming, retries, preserved reasoning and cache behavior |
+| Semantic rewriting, learned compression or embeddings | Not forbidden by language/model category; require fidelity, local model/resource/network and task evidence; disabled in the first automatic filter arm |
+| Image/PDF or text-to-image conversion | Separate exact-text/layout/model comparison; no universal image-token discount or automatic vision-model switch |
+| Keep-alive/cache warming | No unsolicited paid requests, credential retention or subscription consumption; measured opt-in arm only |
+| Semantic answer cache | Never substitute an old answer solely on similarity where repository state, authorization or task intent differs |
+| Cross-tenant cache sharing | No assumed shared authority, credentials or provider cache; prove tenant policy and provider isolation first |
+| Self-hosted KV optimization | Relevant to owned inference infrastructure, not a claim about hosted API billing |
+| Global identifier rewriting or pervasive codebooks | Experimental representation with exact-string escape and measured legend/recovery costs |
+| One physical database for all state | Replaced by one accountable owner per state class and explicit scope/retention contracts |
+| Automatic model/effort downgrade | Separate authorized routing research; excluded from the principal compression arm |
+
+These exclusions are current scope choices, not claims that all such mechanisms are technically impossible or permanently inferior.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Current implementation and executed evidence are linked through the [six product dossiers](/research/context/tools/), the [integration map](/research/context/tools/11-jackin-integration/) and <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/coverage-dispositions.json">old-heading/claim reconciliation</RepoFile>. Numerical promotion thresholds are explicitly proposed policy.
 
 ## Related work
 
-- [Context engine dossier](/research/context/engine/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Token-optimization tools](/research/context/tools/)
+- [Architecture](/research/context/engine/02-architecture/)
+- [Validation harness](/research/context/techniques/16-validation-harness/)
+- [Routing and fleet economics](/research/context/engine/06-routing-and-fleet-economics/)

@@ -1,0 +1,270 @@
+{
+  "external_release_cutoff_utc": "2026-10-24T01:15:00Z",
+  "records": [
+    {
+      "name": "claude-memory-tool",
+      "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool.md",
+      "accessed_utc": "2026-10-24T08:04:29.670964+00:00",
+      "status": 200,
+      "final_url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "bytes": 39689,
+      "sha256": "77bc770ae8208b83a0eac5eb39187b3541f0916f6da82e0b3e6d937e62c61cda",
+      "text_sha256": "77bc770ae8208b83a0eac5eb39187b3541f0916f6da82e0b3e6d937e62c61cda",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "claude-context-announcement",
+      "url": "https://claude.com/blog/context-management",
+      "accessed_utc": "2026-10-24T08:04:29.672084+00:00",
+      "status": 200,
+      "final_url": "https://claude.com/resources/articles/context-management",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 542272,
+      "sha256": "45233c6726524afdab3b5288740ee87dc2474a8c6bd870980a188436f1811dc5",
+      "text_sha256": "a6ec074d6d91c62b99e393c20798420f80453eadfa8b0d44c3f9766ddc538bf4",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "anthropic-long-harness",
+      "url": "https://www.anthropic.com/research/effective-harnesses-for-long-running-agents",
+      "accessed_utc": "2026-10-24T08:04:29.672926+00:00",
+      "status": 200,
+      "final_url": "https://www.anthropic.com/research/effective-harnesses-for-long-running-agents",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 229144,
+      "sha256": "d0934ff18e476c923c57fdd7e6ed531997c9391600663e4536268970f071ec0e",
+      "text_sha256": "cb0a45fa34a17c7d411f0de135bcd53451aff32ba9844c354ef271bb888d5033",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "anthropic-harness-2026",
+      "url": "https://www.anthropic.com/research/harness-design-long-running-apps",
+      "accessed_utc": "2026-10-24T08:04:29.673475+00:00",
+      "status": 200,
+      "final_url": "https://www.anthropic.com/research/harness-design-long-running-apps",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 322600,
+      "sha256": "2bf8563daa8d8ba9f2adb383e4cd7bbcb3d6df0e373dffc4491579e69e544fa1",
+      "text_sha256": "a9e0d0fbca5de5aac06ea659de8eec936cdffa13f930e1fcf902aea86b803201",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "manus-context",
+      "url": "https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus",
+      "accessed_utc": "2026-10-24T08:04:29.808467+00:00",
+      "status": 200,
+      "final_url": "https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 244850,
+      "sha256": "cdf39f6d55fc89edcd24a2d47dcac6028564db2e1d1df20fefe0137526286823",
+      "text_sha256": "4a24376548e45e585f2b35bf0b771afea011c229a0eff4abfb9562a8efde156b",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "cursor-semantic",
+      "url": "https://cursor.com/blog/semsearch",
+      "accessed_utc": "2026-10-24T08:04:29.818268+00:00",
+      "status": 200,
+      "final_url": "https://cursor.com/blog/semsearch",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 191526,
+      "sha256": "98b0b86de956df9078b7d8d9a2d58db288da205bfe3aa1bf19a3fd8fb1203f95",
+      "text_sha256": "0a598b6de50a806dbe8c6775c9bb8a4adb322e586897e773dc07506110d0786a",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "cline-indexing",
+      "url": "https://cline.bot/blog/why-cline-doesnt-index-your-codebase-and-why-thats-a-good-thing",
+      "accessed_utc": "2026-10-24T08:04:29.888230+00:00",
+      "status": 200,
+      "final_url": "https://cline.bot/blog/why-cline-doesnt-index-your-codebase-and-why-thats-a-good-thing",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 124934,
+      "sha256": "f92fbec8904588503a112a29e13c6e5624f51628a590b710d8e4acecdbce15a1",
+      "text_sha256": "96325ab6e68698b6aab5a9880e5319415d50b333553bbc8f5a912ebfebfedf5f",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "aider-repomap",
+      "url": "https://aider.chat/docs/repomap.html",
+      "accessed_utc": "2026-10-24T08:04:29.968490+00:00",
+      "status": 200,
+      "final_url": "https://aider.chat/docs/repomap.html",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 30519,
+      "sha256": "77708d7004b0755018668f7db831cb09b7cb5883da4e46d90bd65fe5683b07f0",
+      "text_sha256": "1709fed397e41e4f8530d403461089f0072e61de77755b9d782ae976111edbd9",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "mem0-v1",
+      "url": "https://arxiv.org/abs/2504.19413v1",
+      "accessed_utc": "2026-10-24T08:04:30.026240+00:00",
+      "status": 200,
+      "final_url": "https://arxiv.org/abs/2504.19413v1",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 44169,
+      "sha256": "516b88f345d8a6a7f6a7a8b950c1af65fe447ddc5bdeda6dd757523e0a13fb35",
+      "text_sha256": "5607aaf0f5fc0a1d7c227f66b5c5bf6fb14e19b79451d5ad4c8dc3d2f946b7ac",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "convomem-v1",
+      "url": "https://arxiv.org/abs/2511.10523v1",
+      "accessed_utc": "2026-10-24T08:04:30.089014+00:00",
+      "status": 200,
+      "final_url": "https://arxiv.org/abs/2511.10523v1",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 43446,
+      "sha256": "2e7de00ccaa6366a04abffe02ee8a7159434eb739c00cb8f6fff21f288e171f3",
+      "text_sha256": "2e8984d8db42b73d525b35d2cc8d3dd57176d08be7e14d593a1f3def3797500c",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "memgpt-v2",
+      "url": "https://arxiv.org/abs/2310.08560v2",
+      "accessed_utc": "2026-10-24T08:04:30.089877+00:00",
+      "status": 200,
+      "final_url": "https://arxiv.org/abs/2310.08560v2",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 43140,
+      "sha256": "b0668f8daf3a467f3902b657751d49fbe959f9b3b35e94e24c93e73a54fc3ac6",
+      "text_sha256": "717792ed3e501cd0d1945f01a896ce09e0a4f628f6d0ed621a4bd4e8ba5465a9",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "letta-filesystem",
+      "url": "https://www.letta.com/blog/benchmarking-ai-agent-memory/",
+      "accessed_utc": "2026-10-24T08:04:30.120311+00:00",
+      "status": 200,
+      "final_url": "https://www.letta.com/blog/benchmarking-ai-agent-memory/",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 41016,
+      "sha256": "e1e577b84ae2228bf699310dbff489516cab3267d66bbe099daccf6cf8192185",
+      "text_sha256": "9d13edb0d0cc27d3f443b27f1f6252c564535f6aeb3a690cabb9ebd4840705e2",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "zep-critique",
+      "url": "https://www.getzep.com/blog/lies-damn-lies-statistics-is-mem0-really-sota-in-agent-memory/",
+      "accessed_utc": "2026-10-24T08:04:30.126613+00:00",
+      "status": 200,
+      "final_url": "https://www.getzep.com/blog/lies-damn-lies-statistics-is-mem0-really-sota-in-agent-memory/",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 118232,
+      "sha256": "91e1f13bba63584b4f2bc6d125ef0f84e570f857ee292ea0753dd82ae8daa792",
+      "text_sha256": "a8c629cb6f14ee0edfbb881aac00ef1ea32fba6028dc0be058e3e0a32f692a5c",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "gptcache",
+      "url": "https://aclanthology.org/2023.nlposs-1.24/",
+      "accessed_utc": "2026-10-24T08:04:30.132145+00:00",
+      "status": 200,
+      "final_url": "https://aclanthology.org/2023.nlposs-1.24/",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 42402,
+      "sha256": "5e834201f7fe841d54ce62dcba55fbc1470590b43b78833c4f7f9abd239db573",
+      "text_sha256": "fbaf5b7a34d756b6ecddd48b0e6574ca74dd40f52c4f362d426cb71ac7900ba0",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    },
+    {
+      "name": "gpt-semantic-cache-v3",
+      "url": "https://arxiv.org/abs/2411.05276v3",
+      "accessed_utc": "2026-10-24T08:04:30.216700+00:00",
+      "status": 200,
+      "final_url": "https://arxiv.org/abs/2411.05276v3",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 43255,
+      "sha256": "377fb8fa99105e982f7c3c15c352d8edc9707a7f09892e84fd08ecc378c7f2b6",
+      "text_sha256": "0587b44acc72aa17c3a218eeaaa114867dcdbb26f6bce62f104da98eb47f8af1",
+      "evidence_class": "public primary-source retrieval and reading; not benchmark execution"
+    }
+  ],
+  "shared_provider_captures_independently_read": {
+    "openai-compaction": {
+      "url": "https://developers.openai.com/api/docs/guides/compaction.md",
+      "accessed_at_utc": "2026-10-24T01:35:50Z",
+      "status": 200,
+      "final_url": "https://developers.openai.com/api/docs/guides/compaction.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": "Sat, 24 Oct 2026 00:16:56 GMT",
+      "bytes": 14272,
+      "sha256": "73fd2fd1afd44bd6f29ce7bd86fd0ae3413c98ec00ae5476879e98171b0b60dd",
+      "evidence_class": "public-document retrieval",
+      "supports_runtime_execution": false,
+      "snapshot_limit": "Unversioned documentation was accessed after cutoff; identity at the exact cutoff is not cryptographically established."
+    },
+    "claude-compaction": {
+      "url": "https://platform.claude.com/docs/en/build-with-claude/compaction.md",
+      "accessed_at_utc": "2026-10-24T01:35:50Z",
+      "status": 200,
+      "final_url": "https://platform.claude.com/docs/en/build-with-claude/compaction.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": null,
+      "bytes": 12237,
+      "sha256": "b8c66a81d710b7fdeb2868b4e73288f45d7fb560f5f69cc0e26154f89654f161",
+      "evidence_class": "public-document retrieval",
+      "supports_runtime_execution": false,
+      "snapshot_limit": "Unversioned documentation was accessed after cutoff; identity at the exact cutoff is not cryptographically established."
+    },
+    "claude-code-memory": {
+      "url": "https://code.claude.com/docs/en/memory.md",
+      "accessed_at_utc": "2026-10-24T01:35:51Z",
+      "status": 200,
+      "final_url": "https://code.claude.com/docs/en/memory.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": "Sat, 24 Oct 2026 01:35:51 GMT",
+      "bytes": 55354,
+      "sha256": "02632438e022b5fc70b470b02d59819d9739756c2666b5632734b4564a08a801",
+      "evidence_class": "public-document retrieval",
+      "supports_runtime_execution": false,
+      "snapshot_limit": "Unversioned documentation was accessed after cutoff; identity at the exact cutoff is not cryptographically established."
+    },
+    "claude-code-context": {
+      "url": "https://code.claude.com/docs/en/context-window.md",
+      "accessed_at_utc": "2026-10-24T01:35:51Z",
+      "status": 200,
+      "final_url": "https://code.claude.com/docs/en/context-window.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": "Sat, 24 Oct 2026 01:35:51 GMT",
+      "bytes": 9208,
+      "sha256": "bd0361d2013d6ff259bf127fd6b0c069ecbcb1c1331df0f23d10f658172ecb72",
+      "evidence_class": "public-document retrieval",
+      "supports_runtime_execution": false,
+      "snapshot_limit": "Unversioned documentation was accessed after cutoff; identity at the exact cutoff is not cryptographically established."
+    },
+    "claude-preserved-thinking": {
+      "url": "https://platform.claude.com/docs/en/build-with-claude/preserved-thinking.md",
+      "accessed_at_utc": "2026-10-24T01:42:43Z",
+      "status": 200,
+      "final_url": "https://platform.claude.com/docs/en/build-with-claude/preserved-thinking.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": null,
+      "bytes": 116200,
+      "sha256": "8b7cd54f0eda1ef0324d8463c928340206415b1dadf0fad233bac91cae75e487",
+      "evidence_class": "public-document retrieval",
+      "supports_runtime_execution": false,
+      "snapshot_limit": "Unversioned documentation was accessed after cutoff; identity at the exact cutoff is not cryptographically established."
+    }
+  },
+  "retrieval_command": {
+    "argv": [
+      "python3",
+      "research/jackin-architecture/fetch_retrieval_sources.py"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9",
+    "exit_code": 0,
+    "network": "public read only; approved escalation",
+    "script_sha256": "e3dab8c259d29d31317bc948923bc46cd6aab7b9d2175130dfc7f7b5f4d4d489",
+    "requests": 15,
+    "http_200": 15,
+    "paid_provider_calls": 0
+  },
+  "limits": [
+    "Mutable pages were accessed after cutoff; exact cutoff contents not asserted.",
+    "Paper landing pages are pinned to the cited versions where available; vendor reports are not independent Jackin replications.",
+    "Raw copyrighted pages are kept in disposable research scratch and not committed."
+  ]
+}

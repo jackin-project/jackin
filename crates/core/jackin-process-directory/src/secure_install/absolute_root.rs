@@ -31,6 +31,31 @@ pub(super) fn open_absolute_directory(path: &Path) -> io::Result<CheckedInstallR
     Ok(CheckedInstallRoot { directory })
 }
 
+pub(super) fn open_absolute_source_root(path: &Path) -> io::Result<super::AbsoluteSourceRoot> {
+    let components = absolute_components(path)?;
+    let mut directory = open_filesystem_root()?;
+
+    for (index, component) in components.iter().enumerate() {
+        if index + 1 == components.len() {
+            let parent = super::duplicate_file(&directory)?;
+            let directory = open_directory_component(&directory, component, NodeRole::Directory)?;
+            let identity = fstat(&directory)?;
+            super::validate_stat(&identity, NodeRole::Directory)?;
+            return Ok(super::AbsoluteSourceRoot {
+                directory,
+                parent,
+                name: component.clone(),
+                identity,
+            });
+        }
+        directory = open_directory_component(&directory, component, NodeRole::Ancestor)?;
+    }
+
+    Err(super::invalid_input(
+        "source root path must name a directory below the OS root",
+    ))
+}
+
 fn absolute_components(path: &Path) -> io::Result<Vec<OsString>> {
     if !path.is_absolute() {
         return Err(super::invalid_input(
@@ -71,7 +96,11 @@ fn open_filesystem_root() -> io::Result<File> {
     Ok(root)
 }
 
-fn open_directory_component(parent: &File, name: &OsStr, role: NodeRole) -> io::Result<File> {
+pub(super) fn open_directory_component(
+    parent: &File,
+    name: &OsStr,
+    role: NodeRole,
+) -> io::Result<File> {
     let before = statat(parent, name, super::NOFOLLOW_STAT_FLAGS)?;
     super::validate_stat(&before, role)?;
 
@@ -92,7 +121,7 @@ fn open_directory_component(parent: &File, name: &OsStr, role: NodeRole) -> io::
 }
 
 #[cfg(target_os = "linux")]
-fn validate_linux_absolute_directory(file: &File, role: NodeRole) -> io::Result<()> {
+pub(super) fn validate_linux_absolute_directory(file: &File, role: NodeRole) -> io::Result<()> {
     let metadata = fstat(file)?;
     super::validate_stat(&metadata, role)?;
     super::linux_acl::ensure_no_extended_acl(

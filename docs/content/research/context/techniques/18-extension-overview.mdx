@@ -1,79 +1,116 @@
 ---
 title: "18 — Coverage and gap map"
-description: "Coverage map for quota, multimodal input, latency, fleets, portability, literature, governance, and online quality."
+description: "Decision coverage for cost, quota, media, latency, fleets, portability, recovery, evidence quality, and automatic Jackin delivery."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-The core techniques chapters cover text-token economics, caching, retrieval, output discipline, routing, provider features, infrastructure, composition, and validation. This map identifies the decision axes that need separate treatment: subscription quota, multimodal input, latency and human time, fleet behavior, portability, current literature, and runtime governance.
+Snapshot **2026-10-24T01:15:00Z**. This map separates documented mechanisms, executed component behavior and a qualified deployment. The refresh supplies current product pins, licensing boundaries, native-provider contracts, concrete regression probes and a proposed architecture. It does not yet supply an end-to-end Jackin task comparison that qualifies an external optimizer as the default.
 
-The strongest correction is conceptual: a subscriber constrained by a usage cap should optimize **tasks per cap**, not API dollars per task. Multimodal input is another distinct token class rather than a footnote to text context. Latency and quality also need explicit accounting because a cheaper token path can still be slower or less reliable.
+The required destination is useful automatic optimization under Jackin's existing authority and native execution/editing model. Preserve native advantages now, implement the small ownership/recovery contracts, then qualify one result treatment and package it. Subscription capacity, multimodal cost, task latency, human correction and recovery remain independent decision axes; a large payload reduction cannot decide them all.
 
 ## Question and scope
 
-Which independent cost and quality axes are already covered, and where do material evidence gaps remain?
+Which decisions are supported, which facts still require execution or workload-specific measurement, and which missing contracts block a safe automatic default? A chapter's existence or a product's advertised feature does not close a gap.
 
-## Method
+## Method and evidence
 
-Coverage was assessed against six independent axes rather than the dossier table of contents:
+Evaluate six axes, expanded to make state ownership and artifact identity explicit:
 
-| Axis | Decision dimension |
-|---|---|
-| Cost metric | dollars, subscription quota, wall-clock time, human attention |
-| Token class | fresh input, cache write, cache read, visible output, thinking, image, document |
-| Emission surface | system prefix, tools, message history, model output, media tool results |
-| Lever | style, tokenizer, context architecture, caching, retrieval, routing, infrastructure, governance |
-| Scope | turn, session, cross-session, capsule, fleet, organization |
-| Delivery | instruction, configuration, hook, orchestrator, provider feature |
+| Axis | Decision dimension | Required distinction |
+|---|---|---|
+| Objective | API spend, subscription capacity, elapsed time, human attention | Cost per accepted task versus payload size; actual quota versus inferred API equivalents |
+| Accounting class | Ordinary input, cache writes by lifetime, cache reads, visible/reasoning output, media | Provider classes can overlap in reported totals; images/documents use their provider's representation |
+| Emission surface | Startup policy, schemas, tool results, history, summaries, model output, media | Avoiding an emission differs from replacing it or modifying past history |
+| Mechanism and boundary | Native feature, instruction, pure transform, retrieval, cache, routing, SDK, proxy | Discovery or status events do not prove replacement; a provider proxy owns different risks |
+| Scope | Turn, context epoch, session, worktree, capsule, tenant, fleet | Shared source state is not shared model memory or authorization |
+| Delivery and ownership | Versioned asset, configuration, hook, process, library, provider | Exact version/features, one owner, lifecycle, licensing, failure behavior and off |
 
-The existing chapters were checked for absent, incidental, partial, or decision-complete treatment. A topic remains a gap when the corpus mentions it but does not supply the measurement or decision rule required to choose an action.
+The [measurement chapter](/research/context/techniques/01-economics-and-measurement/) defines accounting; the [canonical protocol](/research/context/tools/07-evidence-and-claims/) defines promotion evidence. Each current claim also has a source time/version boundary. The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/integration-coverage-dispositions.json">integration coverage ledger</RepoFile> retains the earlier topics and retires unsupported numerical conclusions explicitly.
 
 ## Findings
 
 ### Current coverage map
 
-| Topic | Current assessment | Decision stake | Detailed chapter |
+| Topic | What the refresh establishes | Decision still open | Owner chapter |
 |---|---|---|---|
-| Subscription and quota economics | Dollar economics are mature; cap accounting remains partly provider-opaque | Cache-heavy levers can rank differently under quota than under API prices | [19 — Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/) |
-| Multimodal input | Separate measurement required for images, screenshots, and PDFs | A screenshot can be cheaper or much more expensive than structured text | [20 — Multimodal token economics](/research/context/techniques/20-multimodal-token-economics/) |
-| Latency and human time | Token and dollar models do not decide the time tradeoff | Fan-out, fast modes, and compression hops can exchange tokens for elapsed time | [21 — Latency and time economics](/research/context/techniques/21-latency-and-time-economics/) |
-| Fleet and multi-tenant caching | Self-host mechanisms are covered; hosted cache scope is not fully observable | Spawn timing, dynamic prefixes, and quota attribution change fleet efficiency | [22 — Fleet and multi-tenant cache](/research/context/techniques/22-fleet-and-multitenant-cache/) |
-| Cross-agent portability | Individual mechanisms are documented, but support differs by runtime | A stack tied to one hook or provider is fragile | [23 — Portability matrix](/research/context/techniques/23-cross-agent-portability/) |
-| Literature and product surface | Provider features and research continue to change | New mechanisms can strengthen, qualify, or leave existing decisions unchanged | [24 — Literature and market scan](/research/context/techniques/24-fresh-literature-and-market-delta/) |
-| Governance and online quality | Offline validation exists; runtime budget and drift controls are thinner | Savings are invalid if measurement overhead or quality regressions erase them | [25 — Governance and online quality](/research/context/techniques/25-meta-cost-governance-and-online-quality/) |
-| Unresolved mechanisms | Several ideas remain conditional or provider-blocked | Frontier ideas need feasibility gates before entering a stack | [26 — Frontier mechanisms](/research/context/techniques/26-extension-frontier/) |
-| Combined verdict | Layer interactions and metric choice need one synthesis | Composition must count overlap, cache effects, recovery, and quality | [27 — Stack verdict](/research/context/techniques/27-extension-stacks-and-verdict/) |
-| Volatile claims | Provider-sensitive claims require an explicit verification contract | A current decision must expose its cutoff and uncertainty | [28 — Provider-sensitive claim verification](/research/context/techniques/28-drift-delta/) |
+| Subscription and quota economics | Public allowance/cache policies differ from API prices; no universal quota conversion | Accepted work and actual cap events under the user's plan and usage window | [19 — Subscription and quota](/research/context/techniques/19-subscription-and-quota-economics/) |
+| Multimodal input | Provider/model-specific resizing, patch/tile rules, image detail and coordinate recovery matter | Equal task success and total cost for text, screenshot, crop and PDF alternatives | [20 — Multimodal economics](/research/context/techniques/20-multimodal-token-economics/) |
+| Latency and human time | Added transforms, compaction and child calls can alter cold/warm/task tails | Measured p95 task latency, correction time and local resource budgets on representative work | [21 — Latency and time](/research/context/techniques/21-latency-and-time-economics/) |
+| Fleet and tenant caching | Prefix identity, account/provider boundaries and scheduling affect reuse | Real cache receipts, quota attribution and isolation under concurrent capsules | [22 — Fleet and cache](/research/context/techniques/22-fleet-and-multitenant-cache/) |
+| Host portability | Twelve registry entries, six launch cases and materially different host replacement contracts | Actual discovery/trust/replacement/edit-receipt/cancellation conformance for each exact host | [23 — Portability](/research/context/techniques/23-cross-agent-portability/) |
+| Literature and market | Current releases, primary studies, source artifacts and license reversals change the shortlist | Comparable independent task outcomes; a published result does not transfer automatically | [24 — Literature and delta](/research/context/techniques/24-fresh-literature-and-market-delta/) |
+| Governance and online quality | Net cost includes measurement, retries, recovery and maintenance; proposed hard stops are explicit | A working canary/holdout and drift-control loop with acceptable overhead | [25 — Governance](/research/context/techniques/25-meta-cost-governance-and-online-quality/) |
+| Frontier mechanisms | Feasible components and unresolved provider/runtime dependencies are separated | The smallest discriminating experiment before any new default | [26 — Frontier](/research/context/techniques/26-extension-frontier/) |
+| Combined verdict | Shared gates and interaction-aware composition replace multiplied marketing percentages | Paired combined-arm benefit after each component qualifies independently | [27 — Stack verdict](/research/context/techniques/27-extension-stacks-and-verdict/) |
+| Volatile claims | Release/package/source/benchmark identities and access timestamps must be recorded separately | Recheck changed contracts against the actual review/activation revision | [28 — Verification](/research/context/techniques/28-drift-delta/) |
 
-### Headline findings
+These are evidence summaries, not declarations that every axis is complete. The old “dollar economics are mature” label was too broad: missing provider receipt fields, unknown costs and cache-write classification can alter the denominator. LemonCrow's historical Terminal-Bench baseline, for example, counted cache reads in its table cache field while a “fresh” headline also included writes. The corrected ordinary-input total is a benchmark-accounting finding, not a current product-performance ratio. [Recomputed evidence](/research/context/tools/07-evidence-and-claims/).
 
-- **Quota is a separate objective.** Provider caps are not transparently convertible to API dollars, so quota-sensitive conclusions are explicitly bounded where the denominator is unpublished.
-- **Media must be measured in its native representation.** Image and PDF cost depends on dimensions, preprocessing, page handling, and provider rules; text-token intuition is insufficient.
-- **Latency is not a token subclass.** It belongs beside token and quality metrics in the acceptance function.
-- **Fleet behavior is cache behavior plus orchestration.** Prefix identity, dynamic sections, start timing, and provider cache scope determine whether nominally identical agents share work.
-- **Portability follows the interception boundary.** Instruction-only techniques travel widely; provider betas, proprietary hooks, and runtime-specific storage do not.
-- **Governance is part of net savings.** Measurement, recovery, retries, and quality monitoring consume resources and must be charged to the technique.
+### Evidence states and their consequences
+
+| State | Example in this refresh | What it permits |
+|---|---|---|
+| Native/documented | Current cache, compaction, tool discovery, memory and style contracts | Preserve verified effective behavior; qualify host/version differences before changing configuration |
+| Source inspected | Rust feature graphs, state ownership, license text and hook schemas | Identify integration constraints and precise tests; do not infer runtime success |
+| Component executed | Pinned builds/tests, exact-byte recovery, state/reset faults and benchmark reaggregation | Support the particular observed property and artifact; retain failures and fixture limits |
+| Host qualified | Actual installed host consumes an allowed replacement and preserves native semantics | Advance only that boundary; no automatic task-benefit inference |
+| Task qualified | Representative fixed-model paired tasks pass correctness, recovery, cost and latency gates | Consider a bounded automatic profile with ongoing monitoring |
+
+This research has component evidence and host documentation, but no newly completed native-host/result-replacement or accepted-task qualification. The lack of a universal winner is not a reason to stop at recommendations: the [roadmap](/research/context/techniques/17-adoption-roadmap/) names the contracts and first supported treatment needed to reach automatic delivery.
+
+### Headline decisions across the axes
+
+**Quota is an independent objective.** API cache discounts cannot reveal unpublished subscription weights. Report accepted work/window, cap events, resets and wait time from the real plan. Do not divide an included subscription price by a hypothetical token budget and call it marginal cost. [Quota](/research/context/techniques/19-subscription-and-quota-economics/).
+
+**Media and coordinates are part of correctness.** Compression or resizing can lose small text, change layout and move action coordinates. Reconstruct coordinates using actual resized dimensions, crop offsets and logical-screen scale. Compare equal successful tasks and count full provider representations, including document/image handling. [Multimodal](/research/context/techniques/20-multimodal-token-economics/).
+
+**Latency includes the whole task.** A smaller result can require another search, a recovery call or a slower transform. Separate first-use startup from warm latency and collect tails, retries and human correction. A resource budget is a declared design choice until measured. [Latency](/research/context/techniques/21-latency-and-time-economics/).
+
+**Fleet reuse requires matching authority and context.** Cache sharing across compatible requests is useful; sharing an exposure ledger across fresh consumers is a correctness defect. Repository/worktree state, credentials, tenant identity and consumer epochs need separate ownership. LeanCTX's executed restart/custom-consumer behavior is concrete evidence for this distinction. [State](/research/context/engine/07-memory-and-state/), [LeanCTX](/research/context/tools/04-leanctx-design/).
+
+**Portability follows the actual result boundary.** Status hooks, additive context, feedback substitution, typed result replacement and a separate MCP tool are different operations. Current Claude/Codex hook installation does not establish an optimizer. Preserve native shell/edit authority and read receipts; qualify exact event schemas and trust behavior. [Integration](/research/context/tools/11-jackin-integration/).
+
+**Recovery and licensing are deployment gates.** An unretrievable marker, silent storage failure or incompatible package license can block a candidate even when its output is small. Exact release/source/package/feature identity matters: LemonCrow Runtime Lite is not the historical fuller runtime, RTK's OSS CLI is not its separately licensed typed engine, and a no-model feature choice is not proof of no native dependencies or egress. [Product comparison](/research/context/tools/05-head-to-head/), [Rust reuse](/research/context/engine/09-reuse-decision-matrix/).
+
+**Governance contributes to net cost.** Record the cost and latency of summaries, recovery, measurement, child work, failures and model-based graders. Logs must not become another uncontrolled copy of credentials or private source. A hard correctness/security/recovery failure stops the affected treatment even if average spend improves. [Governance](/research/context/techniques/25-meta-cost-governance-and-online-quality/).
 
 ## Implications for jackin❯
 
-For jackin❯, the coverage and gap map evidence identifies which mechanisms are safe to adopt directly and which still require workload-specific validation.
+### The next executable decision
 
-## Limitations and unknowns
+Preserve native context features and implement one owned asset/configuration contract, a scoped exact-original broker and a typed worker boundary. Then prove a single synchronous host/result treatment, beginning with a pinned RTK OSS `pipe --filter <named-family>` subprocess for one qualified test/diagnostic format as a candidate. Compare it with the native control at fixed main model and effort, and package it automatically only after qualification. This makes defaults effective without treating unverified transformation as a prerequisite to launching a capsule. [Engine rollout](/research/context/engine/10-rollout-and-validation/).
 
-### Evidence boundaries
+The proposed `auto`, `experimental` and `off` profiles express product behavior, not accepted manifest fields today. Automatic mode selects only qualified host/version/content combinations. Experimental mode identifies the chosen artifact and its limits. Off disables new reductions and steering but preserves recovery for earlier emitted references. Failure never reruns a producer or weakens an authorization/integrity decision. [Architecture](/research/context/engine/02-architecture/).
 
-The chapters use the measurement conventions in [01 — Economics and measurement](/research/context/techniques/01-economics-and-measurement/) and the acceptance harness in [16 — Validation harness](/research/context/techniques/16-validation-harness/). Provider-sensitive facts follow the [verification contract](/research/context/techniques/28-drift-delta/). Where providers do not publish quota weights, cache scope, or internal token accounting, the result stays bounded rather than inferred.
+### Remaining gaps in priority order
 
-The dossier's measured heavy-session profile remains a comparison fixture, not a universal workload. Reach must be remeasured for each capsule because a docs-heavy task dominated by native reads presents different optimization opportunities from a shell-heavy code task.
+| Priority | Concrete missing evidence or implementation | Completion condition |
+|---|---|---|
+| 1. Current authority and activation | Effective launch, configuration, hook trust and discovery on the first host | Installed host behavior observed; registry/source-only claims remain bounded |
+| 2. Exact recovery and ownership | Consumer/worktree/epoch identity, archive acknowledgement, cancellation and pressure handling | Same-byte recovery plus restart, missing/corrupt, cross-consumer and fault tests; no producer rerun |
+| 3. Useful task result | Representative native/component/full-product comparisons with complete receipts | Canonical correctness, statistical, all-attempt cost and latency gates, with explicit missing-data bounds |
+| 4. Automatic packaging | Versioned artifact, notices, duplicate-free configuration, upgrades and off | A newly launched qualified capsule receives the useful treatment without manual command changes |
+| 5. Retrieval and wider hosts | Restricted retrieval, native edit compatibility, index lifecycle and each host contract | Separate qualification before composition; no shared exposure assumption |
+| 6. Sustained economics | Subscription windows, fleet pressure, drift and monitoring overhead | Observed accepted work/cost under realistic operation, with a native holdout and clear rollback |
 
-## Sources
+The current dependency/licensing shortlist narrows implementation work but is not the final stack selection. Do not let a promising library bypass allocator/runtime/native-link checks, process-global state review, operational licenses or exact artifact correspondence. Conversely, a heavy whole-product path does not rule out a separable permissive primitive when that boundary is documented and tested. [Reuse decisions](/research/context/engine/09-reuse-decision-matrix/).
 
-Evidence and repository references are cited inline beside the claims they support.
+## Limitations and evidence boundaries
+
+The historical heavy-session profile remains a comparison fixture, not a current universal workload. A docs-heavy task with native reads and a shell-heavy build task expose different reducible surfaces. Native provider changes, host release changes and the post-cutoff Jackin integration-base overlay are recorded separately. Source availability and license labels must be checked at the actual selected artifact, not inferred from a repository's current README.
+
+Use the shared [validation harness](/research/context/techniques/16-validation-harness/) rather than inventing a second promotion policy. Proposed uncertainty/cost/latency thresholds are design choices, not findings that a product already passes. Fixed main-model and effort comparisons remain primary; routing, cheaper children, extra model calls and full-product policy changes are separate declared arms.
+
+The refresh closes important factual gaps and supplies reproducible small tests. It leaves the paid/native-session task comparison, long-lived fleet qualification and production activation for the explicit implementation/evaluation stages. Those missing stages must stay visible in the final decision rather than being replaced by aggregate vendor percentages.
 
 ## Related work
 
 - [Executive summary](/research/context/techniques/00-executive-summary/)
 - [Baseline audit](/research/context/techniques/02-baseline-audit/)
+- [Retrieval, memory and state](/research/context/techniques/08-retrieval-memory-and-state/)
 - [Composed stacks](/research/context/techniques/15-composed-stacks/)
-- [Validation harness](/research/context/techniques/16-validation-harness/)
 - [Adoption roadmap](/research/context/techniques/17-adoption-roadmap/)
+- [Current Jackin integration](/research/context/tools/11-jackin-integration/)

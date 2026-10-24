@@ -1,0 +1,29 @@
+{
+  "records": [
+    {
+      "html_url": "https://github.com/headroomlabs-ai/headroom/issues/3099",
+      "title": "[BUG] Compression merges text across shell command boundaries, producing well-formed lines that encode a false fact",
+      "state": "closed",
+      "created_at": "2026-08-18T03:48:30Z",
+      "updated_at": "2026-10-01T17:27:14Z",
+      "closed_at": "2026-10-01T17:27:14Z",
+      "merged_at": null,
+      "merge_commit_sha": null
+    },
+    {
+      "html_url": "https://github.com/lemoncrow-lab/lemoncrow/pull/46",
+      "title": "fix(mcp): resolve relative edit paths against the session worktree",
+      "state": "closed",
+      "created_at": "2026-09-04T14:51:33Z",
+      "updated_at": "2026-09-18T14:11:18Z",
+      "closed_at": "2026-09-07T12:21:44Z",
+      "merged_at": null,
+      "merge_commit_sha": "d9ab3ad18983e9deb13fd95254ba8a04a2be788d"
+    }
+  ],
+  "lemoncrow_maintainer_comment": {
+    "url": "https://github.com/lemoncrow-lab/lemoncrow/pull/46#issuecomment-5570558170",
+    "created_at": "2026-09-07T12:21:44Z",
+    "meaning": "Maintainer says fix landed in v0.7.1 through a mirror of private history. Public PR merged_at is null."
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "head_parent": "9971e26249c2a601912419c84aad99980f88d28b",
+  "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+  "staged_tree": "b0b6b51fdb94aac84322dcee115a39f1862806e8",
+  "research_files_against_main": 421,
+  "source_boundary": "Private Git/index/worktree from the exact staged tree; original objects are a read-only alternate. No credential validation or update requests; existing scanner baselines/configuration unchanged.",
+  "environment_overrides": {
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_AUTHOR_NAME": "Alexey Zhokhov",
+    "GIT_AUTHOR_EMAIL": "alexey@zhokhov.com",
+    "GIT_COMMITTER_NAME": "Alexey Zhokhov",
+    "GIT_COMMITTER_EMAIL": "alexey@zhokhov.com",
+    "XDG_CACHE_HOME": "/workspace/scratch/1335a158b2a9/tooling/security-cache"
+  },
+  "commands": [
+    {
+      "scanner": "kingfisher",
+      "command": [
+        "kingfisher",
+        "scan",
+        ".",
+        "--staged",
+        "--no-validate",
+        "--redact",
+        "--no-update-check",
+        "--baseline-file",
+        ".kingfisher-baseline.yml"
+      ],
+      "cwd": "/tmp/jackin-research-scan-qqa70xkd",
+      "started_utc": "2026-10-24T09:06:50.835501+00:00",
+      "finished_utc": "2026-10-24T09:06:55.597141+00:00",
+      "duration_seconds": 4.762,
+      "exit_code": 0,
+      "log": "/workspace/scratch/1335a158b2a9/tooling/logs/publication-staged-scans-kingfisher.log",
+      "log_sha256": "418be3fd0102daa6425122edd1c3f826671e3386951054bc33c194abdbd1487d",
+      "blobs_scanned": 371,
+      "findings": 0,
+      "enumeration_errors": false
+    },
+    {
+      "scanner": "gitleaks",
+      "command": [
+        "gitleaks",
+        "git",
+        ".",
+        "--staged",
+        "--pre-commit",
+        "--redact",
+        "--no-banner"
+      ],
+      "cwd": "/tmp/jackin-research-scan-qqa70xkd",
+      "started_utc": "2026-10-24T09:06:55.597446+00:00",
+      "finished_utc": "2026-10-24T09:06:56.654024+00:00",
+      "duration_seconds": 1.057,
+      "exit_code": 1,
+      "log": "/workspace/scratch/1335a158b2a9/tooling/logs/publication-staged-scans-gitleaks.log",
+      "log_sha256": "c75daefbb4202e7b20d723d3a323829bfaf5a71589c3f09abe921b7bc36c276d",
+      "blobs_scanned": null,
+      "findings": null,
+      "enumeration_errors": false
+    }
+  ],
+  "passed": false
+}

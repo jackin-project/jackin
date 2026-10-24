@@ -1,0 +1,227 @@
+{
+  "product": "ponytail",
+  "snapshot_cutoff_utc": "2026-10-24T01:15:00Z",
+  "canonical_repository": "https://github.com/DietrichGebert/ponytail",
+  "canonical_identity": "Live API/canonical clone; no redirect observed",
+  "releases": [
+    {
+      "tag_name": "v5.3.2",
+      "published_at": "2026-10-16T23:15:15Z",
+      "html_url": "https://github.com/DietrichGebert/ponytail/releases/tag/v5.3.2",
+      "prerelease": false,
+      "draft": false,
+      "tag_object": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "peeled_commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "assets": []
+    }
+  ],
+  "registry_queries": {
+    "npm-dietrichgebert-ponytail": {
+      "url": "https://registry.npmjs.org/@dietrichgebert%2fponytail",
+      "accessed_at_utc": "2026-10-24T01:19:20Z",
+      "status": 200,
+      "final_url": "https://registry.npmjs.org/@dietrichgebert%2fponytail",
+      "bytes": 58661,
+      "sha256": "981d741d2ca4d30d31633198ce67b44ed383fd0e52fae3c7a53db99d41744149",
+      "name": "@dietrichgebert/ponytail",
+      "latest": "5.3.2",
+      "published": "2026-10-16T23:06:18.715Z",
+      "license": "MIT",
+      "gitHead": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "dist": {
+        "shasum": "95842ed4d5dadf4191a8d1d26eba9b9cff56d2fa",
+        "tarball": "https://registry.npmjs.org/@dietrichgebert/ponytail/-/ponytail-5.3.2.tgz",
+        "fileCount": 46,
+        "integrity": "sha512-AjJnMi54AXO55kXi0ISNPacLuTjb7e9V4lV2oidyxBOnVoPih8CIAmnfHgwX2VyPsDqwQhJthJ9bNu30MaHuOg==",
+        "signatures": [
+          {
+            "sig": "MEQCIEKsnMd4ce4g4h+ZYvRy9SIqa6A96A7TGiSLnyneMWYNAiAQdw5bDrMAdU37I0/8R9iu8JZUJ7s2loxZgjvoyVqE/w==",
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+          },
+          {
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+            "sig": "MEQCIB9yb+CcRTE2ejc4Z04yd/zlIWnGuF3MpcK5WMcFqKA/AiB4DGx/v43njTVAzXiMA8Mf/jz6QhV960Uxn4IGmJC1lg=="
+          }
+        ],
+        "attestations": {
+          "url": "https://registry.npmjs.org/-/npm/v1/attestations/@dietrichgebert%2fponytail@5.3.2",
+          "provenance": {
+            "predicateType": "https://slsa.dev/provenance/v1"
+          }
+        },
+        "unpackedSize": 278669
+      },
+      "repository": {
+        "url": "git+https://github.com/DietrichGebert/ponytail.git",
+        "type": "git"
+      }
+    }
+  },
+  "source_files": [
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/LICENSE",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "LICENSE",
+      "sha256": "fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab",
+      "bytes": 1071,
+      "purpose": "MIT license",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/package.json",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "package.json",
+      "sha256": "f062af314f6031fe88fcc63bdf1c42fbae9e4acb28b7ac94c1f8acc22d204562",
+      "bytes": 1260,
+      "purpose": "package routes",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/skills/ponytail/SKILL.md",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "skills/ponytail/SKILL.md",
+      "sha256": "9badd22a32e19cb884e46dfa8d3aae82bb81dfa5484105b8b4f0262df823a509",
+      "bytes": 3496,
+      "purpose": "actual policy",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/claude-codex-hooks.json",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "hooks/claude-codex-hooks.json",
+      "sha256": "626dec3a375f21b4d1d4e8499e576f7653923326efbaaf5fcedaad9c73ce905e",
+      "bytes": 1227,
+      "purpose": "activation events",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/ponytail-runtime.js",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "hooks/ponytail-runtime.js",
+      "sha256": "52d8e66d542d49217a9eb721942e7bd9f4ee46a56615fb3f53430276cfe3a592",
+      "bytes": 7751,
+      "purpose": "mode isolation",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/ponytail-activate.js",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "hooks/ponytail-activate.js",
+      "sha256": "1ebc3af449da55df6183bcbf7b6799d01cf632834540a88ab66d13b1e62c8375",
+      "bytes": 9203,
+      "purpose": "continuation and injection",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/ponytail-map.js",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "hooks/ponytail-map.js",
+      "sha256": "74256809245e192f819e049ee62ee52e07634695978f4ff14e5db126d43e14ee",
+      "bytes": 5150,
+      "purpose": "default map bounds and omissions",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/.claude-plugin/plugin.json",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": ".claude-plugin/plugin.json",
+      "sha256": "efcef724e68ceec9b04803f2945f910c4d8712e1cdc83c26913f7b8c887fdd7b",
+      "bytes": 1508,
+      "purpose": "ledger and webhook defaults",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/band/register.tsx",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "hooks/band/register.tsx",
+      "sha256": "d6df3b9286e71ed72a336f491e0267c926b285124d0efd2e4f43002a589cc209",
+      "bytes": 19636,
+      "purpose": "CSV persistence and concurrency risk",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/band/metrics.ts",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "hooks/band/metrics.ts",
+      "sha256": "332a2a56458e059f8d56d0a0388396a9b63ba5ded0c90d8788d235ac8c452a41",
+      "bytes": 15101,
+      "purpose": "cache categories on resume",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/ponytail-band-import.js",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "hooks/ponytail-band-import.js",
+      "sha256": "2d9dda3a6b77b46d5f46f6bc9a9ff2fa624d4f5dee77217c642f6926ab159edc",
+      "bytes": 14078,
+      "purpose": "historical estimates",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/scripts/uninstall.js",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "scripts/uninstall.js",
+      "sha256": "21b0893da341f891a4e9238d8dcf1114eea0378835d725f8eb8347c6497821e9",
+      "bytes": 4400,
+      "purpose": "uninstall behavior",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/benchmarks/agentic/run.py",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "benchmarks/agentic/run.py",
+      "sha256": "ea92f106dc91759257648079dee941a527cacf77c548029ab3850f1a80c5c744",
+      "bytes": 31802,
+      "purpose": "harness and offline scorers",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/benchmarks/agentic/complete.py",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "benchmarks/agentic/complete.py",
+      "sha256": "559e7015eb98563bfa0f75697f40fe9abcff85d025d8f787733cf09989904a50",
+      "bytes": 9704,
+      "purpose": "completion gate",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/benchmarks/agentic/README.md",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "benchmarks/agentic/README.md",
+      "sha256": "abf4e5e49487dc4eb1b6c4aaac03d3aa12fde159cbb10f5af9237d96eaaa9d38",
+      "bytes": 12226,
+      "purpose": "withdrawn contaminated experiment",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/benchmarks/results/2026-10-07-agentic.md",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "path": "benchmarks/results/2026-10-07-agentic.md",
+      "sha256": "a985555ce1835e82c17aa425f2d3743e0373345c8e73ad761923a700dcc341e0",
+      "bytes": 11079,
+      "purpose": "first-party benchmark",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    }
+  ],
+  "checkout_status_after_execution": {
+    "ponytail": "?? assets/codex-icon.png"
+  },
+  "status_interpretation": "Runtime clean; unrelated untracked files in the product checkouts were not used by selected Node/Python paths. All tracked source files match the pinned commit.",
+  "source_availability_is_not_reproducible_build": true
+}

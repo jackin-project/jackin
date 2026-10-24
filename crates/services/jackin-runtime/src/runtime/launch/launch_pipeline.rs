@@ -33,6 +33,86 @@ enum DeferredOperatorEnv<'a> {
     Ready(std::collections::BTreeMap<String, String>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RelatedRestoreExpectation {
+    container_base: String,
+    role_key: String,
+    agent_runtime: String,
+    role_source_git: String,
+    role_source_ref: Option<String>,
+    role_git_sha: Option<String>,
+    fingerprint: String,
+    admitted: Vec<(String, jackin_core::Agent, String)>,
+}
+
+impl RelatedRestoreExpectation {
+    fn from_admission(admission: &super::account_identity::AdmittedAccountConfiguration) -> Self {
+        let manifest = &admission.manifest;
+        Self {
+            container_base: manifest.container_base.clone(),
+            role_key: manifest.role_key.clone(),
+            agent_runtime: manifest.agent_runtime.clone(),
+            role_source_git: manifest.role_source_git.clone(),
+            role_source_ref: manifest.role_source_ref.clone(),
+            role_git_sha: manifest.role_git_sha.clone(),
+            fingerprint: admission.fingerprint.clone(),
+            admitted: manifest
+                .admitted_instances
+                .iter()
+                .map(|instance| {
+                    (
+                        instance.config_id.clone(),
+                        instance.agent,
+                        instance.account_id.clone(),
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    fn verify(
+        &self,
+        admission: &super::account_identity::AdmittedAccountConfiguration,
+    ) -> anyhow::Result<()> {
+        let manifest = &admission.manifest;
+        let admitted = manifest
+            .admitted_instances
+            .iter()
+            .map(|instance| {
+                (
+                    instance.config_id.clone(),
+                    instance.agent,
+                    instance.account_id.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        anyhow::ensure!(
+            manifest.container_base == self.container_base
+                && manifest.role_key == self.role_key
+                && manifest.agent_runtime == self.agent_runtime
+                && manifest.role_source_git == self.role_source_git
+                && manifest.role_source_ref == self.role_source_ref
+                && manifest.role_git_sha == self.role_git_sha
+                && admission.fingerprint == self.fingerprint
+                && admitted == self.admitted,
+            "related restore admission changed before recursive launch"
+        );
+        Ok(())
+    }
+}
+
+struct RestoreLaunchAdmission<'a> {
+    opts: &'a super::LoadOptions,
+    related_expectation: Option<RelatedRestoreExpectation>,
+}
+
+struct LaunchAdmissionRequest<'a, Trust, Branch> {
+    opts: &'a super::LoadOptions,
+    confirm_trust_for_test: Trust,
+    confirm_branch_for_test: Branch,
+    related_expectation: Option<RelatedRestoreExpectation>,
+}
+
 struct InlineOperatorEnv<'a> {
     config: &'a AppConfig,
     selector_key: String,
@@ -275,17 +355,75 @@ fn load_role_inner<'a>(
     runner: &'a mut impl CommandRunner,
     opts: &'a super::LoadOptions,
 ) -> std::pin::Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a>> {
-    Box::pin(load_role_with(
+    load_role_inner_with_admission(
         paths,
         config,
         selector,
         workspace,
         docker,
         runner,
+        RestoreLaunchAdmission {
+            opts,
+            related_expectation: None,
+        },
+    )
+}
+
+fn load_role_inner_with_admission<'a>(
+    paths: &'a JackinPaths,
+    config: &'a mut AppConfig,
+    selector: &'a RoleSelector,
+    workspace: &'a jackin_config::ResolvedWorkspace,
+    docker: &'a impl DockerApi,
+    runner: &'a mut impl CommandRunner,
+    admission: RestoreLaunchAdmission<'a>,
+) -> std::pin::Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a>> {
+    let RestoreLaunchAdmission {
         opts,
-        |_, _| anyhow::bail!("role trust prompt requires the rich launch dialog"),
-        |_, _, _| anyhow::bail!("branch trust prompt requires the rich launch dialog"),
+        related_expectation,
+    } = admission;
+    Box::pin(load_role_with_admission(
+        paths,
+        config,
+        selector,
+        workspace,
+        docker,
+        runner,
+        LaunchAdmissionRequest {
+            opts,
+            confirm_trust_for_test: |_: &RoleSelector, _: &jackin_config::RoleSource| {
+                anyhow::bail!("role trust prompt requires the rich launch dialog")
+            },
+            confirm_branch_for_test: |_: &RoleSelector, _: &jackin_config::RoleSource, _: &str| {
+                anyhow::bail!("branch trust prompt requires the rich launch dialog")
+            },
+            related_expectation,
+        },
     ))
+}
+
+fn admit_explicit_restore_account(
+    root: &std::path::Path,
+    config: &AppConfig,
+    workspace: Option<&WorkspaceName>,
+    role: &str,
+    related_expectation: Option<&RelatedRestoreExpectation>,
+) -> anyhow::Result<super::account_identity::AdmittedAccountConfiguration> {
+    let admission = match super::account_identity::admit_account_configuration(
+        root, config, workspace, role,
+    )? {
+        super::account_identity::AccountConfigurationAdmission::Changed => {
+            if related_expectation.is_some() {
+                anyhow::bail!("related restore admission changed before recursive launch");
+            }
+            anyhow::bail!("instance account policy changed; launch a new instance");
+        }
+        super::account_identity::AccountConfigurationAdmission::Matched(admission) => *admission,
+    };
+    if let Some(expected) = related_expectation {
+        expected.verify(&admission)?;
+    }
+    Ok(admission)
 }
 
 #[cfg(test)]
@@ -725,27 +863,29 @@ fn breadcrumb_auth_mode(
     reason = "Launch coordination keeps restore exits, revision checks, repository and name \
               locks, trust callbacks, and the final launch handoff in their execution order."
 )]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Launch coordination requires paths, mutable config, selector, workspace, \
-              Docker, command runner, options, and independently owned FnOnce trust \
-              and branch confirmation callbacks."
-)]
-pub(crate) async fn load_role_with(
+async fn load_role_with_admission(
     paths: &JackinPaths,
     config: &mut AppConfig,
     selector: &RoleSelector,
     workspace: &jackin_config::ResolvedWorkspace,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
-    opts: &super::LoadOptions,
-    confirm_trust_for_test: impl FnOnce(&RoleSelector, &jackin_config::RoleSource) -> anyhow::Result<()>,
-    confirm_branch_for_test: impl FnOnce(
-        &RoleSelector,
-        &jackin_config::RoleSource,
-        &str,
-    ) -> anyhow::Result<()>,
+    request: LaunchAdmissionRequest<
+        '_,
+        impl FnOnce(&RoleSelector, &jackin_config::RoleSource) -> anyhow::Result<()>,
+        impl FnOnce(&RoleSelector, &jackin_config::RoleSource, &str) -> anyhow::Result<()>,
+    >,
 ) -> anyhow::Result<()> {
+    let LaunchAdmissionRequest {
+        opts,
+        confirm_trust_for_test,
+        confirm_branch_for_test,
+        related_expectation,
+    } = request;
+    anyhow::ensure!(
+        related_expectation.is_none() || opts.restore_container_base.is_some(),
+        "related restore admission requires its explicit container"
+    );
     let account_admission::AccountAdmission {
         initial_account_revision,
         selected_workspace,
@@ -790,6 +930,7 @@ pub(crate) async fn load_role_with(
     let selected_agent_before_role = opts.agent.or(workspace.default_agent);
     let mut early_restore_agent = None;
     let mut early_current_scan = super::EarlyCurrentRestoreScan::NotRun;
+    let mut early_admitted_restore = None;
     let early_restore_container = if opts.restore_container_base.is_none()
         && current_role_reuse_is_compatible(opts)
     {
@@ -805,7 +946,7 @@ pub(crate) async fn load_role_with(
             )
             .await?;
             initial_account_revision.ensure_current(paths)?;
-            match candidate
+            if let Some(admitted) = candidate
                 .map(|candidate| {
                     super::restore_resolve::admit_restore(
                         candidate,
@@ -817,54 +958,58 @@ pub(crate) async fn load_role_with(
                 })
                 .transpose()?
             {
-                Some(super::RestoreResolution::StartCurrentRoleWithHandle(container)) => {
-                    let container_name = container.name().to_owned();
-                    opts.record_launched_instance(&container_name);
-                    return restore_current_role_now_with_handle(
-                        paths,
-                        &container,
-                        &initial_account_revision,
-                        docker,
-                        runner,
-                        &mut steps,
-                        true,
-                        opts.entry_claim.as_deref(),
-                    )
-                    .await;
+                match admitted.resolution.clone() {
+                    super::RestoreResolution::StartCurrentRoleWithHandle(container) => {
+                        let container_name = container.name().to_owned();
+                        opts.record_launched_instance(&container_name);
+                        return restore_current_role_now_with_handle(
+                            paths,
+                            &container,
+                            &initial_account_revision,
+                            docker,
+                            runner,
+                            &mut steps,
+                            true,
+                            opts.entry_claim.as_deref(),
+                        )
+                        .await;
+                    }
+                    super::RestoreResolution::RecreateCurrentRoleWithHandle(container) => {
+                        let container_name = container.name().to_owned();
+                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                            agent,
+                            current: Some(super::RestoreResolution::RecreateCurrentRoleWithHandle(
+                                container,
+                            )),
+                        };
+                        early_admitted_restore = Some(admitted);
+                        Some(container_name)
+                    }
+                    super::RestoreResolution::RecreateCurrentRole(container_name) => {
+                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                            agent,
+                            current: Some(super::RestoreResolution::RecreateCurrentRole(
+                                container_name.clone(),
+                            )),
+                        };
+                        early_admitted_restore = Some(admitted);
+                        Some(container_name)
+                    }
+                    other => {
+                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                            agent,
+                            current: Some(other),
+                        };
+                        early_admitted_restore = Some(admitted);
+                        None
+                    }
                 }
-                Some(super::RestoreResolution::RecreateCurrentRoleWithHandle(container)) => {
-                    let container_name = container.name().to_owned();
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                        agent,
-                        current: Some(super::RestoreResolution::RecreateCurrentRoleWithHandle(
-                            container.clone(),
-                        )),
-                    };
-                    Some(container_name)
-                }
-                Some(super::RestoreResolution::RecreateCurrentRole(container)) => {
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                        agent,
-                        current: Some(super::RestoreResolution::RecreateCurrentRole(
-                            container.clone(),
-                        )),
-                    };
-                    Some(container)
-                }
-                Some(other) => {
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                        agent,
-                        current: Some(other),
-                    };
-                    None
-                }
-                None => {
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                        agent,
-                        current: None,
-                    };
-                    None
-                }
+            } else {
+                early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                    agent,
+                    current: None,
+                };
+                None
             }
         } else {
             let candidate = super::resolve_unselected_current_restore_candidate_with_agent_timed(
@@ -879,21 +1024,25 @@ pub(crate) async fn load_role_with(
             initial_account_revision.ensure_current(paths)?;
             match candidate
                 .map(|mut candidate| -> anyhow::Result<_> {
-                    candidate.resolution = super::restore_resolve::admit_restore(
+                    let admitted = super::restore_resolve::admit_restore(
                         candidate.resolution,
                         &paths.data_dir,
                         config,
                         selected_workspace.as_ref(),
                         &role_key,
                     )?;
-                    Ok(candidate)
+                    candidate.resolution = admitted.resolution.clone();
+                    Ok((candidate, admitted))
                 })
                 .transpose()?
             {
-                Some(super::UnselectedCurrentRestoreResolution {
-                    resolution: super::RestoreResolution::StartCurrentRoleWithHandle(container),
-                    ..
-                }) => {
+                Some((
+                    super::UnselectedCurrentRestoreResolution {
+                        resolution: super::RestoreResolution::StartCurrentRoleWithHandle(container),
+                        ..
+                    },
+                    _,
+                )) => {
                     let container_name = container.name().to_owned();
                     opts.record_launched_instance(&container_name);
                     return restore_current_role_now_with_handle(
@@ -908,10 +1057,14 @@ pub(crate) async fn load_role_with(
                     )
                     .await;
                 }
-                Some(super::UnselectedCurrentRestoreResolution {
-                    resolution: super::RestoreResolution::RecreateCurrentRoleWithHandle(container),
-                    agent,
-                }) => {
+                Some((
+                    super::UnselectedCurrentRestoreResolution {
+                        resolution:
+                            super::RestoreResolution::RecreateCurrentRoleWithHandle(container),
+                        agent,
+                    },
+                    admitted,
+                )) => {
                     let container_name = container.name().to_owned();
                     early_restore_agent = Some(agent);
                     early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
@@ -920,12 +1073,16 @@ pub(crate) async fn load_role_with(
                             container.clone(),
                         )),
                     };
+                    early_admitted_restore = Some(admitted);
                     Some(container_name)
                 }
-                Some(super::UnselectedCurrentRestoreResolution {
-                    resolution: super::RestoreResolution::RecreateCurrentRole(container),
-                    agent,
-                }) => {
+                Some((
+                    super::UnselectedCurrentRestoreResolution {
+                        resolution: super::RestoreResolution::RecreateCurrentRole(container),
+                        agent,
+                    },
+                    admitted,
+                )) => {
                     early_restore_agent = Some(agent);
                     early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
                         agent,
@@ -933,13 +1090,18 @@ pub(crate) async fn load_role_with(
                             container.clone(),
                         )),
                     };
-                    Some(container)
+                    early_admitted_restore = Some(admitted);
+                    Some(container.clone())
                 }
-                Some(super::UnselectedCurrentRestoreResolution { resolution, agent }) => {
+                Some((
+                    super::UnselectedCurrentRestoreResolution { resolution, agent },
+                    admitted,
+                )) => {
                     early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
                         agent,
                         current: Some(resolution),
                     };
+                    early_admitted_restore = Some(admitted);
                     None
                 }
                 None => {
@@ -963,16 +1125,18 @@ pub(crate) async fn load_role_with(
         None
     };
 
+    let mut restore_account_admission = early_admitted_restore
+        .as_ref()
+        .and_then(|admitted: &super::restore_resolve::AdmittedRestore| admitted.account.clone());
+
     if let Some(container) = opts.restore_container_base.as_ref() {
-        anyhow::ensure!(
-            super::account_identity::account_configuration_matches(
-                &paths.data_dir.join(container),
-                config,
-                selected_workspace.as_ref(),
-                &selector.key()
-            )?,
-            "instance account policy changed; launch a new instance"
-        );
+        restore_account_admission = Some(admit_explicit_restore_account(
+            &paths.data_dir.join(container),
+            config,
+            selected_workspace.as_ref(),
+            &role_key,
+            related_expectation.as_ref(),
+        )?);
     }
     if restore_explicit_container(
         paths,
@@ -1086,7 +1250,9 @@ pub(crate) async fn load_role_with(
         confirm_branch_for_test,
     )?;
 
-    let mut restore_pinned_sha: Option<String> = None;
+    let mut restore_pinned_sha = restore_account_admission
+        .as_ref()
+        .and_then(|admission| admission.manifest.role_git_sha.clone());
     let restore_container = if early_restore_container.is_some() {
         early_restore_container
     } else if let Some(container) = opts.restore_container_base.as_ref() {
@@ -1094,26 +1260,35 @@ pub(crate) async fn load_role_with(
     } else if !current_role_reuse_is_compatible(opts) {
         None
     } else {
-        let restore_candidate = super::resolve_restore_candidate_reusing_early(
-            paths,
-            workspace_name.as_deref(),
-            workspace.label.as_str(),
-            &workspace.workdir,
-            &role_key,
-            agent,
-            docker,
-            steps.progress_mut(),
-            &early_current_scan,
-        )
-        .await?;
-        account_revision.ensure_current(paths)?;
-        match super::restore_resolve::admit_restore(
-            restore_candidate,
-            &paths.data_dir,
-            config,
-            selected_workspace.as_ref(),
-            &role_key,
-        )? {
+        let admitted = if let Some(admitted) = early_admitted_restore.take() {
+            admitted
+        } else {
+            let restore_candidate = super::resolve_restore_candidate_reusing_early(
+                paths,
+                workspace_name.as_deref(),
+                workspace.label.as_str(),
+                &workspace.workdir,
+                &role_key,
+                agent,
+                docker,
+                steps.progress_mut(),
+                &early_current_scan,
+            )
+            .await?;
+            account_revision.ensure_current(paths)?;
+            super::restore_resolve::admit_restore(
+                restore_candidate,
+                &paths.data_dir,
+                config,
+                selected_workspace.as_ref(),
+                &role_key,
+            )?
+        };
+        restore_account_admission = admitted.account;
+        restore_pinned_sha = restore_account_admission
+            .as_ref()
+            .and_then(|admission| admission.manifest.role_git_sha.clone());
+        match admitted.resolution {
             super::RestoreResolution::StartFresh => None,
             super::RestoreResolution::StartCurrentRoleWithHandle(container) => {
                 let container_name = container.name().to_owned();
@@ -1132,27 +1307,15 @@ pub(crate) async fn load_role_with(
             }
             super::RestoreResolution::RecreateCurrentRoleWithHandle(container_handle) => {
                 let container = container_handle.name().to_owned();
-                let container_state = paths.data_dir.join(&container);
-                if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
-                    restore_pinned_sha = stored.role_git_sha;
-                }
                 teardown_recreate_container(paths, &container, Some(&container_handle), docker)
                     .await?;
                 Some(container)
             }
             super::RestoreResolution::RecreateCurrentRole(container) => {
-                let container_state = paths.data_dir.join(&container);
-                if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
-                    restore_pinned_sha = stored.role_git_sha;
-                }
                 teardown_recreate_container(paths, &container, None, docker).await?;
                 Some(container)
             }
             super::RestoreResolution::RestoreCurrentRole(container) => {
-                let container_state = paths.data_dir.join(&container);
-                if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
-                    restore_pinned_sha = stored.role_git_sha;
-                }
                 teardown_recreate_container(paths, &container, None, docker).await?;
                 Some(container)
             }
@@ -1182,16 +1345,24 @@ pub(crate) async fn load_role_with(
             }
             super::RestoreResolution::RebuildRelatedRole(manifest) => {
                 steps.finish_progress();
+                let related_expectation = RelatedRestoreExpectation::from_admission(
+                    restore_account_admission.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!("related restore has no admitted account selection")
+                    })?,
+                );
                 let selector = RoleSelector::parse(&manifest.role_key)?;
                 let related_opts = super::related_restore_load_options(opts, &manifest)?;
-                let load_result = load_role_inner(
+                let load_result = load_role_inner_with_admission(
                     paths,
                     config,
                     &selector,
                     workspace,
                     docker,
                     runner,
-                    &related_opts,
+                    RestoreLaunchAdmission {
+                        opts: &related_opts,
+                        related_expectation: Some(related_expectation),
+                    },
                 )
                 .await
                 .map(|()| manifest.container_base);
@@ -1411,6 +1582,7 @@ pub(crate) async fn load_role_with(
             resolved_env,
             rebuild,
             restore_pinned_sha,
+            restore_instances: restore_account_admission.map(|admission| admission.instances),
             git_pull_join,
             account_revision,
             admission_config,
@@ -1577,6 +1749,43 @@ pub(crate) fn emit_auth_provision_launch_plan(state: &RoleState, container: &str
             Some(&detail),
         );
     }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "testable launch entry retains its established callback seam"
+)]
+pub(crate) async fn load_role_with(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    selector: &RoleSelector,
+    workspace: &jackin_config::ResolvedWorkspace,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    opts: &super::LoadOptions,
+    confirm_trust_for_test: impl FnOnce(&RoleSelector, &jackin_config::RoleSource) -> anyhow::Result<()>,
+    confirm_branch_for_test: impl FnOnce(
+        &RoleSelector,
+        &jackin_config::RoleSource,
+        &str,
+    ) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    load_role_with_admission(
+        paths,
+        config,
+        selector,
+        workspace,
+        docker,
+        runner,
+        LaunchAdmissionRequest {
+            opts,
+            confirm_trust_for_test,
+            confirm_branch_for_test,
+            related_expectation: None,
+        },
+    )
+    .await
 }
 
 pub(crate) fn manifest_env_timing_detail(skipped: bool, vars: usize) -> String {

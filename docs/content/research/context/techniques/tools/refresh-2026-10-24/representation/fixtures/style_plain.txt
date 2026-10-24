@@ -1,0 +1,1 @@
+Read logs.csv. Filter level >= ERROR. Report the top 3 causes with exact line numbers. Preserve negations, account identifiers, and permission failures.

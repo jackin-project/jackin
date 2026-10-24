@@ -1,135 +1,105 @@
 ---
-title: "17 — Adoption Roadmap: Day 1 / Week 1 / Month 1"
-description: "Sequenced adoption plan for measured token-efficiency changes, ordered by automation, quality risk, and validation needs."
+title: "17 — Adoption roadmap: native baseline to qualified defaults"
+description: "A staged plan for useful automatic optimization, fixed-model evaluation, native controls, reversible delivery, and qualified rollout."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-Sequenced for one operator; the governing split is
-**automatic beats disciplined** — anything that depends on remembering loses to anything that is
-a default. Each item names its automation vehicle (hook / skill / plugin / settings / jackin❯)
-or is flagged DISCIPLINE with its decay risk.
+Snapshot **2026-10-24T01:15:00Z**. The goal is a useful optimization layer that Jackin packages and configures automatically after qualification. An operator should not need to remember a compression command, maintain duplicate hook files, or manually classify every tool result. Native execution, editing, permissions, the selected main model and its reasoning effort remain the control.
 
-- Day 1 is configuration, not behavior: fix the double-registered hooks, pin subagent models,
- add two CLAUDE.md guard-lines, stop mid-session model switches. ~1 hour, no quality risk.
-- Week 1 instruments before it optimizes: OTel token dashboard + the harness screening run,
- then effort tiering and register choice **with canaries**, because those two carry the
- quality risk.
-- Month 1 moves the savings into infrastructure: context editing via SDK paths, routing flips
- validated per task class, and the jackin❯ token-pack so every launched container is born
- optimized — discipline converted to defaults at `launch.rs` / RoleManifest / CapsuleConfig.
-- Standing rule: re-audit after every Claude Code release — the fixed prefix once grew ~70k
- tokens in 5 days (GH #45188); platform drift dwarfs micro-optimizations.
+The old day/week/month sequence is retained as three dependency stages, not a promise about elapsed implementation time. First establish the actual native baseline and one owned configuration surface. Then implement exact recovery and prove one real host/result treatment. Finally activate the combinations that pass task, security, cost and latency gates, with experimental alternatives and a working off path. No external optimizer has completed that full qualification in this research.
 
 ## Question and scope
 
-Which validated techniques can be adopted immediately, which require experiments, and which remain research-only?
+What can be preserved or simplified today, what needs implementation, and what evidence permits automatic activation? This research PR changes documentation and reproducible evidence; it does not install an optimizer, modify user settings, lower model effort or make paid requests.
 
-## Method
+## Method and evidence
 
-The adoption order ranks techniques by evidence strength, reversibility, dependency, and validation cost, separating direct operating guidance from experiments and research-only ideas.
+Use current [native context behavior](/research/context/techniques/06-context-architecture/), [caching](/research/context/techniques/07-caching-exploitation/), [provider features](/research/context/techniques/12-provider-features/), [quota accounting](/research/context/techniques/19-subscription-and-quota-economics/) and the [engine rollout](/research/context/engine/10-rollout-and-validation/). Product source and component probes narrow the candidate list; they do not establish accepted-task benefit. The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/integration-coverage-dispositions.json">integration coverage ledger</RepoFile> reconciles every old heading and numerical claim in this chapter.
 
-## Findings
+Current source distinguishes twelve registered agents from six embedded entrypoint cases. Claude, Codex and OpenCode have status integrations; their existence does not prove synchronous replacement. The token monitor has five active pollers and lacks the complete task/request/transform receipts proposed here. [Current integration audit](/research/context/tools/11-jackin-integration/).
 
-The evidence orders adoption by automation and validation risk: establish safe defaults first, measure a baseline before changing behavior, and move validated policies into infrastructure only after they pass the harness.
+## Findings and implementation sequence
 
-## Implications for jackin❯
+### Day 1 stage: native truth and owned configuration
 
-### Day 1 (≈1 hour, all CLAUDE-CODE-TODAY, zero quality risk)
-
-| Action | Vehicle | Effect (file) |
+| Work | Automation vehicle | Completion evidence |
 |---|---|---|
-| Deduplicate caveman hooks (plugin registers them; remove the manual copies in `~/.claude/settings.json`) | settings | −966 tok/session-start, −118 tok/prompt (02 §3) |
-| Pin exploration subagents: `model: haiku` (or `sonnet`) + `effort: low` in agent frontmatter | agent files | fan-out ÷13 effective (10) |
-| Add two CLAUDE.md lines: "Prefer Edit over Write on existing files; never rewrite a file to change a few lines" and "Reference `file:line` instead of restating code; no post-edit summaries beyond one line" | CLAUDE.md (cached at 0.1x) | −20% visible output (09 §2–3) |
-| Adopt session habits: model/effort chosen **before** the session, not mid-way; `/clear` between unrelated tasks; let auto-compact work | DISCIPLINE (decays — move to jackin❯ pack in month 1) | avoided cache busts ≈ $0.43/each (10, 07) |
-| If you pinned effort max: drop to high | settings | overthinking ↓, cost ↓ (09 §1, T1) |
-| Verify MCP servers stay deferred (ToolSearch) and remove unused servers entirely | settings | keeps 95.8% schema cut (06, 02 §4) |
+| Record effective host/version, main model, effort, auth, permission mode, tools, rules and native context management | Launch/configuration audit | The actual process and delivered configuration match the recorded control; registry membership alone is insufficient |
+| Detect duplicate owned policy and hook delivery | Asset manifest and discovery audit | One intended copy, correct precedence, preserved unrelated user content, clean update/off behavior |
+| Preserve current native caching, tool discovery and compaction | Host-specific configuration contract | Supported effective settings and real discovery behavior; no redundant external owner |
+| Consolidate a restrained optimization asset | One versioned instruction/configuration owner | Required constraints and literal content preserved; scope and precedence tested; no stronger upstream style policy silently substituted |
+| Establish all-attempt local accounting | Existing usage collection plus bounded receipts | Provider classes, task/attempt identity and missing-data flags; privacy and export choices remain explicit |
 
-Explicitly **not** Day 1: register compression beyond what you already run, effort below high,
-any context-clearing automation — those need Week 1's instrumentation first.
+Audit before removal: two apparent registrations can have different scopes or matchers. The old reductions of 966 tokens per startup and 118 per prompt came from a particular earlier setup, not a verified current installation. An automatic migration should remove only the obsolete bytes it owns, detect user modifications and leave unrelated settings intact. A hook-path string is not a content-integrity or trust check. [Baseline](/research/context/techniques/02-baseline-audit/), [ownership contract](/research/context/engine/05-output-and-prompt-layer/).
 
-### Week 1 (instrument → screen → tier)
+Native Concise/output-style choices and a restrained task policy are candidates for low-impact qualification. Preserve exact identifiers, caveats, diagnostics, required explanations and schema fields. Caveman's full plugin and Ponytail's shortest-diff policy are separate experimental arms; their delivered rules do more than shorten prose. The Caveman plugin's explicit child-model selections must not enter a fixed-model/effort comparison unnoticed. Do not promise a universal 20% output reduction or zero quality risk. [Style](/research/context/techniques/04-style-and-language-compression/), [output](/research/context/techniques/09-output-discipline/), [Caveman](/research/context/tools/01-caveman-design/), [Ponytail](/research/context/tools/09-ponytail-design/).
 
-1. **Stand up measurement** (01 §4): `CLAUDE_CODE_ENABLE_TELEMETRY=1`, OTLP → any collector,
- panel on `claude_code.token.usage` by `type` and `agent.name`, plus `claude_code.cost.usage`.
- Without this, every later claim about your own savings is folklore. (Hook/infra; hours.)
-2. **Run the harness screening arm** (16): n=12 tasks + 6 canaries on your current setup —
- this is the baseline every later change is judged against. (Script; ~an evening of wall-clock,
- mostly unattended.)
-3. **Effort tiering with canaries** (09 §1): `/effort medium` for routine work, high for hard
- tasks; re-run canaries; record the thinking-share delta from your dashboard (closes the
- biggest open measurement in the dossier). DISCIPLINE until month 1 bakes per-task defaults.
-4. **Register decision** (04/02): caveman-ultra ≈58.5% of visible prose at real caveat risk —
- keep, or swap to plain terse-instruction (09 §3) which captures most of the win with less
- misread risk. Decide on canary results, not vibes. Skip wenyan: no token advantage over ultra
- (02 §5).
-5. **Structured-output sidecars** (09 §5): any scripted extraction/classification moves to
- schema-constrained SDK calls — one stable schema per thread (cache pitfall).
+Keep the user's current main model and effort fixed throughout qualification. Moving exploration to a cheaper model, lowering effort, advisor routing or changing models mid-session is a separate treatment requiring explicit evaluation. The earlier fan-out divisor and per-switch dollar estimate are not current default settings. Choose session/task boundaries deliberately; automatic clearing is not a cost-free substitute for native resume or compaction. [Routing](/research/context/techniques/10-model-routing-and-delegation/), [retrieval/state](/research/context/techniques/08-retrieval-memory-and-state/).
 
-### Month 1 (SDK + infrastructure tier)
+Native tool discovery remains the first baseline. Remove an unused server only after checking its ownership and actual workflow use. Deferred schema loading, discovered-tool retention and per-host exceptions must be observed; the old 95.8% example is not a guaranteed saving. Telemetry can help, but a dashboard alone does not supply accepted-task grades or complete child/retry bills. Do not silently enable remote export. [Context architecture](/research/context/techniques/06-context-architecture/), [measurement](/research/context/techniques/01-economics-and-measurement/).
 
-1. **Context editing on long-running SDK/headless flows** (12/08): `clear_tool_uses_20250919`
- with `clear_at_least` sized above the re-write cost; assert via `applied_edits` and cache
- fields. Claude Code interactive already auto-compacts; don't double-manage.
-2. **Routing flip, validated**: advisor pattern first (T1-backed, NEGATIVE-COST), then
- Sonnet-main + escalation per task class that passes n=30 confirmation (15 §3 — the 5–6.6x
- lives or dies here).
-3. **Batch lane** for nightly sweeps (audits, doc regen, triage): Batch API + caching stack
- (reads at 0.05x effective; 07/12).
-4. **The jackin❯ token-pack — discipline becomes infrastructure** (14 §jackin❯; Explore-mapped
- insertion points, this repo):
- - env defaults into the container env assembly at `crates/services/jackin-runtime/src/runtime/launch.rs:590-717`
- (effort tier, telemetry on, attribution header policy);
- - `[token_policy]` block in `jackin.role.toml` (RoleManifest, <RepoFile path="crates/core/jackin-core/src/manifest.rs">crates/core/jackin-core/src/manifest.rs</RepoFile>)
- → per-role model/effort/register defaults, hooks installed via the existing
- `runtime_setup.rs` symlink pattern;
- - `CapsuleConfig` (`crates/core/jackin-protocol/src/lib.rs:25-45`) → `/jackin/run/agent.toml` →
- `build_agent_command` so every spawned agent gets model/effort flags without operator
- action;
- - OTLP plumbing already propagates (`launch.rs:694-723`) — extend the existing traces with
- the token dashboard so each launched capsule reports its class-split spend.
- - Add the **compression-hygiene linter** (14): CI fails when always-loaded context (root
- <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> chain, role files) grows past a token budget — measured with the free
- `count_tokens` endpoint in CI.
-5. **Re-audit cadence**: pin a monthly (and post-release) re-run of 02's baseline audit script —
- prefix size, MCP schema mass, hook payloads. Platform drift is the biggest unmanaged variable
- (06 §TL;DR, GH #45188).
+### Week 1 stage: scope, recovery and one host treatment
 
-### Automatic vs disciplined — the full split
+Build the contracts needed to reduce a result safely before optimizing many families:
 
-| Automatic (set once) | Vehicle |
-|---|---|
-| Hook dedup, MCP defer, subagent model/effort pins, CLAUDE.md guards, output register, OTel, batch lane, token-pack defaults, CI token-budget linter | settings / frontmatter / plugin / jackin❯ |
+1. **Admit one consumer and operation.** Bind the logical session, capsule, repository/worktree, authorized root and context epoch. OS UID/GID does not identify what the current model has seen.
+2. **Capture once and acknowledge durable recovery.** Preserve the authorized observation, producer status, completeness and exact byte identity before a lossy replacement. A transform/storage failure returns that existing observation; authorization or integrity failure never bypasses policy, and the producer is not rerun.
+3. **Qualify one replacement boundary.** Prove the real host consumes the transformed result, preserves native read/edit receipts, honors cancellation and does not merely append feedback. Claude typed replacement and Codex feedback substitution are distinct conformance arms.
+4. **Try one bounded diagnostic reducer.** A pinned RTK OSS `pipe --filter <named-family>` subprocess for one qualified test/diagnostic format is an initial candidate, not a whole-product winner. Jackin passes through unknown or unqualified families. This is not a generic clippy/cargo-check/lint filter or an Apache public Rust library kernel. Known diff/newline/truncation regressions exclude affected families until resolved.
+5. **Run paired tasks with raw independent grading.** Keep model, effort, starting state and relevant cache policy fixed; collect setup, failed attempts, child work, recovery and extra turns. Pilot tasks discover faults and estimate variance; they do not establish promotion by count alone.
 
-| Disciplined (decays without automation) | Decay risk → mitigation |
-|---|---|
-| No mid-session model/effort switches | high → jackin❯ picks per-task model at launch |
-| `/clear` between tasks; task-boundary routing | medium → orchestrator session-per-task |
-| Edit-not-Write adherence | low (model follows CLAUDE.md) → keep the guard-line |
-| Effort tier per task | high → role-file defaults + advisor escalation |
-| Canary re-runs after each stack change | high → schedule it (cron) or it will not happen |
+The proposed Rust broker, worker and selector are not currently shipping. Current `jackin-exec` is an execution MCP surface, not the general optimizer. Restricted retrieval is another arm and must not replace native shell/edit authority or invent native read-before-edit receipts. [Architecture](/research/context/engine/02-architecture/), [observation pipeline](/research/context/engine/03-observation-pipeline/), [RTK](/research/context/tools/03-rtk-design/).
 
-For jackin❯, the adoption roadmap: day 1 / week 1 / month 1 evidence identifies which mechanisms are safe to adopt directly and which still require workload-specific validation.
+Inject storage refusal, timeout, crash, malformed output, missing/corrupt artifacts, restart, compaction, fork, worktree changes and concurrent consumers before task-level promotion. A smaller payload with an unusable recovery marker is a failed treatment. Protect exact paths, counts, failure statuses, diagnostics and truncation indicators. Fixture behavior establishes a component property; a passing native edit/replacement session establishes a different property. [Security and recovery](/research/context/engine/07-memory-and-state/).
 
-## Limitations and unknowns
+Use the [canonical qualification protocol](/research/context/tools/07-evidence-and-claims/) and [validation harness](/research/context/techniques/16-validation-harness/): zero new critical correctness/security/permission/isolation/recovery regressions; acceptance lower one-sided 95% bound above −1 percentage point; for a new complex optimizer, upper one-sided 95% all-attempt cost-per-accepted-task ratio at most 0.80; p95 task latency no more than 10% worse unless a distinct tradeoff profile is declared. The quality margin bounds uncertainty and never permits a known correctness loss. Insufficient cost precision keeps a complex treatment provisional/experimental instead of waiving default-promotion evidence. Twelve to thirty tasks are pilot work; confirmation size follows paired/task-cluster variability.
 
-Quantitative effects are modeled from the dossier baseline and remain workload-specific. Effort and register changes require the stated canary and harness gates before becoming defaults.
+For subscriptions, evaluate accepted work per real usage window and observed cap events. Do not convert API cache prices into unpublished quota weights. Existing native optimizations and low-impact owned-delivery fixes need proportionate verification, not an artificial requirement to save 20%. Absolute cold/warm time, RSS, artifact and index limits are explicit proposed budgets in the [engine rollout](/research/context/engine/10-rollout-and-validation/).
 
-## Sources
+### Month 1 stage: package and activate qualified combinations
 
-| Claim | Basis |
-|---|---|
-| Hook duplication numbers | 02 §3 |
-| Fan-out ÷13, advisor numbers, 9-turn switch break-even | 10, accessed/derived |
-| Edit/restatement savings | 09 |
-| Context-editing mechanics + cache trade | 12/08, platform docs |
-| jackin❯ insertion points | local Explore agent code-map of this repo |
-| GH #45188 prefix growth | github.com/anthropics/claude-code/issues/45188 |
-| Stack multiples referenced | [15 — Composed Stacks: Conservative / Aggressive / Unbelievable](/research/context/techniques/15-composed-stacks/) arithmetic |
+| Profile | Proposed user-visible behavior | What must be ready |
+|---|---|---|
+| Automatic | Jackin preserves native controls, delivers one owned restrained asset and selects a qualified reducer for the supported host/version/content family | Checksummed package, notices, host proof, recovery, task gates, resource limits, effective configuration and clean upgrade/off |
+| Experimental | The operator explicitly selects one upstream backend, retrieval path or exact policy | Candidate/version/features visible; broader authority is not granted by selection; isolated evidence and limits are retained |
+| Off / raw | Native authorized observations and normal host behavior, with new reductions and steering disabled | Previously emitted recovery references continue working; disable does not delete history or waive security |
+
+Automatic selection happens after launch admission and checks capability/version/family qualifications. Users should not have to prepend commands or remember which result needs compression. Unsupported content follows the authorized native path. An inactive candidate reports the missing qualification without claiming that observation alone optimizes the task. The implementation should package one useful supported slice before widening to every host, tool family or backend.
+
+Use the actual <RepoFile path="crates/core/jackin-core/src/manifest.rs">role schema</RepoFile>, <RepoFile path="crates/adapters/jackin-image/src/derived_image.rs">derived-image packaging</RepoFile>, <RepoFile path="crates/apps/jackin-capsule/src/runtime_setup.rs">runtime setup</RepoFile>, <RepoFile path="crates/apps/jackin-capsule/src/session/agent_cmd.rs">session admission</RepoFile> and <RepoFile path="crates/services/jackin-usage-token-monitor/src/session.rs">usage collection</RepoFile>. A future profile requires an explicit validated schema extension: the existing role manifest rejects unknown fields. The old `[token_policy]` and launch-line sketch did not establish an implemented feature. Keep heavy engines outside the control loop and avoid creating a parallel launcher.
+
+Current main advanced after the external cutoff. The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md">separate integration-base review</RepoFile> records new installation/account-marker guards. Future packaging must preserve those checks and their failure semantics. A receipt's internal hash consistency does not alone authenticate the build or authorize execution.
+
+Retrieval follows its own qualification: native search/read baseline, restricted process, explicit consumer epochs, restart/branch tests, schema cost and task-level benefit. Evaluate Headroom Rust versus Python, LemonCrow Lite versus historical fuller runtime, LeanCTX process versus embedding facade, and Caveman engine versus policy as different artifacts. One successful package build must not approve another version or mode. [Reuse matrix](/research/context/engine/09-reuse-decision-matrix/).
+
+SDK context editing, compaction and structured-output sidecars remain separate integration lanes. Native interactive compaction is already the control; do not add a competing history owner. Verify current model/tool eligibility, returned usage iterations and continuation rules. Stable schemas can help scripted extraction but incur protocol/cache cost and must preserve contractual field names and enum values. Batch is appropriate only for eligible asynchronous tasks, using current provider/model rates and completion semantics. The old universal 0.05× cache-read multiplier is retired. [Provider features](/research/context/techniques/12-provider-features/), [output contracts](/research/context/techniques/09-output-discipline/).
+
+Advisor/routing experiments remain optional and separately reported because changing model or effort changes this research's primary control. The earlier 5–6.6× composed forecasts are not rollout evidence. Combined profiles are evaluated after their individual components; overlapping payload, cache and output savings cannot be multiplied mechanically. [Composed stacks](/research/context/techniques/15-composed-stacks/).
+
+### Automatic ownership and recurring verification
+
+| Repeated operator burden | Proposed product responsibility | Guard |
+|---|---|---|
+| Remember a policy or wrapper | Install one versioned owned asset and select qualified result families | Preserve user changes and host precedence; expose off |
+| Reapply settings per capsule | Admit effective configuration once and carry its identity into receipts | Do not alter model/effort/auth choices silently |
+| Decide whether a cached file was seen | Track source generation separately from consumer exposure epoch | Unknown epoch returns content; shared index does not authorize a stub |
+| Rerun canaries after an upgrade | Invalidate affected qualifications and run the exact host/version contract | Keep native behavior available; do not label an old green run current |
+| Watch prefix/schema growth | Budget the actually delivered payload in CI and runtime samples | Count all automatic assets; network token counting requires explicit credentials/authorization |
+
+A release, host hook schema, package feature, source license, provider accounting rule or owned asset change can invalidate a qualification. Recheck the affected contract after change and retain periodic drift review; a monthly calendar alone is not sufficient. Use local deterministic token/byte counters for routine budgets when appropriate, and state tokenizer limitations. The old claim that a provider count endpoint is universally free does not authorize credentials or network calls in CI. [Verification contract](/research/context/techniques/28-drift-delta/).
+
+## Limitations and next decision
+
+No new elapsed-time promise, accepted-task result, quota multiplier or production activation is established here. The immediate implementation decision is a small owned-delivery and recovery foundation, followed by one real diagnostic/result treatment and an automatic package after it passes. This is a path to effective defaults; a dashboard-only end state does not satisfy the objective.
+
+Keep a native holdout and hard rollback triggers. A critical security, correctness or recovery regression stops the affected treatment regardless of average savings. Off must preserve exact recovery already promised, and installation/authority failures must not be converted into raw bypass. Broaden only after the original supported slice is demonstrably useful and maintainable.
 
 ## Related work
 
-- [Token-optimization techniques dossier](/research/context/techniques/)
-- [Validation harness](/research/context/techniques/16-validation-harness/)
-- [Context engine](/research/context/engine/)
+- [Engine rollout and validation](/research/context/engine/10-rollout-and-validation/)
+- [Current Jackin integration](/research/context/tools/11-jackin-integration/)
+- [Evidence and claims](/research/context/tools/07-evidence-and-claims/)
+- [Coverage and gap map](/research/context/techniques/18-extension-overview/)

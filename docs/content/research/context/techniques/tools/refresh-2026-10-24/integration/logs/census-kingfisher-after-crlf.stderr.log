@@ -1,0 +1,4 @@
+ INFO kingfisher: Launching with 2 concurrent scan jobs. Use --jobs to override.
+ INFO kingfisher::rule_loader: Loaded 488 rules
+ INFO kingfisher::scanner::rule_loading: Using Vectorscan rule cache cache_dir=/workspace/scratch/1335a158b2a9/research/coordinator/kingfisher-candidate-review/rule-cache
+ WARN kingfisher_rules::rules_database: Ignoring unsafe or unavailable rule cache directory cache_dir=/workspace/scratch/1335a158b2a9/research/coordinator/kingfisher-candidate-review/rule-cache err=cache directory route is writable by group or others

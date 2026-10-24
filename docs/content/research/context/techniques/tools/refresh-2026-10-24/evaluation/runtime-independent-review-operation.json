@@ -1,0 +1,26 @@
+{
+  "argv": [
+    "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/venv/bin/python",
+    "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/review_runtime_boundaries.py",
+    "--headroom-source",
+    "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/headroom",
+    "--lemon-source",
+    "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/lemoncrow",
+    "--scratch",
+    "/workspace/scratch/1335a158b2a9/research/benchmarks/runtime-review"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9",
+  "environment_overrides": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONPATH": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/lemoncrow/client/src:/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/lemoncrow/src",
+    "HEADROOM_OFFLINE": "1",
+    "HEADROOM_BEACON": "off",
+    "HEADROOM_CCR_BACKEND": "memory"
+  },
+  "started_utc": "2026-10-24T08:13:18.479487+00:00",
+  "ended_utc": "2026-10-24T08:13:18.643590+00:00",
+  "exit_code": 0,
+  "script_sha256": "e49ccba6a56036abc931fc0e7a3ed28d3cd7aca8e71475f37fd147cf557b2a07",
+  "stdout": "logs/runtime-independent-review.stdout",
+  "stderr": "logs/runtime-independent-review.stderr"
+}

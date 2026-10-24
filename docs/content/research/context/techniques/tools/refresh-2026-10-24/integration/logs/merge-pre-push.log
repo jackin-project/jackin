@@ -1,0 +1,15 @@
+  files - Fetching git status
+  files - Fetching files between refs/remotes/origin/chore/context-refresh-2026-10-24 and HEAD
+  files - Fetching files between refs/remotes/origin/chore/context-refresh-2026-10-24 and HEAD (84 files)
+✔ files - Fetching files between refs/remotes/origin/chore/context-refresh-2026-10-24 and HEAD (84 files)
+❯ betterleaks-history
+  betterleaks-history – 84 files –  – betterleaks git . --redact
+  betterleaks-history –  + ○
+  betterleaks-history –    ▾
+  betterleaks-history –  betterleaks 1.9.0
+  betterleaks-history – 84 files –  – betterleaks git . --redact
+  betterleaks-history – 1:30AM WRN warning: exhaustive rename detection was skipped due to too many files.
+  betterleaks-history – 1:30AM WRN warning: you may want to set your diff.renameLimit variable to at least 2520 and retry the command.
+  betterleaks-history – 1:30AM INF scanned ~159255849 bytes (159.26 MB) in 5.9s
+  betterleaks-history – 1:30AM INF no leaks found
+✔ betterleaks-history

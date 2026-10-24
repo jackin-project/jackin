@@ -1,96 +1,110 @@
 ---
-title: "02 — Architecture"
-description: "Crate boundaries, processing layers, data flow, policies, and failure behavior for the jackin❯ context engine."
+title: "02 — Architecture and ownership"
+description: "Current Jackin boundaries and a proposed scoped worker, durable recovery broker, host adapters, and explicit failure semantics."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-One shared `jackin-context` library should own measurement, observation filtering, retrieval, output policy, routing, and memory so Capsule and host tooling cannot diverge.
+At **2026-10-24 01:15:00 UTC**, Jackin source `6e266406b49da2ab3c55355f3b7d33d1643ee6cd` already owns configuration, images, private agent homes, process isolation, credential execution and usage collection. It does **not** implement the context engine described here. Add narrow contracts to those owners and run complex upstream components in supervised workers first. Do not place a complete optimizer inside the capsule control loop merely because it has a Rust library.
 
 ## Question and scope
 
-How should the context engine divide retrieval, observation, output, routing, memory, and verification without duplicating runtime authority?
+Where can optimization execute without duplicating configuration, bypassing authority, corrupting shared state or claiming visibility over native traffic it cannot intercept?
 
 ## Method
 
-The architecture maps the dossier’s validated mechanisms onto existing jackin❯ runtime boundaries, then checks each layer for one owner, explicit data flow, failure isolation, and an acceptance gate.
+Read current workspace, manifest, protocol, capsule setup, launch, hook installers, isolation, control authorization, MCP/exec and usage sources. The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json">source register</RepoFile> pins hashes and paths. An isolated entrypoint-case probe executes only launch selection; no full capsule or native host was launched. Product workers were evaluated in their separate workstreams.
+
+Post-cutoff integration review also inspected main `c98f5f5fdd831e6075e38fde93b9713575406140`: all 26 original audit files remain byte-identical. New installation and account-marker controls are recorded separately in the <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md">integration-base review</RepoFile>. This does not move the external release cutoff or claim a rerun of native hosts.
 
 ## Findings
 
-### Crate and process shape
+### Existing ownership
 
-One new workspace library crate, **`crates/jackin-context`**, following the `jackin-<noun>` subsystem convention (`jackin-usage`, `jackin-isolation`). Consumed by `jackin-capsule` (in-container execution — the primary host) and `jackin` (host CLI reporting). Internal module map mirrors the layers:
-
-```text
-crates/jackin-context/src/
-  measure/     L0: ledger, usage ingestion, bust detector, thinking estimator, harness
-  observe/     L2: classifier, filter engine (TOML corpus), crushers, code outline, media
-  retrieve/    L1: fff embed, sem entities, mq sections, query verbs, packer
-  prompt/      L3: register pack compiler, guard lines, codebook, report registers
-  route/       L4: effort/model policy, spawn choreography, lanes, quota model
-  store/       archive (CCR), read-stub index, handles, session state
-  policy/      role config resolution, kill switches, auth-mode policy
-```
-
-No daemon of its own: the engine runs inside the existing `jackin-capsule` process (PID 1 control plane) — the warm-index economics codedb/fff prove (sub-ms queries, index-once) without a new long-lived service, dashboard, or socket surface. Retrieval indexes live in-process behind the existing daemon state tick; heavy index builds run on the existing tokio runtime with rayon under `spawn_blocking`.
-
-### Interception points (all inside the capsule, zero host writes)
-
-| Boundary | Mechanism | Replaces |
+| Responsibility | Current source owner and behavior | Proposed extension |
 |---|---|---|
-| Shell commands | **PATH shims** at `/jackin/shims/{git,cargo,npm,pytest,go,…}` ahead of `/jackin/runtime` in PATH (image already prepends PATH in <RepoFile path="crates/adapters/jackin-image/src/derived_image.rs">crates/adapters/jackin-image/src/derived_image.rs</RepoFile>), each exec-ing `jackin-capsule ctx run -- <cmd>` | RTK's PreToolUse hook + 14 per-agent integrations; works identically for every runtime incl. hook-less ones (Codex, Amp) |
-| Native `Read`/`Grep`/`Glob` | Engine-owned MCP tools (`ctx_read`, `ctx_search`, `ctx_doc`, …) registered via the existing `claude mcp add jackin-exec`-style path in <RepoFile path="crates/apps/jackin-capsule/src/runtime_setup.rs">crates/apps/jackin-capsule/src/runtime_setup.rs</RepoFile>, plus steering text in the role instruction file; optionally a PostToolUse read-dedup hook via the existing merge-safe <RepoFile path="crates/apps/jackin-capsule/src/agent_status/hook_installer.rs">crates/apps/jackin-capsule/src/agent_status/hook_installer.rs</RepoFile> machinery (12 events already wired, drift-repaired every launch) | headroom-MCP / lean-ctx `ctx_read`; the lean-ctx `HookCovered` retreat says steer honestly, never "NEVER use native tools" |
-| Agent configuration | Generated at capsule setup: model/effort flags in `build_agent_command()` (<RepoFile path="crates/apps/jackin-capsule/src/session.rs">crates/apps/jackin-capsule/src/session.rs</RepoFile>), subagent frontmatter pins, guard lines and register pack into the role instruction file, `[context]` manifest table plumbed host→capsule via `CapsuleConfig` (<RepoFile path="crates/core/jackin-protocol/src/lib.rs">crates/core/jackin-protocol/src/lib.rs</RepoFile>) | Current Caveman, lean-ctx, and RTK user-scope installer/hook classes |
-| Transcripts / usage | Extends the existing JSONL monitors in <RepoFile path="crates/services/jackin-usage-token-monitor/src/lib.rs">crates/services/jackin-usage-token-monitor/src/lib.rs</RepoFile> (Claude/Codex/Kimi/Amp already parsed) with `message.id` dedup, per-tool observation attribution, and cache-class deltas | token-optimizer / ccusage / `rtk gain` |
+| Role schema and model policy | <RepoFile path="crates/core/jackin-core/src/manifest.rs">RoleManifest</RepoFile>; unknown fields denied; no optimization field | Versioned schema/migration and effective component policy |
+| Images and setup | <RepoFile path="crates/adapters/jackin-image/src/derived_image.rs">derived image</RepoFile>, <RepoFile path="crates/apps/jackin-capsule/src/runtime_setup.rs">runtime setup</RepoFile> | Reviewed pinned artifacts, notices and capsule-local adapter configuration |
+| Identity and homes | <RepoFile path="crates/services/jackin-runtime-launch-capsule-setup/src/capsule_setup.rs">capsule setup</RepoFile>, <RepoFile path="crates/apps/jackin-capsule/src/session/agent_cmd.rs">session launch</RepoFile> | Worker admission using actual instance/worktree/session roots |
+| Native launch and model/effort | Session command and embedded entrypoint | Preserve explicit policy; prove each host launch and activation separately |
+| Status hooks | <RepoFile path="crates/apps/jackin-capsule/src/agent_status/hook_installer.rs">installers</RepoFile> for Claude/Codex/OpenCode | Separate synchronous transform/lifecycle adapter; do not reinterpret async status as replacement |
+| Security and credential execution | <RepoFile path="crates/apps/jackin-capsule/src/process_isolation.rs">process isolation</RepoFile>, <RepoFile path="crates/apps/jackin-capsule/src/daemon/control/auth.rs">control authorization</RepoFile>, <RepoFile path="crates/apps/jackin-capsule/src/exec.rs">secure exec</RepoFile> | Narrow worker/recovery authorization with no new ambient credentials |
+| Usage and persistence | <RepoFile path="crates/services/jackin-usage-token-monitor/src/session.rs">token monitor</RepoFile>, usage snapshot store | Provenance-bearing task receipts, not automatic reuse of quota storage as a raw archive |
 
-### Storage
+The later integration base adds descriptor-relative installation checks, non-activating format3 receipt/artifact inspection, container-root identity checks during preparation and recoverable account-marker publication. Preserve those guards when adding artifacts or worker setup. They do not implement a context broker, authenticate source/build authority by themselves or turn a trusted same-UID root into a hostile-tenant boundary. [Pinned installation API](https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/core/jackin-process-directory/src/secure_install.rs), [marker lease](https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/services/jackin-runtime-launch-account-identity/src/account_identity/marker_pair.rs).
 
-All under `/jackin/state/context/` (container-only, honoring the `/jackin/` layout rule), using **turso** (already in-workspace via <RepoFile path="crates/services/jackin-usage-snapshot-store/src/lib.rs">crates/services/jackin-usage-snapshot-store/src/lib.rs</RepoFile>, schema-versioned):
+The workspace uses `crates/core`, `crates/services`, `crates/adapters` and `crates/apps`; the old proposed flat `crates/jackin-context` is not a current crate. Rust 1.99 is the workspace declared minimum. Names below are conceptual interfaces until a separate implementation proposes concrete crate placement. <RepoFile path="Cargo.toml">Workspace manifest</RepoFile>.
 
-- `archive.db` — CCR store: `ccr_entries(hash TEXT PRIMARY KEY, original BLOB, created_at, ttl_seconds)` + FTS index; blake3 keys, first 24 hex chars; wire marker `<<ccr:HASH>>` kept byte-compatible with headroom so mixed environments interoperate.
-- `ledger.db` — savings events (per-transform, per-tool, per-session), bounce events (negative entries), injection-overhead entries; optional hash-chaining for tamper evidence (lean-ctx pattern) off by default.
-- `stubs.json` — read-stub bookkeeping only (never content), LRU-capped, atomic tmp+rename, purged on compaction events, scoped `session` / `task:<id>` for subagents (lean-ctx #954–#956 semantics).
-- `index/` — fff frecency LMDB, sem-core entity cache, BM25/tantivy segments (if enabled), mq-chunked doc index; all rebuildable, corpus-signature freshness (not TTL).
+### Launch, hooks and authority are different layers
 
-### Cache-safety invariants
+`Agent::ALL` has twelve variants; the embedded entrypoint dispatches six. The source audit executes those six selection branches successfully and returns unknown-agent exit 2 for Antigravity, Gemini, Cursor, Muse, omp and Hermes. It does not prove the six installed binaries launch successfully. The image builder copies that script unchanged and the session command selects it. Fixing the missing launch paths is separate production work, required before optimizer portability can be claimed for those hosts.
 
-The INV table below is the engine's contract; each is verifiable from session JSONL and enforced by regression tests (headroom's `prefix_cache_benchmark` pattern):
+Claude's installed `PostToolUse` status hook is asynchronous. Codex installs seven event commands, but its verifier only checks for the script path in the JSON file. Neither mechanism proves host trust, event acceptance or result replacement. Current official [Claude](https://code.claude.com/docs/en/hooks) and [Codex](https://learn.chatgpt.com/docs/hooks) contracts differ; the [integration chapter](/research/context/tools/11-jackin-integration/) owns their detailed qualification matrix.
 
-| INV | Invariant | Verify by |
+The current entrypoint selects native approval-bypass modes for its six hosts, while Jackin separately constrains process and credential access. Preserve the configured policy and document it honestly. A worker must not create its own credential forwarding, broaden allowed paths, change native permission flags or infer authority from model-supplied scope fields.
+
+### Proposed process and interface shape
+
+Use a small Rust policy/broker layer associated with the existing session supervisor, plus a worker for the selected transform or retrieval backend. Start with one process per admitted consumer/worktree scope when upstream state is process-global. An IPC boundary gives crash, dependency and runtime separation; it does not itself confine filesystem or network access. Apply explicit roots, private state, resource limits and egress policy when launching the worker.
+
+| Decision in order | Owner | Next result |
 |---|---|---|
-| INV-1 | The engine never mutates content already sent: all transforms run at first ingestion (shim output, MCP read result), append-only | Diff request bodies with/without engine on fixture sessions; byte-identical prefixes |
-| INV-2 | `cache_read_input_tokens > 0` from call 2 of every session; session cache-read share ≥85% unless the workload explains it | Ledger assertion on live JSONL; alert on regression |
-| INV-3 | Filtered output ≤ raw output in estimated tokens, or raw is emitted (`never_worse`, revalidated against RTK v0.45.0) | Property test over the reviewed current filter corpus |
-| INV-4 | Exit codes preserved bit-exact through shims; a filter failure emits raw output, never an error (`ParseResult::Passthrough` tier) | Shim integration tests; CI-safe guarantee |
-| INV-5 | Every lossy emission carries a recovery handle; `ctx expand <handle>` returns byte-exact originals for entries within retention (all exit codes, not just failures) | Round-trip tests `retrieve(id) == content` |
-| INV-6 | Engine-injected standing context (instructions, tool schemas, codebook) stays under a CI-gated token budget counted with `count_tokens` against the capsule's actual model | `ctx doctor --gate` in CI (lean-ctx pattern) |
-| INV-7 | Never compress error/test-failure signal: policy classifier marks build/lint/test-failure lines verbatim-class before any filter runs | Canary fixtures per filter |
-| INV-8 | Exactly one shell-rewrite path, one output register, one memory store per capsule; engine refuses to activate if a conflicting third-party tool is detected in the role (e.g. RTK hook + engine shims) | Setup-time conflict probe |
-| INV-9 | Mid-session model/effort switches are engine-initiated only at task boundaries; the engine never toggles prompt-resident modes mid-session | Route-policy unit tests; JSONL audit |
-| INV-10 | No network egress from the engine (no telemetry, no update checks, no cloud sync); `count_tokens` is the only permitted API call and runs on the capsule's own credential within its rate pool | Firewall allowlist already enforced by <RepoFile path="crates/apps/jackin-capsule/src/firewall.rs">crates/apps/jackin-capsule/src/firewall.rs</RepoFile> |
+| Observation is not authorized | Native authority and adapter | Preserve denial; do not enter the transform path |
+| Observation is authorized | Adapter/broker | Capture the original once with its status and completeness |
+| Capability or content family is unqualified | Qualification selector | Deliver that authorized original |
+| Required archive does not acknowledge storage | Recovery broker | Deliver the original; emit no lossy marker |
+| Archive succeeds | Selected worker | Produce a bounded candidate without rerunning the producer |
+| Candidate is invalid, late or over budget | Adapter/verifier | Deliver the already-captured original |
+| Candidate passes all checks | Synchronous host adapter | Deliver the typed replacement with scoped recovery |
 
-### Kill switches and config
 
-Every subsystem carries an env kill switch following the existing `JACKIN_DISABLE_TIRITH`/`JACKIN_DISABLE_SHELLFIRM` convention: `JACKIN_CTX_DISABLE` (master), `JACKIN_CTX_NO_SHIMS`, `JACKIN_CTX_NO_MCP`, `JACKIN_CTX_NO_REGISTER`, `JACKIN_CTX_NO_ROUTING`, `JACKIN_CTX_MEASURE_ONLY`. The last one matters most: **measurement-on, mutation-off is the default posture for new roles** (lean-ctx's "measurement before mutation" doctrine) — a role graduates to active compression only after its own baseline window exists in the ledger.
+The protocol has an authenticated caller, scope, observation ID, producer/tool identity, bytes or bounded artifact descriptor, stdout/stderr roles, exit/signal/interruption data when available, capture completeness, exactness requirements and deadline. A response is unchanged or a candidate replacement with transform/version/config digest, omissions, output shape and recovery reference. Unavailable metadata stays unknown; a text hook must not fabricate a signal or complete stream.
 
-Role-facing configuration is a new versioned `[context]` table in `jackin.role.toml` (schema change per PRERELEASE rules — one version bump, 5 artifacts): see [10 — Rollout](/research/context/engine/10-rollout-and-validation/) for the field sketch.
+An upstream adapter never owns Jackin's permanent public types. It translates a narrow contract, declares its effect class and cannot issue a fresh producer command on transform failure. Cancellation stops optional work and preserves the original operation's recorded status.
+
+### Scope and storage
+
+`SessionIdentity` is only `{ uid, gid }`. Session launch separately creates `/jackin/run/sessions/<id>` state/tmp/runtime/cache directories and injects a control capability. Those existing facilities are useful, but they do not define model exposure or resumed-session continuity. <RepoFile path="crates/core/jackin-protocol/src/lib.rs">Protocol identity</RepoFile>, <RepoFile path="crates/apps/jackin-capsule/src/session/agent_cmd.rs">session directories</RepoFile>.
+
+The proposed scope contains capsule generation, instance, repository identity, canonical worktree root, source generation, host session/subagent and context epoch. The broker derives/admit-checks this scope from trusted launch metadata; it does not accept an arbitrary path or UID supplied by a hook payload. A content hash verifies bytes; it is neither authorization nor a logical observation ID.
+
+Separate logical owners for raw observations, immutable source indexes, mutable exposure, durable notes and measurement receipts. They may use different physical databases and retention classes. A shared read-only index requires a matching source snapshot, parser/configuration and security domain. Exposure and recovery authority remain consumer-scoped. [State contract](/research/context/engine/07-memory-and-state/).
+
+### Invariants replacing the old unconditional rules
+
+| Contract | Required behavior |
+|---|---|
+| One owner | One transform per observation; one selected index; one instruction asset owner; no nested compression markers |
+| Execute once | Archive the authorized captured result, never rerun the producer to recover omitted output |
+| Store before loss | Acknowledged durable write and bounded recovery route before emitting a lossy replacement |
+| Security first | Authorization, path integrity and mandatory redaction failures stop; they never fall back to unredacted/raw access |
+| Optional failure | Transform timeout, crash, incompatibility or unsuccessful archive creation selects the already-authorized original observation |
+| Honest completeness | Native truncation, missing stderr, unknown signal or partial stream are recorded, not converted into “complete” evidence |
+| Exposure integrity | No “already seen” omission without a compatible context epoch and delivery evidence |
+| Provider stability | Do not mutate established history or preserved reasoning without a separately qualified provider contract |
+| Bounded resources | Predeclared cold/warm latency, memory, disk and queue limits; pressure disables new lossy observations before evicting required recovery |
+| Measured benefit | Local token non-expansion is only an eligibility guard; it does not prove lower bill, fewer turns or better tasks |
+
+The former universal cache-hit target, one-database rule, blanket fail-open and asserted capsule-wide interception are withdrawn. Provider caching is model/route-specific, and failures at different trust layers require different actions.
 
 ## Implications for jackin❯
 
-These findings define the architecture contract for jackin❯; any implementation must preserve the acceptance gates and boundaries above.
+Implement owned scope, recovery and qualification contracts first; integrate one adapter at a time. Pinned processes are the initial boundary for RTK filters, LeanCTX and LemonCrow retrieval, and broad Headroom/Caveman engines. A small pure Rust library can later move in-process when its dependency graph, state/runtime ownership, target support and cancellation are demonstrated. “Rust” is not sufficient proof of safe embedding. [Reuse matrix](/research/context/engine/09-reuse-decision-matrix/).
+
+Proposed `auto`, `experimental` and `off` policy belongs in a reviewed configuration migration. It is not currently accepted by `RoleManifest`. Off stops new optimization and restores owned configuration while preserving referenced recovery artifacts and configured security. Effective configuration must list source pins, actual host activation, state roots, selected owner and bypass reason.
 
 ## Limitations and unknowns
 
-### What the engine does NOT contain
-
-No output-style rewriting of the agent's own settings files beyond jackin❯ existing merge-safe installers; no browser dashboard (surfaces render in the existing capsule TUI usage dialog and host console); no cross-container daemon (fleet coordination stays in the host orchestrator); no cloud component whatsoever.
+No worker protocol, optimization manifest, artifact broker or selector is implemented in this research PR. Source inspection of Linux isolation is not an executed adversarial security test. Real host replacement, cancellation, edit receipts, restarts and permission interactions remain explicit gates. The existing `jackin-exec` MCP server exposes secure command execution; it is not a general context engine or universal native-tool interception path. Its current dispatcher ignores `notifications/cancelled`, so a new worker cannot inherit a cancellation guarantee merely by using this server.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Pinned source hashes, exact selection-probe commands and host-document access records are in the <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/README.md">architecture evidence</RepoFile>. Product dependencies and tests are recorded in their current dossiers.
 
 ## Related work
 
-- [Context engine dossier](/research/context/engine/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Token-optimization tools](/research/context/tools/)
+- [Observation pipeline](/research/context/engine/03-observation-pipeline/)
+- [Memory and state](/research/context/engine/07-memory-and-state/)
+- [Jackin integration](/research/context/tools/11-jackin-integration/)

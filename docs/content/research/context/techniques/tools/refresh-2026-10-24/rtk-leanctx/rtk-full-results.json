@@ -1,0 +1,902 @@
+{
+  "binary": "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+  "version": {
+    "argv": [
+      "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+      "--version"
+    ],
+    "exit": 0,
+    "stdout": "rtk 1.0.1\n",
+    "stderr": "",
+    "stdout_sha256": "0d93d57058e53977ac72c5e2c5d60fb942924a9e1754358e23f0cad706749706",
+    "elapsed_ms": 2.357
+  },
+  "generated_at_utc": "2026-10-24T01:22:22Z",
+  "records": [
+    {
+      "kind": "shell-equivalence",
+      "command": "git status --porcelain=v1",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "git status --porcelain=v1"
+        ],
+        "exit": 0,
+        "stdout": " M binary.dat\n M crlf.txt\n M \"file space.txt\"\nR  old-name.txt -> \"renamed-\\351\\233\\252.txt\"\n",
+        "stderr": "",
+        "stdout_sha256": "fe7faa00265ae081abf4ab9773ca3f60a10235f6e43400aad31f396923488393",
+        "elapsed_ms": 4.971
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "git status --porcelain=v1"
+        ],
+        "exit": 3,
+        "stdout": "rtk git status --porcelain=v1",
+        "stderr": "",
+        "stdout_sha256": "f77a32619644406aece22a8afa78da71232143669b062d376d75b7cb184f0585",
+        "elapsed_ms": 26.611
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "rtk git status --porcelain=v1"
+        ],
+        "exit": 0,
+        "stdout": " M binary.dat\n M crlf.txt\n M \"file space.txt\"\nR  old-name.txt -> \"renamed-\\351\\233\\252.txt\"",
+        "stderr": "",
+        "stdout_sha256": "313134097c2a20bc884478d88e6d4b149d5402dde646fe81108bb7913b984c0b",
+        "elapsed_ms": 18.337
+      },
+      "exit_preserved": true,
+      "stdout_identical": false,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "git diff --exit-code",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "git diff --exit-code"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/crlf.txt b/crlf.txt\nindex 17f2fc0..fbbee86 100644\n--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,2 +1,2 @@\n-alpha\r\n-beta\r\n+alpha\n+beta\ndiff --git a/file space.txt b/file space.txt\nindex fbbee86..8f83f91 100644\n--- a/file space.txt\t\n+++ b/file space.txt\t\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n\\ No newline at end of file\n",
+        "stderr": "",
+        "stdout_sha256": "1d8fe774a97a04b3d0d5a4f505e306c0799b3cd46c97635e5573589b3f49d26e",
+        "elapsed_ms": 3.556
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "git diff --exit-code"
+        ],
+        "exit": 3,
+        "stdout": "rtk git diff --exit-code",
+        "stderr": "",
+        "stdout_sha256": "521d62255a7ba9ecd98b0da927fd6802e777ed4cd08fb1e40586d71e75618211",
+        "elapsed_ms": 20.338
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "rtk git diff --exit-code"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/crlf.txt b/crlf.txt\nindex 17f2fc0..fbbee86 100644\n--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,2 +1,2 @@\n-alpha\r\n-beta\r\n+alpha\n+beta\ndiff --git a/file space.txt b/file space.txt\nindex fbbee86..8f83f91 100644\n--- a/file space.txt\t\n+++ b/file space.txt\t\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n\\ No newline at end of file\n",
+        "stderr": "",
+        "stdout_sha256": "1d8fe774a97a04b3d0d5a4f505e306c0799b3cd46c97635e5573589b3f49d26e",
+        "elapsed_ms": 7.712
+      },
+      "exit_preserved": true,
+      "stdout_identical": true,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "git diff --quiet",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "git diff --quiet"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\n",
+        "stderr": "",
+        "stdout_sha256": "10704ca429490ff69f40a19bf3da0688291b3a4f9ef211437c50ded283ccc710",
+        "elapsed_ms": 3.263
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "git diff --quiet"
+        ],
+        "exit": 3,
+        "stdout": "rtk git diff --quiet",
+        "stderr": "",
+        "stdout_sha256": "4a141d6bf27ca7b230114dd8e2795fc879765e72d3d8e82c441d83d95f2f4e5c",
+        "elapsed_ms": 20.299
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "rtk git diff --quiet"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\n",
+        "stderr": "",
+        "stdout_sha256": "10704ca429490ff69f40a19bf3da0688291b3a4f9ef211437c50ded283ccc710",
+        "elapsed_ms": 8.002
+      },
+      "exit_preserved": true,
+      "stdout_identical": true,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "git diff --cached --exit-code",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "git diff --cached --exit-code"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/old-name.txt \"b/renamed-\\351\\233\\252.txt\"\nsimilarity index 100%\nrename from old-name.txt\nrename to \"renamed-\\351\\233\\252.txt\"\n",
+        "stderr": "",
+        "stdout_sha256": "9fb9afa5ee46eb66a055ecf85e1f849324f8b9699f70531ec0005ff901e56194",
+        "elapsed_ms": 3.14
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "git diff --cached --exit-code"
+        ],
+        "exit": 3,
+        "stdout": "rtk git diff --cached --exit-code",
+        "stderr": "",
+        "stdout_sha256": "4b9cefab91f4ced20f3aa9d5cc9a56db446246f91497a195bae5c859e46d1ed0",
+        "elapsed_ms": 22.561
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "rtk git diff --cached --exit-code"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/old-name.txt \"b/renamed-\\351\\233\\252.txt\"\nsimilarity index 100%\nrename from old-name.txt\nrename to \"renamed-\\351\\233\\252.txt\"\n",
+        "stderr": "",
+        "stdout_sha256": "9fb9afa5ee46eb66a055ecf85e1f849324f8b9699f70531ec0005ff901e56194",
+        "elapsed_ms": 10.72
+      },
+      "exit_preserved": true,
+      "stdout_identical": true,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "git diff --exit-code && printf should-not-run",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "git diff --exit-code && printf should-not-run"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/crlf.txt b/crlf.txt\nindex 17f2fc0..fbbee86 100644\n--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,2 +1,2 @@\n-alpha\r\n-beta\r\n+alpha\n+beta\ndiff --git a/file space.txt b/file space.txt\nindex fbbee86..8f83f91 100644\n--- a/file space.txt\t\n+++ b/file space.txt\t\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n\\ No newline at end of file\n",
+        "stderr": "",
+        "stdout_sha256": "1d8fe774a97a04b3d0d5a4f505e306c0799b3cd46c97635e5573589b3f49d26e",
+        "elapsed_ms": 3.959
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "git diff --exit-code && printf should-not-run"
+        ],
+        "exit": 3,
+        "stdout": "rtk git diff --exit-code && printf should-not-run",
+        "stderr": "",
+        "stdout_sha256": "57d0168961b495ef8215f764f8c1f337e85896a7a893ae3c2a18021d5d1350f7",
+        "elapsed_ms": 29.211
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "rtk git diff --exit-code && printf should-not-run"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/crlf.txt b/crlf.txt\nindex 17f2fc0..fbbee86 100644\n--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,2 +1,2 @@\n-alpha\r\n-beta\r\n+alpha\n+beta\ndiff --git a/file space.txt b/file space.txt\nindex fbbee86..8f83f91 100644\n--- a/file space.txt\t\n+++ b/file space.txt\t\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n\\ No newline at end of file\n",
+        "stderr": "",
+        "stdout_sha256": "1d8fe774a97a04b3d0d5a4f505e306c0799b3cd46c97635e5573589b3f49d26e",
+        "elapsed_ms": 12.085
+      },
+      "exit_preserved": true,
+      "stdout_identical": true,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "git diff --exit-code || printf expected-difference",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "git diff --exit-code || printf expected-difference"
+        ],
+        "exit": 0,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/crlf.txt b/crlf.txt\nindex 17f2fc0..fbbee86 100644\n--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,2 +1,2 @@\n-alpha\r\n-beta\r\n+alpha\n+beta\ndiff --git a/file space.txt b/file space.txt\nindex fbbee86..8f83f91 100644\n--- a/file space.txt\t\n+++ b/file space.txt\t\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n\\ No newline at end of file\nexpected-difference",
+        "stderr": "",
+        "stdout_sha256": "e483c9ae0e959b8c35d39dc062e3bb0454ca5605e2334dd8578b5a7a458a88b0",
+        "elapsed_ms": 3.44
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "git diff --exit-code || printf expected-difference"
+        ],
+        "exit": 3,
+        "stdout": "rtk git diff --exit-code || printf expected-difference",
+        "stderr": "",
+        "stdout_sha256": "494efd680191fcd4642f2c4bfc1a39a53454c323dabbffeff91405feb0821abf",
+        "elapsed_ms": 23.179
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "rtk git diff --exit-code || printf expected-difference"
+        ],
+        "exit": 0,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/crlf.txt b/crlf.txt\nindex 17f2fc0..fbbee86 100644\n--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,2 +1,2 @@\n-alpha\r\n-beta\r\n+alpha\n+beta\ndiff --git a/file space.txt b/file space.txt\nindex fbbee86..8f83f91 100644\n--- a/file space.txt\t\n+++ b/file space.txt\t\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n\\ No newline at end of file\nexpected-difference",
+        "stderr": "",
+        "stdout_sha256": "e483c9ae0e959b8c35d39dc062e3bb0454ca5605e2334dd8578b5a7a458a88b0",
+        "elapsed_ms": 9.27
+      },
+      "exit_preserved": true,
+      "stdout_identical": true,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "git diff -- 'file space.txt'",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "git diff -- 'file space.txt'"
+        ],
+        "exit": 0,
+        "stdout": "diff --git a/file space.txt b/file space.txt\nindex fbbee86..8f83f91 100644\n--- a/file space.txt\t\n+++ b/file space.txt\t\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n\\ No newline at end of file\n",
+        "stderr": "",
+        "stdout_sha256": "87cffe183b2399a97fc0a099b162c3a30bfaae78807a1f8925f688b20530b410",
+        "elapsed_ms": 3.204
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "git diff -- 'file space.txt'"
+        ],
+        "exit": 3,
+        "stdout": "rtk git diff -- 'file space.txt'",
+        "stderr": "",
+        "stdout_sha256": "6083c910578f4c2f05d32df3b777b94564d12460968faf0542ae7b3422f8b125",
+        "elapsed_ms": 20.899
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "rtk git diff -- 'file space.txt'"
+        ],
+        "exit": 0,
+        "stdout": "file space.txt | 3 ++-\n 1 file changed, 2 insertions(+), 1 deletion(-)\n\nChanges:\n\nfile space.txt\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n  +2 -1\n",
+        "stderr": "",
+        "stdout_sha256": "8575317fe2bd1d35f7e531b667912f504777ef854f9197e0829a53c1e3288cc2",
+        "elapsed_ms": 9.939
+      },
+      "exit_preserved": true,
+      "stdout_identical": false,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "git diff > captured.patch",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "git diff > captured.patch"
+        ],
+        "exit": 0,
+        "stdout": "",
+        "stderr": "",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "elapsed_ms": 3.707
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "git diff > captured.patch"
+        ],
+        "exit": 1,
+        "stdout": "",
+        "stderr": "",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "elapsed_ms": 3.6
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "git diff > captured.patch"
+        ],
+        "exit": 0,
+        "stdout": "",
+        "stderr": "",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "elapsed_ms": 3.207
+      },
+      "exit_preserved": true,
+      "stdout_identical": true,
+      "redirect_bytes_identical": true
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "git diff | wc -l",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "git diff | wc -l"
+        ],
+        "exit": 0,
+        "stdout": "22\n",
+        "stderr": "",
+        "stdout_sha256": "f14b4987904bcb5814e4459a057ed4d20f58a633152288a761214dcd28780b56",
+        "elapsed_ms": 3.103
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "git diff | wc -l"
+        ],
+        "exit": 1,
+        "stdout": "",
+        "stderr": "",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "elapsed_ms": 22.7
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "git diff | wc -l"
+        ],
+        "exit": 0,
+        "stdout": "22\n",
+        "stderr": "",
+        "stdout_sha256": "f14b4987904bcb5814e4459a057ed4d20f58a633152288a761214dcd28780b56",
+        "elapsed_ms": 3.947
+      },
+      "exit_preserved": true,
+      "stdout_identical": true,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "git status --porcelain=v1 | wc -l",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "git status --porcelain=v1 | wc -l"
+        ],
+        "exit": 0,
+        "stdout": "5\n",
+        "stderr": "",
+        "stdout_sha256": "f0b5c2c2211c8d67ed15e75e656c7862d086e9245420892a7de62cd9ec582a06",
+        "elapsed_ms": 3.681
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "git status --porcelain=v1 | wc -l"
+        ],
+        "exit": 1,
+        "stdout": "",
+        "stderr": "",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "elapsed_ms": 21.613
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "git status --porcelain=v1 | wc -l"
+        ],
+        "exit": 0,
+        "stdout": "5\n",
+        "stderr": "",
+        "stdout_sha256": "f0b5c2c2211c8d67ed15e75e656c7862d086e9245420892a7de62cd9ec582a06",
+        "elapsed_ms": 4.88
+      },
+      "exit_preserved": true,
+      "stdout_identical": true,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "env LC_ALL=C git diff --exit-code",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "env LC_ALL=C git diff --exit-code"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/crlf.txt b/crlf.txt\nindex 17f2fc0..fbbee86 100644\n--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,2 +1,2 @@\n-alpha\r\n-beta\r\n+alpha\n+beta\ndiff --git a/file space.txt b/file space.txt\nindex fbbee86..8f83f91 100644\n--- a/file space.txt\t\n+++ b/file space.txt\t\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n\\ No newline at end of file\n",
+        "stderr": "",
+        "stdout_sha256": "1d8fe774a97a04b3d0d5a4f505e306c0799b3cd46c97635e5573589b3f49d26e",
+        "elapsed_ms": 3.641
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "env LC_ALL=C git diff --exit-code"
+        ],
+        "exit": 3,
+        "stdout": "env LC_ALL=C rtk git diff --exit-code",
+        "stderr": "",
+        "stdout_sha256": "9bccbbce37f978a70542c841a0f25d4b0aa73b0b368f6263012261f7cd3a619b",
+        "elapsed_ms": 24.654
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "env LC_ALL=C rtk git diff --exit-code"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/crlf.txt b/crlf.txt\nindex 17f2fc0..fbbee86 100644\n--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,2 +1,2 @@\n-alpha\r\n-beta\r\n+alpha\n+beta\ndiff --git a/file space.txt b/file space.txt\nindex fbbee86..8f83f91 100644\n--- a/file space.txt\t\n+++ b/file space.txt\t\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n\\ No newline at end of file\n",
+        "stderr": "",
+        "stdout_sha256": "1d8fe774a97a04b3d0d5a4f505e306c0799b3cd46c97635e5573589b3f49d26e",
+        "elapsed_ms": 9.368
+      },
+      "exit_preserved": true,
+      "stdout_identical": true,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "cd 'space dir' && git diff --exit-code",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "cd 'space dir' && git diff --exit-code"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/crlf.txt b/crlf.txt\nindex 17f2fc0..fbbee86 100644\n--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,2 +1,2 @@\n-alpha\r\n-beta\r\n+alpha\n+beta\ndiff --git a/file space.txt b/file space.txt\nindex fbbee86..8f83f91 100644\n--- a/file space.txt\t\n+++ b/file space.txt\t\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n\\ No newline at end of file\n",
+        "stderr": "",
+        "stdout_sha256": "1d8fe774a97a04b3d0d5a4f505e306c0799b3cd46c97635e5573589b3f49d26e",
+        "elapsed_ms": 5.907
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "cd 'space dir' && git diff --exit-code"
+        ],
+        "exit": 3,
+        "stdout": "cd 'space dir' && rtk git diff --exit-code",
+        "stderr": "",
+        "stdout_sha256": "f2ee771edce7fc39867d52c660fea83900677198436736aad1ec48e713a8679e",
+        "elapsed_ms": 23.76
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "cd 'space dir' && rtk git diff --exit-code"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/crlf.txt b/crlf.txt\nindex 17f2fc0..fbbee86 100644\n--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,2 +1,2 @@\n-alpha\r\n-beta\r\n+alpha\n+beta\ndiff --git a/file space.txt b/file space.txt\nindex fbbee86..8f83f91 100644\n--- a/file space.txt\t\n+++ b/file space.txt\t\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n\\ No newline at end of file\n",
+        "stderr": "",
+        "stdout_sha256": "1d8fe774a97a04b3d0d5a4f505e306c0799b3cd46c97635e5573589b3f49d26e",
+        "elapsed_ms": 9.949
+      },
+      "exit_preserved": true,
+      "stdout_identical": true,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "bash -c 'git diff --exit-code'",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "bash -c 'git diff --exit-code'"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/crlf.txt b/crlf.txt\nindex 17f2fc0..fbbee86 100644\n--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,2 +1,2 @@\n-alpha\r\n-beta\r\n+alpha\n+beta\ndiff --git a/file space.txt b/file space.txt\nindex fbbee86..8f83f91 100644\n--- a/file space.txt\t\n+++ b/file space.txt\t\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n\\ No newline at end of file\n",
+        "stderr": "",
+        "stdout_sha256": "1d8fe774a97a04b3d0d5a4f505e306c0799b3cd46c97635e5573589b3f49d26e",
+        "elapsed_ms": 5.99
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "bash -c 'git diff --exit-code'"
+        ],
+        "exit": 3,
+        "stdout": "bash -c 'rtk git diff --exit-code'",
+        "stderr": "",
+        "stdout_sha256": "23a7515277d9781410ecdb21603d8d60f5853991500987bc5bd92b5994786bf3",
+        "elapsed_ms": 24.655
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "bash -c 'rtk git diff --exit-code'"
+        ],
+        "exit": 1,
+        "stdout": "diff --git a/binary.dat b/binary.dat\nindex c866266..5663091 100644\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/crlf.txt b/crlf.txt\nindex 17f2fc0..fbbee86 100644\n--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,2 +1,2 @@\n-alpha\r\n-beta\r\n+alpha\n+beta\ndiff --git a/file space.txt b/file space.txt\nindex fbbee86..8f83f91 100644\n--- a/file space.txt\t\n+++ b/file space.txt\t\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+βeta\n+gamma\n\\ No newline at end of file\n",
+        "stderr": "",
+        "stdout_sha256": "1d8fe774a97a04b3d0d5a4f505e306c0799b3cd46c97635e5573589b3f49d26e",
+        "elapsed_ms": 10.279
+      },
+      "exit_preserved": true,
+      "stdout_identical": true,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "printf '%s\\n' 'a b' 'x' | rg 'a b'",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "printf '%s\\n' 'a b' 'x' | rg 'a b'"
+        ],
+        "exit": 0,
+        "stdout": "a b\n",
+        "stderr": "",
+        "stdout_sha256": "01186fcf04b4b447f393e552964c08c7b419c1ad7a25c342a0b631b1967d3a27",
+        "elapsed_ms": 4.841
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "printf '%s\\n' 'a b' 'x' | rg 'a b'"
+        ],
+        "exit": 3,
+        "stdout": "printf '%s\\n' 'a b' 'x' | rtk rg 'a b'",
+        "stderr": "",
+        "stdout_sha256": "4f70a237dff00a99e68419ad83765afde5dfef586770f5110a186ba5cd927cd1",
+        "elapsed_ms": 22.288
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "printf '%s\\n' 'a b' 'x' | rtk rg 'a b'"
+        ],
+        "exit": 0,
+        "stdout": "a b\n",
+        "stderr": "",
+        "stdout_sha256": "01186fcf04b4b447f393e552964c08c7b419c1ad7a25c342a0b631b1967d3a27",
+        "elapsed_ms": 10.681
+      },
+      "exit_preserved": true,
+      "stdout_identical": true,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "shell-equivalence",
+      "command": "git status $(printf -- '--short')",
+      "raw": {
+        "argv": [
+          "bash",
+          "-c",
+          "git status $(printf -- '--short')"
+        ],
+        "exit": 0,
+        "stdout": " M binary.dat\n M crlf.txt\n M \"file space.txt\"\nR  old-name.txt -> \"renamed-\\351\\233\\252.txt\"\n?? captured.patch\n",
+        "stderr": "",
+        "stdout_sha256": "8c54bd148439c1eb7e5cd2835627194ed05679df4910b0311f9f7e46a870730b",
+        "elapsed_ms": 5.562
+      },
+      "rewrite": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "rewrite",
+          "git status $(printf -- '--short')"
+        ],
+        "exit": 1,
+        "stdout": "",
+        "stderr": "",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "elapsed_ms": 3.896
+      },
+      "actual": {
+        "argv": [
+          "bash",
+          "-c",
+          "git status $(printf -- '--short')"
+        ],
+        "exit": 0,
+        "stdout": " M binary.dat\n M crlf.txt\n M \"file space.txt\"\nR  old-name.txt -> \"renamed-\\351\\233\\252.txt\"\n?? captured.patch\n",
+        "stderr": "",
+        "stdout_sha256": "8c54bd148439c1eb7e5cd2835627194ed05679df4910b0311f9f7e46a870730b",
+        "elapsed_ms": 4.842
+      },
+      "exit_preserved": true,
+      "stdout_identical": true,
+      "redirect_bytes_identical": null
+    },
+    {
+      "kind": "diff-bytes",
+      "name": "crlf",
+      "raw": {
+        "argv": [
+          "diff",
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/crlf-a",
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/crlf-b"
+        ],
+        "exit": 1,
+        "stdout": "1c1\n< x\r\n---\n> x\n",
+        "stderr": "",
+        "stdout_sha256": "4ade3e7d5a8091edb60c054019d800642e696525fd6b8abce6c127e684c87768",
+        "elapsed_ms": 1.424
+      },
+      "rtk": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "diff",
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/crlf-a",
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/crlf-b"
+        ],
+        "exit": 1,
+        "stdout": "files differ only in whitespace or line endings (line endings: 1 CRLF vs 0 CRLF)\n",
+        "stderr": "",
+        "stdout_sha256": "c8393c897b935ff64973c2eb4dda298a1fefa559b7087bcaa905926134ad340c",
+        "elapsed_ms": 6.731
+      }
+    },
+    {
+      "kind": "diff-bytes",
+      "name": "no-final-newline",
+      "raw": {
+        "argv": [
+          "diff",
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/no-final-newline-a",
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/no-final-newline-b"
+        ],
+        "exit": 1,
+        "stdout": "1c1\n< x\n---\n> x\n\\ No newline at end of file\n",
+        "stderr": "",
+        "stdout_sha256": "e18ca65f47da1669acb38a94b08efcf497ef960dccb6d67027ea0ee91e8c2400",
+        "elapsed_ms": 1.724
+      },
+      "rtk": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "diff",
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/no-final-newline-a",
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/no-final-newline-b"
+        ],
+        "exit": 1,
+        "stdout": "files differ only in whitespace or line endings (trailing newline: present vs absent)\n",
+        "stderr": "",
+        "stdout_sha256": "0f84566cc935f31a24eebdab3d39c3b7253dd3e30fcf2b4c82b8af85a87f744d",
+        "elapsed_ms": 6.669
+      }
+    },
+    {
+      "kind": "diff-bytes",
+      "name": "nonutf",
+      "raw": {
+        "argv": [
+          "diff",
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/nonutf-a",
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/nonutf-b"
+        ],
+        "exit": 1,
+        "stdout": "1c1\n< \\xffx\n\\ No newline at end of file\n---\n> \\xffy\n\\ No newline at end of file\n",
+        "stderr": "",
+        "stdout_sha256": "67d7fedd0878e079d429efece5782fd7521dd82e577aca7c1c0652ae9e84210c",
+        "elapsed_ms": 1.339
+      },
+      "rtk": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "diff",
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/nonutf-a",
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/nonutf-b"
+        ],
+        "exit": 1,
+        "stdout": "Binary files /workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/nonutf-a and /workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/nonutf-b differ\n",
+        "stderr": "",
+        "stdout_sha256": "dc3aca0530fc9fdbfe1a60097207deb6b2cd8166c54fc5a493c57a7b1c078eff",
+        "elapsed_ms": 6.309
+      }
+    },
+    {
+      "kind": "pipe",
+      "name": "binary-passthrough",
+      "input_sha256": "6375a1044d294c4efc761ce86b9c48d451d11bcf9ef4b586f56d833edb18f6da",
+      "byte_identical": true,
+      "result": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "pipe",
+          "--passthrough"
+        ],
+        "exit": 0,
+        "stdout": "\\xff\u0000\r\n",
+        "stderr": "",
+        "stdout_sha256": "6375a1044d294c4efc761ce86b9c48d451d11bcf9ef4b586f56d833edb18f6da",
+        "elapsed_ms": 1.977
+      }
+    },
+    {
+      "kind": "pipe",
+      "name": "invalid-utf8-filter",
+      "input_sha256": "6375a1044d294c4efc761ce86b9c48d451d11bcf9ef4b586f56d833edb18f6da",
+      "byte_identical": false,
+      "result": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "pipe",
+          "--filter",
+          "git-diff"
+        ],
+        "exit": 1,
+        "stdout": "",
+        "stderr": "rtk: Failed to read stdin: stream did not contain valid UTF-8\n",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "elapsed_ms": 1.743
+      }
+    },
+    {
+      "kind": "pipe",
+      "name": "malformed-json",
+      "input_sha256": "c3e7d1b00a65589b59f816c0b0b668d795a3c28123697d5ab9555bdb8aa04604",
+      "byte_identical": true,
+      "result": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "pipe"
+        ],
+        "exit": 0,
+        "stdout": "{broken json\n",
+        "stderr": "",
+        "stdout_sha256": "c3e7d1b00a65589b59f816c0b0b668d795a3c28123697d5ab9555bdb8aa04604",
+        "elapsed_ms": 3.038
+      }
+    },
+    {
+      "kind": "pipe",
+      "name": "unicode-crlf-no-final",
+      "input_sha256": "e2ccb531dab8df7b213b6f0b02a3cae3006398f3b62810e1bf5a29f928208c06",
+      "byte_identical": true,
+      "result": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "pipe"
+        ],
+        "exit": 0,
+        "stdout": "α\r\nβ",
+        "stderr": "",
+        "stdout_sha256": "e2ccb531dab8df7b213b6f0b02a3cae3006398f3b62810e1bf5a29f928208c06",
+        "elapsed_ms": 2.501
+      }
+    },
+    {
+      "kind": "rust-producer",
+      "name": "warning-success",
+      "raw": {
+        "argv": [
+          "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/cargo",
+          "check",
+          "--offline"
+        ],
+        "exit": 0,
+        "stdout": "",
+        "stderr": "    Checking rtk-research-fixture v0.1.0 (/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/rust-fixture)\nwarning: unused variable: `unused`\n --> src/lib.rs:1:31\n  |\n1 | pub fn value() -> usize { let unused = 7; 2 }\n  |                               ^^^^^^ help: if this is intentional, prefix it with an underscore: `_unused`\n  |\n  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default\n\nwarning: `rtk-research-fixture` (lib) generated 1 warning (run `cargo fix --lib -p rtk-research-fixture` to apply 1 suggestion)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.11s\n",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "elapsed_ms": 122.748
+      },
+      "actual": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "cargo",
+          "check",
+          "--offline"
+        ],
+        "exit": 0,
+        "stdout": "",
+        "stderr": "warning: unused variable: `unused`\n --> src/lib.rs:1:31\n  |\n1 | pub fn value() -> usize { let unused = 7; 2 }\n  |                               ^^^^^^ help: if this is intentional, prefix it with an underscore: `_unused`\n  |\n  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default\ncargo check: 0 errors, 1 warnings (0 crates)\n",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "elapsed_ms": 14.746
+      },
+      "exit_preserved": true,
+      "recalls": []
+    },
+    {
+      "kind": "rust-producer",
+      "name": "test-failure",
+      "raw": {
+        "argv": [
+          "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/cargo",
+          "test",
+          "--offline"
+        ],
+        "exit": 101,
+        "stdout": "\nrunning 1 test\ntest tests::deliberate_failure ... FAILED\n\nfailures:\n\n---- tests::deliberate_failure stdout ----\n\nthread 'tests::deliberate_failure' (189) panicked at src/lib.rs:2:60:\nassertion `left == right` failed\n  left: 2\n right: 3\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    tests::deliberate_failure\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+        "stderr": "   Compiling rtk-research-fixture v0.1.0 (/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-rtk/fixture/rust-fixture)\nwarning: unused variable: `unused`\n --> src/lib.rs:1:31\n  |\n1 | pub fn value() -> usize { let unused = 7; 2 }\n  |                               ^^^^^^ help: if this is intentional, prefix it with an underscore: `_unused`\n  |\n  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default\n\nwarning: `rtk-research-fixture` (lib) generated 1 warning (run `cargo fix --lib -p rtk-research-fixture` to apply 1 suggestion)\nwarning: `rtk-research-fixture` (lib test) generated 1 warning (1 duplicate)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s\n     Running unittests src/lib.rs (target/debug/deps/rtk_research_fixture-591ebbc8f57e68f5)\nerror: test failed, to rerun pass `--lib`\n",
+        "stdout_sha256": "f687c4bdb056faac24f2fb229a5aebd755bf092afa290536068e1a8573efb4d2",
+        "elapsed_ms": 168.603
+      },
+      "actual": {
+        "argv": [
+          "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+          "cargo",
+          "test",
+          "--offline"
+        ],
+        "exit": 101,
+        "stdout": "---- tests::deliberate_failure stdout ----\n\nthread 'tests::deliberate_failure' (198) panicked at src/lib.rs:2:60:\nassertion `left == right` failed\n  left: 2\n right: 3\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\n[full output: rtk recall d8f3a8b0f89a]\n",
+        "stderr": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n",
+        "stdout_sha256": "d5c52db99c81d0417faeb5160d2123df41e6513ce15b3f0c993f7a5775548202",
+        "elapsed_ms": 24.499
+      },
+      "exit_preserved": true,
+      "recalls": [
+        {
+          "argv": [
+            "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-full/rtk",
+            "recall",
+            "d8f3a8b0f89a"
+          ],
+          "exit": 0,
+          "stdout": "\nrunning 1 test\ntest tests::deliberate_failure ... FAILED\n\nfailures:\n\n---- tests::deliberate_failure stdout ----\n\nthread 'tests::deliberate_failure' (198) panicked at src/lib.rs:2:60:\nassertion `left == right` failed\n  left: 2\n right: 3\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    tests::deliberate_failure\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\nwarning: unused variable: `unused`\n --> src/lib.rs:1:31\n  |\n1 | pub fn value() -> usize { let unused = 7; 2 }\n  |                               ^^^^^^ help: if this is intentional, prefix it with an underscore: `_unused`\n  |\n  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default\n\nwarning: `rtk-research-fixture` (lib) generated 1 warning (run `cargo fix --lib -p rtk-research-fixture` to apply 1 suggestion)\nwarning: `rtk-research-fixture` (lib test) generated 1 warning (1 duplicate)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s\n     Running unittests src/lib.rs (target/debug/deps/rtk_research_fixture-591ebbc8f57e68f5)\nerror: test failed, to rerun pass `--lib`\n",
+          "stderr": "",
+          "stdout_sha256": "e0ce34de0e699b6aadf5800894b8c8cafd24a7ce70b475aa10ed6f0481b05efb",
+          "elapsed_ms": 4.75
+        }
+      ]
+    },
+    {
+      "kind": "signal",
+      "exit": -15,
+      "sentinel_preserved": true,
+      "stdout": "cargo clippy: 1 errors, 0 warnings\n\nErrors:\n  error[E0308]: sentinel before signal\n[full output: rtk recall 631b92eed99a]\n",
+      "stderr": ""
+    }
+  ]
+}

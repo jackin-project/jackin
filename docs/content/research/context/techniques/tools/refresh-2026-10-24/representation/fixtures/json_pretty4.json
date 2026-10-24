@@ -1,0 +1,164 @@
+[
+    {
+        "record_identifier": "acct-00000",
+        "display_name": "Ana",
+        "is_active": true,
+        "balance": 0.0,
+        "nullable_note": null,
+        "postal_code": "00000",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00001",
+        "display_name": "李娜",
+        "is_active": false,
+        "balance": 12.75,
+        "nullable_note": "",
+        "postal_code": "00001",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00002",
+        "display_name": "Zoë",
+        "is_active": true,
+        "balance": 25.5,
+        "nullable_note": "keep NOT disabled",
+        "postal_code": "00002",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00003",
+        "display_name": "comma,quote\"",
+        "is_active": false,
+        "balance": 38.25,
+        "nullable_note": null,
+        "postal_code": "00003",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00004",
+        "display_name": "line\nbreak",
+        "is_active": true,
+        "balance": 51.0,
+        "nullable_note": "",
+        "postal_code": "00004",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00005",
+        "display_name": "pipe|tab\t",
+        "is_active": false,
+        "balance": 63.75,
+        "nullable_note": "keep NOT disabled",
+        "postal_code": "00005",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00006",
+        "display_name": "Ana",
+        "is_active": true,
+        "balance": 76.5,
+        "nullable_note": null,
+        "postal_code": "00006",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00007",
+        "display_name": "李娜",
+        "is_active": false,
+        "balance": 89.25,
+        "nullable_note": "",
+        "postal_code": "00007",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00008",
+        "display_name": "Zoë",
+        "is_active": true,
+        "balance": 102.0,
+        "nullable_note": "keep NOT disabled",
+        "postal_code": "00008",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00009",
+        "display_name": "comma,quote\"",
+        "is_active": false,
+        "balance": 114.75,
+        "nullable_note": null,
+        "postal_code": "00009",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00010",
+        "display_name": "line\nbreak",
+        "is_active": true,
+        "balance": 127.5,
+        "nullable_note": "",
+        "postal_code": "00010",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00011",
+        "display_name": "pipe|tab\t",
+        "is_active": false,
+        "balance": 140.25,
+        "nullable_note": "keep NOT disabled",
+        "postal_code": "00011",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00012",
+        "display_name": "Ana",
+        "is_active": true,
+        "balance": 153.0,
+        "nullable_note": null,
+        "postal_code": "00012",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00013",
+        "display_name": "李娜",
+        "is_active": false,
+        "balance": 165.75,
+        "nullable_note": "",
+        "postal_code": "00013",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00014",
+        "display_name": "Zoë",
+        "is_active": true,
+        "balance": 178.5,
+        "nullable_note": "keep NOT disabled",
+        "postal_code": "00014",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00015",
+        "display_name": "comma,quote\"",
+        "is_active": false,
+        "balance": 191.25,
+        "nullable_note": null,
+        "postal_code": "00015",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00016",
+        "display_name": "line\nbreak",
+        "is_active": true,
+        "balance": 204.0,
+        "nullable_note": "",
+        "postal_code": "00016",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    },
+    {
+        "record_identifier": "acct-00017",
+        "display_name": "pipe|tab\t",
+        "is_active": false,
+        "balance": 216.75,
+        "nullable_note": "keep NOT disabled",
+        "postal_code": "00017",
+        "timestamp_utc": "2026-10-24T00:30:00Z"
+    }
+]

@@ -1,0 +1,1 @@
+logs.csv → level ≥ ERROR → top3 causes ∧ exact lines. ¬drop negations, account IDs, permission failures.

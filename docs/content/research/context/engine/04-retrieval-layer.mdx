@@ -1,81 +1,89 @@
 ---
-title: "04 — Retrieval layer (L1)"
-description: "Design for query-driven repository retrieval, bounded context packing, read stubs, and recovery of omitted source material."
+title: "04 — Retrieval layer"
+description: "Exact source selection, current backend alternatives, index freshness, context epochs, and native editing prerequisites."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-Bounded lexical, structural, semantic, and documentation retrieval should replace whole-file reads only when measured task evidence shows a net quality-preserving win.
-Prevention beats compression: tokens never loaded cost nothing and improve quality (context-rot literature; the dossier's negative-cost set is dominated by input-architecture levers). L1 gives the agent bounded, task-shaped retrieval so it stops reading whole files — the lever measured locally at −91% (outline vs read) and −98% (symbol search vs read), and 12–53× for markdown sections.
+Snapshot **2026-10-24 01:15:00 UTC**. Prefer exact, bounded source selection over reading irrelevant material, while measuring the extra schemas, indexing and search turns it creates. Keep native tools as the baseline and exact-read escape. Compare restricted LeanCTX and LemonCrow Runtime Lite independently; neither is a current default winner. A shared source index never implies shared model memory.
 
 ## Question and scope
 
-How should jackin❯ retrieve the smallest sufficient repository and memory context for each task?
+Which retrieval boundary improves repository discovery and complete edits while preserving file authority, dirty state, recall and native read-before-edit requirements? Retrieval-only and full runtime/persona replacement are distinct experiments.
 
 ## Method
 
-The analysis compares lexical, structural, and semantic retrieval against the repository’s scoped-rule and memory surfaces, then assigns each source a trigger, budget, provenance record, and fallback.
+Reassess the old modality/verb/ranking plan against current product code and worktree/epoch probes, current adjacent primitives and Jackin's existing process/MCP setup. No retrieval server is installed in production by this PR. [Product comparison](/research/context/tools/05-head-to-head/), [adjacent tools](/research/context/techniques/03-prior-art-and-market-scan/).
 
 ## Findings
 
-### The four retrieval modalities and their engines
+### Modalities and current alternatives
 
-| Modality | Engine | Form | Question it owns |
-|---|---|---|---|
-| Lexical (files, content, literals) | **fff** — `fff-search` + `fff-query-parser` crates, one `SharedFilePicker` per workspace mount, frecency LMDB under `/jackin/state/context/index/` | current design candidate `=0.10.3`, MIT; API/dependency review required | "find the file / the string" — typo-tolerant, frecency+git ranked |
-| Structural (entities, diffs, impact) | **sem-core** crate — entity graph, structural-hash diff, bounded context surfaces | current design candidate `=0.21.0`, MIT OR Apache-2.0; API/dependency review required | "what is this function / what changed / what breaks / entity-level blame" |
-| Markdown/docs (sections, TOC, code blocks) | **mq** — `mq-lang` (+`sync`, no `http-import`) compiled canned programs + `mq-markdown` for chunking | current design candidate `=0.8.2`, MIT; API/dependency review required | "which section of this large doc answers the question" — select structure before sending full prose |
-| Semantic (fuzzy concept recall) | **none by default** | — | Deliberately absent: embeddings for code navigation never met the ≥20% bar ([current retrieval-tools comparison](/research/context/tools/06-combining/)); optional docs-corpus hybrid index stays a role-level experiment |
+| Need | Native baseline / reusable option | Qualification boundary |
+|---|---|---|
+| Locate paths and literal text | Existing host tools, ripgrep; fff search primitives | Ignore/private-file policy, Unicode, path roots, match completeness and cold scan cost |
+| Navigate symbols and sections | Native exact reads plus tree-sitter; LeanCTX/LemonCrow Lite; narrowly selected language services | Parser/version coverage, source ranges and stale overlays; syntax does not establish semantic call/type completeness |
+| Follow references and affected code | Native language tooling, sem/codedb or language-server integration | Macro/generated-code/dynamic dispatch gaps; never treat a partial graph as proof all callers were found |
+| Read structured documentation/data | Exact section/range reads, mq or an allowed parser | Query/IO authority, exact text requirements and current parser features |
+| Recover an omitted observation | Jackin artifact broker | Historical captured bytes and scope; not a fresh source read or native edit receipt |
 
-Compiler-grade truth stays with the existing role stack: `rust-analyzer` (LSP) and `ast-grep` (CLI) remain the routing targets for definitions/references and structural rewrites — the engine's verbs complement, never replace, them (the architect role's routing decision, inherited).
+The refreshed adjacent register pins fff 0.11.0, sem 0.28.1 and mq 0.9.3 rather than retaining old versions. They are potential primitives, not interchangeable adaptive context runtimes. Full Serena 2.1.0 is GPL-3.0-or-later, while its separable SolidLSP source retains MIT; jCodeMunch 1.108.396 uses current Dual Use terms. Do not assume the old permissive extraction decisions still apply. [Current adjacent source/license assessment](/research/context/techniques/03-prior-art-and-market-scan/).
 
-### Query-verb surface (codedb-shaped, MCP + CLI)
+### Restricted backend treatments
 
-A small lazy-advertised set (lean-ctx's 5-tool lesson: default-advertise few, keep the rest callable through one invoker; schema rent is CI-gated by INV-6):
+**LeanCTX 3.11.4:** compare the released MCP process with a server-enforced read-only surface, fixed root and a distinct context consumer. The preview unpublished `lean-ctx-embed` facade is another arm: it owns a Tokio runtime and configures process-wide state directories through a one-time initializer. Two facade objects are not demonstrated independent tenants. Its read-tool allowlist is real; the broader MCP server's steering-off option alone does not disable every execution/edit dispatch. [LeanCTX dossier](/research/context/tools/04-leanctx-design/).
 
-- `ctx_search` — lexical content/path search (fff underneath): `paths_only`, `compact`, offset pagination with a `more results … offset=N` tail line, weak-match flagging, import-line de-noise.
-- `ctx_read` — mode-gated read (L2 §native-read): `signatures` default for code, `section:` for markdown, `unchanged:HASH` short-circuit via `if_hash`.
-- `ctx_doc` — markdown verbs: `--outline` (TOC), `--section <pattern>`, `--code [lang]`, `--links`, `--skeleton` (headings+code); size-gated (files under ~2 KB return whole — two-step retrieval only pays above that).
-- `ctx_impact` — entity-level blast radius (sem): deps/dependents/transitive + affected-test folding ("covered by N tests" one-liners).
-- `ctx_context` — the task-shaped composer: NL task → identifier extraction → one budget-packed block (symbols + ranked files + callers + snippets) with value-ordered packing under a token budget and one-line markers for omitted sections (codedb's `handleContext` two-step pack — the best single design in that codebase).
-- `ctx_expand` — dereference any handle (CCR hash, read-stub, section handle, omitted-tail marker).
+The executed lifecycle probe returned a 55-byte unchanged stub after a prior full read for an unknown/custom consumer, including after restart without a compaction marker. A different consumer returned content, and the Claude-specific path had mitigation. These are conditional results, not a universal stale-read claim. Until a host epoch can be bound reliably, use explicit full/raw behavior and disable omission-based stubs.
 
-Output-shaping idioms applied uniformly (the grammar of "spend tokens only when forced"): bounded result counts, `file:line` + enclosing-symbol tags, disclosed omissions (`OmittedTail`, `+N more`), escalation footers naming the exact next verb, frecency rendered as words (`hot`/`warm`), compact per-line trees instead of JSON (sem measured 3.7× fewer tokens than pretty JSON; [techniques 11 — Multi-agent protocols and subagent compression](/research/context/techniques/11-multi-agent-protocols/): labeled compact lines beat JSON by 35%).
+**LemonCrow 0.8.0 Runtime Lite:** compare its public lexical/symbol/import retrieval with explicit worktree roots and native execution/editing retained. Parallel-root tests, launch-relative reads and mixed-root refusal passed in the selected library path. The current public Lite engine differs from historical fuller runtime benchmarks and legacy `mcp_server.py` state. Model2Vec is optional, not needed for the stdlib lexical baseline. [LemonCrow dossier](/research/context/tools/10-lemoncrow-design/).
 
-### Ranking
+LemonCrow advertises shell/edit/read/search/web-fetch tools and still accepts an unadvertised `grep` call. Hiding schemas is not access control. A restricted adapter must reject every undeclared operation at dispatch and use filesystem confinement. Exclude shell/edit/web fetching from the retrieval-only arm and turn off output-delta behavior unless recovery and epochs are independently qualified.
 
-Deterministic, additive-never-filter, every signal kill-switchable (codedb's eval-tuned stack): BM25 core + eponymy/stem boost + path-class priors (tests/vendored down-weighted) + tanh size prior + lexical-saturation penalty + graph-distance boost + git co-change boost (via `gix`, no shell-out) + fff frecency fusion. No learned ranker.
+### Proposed query surface
 
-### The doctrine file
+Use a small stable logical interface: locate paths, search literal text, inspect a symbol/section, read an exact range and recover an observation. A backend may combine operations or defer schemas if the host supports it; do not force five always-present tools merely because the design table has five needs.
 
-Retrieval only saves tokens if the agent uses it correctly, so the role instruction file carries a compiled routing section (one source, per-runtime paths — the architect role's consolidation pattern): fff for files/literals, `ctx_impact`/`rust-analyzer` for relationships, `ast-grep` for syntax shapes, `rg` for plain text ("the common case — do not force a structural tool on it"), `ctx_doc` before reading any markdown file over the size gate, "after two searches, read", "never dump trees/snapshots unbounded". The engine's ledger measures adherence (native-read share, search-then-read chains, bounce rate) so doctrine failures are visible, not vibes.
+Every response identifies canonical root, source generation/content hash, path/range, representation (`exact`, `outline`, `selected`) and truncation/omissions. Explicit exact-read requests cannot silently return an outline or unchanged stub. A query with no matches reports the searched scope and limit, not universal absence. Relative paths resolve to the admitted request/worktree root, never a shared “last cwd.”
 
-### Additional verified mechanisms
+Measure schema, annotations and server instructions after actual host serialization. LemonCrow's five advertised schemas measured 4,058 UTF-8 JSON bytes and LeanCTX's twelve 10,608 in their probes; these are byte counts, not universal prompt-token costs. Deferred discovery can reduce steady exposure but adds discovery/tool-call costs. [Schema and instruction techniques](/research/context/techniques/).
 
-- **Config-fingerprinted cache keys**: every ranking kill-switch and mode default is hashed into result-cache keys, so a config toggle can never serve stale-config results (codedb) — a structural fix for a whole bug class.
-- **ConvergenceGovernor**: an 8-slot ring of recent call-signature hashes per session; three identical calls inside the window inject a one-line nudge naming a better verb — ~20 lines that break agent retry-loops at the tool layer (codedb).
-- **Warmup replay through the exact handler path**: top-N repeated queries from a bounded log tail replayed through the same code path with the same defaults at index start, so cache keys match live traffic (codedb; motivated by its measured "62% of calls are exact repeats").
-- **Mode-default table with a no-lossy-override guard**: markdown/docs/config are **never compressed by default**; learned/auto modes may pick a *more* faithful mode than the static default but never a lossier one (lean-ctx — encodes the instructions-must-survive-verbatim failure mode).
-- **Typed mode enum** with byte-stable `Display` round-trip and legacy-predicate-pinned tests — removes the stringly-mode bug class (lean-ctx #528 pattern).
+### Ranking and task policy
 
-### Index lifecycle
+Start with explicit path/symbol/range requests and lexical matches. Structural or semantic ranking is a candidate improvement when measured recall supports it. Cap result size, report omitted matches, diversify paths where helpful and offer a straightforward widening operation. Ranking priors such as recently edited files, tests, import distance or “top N” do not authorize omission of required security/configuration/caller changes.
 
-Index once at capsule launch (parallel build over the workspace mounts), then incremental: `notify`-based watcher patches fff and sem indexes; corpus-signature freshness (content hash over the file set) rather than TTLs decides rebuilds; snapshot to `/jackin/state/context/index/` (rkyv/postcard + zstd) for instant warm restarts of the capsule daemon. Memory budget per capsule enforced via content-cache budgets (fff `ContentCacheBudget`; mmap + CLOCK-cache borrowing rather than whole-content RAM residency — codedb's 1.7 GB steady-state is the anti-lesson).
+Deliver brief task guidance: search narrowly, inspect definitions and affected callers, then read exact ranges before editing; broaden when evidence is incomplete. Do not enforce fixed “two searches then outline,” size thresholds, restart counts or turn cutoffs without workload evidence. A convergence warning can flag repeated identical searches, but it must not stop required investigation or silently downgrade model effort.
+
+### Index and exposure lifecycle
+
+| Event | Source/index action | Exposure action |
+|---|---|---|
+| File edit, dirty overlay or rename | Invalidate affected content/ranges; reconcile filesystem before responding | New content hash cannot inherit old exposure |
+| Branch/worktree change | Bind new root/tree generation; invalidate graph assumptions | New source scope, even if filenames coincide |
+| Compaction or context reset | Index may remain valid | Start a new epoch unless retained exposure is explicitly proven |
+| Resume, fork or different agent | Revalidate source generation and persisted index | Require consumer identity/epoch; do not inherit process-global seen flags |
+| Backend crash/restart | Verify on-disk format/configuration and incomplete transactions | Unknown delivery stays unknown; never infer exposure from a warm index |
+| Permission/ignore-policy change | Rebuild or filter to new admitted security scope | Revoke access to artifacts no longer authorized under the policy |
+
+Immutable index reuse may amortize work across compatible consumers. Mutable exposure, query history and task memory need their own scoped ownership. Watchers can reduce staleness but do not prove freshness under missed events, untracked files, symlink changes or concurrent writers. Retrieval must check generation/hash at the point of use and preserve native stale-edit protection. [State design](/research/context/engine/07-memory-and-state/).
 
 ## Implications for jackin❯
 
-These findings define the retrieval layer (l1) contract for jackin❯; any implementation must preserve the acceptance gates and boundaries above.
+Implement a restricted process adapter before embedding a large runtime. Register only the selected capability in the correct agent home; enforce allowlists in the server and allowed roots at the OS boundary. Keep source paths, errors, native execution and edit receipts intact. One per-worktree/consumer worker is the conservative first configuration for process-global upstream state; share immutable index storage only after explicit concurrency tests.
+
+The smallest decisive comparison is native search/exact-read versus each restricted backend on the same pinned repositories and fixed host/model/effort. Include small fixes, multi-crate refactors, documentation, TypeScript/Java discovery, generated/macro-heavy code, dirty files and simultaneous worktrees. Measure recall of required files, accepted patches, exact-read/recovery calls, schema overhead, cold index time, warm latency, CPU/RSS/disk and all attempted work. A warmed tiny fixture is not the cold behavior of a large repository.
 
 ## Limitations and unknowns
 
-The design remains bounded by the evidence and acceptance gates above; volatile dependencies and provider behavior require revalidation before implementation.
+No task-level benefit, native edit-receipt compatibility, adversarial symlink-race safety or cross-platform lifecycle has been established for the proposed adapter. LeanCTX's facade build was interrupted during shared disk pressure; it is neither a passing integration build nor an upstream build defect. LemonCrow Lite package correspondence does not make its advanced hosted engine reproducible. The old retrieval percentage/latency multipliers and fixed small-file thresholds are retired as default design guarantees.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Current pinned backend sources, fixture outputs and exact measurement units are linked in the LeanCTX/LemonCrow dossiers. The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/README.md">architecture record</RepoFile> captures the independently inspected state constraints and prior-heading reconciliation.
 
 ## Related work
 
-- [Context engine dossier](/research/context/engine/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Token-optimization tools](/research/context/tools/)
+- [Observation pipeline](/research/context/engine/03-observation-pipeline/)
+- [Reuse matrix](/research/context/engine/09-reuse-decision-matrix/)
+- [Validation harness](/research/context/techniques/16-validation-harness/)

@@ -1,0 +1,31 @@
+{
+  "command": [
+    "git",
+    "hook",
+    "run",
+    "pre-commit"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+  "head": "9971e26249c2a601912419c84aad99980f88d28b",
+  "staged_tree": "30924504c846f613f191f7ceedda056b547755dd",
+  "environment_overrides": {
+    "GIT_AUTHOR_NAME": "Alexey Zhokhov",
+    "GIT_AUTHOR_EMAIL": "alexey@zhokhov.com",
+    "GIT_COMMITTER_NAME": "Alexey Zhokhov",
+    "GIT_COMMITTER_EMAIL": "alexey@zhokhov.com"
+  },
+  "scope": "Unmodified repository hook; no skipped steps, no scanner/baseline changes. Explicit verified Git identity permits staged scanner's private commit-tree enumeration.",
+  "started_utc": "2026-10-24T09:13:17.926868+00:00",
+  "merge_parents": [
+    "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
+  ],
+  "finished_utc": "2026-10-24T09:13:23.982652+00:00",
+  "duration_seconds": 6.056,
+  "exit_code": 1,
+  "log": "/workspace/scratch/1335a158b2a9/tooling/logs/final-publication-pre-commit.log",
+  "log_sha256": "05f88af2b99c9ebf462c7bba558e540325efd692e392141436a7bc9c38e9e15e",
+  "staged_tree_after": "30924504c846f613f191f7ceedda056b547755dd",
+  "kingfisher_blobs_scanned": 391,
+  "enumeration_errors": false,
+  "passed": false
+}

@@ -1,0 +1,92 @@
+{
+  "execution_date": "2026-10-24",
+  "external_cutoff_utc": "2026-10-24T01:15:00Z",
+  "model_policy": "All three real agents inherited the parent model and reasoning effort. No override requested. Backend build identifier not independently exposed.",
+  "concurrency_limit": 4,
+  "agents": [
+    {
+      "agent": "/root/caveman_ponytail",
+      "authored": [
+        "Caveman",
+        "Ponytail",
+        "10 provider chapters",
+        "4 representation/output chapters",
+        "market/literature chapters03/24"
+      ],
+      "reviewed": [
+        "RTK/LeanCTX boundaries",
+        "provider_usage/session_cost fixtures",
+        "central integration synthesis"
+      ],
+      "executed": "84 selected Caveman Node tests,22 selected Ponytail Node tests; selected CGO/non-CGO Go engine suites; recovery/warming mocks;14 representation checks; independent RTK filter and accounting fixtures.",
+      "evidence": [
+        "../caveman-ponytail/README.md",
+        "../providers/README.md",
+        "../representation/README.md",
+        "../representation/independent-review/README.md",
+        "../market-literature/README.md"
+      ]
+    },
+    {
+      "agent": "/root/headroom_lemoncrow",
+      "authored": [
+        "Headroom",
+        "LemonCrow",
+        "11 engine chapters",
+        "tools11 integration",
+        "retrieval/adoption/coverage chapters08/17/18"
+      ],
+      "reviewed": [
+        "RTK/LeanCTX APIs and env precondition",
+        "Lemon445-row key join",
+        "representation/host chapters",
+        "Caveman/Ponytail",
+        "post-cutoff main overlay",
+        "all56 changed rendered routes"
+      ],
+      "executed": "Headroom no-ML build and18 selected wheel tests;45 Lemon Runtime Lite tests; worktree/spill/JSON/CCR fixtures; source dispatch probe; minimal SQLite constraints; independent445-row Lemon join.",
+      "evidence": [
+        "../headroom-lemoncrow/README.md",
+        "../jackin-architecture/README.md",
+        "../jackin-architecture/independent-review.md"
+      ]
+    },
+    {
+      "agent": "/root/rtk_leanctx",
+      "authored": [
+        "RTK",
+        "LeanCTX",
+        "tools07 evidence",
+        "economics/baseline/composition/evaluation/latency/governance",
+        "frontier chapters14/26/27",
+        "offline accounting tools"
+      ],
+      "reviewed": [
+        "provider/cache/representation contracts",
+        "Headroom/LemonCrow runtime claims",
+        "strict full-scope coverage reconciliation"
+      ],
+      "executed": "286 RTK engine unit tests and1 doc test; full/OSS fixtures; Lean MCP reset/resume/branch/exact-read fixtures;17 accounting tests; historical raw-data aggregation; independent runtime/package probes.",
+      "evidence": [
+        "../rtk-leanctx/README.md",
+        "../evaluation/README.md",
+        "../evaluation/provider-representation-review.md",
+        "../evaluation/runtime-independent-review.md"
+      ]
+    }
+  ],
+  "coordinator": [
+    "Scope/history/PR/CI recovery",
+    "adjacent and literature primary research",
+    "contradiction resolution and central docs",
+    "coverage inventory and verification",
+    "normal main synchronization and PR1205 publication"
+  ],
+  "unexecuted": [
+    "Paid inference",
+    "subscription task sessions",
+    "native host model-bound replacement",
+    "current six-way accepted-task comparison"
+  ],
+  "status_note": "Authored and executed evidence is recorded in the linked manifests. Render and final central-review completion are reported with their final verification records; this assignment ledger alone is not a passing result."
+}

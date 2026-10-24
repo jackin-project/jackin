@@ -1,0 +1,54 @@
+{
+  "executed_utc": "2026-10-24T08:36:24.310453+00:00",
+  "parent": "9971e26249c2a601912419c84aad99980f88d28b",
+  "tree": "d4c970e041674a204a3e9f287763c2e6151225eb",
+  "cases": [
+    {
+      "case": "isolated-default",
+      "command": [
+        "git",
+        "-C",
+        "/tmp/jackin-kingfisher-identity-b0qdipk_",
+        "commit-tree",
+        "d4c970e041674a204a3e9f287763c2e6151225eb",
+        "-m",
+        "kingfisher staged snapshot",
+        "-p",
+        "9971e26249c2a601912419c84aad99980f88d28b"
+      ],
+      "exit_code": 128,
+      "stdout": "",
+      "stderr": "Author identity unknown\n\n*** Please tell me who you are.\n\nRun\n\n  git config --global user.email \"you@example.com\"\n  git config --global user.name \"Your Name\"\n\nto set your account's default identity.\nOmit --global to set the identity only in this repository.\n\nfatal: unable to auto-detect email address (got 'root@32aa7a4f26c2.(none)')\n",
+      "environment_overrides": {
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null"
+      }
+    },
+    {
+      "case": "explicit-session-identity",
+      "command": [
+        "git",
+        "-C",
+        "/tmp/jackin-kingfisher-identity-b0qdipk_",
+        "commit-tree",
+        "d4c970e041674a204a3e9f287763c2e6151225eb",
+        "-m",
+        "kingfisher staged snapshot",
+        "-p",
+        "9971e26249c2a601912419c84aad99980f88d28b"
+      ],
+      "exit_code": 0,
+      "stdout": "9c7131fa141d12f2f78c0a1274295763c35cad73\n",
+      "stderr": "",
+      "environment_overrides": {
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_AUTHOR_NAME": "Alexey Zhokhov",
+        "GIT_AUTHOR_EMAIL": "alexey@zhokhov.com",
+        "GIT_COMMITTER_NAME": "Alexey Zhokhov",
+        "GIT_COMMITTER_EMAIL": "alexey@zhokhov.com"
+      }
+    }
+  ],
+  "interpretation": "The repository snapshot launcher disables global/system Git configuration and does not copy local user identity. Its temporary commit-tree fails without an identity and succeeds with the verified session identity supplied in the command environment. This probe does not itself scan content."
+}

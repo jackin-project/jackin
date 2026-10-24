@@ -1,0 +1,65 @@
+[
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {},
+        "clientInfo": {
+          "name": "jackin-research",
+          "version": "0.1"
+        }
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {
+          "tools": {
+            "listChanged": true
+          }
+        },
+        "serverInfo": {
+          "name": "lean-ctx",
+          "version": "3.11.4"
+        }
+      }
+    },
+    "elapsed_ms": 8.576
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "tools/call",
+      "params": {
+        "name": "ctx_read",
+        "arguments": {
+          "path": "fixture.rs",
+          "mode": "auto"
+        }
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "--- AUTO CONTEXT ---\nPROJECT OVERVIEW  1 files  0 edges  scanned 0m ago\n\n/  fixture.rs\n\n\n--- END AUTO CONTEXT ---\n\nF1=fixture.rs [unchanged 300L · fresh=true to re-read]"
+          }
+        ],
+        "isError": false,
+        "_meta": {
+          "cache_hint": "ephemeral"
+        }
+      }
+    },
+    "elapsed_ms": 276.397
+  }
+]

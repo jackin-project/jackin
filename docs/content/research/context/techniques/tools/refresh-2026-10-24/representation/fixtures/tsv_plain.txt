@@ -1,0 +1,22 @@
+record_identifier	display_name	is_active	balance	nullable_note	postal_code	timestamp_utc
+acct-00000	Ana	True	0.0		00000	2026-10-24T00:30:00Z
+acct-00001	李娜	False	12.75		00001	2026-10-24T00:30:00Z
+acct-00002	Zoë	True	25.5	keep NOT disabled	00002	2026-10-24T00:30:00Z
+acct-00003	"comma,quote"""	False	38.25		00003	2026-10-24T00:30:00Z
+acct-00004	"line
+break"	True	51.0		00004	2026-10-24T00:30:00Z
+acct-00005	"pipe|tab	"	False	63.75	keep NOT disabled	00005	2026-10-24T00:30:00Z
+acct-00006	Ana	True	76.5		00006	2026-10-24T00:30:00Z
+acct-00007	李娜	False	89.25		00007	2026-10-24T00:30:00Z
+acct-00008	Zoë	True	102.0	keep NOT disabled	00008	2026-10-24T00:30:00Z
+acct-00009	"comma,quote"""	False	114.75		00009	2026-10-24T00:30:00Z
+acct-00010	"line
+break"	True	127.5		00010	2026-10-24T00:30:00Z
+acct-00011	"pipe|tab	"	False	140.25	keep NOT disabled	00011	2026-10-24T00:30:00Z
+acct-00012	Ana	True	153.0		00012	2026-10-24T00:30:00Z
+acct-00013	李娜	False	165.75		00013	2026-10-24T00:30:00Z
+acct-00014	Zoë	True	178.5	keep NOT disabled	00014	2026-10-24T00:30:00Z
+acct-00015	"comma,quote"""	False	191.25		00015	2026-10-24T00:30:00Z
+acct-00016	"line
+break"	True	204.0		00016	2026-10-24T00:30:00Z
+acct-00017	"pipe|tab	"	False	216.75	keep NOT disabled	00017	2026-10-24T00:30:00Z

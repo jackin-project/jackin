@@ -1,0 +1,79 @@
+{
+  "records": [
+    {
+      "claim": "Caveman old75%/character-level folklore",
+      "disposition": "superseded",
+      "evidence_or_reason": "Current component dossier distinguishes token-count methodology, product/runtime and selection/style/format treatments; no global bill or quality winner."
+    },
+    {
+      "claim": "Private profile61%dollars/92.83%reads/54.8%thinking/day costs",
+      "disposition": "withdrawn-as-current-evidence",
+      "evidence_or_reason": "Original private fixtures/receipts were not recovered; current provider accounting and public synthetic examples are separately labeled."
+    },
+    {
+      "claim": "TOON currentbenchmark",
+      "disposition": "vendor-only scoped",
+      "evidence_or_reason": "244questions13datasets4models; average2474TOON/4308prettyJSON/2892compactJSON proxy tokens;72.2/71.4/69.0accuracy. Different baselines and schema/format effects; no pairedNI."
+    },
+    {
+      "claim": "Paritok content/fullstack savings",
+      "disposition": "vendor-only scoped",
+      "evidence_or_reason": "Five-turn toy content benchmark differs from projected cumulative schema overhead; native tool deferral is required baseline; quality122/300→109/300 with17wins30losses,p=.079 is not equivalence."
+    },
+    {
+      "claim": "jCodeMunch current96.2%",
+      "disposition": "vendor-only scoped",
+      "evidence_or_reason": "Fifteen lookups/three repos, top-three symbols versus ranked top-three wholefiles,664975→25132cl100k tokens; benchmark revision differs from selected1.108.396release."
+    },
+    {
+      "claim": "CodeDB26%",
+      "disposition": "vendor-only scoped",
+      "evidence_or_reason": "Twelve tasks/twofeature tasks dominate cost difference,Sonnet4.6$5budget; all12passed but no repetitions or broadNI."
+    },
+    {
+      "claim": "Boost cost/quality",
+      "disposition": "conflicting current reports preserved",
+      "evidence_or_reason": "Introduction81/89evaluated,8infraexcluded,25/81both,$29.04→25.57; benchmarkpage89taskcost$28.41→24.58,81/89savingscoverage and no successcell. Never combine quality from first with cost from second."
+    },
+    {
+      "claim": "Published Rust reuse",
+      "disposition": "executed archive inspection only",
+      "evidence_or_reason": "Four exact archives matched registrySHA256 and embeddedVCS. No actualconsumerbuild. Native dependencies/defaultfeatures and extractedSQLiteconstraint proof are separately scoped."
+    },
+    {
+      "claim": "Currentlicenses",
+      "disposition": "source-inspected component distinction",
+      "evidence_or_reason": "SerenaGPL3+app/SolidLSPMIT; jCodeMunchDualUse1.2; ContextModeELv2; BoostAllRightsReservedpreview/skillsMIT; permissive narrowercomponents do not relicense entireapps."
+    },
+    {
+      "claim": "AgentDietv2",
+      "disposition": "independent paper scoped",
+      "evidence_or_reason": "200Verified+300MultiSWEFlash holdout,100train; auxiliaryGPT5mini reflector. Input39.9–59.7% and cost21.1–35.9% reductions include reflection but four pass-ratecells include one decline; no release-matched current hostNI. Section6.1.1 explicitly did not quantitatively compare latency; the cost result does not qualify a latency gate."
+    },
+    {
+      "claim": "TurnCostv1",
+      "disposition": "offline replay paper,not this audit execution",
+      "evidence_or_reason": "600filtered public trajectories; o200k proxy,98.6%simulated hits,.1readweight,~7.1xflatprice inflation atnearidealcache. No quality counterfactual; codeDOI not retrieved."
+    },
+    {
+      "claim": "CompactionBench/APEC",
+      "disposition": "abstract-only vendor evidence",
+      "evidence_or_reason": "13.5Msessionobservations,7.8%compactionsessions/44.2%tokens; separate controlledAPECupto25.4%cost/9.6%latency. No fullmethod/code or Jackintransfer."
+    },
+    {
+      "claim": "CAVEWOMAN",
+      "disposition": "paper/repository versions separated",
+      "evidence_or_reason": "Paperv1 eightmodels17/20cells; laterrepository ninmodels18/20, differingdatasets/artifacts. Prompt/style/budget changes and proxyjudge limits remain explicit."
+    },
+    {
+      "claim": "NotationMatters",
+      "disposition": "independent counterevidence scoped",
+      "evidence_or_reason": "Fiveopenconfigurations,fourfamilies17–32Bactive; TRONupto27%tokenreductionwith14ppaccuracydrop,TOON18%with9pp. Schema+responseinputtreatment,notpureoutputbrevity; maxfigures neednotbeonepairedcell."
+    },
+    {
+      "claim": "Noindependent studies/novelmeasurement infrastructure",
+      "disposition": "withdrawn",
+      "evidence_or_reason": "Independent current/historical studies and public harnesses exist, including exactversion limitations; absence of a qualifying deployment trial does not establish absence of research."
+    }
+  ]
+}

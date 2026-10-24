@@ -1,0 +1,1837 @@
+{
+  "recorded_utc": "2026-10-24T08:49:28.303211+00:00",
+  "reviewer": "rtk_leanctx independent workstream",
+  "evidence_class": "immutable Git source, configuration and hash comparison; no new runtime or build qualification",
+  "external_research_cutoff_utc": "2026-10-24T01:15:00Z",
+  "original_research_baseline": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+  "previous_main": "c98f5f5fdd831e6075e38fde93b9713575406140",
+  "late_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+  "late_main_commit": {
+    "commit": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+    "parents": "c98f5f5fdd831e6075e38fde93b9713575406140",
+    "committed_at": "2026-10-24T15:38:49+07:00",
+    "subject": "fix(release): publish immutable previews through native tap"
+  },
+  "observed_local_head": "9971e26249c2a601912419c84aad99980f88d28b",
+  "observed_merge_head": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+  "method": {
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+    "read_only_operations": [
+      "git show COMMIT:PATH (exact blob bytes)",
+      "git diff --name-status PREVIOUS_MAIN LATE_MAIN",
+      "git show :PATH (merge index comparison)",
+      "git rev-parse HEAD and MERGE_HEAD",
+      "SHA-256 of exact Git blob bytes",
+      "TOML parse and full-package multiset difference for Cargo.lock",
+      "YAML parse and exact CI graph/triggers/required-gate comparison"
+    ],
+    "preserved_records": [
+      "jackin-architecture/source-audit.json",
+      "jackin-architecture/main-overlay-source-register.json",
+      "earlier CI/build/probe snapshots"
+    ]
+  },
+  "change_summary": {
+    "changed_paths": 26,
+    "changed_rust_source_paths": [],
+    "changed_context_research_paths": [],
+    "all_changed_files_match_merge_index": true
+  },
+  "changed_files": [
+    {
+      "status": "M",
+      "path": ".github/AGENTS.md",
+      "before": {
+        "path": ".github/AGENTS.md",
+        "bytes": 2740,
+        "sha256": "25b5ff4e1477d51f53124358c309b50fe40b4477726458c9012342416f4821bf",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/AGENTS.md"
+      },
+      "after": {
+        "path": ".github/AGENTS.md",
+        "bytes": 2740,
+        "sha256": "4b9c4ce99c49a6bfb2d34864a82967d6c245b69d432120f4bd77361fe0afeec2",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/AGENTS.md"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/actions/declared-task-0/action.yml",
+      "before": {
+        "path": ".github/actions/declared-task-0/action.yml",
+        "bytes": 5242,
+        "sha256": "43faca40310e5a9b464aa0d9a91fe46a2a2079f149950ed8876465312a2c339b",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/actions/declared-task-0/action.yml"
+      },
+      "after": {
+        "path": ".github/actions/declared-task-0/action.yml",
+        "bytes": 5242,
+        "sha256": "9b07fae99a0e86091a22cc9c3cae666d0e310ba0c63e1eb5e1f06ea2559a8989",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/actions/declared-task-0/action.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/actions/u26/action.yml",
+      "before": {
+        "path": ".github/actions/u26/action.yml",
+        "bytes": 1575,
+        "sha256": "ca82c237b186f8e634323281a890c79ce2efba7a99f556f7ce21715f6b28f598",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/actions/u26/action.yml"
+      },
+      "after": {
+        "path": ".github/actions/u26/action.yml",
+        "bytes": 1575,
+        "sha256": "deb38809056e3bda7cbac6ec216c71088df081ac9fd8024f83e7652c06b8caab",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/actions/u26/action.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/actions/velnor-tool-seed/action.yml",
+      "before": {
+        "path": ".github/actions/velnor-tool-seed/action.yml",
+        "bytes": 5910,
+        "sha256": "3b8d2d48bb2ae123f103a0492b9bfb25f937b4a35cc1dd103f0df70c525550ec",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/actions/velnor-tool-seed/action.yml"
+      },
+      "after": {
+        "path": ".github/actions/velnor-tool-seed/action.yml",
+        "bytes": 5910,
+        "sha256": "0f266a1ad201f5cf5b21486616ed0d785467771d96cba39ddeaa7a37fba5beed",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/actions/velnor-tool-seed/action.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/actions/velnor-tools-cache-restore/action.yml",
+      "before": {
+        "path": ".github/actions/velnor-tools-cache-restore/action.yml",
+        "bytes": 12432,
+        "sha256": "744490a75edcb922424a0b6b0ef854e5cca4db9f1b8f4e3e2fb980086a74d263",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/actions/velnor-tools-cache-restore/action.yml"
+      },
+      "after": {
+        "path": ".github/actions/velnor-tools-cache-restore/action.yml",
+        "bytes": 12432,
+        "sha256": "56731363ef279fdae48b6e62c90a5a5b6c4a93875952cbc3bbefc4af11ed6530",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/actions/velnor-tools-cache-restore/action.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/actions/velnor-tools-prelude-u26/action.yml",
+      "before": {
+        "path": ".github/actions/velnor-tools-prelude-u26/action.yml",
+        "bytes": 903,
+        "sha256": "b315cc3438d0a4386f66ea4ebe0924ba59a742a30a977655403b836bfe1947b6",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/actions/velnor-tools-prelude-u26/action.yml"
+      },
+      "after": {
+        "path": ".github/actions/velnor-tools-prelude-u26/action.yml",
+        "bytes": 903,
+        "sha256": "abc11c8bb6bec58365e61d67022090a3ba77178a6c33787b4448fc7ff64b1926",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/actions/velnor-tools-prelude-u26/action.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/actions/velnor-verify-jactionlint/action.yml",
+      "before": {
+        "path": ".github/actions/velnor-verify-jactionlint/action.yml",
+        "bytes": 16646,
+        "sha256": "c97a98062a12eab17d07234ef00dc6926f39f7a908d09cf1db537c94e47751e3",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/actions/velnor-verify-jactionlint/action.yml"
+      },
+      "after": {
+        "path": ".github/actions/velnor-verify-jactionlint/action.yml",
+        "bytes": 16646,
+        "sha256": "927ccd78f4fcfd5dcb8a156fc56c757ba720065d196dfb5e29237d0fcce5c9e4",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/actions/velnor-verify-jactionlint/action.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/actions/velnor-verify-restored-rust/action.yml",
+      "before": {
+        "path": ".github/actions/velnor-verify-restored-rust/action.yml",
+        "bytes": 19157,
+        "sha256": "092b03114863b0db00d8d20724baa459c893db36bd924eb261bccbc45e11188d",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/actions/velnor-verify-restored-rust/action.yml"
+      },
+      "after": {
+        "path": ".github/actions/velnor-verify-restored-rust/action.yml",
+        "bytes": 19157,
+        "sha256": "c9efc0107e53f3c0deb121ce0e986c7f6eb36dba4ee77d643483f990056956a7",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/actions/velnor-verify-restored-rust/action.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/actions/velnor-verify-rust-manifest/action.yml",
+      "before": {
+        "path": ".github/actions/velnor-verify-rust-manifest/action.yml",
+        "bytes": 18949,
+        "sha256": "89c91123284e68216284c6e560d37919810817fbb9bd75705ccd2b1c87af0f93",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/actions/velnor-verify-rust-manifest/action.yml"
+      },
+      "after": {
+        "path": ".github/actions/velnor-verify-rust-manifest/action.yml",
+        "bytes": 18949,
+        "sha256": "fa2fa8d6a675a671207c78703e8046604600813ea71d42c6603224c2be76660a",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/actions/velnor-verify-rust-manifest/action.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/jactionlint.yaml",
+      "before": {
+        "path": ".github/jactionlint.yaml",
+        "bytes": 146,
+        "sha256": "e9086c6b716c729746234e44b5080b843ecdbebb834f8b627c0c48a678ede071",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/jactionlint.yaml"
+      },
+      "after": {
+        "path": ".github/jactionlint.yaml",
+        "bytes": 270,
+        "sha256": "2d2bc75a4e84b4302de1ac37493589cefcdc99a6c18e3c306c21c160eb90733c",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/jactionlint.yaml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/scripts/velnor-tools-cache-identity.sh",
+      "before": {
+        "path": ".github/scripts/velnor-tools-cache-identity.sh",
+        "bytes": 5548,
+        "sha256": "aeff536ec404aa179aa1745fa0e7347470e75003a49fe51747aeec28f7202837",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/scripts/velnor-tools-cache-identity.sh"
+      },
+      "after": {
+        "path": ".github/scripts/velnor-tools-cache-identity.sh",
+        "bytes": 5548,
+        "sha256": "217d36b3bdd7dfd60eae451bf82866504acda2342c43255237a35e0d4e93bd2c",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/scripts/velnor-tools-cache-identity.sh"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/velnor/task-execution-manifest-v1.json",
+      "before": {
+        "path": ".github/velnor/task-execution-manifest-v1.json",
+        "bytes": 244513,
+        "sha256": "61ba22fbe7555ec0b91da677f165151a635aa68478e123f101a481ee5ea66cb9",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/velnor/task-execution-manifest-v1.json"
+      },
+      "after": {
+        "path": ".github/velnor/task-execution-manifest-v1.json",
+        "bytes": 244513,
+        "sha256": "9f1369608496b186fdcd8290b4b53801005dffa2c9267262af1aeccd615479dd",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/velnor/task-execution-manifest-v1.json"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/workflows/binary-preview.yml",
+      "before": {
+        "path": ".github/workflows/binary-preview.yml",
+        "bytes": 47283,
+        "sha256": "8f09592810077cff9bab51d45d6d8efff6d2b63352b32ff1c4f36119f27dfdcf",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/workflows/binary-preview.yml"
+      },
+      "after": {
+        "path": ".github/workflows/binary-preview.yml",
+        "bytes": 71674,
+        "sha256": "b03ca1a4aab5599a5697168b6896e42b0449314f8d2091476692d41f1ef1aebf",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/workflows/binary-preview.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/workflows/binary-release.yml",
+      "before": {
+        "path": ".github/workflows/binary-release.yml",
+        "bytes": 262107,
+        "sha256": "7c420796aba195872da506356a8b7e42eec89e0c7998485e2f45dec7883d735f",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/workflows/binary-release.yml"
+      },
+      "after": {
+        "path": ".github/workflows/binary-release.yml",
+        "bytes": 288329,
+        "sha256": "8dcb7dcb9863c74d4d5b9f4b0fe67f172838c6d07889052bf6861fc68615cd36",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/workflows/binary-release.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/workflows/cache-prune.yml",
+      "before": {
+        "path": ".github/workflows/cache-prune.yml",
+        "bytes": 1620,
+        "sha256": "b47d134eec443811f89d9c78d35a825fd2abe9178f3a3166b11f3b6085383d94",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/workflows/cache-prune.yml"
+      },
+      "after": {
+        "path": ".github/workflows/cache-prune.yml",
+        "bytes": 1620,
+        "sha256": "4dba9594f386d422da72f5e19d5b2674ce9600def464e89caad8abe18c1385e2",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/workflows/cache-prune.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".github/workflows/ci.yml",
+      "before": {
+        "path": ".github/workflows/ci.yml",
+        "bytes": 183492,
+        "sha256": "9e2590b96e8d3dc24ca59f1f3f007f583483ed0c5bd9ff299f619447b86f29f9",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.github/workflows/ci.yml"
+      },
+      "after": {
+        "path": ".github/workflows/ci.yml",
+        "bytes": 183492,
+        "sha256": "3d6fc77f86934f080fde833789ba1871e09238a55c1f63edfac5c0fc1a380af6",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/workflows/ci.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "A",
+      "path": ".github/workflows/preview-tap-reconcile.yml",
+      "before": null,
+      "after": {
+        "path": ".github/workflows/preview-tap-reconcile.yml",
+        "bytes": 29507,
+        "sha256": "c3e2df2090de315c271632ce32ef56d1e23e7043d96ed7b302913065c0018ded",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/workflows/preview-tap-reconcile.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "A",
+      "path": ".github/workflows/stable-tap-reconcile.yml",
+      "before": null,
+      "after": {
+        "path": ".github/workflows/stable-tap-reconcile.yml",
+        "bytes": 29421,
+        "sha256": "cd6b0bfac5a8a206ec9ed4807d241bed0efb2e36048b268752956e358db8b300",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/workflows/stable-tap-reconcile.yml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".velnor/config.toml",
+      "before": {
+        "path": ".velnor/config.toml",
+        "bytes": 24854,
+        "sha256": "12890920d59de0dfadcbf32a2f4510bf0e403791d225e3a32d0896eed53ac215",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.velnor/config.toml"
+      },
+      "after": {
+        "path": ".velnor/config.toml",
+        "bytes": 24886,
+        "sha256": "e0d0384aecbbe099b1d1c78dfbac489d63f91b1893d09b3a69c4f26b60a6e531",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.velnor/config.toml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": ".velnor/release-manifest.json",
+      "before": {
+        "path": ".velnor/release-manifest.json",
+        "bytes": 960,
+        "sha256": "6d21d768829d78886f9f7fa3d3e81840d55a1b7765050515fc1d799e5dbd677c",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/.velnor/release-manifest.json"
+      },
+      "after": {
+        "path": ".velnor/release-manifest.json",
+        "bytes": 960,
+        "sha256": "048ee56dba377dac1ca50db0560bdda7e060004fc28800f8609b61b4502bf854",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.velnor/release-manifest.json"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": "Cargo.lock",
+      "before": {
+        "path": "Cargo.lock",
+        "bytes": 218155,
+        "sha256": "12687dec127cc9f4ce82862e58441ca1e647ea9e952b80bfc088ac5c01e67805",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/Cargo.lock"
+      },
+      "after": {
+        "path": "Cargo.lock",
+        "bytes": 218155,
+        "sha256": "aec3b133ab2957a0afe42c7237299bc17087439ca3bf859f66b1610fdb53c9c6",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/Cargo.lock"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": "Cargo.toml",
+      "before": {
+        "path": "Cargo.toml",
+        "bytes": 30308,
+        "sha256": "3d314492e199ee07ddd01b8f2dc420f09c5a4f5c8e5c29a3046636ce0025f431",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/Cargo.toml"
+      },
+      "after": {
+        "path": "Cargo.toml",
+        "bytes": 30308,
+        "sha256": "80e40a9ef1fc25778362e4c82e14888c2bfee659bc8113ccf6e4a76408e9ce0a",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/Cargo.toml"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": "README.md",
+      "before": {
+        "path": "README.md",
+        "bytes": 6593,
+        "sha256": "92c69e37da0d8c4c7d995422766e41bbd5f63c8d7d4641a22a27ee887497401e",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/README.md"
+      },
+      "after": {
+        "path": "README.md",
+        "bytes": 6585,
+        "sha256": "6c68545dbdd8425c49342fea385b872abff31dcce03d912c918d8170f9647966",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/README.md"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": "crates/tools/jackin-xtask/README.md",
+      "before": {
+        "path": "crates/tools/jackin-xtask/README.md",
+        "bytes": 6415,
+        "sha256": "a3cdada4b45d4e62c38c3600e1c701ded0d2fd5ba2c2e30d48f206aacdb5c703",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/tools/jackin-xtask/README.md"
+      },
+      "after": {
+        "path": "crates/tools/jackin-xtask/README.md",
+        "bytes": 6415,
+        "sha256": "e02f1519373446bcefd4fe7a9f6a81c353722dd0271b793965274899e5335c88",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/tools/jackin-xtask/README.md"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": "docs/content/(public)/getting-started/installation.mdx",
+      "before": {
+        "path": "docs/content/(public)/getting-started/installation.mdx",
+        "bytes": 4716,
+        "sha256": "4adf8e5e7fd03fdd0bad14ac3dffe3d215bc5c7f4d4a241c61b276f1bb7268a5",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/docs/content/(public)/getting-started/installation.mdx"
+      },
+      "after": {
+        "path": "docs/content/(public)/getting-started/installation.mdx",
+        "bytes": 4798,
+        "sha256": "03755b28006e49256a766c2eeb71d9747b56f2a60cdeba89db094b51e045a22e",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/docs/content/(public)/getting-started/installation.mdx"
+      },
+      "merge_index_matches_new_main": true
+    },
+    {
+      "status": "M",
+      "path": "policy/ci-recipes.json",
+      "before": {
+        "path": "policy/ci-recipes.json",
+        "bytes": 840,
+        "sha256": "751cc7757cef1509e27991700ea997ea6888a62eaab28faedfcc7011634b1d07",
+        "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/policy/ci-recipes.json"
+      },
+      "after": {
+        "path": "policy/ci-recipes.json",
+        "bytes": 1050,
+        "sha256": "0e94f403c6b23c4b3571d1be400f56cc334a3324d4c1dc06ca2124c0b083eed7",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/policy/ci-recipes.json"
+      },
+      "merge_index_matches_new_main": true
+    }
+  ],
+  "original_source_audit_comparison": {
+    "record": "jackin-architecture/source-audit.json",
+    "total": 26,
+    "unchanged": 25,
+    "changed": [
+      "Cargo.toml"
+    ],
+    "all_original_hashes_reproduced": true,
+    "files": [
+      {
+        "path": "Cargo.toml",
+        "recorded_baseline_sha256": "3d314492e199ee07ddd01b8f2dc420f09c5a4f5c8e5c29a3046636ce0025f431",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "3d314492e199ee07ddd01b8f2dc420f09c5a4f5c8e5c29a3046636ce0025f431",
+        "new_main_sha256": "80e40a9ef1fc25778362e4c82e14888c2bfee659bc8113ccf6e4a76408e9ce0a",
+        "unchanged_from_baseline": false,
+        "unchanged_from_previous_main": false,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/Cargo.toml"
+      },
+      {
+        "path": "crates/core/jackin-core/src/agent.rs",
+        "recorded_baseline_sha256": "9e23e84d8fb0aa6c5629e18f8c51d82d99281b3808795f9f657e2e29f49b4067",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "9e23e84d8fb0aa6c5629e18f8c51d82d99281b3808795f9f657e2e29f49b4067",
+        "new_main_sha256": "9e23e84d8fb0aa6c5629e18f8c51d82d99281b3808795f9f657e2e29f49b4067",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/core/jackin-core/src/agent.rs"
+      },
+      {
+        "path": "crates/core/jackin-core/src/manifest.rs",
+        "recorded_baseline_sha256": "c2d41f53f597aa05c765f1b550cafb480ffb323a04d421985e010ea2861deba3",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "c2d41f53f597aa05c765f1b550cafb480ffb323a04d421985e010ea2861deba3",
+        "new_main_sha256": "c2d41f53f597aa05c765f1b550cafb480ffb323a04d421985e010ea2861deba3",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/core/jackin-core/src/manifest.rs"
+      },
+      {
+        "path": "crates/core/jackin-core/src/container_paths.rs",
+        "recorded_baseline_sha256": "b857c791e2e765b04c3c6db1e43ab627d37bd6384fb04c1254e4736ba1512817",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "b857c791e2e765b04c3c6db1e43ab627d37bd6384fb04c1254e4736ba1512817",
+        "new_main_sha256": "b857c791e2e765b04c3c6db1e43ab627d37bd6384fb04c1254e4736ba1512817",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/core/jackin-core/src/container_paths.rs"
+      },
+      {
+        "path": "crates/core/jackin-protocol/src/lib.rs",
+        "recorded_baseline_sha256": "e9892ee7d08005ea8f57c71624a039c7cd0c3877b6c73e6ce9a466c0e846e40b",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "e9892ee7d08005ea8f57c71624a039c7cd0c3877b6c73e6ce9a466c0e846e40b",
+        "new_main_sha256": "e9892ee7d08005ea8f57c71624a039c7cd0c3877b6c73e6ce9a466c0e846e40b",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/core/jackin-protocol/src/lib.rs"
+      },
+      {
+        "path": "crates/services/jackin-runtime-launch-capsule-setup/src/capsule_setup.rs",
+        "recorded_baseline_sha256": "0eb95a3a082184f1ed81e6bf2ee30f0651e6a3ca326e4c16d23747732f851715",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "0eb95a3a082184f1ed81e6bf2ee30f0651e6a3ca326e4c16d23747732f851715",
+        "new_main_sha256": "0eb95a3a082184f1ed81e6bf2ee30f0651e6a3ca326e4c16d23747732f851715",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/services/jackin-runtime-launch-capsule-setup/src/capsule_setup.rs"
+      },
+      {
+        "path": "crates/adapters/jackin-image/src/derived_image.rs",
+        "recorded_baseline_sha256": "d498a292ffeb9edd9c502aa56e6a9b1fcbd909dc0c4e54659c55a1f29dc73922",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "d498a292ffeb9edd9c502aa56e6a9b1fcbd909dc0c4e54659c55a1f29dc73922",
+        "new_main_sha256": "d498a292ffeb9edd9c502aa56e6a9b1fcbd909dc0c4e54659c55a1f29dc73922",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/adapters/jackin-image/src/derived_image.rs"
+      },
+      {
+        "path": "crates/apps/jackin-capsule/src/session/agent_cmd.rs",
+        "recorded_baseline_sha256": "7d235a2a7c49eeca244725840cbc3e4aadd13755db1b7a0588d0a538858d46e0",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "7d235a2a7c49eeca244725840cbc3e4aadd13755db1b7a0588d0a538858d46e0",
+        "new_main_sha256": "7d235a2a7c49eeca244725840cbc3e4aadd13755db1b7a0588d0a538858d46e0",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/apps/jackin-capsule/src/session/agent_cmd.rs"
+      },
+      {
+        "path": "crates/apps/jackin-capsule/src/agent_status/hook_installer.rs",
+        "recorded_baseline_sha256": "d429a0bb0f22cc721499ff65e75084de9df9566bee9729104c2c754585909dbe",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "d429a0bb0f22cc721499ff65e75084de9df9566bee9729104c2c754585909dbe",
+        "new_main_sha256": "d429a0bb0f22cc721499ff65e75084de9df9566bee9729104c2c754585909dbe",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/apps/jackin-capsule/src/agent_status/hook_installer.rs"
+      },
+      {
+        "path": "crates/apps/jackin-capsule/src/agent_status/hook_installer/claude.rs",
+        "recorded_baseline_sha256": "e4d9e11f87c72bdef100e85d4f4432b7855c4d57991d7736e3e24b8282cf2300",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "e4d9e11f87c72bdef100e85d4f4432b7855c4d57991d7736e3e24b8282cf2300",
+        "new_main_sha256": "e4d9e11f87c72bdef100e85d4f4432b7855c4d57991d7736e3e24b8282cf2300",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/apps/jackin-capsule/src/agent_status/hook_installer/claude.rs"
+      },
+      {
+        "path": "crates/apps/jackin-capsule/src/agent_status/hook_installer/codex.rs",
+        "recorded_baseline_sha256": "f713d52e18108c767414c7c03cac1f83e47d1786770c40ac7ffa3266388b24d3",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "f713d52e18108c767414c7c03cac1f83e47d1786770c40ac7ffa3266388b24d3",
+        "new_main_sha256": "f713d52e18108c767414c7c03cac1f83e47d1786770c40ac7ffa3266388b24d3",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/apps/jackin-capsule/src/agent_status/hook_installer/codex.rs"
+      },
+      {
+        "path": "crates/apps/jackin-capsule/src/runtime_setup/agent_auth.rs",
+        "recorded_baseline_sha256": "37d13fb49c3dcd7ee2f71fe350f3e5d85e22a8f6bf47aa16c5575d51fa7576fc",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "37d13fb49c3dcd7ee2f71fe350f3e5d85e22a8f6bf47aa16c5575d51fa7576fc",
+        "new_main_sha256": "37d13fb49c3dcd7ee2f71fe350f3e5d85e22a8f6bf47aa16c5575d51fa7576fc",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/apps/jackin-capsule/src/runtime_setup/agent_auth.rs"
+      },
+      {
+        "path": "crates/apps/jackin-capsule/src/daemon/control/auth.rs",
+        "recorded_baseline_sha256": "d22cd21a5a34370112747b3a51d0777bb74ebc40ff14bfde8bb3df9e9a171b39",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "d22cd21a5a34370112747b3a51d0777bb74ebc40ff14bfde8bb3df9e9a171b39",
+        "new_main_sha256": "d22cd21a5a34370112747b3a51d0777bb74ebc40ff14bfde8bb3df9e9a171b39",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/apps/jackin-capsule/src/daemon/control/auth.rs"
+      },
+      {
+        "path": "crates/apps/jackin-capsule/src/process_isolation.rs",
+        "recorded_baseline_sha256": "0a244bab7778063364b2af38d7f6d87566c05c93fc5f4adf9e630f6d0e86a2bb",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "0a244bab7778063364b2af38d7f6d87566c05c93fc5f4adf9e630f6d0e86a2bb",
+        "new_main_sha256": "0a244bab7778063364b2af38d7f6d87566c05c93fc5f4adf9e630f6d0e86a2bb",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/apps/jackin-capsule/src/process_isolation.rs"
+      },
+      {
+        "path": "crates/apps/jackin-capsule/src/process_isolation/linux.rs",
+        "recorded_baseline_sha256": "6c9e6043351c5cff01aa89ab66e459fd5d064f6678c6579feede37eea72731c8",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "6c9e6043351c5cff01aa89ab66e459fd5d064f6678c6579feede37eea72731c8",
+        "new_main_sha256": "6c9e6043351c5cff01aa89ab66e459fd5d064f6678c6579feede37eea72731c8",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/apps/jackin-capsule/src/process_isolation/linux.rs"
+      },
+      {
+        "path": "crates/apps/jackin-capsule/src/process_isolation/linux/rules.rs",
+        "recorded_baseline_sha256": "bbe30da97e9b710661b6bd34cea5c4ef5d577b94a929a91b94290f55045bec50",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "bbe30da97e9b710661b6bd34cea5c4ef5d577b94a929a91b94290f55045bec50",
+        "new_main_sha256": "bbe30da97e9b710661b6bd34cea5c4ef5d577b94a929a91b94290f55045bec50",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/apps/jackin-capsule/src/process_isolation/linux/rules.rs"
+      },
+      {
+        "path": "crates/apps/jackin-capsule/src/process_isolation/linux/paths.rs",
+        "recorded_baseline_sha256": "27b5b9b14566f7e129422f89f744f22b82f3e3793ac3959a99fe9b779c111337",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "27b5b9b14566f7e129422f89f744f22b82f3e3793ac3959a99fe9b779c111337",
+        "new_main_sha256": "27b5b9b14566f7e129422f89f744f22b82f3e3793ac3959a99fe9b779c111337",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/apps/jackin-capsule/src/process_isolation/linux/paths.rs"
+      },
+      {
+        "path": "crates/apps/jackin-capsule/src/exec.rs",
+        "recorded_baseline_sha256": "6f24ada8ac73cd01a41548fe8db2a346a0b439f4682a0f0f1d601c06752b9241",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "6f24ada8ac73cd01a41548fe8db2a346a0b439f4682a0f0f1d601c06752b9241",
+        "new_main_sha256": "6f24ada8ac73cd01a41548fe8db2a346a0b439f4682a0f0f1d601c06752b9241",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/apps/jackin-capsule/src/exec.rs"
+      },
+      {
+        "path": "crates/apps/jackin-capsule/src/mcp_server.rs",
+        "recorded_baseline_sha256": "e57e771c5f68337f9144033a44e3507f3cee47fb8a63104ddff8cee87305925c",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "e57e771c5f68337f9144033a44e3507f3cee47fb8a63104ddff8cee87305925c",
+        "new_main_sha256": "e57e771c5f68337f9144033a44e3507f3cee47fb8a63104ddff8cee87305925c",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/apps/jackin-capsule/src/mcp_server.rs"
+      },
+      {
+        "path": "crates/services/jackin-usage-token-monitor/src/session.rs",
+        "recorded_baseline_sha256": "80c14c887af0c259cc4cb969205bbc07a9a7d2fcdb2d415d9058e1708c71153e",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "80c14c887af0c259cc4cb969205bbc07a9a7d2fcdb2d415d9058e1708c71153e",
+        "new_main_sha256": "80c14c887af0c259cc4cb969205bbc07a9a7d2fcdb2d415d9058e1708c71153e",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/services/jackin-usage-token-monitor/src/session.rs"
+      },
+      {
+        "path": "crates/services/jackin-usage-token-monitor/src/monitor.rs",
+        "recorded_baseline_sha256": "ca497885f6b7aca2e6fcb0346976db577e82d748f29192652574fcf66c825282",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "ca497885f6b7aca2e6fcb0346976db577e82d748f29192652574fcf66c825282",
+        "new_main_sha256": "ca497885f6b7aca2e6fcb0346976db577e82d748f29192652574fcf66c825282",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/services/jackin-usage-token-monitor/src/monitor.rs"
+      },
+      {
+        "path": "crates/services/jackin-usage-token-monitor/src/totals.rs",
+        "recorded_baseline_sha256": "5c4ebbc42aeac13c3e192650df9b99321df811bd3c8162a57a16f851ed8ed54b",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "5c4ebbc42aeac13c3e192650df9b99321df811bd3c8162a57a16f851ed8ed54b",
+        "new_main_sha256": "5c4ebbc42aeac13c3e192650df9b99321df811bd3c8162a57a16f851ed8ed54b",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/services/jackin-usage-token-monitor/src/totals.rs"
+      },
+      {
+        "path": "crates/services/jackin-usage-token-monitor/src/claude.rs",
+        "recorded_baseline_sha256": "b55e58d0ab35bf35ca0944203094a3f2ed24ae7c80e770092393c25f7a04373b",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "b55e58d0ab35bf35ca0944203094a3f2ed24ae7c80e770092393c25f7a04373b",
+        "new_main_sha256": "b55e58d0ab35bf35ca0944203094a3f2ed24ae7c80e770092393c25f7a04373b",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/services/jackin-usage-token-monitor/src/claude.rs"
+      },
+      {
+        "path": "crates/services/jackin-usage-token-monitor/src/codex.rs",
+        "recorded_baseline_sha256": "372bf68b043be3a118783712ee0e9fd7564bb2e28bccdbe8ffe9306480b00053",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "372bf68b043be3a118783712ee0e9fd7564bb2e28bccdbe8ffe9306480b00053",
+        "new_main_sha256": "372bf68b043be3a118783712ee0e9fd7564bb2e28bccdbe8ffe9306480b00053",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/services/jackin-usage-token-monitor/src/codex.rs"
+      },
+      {
+        "path": "docker/runtime/entrypoint.sh",
+        "recorded_baseline_sha256": "99c092f761fbc2f7ef3d0fe7d4c466f1f5358c91a3df82b29c78b52891daab5b",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "99c092f761fbc2f7ef3d0fe7d4c466f1f5358c91a3df82b29c78b52891daab5b",
+        "new_main_sha256": "99c092f761fbc2f7ef3d0fe7d4c466f1f5358c91a3df82b29c78b52891daab5b",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/docker/runtime/entrypoint.sh"
+      },
+      {
+        "path": "docker/runtime/agent-status/hooks/codex/report-hook.sh",
+        "recorded_baseline_sha256": "c74d61ecf5a267d69ebc30ab055a05606b49f8bc39a2ee8d4553ead679ad8ac1",
+        "baseline_blob_matches_record": true,
+        "previous_main_sha256": "c74d61ecf5a267d69ebc30ab055a05606b49f8bc39a2ee8d4553ead679ad8ac1",
+        "new_main_sha256": "c74d61ecf5a267d69ebc30ab055a05606b49f8bc39a2ee8d4553ead679ad8ac1",
+        "unchanged_from_baseline": true,
+        "unchanged_from_previous_main": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/docker/runtime/agent-status/hooks/codex/report-hook.sh"
+      }
+    ]
+  },
+  "prior_overlay_comparison": {
+    "record": "jackin-architecture/main-overlay-source-register.json",
+    "total": 13,
+    "unchanged": 13,
+    "all_original_hashes_reproduced": true,
+    "files": [
+      {
+        "path": "crates/core/jackin-process-directory/src/lib.rs",
+        "recorded_previous_main_sha256": "8d8e0cec3ba486a72f427f3f595fe0b0d322a3568e360fe5cb9b3ddeac3eab95",
+        "previous_main_blob_matches_record": true,
+        "new_main_sha256": "8d8e0cec3ba486a72f427f3f595fe0b0d322a3568e360fe5cb9b3ddeac3eab95",
+        "unchanged": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/core/jackin-process-directory/src/lib.rs"
+      },
+      {
+        "path": "crates/core/jackin-process-directory/src/secure_install.rs",
+        "recorded_previous_main_sha256": "f86ce0095d4973ab5ab608caa30c7ffaabcbe166ecd5bb3aff5748e6073e3214",
+        "previous_main_blob_matches_record": true,
+        "new_main_sha256": "f86ce0095d4973ab5ab608caa30c7ffaabcbe166ecd5bb3aff5748e6073e3214",
+        "unchanged": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/core/jackin-process-directory/src/secure_install.rs"
+      },
+      {
+        "path": "crates/core/jackin-process-directory/src/secure_install/absolute_root.rs",
+        "recorded_previous_main_sha256": "7f0046c4fc4b66a25acadc262f1fdb4fa8c4a8697a8e8f4714090d5c26aafba8",
+        "previous_main_blob_matches_record": true,
+        "new_main_sha256": "7f0046c4fc4b66a25acadc262f1fdb4fa8c4a8697a8e8f4714090d5c26aafba8",
+        "unchanged": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/core/jackin-process-directory/src/secure_install/absolute_root.rs"
+      },
+      {
+        "path": "crates/core/jackin-process-directory/src/secure_install/linux_acl.rs",
+        "recorded_previous_main_sha256": "b76eea815dbbd83fb6cad80ffd3cc140faefffb96abcb94a8654f633b170042f",
+        "previous_main_blob_matches_record": true,
+        "new_main_sha256": "b76eea815dbbd83fb6cad80ffd3cc140faefffb96abcb94a8654f633b170042f",
+        "unchanged": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/core/jackin-process-directory/src/secure_install/linux_acl.rs"
+      },
+      {
+        "path": "crates/core/jackin-process-directory/src/secure_install/darwin_acl.rs",
+        "recorded_previous_main_sha256": "80ebe7e6d7792ce0b9ed33bac2dbda44d14c9efc7c0ffb857d7a460cf19e1967",
+        "previous_main_blob_matches_record": true,
+        "new_main_sha256": "80ebe7e6d7792ce0b9ed33bac2dbda44d14c9efc7c0ffb857d7a460cf19e1967",
+        "unchanged": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/core/jackin-process-directory/src/secure_install/darwin_acl.rs"
+      },
+      {
+        "path": "crates/services/jackin-instance-roles/src/prepare.rs",
+        "recorded_previous_main_sha256": "398cef7096d1618e0218caac2086dbbe3a0fb13aaaa0677e8c03d1fb5458e0da",
+        "previous_main_blob_matches_record": true,
+        "new_main_sha256": "398cef7096d1618e0218caac2086dbbe3a0fb13aaaa0677e8c03d1fb5458e0da",
+        "unchanged": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/services/jackin-instance-roles/src/prepare.rs"
+      },
+      {
+        "path": "crates/services/jackin-runtime-launch-account-identity/src/account_identity.rs",
+        "recorded_previous_main_sha256": "e698d56e137489ea32f714aea008ff10b6a7e6079ba223ae3acbd4c06dc7e033",
+        "previous_main_blob_matches_record": true,
+        "new_main_sha256": "e698d56e137489ea32f714aea008ff10b6a7e6079ba223ae3acbd4c06dc7e033",
+        "unchanged": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/services/jackin-runtime-launch-account-identity/src/account_identity.rs"
+      },
+      {
+        "path": "crates/services/jackin-runtime-launch-account-identity/src/account_identity/marker_pair.rs",
+        "recorded_previous_main_sha256": "092946c949494c7d62ff2bc9c6fdb15dd69b89159216dd8f040f6e701086b6f1",
+        "previous_main_blob_matches_record": true,
+        "new_main_sha256": "092946c949494c7d62ff2bc9c6fdb15dd69b89159216dd8f040f6e701086b6f1",
+        "unchanged": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/services/jackin-runtime-launch-account-identity/src/account_identity/marker_pair.rs"
+      },
+      {
+        "path": "crates/services/jackin-runtime-launch-account-identity/src/account_identity/marker_transaction.rs",
+        "recorded_previous_main_sha256": "8c24e3a2532303ac9f888e524afc48d1f10662eaa4a9bdfcd95053be2035331f",
+        "previous_main_blob_matches_record": true,
+        "new_main_sha256": "8c24e3a2532303ac9f888e524afc48d1f10662eaa4a9bdfcd95053be2035331f",
+        "unchanged": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/services/jackin-runtime-launch-account-identity/src/account_identity/marker_transaction.rs"
+      },
+      {
+        "path": "crates/services/jackin-runtime-launch-account-identity/src/account_identity/marker_transaction/record.rs",
+        "recorded_previous_main_sha256": "353b729071bf2fcd5da553cd04e8329c627d8cadc2df9109f0cc7179df0a9259",
+        "previous_main_blob_matches_record": true,
+        "new_main_sha256": "353b729071bf2fcd5da553cd04e8329c627d8cadc2df9109f0cc7179df0a9259",
+        "unchanged": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/services/jackin-runtime-launch-account-identity/src/account_identity/marker_transaction/record.rs"
+      },
+      {
+        "path": "crates/tools/jackin-xtask/src/precommit_owner_security.rs",
+        "recorded_previous_main_sha256": "60da8ef3a1a3896cfc5ef8b76368bc7b8bc25c63c22d1839d9e8bebb27ea0553",
+        "previous_main_blob_matches_record": true,
+        "new_main_sha256": "60da8ef3a1a3896cfc5ef8b76368bc7b8bc25c63c22d1839d9e8bebb27ea0553",
+        "unchanged": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/tools/jackin-xtask/src/precommit_owner_security.rs"
+      },
+      {
+        "path": "crates/tools/jackin-xtask/src/precommit_owner_security/checked_install.rs",
+        "recorded_previous_main_sha256": "510556b4b8c5efd8d6370dd8ecd074fd47b80920f8b13255cee16be1051559aa",
+        "previous_main_blob_matches_record": true,
+        "new_main_sha256": "510556b4b8c5efd8d6370dd8ecd074fd47b80920f8b13255cee16be1051559aa",
+        "unchanged": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/tools/jackin-xtask/src/precommit_owner_security/checked_install.rs"
+      },
+      {
+        "path": "crates/tools/jackin-xtask/src/precommit_owner_main.rs",
+        "recorded_previous_main_sha256": "643802296f08f97b3f3510ab717b58004ca37e78109c17f8af2e80f21642c680",
+        "previous_main_blob_matches_record": true,
+        "new_main_sha256": "643802296f08f97b3f3510ab717b58004ca37e78109c17f8af2e80f21642c680",
+        "unchanged": true,
+        "new_main_url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/crates/tools/jackin-xtask/src/precommit_owner_main.rs"
+      }
+    ]
+  },
+  "dependency_changes": {
+    "cargo_manifest_only_changed_dependency": "velnor-actions-contract",
+    "other_parsed_manifest_fields_identical": true,
+    "velnor_before": {
+      "version": "=0.1.48",
+      "git": "https://github.com/tailrocks/velnor-new",
+      "rev": "9191feacdb538a8df8299b73eaf2ece63f2645d7"
+    },
+    "velnor_after": {
+      "version": "=0.1.52",
+      "git": "https://github.com/tailrocks/velnor-new",
+      "rev": "1bd31f8203ecf40d141c331e5195eb422e0904d3"
+    },
+    "lock_package_comparison": "Multiset of complete canonicalized package records, preserving duplicates; not a dictionary keyed only by package name.",
+    "removed_package_records": [
+      {
+        "dependencies": [
+          "blake3",
+          "serde",
+          "serde_json",
+          "sha2 0.11.1",
+          "thiserror 2.0.21"
+        ],
+        "name": "velnor-actions-contract",
+        "source": "git+https://github.com/tailrocks/velnor-new?rev=9191feacdb538a8df8299b73eaf2ece63f2645d7#9191feacdb538a8df8299b73eaf2ece63f2645d7",
+        "version": "0.1.48"
+      }
+    ],
+    "added_package_records": [
+      {
+        "dependencies": [
+          "blake3",
+          "serde",
+          "serde_json",
+          "sha2 0.11.1",
+          "thiserror 2.0.21"
+        ],
+        "name": "velnor-actions-contract",
+        "source": "git+https://github.com/tailrocks/velnor-new?rev=1bd31f8203ecf40d141c331e5195eb422e0904d3#1bd31f8203ecf40d141c331e5195eb422e0904d3",
+        "version": "0.1.52"
+      }
+    ],
+    "lock_non_package_fields_identical": true,
+    "linkage_and_runtime_pins": [
+      {
+        "name": "rusqlite",
+        "unchanged_full_package_records": true,
+        "packages": [
+          {
+            "name": "rusqlite",
+            "version": "0.40.2",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "23f2a97da3e3873c73cb2a2e71b35c40ff95e0b1eefa8d72d8499a6928c3b5b3",
+            "dependencies": [
+              "bitflags 2.13.2",
+              "fallible-iterator",
+              "fallible-streaming-iterator",
+              "libsqlite3-sys",
+              "smallvec"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "libsqlite3-sys",
+        "unchanged_full_package_records": true,
+        "packages": [
+          {
+            "name": "libsqlite3-sys",
+            "version": "0.38.2",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "f1d20bef17f513b9b3004532233187769cd072d790971f4e4da0e346eb6401e8",
+            "dependencies": [
+              "cc",
+              "pkg-config",
+              "vcpkg"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "tokio",
+        "unchanged_full_package_records": true,
+        "packages": [
+          {
+            "name": "tokio",
+            "version": "1.53.3",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e",
+            "dependencies": [
+              "bytes",
+              "libc",
+              "mio",
+              "pin-project-lite",
+              "signal-hook-registry",
+              "socket2",
+              "tokio-macros",
+              "windows-sys 0.61.2"
+            ]
+          }
+        ]
+      }
+    ],
+    "rust_toolchain_file_identical": true
+  },
+  "ci_comparison": {
+    "generator_before": "0.1.48",
+    "generator_after": "0.1.52",
+    "generator_commit": "1bd31f8203ecf40d141c331e5195eb422e0904d3",
+    "triggers_identical": true,
+    "concurrency_identical": true,
+    "job_graph_identical": true,
+    "required_gate_identical": true,
+    "required_dependencies_identical": true,
+    "manifest_task_definitions_identical": false,
+    "scope_at_late_main": {
+      "recorded_utc": "2026-10-24T08:49:28.303211+00:00",
+      "source_commit": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+      "evidence_class": "source-only CI scope inspection; not a workflow result",
+      "source_files": [
+        {
+          "path": "AGENTS.md",
+          "bytes": 2326,
+          "sha256": "ceb79a62da41f13fb782f77f32ba7b28dcfe6b6d461ef2765deb101af663ef25",
+          "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/AGENTS.md"
+        },
+        {
+          "path": ".github/AGENTS.md",
+          "bytes": 2740,
+          "sha256": "4b9c4ce99c49a6bfb2d34864a82967d6c245b69d432120f4bd77361fe0afeec2",
+          "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/AGENTS.md"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "bytes": 183492,
+          "sha256": "3d6fc77f86934f080fde833789ba1871e09238a55c1f63edfac5c0fc1a380af6",
+          "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/workflows/ci.yml"
+        },
+        {
+          "path": ".velnor/config.toml",
+          "bytes": 24886,
+          "sha256": "e0d0384aecbbe099b1d1c78dfbac489d63f91b1893d09b3a69c4f26b60a6e531",
+          "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.velnor/config.toml"
+        },
+        {
+          "path": ".velnor/release-manifest.json",
+          "bytes": 960,
+          "sha256": "048ee56dba377dac1ca50db0560bdda7e060004fc28800f8609b61b4502bf854",
+          "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.velnor/release-manifest.json"
+        },
+        {
+          "path": ".github/velnor/task-execution-manifest-v1.json",
+          "bytes": 244513,
+          "sha256": "9f1369608496b186fdcd8290b4b53801005dffa2c9267262af1aeccd615479dd",
+          "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/velnor/task-execution-manifest-v1.json"
+        },
+        {
+          "path": "mise.toml",
+          "bytes": 2831,
+          "sha256": "5406b3b4eca867d35e1d20fad924e605680590c6cd474be8f430e8ad1008caf9",
+          "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/mise.toml"
+        },
+        {
+          "path": "Cargo.toml",
+          "bytes": 30308,
+          "sha256": "80e40a9ef1fc25778362e4c82e14888c2bfee659bc8113ccf6e4a76408e9ce0a",
+          "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/Cargo.toml"
+        },
+        {
+          "path": "Cargo.lock",
+          "bytes": 218155,
+          "sha256": "aec3b133ab2957a0afe42c7237299bc17087439ca3bf859f66b1610fdb53c9c6",
+          "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/Cargo.lock"
+        },
+        {
+          "path": "rust-toolchain.toml",
+          "bytes": 240,
+          "sha256": "211249e714009aab399285f52e14a611ed1bf625715b8cd97be74e9627c7e6e1",
+          "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/rust-toolchain.toml"
+        }
+      ],
+      "ci_triggers": {
+        "pull_request": {
+          "types": [
+            "opened",
+            "edited",
+            "synchronize",
+            "reopened",
+            "ready_for_review"
+          ]
+        },
+        "push": {
+          "branches": [
+            "main"
+          ]
+        },
+        "merge_group": ""
+      },
+      "concurrency": {
+        "group": "velnor-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}",
+        "cancel-in-progress": "${{ github.event_name == 'pull_request' }}"
+      },
+      "job_count": 40,
+      "rust_job_count": 32,
+      "job_graph": {
+        "check-dependency-usage": {
+          "name": "Check / dependency-usage",
+          "if": null,
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "check-repository-links": {
+          "name": "Check / repository-links",
+          "if": null,
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "macos-26",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "check-repository-policy": {
+          "name": "Check / repository-policy",
+          "if": null,
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "macos-26",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "dependency-seed": {
+          "name": "Dependency seed",
+          "if": "github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "30"
+        },
+        "jactionlint": {
+          "name": "Jactionlint",
+          "if": null,
+          "needs": null,
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "5"
+        },
+        "plan": {
+          "name": "Plan",
+          "if": null,
+          "needs": null,
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "5"
+        },
+        "required": {
+          "name": "Required verdict",
+          "if": "${{ !cancelled() }}",
+          "needs": [
+            "plan",
+            "rust-jackin",
+            "rust-jackin-agent-status",
+            "rust-jackin-capsule",
+            "rust-jackin-config",
+            "rust-jackin-console",
+            "rust-jackin-core",
+            "rust-jackin-dev",
+            "rust-jackin-diagnostics",
+            "rust-jackin-docker",
+            "rust-jackin-env",
+            "rust-jackin-host",
+            "rust-jackin-image",
+            "rust-jackin-instance",
+            "rust-jackin-instance-roles",
+            "rust-jackin-isolation",
+            "rust-jackin-launch",
+            "rust-jackin-manifest",
+            "rust-jackin-otlp-testbed",
+            "rust-jackin-process",
+            "rust-jackin-process-directory",
+            "rust-jackin-protocol",
+            "rust-jackin-runtime",
+            "rust-jackin-runtime-launch-account-identity",
+            "rust-jackin-telemetry",
+            "rust-jackin-test-support",
+            "rust-jackin-tui",
+            "rust-jackin-usage",
+            "rust-jackin-usage-broker",
+            "rust-jackin-usage-ffi",
+            "rust-jackin-workflow",
+            "rust-jackin-workflow-spec",
+            "rust-jackin-xtask",
+            "check-dependency-usage",
+            "check-repository-links",
+            "check-repository-policy",
+            "jactionlint"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "5"
+        },
+        "required-gate": {
+          "name": "Required",
+          "if": "${{ always() }}",
+          "needs": [
+            "required"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "5"
+        },
+        "rust-jackin": {
+          "name": "Rust / jackin",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-agent-status": {
+          "name": "Rust / jackin-agent-status",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-agent-status,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-capsule": {
+          "name": "Rust / jackin-capsule",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-capsule,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-config": {
+          "name": "Rust / jackin-config",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-config,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-console": {
+          "name": "Rust / jackin-console",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-console,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-core": {
+          "name": "Rust / jackin-core",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-core,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-dev": {
+          "name": "Rust / jackin-dev",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-dev,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-diagnostics": {
+          "name": "Rust / jackin-diagnostics",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-diagnostics,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-docker": {
+          "name": "Rust / jackin-docker",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-docker,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-env": {
+          "name": "Rust / jackin-env",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-env,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-host": {
+          "name": "Rust / jackin-host",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-host,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-image": {
+          "name": "Rust / jackin-image",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-image,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-instance": {
+          "name": "Rust / jackin-instance",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-instance,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-instance-roles": {
+          "name": "Rust / jackin-instance-roles",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-instance-roles,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-isolation": {
+          "name": "Rust / jackin-isolation",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-isolation,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-launch": {
+          "name": "Rust / jackin-launch",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-launch,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-manifest": {
+          "name": "Rust / jackin-manifest",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-manifest,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-otlp-testbed": {
+          "name": "Rust / jackin-otlp-testbed",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-otlp-testbed,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-process": {
+          "name": "Rust / jackin-process",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-process,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-process-directory": {
+          "name": "Rust / jackin-process-directory",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-process-directory,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-protocol": {
+          "name": "Rust / jackin-protocol",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-protocol,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-runtime": {
+          "name": "Rust / jackin-runtime",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-runtime,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-runtime-launch-account-identity": {
+          "name": "Rust / jackin-runtime-launch-account-identity",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-runtime-launch-account-identity,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-telemetry": {
+          "name": "Rust / jackin-telemetry",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-telemetry,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-test-support": {
+          "name": "Rust / jackin-test-support",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-test-support,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-tui": {
+          "name": "Rust / jackin-tui",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-tui,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-usage": {
+          "name": "Rust / jackin-usage",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-usage,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-usage-broker": {
+          "name": "Rust / jackin-usage-broker",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-usage-broker,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-usage-ffi": {
+          "name": "Rust / jackin-usage-ffi",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-usage-ffi,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-workflow": {
+          "name": "Rust / jackin-workflow",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-workflow,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-workflow-spec": {
+          "name": "Rust / jackin-workflow-spec",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-workflow-spec,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        },
+        "rust-jackin-xtask": {
+          "name": "Rust / jackin-xtask",
+          "if": "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-xtask,')",
+          "needs": [
+            "plan"
+          ],
+          "runs-on": "ubuntu-26.04",
+          "strategy": null,
+          "timeout-minutes": "10"
+        }
+      },
+      "required_verdict_dependencies": [
+        "plan",
+        "rust-jackin",
+        "rust-jackin-agent-status",
+        "rust-jackin-capsule",
+        "rust-jackin-config",
+        "rust-jackin-console",
+        "rust-jackin-core",
+        "rust-jackin-dev",
+        "rust-jackin-diagnostics",
+        "rust-jackin-docker",
+        "rust-jackin-env",
+        "rust-jackin-host",
+        "rust-jackin-image",
+        "rust-jackin-instance",
+        "rust-jackin-instance-roles",
+        "rust-jackin-isolation",
+        "rust-jackin-launch",
+        "rust-jackin-manifest",
+        "rust-jackin-otlp-testbed",
+        "rust-jackin-process",
+        "rust-jackin-process-directory",
+        "rust-jackin-protocol",
+        "rust-jackin-runtime",
+        "rust-jackin-runtime-launch-account-identity",
+        "rust-jackin-telemetry",
+        "rust-jackin-test-support",
+        "rust-jackin-tui",
+        "rust-jackin-usage",
+        "rust-jackin-usage-broker",
+        "rust-jackin-usage-ffi",
+        "rust-jackin-workflow",
+        "rust-jackin-workflow-spec",
+        "rust-jackin-xtask",
+        "check-dependency-usage",
+        "check-repository-links",
+        "check-repository-policy",
+        "jactionlint"
+      ],
+      "required_verdict_condition": "${{ !cancelled() }}",
+      "required_gate": {
+        "name": "Required",
+        "runs-on": "ubuntu-26.04",
+        "timeout-minutes": "5",
+        "env": {
+          "VELNOR_RUN_KEY_ATTEMPT": "${{ github.run_attempt }}"
+        },
+        "needs": [
+          "required"
+        ],
+        "if": "${{ always() }}",
+        "steps": [
+          {
+            "name": "Fail unless the verdict passed",
+            "if": "${{ always() && needs.required.result != 'success' }}",
+            "run": "env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_RUNTIME_TOKEN -u GITHUB_TOKEN -u MISE_GITHUB_TOKEN -u GH_TOKEN -u GH_HOST -u GH_CONFIG_DIR false"
+          }
+        ]
+      },
+      "manifest_generator_version": "0.1.52",
+      "manifest_task_count": 191,
+      "manifest_task_prefix_counts": {
+        "stack/rust/": 191
+      },
+      "discovery_excludes_docs": true,
+      "named_checks": [
+        {
+          "id": "repository-policy",
+          "task": "check:repository-policy",
+          "directory": ".",
+          "inputs": [
+            ".velnor/config.toml",
+            "Cargo.lock",
+            "Cargo.toml",
+            "clippy.toml",
+            "container-path-allowlist.toml",
+            "mise.lock",
+            "mise.toml",
+            "ratchet.toml",
+            "rust-toolchain.toml",
+            "crates/tools/jackin-xtask/src/lint.rs"
+          ],
+          "tools": [
+            "rust",
+            "weaver"
+          ],
+          "timeout_minutes": 10,
+          "runner": {
+            "label": "macos-26",
+            "platform": "macos_arm64",
+            "executor": "hosted"
+          }
+        },
+        {
+          "id": "repository-links",
+          "task": "check:repository-links",
+          "directory": ".",
+          "inputs": [
+            ".velnor/config.toml",
+            "Cargo.lock",
+            "Cargo.toml",
+            "mise.lock",
+            "mise.toml",
+            "rust-toolchain.toml",
+            "crates/tools/jackin-xtask/src/docs.rs"
+          ],
+          "tools": [
+            "rust"
+          ],
+          "timeout_minutes": 10,
+          "runner": {
+            "label": "macos-26",
+            "platform": "macos_arm64",
+            "executor": "hosted"
+          }
+        },
+        {
+          "id": "dependency-usage",
+          "task": "check:dependency-usage",
+          "directory": ".",
+          "inputs": [
+            ".velnor/config.toml",
+            "Cargo.lock",
+            "Cargo.toml",
+            "mise.lock",
+            "mise.toml",
+            "rust-toolchain.toml"
+          ],
+          "tools": [
+            "cargo-shear",
+            "rust"
+          ],
+          "timeout_minutes": 10,
+          "runner": {
+            "label": "ubuntu-26.04",
+            "platform": "linux_x64",
+            "executor": "hosted"
+          }
+        }
+      ],
+      "named_check_commands": {
+        "check:repository-links": {
+          "description": "Validate links across tracked repository documentation",
+          "run": "cargo run --locked -p jackin-xtask -- docs repo-links"
+        },
+        "check:repository-policy": {
+          "description": "Enforce repository-wide architecture, telemetry, and ratchet policy",
+          "run": "cargo run --locked -p jackin-xtask -- lint --strict"
+        },
+        "check:dependency-usage": {
+          "description": "Reject unused workspace dependencies",
+          "run": "cargo shear --deny-warnings"
+        }
+      },
+      "docs_site_lane": {
+        "present": false,
+        "scope": "No Bun/Next/Fumadocs site build, site typecheck or site test job appears in the inspected workflow or generated manifest. Rust Documentation tasks run cargo doc. The repository-links check validates repository documentation links. The final local full docs gate is separately owned by the coordinator."
+      },
+      "not_executed": [
+        "CI run",
+        "workflow rerun",
+        "documentation build",
+        "Rust build",
+        "tests",
+        "release publication",
+        "tap reconciliation"
+      ]
+    },
+    "manifest_task_delta": {
+      "task_ids_identical": true,
+      "task_count": 191,
+      "changed_tasks": 191,
+      "changed_fields_only": [
+        "execution_digest",
+        "report_helper_version"
+      ],
+      "report_helper_version_before": "0.1.48",
+      "report_helper_version_after": "0.1.52",
+      "all_other_fields_identical": true
+    }
+  },
+  "release_changes": {
+    "homebrew_tap_enabled": true,
+    "publication_timeout_minutes": 15,
+    "workflows": [
+      {
+        "path": ".github/workflows/preview-tap-reconcile.yml",
+        "bytes": 29507,
+        "sha256": "c3e2df2090de315c271632ce32ef56d1e23e7043d96ed7b302913065c0018ded",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/workflows/preview-tap-reconcile.yml",
+        "name": "Preview tap reconciliation",
+        "triggers": {
+          "schedule": [
+            {
+              "cron": "*/5 * * * *"
+            }
+          ],
+          "workflow_dispatch": {}
+        },
+        "job_count": 4,
+        "job_names": {
+          "preview-tap-selection": "Select the current committed immutable preview",
+          "preview-tap-prepare": "Prepare a literal-only tap update without write credentials",
+          "preview-tap-writer": "Independently validate and create a signed-off tap PR",
+          "preview-tap-merge": "Merge only the validated and fully reviewed PR head"
+        }
+      },
+      {
+        "path": ".github/workflows/stable-tap-reconcile.yml",
+        "bytes": 29421,
+        "sha256": "cd6b0bfac5a8a206ec9ed4807d241bed0efb2e36048b268752956e358db8b300",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/workflows/stable-tap-reconcile.yml",
+        "name": "Stable tap reconciliation",
+        "triggers": {
+          "schedule": [
+            {
+              "cron": "*/5 * * * *"
+            }
+          ],
+          "workflow_dispatch": {}
+        },
+        "job_count": 4,
+        "job_names": {
+          "stable-tap-selection": "Select the authenticated permanent stable release",
+          "stable-tap-prepare": "Prepare a literal-only tap update without write credentials",
+          "stable-tap-writer": "Independently validate and create a signed-off tap PR",
+          "stable-tap-merge": "Merge only the validated and fully reviewed PR head"
+        }
+      },
+      {
+        "path": ".github/workflows/binary-preview.yml",
+        "bytes": 71674,
+        "sha256": "b03ca1a4aab5599a5697168b6896e42b0449314f8d2091476692d41f1ef1aebf",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/workflows/binary-preview.yml",
+        "name": "Rust binary preview",
+        "triggers": {
+          "workflow_run": {
+            "workflows": [
+              "CI"
+            ],
+            "types": [
+              "completed"
+            ],
+            "branches": [
+              "main"
+            ]
+          },
+          "workflow_dispatch": {
+            "inputs": {
+              "original_run_id": {
+                "description": "Original preview production workflow run ID",
+                "required": "true",
+                "type": "string"
+              },
+              "original_run_attempt": {
+                "description": "Original preview production workflow run attempt",
+                "required": "true",
+                "type": "string"
+              }
+            }
+          }
+        },
+        "job_count": 9,
+        "job_names": {
+          "preview-eligibility": "Select authenticated main source for preview",
+          "preview-payload": "Build ${{ matrix.product_id }} / ${{ matrix.target }}",
+          "preview-assemble": "preview-assemble",
+          "preview-signer": "preview-signer",
+          "preview-publisher": "Publish authenticated channel release",
+          "preview-recovery": "Recover the original signed release without rebuilding",
+          "preview-tap-prepare": "Prepare a literal-only tap update without write credentials",
+          "preview-tap-writer": "Independently validate and create a signed-off tap PR",
+          "preview-tap-merge": "Merge only the validated and fully reviewed PR head"
+        }
+      },
+      {
+        "path": ".github/workflows/binary-release.yml",
+        "bytes": 288329,
+        "sha256": "8dcb7dcb9863c74d4d5b9f4b0fe67f172838c6d07889052bf6861fc68615cd36",
+        "url": "https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/.github/workflows/binary-release.yml",
+        "name": "Rust binary release",
+        "triggers": {
+          "workflow_dispatch": {
+            "inputs": {
+              "operation": {
+                "description": "Prepare the version PR or release the approved version",
+                "required": "true",
+                "type": "choice",
+                "options": [
+                  "prepare",
+                  "release"
+                ],
+                "default": "prepare"
+              },
+              "original_run_id": {
+                "description": "Original retained stable transaction; both recovery fields are required together",
+                "required": "false",
+                "type": "string"
+              },
+              "original_run_attempt": {
+                "description": "Original retained stable transaction; both recovery fields are required together",
+                "required": "false",
+                "type": "string"
+              }
+            }
+          }
+        },
+        "job_count": 16,
+        "job_names": {
+          "stable-eligibility": "Authenticate stable source and complete CI",
+          "stable-prepare": "Prepare the stable version PR",
+          "stable-tag": "Authorize the permanent stable tag",
+          "stable-payload-000": "Build jackin / aarch64-apple-darwin",
+          "stable-payload-001": "Build jackin / aarch64-unknown-linux-gnu",
+          "stable-payload-002": "Build jackin / x86_64-apple-darwin",
+          "stable-payload-003": "Build jackin / x86_64-unknown-linux-gnu",
+          "stable-payload-004": "Build jackin-capsule / aarch64-unknown-linux-gnu",
+          "stable-payload-005": "Build jackin-capsule / x86_64-unknown-linux-gnu",
+          "stable-assemble": "stable-assemble",
+          "stable-signer": "stable-signer",
+          "stable-publisher": "Publish authenticated channel release",
+          "stable-recovery": "Recover the original signed release without rebuilding",
+          "stable-tap-prepare": "Prepare a literal-only tap update without write credentials",
+          "stable-tap-writer": "Independently validate and create a signed-off tap PR",
+          "stable-tap-merge": "Merge only the validated and fully reviewed PR head"
+        }
+      }
+    ]
+  },
+  "conclusion": {
+    "source_continuity": "25 of 26 original audited files are byte-identical at late main; Cargo.toml changes only the Velnor tooling contract dependency. All 13 separately audited c98 overlay source files are byte-identical. No Rust source or context-research path changes in c98..e737.",
+    "integration_conclusions": "The observed launch/hook/usage ownership and existing SQLite-linkage conclusions retain their inspected source basis. The changed Velnor generator and contract require verification on the merged tree; earlier tooling/build results are not relabeled as current.",
+    "ci_scope": "The same 40-job CI graph, 32 Rust jobs, 191 Rust task IDs and 37 verdict dependencies remain. Each task changes only report_helper_version and execution_digest; argv, environment and other task fields are identical. No docs-site gate is added. New native tap reconciliation workflows are scheduled/manual release automation, not PR CI jobs.",
+    "publication_scope": "These 26 changes are inherited main changes. All match the merge index at this inspection; final-head PR diff verification remains pending.",
+    "final_head_ci_status": "Pending coordinator final research head; checkpoint 9971e262 is not final acceptance evidence."
+  },
+  "limitations": [
+    "No full security or release-workflow audit is claimed.",
+    "No new compiler, test, native host, optimizer, provider, release or Homebrew execution was performed for this overlay.",
+    "Source-file equality does not by itself prove behavioral equivalence of changed build tooling.",
+    "The external-product source cutoff remains 2026-10-24T01:15:00Z; this is a later repository-main integration check."
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+  "cutoff_utc": "2026-10-24T01:15:00Z",
+  "census_sha256": "879d002c40b2d42dd59227009f1a053afbb7f14272083eed1dc90f63a94f1695",
+  "reconciliation": "Explicit canonical arrays; exact baseline identity, heading and anchor checks; no fuzzy, substring, old-heading or Summary fallback; duplicates are errors.",
+  "census_entries": 905,
+  "documents": 71,
+  "mdx_documents": 56,
+  "mapped_entries": 905,
+  "missing_entries": [],
+  "invalid_destinations": [],
+  "duplicate_ids": [],
+  "workstream_ledgers": [
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/coverage-dispositions.json",
+      "selector": "old_headings",
+      "selected_records": 26,
+      "accepted_records_before_duplicate_resolution": 26,
+      "sha256": "de618b2730617416c51825ececc2537ecdbea4b92973a96f38796a473cbc9ab0",
+      "prose_disposition_is_authored_rationale": false
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-dispositions.json",
+      "selector": "rows",
+      "selected_records": 110,
+      "accepted_records_before_duplicate_resolution": 110,
+      "sha256": "95ad23a13342f3db2dc5c28bdef6bce3360da18f0ac08cc99417258e40a65164",
+      "prose_disposition_is_authored_rationale": false
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-coverage-dispositions.json",
+      "selector": "rows",
+      "selected_records": 66,
+      "accepted_records_before_duplicate_resolution": 66,
+      "sha256": "485fa19003c7eb1e9f34604975e1b0785645ce6af866edeab45f60f2447edde4",
+      "prose_disposition_is_authored_rationale": false
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/coverage-dispositions.json",
+      "selector": "pages[].headings",
+      "selected_records": 23,
+      "accepted_records_before_duplicate_resolution": 23,
+      "sha256": "63ac5024aebb7800101e854a9d49f951797539257afd7395cd28af25c108dc7a",
+      "prose_disposition_is_authored_rationale": false
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coordinator-dispositions.json",
+      "selector": "rows",
+      "selected_records": 69,
+      "accepted_records_before_duplicate_resolution": 69,
+      "sha256": "9b9c4acc46386aa3884900d9104326f20a85240cf17bf91c6f5c992db4ae195a",
+      "prose_disposition_is_authored_rationale": false
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/artifact-dispositions.json",
+      "selector": "rows",
+      "selected_records": 19,
+      "accepted_records_before_duplicate_resolution": 19,
+      "sha256": "4cb5553366a0dd51b1cf8e984b1ea6e6d7615bef3fc02e5a3eedfdea3973173a",
+      "prose_disposition_is_authored_rationale": false
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/coverage-dispositions.json",
+      "selector": "headings",
+      "selected_records": 164,
+      "accepted_records_before_duplicate_resolution": 164,
+      "sha256": "c017539c8321796469327b22220b464bd5d7a9fd585e58e395f4f9a490f2cea6",
+      "prose_disposition_is_authored_rationale": false
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/integration-coverage-dispositions.json",
+      "selector": "headings",
+      "selected_records": 47,
+      "accepted_records_before_duplicate_resolution": 47,
+      "sha256": "a76c452133dfd4edebbc92484dfc95a4a1f087e243fa092f5f0f25fa51658388",
+      "prose_disposition_is_authored_rationale": false
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/coverage-dispositions.json",
+      "selector": "headings",
+      "selected_records": 218,
+      "accepted_records_before_duplicate_resolution": 218,
+      "sha256": "628fcf9e43b7c83ac783e1917ccaa92ee3694d92fdecc07624bc46d630895197",
+      "prose_disposition_is_authored_rationale": false
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/coverage-dispositions.json",
+      "selector": "chapters[].headings",
+      "selected_records": 87,
+      "accepted_records_before_duplicate_resolution": 87,
+      "sha256": "3582f00490938b9c4677003dea43143ca2a5ab573d3d37b595156ec9b1c83408",
+      "prose_disposition_is_authored_rationale": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/heading-dispositions.json",
+      "selector": "rows",
+      "selected_records": 23,
+      "accepted_records_before_duplicate_resolution": 23,
+      "sha256": "f23eee4508322fc9976ee7cc90f39c261c3b53be1cee8eee447cc67fa9528cab",
+      "prose_disposition_is_authored_rationale": false
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/coverage-dispositions.json",
+      "selector": "headings",
+      "selected_records": 53,
+      "accepted_records_before_duplicate_resolution": 53,
+      "sha256": "7968a84180ce7ebe8310c542e6836cc7afeb66641e132303a66745d686abf75b",
+      "prose_disposition_is_authored_rationale": false
+    }
+  ],
+  "meaning": "Every accepted census entry maps to an explicit authored disposition and exact destination. Split destinations are retained as arrays. This verifies mapping provenance and integrity, not scientific proof, full within-section coverage or paid execution."
+}

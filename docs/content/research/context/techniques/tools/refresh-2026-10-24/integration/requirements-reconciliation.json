@@ -1,0 +1,3238 @@
+{
+  "goal_sha256": "be246947f00b5219809e455ef0896eda14553888735f2a48cdc4d409e8dec43d",
+  "scope_note": "Instruction-entry map, including labels and source links, not a count of independently tested scientific claims. The905-entry baseline census and detailed material/numerical ledgers preserve recovered research scope; command results and unexecuted boundaries remain separate.",
+  "rows": [
+    {
+      "id": "G001",
+      "goal_line": 4,
+      "section": "goal",
+      "requirement": "Fully re-research the complete context-optimization and token-efficiency work previously discussed in this conversation and recorded in Jackin.",
+      "disposition": "Fresh source investigation and component-based decision; production activation remains outside this PR.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G002",
+      "goal_line": 6,
+      "section": "goal",
+      "requirement": "Repository: https://github.com/jackin-project/jackin",
+      "disposition": "Fresh source investigation and component-based decision; production activation remains outside this PR.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G003",
+      "goal_line": 8,
+      "section": "goal",
+      "requirement": "This is a fresh investigation, not a version-number update, a summary of old research, or an exercise in defending the previous recommendation.",
+      "disposition": "Fresh source investigation and component-based decision; production activation remains outside this PR.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G004",
+      "goal_line": 10,
+      "section": "goal",
+      "requirement": "Recover the complete scope. Reopen the original sources. Inspect current implementations. Reassess the evidence. Reproduce important findings where practical. Replace outdated conclusions throughout the existing documentation.",
+      "disposition": "Fresh source investigation and component-based decision; production activation remains outside this PR.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G005",
+      "goal_line": 12,
+      "section": "goal",
+      "requirement": "Determine what Jackin should now install, configure, activate, embed, reuse, adapt, contribute upstream, fork, or implement itself to improve complete agent tasks without sacrificing correctness.",
+      "disposition": "Fresh source investigation and component-based decision; production activation remains outside this PR.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G006",
+      "goal_line": 14,
+      "section": "goal",
+      "requirement": "Deliver the updated research in a GitHub pull request. Do not implement or activate production optimizer behavior as part of this research.",
+      "disposition": "Fresh source investigation and component-based decision; production activation remains outside this PR.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G007",
+      "goal_line": 18,
+      "section": "working_style",
+      "requirement": "Use real subagents aggressively for research, source inspection, experiments, documentation, and independent review. The coordinator should primarily assign work, resolve contradictions, and integrate findings.",
+      "disposition": "Three actual parallel subagents, reused across waves with inherited model policy; distinct-author critical reviews and real command records.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json"
+      ]
+    },
+    {
+      "id": "G008",
+      "goal_line": 20,
+      "section": "working_style",
+      "requirement": "Start parallel workstreams for:",
+      "disposition": "Three actual parallel subagents, reused across waves with inherited model policy; distinct-author critical reviews and real command records.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json"
+      ]
+    },
+    {
+      "id": "G009",
+      "goal_line": 21,
+      "section": "working_style",
+      "requirement": "- Each of the six core products.",
+      "disposition": "Three actual parallel subagents, reused across waves with inherited model policy; distinct-author critical reviews and real command records.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json"
+      ]
+    },
+    {
+      "id": "G010",
+      "goal_line": 22,
+      "section": "working_style",
+      "requirement": "- Independent benchmarks and claim verification.",
+      "disposition": "Three actual parallel subagents, reused across waves with inherited model policy; distinct-author critical reviews and real command records.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json"
+      ]
+    },
+    {
+      "id": "G011",
+      "goal_line": 23,
+      "section": "working_style",
+      "requirement": "- Provider economics, subscriptions, caching, and agent-native features.",
+      "disposition": "Three actual parallel subagents, reused across waves with inherited model policy; distinct-author critical reviews and real command records.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json"
+      ]
+    },
+    {
+      "id": "G012",
+      "goal_line": 24,
+      "section": "working_style",
+      "requirement": "- Adjacent tools, new alternatives, and research literature.",
+      "disposition": "Three actual parallel subagents, reused across waves with inherited model policy; distinct-author critical reviews and real command records.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json"
+      ]
+    },
+    {
+      "id": "G013",
+      "goal_line": 25,
+      "section": "working_style",
+      "requirement": "- Rust reuse, dependency feasibility, and Jackin integration.",
+      "disposition": "Three actual parallel subagents, reused across waves with inherited model policy; distinct-author critical reviews and real command records.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json"
+      ]
+    },
+    {
+      "id": "G014",
+      "goal_line": 26,
+      "section": "working_style",
+      "requirement": "- Security, recovery, state isolation, and concurrent worktrees.",
+      "disposition": "Three actual parallel subagents, reused across waves with inherited model policy; distinct-author critical reviews and real command records.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json"
+      ]
+    },
+    {
+      "id": "G015",
+      "goal_line": 28,
+      "section": "working_style",
+      "requirement": "Give reviewers findings they did not author. Ask them to challenge the evidence and proposed decisions, not merely approve the prose.",
+      "disposition": "Three actual parallel subagents, reused across waves with inherited model policy; distinct-author critical reviews and real command records.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json"
+      ]
+    },
+    {
+      "id": "G016",
+      "goal_line": 30,
+      "section": "working_style",
+      "requirement": "Follow the active project model and reasoning-effort policy. Do not silently substitute models. Record actual delegation and executed work. Never describe a simulated role or section heading as a subagent.",
+      "disposition": "Three actual parallel subagents, reused across waves with inherited model policy; distinct-author critical reviews and real command records.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json"
+      ]
+    },
+    {
+      "id": "G017",
+      "goal_line": 32,
+      "section": "working_style",
+      "requirement": "Inspect available tools and execution capabilities instead of inheriting limitations from the previous session. If delegation or a required environment is unavailable, disclose the limitation and complete the accessible work without fabricating execution.",
+      "disposition": "Three actual parallel subagents, reused across waves with inherited model policy; distinct-author critical reviews and real command records.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json"
+      ]
+    },
+    {
+      "id": "G018",
+      "goal_line": 34,
+      "section": "working_style",
+      "requirement": "Work autonomously. Resolve ordinary questions through evidence and explicit assumptions. Do not stop to ask questions that repository inspection or research can answer.",
+      "disposition": "Three actual parallel subagents, reused across waves with inherited model policy; distinct-author critical reviews and real command records.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json"
+      ]
+    },
+    {
+      "id": "G019",
+      "goal_line": 36,
+      "section": "working_style",
+      "requirement": "Publish useful findings early. Commit and push coherent documentation changes frequently. Prefer one integration branch. Avoid repeated planning and redundant review.",
+      "disposition": "Three actual parallel subagents, reused across waves with inherited model policy; distinct-author critical reviews and real command records.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json"
+      ]
+    },
+    {
+      "id": "G020",
+      "goal_line": 40,
+      "section": "recover_the_full_scope",
+      "requirement": "Read all accessible conversation history, earlier reports, repository research, related plans, and relevant PR discussions before deciding the final scope.",
+      "disposition": "Accessible Git/PR/repository material recovered. Personal Context retrieval was disabled; report-source.md, context-optimizers-deep-research.pdf, original private sessions and complete style corpus were not recovered in bounded searches.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G021",
+      "goal_line": 42,
+      "section": "recover_the_full_scope",
+      "requirement": "Historical entry points:",
+      "disposition": "Original brief, PR1105/1192, Git history and all baseline research files recovered; unavailable private history/reports/corpus named explicitly.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G022",
+      "goal_line": 43,
+      "section": "recover_the_full_scope",
+      "requirement": "- https://github.com/jackin-project/jackin/pull/1105",
+      "disposition": "Original brief, PR1105/1192, Git history and all baseline research files recovered; unavailable private history/reports/corpus named explicitly.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G023",
+      "goal_line": 44,
+      "section": "recover_the_full_scope",
+      "requirement": "- docs/content/research/context/tools/",
+      "disposition": "Original brief, PR1105/1192, Git history and all baseline research files recovered; unavailable private history/reports/corpus named explicitly.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G024",
+      "goal_line": 45,
+      "section": "recover_the_full_scope",
+      "requirement": "- docs/content/research/context/techniques/",
+      "disposition": "Original brief, PR1105/1192, Git history and all baseline research files recovered; unavailable private history/reports/corpus named explicitly.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G025",
+      "goal_line": 46,
+      "section": "recover_the_full_scope",
+      "requirement": "- docs/content/research/context/engine/",
+      "disposition": "Original brief, PR1105/1192, Git history and all baseline research files recovered; unavailable private history/reports/corpus named explicitly.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G026",
+      "goal_line": 47,
+      "section": "recover_the_full_scope",
+      "requirement": "- The measurement tools referenced by those dossiers.",
+      "disposition": "Original brief, PR1105/1192, Git history and all baseline research files recovered; unavailable private history/reports/corpus named explicitly.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G027",
+      "goal_line": 48,
+      "section": "recover_the_full_scope",
+      "requirement": "- The earlier report-source.md and context-optimizers-deep-research.pdf, when accessible.",
+      "disposition": "Accessible Git/PR/repository material recovered. Personal Context retrieval was disabled; report-source.md, context-optimizers-deep-research.pdf, original private sessions and complete style corpus were not recovered in bounded searches.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G028",
+      "goal_line": 49,
+      "section": "recover_the_full_scope",
+      "requirement": "- The historical research brief:",
+      "disposition": "Original brief, PR1105/1192, Git history and all baseline research files recovered; unavailable private history/reports/corpus named explicitly.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G029",
+      "goal_line": 50,
+      "section": "recover_the_full_scope",
+      "requirement": "  https://github.com/jackin-project/jackin/blob/485bcd913db426f396868bb0e5be3f122f4902c9/prompts/research/context-tools.md",
+      "disposition": "Original brief, PR1105/1192, Git history and all baseline research files recovered; unavailable private history/reports/corpus named explicitly.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G030",
+      "goal_line": 52,
+      "section": "recover_the_full_scope",
+      "requirement": "Discover current paths. Follow renames, migrations, later commits, and superseding PRs. Do not assume a historical path, branch, crate, or command still exists. Do not recreate intentionally removed documentation without checking its replacement.",
+      "disposition": "Original brief, PR1105/1192, Git history and all baseline research files recovered; unavailable private history/reports/corpus named explicitly.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G031",
+      "goal_line": 54,
+      "section": "recover_the_full_scope",
+      "requirement": "Read the current repository instructions, documentation conventions, design principles, testing requirements, and PR template.",
+      "disposition": "Original brief, PR1105/1192, Git history and all baseline research files recovered; unavailable private history/reports/corpus named explicitly.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G032",
+      "goal_line": 56,
+      "section": "recover_the_full_scope",
+      "requirement": "Build a coverage inventory mapping every previous research question, material claim, experiment, recommendation, unresolved issue, and document to its refresh workstream and disposition.",
+      "disposition": "Original brief, PR1105/1192, Git history and all baseline research files recovered; unavailable private history/reports/corpus named explicitly.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G033",
+      "goal_line": 58,
+      "section": "recover_the_full_scope",
+      "requirement": "Do not limit the refresh to the six product pages or update only the engine overview while leaving contradictory recommendations in its detailed chapters.",
+      "disposition": "Original brief, PR1105/1192, Git history and all baseline research files recovered; unavailable private history/reports/corpus named explicitly.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G034",
+      "goal_line": 60,
+      "section": "recover_the_full_scope",
+      "requirement": "If historical material cannot be recovered, name the missing material. Reconstruct what is possible from Git history and primary sources. Do not claim to have reread inaccessible conversation content.",
+      "disposition": "Accessible Git/PR/repository material recovered. Personal Context retrieval was disabled; report-source.md, context-optimizers-deep-research.pdf, original private sessions and complete style corpus were not recovered in bounded searches.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json"
+      ]
+    },
+    {
+      "id": "G035",
+      "goal_line": 64,
+      "section": "product_objective",
+      "requirement": "The intended product experience is useful optimization out of the box:",
+      "disposition": "Concrete default, experimental and off/raw semantics plus automatic packaging stages; existing behavior is distinguished from proposed implementation.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G036",
+      "goal_line": 65,
+      "section": "product_objective",
+      "requirement": "- Jackin packages or installs the required reviewed components.",
+      "disposition": "Concrete default, experimental and off/raw semantics plus automatic packaging stages; existing behavior is distinguished from proposed implementation.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G037",
+      "goal_line": 66,
+      "section": "product_objective",
+      "requirement": "- Jackin configures them automatically within its supported isolation model.",
+      "disposition": "Concrete default, experimental and off/raw semantics plus automatic packaging stages; existing behavior is distinguished from proposed implementation.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G038",
+      "goal_line": 67,
+      "section": "product_objective",
+      "requirement": "- Qualified capabilities activate without requiring the operator to maintain several unrelated installers.",
+      "disposition": "Concrete default, experimental and off/raw semantics plus automatic packaging stages; existing behavior is distinguished from proposed implementation.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G039",
+      "goal_line": 68,
+      "section": "product_objective",
+      "requirement": "- The operator can disable everything, disable individual components, select alternatives, and inspect the effective configuration.",
+      "disposition": "Concrete default, experimental and off/raw semantics plus automatic packaging stages; existing behavior is distinguished from proposed implementation.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G040",
+      "goal_line": 69,
+      "section": "product_objective",
+      "requirement": "- Native behavior remains available when a capability is disabled or incompatible.",
+      "disposition": "Concrete default, experimental and off/raw semantics plus automatic packaging stages; existing behavior is distinguished from proposed implementation.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G041",
+      "goal_line": 71,
+      "section": "product_objective",
+      "requirement": "Do not turn this objective into a dashboard with no effective optimization. Equally, do not enable unverified transformations just to claim an automatic default.",
+      "disposition": "Concrete default, experimental and off/raw semantics plus automatic packaging stages; existing behavior is distinguished from proposed implementation.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G042",
+      "goal_line": 73,
+      "section": "product_objective",
+      "requirement": "Provide a concrete default profile, an experimental profile, and an off/raw path. Identify what is ready now and the exact evidence required to promote each remaining capability.",
+      "disposition": "Concrete default, experimental and off/raw semantics plus automatic packaging stages; existing behavior is distinguished from proposed implementation.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G043",
+      "goal_line": 75,
+      "section": "product_objective",
+      "requirement": "Prioritize accepted-task correctness, reliability, and long-term quality over an attractive compression percentage.",
+      "disposition": "Concrete default, experimental and off/raw semantics plus automatic packaging stages; existing behavior is distinguished from proposed implementation.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G044",
+      "goal_line": 77,
+      "section": "product_objective",
+      "requirement": "Prefer upstream reuse and contributions when they meet the requirements. Rust is strongly preferred for Jackin-owned components and evaluation orchestration, but implementation language alone is not sufficient to reject a better backend.",
+      "disposition": "Concrete default, experimental and off/raw semantics plus automatic packaging stages; existing behavior is distinguished from proposed implementation.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G045",
+      "goal_line": 79,
+      "section": "product_objective",
+      "requirement": "Refactoring, architectural changes, forks, and rewrites are acceptable when justified. Do not preserve the previous design merely because research or code already exists.",
+      "disposition": "Concrete default, experimental and off/raw semantics plus automatic packaging stages; existing behavior is distinguished from proposed implementation.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx"
+      ]
+    },
+    {
+      "id": "G046",
+      "goal_line": 83,
+      "section": "freshness_and_provenance",
+      "requirement": "Use the actual research execution date and an explicit UTC cutoff.",
+      "disposition": "Exact release/component pins, artifact identities, dated mutable-source limits and final release rechecks; no mixing of release and default-branch claims.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md"
+      ]
+    },
+    {
+      "id": "G047",
+      "goal_line": 85,
+      "section": "freshness_and_provenance",
+      "requirement": "For every product, verify its identity, canonical repository, latest stable release, publication date, release commit, distributed artifacts, package names, and license boundaries using live primary sources.",
+      "disposition": "Exact release/component pins, artifact identities, dated mutable-source limits and final release rechecks; no mixing of release and default-branch claims.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md"
+      ]
+    },
+    {
+      "id": "G048",
+      "goal_line": 87,
+      "section": "freshness_and_provenance",
+      "requirement": "Distinguish:",
+      "disposition": "Exact release/component pins, artifact identities, dated mutable-source limits and final release rechecks; no mixing of release and default-branch claims.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md"
+      ]
+    },
+    {
+      "id": "G049",
+      "goal_line": 88,
+      "section": "freshness_and_provenance",
+      "requirement": "- Stable release from unreleased default-branch work.",
+      "disposition": "Exact release/component pins, artifact identities, dated mutable-source limits and final release rechecks; no mixing of release and default-branch claims.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md"
+      ]
+    },
+    {
+      "id": "G050",
+      "goal_line": 89,
+      "section": "freshness_and_provenance",
+      "requirement": "- Product version from binary, crate, SDK, plugin, and package versions.",
+      "disposition": "Exact release/component pins, artifact identities, dated mutable-source limits and final release rechecks; no mixing of release and default-branch claims.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md"
+      ]
+    },
+    {
+      "id": "G051",
+      "goal_line": 90,
+      "section": "freshness_and_provenance",
+      "requirement": "- Published packages from internal workspace crates and unpublished facades.",
+      "disposition": "Exact release/component pins, artifact identities, dated mutable-source limits and final release rechecks; no mixing of release and default-branch claims.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md"
+      ]
+    },
+    {
+      "id": "G052",
+      "goal_line": 91,
+      "section": "freshness_and_provenance",
+      "requirement": "- Source availability from reproducible builds.",
+      "disposition": "Exact release/component pins, artifact identities, dated mutable-source limits and final release rechecks; no mixing of release and default-branch claims.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md"
+      ]
+    },
+    {
+      "id": "G053",
+      "goal_line": 92,
+      "section": "freshness_and_provenance",
+      "requirement": "- Documented behavior from inspected implementation and executed behavior.",
+      "disposition": "Exact release/component pins, artifact identities, dated mutable-source limits and final release rechecks; no mixing of release and default-branch claims.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md"
+      ]
+    },
+    {
+      "id": "G054",
+      "goal_line": 93,
+      "section": "freshness_and_provenance",
+      "requirement": "- Benchmark publication date from the date and versions actually tested.",
+      "disposition": "Exact release/component pins, artifact identities, dated mutable-source limits and final release rechecks; no mixing of release and default-branch claims.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md"
+      ]
+    },
+    {
+      "id": "G055",
+      "goal_line": 95,
+      "section": "freshness_and_provenance",
+      "requirement": "Pin source links to commits or release tags for substantive implementation claims. Record access dates, configurations, and source locations.",
+      "disposition": "Exact release/component pins, artifact identities, dated mutable-source limits and final release rechecks; no mixing of release and default-branch claims.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md"
+      ]
+    },
+    {
+      "id": "G056",
+      "goal_line": 97,
+      "section": "freshness_and_provenance",
+      "requirement": "Recheck the selected release identities before finalizing. Do not silently combine code from different revisions. A release arriving during the work must be either explicitly incorporated and revalidated or documented as outside the frozen snapshot.",
+      "disposition": "Exact release/component pins, artifact identities, dated mutable-source limits and final release rechecks; no mixing of release and default-branch claims.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md"
+      ]
+    },
+    {
+      "id": "G057",
+      "goal_line": 99,
+      "section": "freshness_and_provenance",
+      "requirement": "Treat all earlier version numbers, percentages, pricing, quotas, defaults, API descriptions, source-availability claims, and licensing conclusions as unverified historical claims.",
+      "disposition": "Exact release/component pins, artifact identities, dated mutable-source limits and final release rechecks; no mixing of release and default-branch claims.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md"
+      ]
+    },
+    {
+      "id": "G058",
+      "goal_line": 101,
+      "section": "freshness_and_provenance",
+      "requirement": "A newly released package containing an old benchmark document is not a new benchmark. A recent page edit does not make its underlying experiment current.",
+      "disposition": "Exact release/component pins, artifact identities, dated mutable-source limits and final release rechecks; no mixing of release and default-branch claims.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md"
+      ]
+    },
+    {
+      "id": "G059",
+      "goal_line": 105,
+      "section": "core_products",
+      "requirement": "Research all six at comparable depth:",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G060",
+      "goal_line": 107,
+      "section": "core_products",
+      "requirement": "1. Caveman",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/01-caveman-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/01-caveman-design.mdx"
+      ]
+    },
+    {
+      "id": "G061",
+      "goal_line": 108,
+      "section": "core_products",
+      "requirement": "   https://github.com/JuliusBrussee/caveman",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/01-caveman-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/01-caveman-design.mdx"
+      ]
+    },
+    {
+      "id": "G062",
+      "goal_line": 110,
+      "section": "core_products",
+      "requirement": "2. RTK",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/03-rtk-design.mdx"
+      ]
+    },
+    {
+      "id": "G063",
+      "goal_line": 111,
+      "section": "core_products",
+      "requirement": "   https://github.com/rtk-ai/rtk",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/03-rtk-design.mdx"
+      ]
+    },
+    {
+      "id": "G064",
+      "goal_line": 113,
+      "section": "core_products",
+      "requirement": "3. LeanCTX / lean-ctx",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/04-leanctx-design.mdx"
+      ]
+    },
+    {
+      "id": "G065",
+      "goal_line": 114,
+      "section": "core_products",
+      "requirement": "   https://github.com/yvgude/lean-ctx",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/04-leanctx-design.mdx"
+      ]
+    },
+    {
+      "id": "G066",
+      "goal_line": 116,
+      "section": "core_products",
+      "requirement": "4. Ponytail",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/09-ponytail-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/09-ponytail-design.mdx"
+      ]
+    },
+    {
+      "id": "G067",
+      "goal_line": 117,
+      "section": "core_products",
+      "requirement": "   https://github.com/DietrichGebert/ponytail",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/09-ponytail-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/09-ponytail-design.mdx"
+      ]
+    },
+    {
+      "id": "G068",
+      "goal_line": 119,
+      "section": "core_products",
+      "requirement": "5. Headroom",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/02-headroom-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/02-headroom-design.mdx"
+      ]
+    },
+    {
+      "id": "G069",
+      "goal_line": 120,
+      "section": "core_products",
+      "requirement": "   https://github.com/headroomlabs-ai/headroom",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/02-headroom-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/02-headroom-design.mdx"
+      ]
+    },
+    {
+      "id": "G070",
+      "goal_line": 122,
+      "section": "core_products",
+      "requirement": "6. LemonCrow",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/10-lemoncrow-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/10-lemoncrow-design.mdx"
+      ]
+    },
+    {
+      "id": "G071",
+      "goal_line": 123,
+      "section": "core_products",
+      "requirement": "   https://lemoncrow.com",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/10-lemoncrow-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/10-lemoncrow-design.mdx"
+      ]
+    },
+    {
+      "id": "G072",
+      "goal_line": 124,
+      "section": "core_products",
+      "requirement": "   https://github.com/lemoncrow-lab/lemoncrow",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/10-lemoncrow-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/10-lemoncrow-design.mdx"
+      ]
+    },
+    {
+      "id": "G073",
+      "goal_line": 126,
+      "section": "core_products",
+      "requirement": "Verify redirects and ownership changes rather than assuming these remain canonical.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G074",
+      "goal_line": 128,
+      "section": "core_products",
+      "requirement": "Separate each product's independently selectable interventions: narration, coding policy, shell filtering, native tool-result transformation, retrieval, memory, history compression, provider proxy, local inference, and representation changes.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G075",
+      "goal_line": 130,
+      "section": "core_products",
+      "requirement": "For each intervention establish:",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G076",
+      "goal_line": 131,
+      "section": "core_products",
+      "requirement": "- What executes, what data it sees, and what it changes.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G077",
+      "goal_line": 132,
+      "section": "core_products",
+      "requirement": "- The exact interception boundary and traffic outside its reach.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G078",
+      "goal_line": 133,
+      "section": "core_products",
+      "requirement": "- Deterministic versus learned behavior.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G079",
+      "goal_line": 134,
+      "section": "core_products",
+      "requirement": "- Lossless transformation, lossy selection, semantic rewriting, and recoverability.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G080",
+      "goal_line": 135,
+      "section": "core_products",
+      "requirement": "- Default settings, optional features, installation side effects, and uninstall behavior.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G081",
+      "goal_line": 136,
+      "section": "core_products",
+      "requirement": "- Recovery storage, provenance, retention, eviction, completeness, and failure behavior.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G082",
+      "goal_line": 137,
+      "section": "core_products",
+      "requirement": "- Cache-prefix implications and host/provider compatibility.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G083",
+      "goal_line": 138,
+      "section": "core_products",
+      "requirement": "- Cold and warm latency, CPU, RAM, disk, indexing, and concurrency costs.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G084",
+      "goal_line": 139,
+      "section": "core_products",
+      "requirement": "- Network access, telemetry, model downloads, updates, credentials, and licensing.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G085",
+      "goal_line": 140,
+      "section": "core_products",
+      "requirement": "- Supported integration APIs and their stability.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G086",
+      "goal_line": 141,
+      "section": "core_products",
+      "requirement": "- Maintenance activity, issue handling, upstream contribution feasibility, and current evidence.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G087",
+      "goal_line": 143,
+      "section": "core_products",
+      "requirement": "Inspect effective runtime code and delivered instructions, not only READMEs or repository AGENTS.md files.",
+      "disposition": "Comparable component, runtime, license, recovery and integration review across six products with separate source/build/fixture/task evidence.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx"
+      ]
+    },
+    {
+      "id": "G088",
+      "goal_line": 147,
+      "section": "mandatory_rechecks",
+      "requirement": "Reinvestigate the major findings and reversals from the earlier work. These are questions, not conclusions to carry forward.",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "G089",
+      "goal_line": 149,
+      "section": "mandatory_rechecks",
+      "requirement": "Caveman:",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/01-caveman-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/01-caveman-design.mdx"
+      ]
+    },
+    {
+      "id": "G090",
+      "goal_line": 150,
+      "section": "mandatory_rechecks",
+      "requirement": "Separate the output skill from its input engine, proxy, browser, memory, SDK, and other current components. Recheck instruction overhead, exact-content guards, tokenizer assumptions, TOON/pixel modes, recovery, telemetry, and component-specific licensing. Determine whether engine-linked distribution or embedding creates obligations different from using the skill.",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/01-caveman-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/01-caveman-design.mdx"
+      ]
+    },
+    {
+      "id": "G091",
+      "goal_line": 152,
+      "section": "mandatory_rechecks",
+      "requirement": "RTK:",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/03-rtk-design.mdx"
+      ]
+    },
+    {
+      "id": "G092",
+      "goal_line": 153,
+      "section": "mandatory_rechecks",
+      "requirement": "Recheck the previously reported diff-parser information-loss problems and the releases said to correct them. Inspect current recall/tee behavior rather than describing recovery as raw-rerun-only. Test command rewriting, quoting, pipelines, redirection, environment, working directory, exit codes, signals, partial output, and diagnostics emitted on success. Verify whether a reusable library or pure-filter API now exists.",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/03-rtk-design.mdx"
+      ]
+    },
+    {
+      "id": "G093",
+      "goal_line": 155,
+      "section": "mandatory_rechecks",
+      "requirement": "LeanCTX:",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/04-leanctx-design.mdx"
+      ]
+    },
+    {
+      "id": "G094",
+      "goal_line": 156,
+      "section": "mandatory_rechecks",
+      "requirement": "Recheck withdrawn benchmark claims, the external negative evaluation, subsequent remediation, tool-schema and annotation overhead, and independent post-fix evidence. Verify the current embedding facade's name, publication status, feature graph, allocator/runtime ownership, and API contract. Test whether cached-read stubs remain valid after compaction, resume, context resets, branch changes, or a different agent consuming the same index.",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/04-leanctx-design.mdx"
+      ]
+    },
+    {
+      "id": "G095",
+      "goal_line": 158,
+      "section": "mandatory_rechecks",
+      "requirement": "Ponytail:",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/09-ponytail-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/09-ponytail-design.mdx"
+      ]
+    },
+    {
+      "id": "G096",
+      "goal_line": 159,
+      "section": "mandatory_rechecks",
+      "requirement": "Inspect the actual current skill/plugin policy and activation path. Separate useful reuse-first guidance from preferences that can reduce required tests, architecture quality, completeness, or maintainability. Evaluate the exact upstream policy separately from any proposed Jackin adaptation.",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/09-ponytail-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/09-ponytail-design.mdx"
+      ]
+    },
+    {
+      "id": "G097",
+      "goal_line": 161,
+      "section": "mandatory_rechecks",
+      "requirement": "Headroom:",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/02-headroom-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/02-headroom-design.mdx"
+      ]
+    },
+    {
+      "id": "G098",
+      "goal_line": 162,
+      "section": "mandatory_rechecks",
+      "requirement": "Recheck the Rust transform APIs, no-ML build, native dependencies, model loading, and offline behavior. Verify cache-oriented versus token-minimizing modes and actual defaults. Revisit the previously reported shell-output boundary/false-fact issue, including issue #3099 and any successor or fix. Confirm whether SDK/library use supplies a complete recovery path or leaves integration work to the caller.",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/02-headroom-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/02-headroom-design.mdx"
+      ]
+    },
+    {
+      "id": "G099",
+      "goal_line": 164,
+      "section": "mandatory_rechecks",
+      "requirement": "LemonCrow:",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/10-lemoncrow-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/10-lemoncrow-design.mdx"
+      ]
+    },
+    {
+      "id": "G100",
+      "goal_line": 165,
+      "section": "mandatory_rechecks",
+      "requirement": "Recheck the earlier missing-engine-source claim and its later reversal. Verify source completeness, package reproducibility, current licensing, benchmark provenance, relative-path/worktree fixes, and advisory-state lock behavior. Revisit PR #46 and subsequent changes. Test explicit session roots, shared-process state, concurrent worktrees, and whether restricted retrieval can operate without replacing native execution and editing.",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/10-lemoncrow-design.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/10-lemoncrow-design.mdx"
+      ]
+    },
+    {
+      "id": "G101",
+      "goal_line": 167,
+      "section": "mandatory_rechecks",
+      "requirement": "Cross-product:",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "G102",
+      "goal_line": 168,
+      "section": "mandatory_rechecks",
+      "requirement": "Recheck every earlier rejection and preferred integration. Do not retain a fixed defect as a current blocker, and do not treat a merged fix as proof of all related correctness properties.",
+      "disposition": "Named historical findings re-examined and assigned current dispositions; fixes are not generalized to untested sibling paths.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "G103",
+      "goal_line": 170,
+      "section": "mandatory_rechecks",
+      "requirement": "Audit prior assistant statements about tests, build results, CI counts, and PR status against actual artifacts and logs for the exact commit. Narrative summaries and PR descriptions are not independent verification.",
+      "disposition": "Historical PR1105 cited job and PR1192 job/check-run denominators directly rechecked; unsupported and confirmed assertions separated in historical-ci-audit.json.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "G104",
+      "goal_line": 174,
+      "section": "broader_techniques",
+      "requirement": "Refresh the entire techniques dossier, including its measurement code and economic models.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G105",
+      "goal_line": 176,
+      "section": "broader_techniques",
+      "requirement": "Cover:",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G106",
+      "goal_line": 177,
+      "section": "broader_techniques",
+      "requirement": "- Baseline agent behavior and optimizations already enabled by default.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G107",
+      "goal_line": 178,
+      "section": "broader_techniques",
+      "requirement": "- Fresh input, cached input, cache writes, visible output, and reasoning-token accounting.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G108",
+      "goal_line": 179,
+      "section": "broader_techniques",
+      "requirement": "- Output discipline, graduated brevity, multilingual registers, and clarity.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G109",
+      "goal_line": 180,
+      "section": "broader_techniques",
+      "requirement": "- Tokenizer differences, structured formats, JSON/TOON/TRON, codebooks, and representation overhead.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G110",
+      "goal_line": 181,
+      "section": "broader_techniques",
+      "requirement": "- Precise reads, symbol/section retrieval, outlines, search recall, edit-over-rewrite, and preventing unnecessary reads.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G111",
+      "goal_line": 182,
+      "section": "broader_techniques",
+      "requirement": "- Context selection, compaction, context editing, history management, memory, handoffs, and context epochs.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G112",
+      "goal_line": 183,
+      "section": "broader_techniques",
+      "requirement": "- Tool-schema deferral, dynamic discovery, programmatic tool execution, and protocol overhead.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G113",
+      "goal_line": 184,
+      "section": "broader_techniques",
+      "requirement": "- Prefix stability, cache lifetimes, invalidation, warming, batch operations, and cross-session reuse.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G114",
+      "goal_line": 185,
+      "section": "broader_techniques",
+      "requirement": "- Subagent startup/prefix costs, delegation protocols, duplicated research, repeated verification, and parent/subagent handoff costs.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G115",
+      "goal_line": 186,
+      "section": "broader_techniques",
+      "requirement": "- Images, screenshots, PDFs, text-to-image context, and model-specific exact-text fidelity.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G116",
+      "goal_line": 187,
+      "section": "broader_techniques",
+      "requirement": "- API billing versus subscription quotas, rate limits, context pressure, and accepted tasks per usage window.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G117",
+      "goal_line": 188,
+      "section": "broader_techniques",
+      "requirement": "- Latency, operator time, cold starts, indexing, recovery, maintenance, and local resource costs.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G118",
+      "goal_line": 189,
+      "section": "broader_techniques",
+      "requirement": "- Fleet/multi-tenant caching, semantic caches, and self-hosted KV-cache techniques, clearly separated from hosted-provider billed-token savings.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G119",
+      "goal_line": 190,
+      "section": "broader_techniques",
+      "requirement": "- Online quality monitoring, holdouts, canaries, rollout policy, and rollback.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G120",
+      "goal_line": 191,
+      "section": "broader_techniques",
+      "requirement": "- Relevant new papers, provider features, and mechanisms introduced since the earlier research.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G121",
+      "goal_line": 193,
+      "section": "broader_techniques",
+      "requirement": "Recalculate prior workload decompositions, multiplier forecasts, savings ceilings, and assertions about whether 10\u00d7 is possible. Preserve them only when their original data and current assumptions support them. Neither promise nor rule out a multiplier without a workload-specific argument.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G122",
+      "goal_line": 195,
+      "section": "broader_techniques",
+      "requirement": "Research effort control and model routing as separate interventions. Keep the selected model and reasoning effort fixed in the main compression comparison. Do not present a model or effort downgrade as a compression improvement, and do not change the user's configured policy.",
+      "disposition": "All techniques00\u201328 refreshed; unrecovered workload decompositions and unsupported multipliers retired rather than invented.",
+      "destination": "docs/content/research/context/techniques/index.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/index.mdx"
+      ]
+    },
+    {
+      "id": "G123",
+      "goal_line": 199,
+      "section": "adjacent_tools",
+      "requirement": "Revisit all previously discussed adjacent tools and identify materially relevant new alternatives.",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G124",
+      "goal_line": 201,
+      "section": "adjacent_tools",
+      "requirement": "Historical candidates include:",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G125",
+      "goal_line": 202,
+      "section": "adjacent_tools",
+      "requirement": "- pxpipe",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G126",
+      "goal_line": 203,
+      "section": "adjacent_tools",
+      "requirement": "- Context Mode",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G127",
+      "goal_line": 204,
+      "section": "adjacent_tools",
+      "requirement": "- Paritok",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G128",
+      "goal_line": 205,
+      "section": "adjacent_tools",
+      "requirement": "- Serena",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G129",
+      "goal_line": 206,
+      "section": "adjacent_tools",
+      "requirement": "- fff",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G130",
+      "goal_line": 207,
+      "section": "adjacent_tools",
+      "requirement": "- codedb",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G131",
+      "goal_line": 208,
+      "section": "adjacent_tools",
+      "requirement": "- sem",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G132",
+      "goal_line": 209,
+      "section": "adjacent_tools",
+      "requirement": "- jCodeMunch MCP",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G133",
+      "goal_line": 210,
+      "section": "adjacent_tools",
+      "requirement": "- mq",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G134",
+      "goal_line": 211,
+      "section": "adjacent_tools",
+      "requirement": "- Entroly",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G135",
+      "goal_line": 212,
+      "section": "adjacent_tools",
+      "requirement": "- claude-context",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G136",
+      "goal_line": 213,
+      "section": "adjacent_tools",
+      "requirement": "- Repomix",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G137",
+      "goal_line": 215,
+      "section": "adjacent_tools",
+      "requirement": "Recover their canonical links and earlier findings from the repository and Git history, then verify current identities and implementations.",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G138",
+      "goal_line": 217,
+      "section": "adjacent_tools",
+      "requirement": "Classify them by actual purpose: retrieval, compression, memory, tool execution, representation, packing, or evaluation. Do not rank a repository packer as if it were an adaptive context runtime.",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G139",
+      "goal_line": 219,
+      "section": "adjacent_tools",
+      "requirement": "Assess relevant reusable primitives, including Rust MCP tooling, search libraries, tree-sitter, and any newly available narrow libraries.",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G140",
+      "goal_line": 221,
+      "section": "adjacent_tools",
+      "requirement": "Use maintenance, technical fit, evidence, and ownership cost to select deeper investigations. Stars and popularity are discovery signals, not proof. Document why candidates are included, excluded, superseded, or left unresolved.",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G141",
+      "goal_line": 223,
+      "section": "adjacent_tools",
+      "requirement": "Do not let the market scan displace the required six-product and Jackin work.",
+      "disposition": "All twelve required candidates, recovered earlier leads and selected new alternatives assessed by boundary, current primary evidence and reuse feasibility.",
+      "destination": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx"
+      ]
+    },
+    {
+      "id": "G142",
+      "goal_line": 227,
+      "section": "independent_evidence",
+      "requirement": "Recover and reopen the original experiments, their harnesses, configurations, raw results, and follow-up discussions.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G143",
+      "goal_line": 229,
+      "section": "independent_evidence",
+      "requirement": "Required historical leads:",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G144",
+      "goal_line": 230,
+      "section": "independent_evidence",
+      "requirement": "- JetBrains' Caveman, RTK, and Ponytail studies.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G145",
+      "goal_line": 231,
+      "section": "independent_evidence",
+      "requirement": "- Quesma's RTK cost study.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G146",
+      "goal_line": 232,
+      "section": "independent_evidence",
+      "requirement": "- CodePointer's recorded-session analysis.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G147",
+      "goal_line": 233,
+      "section": "independent_evidence",
+      "requirement": "- Dasein's code-compression benchmark:",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G148",
+      "goal_line": 234,
+      "section": "independent_evidence",
+      "requirement": "  https://github.com/daseinlabs/code-compression-bench",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G149",
+      "goal_line": 235,
+      "section": "independent_evidence",
+      "requirement": "- Context Guru's SWE-bench and Terminal-Bench comparisons:",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G150",
+      "goal_line": 236,
+      "section": "independent_evidence",
+      "requirement": "  https://github.com/rossoctl/context-guru",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G151",
+      "goal_line": 237,
+      "section": "independent_evidence",
+      "requirement": "- Tokbench:",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G152",
+      "goal_line": 238,
+      "section": "independent_evidence",
+      "requirement": "  https://github.com/Entelligentsia/tokbench",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G153",
+      "goal_line": 239,
+      "section": "independent_evidence",
+      "requirement": "- The structured Headroom benchmark:",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G154",
+      "goal_line": 240,
+      "section": "independent_evidence",
+      "requirement": "  https://github.com/shreyassks/headroom-benchmarks",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G155",
+      "goal_line": 241,
+      "section": "independent_evidence",
+      "requirement": "- LeanCTX issues #1305 and #1319 and later evaluations.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G156",
+      "goal_line": 242,
+      "section": "independent_evidence",
+      "requirement": "- Wavect's LeanCTX field report.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G157",
+      "goal_line": 243,
+      "section": "independent_evidence",
+      "requirement": "- LemonCrow's benchmark repository:",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G158",
+      "goal_line": 244,
+      "section": "independent_evidence",
+      "requirement": "  https://github.com/lemoncrow-lab/benchmarks",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G159",
+      "goal_line": 245,
+      "section": "independent_evidence",
+      "requirement": "- Caveman's wrap benchmark and Honest Numbers material.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G160",
+      "goal_line": 246,
+      "section": "independent_evidence",
+      "requirement": "- Current Headroom benchmark artifacts.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G161",
+      "goal_line": 247,
+      "section": "independent_evidence",
+      "requirement": "- The previously cited CAVEWOMAN and Notation Matters papers.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G162",
+      "goal_line": 249,
+      "section": "independent_evidence",
+      "requirement": "Verify that every source exists and supports the attributed claim. Correct misattributions, invalid links, and unsupported numerical claims. Search for newer replications, rebuttals, withdrawals, fixes, and negative findings.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G163",
+      "goal_line": 251,
+      "section": "independent_evidence",
+      "requirement": "For every result record:",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G164",
+      "goal_line": 252,
+      "section": "independent_evidence",
+      "requirement": "- Author, affiliation, and possible competitor/vendor interest.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G165",
+      "goal_line": 253,
+      "section": "independent_evidence",
+      "requirement": "- Tool commit/version and enabled configuration.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G166",
+      "goal_line": 254,
+      "section": "independent_evidence",
+      "requirement": "- Agent, model, reasoning effort, authentication route, and cache settings.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G167",
+      "goal_line": 255,
+      "section": "independent_evidence",
+      "requirement": "- Workload, sample selection, task diversity, repetitions, exclusions, and grader.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G168",
+      "goal_line": 256,
+      "section": "independent_evidence",
+      "requirement": "- Exact denominator: payload bytes, estimated tokens, fresh input, total tokens, bill, quota, latency, or accepted outcomes.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G169",
+      "goal_line": 257,
+      "section": "independent_evidence",
+      "requirement": "- Raw-data availability and reproducibility.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G170",
+      "goal_line": 258,
+      "section": "independent_evidence",
+      "requirement": "- Statistical uncertainty, task weighting, and quality limitations.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G171",
+      "goal_line": 259,
+      "section": "independent_evidence",
+      "requirement": "- Whether it is relevant to the current proposed treatment.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G172",
+      "goal_line": 261,
+      "section": "independent_evidence",
+      "requirement": "Distinguish independent controlled outcomes, first-party experiments, competitor-operated experiments, observational reports, fixed-trajectory replays, component fixtures, and source inspection.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G173",
+      "goal_line": 263,
+      "section": "independent_evidence",
+      "requirement": "Older studies can establish historical results and motivate failure tests. Keep them clearly labeled; never project their percentages into a current-release ranking.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G174",
+      "goal_line": 265,
+      "section": "independent_evidence",
+      "requirement": "Do not confuse open data with independence, deterministic code with semantic fidelity, or recoverable originals with a model noticing missing information.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G175",
+      "goal_line": 267,
+      "section": "independent_evidence",
+      "requirement": "Explicitly reassess whether any source actually establishes LemonCrow as the winner. Do not transfer JetBrains results for other tools to LemonCrow.",
+      "disposition": "Study-by-study relationship, treatment, denominator, exclusions, grader and transfer limits; public arithmetic reaggregated without rerunning paid historical agents.",
+      "destination": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json"
+      ]
+    },
+    {
+      "id": "G176",
+      "goal_line": 271,
+      "section": "executable_verification",
+      "requirement": "Use focused, isolated experiments to resolve decisions that source inspection cannot settle.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G177",
+      "goal_line": 273,
+      "section": "executable_verification",
+      "requirement": "Where feasible:",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G178",
+      "goal_line": 274,
+      "section": "executable_verification",
+      "requirement": "- Build candidate Rust APIs with the proposed features and locked dependencies.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G179",
+      "goal_line": 275,
+      "section": "executable_verification",
+      "requirement": "- Check target support, declared versus actual toolchain requirements, native linkage, SQLite conflicts, runtime ownership, and allocator behavior.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G180",
+      "goal_line": 276,
+      "section": "executable_verification",
+      "requirement": "- Verify package/source correspondence and inspect release artifacts.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G181",
+      "goal_line": 277,
+      "section": "executable_verification",
+      "requirement": "- Run relevant upstream tests and small regression reproductions.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G182",
+      "goal_line": 278,
+      "section": "executable_verification",
+      "requirement": "- Probe current agent hook and MCP behavior against official documentation.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G183",
+      "goal_line": 279,
+      "section": "executable_verification",
+      "requirement": "- Confirm which bytes actually reach the model; terminal display changes and appended context are not result replacement.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G184",
+      "goal_line": 280,
+      "section": "executable_verification",
+      "requirement": "- Test native read-before-edit requirements, permissions, cancellation, streaming, and resume.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G185",
+      "goal_line": 281,
+      "section": "executable_verification",
+      "requirement": "- Measure first-use and warm overhead, including schema and instruction costs.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G186",
+      "goal_line": 282,
+      "section": "executable_verification",
+      "requirement": "- Exercise parallel worktrees and context-reset cases.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G187",
+      "goal_line": 284,
+      "section": "executable_verification",
+      "requirement": "Use representative producer-generated fixtures: Rust build/test/lint failures, Git diffs, logs, JSON, tables, source reads, search results, Unicode, CRLF/no-final-newline files, renames, binary changes, truncation, and error output.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G188",
+      "goal_line": 286,
+      "section": "executable_verification",
+      "requirement": "Include malformed inputs, stale indexes, missing recovery records, disk-full conditions, process crashes, deadlines, and interrupted operations.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G189",
+      "goal_line": 288,
+      "section": "executable_verification",
+      "requirement": "Never rerun a side-effecting command merely because result transformation failed. Distinguish optional-transform passthrough from authorization or integrity failures, which must not be bypassed.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G190",
+      "goal_line": 290,
+      "section": "executable_verification",
+      "requirement": "Run experiments without silently modifying host-global agent configuration, exposing private code, leaking credentials, or enabling public services.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G191",
+      "goal_line": 292,
+      "section": "executable_verification",
+      "requirement": "Do not launch paid benchmarks or consume subscription sessions without explicit authorization covering that execution. When unavailable, deliver the reproducible harness/specification and mark results not executed.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G192",
+      "goal_line": 294,
+      "section": "executable_verification",
+      "requirement": "Report inspected, built, tested, reproduced, and inferred evidence separately.",
+      "disposition": "Focused isolated product, dependency, state, recovery and accounting probes executed; incomplete builds, unavailable native-host sessions and unrun task trials are explicitly bounded.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json"
+      ]
+    },
+    {
+      "id": "G193",
+      "goal_line": 298,
+      "section": "jackin_integration_decision",
+      "requirement": "Inspect Jackin's current architecture and supported agents. Do not assume that the old crate layout or proposed context engine still describes the code.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G194",
+      "goal_line": 300,
+      "section": "jackin_integration_decision",
+      "requirement": "Map current ownership of:",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G195",
+      "goal_line": 301,
+      "section": "jackin_integration_decision",
+      "requirement": "- Configuration and role manifests.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G196",
+      "goal_line": 302,
+      "section": "jackin_integration_decision",
+      "requirement": "- Capsule/image setup and agent-specific config homes.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G197",
+      "goal_line": 303,
+      "section": "jackin_integration_decision",
+      "requirement": "- Hooks, MCP registration, process execution, and native tool interfaces.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G198",
+      "goal_line": 304,
+      "section": "jackin_integration_decision",
+      "requirement": "- Usage records, telemetry, provider/auth handling, and session lifecycle.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G199",
+      "goal_line": 305,
+      "section": "jackin_integration_decision",
+      "requirement": "- Workspace/worktree identity, isolation, persistence, and cleanup.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G200",
+      "goal_line": 307,
+      "section": "jackin_integration_decision",
+      "requirement": "For each capability compare:",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G201",
+      "goal_line": 308,
+      "section": "jackin_integration_decision",
+      "requirement": "1. Existing agent-native behavior.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G202",
+      "goal_line": 309,
+      "section": "jackin_integration_decision",
+      "requirement": "2. Direct upstream library dependency.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G203",
+      "goal_line": 310,
+      "section": "jackin_integration_decision",
+      "requirement": "3. Pinned CLI or isolated sidecar.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G204",
+      "goal_line": 311,
+      "section": "jackin_integration_decision",
+      "requirement": "4. Selectively adapted instruction assets.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G205",
+      "goal_line": 312,
+      "section": "jackin_integration_decision",
+      "requirement": "5. An upstream API or feature contribution.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G206",
+      "goal_line": 313,
+      "section": "jackin_integration_decision",
+      "requirement": "6. A narrowly maintained fork or licensed kernel extraction.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G207",
+      "goal_line": 314,
+      "section": "jackin_integration_decision",
+      "requirement": "7. A Jackin-native implementation.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G208",
+      "goal_line": 316,
+      "section": "jackin_integration_decision",
+      "requirement": "Prefer reuse when the boundary works. Before proposing a rewrite, identify the demonstrated limitation and whether an upstream change can resolve it. Before proposing a fork, define its maintenance owner, synchronization policy, regression corpus, and exit conditions.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G209",
+      "goal_line": 318,
+      "section": "jackin_integration_decision",
+      "requirement": "Do not preserve Headroom as the preferred transform library or LeanCTX/LemonCrow as preferred retrieval backends unless fresh evidence still supports those choices.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G210",
+      "goal_line": 320,
+      "section": "jackin_integration_decision",
+      "requirement": "Evaluate licensing per component and distribution mode. Distinguish permissive open source, source-available code, local/internal use, redistribution, embedding, and hosted-service terms. Preserve required notices. Flag unresolved legal interpretations.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G211",
+      "goal_line": 322,
+      "section": "jackin_integration_decision",
+      "requirement": "Specify host-specific integration, initially covering Claude Code and Codex and then every other agent Jackin currently supports. An integration badge is not proof of feature parity.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G212",
+      "goal_line": 324,
+      "section": "jackin_integration_decision",
+      "requirement": "Define explicit ownership for each transformed observation, recovery store, index, shell rewrite, memory item, and provider request. Avoid overlapping compression, nested recovery markers, duplicate schemas, and competing installers.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G213",
+      "goal_line": 326,
+      "section": "jackin_integration_decision",
+      "requirement": "Shared immutable indexes may be useful; shared model-exposure state is a separate correctness problem. Scope mutable state by the necessary capsule, repository/worktree, session, and context epoch.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G214",
+      "goal_line": 328,
+      "section": "jackin_integration_decision",
+      "requirement": "Preserve native execution, editing, approvals, authentication, transcripts, and model policy unless a separately justified replacement passes its own qualification.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G215",
+      "goal_line": 330,
+      "section": "jackin_integration_decision",
+      "requirement": "Produce concrete implementation stages, repository anchors, interfaces, upstream contribution briefs, acceptance gates, and rollback behavior. Distinguish existing behavior from proposed work.",
+      "disposition": "Current Jackin ownership and twelve registry/six dispatch distinction mapped; narrow reuse, fallback, state scope, host seams, contribution briefs and staged acceptance specified.",
+      "destination": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/11-jackin-integration.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md"
+      ]
+    },
+    {
+      "id": "G216",
+      "goal_line": 334,
+      "section": "evaluation_protocol",
+      "requirement": "Design a reproducible current-version comparison with native-agent baseline, separate component arms, full-product arms where relevant, and combined arms only after individual qualification.",
+      "disposition": "Reproducible fixed-model/effort comparison and clustered quality, all-attempt cost and latency gates specified; confirmatory current six-product task experiment not executed.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md"
+      ]
+    },
+    {
+      "id": "G217",
+      "goal_line": 336,
+      "section": "evaluation_protocol",
+      "requirement": "Do not treat a restricted retrieval integration as the same experiment as a full runtime/persona replacement.",
+      "disposition": "Reproducible fixed-model/effort comparison and clustered quality, all-attempt cost and latency gates specified; confirmatory current six-product task experiment not executed.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md"
+      ]
+    },
+    {
+      "id": "G218",
+      "goal_line": 338,
+      "section": "evaluation_protocol",
+      "requirement": "Use representative small fixes, repository discovery, build/test diagnosis, multi-crate refactors, TUI work, TypeScript/Java investigation, documentation, long sessions, and concurrent worktrees.",
+      "disposition": "Reproducible fixed-model/effort comparison and clustered quality, all-attempt cost and latency gates specified; confirmatory current six-product task experiment not executed.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md"
+      ]
+    },
+    {
+      "id": "G219",
+      "goal_line": 340,
+      "section": "evaluation_protocol",
+      "requirement": "Pin initial repository state, dirty changes, agent, model, effort, instructions, tools, permissions, timeouts, versions, and cache conditions. Randomize and interleave runs. Separate cold and warm measurements.",
+      "disposition": "Reproducible fixed-model/effort comparison and clustered quality, all-attempt cost and latency gates specified; confirmatory current six-product task experiment not executed.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md"
+      ]
+    },
+    {
+      "id": "G220",
+      "goal_line": 342,
+      "section": "evaluation_protocol",
+      "requirement": "Measure actual usage by token class, total spending, observed quota behavior, acceptance, failures, retries, recovery, turns, tool calls, compactions, latency, CPU, memory, and disk growth.",
+      "disposition": "Reproducible fixed-model/effort comparison and clustered quality, all-attempt cost and latency gates specified; confirmatory current six-product task experiment not executed.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md"
+      ]
+    },
+    {
+      "id": "G221",
+      "goal_line": 344,
+      "section": "evaluation_protocol",
+      "requirement": "Include all attempted work in the economic accounting, not only successful runs. Preserve both aggregate and task-weighted results. Treat repetitions of one task as clustered observations, not additional task diversity.",
+      "disposition": "Reproducible fixed-model/effort comparison and clustered quality, all-attempt cost and latency gates specified; confirmatory current six-product task experiment not executed.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md"
+      ]
+    },
+    {
+      "id": "G222",
+      "goal_line": 346,
+      "section": "evaluation_protocol",
+      "requirement": "Predeclare quality non-inferiority, benefit, and latency gates with justification. Reconcile inconsistent thresholds in older documents rather than silently choosing the easiest one. A nonsignificant quality difference is not proof of equivalence.",
+      "disposition": "Reproducible fixed-model/effort comparison and clustered quality, all-attempt cost and latency gates specified; confirmatory current six-product task experiment not executed.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md"
+      ]
+    },
+    {
+      "id": "G223",
+      "goal_line": 348,
+      "section": "evaluation_protocol",
+      "requirement": "Use raw independent verification evidence. Publish sanitized configurations, task manifests, receipts, patches, grader results, activation evidence, and aggregation methods.",
+      "disposition": "Reproducible fixed-model/effort comparison and clustered quality, all-attempt cost and latency gates specified; confirmatory current six-product task experiment not executed.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md"
+      ]
+    },
+    {
+      "id": "G224",
+      "goal_line": 350,
+      "section": "evaluation_protocol",
+      "requirement": "Unknown subscription accounting must remain unknown. Do not invent quota conversion factors or add overlapping savings percentages.",
+      "disposition": "Reproducible fixed-model/effort comparison and clustered quality, all-attempt cost and latency gates specified; confirmatory current six-product task experiment not executed.",
+      "destination": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "evidence": [
+        "docs/content/research/context/techniques/16-validation-harness.mdx",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md"
+      ]
+    },
+    {
+      "id": "G225",
+      "goal_line": 354,
+      "section": "documentation_and_pr",
+      "requirement": "Update the existing research as one coherent source of truth.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G226",
+      "goal_line": 356,
+      "section": "documentation_and_pr",
+      "requirement": "Required deliverables:",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G227",
+      "goal_line": 357,
+      "section": "documentation_and_pr",
+      "requirement": "- A concise executive decision with confidence and explicit limitations.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G228",
+      "goal_line": 358,
+      "section": "documentation_and_pr",
+      "requirement": "- A current release/component/license register.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G229",
+      "goal_line": 359,
+      "section": "documentation_and_pr",
+      "requirement": "- Comparable source-grounded reviews of all six products.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G230",
+      "goal_line": 360,
+      "section": "documentation_and_pr",
+      "requirement": "- Refreshed techniques, adjacent-tool, and literature coverage.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G231",
+      "goal_line": 361,
+      "section": "documentation_and_pr",
+      "requirement": "- A claim/evidence ledger and coverage inventory.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G232",
+      "goal_line": 362,
+      "section": "documentation_and_pr",
+      "requirement": "- A concise reconciliation of material earlier claims: confirmed, changed, fixed, withdrawn, contradicted, or unverified.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G233",
+      "goal_line": 363,
+      "section": "documentation_and_pr",
+      "requirement": "- Boundary-based comparison and composition rules.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G234",
+      "goal_line": 364,
+      "section": "documentation_and_pr",
+      "requirement": "- A concrete Jackin reuse/integration/default-profile decision.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G235",
+      "goal_line": 365,
+      "section": "documentation_and_pr",
+      "requirement": "- Reproducible evaluation and implementation plans.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G236",
+      "goal_line": 366,
+      "section": "documentation_and_pr",
+      "requirement": "- Clear outstanding questions tied to the exact evidence needed to resolve them.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G237",
+      "goal_line": 368,
+      "section": "documentation_and_pr",
+      "requirement": "Every current recommendation must have supporting sources, applicable versions, and a verification date. Keep historical experiments separately labeled and out of current performance tables. Use Git history for superseded prose rather than maintaining contradictory dated narratives in active pages.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G238",
+      "goal_line": 370,
+      "section": "documentation_and_pr",
+      "requirement": "Reconcile all affected engine and techniques chapters, navigation, links, summaries, and research-status labels. Do not simply append a new report or shorten away useful prior scope.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G239",
+      "goal_line": 372,
+      "section": "documentation_and_pr",
+      "requirement": "Run the repository's current documentation checks, applicable tests, link/sidebar audits, and rendered-page inspection. Discover the commands from current instructions instead of blindly copying the previous PR recipe.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G240",
+      "goal_line": 374,
+      "section": "documentation_and_pr",
+      "requirement": "Record exact commands, commits, logs, passed checks, failures, and unexecuted checks. Verify CI against the actual PR head. Do not infer a complete gate from one green job.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G241",
+      "goal_line": 376,
+      "section": "documentation_and_pr",
+      "requirement": "Create a new research PR from the appropriate current base, or update an existing open refresh PR only when its scope and ownership match. Verify PR state first. Do not reopen or force-push a merged historical branch.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G242",
+      "goal_line": 378,
+      "section": "documentation_and_pr",
+      "requirement": "Keep production code, dependency changes, global installers, and unrelated refactors outside this PR. Preserve useful isolated experiment artifacts according to repository conventions.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G243",
+      "goal_line": 380,
+      "section": "documentation_and_pr",
+      "requirement": "Push completed work. Do not merge without explicit authorization.",
+      "disposition": "One existing research tree reconciled; validation and publication provenance recorded separately; authorized PR1205 remains unmerged.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G244",
+      "goal_line": 384,
+      "section": "completion",
+      "requirement": "The work is complete when every recovered research item has an explicit disposition, every retained current claim has fresh evidence or a clear uncertainty label, and the documentation presents one consistent decision.",
+      "disposition": "Strongest defensible current recommendation and decisive next experiments are provided; final PR metadata carries final commit, exact-head CI and local review commands.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G245",
+      "goal_line": 386,
+      "section": "completion",
+      "requirement": "Do not stop at \u201cmore benchmarking is needed.\u201d State the strongest defensible recommendation now, what can safely proceed, what remains experimental, and the smallest decisive experiment for each unresolved decision.",
+      "disposition": "Strongest defensible current recommendation and decisive next experiments are provided; final PR metadata carries final commit, exact-head CI and local review commands.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G246",
+      "goal_line": 388,
+      "section": "completion",
+      "requirement": "Do not invent certainty where evidence is missing.",
+      "disposition": "Strongest defensible current recommendation and decisive next experiments are provided; final PR metadata carries final commit, exact-head CI and local review commands.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G247",
+      "goal_line": 390,
+      "section": "completion",
+      "requirement": "Return:",
+      "disposition": "Strongest defensible current recommendation and decisive next experiments are provided; final PR metadata carries final commit, exact-head CI and local review commands.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G248",
+      "goal_line": 391,
+      "section": "completion",
+      "requirement": "- The PR URL, branch, and final commit.",
+      "disposition": "Strongest defensible current recommendation and decisive next experiments are provided; final PR metadata carries final commit, exact-head CI and local review commands.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G249",
+      "goal_line": 392,
+      "section": "completion",
+      "requirement": "- The research cutoff and versions actually inspected.",
+      "disposition": "Strongest defensible current recommendation and decisive next experiments are provided; final PR metadata carries final commit, exact-head CI and local review commands.",
+      "destination": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/08-current-release-register.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G250",
+      "goal_line": 393,
+      "section": "completion",
+      "requirement": "- The most important changes from the earlier conclusions.",
+      "disposition": "Strongest defensible current recommendation and decisive next experiments are provided; final PR metadata carries final commit, exact-head CI and local review commands.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G251",
+      "goal_line": 394,
+      "section": "completion",
+      "requirement": "- The recommended default architecture and alternatives.",
+      "disposition": "Strongest defensible current recommendation and decisive next experiments are provided; final PR metadata carries final commit, exact-head CI and local review commands.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G252",
+      "goal_line": 395,
+      "section": "completion",
+      "requirement": "- The real subagent work performed.",
+      "disposition": "Strongest defensible current recommendation and decisive next experiments are provided; final PR metadata carries final commit, exact-head CI and local review commands.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G253",
+      "goal_line": 396,
+      "section": "completion",
+      "requirement": "- The exact verification completed and remaining blockers.",
+      "disposition": "Strongest defensible current recommendation and decisive next experiments are provided; final PR metadata carries final commit, exact-head CI and local review commands.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G254",
+      "goal_line": 397,
+      "section": "completion",
+      "requirement": "- Copy-pasteable local review instructions required by the repository.",
+      "disposition": "Strongest defensible current recommendation and decisive next experiments are provided; final PR metadata carries final commit, exact-head CI and local review commands.",
+      "destination": "docs/content/research/context/tools/index.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/index.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    },
+    {
+      "id": "G255",
+      "goal_line": 399,
+      "section": "completion",
+      "requirement": "Begin with scope recovery and parallel research, then continue through documentation, verification, and PR delivery.",
+      "disposition": "Strongest defensible current recommendation and decisive next experiments are provided; final PR metadata carries final commit, exact-head CI and local review commands.",
+      "destination": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+        "https://github.com/jackin-project/jackin/pull/1205"
+      ]
+    }
+  ],
+  "historical_brief": {
+    "commit": "485bcd913db426f396868bb0e5be3f122f4902c9",
+    "path": "prompts/research/context-tools.md",
+    "sha256": "7ec058a2821e74a879bfbb6ef1e512e373b19d5374a82d1d6f43fe32334e6a77",
+    "questions_and_deliverables": [
+      {
+        "id": "H01",
+        "text": "- Which boundary changes: instructions, implementation choices, native tool result, shell execution, retrieval, recovery, history, or provider request?",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      },
+      {
+        "id": "H02",
+        "text": "- What is actually deterministic, lossy, byte-exact, recoverable, cache-sensitive, local, or model-dependent?",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      },
+      {
+        "id": "H03",
+        "text": "- Which current code exposes reusable Rust APIs, which is only a CLI, and which facade is preview or unpublished?",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      },
+      {
+        "id": "H04",
+        "text": "- Does direct reuse work before extracting or rewriting? What specific boundary prevents it, and could an upstream contribution fix it?",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      },
+      {
+        "id": "H05",
+        "text": "- Which native agent guarantees must survive: approvals, execution identity, read-before-edit, worktree roots, streaming, auth, and resume?",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      },
+      {
+        "id": "H06",
+        "text": "- Which independent current-release task evidence exists? Are raw tasks, usage receipts, trajectories, patches, and graders publicly available?",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      },
+      {
+        "id": "H07",
+        "text": "- Does the experiment compare real alternative agent trajectories, or only a fixed request before/after reduction?",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      },
+      {
+        "id": "H08",
+        "text": "- What are cold/warm startup, schema, recovery, extra-turn, cache, CPU/RAM, and parallel-state costs?",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      },
+      {
+        "id": "H09",
+        "text": "- Which exact capabilities should be automatically installed and activated, and what conformance/outcome gates permit each default?",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      },
+      {
+        "id": "H10",
+        "text": "- Current six-tool release register and equal-depth design pages with primary source links.",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      },
+      {
+        "id": "H11",
+        "text": "- Boundary-based comparison, explicit licensing/reuse choices, and composition/ownership rules.",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      },
+      {
+        "id": "H12",
+        "text": "- Evidence eligibility ledger and reproducible current-version accepted-task protocol, including negative cases and unavailable proof.",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      },
+      {
+        "id": "H13",
+        "text": "- Jackin-specific implementation sequence tied to real repository anchors, automatic setup, raw bypass, recovery, concurrency, and rollout gates.",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      },
+      {
+        "id": "H14",
+        "text": "- Updated sidebar and reconciled context-engine overview/reuse matrix; no duplicate disconnected report.",
+        "disposition": "Retained and covered by current six-product, engine, evidence and evaluation chapters; removed historical prompt not restored."
+      }
+    ]
+  },
+  "historical_adjacent_recovery": {
+    "revision": "49708bdb0c9848e19e913013e0b7c3de954c3ea0^",
+    "paths": [
+      "docs/content/research/context/tools/06-combining.mdx",
+      "docs/content/research/context/tools/08-current-release-register.mdx"
+    ],
+    "disposition": "Recovered previous adjacent inventory and reverified all twelve named candidates in current market/literature pack."
+  },
+  "publication": {
+    "url": "https://github.com/jackin-project/jackin/pull/1205",
+    "branch": "chore/context-refresh-2026-10-24",
+    "merge_authorized": false,
+    "final_head_provenance": "Final PR body and review report; no self-referential commit hash is fabricated inside its own tree."
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "command": [
+    "mbx",
+    "+1.99.1",
+    "xtask",
+    "roadmap",
+    "audit"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+  "started_utc": "2026-10-24T09:36:22.095639+00:00",
+  "finished_utc": "2026-10-24T09:36:22.399618+00:00",
+  "duration_seconds": 0.304,
+  "exit_code": 0,
+  "log": "/workspace/scratch/1335a158b2a9/tooling/logs/ci-repair-roadmap-retry.log",
+  "log_sha256": "5e103e34a3ce2664bbd2e064757968697c145ddd5ac81baef6f98320f07dd550",
+  "environment_repair": {
+    "operation": "unlink only this task-owned generated target entry; leave shared cached hardlink untouched",
+    "path": "/workspace/scratch/1335a158b2a9/tooling/jackin-target/debug/deps/libvelnor_actions_contract-b334a6627e6d34ba.rlib",
+    "before_mode": "0o444",
+    "before_nlink": 2,
+    "before_bytes": 43099172,
+    "before_sha256": "42434f5beafceaea8341cc46288461f0a1afe90a8ebef2780c630b2f4d0e01cd"
+  },
+  "scope": "Retry only the previously unexecuted roadmap audit after a read-only generated-cache output blocked compilation; no source, dependencies, scanner settings or hook configuration changed."
+}

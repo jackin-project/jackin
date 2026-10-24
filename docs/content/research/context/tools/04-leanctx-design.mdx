@@ -1,60 +1,134 @@
 ---
 title: "04 — LeanCTX: current design"
-description: "LeanCTX 3.10.2: retrieval and recovery, the current lean-ctx-embed facade, dependency boundaries, and evidence."
+description: "LeanCTX 3.11.4: scoped retrieval, tested read-stub lifecycles, preview embedding limits, current defaults, and historical evidence."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-Cutoff: **2026-09-23 UTC**. Reviewed release: [LeanCTX v3.10.2](https://github.com/yvgude/lean-ctx/releases/tag/v3.10.2). LeanCTX is the closest Rust-based integrated retrieval/runtime candidate in this set. The current experimental embedding crate is **lean-ctx-embed**, not the previous facade path. Its availability does not imply a stable SDK or proven task savings.
+Source cutoff: **2026-10-24T01:15:00Z**. Reviewed stable release: [LeanCTX v3.11.4](https://github.com/yvgude/lean-ctx/releases/tag/v3.11.4), published October 11, commit `3afe2bbffe0834ec58517ffd493e5a51c5c1ca57`. Release metadata names `main` as its target, so the resolved tag commit, source tree and executable digest are recorded separately. The latest-release recheck remained 3.11.4; later default-branch work is not treated as shipped behavior.
+
+LeanCTX is a credible **restricted retrieval candidate**, not an established winner or an automatic replacement for Jackin's native tools. Current read-scope fixes deserve credit: our executable probes withheld unchanged stubs for the Claude process scope, refreshed after a compaction marker and a branch change, and separated different explicit consumers. The remaining integration obligation is explicit: **a cached source and a model's present context are different states**. The same custom scope can receive a persisted stub after restart even if a new model context never saw the original.
+
+The Rust facade is still **`lean-ctx-embed` 0.1.0, unpublished Preview**. Its first-engine-wins process-global environment configuration and fixed default temporary path are concrete reasons to prefer a scoped subprocess initially. The public source does not justify installing the full runtime, registry, proxy, memory policy or steering assets by default.
 
 ## Question and scope
 
-Should Jackin adopt the complete runtime, use restricted MCP retrieval, or call the Rust engine in process?
+Should Jackin use native precise reads/search, a restricted LeanCTX MCP worker, or its embedded Rust engine? Treat retrieval, automatic selection, delivery deduplication, memory, shell shaping, policy admission, proxy compression and model routing as separate interventions.
 
-## Method
+## Method and evidence
 
-Inspect the tagged workspace, embedding manifest and README, and benchmark-status file. Separate the published engine crate, unpublished embedding facade, host integration, and outcome evidence.
+Reopened release/tag, package registries, licensing matrix, manifests, effective read/stub/cache code, embedding facade, telemetry/setup defaults, withdrawn benchmarks and the original negative-evaluation leads. Verified the Linux x86_64 musl release archive against its GitHub SHA-256 digest and ran its binary over JSONL MCP with a local 300-line Git fixture. No provider/model calls, global installation or production optimizer activation occurred.
 
-## Findings
+The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md">reproduction record</RepoFile> preserves scripts, model-visible MCP response bytes, schema measurements, lifecycle results and build logs. These are protocol/component fixtures, not live Claude Code/Codex sessions or accepted-task trials.
 
-### Retrieval before compression
+## Source, packages and licensing
 
-LeanCTX combines structural reads, search, symbols, outlines, session reuse, shell shaping, recovery, and optional proxy paths. Its [embedding surface](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/crates/lean-ctx-embed/README.md) offers read, search, symbol, outline, and tree operations. These can avoid broad reads; their failure mode is retrieval incompleteness or stale reuse, not only lossy compression.
+| Surface | Verified identity and status | Reuse boundary |
+|---|---|---|
+| Rust engine/CLI | `lean-ctx` 3.11.4, edition 2024, library `lean_ctx`; crates.io version exists, non-yanked, Apache-2.0 | A published engine/application package does not make all internal modules stable embedding APIs. No package Rust minimum is declared. |
+| Native release | Linux x86_64 musl archive verified; binary reports 3.11.4 | Other Linux/macOS/Windows and CUDA artifacts are advertised but were not executed. Matching release digest is not a reproducible-build proof. |
+| npm wrapper | `lean-ctx-bin` 3.11.4 exists on npm, Apache-2.0 metadata | Includes preinstall/postinstall scripts; not run here. It is an installer/launcher package, not the Rust facade. |
+| Rust facade | `lean-ctx-embed` 0.1.0, `publish = false`, edition 2024, declared Rust 1.85 | Experimental source/path dependency, absent from crates.io. README expressly denies a supported stable public Rust SDK. |
+| Other SDK/client identities | Release includes `thinkery_leanctx_engine` wheels; facade README distinguishes Python SDK and pip/npm HTTP clients also named `lean-ctx-embed` | Do not transfer API guarantees, licenses or performance between these artifacts or private components. |
 
-A short unchanged-read response is correct only when the recipient still has the referenced content. A shared source cache and a model's current conversational memory are different things. Compaction, resume, a new subagent, and another worktree must be represented in the reuse contract.
+Sources: [engine manifest](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/Cargo.toml), [crates.io version](https://crates.io/api/v1/crates/lean-ctx/3.11.4), [npm metadata](https://registry.npmjs.org/lean-ctx-bin/3.11.4), [facade manifest](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/crates/lean-ctx-embed/Cargo.toml), [facade status](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/crates/lean-ctx-embed/README.md).
 
-### Actual Rust boundary
+The [public-host license policy](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/LICENSE.md) makes [the path matrix](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/LICENSE_MATRIX.toml) authoritative: public core/interfaces/docs are Apache-2.0 subject to listed exceptions, and vendored material retains upstream terms. Private commercial/runtime/service components are excluded from this public distribution. Public-source rights do not grant rights to those private components or trademarks. Release SBOM and third-party notices are separate assets; the inspected native archive itself contains only the executable. Packaging must preserve the applicable notices, not infer terms from a product label.
 
-The [workspace](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/Cargo.toml) declares an engine library and the `lean-ctx-embed` workspace member. The [facade manifest](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/crates/lean-ctx-embed/Cargo.toml) declares version 0.1.0, Apache-2.0, and `publish = false`. Its README explicitly marks the API preview rather than a stable public Rust SDK.
+## Independently selectable interventions
 
-The facade disables engine defaults to avoid imposing the engine's global allocator, but explicitly enables tree-sitter, embeddings, HTTP-server, and secure-update features. It is not a minimal no-ML kernel just because default features are disabled at one dependency edge.
+| Component | Inputs and behavior | Main correctness/cost boundary |
+|---|---|---|
+| Precise/structural reads, search, symbols, outlines, tree | Source files and lexical/AST/index data; modes range from exact requests to selected structure | Retrieval completeness, current source versions, policy admission and edit prerequisites; native calls outside MCP/hooks remain outside this route. |
+| Automatic read selection | Chooses modes using configured/context/task signals; optional learned policy and semantic enrichment are distinct | Selected bodies/details may be absent. A structural outline or graph is navigation evidence, not complete semantic impact. |
+| Read reuse / unchanged stubs | Session cache plus persisted delivery metadata | Needs verified recipient and context lifetime, not just unchanged file bytes. A stub is not an archived copy. |
+| Tool schemas, rules, nudges and automatic context | MCP tools plus configured instruction/annotation delivery | These add context; turning off rules does not remove every annotation or deny execution/edit tools. |
+| Shell, editing and recovery | Registered tools execute commands or mutate files; shaping can store admitted output | Separate execution/approval/streaming contract. Restricted retrieval must deny these at dispatch. |
+| Memory, archives and handoffs | Persisted knowledge/session state and references | Staleness, authority, retention, recall cost and context epochs require explicit ownership. |
+| Provider proxy and representation | Requests actually routed through configured provider endpoints | Auth, sealed fields, cache prefixes and provider accounting differ from MCP traffic. No proxy was activated here. |
 
-Methods are synchronous and own a multithreaded Tokio runtime. The README directs async callers through a blocking boundary. Jackin must measure contention and cancellation rather than invoking this API indiscriminately on runtime workers.
+Implementation anchors: [registered reads](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/tools/registered/ctx_read.rs), [tool profiles](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/tool_profiles.rs), [server initialization](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/server/server_handler.rs), [measurement scope](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/docs/concepts/measurement-scope.md). The [3.11.0 upgrade notes](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/CHANGELOG.md) remove automatic model routing; old routing descriptions must not be carried into this treatment. Model and reasoning effort remain fixed in Jackin's main comparison.
 
-### Evidence status
+## Actual embedding contract
 
-The current [BENCHMARKS.md](https://github.com/yvgude/lean-ctx/blob/v3.10.2/BENCHMARKS.md) withdraws historical numbers from technical decisions. No independent accepted-task result for this exact release and restricted profile was established. Installation matrices and generated command counts are not execution or outcome guarantees.
+The facade's engine dependency disables defaults, avoiding the engine's optional jemalloc allocator, **but explicitly enables tree-sitter, embeddings, HTTP-server and secure-update**. Its compile graph is not a minimal no-ML kernel: it still includes native parsing/SQLite and optional-ML infrastructure such as ONNX Runtime integration. A lexical operation need not download a model; that is different from a no-ML feature graph. The locked facade check started compiling dependencies but was interrupted during workspace disk contention before producing a complete result. Neither actual minimum toolchain compatibility nor a successful Jackin link is established.
 
-## Implications for jackin❯
+[EngineBuilder and dispatch](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/crates/lean-ctx-embed/src/engine.rs) own a multithreaded Tokio runtime, defaulting to two workers; methods are synchronous and require a blocking boundary in an async host. The API admits an explicit read-tool allowlist; write/exec require separate opt-ins. Path checks reject escapes and secret paths, but are not an OS sandbox against hard links, concurrent path changes or explicitly enabled shell execution.
 
-**Best part:** a replaceable read-only retrieval backend, especially for repeated exploration of large repositories.
+The same file's `configure_process_env` uses a static `Once`: **the first engine sets all four process-wide data/config/state/cache environment paths**. Its default is `temp_dir()/lean-ctx-embed`, not a unique directory per instance. Different later `.data_dir(...)` values do not give independently configured processes. Session/cache objects are instance-owned, but substantial surrounding state remains process-global; the facade has no caller-owned context-epoch/reset contract. These are source-inspected facts, not a reproduced two-engine runtime test.
 
-**Integration choice:** begin with a per-worktree stdio MCP process restricted to the required read/search/symbol/outline functions. Enforce read-only behavior at the dispatcher and filesystem boundary; hiding a tool in a prompt is not an authorization check. Preserve the native exact-read/edit workflow until edit prerequisites are verified.
+The safe builder also calls unsafe `std::env::set_var`, justified in source by running before its own runtime threads start. That does not establish that an embedding host has no existing threads reading the environment. [Rust's documented safety contract](https://doc.rust-lang.org/std/env/fn.set_var.html) makes this an additional non-Windows embedding prerequisite; no race or undefined behavior was reproduced here. Injected configuration or child-process environment setup avoids relying on an unproven host-wide condition.
 
-A second arm can embed the commit-pinned facade behind an internal adapter. Ask upstream for granular feature gates and a caller-owned runtime before committing Jackin's stable architecture to it. Do not conflate the Python SDK, HTTP clients, published engine, and unpublished Rust facade.
+Ask upstream for injected instance-scoped stores/configuration, caller-owned runtime/cancellation, granular lexical-only features, and an explicit delivery-epoch API before making it a shared in-process Jackin backend. A per-worktree/session subprocess with explicit directories is the current practical isolation boundary. A separate process also avoids assuming compatible `libsqlite3-sys`, native linkage and allocator behavior in Jackin's dependency graph.
 
-**Default decision:** do not activate the complete tool registry, memory policies, shell rewriting, or proxy automatically. Promote only a measured profile, including schema and indexing overhead.
+## Cached content versus model exposure
 
-## Limitations and unknowns
+[Conversation gating](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/conversation.rs) prioritizes explicit `LEAN_CTX_SCOPE`, then supported task identity, then process/transcript signals. The current code recognizes that Claude parent and subagents may share one MCP process: a process-derived identity cannot identify the recipient, so unchanged stubs are withheld. Recent multiplexed conversations also withhold stubs. Unknown warm callers retain a legacy allow path; cold persisted stubs require the same known conversation. An explicit custom scope is safe only when the integration truly owns that consumer's context lifetime.
 
-The embedding build was not run in this review. Public documentation describes different source, installed-runtime, and SDK baselines; [current CLI guidance](https://leanctx.com/docs/cli-reference/) explicitly identifies stale generated help. Pin source and artifact independently. Structural graphs and embeddings are navigation aids, not proof of complete semantic impact.
+[The persistent stub index](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/read_stub_index.rs) holds delivery metadata, hashes/mtime, path and file references, capped at 1,024 records. It does not hold the file's original content. [Compaction synchronization](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/server/compaction_sync.rs) reads the host's marker or radar events, resets delivery/search state and clears persisted stubs. Its last-seen timestamp is process-global, another reason not to assume independent embedded instances.
 
-## Sources
+### Executed lifecycle matrix
 
-Tagged workspace, facade documentation, manifest, and benchmark policy are linked inline.
+The fixture first delivered a full file and then explicitly requested `auto` to exercise stubs. Explicit `full`/`raw` requests are forced fresh by current code; testing only those modes would not test deduplication.
+
+| Case in the released binary | Observed response | What it establishes |
+|---|---|---|
+| Unknown caller; warm auto reread | 55-byte unchanged stub after annotation was exhausted | Legacy unknown-caller reuse remains enabled; identity cannot be inferred from the cache alone. |
+| Explicit `agent-A`; warm auto reread | Same unchanged stub | Custom scope permits reuse after full delivery. |
+| `CLAUDECODE=1`; warm auto reread | Source content, no unchanged stub | Process-scope safeguard worked in this fixture. This was an environment simulation, not a Claude session. |
+| Host-style compaction marker written | Next auto read returned current cognitive selection, not a stub | Marker invalidation worked; auto may still select less than the full file. Actual host event delivery remains to verify. |
+| Git checkout to changed branch | Read reflected the changed function name | This fixture did not serve stale source after the branch change. |
+| Restart after the compaction-marker arm | Content returned for both same and different explicit consumer | This particular persisted state did not resurrect a stub. |
+| Separate no-marker arm, same explicit consumer after restart | Persisted unchanged stub returned | Reusing an identity is not proof the restarted model possesses the old observation. |
+| Same no-marker data, different explicit consumer | Content returned | Scope separation worked for sequential processes sharing that state. |
+| Explicit raw benign text | CRLF, Unicode and missing final newline preserved | Exact bytes for this fixture, not universal bypass of admission/redaction. |
+
+No concurrent multi-worktree process test or real host context-reset/resume session was executed. A silent reset with no delivered event cannot be inferred by the server; Jackin must change the consumer/epoch or force fresh reads. Native edit prerequisites may require the native read tool even when an MCP read was exact.
+
+## Recovery is several stores, with different lifetimes
+
+The [archive](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/archive.rs) stores content plus tool/command/session and authority metadata, subject to admission, truncation, disk budget and age. [Defaults](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/config/sections.rs) include an 800-byte threshold despite the `threshold_chars` name, 48-hour age and 500 MiB archive budget; the production per-entry cap is 10 MiB. These are not guarantees that every observation is archived completely.
+
+The [in-memory reference store](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/server/reference_store.rs) is process-global, with a five-minute TTL, 200-entry and 64 MiB aggregate limits. It can decline storage on contention and cannot survive process exit. [Recovery verification](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/recovery_verify.rs) distinguishes missing, expired, digest-mismatched and policy-refused handles. Recovery stores admitted text, and current policy may refuse return; it is not an unrestricted original-byte vault. Storage failure, expiry, policy changes and a model overlooking a missing detail remain different failure modes. These recovery implementations were inspected; their full fault corpus was not executed.
+
+## Schema, annotation and resource overhead
+
+With rules injection off, minimal-overhead requested, telemetry/proxy disabled and headless startup, `tools/list` still advertised **12 tools occupying 10,608 bytes of compact JSON**, including `ctx_patch`, `ctx_shell` and `shell`. This is a wire-byte measurement, not token or billed-schema accounting. Zero initialization instruction bytes did not mean zero later steering: the first large full read gained a 202-byte nudge and the second response gained 115 bytes of automatic project context. The fixture also returned a 1,177-byte map for 4,886 source bytes, but that selected representation is not an accepted-task saving.
+
+On this one tiny repository, recorded initialization was roughly 13–21 ms, first full reads 0.23–0.28 s and first map reads 0.44–0.46 s; subsequent measured calls were roughly 11–43 ms. These isolated single samples are not a latency distribution or comparison with native tools. Indexing, model loading, larger-repository CPU/RAM/disk, concurrent worktrees and long-running memory growth were not measured. Keep those costs in the proposed evaluation rather than projecting toy-file timings.
+
+## Defaults, network and installation
+
+[Telemetry defaults](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/config/sections.rs) are **on** for current v2 aggregates; `DO_NOT_TRACK=1`, `LEAN_CTX_TELEMETRY=off` or explicit stored opt-out disable them. Older “telemetry off” field-report statements do not describe this release. Setup defaults also include MCP updates and hook management. [Server initialization](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/server/server_handler.rs) can maintain installed rules/skills/hooks and check versions; headless mode avoids that maintenance path. [MCP startup](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/cli/dispatch/server.rs) includes housekeeping and optional proxy startup, not only read handling.
+
+The probe set all four LeanCTX directories explicitly, disabled telemetry/proxy/update/rule/skill/hook management and capped worker/index threads. No model was downloaded. That configuration is a scoped research treatment, not the upstream install default. Optional semantic-index construction can require model/runtime downloads; external providers and the proxy introduce their own credentials and egress.
+
+[Uninstall](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/uninstall/mod.rs) reaches processes, autostart, shell configuration, MCP registrations, rules, skills, data and binary, with dry-run/keep options. Its breadth is a reason for Jackin to own a small scoped registration rather than rely on a general installer/uninstaller. Neither installation nor cleanup was exercised against host-global state.
+
+## Historical claims and current evidence
+
+The pinned [BENCHMARKS.md](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/BENCHMARKS.md) explicitly withdraws its historical performance table from technical decisions. Its replacement Performance Benchmark direction is Research, not a universal proof of savings.
+
+[Issue #1305](https://github.com/yvgude/lean-ctx/issues/1305) is the vendor's July 28 transcription of an external `Middle_Key8737` evaluation of 3.8.18 with Codex/MCP across Fastify, Beets and Terraform. It reports 34,766,864 treatment versus 31,433,431 baseline tokens, **+10.60% aggregate**, with heterogeneous task results. The original external harness/raw receipts were not recovered here. The issue's −15/−45/−55% figures are remediation targets, not measured post-fix outcomes. Its “released in v3.9.14” closure establishes a release response, not those targets' achievement.
+
+[Issue #1319](https://github.com/yvgude/lean-ctx/issues/1319) proposes a scripted tool-call suite; its sample JSON percentages are illustrative. [Wavect's report](https://wavect.io/blog/lean-ctx-agency-experience/) is an agency observation, with a July 26 tracking snapshot despite later review dates. Its 64.1% context, 92.7% MCP and 56.6% estimated-cost figures have different tool-local denominators, no paired current-release task control, and should not be projected into this profile. New code fixes and closed issues are evidence of maintenance, not independent post-fix quality non-inferiority.
+
+The stable [measurement-scope document](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/docs/concepts/measurement-scope.md) correctly separates tool-local estimates from provider usage and paired conversation outcomes. MCP-only observations do not reveal provider cache classes, native bypass traffic, subscription quotas or whole-task ROI. No recovered independent current 3.11.4 restricted-profile accepted-task result resolves that gap; see the [evidence ledger](/research/context/tools/07-evidence-and-claims/).
+
+## Jackin decision and decisive next steps
+
+1. **Keep native exact read/edit and execution as the default.** Compare a read-only LeanCTX worker with the native baseline and other retrieval candidates. A profile name or hidden tool list is not authorization: deny execution/write at dispatch and enforce the intended filesystem boundary.
+2. **Use explicit process and state scopes.** Separate worktree/session workers initially. Share immutable index material only through a verified versioned contract; never share mutable delivery state merely because repositories share files. Change context epoch on reset, compaction or a new consumer unless preserved context is proven.
+3. **Request upstream embedding improvements before a shared in-process dependency.** Complete a clean, locked build with constrained debug/incremental settings, then test two simultaneous roots/data directories, cancellation and epoch invalidation. The existing interrupted build is not a product build failure or a successful feasibility gate.
+4. **Measure the actual restricted treatment.** Disable unrequested telemetry, proxy, steering, automatic setup and optional learning; count remaining schemas, nudges, indexing and recovery. Confirm exact native edit prerequisites in each supported host. Full-product memory/proxy/persona arms are separate comparisons.
+5. **Promote only after lifecycle and accepted-task gates pass.** The smallest missing correctness experiment is an actual host parent/subagent/reset/resume transcript with stub creation, epoch changes and raw recovery, plus concurrent worktrees. The smallest outcome experiment pairs native precise reads with this scoped retrieval profile on representative discovery/refactor tasks at fixed model/effort, including all retries and failures. Rollback removes the worker registration and retains native access to source and Jackin-owned evidence.
 
 ## Related work
 
 - [LemonCrow](/research/context/tools/10-lemoncrow-design/)
 - [Six-tool comparison](/research/context/tools/05-head-to-head/)
+- [Composition](/research/context/tools/06-combining/)
+- [Evidence](/research/context/tools/07-evidence-and-claims/)
 - [Jackin integration](/research/context/tools/11-jackin-integration/)

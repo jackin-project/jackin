@@ -1,0 +1,1274 @@
+{
+  "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+  "source_cutoff_utc": "2026-10-24T01:15:00Z",
+  "rows": [
+    {
+      "id": "S0471",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "6",
+      "heading": "## Summary",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#summary",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Summary",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0472",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "16",
+      "heading": "## Question and scope",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#question-and-method",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Question and method",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0473",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "20",
+      "heading": "## Method",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#question-and-method",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Question and method",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0474",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "24",
+      "heading": "## Findings",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#the-sixteen-mechanism-board",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "The sixteen-mechanism board",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0475",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "26",
+      "heading": "### Baseline for all arithmetic ($17 floor variant)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#summary",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Summary",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0476",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "32",
+      "heading": "### The frontier board",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#the-sixteen-mechanism-board",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "The sixteen-mechanism board",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0477",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "53",
+      "heading": "### Band A \u2014 provider-side megaleverage (where the real 10x lives)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#model-and-serving-mechanisms",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Model and serving mechanisms",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0478",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "55",
+      "heading": "### K1. Soft-prompt context compression: gist tokens, ICAE, AutoCompressors, Activation Beacon, 500xCompressor",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k1-gist-icae-autocompressors-activation-beacon-and-500xcompressor",
+      "evidence_or_reason": "Retain all five learned-compression families with exact paper versions, model/activation requirements and task-transfer limits; retire hosted-day arithmetic.",
+      "current_heading": "K1. Gist, ICAE, AutoCompressors, Activation Beacon and 500xCompressor",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0479",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "70",
+      "heading": "### K2. KV-cache as a persistent, shippable artifact (LMCache + CacheGen)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k2-kv-state-as-a-persistent-artifact",
+      "evidence_or_reason": "Retain persistent KV infrastructure, current LMCache architecture and CacheGen; replace storage-only pricing with deployment/restore/isolation economics.",
+      "current_heading": "K2. KV state as a persistent artifact",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0480",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "85",
+      "heading": "### K3. Server-side context editing + memory offload (Anthropic context management)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k3-provider-context-editing-plus-external-memory",
+      "evidence_or_reason": "Retain native context editing and memory; separate historical vendor evaluations, signed continuation and full iteration/cache accounting.",
+      "current_heading": "K3. Provider context editing plus external memory",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0481",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "100",
+      "heading": "### K4. Context distillation into fine-tunes of repeated instructions",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k4-distill-standing-context-into-a-fine-tuned-model",
+      "evidence_or_reason": "Retain distillation; verify scoped public customization availability, remove universal economic impossibility and keep changed weights outside the fixed-model arm.",
+      "current_heading": "K4. Distill standing context into a fine-tuned model",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0482",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "115",
+      "heading": "### K5. Provider cache-price arbitrage (DeepSeek-class economics at a gateway)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k5-provider-cache-price-routing",
+      "evidence_or_reason": "Retain cache-price routing as a separate explicit provider/model policy; retire old price ratio and unmeasured workload allocation.",
+      "current_heading": "K5. Provider cache-price routing",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0483",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "130",
+      "heading": "### Band B \u2014 session-layer frontier (deployable, small, real)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#representation-and-reasoning-mechanisms",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Representation and reasoning mechanisms",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0484",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "132",
+      "heading": "### K6. In-context session codebooks (negotiated abbreviation tables)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k6-in-context-session-codebooks",
+      "evidence_or_reason": "Retain codebooks as a versioned exact-reference experiment; retire unreproduced token counts and daily output-share forecast.",
+      "current_heading": "K6. In-context session codebooks",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0485",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "147",
+      "heading": "### K7. Single-token semantic anchors",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k7-single-token-semantic-anchors",
+      "evidence_or_reason": "Correct universal tokenizer floor/physics claim; retain aliases with complete-envelope counting, shared dictionary and referent tests.",
+      "current_heading": "K7. Single-token semantic anchors",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0486",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "162",
+      "heading": "### K8. Self-extending abbreviation registries in memory files",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k8-a-persistent-abbreviation-registry",
+      "evidence_or_reason": "Retain persistent registry; add consumer/epoch/version lifetime and dangling-alias protection; retire fixed reuse threshold.",
+      "current_heading": "K8. A persistent abbreviation registry",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0487",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "177",
+      "heading": "### K9. Prompt-as-program / run-length encoding of repeated structure",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k9-templates-and-repeated-structure-encoding",
+      "evidence_or_reason": "Retain templates and deterministic expansion; require exact expansion/grammar cost; retire token-only daily forecast.",
+      "current_heading": "K9. Templates and repeated-structure encoding",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0488",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "192",
+      "heading": "### K10. Token-aligned identifier naming (tokenizer-aware code style)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k10-token-aware-identifier-naming",
+      "evidence_or_reason": "Retain token-aware naming as measurement advisory; preserve readable language/API contracts and reject speculative bulk-renaming benefit.",
+      "current_heading": "K10. Token-aware identifier naming",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0489",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "207",
+      "heading": "### K11. Tokenizer arbitrage routing (the under-reported 1.35x on top of the 10x)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k11-tokenizer-aware-model-routing",
+      "evidence_or_reason": "Retain tokenizer/model routing separately from fixed-model compression; replace old ratios/default Haiku assumption with actual current treatment accounting.",
+      "current_heading": "K11. Tokenizer-aware model routing",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0490",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "222",
+      "heading": "### K12. Thinking-channel compression: effort routing now, Chain-of-Draft as the ceiling",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k12-shorter-reasoning-and-effort-controls",
+      "evidence_or_reason": "Retain terse reasoning/effort questions; separate visible style, provider effort and output limits; retire inferred hidden-reasoning shares and savings ceiling.",
+      "current_heading": "K12. Shorter reasoning and effort controls",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0491",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "237",
+      "heading": "### K13. Cache-keepalive daemon (rewritten by the 1h-TTL discovery)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k13-paid-cache-warming-and-renewal",
+      "evidence_or_reason": "Retain paid warming conditional on reuse/TTL/billing route; withdraw hidden resume ping default, universal one-hour TTL and 19-hour/46-minute rules.",
+      "current_heading": "K13. Paid cache warming and renewal",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0492",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "252",
+      "heading": "### Band C \u2014 infrastructure: where the discipline gets baked in",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#operational-mechanisms",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Operational mechanisms",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0493",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "254",
+      "heading": "### K14. Compression-hygiene CI linter (token budget for always-loaded files)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k14-context-budget-ci-checks",
+      "evidence_or_reason": "Retain context CI inventory/regression guard; preserve requirements, count actual host loading, label proxies and retire arbitrary universal budgets/dollar drift.",
+      "current_heading": "K14. Context-budget CI checks",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0494",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "281",
+      "heading": "### K15. Hard-prompt compression at the append seam (LLMLingua-2 gateway)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k15-learned-text-pruning-at-ingestion",
+      "evidence_or_reason": "Retain learned ingestion pruning; correct LLMLingua-2 token-classifier mechanism, require real host seam, rare-fact fidelity, runtime/recovery and task evidence.",
+      "current_heading": "K15. Learned text pruning at ingestion",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0495",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "296",
+      "heading": "### K16. The jackin\u276f-baked optimization pack (orchestrator as delivery vehicle)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k16-jackin-as-policy-delivery",
+      "evidence_or_reason": "Retain orchestrator policy delivery as proposed versioned integration; preserve selected model/effort/native authority and remove summed pack forecast.",
+      "current_heading": "K16. Jackin as policy delivery",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0496",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "311",
+      "heading": "## Implications for jackin\u276f",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k16-jackin-as-policy-delivery",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "K16. Jackin as policy delivery",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0497",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "315",
+      "heading": "## Limitations and unknowns",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#retired-folklore-and-uncertainty",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Retired folklore and uncertainty",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0498",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "317",
+      "heading": "### Folklore graveyard (measured, dead)",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#retired-folklore-and-uncertainty",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Retired folklore and uncertainty",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0499",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "328",
+      "heading": "## Sources",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#question-and-method",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Question and method",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0500",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "line": "372",
+      "heading": "## Related work",
+      "blob_sha256": "839c395cf4fac170f87440ef09b88652747a4c6062e6e7271c857e78b17339aa",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#related-work",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Related work",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0682",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "6",
+      "heading": "## Summary",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#summary",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Summary",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0683",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "23",
+      "heading": "## Question and scope",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#question-and-method",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Question and method",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0684",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "27",
+      "heading": "## Method",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#question-and-method",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Question and method",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0685",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "31",
+      "heading": "## Findings",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#the-eight-proposal-board",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "The eight-proposal board",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0686",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "33",
+      "heading": "### The board",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#the-eight-proposal-board",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "The eight-proposal board",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0687",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "53",
+      "heading": "## Implications for jackin\u276f",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#composition-and-next-decisions",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Composition and next decisions",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0688",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "55",
+      "heading": "### V1. Quota-window scheduler \u2014 shape work to the cap's reset clock",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v1-quota-window-scheduler",
+      "evidence_or_reason": "Retain quota scheduling using actual authorized observations and deadlines; withdraw universal five-hour windows, read weights and model-band allocation forecasts.",
+      "current_heading": "V1. Quota-window scheduler",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0689",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "80",
+      "heading": "### V2. Per-account quota-denominator prober \u2014 fit the cap weight from your own headers",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v2-per-account-quota-observation-and-calibration",
+      "evidence_or_reason": "Reframe denominator probing as supported quota observation/calibration; expose identifiability, delayed snapshots, drift and unknown coefficients.",
+      "current_heading": "V2. Per-account quota observation and calibration",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0690",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "104",
+      "heading": "### V3. Vision-tier auto-router \u2014 every screenshot to the cheap tokenizer family",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v3-vision-representation-and-optional-vision-model-routing",
+      "evidence_or_reason": "Separate same-model media representation from explicit vision-model routing; withdraw cap-to-task/quality/quota transfer and require original/spatial fidelity.",
+      "current_heading": "V3. Vision representation and optional vision-model routing",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0691",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "125",
+      "heading": "### V4. Screenshot/PDF \u2192 text transcoder at ingestion \u2014 pay text, not the media tax",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v4-screenshotpdf-to-text-extraction-at-ingestion",
+      "evidence_or_reason": "Retain text/OCR extraction with original/page provenance; remove universal exactness, quality improvement and unreproduced savings ranges.",
+      "current_heading": "V4. Screenshot/PDF-to-text extraction at ingestion",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0692",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "146",
+      "heading": "### V5. Time-value auto fast-mode \u2014 flip fast mode by who is waiting",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v5-time-value-speed-policy",
+      "evidence_or_reason": "Retain explicit same-model speed profile; include whole critical path, autonomous deadlines, actual billing and current persistent cache-header behavior.",
+      "current_heading": "V5. Time-value speed policy",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0693",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "170",
+      "heading": "### V6. Hosted \"warm repo\" \u2014 the CAG pattern as a fleet-shared, always-warm cached prefix",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v6-cached-repository-core-and-staggered-starts",
+      "evidence_or_reason": "Retain revisioned cached core and stagger hypothesis; preserve provider/tenant/workspace scope, native staggering and actual receipts; retire tenfold/fullfleet forecast.",
+      "current_heading": "V6. Cached repository core and staggered starts",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0694",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "196",
+      "heading": "### V7. Online-canary-gated adaptive compression \u2014 compress hard only while a live judge says it's safe",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v7-online-monitoring-with-bounded-rollback",
+      "evidence_or_reason": "Retain monitoring/rollback for prequalified lanes; sampled async judges cannot establish safety or prevent prior failures; include calibration and full guard cost.",
+      "current_heading": "V7. Online monitoring with bounded rollback",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0695",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "220",
+      "heading": "### V8. Cross-provider portable token-policy compiler \u2014 one policy, every agent's config",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v8-cross-host-portable-policy-compiler",
+      "evidence_or_reason": "Retain capability-aware compiler proposal; require native activation and off-path conformance; remove neutral translation and60/80-percent portability claims.",
+      "current_heading": "V8. Cross-host portable policy compiler",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0696",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "244",
+      "heading": "### Honest ceiling",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#composition-and-next-decisions",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Composition and next decisions",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0697",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "256",
+      "heading": "## Limitations and unknowns",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#limitations-and-evidence",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Limitations and evidence",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0698",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "260",
+      "heading": "## Sources",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#limitations-and-evidence",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Limitations and evidence",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0699",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "line": "264",
+      "heading": "## Related work",
+      "blob_sha256": "139cfb8892836842238f8ddaa0857a1da372c7af26605878603ad85f613f3fd5",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#related-work",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Related work",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0700",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "6",
+      "heading": "## Summary",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#summary",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Summary",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0701",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "12",
+      "heading": "## Question and scope",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#question-and-method",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Question and method",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0702",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "16",
+      "heading": "## Method",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#question-and-method",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Question and method",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0703",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "20",
+      "heading": "## Findings",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#current-evidence-by-topic",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Current evidence by topic",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0704",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "22",
+      "heading": "### Current evidence by topic",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#current-evidence-by-topic",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Current evidence by topic",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0705",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "35",
+      "heading": "### Dollar verdict",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#dollar-and-multiplier-verdict",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Dollar and multiplier verdict",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0706",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "44",
+      "heading": "### Quota verdict",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#quota-verdict",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Quota verdict",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0707",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "55",
+      "heading": "### Conservative stack",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#native-preserving-profile",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Native-preserving profile",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0708",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "63",
+      "heading": "### Quota-bound subscriber stack",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#quota--or-latency-constrained-profile",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Quota- or latency-constrained profile",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0709",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "70",
+      "heading": "### Conditional routing stack",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#separate-routing-or-training-research",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Separate routing or training research",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0710",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "77",
+      "heading": "### Cross-layer caveats",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#cross-layer-decisions-and-rejected-claims",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Cross-layer decisions and rejected claims",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0711",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "83",
+      "heading": "## Implications for jackin\u276f",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#implications-and-remaining-unknowns",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Implications and remaining unknowns",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0712",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "85",
+      "heading": "### Current tier adjustments",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#cross-layer-decisions-and-rejected-claims",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Cross-layer decisions and rejected claims",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0713",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "98",
+      "heading": "### Current stack guidance",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#stack-guidance",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Stack guidance",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0714",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "102",
+      "heading": "## Limitations and unknowns",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#implications-and-remaining-unknowns",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Implications and remaining unknowns",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0715",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "104",
+      "heading": "### Rejected or downgraded claims",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#cross-layer-decisions-and-rejected-claims",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Cross-layer decisions and rejected claims",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0716",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "112",
+      "heading": "## Sources",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#question-and-method",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Question and method",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    },
+    {
+      "id": "S0717",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "line": "116",
+      "heading": "## Related work",
+      "blob_sha256": "62d350f37df9d9488d95e7c8e026257c808e312f840d1eef5a52fd1df7c4397a",
+      "workstream": "rtk-leanctx-frontier",
+      "disposition": "refreshed-and-reconciled",
+      "current_anchor": "/research/context/techniques/27-extension-stacks-and-verdict/#related-work",
+      "evidence_or_reason": "Scope retained/reorganized with current primary contracts, explicit uncertainty and fixed-model/effort gates; unsupported workload, quota and composition multipliers withdrawn.",
+      "current_heading": "Related work",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+        "docs/content/research/context/tools/07-evidence-and-claims.mdx"
+      ]
+    }
+  ],
+  "mechanisms": [
+    {
+      "id": "K1",
+      "disposition": "Retain all five learned-compression families with exact paper versions, model/activation requirements and task-transfer limits; retire hosted-day arithmetic.",
+      "current_heading": "K1. Gist, ICAE, AutoCompressors, Activation Beacon and 500xCompressor",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k1-gist-icae-autocompressors-activation-beacon-and-500xcompressor"
+    },
+    {
+      "id": "K2",
+      "disposition": "Retain persistent KV infrastructure, current LMCache architecture and CacheGen; replace storage-only pricing with deployment/restore/isolation economics.",
+      "current_heading": "K2. KV state as a persistent artifact",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k2-kv-state-as-a-persistent-artifact"
+    },
+    {
+      "id": "K3",
+      "disposition": "Retain native context editing and memory; separate historical vendor evaluations, signed continuation and full iteration/cache accounting.",
+      "current_heading": "K3. Provider context editing plus external memory",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k3-provider-context-editing-plus-external-memory"
+    },
+    {
+      "id": "K4",
+      "disposition": "Retain distillation; verify scoped public customization availability, remove universal economic impossibility and keep changed weights outside the fixed-model arm.",
+      "current_heading": "K4. Distill standing context into a fine-tuned model",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k4-distill-standing-context-into-a-fine-tuned-model"
+    },
+    {
+      "id": "K5",
+      "disposition": "Retain cache-price routing as a separate explicit provider/model policy; retire old price ratio and unmeasured workload allocation.",
+      "current_heading": "K5. Provider cache-price routing",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k5-provider-cache-price-routing"
+    },
+    {
+      "id": "K6",
+      "disposition": "Retain codebooks as a versioned exact-reference experiment; retire unreproduced token counts and daily output-share forecast.",
+      "current_heading": "K6. In-context session codebooks",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k6-in-context-session-codebooks"
+    },
+    {
+      "id": "K7",
+      "disposition": "Correct universal tokenizer floor/physics claim; retain aliases with complete-envelope counting, shared dictionary and referent tests.",
+      "current_heading": "K7. Single-token semantic anchors",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k7-single-token-semantic-anchors"
+    },
+    {
+      "id": "K8",
+      "disposition": "Retain persistent registry; add consumer/epoch/version lifetime and dangling-alias protection; retire fixed reuse threshold.",
+      "current_heading": "K8. A persistent abbreviation registry",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k8-a-persistent-abbreviation-registry"
+    },
+    {
+      "id": "K9",
+      "disposition": "Retain templates and deterministic expansion; require exact expansion/grammar cost; retire token-only daily forecast.",
+      "current_heading": "K9. Templates and repeated-structure encoding",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k9-templates-and-repeated-structure-encoding"
+    },
+    {
+      "id": "K10",
+      "disposition": "Retain token-aware naming as measurement advisory; preserve readable language/API contracts and reject speculative bulk-renaming benefit.",
+      "current_heading": "K10. Token-aware identifier naming",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k10-token-aware-identifier-naming"
+    },
+    {
+      "id": "K11",
+      "disposition": "Retain tokenizer/model routing separately from fixed-model compression; replace old ratios/default Haiku assumption with actual current treatment accounting.",
+      "current_heading": "K11. Tokenizer-aware model routing",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k11-tokenizer-aware-model-routing"
+    },
+    {
+      "id": "K12",
+      "disposition": "Retain terse reasoning/effort questions; separate visible style, provider effort and output limits; retire inferred hidden-reasoning shares and savings ceiling.",
+      "current_heading": "K12. Shorter reasoning and effort controls",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k12-shorter-reasoning-and-effort-controls"
+    },
+    {
+      "id": "K13",
+      "disposition": "Retain paid warming conditional on reuse/TTL/billing route; withdraw hidden resume ping default, universal one-hour TTL and 19-hour/46-minute rules.",
+      "current_heading": "K13. Paid cache warming and renewal",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k13-paid-cache-warming-and-renewal"
+    },
+    {
+      "id": "K14",
+      "disposition": "Retain context CI inventory/regression guard; preserve requirements, count actual host loading, label proxies and retire arbitrary universal budgets/dollar drift.",
+      "current_heading": "K14. Context-budget CI checks",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k14-context-budget-ci-checks"
+    },
+    {
+      "id": "K15",
+      "disposition": "Retain learned ingestion pruning; correct LLMLingua-2 token-classifier mechanism, require real host seam, rare-fact fidelity, runtime/recovery and task evidence.",
+      "current_heading": "K15. Learned text pruning at ingestion",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k15-learned-text-pruning-at-ingestion"
+    },
+    {
+      "id": "K16",
+      "disposition": "Retain orchestrator policy delivery as proposed versioned integration; preserve selected model/effort/native authority and remove summed pack forecast.",
+      "current_heading": "K16. Jackin as policy delivery",
+      "current_anchor": "/research/context/techniques/14-frontier-ideas/#k16-jackin-as-policy-delivery"
+    },
+    {
+      "id": "V1",
+      "disposition": "Retain quota scheduling using actual authorized observations and deadlines; withdraw universal five-hour windows, read weights and model-band allocation forecasts.",
+      "current_heading": "V1. Quota-window scheduler",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v1-quota-window-scheduler"
+    },
+    {
+      "id": "V2",
+      "disposition": "Reframe denominator probing as supported quota observation/calibration; expose identifiability, delayed snapshots, drift and unknown coefficients.",
+      "current_heading": "V2. Per-account quota observation and calibration",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v2-per-account-quota-observation-and-calibration"
+    },
+    {
+      "id": "V3",
+      "disposition": "Separate same-model media representation from explicit vision-model routing; withdraw cap-to-task/quality/quota transfer and require original/spatial fidelity.",
+      "current_heading": "V3. Vision representation and optional vision-model routing",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v3-vision-representation-and-optional-vision-model-routing"
+    },
+    {
+      "id": "V4",
+      "disposition": "Retain text/OCR extraction with original/page provenance; remove universal exactness, quality improvement and unreproduced savings ranges.",
+      "current_heading": "V4. Screenshot/PDF-to-text extraction at ingestion",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v4-screenshotpdf-to-text-extraction-at-ingestion"
+    },
+    {
+      "id": "V5",
+      "disposition": "Retain explicit same-model speed profile; include whole critical path, autonomous deadlines, actual billing and current persistent cache-header behavior.",
+      "current_heading": "V5. Time-value speed policy",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v5-time-value-speed-policy"
+    },
+    {
+      "id": "V6",
+      "disposition": "Retain revisioned cached core and stagger hypothesis; preserve provider/tenant/workspace scope, native staggering and actual receipts; retire tenfold/fullfleet forecast.",
+      "current_heading": "V6. Cached repository core and staggered starts",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v6-cached-repository-core-and-staggered-starts"
+    },
+    {
+      "id": "V7",
+      "disposition": "Retain monitoring/rollback for prequalified lanes; sampled async judges cannot establish safety or prevent prior failures; include calibration and full guard cost.",
+      "current_heading": "V7. Online monitoring with bounded rollback",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v7-online-monitoring-with-bounded-rollback"
+    },
+    {
+      "id": "V8",
+      "disposition": "Retain capability-aware compiler proposal; require native activation and off-path conformance; remove neutral translation and60/80-percent portability claims.",
+      "current_heading": "V8. Cross-host portable policy compiler",
+      "current_anchor": "/research/context/techniques/26-extension-frontier/#v8-cross-host-portable-policy-compiler"
+    }
+  ]
+}
