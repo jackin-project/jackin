@@ -1,14 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{now_epoch, render_account_list, render_detail};
+use super::{now_epoch, render_account_list, render_detail, usage_frame_layout};
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-};
+use ratatui::{Frame, layout::Rect};
 
 use crate::tui::state::ManagerState;
 
@@ -49,11 +46,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
 }
 
 pub fn render_at(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, now_epoch: i64) {
-    let body = crate::tui::view::workspace_frame_areas(area).body;
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
-        .split(body);
-    render_account_list(frame, columns[0], state, now_epoch);
-    render_detail(frame, columns[1], state, now_epoch);
+    let layout = usage_frame_layout(area);
+    render_account_list(frame, layout.list_outer, state, now_epoch);
+    render_detail(frame, layout.detail_outer, state, now_epoch);
 }

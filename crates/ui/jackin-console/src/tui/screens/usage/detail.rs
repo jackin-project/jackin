@@ -135,28 +135,19 @@ fn render_detail_panel(
         return;
     }
 
-    let status_height = inner.height.min(1);
-    let status_area = Rect::new(inner.x, inner.y, inner.width, status_height);
-    let body_area = Rect::new(
-        inner.x,
-        inner.y.saturating_add(status_height),
-        inner.width,
-        inner.height.saturating_sub(status_height),
-    );
-    if status_height > 0 {
-        let status = if screen.refreshing() || (screen.accounts.is_empty() && screen.loading()) {
-            refreshing_line()
-        } else {
-            Line::default()
-        };
-        frame.render_widget(Paragraph::new(status), status_area);
-    }
-    if body_area.width > 0 && body_area.height > 0 {
+    let areas = super::geometry::detail_areas(inner);
+    let status = if screen.refreshing() || (screen.accounts.is_empty() && screen.loading()) {
+        refreshing_line()
+    } else {
+        Line::default()
+    };
+    frame.render_widget(Paragraph::new(status), areas.status);
+    if areas.body.width > 0 && areas.body.height > 0 {
         frame.render_widget(
             Paragraph::new(lines)
                 .scroll((screen.scroll, 0))
                 .wrap(Wrap { trim: false }),
-            body_area,
+            areas.body,
         );
     }
 }

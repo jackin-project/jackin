@@ -3,6 +3,7 @@
 
 mod body;
 mod detail;
+mod geometry;
 mod labels_metric;
 mod labels_time;
 mod list;
@@ -20,6 +21,10 @@ pub(crate) use body::{
     meter_style, panel, refreshing_line, row_style,
 };
 pub(crate) use detail::render_detail;
+pub use geometry::{
+    UsageFrameLayout, UsageListGeometry, UsageRowTarget, UsageWheelAction, WheelDirection,
+    list_geometry, usage_frame_layout, usage_wheel_action,
+};
 pub use labels_metric::freshness_age_label;
 pub(crate) use labels_metric::{
     issue_text, metric_group_value_summary, metric_scope_summary, non_empty_label, now_epoch,
