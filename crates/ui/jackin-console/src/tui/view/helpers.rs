@@ -7,16 +7,19 @@ use super::{
     modal_overlay_state_for_route, modal_overlay_visible, render_footer, render_header,
     reserved_footer_height_for_facts, workspace_frame_areas,
 };
+use crate::tui::screens::usage::UsagePaintReceipt;
 use ratatui::{Frame, layout::Rect};
 
 pub(crate) fn render_usage_surface(
     frame: &mut Frame<'_>,
     area: Rect,
     state: &crate::tui::state::ManagerState<'_>,
-) {
+) -> Option<UsagePaintReceipt> {
     let areas = workspace_frame_areas(area);
     render_header(frame, areas.header, "usage");
-    crate::tui::screens::usage::render(frame, area, state);
+    let now_epoch = crate::tui::screens::usage::now_epoch();
+    let receipt =
+        crate::tui::screens::usage::render_at_with_pointer_receipt(frame, area, state, now_epoch);
     let hints = [
         termrock::widgets::HintSpan::Key("↑↓"),
         termrock::widgets::HintSpan::Text(" select  "),
@@ -26,6 +29,7 @@ pub(crate) fn render_usage_surface(
         termrock::widgets::HintSpan::Text(" back"),
     ];
     render_footer(frame, areas.footer, &hints);
+    receipt
 }
 
 pub(crate) fn reserved_footer_height(

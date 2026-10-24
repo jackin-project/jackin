@@ -12,15 +12,25 @@ use ratatui::{
 
 use crate::tui::state::ManagerState;
 
+#[cfg(test)]
 pub(crate) fn render_account_list(
     frame: &mut Frame<'_>,
     area: Rect,
     state: &ManagerState<'_>,
     now_epoch: i64,
 ) {
-    let Some(screen) = state.usage.screen.as_ref() else {
-        return;
-    };
+    drop(render_account_list_with_geometry(
+        frame, area, state, now_epoch,
+    ));
+}
+
+pub(crate) fn render_account_list_with_geometry(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &ManagerState<'_>,
+    now_epoch: i64,
+) -> Option<super::UsageListGeometry> {
+    let screen = state.usage.screen.as_ref()?;
     let focused = true;
     let block = Block::default()
         .borders(Borders::ALL)
@@ -33,7 +43,7 @@ pub(crate) fn render_account_list(
     frame.render_widget(block, area);
 
     let geometry = list_geometry(screen, inner, now_epoch, state.usage.visible);
-    let paragraph = Paragraph::new(geometry.lines).wrap(Wrap { trim: false });
+    let paragraph = Paragraph::new(geometry.lines.clone()).wrap(Wrap { trim: false });
     let paragraph = if geometry.scroll {
         paragraph.scroll((screen.scroll, 0))
     } else {
@@ -45,4 +55,5 @@ pub(crate) fn render_account_list(
         paragraph
     };
     frame.render_widget(paragraph, inner);
+    Some(geometry)
 }

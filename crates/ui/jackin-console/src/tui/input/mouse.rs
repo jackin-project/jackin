@@ -133,6 +133,10 @@ pub fn handle_mouse_with_config(
     }
 
     let input_owner = state.painted_input_owner();
+    if input_owner == ConsolePaintedInputOwner::Usage {
+        handle_usage_pointer_event(state, mouse, term_size);
+        return super::InputOutcome::Continue;
+    }
     if !input_owner.allows_manager_pointer_actions() {
         state.clear_pointer_state();
         return super::InputOutcome::Continue;
@@ -298,6 +302,38 @@ fn clear_pointer_hover(state: &mut ManagerState<'_>) {
     }
 }
 
+fn handle_usage_pointer_event(state: &mut ManagerState<'_>, mouse: MouseEvent, area: Rect) {
+    match mouse.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            let _ = state
+                .usage
+                .select_painted_row(area, mouse.column, mouse.row);
+        }
+        MouseEventKind::ScrollUp => {
+            let _ = state.usage.apply_painted_wheel_action(
+                area,
+                mouse.column,
+                mouse.row,
+                crate::tui::screens::usage::WheelDirection::Up,
+            );
+        }
+        MouseEventKind::ScrollDown => {
+            let _ = state.usage.apply_painted_wheel_action(
+                area,
+                mouse.column,
+                mouse.row,
+                crate::tui::screens::usage::WheelDirection::Down,
+            );
+        }
+        MouseEventKind::Moved
+        | MouseEventKind::ScrollLeft
+        | MouseEventKind::ScrollRight
+        | MouseEventKind::Down(_)
+        | MouseEventKind::Drag(_)
+        | MouseEventKind::Up(_) => {}
+    }
+}
+
 fn handle_modal_pointer_event(
     state: &mut ManagerState<'_>,
     owner: ConsolePaintedInputOwner,
@@ -369,6 +405,12 @@ pub fn clickable_at(
         return false;
     }
     let input_owner = state.painted_input_owner();
+    if input_owner == ConsolePaintedInputOwner::Usage {
+        return state
+            .usage
+            .painted_row_target(term_size, mouse.column, mouse.row)
+            .is_some();
+    }
     if !input_owner.allows_manager_pointer_actions() {
         return false;
     }

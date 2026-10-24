@@ -8,6 +8,7 @@ mod labels_metric;
 mod labels_time;
 mod list;
 mod model;
+mod pointer;
 mod publication;
 mod refresh;
 mod screen;
@@ -36,13 +37,16 @@ pub(crate) use labels_time::{
     past_age_label, quota_state_label, relative_time_label, summary_category_rank,
     updated_age_label,
 };
+#[cfg(test)]
 pub(crate) use list::render_account_list;
 pub use model::{
     USAGE_HEARTBEAT_INTERVAL, UsageAccount, UsageFilter, UsageMetricGroup, UsageRefreshOutcome,
     UsageRefreshRequest, UsageSort, UsageWindow,
 };
+pub use pointer::UsagePaintReceipt;
 pub(crate) use publication::{
     append_publication_age, append_publication_issues, empty_publication_lines,
 };
+pub(crate) use screen::render_at_with_pointer_receipt;
 pub use screen::{handle_key, render, render_at};
 pub use state::UsageScreenState;

@@ -518,6 +518,8 @@ where
     B: ratatui::backend::Backend,
     B::Error: std::error::Error + Send + Sync + 'static,
 {
+    let ConsoleStage::Manager(ms) = &mut state.stage;
+    ms.usage.clear_painted_pointer();
     let full_area: ratatui::layout::Rect = terminal.size()?.into();
     let (main_area, debug_bar_area) =
         split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
@@ -580,9 +582,16 @@ where
             jackin_telemetry::operation(&jackin_telemetry::operation::UI_RENDER, &render_attrs).ok()
         })
     });
+    let mut usage_receipt = None;
     let render_result = terminal.draw(|frame| {
         let ConsoleStage::Manager(ms) = &state.stage;
-        jackin_console::tui::view::render(frame, main_area, ms, context.config, context.cwd);
+        usage_receipt = jackin_console::tui::view::render_with_usage_receipt(
+            frame,
+            main_area,
+            ms,
+            context.config,
+            context.cwd,
+        );
         if let Some(confirm) = confirm_state {
             let (body, hint_row) = quit_confirm_body_and_hint_area(main_area);
             jackin_console::tui::view::render_modal_backdrop(frame, body);
@@ -611,6 +620,15 @@ where
         );
     }
     render_result?;
+    let root_surface_unblocked = state.quit_confirm.is_none();
+    {
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        if root_surface_unblocked && ms.painted_input_owner() == ConsolePaintedInputOwner::Usage {
+            ms.usage.publish_painted_pointer(main_area, usage_receipt);
+        } else {
+            ms.usage.clear_painted_pointer();
+        }
+    }
     context.mouse_state.last_painted_main_area = Some(main_area);
     context
         .jank_monitor
@@ -1203,8 +1221,9 @@ where
     B: ratatui::backend::Backend,
     B::Error: std::error::Error + Send + Sync + 'static,
 {
-    terminal.resize(ratatui::layout::Rect::new(0, 0, width, height))?;
     let ConsoleStage::Manager(manager) = &mut state.stage;
+    manager.usage.clear_painted_pointer();
+    terminal.resize(ratatui::layout::Rect::new(0, 0, width, height))?;
     manager.clear_pointer_state();
     mouse_state.chrome_regions.clear();
     mouse_state.geometry_invalid = true;

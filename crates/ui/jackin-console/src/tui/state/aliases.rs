@@ -27,6 +27,100 @@ use crate::tui::op_picker::OpPickerState;
 pub struct UsageRouteState {
     pub screen: Option<UsageScreenState>,
     pub visible: bool,
+    painted_pointer: Option<crate::tui::screens::usage::UsagePaintReceipt>,
+}
+
+impl UsageRouteState {
+    /// Revoke any input authority from the most recently painted Usage frame.
+    pub fn clear_painted_pointer(&mut self) {
+        self.painted_pointer = None;
+    }
+
+    /// Publish a Usage receipt only when it still matches the live route state.
+    pub fn publish_painted_pointer(
+        &mut self,
+        area: ratatui::layout::Rect,
+        receipt: Option<crate::tui::screens::usage::UsagePaintReceipt>,
+    ) {
+        self.painted_pointer = receipt.filter(|receipt| {
+            self.visible
+                && self
+                    .screen
+                    .as_ref()
+                    .is_some_and(|screen| receipt.matches(area, screen))
+        });
+    }
+
+    pub(crate) fn painted_row_target(
+        &self,
+        area: ratatui::layout::Rect,
+        x: u16,
+        y: u16,
+    ) -> Option<crate::tui::screens::usage::UsageRowTarget> {
+        if !self.visible {
+            return None;
+        }
+        let screen = self.screen.as_ref()?;
+        let receipt = self.painted_pointer.as_ref()?;
+        receipt
+            .matches(area, screen)
+            .then(|| receipt.target_at(x, y))
+            .flatten()
+    }
+
+    pub(crate) fn painted_wheel_action(
+        &self,
+        area: ratatui::layout::Rect,
+        x: u16,
+        y: u16,
+        direction: crate::tui::screens::usage::WheelDirection,
+    ) -> Option<crate::tui::screens::usage::UsageWheelAction> {
+        if !self.visible {
+            return None;
+        }
+        let screen = self.screen.as_ref()?;
+        self.painted_pointer
+            .as_ref()?
+            .wheel_action(screen, area, x, y, direction)
+    }
+
+    pub(crate) fn select_painted_row(
+        &mut self,
+        area: ratatui::layout::Rect,
+        x: u16,
+        y: u16,
+    ) -> bool {
+        let Some(target) = self.painted_row_target(area, x, y) else {
+            return false;
+        };
+        let Some(screen) = self.screen.as_mut() else {
+            return false;
+        };
+        let selected = screen.select_rendered_target(&target);
+        if selected {
+            self.clear_painted_pointer();
+        }
+        selected
+    }
+
+    pub(crate) fn apply_painted_wheel_action(
+        &mut self,
+        area: ratatui::layout::Rect,
+        x: u16,
+        y: u16,
+        direction: crate::tui::screens::usage::WheelDirection,
+    ) -> bool {
+        let Some(action) = self.painted_wheel_action(area, x, y, direction) else {
+            return false;
+        };
+        if let Some(screen) = self.screen.as_mut() {
+            screen.apply_wheel_action(action);
+            self.clear_painted_pointer();
+            true
+        } else {
+            false
+        }
+    }
 }
 
 pub type ManagerEffect = crate::tui::effect::ConsoleManagerEffect<
