@@ -127,7 +127,7 @@ formula = "Formula/jackin.rb"
 
 [distribution.homebrew_tap.updater]
 task = "package-update"
-inputs = ["Formula/jackin-preview.rb", "Formula/jackin.rb", "lib/jackin_formula_support.rb", "mise.lock", "mise.toml", "scripts/package-update.py", "scripts/package-update.sh", "scripts/package_update_validation.py"]
+inputs = [".velnor/config.toml", "Formula/jackin-preview.rb", "Formula/jackin.rb", "lib/jackin_formula_support.rb", "mise.lock", "mise.toml", "scripts/homebrew_install_policy.py", "scripts/package-update.py", "scripts/package-update.sh", "scripts/package_update_validation.py", "scripts/test-homebrew-install.sh", "scripts/test-package-update.sh", "scripts/test_homebrew_formulary_keg.rb", "scripts/test_homebrew_install_policy.py", "scripts/test_package_update.py"]
 tools = ["python"]
 timeout_minutes = 5
 
