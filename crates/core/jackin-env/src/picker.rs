@@ -54,9 +54,10 @@ pub(crate) struct RawOpSection {
     pub(super) label: String,
 }
 
-// SAFETY: 'value' is intentionally absent from this struct. The picker is a
-// metadata browser; serde must not deserialize secret values into memory.
-// Any change adding a `value` field here breaks the picker's trust model.
+// SAFETY: `value` is intentionally absent from this struct, so it is not
+// retained in `RawOpField` or the picker model. `item_get` still buffers the
+// CLI's raw response, so this does not prevent secret values from entering
+// process memory. Do not add a `value` field here.
 //
 #[derive(serde::Deserialize)]
 pub(crate) struct RawOpField {
