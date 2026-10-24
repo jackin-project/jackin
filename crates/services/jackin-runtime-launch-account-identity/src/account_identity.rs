@@ -16,8 +16,12 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+mod marker_pair;
+use marker_pair::MarkerPairLease;
+
 const ACCOUNT_FINGERPRINT_FILE: &str = "account-config.sha256";
 const ACCOUNT_ADMISSION_FILE: &str = "account-admission.sha256";
+const ACCOUNT_MARKERS_TRANSACTION_FILE: &str = ".account-markers-transaction";
 const CREDENTIAL_TRANSACTION_FILE: &str = ".credentials-transaction";
 const CREDENTIAL_TRANSACTION_VERSION: u8 = 1;
 
@@ -689,19 +693,31 @@ pub fn account_configuration_matches(
     workspace: Option<&WorkspaceName>,
     role: &str,
 ) -> anyhow::Result<bool> {
+    let Some(lease) = MarkerPairLease::acquire_optional(root)? else {
+        return Ok(false);
+    };
+    lease.ensure_no_reserved_journal(ACCOUNT_MARKERS_TRANSACTION_FILE)?;
+    lease.ensure_root_identity()?;
     let stored = match std::fs::read_to_string(root.join(ACCOUNT_FINGERPRINT_FILE)) {
         Ok(value) => value,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            lease.ensure_root_identity()?;
+            return Ok(false);
+        }
         Err(error) => return Err(error.into()),
     };
+    lease.ensure_root_identity()?;
     let manifest = InstanceManifest::read(root)?;
-    Ok(stored
+    lease.ensure_root_identity()?;
+    let matches = stored
         == account_configuration_fingerprint(
             config,
             workspace,
             role,
             &manifest.admitted_instances,
-        )?)
+        )?;
+    lease.ensure_root_identity()?;
+    Ok(matches)
 }
 
 #[derive(Debug)]
@@ -753,6 +769,9 @@ fn publish_account_fingerprints(
     selected_fingerprint: &str,
     admission_fingerprint: &str,
 ) -> anyhow::Result<()> {
+    let lease = MarkerPairLease::acquire(root)?;
+    lease.ensure_no_reserved_journal(ACCOUNT_MARKERS_TRANSACTION_FILE)?;
+    lease.ensure_root_identity()?;
     let selected_path = root.join(ACCOUNT_FINGERPRINT_FILE);
     let admission_path = root.join(ACCOUNT_ADMISSION_FILE);
     let selected_tmp = root.join(format!(
@@ -763,22 +782,38 @@ fn publish_account_fingerprints(
         ".{ACCOUNT_ADMISSION_FILE}.{}.tmp",
         CREDENTIAL_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
+    lease.ensure_root_identity()?;
     let previous_selected = read_marker(&selected_path)?;
+    lease.ensure_root_identity()?;
     let previous_admission = read_marker(&admission_path)?;
+    lease.ensure_root_identity()?;
 
     let publish_result = (|| -> anyhow::Result<()> {
         std::fs::write(&selected_tmp, selected_fingerprint)?;
+        lease.ensure_root_identity()?;
         std::fs::write(&admission_tmp, admission_fingerprint)?;
+        lease.ensure_root_identity()?;
         std::fs::rename(&selected_tmp, &selected_path)?;
+        lease.ensure_root_identity()?;
+        marker_pair::pause_after_selected_rename(root)?;
+        lease.ensure_root_identity()?;
         std::fs::rename(&admission_tmp, &admission_path)?;
+        lease.ensure_root_identity()?;
         revision.ensure_current(paths)?;
+        lease.ensure_root_identity()?;
         Ok(())
     })();
 
     if let Err(error) = publish_result {
+        lease.ensure_root_identity().context(format!(
+            "account marker publication failed and its root identity changed: {error:#}"
+        ))?;
         drop(std::fs::remove_file(&selected_tmp));
+        lease.ensure_root_identity()?;
         drop(std::fs::remove_file(&admission_tmp));
+        lease.ensure_root_identity()?;
         restore_marker(&selected_path, previous_selected.as_deref())?;
+        lease.ensure_root_identity()?;
         restore_marker(&admission_path, previous_admission.as_deref())?;
         return Err(error);
     }
@@ -811,19 +846,31 @@ pub fn account_admission_matches(
     workspace: Option<&WorkspaceName>,
     role: &str,
 ) -> anyhow::Result<bool> {
+    let Some(lease) = MarkerPairLease::acquire_optional(root)? else {
+        return Ok(false);
+    };
+    lease.ensure_no_reserved_journal(ACCOUNT_MARKERS_TRANSACTION_FILE)?;
+    lease.ensure_root_identity()?;
     let stored = match std::fs::read_to_string(root.join(ACCOUNT_ADMISSION_FILE)) {
         Ok(value) => value,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            lease.ensure_root_identity()?;
+            return Ok(false);
+        }
         Err(error) => return Err(error.into()),
     };
+    lease.ensure_root_identity()?;
     let manifest = InstanceManifest::read(root)?;
-    Ok(stored
+    lease.ensure_root_identity()?;
+    let matches = stored
         == account_configuration_fingerprint(
             config,
             workspace,
             role,
             &manifest.admitted_instances,
-        )?)
+        )?;
+    lease.ensure_root_identity()?;
+    Ok(matches)
 }
 
 #[expect(
