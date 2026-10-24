@@ -134,11 +134,14 @@ async fn run_launch_core_happy_path_returns_container_name() {
 #[tokio::test]
 async fn run_launch_core_removes_container_if_generation_rotates_during_docker_run() {
     let mut fix = LaunchCoreFixture::new();
+    fix.container_name = "jk-rotation-standard".to_owned();
     let mut rotated = fix.config.clone();
     rotated
         .env
         .insert("ROTATED_DURING_DOCKER_RUN".into(), "new".into());
-    let _rotation = schedule_config_rotation(&fix.paths, "docker run", &rotated);
+    let container_name = &fix.container_name;
+    let operation_prefix = format!("docker run -d --name {container_name}");
+    let _rotation = schedule_config_rotation(&fix.paths, operation_prefix, &rotated);
     fix.runner.command_hook = Some(rotate_config_on_operation);
 
     let error = launch_core::run_launch_core(fix.as_core())
@@ -150,14 +153,148 @@ async fn run_launch_core_removes_container_if_generation_rotates_during_docker_r
             .contains("configuration changed during launch"),
         "unexpected rotation error: {error:#}"
     );
+    let recorded = fix.docker.recorded.borrow();
+    let certs_volume = crate::instance::naming::dind_certs_volume(&fix.container_name);
+    let network = crate::instance::naming::role_network_name(&fix.container_name);
     assert!(
-        fix.docker
-            .recorded
-            .borrow()
+        recorded
             .iter()
             .any(|call| call == &format!("docker rm -f {}", fix.container_name)),
-        "stale started container must be force-removed: {:?}",
-        fix.docker.recorded.borrow()
+        "stale started container must be force-removed: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker volume rm {certs_volume}")),
+        "rotation cleanup must remove the owned DinD cert volume: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker network rm {network}")),
+        "rotation cleanup must remove the owned role network: {recorded:?}"
+    );
+}
+
+#[tokio::test]
+async fn run_launch_core_removes_owned_dind_resources_if_generation_rotates_during_docker_run() {
+    let mut fix = LaunchCoreFixture::new();
+    fix.container_name = "jk-rotation-compat".to_owned();
+    fix.opts.docker_profile = Some(crate::runtime::docker_profile::DockerSecurityProfile::Compat);
+    let mut rotated = fix.config.clone();
+    rotated
+        .env
+        .insert("ROTATED_DURING_DOCKER_RUN".into(), "new".into());
+    let container_name = &fix.container_name;
+    let operation_prefix = format!("docker run -d --name {container_name}");
+    let _rotation = schedule_config_rotation(&fix.paths, operation_prefix, &rotated);
+    fix.runner.command_hook = Some(rotate_config_on_operation);
+
+    let error = launch_core::run_launch_core(fix.as_core())
+        .await
+        .expect_err("launch must fail after config rotates during docker run");
+    assert!(
+        error
+            .to_string()
+            .contains("configuration changed during launch"),
+        "unexpected rotation error: {error:#}"
+    );
+
+    let recorded = fix.docker.recorded.borrow();
+    let dind_container = crate::instance::naming::dind_container_name(&fix.container_name);
+    let certs_volume = crate::instance::naming::dind_certs_volume(&fix.container_name);
+    let network = crate::instance::naming::role_network_name(&fix.container_name);
+    let dind_start = format!("start_container:{dind_container}");
+    let dind_start_index = recorded
+        .iter()
+        .position(|call| call == &dind_start)
+        .expect("Compat rotation fixture must start its DinD sidecar");
+
+    for (resource, teardown) in [
+        (
+            "role container",
+            format!("docker rm -f {}", fix.container_name),
+        ),
+        ("DinD container", format!("docker rm -f {dind_container}")),
+        (
+            "DinD cert volume",
+            format!("docker volume rm {certs_volume}"),
+        ),
+        ("role network", format!("docker network rm {network}")),
+    ] {
+        let teardown_index = recorded
+            .iter()
+            .position(|call| call == &teardown)
+            .unwrap_or_else(|| {
+                panic!("rotation cleanup must remove the owned {resource}: {recorded:?}")
+            });
+        assert!(
+            dind_start_index < teardown_index,
+            "DinD must start before owned-resource teardown; calls: {recorded:?}"
+        );
+    }
+}
+
+#[test]
+fn config_rotation_docker_run_prefix_is_fixture_scoped() {
+    let mut first = LaunchCoreFixture::new();
+    first.container_name = "jk-rotation-route-first".to_owned();
+    let first_original = std::fs::read(&first.paths.config_file).unwrap();
+    let mut first_rotated = first.config.clone();
+    first_rotated
+        .env
+        .insert("ROTATION_ROUTE_MARKER".into(), "first".into());
+    let first_rotated_bytes = toml::to_string(&first_rotated).unwrap().into_bytes();
+    let first_container_name = &first.container_name;
+    let first_prefix = format!("docker run -d --name {first_container_name}");
+    let _first_rotation =
+        schedule_config_rotation(&first.paths, first_prefix.clone(), &first_rotated);
+
+    let mut second = LaunchCoreFixture::new();
+    second.container_name = "jk-rotation-route-second".to_owned();
+    let second_original = std::fs::read(&second.paths.config_file).unwrap();
+    let mut second_rotated = second.config.clone();
+    second_rotated
+        .env
+        .insert("ROTATION_ROUTE_MARKER".into(), "second".into());
+    let second_rotated_bytes = toml::to_string(&second_rotated).unwrap().into_bytes();
+    let second_container_name = &second.container_name;
+    let second_prefix = format!("docker run -d --name {second_container_name}");
+    let _second_rotation =
+        schedule_config_rotation(&second.paths, second_prefix.clone(), &second_rotated);
+
+    rotate_config_on_operation("docker ps --format {{.Names}}");
+    let sibling_name_command = format!("{first_prefix}-other --label test=true");
+    rotate_config_on_operation(&sibling_name_command);
+    assert_eq!(
+        std::fs::read(&first.paths.config_file).unwrap(),
+        first_original
+    );
+    assert_eq!(
+        std::fs::read(&second.paths.config_file).unwrap(),
+        second_original
+    );
+
+    let second_run = format!("{second_prefix} --label test=true");
+    rotate_config_on_operation(&second_run);
+    assert_eq!(
+        std::fs::read(&first.paths.config_file).unwrap(),
+        first_original
+    );
+    assert_eq!(
+        std::fs::read(&second.paths.config_file).unwrap(),
+        second_rotated_bytes
+    );
+
+    let first_run = format!("{first_prefix} --label test=true");
+    rotate_config_on_operation(&first_run);
+    assert_eq!(
+        std::fs::read(&first.paths.config_file).unwrap(),
+        first_rotated_bytes
+    );
+    assert_eq!(
+        std::fs::read(&second.paths.config_file).unwrap(),
+        second_rotated_bytes
     );
 }
 

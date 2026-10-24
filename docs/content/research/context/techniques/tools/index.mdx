@@ -7,8 +7,6 @@ description: "Explicit-input offline instruments for token requests, Claude tran
 
 Accounting sources verified **2026-10-24**, source cutoff **2026-10-24T01:15:00Z**. The native Rust `jackin-xtask measurement` commands are the recommended path for new use. They prepare requests and analyze explicitly supplied files; they do not discover private transcripts, read agent OAuth stores, launch agents, or establish accepted-task savings.
 
-The existing Python entry points remain tracked and usable during this compatibility window. This migration does not remove them or change their command names. The Rust regressions cover the same accounting contracts and additional boundary cases; the historical Python tests remain available as a separate compatibility check.
-
 ## Instruments and scope
 
 | Instrument | Input and result | Limit |
@@ -17,7 +15,6 @@ The existing Python entry points remain tracked and usable during this compatibi
 | `cargo run -p jackin-xtask -- measurement image-tokens` | Explicit model and synthetic PNG dimensions from 1 through 4096 on each axis; prepares requests sequentially | Dimensions are validated before any opt-in request; no aggregate image-size cap, OCR claim or universal pixel formula |
 | `cargo run -p jackin-xtask -- measurement session-cost` | Explicit Claude JSONL paths; disjoint usage classes grouped by exact model and deduplicated response | Streams supplied files; does not discover subagents, parse Codex transcripts or convert quota to dollars |
 | `cargo run -p jackin-xtask -- measurement provider-usage` | One explicit OpenAI Responses, Claude Messages or Gemini Interactions usage object | Contract and OpenAI write policy must be chosen; not an invoice or host-credit parser |
-| Python compatibility scripts and tests | <RepoFile path="docs/content/research/context/techniques/tools/count_tokens.py">count_tokens.py</RepoFile>, <RepoFile path="docs/content/research/context/techniques/tools/image_tokens.py">image_tokens.py</RepoFile>, <RepoFile path="docs/content/research/context/techniques/tools/session_cost.py">session_cost.py</RepoFile>, <RepoFile path="docs/content/research/context/techniques/tools/provider_usage.py">provider_usage.py</RepoFile> and the <RepoFile path="docs/content/research/context/techniques/tools/test_measurement_tools.py">historical tests</RepoFile> remain available during the migration window | New use should follow the Rust command examples below |
 
 Run the recommended Rust commands from the repository root:
 
@@ -34,19 +31,9 @@ cargo run -p jackin-xtask -- measurement provider-usage response.json --contract
 
 A samples file is a JSON array of objects with <code>label</code> and <code>text</code> strings. Text and file reads preserve CRLF and final-newline bytes before UTF-8 decoding; transcript accounting reads one UTF-8 JSONL line at a time and reports malformed input with its path and line number. Offline request output contains the supplied content: retain it only where that content is authorized.
 
-For the compatibility window, the original commands remain available from this directory:
-
-~~~sh
-python3 count_tokens.py --model EXACT_MODEL text 'public fixture'
-python3 image_tokens.py --model EXACT_MODEL 280x280 1000x1000
-python3 session_cost.py explicit-session.jsonl explicit-worker.jsonl
-python3 provider_usage.py response.json --contract openai-responses --cache-writes paid
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_measurement_tools.py
-~~~
-
 ## Explicit network execution
 
-In the Rust commands, only <code>count-tokens</code> and <code>image-tokens</code> accept <code>--execute</code>. That opt-in sends the prepared content to Anthropic using <code>ANTHROPIC_API_KEY</code>, or a named <code>--api-key-env</code> variable. It does not reuse Claude Code credentials. The Rust client uses the fixed Anthropic token-count endpoint and refuses redirects to avoid forwarding the selected key to another host. The Python compatibility commands retain their existing options. No provider request was made while migrating or validating these tools.
+In the Rust commands, only <code>count-tokens</code> and <code>image-tokens</code> accept <code>--execute</code>. That opt-in sends the prepared content to Anthropic using <code>ANTHROPIC_API_KEY</code>, or a named <code>--api-key-env</code> variable. It does not reuse Claude Code credentials. The Rust client uses the fixed Anthropic token-count endpoint and refuses redirects to avoid forwarding the selected key to another host. No provider request was made while migrating or validating these tools.
 
 The [official counting documentation](https://platform.claude.com/docs/en/build-with-claude/token-counting) governs support, rate limits and estimate semantics. There is no default model or assumed tokenizer-family equality. An input-counting endpoint cannot calibrate hidden reasoning by subtraction or reveal a real cache hit.
 
@@ -56,7 +43,7 @@ The parser deduplicates response IDs within a session; absent a session ID, the 
 
 Cache writes are partitioned into five-minute, one-hour and **unknown TTL** classes. The aggregate is not added again. If final <code>usage.iterations</code> exists, its entries replace the top-level counters so compaction is counted once.
 
-A <code>--prices</code> file contains USD/MTok for <code>input</code>, <code>cache_read</code>, <code>cache_write_5m</code>, <code>cache_write_1h</code> and <code>output</code>, keyed by exact model. This aggregate pricing mode is suitable only when all receipts for each model share that price profile. Separate mixed context tiers, authentication routes, service modes and dates, or price each request with the final-usage instrument first. Neither command infers those conditions from a model name.
+A <code>--prices</code> file contains USD/MTok for <code>input</code>, <code>cache_read</code>, <code>cache_write_5m</code>, <code>cache_write_1h</code> and <code>output</code>, keyed by exact model. This aggregate pricing mode is suitable only when all receipts for each model share that price profile. Separate mixed context tiers, authentication routes, service modes and dates, or price each request with the final-usage instrument first. The aggregate pricing mode does not infer those conditions from a model name.
 
 Unknown model/TTL means unknown estimate, not zero; a true zero remains zero. Output includes reported thinking, prose and tool arguments. Include failed attempts, children, compaction and repair sessions explicitly. Current SDK main-loop <code>result.usage</code> and whole-tree <code>modelUsage</code> are different summaries; this JSONL parser does not automatically reconcile both. [Agent-loop contract](https://code.claude.com/docs/en/agent-sdk/agent-loop).
 
