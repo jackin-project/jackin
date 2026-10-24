@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Descriptor-relative inspection of a caller-pinned private installation root.
+//! Descriptor-relative inspection of a private installation root.
 //!
-//! The root is a capability supplied by the caller. This module does not
-//! authenticate the pathname or ancestors from which that descriptor came.
+//! A caller can supply an already-open root or ask this module to acquire one
+//! from an absolute path by checking each ancestor from the OS root. These
+//! checks do not authenticate an installation or its source contents.
 
+mod absolute_root;
 #[cfg(target_os = "macos")]
 mod darwin_acl;
 #[cfg(target_os = "linux")]
@@ -59,10 +61,10 @@ impl InstallFileKind {
 
 /// An owned, checked descriptor for a caller-pinned installation directory.
 ///
-/// Construction duplicates the supplied descriptor with close-on-exec set,
-/// then requires a current-effective-UID directory with exact mode `0700` and
-/// a supported native ACL policy. The external path and its ancestors are not
-/// inspected by this type.
+/// Constructors retain an owned close-on-exec directory descriptor. The
+/// pinned-descriptor constructor checks only that descriptor; the absolute
+/// path constructor checks every ancestor from the OS root before retaining
+/// the final descriptor.
 pub struct CheckedInstallRoot {
     directory: File,
 }
@@ -102,6 +104,7 @@ impl fmt::Debug for CheckedInstallFile {
 enum NodeRole {
     Root,
     Directory,
+    Ancestor,
     Leaf(InstallFileKind),
 }
 
@@ -117,6 +120,7 @@ struct MetadataFacts {
 enum MetadataProblem {
     WrongType,
     WrongOwner,
+    WrongAncestorOwner,
     WrongMode,
     MultipleLinks,
     WritableByGroupOrOther,
@@ -138,6 +142,17 @@ impl CheckedInstallRoot {
         let directory = File::from(descriptor);
         validate_directory_descriptor(&directory, NodeRole::Root)?;
         Ok(Self { directory })
+    }
+
+    /// Open and validate an absolute installation directory from the OS root.
+    ///
+    /// Every path component is inspected and opened relative to a pinned
+    /// directory descriptor. The final descriptor must be owned by the
+    /// effective user, have exact mode `0700`, and pass the native ACL check.
+    /// This validates the selected path's current ancestor chain; it does not
+    /// authenticate an installation or retain every ancestor name forever.
+    pub fn from_absolute_directory(path: &Path) -> io::Result<Self> {
+        absolute_root::open_absolute_directory(path)
     }
 
     /// Open and validate a relative regular file beneath this pinned root.
@@ -333,20 +348,25 @@ fn classify_metadata(
     role: NodeRole,
 ) -> Result<(), MetadataProblem> {
     let (expected_type, expected_mode) = match role {
-        NodeRole::Root | NodeRole::Directory => (FileType::Directory, None),
+        NodeRole::Root | NodeRole::Directory | NodeRole::Ancestor => (FileType::Directory, None),
         NodeRole::Leaf(kind) => (FileType::RegularFile, Some(kind.expected_mode())),
     };
     if facts.file_type != expected_type {
         return Err(MetadataProblem::WrongType);
     }
-    if facts.uid != effective_uid {
+    if matches!(role, NodeRole::Ancestor) && facts.uid != 0 && facts.uid != effective_uid {
+        return Err(MetadataProblem::WrongAncestorOwner);
+    }
+    if !matches!(role, NodeRole::Ancestor) && facts.uid != effective_uid {
         return Err(MetadataProblem::WrongOwner);
     }
     match role {
         NodeRole::Root if facts.mode != Mode::from_bits_truncate(0o700) => {
             return Err(MetadataProblem::WrongMode);
         }
-        NodeRole::Directory if facts.mode.intersects(Mode::WGRP | Mode::WOTH) => {
+        NodeRole::Directory | NodeRole::Ancestor
+            if facts.mode.intersects(Mode::WGRP | Mode::WOTH) =>
+        {
             return Err(MetadataProblem::WritableByGroupOrOther);
         }
         NodeRole::Leaf(_) => {
@@ -357,7 +377,7 @@ fn classify_metadata(
                 return Err(MetadataProblem::MultipleLinks);
             }
         }
-        NodeRole::Root | NodeRole::Directory => {}
+        NodeRole::Root | NodeRole::Directory | NodeRole::Ancestor => {}
     }
     Ok(())
 }
@@ -366,6 +386,9 @@ fn metadata_problem_error(problem: MetadataProblem) -> io::Error {
     let message = match problem {
         MetadataProblem::WrongType => "installation entry has an unexpected file type",
         MetadataProblem::WrongOwner => "installation entry is not owned by the effective user",
+        MetadataProblem::WrongAncestorOwner => {
+            "installation ancestor is not owned by root or the effective user"
+        }
         MetadataProblem::WrongMode => "installation entry has an unexpected mode",
         MetadataProblem::MultipleLinks => "installation file must have exactly one hard link",
         MetadataProblem::WritableByGroupOrOther => {
