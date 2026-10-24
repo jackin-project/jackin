@@ -502,7 +502,7 @@ fn t02_inactive_usage_guards_click_hover_and_wheel_dispatch() {
     let workspace_before = state.selected;
     let split_before = state.list_split_pct;
     let focus_before = state.list_focus_owner.clone();
-    let drag_before = state.drag_state;
+    assert!(state.drag_state.is_some());
     let list_names_scroll_before = (
         state.list_names_scroll.offset_x(),
         state.list_names_scroll.offset_y(),
@@ -532,7 +532,7 @@ fn t02_inactive_usage_guards_click_hover_and_wheel_dispatch() {
     assert_eq!(state.selected, workspace_before);
     assert_eq!(state.list_split_pct, split_before);
     assert_eq!(state.list_focus_owner, focus_before);
-    assert_eq!(state.drag_state, drag_before);
+    assert!(state.drag_state.is_none());
     assert_eq!(
         (
             state.list_names_scroll.offset_x(),

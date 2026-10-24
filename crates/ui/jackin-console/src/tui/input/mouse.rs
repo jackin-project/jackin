@@ -134,6 +134,7 @@ pub fn handle_mouse_with_config(
 
     let input_owner = state.painted_input_owner();
     if input_owner == ConsolePaintedInputOwner::Usage {
+        state.clear_pointer_state();
         handle_usage_pointer_event(state, mouse, term_size);
         return super::InputOutcome::Continue;
     }
