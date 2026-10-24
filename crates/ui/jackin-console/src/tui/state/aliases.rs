@@ -113,13 +113,27 @@ impl UsageRouteState {
         let Some(action) = self.painted_wheel_action(area, x, y, direction) else {
             return false;
         };
-        if let Some(screen) = self.screen.as_mut() {
-            screen.apply_wheel_action(action);
-            self.clear_painted_pointer();
-            true
-        } else {
-            false
+        let Some(receipt) = self.painted_pointer.as_ref() else {
+            return false;
+        };
+        let (painted_detail_scroll, maximum_detail_scroll) = receipt.detail_scroll_bounds();
+        let Some(screen) = self.screen.as_mut() else {
+            return false;
+        };
+        match action {
+            crate::tui::screens::usage::UsageWheelAction::ScrollDetail(delta) => {
+                screen.apply_painted_detail_wheel(
+                    delta,
+                    painted_detail_scroll,
+                    maximum_detail_scroll,
+                );
+            }
+            crate::tui::screens::usage::UsageWheelAction::MoveSelection(_) => {
+                screen.apply_wheel_action(action);
+            }
         }
+        self.clear_painted_pointer();
+        true
     }
 }
 

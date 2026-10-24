@@ -42,6 +42,7 @@ impl UsageScreenState {
             None => self.selected = 0,
         }
         self.scroll = 0;
+        self.list_scroll = 0;
     }
 
     #[must_use]
@@ -71,6 +72,7 @@ impl UsageScreenState {
             self.selected = selected;
             self.selected_id = self.selected_account().map(UsageAccount::stable_id);
             self.scroll = 0;
+            self.list_scroll = 0;
             true
         } else {
             self.notice = Some(if self.accounts.is_empty() {
@@ -174,5 +176,14 @@ impl UsageScreenState {
                 };
             }
         }
+    }
+
+    pub(crate) fn apply_painted_detail_wheel(&mut self, delta: i8, painted: u16, maximum: u16) {
+        let amount = u16::from(delta.unsigned_abs());
+        self.scroll = if delta.is_negative() {
+            painted.saturating_sub(amount)
+        } else {
+            painted.saturating_add(amount).min(maximum)
+        };
     }
 }

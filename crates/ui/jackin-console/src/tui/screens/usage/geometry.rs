@@ -54,6 +54,16 @@ pub struct UsageFrameLayout {
     pub detail_body: Rect,
 }
 
+/// Detail scroll geometry consumed by one successful Usage paint.
+///
+/// The raw screen offset may exceed the visible document after a resize or
+/// content change. The renderer and live wheel route share this bounded value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct UsageDetailScrollGeometry {
+    pub(super) maximum: u16,
+    pub(super) painted: u16,
+}
+
 /// Prepared usage-list lines and their semantic row ownership.
 ///
 /// Use the same inner rectangle and scroll offset as the frame being queried;

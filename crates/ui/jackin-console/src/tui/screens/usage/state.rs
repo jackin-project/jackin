@@ -20,6 +20,9 @@ pub struct UsageScreenState {
     pub detail: bool,
     pub sort: UsageSort,
     pub filter: UsageFilter,
+    /// Scroll offset consumed by the Usage list Paragraph.
+    pub list_scroll: u16,
+    /// Scroll offset consumed by the Usage detail Paragraph.
     pub scroll: u16,
     pub notice: Option<String>,
     pub generated_at_epoch: Option<i64>,
@@ -41,6 +44,7 @@ impl Clone for UsageScreenState {
             detail: self.detail,
             sort: self.sort,
             filter: self.filter,
+            list_scroll: self.list_scroll,
             scroll: self.scroll,
             notice: self.notice.clone(),
             generated_at_epoch: self.generated_at_epoch,
@@ -63,6 +67,7 @@ impl PartialEq for UsageScreenState {
             && self.detail == other.detail
             && self.sort == other.sort
             && self.filter == other.filter
+            && self.list_scroll == other.list_scroll
             && self.scroll == other.scroll
             && self.notice == other.notice
             && self.generated_at_epoch == other.generated_at_epoch

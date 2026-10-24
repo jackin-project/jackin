@@ -45,7 +45,7 @@ pub(crate) fn render_account_list_with_geometry(
     let geometry = list_geometry(screen, inner, now_epoch, state.usage.visible);
     let paragraph = Paragraph::new(geometry.lines.clone()).wrap(Wrap { trim: false });
     let paragraph = if geometry.scroll {
-        paragraph.scroll((screen.scroll, 0))
+        paragraph.scroll((screen.list_scroll, 0))
     } else {
         paragraph
     };

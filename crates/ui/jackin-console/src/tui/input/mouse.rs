@@ -310,25 +310,31 @@ fn handle_usage_pointer_event(state: &mut ManagerState<'_>, mouse: MouseEvent, a
                 .usage
                 .select_painted_row(area, mouse.column, mouse.row);
         }
-        MouseEventKind::ScrollUp => {
-            let _ = state.usage.apply_painted_wheel_action(
-                area,
-                mouse.column,
-                mouse.row,
-                crate::tui::screens::usage::WheelDirection::Up,
-            );
-        }
-        MouseEventKind::ScrollDown => {
-            let _ = state.usage.apply_painted_wheel_action(
-                area,
-                mouse.column,
-                mouse.row,
-                crate::tui::screens::usage::WheelDirection::Down,
-            );
+        MouseEventKind::ScrollLeft
+        | MouseEventKind::ScrollRight
+        | MouseEventKind::ScrollUp
+        | MouseEventKind::ScrollDown => {
+            let direction = match console_mouse_wheel_plan(mouse.kind, mouse.modifiers) {
+                ConsoleMouseWheelPlan::Vertical(delta) if delta < 0 => {
+                    Some(crate::tui::screens::usage::WheelDirection::Up)
+                }
+                ConsoleMouseWheelPlan::Vertical(delta) if delta > 0 => {
+                    Some(crate::tui::screens::usage::WheelDirection::Down)
+                }
+                ConsoleMouseWheelPlan::Vertical(_)
+                | ConsoleMouseWheelPlan::Horizontal { .. }
+                | ConsoleMouseWheelPlan::None => None,
+            };
+            if let Some(direction) = direction {
+                let _ = state.usage.apply_painted_wheel_action(
+                    area,
+                    mouse.column,
+                    mouse.row,
+                    direction,
+                );
+            }
         }
         MouseEventKind::Moved
-        | MouseEventKind::ScrollLeft
-        | MouseEventKind::ScrollRight
         | MouseEventKind::Down(_)
         | MouseEventKind::Drag(_)
         | MouseEventKind::Up(_) => {}

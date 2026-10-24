@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::geometry::UsageDetailScrollGeometry;
 use super::{
     append_account_full_body, append_account_summary_body, append_overview_account,
     append_publication_age, append_publication_issues, credential_expiry_label,
@@ -18,25 +19,22 @@ use ratatui::{
 
 use crate::tui::state::ManagerState;
 
-pub(crate) fn render_detail(
+pub(super) fn render_detail_with_geometry(
     frame: &mut Frame<'_>,
     area: Rect,
     state: &ManagerState<'_>,
     now_epoch: i64,
-) {
-    let Some(screen) = state.usage.screen.as_ref() else {
-        return;
-    };
+) -> Option<UsageDetailScrollGeometry> {
+    let screen = state.usage.screen.as_ref()?;
     let Some(account) = screen.selected_account() else {
         if screen.accounts.is_empty() {
-            render_detail_panel(
+            return Some(render_detail_panel(
                 frame,
                 area,
                 "Overview",
                 screen,
                 super::publication::empty_publication_body_lines(screen, now_epoch),
-            );
-            return;
+            ));
         }
         let order = screen.visible_order();
         if order.is_empty() {
@@ -56,8 +54,7 @@ pub(crate) fn render_detail(
                     Style::default().fg(Color::Yellow),
                 )));
             }
-            render_detail_panel(frame, area, "Overview", screen, lines);
-            return;
+            return Some(render_detail_panel(frame, area, "Overview", screen, lines));
         }
         let mut lines = vec![Line::from("Status    available"), Line::from("")];
         append_publication_age(&mut lines, screen, now_epoch);
@@ -72,8 +69,7 @@ pub(crate) fn render_detail(
                 Style::default().fg(Color::Yellow),
             )));
         }
-        render_detail_panel(frame, area, "Overview", screen, lines);
-        return;
+        return Some(render_detail_panel(frame, area, "Overview", screen, lines));
     };
     let title = if screen.detail { "Account" } else { "Overview" };
     let mut lines = vec![
@@ -117,7 +113,17 @@ pub(crate) fn render_detail(
             Style::default().fg(Color::Yellow),
         )));
     }
-    render_detail_panel(frame, area, title, screen, lines);
+    Some(render_detail_panel(frame, area, title, screen, lines))
+}
+
+#[cfg(test)]
+pub(crate) fn render_detail(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &ManagerState<'_>,
+    now_epoch: i64,
+) {
+    let _ = render_detail_with_geometry(frame, area, state, now_epoch);
 }
 
 fn render_detail_panel(
@@ -126,13 +132,16 @@ fn render_detail_panel(
     title: &'static str,
     screen: &super::UsageScreenState,
     lines: Vec<Line<'static>>,
-) {
+) -> UsageDetailScrollGeometry {
     let block = panel(title);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     if inner.width == 0 || inner.height == 0 {
-        return;
+        return UsageDetailScrollGeometry {
+            maximum: 0,
+            painted: 0,
+        };
     }
 
     let areas = super::geometry::detail_areas(inner);
@@ -142,12 +151,18 @@ fn render_detail_panel(
         Line::default()
     };
     frame.render_widget(Paragraph::new(status), areas.status);
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let maximum = if areas.body.width > 0 && areas.body.height > 0 {
+        paragraph
+            .line_count(areas.body.width)
+            .saturating_sub(usize::from(areas.body.height))
+            .min(usize::from(u16::MAX)) as u16
+    } else {
+        0
+    };
+    let painted = screen.scroll.min(maximum);
     if areas.body.width > 0 && areas.body.height > 0 {
-        frame.render_widget(
-            Paragraph::new(lines)
-                .scroll((screen.scroll, 0))
-                .wrap(Wrap { trim: false }),
-            areas.body,
-        );
+        frame.render_widget(paragraph.scroll((painted, 0)), areas.body);
     }
+    UsageDetailScrollGeometry { maximum, painted }
 }

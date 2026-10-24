@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::geometry::UsageDetailScrollGeometry;
 use super::{
     UsageFrameLayout, UsageListGeometry, UsageRowTarget, UsageScreenState, UsageWheelAction,
     WheelDirection, usage_wheel_action,
@@ -20,6 +21,7 @@ pub struct UsagePaintReceipt {
     refresh_subscription_present: bool,
     layout: UsageFrameLayout,
     list_geometry: UsageListGeometry,
+    detail_scroll: UsageDetailScrollGeometry,
 }
 
 impl std::fmt::Debug for UsagePaintReceipt {
@@ -35,6 +37,7 @@ impl UsagePaintReceipt {
         screen: &UsageScreenState,
         layout: UsageFrameLayout,
         list_geometry: UsageListGeometry,
+        detail_scroll: UsageDetailScrollGeometry,
     ) -> Self {
         Self {
             area,
@@ -43,6 +46,7 @@ impl UsagePaintReceipt {
             refresh_subscription_present: screen.refresh_rx.is_some(),
             layout,
             list_geometry,
+            detail_scroll,
         }
     }
 
@@ -54,7 +58,7 @@ impl UsagePaintReceipt {
 
     pub(crate) fn target_at(&self, x: u16, y: u16) -> Option<UsageRowTarget> {
         self.list_geometry
-            .target_at(x, y, self.screen_snapshot.scroll)
+            .target_at(x, y, self.screen_snapshot.list_scroll)
     }
 
     pub(crate) fn wheel_action(
@@ -67,5 +71,9 @@ impl UsagePaintReceipt {
     ) -> Option<UsageWheelAction> {
         self.matches(area, screen).then_some(())?;
         usage_wheel_action(self.layout, &self.screen_snapshot, x, y, direction)
+    }
+
+    pub(crate) const fn detail_scroll_bounds(&self) -> (u16, u16) {
+        (self.detail_scroll.painted, self.detail_scroll.maximum)
     }
 }

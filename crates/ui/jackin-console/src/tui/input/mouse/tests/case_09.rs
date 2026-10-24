@@ -110,6 +110,13 @@ fn metered_account(
 }
 
 fn paint_usage(state: &mut ManagerState<'_>, area: Rect) -> Buffer {
+    paint_usage_with_receipt(state, area).0
+}
+
+fn paint_usage_with_receipt(
+    state: &mut ManagerState<'_>,
+    area: Rect,
+) -> (Buffer, crate::tui::screens::usage::UsagePaintReceipt) {
     let backend = TestBackend::new(area.right(), area.bottom());
     let mut terminal = Terminal::new(backend).expect("test terminal");
     let mut receipt = None;
@@ -119,8 +126,48 @@ fn paint_usage(state: &mut ManagerState<'_>, area: Rect) -> Buffer {
                 crate::tui::screens::usage::render_at_with_pointer_receipt(frame, area, state, NOW);
         })
         .expect("actual TestBackend paint");
+    let receipt = receipt.expect("visible Usage frame publishes a receipt");
+    state
+        .usage
+        .publish_painted_pointer(area, Some(receipt.clone()));
+    (terminal.backend().buffer().clone(), receipt)
+}
+
+fn paint_usage_without_receipt(state: &mut ManagerState<'_>, area: Rect) {
+    assert!(area.width == 0 || area.height == 0);
+    let backend = TestBackend::new(area.right(), area.bottom());
+    let mut terminal = Terminal::new(backend).expect("test terminal");
+    let mut receipt = None;
+    terminal
+        .draw(|frame| {
+            receipt =
+                crate::tui::screens::usage::render_at_with_pointer_receipt(frame, area, state, NOW);
+        })
+        .expect("actual TestBackend paint");
+    assert!(
+        receipt.is_none(),
+        "zero-area Usage paint does not publish a receipt"
+    );
     state.usage.publish_painted_pointer(area, receipt);
-    terminal.backend().buffer().clone()
+}
+
+fn expand_usage_detail_for_scroll(state: &mut ManagerState<'_>, account_index: usize) {
+    let screen = state.usage.screen.as_mut().expect("Usage screen");
+    let base = screen.accounts[account_index]
+        .windows
+        .first()
+        .cloned()
+        .expect("fixture account has a window");
+    screen.accounts[account_index].windows = (0..24)
+        .map(|index| {
+            let mut window = base.clone();
+            window.window_id = format!("detail-window-{index}");
+            window.label = format!("Detail window {index} 界");
+            window.value = format!("detail value {index} {}", "界".repeat(8));
+            window
+        })
+        .collect();
+    screen.notice = Some("Unique detail diagnostic TAIL-END".to_owned());
 }
 
 fn row_y(buffer: &Buffer, needle: &str, area: Rect) -> u16 {
@@ -326,7 +373,9 @@ fn dispatch(state: &mut ManagerState<'_>, kind: MouseEventKind, x: u16, y: u16, 
     let _outcome = handle_mouse_with_config(state, mouse_at_kind(kind, x, y), area, None);
 }
 
-fn background_snapshot(state: &ManagerState<'_>) -> impl std::fmt::Debug + PartialEq + use<> {
+pub(super) fn background_snapshot(
+    state: &ManagerState<'_>,
+) -> impl std::fmt::Debug + PartialEq + use<> {
     (
         state.selected,
         state.list_split_pct,
@@ -445,8 +494,28 @@ fn assert_tiny_and_zero_area_receipts_recover() {
 
     let mut recovering = rich_usage_manager();
     for empty_area in [Rect::new(7, 4, 0, 7), Rect::new(7, 4, 40, 0)] {
+        let normal_area = term_120x40();
+        let valid_buffer = paint_usage(&mut recovering, normal_area);
+        let alpha_y = row_y(&valid_buffer, "Alpha", normal_area);
+        let list_x = crate::tui::screens::usage::usage_frame_layout(normal_area)
+            .list_inner
+            .x;
+        assert!(
+            recovering
+                .usage
+                .painted_row_target(normal_area, list_x, alpha_y)
+                .is_some(),
+            "normal Usage paint publishes its real row target"
+        );
         let before = usage_snapshot(&recovering);
-        paint_usage(&mut recovering, empty_area);
+        paint_usage_without_receipt(&mut recovering, empty_area);
+        assert!(
+            recovering
+                .usage
+                .painted_row_target(normal_area, list_x, alpha_y)
+                .is_none(),
+            "empty Usage paint revokes the previous receipt"
+        );
         let probe = mouse_at_kind(
             MouseEventKind::Down(MouseButton::Left),
             empty_area.x,
@@ -622,7 +691,7 @@ fn assert_reserved_usage_regions_are_inert(area: Rect) {
     }
 
     let mut overscrolled = rich_usage_manager();
-    overscrolled.usage.screen.as_mut().unwrap().scroll = u16::MAX;
+    overscrolled.usage.screen.as_mut().unwrap().list_scroll = u16::MAX;
     let _overscroll_buffer = paint_usage(&mut overscrolled, area);
     let inner = crate::tui::screens::usage::usage_frame_layout(area).list_inner;
     for y in inner.y..inner.y + inner.height {
@@ -818,6 +887,7 @@ fn t03_published_rows_dispatch_stable_ids_and_detail_end_to_end() {
         state.usage.screen.as_ref().unwrap().selected_id.as_deref(),
         Some("provider:c")
     );
+    expand_usage_detail_for_scroll(&mut state, 2);
     let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
     crate::tui::screens::usage::handle_key(&mut state, key);
     assert!(state.usage.screen.as_ref().unwrap().detail);
@@ -876,7 +946,7 @@ fn t03_published_unicode_scroll_resize_rows_match_actual_buffer() {
     for width in [40, 63, 100, 180] {
         for scroll in [0, 5, 13, 25, 40] {
             let area = Rect::new(7, 4, width, 36);
-            state.usage.screen.as_mut().unwrap().scroll = scroll;
+            state.usage.screen.as_mut().unwrap().list_scroll = scroll;
             let buffer = paint_usage(&mut state, area);
             let layout = crate::tui::screens::usage::usage_frame_layout(area);
             let visible_text = rect_text(&buffer, layout.list_inner);
@@ -1001,6 +1071,13 @@ fn t03_published_panes_wheel_one_three_and_reserved_regions_are_inert() {
         "selection saturates at Overview"
     );
 
+    {
+        let screen = state.usage.screen.as_mut().unwrap();
+        screen.selected = 1;
+        screen.selected_id = Some("provider:a".to_owned());
+        screen.detail = true;
+    }
+    expand_usage_detail_for_scroll(&mut state, 0);
     state.usage.screen.as_mut().unwrap().scroll = 0;
     paint_usage(&mut state, area);
     dispatch(
@@ -1021,7 +1098,20 @@ fn t03_published_panes_wheel_one_three_and_reserved_regions_are_inert() {
     );
     assert_eq!(state.usage.screen.as_ref().unwrap().scroll, 0);
     state.usage.screen.as_mut().unwrap().scroll = u16::MAX;
-    paint_usage(&mut state, area);
+    let (buffer, receipt) = paint_usage_with_receipt(&mut state, area);
+    let (painted, maximum) = receipt.detail_scroll_bounds();
+    assert_eq!(
+        painted, maximum,
+        "raw MAX paints at the measured document tail"
+    );
+    assert!(maximum > 3, "the fixture overflows the visible detail body");
+    assert!(
+        rect_text(
+            &buffer,
+            crate::tui::screens::usage::usage_frame_layout(area).detail_body
+        )
+        .contains("TAIL-END")
+    );
     dispatch(
         &mut state,
         MouseEventKind::ScrollDown,
@@ -1029,7 +1119,21 @@ fn t03_published_panes_wheel_one_three_and_reserved_regions_are_inert() {
         layout.detail_body.y,
         area,
     );
-    assert_eq!(state.usage.screen.as_ref().unwrap().scroll, u16::MAX);
+    assert_eq!(state.usage.screen.as_ref().unwrap().scroll, maximum);
+    assert_eq!(state.usage.screen.as_ref().unwrap().list_scroll, 0);
+    paint_usage(&mut state, area);
+    dispatch(
+        &mut state,
+        MouseEventKind::ScrollUp,
+        layout.detail_body.x,
+        layout.detail_body.y,
+        area,
+    );
+    assert_eq!(
+        state.usage.screen.as_ref().unwrap().scroll,
+        maximum.saturating_sub(3),
+        "one wheel-up recovers three rows from the measured tail"
+    );
 
     assert_reserved_usage_regions_are_inert(area);
 }

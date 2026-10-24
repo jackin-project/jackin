@@ -105,7 +105,11 @@ fn query(
     x: u16,
     y: u16,
 ) -> Option<UsageRowTarget> {
-    list_geometry(screen, layout.list_inner, TEST_NOW_EPOCH, true).target_at(x, y, screen.scroll)
+    list_geometry(screen, layout.list_inner, TEST_NOW_EPOCH, true).target_at(
+        x,
+        y,
+        screen.list_scroll,
+    )
 }
 
 fn assert_selected(
@@ -131,12 +135,17 @@ fn assert_row_target_and_selection(
     for x in [layout.list_inner.x, right] {
         assert_eq!(query(screen, layout, x, y), Some(target.clone()));
         let original_scroll = screen.scroll;
+        let original_list_scroll = screen.list_scroll;
         let original_accounts = screen.accounts.clone();
         let mut selected_screen = screen.clone();
         assert_selected(&mut selected_screen, target.clone(), selected, id);
         assert_eq!(
             selected_screen.scroll, original_scroll,
-            "selection preserves scroll"
+            "selection preserves detail scroll"
+        );
+        assert_eq!(
+            selected_screen.list_scroll, original_list_scroll,
+            "selection preserves list scroll"
         );
         assert_eq!(
             selected_screen.accounts, original_accounts,
@@ -250,7 +259,7 @@ fn t02_wrapped_unicode_resize_and_scrolled_rows_select_rendered_stable_ids() {
         for scroll in [0, 5, 13, 25, 40] {
             let area = Rect::new(4, 3, width, 42);
             let mut current = screen.clone();
-            current.scroll = scroll;
+            current.list_scroll = scroll;
             let manager = s8_manager(current);
             let layout = usage_frame_layout(area);
             let buffer = render_canvas(&manager, area, (width + 10, 50));
@@ -277,7 +286,7 @@ fn t02_wrapped_unicode_resize_and_scrolled_rows_select_rendered_stable_ids() {
                     ordinal,
                     Some(id),
                 );
-                if width == 40 && screen.scroll == 0 && id == "px9:a9" {
+                if width == 40 && screen.list_scroll == 0 && id == "px9:a9" {
                     narrow_a_rows.insert(y.saturating_sub(layout.list_inner.y));
                 }
                 if width == 180 {
@@ -358,7 +367,7 @@ fn t02_provider_spacers_borders_seam_status_and_offscreen_are_inert() {
     );
 
     let mut offscreen = screen.clone();
-    offscreen.scroll = u16::MAX;
+    offscreen.list_scroll = u16::MAX;
     assert_eq!(
         query(&offscreen, layout, layout.list_inner.x, layout.list_inner.y),
         None,
@@ -423,7 +432,7 @@ fn t02_wheel_list_moves_one_detail_moves_three_and_status_is_reserved() {
     let area = Rect::new(5, 3, 150, 44);
     let layout = usage_frame_layout(area);
     let mut screen = fixture_screen();
-    screen.scroll = 0;
+    screen.list_scroll = 0;
     let manager = s8_manager(screen.clone());
     let buffer = render_canvas(&manager, area, (170, 60));
     let overview_y = row_with(&buffer, layout.list_inner, "Overview");
@@ -499,7 +508,7 @@ fn t02_wheel_list_moves_one_detail_moves_three_and_status_is_reserved() {
     );
     assert_eq!(screen.selected_id.as_deref(), Some("py9:c9"));
 
-    screen.scroll = u16::MAX;
+    screen.list_scroll = u16::MAX;
     assert_eq!(
         query(&screen, layout, header_point.0, header_point.1),
         None,
@@ -513,9 +522,9 @@ fn t02_wheel_list_moves_one_detail_moves_three_and_status_is_reserved() {
     assert_eq!(screen.selected, 3);
     assert_eq!(screen.selected_id.as_deref(), Some("py9:c9"));
     assert_eq!(
-        screen.scroll,
+        screen.list_scroll,
         u16::MAX,
-        "list-wheel selection preserves the offscreen scroll"
+        "list-wheel selection preserves the offscreen list scroll"
     );
 
     let body_point = (layout.detail_body.x, layout.detail_body.y);
@@ -525,6 +534,11 @@ fn t02_wheel_list_moves_one_detail_moves_three_and_status_is_reserved() {
         UsageWheelAction::ScrollDetail(3)
     );
     assert_eq!(screen.scroll, 3);
+    assert_eq!(
+        screen.list_scroll,
+        u16::MAX,
+        "detail wheel leaves the list offset alone"
+    );
     assert_eq!(
         apply_queried_wheel(&mut screen, body_point, WheelDirection::Up),
         UsageWheelAction::ScrollDetail(-3)
@@ -686,7 +700,7 @@ fn t02_sorted_and_filtered_rendered_rows_keep_stable_account_targets() {
     let area = Rect::new(7, 4, 150, 44);
     let mut screen = fixture_screen();
     screen.sort = UsageSort::Remaining;
-    screen.scroll = 0;
+    screen.list_scroll = 0;
     let manager = s8_manager(screen);
     let layout = usage_frame_layout(area);
     let buffer = render_canvas(&manager, area, (170, 60));
@@ -714,7 +728,7 @@ fn t02_sorted_and_filtered_rendered_rows_keep_stable_account_targets() {
     filtered.accounts[2].is_stale = true;
     filtered.accounts[2].freshness_phase = UsageFreshnessPhaseV1::Stale;
     filtered.filter = UsageFilter::Stale;
-    filtered.scroll = 0;
+    filtered.list_scroll = 0;
     let filtered_manager = s8_manager(filtered);
     let filtered_buffer = render_canvas(&filtered_manager, area, (170, 60));
     let filtered_layout = usage_frame_layout(area);
@@ -787,7 +801,7 @@ fn t02_shared_paragraph_geometry_matches_translated_paint() {
                 layout.list_inner.x + layout.list_inner.width - 1,
             ] {
                 assert_eq!(
-                    geometry.target_at(x, y, screen.scroll),
+                    geometry.target_at(x, y, screen.list_scroll),
                     Some(target.clone()),
                     "painted physical row={row:?}, x={x}, y={y}"
                 );
@@ -803,7 +817,7 @@ fn t02_shared_paragraph_geometry_matches_translated_paint() {
                     assert_eq!(buffer[(continuation_x, y)].symbol(), " ");
                     saw_visible_wide_continuation = true;
                     assert_eq!(
-                        geometry.target_at(continuation_x, y, screen.scroll),
+                        geometry.target_at(continuation_x, y, screen.list_scroll),
                         Some(target.clone())
                     );
                 }
@@ -823,7 +837,7 @@ fn t02_shared_paragraph_geometry_matches_translated_paint() {
         "translated paint includes wide continuation cells"
     );
     assert_eq!(
-        geometry.target_at(layout.list_outer.x, layout.list_inner.y, screen.scroll),
+        geometry.target_at(layout.list_outer.x, layout.list_inner.y, screen.list_scroll),
         None
     );
     assert_eq!(

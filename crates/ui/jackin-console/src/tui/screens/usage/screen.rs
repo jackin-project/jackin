@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::detail::render_detail_with_geometry;
 use super::list::render_account_list_with_geometry;
-use super::{UsagePaintReceipt, now_epoch, render_detail, usage_frame_layout};
+use super::{UsagePaintReceipt, now_epoch, usage_frame_layout};
 
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -34,9 +35,13 @@ pub fn handle_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             screen.refresh_due = true;
             screen.force_refresh_pending = true;
         }
-        KeyCode::PageUp => screen.scroll = screen.scroll.saturating_sub(5),
+        KeyCode::PageUp => {
+            screen.scroll = screen.scroll.saturating_sub(5);
+            screen.list_scroll = screen.list_scroll.saturating_sub(5);
+        }
         KeyCode::PageDown => {
             screen.scroll = screen.scroll.saturating_add(5);
+            screen.list_scroll = screen.list_scroll.saturating_add(5);
         }
         _ => {}
     }
@@ -69,8 +74,9 @@ pub(crate) fn render_at_with_pointer_receipt(
             <= u32::from(frame_area.y) + u32::from(frame_area.height);
     let layout = usage_frame_layout(area);
     let geometry = render_account_list_with_geometry(frame, layout.list_outer, state, now_epoch)?;
-    render_detail(frame, layout.detail_outer, state, now_epoch);
+    let detail_geometry =
+        render_detail_with_geometry(frame, layout.detail_outer, state, now_epoch)?;
     let screen = state.usage.screen.as_ref()?;
     (state.usage.visible && request_is_fully_painted)
-        .then(|| UsagePaintReceipt::new(area, now_epoch, screen, layout, geometry))
+        .then(|| UsagePaintReceipt::new(area, now_epoch, screen, layout, geometry, detail_geometry))
 }

@@ -21,6 +21,7 @@ pub(crate) use body::{
     append_account_full_body, append_account_summary_body, append_overview_account, meter_line,
     meter_style, panel, refreshing_line, row_style,
 };
+#[cfg(test)]
 pub(crate) use detail::render_detail;
 pub use geometry::{
     UsageFrameLayout, UsageListGeometry, UsageRowTarget, UsageWheelAction, WheelDirection,
