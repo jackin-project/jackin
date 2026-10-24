@@ -54,6 +54,10 @@ pub(crate) struct RawOpSection {
     pub(super) label: String,
 }
 
+// SAFETY: 'value' is intentionally absent from this struct. The picker is a
+// metadata browser; serde must not deserialize secret values into memory.
+// Any change adding a `value` field here breaks the picker's trust model.
+//
 #[derive(serde::Deserialize)]
 pub(crate) struct RawOpField {
     pub(super) id: String,
