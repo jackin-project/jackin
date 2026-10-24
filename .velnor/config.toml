@@ -57,6 +57,7 @@ tag_name = "v{{ version }}"
 manifest_path = "Cargo.toml"
 version_package = "jackin"
 version_env = "JACKIN_VERSION_OVERRIDE"
+publication_timeout_minutes = 15
 
 [stacks.rust.binary_release.preview]
 enabled = true
@@ -111,7 +112,7 @@ asset_name = "capsule-manifest.json"
 profile = "signed-sbom-v1"
 
 [distribution.homebrew_tap]
-enabled = false
+enabled = true
 repository = "jackin-project/homebrew-tap"
 environment = "tap-update"
 app_id_variable = "HOMEBREW_TAP_APP_ID"
@@ -126,7 +127,7 @@ formula = "Formula/jackin.rb"
 
 [distribution.homebrew_tap.updater]
 task = "package-update"
-inputs = ["Formula/jackin-preview.rb", "Formula/jackin.rb", "lib/jackin_formula_support.rb", "mise.lock", "mise.toml", "scripts/package-update.py", "scripts/package-update.sh", "scripts/package_update_validation.py"]
+inputs = [".velnor/config.toml", "Formula/jackin-preview.rb", "Formula/jackin.rb", "lib/jackin_formula_support.rb", "mise.lock", "mise.toml", "scripts/homebrew_install_policy.py", "scripts/package-update.py", "scripts/package-update.sh", "scripts/package_update_validation.py", "scripts/test-homebrew-install.sh", "scripts/test-package-update.sh", "scripts/test_homebrew_formulary_keg.rb", "scripts/test_homebrew_install_policy.py", "scripts/test_package_update.py"]
 tools = ["python"]
 timeout_minutes = 5
 

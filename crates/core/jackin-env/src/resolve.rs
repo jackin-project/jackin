@@ -645,6 +645,11 @@ pub fn lookup_operator_env_raw(
         .map(|(_, value)| value.as_display_str().clone())
 }
 
+/// Look up the winning typed declaration for one operator-env key.
+///
+/// This is a Rust-only composition seam for source-equality caching before a
+/// protected read. The returned value can contain credential material and must
+/// never be logged, persisted, or projected across FFI.
 pub fn lookup_operator_env_declaration(
     config: &AppConfig,
     role_selector: Option<&str>,
