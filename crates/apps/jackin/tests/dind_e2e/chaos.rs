@@ -117,11 +117,20 @@ pub(super) fn assert_no_stale_state_dirs(state_root: &Path, live_names: &[String
 pub(super) fn apply_fault(fault: Fault, container: &str) {
     match fault {
         Fault::KillContainer => {
-            let status = docker_command()
+            let output = docker_command()
                 .args(["kill", container])
-                .status()
+                .output()
                 .expect("docker kill");
-            assert!(status.success(), "docker kill {container} failed");
+            if output.status.success() {
+                return;
+            }
+            // The session can exit after the report marker but before this fault runs.
+            // In that race, an already-stopped container is the requested outcome.
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains("No such container") || stderr.contains("is not running"),
+                "docker kill {container} failed: {stderr}"
+            );
         }
         Fault::SigkillCapsule => {
             let capsule = docker_command()
