@@ -642,6 +642,20 @@ fn ticker_collector_preserves_minimum_attempt_floor_and_retry_after() {
         "Retry-After remains the maximum dispatch deadline"
     );
     tick(NOW + 1_200, Duration::from_mins(20), &mut ticker_state);
+    let retry_generation = harness
+        .coordinator
+        .current(&harness.capability, NOW + 1_200)
+        .expect("third collector generation")
+        .generation;
+    harness
+        .coordinator
+        .join_generation(
+            &harness.capability,
+            retry_generation,
+            Duration::from_secs(1),
+            NOW + 1_200,
+        )
+        .expect("join provider result after Retry-After deadline");
     assert_eq!(executor.calls.load(Ordering::SeqCst), 3);
 }
 
