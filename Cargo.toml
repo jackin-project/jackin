@@ -190,6 +190,7 @@ hex = "0.4"
 httpdate = "1"
 icu_collator = "2.3.1"
 icu_locale = "2.3.1"
+libc = "0.2"
 insta = "=1.49.0"
 jackin-build-meta = { version = "0.6.4", path = "crates/core/jackin-build-meta" }
 jackin-brand = { version = "0.6.4", path = "crates/core/jackin-brand" }

@@ -35,12 +35,16 @@ async fn main() -> Result<()> {
     let is_pid1 = std::process::id() == 1 || forced_daemon_mode(&args);
 
     if is_pid1 {
+        #[cfg(target_os = "macos")]
+        jackin_capsule::pid1::prepare_darwin_reaper()?;
         let mut telemetry = jackin_capsule::telemetry::init()
             .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)?;
         let launch_config = config::load()
             .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)?;
         let agent = resolve_initial_agent(&args, &launch_config)
             .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)?;
+        #[cfg(target_os = "macos")]
+        jackin_capsule::pid1::activate_darwin_reaper();
         let result = daemon::run_daemon(agent, launch_config, &mut telemetry).await;
         if result.is_err() {
             telemetry.daemon_failed();
