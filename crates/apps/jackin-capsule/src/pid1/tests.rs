@@ -487,15 +487,7 @@ impl FixtureTimer {
     ) -> io::Result<Option<ExitStatus>> {
         self.runtime.block_on(async {
             loop {
-                let child_pid = child.id();
-                let status = jackin_process::coordinate_children(|registry| {
-                    if !registry.contains(child_pid) {
-                        return Err(io::Error::other(
-                            "registered fixture child lost its owner reservation",
-                        ));
-                    }
-                    child.try_wait()
-                })?;
+                let status = try_wait_registered_fixture_child(child)?;
                 if let Some(status) = status {
                     return Ok(Some(status));
                 }
@@ -518,13 +510,13 @@ impl FixtureTimer {
         self.runtime.block_on(async {
             loop {
                 let actual_parent = pid_to_u32(nix::unistd::getppid())?;
-                if actual_parent != intermediate_pid {
-                    if actual_parent == expected_reaper_pid {
-                        return Ok(actual_parent);
-                    }
+                if actual_parent != intermediate_pid && actual_parent != expected_reaper_pid {
                     return Err(io::Error::other(format!(
                         "grandchild PPID changed to unexpected process {actual_parent}"
                     )));
+                }
+                if actual_parent != intermediate_pid {
+                    return Ok(actual_parent);
                 }
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 if remaining.is_zero() {
@@ -537,6 +529,19 @@ impl FixtureTimer {
             }
         })
     }
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+fn try_wait_registered_fixture_child(child: &mut Child) -> io::Result<Option<ExitStatus>> {
+    let child_pid = child.id();
+    jackin_process::coordinate_children(|registry| {
+        if !registry.contains(child_pid) {
+            return Err(io::Error::other(
+                "registered fixture child lost its owner reservation",
+            ));
+        }
+        child.try_wait()
+    })
 }
 
 #[cfg(any(
@@ -1433,13 +1438,11 @@ fn run_sigwait_requeue_fixture(directory: &Path) -> io::Result<()> {
     let wait_result = events.wait_until(deadline, |observed| {
         reaper_completed_reap(observed, reaper_pid)
     });
-    if let Err(error) = wait_result {
-        #[cfg(target_os = "macos")]
-        if diagnostic_mode {
-            diagnose_sigchld_wait_failure(child_pid, &events);
-        }
-        return Err(error);
+    #[cfg(target_os = "macos")]
+    if wait_result.is_err() && diagnostic_mode {
+        diagnose_sigchld_wait_failure(child_pid, &events);
     }
+    wait_result?;
     assert_sigwait_requeue_events(events.events(), reaper_pid);
     assert_targeted_echild(child_pid)?;
     events.require_quiet(Duration::from_millis(25))?;
