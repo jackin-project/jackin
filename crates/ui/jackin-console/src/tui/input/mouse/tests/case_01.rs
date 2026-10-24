@@ -93,6 +93,123 @@ fn github_choices(count: usize) -> Vec<crate::github_mounts::GithubChoice> {
         .collect()
 }
 
+fn workdir_picker_state(count: usize) -> crate::tui::components::workdir_pick::WorkdirPickState {
+    let choices = (0..count)
+        .map(
+            |index| crate::tui::components::workdir_pick::WorkdirChoice {
+                path: format!("/w/project-{index:02}"),
+                label: format!("choice-{index:02}-painted"),
+            },
+        )
+        .collect::<Vec<_>>();
+    crate::tui::components::workdir_pick::WorkdirPickState {
+        list_state: termrock::widgets::ListState::for_count(choices.len()),
+        choices,
+    }
+}
+
+fn state_with_workdir_picker(count: usize, create_prelude: bool) -> ManagerState<'static> {
+    let mut state = list_state_with_saved(3);
+    state.selected = 1;
+    crate::tui::scroll_block::scroll_area_set_y(&mut state.list_names_scroll, 4);
+    state
+        .list_focus_owner
+        .focus_content(MountScrollFocus::Workspace);
+    let picker = workdir_picker_state(count);
+
+    if create_prelude {
+        state.stage = ManagerStage::CreatePrelude(crate::tui::state::CreatePreludeState {
+            modal: Some(Modal::WorkdirPick { state: picker }),
+            ..Default::default()
+        });
+    } else {
+        let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Roles;
+        editor.tab_content_height = 50;
+        crate::tui::scroll_block::scroll_area_set_y(&mut editor.tab_scroll, 4);
+        editor.modal = Some(Modal::WorkdirPick { state: picker });
+        state.stage = ManagerStage::Editor(editor);
+    }
+    state
+}
+
+fn workdir_picker_context<'state>(
+    state: &'state ManagerState<'_>,
+    terminal_area: Rect,
+) -> (
+    Rect,
+    &'state crate::tui::components::workdir_pick::WorkdirPickState,
+) {
+    let modal = match &state.stage {
+        ManagerStage::Editor(editor) => editor.modal.as_ref(),
+        ManagerStage::CreatePrelude(prelude) => prelude.modal.as_ref(),
+        _ => None,
+    }
+    .expect("editor or create-prelude Workdir modal should be present");
+    let Modal::WorkdirPick { state: picker } = modal else {
+        panic!("Workdir picker modal expected");
+    };
+    (modal.rect(terminal_area), picker)
+}
+
+fn painted_workdir_picker_row_position(
+    state: &ManagerState<'_>,
+    terminal_area: Rect,
+    marker: &str,
+) -> ratatui::layout::Position {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let (modal_area, picker) = workdir_picker_context(state, terminal_area);
+    let mut terminal = Terminal::new(TestBackend::new(terminal_area.width, terminal_area.height))
+        .expect("Workdir picker TestBackend should initialize");
+    terminal
+        .draw(|frame| {
+            crate::tui::components::workdir_pick::render(frame, modal_area, picker);
+        })
+        .expect("Workdir picker should render to TestBackend");
+
+    let buffer = terminal.backend().buffer();
+    (modal_area.y..modal_area.bottom())
+        .find_map(|row| {
+            let text = (modal_area.x..modal_area.right())
+                .map(|column| buffer[(column, row)].symbol())
+                .collect::<String>();
+            let byte = text.find(marker)?;
+            let column = termrock::text::display_cols(&text[..byte]);
+            Some(ratatui::layout::Position::new(
+                modal_area.x.saturating_add(
+                    u16::try_from(column).expect("painted Workdir label column fits u16"),
+                ),
+                row,
+            ))
+        })
+        .unwrap_or_else(|| panic!("actual Workdir picker TestBackend buffer lacks {marker:?}"))
+}
+
+fn assert_workdir_picker_background_unchanged(
+    state: &ManagerState<'_>,
+    expected_picker_selection: usize,
+    original_selected: usize,
+    original_focus: &crate::tui::focus::TabFocus<MountScrollFocus>,
+    original_list_scroll: u16,
+    original_editor_scroll: Option<u16>,
+) {
+    let (_, picker) = workdir_picker_context(state, term_120x40());
+    assert_eq!(
+        picker.list_state.selected().copied(),
+        Some(expected_picker_selection)
+    );
+    assert_eq!(state.selected, original_selected);
+    assert_eq!(&state.list_focus_owner, original_focus);
+    assert_eq!(state.list_names_scroll.offset_y(), original_list_scroll);
+    if let Some(original_editor_scroll) = original_editor_scroll {
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor route should remain active");
+        };
+        assert_eq!(editor.tab_scroll.offset_y(), original_editor_scroll);
+    }
+}
+
 #[test]
 fn conformance_wire_mouse_coordinates_become_only_semantic_action() -> anyhow::Result<()> {
     const CHILD: &str = "JACKIN_MOUSE_PRIVACY_WIRE_CHILD";
@@ -532,11 +649,13 @@ fn editor_workdir_picker_wheel_scrolls_modal_selection_not_background() {
         state: crate::tui::components::workdir_pick::WorkdirPickState::from_mounts(&mounts),
     });
     state.stage = ManagerStage::Editor(editor);
+    let term = term_120x40();
+    let position = painted_workdir_picker_row_position(&state, term, "(mount dst)");
 
     handle_mouse(
         &mut state,
-        mouse_kind_at(MouseEventKind::ScrollDown, 60, 20),
-        term_120x40(),
+        mouse_kind_at(MouseEventKind::ScrollDown, position.x, position.y),
+        term,
     );
 
     let ManagerStage::Editor(editor) = &state.stage else {
@@ -551,6 +670,136 @@ fn editor_workdir_picker_wheel_scrolls_modal_selection_not_background() {
         panic!("workdir picker modal expected");
     };
     assert_eq!(picker.list_state.selected().copied(), Some(1));
+}
+
+#[test]
+fn workdir_picker_wheel_misses_and_blocked_owners_preserve_state() {
+    let term = term_120x40();
+    for create_prelude in [false, true] {
+        let mut state = state_with_workdir_picker(3, create_prelude);
+        let (modal_area, _) = workdir_picker_context(&state, term);
+        let original_selected = state.selected;
+        let original_focus = state.list_focus_owner.clone();
+        let original_list_scroll = state.list_names_scroll.offset_y();
+        let original_editor_scroll = match &state.stage {
+            ManagerStage::Editor(editor) => Some(editor.tab_scroll.offset_y()),
+            ManagerStage::CreatePrelude(_) => None,
+            _ => panic!("editor or create-prelude stage expected"),
+        };
+
+        for (column, row) in [
+            (modal_area.x, modal_area.y),
+            (modal_area.x + 2, modal_area.y + 1),
+            (modal_area.x + 2, modal_area.y + modal_area.height - 3),
+            (0, 0),
+        ] {
+            handle_mouse(
+                &mut state,
+                mouse_kind_at(MouseEventKind::ScrollDown, column, row),
+                term,
+            );
+            assert_workdir_picker_background_unchanged(
+                &state,
+                0,
+                original_selected,
+                &original_focus,
+                original_list_scroll,
+                original_editor_scroll,
+            );
+        }
+
+        let painted_row = painted_workdir_picker_row_position(&state, term, "choice-00-painted");
+        state.keyboard_help = Some(termrock::widgets::KeyboardHelpState::modal());
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, painted_row.x, painted_row.y),
+            term,
+        );
+        assert!(state.keyboard_help.is_some());
+        assert_workdir_picker_background_unchanged(
+            &state,
+            0,
+            original_selected,
+            &original_focus,
+            original_list_scroll,
+            original_editor_scroll,
+        );
+    }
+}
+
+#[test]
+fn workdir_picker_wheel_edges_saturate_for_editor_and_create_prelude() {
+    let term = term_120x40();
+    for create_prelude in [false, true] {
+        let mut state = state_with_workdir_picker(3, create_prelude);
+        let original_selected = state.selected;
+        let original_focus = state.list_focus_owner.clone();
+        let original_list_scroll = state.list_names_scroll.offset_y();
+        let original_editor_scroll = match &state.stage {
+            ManagerStage::Editor(editor) => Some(editor.tab_scroll.offset_y()),
+            ManagerStage::CreatePrelude(_) => None,
+            _ => panic!("editor or create-prelude stage expected"),
+        };
+
+        let first_row = painted_workdir_picker_row_position(&state, term, "choice-00-painted");
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollUp, first_row.x, first_row.y),
+            term,
+        );
+        assert_workdir_picker_background_unchanged(
+            &state,
+            0,
+            original_selected,
+            &original_focus,
+            original_list_scroll,
+            original_editor_scroll,
+        );
+
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, first_row.x, first_row.y),
+            term,
+        );
+        assert_workdir_picker_background_unchanged(
+            &state,
+            1,
+            original_selected,
+            &original_focus,
+            original_list_scroll,
+            original_editor_scroll,
+        );
+
+        let second_row = painted_workdir_picker_row_position(&state, term, "choice-01-painted");
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, second_row.x, second_row.y),
+            term,
+        );
+        assert_workdir_picker_background_unchanged(
+            &state,
+            2,
+            original_selected,
+            &original_focus,
+            original_list_scroll,
+            original_editor_scroll,
+        );
+
+        let last_row = painted_workdir_picker_row_position(&state, term, "choice-02-painted");
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, last_row.x, last_row.y),
+            term,
+        );
+        assert_workdir_picker_background_unchanged(
+            &state,
+            2,
+            original_selected,
+            &original_focus,
+            original_list_scroll,
+            original_editor_scroll,
+        );
+    }
 }
 
 #[test]

@@ -136,7 +136,17 @@ pub fn try_scroll_picker_modal(
                 return false;
             };
             let area = modal.rect(term_size);
-            if !point_in_rect(mouse.column, mouse.row, area) {
+            let accepts_wheel = match modal {
+                Modal::WorkdirPick { state: picker } => {
+                    crate::tui::components::workdir_pick::selection_hit_at(
+                        area,
+                        picker,
+                        ratatui::layout::Position::new(mouse.column, mouse.row),
+                    )
+                }
+                _ => point_in_rect(mouse.column, mouse.row, area),
+            };
+            if !accepts_wheel {
                 return false;
             }
             scroll_modal_selection(editor.modal.as_mut(), delta)
@@ -149,7 +159,17 @@ pub fn try_scroll_picker_modal(
                 return false;
             };
             let area = modal.rect(term_size);
-            if !point_in_rect(mouse.column, mouse.row, area) {
+            let accepts_wheel = match modal {
+                Modal::WorkdirPick { state: picker } => {
+                    crate::tui::components::workdir_pick::selection_hit_at(
+                        area,
+                        picker,
+                        ratatui::layout::Position::new(mouse.column, mouse.row),
+                    )
+                }
+                _ => point_in_rect(mouse.column, mouse.row, area),
+            };
+            if !accepts_wheel {
                 return false;
             }
             scroll_modal_selection(prelude.modal.as_mut(), delta)
