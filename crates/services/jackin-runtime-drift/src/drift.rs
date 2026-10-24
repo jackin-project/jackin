@@ -25,7 +25,8 @@ pub async fn detect_workspace_edit_drift(
     let mut affected_stopped = Vec::new();
     for rec in records {
         let edited = edited_mounts.iter().find(|m| m.dst == rec.mount_dst);
-        let drifted = edited.is_none_or(|m| m.src != rec.original_src);
+        let drifted =
+            edited.is_none_or(|m| m.src != rec.original_src || m.isolation != rec.isolation);
         if !drifted {
             continue;
         }
