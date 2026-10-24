@@ -1,71 +1,111 @@
 ---
-title: "09 — Current reuse decision matrix"
-description: "Current six-tool decisions: reuse selected Rust APIs, isolate retrieval backends, adapt policies, and own Jackin-specific contracts."
+title: "09 — Reuse decision matrix"
+description: "Current component licenses, Rust/process feasibility, all reuse alternatives, and specific upstream contributions before forks or rewrites."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-Tool-state cutoff: **2026-09-23 UTC**. **Reuse before rewrite, with Jackin-owned boundaries.** None of these decisions changes Cargo dependencies or activates a runtime. The [integration plan](/research/context/tools/11-jackin-integration/) defines implementation gates; the [release register](/research/context/tools/08-current-release-register/) fixes versions.
+Snapshot **2026-10-24 01:15:00 UTC**. Prefer native behavior and narrow upstream reuse, with Rust for Jackin-owned scope, recovery and evaluation contracts. Start complex/stateful backends as pinned processes. The earlier preferred Headroom dependency, blanket RTK Apache extraction, Caveman BSL rejection and full-public LemonCrow assumption do not survive current evidence. No component is a complete-task winner by default.
 
 ## Question and scope
 
-Which capabilities should Jackin depend on, bundle, adapt, extract, or implement itself?
+For each capability, should Jackin preserve a native feature, depend on a library, package a CLI/sidecar, adapt instructions, contribute upstream, maintain a narrow fork/kernel, or implement its own control? Language, popularity and source availability alone cannot decide.
 
 ## Method
 
-Distinguish current source APIs from published/stable SDK contracts, then assess execution ownership, recovery, isolation, licensing, dependency cost, and release-matched outcome evidence. A missing stable SDK favors an adapter or process boundary; it does not automatically justify a complete rewrite.
+Use the six refreshed product dossiers, exact build/package/fixture records, current component licenses and independent source checks of RTK/LeanCTX. Inspect current Jackin Cargo/usage/runtime boundaries rather than the old proposed crate layout. Pinned product versions and dates are centralized in the [release register](/research/context/tools/08-current-release-register/).
 
 ## Findings
 
-### Current six-tool decision
+### Seven choices for each capability
 
-| Product | Current release and license boundary | Decision | Gate |
-|---|---|---|---|
-| Headroom | 0.38.0; Apache-2.0 | Evaluate source-pinned headroom-core transforms inside a Jackin worker | Build the no-ML configuration, inspect linkage/egress, qualify selected algorithms |
-| RTK | 0.49.0; Apache-2.0 | Bundle a pinned executable for measured command families; request an upstream pure-filter API | Native semantics, current recall behavior, fidelity and task-level qualification |
-| LeanCTX | 3.10.2; Apache-2.0 engine and preview facade | Restricted MCP first; evaluate lean-ctx-embed behind an internal adapter | Unpublished API, runtime ownership, feature granularity, state isolation |
-| LemonCrow | 0.7.4; Apache-2.0 source engine | Pinned per-worktree retrieval comparator; full runtime is a separate arm | Reproducible build, tool authorization, explicit roots, concurrent state and native edit prerequisites |
-| Ponytail | 4.10.0; MIT assets | Adapt reuse-first guidance or offer the exact upstream skill as a separate option | No test/architecture/requirement reduction; activation and quality checks |
-| Caveman | 2.7.0; MIT skill/client surfaces, BSL-1.1 engine-linked code | Optional reviewed narration assets; no default engine distribution | Exact license boundary, host behavior, clarity and task completeness |
+| Choice | Best fit | Evidence before selection |
+|---|---|---|
+| Existing agent-native behavior | Execution/editing, provider connection, native discovery/compaction and exact reads | Verify installed host/version/defaults; measure a genuine native baseline |
+| Direct upstream library | Small typed operation with explicit state/runtime and supported feature graph | Locked target build, license, API stability, cancellation, allocator/native linkage and fidelity |
+| Pinned CLI or isolated sidecar | Broad dependencies, process-global state or a useful existing stdin/MCP API | Artifact/source identity, OS confinement, lifecycle, exact IO/status contract and overhead |
+| Selectively adapted instruction asset | Concise role guidance or reuse-first policy without an engine | Effective content/precedence, activation cost, off/resume behavior and separate task arm |
+| Upstream API/feature contribution | A useful backend missing a narrow boundary or lifecycle contract | Minimal reproducer, proposed contract, regression tests and maintainer discussion |
+| Narrow fork or licensed kernel extraction | A demonstrated blocker remains and upstream cannot meet the required boundary | Applicable terms, owner, synchronization policy, corpus and retirement plan |
+| Jackin-native implementation | Supervisor admission, observation scope, durable recovery, qualification and task receipts | Reuse current architecture; do not recreate a full search/compression platform without evidence |
 
-Primary API/license evidence: [Headroom manifest](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/Cargo.toml), [Headroom exports](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/src/transforms/mod.rs), [RTK manifest](https://github.com/rtk-ai/rtk/blob/v0.49.0/Cargo.toml), [LeanCTX facade](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/crates/lean-ctx-embed/Cargo.toml), [LemonCrow license](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/LICENSE), [Ponytail package](https://github.com/DietrichGebert/ponytail/blob/v4.10.0/package.json), [Caveman map](https://github.com/JuliusBrussee/caveman/blob/v2.7.0/LICENSING.md).
+A process boundary is not automatic security; a library boundary is not automatic portability. Shared types must remain Jackin-owned and backend-neutral so a better backend can replace the first one without changing task/authorization semantics.
+
+### Current six-product decision
+
+| Component and pin | Technical/license change | Decision now |
+|---|---|---|
+| RTK OSS 1.0.1, `4ef8730c…` | Published Apache-2.0 executable with stdin filters; command modules remain private | First substantial automatic-filter candidate after host/fidelity/task qualification; experimental selected diagnostics now, caller-owned capture/recovery |
+| RTK engine/proxy 1.0.1 | Public typed API exists; internal unpublished crates use BUSL-1.1, default full binary links engine | Separate licensed treatment; do not call the whole current product permissive Apache or claim no library |
+| Headroom 0.41.0, `76133cff…` | Apache Rust internal core and Python SDK; no-ML Rust check passes, but JSON/recovery/backend parity gaps remain | Compare selected Rust worker and Python `densify`; no preferred backend or full proxy default |
+| LeanCTX 3.11.4, `3afe2bbf…` | Apache engine/facade; unpublished Preview `lean-ctx-embed` owns Tokio runtime and first-engine-wins process environment | Restricted process first; embedding later only after state/runtime/features and actual consumer build qualify |
+| LemonCrow 0.8.0, `d96bad0e…` | Public Apache Runtime Lite, advanced hosted engine private; package bytes matched reviewed client source | Restricted per-worktree retrieval comparator; exclude shell/edit replacement and inherited legacy exposure state |
+| Caveman product 4.0.1, `d262ab38…`; runtime `bin-v4.0.2`, `b4531dfc…` | Public repository/engine now Apache-2.0; Go engine and skill are separate; CLI/runtime pin mismatch matters | Exact skill, adapted asset and isolated engine are separate candidates; obsolete BSL exclusion removed |
+| Ponytail 5.3.2, `16352ac2…` | MIT; current complete-work policy differs from old one-line criticism; plugin has maps/state/activation costs | Adapt restrained guidance first; exact upstream skill/plugin is a separately pinned experiment |
+
+Sources and complete hashes: [RTK](/research/context/tools/03-rtk-design/), [Headroom](/research/context/tools/02-headroom-design/), [LeanCTX](/research/context/tools/04-leanctx-design/), [LemonCrow](/research/context/tools/10-lemoncrow-design/), [Caveman](/research/context/tools/01-caveman-design/), [Ponytail](/research/context/tools/09-ponytail-design/). Current component evidence supports feasibility, not automatic task qualification.
+
+RTK's engine grant permits specified production use but restricts offering the work/derivatives as a paid or hosted product/service without a separate arrangement. Its stated future license change does not make it Apache today. Review the exact distribution mode; do not assume a fork removes restrictions. Source code that remains Apache in historical LemonCrow releases stays available under that license, but it is not proof that the current advanced hosted engine is fully published.
+
+### Rust and process feasibility
+
+| Candidate | Executed or inspected result | Practical consequence |
+|---|---|---|
+| Headroom no-default-features core | Locked Linux x86_64 check passed on Rust 1.99.1; 185 normal package/version nodes including root; no ort/fastembed/magika | Feasible selected worker; still C grammars/Oniguruma/bundled SQLite/tokenizer/network dependencies. No cross-platform or combined Jackin build claimed. |
+| RTK engine | 286 unit + one guide test passed; public Block/Method/pipeline contracts | Technical reuse exists, with BUSL and unpublished API ownership to resolve. Root application library does not expose private command filters. |
+| LeanCTX facade | Source confirms own two-worker Tokio runtime, explicit broad features and static `Once` setting four process-wide directories | Multiple facade instances are not independent tenants; avoid in-process default. Locked check interrupted by disk pressure, not passed or upstream-defective. |
+| LeanCTX consumer plus Jackin SQLite | Full-facade offline metadata attempt stopped on missing registry `rmcp` before resolving the graph | Not a successful consumer build; upstream workspace patches are not automatically inherited by a consumer. |
+| Extracted SQLite constraints | Metadata-only minimal graphs combining Jackin 0.40.2 with rusqlite 0.39, 0.34 or 0.32 each failed explicitly on `links = "sqlite3"` | Demonstrated constraint collisions for these pairs, not full product builds. Sem default disk-cache-off and RTK engine-only are separate paths. |
+| LemonCrow Lite client | 87 packaged client files matched source; 45 selected tests and root-isolation fixtures passed | Useful Python process candidate with small lexical baseline; no language-only rejection or full advanced-engine reproducibility claim. |
+| Caveman engine | Current local Go/CGO build and focused package tests/probes recorded by product workstream | Licensed process reuse deserves comparison; not a Rust rewrite requirement. Full release artifact/signature parity remains separate. |
+
+Native linkage must be checked at the actual consumer feature set. Jackin pins rusqlite 0.40.2; Headroom's reviewed lock also resolves 0.40.2. LeanCTX uses 0.39, RTK's application 0.34, and sem's optional disk-cache path 0.32. The isolated minimal resolver probes reached and reported incompatible SQLite `links` for those three pairs. Their exact manifests/results are in the <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/linkage-constraint-results.json">constraint record</RepoFile>; this does not establish every full dependency graph or target. Separate processes avoid combining those native link graphs. <RepoFile path="Cargo.toml">Jackin dependencies</RepoFile> and the product manifests provide the exact constraints.
+
+LeanCTX also sets process environment from a safe builder using `unsafe set_var`; starting before its own runtime threads does not establish that an embedding host has no other readers. [Rust 1.99.1 safety requirements](https://doc.rust-lang.org/std/env/fn.set_var.html) make this an additional non-Windows caller-thread prerequisite, source-inspected rather than a reproduced race. Prefer injected configuration or environment set before child-process startup.
+
+Ordinary primitives remain viable: published `sem-core` 0.28.1 has disk cache off by default; `mq-lang`/`mq-markdown` 0.9.3 expose narrower parsing/query choices; fff-search 0.11.0 has a ripgrep default with native git/LMDB dependencies. The current Rust MCP SDK `rmcp` 3.7.0 and tree-sitter 0.27.1 are candidates, not dependencies introduced by this research. Confirm package/source correspondence, features, IO sandboxing and real target builds before adding them. [Adjacent assessment](/research/context/techniques/03-prior-art-and-market-scan/).
 
 ### What Jackin should own
 
-Own operator configuration, qualification records, typed result envelopes, artifact completeness/provenance, raw recovery, session/context-epoch exposure state, isolation, worker lifecycle, and actual-versus-estimated usage. Extend the existing workspace rather than duplicating execution, provider, or telemetry infrastructure. <RepoFile path="Cargo.toml">Workspace components</RepoFile> and <RepoFile path="crates/apps/jackin-capsule/src/runtime_setup.rs">capsule-local setup</RepoFile> anchor this plan.
+Own admission from existing capsule/session metadata, context epochs, observation/recovery identity, authorization, durable acknowledgement, one-transform composition, cancellation/deadlines, effective configuration and outcome receipts. Reuse native command/edit/provider behavior and compatible algorithms. The existing secure-exec MCP server is not a substitute for these contracts, and a PTY cannot reveal every model request.
 
-No whole-product rewrite is presently justified by the inspected evidence. Headroom already supplies relevant Rust source; LeanCTX supplies an experimental facade; LemonCrow can be evaluated as a process. A working sidecar can be better than a forced Rust port if accepted-task behavior is superior.
+Keep stateful engines out of render/control critical paths initially. Use a worker's explicit input/output contract and narrow capabilities, not an unconstrained shell or arbitrary upstream global installer. Shared immutable source indexes are a later optimization after source/security identity; model-exposure state remains consumer-scoped. [Architecture](/research/context/engine/02-architecture/).
 
-### When to extract or build a kernel
+### Concrete upstream contribution briefs
 
-First try the narrow public API or subprocess and measure its boundary. Then propose an upstream change that makes the required feature pure, independently testable, or configurable. Extract a licensed kernel only when the existing boundary demonstrably cannot meet Jackin's requirements or upstream support is unavailable. Record source commit, notices, local modifications, regression corpus, and upstream-update review ownership.
+| Upstream | Demonstrated gap | Small contribution and acceptance evidence |
+|---|---|---|
+| RTK OSS | Useful filters are private CLI modules; stdin path has no producer/recovery contract and Git compaction differs from structural diff | Supported pure typed filter API with omitted-range/completeness metadata; real diagnostic/malformed/diff corpus; no command execution or global mutation |
+| Headroom | Rust CCR cannot acknowledge write failure; duplicate-key JSON is normalized; Rust Kompress lacks Python line reconstruction | Fallible durable `put`, explicit byte-vs-JSON fidelity, backend line/table parity and smaller transform feature set; retain injected-fault fixtures |
+| LeanCTX | Process-global directory initialization, owned runtime, preview API and implicit exposure continuity | Caller-owned paths/runtime, explicit consumer/epoch reset and read-only dispatch contract; two-root and reset/resume tests |
+| LemonCrow | Lite spill failure can still yield unchanged; hidden tool dispatch differs from advertised tools; legacy global cwd remains separate | Fail-closed omission when recovery fails, enforceable retrieval-only capability set and explicit epoch binding; retain real-worktree/spill fixtures |
+| Caveman | Skill/full-runtime boundaries and runtime pin differ; warmer broadens record-mode effects | Component/artifact manifest, explicit no-warm/no-credential baseline, stable engine adapter/recovery contract |
+| Ponytail | Exact policy useful, but plugin mode/map scope changes across lifecycle | Session-scoped persistent opt-out, bounded file IO and complete path handling; exact policy vs plugin activation tests |
 
-Build new logic where it encodes Jackin's own contract or where no suitable implementation meets fidelity, isolation, or recovery requirements. Do not mistake a faster implementation of the wrong semantics for a successful optimization. Do not port BSL code into an Apache-only implementation while labeling it an independent reference design.
+These are proposed briefs, not claims that maintainers accepted work. No external issue/comment was posted without authorization. Coordinate overlap with upstream fixes before creating a fork.
 
-### Embedding is not automatic compatibility
+### Fork and kernel policy
 
-The Headroom core and LeanCTX embedding facade use internal version 0.1.0; the facade is unpublished and owns a Tokio runtime. Their product release numbers are not interchangeable Cargo versions. Disabling defaults on the LeanCTX facade's engine dependency still enables several substantial features explicitly. See its [README](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/crates/lean-ctx-embed/README.md).
+A narrow fork is justified only by a reproduced blocker on the selected treatment and a documented upstream attempt/decision. Assign a named maintenance owner during implementation, pin a clean base, preserve notices, review upstream releases on a defined cadence, and carry a small regression corpus for the changed boundary. Re-run it on every sync and before promotion. End the fork when a supported upstream API meets the contract or when measured benefit no longer pays its ownership cost.
 
-Pin a commit and lock dependencies. Compile every supported target and selected feature combination, including native-library resolver constraints. Avoid exposing upstream types as durable Jackin APIs. A separately supervised worker is the initial fault-containment boundary, not a claim that crashes or deadlocks cannot occur.
+Do not extract BUSL, GPL, Elastic or Dual Use code under an Apache assumption. Current Serena's separable MIT SolidLSP and historical MIT releases are distinct options from its GPL application; current jCodeMunch redistribution/commercial terms differ from the old assumption. License-compatible local use is not automatically license-compatible redistribution or hosted service. [Adjacent license register](/research/context/techniques/03-prior-art-and-market-scan/).
 
 ## Implications for jackin❯
 
-### Acceptance bar
-
-A candidate becomes an automatic default only after source/license and build checks, actual host activation, fidelity and raw recovery, parallel-worktree isolation, and controlled accepted-task evaluation pass. The proposed 20% net-improvement target is a gate to validate, not a measured promise or a reason to ignore correctness. Predeclare quality margins and outcome statistics; keep failed attempts in the denominator. [Current protocol](/research/context/tools/07-evidence-and-claims/).
-
-No full global installer, provider interception, model downgrade, or effort downgrade is required for the initial architecture. Complementary capabilities can compose only with explicit ownership and a separately measured combined profile.
+Proceed with the small Rust control/recovery/evidence contracts and a pinned OSS diagnostic-worker qualification. Compare one restricted retrieval process at a time against native tools, with unchanged stubs disabled when epoch continuity is unknown. Package concise instruction assets separately. Reassess preferred algorithms from current complete-task results rather than committing early to Headroom, LeanCTX or LemonCrow.
 
 ## Limitations and unknowns
 
-Crate builds and installed-agent conformance were not run in this research environment. Adjacent retrieval libraries described in other feature sketches are not requalified by this six-tool review; their versions and features must be verified before reuse. This page supersedes dependency assumptions in those sketches, without claiming their implementations exist.
+No combined Jackin dependency build, cross-platform worker suite, real host activation or paid accepted-task comparison qualifies any of these as an automatic external default. Source-level dependency risks and incomplete attempts are explicitly labeled. The design can proceed on interfaces and narrow prototypes without inventing the missing outcomes or rewriting entire upstream products.
 
 ## Sources
 
-Current tagged sources are inline. Product-specific benefits and remaining risks are detailed in the [six-tool comparison](/research/context/tools/05-head-to-head/).
+The linked dossiers contain immutable source/package/license pins and exact commands. <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/README.md">Architecture evidence</RepoFile> records independent source checks, metadata-attempt limitations and earlier-choice dispositions.
 
 ## Related work
 
-- [Context engine](/research/context/engine/)
-- [Current integration plan](/research/context/tools/11-jackin-integration/)
-- [Release register](/research/context/tools/08-current-release-register/)
+- [Integration strategy](/research/context/tools/11-jackin-integration/)
+- [Composition rules](/research/context/tools/06-combining/)
+- [Rollout](/research/context/engine/10-rollout-and-validation/)

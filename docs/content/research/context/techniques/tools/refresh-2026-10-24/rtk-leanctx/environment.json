@@ -1,0 +1,12 @@
+{
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.39",
+  "python": "3.12.14",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+  "git": "git version 2.51.1",
+  "provider_calls": 0,
+  "subscription_sessions": 0,
+  "model_downloads": 0,
+  "global_installers": 0,
+  "locally_available_toolchain_read_only": "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin"
+}

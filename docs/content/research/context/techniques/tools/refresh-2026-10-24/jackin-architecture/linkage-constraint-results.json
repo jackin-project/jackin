@@ -1,0 +1,77 @@
+[
+  {
+    "case": "leanctx-sqlite",
+    "evidence_class": "minimal extracted rusqlite constraints, not full product/Jackin dependency graph",
+    "manifest": "[package]\nname=\"leanctx-sqlite-constraint-probe\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\njackin_sqlite={package=\"rusqlite\",version=\"=0.40.2\",features=[\"bundled\"]}\ncandidate_sqlite={package=\"rusqlite\",version=\"0.39\",features=[\"bundled\"]}\n",
+    "argv": [
+      "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/cargo",
+      "metadata",
+      "--offline",
+      "--format-version",
+      "1",
+      "--manifest-path",
+      "/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/leanctx-sqlite/Cargo.toml"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/leanctx-sqlite",
+    "environment_overrides": {
+      "CARGO_HOME": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/cargo-home",
+      "CARGO_TARGET_DIR": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/unused-target",
+      "RUSTC": "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustc",
+      "PATH": "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin:/root/.codex/tmp/arg0/codex-arg0tzmkIp:/opt/codex/codex-path:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin/override:/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin/fallback"
+    },
+    "exit_code": 101,
+    "elapsed_seconds": 0.04393026700199698,
+    "stdout": "",
+    "stderr": "error: failed to select a version for `libsqlite3-sys`.\n    ... required by package `rusqlite v0.40.2`\n    ... which satisfies dependency `jackin_sqlite = \"=0.40.2\"` of package `leanctx-sqlite-constraint-probe v0.0.0 (/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/leanctx-sqlite)`\nversions that meet the requirements `^0.38.1` are: 0.38.2\n\npackage `libsqlite3-sys` links to the native library `sqlite3`, but it conflicts with a previous package which links to `sqlite3` as well:\npackage `libsqlite3-sys v0.37.0`\n    ... which satisfies dependency `libsqlite3-sys = \"^0.37.0\"` of package `rusqlite v0.39.0`\n    ... which satisfies dependency `candidate_sqlite = \"^0.39\"` of package `leanctx-sqlite-constraint-probe v0.0.0 (/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/leanctx-sqlite)`\nnote: only one package in the dependency graph may specify the same links value to ensure that only one copy of a native library is linked in the final binary\nfor more information, see https://doc.rust-lang.org/cargo/reference/resolver.html#links\nhelp: try to adjust your dependencies so that only one package uses the `links = \"sqlite3\"` value\n\nfailed to select a version for `libsqlite3-sys` which could resolve this conflict\n"
+  },
+  {
+    "case": "sem-disk-cache-sqlite",
+    "evidence_class": "minimal extracted rusqlite constraints, not full product/Jackin dependency graph",
+    "manifest": "[package]\nname=\"sem-disk-cache-sqlite-constraint-probe\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\njackin_sqlite={package=\"rusqlite\",version=\"=0.40.2\",features=[\"bundled\"]}\ncandidate_sqlite={package=\"rusqlite\",version=\"0.32\",features=[\"bundled\"]}\n",
+    "argv": [
+      "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/cargo",
+      "metadata",
+      "--offline",
+      "--format-version",
+      "1",
+      "--manifest-path",
+      "/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/sem-disk-cache-sqlite/Cargo.toml"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/sem-disk-cache-sqlite",
+    "environment_overrides": {
+      "CARGO_HOME": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/cargo-home",
+      "CARGO_TARGET_DIR": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/unused-target",
+      "RUSTC": "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustc",
+      "PATH": "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin:/root/.codex/tmp/arg0/codex-arg0tzmkIp:/opt/codex/codex-path:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin/override:/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin/fallback"
+    },
+    "exit_code": 101,
+    "elapsed_seconds": 0.06283120800071629,
+    "stdout": "",
+    "stderr": "error: failed to select a version for `libsqlite3-sys`.\n    ... required by package `rusqlite v0.32.0`\n    ... which satisfies dependency `candidate_sqlite = \"^0.32\"` of package `sem-disk-cache-sqlite-constraint-probe v0.0.0 (/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/sem-disk-cache-sqlite)`\nversions that meet the requirements `^0.30.0` are: 0.30.1, 0.30.0\n\npackage `libsqlite3-sys` links to the native library `sqlite3`, but it conflicts with a previous package which links to `sqlite3` as well:\npackage `libsqlite3-sys v0.38.2`\n    ... which satisfies dependency `libsqlite3-sys = \"^0.38.1\"` of package `rusqlite v0.40.2`\n    ... which satisfies dependency `jackin_sqlite = \"=0.40.2\"` of package `sem-disk-cache-sqlite-constraint-probe v0.0.0 (/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/sem-disk-cache-sqlite)`\nnote: only one package in the dependency graph may specify the same links value to ensure that only one copy of a native library is linked in the final binary\nfor more information, see https://doc.rust-lang.org/cargo/reference/resolver.html#links\nhelp: try to adjust your dependencies so that only one package uses the `links = \"sqlite3\"` value\n\nfailed to select a version for `libsqlite3-sys` which could resolve this conflict\n"
+  },
+  {
+    "case": "rtk-cli-sqlite",
+    "evidence_class": "minimal extracted rusqlite constraints, not full product/Jackin dependency graph",
+    "manifest": "[package]\nname=\"rtk-cli-sqlite-constraint-probe\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\njackin_sqlite={package=\"rusqlite\",version=\"=0.40.2\",features=[\"bundled\"]}\ncandidate_sqlite={package=\"rusqlite\",version=\"0.34\",features=[\"bundled\"]}\n",
+    "argv": [
+      "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/cargo",
+      "metadata",
+      "--offline",
+      "--format-version",
+      "1",
+      "--manifest-path",
+      "/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/rtk-cli-sqlite/Cargo.toml"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/rtk-cli-sqlite",
+    "environment_overrides": {
+      "CARGO_HOME": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/cargo-home",
+      "CARGO_TARGET_DIR": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/unused-target",
+      "RUSTC": "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustc",
+      "PATH": "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin:/root/.codex/tmp/arg0/codex-arg0tzmkIp:/opt/codex/codex-path:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin/override:/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin/fallback"
+    },
+    "exit_code": 101,
+    "elapsed_seconds": 0.04643797199969413,
+    "stdout": "",
+    "stderr": "error: failed to select a version for `libsqlite3-sys`.\n    ... required by package `rusqlite v0.40.2`\n    ... which satisfies dependency `jackin_sqlite = \"=0.40.2\"` of package `rtk-cli-sqlite-constraint-probe v0.0.0 (/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/rtk-cli-sqlite)`\nversions that meet the requirements `^0.38.1` are: 0.38.2\n\npackage `libsqlite3-sys` links to the native library `sqlite3`, but it conflicts with a previous package which links to `sqlite3` as well:\npackage `libsqlite3-sys v0.32.0`\n    ... which satisfies dependency `libsqlite3-sys = \"^0.32.0\"` of package `rusqlite v0.34.0`\n    ... which satisfies dependency `candidate_sqlite = \"^0.34\"` of package `rtk-cli-sqlite-constraint-probe v0.0.0 (/workspace/scratch/1335a158b2a9/research/jackin-architecture/linkage-constraints/rtk-cli-sqlite)`\nnote: only one package in the dependency graph may specify the same links value to ensure that only one copy of a native library is linked in the final binary\nfor more information, see https://doc.rust-lang.org/cargo/reference/resolver.html#links\nhelp: try to adjust your dependencies so that only one package uses the `links = \"sqlite3\"` value\n\nfailed to select a version for `libsqlite3-sys` which could resolve this conflict\n"
+  }
+]

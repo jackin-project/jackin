@@ -1,0 +1,195 @@
+{
+  "repo": "yvgude/lean-ctx",
+  "tag": "v3.11.4",
+  "published": "2026-10-11T21:31:12Z",
+  "assets": [
+    {
+      "name": "lean-ctx-3.11.4-source.tar.gz",
+      "size": 20272251,
+      "digest": "sha256:401bf1dfb9c1ed268e1425717b73e3309768d5458e8fa52a1ae53cc9a3592b9e",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/lean-ctx-3.11.4-source.tar.gz"
+    },
+    {
+      "name": "lean-ctx-aarch64-apple-darwin.tar.gz",
+      "size": 26781480,
+      "digest": "sha256:d0bc4b1b91715436e6b400dedbdfb1eaeba9dafa575d1d6c9a2f3296d040245f",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/lean-ctx-aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "lean-ctx-aarch64-unknown-linux-gnu.tar.gz",
+      "size": 28003338,
+      "digest": "sha256:9b9e5977d54f810ac81b94664353645dda2b906de21465291bbb7bdb7d18ec5e",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/lean-ctx-aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "lean-ctx-aarch64-unknown-linux-musl.tar.gz",
+      "size": 27571993,
+      "digest": "sha256:fe80347ca0b4e34f18a090209c08e05d10078db46ebf2bba44b039b166acaf98",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/lean-ctx-aarch64-unknown-linux-musl.tar.gz"
+    },
+    {
+      "name": "lean-ctx-x86_64-apple-darwin.tar.gz",
+      "size": 27798249,
+      "digest": "sha256:26c305c4ef6f5e049ddb5b6aa0f2a112fafbebcce8456406d88d9b289e8010c1",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/lean-ctx-x86_64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "lean-ctx-x86_64-pc-windows-gnu.zip",
+      "size": 27920074,
+      "digest": "sha256:d6911b384219576335d49284a05e7d919119133ce4d895f00683b819e33868e8",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/lean-ctx-x86_64-pc-windows-gnu.zip"
+    },
+    {
+      "name": "lean-ctx-x86_64-pc-windows-msvc-cuda.zip",
+      "size": 30168337,
+      "digest": "sha256:b68869d58b601cf55807443ebd309e51a27f818844d1130ab592fa2ea2d19d76",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/lean-ctx-x86_64-pc-windows-msvc-cuda.zip"
+    },
+    {
+      "name": "lean-ctx-x86_64-pc-windows-msvc.zip",
+      "size": 30143891,
+      "digest": "sha256:306cd503af93572ab8d1b27f7d4a851e54a2336897b1db98f46aa479b8d554f7",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/lean-ctx-x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "lean-ctx-x86_64-unknown-linux-gnu-cuda.tar.gz",
+      "size": 29077128,
+      "digest": "sha256:c95d617812457c19398239a0108cb500805474be8bf060868ff4e739c7943824",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/lean-ctx-x86_64-unknown-linux-gnu-cuda.tar.gz"
+    },
+    {
+      "name": "lean-ctx-x86_64-unknown-linux-gnu.tar.gz",
+      "size": 29070822,
+      "digest": "sha256:5044d0393f7b51bbb861435bd9d98694339678b4f827a690216d870b6719d56a",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/lean-ctx-x86_64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "lean-ctx-x86_64-unknown-linux-musl.tar.gz",
+      "size": 29038923,
+      "digest": "sha256:f7a4d677b77266bfb60883485e4ee7ad3fd7e129d3f935c08dee2d50a8b1df71",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/lean-ctx-x86_64-unknown-linux-musl.tar.gz"
+    },
+    {
+      "name": "LICENSE.md",
+      "size": 2133,
+      "digest": "sha256:e4f77f5ec9d509f0014ddefe2b81afac9a7d095cdff283348c680fb207d95746",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/LICENSE.md"
+    },
+    {
+      "name": "LICENSES-Apache-2.0.txt",
+      "size": 10763,
+      "digest": "sha256:16cbd2ce016ef3b37cb2dc50db37cba7c46a186b51a3f1ff3460fd2fad05f8f9",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/LICENSES-Apache-2.0.txt"
+    },
+    {
+      "name": "release-manifest.json",
+      "size": 7156,
+      "digest": "sha256:e6106b3fb6695a3e87a44f7855dedd49af413d59c0b50d69eda83bdd53e3a39a",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/release-manifest.json"
+    },
+    {
+      "name": "release-manifest.json.pem",
+      "size": 3200,
+      "digest": "sha256:d5ca4ac8e9c551ede2e778a20cb462df36e6b3e2fbdb38facc5f7b95b2932684",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/release-manifest.json.pem"
+    },
+    {
+      "name": "release-manifest.json.sig",
+      "size": 96,
+      "digest": "sha256:96b86c7fd744e810035959a0412c2c8bcf438cf31ba31840b0fbe31879cf3be9",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/release-manifest.json.sig"
+    },
+    {
+      "name": "SBOM.cdx.json",
+      "size": 660373,
+      "digest": "sha256:43a48c7a681586700b9f017e4002247a6342fe31befe9566ba81ca2d21f6bf9b",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/SBOM.cdx.json"
+    },
+    {
+      "name": "SHA256SUMS",
+      "size": 2787,
+      "digest": "sha256:beea46217036ca2470d8de59799711c5a457b7d80be30f4a115b0da2bc29ffff",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/SHA256SUMS"
+    },
+    {
+      "name": "SHA256SUMS.pem",
+      "size": 3192,
+      "digest": "sha256:f9febe9861883fb178f1d0c76b20adf96fa9c99b773ff25c267b531f13a900a0",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/SHA256SUMS.pem"
+    },
+    {
+      "name": "SHA256SUMS.sig",
+      "size": 96,
+      "digest": "sha256:bf30f8a9e30c02e29a6a05ffa44b4f368cff2859d3d3a4f0a9e7bf32538f6b23",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/SHA256SUMS.sig"
+    },
+    {
+      "name": "thinkery_leanctx_engine-3.11.4-py3-none-macosx_11_0_arm64.whl",
+      "size": 26662335,
+      "digest": "sha256:c7a0a00c5c16b1cf1522dfe41c84837706312001e8c1c923b7002a72084e8b5d",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/thinkery_leanctx_engine-3.11.4-py3-none-macosx_11_0_arm64.whl"
+    },
+    {
+      "name": "thinkery_leanctx_engine-3.11.4-py3-none-macosx_11_0_x86_64.whl",
+      "size": 27630252,
+      "digest": "sha256:97e97264dc86115ba7f87fc40c11ad1f1ce2d6c14084b3b8bc602d8d10f28d23",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/thinkery_leanctx_engine-3.11.4-py3-none-macosx_11_0_x86_64.whl"
+    },
+    {
+      "name": "thinkery_leanctx_engine-3.11.4-py3-none-manylinux_2_35_aarch64.whl",
+      "size": 27861119,
+      "digest": "sha256:035a3986af99066521b14b62a1f20bbe7d06617447ec27618c63051ce5a69f73",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/thinkery_leanctx_engine-3.11.4-py3-none-manylinux_2_35_aarch64.whl"
+    },
+    {
+      "name": "thinkery_leanctx_engine-3.11.4-py3-none-manylinux_2_35_x86_64.whl",
+      "size": 28838888,
+      "digest": "sha256:8c400130000c092ec81a8788adaf3e7a585ee8440c7bded22bd69c8e9a8687d3",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/thinkery_leanctx_engine-3.11.4-py3-none-manylinux_2_35_x86_64.whl"
+    },
+    {
+      "name": "thinkery_leanctx_engine-3.11.4-py3-none-musllinux_1_2_aarch64.whl",
+      "size": 27416126,
+      "digest": "sha256:562231e8321d30f554467123ee2b32709c06ff23ca09663952943fec8c68bd95",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/thinkery_leanctx_engine-3.11.4-py3-none-musllinux_1_2_aarch64.whl"
+    },
+    {
+      "name": "thinkery_leanctx_engine-3.11.4-py3-none-musllinux_1_2_x86_64.whl",
+      "size": 28815624,
+      "digest": "sha256:df4311faf6f910ee23c15d956b41d0bb929d5588620ae23f4c06a6de0c3cf143",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/thinkery_leanctx_engine-3.11.4-py3-none-musllinux_1_2_x86_64.whl"
+    },
+    {
+      "name": "thinkery_leanctx_engine-3.11.4-py3-none-win_amd64.whl",
+      "size": 28964389,
+      "digest": "sha256:d73308577c1b445d2da7f048bb9399131a952038bf181f83632946bb5f7c7099",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/thinkery_leanctx_engine-3.11.4-py3-none-win_amd64.whl"
+    },
+    {
+      "name": "thinkery_leanctx_engine_cuda-3.11.4-py3-none-manylinux_2_35_x86_64.whl",
+      "size": 28849185,
+      "digest": "sha256:c199de028662960fedd885a82ad37ed3e7017b9abf7b9ad82e05a0d5936bdf9f",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/thinkery_leanctx_engine_cuda-3.11.4-py3-none-manylinux_2_35_x86_64.whl"
+    },
+    {
+      "name": "thinkery_leanctx_engine_cuda-3.11.4-py3-none-win_amd64.whl",
+      "size": 28985516,
+      "digest": "sha256:d2154f4ecccbd30fdac1b955119a8c4af893e00383581c2a9dbb283055a0a5a2",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/thinkery_leanctx_engine_cuda-3.11.4-py3-none-win_amd64.whl"
+    },
+    {
+      "name": "thinkery_leanctx_engine_windows_gnu-3.11.4-py3-none-win_amd64.whl",
+      "size": 26998896,
+      "digest": "sha256:d8f9320d5d142aba806d5f670425749e7ea46bad11094feeda65b215c56cf52f",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/thinkery_leanctx_engine_windows_gnu-3.11.4-py3-none-win_amd64.whl"
+    },
+    {
+      "name": "THIRD_PARTY_NOTICES",
+      "size": 331166,
+      "digest": "sha256:8e7c3f6fef105ed301421a861b5b25e08335238fd53f43ba8fc92a24405fc05a",
+      "url": "https://github.com/yvgude/lean-ctx/releases/download/v3.11.4/THIRD_PARTY_NOTICES"
+    }
+  ],
+  "release_target_commitish": "main",
+  "resolved_tag_commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57"
+}

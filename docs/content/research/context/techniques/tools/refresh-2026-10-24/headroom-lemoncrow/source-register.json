@@ -1,0 +1,381 @@
+{
+  "snapshot_cutoff": "2026-10-24T01:15:00Z",
+  "access_date_utc": "2026-10-24",
+  "sources": [
+    {
+      "id": "HR01",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/Cargo.toml",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Workspace members, rust-version, common dependencies and licensing.",
+      "file_sha256": "1a1c67182a2d3cc314afb1c34677672597a10c8b867fb45b271c300870c99221"
+    },
+    {
+      "id": "HR02",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/Cargo.toml",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Internal 0.1.0 version; default ML feature; optional and mandatory dependencies.",
+      "file_sha256": "0bab0c4066f4690eea256680186bf7c0d38327feda919db64912a7adccdb7155"
+    },
+    {
+      "id": "HR03",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/src/transforms/mod.rs",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Public callable transform exports; no implied stable SDK or host interception.",
+      "file_sha256": "bcfda7b83f7c08527a7bed0638103b1f196c00c8da59af0309683748a14c8487"
+    },
+    {
+      "id": "HR04",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/headroom/compress.py",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Python agent/densify and default modes; verifier uses parsed JSON; frozen-prefix caller responsibility.",
+      "file_sha256": "5dcf51dc0b4349dd53e68deedcac7070ccbbfca2789807a214b5b1ccf230ef77"
+    },
+    {
+      "id": "HR05",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/headroom/transforms/kompress_compressor.py",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Python line-preserving word reconstruction; table protection conditions.",
+      "file_sha256": "3446a8446723d65a3799dcdf77025572007ffb4948d62f7953edf3d5bc065c8f"
+    },
+    {
+      "id": "HR06",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/src/transforms/kompress.rs",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Rust word split and join discard line boundaries; inspected without inference.",
+      "file_sha256": "393b8e395724aae6d67d75456c14ef1cc5cb06074604b670555cead6d13f9052"
+    },
+    {
+      "id": "HR07",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/tests/test_kompress_line_integrity.py",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Four selected fake-mask reconstruction/protection tests; executed installed package.",
+      "file_sha256": "dc0c9450dc4090f96b9bdbca1bffa2405f34c5e0444e7cd3b63819e117bd6afd"
+    },
+    {
+      "id": "HR08",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/tests/test_densify_agent_mode.py",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Fourteen selected SDK tests; executed installed package.",
+      "file_sha256": "2b9ea05b8f2556f6ba986a7e756b758dd8a46b79622774c82af33993253e08f4"
+    },
+    {
+      "id": "HR09",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/src/transforms/pipeline/reformats/json_minifier.rs",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "serde_json parse/serialize; duplicate keys lost, escapes normalized.",
+      "file_sha256": "44fa315d37890d212c5b6584855204bd79547bca1d0d3ce619b6fcff86dbba19"
+    },
+    {
+      "id": "HR10",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/src/ccr/mod.rs",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "CcrStore put returns unit; idle/max-life constants; protocol does not inject host recovery.",
+      "file_sha256": "065869f0b9a39c239bccaf27ea39b416af7a136b17eaa3093c9e60d28c22860e"
+    },
+    {
+      "id": "HR11",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/src/ccr/backends/sqlite.rs",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "SQLite statement failures warn instead of returning acknowledgement.",
+      "file_sha256": "c79cb601cd440a579903615b914de0eff45406f608417690cbd7840e36e2ebc5"
+    },
+    {
+      "id": "HR12",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/headroom/cli/proxy.py",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Effective Python CLI proxy defaults and cache/token modes.",
+      "file_sha256": "19713bfbb09f6506ad51035925eaee20342ab6834294535047d90a3b81d57a74"
+    },
+    {
+      "id": "HR13",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-proxy/src/config.rs",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Rust proxy off/compression defaults differ from Python CLI.",
+      "file_sha256": "66dd5aea7dd844d2fd08bc3d618e259352331ba627cd70982a30bf840241b961"
+    },
+    {
+      "id": "HR14",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/headroom/cli/wrap.py",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Wrapper code-memory choice and configuration integration.",
+      "file_sha256": "d0c5ec59d6c0a37618137cd4116a7c5806f54d0f4ad75ca22f9901b4ae1a2dad"
+    },
+    {
+      "id": "HR15",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/headroom/cli/install.py",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Persistent install/removal side effects and managed ownership.",
+      "file_sha256": "1dcb19b774b3aa87944e5eb5b2754b43b930361cb910a07565fd53d2b1965a04"
+    },
+    {
+      "id": "HR16",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/headroom/telemetry/beacon.py",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Anonymous upload default on; opt-out and offline checks differ from local telemetry.",
+      "file_sha256": "30e82b81435a2a68218497e6e04fe8c1afe7aacd433ec74d22d4ec2be31dccba"
+    },
+    {
+      "id": "HR17",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/benchmarks/results/index_proof_table.txt",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Historical synthetic component token table; not current task qualification.",
+      "file_sha256": "5ee3a4a5508778453a53e398de513274b52dff0e5d6de422074deea65cb6876a"
+    },
+    {
+      "id": "HR18",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/benchmarks/tool_search_vs_native/README.md",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "First-party Oct6 tool-search/task comparison scope and caveats.",
+      "file_sha256": "9b32d0bda75acb341b7307b3c59c19cc22e88c48ee3e0a822e3a38286b15c8e5"
+    },
+    {
+      "id": "HR19",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/rust-toolchain.toml",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Pinned Rust 1.95.0 repository toolchain, distinct from workspace minimum.",
+      "file_sha256": "d8342f6e05717be42847d07b256ca46eb7e73edb96b793db997ea2c75fdfe842"
+    },
+    {
+      "id": "HR20",
+      "product": "headroom",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/LICENSE",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "Apache-2.0 source terms; models/enterprise/dependencies separately inventoried.",
+      "file_sha256": "f14dd440c8e3152b4d4d324615de8251ddb011dc81f484daad0b6902093539cc"
+    },
+    {
+      "id": "HR21",
+      "product": "headroom",
+      "kind": "issue",
+      "url": "https://github.com/headroomlabs-ai/headroom/issues/3099",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "claim_scope": "User-reported shell/table false facts, closure date, original 0.33.0 context."
+    },
+    {
+      "id": "LC01",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/docs/reference/open-source-boundary.md",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Current private advanced-engine boundary and historical Apache source preserved.",
+      "file_sha256": "c7e3f880c3d9547f0f58abaff63cc889b6c7ba9ddac912608261335f4a0eaf8a"
+    },
+    {
+      "id": "LC02",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/LICENSE",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Apache-2.0 public/local tree; distinct proprietary enterprise terms.",
+      "file_sha256": "603da4f4b530d27c8650440c78bc2e608bcd911c637a4752ff61dbf12ca1dcb4"
+    },
+    {
+      "id": "LC03",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/docs/architecture/runtime-lite.md",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Local stdio architecture, optional helper and index lifecycle.",
+      "file_sha256": "01488e2880851050a8bb77f87d82d59dc21dbbf6aa47b338c30e2442d817fd46"
+    },
+    {
+      "id": "LC04",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/lite/mcp.py",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Explicit root; per-checkout state; route(active=None); background startup; tool dispatch.",
+      "file_sha256": "e219be12c152a6cadd40e44d2e5d1b1f0683e7e435faeee61a6881cfe04e72d4"
+    },
+    {
+      "id": "LC05",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/lite/policy.py",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Five advertised tools and separately callable local tool set.",
+      "file_sha256": "8e6afb5e9eef40898bd62772b9a2f45efd1767ceba1f0219677da48fc7a8f0f4"
+    },
+    {
+      "id": "LC06",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/worktrees.py",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Registered worktree path selection; mixed roots refused; generic sticky doc differs from Lite caller.",
+      "file_sha256": "12d65a9b41e6fc81099a7d9a847592718fd536126607e86635b81b1f93bdc287"
+    },
+    {
+      "id": "LC07",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/src/lemoncrow/gateway/adapters/mcp_server.py",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Full/legacy shared _last_session_cwd remains separate from Lite behavior.",
+      "file_sha256": "2ba9ab63b28ed28e34d3bf1c3b71b33c5e38bc3237917ff2044555fc65ce2bce"
+    },
+    {
+      "id": "LC08",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/src/lemoncrow/gateway/adapters/mcp/smart_state.py",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Bounded flock attempts, default five-second timeout and unlocked fallback.",
+      "file_sha256": "1c7558fdb745e37509d35ed3df4885e883f7b9730800d58a992eb65a4288463c"
+    },
+    {
+      "id": "LC09",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/lite/index.py",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "SQLite FTS5, WAL, generation state, versioned index and freshness.",
+      "file_sha256": "6c35f9edf410901f203eb29ac5c02853a7f22825cbeb2efc9d9551e420de1bf9"
+    },
+    {
+      "id": "LC10",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/kit/output_delta.py",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "RunHistory successful identical-output behavior; no context epoch.",
+      "file_sha256": "96e842c267ad7dad06ffaa429c83853eec0fc08dad176e8c363693e0c960b359"
+    },
+    {
+      "id": "LC11",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/localtools/shell.py",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Shell output/history, failed spill presentation and command routing.",
+      "file_sha256": "cf0a25c3eb273d9065a3185fed8e9dfd2a601bd35ad9b9fe4b968ba277f1b30e"
+    },
+    {
+      "id": "LC12",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/kit/spill.py",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Temporary spill retention, size/count limits and OSError fallback.",
+      "file_sha256": "fecb82ab17fce69f52e8056210d40ce066ac7ebb035cdbf6b0343258a40f446c"
+    },
+    {
+      "id": "LC13",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/search_dedup.py",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Hosted-client session/view/revision/epoch-aware dedup, distinct from Lite shell.",
+      "file_sha256": "8fbd2fc89c1c41fb002d7b9f7a1c99ced3264c985a34aa8724ab255957370c43"
+    },
+    {
+      "id": "LC14",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/trace.py",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Local trace defaults, retention, bulk argument handling and off switch.",
+      "file_sha256": "25bffe7d4d9c951b0728d771eaabd710c5d643b0a8e2a40549acab2df211ecd9"
+    },
+    {
+      "id": "LC15",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/scripts/uninstall_runtime.sh",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Owned registration/runtime cleanup, retained account and Review state.",
+      "file_sha256": "144dac1295bc16df3539a598339e4d86160fdda344632080d63ae58fcbdfe06a"
+    },
+    {
+      "id": "LC16",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/BENCHMARKS.md",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Historical fuller runtime/persona and model/harness provenance; no current Lite qualification.",
+      "file_sha256": "a26ccc6638bd5ef7f4bf6e09d9b2de203af7dd10b1e6d953ab6b4195a232e408"
+    },
+    {
+      "id": "LC17",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/docs/operations/runtime-credit-gate.md",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Paired provider-usage/task-acceptance gate specification, not a passed result.",
+      "file_sha256": "739303e62546576e48d692118ef186851be20bee23c259ab62075ddc14490990"
+    },
+    {
+      "id": "LC18",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/tests/test_runtime_lite.py",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "45 selected offline upstream tests executed successfully.",
+      "file_sha256": "907c1f0779c0d35f3756bc9199026454fd9b2b85e115139119ce36be9d1f6fde"
+    },
+    {
+      "id": "LC19",
+      "product": "lemoncrow",
+      "kind": "inspected-release-source",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/pyproject.toml",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Source project distribution name/Python range; differs from Runtime wheel name.",
+      "file_sha256": "9577ed70119f9aba5dba4044658308a618140bb3d02f7afea01ef2003007291f"
+    },
+    {
+      "id": "LC20",
+      "product": "lemoncrow",
+      "kind": "pull-request",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/pull/46",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Public PR closed, merged_at null; initial shared-cwd proposal."
+    },
+    {
+      "id": "LC21",
+      "product": "lemoncrow",
+      "kind": "maintainer-comment",
+      "url": "https://github.com/lemoncrow-lab/lemoncrow/pull/46#issuecomment-5570558170",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "claim_scope": "Maintainer says landed in v0.7.1 mirrored from private history; not a public merge."
+    }
+  ]
+}

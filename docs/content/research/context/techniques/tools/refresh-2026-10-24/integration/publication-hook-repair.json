@@ -1,0 +1,39 @@
+{
+  "recorded_utc": "2026-10-24T09:15:50.629110+00:00",
+  "failed_attempt": {
+    "staged_tree": "30924504c846f613f191f7ceedda056b547755dd",
+    "started_utc": "2026-10-24T09:13:17.926868+00:00",
+    "finished_utc": "2026-10-24T09:13:23.982652+00:00",
+    "exit_code": 1,
+    "kingfisher_blobs_scanned": 391,
+    "enumeration_errors": false
+  },
+  "actual_failure": "rumdl reported two consecutive-blank-line violations in the current rendered QA note and one missing relative link to a probe in the archived pre-release-merge QA note.",
+  "passed_selected_steps": [
+    "cargo_deny",
+    "gitleaks",
+    "kingfisher-staged",
+    "jactionlint"
+  ],
+  "scope": "These are the selected applicable hook steps for the staged files, not a claim that every Rust workspace check ran. The earlier full documentation/build/render gates retain their input scope. This failed attempt is preserved; a later exact-tree hook result is recorded separately in final PR metadata.",
+  "records": [
+    {
+      "artifact": "logs/final-publication-pre-commit.json",
+      "sha256": "895a787ef97486881bbf262c80044c4b920d66b1f6e656ef432b2fbc9134b603",
+      "bytes": 1184
+    },
+    {
+      "artifact": "logs/final-publication-pre-commit.log",
+      "sha256": "05f88af2b99c9ebf462c7bba558e540325efd692e392141436a7bc9c38e9e15e",
+      "bytes": 5322
+    }
+  ],
+  "repair_completed_utc": "2026-10-24T09:17:24.120296+00:00",
+  "repair": {
+    "current_qa_note": "Removed exactly two duplicate blank lines; no experiment semantics changed.",
+    "historical_probe": "Added the exact missing probe at the archived review relative-link destination. Its bytes match both historical result and command script digests; original historical review unchanged.",
+    "historical_probe_sha256": "73360d99deed684868f0c27add8b1e2535e09f922413028265e85ef98300ff54",
+    "current_artifact_files": 132,
+    "current_render_artifact_references_verified": 12
+  }
+}

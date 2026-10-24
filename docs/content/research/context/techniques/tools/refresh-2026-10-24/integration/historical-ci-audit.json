@@ -1,0 +1,612 @@
+{
+  "accessed_at": "2026-10-24T01:28:30Z",
+  "runs": [
+    {
+      "run": 35813645780,
+      "total": 44,
+      "counts": {
+        "success": 20,
+        "skipped": 24
+      },
+      "head": "485bcd913db426f396868bb0e5be3f122f4902c9"
+    },
+    {
+      "run": 40002324834,
+      "total": 38,
+      "counts": {
+        "success": 37,
+        "skipped": 1
+      },
+      "head": "43c69a8b290d67f130e2d79fa4718f6d34189cb5"
+    },
+    {
+      "run": 40009941237,
+      "total": 38,
+      "counts": {
+        "success": 37,
+        "skipped": 1
+      },
+      "head": "1adedfcc1ff38516aa11e4d6324c304f1c9ca82c"
+    }
+  ],
+  "docs_job": 107030499129,
+  "docs_log_excerpts": [
+    "2026-09-23T03:16:50.0022191Z $ fumadocs-mdx",
+    "2026-09-23T03:16:50.7412513Z $ bun run scripts/gen-crate-pages.ts && vite build && bun run scripts/prerender-static.ts",
+    "2026-09-23T03:17:22.3997751Z [prerender-static] wrote 1290 static routes",
+    "2026-09-23T03:17:22.4779598Z $ bun test",
+    "2026-09-23T03:17:22.4914974Z  18 pass",
+    "2026-09-23T03:17:22.4916685Z  0 fail",
+    "2026-09-23T03:17:22.4916857Z  30 expect() calls",
+    "2026-09-23T03:17:22.4917060Z Ran 18 tests across 2 files. [10.00ms]"
+  ],
+  "claim_reconciliation": "PR1105 cited Docs job107030499129 shows1290 static routes and18 tests/30expect calls, not the body claims447 pages/183 tests/938 expectations or the named absent audit commands. This cited log does not establish those claims. PR1192 body38 successful checks+1skip is confirmed by39 check runs including DCO; its Actions workflow has38 jobs with37success+1skip. Final1192 head has a separate successful run40009941237; do not confuse job count with check count.",
+  "check_runs": [
+    {
+      "sha": "1adedfcc1ff38516aa11e4d6324c304f1c9ca82c",
+      "total_count": 39,
+      "counts": {
+        "success": 38,
+        "skipped": 1
+      },
+      "checks": [
+        {
+          "id": 120613534198,
+          "name": "Required",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120613534198"
+        },
+        {
+          "id": 120613186127,
+          "name": "Required verdict",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120613186127"
+        },
+        {
+          "id": 120607914842,
+          "name": "Dependency seed",
+          "conclusion": "skipped",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607914842"
+        },
+        {
+          "id": 120607913464,
+          "name": "Rust / jackin-console",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607913464"
+        },
+        {
+          "id": 120607913259,
+          "name": "Rust / jackin-host",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607913259"
+        },
+        {
+          "id": 120607913109,
+          "name": "Rust / jackin-docker",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607913109"
+        },
+        {
+          "id": 120607912972,
+          "name": "Rust / jackin-xtask",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912972"
+        },
+        {
+          "id": 120607912955,
+          "name": "Rust / jackin-instance",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912955"
+        },
+        {
+          "id": 120607912941,
+          "name": "Rust / jackin-usage-ffi",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912941"
+        },
+        {
+          "id": 120607912918,
+          "name": "Rust / jackin-runtime",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912918"
+        },
+        {
+          "id": 120607912914,
+          "name": "Rust / jackin-tui",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912914"
+        },
+        {
+          "id": 120607912912,
+          "name": "Rust / jackin-diagnostics",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912912"
+        },
+        {
+          "id": 120607912883,
+          "name": "Rust / jackin-config",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912883"
+        },
+        {
+          "id": 120607912850,
+          "name": "Rust / jackin-process-directory",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912850"
+        },
+        {
+          "id": 120607912844,
+          "name": "Rust / jackin-otlp-testbed",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912844"
+        },
+        {
+          "id": 120607912841,
+          "name": "Rust / jackin-workflow",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912841"
+        },
+        {
+          "id": 120607912837,
+          "name": "Rust / jackin-usage-broker",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912837"
+        },
+        {
+          "id": 120607912834,
+          "name": "Rust / jackin-manifest",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912834"
+        },
+        {
+          "id": 120607912799,
+          "name": "Rust / jackin-test-support",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912799"
+        },
+        {
+          "id": 120607912769,
+          "name": "Rust / jackin-process",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912769"
+        },
+        {
+          "id": 120607912757,
+          "name": "Rust / jackin-core",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912757"
+        },
+        {
+          "id": 120607912746,
+          "name": "Rust / jackin-launch",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912746"
+        },
+        {
+          "id": 120607912670,
+          "name": "Rust / jackin-protocol",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912670"
+        },
+        {
+          "id": 120607912647,
+          "name": "Rust / jackin-isolation",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912647"
+        },
+        {
+          "id": 120607912632,
+          "name": "Rust / jackin-workflow-spec",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912632"
+        },
+        {
+          "id": 120607912598,
+          "name": "Rust / jackin-env",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912598"
+        },
+        {
+          "id": 120607912595,
+          "name": "Rust / jackin-telemetry",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912595"
+        },
+        {
+          "id": 120607912576,
+          "name": "Rust / jackin-usage",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912576"
+        },
+        {
+          "id": 120607912537,
+          "name": "Rust / jackin-image",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912537"
+        },
+        {
+          "id": 120607912125,
+          "name": "Rust / jackin-dev",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912125"
+        },
+        {
+          "id": 120607912112,
+          "name": "Check / dependency-usage",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912112"
+        },
+        {
+          "id": 120607912110,
+          "name": "Rust / jackin-capsule",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912110"
+        },
+        {
+          "id": 120607912057,
+          "name": "Rust / jackin",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607912057"
+        },
+        {
+          "id": 120607911944,
+          "name": "Check / repository-links",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607911944"
+        },
+        {
+          "id": 120607911940,
+          "name": "Rust / jackin-agent-status",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607911940"
+        },
+        {
+          "id": 120607911927,
+          "name": "Check / repository-policy",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607911927"
+        },
+        {
+          "id": 120607421258,
+          "name": "Plan",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607421258"
+        },
+        {
+          "id": 120607420819,
+          "name": "Jactionlint",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40009941237/job/120607420819"
+        },
+        {
+          "id": 120607398017,
+          "name": "DCO",
+          "conclusion": "success",
+          "app": "dco-2",
+          "url": "https://github.com/jackin-project/jackin/runs/120607398017"
+        }
+      ]
+    },
+    {
+      "sha": "43c69a8b290d67f130e2d79fa4718f6d34189cb5",
+      "total_count": 39,
+      "counts": {
+        "success": 38,
+        "skipped": 1
+      },
+      "checks": [
+        {
+          "id": 120587298225,
+          "name": "Required",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120587298225"
+        },
+        {
+          "id": 120587001377,
+          "name": "Required verdict",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120587001377"
+        },
+        {
+          "id": 120581912391,
+          "name": "Dependency seed",
+          "conclusion": "skipped",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581912391"
+        },
+        {
+          "id": 120581911719,
+          "name": "Rust / jackin-test-support",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911719"
+        },
+        {
+          "id": 120581911581,
+          "name": "Rust / jackin-process-directory",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911581"
+        },
+        {
+          "id": 120581911556,
+          "name": "Rust / jackin-tui",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911556"
+        },
+        {
+          "id": 120581911515,
+          "name": "Rust / jackin-usage-broker",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911515"
+        },
+        {
+          "id": 120581911406,
+          "name": "Rust / jackin-runtime",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911406"
+        },
+        {
+          "id": 120581911346,
+          "name": "Rust / jackin-usage-ffi",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911346"
+        },
+        {
+          "id": 120581911337,
+          "name": "Rust / jackin-workflow-spec",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911337"
+        },
+        {
+          "id": 120581911326,
+          "name": "Rust / jackin-workflow",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911326"
+        },
+        {
+          "id": 120581911163,
+          "name": "Rust / jackin-usage",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911163"
+        },
+        {
+          "id": 120581911156,
+          "name": "Rust / jackin-manifest",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911156"
+        },
+        {
+          "id": 120581911136,
+          "name": "Rust / jackin-config",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911136"
+        },
+        {
+          "id": 120581911133,
+          "name": "Rust / jackin-xtask",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911133"
+        },
+        {
+          "id": 120581911106,
+          "name": "Rust / jackin-protocol",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911106"
+        },
+        {
+          "id": 120581911099,
+          "name": "Rust / jackin-otlp-testbed",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911099"
+        },
+        {
+          "id": 120581911051,
+          "name": "Rust / jackin-process",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581911051"
+        },
+        {
+          "id": 120581910937,
+          "name": "Rust / jackin-telemetry",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910937"
+        },
+        {
+          "id": 120581910860,
+          "name": "Rust / jackin-dev",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910860"
+        },
+        {
+          "id": 120581910840,
+          "name": "Rust / jackin-image",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910840"
+        },
+        {
+          "id": 120581910803,
+          "name": "Rust / jackin",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910803"
+        },
+        {
+          "id": 120581910793,
+          "name": "Rust / jackin-env",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910793"
+        },
+        {
+          "id": 120581910786,
+          "name": "Rust / jackin-capsule",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910786"
+        },
+        {
+          "id": 120581910699,
+          "name": "Rust / jackin-launch",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910699"
+        },
+        {
+          "id": 120581910683,
+          "name": "Rust / jackin-diagnostics",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910683"
+        },
+        {
+          "id": 120581910627,
+          "name": "Rust / jackin-console",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910627"
+        },
+        {
+          "id": 120581910573,
+          "name": "Rust / jackin-docker",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910573"
+        },
+        {
+          "id": 120581910572,
+          "name": "Rust / jackin-isolation",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910572"
+        },
+        {
+          "id": 120581910563,
+          "name": "Rust / jackin-host",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910563"
+        },
+        {
+          "id": 120581910466,
+          "name": "Rust / jackin-instance",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910466"
+        },
+        {
+          "id": 120581910414,
+          "name": "Rust / jackin-core",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581910414"
+        },
+        {
+          "id": 120581909656,
+          "name": "Rust / jackin-agent-status",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581909656"
+        },
+        {
+          "id": 120581909619,
+          "name": "Check / repository-links",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581909619"
+        },
+        {
+          "id": 120581909511,
+          "name": "Check / repository-policy",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581909511"
+        },
+        {
+          "id": 120581909457,
+          "name": "Check / dependency-usage",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581909457"
+        },
+        {
+          "id": 120581334048,
+          "name": "Jactionlint",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581334048"
+        },
+        {
+          "id": 120581333253,
+          "name": "Plan",
+          "conclusion": "success",
+          "app": "github-actions",
+          "url": "https://github.com/jackin-project/jackin/actions/runs/40002324834/job/120581333253"
+        },
+        {
+          "id": 120581313638,
+          "name": "DCO",
+          "conclusion": "success",
+          "app": "dco-2",
+          "url": "https://github.com/jackin-project/jackin/runs/120581313638"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "recorded_utc": "2026-10-24T09:47:14.806141+00:00",
+  "head": "f8201076af4bca7faf9f579f627e8056dbd7f83f",
+  "additional_parent": "57612bbc595f91faf9ba89351d697aedb9fa2757",
+  "before_repair_tree": "33aa3231d5bdedb468a12acd3f068dda52918842",
+  "staged_tree": "95d36e7505a9b6eb0704190c82a8ae2c7e0c57de",
+  "research_paths_preserved": 28,
+  "main_paths_exact": 4,
+  "checkpoint_stash": "07b6b1ae2dd24c1c98db030ef38bcef8494ba14a",
+  "operations": [
+    {
+      "command": [
+        "git",
+        "stash",
+        "push",
+        "--staged",
+        "-m",
+        "context research CI repair before comment-only main synchronization"
+      ],
+      "started_utc": "2026-10-24T09:47:14.532626+00:00",
+      "finished_utc": "2026-10-24T09:47:14.588695+00:00",
+      "exit_code": 0,
+      "stdout": "Saved working directory and index state On chore/context-refresh-2026-10-24: context research CI repair before comment-only main synchronization\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "merge",
+        "--no-commit",
+        "--no-ff",
+        "57612bbc595f91faf9ba89351d697aedb9fa2757"
+      ],
+      "started_utc": "2026-10-24T09:47:14.613600+00:00",
+      "finished_utc": "2026-10-24T09:47:14.644781+00:00",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "Automatic merge went well; stopped before committing as requested\n"
+    },
+    {
+      "command": [
+        "git",
+        "stash",
+        "apply",
+        "07b6b1ae2dd24c1c98db030ef38bcef8494ba14a"
+      ],
+      "started_utc": "2026-10-24T09:47:14.646838+00:00",
+      "finished_utc": "2026-10-24T09:47:14.700034+00:00",
+      "exit_code": 0,
+      "stdout": "On branch chore/context-refresh-2026-10-24\nAll conflicts fixed but you are still merging.\n  (use \"git commit\" to conclude merge)\n\nChanges to be committed:\n\tmodified:   crates/core/jackin-env/src/accounts.rs\n\tmodified:   crates/core/jackin-env/src/op_cli.rs\n\tmodified:   crates/core/jackin-env/src/picker.rs\n\tmodified:   crates/core/jackin-env/src/resolve.rs\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/ci-f820-completed-run.json\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/ci-repair-render/comparison.json\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/ci-repair-render/evidence-hashes.json\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/ci-repair-render/execution-command.json\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/ci-repair-render/execution.log\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/ci-repair-render/mobile-independent-review.json\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/ci-repair-render/render_pages.mjs\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/ci-repair-render/rendered-pages-results.json\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/ci-repair-render/server-cleanup.json\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/ci-repair-render/visual-review.json\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/ci-repair.json\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-f820-repository-links.log\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-repair-final-repo-links.json\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-repair-final-repo-links.log\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-repair-local-1.log\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-repair-local-2.log\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-repair-local-3.log\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-repair-local-4.log\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-repair-local-5.log\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-repair-local-6.log\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-repair-local-7.log\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-repair-local-results.json\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-repair-roadmap-retry.json\n\tnew file:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-repair-roadmap-retry.log\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/README.md\n\tmodified:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/late-main-overlay.md\n\tmodified:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/verification.json\n\tmodified:   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/verification.md\n\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "add",
+        "--",
+        "docs/content/research/context"
+      ],
+      "started_utc": "2026-10-24T09:47:14.700054+00:00",
+      "finished_utc": "2026-10-24T09:47:14.713942+00:00",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "scope": "Normal no-commit merge after preserving only the task-owned staged research repair; restored every original research blob exactly. The named stash is retained as a checkpoint until publication is verified. No published history rewritten."
+}

@@ -1,0 +1,90 @@
+{
+  "at_utc": "2026-10-24T02:31:51Z",
+  "reviewer": "/root/caveman_ponytail",
+  "reviewed_authors": [
+    "/root/rtk_leanctx"
+  ],
+  "binary_sha256": "38b915f2a52ce4b7ef7d6dc3966aaeccb9f754731b2933571bf85026bcba8677",
+  "cwd": "/workspace/scratch/1335a158b2a9/research/representation/independent-review",
+  "env_overrides": {
+    "XDG_CONFIG_HOME": "/workspace/scratch/1335a158b2a9/research/representation/independent-review/config",
+    "XDG_DATA_HOME": "/workspace/scratch/1335a158b2a9/research/representation/independent-review/data",
+    "RTK_DB_PATH": "/workspace/scratch/1335a158b2a9/research/representation/independent-review/tracking.db",
+    "RTK_RECALL_DB": "/workspace/scratch/1335a158b2a9/research/representation/independent-review/recall.db",
+    "RTK_TELEMETRY_DISABLED": "1",
+    "NO_COLOR": "1"
+  },
+  "scope": "Independent released-OSS-stdin boundary probes; no host task or model. Non-diff and passthrough corroborate authored dossier; mixed grep diagnostic tests a separate unstructured failure line.",
+  "records": [
+    {
+      "name": "non_diff_structural",
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-oss/rtk",
+        "diff",
+        "-"
+      ],
+      "exit": 0,
+      "input_bytes": 37,
+      "output_bytes": 38,
+      "byte_identical": false,
+      "input_sha256": "f849ffe1d3b6bcf94036df13444edda640573c11002f6f0582729728ad5047e8",
+      "stdout_sha256": "857266c099a5fe965e5ac720331c5520001c8c14ba03fd0f54723ebbb4b20e10",
+      "stdout_excerpt": "operation failed: no permission\r\nlast\n",
+      "retains_scan_incomplete": false,
+      "elapsed_seconds": 0.016683
+    },
+    {
+      "name": "non_diff_git_filter",
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-oss/rtk",
+        "pipe",
+        "--filter",
+        "git-diff"
+      ],
+      "exit": 0,
+      "input_bytes": 37,
+      "output_bytes": 0,
+      "byte_identical": false,
+      "input_sha256": "f849ffe1d3b6bcf94036df13444edda640573c11002f6f0582729728ad5047e8",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_excerpt": "",
+      "retains_scan_incomplete": false,
+      "elapsed_seconds": 0.001935
+    },
+    {
+      "name": "arbitrary_passthrough",
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-oss/rtk",
+        "pipe",
+        "--passthrough"
+      ],
+      "exit": 0,
+      "input_bytes": 13,
+      "output_bytes": 13,
+      "byte_identical": true,
+      "input_sha256": "d8a3c3feb1d0e38d3d34b30d4327f2449db2639c6bd2817ce89807f946029670",
+      "stdout_sha256": "d8a3c3feb1d0e38d3d34b30d4327f2449db2639c6bd2817ce89807f946029670",
+      "stdout_excerpt": "valid\r\n\u0000\\xfflast",
+      "retains_scan_incomplete": false,
+      "elapsed_seconds": 0.002471
+    },
+    {
+      "name": "grep_mixed_diagnostic",
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/artifacts/rtk-oss/rtk",
+        "pipe",
+        "--filter",
+        "grep"
+      ],
+      "exit": 0,
+      "input_bytes": 3630,
+      "output_bytes": 311,
+      "byte_identical": false,
+      "input_sha256": "aa4120b8391c17eee82f4fca63fa6ae86126fefe545f74b2e8732295a6cdfc90",
+      "stdout_sha256": "063254dd65a168184e045b7448af1a753fb7253486569f204289d93499121794",
+      "stdout_excerpt": "60 matches in 1F:\n\n[file] very/long/repository/path/src/example.rs (60):\n     1: needle value 1\n     2: needle value 2\n     3: needle value 3\n     4: needle value 4\n     5: needle value 5\n     6: needle value 6\n     7: needle value 7\n     8: needle v",
+      "retains_scan_incomplete": false,
+      "elapsed_seconds": 0.001526
+    }
+  ]
+}

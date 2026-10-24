@@ -1,0 +1,52 @@
+{
+  "budget_refuses_new_preserves_old": true,
+  "closed_store_returns_error_and_original": true,
+  "default_record_exact": true,
+  "fixture": {
+    "byte_exact_recovery_crlf_unicode_no_final_newline": true,
+    "bytes": 45007,
+    "compression_ms": [
+      22.041,
+      14.707,
+      14.514,
+      14.5,
+      13.854,
+      13.825,
+      14.131,
+      13.745,
+      15.249,
+      13.693,
+      13.479
+    ],
+    "content_type": "json",
+    "tokens_after": 139,
+    "tokens_before": 14002
+  },
+  "instruction_counts": {
+    "caveman_activation": {
+      "bytes": 4961,
+      "o200k_base": 1246
+    },
+    "caveman_source_skill": {
+      "bytes": 4678,
+      "o200k_base": 1158
+    },
+    "ponytail_full_activation": {
+      "bytes": 2861,
+      "o200k_base": 639
+    },
+    "ponytail_source_skill": {
+      "bytes": 3496,
+      "o200k_base": 802
+    }
+  },
+  "malformed_json_passes_original": true,
+  "mcp_tool_definition_estimate": {
+    "basis": "local reserialized tool definitions; not billed host wire",
+    "bytes": 3097,
+    "o200k_base": 694,
+    "tools": 5
+  },
+  "missing_recovery_is_error": true,
+  "no_store_passes_original": true
+}

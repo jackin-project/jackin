@@ -1,0 +1,12 @@
+error: unclosed table, expected `]`
+ --> ../../tooling/cargo/git/checkouts/velnor-new-e7471f4f9af9fd1a/1bd31f8/fixtures/parity/malformed/input/Cargo.toml:4:14
+  |
+4 | [dependencies
+  |              ^
+error: unclosed table, expected `]`
+ --> ../../tooling/cargo/git/checkouts/velnor-new-e7471f4f9af9fd1a/1bd31f8/fixtures/parity/malformed-ignored/input/Cargo.toml:4:14
+  |
+4 | [dependencies
+  |              ^
+roadmap sidebar OK — 18 meta.json file(s), all pages resolve.
+mbx[cache]: 2 hits, 14 misses; 0 B downloaded, 0 B uploaded, 36.9 MiB stored locally

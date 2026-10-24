@@ -1,0 +1,52 @@
+{
+  "tiktoken_version": "0.12.0",
+  "install_command": "python -m pip install --disable-pip-version-check --no-cache-dir --target research/representation/python-libs tiktoken==0.12.0",
+  "install_exit_code": 0,
+  "initialization_command": "PYTHONPATH=research/representation/python-libs TIKTOKEN_CACHE_DIR=research/representation/tokenizer-cache python (get_encoding cl100k_base/o200k_base)",
+  "source": "https://github.com/openai/tiktoken/tree/0.12.0",
+  "cache_files": [
+    {
+      "name": "fb374d419588a4632f3f557e76b4b70aebbca790",
+      "bytes": 3613922,
+      "sha256": "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d"
+    },
+    {
+      "name": "9b5ad71b2ce5302211f9c61530b329a4922fc6a4",
+      "bytes": 1681126,
+      "sha256": "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "certifi",
+      "version": "2026.10.23"
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.5.2"
+    },
+    {
+      "name": "idna",
+      "version": "3.20"
+    },
+    {
+      "name": "regex",
+      "version": "2026.9.29"
+    },
+    {
+      "name": "requests",
+      "version": "2.34.2"
+    },
+    {
+      "name": "tiktoken",
+      "version": "0.12.0"
+    },
+    {
+      "name": "urllib3",
+      "version": "2.8.0"
+    }
+  ],
+  "license": "tiktoken 0.12.0 MIT; installed distribution LICENSE and PyPI metadata inspected. No third-party implementation or merge tables copied into the evidence bundle.",
+  "license_sha256": "418cb499b436128d653d79941333a5437b7be2ea9213dcc2f04d15d5d2c51d86",
+  "encodings_are_proxies": true
+}

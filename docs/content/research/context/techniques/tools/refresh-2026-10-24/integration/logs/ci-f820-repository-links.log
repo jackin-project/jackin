@@ -1,0 +1,737 @@
+﻿2026-10-24T09:27:09.0146520Z Current runner version: '2.338.0'
+2026-10-24T09:27:09.0162940Z ##[group]Runner Image Provisioner
+2026-10-24T09:27:09.0163610Z Hosted Compute Agent
+2026-10-24T09:27:09.0164220Z Version: 20261021.618
+2026-10-24T09:27:09.0164700Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+2026-10-24T09:27:09.0165240Z Build Date: 2026-10-21T00:45:21Z
+2026-10-24T09:27:09.0165780Z Worker ID: {a59b9ab9-fd16-4286-bd13-1b174a77b335}
+2026-10-24T09:27:09.0166400Z Region: westus
+2026-10-24T09:27:09.0166760Z Cloud: MacCloud
+2026-10-24T09:27:09.0167200Z ##[endgroup]
+2026-10-24T09:27:09.0168550Z ##[group]Operating System
+2026-10-24T09:27:09.0169000Z macOS
+2026-10-24T09:27:09.0169330Z 26.6.2
+2026-10-24T09:27:09.0169660Z 25G83
+2026-10-24T09:27:09.0170050Z ##[endgroup]
+2026-10-24T09:27:09.0170460Z ##[group]Runner Image
+2026-10-24T09:27:09.0171000Z Image: macos-26-arm64
+2026-10-24T09:27:09.0171420Z Version: 20261021.0445.8
+2026-10-24T09:27:09.0172320Z Included Software: https://github.com/actions/runner-images/blob/macos-26-arm64/20261021.0445/images/macos/macos-26-arm64-Readme.md
+2026-10-24T09:27:09.0173450Z Image Release: https://github.com/actions/runner-images/releases/tag/macos-26-arm64%2F20261021.0445
+2026-10-24T09:27:09.0174240Z ##[endgroup]
+2026-10-24T09:27:09.0175180Z ##[group]GITHUB_TOKEN Permissions
+2026-10-24T09:27:09.0176570Z Contents: read
+2026-10-24T09:27:09.0176930Z Metadata: read
+2026-10-24T09:27:09.0177410Z ##[endgroup]
+2026-10-24T09:27:09.0178980Z Secret source: Actions
+2026-10-24T09:27:09.0179540Z Cache mode: write
+2026-10-24T09:27:09.0180050Z Prepare workflow directory
+2026-10-24T09:27:09.0708900Z Prepare all required actions
+2026-10-24T09:27:09.0752770Z Getting action download info
+2026-10-24T09:27:09.3544110Z Download action repository 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+2026-10-24T09:27:09.5949980Z Download action repository 'jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550' (SHA:8418fedb1110381a0d3ba51a7a415d7c1b884550)
+2026-10-24T09:27:10.0647810Z Download action repository 'actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333' (SHA:9000827ccba6bdab643e8b6fd33ac0654aef8333)
+2026-10-24T09:27:10.5388280Z Download action repository 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9' (SHA:cf430e030ddbb5b0abf93d22962f4752f3646cd9)
+2026-10-24T09:27:10.6708640Z Complete job name: Check / repository-links
+2026-10-24T09:27:10.7104530Z ##[group]Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+2026-10-24T09:27:10.7105340Z with:
+2026-10-24T09:27:10.7105700Z   fetch-depth: 0
+2026-10-24T09:27:10.7106060Z   persist-credentials: false
+2026-10-24T09:27:10.7106480Z   repository: jackin-project/jackin
+2026-10-24T09:27:10.7109420Z   token: ***
+2026-10-24T09:27:10.7109760Z   ssh-strict: true
+2026-10-24T09:27:10.7110110Z   ssh-user: git
+2026-10-24T09:27:10.7110440Z   clean: true
+2026-10-24T09:27:10.7110800Z   sparse-checkout-cone-mode: true
+2026-10-24T09:27:10.7111210Z   fetch-tags: false
+2026-10-24T09:27:10.7111570Z   show-progress: true
+2026-10-24T09:27:10.7111980Z   lfs: false
+2026-10-24T09:27:10.7112310Z   submodules: false
+2026-10-24T09:27:10.7112680Z   set-safe-directory: true
+2026-10-24T09:27:10.7113170Z   allow-unsafe-pr-checkout: false
+2026-10-24T09:27:10.7113740Z env:
+2026-10-24T09:27:10.7114090Z   ACTIONS_ID_TOKEN_REQUEST_TOKEN: 
+2026-10-24T09:27:10.7114520Z   ACTIONS_ID_TOKEN_REQUEST_URL: 
+2026-10-24T09:27:10.7114960Z   ACTIONS_RUNTIME_TOKEN: 
+2026-10-24T09:27:10.7115350Z   CARGO_REGISTRY_TOKEN: 
+2026-10-24T09:27:10.7115720Z   GH_CONFIG_DIR: 
+2026-10-24T09:27:10.7116060Z   GH_HOST: 
+2026-10-24T09:27:10.7116390Z   GH_TOKEN: 
+2026-10-24T09:27:10.7116710Z   GITHUB_TOKEN: 
+2026-10-24T09:27:10.7117070Z   MISE_AUTO_INSTALL: false
+2026-10-24T09:27:10.7117460Z   MISE_EXEC_AUTO_INSTALL: false
+2026-10-24T09:27:10.7117870Z   MISE_GITHUB_TOKEN: 
+2026-10-24T09:27:10.7118250Z   MISE_LOCKFILE: 0
+2026-10-24T09:27:10.7118590Z   MISE_NO_CONFIG: 1
+2026-10-24T09:27:10.7118950Z   MISE_NO_ENV: 1
+2026-10-24T09:27:10.7119480Z   MISE_NO_HOOKS: 1
+2026-10-24T09:27:10.7120260Z   NODE_AUTH_TOKEN: 
+2026-10-24T09:27:10.7120600Z   NPM_TOKEN: 
+2026-10-24T09:27:10.7121140Z   VELNOR_ASSET_SHA256: 27f6d0efa3a988c200f0ca4a79207048ce844661dcafb431237f33d075a97d0c
+2026-10-24T09:27:10.7122190Z   VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.52/velnor-actions-0.1.52-aarch64-apple-darwin
+2026-10-24T09:27:10.7123120Z   VELNOR_RELEASE_COMMIT: 1bd31f8203ecf40d141c331e5195eb422e0904d3
+2026-10-24T09:27:10.7123650Z   VELNOR_RUN_KEY_ATTEMPT: 1
+2026-10-24T09:27:10.7124030Z ##[endgroup]
+2026-10-24T09:27:11.1014370Z Syncing repository: jackin-project/jackin
+2026-10-24T09:27:11.1016340Z ##[group]Getting Git version info
+2026-10-24T09:27:11.1016990Z Working directory is '/Users/runner/work/jackin/jackin'
+2026-10-24T09:27:11.1018080Z [command]/opt/homebrew/bin/git version
+2026-10-24T09:27:11.1278460Z git version 2.56.0
+2026-10-24T09:27:11.1292590Z ##[endgroup]
+2026-10-24T09:27:11.1300080Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/250e900e-317a-4cb4-aafd-e96084268438/.gitconfig'
+2026-10-24T09:27:11.1308160Z Temporarily overriding HOME='/Users/runner/work/_temp/250e900e-317a-4cb4-aafd-e96084268438' before making global git config changes
+2026-10-24T09:27:11.1312230Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-24T09:27:11.1314970Z [command]/opt/homebrew/bin/git config --global --add safe.directory /Users/runner/work/jackin/jackin
+2026-10-24T09:27:11.1426350Z Deleting the contents of '/Users/runner/work/jackin/jackin'
+2026-10-24T09:27:11.1429420Z ##[group]Determining repository object format
+2026-10-24T09:27:11.1430430Z ##[endgroup]
+2026-10-24T09:27:11.1431200Z ##[group]Initializing the repository
+2026-10-24T09:27:11.1433670Z [command]/opt/homebrew/bin/git init /Users/runner/work/jackin/jackin
+2026-10-24T09:27:11.1630420Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-24T09:27:11.1631390Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-24T09:27:11.1632950Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-24T09:27:11.1633610Z hint: call:
+2026-10-24T09:27:11.1633970Z hint:
+2026-10-24T09:27:11.1634440Z hint: 	git config --global init.defaultBranch <name>
+2026-10-24T09:27:11.1634970Z hint:
+2026-10-24T09:27:11.1635950Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-24T09:27:11.1636980Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-24T09:27:11.1637670Z hint:
+2026-10-24T09:27:11.1638050Z hint: 	git branch -m <name>
+2026-10-24T09:27:11.1638560Z hint:
+2026-10-24T09:27:11.1639190Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-24T09:27:11.1640090Z Initialized empty Git repository in /Users/runner/work/jackin/jackin/.git/
+2026-10-24T09:27:11.1647130Z [command]/opt/homebrew/bin/git remote add origin https://github.com/jackin-project/jackin
+2026-10-24T09:27:11.1714810Z ##[endgroup]
+2026-10-24T09:27:11.1715550Z ##[group]Disabling automatic garbage collection
+2026-10-24T09:27:11.1717070Z [command]/opt/homebrew/bin/git config --local gc.auto 0
+2026-10-24T09:27:11.1776040Z ##[endgroup]
+2026-10-24T09:27:11.1776700Z ##[group]Setting up auth
+2026-10-24T09:27:11.1777160Z Removing SSH command configuration
+2026-10-24T09:27:11.1779530Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-24T09:27:11.1840850Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-24T09:27:11.2684570Z Removing HTTP extra header
+2026-10-24T09:27:11.2687350Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-24T09:27:11.2770360Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-24T09:27:11.3594260Z Removing includeIf entries pointing to credentials config files
+2026-10-24T09:27:11.3612560Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-24T09:27:11.3688920Z [command]/opt/homebrew/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-24T09:27:11.5023910Z [command]/opt/homebrew/bin/git config --file /Users/runner/work/_temp/git-credentials-05f1467f-7600-4586-80e6-63a4fbcecc63.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-24T09:27:11.5027040Z [command]/opt/homebrew/bin/git config --local includeIf.gitdir:/Users/runner/work/jackin/jackin/.git.path /Users/runner/work/_temp/git-credentials-05f1467f-7600-4586-80e6-63a4fbcecc63.config
+2026-10-24T09:27:11.5039880Z [command]/opt/homebrew/bin/git config --local includeIf.gitdir:/Users/runner/work/jackin/jackin/.git/worktrees/*.path /Users/runner/work/_temp/git-credentials-05f1467f-7600-4586-80e6-63a4fbcecc63.config
+2026-10-24T09:27:11.5126300Z [command]/opt/homebrew/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-05f1467f-7600-4586-80e6-63a4fbcecc63.config
+2026-10-24T09:27:11.5205450Z [command]/opt/homebrew/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-05f1467f-7600-4586-80e6-63a4fbcecc63.config
+2026-10-24T09:27:11.5289620Z ##[endgroup]
+2026-10-24T09:27:11.5291440Z ##[group]Fetching the repository
+2026-10-24T09:27:11.5295180Z [command]/opt/homebrew/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* +85f3ec21ffa147b8d029891cda4b8d7979db4c47:refs/remotes/pull/1205/merge
+2026-10-24T09:27:17.3847060Z From https://github.com/jackin-project/jackin
+2026-10-24T09:27:17.3848930Z  * [new branch]        chore/context-refresh-2026-10-24 -> origin/chore/context-refresh-2026-10-24
+2026-10-24T09:27:17.3850610Z  * [new branch]        feat/recover-precommit-source-root -> origin/feat/recover-precommit-source-root
+2026-10-24T09:27:17.3852470Z  * [new branch]        feature/recover-console-usage-stage4-a -> origin/feature/recover-console-usage-stage4-a
+2026-10-24T09:27:17.3858420Z  * [new branch]        fix/restore-docs-source-globs -> origin/fix/restore-docs-source-globs
+2026-10-24T09:27:17.3860740Z  * [new branch]        main               -> origin/main
+2026-10-24T09:27:17.3863000Z  * [new branch]        recover/env-four-comments-20261024 -> origin/recover/env-four-comments-20261024
+2026-10-24T09:27:17.3865200Z  * [new tag]           archive/claude-unattended-monitor-2026-10-10 -> archive/claude-unattended-monitor-2026-10-10
+2026-10-24T09:27:17.3882600Z  * [new tag]           jackin-dev-v0.1.0  -> jackin-dev-v0.1.0
+2026-10-24T09:27:17.3883650Z  * [new tag]           jackin-dev-v0.1.1  -> jackin-dev-v0.1.1
+2026-10-24T09:27:17.3884630Z  * [new tag]           jackin-dev-v0.1.10 -> jackin-dev-v0.1.10
+2026-10-24T09:27:17.3885650Z  * [new tag]           jackin-dev-v0.1.11 -> jackin-dev-v0.1.11
+2026-10-24T09:27:17.3886630Z  * [new tag]           jackin-dev-v0.1.12 -> jackin-dev-v0.1.12
+2026-10-24T09:27:17.3887610Z  * [new tag]           jackin-dev-v0.1.13 -> jackin-dev-v0.1.13
+2026-10-24T09:27:17.3888760Z  * [new tag]           jackin-dev-v0.1.14 -> jackin-dev-v0.1.14
+2026-10-24T09:27:17.3890010Z  * [new tag]           jackin-dev-v0.1.15 -> jackin-dev-v0.1.15
+2026-10-24T09:27:17.3890980Z  * [new tag]           jackin-dev-v0.1.16 -> jackin-dev-v0.1.16
+2026-10-24T09:27:17.3892050Z  * [new tag]           jackin-dev-v0.1.17 -> jackin-dev-v0.1.17
+2026-10-24T09:27:17.3894580Z  * [new tag]           jackin-dev-v0.1.19 -> jackin-dev-v0.1.19
+2026-10-24T09:27:17.3895610Z  * [new tag]           jackin-dev-v0.1.2  -> jackin-dev-v0.1.2
+2026-10-24T09:27:17.3896740Z  * [new tag]           jackin-dev-v0.1.20 -> jackin-dev-v0.1.20
+2026-10-24T09:27:17.3901150Z  * [new tag]           jackin-dev-v0.1.21 -> jackin-dev-v0.1.21
+2026-10-24T09:27:17.3902390Z  * [new tag]           jackin-dev-v0.1.22 -> jackin-dev-v0.1.22
+2026-10-24T09:27:17.3903610Z  * [new tag]           jackin-dev-v0.1.23 -> jackin-dev-v0.1.23
+2026-10-24T09:27:17.3904810Z  * [new tag]           jackin-dev-v0.1.24 -> jackin-dev-v0.1.24
+2026-10-24T09:27:17.3906170Z  * [new tag]           jackin-dev-v0.1.25 -> jackin-dev-v0.1.25
+2026-10-24T09:27:17.3907610Z  * [new tag]           jackin-dev-v0.1.26 -> jackin-dev-v0.1.26
+2026-10-24T09:27:17.3909070Z  * [new tag]           jackin-dev-v0.1.27 -> jackin-dev-v0.1.27
+2026-10-24T09:27:17.3910450Z  * [new tag]           jackin-dev-v0.1.28 -> jackin-dev-v0.1.28
+2026-10-24T09:27:17.3912180Z  * [new tag]           jackin-dev-v0.1.29 -> jackin-dev-v0.1.29
+2026-10-24T09:27:17.3913740Z  * [new tag]           jackin-dev-v0.1.3  -> jackin-dev-v0.1.3
+2026-10-24T09:27:17.3915080Z  * [new tag]           jackin-dev-v0.1.30 -> jackin-dev-v0.1.30
+2026-10-24T09:27:17.3916330Z  * [new tag]           jackin-dev-v0.1.31 -> jackin-dev-v0.1.31
+2026-10-24T09:27:17.3917670Z  * [new tag]           jackin-dev-v0.1.32 -> jackin-dev-v0.1.32
+2026-10-24T09:27:17.3919730Z  * [new tag]           jackin-dev-v0.1.33 -> jackin-dev-v0.1.33
+2026-10-24T09:27:17.3921110Z  * [new tag]           jackin-dev-v0.1.34 -> jackin-dev-v0.1.34
+2026-10-24T09:27:17.3922470Z  * [new tag]           jackin-dev-v0.1.37 -> jackin-dev-v0.1.37
+2026-10-24T09:27:17.3923710Z  * [new tag]           jackin-dev-v0.1.38 -> jackin-dev-v0.1.38
+2026-10-24T09:27:17.3924980Z  * [new tag]           jackin-dev-v0.1.39 -> jackin-dev-v0.1.39
+2026-10-24T09:27:17.3926260Z  * [new tag]           jackin-dev-v0.1.4  -> jackin-dev-v0.1.4
+2026-10-24T09:27:17.3927480Z  * [new tag]           jackin-dev-v0.1.40 -> jackin-dev-v0.1.40
+2026-10-24T09:27:17.3928710Z  * [new tag]           jackin-dev-v0.1.42 -> jackin-dev-v0.1.42
+2026-10-24T09:27:17.3929980Z  * [new tag]           jackin-dev-v0.1.43 -> jackin-dev-v0.1.43
+2026-10-24T09:27:17.3931220Z  * [new tag]           jackin-dev-v0.1.44 -> jackin-dev-v0.1.44
+2026-10-24T09:27:17.3932420Z  * [new tag]           jackin-dev-v0.1.49 -> jackin-dev-v0.1.49
+2026-10-24T09:27:17.3933600Z  * [new tag]           jackin-dev-v0.1.50 -> jackin-dev-v0.1.50
+2026-10-24T09:27:17.3934760Z  * [new tag]           jackin-dev-v0.1.51 -> jackin-dev-v0.1.51
+2026-10-24T09:27:17.3936430Z  * [new tag]           jackin-dev-v0.1.52 -> jackin-dev-v0.1.52
+2026-10-24T09:27:17.3937640Z  * [new tag]           jackin-dev-v0.1.6  -> jackin-dev-v0.1.6
+2026-10-24T09:27:17.3938820Z  * [new tag]           jackin-dev-v0.1.7  -> jackin-dev-v0.1.7
+2026-10-24T09:27:17.3940050Z  * [new tag]           jackin-dev-v0.1.8  -> jackin-dev-v0.1.8
+2026-10-24T09:27:17.3941280Z  * [new tag]           jackin-dev-v0.1.9  -> jackin-dev-v0.1.9
+2026-10-24T09:27:17.3942500Z  * [new tag]           preview            -> preview
+2026-10-24T09:27:17.3944420Z  * [new tag]           preview-3dedb59eb7643bf83f6fcd84465330a6350af6a6 -> preview-3dedb59eb7643bf83f6fcd84465330a6350af6a6
+2026-10-24T09:27:17.3947350Z  * [new tag]           preview-41bad147b5ba9db09be99b07248531ce1bd867be -> preview-41bad147b5ba9db09be99b07248531ce1bd867be
+2026-10-24T09:27:17.3949970Z  * [new tag]           preview-6e266406b49da2ab3c55355f3b7d33d1643ee6cd -> preview-6e266406b49da2ab3c55355f3b7d33d1643ee6cd
+2026-10-24T09:27:17.3952830Z  * [new tag]           preview-7dd2e5012d4cd2f2bad24e445e7198f5efd882f8 -> preview-7dd2e5012d4cd2f2bad24e445e7198f5efd882f8
+2026-10-24T09:27:17.3955680Z  * [new tag]           preview-b58c036d8b8c4cfc9af8d8ff4a5bc48e60eae92f -> preview-b58c036d8b8c4cfc9af8d8ff4a5bc48e60eae92f
+2026-10-24T09:27:17.3958380Z  * [new tag]           preview-c98f5f5fdd831e6075e38fde93b9713575406140 -> preview-c98f5f5fdd831e6075e38fde93b9713575406140
+2026-10-24T09:27:17.3960200Z  * [new tag]           v0.6.0             -> v0.6.0
+2026-10-24T09:27:17.3961150Z  * [new tag]           v0.6.1             -> v0.6.1
+2026-10-24T09:27:17.3962220Z  * [new tag]           v0.6.2             -> v0.6.2
+2026-10-24T09:27:17.3963530Z  * [new tag]           v0.6.3             -> v0.6.3
+2026-10-24T09:27:17.3964470Z  * [new tag]           v0.6.4             -> v0.6.4
+2026-10-24T09:27:17.3965690Z  * [new ref]           85f3ec21ffa147b8d029891cda4b8d7979db4c47 -> pull/1205/merge
+2026-10-24T09:27:17.3968880Z ##[endgroup]
+2026-10-24T09:27:17.3970110Z ##[group]Determining the checkout info
+2026-10-24T09:27:17.3971310Z ##[endgroup]
+2026-10-24T09:27:17.3972120Z [command]/opt/homebrew/bin/git sparse-checkout disable
+2026-10-24T09:27:17.3992590Z [command]/opt/homebrew/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-24T09:27:17.4079250Z ##[group]Checking out the ref
+2026-10-24T09:27:17.4082440Z [command]/opt/homebrew/bin/git checkout --progress --force refs/remotes/pull/1205/merge
+2026-10-24T09:27:18.4192960Z HEAD is now at 85f3ec21 Merge f8201076af4bca7faf9f579f627e8056dbd7f83f into e737f4b5eb7c1a0d15ba6595fc260407ad178452
+2026-10-24T09:27:18.4314240Z ##[endgroup]
+2026-10-24T09:27:18.4423470Z [command]/opt/homebrew/bin/git log -1 --format=%H
+2026-10-24T09:27:18.4561550Z 85f3ec21ffa147b8d029891cda4b8d7979db4c47
+2026-10-24T09:27:18.4633490Z ##[group]Removing auth
+2026-10-24T09:27:18.4633820Z Removing SSH command configuration
+2026-10-24T09:27:18.4634260Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-24T09:27:18.4664260Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-24T09:27:18.6160170Z Removing HTTP extra header
+2026-10-24T09:27:18.6163720Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-24T09:27:18.6184610Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-24T09:27:18.7157820Z Removing includeIf entries pointing to credentials config files
+2026-10-24T09:27:18.7159740Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-24T09:27:18.7235320Z includeif.gitdir:/Users/runner/work/jackin/jackin/.git.path
+2026-10-24T09:27:18.7269500Z includeif.gitdir:/Users/runner/work/jackin/jackin/.git/worktrees/*.path
+2026-10-24T09:27:18.7286230Z includeif.gitdir:/github/workspace/.git.path
+2026-10-24T09:27:18.7286690Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-24T09:27:18.7288130Z [command]/opt/homebrew/bin/git config --local --get-all includeif.gitdir:/Users/runner/work/jackin/jackin/.git.path
+2026-10-24T09:27:18.7288800Z /Users/runner/work/_temp/git-credentials-05f1467f-7600-4586-80e6-63a4fbcecc63.config
+2026-10-24T09:27:18.7307300Z [command]/opt/homebrew/bin/git config --local --unset includeif.gitdir:/Users/runner/work/jackin/jackin/.git.path \/Users\/runner\/work\/_temp\/git\-credentials\-05f1467f\-7600\-4586\-80e6\-63a4fbcecc63\.config
+2026-10-24T09:27:18.7336380Z [command]/opt/homebrew/bin/git config --local --get-all includeif.gitdir:/Users/runner/work/jackin/jackin/.git/worktrees/*.path
+2026-10-24T09:27:18.7418600Z /Users/runner/work/_temp/git-credentials-05f1467f-7600-4586-80e6-63a4fbcecc63.config
+2026-10-24T09:27:18.7437860Z [command]/opt/homebrew/bin/git config --local --unset includeif.gitdir:/Users/runner/work/jackin/jackin/.git/worktrees/*.path \/Users\/runner\/work\/_temp\/git\-credentials\-05f1467f\-7600\-4586\-80e6\-63a4fbcecc63\.config
+2026-10-24T09:27:18.7508100Z [command]/opt/homebrew/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-24T09:27:18.7632550Z /github/runner_temp/git-credentials-05f1467f-7600-4586-80e6-63a4fbcecc63.config
+2026-10-24T09:27:18.7653100Z [command]/opt/homebrew/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-05f1467f\-7600\-4586\-80e6\-63a4fbcecc63\.config
+2026-10-24T09:27:18.7743910Z [command]/opt/homebrew/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-24T09:27:18.7887590Z /github/runner_temp/git-credentials-05f1467f-7600-4586-80e6-63a4fbcecc63.config
+2026-10-24T09:27:18.7914550Z [command]/opt/homebrew/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-05f1467f\-7600\-4586\-80e6\-63a4fbcecc63\.config
+2026-10-24T09:27:18.8007560Z [command]/opt/homebrew/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-24T09:27:18.9464830Z Removing credentials config '/Users/runner/work/_temp/git-credentials-05f1467f-7600-4586-80e6-63a4fbcecc63.config'
+2026-10-24T09:27:18.9509230Z ##[endgroup]
+2026-10-24T09:27:18.9850120Z ##[group]Run jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550
+2026-10-24T09:27:18.9850490Z with:
+2026-10-24T09:27:18.9850680Z   cache: false
+2026-10-24T09:27:18.9850880Z   cache_save: false
+2026-10-24T09:27:18.9851060Z   env: false
+2026-10-24T09:27:18.9851200Z   install: false
+2026-10-24T09:27:18.9851520Z   sha256: d40e2fcd96fed7c70b04af282c36534d87d0318bef89c16fa00c9f98e55ade88
+2026-10-24T09:27:18.9851890Z   version: 2026.10.18
+2026-10-24T09:27:18.9852070Z   auto_update: false
+2026-10-24T09:27:18.9852270Z   minimum_release_age: 24h
+2026-10-24T09:27:18.9852540Z   monorepo: true
+2026-10-24T09:27:18.9852690Z   bootstrap: false
+2026-10-24T09:27:18.9852880Z   cache_save_post: false
+2026-10-24T09:27:18.9853130Z   cache_restore_retry_budget: 0s
+2026-10-24T09:27:18.9853350Z   cache_save_retry_budget: 0s
+2026-10-24T09:27:18.9853550Z   cache_key_prefix: mise-v1
+2026-10-24T09:27:18.9853830Z   cache_max_age_days: 30
+2026-10-24T09:27:18.9854050Z   experimental: false
+2026-10-24T09:27:18.9854270Z   log_level: info
+2026-10-24T09:27:18.9854450Z   reshim: false
+2026-10-24T09:27:18.9854640Z   add_shims_to_path: true
+2026-10-24T09:27:18.9856890Z   github_token: ***
+2026-10-24T09:27:18.9857050Z   persist_github_token: false
+2026-10-24T09:27:18.9857230Z   fetch_from_github: true
+2026-10-24T09:27:18.9857430Z   export_path: true
+2026-10-24T09:27:18.9857610Z   wings_enabled: false
+2026-10-24T09:27:18.9857790Z env:
+2026-10-24T09:27:18.9857940Z   ACTIONS_ID_TOKEN_REQUEST_TOKEN: 
+2026-10-24T09:27:18.9858150Z   ACTIONS_ID_TOKEN_REQUEST_URL: 
+2026-10-24T09:27:18.9858330Z   ACTIONS_RUNTIME_TOKEN: 
+2026-10-24T09:27:18.9858500Z   CARGO_REGISTRY_TOKEN: 
+2026-10-24T09:27:18.9858660Z   GH_CONFIG_DIR: 
+2026-10-24T09:27:18.9858790Z   GH_HOST: 
+2026-10-24T09:27:18.9858920Z   GH_TOKEN: 
+2026-10-24T09:27:18.9859060Z   GITHUB_TOKEN: 
+2026-10-24T09:27:18.9859210Z   MISE_AUTO_INSTALL: false
+2026-10-24T09:27:18.9859440Z   MISE_EXEC_AUTO_INSTALL: false
+2026-10-24T09:27:18.9859630Z   MISE_GITHUB_TOKEN: 
+2026-10-24T09:27:18.9859800Z   MISE_LOCKFILE: 0
+2026-10-24T09:27:18.9859950Z   MISE_NO_CONFIG: 1
+2026-10-24T09:27:18.9860100Z   MISE_NO_ENV: 1
+2026-10-24T09:27:18.9860250Z   MISE_NO_HOOKS: 1
+2026-10-24T09:27:18.9860380Z   NODE_AUTH_TOKEN: 
+2026-10-24T09:27:18.9860530Z   NPM_TOKEN: 
+2026-10-24T09:27:18.9860800Z   VELNOR_ASSET_SHA256: 27f6d0efa3a988c200f0ca4a79207048ce844661dcafb431237f33d075a97d0c
+2026-10-24T09:27:18.9861440Z   VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.52/velnor-actions-0.1.52-aarch64-apple-darwin
+2026-10-24T09:27:18.9862000Z   VELNOR_RELEASE_COMMIT: 1bd31f8203ecf40d141c331e5195eb422e0904d3
+2026-10-24T09:27:18.9862280Z   VELNOR_RUN_KEY_ATTEMPT: 1
+2026-10-24T09:27:18.9862630Z ##[endgroup]
+2026-10-24T09:27:19.2386270Z `minimum_release_age` is ignored because an explicit mise version was provided
+2026-10-24T09:27:19.2402000Z ##[group]Download mise@2026.10.18
+2026-10-24T09:27:19.2473640Z [command]/opt/homebrew/bin/zstd --version
+2026-10-24T09:27:19.2686480Z *** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***
+2026-10-24T09:27:19.2708980Z [command]/usr/bin/tar --zstd --version
+2026-10-24T09:27:19.2827570Z bsdtar 3.5.3 - libarchive 3.7.4 zlib/1.2.12 liblzma/5.4.3 bz2lib/1.0.8 
+2026-10-24T09:27:19.2858830Z Using curl to download mise
+2026-10-24T09:27:19.2861750Z [command]/usr/bin/curl -fsSL https://github.com/jdx/mise/releases/download/v2026.10.18/mise-v2026.10.18-macos-arm64.tar.zst --output /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/mise-action-DUjP7N/mise-v2026.10.18-macos-arm64.tar.zst
+2026-10-24T09:27:19.8502650Z [command]/usr/bin/tar --zstd -xf /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/mise-action-DUjP7N/mise-v2026.10.18-macos-arm64.tar.zst -C /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/mise-action-DUjP7N
+2026-10-24T09:27:20.0952260Z [command]/bin/mv /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/mise-action-DUjP7N/mise/bin/mise /Users/runner/.local/share/mise/bin/mise
+2026-10-24T09:27:20.2747450Z ##[group]Setting env vars
+2026-10-24T09:27:20.2765770Z Setting MISE_LOG_LEVEL=info
+2026-10-24T09:27:20.2777010Z Setting MISE_TRUSTED_CONFIG_PATHS=/Users/runner/work/jackin/jackin
+2026-10-24T09:27:20.2878050Z Setting MISE_YES=1
+2026-10-24T09:27:20.2979350Z Adding /Users/runner/.local/share/mise/shims to PATH
+2026-10-24T09:27:20.3081440Z ##[group]Running mise --version
+2026-10-24T09:27:20.3126290Z [command]/Users/runner/.local/share/mise/bin/mise --version
+2026-10-24T09:27:20.3131420Z 2026.10.18 macos-arm64 (2026-10-23)
+2026-10-24T09:27:20.3234230Z ##[endgroup]
+2026-10-24T09:27:20.3339570Z ##[group]Running mise ls
+2026-10-24T09:27:20.3440610Z [command]/Users/runner/.local/share/mise/bin/mise ls
+2026-10-24T09:27:20.3541940Z ##[endgroup]
+2026-10-24T09:27:20.3891340Z ##[group]Run sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; d="$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.52"&&mkdir -p "${d%/*}"&&s="/opt/velnor/seed/generator/${d##*/}"&&p="$VELNOR_ASSET_SHA256  "&&if [ -f "$s" ]&&echo "$p$s"|shasum -a 256 -c -;then cp "$s" "$d";else curl -fsSL --connect-timeout 15 --max-time 120 --retry 5 --retry-all-errors --retry-max-time 180 --proto '\''=https'\'' --tlsv1.2 "$VELNOR_ASSET_URL" -o "$d"&&echo "$p$d"|shasum -a 256 -c -;fi&&chmod +x "$d"'
+2026-10-24T09:27:20.3895880Z [36;1msh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; d="$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.52"&&mkdir -p "${d%/*}"&&s="/opt/velnor/seed/generator/${d##*/}"&&p="$VELNOR_ASSET_SHA256  "&&if [ -f "$s" ]&&echo "$p$s"|shasum -a 256 -c -;then cp "$s" "$d";else curl -fsSL --connect-timeout 15 --max-time 120 --retry 5 --retry-all-errors --retry-max-time 180 --proto '\''=https'\'' --tlsv1.2 "$VELNOR_ASSET_URL" -o "$d"&&echo "$p$d"|shasum -a 256 -c -;fi&&chmod +x "$d"'[0m
+2026-10-24T09:27:20.3951710Z shell: /bin/bash -e {0}
+2026-10-24T09:27:20.3951920Z env:
+2026-10-24T09:27:20.3952110Z   ACTIONS_ID_TOKEN_REQUEST_TOKEN: 
+2026-10-24T09:27:20.3952340Z   ACTIONS_ID_TOKEN_REQUEST_URL: 
+2026-10-24T09:27:20.3952540Z   ACTIONS_RUNTIME_TOKEN: 
+2026-10-24T09:27:20.3952750Z   CARGO_REGISTRY_TOKEN: 
+2026-10-24T09:27:20.3952950Z   GH_CONFIG_DIR: 
+2026-10-24T09:27:20.3953110Z   GH_HOST: 
+2026-10-24T09:27:20.3953280Z   GH_TOKEN: 
+2026-10-24T09:27:20.3953430Z   GITHUB_TOKEN: 
+2026-10-24T09:27:20.3953600Z   MISE_AUTO_INSTALL: false
+2026-10-24T09:27:20.3953820Z   MISE_EXEC_AUTO_INSTALL: false
+2026-10-24T09:27:20.3954020Z   MISE_GITHUB_TOKEN: 
+2026-10-24T09:27:20.3954260Z   MISE_LOCKFILE: 0
+2026-10-24T09:27:20.3954460Z   MISE_NO_CONFIG: 1
+2026-10-24T09:27:20.3954620Z   MISE_NO_ENV: 1
+2026-10-24T09:27:20.3954820Z   MISE_NO_HOOKS: 1
+2026-10-24T09:27:20.3954990Z   NODE_AUTH_TOKEN: 
+2026-10-24T09:27:20.3955170Z   NPM_TOKEN: 
+2026-10-24T09:27:20.3955490Z   VELNOR_ASSET_SHA256: 27f6d0efa3a988c200f0ca4a79207048ce844661dcafb431237f33d075a97d0c
+2026-10-24T09:27:20.3956170Z   VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.52/velnor-actions-0.1.52-aarch64-apple-darwin
+2026-10-24T09:27:20.3956740Z   VELNOR_RELEASE_COMMIT: 1bd31f8203ecf40d141c331e5195eb422e0904d3
+2026-10-24T09:27:20.3957440Z   VELNOR_RUN_KEY_ATTEMPT: 1
+2026-10-24T09:27:20.3957660Z   MISE_LOG_LEVEL: info
+2026-10-24T09:27:20.3957900Z   MISE_TRUSTED_CONFIG_PATHS: /Users/runner/work/jackin/jackin
+2026-10-24T09:27:20.3958200Z   MISE_YES: 1
+2026-10-24T09:27:20.3958380Z ##[endgroup]
+2026-10-24T09:27:21.0855970Z /Users/runner/work/_temp/velnor/bin/velnor-actions-0.1.52: OK
+2026-10-24T09:27:21.0975250Z ##[group]Run actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+2026-10-24T09:27:21.0975590Z with:
+2026-10-24T09:27:21.0975770Z   name: velnor-plan-r40081824323-a1
+2026-10-24T09:27:21.0976030Z   path: /Users/runner/work/_temp/velnor/r40081824323-a1
+2026-10-24T09:27:21.0976290Z   merge-multiple: false
+2026-10-24T09:27:21.0976480Z   repository: jackin-project/jackin
+2026-10-24T09:27:21.0976700Z   run-id: 40081824323
+2026-10-24T09:27:21.0976870Z   skip-decompress: false
+2026-10-24T09:27:21.0977050Z   digest-mismatch: error
+2026-10-24T09:27:21.0977240Z env:
+2026-10-24T09:27:21.0977430Z   ACTIONS_ID_TOKEN_REQUEST_TOKEN: 
+2026-10-24T09:27:21.0977650Z   ACTIONS_ID_TOKEN_REQUEST_URL: 
+2026-10-24T09:27:21.0977850Z   ACTIONS_RUNTIME_TOKEN: 
+2026-10-24T09:27:21.0978040Z   CARGO_REGISTRY_TOKEN: 
+2026-10-24T09:27:21.0978200Z   GH_CONFIG_DIR: 
+2026-10-24T09:27:21.0978360Z   GH_HOST: 
+2026-10-24T09:27:21.0978500Z   GH_TOKEN: 
+2026-10-24T09:27:21.0978650Z   GITHUB_TOKEN: 
+2026-10-24T09:27:21.0978870Z   MISE_AUTO_INSTALL: false
+2026-10-24T09:27:21.0979060Z   MISE_EXEC_AUTO_INSTALL: false
+2026-10-24T09:27:21.0979260Z   MISE_GITHUB_TOKEN: 
+2026-10-24T09:27:21.0979420Z   MISE_LOCKFILE: 0
+2026-10-24T09:27:21.0979580Z   MISE_NO_CONFIG: 1
+2026-10-24T09:27:21.0979730Z   MISE_NO_ENV: 1
+2026-10-24T09:27:21.0979880Z   MISE_NO_HOOKS: 1
+2026-10-24T09:27:21.0980030Z   NODE_AUTH_TOKEN: 
+2026-10-24T09:27:21.0980200Z   NPM_TOKEN: 
+2026-10-24T09:27:21.0980490Z   VELNOR_ASSET_SHA256: 27f6d0efa3a988c200f0ca4a79207048ce844661dcafb431237f33d075a97d0c
+2026-10-24T09:27:21.0981120Z   VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.52/velnor-actions-0.1.52-aarch64-apple-darwin
+2026-10-24T09:27:21.0981680Z   VELNOR_RELEASE_COMMIT: 1bd31f8203ecf40d141c331e5195eb422e0904d3
+2026-10-24T09:27:21.0981960Z   VELNOR_RUN_KEY_ATTEMPT: 1
+2026-10-24T09:27:21.0982150Z   MISE_LOG_LEVEL: info
+2026-10-24T09:27:21.0982380Z   MISE_TRUSTED_CONFIG_PATHS: /Users/runner/work/jackin/jackin
+2026-10-24T09:27:21.0982650Z   MISE_YES: 1
+2026-10-24T09:27:21.0982800Z ##[endgroup]
+2026-10-24T09:27:21.2592060Z Downloading single artifact
+2026-10-24T09:27:21.4756070Z Preparing to download the following artifacts:
+2026-10-24T09:27:21.4857570Z - velnor-plan-r40081824323-a1 (ID: 12555502525, Size: 109171, Expected Digest: sha256:9fc55fbf5440c6c3d80a37fc682896500f1432a0f2d5276168ccbcb004d6e903)
+2026-10-24T09:27:21.7625530Z Redirecting to blob download url: https://productionresultssa14.blob.core.windows.net/actions-results/64fa6b4e-b0ba-88b7-afd5-f60aabeba30a/workflow-job-run-b48bfff5-a2e8-5556-82fb-7e8bfd0dfc65/artifacts/70c447328d47cb7a806b7103f135c6711c0d5da3b770242a5d3b3be2d0afeaaf.zip
+2026-10-24T09:27:21.7627030Z Starting download of artifact to: /Users/runner/work/_temp/velnor/r40081824323-a1
+2026-10-24T09:27:21.9153660Z (node:1794) [DEP0005] DeprecationWarning: Buffer() is deprecated due to security and usability issues. Please use the Buffer.alloc(), Buffer.allocUnsafe(), or Buffer.from() methods instead.
+2026-10-24T09:27:21.9255780Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-24T09:27:22.0061420Z SHA256 digest of downloaded artifact is 9fc55fbf5440c6c3d80a37fc682896500f1432a0f2d5276168ccbcb004d6e903
+2026-10-24T09:27:22.0119030Z Artifact download completed successfully.
+2026-10-24T09:27:22.0119430Z Total of 1 artifact(s) downloaded
+2026-10-24T09:27:22.0119770Z Download artifact has finished successfully
+2026-10-24T09:27:22.0164200Z ##[group]Run env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_RUNTIME_TOKEN -u GITHUB_TOKEN -u MISE_GITHUB_TOKEN -u GH_TOKEN -u GH_HOST -u GH_CONFIG_DIR "$RUNNER_TEMP"'/velnor/bin/velnor-actions-0.1.52'
+2026-10-24T09:27:22.0165810Z [36;1menv -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_RUNTIME_TOKEN -u GITHUB_TOKEN -u MISE_GITHUB_TOKEN -u GH_TOKEN -u GH_HOST -u GH_CONFIG_DIR "$RUNNER_TEMP"'/velnor/bin/velnor-actions-0.1.52'[0m
+2026-10-24T09:27:22.0197240Z shell: /bin/bash -e {0}
+2026-10-24T09:27:22.0197420Z env:
+2026-10-24T09:27:22.0197570Z   ACTIONS_ID_TOKEN_REQUEST_TOKEN: 
+2026-10-24T09:27:22.0197770Z   ACTIONS_ID_TOKEN_REQUEST_URL: 
+2026-10-24T09:27:22.0197990Z   ACTIONS_RUNTIME_TOKEN: 
+2026-10-24T09:27:22.0198190Z   CARGO_REGISTRY_TOKEN: 
+2026-10-24T09:27:22.0198360Z   GH_CONFIG_DIR: 
+2026-10-24T09:27:22.0198550Z   GH_HOST: 
+2026-10-24T09:27:22.0198690Z   GH_TOKEN: 
+2026-10-24T09:27:22.0198830Z   GITHUB_TOKEN: 
+2026-10-24T09:27:22.0199050Z   MISE_AUTO_INSTALL: false
+2026-10-24T09:27:22.0199240Z   MISE_EXEC_AUTO_INSTALL: false
+2026-10-24T09:27:22.0199430Z   MISE_GITHUB_TOKEN: 
+2026-10-24T09:27:22.0199600Z   MISE_LOCKFILE: 0
+2026-10-24T09:27:22.0199770Z   MISE_NO_CONFIG: 1
+2026-10-24T09:27:22.0199960Z   MISE_NO_ENV: 1
+2026-10-24T09:27:22.0200150Z   MISE_NO_HOOKS: 1
+2026-10-24T09:27:22.0200320Z   NODE_AUTH_TOKEN: 
+2026-10-24T09:27:22.0200480Z   NPM_TOKEN: 
+2026-10-24T09:27:22.0200780Z   VELNOR_ASSET_SHA256: 27f6d0efa3a988c200f0ca4a79207048ce844661dcafb431237f33d075a97d0c
+2026-10-24T09:27:22.0201420Z   VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.52/velnor-actions-0.1.52-aarch64-apple-darwin
+2026-10-24T09:27:22.0201970Z   VELNOR_RELEASE_COMMIT: 1bd31f8203ecf40d141c331e5195eb422e0904d3
+2026-10-24T09:27:22.0202260Z   VELNOR_RUN_KEY_ATTEMPT: 1
+2026-10-24T09:27:22.0202460Z   MISE_LOG_LEVEL: info
+2026-10-24T09:27:22.0202690Z   MISE_TRUSTED_CONFIG_PATHS: /Users/runner/work/jackin/jackin
+2026-10-24T09:27:22.0202970Z   MISE_YES: 1
+2026-10-24T09:27:22.0203120Z   VELNOR_CHECK_ID: repository-links
+2026-10-24T09:27:22.0203360Z   VELNOR_CHECK_JOB_ID: check-repository-links
+2026-10-24T09:27:22.0203610Z   VELNOR_CHECK_LANE_VARIANT: single
+2026-10-24T09:27:22.0203830Z   VELNOR_INTERNAL_OP: execute-check-v1
+2026-10-24T09:27:22.0204100Z   VELNOR_TASK_ID: stack/mise/repository-links/check/default
+2026-10-24T09:27:22.0204360Z ##[endgroup]
+2026-10-24T09:29:06.5133390Z velnor-actions: internal request failed: internal: nonzero_exit: mise-check: Some(1): [check:repository-links] $ cargo run --locked -p jackin-xtask -- docs repo-links
+2026-10-24T09:29:06.5134750Z     Updating crates.io index
+2026-10-24T09:29:06.5135860Z     Updating git repository `https://github.com/tailrocks/velnor-new`
+2026-10-24T09:29:06.5136470Z     Updating git submodule `https://github.com/tailrocks/velnor-new.git`
+2026-10-24T09:29:06.5137220Z error: unclosed table, expected `]`
+2026-10-24T09:29:06.5139600Z  --> ../../_temp/velnor-check-1797-0/cargo/git/checkouts/velnor-new-e7471f4f9af9fd1a/1bd31f8/fixtures/parity/malformed/input/Cargo.toml:4:14
+2026-10-24T09:29:06.5140250Z   |
+2026-10-24T09:29:06.5140770Z 4 | [dependencies
+2026-10-24T09:29:06.5141430Z   |              ^
+2026-10-24T09:29:06.5141920Z error: unclosed table, expected `]`
+2026-10-24T09:29:06.5142610Z  --> ../../_temp/velnor-check-1797-0/cargo/git/checkouts/velnor-new-e7471f4f9af9fd1a/1bd31f8/fixtures/parity/malformed-ignored/input/Cargo.toml:4:14
+2026-10-24T09:29:06.5143500Z   |
+2026-10-24T09:29:06.5143900Z 4 | [dependencies
+2026-10-24T09:29:06.5144120Z   |              ^
+2026-10-24T09:29:06.5144610Z     Updating git repository `https://github.com/tailrocks/termrock.git`
+2026-10-24T09:29:06.5145140Z     Updating git repository `https://github.com/tailrocks/termpane.git`
+2026-10-24T09:29:06.5145800Z  Downloading crates ...
+2026-10-24T09:29:06.5146210Z   Downloaded anstyle-query v1.1.5
+2026-10-24T09:29:06.5146520Z   Downloaded cfg-if v1.0.5
+2026-10-24T09:29:06.5147510Z   Downloaded is_terminal_polyfill v1.70.2
+2026-10-24T09:29:06.5148030Z   Downloaded itoa v1.0.18
+2026-10-24T09:29:06.5148410Z   Downloaded cfg_aliases v0.2.2
+2026-10-24T09:29:06.5148880Z   Downloaded cfg_aliases v0.1.1
+2026-10-24T09:29:06.5149710Z   Downloaded multiversion_no_op v1.0.0
+2026-10-24T09:29:06.5150250Z   Downloaded tokio-macros v2.7.2
+2026-10-24T09:29:06.5150720Z   Downloaded block-buffer v0.12.1
+2026-10-24T09:29:06.5151040Z   Downloaded downcast-rs v1.2.1
+2026-10-24T09:29:06.5151650Z   Downloaded strsim v0.11.1
+2026-10-24T09:29:06.5152110Z   Downloaded adler2 v2.0.1
+2026-10-24T09:29:06.5152720Z   Downloaded anstream v1.0.0
+2026-10-24T09:29:06.5153280Z   Downloaded anstyle v1.0.14
+2026-10-24T09:29:06.5153640Z   Downloaded anstyle-parse v1.0.0
+2026-10-24T09:29:06.5154650Z   Downloaded filetime v0.2.29
+2026-10-24T09:29:06.5155200Z   Downloaded colorchoice v1.0.5
+2026-10-24T09:29:06.5155600Z   Downloaded crypto-common v0.2.2
+2026-10-24T09:29:06.5156130Z   Downloaded serde_spanned v1.1.2
+2026-10-24T09:29:06.5156770Z   Downloaded shell-words v1.1.1
+2026-10-24T09:29:06.5157070Z   Downloaded clap_lex v1.1.1
+2026-10-24T09:29:06.5157450Z   Downloaded cpufeatures v0.3.1
+2026-10-24T09:29:06.5158030Z   Downloaded filedescriptor v0.8.3
+2026-10-24T09:29:06.5158480Z   Downloaded heck v0.5.0
+2026-10-24T09:29:06.5158820Z   Downloaded scopeguard v1.2.0
+2026-10-24T09:29:06.5159260Z   Downloaded hex v0.4.3
+2026-10-24T09:29:06.5159640Z   Downloaded equivalent v1.0.3
+2026-10-24T09:29:06.5160200Z   Downloaded errno v0.3.14
+2026-10-24T09:29:06.5160630Z   Downloaded nohash-hasher v0.2.0
+2026-10-24T09:29:06.5161050Z   Downloaded portable-pty v0.9.0
+2026-10-24T09:29:06.5161580Z   Downloaded quote v1.0.47
+2026-10-24T09:29:06.5162180Z   Downloaded shlex v2.0.1
+2026-10-24T09:29:06.5162530Z   Downloaded signal-hook-registry v1.4.8
+2026-10-24T09:29:06.5163020Z   Downloaded simd-adler32 v0.3.10
+2026-10-24T09:29:06.5163360Z   Downloaded thiserror v1.0.69
+2026-10-24T09:29:06.5163860Z   Downloaded thiserror v2.0.21
+2026-10-24T09:29:06.5164290Z   Downloaded thiserror-impl v1.0.69
+2026-10-24T09:29:06.5164730Z   Downloaded thiserror-impl v2.0.21
+2026-10-24T09:29:06.5165620Z   Downloaded anyhow v1.0.104
+2026-10-24T09:29:06.5166050Z   Downloaded arraydeque v0.5.1
+2026-10-24T09:29:06.5166560Z   Downloaded autocfg v1.5.1
+2026-10-24T09:29:06.5167440Z   Downloaded blake3 v1.8.7
+2026-10-24T09:29:06.5167820Z   Downloaded constant_time_eq v0.4.2
+2026-10-24T09:29:06.5168440Z   Downloaded crc32fast v1.5.2
+2026-10-24T09:29:06.5169000Z   Downloaded digest v0.11.3
+2026-10-24T09:29:06.5169290Z   Downloaded fastrand v2.5.0
+2026-10-24T09:29:06.5169710Z   Downloaded find-msvc-tools v0.1.14
+2026-10-24T09:29:06.5170170Z   Downloaded foldhash v0.2.0
+2026-10-24T09:29:06.5170750Z   Downloaded serial2 v0.2.38
+2026-10-24T09:29:06.5171170Z   Downloaded sha2 v0.11.1
+2026-10-24T09:29:06.5171440Z   Downloaded simdutf8 v0.1.5
+2026-10-24T09:29:06.5171770Z   Downloaded utf8parse v0.2.2
+2026-10-24T09:29:06.5172090Z   Downloaded arrayvec v0.7.8
+2026-10-24T09:29:06.5172510Z   Downloaded encoding_rs_io v0.1.8
+2026-10-24T09:29:06.5172870Z   Downloaded once_cell v1.21.4
+2026-10-24T09:29:06.5173370Z   Downloaded rustversion v1.0.23
+2026-10-24T09:29:06.5173820Z   Downloaded tempfile v3.27.0
+2026-10-24T09:29:06.5174240Z   Downloaded clap_derive v4.6.7
+2026-10-24T09:29:06.5174580Z   Downloaded fs4 v1.1.0
+2026-10-24T09:29:06.5174960Z   Downloaded hybrid-array v0.4.15
+2026-10-24T09:29:06.5175300Z   Downloaded iana-time-zone v0.1.65
+2026-10-24T09:29:06.5175920Z   Downloaded pin-project-lite v0.2.17
+2026-10-24T09:29:06.5176520Z   Downloaded proc-macro2 v1.0.107
+2026-10-24T09:29:06.5176850Z   Downloaded serde_derive v1.0.229
+2026-10-24T09:29:06.5177360Z   Downloaded smallvec v1.16.3
+2026-10-24T09:29:06.5177710Z   Downloaded toml v1.1.8+spec-1.1.0
+2026-10-24T09:29:06.5178070Z   Downloaded toml_parser v1.1.5+spec-1.1.0
+2026-10-24T09:29:06.5178530Z   Downloaded xattr v1.6.1
+2026-10-24T09:29:06.5178920Z   Downloaded annotate-snippets v0.12.16
+2026-10-24T09:29:06.5179350Z   Downloaded bitflags v2.13.2
+2026-10-24T09:29:06.5180080Z   Downloaded const-oid v0.10.2
+2026-10-24T09:29:06.5180420Z   Downloaded core-foundation-sys v0.8.7
+2026-10-24T09:29:06.5180930Z   Downloaded log v0.4.34
+2026-10-24T09:29:06.5181450Z   Downloaded num-traits v0.2.19
+2026-10-24T09:29:06.5181860Z   Downloaded serde_core v1.0.229
+2026-10-24T09:29:06.5182340Z   Downloaded tar v0.4.46
+2026-10-24T09:29:06.5182640Z   Downloaded bytes v1.12.1
+2026-10-24T09:29:06.5183140Z   Downloaded clap v4.6.7
+2026-10-24T09:29:06.5183650Z   Downloaded flate2 v1.1.10
+2026-10-24T09:29:06.5184010Z   Downloaded getrandom v0.4.3
+2026-10-24T09:29:06.5239410Z   Downloaded miniz_oxide v0.9.1
+2026-10-24T09:29:06.5239940Z   Downloaded base64 v0.23.1
+2026-10-24T09:29:06.5240260Z   Downloaded bumpalo v3.20.3
+2026-10-24T09:29:06.5240740Z   Downloaded memchr v2.8.3
+2026-10-24T09:29:06.5241030Z   Downloaded mio v1.2.4
+2026-10-24T09:29:06.5241560Z   Downloaded serde v1.0.229
+2026-10-24T09:29:06.5242070Z   Downloaded indexmap v2.14.2
+2026-10-24T09:29:06.5242410Z   Downloaded toml_writer v1.1.3+spec-1.1.0
+2026-10-24T09:29:06.5242960Z   Downloaded typed-path v0.12.3
+2026-10-24T09:29:06.5243320Z   Downloaded unicode-ident v1.0.27
+2026-10-24T09:29:06.5243960Z   Downloaded cc v1.8.0
+2026-10-24T09:29:06.5244380Z   Downloaded zmij v1.0.23
+2026-10-24T09:29:06.5244650Z   Downloaded serde_json v1.0.154
+2026-10-24T09:29:06.5245030Z   Downloaded toml_datetime v1.1.2+spec-1.1.0
+2026-10-24T09:29:06.5245280Z   Downloaded clap_builder v4.6.7
+2026-10-24T09:29:06.5245650Z   Downloaded hashbrown v0.17.1
+2026-10-24T09:29:06.5246050Z   Downloaded quick-xml v0.42.0
+2026-10-24T09:29:06.5246260Z   Downloaded chrono v0.4.45
+2026-10-24T09:29:06.5246440Z   Downloaded zopfli v0.8.4
+2026-10-24T09:29:06.5246750Z   Downloaded uuid v1.28.0
+2026-10-24T09:29:06.5247080Z   Downloaded typenum v1.20.1
+2026-10-24T09:29:06.5247280Z   Downloaded granit-parser v2.0.0
+2026-10-24T09:29:06.5247640Z   Downloaded syn v3.0.9
+2026-10-24T09:29:06.5247960Z   Downloaded nix v0.28.0
+2026-10-24T09:29:06.5248310Z   Downloaded syn v2.0.119
+2026-10-24T09:29:06.5248710Z   Downloaded nix v0.31.3
+2026-10-24T09:29:06.5248990Z   Downloaded zlib-rs v0.6.8
+2026-10-24T09:29:06.5249290Z   Downloaded winnow v1.0.4
+2026-10-24T09:29:06.5249680Z   Downloaded zip v9.0.5
+2026-10-24T09:29:06.5249980Z   Downloaded rustix v1.1.5
+2026-10-24T09:29:06.5250380Z   Downloaded unicode-width v0.2.2
+2026-10-24T09:29:06.5250630Z   Downloaded encoding_rs v0.8.42
+2026-10-24T09:29:06.5251760Z   Downloaded serde-saphyr v2.0.0
+2026-10-24T09:29:06.5252670Z   Downloaded libc v0.2.191
+2026-10-24T09:29:06.5253020Z   Downloaded tokio v1.53.3
+2026-10-24T09:29:06.5253300Z    Compiling libc v0.2.191
+2026-10-24T09:29:06.5253650Z    Compiling unicode-ident v1.0.27
+2026-10-24T09:29:06.5253990Z    Compiling cfg-if v1.0.5
+2026-10-24T09:29:06.5254360Z    Compiling proc-macro2 v1.0.107
+2026-10-24T09:29:06.5254800Z    Compiling quote v1.0.47
+2026-10-24T09:29:06.5255570Z    Compiling bitflags v2.13.2
+2026-10-24T09:29:06.5256280Z    Compiling serde_core v1.0.229
+2026-10-24T09:29:06.5256650Z    Compiling syn v3.0.9
+2026-10-24T09:29:06.5256960Z    Compiling errno v0.3.14
+2026-10-24T09:29:06.5257260Z    Compiling rustversion v1.0.23
+2026-10-24T09:29:06.5257640Z    Compiling rustix v1.1.5
+2026-10-24T09:29:06.5258090Z    Compiling typenum v1.20.1
+2026-10-24T09:29:06.5258500Z    Compiling hybrid-array v0.4.15
+2026-10-24T09:29:06.5258830Z    Compiling shlex v2.0.1
+2026-10-24T09:29:06.5259250Z    Compiling find-msvc-tools v0.1.14
+2026-10-24T09:29:06.5259560Z    Compiling crc32fast v1.5.2
+2026-10-24T09:29:06.5260030Z    Compiling anstyle v1.0.14
+2026-10-24T09:29:06.5260510Z    Compiling autocfg v1.5.1
+2026-10-24T09:29:06.5260860Z    Compiling zmij v1.0.23
+2026-10-24T09:29:06.5261250Z    Compiling cfg_aliases v0.2.2
+2026-10-24T09:29:06.5261670Z    Compiling nix v0.31.3
+2026-10-24T09:29:06.5261930Z    Compiling num-traits v0.2.19
+2026-10-24T09:29:06.5262350Z    Compiling cc v1.8.0
+2026-10-24T09:29:06.5262630Z    Compiling encoding_rs v0.8.42
+2026-10-24T09:29:06.5263070Z    Compiling syn v2.0.119
+2026-10-24T09:29:06.5264030Z    Compiling memchr v2.8.3
+2026-10-24T09:29:06.5264360Z    Compiling cfg_aliases v0.1.1
+2026-10-24T09:29:06.5264880Z    Compiling utf8parse v0.2.2
+2026-10-24T09:29:06.5265390Z    Compiling equivalent v1.0.3
+2026-10-24T09:29:06.5265830Z    Compiling thiserror v1.0.69
+2026-10-24T09:29:06.5266200Z    Compiling simd-adler32 v0.3.10
+2026-10-24T09:29:06.5266480Z    Compiling getrandom v0.4.3
+2026-10-24T09:29:06.5266920Z    Compiling hashbrown v0.17.1
+2026-10-24T09:29:06.5267280Z    Compiling anyhow v1.0.104
+2026-10-24T09:29:06.5267570Z    Compiling blake3 v1.8.7
+2026-10-24T09:29:06.5267760Z    Compiling indexmap v2.14.2
+2026-10-24T09:29:06.5268060Z    Compiling thiserror-impl v1.0.69
+2026-10-24T09:29:06.5268280Z    Compiling anstyle-parse v1.0.0
+2026-10-24T09:29:06.5268610Z    Compiling nix v0.28.0
+2026-10-24T09:29:06.5268810Z    Compiling crypto-common v0.2.2
+2026-10-24T09:29:06.5269100Z    Compiling block-buffer v0.12.1
+2026-10-24T09:29:06.5269620Z    Compiling const-oid v0.10.2
+2026-10-24T09:29:06.5270000Z    Compiling is_terminal_polyfill v1.70.2
+2026-10-24T09:29:06.5270450Z    Compiling anstyle-query v1.1.5
+2026-10-24T09:29:06.5270710Z    Compiling log v0.4.34
+2026-10-24T09:29:06.5271070Z    Compiling scopeguard v1.2.0
+2026-10-24T09:29:06.5271270Z    Compiling serde v1.0.229
+2026-10-24T09:29:06.5271470Z    Compiling colorchoice v1.0.5
+2026-10-24T09:29:06.5271680Z    Compiling serde_json v1.0.154
+2026-10-24T09:29:06.5271880Z    Compiling thiserror v2.0.21
+2026-10-24T09:29:06.5272090Z    Compiling simdutf8 v0.1.5
+2026-10-24T09:29:06.5272310Z    Compiling multiversion_no_op v1.0.0
+2026-10-24T09:29:06.5272630Z    Compiling adler2 v2.0.1
+2026-10-24T09:29:06.5272940Z    Compiling miniz_oxide v0.9.1
+2026-10-24T09:29:06.5273160Z    Compiling anstream v1.0.0
+2026-10-24T09:29:06.5273600Z    Compiling digest v0.11.3
+2026-10-24T09:29:06.5273990Z    Compiling thiserror-impl v2.0.21
+2026-10-24T09:29:06.5274220Z    Compiling tokio-macros v2.7.2
+2026-10-24T09:29:06.5274580Z    Compiling serde_derive v1.0.229
+2026-10-24T09:29:06.5274810Z    Compiling signal-hook-registry v1.4.8
+2026-10-24T09:29:06.5275070Z    Compiling cpufeatures v0.3.1
+2026-10-24T09:29:06.5275300Z    Compiling mio v1.2.4
+2026-10-24T09:29:06.5275480Z    Compiling heck v0.5.0
+2026-10-24T09:29:06.5275810Z    Compiling clap_lex v1.1.1
+2026-10-24T09:29:06.5276120Z    Compiling pin-project-lite v0.2.17
+2026-10-24T09:29:06.5276340Z    Compiling bumpalo v3.20.3
+2026-10-24T09:29:06.5276630Z    Compiling bytes v1.12.1
+2026-10-24T09:29:06.5276830Z    Compiling core-foundation-sys v0.8.7
+2026-10-24T09:29:06.5277310Z    Compiling arraydeque v0.5.1
+2026-10-24T09:29:06.5278040Z    Compiling constant_time_eq v0.4.2
+2026-10-24T09:29:06.5278340Z    Compiling arrayvec v0.7.8
+2026-10-24T09:29:06.5278720Z    Compiling zlib-rs v0.6.8
+2026-10-24T09:29:06.5279350Z    Compiling strsim v0.11.1
+2026-10-24T09:29:06.5279730Z    Compiling itoa v1.0.18
+2026-10-24T09:29:06.5280080Z    Compiling foldhash v0.2.0
+2026-10-24T09:29:06.5280390Z    Compiling smallvec v1.16.3
+2026-10-24T09:29:06.5280750Z    Compiling unicode-width v0.2.2
+2026-10-24T09:29:06.5281130Z    Compiling winnow v1.0.4
+2026-10-24T09:29:06.5281350Z    Compiling annotate-snippets v0.12.16
+2026-10-24T09:29:06.5281690Z    Compiling toml_parser v1.1.5+spec-1.1.0
+2026-10-24T09:29:06.5282020Z    Compiling granit-parser v2.0.0
+2026-10-24T09:29:06.5282380Z    Compiling clap_builder v4.6.7
+2026-10-24T09:29:06.5282680Z    Compiling iana-time-zone v0.1.65
+2026-10-24T09:29:06.5282940Z    Compiling tokio v1.53.3
+2026-10-24T09:29:06.5283120Z    Compiling flate2 v1.1.10
+2026-10-24T09:29:06.5283300Z    Compiling zopfli v0.8.4
+2026-10-24T09:29:06.5283590Z    Compiling clap_derive v4.6.7
+2026-10-24T09:29:06.5283820Z    Compiling sha2 v0.11.1
+2026-10-24T09:29:06.5284010Z    Compiling encoding_rs_io v0.1.8
+2026-10-24T09:29:06.5284350Z    Compiling filedescriptor v0.8.3
+2026-10-24T09:29:06.5284550Z    Compiling xattr v1.6.1
+2026-10-24T09:29:06.5284740Z    Compiling serde_spanned v1.1.2
+2026-10-24T09:29:06.5285180Z    Compiling toml_datetime v1.1.2+spec-1.1.0
+2026-10-24T09:29:06.5285450Z    Compiling filetime v0.2.29
+2026-10-24T09:29:06.5285670Z    Compiling serial2 v0.2.38
+2026-10-24T09:29:06.5285870Z    Compiling once_cell v1.21.4
+2026-10-24T09:29:06.5286250Z    Compiling shell-words v1.1.1
+2026-10-24T09:29:06.5286450Z    Compiling downcast-rs v1.2.1
+2026-10-24T09:29:06.5286640Z    Compiling fastrand v2.5.0
+2026-10-24T09:29:06.5286830Z    Compiling typed-path v0.12.3
+2026-10-24T09:29:06.5287030Z    Compiling nohash-hasher v0.2.0
+2026-10-24T09:29:06.5287220Z    Compiling base64 v0.23.1
+2026-10-24T09:29:06.5287410Z    Compiling toml_writer v1.1.3+spec-1.1.0
+2026-10-24T09:29:06.5287650Z    Compiling toml v1.1.8+spec-1.1.0
+2026-10-24T09:29:06.5287860Z    Compiling serde-saphyr v2.0.0
+2026-10-24T09:29:06.5288050Z    Compiling zip v9.0.5
+2026-10-24T09:29:06.5288220Z    Compiling tempfile v3.27.0
+2026-10-24T09:29:06.5288420Z    Compiling portable-pty v0.9.0
+2026-10-24T09:29:06.5288610Z    Compiling tar v0.4.46
+2026-10-24T09:29:06.5288780Z    Compiling clap v4.6.7
+2026-10-24T09:29:06.5289360Z    Compiling velnor-actions-contract v0.1.52 (https://github.com/tailrocks/velnor-new?rev=1bd31f8203ecf40d141c331e5195eb422e0904d3#1bd31f82)
+2026-10-24T09:29:06.5290050Z    Compiling jackin-process v0.6.4 (/Users/runner/work/jackin/jackin/crates/core/jackin-process)
+2026-10-24T09:29:06.5290630Z    Compiling chrono v0.4.45
+2026-10-24T09:29:06.5290820Z    Compiling uuid v1.28.0
+2026-10-24T09:29:06.5291020Z    Compiling quick-xml v0.42.0
+2026-10-24T09:29:06.5291220Z    Compiling fs4 v1.1.0
+2026-10-24T09:29:06.5291650Z    Compiling jackin-process-directory v0.6.4 (/Users/runner/work/jackin/jackin/crates/core/jackin-process-directory)
+2026-10-24T09:29:06.5292090Z    Compiling hex v0.4.3
+2026-10-24T09:29:06.5292410Z    Compiling jackin-xtask v0.6.4 (/Users/runner/work/jackin/jackin/crates/tools/jackin-xtask)
+2026-10-24T09:29:06.5292850Z     Finished `dev` profile [unoptimized] target(s) in 1m 03s
+2026-10-24T09:29:06.5293160Z      Running `target/debug/jackin-xtask docs repo-links`
+2026-10-24T09:29:06.5293520Z error: repository file references must be verifiable links (3 problem(s)):
+2026-10-24T09:29:06.5294250Z   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/late-main-overlay.md:7: link existing repo file `Cargo.toml` with <RepoFile path="Cargo.toml" />
+2026-10-24T09:29:06.5295270Z   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/late-main-overlay.md:9: link existing repo file `Cargo.lock` with <RepoFile path="Cargo.lock" />
+2026-10-24T09:29:06.5296250Z   docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/verification.md:88: link existing repo file `Cargo.toml` with <RepoFile path="Cargo.toml" />
+2026-10-24T09:29:06.5296880Z [check:repository-links] ERROR task failed
+2026-10-24T09:29:06.5297120Z 
+2026-10-24T09:29:06.6108640Z ##[error]Process completed with exit code 1.
+2026-10-24T09:29:06.6262440Z ##[group]Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+2026-10-24T09:29:06.6262770Z with:
+2026-10-24T09:29:06.6262920Z   if-no-files-found: error
+2026-10-24T09:29:06.6263160Z   name: velnor-crate-r40081824323-a1-check-repository-links
+2026-10-24T09:29:06.6263430Z   overwrite: true
+2026-10-24T09:29:06.6263630Z   path: /Users/runner/work/_temp/velnor/r40081824323-a1
+2026-10-24T09:29:06.6263860Z   retention-days: 30
+2026-10-24T09:29:06.6264030Z   compression-level: 6
+2026-10-24T09:29:06.6264200Z   include-hidden-files: false
+2026-10-24T09:29:06.6264370Z   archive: true
+2026-10-24T09:29:06.6264520Z env:
+2026-10-24T09:29:06.6264650Z   ACTIONS_ID_TOKEN_REQUEST_TOKEN: 
+2026-10-24T09:29:06.6264850Z   ACTIONS_ID_TOKEN_REQUEST_URL: 
+2026-10-24T09:29:06.6265040Z   ACTIONS_RUNTIME_TOKEN: 
+2026-10-24T09:29:06.6265210Z   CARGO_REGISTRY_TOKEN: 
+2026-10-24T09:29:06.6265360Z   GH_CONFIG_DIR: 
+2026-10-24T09:29:06.6265500Z   GH_HOST: 
+2026-10-24T09:29:06.6265630Z   GH_TOKEN: 
+2026-10-24T09:29:06.6265790Z   GITHUB_TOKEN: 
+2026-10-24T09:29:06.6265940Z   MISE_AUTO_INSTALL: false
+2026-10-24T09:29:06.6266110Z   MISE_EXEC_AUTO_INSTALL: false
+2026-10-24T09:29:06.6266270Z   MISE_GITHUB_TOKEN: 
+2026-10-24T09:29:06.6266410Z   MISE_LOCKFILE: 0
+2026-10-24T09:29:06.6266560Z   MISE_NO_CONFIG: 1
+2026-10-24T09:29:06.6266950Z   MISE_NO_ENV: 1
+2026-10-24T09:29:06.6267080Z   MISE_NO_HOOKS: 1
+2026-10-24T09:29:06.6267220Z   NODE_AUTH_TOKEN: 
+2026-10-24T09:29:06.6267360Z   NPM_TOKEN: 
+2026-10-24T09:29:06.6267630Z   VELNOR_ASSET_SHA256: 27f6d0efa3a988c200f0ca4a79207048ce844661dcafb431237f33d075a97d0c
+2026-10-24T09:29:06.6268230Z   VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.52/velnor-actions-0.1.52-aarch64-apple-darwin
+2026-10-24T09:29:06.6268750Z   VELNOR_RELEASE_COMMIT: 1bd31f8203ecf40d141c331e5195eb422e0904d3
+2026-10-24T09:29:06.6269020Z   VELNOR_RUN_KEY_ATTEMPT: 1
+2026-10-24T09:29:06.6269180Z   MISE_LOG_LEVEL: info
+2026-10-24T09:29:06.6269400Z   MISE_TRUSTED_CONFIG_PATHS: /Users/runner/work/jackin/jackin
+2026-10-24T09:29:06.6269640Z   MISE_YES: 1
+2026-10-24T09:29:06.6269770Z ##[endgroup]
+2026-10-24T09:29:07.0760940Z With the provided path, there will be 4 files uploaded
+2026-10-24T09:29:07.2706970Z Artifact name is valid!
+2026-10-24T09:29:07.2707560Z Root directory input is valid!
+2026-10-24T09:29:07.5401470Z Uploading artifact: velnor-crate-r40081824323-a1-check-repository-links.zip
+2026-10-24T09:29:07.5432640Z Beginning upload of artifact content to blob storage
+2026-10-24T09:29:07.8412960Z Uploaded bytes 110337
+2026-10-24T09:29:07.8852840Z Finished uploading artifact content to blob storage!
+2026-10-24T09:29:07.8854060Z SHA256 digest of uploaded artifact is 50908556e4618b158af53623d3821e2e1dc16372c5b26a2d8124063bf23720ee
+2026-10-24T09:29:07.8854940Z Finalizing artifact upload
+2026-10-24T09:29:08.3576490Z Artifact velnor-crate-r40081824323-a1-check-repository-links successfully finalized. Artifact ID 12555821619
+2026-10-24T09:29:08.3578990Z Artifact velnor-crate-r40081824323-a1-check-repository-links has been successfully uploaded! Final size is 110337 bytes. Artifact ID is 12555821619
+2026-10-24T09:29:08.3585900Z Artifact download URL: https://github.com/jackin-project/jackin/actions/runs/40081824323/artifacts/12555821619
+2026-10-24T09:29:08.3797410Z Post job cleanup.
+2026-10-24T09:29:08.6321550Z Post job cleanup.
+2026-10-24T09:29:08.7406920Z [command]/opt/homebrew/bin/git version
+2026-10-24T09:29:08.7708850Z git version 2.56.0
+2026-10-24T09:29:08.7726080Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/18f5d95a-716a-4d5e-a508-8f37dd8a7f52/.gitconfig'
+2026-10-24T09:29:08.7732720Z Temporarily overriding HOME='/Users/runner/work/_temp/18f5d95a-716a-4d5e-a508-8f37dd8a7f52' before making global git config changes
+2026-10-24T09:29:08.7733470Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-24T09:29:08.7736550Z [command]/opt/homebrew/bin/git config --global --add safe.directory /Users/runner/work/jackin/jackin
+2026-10-24T09:29:08.7851150Z Removing SSH command configuration
+2026-10-24T09:29:08.7855850Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-24T09:29:08.7927270Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-24T09:29:08.8986600Z Removing HTTP extra header
+2026-10-24T09:29:08.8991280Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-24T09:29:08.9064670Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-24T09:29:08.9987630Z Removing includeIf entries pointing to credentials config files
+2026-10-24T09:29:08.9992540Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-24T09:29:09.0065990Z [command]/opt/homebrew/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-24T09:29:09.1068470Z Cleaning up orphan processes

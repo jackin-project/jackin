@@ -1,0 +1,84 @@
+{
+  "pin": "c98f5f5fdd831e6075e38fde93b9713575406140",
+  "sources": [
+    {
+      "path": "crates/core/jackin-process-directory/src/lib.rs",
+      "bytes": 1283,
+      "sha256": "8d8e0cec3ba486a72f427f3f595fe0b0d322a3568e360fe5cb9b3ddeac3eab95",
+      "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/core/jackin-process-directory/src/lib.rs"
+    },
+    {
+      "path": "crates/core/jackin-process-directory/src/secure_install.rs",
+      "bytes": 14921,
+      "sha256": "f86ce0095d4973ab5ab608caa30c7ffaabcbe166ecd5bb3aff5748e6073e3214",
+      "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/core/jackin-process-directory/src/secure_install.rs"
+    },
+    {
+      "path": "crates/core/jackin-process-directory/src/secure_install/absolute_root.rs",
+      "bytes": 3687,
+      "sha256": "7f0046c4fc4b66a25acadc262f1fdb4fa8c4a8697a8e8f4714090d5c26aafba8",
+      "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/core/jackin-process-directory/src/secure_install/absolute_root.rs"
+    },
+    {
+      "path": "crates/core/jackin-process-directory/src/secure_install/linux_acl.rs",
+      "bytes": 2809,
+      "sha256": "b76eea815dbbd83fb6cad80ffd3cc140faefffb96abcb94a8654f633b170042f",
+      "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/core/jackin-process-directory/src/secure_install/linux_acl.rs"
+    },
+    {
+      "path": "crates/core/jackin-process-directory/src/secure_install/darwin_acl.rs",
+      "bytes": 13160,
+      "sha256": "80ebe7e6d7792ce0b9ed33bac2dbda44d14c9efc7c0ffb857d7a460cf19e1967",
+      "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/core/jackin-process-directory/src/secure_install/darwin_acl.rs"
+    },
+    {
+      "path": "crates/services/jackin-instance-roles/src/prepare.rs",
+      "bytes": 12877,
+      "sha256": "398cef7096d1618e0218caac2086dbbe3a0fb13aaaa0677e8c03d1fb5458e0da",
+      "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/services/jackin-instance-roles/src/prepare.rs"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-account-identity/src/account_identity.rs",
+      "bytes": 35227,
+      "sha256": "e698d56e137489ea32f714aea008ff10b6a7e6079ba223ae3acbd4c06dc7e033",
+      "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/services/jackin-runtime-launch-account-identity/src/account_identity.rs"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-account-identity/src/account_identity/marker_pair.rs",
+      "bytes": 13536,
+      "sha256": "092946c949494c7d62ff2bc9c6fdb15dd69b89159216dd8f040f6e701086b6f1",
+      "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/services/jackin-runtime-launch-account-identity/src/account_identity/marker_pair.rs"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-account-identity/src/account_identity/marker_transaction.rs",
+      "bytes": 59236,
+      "sha256": "8c24e3a2532303ac9f888e524afc48d1f10662eaa4a9bdfcd95053be2035331f",
+      "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/services/jackin-runtime-launch-account-identity/src/account_identity/marker_transaction.rs"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-account-identity/src/account_identity/marker_transaction/record.rs",
+      "bytes": 11462,
+      "sha256": "353b729071bf2fcd5da553cd04e8329c627d8cadc2df9109f0cc7179df0a9259",
+      "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/services/jackin-runtime-launch-account-identity/src/account_identity/marker_transaction/record.rs"
+    },
+    {
+      "path": "crates/tools/jackin-xtask/src/precommit_owner_security.rs",
+      "bytes": 11535,
+      "sha256": "60da8ef3a1a3896cfc5ef8b76368bc7b8bc25c63c22d1839d9e8bebb27ea0553",
+      "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/tools/jackin-xtask/src/precommit_owner_security.rs"
+    },
+    {
+      "path": "crates/tools/jackin-xtask/src/precommit_owner_security/checked_install.rs",
+      "bytes": 5285,
+      "sha256": "510556b4b8c5efd8d6370dd8ecd074fd47b80920f8b13255cee16be1051559aa",
+      "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/tools/jackin-xtask/src/precommit_owner_security/checked_install.rs"
+    },
+    {
+      "path": "crates/tools/jackin-xtask/src/precommit_owner_main.rs",
+      "bytes": 3754,
+      "sha256": "643802296f08f97b3f3510ab717b58004ca37e78109c17f8af2e80f21642c680",
+      "url": "https://github.com/jackin-project/jackin/blob/c98f5f5fdd831e6075e38fde93b9713575406140/crates/tools/jackin-xtask/src/precommit_owner_main.rs"
+    }
+  ],
+  "method": "git show exact pinned commit to disposable scratch; SHA-256; read-only source inspection"
+}

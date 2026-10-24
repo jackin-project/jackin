@@ -1,0 +1,166 @@
+{
+  "cwd": "/workspace/scratch/1335a158b2a9",
+  "command": "python research/market-literature/inspect_published_crates.py",
+  "interpreter": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.39",
+  "exit_code": 0,
+  "cutoff": "2026-10-24T01:15:00Z",
+  "records": [
+    {
+      "crate": "fff-search",
+      "version": "0.11.0",
+      "artifact_url": "https://static.crates.io/crates/fff-search/fff-search-0.11.0.crate",
+      "accessed": "2026-10-24T08:09:06.603812+00:00",
+      "bytes": 2086006,
+      "sha256": "a80ed5bdfa89cc81cb314374a4460da880d68e4c81d9574a587f28757a9c943e",
+      "registry_checksum_match": true,
+      "executed": false,
+      "scope": "downloaded published archive; selected manifests and API-source members inspected without building",
+      "members": [
+        {
+          "path": "Cargo.toml",
+          "bytes": 6295,
+          "sha256": "97ef85272f4862e5fbc82c1aa3e5dc8c9846d284ca0503eb1148b44852dbed74"
+        },
+        {
+          "path": "Cargo.toml.orig",
+          "bytes": 3473,
+          "sha256": "a096880a3819edb8db4f7008530c881baaabbd0c1ae674ab0667ee3f55dd24e3"
+        },
+        {
+          "path": ".cargo_vcs_info.json",
+          "bytes": 109,
+          "sha256": "f6678f20f3d50b28b8ca659a88f8eb5807b547864bde43d298b4fe14b5eb27db"
+        },
+        {
+          "path": "src/lib.rs",
+          "bytes": 6027,
+          "sha256": "d1c721fcbbe2befcaca9ad999e5c69c527da12c868031fb04f12475bf92be572"
+        }
+      ],
+      "vcs": {
+        "git": {
+          "sha1": "95fd777c2529fc7b4d7572dabff64cc07268f2c5"
+        },
+        "path_in_vcs": "crates/fff-core"
+      }
+    },
+    {
+      "crate": "sem-core",
+      "version": "0.28.1",
+      "artifact_url": "https://static.crates.io/crates/sem-core/sem-core-0.28.1.crate",
+      "accessed": "2026-10-24T08:09:06.740533+00:00",
+      "bytes": 1001741,
+      "sha256": "7b9172d50078c2a48270f7fb1cd74c3dc3092abf231305dab388a4e94b7ae91b",
+      "registry_checksum_match": true,
+      "executed": false,
+      "scope": "downloaded published archive; selected manifests and API-source members inspected without building",
+      "members": [
+        {
+          "path": "Cargo.toml",
+          "bytes": 9542,
+          "sha256": "16f0d4abc63f30e9f42747dd056a145c06fb4d22d22668270153d310bc92ad4d"
+        },
+        {
+          "path": "Cargo.toml.orig",
+          "bytes": 10512,
+          "sha256": "11a85fc153c32b1add7d606767183e801c9b819185a4f99d1342604bec2fba54"
+        },
+        {
+          "path": ".cargo_vcs_info.json",
+          "bytes": 109,
+          "sha256": "56e48e7cafaddfe583a1bd34515fcb55dd82ff0ef40d619b78e358e2f0996fb8"
+        },
+        {
+          "path": "src/lib.rs",
+          "bytes": 189,
+          "sha256": "fa63a1eca2669396d57efe71caf0831a0ad97616717750ec8dcc64ff8a837eec"
+        }
+      ],
+      "vcs": {
+        "git": {
+          "sha1": "9177f90cfe3a6c6676b7e8dd367d40e01b99bedc"
+        },
+        "path_in_vcs": "crates/sem-core"
+      }
+    },
+    {
+      "crate": "mq-markdown",
+      "version": "0.9.3",
+      "artifact_url": "https://static.crates.io/crates/mq-markdown/mq-markdown-0.9.3.crate",
+      "accessed": "2026-10-24T08:09:06.807290+00:00",
+      "bytes": 823420,
+      "sha256": "7b5921da6d34165cf11b84a33ade3b8d1c08fbddc6b52daee8985394cf2a6e37",
+      "registry_checksum_match": true,
+      "executed": false,
+      "scope": "downloaded published archive; selected manifests and API-source members inspected without building",
+      "members": [
+        {
+          "path": "Cargo.toml",
+          "bytes": 2819,
+          "sha256": "9337deb996e82cc43abc55830388d3aff4156d09646a015b776e8002888dc3f9"
+        },
+        {
+          "path": "Cargo.toml.orig",
+          "bytes": 1323,
+          "sha256": "6f44f95484e97fdf8ce2b8d6d4efbaea27de08ef596db4ab49a7e72ff98b7804"
+        },
+        {
+          "path": ".cargo_vcs_info.json",
+          "bytes": 112,
+          "sha256": "11f510c504aefed3a48ad8bcc44e9b4e19096b1aed627fad87045d80e05cf09a"
+        },
+        {
+          "path": "src/lib.rs",
+          "bytes": 5037,
+          "sha256": "f0389c7e27be703d6451f020b8d3407e8e9cc4055624eb4251c521e3c7ee21af"
+        }
+      ],
+      "vcs": {
+        "git": {
+          "sha1": "7ec9723c6aeedd3c0bd894d34afe3eb20cb089db"
+        },
+        "path_in_vcs": "crates/mq-markdown"
+      }
+    },
+    {
+      "crate": "mq-lang",
+      "version": "0.9.3",
+      "artifact_url": "https://static.crates.io/crates/mq-lang/mq-lang-0.9.3.crate",
+      "accessed": "2026-10-24T08:09:06.855594+00:00",
+      "bytes": 1411258,
+      "sha256": "1d9d3ccb024a24f439051ac5fdc95f925d4b1e3b3108221d43b82f80e7392673",
+      "registry_checksum_match": true,
+      "executed": false,
+      "scope": "downloaded published archive; selected manifests and API-source members inspected without building",
+      "members": [
+        {
+          "path": "Cargo.toml",
+          "bytes": 5340,
+          "sha256": "6b6393bed224bb56709e87dce88fdf273aff0d8672ccf902da4359ef5a9d75c0"
+        },
+        {
+          "path": "Cargo.toml.orig",
+          "bytes": 3449,
+          "sha256": "16ce7e1c529b1c15509a84bfabee239bab8e6d4309d763b6ef28510a0b0cabac"
+        },
+        {
+          "path": ".cargo_vcs_info.json",
+          "bytes": 108,
+          "sha256": "14a802a6ce1c76e5341c187aa7da7d8ec546ad937d7d714179d28b0910b73dd6"
+        },
+        {
+          "path": "src/lib.rs",
+          "bytes": 20717,
+          "sha256": "95e9415be6da8cb7391ebd9ccfe6c5b209753264bec08ea5bc3aded3acf4e52f"
+        }
+      ],
+      "vcs": {
+        "git": {
+          "sha1": "7ec9723c6aeedd3c0bd894d34afe3eb20cb089db"
+        },
+        "path_in_vcs": "crates/mq-lang"
+      }
+    }
+  ]
+}

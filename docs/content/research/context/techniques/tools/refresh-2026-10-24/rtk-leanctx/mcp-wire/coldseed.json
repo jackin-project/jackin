@@ -1,0 +1,96 @@
+[
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {},
+        "clientInfo": {
+          "name": "jackin-research",
+          "version": "0.1"
+        }
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {
+          "tools": {
+            "listChanged": true
+          }
+        },
+        "serverInfo": {
+          "name": "lean-ctx",
+          "version": "3.11.4"
+        }
+      }
+    },
+    "elapsed_ms": 16.719
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "tools/call",
+      "params": {
+        "name": "ctx_read",
+        "arguments": {
+          "path": "fixture.rs",
+          "mode": "full"
+        }
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "pub fn function_1() -> usize {\n    let v0 = 1;\n    let v1 = 2;\n    let v2 = 3;\n    let v3 = 4;\n    let v4 = 5;\n    let v5 = 6;\n    let v6 = 7;\n    let v7 = 8;\n    let v8 = 9;\n    let v9 = 10;\n    let v10 = 11;\n    let v11 = 12;\n    v0\n}\npub fn function_2() -> usize {\n    let v0 = 2;\n    let v1 = 3;\n    let v2 = 4;\n    let v3 = 5;\n    let v4 = 6;\n    let v5 = 7;\n    let v6 = 8;\n    let v7 = 9;\n    let v8 = 10;\n    let v9 = 11;\n    let v10 = 12;\n    let v11 = 13;\n    v0\n}\npub fn function_3() -> usize {\n    let v0 = 3;\n    let v1 = 4;\n    let v2 = 5;\n    let v3 = 6;\n    let v4 = 7;\n    let v5 = 8;\n    let v6 = 9;\n    let v7 = 10;\n    let v8 = 11;\n    let v9 = 12;\n    let v10 = 13;\n    let v11 = 14;\n    v0\n}\npub fn function_4() -> usize {\n    let v0 = 4;\n    let v1 = 5;\n    let v2 = 6;\n    let v3 = 7;\n    let v4 = 8;\n    let v5 = 9;\n    let v6 = 10;\n    let v7 = 11;\n    let v8 = 12;\n    let v9 = 13;\n    let v10 = 14;\n    let v11 = 15;\n    v0\n}\npub fn function_5() -> usize {\n    let v0 = 5;\n    let v1 = 6;\n    let v2 = 7;\n    let v3 = 8;\n    let v4 = 9;\n    let v5 = 10;\n    let v6 = 11;\n    let v7 = 12;\n    let v8 = 13;\n    let v9 = 14;\n    let v10 = 15;\n    let v11 = 16;\n    v0\n}\npub fn function_6() -> usize {\n    let v0 = 6;\n    let v1 = 7;\n    let v2 = 8;\n    let v3 = 9;\n    let v4 = 10;\n    let v5 = 11;\n    let v6 = 12;\n    let v7 = 13;\n    let v8 = 14;\n    let v9 = 15;\n    let v10 = 16;\n    let v11 = 17;\n    v0\n}\npub fn function_7() -> usize {\n    let v0 = 7;\n    let v1 = 8;\n    let v2 = 9;\n    let v3 = 10;\n    let v4 = 11;\n    let v5 = 12;\n    let v6 = 13;\n    let v7 = 14;\n    let v8 = 15;\n    let v9 = 16;\n    let v10 = 17;\n    let v11 = 18;\n    v0\n}\npub fn function_8() -> usize {\n    let v0 = 8;\n    let v1 = 9;\n    let v2 = 10;\n    let v3 = 11;\n    let v4 = 12;\n    let v5 = 13;\n    let v6 = 14;\n    let v7 = 15;\n    let v8 = 16;\n    let v9 = 17;\n    let v10 = 18;\n    let v11 = 19;\n    v0\n}\npub fn function_9() -> usize {\n    let v0 = 9;\n    let v1 = 10;\n    let v2 = 11;\n    let v3 = 12;\n    let v4 = 13;\n    let v5 = 14;\n    let v6 = 15;\n    let v7 = 16;\n    let v8 = 17;\n    let v9 = 18;\n    let v10 = 19;\n    let v11 = 20;\n    v0\n}\npub fn function_10() -> usize {\n    let v0 = 10;\n    let v1 = 11;\n    let v2 = 12;\n    let v3 = 13;\n    let v4 = 14;\n    let v5 = 15;\n    let v6 = 16;\n    let v7 = 17;\n    let v8 = 18;\n    let v9 = 19;\n    let v10 = 20;\n    let v11 = 21;\n    v0\n}\npub fn function_11() -> usize {\n    let v0 = 11;\n    let v1 = 12;\n    let v2 = 13;\n    let v3 = 14;\n    let v4 = 15;\n    let v5 = 16;\n    let v6 = 17;\n    let v7 = 18;\n    let v8 = 19;\n    let v9 = 20;\n    let v10 = 21;\n    let v11 = 22;\n    v0\n}\npub fn function_12() -> usize {\n    let v0 = 12;\n    let v1 = 13;\n    let v2 = 14;\n    let v3 = 15;\n    let v4 = 16;\n    let v5 = 17;\n    let v6 = 18;\n    let v7 = 19;\n    let v8 = 20;\n    let v9 = 21;\n    let v10 = 22;\n    let v11 = 23;\n    v0\n}\npub fn function_13() -> usize {\n    let v0 = 13;\n    let v1 = 14;\n    let v2 = 15;\n    let v3 = 16;\n    let v4 = 17;\n    let v5 = 18;\n    let v6 = 19;\n    let v7 = 20;\n    let v8 = 21;\n    let v9 = 22;\n    let v10 = 23;\n    let v11 = 24;\n    v0\n}\npub fn function_14() -> usize {\n    let v0 = 14;\n    let v1 = 15;\n    let v2 = 16;\n    let v3 = 17;\n    let v4 = 18;\n    let v5 = 19;\n    let v6 = 20;\n    let v7 = 21;\n    let v8 = 22;\n    let v9 = 23;\n    let v10 = 24;\n    let v11 = 25;\n    v0\n}\npub fn function_15() -> usize {\n    let v0 = 15;\n    let v1 = 16;\n    let v2 = 17;\n    let v3 = 18;\n    let v4 = 19;\n    let v5 = 20;\n    let v6 = 21;\n    let v7 = 22;\n    let v8 = 23;\n    let v9 = 24;\n    let v10 = 25;\n    let v11 = 26;\n    v0\n}\npub fn function_16() -> usize {\n    let v0 = 16;\n    let v1 = 17;\n    let v2 = 18;\n    let v3 = 19;\n    let v4 = 20;\n    let v5 = 21;\n    let v6 = 22;\n    let v7 = 23;\n    let v8 = 24;\n    let v9 = 25;\n    let v10 = 26;\n    let v11 = 27;\n    v0\n}\npub fn function_17() -> usize {\n    let v0 = 17;\n    let v1 = 18;\n    let v2 = 19;\n    let v3 = 20;\n    let v4 = 21;\n    let v5 = 22;\n    let v6 = 23;\n    let v7 = 24;\n    let v8 = 25;\n    let v9 = 26;\n    let v10 = 27;\n    let v11 = 28;\n    v0\n}\npub fn function_18() -> usize {\n    let v0 = 18;\n    let v1 = 19;\n    let v2 = 20;\n    let v3 = 21;\n    let v4 = 22;\n    let v5 = 23;\n    let v6 = 24;\n    let v7 = 25;\n    let v8 = 26;\n    let v9 = 27;\n    let v10 = 28;\n    let v11 = 29;\n    v0\n}\npub fn function_19() -> usize {\n    let v0 = 19;\n    let v1 = 20;\n    let v2 = 21;\n    let v3 = 22;\n    let v4 = 23;\n    let v5 = 24;\n    let v6 = 25;\n    let v7 = 26;\n    let v8 = 27;\n    let v9 = 28;\n    let v10 = 29;\n    let v11 = 30;\n    v0\n}\npub fn function_20() -> usize {\n    let v0 = 20;\n    let v1 = 21;\n    let v2 = 22;\n    let v3 = 23;\n    let v4 = 24;\n    let v5 = 25;\n    let v6 = 26;\n    let v7 = 27;\n    let v8 = 28;\n    let v9 = 29;\n    let v10 = 30;\n    let v11 = 31;\n    v0\n}\n\n\n[lean-ctx nudge] large explicit full/raw read — mode=signatures/map covers orientation at a fraction of the tokens; reserve full/raw for edit prep. (once per session; behavior_nudges=off to silence)"
+          }
+        ],
+        "isError": false,
+        "_meta": {
+          "cache_hint": "stable"
+        }
+      }
+    },
+    "elapsed_ms": 234.699
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "tools/call",
+      "params": {
+        "name": "ctx_read",
+        "arguments": {
+          "path": "fixture.rs",
+          "mode": "auto"
+        }
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "--- AUTO CONTEXT ---\nPROJECT OVERVIEW  1 files  0 edges  scanned 0m ago\n\n/  fixture.rs\n\n\n--- END AUTO CONTEXT ---\n\nF1=fixture.rs [unchanged 300L · fresh=true to re-read]"
+          }
+        ],
+        "isError": false,
+        "_meta": {
+          "cache_hint": "ephemeral"
+        }
+      }
+    },
+    "elapsed_ms": 22.866
+  }
+]

@@ -1,0 +1,33 @@
+{
+  "snapshot_cutoff": "2026-10-24T01:15:00Z",
+  "releases": [
+    {
+      "repository": "headroomlabs-ai/headroom",
+      "endpoint": "https://api.github.com/repos/headroomlabs-ai/headroom/releases/413248810",
+      "html_url": "https://github.com/headroomlabs-ai/headroom/releases/tag/v0.41.0",
+      "tag": "v0.41.0",
+      "published_at": "2026-10-14T22:46:09Z",
+      "release_updated_at": "2026-10-14T23:15:07Z",
+      "release_target_commitish": "76133cff59b71284399bf760c5578dc373c97231",
+      "resolved_tag_commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "draft": false,
+      "prerelease": false,
+      "checked_at": "2026-10-24T01:28:58Z",
+      "unchanged_since_snapshot": true
+    },
+    {
+      "repository": "lemoncrow-lab/lemoncrow",
+      "endpoint": "https://api.github.com/repos/lemoncrow-lab/lemoncrow/releases/417449666",
+      "html_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/tag/v0.8.0",
+      "tag": "v0.8.0",
+      "published_at": "2026-10-19T15:18:45Z",
+      "release_updated_at": "2026-10-19T15:20:16Z",
+      "release_target_commitish": "main",
+      "resolved_tag_commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "draft": false,
+      "prerelease": false,
+      "checked_at": "2026-10-24T01:28:58Z",
+      "unchanged_since_snapshot": true
+    }
+  ]
+}

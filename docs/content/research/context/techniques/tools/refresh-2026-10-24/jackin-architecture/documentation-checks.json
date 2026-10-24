@@ -1,0 +1,96 @@
+{
+  "checked_utc": "2026-10-24T02:10:36.820017+00:00",
+  "scope": "12 architecture/integration MDX pages and curated architecture artifacts",
+  "checks": [
+    {
+      "path": "docs/content/research/context/engine/01-goals-and-non-goals.mdx",
+      "description_chars": 127,
+      "body_lines": 84,
+      "canonical_state": true
+    },
+    {
+      "path": "docs/content/research/context/engine/02-architecture.mdx",
+      "description_chars": 127,
+      "body_lines": 107,
+      "canonical_state": true
+    },
+    {
+      "path": "docs/content/research/context/engine/03-observation-pipeline.mdx",
+      "description_chars": 129,
+      "body_lines": 92,
+      "canonical_state": true
+    },
+    {
+      "path": "docs/content/research/context/engine/04-retrieval-layer.mdx",
+      "description_chars": 120,
+      "body_lines": 86,
+      "canonical_state": true
+    },
+    {
+      "path": "docs/content/research/context/engine/05-output-and-prompt-layer.mdx",
+      "description_chars": 139,
+      "body_lines": 89,
+      "canonical_state": true
+    },
+    {
+      "path": "docs/content/research/context/engine/06-routing-and-fleet-economics.mdx",
+      "description_chars": 135,
+      "body_lines": 83,
+      "canonical_state": true
+    },
+    {
+      "path": "docs/content/research/context/engine/07-memory-and-state.mdx",
+      "description_chars": 134,
+      "body_lines": 90,
+      "canonical_state": true
+    },
+    {
+      "path": "docs/content/research/context/engine/08-measurement-and-verification.mdx",
+      "description_chars": 129,
+      "body_lines": 97,
+      "canonical_state": true
+    },
+    {
+      "path": "docs/content/research/context/engine/09-reuse-decision-matrix.mdx",
+      "description_chars": 139,
+      "body_lines": 108,
+      "canonical_state": true
+    },
+    {
+      "path": "docs/content/research/context/engine/10-rollout-and-validation.mdx",
+      "description_chars": 134,
+      "body_lines": 110,
+      "canonical_state": true
+    },
+    {
+      "path": "docs/content/research/context/engine/index.mdx",
+      "description_chars": 135,
+      "body_lines": 80,
+      "canonical_state": true
+    },
+    {
+      "path": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "description_chars": 132,
+      "body_lines": 120,
+      "canonical_state": true
+    }
+  ],
+  "coverage_counts": {
+    "documents": 12,
+    "old_headings": 164,
+    "material_units": 317,
+    "numerical_or_version_lines": 169
+  },
+  "git_diff_check": {
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "errors": [],
+  "not_claimed": [
+    "repository-wide xtask",
+    "rendered pages",
+    "complete external link crawl",
+    "PR CI"
+  ]
+}

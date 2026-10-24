@@ -1,268 +1,124 @@
 ---
 title: "26 — Frontier mechanisms for unresolved gaps"
-description: "Eight frontier mechanisms derived from unresolved multimodal, fleet, portability, latency, and governance questions."
+description: "Eight testable proposals for quota scheduling, multimodal inputs, speed, shared prefixes, online monitoring, and portable policy."
 ---
+
+**Research state:** Current
+
+Source cutoff: **2026-10-24T01:15:00Z**. This refresh preserves **V1–V8**, reconciles current native/provider behavior, and withdraws unsupported savings, portability and quota-weight forecasts.
 
 ## Summary
 
-Eight frontier ideas arise from the dossier's remaining blind spots and
-do **not** duplicate the core dossier's sixteen ([20 — Multimodal token economics](/research/context/techniques/20-multimodal-token-economics/) K1–K16). Each is worked mechanism → savings math →
-feasibility verdict (`REAL-NOW` / `BUILDABLE` / `RESEARCH-STAGE` / `BLOCKED-BY-&lt;x&gt;` /
-`PHYSICS-SAYS-NO`) with an evidence tier and an evidence-scope note. Arithmetic uses the dossier's modeled
-profile as a comparison fixture; revalidate provider-sensitive inputs through [24 — Literature and market evidence map](/research/context/techniques/24-fresh-literature-and-market-delta/). Quota figures
-use [19 — Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/)'s model.
+The remaining frontier includes useful integration projects, but “buildable” does not mean quality neutral, authorized to activate, or proven economical. Quota observation can be noisy, image substitution can lose information, warming costs money, and an asynchronous judge can detect a failure only after it happens.
 
-- The dossier identifies **8 deployable-but-unbuilt frontier ideas**; none reopens the blocked hosted-KV or
- soft-prompt ceiling from the core dossier.
-- The biggest quota unlock is a **per-account cap prober** that fits the unpublished denominator
- from response headers, making tasks-per-cap optimization measurable.
-- The biggest automatic-dollar levers are **vision routing/transcoding** and a **warm-repo CAG
- prefix choreographer**, both buildable in an orchestrator.
-- The frontier verdict stays pragmatic: these are integration projects, not physics breakthroughs.
+Keep the selected model and effort fixed in the primary experiment. Scheduling, media representation and native cache policy can be tested under that constraint; cross-model vision/routing and changed effort belong in explicitly separate arms. Compare against existing native features before claiming a new benefit.
 
-## Question and scope
+## Question and method
 
-Which unresolved gaps admit buildable mechanisms, and which remain research-stage or blocked by provider boundaries?
+Each proposal identifies the gap, eligible surface, economic denominator, failure modes and smallest decisive experiment. Current official contracts are in [provider features](/research/context/techniques/12-provider-features/), [quota economics](/research/context/techniques/19-subscription-and-quota-economics/) and the [host matrix](/research/context/techniques/23-cross-agent-portability/). No account probing, paid inference, warm request, OCR pipeline or deployed policy compiler ran here.
 
-## Method
+## The eight-proposal board
 
-Each frontier mechanism starts from a named evidence gap, states its provider and infrastructure assumptions, shows its savings arithmetic, and defines a falsification or delivery boundary.
+| ID | Proposal | Current disposition | Retired inference |
+|---|---|---|---|
+| V1 | Quota-window scheduler | Conditional scheduler using authorized current observations | Universal five-hour/weekly structure, 0.1× weighting and 30–50% model-shift benefit |
+| V2 | Quota observation/calibration | Measurement hypothesis; opaque accounting may remain unidentified | Undocumented headers reveal a stable denominator |
+| V3 | Vision representation or model routing | Fixed-model media experiment; model routing is separate | Universal 67% image saving and quality-neutral text summaries |
+| V4 | Screenshot/PDF text extraction | Conditional evidence view with original retained | Text extraction is always exact or saves 50–85% |
+| V5 | Time-value speed selection | Explicit same-model speed policy where supported | Every toggle busts cache; autonomous work has no latency value |
+| V6 | Cached repository core and staggered starts | Scoped prefix experiment against native behavior | Universal 0.1× reads, tenfold cold-start gains and shared workspaces |
+| V7 | Online monitoring with rollback | Additional detection/containment for prequalified lanes | Sampling makes aggressive compression safe |
+| V8 | Portable policy compiler | Capability-aware proposal requiring host conformance | Configuration translation is neutral or 60–80% portable |
 
-## Findings
+## V1. Quota-window scheduler
 
-### The board
+**Mechanism:** defer already authorized discretionary work until the applicable account window or resource limit permits it. Use current plan, connection mode, reset information and fresh observations. [Claude plan guidance](https://support.claude.com/en/articles/11145838-use-claude-code-with-your-pro-or-max-plan) and [Codex pricing](https://learn.chatgpt.com/docs/pricing) describe different structures; Codex Pro currently has no five-hour limit. A model-specific allowance does not imply that routing away from it preserves every shared limit.
 
-| # | Idea | Blind spot | Verdict | Honest effect | Tier |
-|---|---|---|---|---|---|
-| V1 | Quota-window scheduler | 1 quota | BUILDABLE | frees cap headroom (no $ saving) | T1/T3 |
-| V2 | Per-account quota-denominator prober | 1 quota | BUILDABLE | closes the unpublished-cap-weight gap empirically | T1/T3 |
-| V3 | Vision-tier auto-router | 2 multimodal | BUILDABLE | −67% image tokens on routed frames | T1 |
-| V4 | Screenshot/PDF → text transcoder at ingestion | 2 multimodal | BUILDABLE | −50% to −85% on textual media | T1 |
-| V5 | Time-value auto fast-mode | 3 latency | BUILDABLE | buys wall-clock only when a human is blocked | T1 |
-| V6 | Hosted "warm repo" CAG prefix + fleet choreographer | 4 fleet / 6 CAG | BUILDABLE | repo at 0.1× across a fleet; ~10× cold-start cut | T1/T2 |
-| V7 | Online-canary-gated adaptive compression | 8 online-quality | BUILDABLE | unlocks aggressive compression at a live safety net | T1 |
-| V8 | Cross-provider portable token-policy compiler | 5 portability | BUILDABLE | the stack survives an agent switch | T1 |
+**Economics:** measure accepted tasks completed before a deadline, utilization, time spent waiting and paid spill. Delaying work does not create more allowance and can make source state stale. Flat subscription price does not erase opportunity cost or purchased-credit expense.
 
-None is `BLOCKED-BY-hosted-API` or `PHYSICS-SAYS-NO` — the core dossier already mapped that ceiling (K1/K2
-soft-prompts/KV-export are the blocked megaleverage). The remaining frontier is deployable but unbuilt:
-the gaps are blind spots, not physics.
+**Decisive test:** matched authorized tasks/windows with other account activity recorded, scheduling latency and deadline failures included. Preserve model/effort, auth and spend limits. Do not switch accounts, enable overage or use linked monthly API credits merely because the queue hits a cap; those are distinct user choices and billing routes. No fixed quota-weight formula is assumed.
 
----
+## V2. Per-account quota observation and calibration
 
+**Mechanism:** compare supported native usage snapshots or authorized exports with scoped task usage. A local statistical model may help predict an account's next observed utilization change. The older proposal to transparently proxy subscription traffic and infer a universal denominator from undocumented headers is not a supported default.
 
-## Implications for jackin❯
+**Identifiability matters:** rolling-window expirations, background sessions, dashboard quantization, delayed updates, varying task/model weights and correlated token classes can produce several equally plausible fits. A stale usage bar is not a request receipt. A good fit to one window does not identify a stable provider formula.
 
-### V1. Quota-window scheduler — shape work to the cap's reset clock
+**Decisive test:** before fitting, establish fresh observations and which other activity shares the balance. Use multiple windows and held-out tasks, report uncertainty and detect policy drift. If classes cannot be separated, report observed utilization per accepted task rather than invented coefficients. Do not synthesize paid probing traffic without authorization. Native usage visibility is useful even when the denominator remains unknown; V1 need not wait for an unidentifiable model. [Quota measurement](/research/context/techniques/19-subscription-and-quota-economics/).
 
-**Evidence scope:** No earlier frontier idea touches the subscription cap (quota is blind spot
-1); K13 (keepalive) is about TTL, not the usage window.
+## V3. Vision representation and optional vision-model routing
 
-**Mechanism:** the subscription cap is a rolling 5-hour window plus a fixed weekly anchor ([19 — Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/)).
-Cache reads weigh ~0.1× against it, but the binding event is the *window boundary*, not per-token
-price. A scheduler defers discretionary/batchable work (sweeps, nightly review, large refactors) to
-just after a 5-hour reset and away from the days approaching the weekly anchor; on Max it routes
-Sonnet-heavy work against the *Sonnet-only* weekly limit to preserve the *all-model* budget for Opus
-work. It is the quota-axis analogue of batch scheduling ([21 — Latency, wall-clock, and human-time as a second cost axis](/research/context/techniques/21-latency-and-time-economics/) L5).
+**Mechanism:** first compare native image handling with supported resolution/detail choices on the **same selected model**. Cropping, multiple crops, downsampling or a derived text description each changes the evidence. A separate vision model adds a second model, summarization and recovery; it must be declared as a routing arm.
 
-**Savings math:** no dollar saving (subscription is flat); it raises **tasks-per-cap** by smoothing
-burn across windows so the operator hits the wall less often. With two weekly limits on Max, steering
-an estimated 30–50% of routine work onto the Sonnet band preserves the all-model budget for the
-hardest tasks (ESTIMATE; magnitude is per-workload and unmeasurable without the unpublished
-denominator — see V2).
+The [current media contracts](/research/context/techniques/20-multimodal-token-economics/) depend on model, dimensions, detail settings, resizing and endpoint. Old family-wide caps do not establish that every screenshot costs the cap. A 67% cap difference is not a measured 67% task saving or quota change. Small labels, selection state, alignment, overlays and coordinates may carry the answer.
 
-**Feasibility verdict:** BUILDABLE — a cron/queue that reads `/usage` cap-% (or the `unified-*`
-headers) and releases queued work when headroom exists. The blocker is the opaque denominator (V2);
-with it, this becomes a closed-loop scheduler.
+**Decisive test:** fixed screenshots with exact text, spatial questions and UI action targets, followed by complete tasks. Record native image tokens, any text summary/output, schema/instruction overhead, rereads and missed details. Retain the original and correctly map crop coordinates. An active pre-tool hook must not duplicate screenshot capture or silently replace a tool result on a host without that contract.
 
-**Tier:** T1 (cap structure) + T3 (the ~0.1× weight it schedules around). **Quality risk:** NEUTRAL
-(same work, different time). **Effort:** medium.
+## V4. Screenshot/PDF-to-text extraction at ingestion
 
-### V2. Per-account quota-denominator prober — fit the cap weight from your own headers
+**Mechanism:** use a trusted available text layer or accessibility representation when it contains the needed evidence; use OCR as a fallible extraction process. Born-digital PDF text can still lose columns, reading order, equations, font meaning or embedded figures. Screenshots can reveal state absent from an accessibility tree. Text extracted from source code is not proof of the rendered UI.
 
-**Evidence scope:** Directly attacks [19 — Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/)'s bounded INCOMPLETE (the unpublished cap
-denominator + cache-read weight); no core-dossier idea reads the `unified-*` headers.
+[Claude PDF support](https://platform.claude.com/docs/en/build-with-claude/pdf-support) and [vision guidance](https://platform.claude.com/docs/en/build-with-claude/vision) describe distinct input paths. Text can be cheaper in some documents and larger in others after extraction/markup. The earlier 50–85% and 25-page ratios were not reproduced and are not a new forecast.
 
-**Mechanism:** Anthropic does not publish the token denominator of a window or the exact cache-read
-cap weight, but the `anthropic-ratelimit-unified-*` response headers (5h-utilization, 7d-utilization,
-reset) expose cap-% per call. A transparent pass-through proxy (cc-relay-style) logs (tokens-by-class,
-cap-%) per request; a regression fits the per-class cap weights and the 100%-denominator **for this
-account** — the empirical method three community datasets already used to triangulate cache_read ≈
-0.1× ([19 — Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/)).
+**Decisive test:** exact text/identifier checks, table and layout questions, provenance back to page/region and requested visual evidence. Retain accessible originals and expose an explicit fallback. Count OCR runtime, dependencies, models, error handling and additional model calls. Do not remove the image/PDF from an exact-layout task merely because the extracted string is shorter.
 
-**Savings math:** no direct saving; it converts [19 — Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/)'s "tasks-per-cap is unquantifiable" into a
-measured per-account model, which is the *precondition* for V1 and for honestly costing every quota
-lever. Closes the dossier's largest INCOMPLETE.
+## V5. Time-value speed policy
 
-**Feasibility verdict:** BUILDABLE today (the community tools exist); the caveat is that the cap
-denominator shifted ~2× and resets periodically, so the fit must be re-run after limit
-changes.
+**Mechanism:** a user-selected profile may buy lower latency on a supported unchanged model/effort when reduced waiting is worth the premium. Record the actual billing route: API pricing, purchased credits and included-limit multipliers differ. Fast mode on an unsupported model can switch models, so that path is ineligible for the fixed-model arm.
 
-**Tier:** T1 (headers exist, observed by multiple proxies) + T3 (the fit). **Quality risk:** NEUTRAL,
-*if* the proxy preserves `cache_control` (a careless proxy busts the cache — [19 — Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/) Q1). **Effort:**
-medium.
+Use <code>value_of_avoided_critical_path_wait &gt; additional_total_cost</code>. Whole-task time includes tools, queues, verification and retries. Response-generation speed is only one component. Autonomous jobs can have deadlines or expensive infrastructure occupancy; an attached human is not proof that every saved second is productive time.
 
-### V3. Vision-tier auto-router — every screenshot to the cheap tokenizer family
+Current [Claude Code caching](https://code.claude.com/docs/en/prompt-caching) documents a persistent header after first fast enablement: the first relevant request misses, while later toggles/fallback retain that header. The old “every toggle rebills the prefix” rule is withdrawn.
 
-**Evidence scope:** The core dossier's routing (K11) routes by *text* tokenizer; this routes *images* by
-the 3.05× per-image cap divergence ([20 — Multimodal token economics: images, screenshots, PDFs](/research/context/techniques/20-multimodal-token-economics/)), which the core dossier never measured.
+**Decisive test:** randomized same-model speed arms with the user's explicit latency/cost preference, whole-task p50/p95 and paid/included usage. Keep the standard path available and do not automatically enable paid overage. No speed change was made here. [Latency economics](/research/context/techniques/21-latency-and-time-economics/).
 
-**Mechanism:** a hook intercepts image/screenshot content and dispatches it to a Sonnet/Haiku subagent
-(per-image cap 1,568 tokens) instead of the Opus/Fable main loop (cap 4,784), returning a text summary
-to the main thread. The pixels never touch the expensive family's context.
+## V6. Cached repository core and staggered starts
 
-**Savings math:** per full-frame screenshot, 4,784 → 1,568 image tokens = **−67%** ([20 — Multimodal token economics: images, screenshots, PDFs](/research/context/techniques/20-multimodal-token-economics/) measured).
-A 20-frame debugging session: 20 × (4,784 − 1,568) = 64,320 tokens shifted off the expensive family —
-modest in dollars (image tokens at input price) but real in quota ([19 — Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/)) and window pressure, and
-larger on the operator's current Opus-4.8 main loop where every main-thread screenshot pays the 4,784
-cap.
+**Mechanism:** a bounded, relevant and revisioned repository core may be loaded once and reused as an eligible common prefix. [CAG v2](https://arxiv.org/abs/2412.15605v2) studies preloading manageable knowledge collections and reusing state. It does not establish that preloading a changing codebase beats precise native retrieval.
 
-**Feasibility verdict:** BUILDABLE — a PreToolUse hook + a vision subagent pinned `model: haiku`. The
-only friction is summarization fidelity (the main thread sees text, not pixels).
+[Provider cache scope](/research/context/techniques/22-fleet-and-multitenant-cache/) remains binding. Separate Claude API workspaces do not share entries. Do not merge tenants, credentials or histories to manufacture reuse. Model identity, tool/schema order, current instructions and permitted content must match. Moving dynamic system data to a user message changes authority. Stable context must be true, not merely byte-identical.
 
-**Tier:** T1 (measured caps, [20 — Multimodal token economics: images, screenshots, PDFs](/research/context/techniques/20-multimodal-token-economics/)). **Quality risk:** QUALITY-TRADE if the summary drops a visual
-detail the main task needs; NEUTRAL for UI-state/log screenshots. **Effort:** hours.
+Read prices and minimums are model-specific. Waiting for one useful pioneer or issuing a paid prewarm can reduce repeated writes under particular conditions; current Claude Workflow already staggers same-prefix fan-outs. The idealized one-write-plus-reads arithmetic is a prefix-only scenario, not a tenfold task or cold-start result.
 
-### V4. Screenshot/PDF → text transcoder at ingestion — pay text, not the media tax
+**Decisive test:** native retrieval versus curated core, with and without explicit warming, at cold/warm and realistic idle/concurrent conditions. Include irrelevant core carry, indexing/retrieval, schema and output, stale revisions, unused warms and actual cache receipts. Invalidate on relevant source/policy changes and preserve exact current-read fallback. Versioned cache state must never make an old revision appear current.
 
-**Evidence scope:** The core dossier has zero multimodal; this operationalizes [20 — Multimodal token economics: images, screenshots, PDFs](/research/context/techniques/20-multimodal-token-economics/)'s "text beats
-pixels for textual content" and "avoid the PDF tax" as an automatic ingestion step.
+## V7. Online monitoring with bounded rollback
 
-**Mechanism:** before any screenshot or PDF enters context, a local step extracts its text — OCR /
-accessibility-tree for screenshots, `pdftotext` for born-digital PDFs — and feeds the *text*, falling
-back to the image only when layout is load-bearing (a rendered chart, a visual bug). This pays text
-tokens (exact, scrollable) instead of the 1,568–4,784 image cap or the 1.98–2.30× PDF tax ([20 — Multimodal token economics: images, screenshots, PDFs](/research/context/techniques/20-multimodal-token-economics/)).
+**Mechanism:** monitor a previously qualified compression lane for omitted constraints, diagnostics, wrong references and recovery failure, then stop or revert the affected treatment. Deterministic checks can reject some outputs before exposure; sampled asynchronous review mainly detects later drift.
 
-**Savings math:** a dense code screenful as text is 593–765 tokens vs a 1,568–4,784 screenshot =
-**−50% to −85%**; a 25-page text-extractable PDF is ~40,000 tokens as text vs 78,806 as a PDF =
-**~−50%** ([20 — Multimodal token economics: images, screenshots, PDFs](/research/context/techniques/20-multimodal-token-economics/) measured). Plus exact characters and downstream grep-ability.
+An LLM judge can miss errors, share model biases and fail to observe an omitted fact without the original. Sampling never guarantees every dangerous output was checked, and later rollback cannot undo an earlier edit or external action. The old claim that a 1–10% sampled guard removes standing caveat risk is withdrawn.
 
-**Feasibility verdict:** BUILDABLE — needs a local OCR/extraction tool in the container (jackin❯ can
-bake it in, [22 — Fleet, team & multi-tenant cache economics (hosted)](/research/context/techniques/22-fleet-and-multitenant-cache/) F6). For born-digital PDFs `pdftotext` is trivial; OCR for screenshots is heavier.
+**Decisive test:** calibrated seeded failures, false-positive/negative rates, detection delay, rollback scope and known-critical-failure handling. Use raw/provenance-bound evidence within the right permissions; account for judge and adjudication costs, retries and exposure before detection. Preserve selected model/effort unless a separate judge treatment is explicitly configured. Do not promote an unqualified aggressive lane because it has a monitoring dashboard. [Governance and online quality](/research/context/techniques/25-meta-cost-governance-and-online-quality/).
 
-**Tier:** T1 (measured token deltas). **Quality risk:** NEGATIVE-COST for textual media (cheaper +
-exact); RISKY only if OCR errs or layout mattered — keep the image-fallback path. **Effort:** hours
-(PDF) to days (robust screenshot OCR).
+## V8. Cross-host portable policy compiler
 
-### V5. Time-value auto fast-mode — flip fast mode by who is waiting
+**Mechanism:** resolve a declarative policy against exact native host/version capabilities, emit a reviewable configuration, and show effective settings and unsupported requests. Separate intent such as “retain exact recovery” from mechanisms such as one host's output hook or a provider beta.
 
-**Evidence scope:** The core dossier never models latency; this automates [21 — Latency, wall-clock, and human-time as a second cost axis](/research/context/techniques/21-latency-and-time-economics/)'s v·t·s > Δ$
-inequality.
+The current [twelve-host matrix](/research/context/techniques/23-cross-agent-portability/) documents different replacement, promise/error and provider boundaries. Model/effort names, output caps, tool discovery, TTLs and instruction authority do not translate automatically. Jackin's registry is not identical to launch dispatch. A generated config file alone is not activation evidence.
 
-**Mechanism:** an orchestrator classifies each turn as interactive (a human is blocked) or autonomous
-(batch/CI/overnight) and toggles fast mode accordingly — fast mode on Opus 4.8 buys up to 2.5× speed
-for 2× price ([21 — Latency, wall-clock, and human-time as a second cost axis](/research/context/techniques/21-latency-and-time-economics/)), worth it when a developer-minute (~$0.83–1.25) times the minutes saved exceeds
-the token premium, i.e. exactly when a human waits. Autonomous turns stay standard or go to batch
-(50% off). On a subscription, fast mode also bypasses the cap (draws credits) — a lever to finish
-without burning cap headroom at a dollar price.
+**Decisive test:** resolve defaults, validate schema and permission behavior, inspect actual model-visible output, exercise failure/timeout/cancel/resume and verify disabling restores native behavior. Unsupported optional transforms should leave the native path intact with a visible reason; missing required security/authorization controls should block activation. Never fall back to another model, billing route or broad proxy silently.
 
-**Savings math:** on a 5-minute interactive task costing ~$0.50 in tokens, fast mode adds ~$0.50 and
-returns ~3 minutes ≈ $3.75 of developer time (≈7:1, [21 — Latency, wall-clock, and human-time as a second cost axis](/research/context/techniques/21-latency-and-time-economics/) ESTIMATE); on autonomous work it saves the
-premium entirely (t≈0 → never buy speed). Net: the same total-cost optimum [21 — Latency, wall-clock, and human-time as a second cost axis](/research/context/techniques/21-latency-and-time-economics/) derives, applied
-automatically.
+No per-lever saving is added for configuration translation. Its value is measured avoided integration work, reduced drift and qualified behavior. Ongoing adapter maintenance belongs in the economics; “60–80% portable” and “neutral configuration change” are retired.
 
-**Feasibility verdict:** BUILDABLE — detect interactive-vs-autonomous from the launch context
-(jackin❯ knows whether a human is attached) and set `speed: "fast"` at session start (never mid-turn —
-it re-bills the prefix, [21 — Latency, wall-clock, and human-time as a second cost axis](/research/context/techniques/21-latency-and-time-economics/)).
+## Composition and next decisions
 
-**Tier:** T1 (fast-mode pricing/speed) + ESTIMATE (developer-minute value). **Quality risk:** NEUTRAL
-(identical model/quality). **Effort:** hours.
+| Phase | Eligible next step | Evidence before widening |
+|---|---|---|
+| Observe | Native usage/context/capability inventory and explicit unknowns | Fresh account observations only when authorized; no inferred quota prices |
+| Small local experiment | Exact templates, bounded extraction, versioned source pointers | Fidelity, permission and recovery fixtures |
+| Native-policy experiment | Supported cache, scheduling or same-model speed profile | Real cold/warm receipts and accepted-task/latency outcomes |
+| Runtime experiment | One retrieval/reducer implementation at an owned seam | Canonical critical-failure, quality, cost and latency gates |
+| Separate policy research | Model routing, training, semantic vision summaries | Explicit treatment identity and full escalation/recovery cost |
 
-### V6. Hosted "warm repo" — the CAG pattern as a fleet-shared, always-warm cached prefix
+K1–K16 in [chapter 14](/research/context/techniques/14-frontier-ideas/) cover the underlying mechanisms; these eight proposals do not bypass their constraints. [Chapter 27](/research/context/techniques/27-extension-stacks-and-verdict/) supplies the current stack verdict without another speculative multiplier.
 
-**Evidence scope:** New synthesis of [24 — Fresh literature & market delta (clean-room re-sweep)](/research/context/techniques/24-fresh-literature-and-market-delta/) FL1 (CAG-via-caching) + [22 — Fleet, team & multi-tenant cache economics (hosted)](/research/context/techniques/22-fleet-and-multitenant-cache/) (fleet workspace cache) +
-the `/cd` and 1h-TTL levers; distinct from K6 (codebooks, small recurring strings) and K16 (the
-general pack) by being the *whole stable repo core* as a persistent shared artifact.
+## Limitations and evidence
 
-**Mechanism:** designate the repo's stable core (key source files, the spec, the API surface) as a
-`cache_control` prefix; pin the fleet to one workspace ([22 — Fleet, team & multi-tenant cache economics (hosted)](/research/context/techniques/22-fleet-and-multitenant-cache/) F1) with `excludeDynamicSections` (F2)
-so every container shares one cached copy; keep it warm with 1h TTL + a pre-warm/keepalive ping (the core dossier
-K13 / Aider's pattern, [23 — Cross-agent / cross-provider portability matrix](/research/context/techniques/23-cross-agent-portability/) P2). Every container then reads the repo at 0.1× instead of
-re-exploring — the CAG "preload-and-reuse" pattern realized across a hosted fleet, composing *with*
-caching rather than against it (unlike LLMLingua).
-
-**Savings math:** the shared-prefix fleet math ([22 — Fleet, team & multi-tenant cache economics (hosted)](/research/context/techniques/22-fleet-and-multitenant-cache/) F1/F3): N containers → 1 write + (N−1) 0.1×
-reads of the repo core; cold-start ~10× cut (F3). Per turn, the repo core costs 0.1× instead of fresh
-exploration tokens. Bounded by the 200K subscription context ([19 — Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/)) — the *core*, not the whole
-repo, fits.
-
-**Feasibility verdict:** BUILDABLE — jackin❯'s launcher is the natural home (it already owns the
-insertion points, core-dossier K16 / [22 — Fleet, team & multi-tenant cache economics (hosted)](/research/context/techniques/22-fleet-and-multitenant-cache/) F6). The hard part is curating "the stable core" and keeping it
-byte-stable (any edit busts it).
-
-**Tier:** T1 (caching/fleet mechanics) + T2 (CAG quality-vs-RAG). **Quality risk:** NEUTRAL-to-
-NEGATIVE-COST when the core fits and is current; RISKY if it goes stale in the cached prefix (re-warm
-on change). **Effort:** high (curation + fleet wiring), amortized across launches.
-
-### V7. Online-canary-gated adaptive compression — compress hard only while a live judge says it's safe
-
-**Evidence scope:** Connects [25 — Meta layer: the cost of optimizing, budget governance, and online quality guarding](/research/context/techniques/25-meta-cost-governance-and-online-quality/)'s online judge (blind spot 8) to compression; the core dossier's
-compression (10) and harness (31) are offline — nothing self-regulates compression on live quality.
-
-**Mechanism:** run aggressive output compression (caveman-ultra, terse registers, tight effort) by
-default, with a sampled async LLM-as-judge ([25 — Meta layer: the cost of optimizing, budget governance, and online quality guarding](/research/context/techniques/25-meta-cost-governance-and-online-quality/) G3) watching production traces for caveat-drop /
-negation loss / missed warnings. On a drift alarm, the orchestrator auto-reverts the affected lane to
-a safer register until the canary clears. Compression becomes a closed loop with a live floor instead
-of a static gamble.
-
-**Savings math:** lets the operator run at the *aggressive* end of the core dossier's register/effort curve
-(the 58.5% caveman-ultra, the high→medium effort) without the standing caveat-drop risk the core dossier
-flagged as unmeasured — turning a `RISKY` lever into a guarded one. The net is the aggressive lever's
-saving minus the guard tax ([25 — Meta layer: the cost of optimizing, budget governance, and online quality guarding](/research/context/techniques/25-meta-cost-governance-and-online-quality/) G4: sampling 1–10%); positive when the compressed lane is large
-and the judge is cheap.
-
-**Feasibility verdict:** BUILDABLE — wire a validated reference-free judge (LangSmith/Braintrust/Arize
-AX) over the compressed lane's traces with a revert webhook. The blocker is judge calibration ([25 — Meta layer: the cost of optimizing, budget governance, and online quality guarding](/research/context/techniques/25-meta-cost-governance-and-online-quality/):
-validate the judge first).
-
-**Tier:** T1 (online-eval tooling). **Quality risk:** the *point* is to bound quality risk;
-mis-calibration (false clears) is the residual risk. **Effort:** days.
-
-### V8. Cross-provider portable token-policy compiler — one policy, every agent's config
-
-**Evidence scope:** Operationalizes [23 — Cross-agent / cross-provider portability matrix](/research/context/techniques/23-cross-agent-portability/)'s portability matrix; the core dossier is single-agent.
-
-**Mechanism:** a declarative token-policy (effort tier, model-routing rules, context-rules files,
-output caps, cache discipline) compiles to each agent's native config: Cursor `.cursor/rules` +
-model variants, Codex `config.toml` profiles, Gemini `settings.json` aliases + `contextManagement`,
-Aider flags (`--cache-prompts`, `--map-tokens`, architect/editor/weak), Claude Code env + role TOML
-(jackin❯ K16). The stack survives an agent switch as a recompile, not a rewrite.
-
-**Savings math:** no new per-lever saving; it preserves the *whole stack's* savings across agents and
-prevents the silent loss when a team moves tools ([23 — Cross-agent / cross-provider portability matrix](/research/context/techniques/23-cross-agent-portability/): ~80% of the stack ports as discipline, ~60%
-as feature). Value = avoided re-derivation + avoided drift on the non-portable edges (cache_control,
-fast mode, register compression) which the compiler flags as agent-specific.
-
-**Feasibility verdict:** BUILDABLE — a config generator over the file-45 matrix; the friction is
-tracking each agent's config drift (Copilot's billing flip, Cursor's `.cursorrules`
-deprecation, etc.).
-
-**Tier:** T1 (each target's config surface, [23 — Cross-agent / cross-provider portability matrix](/research/context/techniques/23-cross-agent-portability/)). **Quality risk:** NEUTRAL (config translation).
-**Effort:** days (and ongoing maintenance as agents churn).
-
----
-
-### Honest ceiling
-
-These eight are deployable-but-unbuilt, not megaleverage. The biggest *dollar* swings remain where
-they remain blocked behind the hosted API (soft-prompts, KV export: K1/K2/[24 — Literature and market evidence map](/research/context/techniques/24-fresh-literature-and-market-delta/)) — and the
-biggest *quota* swing (V1/V2) cannot be sized until the denominator is probed. The remaining frontier
-changes *which* choice is correct (route vision cheap, prefer text over pixels, buy speed only when a
-human waits, guard compression live) and *what is measurable* (the cap weight, the guard tax) more
-than it raises the dollar-reduction ceiling. The composed effect on the tier list and the 10x verdict
-is settled in 49.
-
-For jackin❯, the frontier mechanisms for unresolved gaps evidence identifies which mechanisms are safe to adopt directly and which still require workload-specific validation.
-
-## Limitations and unknowns
-
-Quantitative conclusions are workload- and model-specific. Re-measure volatile provider inputs and validate transfers on representative jackin❯ tasks.
-
-## Sources
-
-Evidence and repository references are cited inline beside the claims they support.
+No empirical quota denominator, current vision task saving, OCR accuracy, fleet cache gain or online-guard reliability was established here. The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json">source register</RepoFile> identifies current contracts and paper versions; the coverage ledger gives each former heading and quantitative forecast an explicit disposition.
 
 ## Related work
 
-- [Token-optimization techniques dossier](/research/context/techniques/)
+- [Baseline audit](/research/context/techniques/02-baseline-audit/)
 - [Validation harness](/research/context/techniques/16-validation-harness/)
-- [Context engine](/research/context/engine/)
+- [Extension coverage](/research/context/techniques/18-extension-overview/)
+- [Provider-sensitive verification](/research/context/techniques/28-drift-delta/)

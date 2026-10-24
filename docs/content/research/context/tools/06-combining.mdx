@@ -1,83 +1,78 @@
 ---
 title: "06 — Composition and ownership"
-description: "How the six tools can compose without duplicate compression, broken recovery, shared-state contention, or cache churn."
+description: "Single ownership of observations, recovery, exposure, configuration and provider requests across optimizer combinations."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-Cutoff: **2026-09-23 UTC**. Compose capabilities only when their ownership boundaries are explicit. One transformation owner per observation is the default. A separate narration policy can coexist with retrieval, but the combination is a new treatment. This refresh covers the six named products, not an unverified adjacent-tool popularity list.
+Cutoff **2026-10-24T01:15:00Z**; inspected October 24. Compose independently qualified capabilities with one owner at each boundary. The default architecture preserves the native agent and its configured security boundary, then adds selected instructions, exact retrieval or observation transforms through host-specific contracts. A combined treatment needs its own outcome test.
 
-## Question and scope
+## Question and method
 
-How can Jackin combine useful capabilities without inheriting every product's installers, policies, state stores, and proxy behavior?
+How can Jackin automatically configure useful components without duplicate reduction, competing installers, stale exposure state or unowned auxiliary requests? Map each component's actual reach using the [six-product comparison](/research/context/tools/05-head-to-head/), current [host contracts](/research/context/techniques/23-cross-agent-portability/) and [Jackin source audit](/research/context/tools/11-jackin-integration/). Distinguish display changes, appended feedback and replacement of bytes consumed by the model.
 
-## Method
+## Ownership map
 
-Map where each intervention touches execution, agent-visible output, source selection, instructions, provider requests, and recovery. Assess collisions at those boundaries before measuring combined outcomes.
-
-## Findings
-
-### Candidate composition
-
-```text
-Jackin configuration and qualification registry
-  |-- versioned, role-aware instructions
-  |-- native agent execution and edits
-  |-- selected post-execution transforms where the host supports replacement
-  |-- one restricted repository-retrieval backend per experiment
-  |-- scoped artifact/recovery service and usage evidence
-  `-- optional provider proxy in a separately qualified profile
-```
-
-The [six-tool matrix](/research/context/tools/05-head-to-head/) establishes each product's reach. The [current Claude hook reference](https://code.claude.com/docs/en/hooks) distinguishes replacement of a result from merely appending context. The [Codex MCP reference](https://developers.openai.com/codex/mcp/) offers a separate server/tool configuration surface; it is not evidence of identical native-result interception.
-
-### Conflict rules
-
-| Combination | Default decision | Reason |
+| Object | Authoritative owner | Required contract |
 |---|---|---|
-| Caveman-style narration plus restricted retrieval | Evaluate after individual arms | Different boundaries, but behavior and prompt overhead can interact |
-| Ponytail plus LemonCrow persona | Do not stack by default | Both influence implementation strategy; attribution is lost |
-| RTK rewrite plus LeanCTX/LemonCrow shell replacement | Reject unless an explicit experiment owns the chain | Duplicate execution/routing policy and repeated output reduction |
-| Headroom transform applied to an already-reduced result | Bypass by default | The second pass may remove recovery hints or misinterpret summaries |
-| Multiple provider proxies | Reject in the automatic profile | Overlapping cache/auth/streaming and failure ownership |
-| Shared source index plus session-local exposure ledger | Permissible with isolation tests | Immutable data can be shared; what a model has seen cannot |
+| Native process/edit/approval result | Existing host and Jackin configured process boundary | Execute once; preserve exit/signal/cancellation, native read receipts and actual authorization policy |
+| Transformed observation | One selected host adapter plus one reducer | Exact producer identity, capture completeness, original digest, transform/config version and eligibility decision |
+| Recoverable original | Jackin-scoped artifact broker or explicitly admitted upstream store | Acknowledged persistence before loss, authorized exact retrieval, explicit retention and missing/corrupt errors |
+| Source index | One backend per qualified arm | Worktree/root/revision/generation identity, dirty-file freshness, traversal policy and native fallback |
+| Model exposure | Host consumer and context epoch | Never infer exposure from file hash, process uptime or another agent's read |
+| Instructions and MCP registration | Jackin configuration owner | Preserve unrelated entries, no duplicate schema/policy, reversible owned writes and effective configuration |
+| Memory item | Named session/repository memory policy | Provenance, trust, validity, supersession and retention distinct from observed source bytes |
+| Provider request and credentials | Existing route or one explicitly selected proxy | Streaming, auth, signed thinking, usage events, retries, cache writes and auxiliary traffic owned end to end |
 
-### Recovery contract
+Current `SessionIdentity` holds UID/GID, not this full context identity. Existing Claude and Codex hooks report status and do not prove a working replacement adapter. Current launch paths use permissive native modes; preserve the actual configured boundary rather than claim that approval prompts are universally enabled. [Current/proposed distinction](/research/context/engine/02-architecture/).
 
-Give each result a producer, workspace identity, content hash, capture-completeness flag, transform/version, and recovery handle. The authoritative preserved object is the exact result captured at that boundary, not an imagined complete command log.
+## Composition rules
 
-Keep the raw object before reducing it. If storage fails, return the original observed result; do not silently emit an unrecoverable lossy summary. Bound storage, pin artifacts needed by active or resumable sessions, and make eviction explicit. Raw recovery must bypass all reducers and keep source provenance.
+| Combination | Decision | Reason |
+|---|---|---|
+| Restrained narration plus precise retrieval | Compare after separate qualification | Different boundaries, but added instructions and changed tool choice interact |
+| Ponytail implementation policy plus another full persona | Avoid in the default | Changes architecture/testing decisions and destroys attribution |
+| RTK command rewriting plus LeanCTX/LemonCrow shell replacement | Do not stack | Competing execution and approval contracts; repeated transformations |
+| Headroom/Caveman applied to an already-reduced result | Bypass unless an explicit typed chain is qualified | Summaries and recovery markers are not raw producer formats |
+| Several proxies or warmers | Reject in the automatic profile | Credentials, retries, billing and cache ownership become ambiguous |
+| Immutable source data shared across worktrees | Only with content/root authorization and generation rules | A shared index does not authorize cross-worktree disclosure |
+| Shared mutable exposure ledger | Reject | Context resets, subagents and users do not share a reliable knowledge state |
+| Two recovery schemes nested in one result | Reject by default | Ambiguous provenance, expiration and decoding; one external recovery protocol |
 
-Reversibility is operational, not cognitive: a model may confidently misinterpret a summary without asking for its original. Failures, security findings, exact diffs, executable instructions, and final acceptance evidence need stricter raw-preservation rules.
+A wrapper may use upstream stores internally, but the external handle must have one lifetime and authorization contract. A handle or content hash is not an access credential. Compare ordinary strings and structured fields without executing retrieved instructions.
 
-### Cache and deduplication
+## Recovery before reduction
 
-Transform a new eligible observation once and freeze that representation within the session. Do not silently rewrite previously sent history to improve a local counter. Keep tool schemas and policy prefixes stable when possible.
+Persist the exact authorized observation captured at the boundary before returning a lossy view. Record stdout/stderr and capture completeness; a host-truncated result cannot be relabeled the complete original. Durable acknowledgement, not a unit-returning storage call, is the promotion condition. If optional storage/transformation fails, return the captured original once. Never rerun a side-effecting command to reconstruct output.
 
-Deduplication requires a **context epoch**, not just a file hash. Clear or rebuild exposure state after compaction, resume, model reset, or subagent creation unless retained content is proven. Never equate another agent's successful read with this agent knowing the content.
+Authorization failure, path-integrity failure and required redaction are not optional-transform errors: refuse or surface the error without exposing forbidden raw data. Preserve security findings, exact diffs, executable content and final acceptance evidence according to their stronger fidelity rules. The model may fail to notice an omission even when recovery works; recovery is necessary but not a quality proof.
 
-### Multi-agent behavior
+Fresh probes show why this matters: Headroom's Rust CCR put interface did not propagate a deliberately broken store; LemonCrow Lite could emit unchanged output without a spill reference; Caveman's tested fallible engine path returned the original plus an error. These are specific tested boundaries, not blanket product rankings. [Headroom](/research/context/tools/02-headroom-design/), [LemonCrow](/research/context/tools/10-lemoncrow-design/), [Caveman](/research/context/tools/01-caveman-design/).
 
-Scope mutable state by capsule, worktree, session, and context epoch. Share only explicitly immutable or concurrency-safe data. Do not make tool completion wait behind a machine-wide advisory-counter lock. Unknown completion after a mutation must be resolved through operation identity and state inspection, not automatic retry.
+Pin originals required by active/resumable sessions. At capacity, stop new lossy transformations before evicting referenced records. Recovery bypasses reducers and returns provenance and complete bytes when permitted. Explicitly test restart, missing/corrupt data, deadlines, storage pressure, interrupted writes and simultaneous consumers.
 
-LemonCrow's [current bounded state implementation](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/gateway/adapters/mcp/smart_state.py) illustrates why lock scope and timeout both matter. A finite timeout is not a latency target for every tool call.
+## Cache stability and context epochs
 
-## Implications for jackin❯
+Transform an eligible observation once and freeze its delivered representation. Keep stable schemas, policy and source prefixes when the host/provider permits it; do not rewrite sent history opportunistically. Current cache rules are provider/model/auth specific, including paid writes and signed thinking. [Caching](/research/context/techniques/07-caching-exploitation/).
 
-Generate capsule-local configuration rather than invoking six installers against the operator's home. Preserve existing hooks and approvals. Disable upstream updaters, telemetry, public listeners, and optional model downloads unless the selected profile explicitly permits them.
+Advance or invalidate exposure on compaction, resume, clear, reset, fork and new consumers unless retained content is demonstrated. A process may survive while the model loses its earlier context. The LeanCTX same-agent restart probe returned an AUTO stub without a compaction marker; explicit full retrieval remains a distinct path. Host lifecycle events are inputs to an epoch protocol, not proof that every prior observation survived. [State model](/research/context/engine/07-memory-and-state/).
 
-Expose operator controls for effective profile, active components, bypass reasons, versions, recovery, and rollback. The command names in future designs are proposals until implemented. No optimizer should be allowed to change the chosen model or reasoning effort to manufacture token savings.
+A compact handoff should carry verified decisions, repository revision, dirty changes, unresolved requirements and recovery references. The child still needs admitted source and its own exposure history. Count child startup, duplicate searches, review, retries and parent interpretation in total task economics.
 
-## Limitations and unknowns
+## Installation and effective off
 
-A composable API does not establish good combined outcomes. Run factorial ablations only after each individual candidate works. A passive shadow transform can estimate output differences but cannot predict the alternative agent trajectory and must never re-execute a mutating command.
+Generate capsule-local configuration and provision pinned artifacts with applicable notices. Do not run several upstream installers against the operator's home. Disable unselected update checks, telemetry, model downloads, hosted transports and auxiliary provider requests. Caveman record mode alone does not disable its warmer; use the actual component switches. A hidden MCP method must be denied server-side, not merely removed from tools/list.
 
-## Sources
+Off removes new optimizer steering, registrations, workers and routing while preserving the native agent and security configuration. It does not retroactively restore earlier compressed history or delete originals needed for recovery. Rollback keeps the recovery broker available through the declared horizon and reports which configuration owner changed what. Proposed profile names are not current CLI guarantees.
 
-Product boundaries come from the six design pages; host interfaces and current state implementation are linked inline.
+## Smallest decisive composition test
+
+After each component passes host and fidelity tests, run a fixed-model/effort factorial trial with native, component A, component B and A+B arms on representative task clusters. Interleave cold/warm runs and include all attempts. A passive shadow transform only measures the same captured trajectory; it cannot predict the alternative agent's decisions. Observe actual model-bound activation and score acceptance independently. [Evaluation protocol](/research/context/techniques/16-validation-harness/).
 
 ## Related work
 
-- [Evidence and acceptance](/research/context/tools/07-evidence-and-claims/)
-- [Jackin integration](/research/context/tools/11-jackin-integration/)
-- [Context engine](/research/context/engine/)
+- [Reuse matrix](/research/context/engine/09-reuse-decision-matrix/)
+- [Rollout](/research/context/engine/10-rollout-and-validation/)
+- [Security and lifecycle evidence](/research/context/tools/11-jackin-integration/)

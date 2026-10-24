@@ -1,74 +1,92 @@
 ---
-title: "05 — Output and prompt layer (L3)"
-description: "Design for concise output registers, prompt guards, subagent reports, codebooks, and quality instrumentation."
+title: "05 — Output and prompt layer"
+description: "Versioned instruction assets, complete concise answers, exact-content guards, and separate evaluation of upstream policies and adaptations."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-Generated role policy should enforce concise, evidence-preserving output and bounded subagent reports without adding a separate plugin or per-turn injection layer.
-Output is the 5×-priced token class (~17% of heavy-session dollars; 1 output token = 50 cache-read tokens) and the one place a prompt — not a program — is the whole mechanism. The engine ships caveman's validated core as **role-generated policy text**, with the honest numbers and the guard rails the research demanded, and none of the plugin delivery (hooks, ~940-token skill listing, per-turn re-injection machinery).
+Snapshot **2026-10-24 01:15:00 UTC**. Deliver concise, role-appropriate guidance without weakening requirements, tests, architecture or the selected model/effort. Start with duplicate-free delivery of Jackin-owned instructions. Treat exact Caveman/Ponytail assets, full plugins and a restrained Jackin adaptation as different experiments; do not transfer one treatment's result to another.
 
 ## Question and scope
 
-Which prompt and output controls reduce tokens without suppressing reasoning, evidence, warnings, or tool fidelity?
+How can output and instruction design avoid unnecessary narration and repeated context while preserving completeness, precise strings, useful explanations and durable artifacts? This layer changes policy/input assets; it does not intercept arbitrary hidden reasoning or guarantee a shorter task.
 
 ## Method
 
-The design combines provider controls, local output measurements, and quality evidence to separate lossless formatting reductions from brevity choices that require workload-specific validation.
+Inspect the effective current Caveman and Ponytail assets and their activation paths, distinguish skill-only from full-plugin behavior, and reconcile historical tokenizer/register measurements with current task evidence. Product pins, source hashes, selected local tests and independent-study limits are in [Caveman](/research/context/tools/01-caveman-design/) and [Ponytail](/research/context/tools/09-ponytail-design/).
 
 ## Findings
 
-### The register pack
+### Current assets and independently selectable treatments
 
-Compiled per role into the instruction file the capsule already provisions (one source → per-runtime paths), selected by a `[context.output]` level:
-
-| Level | Mechanism | Honest expectation (evidence) |
+| Treatment | Current inspected boundary | Proposed use |
 |---|---|---|
-| `off` | nothing injected | baseline |
-| `terse` (default) | plain terse-instruction: drop pleasantries/filler/hedging, complete sentences | captures most of the realizable win at lowest misread risk ([techniques 09 — Output discipline and structured generation](/research/context/techniques/09-output-discipline/): register ladder −54% at "plain") |
-| `compact` | + fragments allowed, telegraphic | −60% visible prose class |
-| `register` | full caveman-ultra-style register (word deletion, `→` causal arrows — the one glyph that pays at 1.0 tok) | **58.5%** of visible prose (T1 local); ≈10% of session dollars realized, 17% hard cap; ~50% over a terse baseline per caveman's own honest eval |
+| Caveman 4.0.1 output skill | Clarity/exact-content guidance; ordinary persisted artifacts retain normal prose | Compare the exact skill independently; do not import the entire plugin to obtain a short-output rule |
+| Caveman full plugin | Additional agents, engine/proxy/browser/memory and activation behavior; some agent policies select a model or constrain task scope | Separate full-product arm with declared policy changes; excluded from a fixed-model/effort skill comparison |
+| Caveman engine runtime | Separate `bin-v4.0.2` release; product CLI 4.0.1 still points to the earlier runtime | Transform candidate owned by the observation layer, not an assumed part of the output skill |
+| Ponytail 5.3.2 exact policy | Reuse-first work with complete affected callers/tests/config/security; current policy is not the old “one line only” caricature | Compare exact skill/plugin with activation evidence |
+| Jackin adaptation | Short owned guidance retaining project/user standards and current model/effort | New policy treatment with its own version, tests and task evidence |
 
-Rules baked into every level above `off` (the parts of caveman's SKILL.md that are guards, not compression): code blocks, API names, identifiers, error strings, commit keywords verbatim; never abbreviate code symbols; **auto-clarity carve-outs** — security warnings, destructive-op confirmations, order-sensitive sequences, and anything where compression creates ambiguity drop to plain prose. No wenyan tiers (no token gain over ultra, maximal risk — killed). No prose-word abbreviation lists beyond genuinely multi-token words (BPE already compressed the common ones: `fn`=2 tok > `function`=1).
+Caveman's current public engine/repository is Apache-2.0; the earlier blanket BSL exclusion is obsolete. Ponytail is MIT. Preserve applicable notices when distributing assets; separate private cloud/service terms and third-party assets remain outside that blanket. [Current release/license register](/research/context/tools/08-current-release-register/).
 
-### Guard lines (negative-cost, always on)
+### Proposed instruction content
 
-Two lines the dossier measured and tiered S, injected regardless of register level: "Prefer Edit over Write on existing files; never rewrite a file to change a few lines" (−89.3% per avoided rewrite, T1, and quality *up* per the aider diff-format evidence) and "Reference `file:line` instead of restating code; no post-edit summaries beyond one line" (−352 tokens per avoided restatement, 91.4%, T1). Plus the pointer rule: cite decision/doc handles, don't restate (−77.3% per recalled item).
+A small owned policy should ask the agent to complete the requested work, prefer existing abstractions where appropriate, inspect affected code, make precise edits, run the repository's necessary verification and explain consequential decisions concisely. Preserve uncertainty, negations, exceptions, error messages, path names, identifiers and required citations. Avoid repeated restatement of the task and unnecessary narration of routine steps.
 
-### Subagent report registers (the fleet multiplier)
+Brevity must adapt to the deliverable. A detailed design, incident report, research answer or user-requested explanation may require substantial prose. File contents, public documentation, tests and commit/PR explanations retain their intended style and completeness. An operator's explicit requested depth takes precedence over a terse register.
 
-Enforced *format* registers on subagent final messages — the dossier's decisive finding is that **enforced format does all the work; politeness asks do none** (the "Answer concisely" control arm saved nothing; the format register saved 43.9%). The engine writes the output-format contract into every generated agent definition: labeled compact lines (not JSON — +35% tax; not prose), `file:line` references, an `anomalies` free-text escape field, artifact-reference passing for anything over ~1k tokens (write to file, return path + ≤5-line abstract — ~80× vs copy-through), and the corruption boundary: **reports of completed work compress; specs of pending work never do** (one corrupted spec wastes an entire subagent run).
+Do not impose “no new abstraction,” “smallest line count,” fixed file limits, blanket test avoidance or automatic model downgrades. Those can make a short response less correct or maintainable. Current Ponytail has changed materially since earlier criticism; evaluate its actual policy rather than preserving fixed defects as present blockers.
 
-### Session codebook (K6/K7, bounded)
+### Exact-content and edit guards
 
-An optional per-role codebook: ≤8 aliases for genuinely hot multi-token identifiers/paths (legend ~212 tokens, −71% per aliased mention, break-even at second use), pinned in the stable prefix, byte-stable across turns (INV-1), re-pinned after compaction events. Alias admission is ledger-driven (hit-rate instrumented, LRU-evicted — K8's gate) so the codebook can never bloat into net-negative prefix rent. Single-token anchors are explicitly out (physics floor: 2–3 tokens minimum).
+Exact spans are ineligible for language compression when their bytes matter: commands, patches, file paths, API names, quoted evidence, schemas, numbers/units and code. Use native edit-over-rewrite where suitable, but do not force a patch strategy that obscures a required larger refactor. A shorter patch is not proof of complete engineering.
 
-### Structured-output sidecars
+Source retrieval, output policy and coding policy are separate interventions. A terse answer can reduce visible narration while increasing clarification or repair turns. Record those downstream effects. Hidden reasoning, provider-generated summaries and tool invocations must be accounted for only when the provider exposes them; visible answer length is not total output billing.
 
-For engine-run SDK calls (harness tasks, batch jobs, summarizers): `output_config.format` json_schema with `strict: true`, one stable schema per thread (changing it mid-thread invalidates the cache — the documented pitfall), killing wrapper prose and the parse-retry class. Not applicable to the interactive agent loop.
+### Activation, precedence and lifecycle
 
-### Calibration evidence
+Jackin should deliver one versioned asset through the host's existing role/configuration mechanism and record its content hash. Avoid simultaneous copies in a system prompt, root instructions, skill and hook reminder. Deduplicate only material that Jackin owns and knows to be identical; do not remove user/project instructions because a similarity heuristic considers them redundant.
 
-caveman-code's shipped register (the family's production-hardened variant) budgets **120–195 system-prompt tokens** for the full three-level block — the engine's register pack targets the same envelope, CI-gated (INV-6). Its exception list adds one item the flagship lacks and jackin❯ adopts: **commit messages and PR descriptions are exempt at every level** (matching this repo's own "code/commits/PRs: write normal" rule; the caveman plugin's `/caveman-commit` — same author, opposite policy — is the documented anti-pattern). The family's first agentic quality datapoint (honest-bench: the register-active arm resolved 1–2 fewer tasks than Codex, n=25) is directionally negative and too small to settle — it *mandates* the canary/holdout gating below rather than changing the default (`terse`).
+Precedence is explicit: operator/user policy and repository requirements remain authoritative; an optimization asset adds compatible defaults. A session-level disable survives compaction, resume and worker restart. The Ponytail plugin's observed mode lifecycle and per-project state demonstrate why installer success alone is insufficient. Two concurrent sessions may choose different modes even if they share a worktree.
 
-### Quality instrumentation (this layer's open question, finally answered)
+Update and uninstall affect only owned asset entries, using content/version identity and a reviewable migration. Preserve unrelated hooks/configuration and surface conflicts rather than erasing them. No upstream host-global installer is needed to package an instruction asset in a capsule.
 
-Register compression's agentic-task quality impact is the largest unmeasured risk in the entire research corpus — no benchmark exists anywhere. The engine closes it operationally: registers above `terse` run behind (a) the C1–C6 canaries in the role's screening A/B before activation, and (b) a sampled online judge ([techniques 25 — Meta layer: the cost of optimizing, budget governance, and online quality guarding](/research/context/techniques/25-meta-cost-governance-and-online-quality/): async, reference-free, alarm-don't-block, 1–10% sampling) watching for dropped caveats/negations on live traffic, with automatic per-role fallback to `terse` on alarm — V7's canary-gated adaptive compression, shipped.
+### Subagent handoffs and report formats
+
+For bounded delegation, request findings, exact source/artifact references, decisions, changed files, unresolved risks and executed verification. Keep distinct ownership and ask reviewers to challenge work they did not author. A concise report can reduce duplicated investigation, but arbitrary hard report-token ceilings can omit the very evidence a reviewer needs.
+
+A handoff is a new input artifact with provenance, not a transcript replay or guaranteed replacement for context. The receiving agent may need exact source and raw evidence. Include that recovery route and account for follow-up reads. Do not claim an “80× fleet multiplier” from a short handoff example or change the selected worker model to manufacture a saving. [Multi-agent protocols](/research/context/techniques/11-multi-agent-protocols/).
+
+### Codebooks, structured outputs and tokenization
+
+Session aliases or codebooks are experimental. Include legend cost, first exposure, context resets, exact-string escapes and repair turns in the comparison. Never rename source identifiers or paths invisibly. An alias that saves characters can expand under another tokenizer; measure the exact model/request serialization.
+
+Structured output is appropriate where a consumer requires a schema. JSON/TOON/TRON, shorthand registers and multilingual phrasing have different delimiters, escaping, comprehension and provider compatibility. Do not turn every user-facing answer into a compact machine format. Keep any provider constrained-output sidecar separate from prose policy and verify current support before using it. [Representation/tokenization techniques](/research/context/techniques/05-tokenizer-arbitrage/).
+
+### Calibration and quality instrumentation
+
+Caveman's inspected skill measured 4,961 UTF-8 bytes and 1,246 o200k tokens in the product probe. That is an asset estimate under one tokenizer, not its billed cost in every host or proof of break-even. Full plugin schemas and instructions add separately. Measure actual activation bytes/tokens once, repeated delivery, output changes, recovery and clarification costs.
+
+Historical fixed-text register percentages and “negative-cost always-on” claims do not establish current task benefit. Preserve historical experiments in the evidence ledger with their denominators. Grade completeness, correctness, maintainability, tests, exact strings and useful explanation using independent checks; a model's 1–10 style score is supplementary, not an acceptance oracle. [Evidence protocol](/research/context/tools/07-evidence-and-claims/).
 
 ## Implications for jackin❯
 
-These findings define the output and prompt layer (l3) contract for jackin❯; any implementation must preserve the acceptance gates and boundaries above.
+The initial proposed automatic asset contains restrained role guidance and duplicate-free owned delivery. It does not bundle a full proxy, memory system, codemap or agent fleet. Current source does not yet implement this selector or asset manifest. Qualification first checks policy precedence, activation, off/resume behavior and unchanged task requirements, then compares exact upstream and adapted policies separately.
+
+For a product plugin that changes agent model, scope or test behavior, either isolate those components or declare the full treatment separately. Main compression comparisons keep model and reasoning effort fixed. There is no accepted-task evidence in this refresh that authorizes unconditional terse language across all roles.
 
 ## Limitations and unknowns
 
-The design remains bounded by the evidence and acceptance gates above; volatile dependencies and provider behavior require revalidation before implementation.
+Local asset tests and token counts cannot establish broad accepted-task benefit. No paid style-policy task comparison ran. The old fixed dollar ceilings, output multipliers, alias break-even counts and small instruction budgets are withdrawn as universal rules. Provider prices and task mixes belong in the current economic model, not hard-coded policy defaults.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Current pinned assets, activation tests and license evidence are in the Caveman/Ponytail dossiers and their reproduction record. Design choices above are explicit Jackin proposals, not claims that the upstream products already satisfy every lifecycle contract.
 
 ## Related work
 
-- [Context engine dossier](/research/context/engine/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Token-optimization tools](/research/context/tools/)
+- [Output discipline](/research/context/techniques/09-output-discipline/)
+- [Memory and handoffs](/research/context/engine/07-memory-and-state/)
+- [Rollout](/research/context/engine/10-rollout-and-validation/)

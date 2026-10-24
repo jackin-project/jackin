@@ -1,0 +1,18 @@
+{
+  "grok": {
+    "commit": "2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8",
+    "commit_date": "2026-09-29T16:57:09Z"
+  },
+  "omp": {
+    "tag": "v18.2.4",
+    "commit": "1c0303b1f2ec515cbf4b44a9a49d68a029531aac"
+  },
+  "hermes": {
+    "commit": "5894e750c3dba980d43b25aa29e3958149ba2c61",
+    "commit_date": "2026-10-24T00:40:33Z"
+  },
+  "opencode": {
+    "commit": "c272a63cb4dd86a3e8771cf9a03be051fae28e95",
+    "commit_date": "2026-10-24T00:40:05Z"
+  }
+}

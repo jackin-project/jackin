@@ -1,0 +1,74 @@
+[
+  {
+    "id": "RTK-library",
+    "status": "changed",
+    "claim": "RTK 1.0.1 has an application library and public unpublished engine; root command filters remain private.",
+    "evidence": "source-register.json"
+  },
+  {
+    "id": "RTK-license",
+    "status": "changed",
+    "claim": "The default binary links the BUSL engine; the OSS edition is Apache. Jackin distribution and hosted grant interpretation remains unresolved.",
+    "evidence": "artifact-correspondence.json; frozen manifests/licenses"
+  },
+  {
+    "id": "RTK-diff-fixed",
+    "status": "fixed-with-surface-limit",
+    "claim": "The structural diff path is corrected; a separate Git compactor drops newline metadata and condenses truncated input.",
+    "evidence": "rtk-diff-boundary-results.json"
+  },
+  {
+    "id": "RTK-raw-rerun-only",
+    "status": "contradicted",
+    "claim": "SQLite and tee recovery exist; failed Cargo test recall executed successfully. Universal capture is not established.",
+    "evidence": "rtk-full-results.json; rtk-oss-results.json"
+  },
+  {
+    "id": "RTK-build",
+    "status": "qualified",
+    "claim": "Engine tests passed: 286 unit and one integration test. Selected full CLI tests did not execute.",
+    "evidence": "logs"
+  },
+  {
+    "id": "Lean-facade",
+    "status": "confirmed-expanded",
+    "claim": "The facade remains Preview, unpublished 0.1.0. It avoids jemalloc but explicitly enables ML/HTTP features, owns a runtime and sets process-global configuration.",
+    "evidence": "source-register.json"
+  },
+  {
+    "id": "Lean-cache-lifecycle",
+    "status": "changed-executed",
+    "claim": "Claude process-scope stubs were withheld; compaction marker and branch change refreshed content. A cold stub persists for the same custom scope.",
+    "evidence": "leanctx-mcp-results.json; leanctx-cold-results.json"
+  },
+  {
+    "id": "Lean-schema-overhead",
+    "status": "executed",
+    "claim": "The scoped fixture advertised 12 tools occupying 10,608 compact JSON bytes, with 202-byte and 115-byte response annotations.",
+    "evidence": "mcp-wire; leanctx-mcp-results.json"
+  },
+  {
+    "id": "Lean-negative-remediation",
+    "status": "historical-qualified",
+    "claim": "Issue 1305 contains a vendor transcription of the historical +10.60% external result. The -55% target is not an outcome; issue 1319 sample JSON is not a result.",
+    "evidence": "issues1305/1319"
+  },
+  {
+    "id": "Lean-Wavect",
+    "status": "historical-qualified",
+    "claim": "The Wavect report uses July 26 observations despite a later review date. Its local estimates do not establish provider bills.",
+    "evidence": "primaryWavectreport"
+  },
+  {
+    "id": "Lean-telemetry",
+    "status": "changed",
+    "claim": "Current telemetry v2 defaults on. The probe explicitly disabled it; older off-by-default reports do not describe this release.",
+    "evidence": "pinnedconfigsections/CHANGELOG"
+  },
+  {
+    "id": "Lean-build",
+    "status": "incomplete",
+    "claim": "The locked facade check was interrupted with exit 130. Neither a pass nor an upstream product failure is claimed.",
+    "evidence": "logs/leanctx-embed-check.log"
+  }
+]

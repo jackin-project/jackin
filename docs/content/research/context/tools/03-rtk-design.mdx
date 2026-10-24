@@ -1,63 +1,123 @@
 ---
 title: "03 — RTK: current design"
-description: "RTK 0.49.0: command filtering, content-addressed recall, parser corrections, and selective Jackin integration."
+description: "RTK 1.0.1 has an OSS filter executable, a BUSL engine and proxy, scoped recall, and distinct diff paths with different fidelity."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-Cutoff: **2026-09-23 UTC**. Reviewed release: [RTK v0.49.0](https://github.com/rtk-ai/rtk/releases/tag/v0.49.0), release commit `b1c0dc00649c50fbe8930f849c800d4d6ca12091`. RTK is a Rust command-output optimizer with a current recall facility. It is neither a universal input proxy nor an established embeddable filter SDK.
+Source cutoff: **2026-10-24T01:15:00Z**. Reviewed stable release: [RTK v1.0.1](https://github.com/rtk-ai/rtk/releases/tag/v1.0.1), published October 14, commit `4ef8730cf3a0dea11c8d64a9b90bc0616fe52100`. The release remains current at the final metadata recheck. Later default-branch work and development prereleases are separate treatments.
+
+RTK now has a reusable compression engine, an application library target, a stdin-filter executable interface, and a separate provider proxy. The earlier “no library” conclusion is obsolete. **The default binary includes BUSL-1.1 code; the separately distributed `rtk-oss` edition retains the Apache-2.0 command filters.** These are different reuse and licensing choices.
+
+The strongest immediate option is an experimental **pinned OSS diagnostic filter behind caller-owned capture**, with native execution and approvals retained. Current fixtures support that investigation; they do not establish a task-efficiency winner. Keep machine-consumed output and review diffs exact: the corrected structural diff parser and the Git compacting filter are different implementations, and the latter still omits information on tested inputs.
 
 ## Question and scope
 
-Where can command-specific filtering help Jackin without changing shell semantics, approval behavior, or the meaning of diagnostic evidence?
+Which RTK components can reduce observations without changing command execution, permissions, diagnostic meaning, or access to the original evidence? Evaluate filtering separately from instruction injection, native tool transformation, history compression, routing and representation changes.
 
-## Method
+## Method and evidence
 
-Inspect the tagged manifest and changelog; explicitly distinguish released fixes from independently reproduced behavior. Assess shell reach separately from native file tools and provider history.
+Reopened tagged source, manifests, licenses, release assets, registry records, parser/recovery implementations and hook lifecycle code. Verified the published Linux x86_64 musl **full and OSS** archives against GitHub asset SHA-256 digests; both report 1.0.1. Built and tested the engine with a locally available Rust 1.99.1 toolchain. Ran real Git and dependency-free Cargo producers, controlled signal fixtures, and malformed stdin probes. No paid agent runs, global installer, proxy activation or model-policy changes were performed.
 
-## Findings
+The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md">reproduction record</RepoFile> contains commands, fixture code, results, source hashes and exact build limitations. Component execution is distinct from host activation and accepted-task evidence.
 
-### Current capabilities
+## Release, package and license boundaries
 
-The [0.49.0 changelog](https://github.com/rtk-ai/rtk/blob/v0.49.0/CHANGELOG.md) records a content-addressed SQLite recall store, selectable retriever behavior, recall-efficiency counters, signal-handling work, and command-routing corrections. The description that RTK can recover only by rerunning the original command is no longer adequate.
+| Component at the pinned commit | Actual boundary | License and distribution consequence |
+|---|---|---|
+| `rtk` 1.0.1 application | Rust 2024, declared minimum Rust 1.91; library exposes application entry, with command modules private | Root package Apache-2.0, but default `engine` feature links BUSL code. Root metadata alone does not describe the full binary. |
+| `rtk-oss` 1.0.1 executable | Same CLI built with `--no-default-features`; command filters and hook core remain | Apache-2.0 edition; verified archive contains binary and Apache license. Preserve applicable dependency notices. |
+| `rtk-engine` 1.0.1 | Public `Block`, `Method`, `MethodCtx`, `Outcome`, pipeline/registry and provenance primitives; `publish = false` | BUSL-1.1. Source reuse is technically possible; distribution mode needs a separate license decision. |
+| `rtk-text` 1.0.1 | Shared text/estimation primitives; `publish = false` | Apache-2.0; does not expose the command-specific filter catalog. |
+| `rtk-plugin` 1.0.1 | Method authoring and registration over the engine; `publish = false` | BUSL-1.1; the API retains its engine dependency. |
+| `rtk-proxy` 1.0.1 | Separate workspace and executable/library, Tokio/axum and SQLite; not linked into CLI | BUSL-1.1, `publish = false`; engine dependency is also BUSL. |
 
-The same release records a structural region parser for unified diffs, budget-owned hunks, raw fallback, and subsequent filename and no-newline handling corrections. The prior prefix-classifier failure is not a valid blanket rejection of the current parser. These are **upstream released corrections**; this review did not execute the regression corpus.
+Sources: [root manifest](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/Cargo.toml), [engine manifest](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/Cargo.toml), [public exports](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/src/lib.rs), [text](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/text/Cargo.toml), [plugin](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/plugin/Cargo.toml), [proxy](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/proxy/Cargo.toml). Official registry checks found no `rtk` 1.0.1 or `rtk-engine` release on crates.io; do not substitute `cargo install rtk` for this artifact identity.
 
-### Recovery is scoped, not universal
+The [engine grant](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/LICENSE) permits production use without charge, including upstream's binary, but excludes offering the work or a derivative to third parties as a paid or hosted product/service without another arrangement. Its stated change date is September 9, 2030, with Apache-2.0 as the change license. The [proxy license](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/proxy/LICENSE) is separate. Whether Jackin's precise packaged or hosted distribution falls within a grant remains a legal question; a fork does not remove the restriction.
 
-The release differentiates tee and SQLite modes and failure/truncation-driven recovery. Do not infer that every successful command's full original is stored, that all entries survive indefinitely, or that recall has zero context overhead. Qualification must record the exact retriever mode, retention, capacity, and which bytes were actually captured.
+## Independently selectable interventions
 
-### Integration boundary
+| Intervention | What executes and sees | What changes and remains outside its reach |
+|---|---|---|
+| Command wrapper/rewrite | Parses a shell request, may rewrite it, then launches the selected command | Deterministic selection/formatting; commands outside the route and native read/search results remain untouched. Execution and approval compatibility need qualification. |
+| `rtk pipe --filter FAMILY` | Reads already-produced stdin; does not execute the producer | Process boundary for selected UTF-8 filters. Owns neither producer exit/signal state nor durable raw recovery. |
+| `rtk diff -` | Reads a unified diff through the structural region parser | Condensed representation with structural fallback; different from `pipe --filter git-diff`. |
+| Engine methods / hook pipelines | Block methods plus optional external process methods | Selected observation transforms or directives where the host supports them. Metadata declaring fidelity/cache stability is an assertion to test. |
+| Awareness / terse directives | Instructions delivered through supported hook/configuration paths | Model behavior and instruction overhead; separate arm from filtering. |
+| Provider proxy | Separate daemon sees requests routed through its endpoint | Normalization, optional cache alignment, CCR/history, representation and routing; bypass traffic remains invisible. Distinct auth/network/storage intervention. |
 
-```text
-agent shell request -> optional rewrite/wrapper -> real command
-                   -> filter + optional recall -> agent observation
-```
+Primary implementation: [stdin filters](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/cmds/system/pipe_cmd.rs), [method contract](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/src/method.rs), [default pipeline](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/builtin/default.toml), [proxy boundary](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/proxy/README.md). The default pipeline contains shell rewriting and, when a proxy is running, ANSI/progress/dedup normalization; it has no `after_tool` rule. Removing repeated lines or progress information is not universally semantically lossless.
 
-Native agent reads and searches outside that route are not automatically covered. Reducing a newly produced result avoids rewriting an existing prompt prefix, but does not prove favorable provider cache accounting or unchanged agent behavior. Deterministic filtering can still omit a crucial detail.
+The [posthook implementation](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/hooks/posthook.rs) can emit an output-replacement field. That does not establish that a host/version accepts it for every native tool. Verify the model-facing transcript, not just hook stdout or terminal presentation. The [host integration decision](/research/context/tools/11-jackin-integration/) governs that qualification.
 
-### Rust packaging
+## Diff corrections at the correct surface
 
-The [manifest](https://github.com/rtk-ai/rtk/blob/v0.49.0/Cargo.toml) identifies an Apache-2.0 CLI with Rust minimum 1.91. No library target is declared, and `src/lib.rs` was absent in the inspected tag. Do not propose `use rtk::...` as a supported integration. A command-line package on a Rust registry is not automatically a reusable library.
+The [structural parser](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/cmds/git/diff_cmd.rs) tracks file regions and hunk budgets, handles header-like content, and rejects malformed/incomplete structures for raw fallback. Source tests cover no-prefix paths, mail patches, combined hunks, truncation and no-newline markers. We did not execute that entire upstream CLI corpus. The old prefix-classifier defect is not a valid blanket rejection of this parser.
 
-## Implications for jackin❯
+However, [Git `compact_diff`](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/cmds/git/git_cmd.rs) is a different, budgeted path used by the Git wrapper and `pipe --filter git-diff`. Current executable evidence establishes:
 
-**Best part:** its command-specific catalog and now-explicit recall design. Start with measured noisy command families, not all shell traffic.
+| Same fixture / boundary | `rtk diff -` | `rtk pipe --filter git-diff` |
+|---|---|---|
+| Real Git patch containing header-like source lines | Retained changed payload and no-final-newline marker | Retained changed payload; omitted no-final-newline marker |
+| Patch cut before hunk budget completes | Fell back to input with an added terminating newline | Condensed partial content and counts, without an incomplete-hunk warning |
+| Non-diff text without final newline | Returned text with a terminating newline | Empty stdout, exit 0 |
+| Invalid UTF-8 ending in newline | Preserved bytes in this fixture | Exit 1, no stdout |
 
-**Integration choice:** package a pinned executable for a controlled arm, or seek an upstream pure-filter API. Extract a small reviewed Apache-2.0 kernel only if the executable boundary cannot preserve Jackin's contract. Keep attribution and regression fixtures. A permanent full fork is not the default choice.
+Thus “raw fallback” also needs byte-level qualification: `diff -` deliberately adds a newline when absent. Generic `pipe --passthrough` preserved the tested non-UTF-8/NUL/CRLF bytes. Neither compacting diff surface should supply an applyable patch, exact review evidence or machine protocol without a separately proven representation contract.
 
-**Default decision:** avoid blanket command rewriting. Prefer a host-supported post-execution seam when available; otherwise qualify exact commands, arguments, consumers, exits, and signals. Keep mutation output, security findings, and review diffs raw until their individual fidelity gates pass. Do not disable all current RTK features solely because a superseded parser was wrong.
+## Recovery and provenance
 
-## Limitations and unknowns
+[SQLite recall](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/core/retriever.rs) defaults to 10 MiB per entry, 200 entries, 30-day retention and gzip. Its identifier is the first 12 hexadecimal SHA-256 characters of command plus a separator plus captured content. Rows retain command, cwd, exit status, creation time, shown-line position, size, truncation state and payload. The hash itself is not a session/worktree identity. Over-cap storage may preserve a bounded hidden tail rather than a complete original; expiry and oldest-entry eviction occur on writes.
 
-No independent accepted-task evaluation of 0.49.0 was established. New recall changes the treatment, so older external studies do not measure this release. Permission matching, pipelines, quoted arguments, non-UTF-8 bytes, partial capture, and kill handling require real producer tests. Gross gain and recall counters are diagnostics, not provider-billed savings.
+[Tee/retriever dispatch](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/core/tee.rs) is conditional. Ordinary failure hints require a nonzero exit and at least 500 captured bytes; forced truncation paths can store successful output. Legacy tee defaults are 20 files and 1 MiB per file, with success capture optional. This is neither raw-rerun-only nor a universal durable original store.
 
-## Sources
+The real failing Cargo-test fixture returned exit 101, retained assertion detail and supplied a working recall reference. A successful Cargo-check warning retained its message/location but produced no recall hint. Missing recall returned an error. Recovery cannot restore bytes never captured or retained, and a model may never request an omitted detail.
 
-The tagged manifest and changelog support current capabilities and release corrections; [07 — Evidence](/research/context/tools/07-evidence-and-claims/) records independent-study eligibility.
+The stdin filter does not archive input. It rejects input above 10 MiB or invalid UTF-8 before filtering; panic fallback and estimated-size `never_worse` do not make malformed family inputs safe. Jackin must capture once, preserve stdout/stderr and producer status, and treat optional filter failure as passthrough of that captured observation. Never rerun a side-effecting producer to recover from a transformation error.
+
+## Defaults, costs and lifecycle
+
+`rtk init` can write agent instructions, hook/plugin files and settings at project or global scope. The [agent-specific lifecycle](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/docs/guide/getting-started/supported-agents.md) has different cleanup and ownership rules; removing the binary alone does not remove integrations. No installer/uninstaller was executed. Jackin should own capsule-local files and remove only that profile's registrations, state and executable on rollback.
+
+The [rewrite protocol](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/hooks/rewrite_cmd.rs) distinguishes allow/rewrite, defer, deny-to-host and rewrite/ask through exits 0, 1, 2 and 3. These are not producer exit statuses. A denied rewrite must still pass through native authorization; it is not permission to execute.
+
+An additional release-binary probe proposed `rtk lint` for `npm run lint`, returning **rewrite/ask exit 3**. The pinned [lint implementation](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/cmds/js/lint_cmd.rs) defaults empty arguments to ESLint through a package runner, not the project's named script. Script flags or chained checks therefore need a separate execution-equivalence test; this probe executed only rewriting, not npm, a linter or the host's ask flow. It reinforces the proposed caller-owned stdin-filter boundary and does not invalidate the 15 different shell fixtures below.
+
+[Telemetry](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/core/telemetry.rs) requires explicit consent, an enabled setting and a compiled endpoint; `RTK_TELEMETRY_DISABLED=1` disables it. Local tracking/recall still write data. The inspected deterministic filters need no model download. Optional external methods and proxy have separate dependencies, credentials and egress boundaries; they were not activated.
+
+The [text estimator](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/text/src/lib.rs) uses UTF-8 byte length divided by four, rounded up. A smaller estimate is not measured provider-token, bill or quota reduction. Filtering a new observation can preserve prior history, but instructions, schemas, recovery calls and serialization still affect cache behavior. Proxy normalization/alignment require separate provider-specific measurements.
+
+## Executed verification and limits
+
+| Verification | Result and scope |
+|---|---|
+| Locked `rtk-engine` tests | **286 unit tests and 1 guide integration test passed**, zero doc tests, Rust 1.99.1/Linux x86_64. Initial run lacked `rustdoc` on PATH; corrected run exited 0. |
+| Full and OSS binary fixtures | Each completed the same 25 records. All 15 shell cases preserved exits: quoting, `&&`/`||`, environment, spaced cwd, nested Bash, redirects and selected pipes. Some cases correctly deferred rewriting. |
+| Serialization | Standalone porcelain status lost its trailing newline; selected piped/redirected machine consumers stayed raw. This is not complete shell equivalence. |
+| Real producers | Dependency-free Cargo success warning/failure diagnostics retained; failure recall worked. CRLF/no-final-newline/non-UTF-8 file comparisons reported differences rather than false equality. |
+| Interruption | Controlled long-running Cargo shim retained a pre-SIGTERM diagnostic; wrapper exited by signal. Whole-process-tree, PTY, Windows and arbitrary streaming behavior remain untested. |
+| Diff/invalid input | Surface differences reproduced above; over-cap pipe rejected; missing recall failed visibly. |
+| Independent synthetic diagnostic | A separate reviewer supplied 60 grep-style matches plus an incomplete-scan diagnostic to `pipe --filter grep`; it omitted that diagnostic and exited 0. No real grep/permission failure was executed. <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/independent-review/rtk-independent-results.json">Exact fixture record and result</RepoFile>. |
+| Full source CLI tests | Not completed. Checkout residue caused a build-script refusal before selected tests ran: experiment setup failure, not a stable-release defect. |
+| Task economics / host delivery | Not run locally. See [evidence review](/research/context/tools/07-evidence-and-claims/) for historical studies and the newly located release-matched external RTK study. |
+
+Individual timings remain in artifacts; they are not randomized cold/warm benchmarks. OS caches and producer compilation differ between calls. RSS, CPU attribution, fleet contention, durable recovery under disk-full/crash and accepted-task cost remain unmeasured.
+
+## Jackin decision and decisive next steps
+
+1. **Qualify pinned OSS for selected noisy diagnostics.** Invoke a chosen stdin filter on captured bytes, with one transformation owner and Jackin-owned recovery. Preserve native execution, approval, auth and model/effort. Optional-transform failures return captured bytes; integrity/authorization failures remain failures.
+2. **Keep exact reads, machine formats and review diffs raw.** Current Git compaction behavior independently justifies exclusion. Promote a family only after its malformed/truncation/Unicode/signal corpus and model-facing activation check pass.
+3. **Evaluate engine reuse as a licensed arm.** Public traits and passing tests justify a spike, not a supported-SDK assumption. Seek version guarantees, caller-owned recovery and an appropriate distribution grant. Apache CLI private modules do not supply that typed API.
+4. **Prefer a narrow upstream API contribution to a full fork.** Proposed contract: typed observation in; bytes, omitted ranges, provenance and recoverability out; no command launch, global settings mutation or implicit storage. An extraction needs verified applicable terms, a maintenance owner, synchronization policy and regression corpus.
+5. **Compare complete tasks before default activation.** Hold agent/model/effort and native permissions fixed; count instructions, schemas, recovery, retries, failures and cache classes. Full-product/proxy/representation arms remain separate. Rollback removes the selected reducer while keeping native observations and resumable originals usable.
 
 ## Related work
 
 - [Six-tool comparison](/research/context/tools/05-head-to-head/)
-- [Composition](/research/context/tools/06-combining/)
+- [Composition and ownership](/research/context/tools/06-combining/)
+- [Evidence and claims](/research/context/tools/07-evidence-and-claims/)
+- [Current release register](/research/context/tools/08-current-release-register/)
 - [Jackin integration](/research/context/tools/11-jackin-integration/)

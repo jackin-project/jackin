@@ -1,76 +1,81 @@
 ---
 title: "05 — Six-tool comparison"
-description: "Boundary-based comparison and build, embed, adapt, or bundle decisions for the six current optimizers."
+description: "Current component boundaries, demonstrated limits and reuse choices for Caveman, RTK, LeanCTX, Ponytail, Headroom and LemonCrow."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-Cutoff: **2026-09-23 UTC**. There is no defensible universal winner. Headroom offers the most directly useful Rust transform surface; LeanCTX offers a preview Rust retrieval facade; LemonCrow offers an integrated runtime worth evaluating; RTK specializes in commands; Caveman and Ponytail offer different instruction-level interventions. Release identity is fixed in [08 — Register](/research/context/tools/08-current-release-register/).
+Cutoff: **2026-10-24T01:15:00Z**; verified October 24. There is no supported current overall winner. Adopt separately selectable capabilities with exact host, content and lifecycle contracts. The [release register](/research/context/tools/08-current-release-register/) fixes product, binary, package and license identities.
 
-## Question and scope
+## Question and method
 
-Which component solves each part of Jackin's token problem, and which integration form preserves ownership and correctness?
+Which intervention addresses observed waste without changing the task, selected model, reasoning effort or configured security boundary? Compare effective runtime paths. Distinguish source inspection, built APIs, local fixture outcomes and accepted-task outcomes. Package identity, licensing, activation, recovery and maintenance matter alongside correctness and economics.
 
-## Method
+## Capability and interception matrix
 
-Compare interception reach, effect on behavior, recovery, cache risk, dependencies, licensing, and available APIs. Require exact treatment matching before transferring any outcome claim. A preference for Rust is relevant to packaging and maintenance, not a substitute for task evidence.
+| Product | Separate interventions | Actual boundary | Traffic outside it |
+|---|---|---|---|
+| Caveman 4.0.1 / bin-v4.0.2 | Narration; Go transforms; proxy; schemas; memory; browser; TOON/pixel; warming/routing | Instructions affect generation; engine receives supplied content; proxy sees routed requests | Unrouted providers and native tools not connected to its adapter |
+| RTK 1.0.1 | Command wrapper; stdin filters; engine pipeline; recall/tee; separate proxy | Commands rewritten or explicitly invoked; supplied stdin bytes | Native file/search tools and bypassed commands; standalone diff and pipe diff differ |
+| LeanCTX 3.11.4 | Retrieval; exact/selected reads; exposure stubs; memory; shell; proxy; embedding | Its MCP/API/CLI calls and configured proxy traffic | Native read-before-edit state; persistent server state does not prove model exposure |
+| Ponytail 5.3.2 | Reuse/implementation policy; hooks; code map; metrics | Delivered instructions and hook events | No transparent result replacement or provider accounting guarantee |
+| Headroom 0.41.0 | Typed transforms; CCR; learned selection; cache planning; SDK/proxy | Supplied transform content or routed SDK/proxy requests | Native results outside the integration; Python and Rust backends differ |
+| LemonCrow 0.8.0 | Public Lite index/read/search; shell/edit; optional semantics; private advanced services | Calls to the selected Lite/full/hosted surface | Native host operations and absent private advanced implementation |
 
-## Findings
+Sources: pinned [Caveman](/research/context/tools/01-caveman-design/), [RTK](/research/context/tools/03-rtk-design/), [LeanCTX](/research/context/tools/04-leanctx-design/), [Ponytail](/research/context/tools/09-ponytail-design/), [Headroom](/research/context/tools/02-headroom-design/) and [LemonCrow](/research/context/tools/10-lemoncrow-design/) reviews. A row does not imply full coverage or an equivalent treatment.
 
-### Capability matrix
+## Reuse decisions
 
-| Axis | Caveman | RTK | LeanCTX | Ponytail | Headroom | LemonCrow |
-|---|---|---|---|---|---|---|
-| Primary intervention | Narration skill plus separate input stack | Command output | Retrieval/context runtime | Implementation choices | Typed input transforms/proxy | Integrated retrieval/tools/runtime |
-| Prevent unnecessary work | Policy-dependent | No | Retrieval/reuse | Direct objective | Not its primary scope | Search/read cycle reduction |
-| Reduce shell observations | Engine/integration-dependent | Main scope | Shell path | Indirect only | At a routed result/request seam | Own Bash tool / integration |
-| Progressive source retrieval | Separate input surfaces | Not automatic native-tool coverage | Core capability | No | Optional source shaping | Core capability |
-| Provider interception required | No for skill; input path varies | No | No for MCP | No | No for library; yes for proxy | No for local tool integration |
-| Recovery | Engine-specific references | Current recall/tee modes | Archive / exact reads | Not applicable | CCR / selected originals | Spill / targeted reads |
-| Rust embedding | No verified Rust engine API | CLI, no verified library target | Preview lean-ctx-embed | Not a Rust runtime | Public headroom-core source APIs | Python, use process boundary |
-| Initial Jackin role | Optional narration | Qualified command arm | Read-only backend | Adapted policy | Selected transform worker | Read-only comparator |
-
-Sources: the current [Caveman](/research/context/tools/01-caveman-design/), [RTK](/research/context/tools/03-rtk-design/), [LeanCTX](/research/context/tools/04-leanctx-design/), [Ponytail](/research/context/tools/09-ponytail-design/), [Headroom](/research/context/tools/02-headroom-design/), and [LemonCrow](/research/context/tools/10-lemoncrow-design/) source reviews.
-
-### Build, embed, adapt, or bundle
-
-| Capability | Preferred first move | When to build or extract |
+| Capability | First comparison | Demonstrated limitation and next action |
 |---|---|---|
-| Configuration, compatibility, evidence, isolation | Build in Jackin, extending existing components | These contracts depend on Jackin's host and capsule model |
-| Structured transforms | Source-pin selected headroom-core APIs in an isolated worker | Upstream cannot meet a demonstrated feature, fidelity, or deployment boundary |
-| Shell filters | Evaluate RTK executable and request a pure-filter upstream API | Only selected licensed kernels, with copied regression fixtures and provenance |
-| Repository retrieval | Native exact tools versus restricted LeanCTX and LemonCrow arms | A backend fails measured recall, freshness, isolation, or host integration requirements |
-| Narration and reuse policy | Small role-specific assets or adapted instructions | Native delivery is simpler than installing another runtime |
-| Provider proxy | Optional independent experiment | Only when tool-boundary reach is insufficient and cache/auth conformance passes |
+| Repository discovery | Native exact tools versus LeanCTX full reads and restricted LemonCrow Lite | AUTO exposure can survive restart; Lite schema filtering is not read-only enforcement. Add epochs and denied-call controls. |
+| Symbol/section selection | Native tools versus narrow fff-search, sem-core and mq-markdown primitives | Qualify grammar features, native dependencies, root identity and published artifacts. [Market scan](/research/context/techniques/03-prior-art-and-market-scan/). |
+| Structured observations | Caveman Go worker versus selected Headroom no-ML Rust transforms | Caveman has fallible recovery and CGO-dependent capabilities; Headroom has duplicate-key and persistence-interface failures. No blanket default. |
+| Command output | Apache RTK OSS pipe or explicitly invoked qualified commands | Some pipe paths omit diff metadata or suppress unmatched input. Preserve raw originals and qualify each filter. |
+| Generic pipeline | RTK engine as a separately licensed arm | Public traits and passing tests establish feasibility, not distribution permission or task fidelity. |
+| Narration | Minimal native clarity-first policy versus Caveman skill | Count delivered overhead and hidden reasoning. Exclude model-selecting bundled agents and extreme styles. |
+| Reuse policy | Small Jackin policy versus exact Ponytail product | Preserve complete migrations, tests, review and explicit off state. Adaptations inherit no benchmark percentage. |
+| Provider interception | Native features, then one explicit proxy if the host seam is insufficient | Qualify auth, streaming, signed thinking, cache writes, auxiliary calls and usage events. |
 
-Embedding all three Rust-capable packages is not automatically viable. RTK depends on bundled `rusqlite` 0.31 and Headroom on 0.40 in their reviewed manifests; packages linking incompatible native SQLite bindings may conflict in one dependency graph. Run a resolver/build spike rather than assuming different Rust packages always coexist. Process separation avoids that link boundary but introduces lifecycle costs. [RTK manifest](https://github.com/rtk-ai/rtk/blob/v0.49.0/Cargo.toml), [Headroom manifest](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/Cargo.toml).
+The previous unconditional preference for Headroom is withdrawn: its no-ML build makes it a contender, while current fidelity and recovery findings prevent automatic promotion. Caveman's former engine-license rejection is obsolete for the Apache releases. A Go process is acceptable when its complete costs and contracts beat a Rust alternative.
 
-### Best fit by actual waste
+## APIs and dependency feasibility
 
-If routine narration dominates, compare a minimal native brevity policy with Caveman's skill. If redundant implementation dominates, compare a restrained reuse-first policy with Ponytail. Do not optimize line count instead of requirement coverage.
+RTK exports a reusable pipeline with Block, Method and registry/provenance surfaces. Its application library exposes the application entry but keeps command modules private; rtk-engine and rtk-text are unpublished internal packages. A stdin-filter command now exists. The default engine is BUSL-1.1; the OSS command edition is Apache-2.0. [Manifest](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/Cargo.toml), [engine license](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/LICENSE).
 
-If large structured command results dominate, test qualified RTK families or selected Headroom transforms. If repeated repository exploration dominates, prioritize exact selection and compare LeanCTX with LemonCrow. If already-selected observations remain too large, evaluate compression next. Broad provider compression is a different boundary and should not be the starting assumption.
+Headroom's unpublished headroom-core is a real public Rust surface. Its selected no-ML profile compiled without fastembed, ONNX Runtime or Magika but retained SQLite, Oniguruma and tree-sitter native dependencies. LeanCTX's unpublished lean-ctx-embed preview owns a multithreaded Tokio runtime and process-global configuration; the build attempt here was interrupted rather than completed. Exact resolution, allocator ownership and native SQLite compatibility require concrete graph probes. [Headroom core](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/Cargo.toml), [LeanCTX facade](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/crates/lean-ctx-embed/Cargo.toml).
 
-### Evidence is not additive
+A sidecar initially contains runtime ownership, linkage and state more clearly than importing every engine into Jackin. It still adds startup, IPC, supervision and cancellation work. Direct dependency promotion requires a narrow stable API, a compatible graph and measured benefit. Python Runtime Lite is not rejected on language grounds.
 
-A full LemonCrow result includes its tools and persona; it cannot qualify a read-only Jackin backend. A Ponytail result cannot qualify a rewritten policy. A Headroom proxy result cannot qualify a direct Rust transform. Percentages from these configurations must never be added together to forecast a combined stack.
+The initial RTK candidate is the pinned OSS `pipe --filter <named-family>` subprocess, starting with one qualified test/diagnostic format. Its resolver includes named Cargo test, pytest, Go test/build, TypeScript and other formats; it does not expose a generic Clippy, Cargo check or lint filter. Broader compiler/lint fixtures are qualification inputs, not already supported coverage. The application's private command modules are not an Apache public Rust filter library. [Named filter resolver](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/cmds/system/pipe_cmd.rs).
+
+## Correctness and recovery
+
+| Evidence | Establishes | Does not establish |
+|---|---|---|
+| Exact recovery fixture | Tested original bytes can be retrieved | Agent notices omission and recovers before a wrong decision |
+| Never enlarges a payload | Local size bound | Semantic equivalence, retained diagnostics, lower bill or quota use |
+| Merged fix | Named defect changed in a selected path | Parallel-backend, edition or malformed-input correctness |
+| Read-only tool list | Advertised capabilities | Server-side denial of hidden exec/edit calls |
+| Stable index | Reusable source information | Model knowledge after compaction, reset, fork or another agent's read |
+| Component tests | Tested API behavior | Complete-task quality or native host conformance |
+
+Security findings, authorization decisions, exact diffs, executable material and final acceptance evidence need stronger preservation than routine redundant text. Optional-transform failure returns the captured result once; authorization/integrity failure remains an error. Never rerun a mutating producer merely because transformation failed.
+
+## Evidence and economic limits
+
+Historical studies concern different releases, hosts, models and policies. Current RTK evidence exists but is narrow. LemonCrow's old full-runtime benchmark does not qualify Lite retrieval; JetBrains studies of other tools contain no LemonCrow treatment. Full Ponytail, an adapted policy and passive instructions are separate arms. [Evidence eligibility](/research/context/tools/07-evidence-and-claims/).
+
+A smaller payload can increase spending through cache misses, extra turns, reasoning, recovery or local inference. Count every attempt per accepted task, preserve aggregate and task-weighted estimates, and measure cold/warm latency and resource growth. Percentages from different interventions are not additive.
 
 ## Implications for jackin❯
 
-The recommended target is **automatic, compatibility-qualified selection**, not an empty abstraction and not unconditional compression. Package reviewed components with Jackin; enable only transformations that satisfy a recorded host/version/content contract. Keep raw operation available and explain every bypass or disabled component.
-
-Retain native agent execution, editing, approvals, and authentication by default. Use replaceable backends rather than rebuilding entire products. The [implementation plan](/research/context/tools/11-jackin-integration/) gives concrete responsibilities and gates.
-
-## Limitations and unknowns
-
-The comparison does not establish that any candidate is fastest, cheapest, or safe for every task. API presence was inspected, not compiled. Independent current-release accepted-task evidence remains missing; [07 — Evidence](/research/context/tools/07-evidence-and-claims/) defines how to close that gap.
-
-## Sources
-
-Per-tool pages contain tagged source and release evidence. The matrix's recommendations are deductions from those boundaries, not measurements.
+Proceed with scoped configuration, qualification and evidence ownership. Package pinned experimental components automatically instead of invoking host-global installers. Reuse upstream APIs; contribute fallible persistence, epoch reset, exact-result contracts and read-only dispatch before forking. A fork needs an owner, upstream synchronization, regression corpus, security response and exit condition. [Reuse matrix](/research/context/engine/09-reuse-decision-matrix/).
 
 ## Related work
 
 - [Composition](/research/context/tools/06-combining/)
-- [Release register](/research/context/tools/08-current-release-register/)
-- [Engine reuse matrix](/research/context/engine/09-reuse-decision-matrix/)
+- [Implementation](/research/context/tools/11-jackin-integration/)
+- [Evaluation](/research/context/techniques/16-validation-harness/)

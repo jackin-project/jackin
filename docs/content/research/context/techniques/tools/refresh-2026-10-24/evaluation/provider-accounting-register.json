@@ -1,0 +1,221 @@
+{
+  "cutoff_utc": "2026-10-24T01:15:00Z",
+  "evidence": "Official public documentation inspected, no provider calls or bills executed. USD per million tokens, standard tier, selected models only.",
+  "sources": {
+    "openai_pricing": "https://developers.openai.com/api/docs/pricing",
+    "openai_cache": "https://developers.openai.com/api/docs/guides/prompt-caching",
+    "openai_reasoning": "https://developers.openai.com/api/docs/guides/reasoning",
+    "claude_pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "claude_cache": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+    "claude_thinking": "https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking",
+    "gemini_pricing": "https://ai.google.dev/gemini-api/docs/pricing",
+    "gemini_cache": "https://ai.google.dev/gemini-api/docs/caching",
+    "gemini_thinking": "https://ai.google.dev/gemini-api/docs/thinking"
+  },
+  "usage_contracts": {
+    "openai_responses": {
+      "input_total": "usage.input_tokens",
+      "cache_read_subset": "usage.input_tokens_details.cached_tokens",
+      "cache_write_subset": "usage.input_tokens_details.cache_write_tokens",
+      "write_breakdown": [
+        "usage.input_tokens_details.cache_write_tokens_details.ttl_30m_tokens",
+        "usage.input_tokens_details.cache_write_tokens_details.ttl_12h_tokens"
+      ],
+      "ordinary_input": "input_total - cache_read_subset - cache_write_subset",
+      "output_total": "usage.output_tokens",
+      "reasoning_subset": "usage.output_tokens_details.reasoning_tokens",
+      "rules": [
+        "Do not add reasoning tokens to output total.",
+        "For GPT5.6 and later, cached/read and write counts disjoint; write classes sum cache_write_tokens.",
+        "Earlier models have no separate cache-write charge: ordinary billed input=input_total-cache_read_subset.",
+        "Missing write accounting for a paid-write model is unknown, not zero."
+      ]
+    },
+    "claude_messages": {
+      "ordinary_input": "usage.input_tokens",
+      "cache_read": "usage.cache_read_input_tokens",
+      "cache_write": "usage.cache_creation_input_tokens",
+      "write_breakdown": [
+        "usage.cache_creation.ephemeral_5m_input_tokens",
+        "usage.cache_creation.ephemeral_1h_input_tokens"
+      ],
+      "total_prompt": "input_tokens + cache_read_input_tokens + cache_creation_input_tokens",
+      "output_total": "usage.output_tokens",
+      "reasoning_subset": "usage.output_tokens_details.thinking_tokens",
+      "rules": [
+        "Input classes disjoint.",
+        "Reasoning is subset of output; missing split stays unknown.",
+        "When usage.iterations is present, sum iterations; top-level omits compaction costs and must not be summed again."
+      ]
+    },
+    "gemini_interactions": {
+      "input_total": "usage.total_input_tokens",
+      "cache_read_subset": "usage.total_cached_tokens",
+      "ordinary_input": "total_input_tokens-total_cached_tokens",
+      "visible_output": "usage.total_output_tokens",
+      "reasoning_disjoint": "usage.total_thought_tokens",
+      "priced_generation": "total_output_tokens + total_thought_tokens",
+      "rules": [
+        "Interactions output and thoughts are disjoint: documented example 62+171+297=530 total.",
+        "Argon supports implicit caching only, not explicit storage objects.",
+        "Do not use generateContent usageMetadata field names for Interactions."
+      ]
+    }
+  },
+  "rates": {
+    "gpt-6-astra": {
+      "provider": "openai",
+      "prompt_threshold": 272000,
+      "at_or_below": {
+        "input": 10,
+        "output_inclusive_reasoning": 50,
+        "cache_read": 1,
+        "cache_write_30m": 12.5,
+        "cache_write_12h": 25
+      },
+      "above": {
+        "input": 20,
+        "output_inclusive_reasoning": 75,
+        "cache_read": 2,
+        "cache_write_30m": 25,
+        "cache_write_12h": 50
+      }
+    },
+    "gpt-6.1-sol": {
+      "provider": "openai",
+      "prompt_threshold": 272000,
+      "at_or_below": {
+        "input": 2,
+        "output_inclusive_reasoning": 10,
+        "cache_read": 0.1,
+        "cache_write_30m": 2.5,
+        "cache_write_12h": 5
+      },
+      "above": {
+        "input": 4,
+        "output_inclusive_reasoning": 15,
+        "cache_read": 0.2,
+        "cache_write_30m": 5,
+        "cache_write_12h": 10
+      }
+    },
+    "gpt-6-sol": {
+      "provider": "openai",
+      "prompt_threshold": 272000,
+      "at_or_below": {
+        "input": 2,
+        "output_inclusive_reasoning": 10,
+        "cache_read": 0.2,
+        "cache_write_30m": 2.5,
+        "cache_write_12h": 5
+      },
+      "above": {
+        "input": 4,
+        "output_inclusive_reasoning": 15,
+        "cache_read": 0.4,
+        "cache_write_30m": 5,
+        "cache_write_12h": 10
+      }
+    },
+    "gpt-6-luna": {
+      "provider": "openai",
+      "prompt_threshold": 272000,
+      "at_or_below": {
+        "input": 0.1,
+        "output_inclusive_reasoning": 0.5,
+        "cache_read": 0.01,
+        "cache_write_30m": 0.125,
+        "cache_write_12h": 0.25
+      },
+      "above": {
+        "input": 0.2,
+        "output_inclusive_reasoning": 0.75,
+        "cache_read": 0.02,
+        "cache_write_30m": 0.25,
+        "cache_write_12h": 0.5
+      }
+    },
+    "gpt-5.6-sol": {
+      "provider": "openai",
+      "prompt_threshold": 272000,
+      "at_or_below": {
+        "input": 4,
+        "output_inclusive_reasoning": 20,
+        "cache_read": 0.4,
+        "cache_write_30m": 5,
+        "cache_write_12h": 10
+      },
+      "above": {
+        "input": 8,
+        "output_inclusive_reasoning": 30,
+        "cache_read": 0.8,
+        "cache_write_30m": 10,
+        "cache_write_12h": 20
+      }
+    },
+    "claude-fable-5-1": {
+      "provider": "claude",
+      "input": 10,
+      "output_inclusive_thinking": 50,
+      "cache_read": 0.25,
+      "cache_write_5m": 12.5,
+      "cache_write_1h": 20
+    },
+    "claude-mythos-5-1": {
+      "provider": "claude",
+      "input": 10,
+      "output_inclusive_thinking": 50,
+      "cache_read": 0.25,
+      "cache_write_5m": 12.5,
+      "cache_write_1h": 20
+    },
+    "claude-opus-5-5": {
+      "provider": "claude",
+      "input": 4,
+      "output_inclusive_thinking": 20,
+      "cache_read": 0.2,
+      "cache_write_5m": 5,
+      "cache_write_1h": 8
+    },
+    "claude-sonnet-5-5": {
+      "provider": "claude",
+      "input": 2,
+      "output_inclusive_thinking": 10,
+      "cache_read": 0.1,
+      "cache_write_5m": 2.5,
+      "cache_write_1h": 4
+    },
+    "claude-haiku-5-5": {
+      "provider": "claude",
+      "prompt_threshold": 100000,
+      "at_or_below": {
+        "input": 0.1,
+        "output_inclusive_thinking": 0.5,
+        "cache_read": 0.01,
+        "cache_write_5m": 0.125,
+        "cache_write_1h": 0.2
+      },
+      "above": {
+        "input": 0.5,
+        "output_inclusive_thinking": 2.5,
+        "cache_read": 0.05,
+        "cache_write_5m": 0.625,
+        "cache_write_1h": 1
+      }
+    },
+    "gemini-4-argon": {
+      "provider": "gemini",
+      "intro_valid_through": "2026-11-30",
+      "input": 2,
+      "output_plus_thought": 10,
+      "cache_read": 0.1,
+      "from_2026_12_01": {
+        "input": 4,
+        "output_plus_thought": 20,
+        "cache_read": 0.2
+      },
+      "cache_minimum_tokens": 4096,
+      "cache_increment_rule": "At least 2050 aggregate new tokens for full previous-request cache; otherwise last2050 previous tokens reprocessed at ordinary input price."
+    }
+  }
+}

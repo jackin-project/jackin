@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+    "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/verify_coverage_reconciliation.py"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+  "environment_overrides": {
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "started_utc": "2026-10-24T08:27:22.613774+00:00",
+  "ended_utc": "2026-10-24T08:27:23.130289+00:00",
+  "exit_code": 1,
+  "script_sha256": "fef84a25d596bc075d1e9f2d7db1abd15a6f33feb0940fdd758ced2d6db1b30a",
+  "stdout": "logs/coverage-integrity-initial.stdout",
+  "stderr": "logs/coverage-integrity-initial.stderr",
+  "interpretation": "Harness-only failure: standalone remark parser treated YAML frontmatter as a setext heading. Negative guards passed before this comparison. Corrected independent parser strips frontmatter just as the site does."
+}

@@ -1,0 +1,55 @@
+{
+  "recorded_utc": "2026-10-24T09:44:41.298Z",
+  "url": "https://api.github.com/repos/jackin-project/jackin/compare/e737f4b5eb7c1a0d15ba6595fc260407ad178452...57612bbc595f91faf9ba89351d697aedb9fa2757",
+  "status": "ahead",
+  "ahead_by": 1,
+  "behind_by": 0,
+  "total_commits": 1,
+  "commits": [
+    {
+      "sha": "57612bbc595f91faf9ba89351d697aedb9fa2757",
+      "message": "docs(env): document credential and picker invariants (#1206)\n\n## Summary\n\nRecover four comments that document existing credential and picker\nboundaries:\n\n- Operator environment declarations can contain credential material and\nstay within Rust.\n- Credential declarations follow the resolved launch instance and its\nexisting routing rules.\n- A per-reference 1Password account overrides the instance default.\n- The operator picker deserializes metadata only; secret values stay out\nof its model.\n\nNo executable code changed.\n\n## Validation\n\n- Normal pre-commit passed the `jackin-env` formatter, `cargo check`,\nand Clippy tasks, plus Gitleaks and Kingfisher.\n- Normal pre-push passed Betterleaks with no findings.\n\n---------\n\nSigned-off-by: Alexey Zhokhov <alexey@zhokhov.com>",
+      "parents": [
+        "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "filename": "crates/core/jackin-env/src/accounts.rs",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 0,
+      "sha": "a2f0c238cddb1f8f0725012910875df1cdd03b50",
+      "patch": "@@ -30,6 +30,10 @@ fn account_for_credential_resolution(\n     account\n }\n \n+/// Return the exact persisted credential declarations selected for one launch\n+/// instance. The launcher uses this alongside the resolved values to build a\n+/// source-identity fence; resolution itself remains in this module so the\n+/// model-dependent routing rules cannot drift between staging and proofing.\n pub fn credential_env_declarations_for_instance(\n     config: &AppConfig,\n     instance: &jackin_config::ResolvedInstance,",
+      "blob_url": "https://github.com/jackin-project/jackin/blob/57612bbc595f91faf9ba89351d697aedb9fa2757/crates%2Fcore%2Fjackin-env%2Fsrc%2Faccounts.rs"
+    },
+    {
+      "filename": "crates/core/jackin-env/src/op_cli.rs",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 0,
+      "sha": "c9d7e420cdbc686a25f97b5e98242030d962ff4b",
+      "patch": "@@ -266,6 +266,8 @@ fn op_read_args<'a>(reference: &'a str, account: Option<&'a str>) -> Vec<&'a str\n \n impl OpRunner for OpCli {\n     fn read_with_account(&self, reference: &str, account: Option<&str>) -> anyhow::Result<String> {\n+        // A per-ref account overrides the instance default so a workspace\n+        // holding refs from several accounts resolves each against its own.\n         match account {\n             Some(_) => Self {\n                 binary: self.binary.clone(),",
+      "blob_url": "https://github.com/jackin-project/jackin/blob/57612bbc595f91faf9ba89351d697aedb9fa2757/crates%2Fcore%2Fjackin-env%2Fsrc%2Fop_cli.rs"
+    },
+    {
+      "filename": "crates/core/jackin-env/src/picker.rs",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 0,
+      "sha": "2450eea47420748104ad1420ebd289e83a0a42ed",
+      "patch": "@@ -54,6 +54,11 @@ pub(crate) struct RawOpSection {\n     pub(super) label: String,\n }\n \n+// SAFETY: `value` is intentionally absent from this struct, so it is not\n+// retained in `RawOpField` or the picker model. `item_get` still buffers the\n+// CLI's raw response, so this does not prevent secret values from entering\n+// process memory. Do not add a `value` field here.\n+//\n #[derive(serde::Deserialize)]\n pub(crate) struct RawOpField {\n     pub(super) id: String,",
+      "blob_url": "https://github.com/jackin-project/jackin/blob/57612bbc595f91faf9ba89351d697aedb9fa2757/crates%2Fcore%2Fjackin-env%2Fsrc%2Fpicker.rs"
+    },
+    {
+      "filename": "crates/core/jackin-env/src/resolve.rs",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 0,
+      "sha": "cb80556c3c16419fb36b813aaae68d259ccaf2f7",
+      "patch": "@@ -645,6 +645,11 @@ pub fn lookup_operator_env_raw(\n         .map(|(_, value)| value.as_display_str().clone())\n }\n \n+/// Look up the winning typed declaration for one operator-env key.\n+///\n+/// This is a Rust-only composition seam for source-equality caching before a\n+/// protected read. The returned value can contain credential material and must\n+/// never be logged, persisted, or projected across FFI.\n pub fn lookup_operator_env_declaration(\n     config: &AppConfig,\n     role_selector: Option<&str>,",
+      "blob_url": "https://github.com/jackin-project/jackin/blob/57612bbc595f91faf9ba89351d697aedb9fa2757/crates%2Fcore%2Fjackin-env%2Fsrc%2Fresolve.rs"
+    }
+  ]
+}

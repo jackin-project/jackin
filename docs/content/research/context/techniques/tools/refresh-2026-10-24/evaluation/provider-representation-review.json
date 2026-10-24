@@ -1,0 +1,365 @@
+{
+  "reviewer": "/root/rtk_leanctx",
+  "reviewed_author": "/root/caveman_ponytail",
+  "source_cutoff_utc": "2026-10-24T01:15:00Z",
+  "review_completed_utc": "2026-10-24T02:40:09.857772+00:00",
+  "reviewed_files": {
+    "docs/content/research/context/techniques/05-tokenizer-arbitrage.mdx":
+            "a81201a9ee84d0283e3b222a4284d2188efea0f4c9aec2ea93e4f5612f7d51be",
+    "docs/content/research/context/techniques/06-context-architecture.mdx":
+            "4e96346e8bd087806497d081def81caf27222252a4e4f952d7d971b03cf5a8ba",
+    "docs/content/research/context/techniques/07-caching-exploitation.mdx":
+            "ed6d175ec092207536a56fb7c086d44b591f0f3eed9f1b0b559e619ce4453771",
+    "docs/content/research/context/techniques/12-provider-features.mdx":
+            "7958c1208276b1bb4fc74583057a85d43d48298e716c1acdd6dd18d301d28ad2",
+    "docs/content/research/context/techniques/19-subscription-and-quota-economics.mdx":
+            "303da5e50e00bbd67ce8ebe7ac134795c8064a2697a628ccdf2b648a6e529e00",
+    "docs/content/research/context/techniques/22-fleet-and-multitenant-cache.mdx":
+            "81161f1d10548efb6f5850812d08460e9d9d7d092d5f2f6daecea5d90bcbe52f",
+    "docs/content/research/context/techniques/28-drift-delta.mdx":
+            "240514952098385d59ac6d3e014b48b1391fadd970c87f7d139c44d5d8f8fa78",
+    "docs/content/research/context/techniques/04-style-and-language-compression.mdx":
+            "3bee5529215cece5ff4c8ac88cd32487b81ac5649ee3a75eebe86f8b03970674",
+    "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/representation_probe.py":
+            "42c5ebfe4546e9afd93b6d393fa611f180082b5756577a89a966bf274113b00e",
+    "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json":
+            "168c4d5c731ed0cba9f4aff6c7a434fef31a7eb5d5736c0a16c8081b47cc9523",
+    "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/execution-manifest.json":
+            "34dfa4173930ec2884e3560ebb0d62f7b0fcc317007788f91fd3b8b4c8ab8fd2"
+  },
+  "source_captures": {
+    "openai-cache": {
+      "register_metadata": {
+        "url": "https://developers.openai.com/api/docs/guides/prompt-caching.md",
+        "accessed_at_utc": "2026-10-24T01:35:50Z",
+        "status": 200,
+        "final_url": "https://developers.openai.com/api/docs/guides/prompt-caching.md",
+        "content_type": "text/markdown; charset=utf-8",
+        "last_modified": "Sat, 24 Oct 2026 00:16:13 GMT",
+        "bytes": 55725,
+        "sha256":
+                "715eacd5f0fe6bd7b238b74b770a6eb5b9a5260f464b5d54066b0bf580d3e995"
+      },
+      "reviewed_text_sha256":
+              "715eacd5f0fe6bd7b238b74b770a6eb5b9a5260f464b5d54066b0bf580d3e995",
+      "reviewed_text_bytes": 55725
+    },
+    "openai-pricing": {
+      "register_metadata": {
+        "url": "https://developers.openai.com/api/docs/pricing.md",
+        "accessed_at_utc": "2026-10-24T01:35:50Z",
+        "status": 200,
+        "final_url": "https://developers.openai.com/api/docs/pricing.md",
+        "content_type": "text/markdown; charset=utf-8",
+        "last_modified": "Sat, 24 Oct 2026 00:14:58 GMT",
+        "bytes": 22449,
+        "sha256":
+                "606acc6693f882253e203e30da2fbfd23f28b02540a98f26fce93c5cdc04e9dd"
+      },
+      "reviewed_text_sha256":
+              "606acc6693f882253e203e30da2fbfd23f28b02540a98f26fce93c5cdc04e9dd",
+      "reviewed_text_bytes": 22449
+    },
+    "openai-codex-pricing": {
+      "register_metadata": {
+        "url": "https://developers.openai.com/codex/pricing.md",
+        "accessed_at_utc": "2026-10-24T01:35:50Z",
+        "status": 200,
+        "final_url": "https://learn.chatgpt.com/docs/pricing.md",
+        "content_type": "text/markdown; charset=utf-8",
+        "last_modified": null,
+        "bytes": 45736,
+        "sha256":
+                "e3e0a5ac79441fac79cf1e50d31c0bdbd8d27e0f30452a8307f87ab64495bdf3"
+      },
+      "reviewed_text_sha256":
+              "e3e0a5ac79441fac79cf1e50d31c0bdbd8d27e0f30452a8307f87ab64495bdf3",
+      "reviewed_text_bytes": 45736
+    },
+    "claude-cache": {
+      "register_metadata": {
+        "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching.md",
+        "accessed_at_utc": "2026-10-24T01:35:50Z",
+        "status": 200,
+        "final_url": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching.md",
+        "content_type": "text/markdown; charset=utf-8",
+        "last_modified": null,
+        "bytes": 162332,
+        "sha256":
+                "877d675a151da3dc66132fcb0226551a6484ad70c3f8a610e11f363a9b3d8aaa"
+      },
+      "reviewed_text_sha256":
+              "877d675a151da3dc66132fcb0226551a6484ad70c3f8a610e11f363a9b3d8aaa",
+      "reviewed_text_bytes": 162332
+    },
+    "claude-pricing": {
+      "register_metadata": {
+        "url": "https://platform.claude.com/docs/en/about-claude/pricing.md",
+        "accessed_at_utc": "2026-10-24T01:35:50Z",
+        "status": 200,
+        "final_url": "https://platform.claude.com/docs/en/about-claude/pricing.md",
+        "content_type": "text/markdown; charset=utf-8",
+        "last_modified": null,
+        "bytes": 53397,
+        "sha256":
+                "f71573e3b8280316d567a310cdc9a469c6c56a3a0c13d9156446e4af340be39e"
+      },
+      "reviewed_text_sha256":
+              "f71573e3b8280316d567a310cdc9a469c6c56a3a0c13d9156446e4af340be39e",
+      "reviewed_text_bytes": 53397
+    },
+    "claude-compaction": {
+      "register_metadata": {
+        "url": "https://platform.claude.com/docs/en/build-with-claude/compaction.md",
+        "accessed_at_utc": "2026-10-24T01:35:50Z",
+        "status": 200,
+        "final_url": "https://platform.claude.com/docs/en/build-with-claude/compaction.md",
+        "content_type": "text/markdown; charset=utf-8",
+        "last_modified": null,
+        "bytes": 12237,
+        "sha256":
+                "b8c66a81d710b7fdeb2868b4e73288f45d7fb560f5f69cc0e26154f89654f161"
+      },
+      "reviewed_text_sha256":
+              "b8c66a81d710b7fdeb2868b4e73288f45d7fb560f5f69cc0e26154f89654f161",
+      "reviewed_text_bytes": 12237
+    },
+    "claude-compaction-threshold": {
+      "register_metadata": {
+        "url": "https://platform.claude.com/docs/en/build-with-claude/compaction-threshold.md",
+        "accessed_at_utc": "2026-10-24T01:42:43Z",
+        "status": 200,
+        "final_url": "https://platform.claude.com/docs/en/build-with-claude/compaction-threshold.md",
+        "content_type": "text/markdown; charset=utf-8",
+        "last_modified": null,
+        "bytes": 114607,
+        "sha256":
+                "53c43804de512cbab41f7126fdd27a41ab8d068f422ce429620773a95e8bb4fe"
+      },
+      "reviewed_text_sha256":
+              "53c43804de512cbab41f7126fdd27a41ab8d068f422ce429620773a95e8bb4fe",
+      "reviewed_text_bytes": 114607
+    },
+    "claude-counting": {
+      "register_metadata": {
+        "url": "https://platform.claude.com/docs/en/build-with-claude/token-counting.md",
+        "accessed_at_utc": "2026-10-24T01:35:50Z",
+        "status": 200,
+        "final_url": "https://platform.claude.com/docs/en/build-with-claude/token-counting.md",
+        "content_type": "text/markdown; charset=utf-8",
+        "last_modified": null,
+        "bytes": 44259,
+        "sha256":
+                "012ebe6155984b65d290bf4d16251f9fce90be46c00188928e6f727e9329aaba"
+      },
+      "reviewed_text_sha256":
+              "012ebe6155984b65d290bf4d16251f9fce90be46c00188928e6f727e9329aaba",
+      "reviewed_text_bytes": 44259
+    },
+    "claude-monthly-api-credits": {
+      "register_metadata": {
+        "url": "https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans",
+        "accessed_at_utc": "2026-10-24T01:44:37Z",
+        "status": 200,
+        "final_url": "https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans",
+        "content_type": "text/html; charset=utf-8",
+        "last_modified": null,
+        "bytes": 230436,
+        "sha256":
+                "b1391a1ae238e08da37327cb714765892036fc8be3e4501973c25531f8515201"
+      },
+      "reviewed_text_sha256":
+              "60cfcfa846385b4161392dcafac62459cbe791c30ca52723d756d98bd0fe9840",
+      "reviewed_text_bytes": 7902
+    },
+    "claude-subscription-sdk": {
+      "register_metadata": {
+        "url": "https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan",
+        "accessed_at_utc": "2026-10-24T01:41:56Z",
+        "status": 200,
+        "final_url": "https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan",
+        "content_type": "text/html; charset=utf-8",
+        "last_modified": null,
+        "bytes": 192839,
+        "sha256":
+                "88992e69c8c897b5d9c15e7a0b7e9dc1635aa7b5144ddf876751e3ae670a7032"
+      },
+      "reviewed_text_sha256":
+              "593b811b0027e37408074177fdae98a5d417c1d200e43b602ae7f75d972fa000",
+      "reviewed_text_bytes": 1532
+    },
+    "claude-code-cache": {
+      "register_metadata": {
+        "url": "https://code.claude.com/docs/en/prompt-caching.md",
+        "accessed_at_utc": "2026-10-24T01:35:51Z",
+        "status": 200,
+        "final_url": "https://code.claude.com/docs/en/prompt-caching.md",
+        "content_type": "text/markdown; charset=utf-8",
+        "last_modified": "Sat, 24 Oct 2026 01:35:51 GMT",
+        "bytes": 44402,
+        "sha256":
+                "dbc4fb385c4c03ecfda0b23926f2ad22662649fa3e2282f90c516c80bcaa540e"
+      },
+      "reviewed_text_sha256":
+              "dbc4fb385c4c03ecfda0b23926f2ad22662649fa3e2282f90c516c80bcaa540e",
+      "reviewed_text_bytes": 44402
+    },
+    "claude-mid-system": {
+      "register_metadata": {
+        "url": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages.md",
+        "accessed_at_utc": "2026-10-24T01:35:50Z",
+        "status": 200,
+        "final_url": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages.md",
+        "content_type": "text/markdown; charset=utf-8",
+        "last_modified": null,
+        "bytes": 105284,
+        "sha256":
+                "3dd3efba07e8a7502d137f46ff862c3bb9a5cfffb59e3575a77027340424db92"
+      },
+      "reviewed_text_sha256":
+              "3dd3efba07e8a7502d137f46ff862c3bb9a5cfffb59e3575a77027340424db92",
+      "reviewed_text_bytes": 105284
+    },
+    "gemini-cache": {
+      "register_metadata": {
+        "url": "https://ai.google.dev/gemini-api/docs/caching",
+        "accessed_at_utc": "2026-10-24T01:35:51Z",
+        "status": 200,
+        "final_url": "https://ai.google.dev/gemini-api/docs/caching",
+        "content_type": "text/html; charset=utf-8",
+        "last_modified": "Fri, 23 Oct 2026 10:19:59 GMT",
+        "bytes": 91647,
+        "sha256":
+                "994764b3946f94d365ea42680183d9ffeece643c4a7cb9c90fcab96cd1c93d6e"
+      },
+      "reviewed_text_sha256":
+              "1af78dc47b8d035c3ce12f0dd2e4f0f6905fe5bdeb7dcecc9624bb5018675692",
+      "reviewed_text_bytes": 3062
+    },
+    "gemini-pricing": {
+      "register_metadata": {
+        "url": "https://ai.google.dev/gemini-api/docs/pricing",
+        "accessed_at_utc": "2026-10-24T01:35:51Z",
+        "status": 200,
+        "final_url": "https://ai.google.dev/gemini-api/docs/pricing",
+        "content_type": "text/html; charset=utf-8",
+        "last_modified": "Thu, 22 Oct 2026 16:39:31 GMT",
+        "bytes": 253703,
+        "sha256":
+                "a35a8558de4f5cfff3e458b66766611aba488a48a490256661f376340e124bdd"
+      },
+      "reviewed_text_sha256":
+              "56604f2ae87cc7fe43d955b87eba6fdeb001adc46f66b90e0a67ce9fa1881571",
+      "reviewed_text_bytes": 60740
+    },
+    "gemini-interactions": {
+      "register_metadata": {
+        "url": "https://ai.google.dev/gemini-api/docs/interactions-overview",
+        "accessed_at_utc": "2026-10-24T01:41:55Z",
+        "status": 200,
+        "final_url": "https://ai.google.dev/gemini-api/docs/interactions-overview",
+        "content_type": "text/html; charset=utf-8",
+        "last_modified": "Thu, 15 Oct 2026 20:19:01 GMT",
+        "bytes": 154501,
+        "sha256":
+                "874ac772358fda3436814263f2117b5cb7e5619e44585d8d8e62691ce17ba52d"
+      },
+      "reviewed_text_sha256":
+              "413675c0fd5bc1028cb1b2990398adf10b3fe669497d8c0e0c445512a67d8f9b",
+      "reviewed_text_bytes": 15704
+    },
+    "cavewoman-paper": {
+      "register_metadata": {
+        "url": "https://arxiv.org/html/2606.24083v1",
+        "accessed_at_utc": "2026-10-24T02:11:53Z",
+        "status": 200,
+        "final_url": "https://arxiv.org/html/2606.24083v1",
+        "content_type": "text/html; charset=utf-8",
+        "last_modified": "Mon, 24 Aug 2026 20:14:56 GMT",
+        "bytes": 861254,
+        "sha256":
+                "14515fe20a36357510f5896cbed8c6511224c701bcb944cb5f7a185bc37ea80e"
+      },
+      "reviewed_text_sha256":
+              "922c8fc31dbb72d46a764a55cb1adb63443b0c0663c59a06d8656f2ca1dd3a29",
+      "reviewed_text_bytes": 89171
+    },
+    "cavewoman-expanded-readme": {
+      "register_metadata": {
+        "url": "https://raw.githubusercontent.com/danielle34/cavewoman/28875b39a6c957a0ae96950538cdacfcd0eff0b3/README.md",
+        "accessed_at_utc": "2026-10-24T02:26:35Z",
+        "status": 200,
+        "final_url": "https://raw.githubusercontent.com/danielle34/cavewoman/28875b39a6c957a0ae96950538cdacfcd0eff0b3/README.md",
+        "content_type": "text/plain; charset=utf-8",
+        "last_modified": null,
+        "bytes": 9527,
+        "sha256":
+                "9362b3775635e5fee2356900943c3178a35cdbd5a04d9b749c6164d01c4e19ec"
+      },
+      "reviewed_text_sha256":
+              "9362b3775635e5fee2356900943c3178a35cdbd5a04d9b749c6164d01c4e19ec",
+      "reviewed_text_bytes": 9527
+    },
+    "notation-paper": {
+      "register_metadata": {
+        "url": "https://arxiv.org/html/2605.29676v2",
+        "accessed_at_utc": "2026-10-24T02:11:53Z",
+        "status": 200,
+        "final_url": "https://arxiv.org/html/2605.29676v2",
+        "content_type": "text/html; charset=utf-8",
+        "last_modified": "Mon, 24 Aug 2026 19:54:33 GMT",
+        "bytes": 218320,
+        "sha256":
+                "785aa9727e788f0399b6aca74bf8e395fa67cd342038fbe8b83bf93ed81f1d99"
+      },
+      "reviewed_text_sha256":
+              "ec4357ecff34f4d8437404bca19157ec6d2f961f502860b95333dc7167e0e1f6",
+      "reviewed_text_bytes": 65962
+    },
+    "notation-repo-readme": {
+      "register_metadata": {
+        "url": "https://raw.githubusercontent.com/lkutschka/notation-matters/b31385bb66ffdfd0b9da7eeaef03870a74aeafb1/README.md",
+        "accessed_at_utc": "2026-10-24T02:26:35Z",
+        "status": 200,
+        "final_url": "https://raw.githubusercontent.com/lkutschka/notation-matters/b31385bb66ffdfd0b9da7eeaef03870a74aeafb1/README.md",
+        "content_type": "text/plain; charset=utf-8",
+        "last_modified": null,
+        "bytes": 3952,
+        "sha256":
+                "dcaf7ed1a331cb0064c69c20609d7ad6535398fe8e2dee7a1a933d7123dbbb2f"
+      },
+      "reviewed_text_sha256":
+              "dcaf7ed1a331cb0064c69c20609d7ad6535398fe8e2dee7a1a933d7123dbbb2f",
+      "reviewed_text_bytes": 3952
+    },
+    "compactionbench": {
+      "register_metadata": {
+        "url": "https://www.microsoft.com/en-us/research/publication/benchmarking-long-horizon-agent-context-compaction-with-compactionbench/",
+        "accessed_at_utc": "2026-10-24T01:51:47Z",
+        "status": 200,
+        "final_url": "https://www.microsoft.com/en-us/research/publication/benchmarking-long-horizon-agent-context-compaction-with-compactionbench/",
+        "content_type": "text/html; charset=UTF-8",
+        "last_modified": null,
+        "bytes": 174607,
+        "sha256":
+                "63b8f0a2555c57e5b85fc0dd587ec53d1dbdd4ee84e705dbe3e7326e97c7236e"
+      },
+      "reviewed_text_sha256":
+              "26254b208d42636113c7bc857fe4976508437a9466b557b951d98eca39385733",
+      "reviewed_text_bytes": 4363
+    }
+  },
+  "findings": [
+    {
+      "id": "argon-minimum",
+      "status": "accepted-and-corrected",
+      "detail": "Minimum 4,096 input separated from 2,050 aggregate continuation increment in chapters07 and12."
+    },
+    {
+      "id": "claude-iterations-wording",
+      "status": "accepted-and-corrected",
+      "detail": "Chapter07 now describes top-level input/output omission of compaction and pricing iterations once."
+    }
+  ],
+  "scope": "Primary-source and artifact inspection plus independent arithmetic reasoning. Existing representation checks not rerun. No paid calls, host sessions, provider fleet, installer or model execution."
+}

@@ -1,0 +1,44 @@
+{
+  "executed_at_utc": "2026-10-24T01:23:35Z",
+  "node": "v24.19.0",
+  "ponytail_compact_after_off": {
+    "injects_active_policy": false,
+    "bytes": 0
+  },
+  "ponytail_resume_after_off": {
+    "injects_active_policy": true,
+    "bytes": 2861
+  },
+  "ponytail_clear_after_off": {
+    "injects_active_policy": true,
+    "bytes": 2861
+  },
+  "caveman_compact_after_off": {
+    "injects_active_policy": false,
+    "bytes": 2
+  },
+  "caveman_resume_after_off": {
+    "injects_active_policy": false,
+    "bytes": 2
+  },
+  "caveman_fork_after_off": {
+    "injects_active_policy": false,
+    "bytes": 2
+  },
+  "caveman_clear_after_off": {
+    "injects_active_policy": true,
+    "bytes": 4548
+  },
+  "map_fixture": {
+    "bytes": 110,
+    "output": "Codebase map (what already exists; reuse it, read a file only when you need its details):\nsrc/: visibleSymbol\n",
+    "visible_found": true,
+    "unicode_path_found": false,
+    "spaced_path_found": false,
+    "test_found": false,
+    "late_symbol_found": false
+  },
+  "caveman_commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+  "caveman-runtime_commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+  "ponytail_commit": "16352ac229eb08a9598dcae48fe9f2b342567d86"
+}

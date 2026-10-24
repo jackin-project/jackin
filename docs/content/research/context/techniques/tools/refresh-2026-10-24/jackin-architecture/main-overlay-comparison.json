@@ -1,0 +1,186 @@
+{
+  "reviewed_at_utc": "2026-10-24T08:20:13.709133+00:00",
+  "baseline": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+  "integration_overlay": "c98f5f5fdd831e6075e38fde93b9713575406140",
+  "external_release_cutoff_unchanged": "2026-10-24T01:15:00Z",
+  "reason": "origin/main advanced during research; compatibility overlay before coordinator merge",
+  "command": {
+    "argv": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/main_overlay_audit.py",
+      "--repo",
+      "/workspace/scratch/1335a158b2a9/jackin",
+      "--audit",
+      "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+      "--commit",
+      "c98f5f5fdd831e6075e38fde93b9713575406140",
+      "--output",
+      "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-comparison.json"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+    "exit_code": 0
+  },
+  "method": "Read-only git show exact commit; compare SHA-256 with original source audit. No checkout/source mutation, build or host execution.",
+  "source_comparison": [
+    {
+      "path": "Cargo.toml",
+      "baseline_sha256": "3d314492e199ee07ddd01b8f2dc420f09c5a4f5c8e5c29a3046636ce0025f431",
+      "overlay_sha256": "3d314492e199ee07ddd01b8f2dc420f09c5a4f5c8e5c29a3046636ce0025f431",
+      "unchanged": true
+    },
+    {
+      "path": "crates/core/jackin-core/src/agent.rs",
+      "baseline_sha256": "9e23e84d8fb0aa6c5629e18f8c51d82d99281b3808795f9f657e2e29f49b4067",
+      "overlay_sha256": "9e23e84d8fb0aa6c5629e18f8c51d82d99281b3808795f9f657e2e29f49b4067",
+      "unchanged": true
+    },
+    {
+      "path": "crates/core/jackin-core/src/manifest.rs",
+      "baseline_sha256": "c2d41f53f597aa05c765f1b550cafb480ffb323a04d421985e010ea2861deba3",
+      "overlay_sha256": "c2d41f53f597aa05c765f1b550cafb480ffb323a04d421985e010ea2861deba3",
+      "unchanged": true
+    },
+    {
+      "path": "crates/core/jackin-core/src/container_paths.rs",
+      "baseline_sha256": "b857c791e2e765b04c3c6db1e43ab627d37bd6384fb04c1254e4736ba1512817",
+      "overlay_sha256": "b857c791e2e765b04c3c6db1e43ab627d37bd6384fb04c1254e4736ba1512817",
+      "unchanged": true
+    },
+    {
+      "path": "crates/core/jackin-protocol/src/lib.rs",
+      "baseline_sha256": "e9892ee7d08005ea8f57c71624a039c7cd0c3877b6c73e6ce9a466c0e846e40b",
+      "overlay_sha256": "e9892ee7d08005ea8f57c71624a039c7cd0c3877b6c73e6ce9a466c0e846e40b",
+      "unchanged": true
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-capsule-setup/src/capsule_setup.rs",
+      "baseline_sha256": "0eb95a3a082184f1ed81e6bf2ee30f0651e6a3ca326e4c16d23747732f851715",
+      "overlay_sha256": "0eb95a3a082184f1ed81e6bf2ee30f0651e6a3ca326e4c16d23747732f851715",
+      "unchanged": true
+    },
+    {
+      "path": "crates/adapters/jackin-image/src/derived_image.rs",
+      "baseline_sha256": "d498a292ffeb9edd9c502aa56e6a9b1fcbd909dc0c4e54659c55a1f29dc73922",
+      "overlay_sha256": "d498a292ffeb9edd9c502aa56e6a9b1fcbd909dc0c4e54659c55a1f29dc73922",
+      "unchanged": true
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/session/agent_cmd.rs",
+      "baseline_sha256": "7d235a2a7c49eeca244725840cbc3e4aadd13755db1b7a0588d0a538858d46e0",
+      "overlay_sha256": "7d235a2a7c49eeca244725840cbc3e4aadd13755db1b7a0588d0a538858d46e0",
+      "unchanged": true
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/agent_status/hook_installer.rs",
+      "baseline_sha256": "d429a0bb0f22cc721499ff65e75084de9df9566bee9729104c2c754585909dbe",
+      "overlay_sha256": "d429a0bb0f22cc721499ff65e75084de9df9566bee9729104c2c754585909dbe",
+      "unchanged": true
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/agent_status/hook_installer/claude.rs",
+      "baseline_sha256": "e4d9e11f87c72bdef100e85d4f4432b7855c4d57991d7736e3e24b8282cf2300",
+      "overlay_sha256": "e4d9e11f87c72bdef100e85d4f4432b7855c4d57991d7736e3e24b8282cf2300",
+      "unchanged": true
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/agent_status/hook_installer/codex.rs",
+      "baseline_sha256": "f713d52e18108c767414c7c03cac1f83e47d1786770c40ac7ffa3266388b24d3",
+      "overlay_sha256": "f713d52e18108c767414c7c03cac1f83e47d1786770c40ac7ffa3266388b24d3",
+      "unchanged": true
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/runtime_setup/agent_auth.rs",
+      "baseline_sha256": "37d13fb49c3dcd7ee2f71fe350f3e5d85e22a8f6bf47aa16c5575d51fa7576fc",
+      "overlay_sha256": "37d13fb49c3dcd7ee2f71fe350f3e5d85e22a8f6bf47aa16c5575d51fa7576fc",
+      "unchanged": true
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/daemon/control/auth.rs",
+      "baseline_sha256": "d22cd21a5a34370112747b3a51d0777bb74ebc40ff14bfde8bb3df9e9a171b39",
+      "overlay_sha256": "d22cd21a5a34370112747b3a51d0777bb74ebc40ff14bfde8bb3df9e9a171b39",
+      "unchanged": true
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/process_isolation.rs",
+      "baseline_sha256": "0a244bab7778063364b2af38d7f6d87566c05c93fc5f4adf9e630f6d0e86a2bb",
+      "overlay_sha256": "0a244bab7778063364b2af38d7f6d87566c05c93fc5f4adf9e630f6d0e86a2bb",
+      "unchanged": true
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/process_isolation/linux.rs",
+      "baseline_sha256": "6c9e6043351c5cff01aa89ab66e459fd5d064f6678c6579feede37eea72731c8",
+      "overlay_sha256": "6c9e6043351c5cff01aa89ab66e459fd5d064f6678c6579feede37eea72731c8",
+      "unchanged": true
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/process_isolation/linux/rules.rs",
+      "baseline_sha256": "bbe30da97e9b710661b6bd34cea5c4ef5d577b94a929a91b94290f55045bec50",
+      "overlay_sha256": "bbe30da97e9b710661b6bd34cea5c4ef5d577b94a929a91b94290f55045bec50",
+      "unchanged": true
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/process_isolation/linux/paths.rs",
+      "baseline_sha256": "27b5b9b14566f7e129422f89f744f22b82f3e3793ac3959a99fe9b779c111337",
+      "overlay_sha256": "27b5b9b14566f7e129422f89f744f22b82f3e3793ac3959a99fe9b779c111337",
+      "unchanged": true
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/exec.rs",
+      "baseline_sha256": "6f24ada8ac73cd01a41548fe8db2a346a0b439f4682a0f0f1d601c06752b9241",
+      "overlay_sha256": "6f24ada8ac73cd01a41548fe8db2a346a0b439f4682a0f0f1d601c06752b9241",
+      "unchanged": true
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/mcp_server.rs",
+      "baseline_sha256": "e57e771c5f68337f9144033a44e3507f3cee47fb8a63104ddff8cee87305925c",
+      "overlay_sha256": "e57e771c5f68337f9144033a44e3507f3cee47fb8a63104ddff8cee87305925c",
+      "unchanged": true
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/session.rs",
+      "baseline_sha256": "80c14c887af0c259cc4cb969205bbc07a9a7d2fcdb2d415d9058e1708c71153e",
+      "overlay_sha256": "80c14c887af0c259cc4cb969205bbc07a9a7d2fcdb2d415d9058e1708c71153e",
+      "unchanged": true
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/monitor.rs",
+      "baseline_sha256": "ca497885f6b7aca2e6fcb0346976db577e82d748f29192652574fcf66c825282",
+      "overlay_sha256": "ca497885f6b7aca2e6fcb0346976db577e82d748f29192652574fcf66c825282",
+      "unchanged": true
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/totals.rs",
+      "baseline_sha256": "5c4ebbc42aeac13c3e192650df9b99321df811bd3c8162a57a16f851ed8ed54b",
+      "overlay_sha256": "5c4ebbc42aeac13c3e192650df9b99321df811bd3c8162a57a16f851ed8ed54b",
+      "unchanged": true
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/claude.rs",
+      "baseline_sha256": "b55e58d0ab35bf35ca0944203094a3f2ed24ae7c80e770092393c25f7a04373b",
+      "overlay_sha256": "b55e58d0ab35bf35ca0944203094a3f2ed24ae7c80e770092393c25f7a04373b",
+      "unchanged": true
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/codex.rs",
+      "baseline_sha256": "372bf68b043be3a118783712ee0e9fd7564bb2e28bccdbe8ffe9306480b00053",
+      "overlay_sha256": "372bf68b043be3a118783712ee0e9fd7564bb2e28bccdbe8ffe9306480b00053",
+      "unchanged": true
+    },
+    {
+      "path": "docker/runtime/entrypoint.sh",
+      "baseline_sha256": "99c092f761fbc2f7ef3d0fe7d4c466f1f5358c91a3df82b29c78b52891daab5b",
+      "overlay_sha256": "99c092f761fbc2f7ef3d0fe7d4c466f1f5358c91a3df82b29c78b52891daab5b",
+      "unchanged": true
+    },
+    {
+      "path": "docker/runtime/agent-status/hooks/codex/report-hook.sh",
+      "baseline_sha256": "c74d61ecf5a267d69ebc30ab055a05606b49f8bc39a2ee8d4553ead679ad8ac1",
+      "overlay_sha256": "c74d61ecf5a267d69ebc30ab055a05606b49f8bc39a2ee8d4553ead679ad8ac1",
+      "unchanged": true
+    }
+  ],
+  "counts": {
+    "unchanged": 26,
+    "changed": 0
+  }
+}

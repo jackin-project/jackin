@@ -1,114 +1,95 @@
 ---
-title: "03 — Observation pipeline (L2)"
-description: "Design for classifying, filtering, compressing, and preserving agent observations before they enter cached context."
+title: "03 — Observation pipeline"
+description: "Capture once, preserve authorized originals, qualify typed reductions, and distinguish transform fallback from security failures."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-Observations should be classified and reduced once, before first cache admission, with a content-addressed original available for recovery on every outcome.
-The write-time layer shrinks an observation **once, at ingestion, before it is first cached**. Current design references are [Headroom v0.34.0](/research/context/tools/02-headroom-design/), [RTK v0.45.0](/research/context/tools/03-rtk-design/), [lean-ctx v3.9.18](/research/context/tools/04-leanctx-design/), and [Caveman v2.0.0](/research/context/tools/01-caveman-design/).
+Snapshot **2026-10-24 01:15:00 UTC**. A useful optimizer reduces a result at a verified model-input boundary while keeping the original operation and its evidence recoverable. The proposed pipeline captures once, checks eligibility, acknowledges durable recovery before loss, transforms once and validates the host-specific replacement. It never reruns a command to repair failed compression.
 
 ## Question and scope
 
-Which runtime observations should the engine collect, normalize, filter, and expose without leaking secrets or flooding context?
+Which shell outputs, structured results, source views and media can be reduced without changing their meaning, concealing errors, bypassing authority or falsely implying completeness? This chapter defines the proposed adapter contract; no production pipeline is implemented.
 
 ## Method
 
-The design traces current runtime signals from collection through normalization and filtering, using repository interfaces and the dossier’s measurement rules to bound payload size, freshness, and secret exposure.
+Combine current host documentation with the executed Headroom, RTK, LeanCTX and LemonCrow component probes, and inspect Jackin's secure execution/MCP paths at `6e266406b49da2ab3c55355f3b7d33d1643ee6cd`. Product-specific evidence remains in the [dossiers](/research/context/tools/); current host contracts are centralized in [integration](/research/context/tools/11-jackin-integration/).
 
 ## Findings
 
-### Pipeline
+### Ordered pipeline and failure behavior
 
-```text
- shim / MCP read / web fetch                    (ingestion point)
-   │
-   ▼
- CLASSIFY   current reviewed RTK-derived classifier OR content detector
-   │        (magika ONNX tier optional → unidiff parse-oracle → aho-corasick keywords)
-   ▼
- POLICY     verbatim-class gate: build/lint errors, test failures, security warnings,
-   │        explicitly-requested raw reads → PASS THROUGH untouched (INV-7)
-   ▼
- TRANSFORM  exactly one typed transform, deterministic:
-   │          reviewed declarative + native streaming shell filters
-   │          json/tabular/yaml crushers (stats-compaction, sampled arrays, anomalies kept)
-   │          code outline (tree-sitter signatures; never regex+brace-counting)
-   │          search-result shaping (file:line:content, dedup, import-line de-noise)
-   │          log dedup/grouping (template clustering, counts)
-   │          markdown section slicing (mq; see L1)
-   │          extractive prose scoring (BM25+recency+salience; TextCrusher-class, no ML)
-   ▼
- GUARD      never_worse: estimated tokens(out) ≤ tokens(raw) or emit raw (INV-3)
-   │        ParseResult tiers: Full / Degraded(+warnings) / Passthrough with marker
-   ▼
- ARCHIVE    verbatim original → CCR store (blake3, TTL ≥30 min), all exit codes
-   │        emission carries recovery footer:  [full output: ctx expand <<ccr:HASH>>]
-   ▼
- LEDGER     tokens_in/out, transform id, per-block manifest → measure/ (L0)
-```
+| Step | Required action | Failure disposition |
+|---|---|---|
+| 1. Admit | Authenticate the caller and bind trusted session/worktree scope; preserve the host's authorization result | Denied or invalid scope stops. Do not expose an alternative raw path. |
+| 2. Capture | Observe the executed result once, after mandatory redaction; retain byte boundaries and known status/completeness | Preserve the native failure/partial-capture contract. Never claim unavailable bytes exist. |
+| 3. Select | Check host/version/tool/content qualification, exactness requirements and one-owner rule | Unknown or excluded class returns the original observed result. |
+| 4. Persist | Commit the original and metadata; obtain durable acknowledgement and authorized recovery reference | Return the original already-captured observation if storage is unavailable; emit no lossy marker. |
+| 5. Transform | Run one pinned adapter within deadline/resource bounds; no producer access or provider calls by default | Optional worker failure returns the stored/captured original. |
+| 6. Validate | Check result schema, status, omissions, fidelity guards and configured output budget | Invalid candidate is discarded, not recursively compressed. |
+| 7. Deliver | Use the tested host replacement contract; record actual delivery if observable | If acceptance cannot be proven, mark exposure unknown and disable omission-based reuse. |
 
-### Shell boundary (shims)
+Storage is required for an eligible lossy replacement, not for every observation in the off/native baseline. “Original” means the authorized observation the host supplied. It may already be truncated, redacted or missing stream detail. The proposed archive must preserve those limitations. Jackin's current <RepoFile path="crates/apps/jackin-capsule/src/exec.rs">secure capture</RepoFile> and <RepoFile path="crates/apps/jackin-capsule/src/mcp_server.rs">MCP result rendering</RepoFile> already distinguish denial/redaction from successful output; an optimizer must not recover pre-redaction secrets.
 
-- **Coverage**: review RTK v0.45.0's current declarative corpus and port only high-traffic filters proven by the local reach audit. The declarative pipeline is the primary extension form; project-local filters are content-hash trusted before loading.
-- **Classifier**: review and port RTK v0.45.0's current classifier table + shell lexer: split on `&&`/`||`/`;` and rewrite each segment; anything with backticks, `$( )`, or file redirects is unattestable → passthrough. Ignore-list for shell built-ins and one-liners.
-- **Safety**: exit codes bit-exact (INV-4); stderr filtered separately; signal exits propagate 128+n; package-manager sniffing before JS tool rewrites.
-- **What shims buy over hooks**: identical behavior for every runtime (Claude Code, Codex, Amp, Kimi, Opencode, Grok) with zero per-agent integration code, no settings.json surface, no permission-prompt mediation (the agent's permission system sees the original command; the shim is transparent downstream of approval).
+A missing artifact discovered during recovery is an integrity failure: report that the original is unavailable and preserve its provenance. Do not fabricate a replacement, retrieve another session's equal hash, or reexecute a side-effecting producer. A user may separately authorize a new command, but that is a new operation with a new observation ID.
 
-### Native-read boundary (MCP verbs + optional PostToolUse dedup)
+### Shell boundary: preserve execution, filter explicit observations
 
-- `ctx_read` with `full` / `signatures` / `outline` / `lines:N-M` / `section:<heading>` modes. Compressed modes remain experimental until current local task evidence establishes a size gate and non-inferiority.
-- **Read-stub cache**: content-addressed re-read suppression for unchanged files; changed files return a bounded delta or full content. Scoping is per conversation and subagent, with purge on compaction. Exact output sizes and fallback thresholds are benchmark outputs, not inherited constants.
-- **Steering, honestly**: role instructions advertise the verbs and when to prefer them; native tools stay available and (where the runtime supports PostToolUse output mutation) get transparent read-dedup so even un-steered reads benefit. No deny-hooks, no "always use X" absolutism — codedb's blocking installer hook and lean-ctx's abandoned "NEVER use native tools" rulebook are the documented anti-patterns.
+The first candidate is a pinned `rtk-oss pipe --filter FAMILY` process consuming an already-captured result. Its stdin filter does not execute the producer or create an archive. Jackin must supply recovery and validate the named family. Start with one qualified test/diagnostic format: available names include `cargo-test`/`cargo`, `pytest`, `go-test`/`go-build`, `ctest`, `tsc`, `vitest`, `mypy` and `ruff`. This is not a generic clippy/cargo-check/lint interface or a public Apache Rust library kernel. This permits a diagnostic-filter experiment without changing quoting, shell expansion, pipelines, redirects, environment, cwd or command exit behavior. [RTK current source and reproductions](/research/context/tools/03-rtk-design/).
 
-### Code outlining
+Do not default to a PATH shim or generic command rewriter. Native hosts may use absolute binaries, internal tools, code-mode calls, shells with different parsing, or result bounds before any shim. A wrapper can also accidentally change pipeline status, signal propagation, redirection, TTY behavior or streaming. Rewriting is a separate treatment with shell-generated fixtures, not a consequence of choosing RTK as a formatter.
 
-tree-sitter only; no regex-and-brace approximation. The grammar set is **per role** so the image links only required languages. Output uses a declaration skeleton, explicit omission count, and an escalation footer naming the exact follow-up read.
+Preserve stdout/stderr association, exit code and signal/interruption when the host actually supplies them. Do not universally convert signals to `128 + n` or infer success from exit zero alone: compilers and linters can emit important diagnostics on success. Initial automatic eligibility should exclude unknown/free-form shell text, machine-readable output consumed downstream, source patches and exact Git evidence.
 
-### Structured-data crushers
+### Native tools, MCP and editing
 
-Deterministic, byte-stable, never-inflate: JSON schema/statistics with disclosed sampling, CSV/TSV sampling with counts, and YAML/TOML minification only where round-trip lossless. Current token effects are measured with the target provider tokenizer; no percentage is inherited from another tool or format benchmark.
+A synchronous replacement seam can change selected model-bound content after native execution. An asynchronous status event or `additionalContext` merely adds information and cannot prove original input was removed. Adding MCP retrieval tools also does not intercept native `Read`, shell or edit calls. The host/version adapter must prove the actual path and capture completeness.
 
-### Media policy ([techniques 20 — Multimodal token economics: images, screenshots, PDFs](/research/context/techniques/20-multimodal-token-economics/))
+Native edits may require a prior native read receipt, exact old text or a current file version. An MCP outline or cache hit cannot be assumed to satisfy those requirements. Keep exact native reads available and require them before editing when the host contract demands it. Never replace native edit authorization or stale-write checks with an optimizer's “file already seen” ledger.
 
-Text-first enforcement at the boundary: born-digital PDFs transcode to text via `pdftotext` baked in the construct image (~2× PDF tax avoided; 25-page PDF ≈ 78.8k tokens as pages vs ~40k as text); screenshots of textual content are rejected with a pointer to the text source when one exists (2–6× cost); images client-side downsampled to the model family's pixel cap before send (up to −73% on Opus-family caps); vision work routes to a Sonnet/Haiku-tier subagent returning text (−67%/frame, the ~3.0–3.1× per-image cap divergence). Text-to-image re-encoding of textual context — [current rising-tools comparison](/research/context/tools/06-combining/) — inverts this rule; the engine keeps text-first as the default and treats modality re-encoding as a harness-gated experiment only, because byte-exact content must never live only in pixels (silent-confabulation failure shape) and the economics depend on undocumented provider vision pricing.
+### Content-specific candidates and exclusions
 
-### Prose (the residual)
+| Content class | Candidate treatment | Required preservation / current decision |
+|---|---|---|
+| Build/test/lint qualification corpus | Named RTK OSS filters only where applicable, or independently qualified Rust/Python/Go alternatives | Keep failures, warnings, paths, line/column, exit status, counts and raw recovery; producer-generated corpus first |
+| JSON | Whitespace-only lexer or typed unique-key domain | Headroom's Rust and Python agent-mode probes collapse duplicate keys; parsed equality is not exact evidence. Reject ambiguous input or pass through. |
+| Logs and tables | Bounded selection with explicit omitted ranges | Keep row/field associations, multiline events, negations, units and time ordering. Do not create a sentence by joining unrelated lines. |
+| Search results | Exact path/range selection plus bounded match context | Record omitted counts and search scope; an empty ranked result does not prove absence |
+| Source and code outlines | Syntax outline for navigation followed by exact reads | Preserve names/signatures/spans; syntax is not complete type, macro, call-graph or dependency analysis |
+| Git diff/patch | Native exact output by default | Preserve no-final-newline markers, binary/rename/mode changes and truncation. RTK stdin git-diff and structural diff parser are distinct paths. |
+| Prose | Native or explicitly scoped format changes first | Learned summarization and semantic rewriting need separate task tests; determinism alone is not fidelity |
+| Images/PDFs/screenshots | Native media or separately qualified preprocessing | Preserve exact-text/layout needs and model policy; no automatic cheaper-model routing or assumed universal token ratio |
 
-No ML in the default path. Any extractive prose mode must be CCR-recoverable and pass a current buried-answer/non-inferiority test. Web/HTML first converts to structured Markdown, then selects sections instead of stripping tags heuristically.
+The Headroom Python shell-line reconstruction fix passed focused tests, while the Rust Kompress code still uses whitespace splitting/joining. A product-level “fixed” label cannot authorize another backend. LemonCrow Lite's repeated-shell probe emitted an unchanged result even when spill creation failed. Those observations motivate backend-specific guards and durable acknowledgement; they do not imply all transforms in either product are defective. [Headroom](/research/context/tools/02-headroom-design/), [LemonCrow](/research/context/tools/10-lemoncrow-design/).
 
-### Guard contracts adopted from the current source verification
+### Guard contracts
 
-The pipeline requires these contracts; each port is revalidated against current upstream source and local tests:
+The host adapter declares whether it received exact bytes, decoded text, structured fields or an already-bounded rendering. Validate encoding before text transforms; preserve original UTF-8 bytes, Unicode normalization form, CRLF and no-final-newline information when exactness matters. Do not decode invalid bytes with silent replacement and then call the archive lossless.
 
-- **Anti-confusion truncation**: exactly one `[N more lines]` end marker per truncated payload, never interleaved omission markers (agents parse those as code and retry-loop); the kept+N==total invariant is property-tested (RTK).
-- **`unless` anti-swallow guards**: any short-circuit summary rule ("N tests passed") carries an `unless` regex so error-bearing output is never swallowed by the happy-path summary (RTK TOML DSL).
-- **Per-filter panic isolation**: every filter runs under `catch_unwind`; panic → warn + raw passthrough — fail-open in both the crash and quality dimensions when combined with the never-worse guard (RTK).
-- **`transparent_prefixes`**: wrapper commands (`docker exec c`, `poetry run`, `direnv exec .`) are stripped before classification and re-prepended after, so wrappers never defeat filtering (RTK).
-- **Content-sniffing pipe mode**: `cmd | ctx pipe` fingerprints the first 1 KiB (banner-anchored to avoid misroutes) and auto-selects a filter — zero-flag usage for role scripts (RTK).
-- **Trust-before-load for role/project filter files**: SHA-256 content pinning, single read returning the verified bytes (TOCTOU-safe), fail-closed on canonicalization errors, CI-only env override (RTK `trust.rs` — the threat model is an attacker-committed filter shaping what the model sees).
-- **Lossless-compaction tier with a runtime round-trip self-check**: format-native reversible transforms (run-collapse with exact counts, grep-result reshaping, ANSI strip) verify `inverse(compressed) == original` at runtime and emit the original on any mismatch — a store-free tier below CCR (headroom `--lossless`).
-- **Kolmogorov gate**: a gzip-ratio probe classifies payload compressibility before attempting aggressive modes — never spend effort on incompressible content (lean-ctx).
-- **Per-tool line budgets** as defense-in-depth behind typed filters, with thresholds derived from the current local workload.
-- **`anchored` read mode**: verbatim content with per-line hash anchors, making compressed-read → patch workflows drift-safe (lean-ctx; excluded from bounce accounting as lossless).
-- **Preserved-segment span classification** for any prose transform: fences, inline code, URLs, paths, versions, numbers, and identifiers pass byte-exact through every lossy path.
+A transform manifest identifies algorithm/configuration version, input/output hashes, content class, expected omissions, token-estimate method and recovery handle. Keep statistics outside model-visible text unless needed for a meaningful decision. A short explicit omission notice is useful; a verbose per-result telemetry block can erase the saving.
+
+Use size, repetition or compressibility heuristics only as routing signals. They are not proofs that a field is irrelevant. Require retained evidence checks on a diverse fixture corpus and pass through unknown structures. A local “output tokens no larger than input” guard does not guarantee task savings: schema, recovery calls and extra turns still count.
 
 ## Implications for jackin❯
 
-These findings define the observation pipeline (l2) contract for jackin❯; any implementation must preserve the acceptance gates and boundaries above.
+Start with one synchronous host adapter, one diagnostic family and a raw verifier lane. Keep errors and exact evidence native until individually qualified. Compare RTK OSS, Headroom no-ML Rust, Python `densify` and Caveman's engine as separate arms against the same original result. A smaller pure adapter is preferable to a full proxy only when it actually reaches the needed boundary.
+
+The minimal conformance corpus includes real Rust build/test/lint output; success with stderr diagnostics; Git CRLF/no-EOL/binary/rename/mode/truncated diffs; duplicate-key and malformed JSON; multiline tables/logs; Unicode/source reads; native truncation; cancellation; a stalled/crashed worker; missing/replaced artifact; and unavailable storage. The source/package tests already executed are not a substitute for these end-to-end host checks. [Validation protocol](/research/context/techniques/16-validation-harness/).
 
 ## Limitations and unknowns
 
-### Explicit exclusions
+The research did not execute real host result replacement, streaming cancellation or native read-before-edit across agents. It did not simulate a full disk for the proposed broker. Headroom's injected storage fault removed its SQLite table; LemonCrow's spill probe used an unusable spill directory. Preserve those exact fault models rather than relabeling them as exhaustive durability proof.
 
-No whole-prompt rewriting, history pruning, or conversation compaction in the default engine. It measures incremental benefit over current native agent features, not over a naive baseline ([current objective comparison](/research/context/tools/05-head-to-head/)).
+Provider-history rewriting, chained shell rewriting, arbitrary source compression, default embeddings, full runtime replacement and media/model routing remain separate experimental treatments. Recovery availability also does not prove a model will notice an omission; accepted-task tests must measure missed facts and recovery behavior.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Pinned implementation and executed fixtures are in the product dossiers and <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/README.md">architecture evidence</RepoFile>. Proposed contracts and exclusions are design choices derived from those observed boundaries.
 
 ## Related work
 
-- [Context engine dossier](/research/context/engine/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Token-optimization tools](/research/context/tools/)
+- [Retrieval layer](/research/context/engine/04-retrieval-layer/)
+- [Memory and state](/research/context/engine/07-memory-and-state/)
+- [Multimodal economics](/research/context/techniques/20-multimodal-token-economics/)

@@ -1,0 +1,40 @@
+[
+  {
+    "command": [
+      "bun",
+      "run",
+      "build"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+    "started_utc": "2026-10-24T08:22:19.345309+00:00",
+    "finished_utc": "2026-10-24T08:23:15.294722+00:00",
+    "duration_seconds": 55.949,
+    "exit_code": 0,
+    "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-render-build.log"
+  },
+  {
+    "command": [
+      "bunx",
+      "tsc",
+      "--noEmit"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+    "started_utc": "2026-10-24T08:23:15.295029+00:00",
+    "finished_utc": "2026-10-24T08:23:16.048628+00:00",
+    "duration_seconds": 0.754,
+    "exit_code": 0,
+    "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-render-types.log"
+  },
+  {
+    "command": [
+      "bun",
+      "test"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+    "started_utc": "2026-10-24T08:23:16.049077+00:00",
+    "finished_utc": "2026-10-24T08:23:16.065099+00:00",
+    "duration_seconds": 0.016,
+    "exit_code": 0,
+    "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-render-tests.log"
+  }
+]

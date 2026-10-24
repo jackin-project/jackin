@@ -1,0 +1,18 @@
+{
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+    "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/verify_coverage_reconciliation.py"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+  "environment_overrides": {
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "started_utc": "2026-10-24T08:28:49.289673+00:00",
+  "ended_utc": "2026-10-24T08:28:49.380588+00:00",
+  "exit_code": 1,
+  "script_sha256": "8e5d25fc2001b1c2916ed5a1c79cda7bd80f65f9af7ae01fdb90378655fbaccc",
+  "stdout": "logs/coverage-integrity-second.stdout",
+  "stderr": "logs/coverage-integrity-second.stderr",
+  "earlier_harness_failure": "coverage-integrity-operation-initial.json",
+  "interpretation": "Harness-only escaping failure: Python non-raw triple string interpreted CR/LF in the embedded JavaScript regex; corrected by raw string."
+}

@@ -1,0 +1,246 @@
+{
+  "source_cutoff_utc": "2026-10-24T01:15:00Z",
+  "operations": [
+    {
+      "name": "source-extraction",
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/extract_public_rows.py",
+        "--source-dir",
+        "/workspace/scratch/1335a158b2a9/research/benchmarks/sources",
+        "--output-dir",
+        "/workspace/scratch/1335a158b2a9/research/benchmarks"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9",
+      "environment_overrides": {
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "started_utc": "2026-10-24T02:18:06.822122+00:00",
+      "ended_utc": "2026-10-24T02:18:06.913392+00:00",
+      "exit_code": 0,
+      "log": "logs/source-extraction.log",
+      "log_sha256": "94cd01a9e36328b8903be3c1558a54e42ddb28093bcd164ca5bbce344a9a1705"
+    },
+    {
+      "name": "offline-reaggregation",
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/reaggregate.py"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation",
+      "environment_overrides": {
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "started_utc": "2026-10-24T02:18:06.913571+00:00",
+      "ended_utc": "2026-10-24T02:18:06.957696+00:00",
+      "exit_code": 0,
+      "log": "logs/offline-reaggregation.log",
+      "log_sha256": "cd644431f217bbad20922c860500fe3f673082cbea163da524b0bd5ccc570bdb"
+    },
+    {
+      "name": "measurement-tests",
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "-m",
+        "unittest",
+        "-v",
+        "test_measurement_tools.py"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools",
+      "environment_overrides": {
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "started_utc": "2026-10-24T02:18:06.957857+00:00",
+      "ended_utc": "2026-10-24T02:18:07.027192+00:00",
+      "exit_code": 0,
+      "log": "logs/measurement-tests.log",
+      "log_sha256": "7696ecfbdce4ec737a28c774c3c21a2cc0b89add88c53da24cecbc30de86dfff"
+    },
+    {
+      "name": "fetch-plan",
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/fetch_public_sources.py",
+        "--destination",
+        "/tmp/jackin-benchmark-sources"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation",
+      "environment_overrides": {
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "started_utc": "2026-10-24T02:18:07.027362+00:00",
+      "ended_utc": "2026-10-24T02:18:07.081194+00:00",
+      "exit_code": 0,
+      "log": "logs/fetch-plan.log",
+      "log_sha256": "08f9b5107c91b83227caf104b5c7fdf4c2c0027cb8d8ea630c22d626023c140b"
+    },
+    {
+      "name": "synthetic-accounting-fixtures",
+      "execution": "This recorded Python process imported provider_usage and checked all four explicit cases against expected classes and prices. No provider calls.",
+      "cases": 4,
+      "exit_code": 0,
+      "result": "accounting-fixture-results.json"
+    },
+    {
+      "name": "source-extraction-after-independent-review",
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/extract_public_rows.py",
+        "--source-dir",
+        "/workspace/scratch/1335a158b2a9/research/benchmarks/sources",
+        "--output-dir",
+        "/workspace/scratch/1335a158b2a9/research/benchmarks/review-extraction"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9",
+      "environment_overrides": {
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "started_utc": "2026-10-24T02:40:09.746684+00:00",
+      "ended_utc": "2026-10-24T02:40:09.846011+00:00",
+      "exit_code": 0,
+      "script_sha256": "1f785475eb71f7182941e38a2800320246bafc99e3b0742174d25d484438999c",
+      "log": "logs/source-extraction-after-review.log",
+      "log_sha256": "94cd01a9e36328b8903be3c1558a54e42ddb28093bcd164ca5bbce344a9a1705",
+      "parsed_equality_with_curated_files": {
+        "benchmark-rows.json": true,
+        "aggregation-results.json": true
+      },
+      "change": "Reject duplicate keys and unequal trial sets before joining trial-level rollups; no provider calls."
+    },
+    {
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/venv/bin/python",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/review_runtime_boundaries.py",
+        "--headroom-source",
+        "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/headroom",
+        "--lemon-source",
+        "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/lemoncrow",
+        "--scratch",
+        "/workspace/scratch/1335a158b2a9/research/benchmarks/runtime-review"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9",
+      "environment_overrides": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/lemoncrow/client/src:/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/lemoncrow/src",
+        "HEADROOM_OFFLINE": "1",
+        "HEADROOM_BEACON": "off",
+        "HEADROOM_CCR_BACKEND": "memory"
+      },
+      "started_utc": "2026-10-24T08:13:18.479487+00:00",
+      "ended_utc": "2026-10-24T08:13:18.643590+00:00",
+      "exit_code": 0,
+      "script_sha256": "e49ccba6a56036abc931fc0e7a3ed28d3cd7aca8e71475f37fd147cf557b2a07",
+      "stdout": "logs/runtime-independent-review.stdout",
+      "stderr": "logs/runtime-independent-review.stderr",
+      "name": "runtime-independent-cross-review",
+      "operation_record": "runtime-independent-review-operation.json"
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/review_lemon_package.py",
+        "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/sources/lemoncrow-runtime-client.tar.gz",
+        "/workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/lemoncrow"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9",
+      "environment_overrides": {},
+      "started_utc": "2026-10-24T08:16:23.337283+00:00",
+      "ended_utc": "2026-10-24T08:16:23.760971+00:00",
+      "exit_code": 0,
+      "script_sha256": "12acd3fdc6b0785228112d06c1ffb3ec4c4479711ec62fe4e9314018d67e8c0c",
+      "stdout": "logs/lemon-package-independent.stdout",
+      "stderr": "logs/lemon-package-independent.stderr",
+      "name": "lemon-release-package-independent-comparison",
+      "operation_record": "lemon-package-independent-operation.json"
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/verify_coverage_reconciliation.py"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+      "environment_overrides": {
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "started_utc": "2026-10-24T08:27:22.613774+00:00",
+      "ended_utc": "2026-10-24T08:27:23.130289+00:00",
+      "exit_code": 1,
+      "script_sha256": "fef84a25d596bc075d1e9f2d7db1abd15a6f33feb0940fdd758ced2d6db1b30a",
+      "stdout": "logs/coverage-integrity-initial.stdout",
+      "stderr": "logs/coverage-integrity-initial.stderr",
+      "interpretation": "Harness-only failure: standalone remark parser treated YAML frontmatter as a setext heading. Negative guards passed before this comparison. Corrected independent parser strips frontmatter just as the site does.",
+      "name": "coverage-integrity-initial-harness-failure",
+      "operation_record": "coverage-integrity-operation-initial.json"
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/verify_coverage_reconciliation.py"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+      "environment_overrides": {
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "started_utc": "2026-10-24T08:28:49.289673+00:00",
+      "ended_utc": "2026-10-24T08:28:49.380588+00:00",
+      "exit_code": 1,
+      "script_sha256": "8e5d25fc2001b1c2916ed5a1c79cda7bd80f65f9af7ae01fdb90378655fbaccc",
+      "stdout": "logs/coverage-integrity-second.stdout",
+      "stderr": "logs/coverage-integrity-second.stderr",
+      "earlier_harness_failure": "coverage-integrity-operation-initial.json",
+      "interpretation": "Harness-only escaping failure: Python non-raw triple string interpreted CR/LF in the embedded JavaScript regex; corrected by raw string.",
+      "name": "coverage-integrity-second-harness-failure",
+      "operation_record": "coverage-integrity-operation-second.json"
+    },
+    {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/verify_coverage_reconciliation.py"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+      "environment_overrides": {
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "started_utc": "2026-10-24T08:29:22.239215+00:00",
+      "ended_utc": "2026-10-24T08:29:22.701472+00:00",
+      "exit_code": 0,
+      "script_sha256": "b86b3bff05e90396875d0fb8d21fa03536dd2805c564ba822750169cf7e25285",
+      "stdout": "logs/coverage-integrity.stdout",
+      "stderr": "logs/coverage-integrity.stderr",
+      "earlier_harness_failures": [
+        "coverage-integrity-operation-initial.json",
+        "coverage-integrity-operation-second.json"
+      ],
+      "name": "coverage-integrity-final",
+      "operation_record": "coverage-integrity-operation.json"
+    },
+    {
+      "name": "strict-coverage-final-reconciliation",
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/reconcile_coverage.py"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+      "environment_overrides": {
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "started_utc": "2026-10-24T08:31:26.374753+00:00",
+      "ended_utc": "2026-10-24T08:31:26.675159+00:00",
+      "exit_code": 0,
+      "script_sha256": "a569a808b67c1e85570a5979b0510ad6d7535d9988f883033af9b674edcdcd04",
+      "stdout": "logs/coverage-reconciliation.stdout",
+      "stderr": "logs/coverage-reconciliation.stderr"
+    }
+  ],
+  "provider_calls": 0,
+  "subscription_sessions": 0,
+  "upstream_agent_harness_executions": 0,
+  "public_source_downloads": "Separate source/article registers record bounded read-only retrieval; fetch-plan did not download.",
+  "test_scope": "17 offline regression tests plus four explicit final-usage examples; source aggregation and a pure upstream grader counterexample; independent direct Python runtime-boundary probes and 87-file Lemon package/source comparison. Each operation retains its own scope.",
+  "unexecuted": [
+    "Current paid agent benchmark",
+    "Subscriber quota experiment",
+    "Confirmatory acceptance/latency trial",
+    "Generalized fetch helper against all URLs"
+  ]
+}

@@ -1,0 +1,1190 @@
+{
+  "product": "caveman",
+  "snapshot_cutoff_utc": "2026-10-24T01:15:00Z",
+  "canonical_repository": "https://github.com/JuliusBrussee/caveman",
+  "canonical_identity": "Live API/canonical clone; no redirect observed",
+  "releases": [
+    {
+      "tag_name": "v4.0.1",
+      "published_at": "2026-10-13T18:34:04Z",
+      "html_url": "https://github.com/JuliusBrussee/caveman/releases/tag/v4.0.1",
+      "prerelease": false,
+      "draft": false,
+      "tag_object": "d0be14f2dc92a99d12e717465d6908723ab9bfdb",
+      "peeled_commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "assets": [
+        {
+          "name": "caveman-browser-1.3.0.zip",
+          "size": 179862,
+          "digest": "sha256:b56fe25d304e66a176f3489785fd9c170ed22d1e8b913cd4ef1ee0870d1703bd",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/v4.0.1/caveman-browser-1.3.0.zip"
+        },
+        {
+          "name": "caveman-browser-firefox-1.3.0.zip",
+          "size": 180101,
+          "digest": "sha256:e1eb4488e6a440f59e3d829a21c00501a1f7c17fda51505a61af7a335446800f",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/v4.0.1/caveman-browser-firefox-1.3.0.zip"
+        },
+        {
+          "name": "caveman.skill",
+          "size": 4410,
+          "digest": "sha256:765cf6fa6feaaabe0abb46936eeff8aff935e5ec49c11a2ea96a6f3775669e10",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/v4.0.1/caveman.skill"
+        }
+      ]
+    },
+    {
+      "tag_name": "bin-v4.0.2",
+      "published_at": "2026-10-23T05:22:07Z",
+      "html_url": "https://github.com/JuliusBrussee/caveman/releases/tag/bin-v4.0.2",
+      "prerelease": false,
+      "draft": false,
+      "tag_object": "62a906068603b51922e1aa609424f2548950cfab",
+      "peeled_commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "assets": [
+        {
+          "name": "caveman-blocks_darwin_amd64",
+          "size": 6057456,
+          "digest": "sha256:485b74281cf8e8e851ba800d86041192dba0764490c1f996a5b1655657aa3edd",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-blocks_darwin_amd64"
+        },
+        {
+          "name": "caveman-blocks_darwin_arm64",
+          "size": 5704418,
+          "digest": "sha256:b780d38f1c0409778bba40ce7dd35c0b7ab9f32ad6abeee25ed4aa8799404e5d",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-blocks_darwin_arm64"
+        },
+        {
+          "name": "caveman-blocks_linux_amd64",
+          "size": 5935266,
+          "digest": "sha256:edb917309d776e5b12aa009334049da1ca8ea4de33679490df284e6f7682a006",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-blocks_linux_amd64"
+        },
+        {
+          "name": "caveman-blocks_linux_arm64",
+          "size": 5636258,
+          "digest": "sha256:33b38b27e326fcee794c2dbba14883cd081e6e08c2dfd6ac9e0b491f7f4d292f",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-blocks_linux_arm64"
+        },
+        {
+          "name": "caveman-blocks_win32_amd64",
+          "size": 6166528,
+          "digest": "sha256:81479cf52e9deb9850a9449b17a816c666afe4c753452b73f7bf7139ef014c57",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-blocks_win32_amd64"
+        },
+        {
+          "name": "caveman-browse_darwin_amd64",
+          "size": 35560784,
+          "digest": "sha256:1efd49bebf887c68fc43a4abfb09db1fb49d6583bd11d405b9d8957974b60037",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-browse_darwin_amd64"
+        },
+        {
+          "name": "caveman-browse_darwin_arm64",
+          "size": 34710194,
+          "digest": "sha256:75a1f494f56ef73c98254455735da4dfbaa66c277679fc9a29de35b9116e331b",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-browse_darwin_arm64"
+        },
+        {
+          "name": "caveman-browse_linux_amd64",
+          "size": 32896284,
+          "digest": "sha256:66fcbd605030b9021e38bcfed6a4d4a9126f47fa26c14dd629d2bc9052f7974e",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-browse_linux_amd64"
+        },
+        {
+          "name": "caveman-browse_linux_arm64",
+          "size": 31820850,
+          "digest": "sha256:6fd152bcb97640f8ab6fc8f0a4c6afb765143ab09fa7feca253cdb5df32ad595",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-browse_linux_arm64"
+        },
+        {
+          "name": "caveman-browse_win32_amd64",
+          "size": 34075648,
+          "digest": "sha256:b83f4f59e59cb94a48a3fb691cdaea650aef50eeed829133a3c460cc80a53d3b",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-browse_win32_amd64"
+        },
+        {
+          "name": "caveman-browse_win32_arm64",
+          "size": 32661504,
+          "digest": "sha256:02694852363698fc41a059c484949bcbcb6629f1c81f8e59df8a918a578fdc52",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-browse_win32_arm64"
+        },
+        {
+          "name": "caveman-engine_darwin_amd64",
+          "size": 31460786,
+          "digest": "sha256:ab1b573e9a3c5c28403f5242eef17305b60f2568548ee4f94ee39ced078b10de",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-engine_darwin_amd64"
+        },
+        {
+          "name": "caveman-engine_darwin_arm64",
+          "size": 31262274,
+          "digest": "sha256:8d961a8cfc7bd143eaf905b8ae7ae39cf60dff05204f8d0174b5f41ad9c65319",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-engine_darwin_arm64"
+        },
+        {
+          "name": "caveman-engine_linux_amd64",
+          "size": 30798072,
+          "digest": "sha256:0b450e46732461a931bb86c78e0c8ea1b08d525fa2cf5aa4592d9c218edc46a4",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-engine_linux_amd64"
+        },
+        {
+          "name": "caveman-engine_linux_arm64",
+          "size": 30346816,
+          "digest": "sha256:6b0915f8c2d83817fe5afce14c8a3cf9f959dfb12b2ccc53947bbf1ac47c37b4",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-engine_linux_arm64"
+        },
+        {
+          "name": "caveman-engine_win32_amd64",
+          "size": 31869440,
+          "digest": "sha256:f4dc2c4e5d4d919a0fdc0929e4ac8d3a81609d41656604731d2584c38f022075",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-engine_win32_amd64"
+        },
+        {
+          "name": "caveman-engine_win32_arm64",
+          "size": 31215616,
+          "digest": "sha256:2c4aed8048f708768f400896e05e5524cb48763c23b6b7fac4b480fd06cf5e1f",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-engine_win32_arm64"
+        },
+        {
+          "name": "caveman-mcp_darwin_amd64",
+          "size": 27521280,
+          "digest": "sha256:662ffc39b43266152c1397e29eaa8b7ce4b797a933928bd5d430e99de358305a",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-mcp_darwin_amd64"
+        },
+        {
+          "name": "caveman-mcp_darwin_arm64",
+          "size": 27148178,
+          "digest": "sha256:d54f0f2f73de35009b2e7025d0fcb9d369398940ca6fcc05d34bdee36bc41c84",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-mcp_darwin_arm64"
+        },
+        {
+          "name": "caveman-mcp_linux_amd64",
+          "size": 25051963,
+          "digest": "sha256:499b84b7cd19aa2a71ea4f43dfd97d7348c4fc5cf68a97ca168a00f1ce7d4054",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-mcp_linux_amd64"
+        },
+        {
+          "name": "caveman-mcp_linux_arm64",
+          "size": 24543887,
+          "digest": "sha256:50e00693fc71319439b52635fcea686ec86291ea6f9780750286f99ea8743191",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-mcp_linux_arm64"
+        },
+        {
+          "name": "caveman-mcp_win32_amd64",
+          "size": 26097152,
+          "digest": "sha256:2dcd5b2c49883ebca74ec3ca1e903bd83eaa77eb48af467f422b8f7481a4c86f",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-mcp_win32_amd64"
+        },
+        {
+          "name": "caveman-mcp_win32_arm64",
+          "size": 25336832,
+          "digest": "sha256:d1954a0cd0074b2630e4ac52a0b18d2d89609e0d2cf42b3b8f52951b05486179",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-mcp_win32_arm64"
+        },
+        {
+          "name": "caveman-proxy_darwin_amd64",
+          "size": 48694741,
+          "digest": "sha256:af128a8d8727ac612aa04d1dc92e04d2346a33449941dd03d9938ec2334bd14e",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-proxy_darwin_amd64"
+        },
+        {
+          "name": "caveman-proxy_darwin_arm64",
+          "size": 47439058,
+          "digest": "sha256:1ff9b9438b496fee0bb992c1de6bd944921eb9a6ba5debd52c5afca732a1c629",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-proxy_darwin_arm64"
+        },
+        {
+          "name": "caveman-proxy_linux_amd64",
+          "size": 46315504,
+          "digest": "sha256:a70f393806ef8ef1a4b29353f158769eab6b797b3b860fc85c81528f2bfc4f04",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-proxy_linux_amd64"
+        },
+        {
+          "name": "caveman-proxy_linux_arm64",
+          "size": 44698520,
+          "digest": "sha256:bd6f6ae5de6fdfdd4cc067dc4ec1641f9f839b35f4b8c8ba3571b06255e75ebd",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-proxy_linux_arm64"
+        },
+        {
+          "name": "caveman-proxy_win32_amd64",
+          "size": 47872000,
+          "digest": "sha256:937a0b6cc7aca98eea7bb8a6b9f647f2a50a6638c2a806048bd736659f963568",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-proxy_win32_amd64"
+        },
+        {
+          "name": "caveman-proxy_win32_arm64",
+          "size": 45843968,
+          "digest": "sha256:41394120fce559dba9978864175cbca191de82476de6f168c41314275e50b2a8",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-proxy_win32_arm64"
+        },
+        {
+          "name": "caveman-shrink_darwin_amd64",
+          "size": 27283072,
+          "digest": "sha256:923b4617cea2f93e5f01c2ce17e0aba03cfd5c5a072b5a76efae5df6606b0fde",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-shrink_darwin_amd64"
+        },
+        {
+          "name": "caveman-shrink_darwin_arm64",
+          "size": 26932898,
+          "digest": "sha256:ef0df42ab7ce2ad03e440e3d54fb725dbea08e41ba6e9f451ffbc8369d07c08d",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-shrink_darwin_arm64"
+        },
+        {
+          "name": "caveman-shrink_linux_amd64",
+          "size": 24827158,
+          "digest": "sha256:d2aaa14e830541a521de90c77029daf5337770a020035550db73b6bcacf036b8",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-shrink_linux_amd64"
+        },
+        {
+          "name": "caveman-shrink_linux_arm64",
+          "size": 24350618,
+          "digest": "sha256:fd92e9c59229bb91a28bc93e5c7d8599c3e24c1eb768b0dacbcc32e94953bdd7",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-shrink_linux_arm64"
+        },
+        {
+          "name": "caveman-shrink_win32_amd64",
+          "size": 25864704,
+          "digest": "sha256:f30b8a4d6606eecb36713c67e1ba80eaa8912f2ec2400b84268bc8e8b3101f86",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-shrink_win32_amd64"
+        },
+        {
+          "name": "caveman-shrink_win32_arm64",
+          "size": 25122816,
+          "digest": "sha256:363f94cd1cf78df766411893f42130b0a5a580c06fa5b2ca7d82a28a17139fd8",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/caveman-shrink_win32_arm64"
+        },
+        {
+          "name": "cavemem_darwin_amd64",
+          "size": 27590704,
+          "digest": "sha256:a9d4c06c3f91f23e9270884d631dc135f449c1fb20444b895f84be2672026e82",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/cavemem_darwin_amd64"
+        },
+        {
+          "name": "cavemem_darwin_arm64",
+          "size": 27201730,
+          "digest": "sha256:c375d15ff2b2166412fb739dcf7908f8d73b5f7bc8e1b44bf5be0b04df9bbfd9",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/cavemem_darwin_arm64"
+        },
+        {
+          "name": "cavemem_linux_amd64",
+          "size": 25128467,
+          "digest": "sha256:f796cdc01d28b700e26923ba2ab8c6088c9e20015e4b5081c8b80b059bbff95d",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/cavemem_linux_amd64"
+        },
+        {
+          "name": "cavemem_linux_arm64",
+          "size": 24560579,
+          "digest": "sha256:c1c1e94263650abdb7473524c0ea382b57a375934e6ab1a5603b84571423ab18",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/cavemem_linux_arm64"
+        },
+        {
+          "name": "cavemem_win32_amd64",
+          "size": 26169344,
+          "digest": "sha256:4a284feecf4527bf558874bde09e3604052af789b0adb7263f2470fee89d13ae",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/cavemem_win32_amd64"
+        },
+        {
+          "name": "cavemem_win32_arm64",
+          "size": 25400832,
+          "digest": "sha256:b9a68e984748708e39123621387654cbd6cb440474ea9913291aff9e6a72ae05",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/cavemem_win32_arm64"
+        },
+        {
+          "name": "checksums.txt",
+          "size": 4984,
+          "digest": "sha256:29e1e2684e4fad5a2607b89b9a21a5af8263aaf21ac13a6a8721ec5089ed69c5",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/checksums.txt"
+        },
+        {
+          "name": "checksums.txt.keysig",
+          "size": 291,
+          "digest": "sha256:68e708300c4a725b043ebedd32bee5b17a3fa0c5a502a3afb9df3f6e8d3e464c",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/checksums.txt.keysig"
+        },
+        {
+          "name": "COPYING.mingw-w64",
+          "size": 2326,
+          "digest": "sha256:99a69660981156c21336fdb5661f89341b013c94e4bf9e1c7467b4745718397f",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/COPYING.mingw-w64"
+        },
+        {
+          "name": "COPYRIGHT.musl",
+          "size": 6204,
+          "digest": "sha256:f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/COPYRIGHT.musl"
+        },
+        {
+          "name": "LICENSE",
+          "size": 11358,
+          "digest": "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/LICENSE"
+        },
+        {
+          "name": "LICENSE-MIT",
+          "size": 1071,
+          "digest": "sha256:5eb826cd03151bcc7cce3f80d40e87733237fedfc6c36d6908aca5fd650a0bdb",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/LICENSE-MIT"
+        },
+        {
+          "name": "LICENSE.caveman-blocks",
+          "size": 11358,
+          "digest": "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/LICENSE.caveman-blocks"
+        },
+        {
+          "name": "LICENSE.zig",
+          "size": 1080,
+          "digest": "sha256:5c537d6853e005298a285d508cff9ac7192cea23576c840d485b2b586a7ff177",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/LICENSE.zig"
+        },
+        {
+          "name": "LICENSING.md",
+          "size": 3645,
+          "digest": "sha256:e36ef7b22766ea22f01bce187f629669e62f2346948435154a295f91bd3c3ff2",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/LICENSING.md"
+        },
+        {
+          "name": "modules.json",
+          "size": 18237,
+          "digest": "sha256:8cd41351c1faea27212212b6e39a90af721e1aa2f5b0896d4f27d46a33229d4e",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/modules.json"
+        },
+        {
+          "name": "NOTICE",
+          "size": 2285,
+          "digest": "sha256:20112dc6e62e91da4f03c29fd10cfa41743a9c526389fdf1396c3649c18216fc",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/NOTICE"
+        },
+        {
+          "name": "NOTICE.browse",
+          "size": 1379,
+          "digest": "sha256:ac8b226fb6e5d7ca20804794bf3da9c5bad3030191c312a89d6c55c0c14e104f",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/NOTICE.browse"
+        },
+        {
+          "name": "NOTICE.engine-pixel",
+          "size": 2001,
+          "digest": "sha256:bb4dec62bfc539d7f7edf66d4fac1edfb84eeb705733f8f63611e0aa87171378",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/NOTICE.engine-pixel"
+        },
+        {
+          "name": "RELEASE",
+          "size": 11,
+          "digest": "sha256:c6e910303aabac4b188b6903cd06c13a4a31367029862a5aff54bfedc3725c5b",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/RELEASE"
+        },
+        {
+          "name": "SPLEEN_LICENSE.txt",
+          "size": 1313,
+          "digest": "sha256:f33fe8679d5b2abecc4f1313ce6c6bfa58262964de5f7bca146596a7318047af",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/SPLEEN_LICENSE.txt"
+        },
+        {
+          "name": "THIRD_PARTY_GO_LICENSES.tar.gz",
+          "size": 8808,
+          "digest": "sha256:a718d542d96e9334079c87d6b5d440c5b3bea3b31c3f6f8a262c0b718c45b24e",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/THIRD_PARTY_GO_LICENSES.tar.gz"
+        },
+        {
+          "name": "UNIFONT_LICENSE.txt",
+          "size": 24142,
+          "digest": "sha256:1e74cb82bf476843e97c2596297b04219b1a7e51f7238944a8c031cb9401fa87",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.0.2/UNIFONT_LICENSE.txt"
+        }
+      ]
+    }
+  ],
+  "registry_queries": {
+    "npm-caveman-ai-cli": {
+      "url": "https://registry.npmjs.org/@caveman-ai%2fcli",
+      "accessed_at_utc": "2026-10-24T01:19:20Z",
+      "status": 200,
+      "final_url": "https://registry.npmjs.org/@caveman-ai%2fcli",
+      "bytes": 68135,
+      "sha256": "43e46cfa6c704c45514c942701bbbbfaf9a36d96d0b10da73ed5826cb3819f6d",
+      "name": "@caveman-ai/cli",
+      "latest": "4.0.1",
+      "published": "2026-10-13T18:31:25.030Z",
+      "license": "Apache-2.0",
+      "gitHead": null,
+      "dist": {
+        "shasum": "5572d3985c34efd34b0c0a4c9a2c4170e5019b28",
+        "tarball": "https://registry.npmjs.org/@caveman-ai/cli/-/cli-4.0.1.tgz",
+        "fileCount": 40,
+        "integrity": "sha512-ik1hgVGrhkha9YcZKSijfcS97nKjwYKyI4rvs7+7spTsNyBWClhgC2lAzgDkj3n5OvFcaROzNOHQ3jcS3AYCxw==",
+        "signatures": [
+          {
+            "sig": "MEYCIQC/Yh8qC96AcSNoevv9rOMCAiBWLqU5fuD6SaCpQ+sdAgIhAIOfWVCZ2XK68PyGZH8ecpWznooYSmgVFfwW6aty0o1W",
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+          },
+          {
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+            "sig": "MEUCIAIECPOIE3k9YQvpAV7pmezjbDBfWt8Tn+5sU5DHTr4xAiEA+GiDPCyd7Tt23qx5N0+TcS+XruaTI8a+Cy5Pxr048BI="
+          }
+        ],
+        "attestations": {
+          "url": "https://registry.npmjs.org/-/npm/v1/attestations/@caveman-ai%2fcli@4.0.1",
+          "provenance": {
+            "predicateType": "https://slsa.dev/provenance/v1"
+          }
+        },
+        "unpackedSize": 1660970
+      },
+      "repository": {
+        "url": "git+https://github.com/JuliusBrussee/caveman.git",
+        "type": "git",
+        "directory": "packages/cli"
+      }
+    },
+    "npm-caveman-ai-pi": {
+      "url": "https://registry.npmjs.org/@caveman-ai%2fpi",
+      "accessed_at_utc": "2026-10-24T01:19:20Z",
+      "status": 200,
+      "final_url": "https://registry.npmjs.org/@caveman-ai%2fpi",
+      "bytes": 14363,
+      "sha256": "8a9b84cf5a09baed859b4a7fb352566b8c58ef56a32ed5bbca4ebedd09ab621c",
+      "name": "@caveman-ai/pi",
+      "latest": "0.3.1",
+      "published": "2026-10-13T18:32:14.958Z",
+      "license": "Apache-2.0",
+      "gitHead": null,
+      "dist": {
+        "shasum": "aa4845e75263070d0a9aa72d94bf6f95f3217eea",
+        "tarball": "https://registry.npmjs.org/@caveman-ai/pi/-/pi-0.3.1.tgz",
+        "fileCount": 6,
+        "integrity": "sha512-IW67wMiWZYvtTsW6nOknMRGyfila/aUvgMVUDYIZiUnHs2+rnyYwbIndoFVa53Aq4YBEAqaKnGjAWMRAK1Lznw==",
+        "signatures": [
+          {
+            "sig": "MEUCIBr3gYrChTgw181w5HkQCI/EhReVDkg3/KoV2C3kUjvnAiEA9aoBoMte7d5RcKgzFyQ2QI7RMSrkUKDxqegWosVT2Ps=",
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+          },
+          {
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+            "sig": "MEUCIQDI+sljTlw46OW6PEcEizBhyPR4XdCGTYzC3gaolc+eqQIgSCr6tYgkBwGK6Rth6qyhpyMeaCKfBLeFLOI6QVi3xDg="
+          }
+        ],
+        "attestations": {
+          "url": "https://registry.npmjs.org/-/npm/v1/attestations/@caveman-ai%2fpi@0.3.1",
+          "provenance": {
+            "predicateType": "https://slsa.dev/provenance/v1"
+          }
+        },
+        "unpackedSize": 114957
+      },
+      "repository": {
+        "url": "git+https://github.com/JuliusBrussee/caveman.git",
+        "type": "git",
+        "directory": "packages/pi-extension"
+      }
+    },
+    "npm-caveman-ai-sdk": {
+      "url": "https://registry.npmjs.org/@caveman-ai%2fsdk",
+      "accessed_at_utc": "2026-10-24T01:19:20Z",
+      "status": 200,
+      "final_url": "https://registry.npmjs.org/@caveman-ai%2fsdk",
+      "bytes": 14600,
+      "sha256": "214c071b03fece3008a60f06528120509f8c338c2cd5466aae0ddcbe88057d85",
+      "name": "@caveman-ai/sdk",
+      "latest": "1.2.0",
+      "published": "2026-09-30T22:27:05.469Z",
+      "license": "Apache-2.0",
+      "gitHead": null,
+      "dist": {
+        "shasum": "c6a2edc8ffb615f49737267c184a1782e6f1588c",
+        "tarball": "https://registry.npmjs.org/@caveman-ai/sdk/-/sdk-1.2.0.tgz",
+        "fileCount": 20,
+        "integrity": "sha512-3fJkSBbKassQQ68bLlQkaxOtqC2Elo3MNszzdnepYIcXVET5jWweqYYd474yoMQ7rdXHG9d8p0S6sRYBD/T0MA==",
+        "signatures": [
+          {
+            "sig": "MEQCIHqb++gK8CaUSA9g4F0tV12eJCsQSonEG4PN2hQHcu4sAiA8o4F0Mkkh1IkBY5q1av/mGJuNMsM4kSiP23DrbtJl9A==",
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+          },
+          {
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+            "sig": "MEUCIH1/6fdqtVoYeXoRKSncSyJZEI2pS9Nd0v7ExrL3xHUcAiEAxy/K3wbxH/fAvTbzIvgCcRlsmxx0kTC8lBG4H/B7RYM="
+          }
+        ],
+        "attestations": {
+          "url": "https://registry.npmjs.org/-/npm/v1/attestations/@caveman-ai%2fsdk@1.2.0",
+          "provenance": {
+            "predicateType": "https://slsa.dev/provenance/v1"
+          }
+        },
+        "unpackedSize": 270457
+      },
+      "repository": {
+        "url": "git+https://github.com/JuliusBrussee/caveman.git",
+        "type": "git",
+        "directory": "packages/sdk/typescript"
+      }
+    },
+    "npm-caveman-ai-middleware": {
+      "url": "https://registry.npmjs.org/@caveman-ai%2fmiddleware",
+      "accessed_at_utc": "2026-10-24T01:19:20Z",
+      "status": 200,
+      "final_url": "https://registry.npmjs.org/@caveman-ai%2fmiddleware",
+      "bytes": 32460,
+      "sha256": "cf65404da9ae1bf8b6b854839a8f380e12a13ac7cfe3f50471de5a1bdb4ef5e2",
+      "name": "@caveman-ai/middleware",
+      "latest": "1.0.1",
+      "published": "2026-10-08T05:17:19.694Z",
+      "license": "Apache-2.0",
+      "gitHead": null,
+      "dist": {
+        "shasum": "e7bf366f55badf2e7ba7f933b68580c13f56435c",
+        "tarball": "https://registry.npmjs.org/@caveman-ai/middleware/-/middleware-1.0.1.tgz",
+        "fileCount": 50,
+        "integrity": "sha512-SXGoAbCnu/WIghaUsZFCbg0EUK0Voh7tG1uofrY7y3vR/L1QuG+VgwaAaiKe6QDniLd59ZcgNYQCZmwe+ePrJQ==",
+        "signatures": [
+          {
+            "sig": "MEUCIQC988rB0Ne+qxzlezd6UFmhDSuLfTMjzh3Pd3/MFz39XQIgRLb46IJ5SVAkETV8IRYOYYiTnNv1XjEkIKEUJ8Qr8Lg=",
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+          },
+          {
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+            "sig": "MEUCIFYzJrMzxDZGTEDAfKLUSLVQljhVnBw8OQbjLgjOOSH5AiEAluCjGhGwoB7oObCBcjJOXfxbgI4RdaTSUavz/0rj7Ac="
+          }
+        ],
+        "attestations": {
+          "url": "https://registry.npmjs.org/-/npm/v1/attestations/@caveman-ai%2fmiddleware@1.0.1",
+          "provenance": {
+            "predicateType": "https://slsa.dev/provenance/v1"
+          }
+        },
+        "unpackedSize": 222361
+      },
+      "repository": {
+        "url": "git+https://github.com/JuliusBrussee/caveman.git",
+        "type": "git",
+        "directory": "packages/middleware/typescript"
+      }
+    },
+    "npm-caveman-installer": {
+      "url": "https://registry.npmjs.org/caveman-installer",
+      "accessed_at_utc": "2026-10-24T01:19:20Z",
+      "status": 200,
+      "final_url": "https://registry.npmjs.org/caveman-installer",
+      "bytes": 1860,
+      "sha256": "6145a0815795fffedc350d156cf942df8efeee7a5a59a7f6a1cda892c1822a22",
+      "name": "caveman-installer",
+      "latest": "0.0.0",
+      "published": "2026-09-30T17:13:04.390Z",
+      "license": "UNLICENSED",
+      "gitHead": null,
+      "dist": {
+        "integrity": "sha512-/18jJbplSjP94aq2aU+t7f8HGqauRn2YjU18DLTVRO3IxEIxilojVb7leWOB2TWlaO6fSMy+83cniLilMlGE4g==",
+        "shasum": "dae4907785a17cc317194c09700cc34c0afcfdd6",
+        "tarball": "https://registry.npmjs.org/caveman-installer/-/caveman-installer-0.0.0.tgz",
+        "fileCount": 3,
+        "unpackedSize": 516,
+        "signatures": [
+          {
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+            "sig": "MEUCIAkzohQowLTM0sIAHNdZnMBwmrKhhsStccmUtdmkplE4AiEA2e55k2DMh6FIEUbIkfH80hAtGakFdtMDECBYLTx2Pm8="
+          }
+        ]
+      },
+      "repository": null
+    },
+    "npm-caveman-mcp": {
+      "url": "https://registry.npmjs.org/caveman-mcp",
+      "accessed_at_utc": "2026-10-24T01:19:20Z",
+      "error": "HTTP Error 404: Not Found"
+    },
+    "npm-caveman-shrink": {
+      "url": "https://registry.npmjs.org/caveman-shrink",
+      "accessed_at_utc": "2026-10-24T01:19:20Z",
+      "status": 200,
+      "final_url": "https://registry.npmjs.org/caveman-shrink",
+      "bytes": 6509,
+      "sha256": "8577c962e09cf21c8828ffcacd31bfe8269ffab0e0170c630b4c750b31d3543e",
+      "name": "caveman-shrink",
+      "latest": "0.1.1",
+      "published": "2026-09-15T04:10:58.048Z",
+      "license": "MIT",
+      "gitHead": "4df4b03ba538751131d24415c59a1fad0d8c2c18",
+      "dist": {
+        "shasum": "b0d1ca98f52c1e23958256eeef1c5eabf235595c",
+        "tarball": "https://registry.npmjs.org/caveman-shrink/-/caveman-shrink-0.1.1.tgz",
+        "fileCount": 6,
+        "integrity": "sha512-Y1x8I5LV/Ai4HVdBuLr7THfqTqwgePKfh//b+D4/scIn5ka6wRKxh0sQcGkpDLowdtFXo1Amz4nB1ZiudY93Fw==",
+        "signatures": [
+          {
+            "sig": "MEYCIQDJ7p4NrTjKp58LaOWhjeOvGKGB9BtvAC4qQmveFX/R3AIhAMs4WPfKrPXBePuVz/Fa83gqDMPDc1z5ZPqH6XacjIYD",
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+          },
+          {
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+            "sig": "MEUCIHRieR4XSH/ZH0tDnQFqh3EMOX7Ji2vkMenuRWeFHE5KAiEAva1AODbGeGffZ7fGBRzS8p5xIHmOJgRo7CKqyIYhsyQ="
+          }
+        ],
+        "unpackedSize": 23193
+      },
+      "repository": {
+        "url": "git+https://github.com/JuliusBrussee/caveman.git",
+        "type": "git",
+        "directory": "src/mcp-servers/caveman-shrink"
+      }
+    },
+    "npm-caveman-browse": {
+      "url": "https://registry.npmjs.org/caveman-browse",
+      "accessed_at_utc": "2026-10-24T01:19:20Z",
+      "error": "HTTP Error 404: Not Found"
+    },
+    "npm-cavemem": {
+      "url": "https://registry.npmjs.org/cavemem",
+      "accessed_at_utc": "2026-10-24T01:19:20Z",
+      "status": 200,
+      "final_url": "https://registry.npmjs.org/cavemem",
+      "bytes": 17500,
+      "sha256": "9f10dcca0adb06b2a205f14c16e4d844b4395d87ce7255d48655747433d1e26b",
+      "name": "cavemem",
+      "latest": "0.2.1",
+      "published": "2026-05-06T12:16:25.400Z",
+      "license": "MIT",
+      "gitHead": "e934e436e0dcb68422475d85385f7f8eb5e449b1",
+      "dist": {
+        "integrity": "sha512-sujtPDxbgyFTNT8d3yREFDYLTbkCTTvcBIN0VIvVER/4qtx2cH64b9oEDmL1m0usfpNAo4Il8H058shoGZTFFA==",
+        "shasum": "021af8e7f24d0f69ad7dbce38ff229739878ea3e",
+        "tarball": "https://registry.npmjs.org/cavemem/-/cavemem-0.2.1.tgz",
+        "fileCount": 12,
+        "unpackedSize": 223868,
+        "signatures": [
+          {
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+            "sig": "MEUCIBJoL25jcS1WZqk7R3vcqxkJFCPq2oiYqTNNZoU80EQgAiEAnLzCNBFTvm1fia5iPiCdxa4liT/kkvoiRec5SMEpD7o="
+          }
+        ]
+      },
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/JuliusBrussee/cavemem.git"
+      }
+    },
+    "npm-caveman-ai-device-auth": {
+      "url": "https://registry.npmjs.org/@caveman-ai%2fdevice-auth",
+      "accessed_at_utc": "2026-10-24T01:19:20Z",
+      "error": "HTTP Error 404: Not Found"
+    },
+    "npm-caveman-ai-contracts": {
+      "url": "https://registry.npmjs.org/@caveman-ai%2fcontracts",
+      "accessed_at_utc": "2026-10-24T01:19:20Z",
+      "status": 200,
+      "final_url": "https://registry.npmjs.org/@caveman-ai%2fcontracts",
+      "bytes": 4641,
+      "sha256": "3ee0dc59cc29c227f393a8ca299413d7063500ff38d32dd845c52392b719d29e",
+      "name": "@caveman-ai/contracts",
+      "latest": "2.0.0",
+      "published": "2026-09-30T22:30:13.278Z",
+      "license": "Apache-2.0",
+      "gitHead": null,
+      "dist": {
+        "shasum": "2fe739f924aaf9994f2cebf47610f9780e81dc69",
+        "tarball": "https://registry.npmjs.org/@caveman-ai/contracts/-/contracts-2.0.0.tgz",
+        "fileCount": 34,
+        "integrity": "sha512-wav+tlJCs/IeGlIg7Ub6bt0ehGv87Mx0mhi5qVidSyyh4pGP0gpEgrAmFxvUb00bOKtRl5aMD9aYRDR1T0qqyA==",
+        "signatures": [
+          {
+            "sig": "MEYCIQCPtuDobTpGL7Zs8JFZDdYn/PBHlxD/YRfrWuOLTT7U2gIhAOaNGBBqBPsGBPp4vQm2HhFee0UqedRNiSQ2jwOahTG7",
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+          },
+          {
+            "sig": "MEQCIEQ8UKoLRZS3xQ7jmAHBYbsijepUajlvaNCjnJXBAFlFAiBlUFiyVNB7C7g0YIlBQFzwBcfH8reY20nN//Gw0g+E4A==",
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+          }
+        ],
+        "attestations": {
+          "url": "https://registry.npmjs.org/-/npm/v1/attestations/@caveman-ai%2fcontracts@2.0.0",
+          "provenance": {
+            "predicateType": "https://slsa.dev/provenance/v1"
+          }
+        },
+        "unpackedSize": 181283
+      },
+      "repository": {
+        "url": "git+https://github.com/JuliusBrussee/caveman.git",
+        "type": "git",
+        "directory": "packages/shared/contracts"
+      }
+    },
+    "npm-caveman-provider-catalog": {
+      "url": "https://registry.npmjs.org/@caveman%2fprovider-catalog",
+      "accessed_at_utc": "2026-10-24T01:19:20Z",
+      "error": "HTTP Error 404: Not Found"
+    },
+    "npm-subagent-tax": {
+      "url": "https://registry.npmjs.org/subagent-tax",
+      "accessed_at_utc": "2026-10-24T01:19:21Z",
+      "error": "HTTP Error 404: Not Found"
+    },
+    "pypi-caveman-sdk": {
+      "url": "https://pypi.org/pypi/caveman-sdk/json",
+      "accessed_at_utc": "2026-10-24T01:19:21Z",
+      "status": 200,
+      "final_url": "https://pypi.org/pypi/caveman-sdk/json",
+      "bytes": 13003,
+      "sha256": "e7e86ec0571cdc54d689ba161e7da43bfd8adc675fcbd8be5677f0fa53aa7423",
+      "name": "caveman-sdk",
+      "latest": "1.2.0",
+      "license": null,
+      "license_expression": "Apache-2.0",
+      "artifacts": [
+        {
+          "filename": "caveman_sdk-1.2.0-py3-none-any.whl",
+          "upload_time_iso_8601": "2026-09-30T22:27:38.070979Z",
+          "digests": {
+            "blake2b_256": "1ac1b72a03f062526e69575371821f64ad2fe7b31dadfbb58e3c6292d2e31f11",
+            "md5": "8e137e77b21f5cbf4a4ecc5b38f7f5dc",
+            "sha256": "86a930a7f525756d307b741115962e0ef3211369ed3c590ca5d87b88db1d6e74"
+          },
+          "url": "https://files.pythonhosted.org/packages/1a/c1/b72a03f062526e69575371821f64ad2fe7b31dadfbb58e3c6292d2e31f11/caveman_sdk-1.2.0-py3-none-any.whl",
+          "size": 73214
+        },
+        {
+          "filename": "caveman_sdk-1.2.0.tar.gz",
+          "upload_time_iso_8601": "2026-09-30T22:27:39.368038Z",
+          "digests": {
+            "blake2b_256": "a1e9436dc7cb47bee8b97c31226596a5d85e0c149e601b194d8cb289ca964803",
+            "md5": "4f3747584e11de64d726182ccfe3b851",
+            "sha256": "6bb4b61015c860c4161bce68efb5d4fde51d8402e67328883859e1eb72642a17"
+          },
+          "url": "https://files.pythonhosted.org/packages/a1/e9/436dc7cb47bee8b97c31226596a5d85e0c149e601b194d8cb289ca964803/caveman_sdk-1.2.0.tar.gz",
+          "size": 121449
+        }
+      ]
+    },
+    "pypi-caveman-middleware": {
+      "url": "https://pypi.org/pypi/caveman-middleware/json",
+      "accessed_at_utc": "2026-10-24T01:19:21Z",
+      "status": 200,
+      "final_url": "https://pypi.org/pypi/caveman-middleware/json",
+      "bytes": 19155,
+      "sha256": "458f243b25d6cf8aeff95cfc97662ea86522e4432357a4c1f415eba97de40b04",
+      "name": "caveman-middleware",
+      "latest": "1.0.0",
+      "license": null,
+      "license_expression": "Apache-2.0",
+      "artifacts": [
+        {
+          "filename": "caveman_middleware-1.0.0-py3-none-any.whl",
+          "upload_time_iso_8601": "2026-09-30T22:34:39.874597Z",
+          "digests": {
+            "blake2b_256": "ed5fc62eeec50a0ce8d1022a4848dde732f1903f5acf16a7826aaae76d02ed9c",
+            "md5": "cde20602e9d22d7e4c422854ab2cd668",
+            "sha256": "3fe070982fadce8a8d382d7ac6aafd16d8caa82a204bf5cd48178b8bc2ffb24c"
+          },
+          "url": "https://files.pythonhosted.org/packages/ed/5f/c62eeec50a0ce8d1022a4848dde732f1903f5acf16a7826aaae76d02ed9c/caveman_middleware-1.0.0-py3-none-any.whl",
+          "size": 97734
+        },
+        {
+          "filename": "caveman_middleware-1.0.0.tar.gz",
+          "upload_time_iso_8601": "2026-09-30T22:34:41.213044Z",
+          "digests": {
+            "blake2b_256": "a33d98a64f78e597a6eab32b9a2868c903791692ca2d6f03bf8e1b40f0eccc25",
+            "md5": "ec648225cff76cc7f895693063ea5cf1",
+            "sha256": "0886e93d9684ab76a3627c13e518aa6b93dfdab602a90ed52d017d7fe3913faf"
+          },
+          "url": "https://files.pythonhosted.org/packages/a3/3d/98a64f78e597a6eab32b9a2868c903791692ca2d6f03bf8e1b40f0eccc25/caveman_middleware-1.0.0.tar.gz",
+          "size": 116580
+        }
+      ]
+    }
+  },
+  "source_files": [
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/skills/caveman/SKILL.md",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "path": "skills/caveman/SKILL.md",
+      "sha256": "415d43518f2b1a9498c15a445d4657117b129ee5e81b19454ce348439cc6672b",
+      "bytes": 4678,
+      "purpose": "delivered policy",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/.claude-plugin/plugin.json",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "path": ".claude-plugin/plugin.json",
+      "sha256": "5ca92785ab333f48dcace278e98a4005b68edcdbf5f2b00b6af1cf21e01db668",
+      "bytes": 1998,
+      "purpose": "host hooks",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/.claude-plugin/marketplace.json",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "path": ".claude-plugin/marketplace.json",
+      "sha256": "eb62c13f48bff391bfc70b11524b957964b9de196dd341fcfcf745c9b13bcc41",
+      "bytes": 532,
+      "purpose": "plugin discovery root",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/agents/cavecrew-investigator.md",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "path": "agents/cavecrew-investigator.md",
+      "sha256": "e457b1c5c32decd315cf196821c1f3935df4f12029cd3e1398a35f1b4148af17",
+      "bytes": 1640,
+      "purpose": "model selection",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/agents/cavecrew-reviewer.md",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "path": "agents/cavecrew-reviewer.md",
+      "sha256": "85d737e5a08409c1fd7a35be0ceb6411c447ef58be3ef0d341a12c09cb2aac04",
+      "bytes": 1601,
+      "purpose": "model selection",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/agents/cavecrew-builder.md",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "path": "agents/cavecrew-builder.md",
+      "sha256": "7b7c8e6bfd23b2306356820fd1fde42228fb092bd9e50b272616bb70ca356de4",
+      "bytes": 1478,
+      "purpose": "scope/testing restrictions",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/src/hooks/cavecrew-model-overrides.js",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "path": "src/hooks/cavecrew-model-overrides.js",
+      "sha256": "faf9d5b3d792f86441ed4298f2017e0d56815b787cfcf61e511108dc5b459bdb",
+      "bytes": 5544,
+      "purpose": "optional persistent model override",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/src/hooks/caveman-activate.js",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "path": "src/hooks/caveman-activate.js",
+      "sha256": "c7e06f2766c616ac791a923d8c2c5bfa654742cbcd5e86d18575b529ce48d9f9",
+      "bytes": 30837,
+      "purpose": "activation and context reset",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/packages/cli/src/index.ts",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "path": "packages/cli/src/index.ts",
+      "sha256": "441c404ae336bfbe927f4e4653d676c3750c5651d43f2c0cd9bd557c5286d722",
+      "bytes": 1059611,
+      "purpose": "installer, telemetry, wrapper defaults",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/packages/cli/BINARY_RELEASE",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "path": "packages/cli/BINARY_RELEASE",
+      "sha256": "cb7faeabaac332ea9dd3fc04fd396b63077a3a410a75f4dea169f68b867904cc",
+      "bytes": 11,
+      "purpose": "source installer pin",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/packages/cli/BLOCKS_RELEASE",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "path": "packages/cli/BLOCKS_RELEASE",
+      "sha256": "46a05726438c78f0b7509d466373f9882029c0a9a3c20d0d32ee9952a2eeb921",
+      "bytes": 77,
+      "purpose": "external Blocks release",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/docs/HONEST-NUMBERS.md",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "path": "docs/HONEST-NUMBERS.md",
+      "sha256": "a7ac74da98a64399d563789a771a54f20cb259b2716e36e140605d2fb4a098b1",
+      "bytes": 7306,
+      "purpose": "first-party output evidence",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/docs/WRAP-BENCHMARK.md",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "path": "docs/WRAP-BENCHMARK.md",
+      "sha256": "7b973a005e1c981babf006b68fb7e22c4775db8ee661a17d4bc0bb061d4925b3",
+      "bytes": 7080,
+      "purpose": "first-party wrapper evidence",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/LICENSE",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bytes": 11358,
+      "purpose": "current root license",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/LICENSING.md",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "LICENSING.md",
+      "sha256": "e36ef7b22766ea22f01bce187f629669e62f2346948435154a295f91bd3c3ff2",
+      "bytes": 3645,
+      "purpose": "component license boundaries",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/NOTICE",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "NOTICE",
+      "sha256": "20112dc6e62e91da4f03c29fd10cfa41743a9c526389fdf1396c3649c18216fc",
+      "bytes": 2285,
+      "purpose": "retained third-party terms",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/go.mod",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "go.mod",
+      "sha256": "4e1c077feddef3ff29d4688e05bdd1a3c3f401c1a925b88ffe90e1b806f4985b",
+      "bytes": 1542,
+      "purpose": "toolchain and dependency graph",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/engine/engine.go",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "engine/engine.go",
+      "sha256": "0d8700741ff0634c5550f06498716ff3fe29cc414c3bff1ed0583724201d5b45",
+      "bytes": 10324,
+      "purpose": "Go API and deterministic routing",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/engine/result.go",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "engine/result.go",
+      "sha256": "ddc0b82544b65282b639c785001de8666c6177de38328c4dfc5287f696310563",
+      "bytes": 4983,
+      "purpose": "modes and external recovery",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/engine/ccr/store_sqlite.go",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "engine/ccr/store_sqlite.go",
+      "sha256": "d378f81e8a0da6c25dbcd075683e574277c7cb8682883c615024017afdbb30bb",
+      "bytes": 30986,
+      "purpose": "durability, budget and failure behavior",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/engine/tokens/tokens.go",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "engine/tokens/tokens.go",
+      "sha256": "911241312384408f5adc932cf8f8cecb5cb6d20ebeb33d6336ea5de8574ce097",
+      "bytes": 2869,
+      "purpose": "counter basis",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/engine/toon.go",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "engine/toon.go",
+      "sha256": "8b295e677885ed313324649089ad610625d821f779a80a82f7433f4284cc0b17",
+      "bytes": 840,
+      "purpose": "structured representation",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/engine/pixel/gate.go",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "engine/pixel/gate.go",
+      "sha256": "358c5c673560ce5b1b4215fd9cbcdc169383da25714dd76c2754995078131170",
+      "bytes": 7171,
+      "purpose": "pixel eligibility and pricing assumptions",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/proxy/internal/config/config.go",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "proxy/internal/config/config.go",
+      "sha256": "44e154f3aff7d246d438348c874bc1f2add11ae06aed121ca18398a22ff74dc3",
+      "bytes": 26737,
+      "purpose": "raw proxy defaults",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/proxy/internal/config/middleware.go",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "proxy/internal/config/middleware.go",
+      "sha256": "ce223a622a1e1b4f1c1fbc7b6935e5dbebde4eae534d40246abfee6d4f91036d",
+      "bytes": 7312,
+      "purpose": "distinct middleware retention",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/proxy/cmd/caveman-proxy/cache_warm.go",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "proxy/cmd/caveman-proxy/cache_warm.go",
+      "sha256": "0db3bdb68b5185597575ec08ee2a09bbfe14c73de9df03bd96c58f80c5a296a1",
+      "bytes": 1341,
+      "purpose": "default-on warmer",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/proxy/cmd/caveman-proxy/main.go",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "proxy/cmd/caveman-proxy/main.go",
+      "sha256": "76336d4a31670462f771b601574eb26ff7427d6699ac7211a36ec8267c080206",
+      "bytes": 46868,
+      "purpose": "mode-independent warmer wiring",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/proxy/internal/gateway/cache_warm.go",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "proxy/internal/gateway/cache_warm.go",
+      "sha256": "79af3bd31c74c90cd94be0da4ff88c2c48c1f243039a3e39bc96d723a4e7388d",
+      "bytes": 27353,
+      "purpose": "warming eligibility, credentials and request shape",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/mcp/server.go",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "mcp/server.go",
+      "sha256": "9e4b5a4fb74b4a68414760da46a402c39af2adb14c33d6b5408486ec578b5650",
+      "bytes": 13391,
+      "purpose": "protocol and output limits",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/mcp/engine_tools.go",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "mcp/engine_tools.go",
+      "sha256": "210231dfa9d64fb18b5901d42d486a130e3f65cefe8a549378c1bfdbf8b5b49b",
+      "bytes": 13880,
+      "purpose": "five engine tools",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/mem/README.md",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "mem/README.md",
+      "sha256": "33d565aa06d6f94575d01653fdbe748bf737225ccf2937639a41c2c702812c2f",
+      "bytes": 2265,
+      "purpose": "memory semantics",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/shrink/README.md",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "shrink/README.md",
+      "sha256": "b411fe5c5b58da388ace541ead6c71c05a25fb7e23839d5fe194099e7d2e5d56",
+      "bytes": 2181,
+      "purpose": "schema filtering",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/browse/README.md",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "browse/README.md",
+      "sha256": "6c621045ce39a7b3560e7497b3f32aafc6cc49ab7cdede44230a03a1d2f8f50c",
+      "bytes": 1776,
+      "purpose": "browser boundary",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/docs/technical/security-and-privacy.md",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "docs/technical/security-and-privacy.md",
+      "sha256": "ca4b813345da4d26baf57769fcac95ad3a87cfa89e99730f06384e639c5a46b0",
+      "bytes": 8809,
+      "purpose": "data flows",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/mcp/package.json",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "mcp/package.json",
+      "sha256": "b6f0b82fd6c1373b7bec854f2a170acad64979b8fc307dc7d23809187ada1039",
+      "bytes": 668,
+      "purpose": "unpublished facade version",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/browse/package.json",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "browse/package.json",
+      "sha256": "0092aaca875e812fb078906b7c317e7ac407e34fe6c05e044f0ec2946cf0441b",
+      "bytes": 829,
+      "purpose": "unpublished facade version",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/shrink/package.json",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "shrink/package.json",
+      "sha256": "b55de00e6d0952431f415af081237527e6966976ecb75aa2e53d70b8609e0358",
+      "bytes": 680,
+      "purpose": "version mismatch with old published JS proxy",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/mem/js/package.json",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "mem/js/package.json",
+      "sha256": "8421da45e02adfa9c62f9164e953e89754c8569e434f27c29b2de5607f90af1d",
+      "bytes": 432,
+      "purpose": "name mismatch with separately published older package",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    },
+    {
+      "url": "https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/packages/shared/contracts/package.json",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "path": "packages/shared/contracts/package.json",
+      "sha256": "1b7ed9221a59b1f4e68d0c9256a88d921c29b56a1cf04d27266a1eca4b8a58ce",
+      "bytes": 859,
+      "purpose": "workspace versus published contract version",
+      "accessed_on_utc": "2026-10-24",
+      "evidence": "source inspected; execution separately recorded"
+    }
+  ],
+  "checkout_status_after_execution": {
+    "caveman": "?? engine/codexexec.go\n?? engine/codexexec_test.go\n?? engine/testdata/codex_exec_code_mode.txt\n?? proxy/internal/nativeruntime/hook_budget_test.go\n?? proxy/internal/store/source_pi.go\n?? proxy/internal/store/source_pi_test.go\n?? tests/installer/unit.wedge-locks.test.mjs",
+    "caveman-runtime": ""
+  },
+  "status_interpretation": "Runtime clean; unrelated untracked files in the product checkouts were not used by selected Node/Python paths. All tracked source files match the pinned commit.",
+  "source_availability_is_not_reproducible_build": true
+}

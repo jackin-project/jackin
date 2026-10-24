@@ -1,0 +1,137 @@
+{
+  "executed_utc": "2026-10-24T08:52:02.596435+00:00",
+  "method": "Static owned-file structure, internal route existence, RepoFile existence, coverage-target existence, JSON parsing and git whitespace check. No rendered browser or repository-wide gate is implied.",
+  "command": {
+    "argv": [
+      "python3",
+      "research/jackin-architecture/check_integration_docs.py"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9"
+  },
+  "documents": [
+    {
+      "path": "docs/content/research/context/engine/01-goals-and-non-goals.mdx",
+      "sha256": "c3bf982baf32039d9001b7dc210f62520a8c0a1208fa9a46a091aa8c11617afe",
+      "body_lines": 82,
+      "description_characters": 127,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/engine/02-architecture.mdx",
+      "sha256": "e5861bcf978a40be76c4dfcf6b061685cc0e27490c001ecd52ad5e1f9e45b78f",
+      "body_lines": 105,
+      "description_characters": 127,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/engine/03-observation-pipeline.mdx",
+      "sha256": "7aa84dc055165ba1cd5e4792b03ebf3e728e7f094e0ee1963651585031fea46d",
+      "body_lines": 90,
+      "description_characters": 129,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/engine/04-retrieval-layer.mdx",
+      "sha256": "bb9e532dcfb3f7c5acc938588ef18bfdd1935c2c01f5613b88ea5ad2cae76565",
+      "body_lines": 84,
+      "description_characters": 120,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/engine/05-output-and-prompt-layer.mdx",
+      "sha256": "6a589ebb7453eb9965dfd8675f56ce706b552789144068f10021a52a157a29ad",
+      "body_lines": 87,
+      "description_characters": 139,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/engine/06-routing-and-fleet-economics.mdx",
+      "sha256": "818a0125fb63e5616e79dd969ac1882584f1705b136ea3ae015738a8e5673b91",
+      "body_lines": 81,
+      "description_characters": 135,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/engine/07-memory-and-state.mdx",
+      "sha256": "78269f8b27f3cf5c763f6019e64dfbb44b10ab71cb6684ebc5e6ee71e8970219",
+      "body_lines": 90,
+      "description_characters": 134,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/engine/08-measurement-and-verification.mdx",
+      "sha256": "d06da083a4b0d74cca48ad09c98853cbfe380de404fb1a50423b34921ab2986e",
+      "body_lines": 95,
+      "description_characters": 129,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/engine/09-reuse-decision-matrix.mdx",
+      "sha256": "77c7a309a3efde3120af5480df9d4db981f994ecb720ab3d5d01e852b1b23379",
+      "body_lines": 106,
+      "description_characters": 139,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/engine/10-rollout-and-validation.mdx",
+      "sha256": "d6b82ce62050e1015c10033004fb6f42c6d88ae595d7b19e227401f4297af600",
+      "body_lines": 108,
+      "description_characters": 134,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/engine/index.mdx",
+      "sha256": "61b49162fd053da88cf71c427765e256565d755262afb6b95bd4afd4d46cc20d",
+      "body_lines": 78,
+      "description_characters": 135,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/tools/02-headroom-design.mdx",
+      "sha256": "a16d26fe969cb3c7229c7c58404c193b111c140a201c7030225c98ad50ced57d",
+      "body_lines": 112,
+      "description_characters": 117,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/tools/10-lemoncrow-design.mdx",
+      "sha256": "65b956eb9a860414debbeb8f0efae950fe631abd7277bd5d840c06e1b58e8d86",
+      "body_lines": 122,
+      "description_characters": 124,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "sha256": "9f33588611761829310a2a6a8e4e9fa3472799f61c1fe1f312bbff5e30527b00",
+      "body_lines": 122,
+      "description_characters": 132,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/08-retrieval-memory-and-state.mdx",
+      "sha256": "a788edcf9659a1da7948ad2679b46b0c70ce9956d82d65f1c0576ce3fb9dcc61",
+      "body_lines": 133,
+      "description_characters": 137,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/17-adoption-roadmap.mdx",
+      "sha256": "a10ab63a8e7bb17c1d3e227c2ba2f801dbcb5a5e587e4ca0306b0700c5ed6463",
+      "body_lines": 100,
+      "description_characters": 133,
+      "research_state_current": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/18-extension-overview.mdx",
+      "sha256": "ad7d983c1a51af96b2b9a0e665c81f523658925972fe5b540973444f835ca2f1",
+      "body_lines": 111,
+      "description_characters": 130,
+      "research_state_current": true
+    }
+  ],
+  "json_files_parsed": 36,
+  "coverage_ledgers_validated": 2,
+  "git_diff_check_exit": 0,
+  "errors": [],
+  "passed": true
+}

@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+    "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/render_pages.mjs",
+    "--out",
+    "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/run-corrected"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9",
+  "started_utc": "2026-10-24T08:37:47.990667+00:00",
+  "duration_seconds": 30.979,
+  "exit_code": 0,
+  "log": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/run-corrected/execution.log",
+  "scope": "Corrected responsive-navigation harness; task-local Chromium against loopback-only final static build."
+}

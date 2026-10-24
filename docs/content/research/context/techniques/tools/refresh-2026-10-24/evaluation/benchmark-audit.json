@@ -1,0 +1,288 @@
+{
+  "cutoff_utc": "2026-10-24T01:15:00Z",
+  "execution_scope": "Source/harness inspection, offline numeric reaggregation and one pure-grader counterexample only. No paid model calls, subscription experiments or live product ranking.",
+  "common_rules": [
+    "Experiment date differs from article date and current repository commit.",
+    "Unknown historical effort/authentication/version is retained as unknown.",
+    "Published reported dollars are not relabeled invoices; no contemporary repricing of undocumented historical tokens.",
+    "Repeated runs on one task are not independent task diversity.",
+    "A non-significant difference is not a non-inferiority result.",
+    "Incomplete, aborted and excluded attempt costs limit deployment economics."
+  ],
+  "studies": [
+    {
+      "id": "jetbrains-rtk",
+      "relationship": "External to RTK; JetBrains is a commercial agent/platform vendor.",
+      "source": "https://blog.jetbrains.com/ai/2026/07/rtk-claude-code-token-savings/",
+      "tested_product": "RTK 0.43.0",
+      "agent": "Claude Code 2.1.201 / Harbor 0.18",
+      "model_effort": "Sonnet 5, low and high separately",
+      "auth": "Billed agent receipts as reported; exact account route not independently recovered.",
+      "tasks": "SkillsBench, 86 of 87 tasks after one internet exclusion; 80 clean low-effort pairs.",
+      "attempts": "425 billed trials including smoke/repeated-task/full runs.",
+      "outcome": "Low-effort median paired cost +7.6%; high +0.1%. Low quality: 5 better, 4 worse, 71 tied; high: 5 better, 4 worse, 62 tied.",
+      "limits": [
+        "Complete raw trajectories were not recovered.",
+        "Setup/glibc failure and error exclusions affect qualification.",
+        "RTK gain counters use eligible whole outputs, unlike native truncation.",
+        "The historical release does not qualify current RTK 1.0.1."
+      ],
+      "executed_here": "Reopened original report; no raw rerun."
+    },
+    {
+      "id": "jetbrains-ponytail",
+      "relationship": "External to Ponytail; commercial agent/platform vendor.",
+      "source": "https://blog.jetbrains.com/ai/2026/07/ponytail-skill-claude-tested/",
+      "tested_product": "Ponytail 4.8.4",
+      "agent": "Claude Code 2.1.201 / Harbor 0.18",
+      "model_effort": "Sonnet 5, medium",
+      "auth": "251 billed trials and $246.09 as reported; full receipts unavailable.",
+      "tasks": "80 matched SkillsBench pairs.",
+      "treatment": "Policy emulated after the task; omits first status and child reinjection of the full plugin. 100 treatment injections, zero control injections; natural self-activation 0/10.",
+      "outcome": "Median paired cost −10.3%; quality: 6 better, 9 worse, 65 ties.",
+      "limits": [
+        "Security/accessibility were not direct acceptance endpoints.",
+        "No complete public raw corpus was recovered.",
+        "Current plugin 5.3.2 and Jackin's adapted policy are separate arms.",
+        "A bootstrap median interval touching zero and non-significance cannot prove non-inferiority."
+      ],
+      "executed_here": "Original report reopened; treatment/denominator audit."
+    },
+    {
+      "id": "jetbrains-caveman",
+      "relationship": "External to Caveman; commercial agent/platform vendor.",
+      "source": "https://blog.jetbrains.com/ai/2026/07/speak-to-ai-agents-like-cavemen-tosave-tokens/",
+      "tested_product": "Historical Caveman style skill, not current input engine.",
+      "agent": "Claude Code 2.1.200 / Harbor 0.17",
+      "model_effort": "Sonnet 5, low",
+      "auth": "Approximately 240 billed trials and $106 reported.",
+      "tasks": "86 SkillsBench tasks; 82 complete pairs.",
+      "outcome": "Output 592K→542K (−8.5%); quality: 8 better, 10 worse, 64 ties. Raw cost $40.60 versus $36.39 (+11.6%), dominated by one pricing-tier outlier.",
+      "limits": [
+        "No universal 10% ceiling follows.",
+        "This is not a current full-product experiment.",
+        "Quality p=.82 does not establish equivalence."
+      ],
+      "executed_here": "Original report reopened; no paid rerun."
+    },
+    {
+      "id": "quesma-rtk",
+      "relationship": "External observability vendor, not RTK author.",
+      "source": "https://quesma.com/blog/does-rtk-make-ai-coding-cheaper/",
+      "experiment_date": "2026-09-11 report",
+      "tested_product": "RTK 0.45.0",
+      "agent": "Claude Code 2.1.220 and OpenCode 1.18.25 / Harbor 0.20",
+      "model_effort": "Fable 5 and DeepSeek V4 Pro 0813; exact historical effort not established in recovered raw material.",
+      "auth": "DeepSeek through OpenRouter; full raw billing records offered on request, not public.",
+      "tasks": "Terminal-Bench 2.1; 85/89 tasks after four Fable refusals were excluded; five repeats.",
+      "attempts": 1740,
+      "outcome": "Total spend per pass: Fable −3%, DeepSeek +7%; equal-task average: +1%/+17%. Pass rates: 84→83% and 71→69%.",
+      "limits": [
+        "A costly corewar task changes pooled versus equal-task ranking.",
+        "Historical native cache ratios are not current prices.",
+        "Old find traversal loop fixed after tested release; not a present defect claim."
+      ],
+      "executed_here": "Original report and methodology reopened; no complete trajectory reproduction."
+    },
+    {
+      "id": "codepointer",
+      "relationship": "External author; product affiliation not established.",
+      "source": "https://codepointer.dev/p/cutting-llm-token-costs-with-rtk",
+      "experiment_date": "2026-06-18 report",
+      "tested_product": "Historical Headroom processing; RTK published reduction factors; Caveman ten-prompt estimate.",
+      "agent": "Private historical sessions; exact complete host/model/effort/auth matrix unavailable.",
+      "tasks": "500 sampled sessions from 2,182 across 13 projects; empty/runaway sessions excluded.",
+      "outcome": "614M tokens and $926.31 in the sample; 3.7% combined modeled saving, composed of Headroom 2.8, RTK 0.5 and Caveman 0.4 percentage points.",
+      "limits": [
+        "Fixed observed trajectories, not rerun optimized agents.",
+        "RTK was not executed in this replay.",
+        "Only two observed compactions underpin the 26–27× lifetime assumption.",
+        "Full private inputs and harness are absent; no universal upper bound follows."
+      ],
+      "executed_here": "Original article and arithmetic interpretation audited."
+    },
+    {
+      "id": "zuwasi-rtk-current",
+      "relationship": "External published study; author's claimed independence not independently verified beyond repository ownership.",
+      "repo": "zuwasi/rtk-token-benchmark",
+      "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+      "tested_product": "RTK 1.0.1",
+      "agent": "Claude Code, Droid, Amp; Amp Windows/WSL accounts differ.",
+      "model_effort": "Claude Fable 5.1; Droid GPT-6.1 Sol; Amp model not exposed. Effort is not pinned.",
+      "auth": "Recorded host dollars/credits where present; cross-host accounting not equivalent.",
+      "tasks": "12 command fixtures with five timing repetitions; one constrained seven-answer task with three threads per arm and host.",
+      "treatment": "Five forced shell calls; no native reads; Claude PowerShell disabled; full cat versus a 150-line RTK read on large files.",
+      "outcome": "Aggregate raw→RTK tokens: o200k 225,685→27,961; old Claude tokenizer 270,527→32,503; Gemma proxy 271,603→33,371; Llama 223,829→27,423; Qwen 233,509→29,549. Claude answers 17/21→21/21 and recorded cost $1.41271225→$2.7771755.",
+      "limits": [
+        "Tokenizer labels are not all actual current provider tokenizers.",
+        "One task: 21 answers are not 21 independent coding tasks.",
+        "The runner aborts and saves prior rows without retaining the errored row.",
+        "Shell lint rewriting and host preview caps affect semantics.",
+        "There is no all-six comparison."
+      ],
+      "executed_here": "Public command and all four agent result sets reaggregated; runner inspected."
+    },
+    {
+      "id": "dasein",
+      "relationship": "Competitor-owned: author sells Parsec arm.",
+      "repo": "daseinlabs/code-compression-bench",
+      "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+      "tested_product": "Historical July six-arm configuration plus September Fermat addition; current versions are not inferred.",
+      "agent": "Claude Agent SDK / Claude Code; July CLI version unrecorded; September CLI 2.1.183 mentioned.",
+      "model_effort": "Sonnet 4.6 via Vertex with auxiliary Haiku; exact historical effort unrecorded.",
+      "auth": "Vertex as reported; public per-task cost_usd summaries are not a complete per-call receipt archive.",
+      "tasks": "100 SWE-bench Verified tasks, 700 rows across seven arms.",
+      "outcome": "A0: 57 solves/$147.301; Parsec: 62/$89.6527; Woz: 55/$128.2811; Headroom: 58/$212.1427; RTK: 54/$165.7721; Caveman: 58/$118.9869; Fermat: 55/$115.0893.",
+      "limits": [
+        "Latest complete run selected; earlier smoke, aborted and bug-affected runs excluded.",
+        "Fermat uses a later harness/date/model alias, not a same-day comparison.",
+        "Headroom uses token mode; startup TCP readiness alone does not prove transformation activation.",
+        "Official SWE grading gives a useful task endpoint, but no current-release non-inferiority result."
+      ],
+      "executed_here": "Actual arm runners, grader and pricing inspected; 700 rows reaggregated."
+    },
+    {
+      "id": "context-guru",
+      "relationship": "Competitor-owned by Context Guru author.",
+      "repo": "rossoctl/context-guru",
+      "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+      "tested_product": "Historical RTK 0.43; Headroom CCR off and tool search disabled. Exact Headroom installation not established; current presets have changed.",
+      "agent": "Claude Code via Harbor; Sonnet 5 with a Bedrock gateway in the SWE report.",
+      "model_effort": "Exact historical effort not established.",
+      "auth": "Provider Bedrock/gateway usage and estimates; some competitor raw-trial artifacts were pruned.",
+      "tasks": "Reported SWE 50 tasks with two trials; Terminal 89 tasks with selected 83/82 clean/merged scopes. July CSV has 149 rows: baseline nine tasks, others ten.",
+      "outcome": "SWE: baseline 43/$31.98; Context Guru 44/$27.77; Headroom 40/$30.30; RTK 43/$29.09. September observation: 281,421 requests, 29,346 sessions, 19 tenants, $32,203.3367 provider spend; estimated saving corrected from $86.56 to $157.14.",
+      "limits": [
+        "Terminal has unequal time budgets, selected reruns and post-hoc baseline exclusions.",
+        "Today's harness preset is not the exact historical treatment.",
+        "The September estimate correction leaves provider spend unchanged.",
+        "The 0.488% net observational share is not a randomized billing gain."
+      ],
+      "executed_here": "Actual runners, reproduction instructions, measurement limits and correction inspected; July 149-row CSV reaggregated."
+    },
+    {
+      "id": "tokbench",
+      "relationship": "Competitor/harness-owned: Entelligentsia authors Forge and Forge compression.",
+      "repo": "Entelligentsia/tokbench",
+      "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+      "tested_product": "RTK 0.42.2; LeanCTX 3.7.3→3.7.5 during integration fixes; Headroom 0.23.0.",
+      "agent": "Forge eight-phase pipeline with native phase isolation; one TypeScript bug.",
+      "model_effort": "GLM 5.1/4.7/4.6 phase map; not one fixed model across phases. Exact effort is not the selected research profile.",
+      "auth": "Ollama cloud; token counts are neither actual subscription draw nor invoices.",
+      "tasks": "One real bug; 14 matrix runs: five native plus three per candidate. 28 raw summaries cover matrix, diagnostic and void runs.",
+      "outcome": "Matrix median input: native 2,183,153; LeanCTX 3,015,055; Headroom 2,571,467; RTK 2,839,459. Four voids contain 4,998,311 input tokens.",
+      "limits": [
+        "Green build/test/lint does not cover all plan-execution or provider failures.",
+        "Four void attempt costs are excluded from the main matrix.",
+        "Repetition does not create task diversity or a quality population.",
+        "Historical profiles are not current restricted treatments."
+      ],
+      "executed_here": "All 28 input sums checked against analysis data with zero mismatches; protocol, pins and runner notes inspected."
+    },
+    {
+      "id": "structured-headroom",
+      "relationship": "External repository; author affiliation not established.",
+      "repo": "shreyassks/headroom-benchmarks",
+      "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+      "tested_product": "Manifest requires headroom-ai[all]>=0.27, a lower bound rather than exact installed release.",
+      "agent": "LangGraph with MiniMax M3; separate GSM8K, SQuAD and BFCL tier-1 suites.",
+      "model_effort": "MiniMax M3; exact historical effort and authentication not established.",
+      "tasks": "Reported 50 LangGraph cases and 106 calls; 100 cases in each selected tier-1 dataset.",
+      "outcome": "Headline 44.15% input / 37.05% cost is a proxy-derived counterfactual on one compressed trajectory. Tier-1 uses baseline-first sequential calls and excludes cache reads from the reduction.",
+      "limits": [
+        "No complete raw record set is checked in.",
+        "The LangGraph runner lacks an independent accepted-task grader.",
+        "The BFCL checker accepts any one expected argument substring; the wrong-function probe passed.",
+        "A five-percentage-point SQuAD exact-match drop is reported; no non-inferiority result."
+      ],
+      "executed_here": "Runner, metrics and grader inspected; only two pure functions extracted via AST and executed on an offline wrong-function counterexample."
+    },
+    {
+      "id": "caveman-vendor",
+      "relationship": "First-party.",
+      "repo": "JuliusBrussee/caveman",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "tested_product": "Current 4.0.1 tree contains a style 3.1.0 snapshot and an older Cloud wrap experiment; the October engine aeb45e2f is distinct.",
+      "agent": "Style snapshot: Claude Code 2.1.288 / Opus 5.5. Wrap: Claude Code 2.1.223 / Sonnet 5, with Headroom 0.33 at e0ce4b1d.",
+      "model_effort": "Style/wrap effort not established from complete public raw receipts.",
+      "auth": "Wrap uses modelUsage summed input classes; private harness and raw runs absent.",
+      "tasks": "Style: ten prompts once per condition. Wrap: six fixtures × three repeats × three arms, 54 runs.",
+      "outcome": "Style median reduction versus concise control: default 3%, ultra 35%, mega 9%. Wrap input 885,793→591,673 with 18/18 exact answers. Static engine 130,611→22,994 local tokens is separate.",
+      "limits": [
+        "Style rules were not rerun after 3.2; complete fidelity and input-usage evidence absent.",
+        "Wrap input is unweighted by price; three Headroom YAML failures are excluded from held-quality savings.",
+        "HTML increases input 9.9% and remains in the aggregate.",
+        "Current file reduction is not a current agent experiment."
+      ],
+      "executed_here": "Original report tables and provenance inspected; six-case arithmetic recomputed, not 54 trials repeated."
+    },
+    {
+      "id": "headroom-vendor",
+      "relationship": "First-party.",
+      "repo": "headroomlabs-ai/headroom",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "tested_product": "Current 0.41 tree contains a September 2 synthetic proof and October 6 tool-search study; neither is a current 0.41 execution stamp.",
+      "agent": "Claude Code 2.1.290 / Sonnet 5.5, one pricing-fix task; six fake MCP servers and 63 tools.",
+      "model_effort": "Tool-search study uses Sonnet 5.5; synthetic counter is GPT-5.6/o200k. Exact effort not reported.",
+      "auth": "Reported tool-search model cost; no independent invoice audit.",
+      "tasks": "Four synthetic scenarios; one agent task with variants and three post-fix repeats; 73 total runs including diagnostics.",
+      "outcome": "Static 178,024→104,261 tokens (41.4%). Reported short native/client/hot costs: $0.061/$0.062/$0.046; long: $0.284/$0.284/$0.255.",
+      "limits": [
+        "One fixture task does not become 73 independent tasks.",
+        "Prefix repair and a 4K small-MCP minimum change overhead and recovery.",
+        "Static synthetic reduction cannot qualify agent task quality."
+      ],
+      "executed_here": "Runner report and proof table inspected; four-scenario arithmetic recomputed."
+    },
+    {
+      "id": "lemoncrow-vendor",
+      "relationship": "First-party historical fuller engine/persona; current Runtime Lite boundary is separate.",
+      "repo": "lemoncrow-lab/benchmarks",
+      "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+      "runtime_repo": "lemoncrow-lab/lemoncrow",
+      "runtime_commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "tested_product": "Historical fuller engine/configurations, not a qualified public Runtime Lite 0.8 result.",
+      "agent": "Verified raw rows name Opus 4.8 and Haiku 4.5; manifest names Sonnet 4-20250514, code persona and conflicting job/timeout settings. Terminal baseline: Claude Code 2.1.205 on July 9; candidate July 28.",
+      "model_effort": "Terminal candidate uses Opus 4.8 high; matched baseline effort not fully recovered. July 29 Opus 5 is a different model.",
+      "auth": "Reported cost summaries, not independent invoices. Terminal baseline lacks cost in 34/445 rows.",
+      "tasks": "Verified 50×5 paired repetitions; Lite 10×5; Terminal 89×5; separate limited September debug/exploration scopes.",
+      "outcome": "Verified: 202/250→232/250, $234.84328645→$165.45074645. Lite: 49/50→48/50, $19.8300085→$17.5053555. Opus 4.8 Terminal: both 351/445. Current Lite quality remains unknown.",
+      "limits": [
+        "Verified manifest/settings conflict is unresolved.",
+        "September debug changed source mid-run; seven-task exploration is ungraded and selectively repaired, not controlled release validation.",
+        "Terminal's 16% price claim normalizes TTL and uses 86/89 priceable task averages; it is not an actual all-attempt bill.",
+        "Terminal baseline cache column contains reads, not reads plus writes: ordinary input 70,310; advertised fresh 12,873,472 still includes 12,803,162 writes.",
+        "No replacement candidate fresh-input ratio was computed.",
+        "The old DIY Caveman prompt comparison is not the current full plugin."
+      ],
+      "executed_here": "Raw SWE, Lite, debug and exploration totals plus Terminal baseline/job statistics reaggregated; normalization code inspected; all 445 baseline class correspondences checked."
+    },
+    {
+      "id": "kompressor",
+      "relationship": "Competitor-owned OptScale/Kompressor study.",
+      "repo": "hystax/optscale-kompressor",
+      "commit": "91156bb29c05b2fa6b10f4ca2db5aa9e538f228c",
+      "source": "https://wf.optscale.ai/blog/context-compression-coding-agents",
+      "tested_product": "Kompressor 0.13 versus Headroom 0.40, not current Headroom 0.41.",
+      "agent": "Codex / GPT-5.5 on Terminal-Bench 2.1: native, Headroom default ML/aggressive and Kompressor.",
+      "model_effort": "GPT-5.5 at historical $5/$0.50/$30 rates; exact effort not established from complete public receipts.",
+      "auth": "Reported provider-billed live cost through OptScale; complete all-attempt records not located.",
+      "tasks": "Replay: 6,255 eligible outputs of at least 512 characters, 34.2M characters. Live: 87 common completed tasks with uneven two/three repetitions.",
+      "outcome": "Replay removal: Kompressor 62.8%, Headroom ML 22.6%, no-ML 7.3%. Live reported cost: baseline $107.89, Headroom $99.04, Kompressor $83.40.",
+      "limits": [
+        "Seven failures in Kompressor's streaming integration are excluded, alongside other infrastructure skips.",
+        "Quality 82.2%/81.6%/81.1% and non-significance do not prove non-inferiority.",
+        "Character and identifier retention are not accepted coding tasks.",
+        "The public runner is useful, but complete billed closed-loop records are absent."
+      ],
+      "executed_here": "Original article, replay/metrics/report code and Harbor runner inspected; no live attempt reproduction."
+    }
+  ],
+  "unexecuted": [
+    "Current matched six-product paid agent suite.",
+    "Actual subscriber quota/cap experiments.",
+    "Independent current Runtime Lite accepted-task comparison.",
+    "Full public recomputation of absent vendor private harnesses or trajectories.",
+    "Confirmatory statistical non-inferiority or p95 latency certification."
+  ]
+}

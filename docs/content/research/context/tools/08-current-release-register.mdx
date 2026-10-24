@@ -1,56 +1,70 @@
 ---
 title: "08 — Current release register"
-description: "The September 23, 2026 six-tool release baseline, component identities, and source-verification boundaries."
+description: "October 24 frozen product, runtime, package, source and license identities with verification and distribution limits."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-Authoritative research cutoff: **2026-09-23 UTC**. The comparison fixes six products to the stable GitHub releases below. Release metadata was retrieved through the live repository API; cached search and release-page results were not used to select versions.
+Authoritative source cutoff: **2026-10-24T01:15:00Z**. Research executed October 24 UTC. Select stable releases published before the cutoff and resolve tags to commits; retain later default-branch work separately. The register is a research baseline, not an automatically updating dependency lockfile.
 
-## Question and scope
+## Product release identities
 
-Which exact releases define the comparison, and what does verification establish?
-
-## Method
-
-Check release objects, publication dates, and selected tagged source. Keep product, binary, crate, SDK, and host versions separate. This is a research baseline, not an automatically updating dependency lockfile. Unreviewed adjacent products are outside this refresh; no stale adoption leaderboard is retained.
-
-## Findings
-
-| Tool | Reviewed stable release | Published, UTC | Component distinction |
+| Product | Stable release | Published UTC | Resolved release commit |
 |---|---|---|---|
-| Caveman | [v2.7.0](https://github.com/JuliusBrussee/caveman/releases/tag/v2.7.0) | 2026-09-15 | Release names bin-v1.1.7; some npm publications are marked pending |
-| RTK | [v0.49.0](https://github.com/rtk-ai/rtk/releases/tag/v0.49.0) | 2026-09-11 | CLI package, not a verified library target |
-| LeanCTX | [v3.10.2](https://github.com/yvgude/lean-ctx/releases/tag/v3.10.2) | 2026-09-16 | Engine 3.10.2; unpublished lean-ctx-embed facade 0.1.0 |
-| Ponytail | [v4.10.0](https://github.com/DietrichGebert/ponytail/releases/tag/v4.10.0) | 2026-09-14 | Skill/plugin assets and host adapters, not a Rust engine |
-| Headroom | [v0.38.0](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.38.0) | 2026-09-21 | Product 0.38.0; source headroom-core crate 0.1.0 |
-| LemonCrow | [v0.7.4](https://github.com/lemoncrow-lab/lemoncrow/releases/tag/v0.7.4) | 2026-09-14 | Python runtime with source engine and packaged distributions |
+| Caveman product | [v4.0.1](https://github.com/JuliusBrussee/caveman/releases/tag/v4.0.1) | 2026-10-13 18:34:04 | `d262ab3882952a59312ff3537cd86d894523c5ab` |
+| Caveman runtime | [bin-v4.0.2](https://github.com/JuliusBrussee/caveman/releases/tag/bin-v4.0.2) | 2026-10-23 05:22:07 | `b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6` |
+| RTK | [v1.0.1](https://github.com/rtk-ai/rtk/releases/tag/v1.0.1) | 2026-10-14 13:31:42 | `4ef8730cf3a0dea11c8d64a9b90bc0616fe52100` |
+| LeanCTX | [v3.11.4](https://github.com/yvgude/lean-ctx/releases/tag/v3.11.4) | 2026-10-11 21:31:12 | `3afe2bbffe0834ec58517ffd493e5a51c5c1ca57` |
+| Ponytail | [v5.3.2](https://github.com/DietrichGebert/ponytail/releases/tag/v5.3.2) | 2026-10-16 23:15:15 | `16352ac229eb08a9598dcae48fe9f2b342567d86` |
+| Headroom | [v0.41.0](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.41.0) | 2026-10-14 22:46:09 | `76133cff59b71284399bf760c5578dc373c97231` |
+| LemonCrow | [v0.8.0](https://github.com/lemoncrow-lab/lemoncrow/releases/tag/v0.8.0) | 2026-10-19 15:18:45 | `d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d` |
 
-Release API entry points: [Caveman](https://api.github.com/repos/JuliusBrussee/caveman/releases), [RTK](https://api.github.com/repos/rtk-ai/rtk/releases/latest), [LeanCTX](https://api.github.com/repos/yvgude/lean-ctx/releases/latest), [Ponytail](https://api.github.com/repos/DietrichGebert/ponytail/releases/latest), [Headroom](https://api.github.com/repos/headroomlabs-ai/headroom/releases/latest), and [LemonCrow](https://api.github.com/repos/lemoncrow-lab/lemoncrow/releases/latest). These discovery URLs are mutable; the per-row release and design-page source links identify the reviewed snapshot.
+Canonical repositories remain those linked above. Product pages record registry redirects, raw release objects and tag peeling. GitHub publication, package publication, commit time and later page edits are distinct timestamps. Selected releases were rechecked during execution; exact access times are retained in each evidence bundle and the integration verification record. A later release never silently changes these inspected bytes.
 
-### Current implementation facts that matter
+## Components and distribution boundaries
 
-- RTK's release contains content-addressed recall and structural diff-parser corrections. Do not describe it as raw-rerun-only or apply the superseded prefix-parser verdict to it. [Tagged changelog](https://github.com/rtk-ai/rtk/blob/v0.49.0/CHANGELOG.md).
-- LeanCTX's current embedding facade is `lean-ctx-embed`, preview and unpublished. [Tagged manifest](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/crates/lean-ctx-embed/Cargo.toml).
-- Headroom has public Rust transform exports. Source reuse is a real option; published stable SDK support and build portability remain separate checks. [Tagged exports](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/src/transforms/mod.rs).
-- LemonCrow's tagged tree includes its engine source and bounded advisory-state lock. [Engine package](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/pro/__init__.py), [lock implementation](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/gateway/adapters/mcp/smart_state.py).
-- Caveman's skill/client and engine licenses differ. [License map](https://github.com/JuliusBrussee/caveman/blob/v2.7.0/LICENSING.md).
-- Ponytail's full policy includes testing/minimal-diff preferences that must not override Jackin's requirements. [Current policy](https://github.com/DietrichGebert/ponytail/blob/v4.10.0/AGENTS.md).
+| Surface | Actual identity | License/reuse consequence |
+|---|---|---|
+| Caveman npm launcher | @caveman-ai/cli 4.0.1 still pins bin-v4.0.1 | Installing the published CLI does not select the separately tested bin-v4.0.2 source. Current repository code Apache-2.0 with retained third-party notices; Cloud remains separate. |
+| Caveman clients | JS/Python SDK 1.2.0; middleware versions differ; several source facade names absent at queried npm endpoints | Do not confuse source package names, placeholder/unrelated legacy packages or unpublished workspaces with supported installs. |
+| RTK full / OSS | Same 1.0.1 version; full default links engine, OSS disables default features | Apache CLI/text versus BUSL-1.1 engine and separate proxy. Distribution mode needs the applicable grant. |
+| RTK internal crates | rtk-engine and rtk-text 1.0.1, publish=false; application library differs | Public source APIs are not published stable crates. The Apache text crate is not the command-filter catalog. |
+| LeanCTX | Published lean-ctx 3.11.4 and npm lean-ctx-bin 3.11.4; lean-ctx-embed 0.1.0 preview unpublished | Public path license matrix primarily Apache-2.0 with exceptions; private services/components excluded. npm installation scripts are separate side effects. |
+| Ponytail | @dietrichgebert/ponytail 5.3.2, effective policy and host scripts | MIT. Copied instruction assets retain notices and need their own policy/activation qualification. |
+| Headroom | headroom-ai 0.41.0; three inspected npm packages 0.41.0; headroom-core 0.1.0 internal/unpublished | Apache-2.0 public code. Optional models/dependencies/enterprise components require their own terms. |
+| LemonCrow | Public source 0.8.0; release wheel lemoncrow-runtime-client 0.8.0 differs from source client name | Apache public/local code; advanced current engine private. Selected PyPI version endpoints returned 404; reviewed release artifact is the install identity. |
 
-## Implications for jackin❯
+Primary component boundaries: [Caveman licensing](https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/LICENSING.md), [RTK engine grant](https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/LICENSE), [LeanCTX path matrix](https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/LICENSE_MATRIX.toml), [Ponytail manifest](https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/package.json), [Headroom core](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/Cargo.toml), [LemonCrow source boundary](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/docs/reference/open-source-boundary.md).
 
-Pin the selected repository commit, binary digest, dependency lock, configuration hash, agent version, and provider/auth path during qualification. Resolve a tag to its commit before building; do not use an unchecked moving branch or `/latest` during capsule startup. A changed component invalidates only the affected qualification records, but never inherits a prior performance percentage automatically.
+Earlier releases retain their earlier grants. A permissive current release does not retroactively relicense every old artifact; an old Apache release does not grant absent proprietary current code. Preserve applicable license/NOTICE/model/font/dependency records for the files actually shipped. Unresolved commercial-distribution interpretations remain explicit; a fork does not remove restrictions.
 
-## Limitations and unknowns
+## What was verified
 
-This review establishes release identity and selected source behavior, not complete builds, signatures, network behavior, or task outcomes. No six-way paid benchmark was executed. All six currently lack a release-matched independent accepted-task result established by this review. GitHub stars and download counts are deliberately excluded from ranking.
+| Product | Executed or inspected evidence | Remaining limit |
+|---|---|---|
+| Caveman | npm selected-file correspondence; Node suites; runtime Go source tests with/without CGO; exact recovery and warming mocks | No fresh runtime-binary signature verification or real provider warming/task trial |
+| RTK | Full/OSS Linux musl asset digests and execution; engine unit/doc tests; producer and malformed filter fixtures | No all-platform build or accepted-task comparison on Jackin |
+| LeanCTX | Published native binary and MCP fixtures; byte-exact full reads; branch/reset/restart/consumer probes | Full embedding build incomplete; actual host lifecycle and broad resource qualification absent |
+| Ponytail | npm/tag selected-file correspondence; hook/policy suites and explicit off/resume/clear probes | No real host policy obedience or task trial |
+| Headroom | PyPI identity/tests; no-ML locked Rust build/tree; JSON and persistence fault probes | ML inference, complete portability and whole-task qualification absent |
+| LemonCrow | Release archive digest; 87 client files identical to source; 45 Lite tests; worktree/spill probes | Not every bundle reproducible; advanced private engine unavailable; no actual host task trial |
 
-## Sources
+Exact configurations, toolchains, commands, exits and source hashes are in the <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md">Caveman/Ponytail</RepoFile>, <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md">RTK/LeanCTX</RepoFile> and <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md">Headroom/LemonCrow</RepoFile> records. Setup failures, disk pressure and interrupted builds are retained separately from passing runs.
 
-Release records and tagged source references are inline. [07 — Evidence](/research/context/tools/07-evidence-and-claims/) records why plausible-looking studies may not qualify.
+## Adjacent and host versions
+
+The [market register](/research/context/techniques/03-prior-art-and-market-scan/) fixes all twelve historical adjacent tools and relevant new alternatives. The [provider/host register](/research/context/techniques/12-provider-features/) records mutable official contracts with access times. Neither is a claim that every marketed host adapter works in Jackin. Actual agent binaries were not run here; the installed Jackin launch/configuration source is pinned to the repository baseline.
+
+## Qualification and freshness
+
+A treatment receipt must identify repository commit, package/binary digest, feature graph, configuration/instruction/schema hashes, host version, model, effort, provider/auth route, cache conditions and lifecycle scope. A moving latest download at capsule startup is not this contract. Changes invalidate the affected qualification records rather than inherit an old performance percentage.
+
+Publication dates do not date an experiment. Benchmarks retained inside a new release can still concern older source, different personas or changed live mounts. The [evidence ledger](/research/context/tools/07-evidence-and-claims/) keeps historical outcomes out of current capability tables. There is no current broad independent six-product accepted-task ranking.
 
 ## Related work
 
-- [Tools dossier](/research/context/tools/)
-- [Six-tool comparison](/research/context/tools/05-head-to-head/)
-- [Jackin integration](/research/context/tools/11-jackin-integration/)
+- [Product decision](/research/context/tools/)
+- [Scope and reconciliation](/research/context/tools/12-scope-and-reconciliation/)
+- [Reuse matrix](/research/context/engine/09-reuse-decision-matrix/)

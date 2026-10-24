@@ -1,0 +1,46 @@
+{
+  "generated_utc": "2026-10-24T09:42:29.070469+00:00",
+  "scope": "Scratch-only CI-repair browser-run records. Screenshots are listed with hashes in comparison.json; no frozen architecture artifacts were overwritten.",
+  "files": [
+    {
+      "path": "render_pages.mjs",
+      "sha256": "73360d99deed684868f0c27add8b1e2535e09f922413028265e85ef98300ff54",
+      "bytes": 18942
+    },
+    {
+      "path": "execution-command.json",
+      "sha256": "7cce4602088dd70d641ca6d8064d5768ffa604b31b6fd1af7976362c94e789d7",
+      "bytes": 2078
+    },
+    {
+      "path": "execution.log",
+      "sha256": "0cdfd11becf066f212b48c611364e0ffe85e42ddb5d5ea3f3a210a00666894fc",
+      "bytes": 19558
+    },
+    {
+      "path": "server-cleanup.json",
+      "sha256": "48f9c17f97a1559df9ac1308d1a7591eaf5a4728e3c3990e4f6b4815338dca47",
+      "bytes": 211
+    },
+    {
+      "path": "rendered-pages-results.json",
+      "sha256": "0e8be575ec15bd709b69947f4efd3946eb3d6892383d69999a1971b7fdc718a6",
+      "bytes": 572758
+    },
+    {
+      "path": "comparison.json",
+      "sha256": "a2de7f9395bee9ca8ac7c6146c30002175bd87494c99dcb509793d78b823898c",
+      "bytes": 19683
+    },
+    {
+      "path": "visual-review.json",
+      "sha256": "c14c88ab1c3c4324af99e432c4ba6c1e9fdfd295620ab32718b63583923da9ff",
+      "bytes": 10710
+    },
+    {
+      "path": "mobile-independent-review.json",
+      "sha256": "f0d7fb782c5dc14b0afb8ffb269782b0516fe182a237be9648d0a3e64861ec1b",
+      "bytes": 5669
+    }
+  ]
+}

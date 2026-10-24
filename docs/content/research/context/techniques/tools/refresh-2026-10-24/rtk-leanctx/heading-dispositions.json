@@ -1,0 +1,421 @@
+{
+  "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+  "source_cutoff_utc": "2026-10-24T01:15:00Z",
+  "scope": "Every baseline heading in tools03 and04; evaluation110-row ledger is separate.",
+  "rows": [
+    {
+      "id": "S0782",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "line": "6",
+      "heading": "## Summary",
+      "blob_sha256": "5fcc22eb03d6c7bb6f97b7ecaa0aba87e4c5e942a6bc4f72437f269bb16f4113",
+      "workstream": "rtk-leanctx",
+      "disposition": "changed",
+      "current_anchor": "/research/context/tools/03-rtk-design/#summary",
+      "evidence_or_reason": "Version 1.0.1 plus engine/proxy/license split; prior no-library claim superseded.",
+      "current_heading": "Summary",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0783",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "line": "10",
+      "heading": "## Question and scope",
+      "blob_sha256": "5fcc22eb03d6c7bb6f97b7ecaa0aba87e4c5e942a6bc4f72437f269bb16f4113",
+      "workstream": "rtk-leanctx",
+      "disposition": "retained-expanded",
+      "current_anchor": "/research/context/tools/03-rtk-design/#question-and-scope",
+      "evidence_or_reason": "Independent components and ownership kept.",
+      "current_heading": "Question and scope",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0784",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "line": "14",
+      "heading": "## Method",
+      "blob_sha256": "5fcc22eb03d6c7bb6f97b7ecaa0aba87e4c5e942a6bc4f72437f269bb16f4113",
+      "workstream": "rtk-leanctx",
+      "disposition": "expanded",
+      "current_anchor": "/research/context/tools/03-rtk-design/#method-and-evidence",
+      "evidence_or_reason": "Actual source/release/registry/test/binary fixture evidence added.",
+      "current_heading": "Method and evidence",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0785",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "line": "18",
+      "heading": "## Findings",
+      "blob_sha256": "5fcc22eb03d6c7bb6f97b7ecaa0aba87e4c5e942a6bc4f72437f269bb16f4113",
+      "workstream": "rtk-leanctx",
+      "disposition": "reorganized",
+      "current_anchor": "/research/context/tools/03-rtk-design/#release-package-and-license-boundaries",
+      "evidence_or_reason": "All substantive former subsections retained or corrected in explicit sections.",
+      "current_heading": "Release, package and license boundaries",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0786",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "line": "20",
+      "heading": "### Current capabilities",
+      "blob_sha256": "5fcc22eb03d6c7bb6f97b7ecaa0aba87e4c5e942a6bc4f72437f269bb16f4113",
+      "workstream": "rtk-leanctx",
+      "disposition": "changed",
+      "current_anchor": "/research/context/tools/03-rtk-design/#independently-selectable-interventions",
+      "evidence_or_reason": "New engine, pipe API, proxy; historical parser fix differentiated from Git compactor.",
+      "current_heading": "Independently selectable interventions",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0787",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "line": "26",
+      "heading": "### Recovery is scoped, not universal",
+      "blob_sha256": "5fcc22eb03d6c7bb6f97b7ecaa0aba87e4c5e942a6bc4f72437f269bb16f4113",
+      "workstream": "rtk-leanctx",
+      "disposition": "confirmed-expanded",
+      "current_anchor": "/research/context/tools/03-rtk-design/#recovery-and-provenance",
+      "evidence_or_reason": "Defaults, identifiers, caps, successful diagnostics and actual recall behavior recorded.",
+      "current_heading": "Recovery and provenance",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0788",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "line": "30",
+      "heading": "### Integration boundary",
+      "blob_sha256": "5fcc22eb03d6c7bb6f97b7ecaa0aba87e4c5e942a6bc4f72437f269bb16f4113",
+      "workstream": "rtk-leanctx",
+      "disposition": "changed",
+      "current_anchor": "/research/context/tools/03-rtk-design/#independently-selectable-interventions",
+      "evidence_or_reason": "New proxy/native-pipeline boundaries; host activation remains separate.",
+      "current_heading": "Independently selectable interventions",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0789",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "line": "39",
+      "heading": "### Rust packaging",
+      "blob_sha256": "5fcc22eb03d6c7bb6f97b7ecaa0aba87e4c5e942a6bc4f72437f269bb16f4113",
+      "workstream": "rtk-leanctx",
+      "disposition": "contradicted",
+      "current_anchor": "/research/context/tools/03-rtk-design/#release-package-and-license-boundaries",
+      "evidence_or_reason": "lib target and engine now exist; Apache-only binary is separately shipped OSS edition.",
+      "current_heading": "Release, package and license boundaries",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0790",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "line": "43",
+      "heading": "## Implications for jackin\u276f",
+      "blob_sha256": "5fcc22eb03d6c7bb6f97b7ecaa0aba87e4c5e942a6bc4f72437f269bb16f4113",
+      "workstream": "rtk-leanctx",
+      "disposition": "reassessed",
+      "current_anchor": "/research/context/tools/03-rtk-design/#jackin-decision-and-decisive-next-steps",
+      "evidence_or_reason": "Prefer narrow pinned OSS diagnostic arm; licensed engine separate; exact diff/machine output exclusions current.",
+      "current_heading": "Jackin decision and decisive next steps",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0791",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "line": "51",
+      "heading": "## Limitations and unknowns",
+      "blob_sha256": "5fcc22eb03d6c7bb6f97b7ecaa0aba87e4c5e942a6bc4f72437f269bb16f4113",
+      "workstream": "rtk-leanctx",
+      "disposition": "expanded",
+      "current_anchor": "/research/context/tools/03-rtk-design/#executed-verification-and-limits",
+      "evidence_or_reason": "Executed fixtures and precise incomplete builds; current externalRTKstudy no longer categorically absent.",
+      "current_heading": "Executed verification and limits",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0792",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "line": "55",
+      "heading": "## Sources",
+      "blob_sha256": "5fcc22eb03d6c7bb6f97b7ecaa0aba87e4c5e942a6bc4f72437f269bb16f4113",
+      "workstream": "rtk-leanctx",
+      "disposition": "retained-expanded",
+      "current_anchor": "/research/context/tools/03-rtk-design/#method-and-evidence",
+      "evidence_or_reason": "Pinned inline primary links plus hashed source register.",
+      "current_heading": "Method and evidence",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0793",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "line": "59",
+      "heading": "## Related work",
+      "blob_sha256": "5fcc22eb03d6c7bb6f97b7ecaa0aba87e4c5e942a6bc4f72437f269bb16f4113",
+      "workstream": "rtk-leanctx",
+      "disposition": "retained",
+      "current_anchor": "/research/context/tools/03-rtk-design/#related-work",
+      "evidence_or_reason": "Internalcomparison/evidence/integration references kept.",
+      "current_heading": "Related work",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0794",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "line": "6",
+      "heading": "## Summary",
+      "blob_sha256": "44db733d5559b6581e090b6002713f302308de0c7bc25d599eaa56f2dec68c61",
+      "workstream": "rtk-leanctx",
+      "disposition": "changed",
+      "current_anchor": "/research/context/tools/04-leanctx-design/#summary",
+      "evidence_or_reason": "Version 3.11.4 and scoped retrieval candidate; unsupported closest-Rust ranking removed.",
+      "current_heading": "Summary",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0795",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "line": "10",
+      "heading": "## Question and scope",
+      "blob_sha256": "44db733d5559b6581e090b6002713f302308de0c7bc25d599eaa56f2dec68c61",
+      "workstream": "rtk-leanctx",
+      "disposition": "retained-expanded",
+      "current_anchor": "/research/context/tools/04-leanctx-design/#question-and-scope",
+      "evidence_or_reason": "Native versus MCP versus facade choices kept; components separated.",
+      "current_heading": "Question and scope",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0796",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "line": "14",
+      "heading": "## Method",
+      "blob_sha256": "44db733d5559b6581e090b6002713f302308de0c7bc25d599eaa56f2dec68c61",
+      "workstream": "rtk-leanctx",
+      "disposition": "expanded",
+      "current_anchor": "/research/context/tools/04-leanctx-design/#method-and-evidence",
+      "evidence_or_reason": "Registry/release hashes and MCP lifecycle tests now executed.",
+      "current_heading": "Method and evidence",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0797",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "line": "18",
+      "heading": "## Findings",
+      "blob_sha256": "44db733d5559b6581e090b6002713f302308de0c7bc25d599eaa56f2dec68c61",
+      "workstream": "rtk-leanctx",
+      "disposition": "reorganized",
+      "current_anchor": "/research/context/tools/04-leanctx-design/#independently-selectable-interventions",
+      "evidence_or_reason": "All old substantive content retained in deeper sections.",
+      "current_heading": "Independently selectable interventions",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0798",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "line": "20",
+      "heading": "### Retrieval before compression",
+      "blob_sha256": "44db733d5559b6581e090b6002713f302308de0c7bc25d599eaa56f2dec68c61",
+      "workstream": "rtk-leanctx",
+      "disposition": "confirmed-expanded",
+      "current_anchor": "/research/context/tools/04-leanctx-design/#cached-content-versus-model-exposure",
+      "evidence_or_reason": "Automatic/full/raw selection and delivery-state distinction; current fixes plus real stubs tested.",
+      "current_heading": "Cached content versus model exposure",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0799",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "line": "26",
+      "heading": "### Actual Rust boundary",
+      "blob_sha256": "44db733d5559b6581e090b6002713f302308de0c7bc25d599eaa56f2dec68c61",
+      "workstream": "rtk-leanctx",
+      "disposition": "confirmed-expanded",
+      "current_anchor": "/research/context/tools/04-leanctx-design/#actual-embedding-contract",
+      "evidence_or_reason": "Facade remains preview/unpublished; feature/runtime facts rechecked; new process-global environment finding.",
+      "current_heading": "Actual embedding contract",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0800",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "line": "34",
+      "heading": "### Evidence status",
+      "blob_sha256": "44db733d5559b6581e090b6002713f302308de0c7bc25d599eaa56f2dec68c61",
+      "workstream": "rtk-leanctx",
+      "disposition": "confirmed-expanded",
+      "current_anchor": "/research/context/tools/04-leanctx-design/#historical-claims-and-current-evidence",
+      "evidence_or_reason": "Withdrawal confirmed; external negative evaluation, remediations and targets and Wavect dates/denominators reopened.",
+      "current_heading": "Historical claims and current evidence",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0801",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "line": "38",
+      "heading": "## Implications for jackin\u276f",
+      "blob_sha256": "44db733d5559b6581e090b6002713f302308de0c7bc25d599eaa56f2dec68c61",
+      "workstream": "rtk-leanctx",
+      "disposition": "reassessed",
+      "current_anchor": "/research/context/tools/04-leanctx-design/#jackin-decision-and-decisive-next-steps",
+      "evidence_or_reason": "Restricted worker justified independently; shared embedding remains separate blocked feasibility arm.",
+      "current_heading": "Jackin decision and decisive next steps",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0802",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "line": "48",
+      "heading": "## Limitations and unknowns",
+      "blob_sha256": "44db733d5559b6581e090b6002713f302308de0c7bc25d599eaa56f2dec68c61",
+      "workstream": "rtk-leanctx",
+      "disposition": "changed",
+      "current_anchor": "/research/context/tools/04-leanctx-design/#executed-lifecycle-matrix",
+      "evidence_or_reason": "Build attempted but incomplete; precise tested/unexecuted lifecycle states and resources recorded.",
+      "current_heading": "Executed lifecycle matrix",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0803",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "line": "52",
+      "heading": "## Sources",
+      "blob_sha256": "44db733d5559b6581e090b6002713f302308de0c7bc25d599eaa56f2dec68c61",
+      "workstream": "rtk-leanctx",
+      "disposition": "retained-expanded",
+      "current_anchor": "/research/context/tools/04-leanctx-design/#source-packages-and-licensing",
+      "evidence_or_reason": "Pinned code/registry/primary evidence links and source hash register.",
+      "current_heading": "Source, packages and licensing",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    },
+    {
+      "id": "S0804",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "line": "56",
+      "heading": "## Related work",
+      "blob_sha256": "44db733d5559b6581e090b6002713f302308de0c7bc25d599eaa56f2dec68c61",
+      "workstream": "rtk-leanctx",
+      "disposition": "retained",
+      "current_anchor": "/research/context/tools/04-leanctx-design/#related-work",
+      "evidence_or_reason": "Comparative/integration links retained.",
+      "current_heading": "Related work",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json"
+      ]
+    }
+  ]
+}

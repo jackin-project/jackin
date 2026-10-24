@@ -8,6 +8,7 @@ import unittest
 import count_tokens
 import image_tokens
 import session_cost
+import provider_usage
 
 
 class AccountingTests(unittest.TestCase):
@@ -84,6 +85,51 @@ class AccountingTests(unittest.TestCase):
         self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
         self.assertEqual(int.from_bytes(data[16:20], "big"), 280)
         self.assertEqual(int.from_bytes(data[20:24], "big"), 140)
+
+    def test_compaction_iterations_replace_top_level(self):
+        usage = {"input_tokens": 100, "output_tokens": 10, "iterations": [
+            {"type": "compaction", "input_tokens": 200, "output_tokens": 20},
+            {"type": "message", "input_tokens": 100, "output_tokens": 10}]}
+        result = session_cost.normalize(usage)
+        self.assertEqual((result["input"], result["output"]), (300, 30))
+        dedup = self.records([self.response(**usage), self.response(**usage)])
+        self.assertEqual(dedup["tokens_by_model"]["fixture-model"]["output"], 30)
+
+    def test_openai_paid_write_classes_are_disjoint(self):
+        usage = {"input_tokens": 12000, "output_tokens": 800,
+            "input_tokens_details": {"cached_tokens": 4000, "cache_write_tokens": 7000,
+                "cache_write_tokens_details": {"ttl_30m_tokens": 3000, "ttl_12h_tokens": 4000}},
+            "output_tokens_details": {"reasoning_tokens": 300}}
+        normalized = provider_usage.normalize("openai-responses", usage, "paid")
+        self.assertEqual(normalized["tokens"]["input"], 1000)
+        cost = provider_usage.price(normalized, {"input": 2, "cache_read": .1,
+            "cache_write_30m": 2.5, "cache_write_12h": 5, "output": 10})
+        self.assertAlmostEqual(cost["usd"], .0379)
+        usage["input_tokens_details"]["cache_write_tokens"] = 7001
+        with self.assertRaisesRegex(ValueError, "do not sum"):
+            provider_usage.normalize("openai-responses", usage, "paid")
+
+    def test_openai_paid_writes_cannot_be_silently_absent(self):
+        usage = {"input_tokens": 10, "output_tokens": 0,
+                 "input_tokens_details": {"cached_tokens": 0}}
+        with self.assertRaisesRegex(ValueError, "cache_write_tokens"):
+            provider_usage.normalize("openai-responses", usage, "paid")
+        self.assertEqual(provider_usage.normalize("openai-responses", usage, "ordinary-input")["tokens"]["input"], 10)
+
+    def test_gemini_interactions_thought_is_disjoint(self):
+        result = provider_usage.normalize("gemini-interactions", {
+            "total_input_tokens": 62, "total_output_tokens": 171,
+            "total_thought_tokens": 297, "total_tokens": 530})
+        self.assertEqual(result["tokens"]["output"], 468)
+        with self.assertRaisesRegex(ValueError, "total_thought_tokens"):
+            provider_usage.normalize("gemini-interactions", {"total_input_tokens": 62, "total_output_tokens": 171})
+
+    def test_reasoning_subset_and_missing_split(self):
+        result = provider_usage.normalize("claude-messages", {"input_tokens": 1, "output_tokens": 10})
+        self.assertIsNone(result["reasoning_output_tokens"])
+        with self.assertRaisesRegex(ValueError, "exceeds"):
+            provider_usage.normalize("claude-messages", {"input_tokens": 1, "output_tokens": 10,
+                "output_tokens_details": {"thinking_tokens": 11}})
 
 
 if __name__ == "__main__":

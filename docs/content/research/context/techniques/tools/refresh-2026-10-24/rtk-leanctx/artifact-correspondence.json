@@ -1,0 +1,32 @@
+[
+  {
+    "component": "RTK full 1.0.1",
+    "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+    "artifact_local_name": "rtk-v1.0.1.tar.gz",
+    "sha256": "5b919c3bccb799b67a61866d0e617410a4fcdf173e2614440e59de2fa2003436",
+    "size_bytes": 6778173,
+    "digest_matched_official_asset": true,
+    "platform": "x86_64-unknown-linux-musl",
+    "source_reproducible_build_proven": false
+  },
+  {
+    "component": "RTK OSS 1.0.1",
+    "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+    "artifact_local_name": "rtk-oss-v1.0.1.tar.gz",
+    "sha256": "a44e8ffc43981100b4ddf1710399a1649a6c874591aa6d0c0727fe6cbd983c41",
+    "size_bytes": 5766270,
+    "digest_matched_official_asset": true,
+    "platform": "x86_64-unknown-linux-musl",
+    "source_reproducible_build_proven": false
+  },
+  {
+    "component": "LeanCTX 3.11.4",
+    "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+    "artifact_local_name": "leanctx-v3.11.4.tar.gz",
+    "sha256": "f7a4d677b77266bfb60883485e4ee7ad3fd7e129d3f935c08dee2d50a8b1df71",
+    "size_bytes": 29038923,
+    "digest_matched_official_asset": true,
+    "platform": "x86_64-unknown-linux-musl",
+    "source_reproducible_build_proven": false
+  }
+]

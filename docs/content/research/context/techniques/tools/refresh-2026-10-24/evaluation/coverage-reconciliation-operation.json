@@ -1,0 +1,17 @@
+{
+  "name": "strict-coverage-final-reconciliation",
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+    "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/reconcile_coverage.py"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+  "environment_overrides": {
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "started_utc": "2026-10-24T08:31:26.374753+00:00",
+  "ended_utc": "2026-10-24T08:31:26.675159+00:00",
+  "exit_code": 0,
+  "script_sha256": "a569a808b67c1e85570a5979b0510ad6d7535d9988f883033af9b674edcdcd04",
+  "stdout": "logs/coverage-reconciliation.stdout",
+  "stderr": "logs/coverage-reconciliation.stderr"
+}

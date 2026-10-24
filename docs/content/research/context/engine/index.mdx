@@ -1,77 +1,83 @@
 ---
-title: "jackin❯ Context Engine — design spec"
-description: "A measured, reuse-first context-engine design with explicit host, recovery, isolation, and outcome boundaries."
+title: "jackin❯ Context Engine — current design decision"
+description: "A qualified automatic profile, current Jackin ownership, and reusable optimization boundaries with explicit evidence and rollout gates."
 ---
 
-**Research state:** Incomplete
+**Research state:** Current
 
-External-tool research cutoff: **2026-09-23 UTC**. The [six-tool dossier](/research/context/tools/) and [current release register](/research/context/tools/08-current-release-register/) cover Caveman, RTK, LeanCTX, Ponytail, Headroom, and LemonCrow. The [Jackin integration strategy](/research/context/tools/11-jackin-integration/) and [reuse matrix](/research/context/engine/09-reuse-decision-matrix/) govern current dependency choices. This is still a design, not implemented or benchmark-qualified behavior.
+Research snapshot: **2026-10-24 01:15:00 UTC**. Jackin source: **`6e266406b49da2ab3c55355f3b7d33d1643ee6cd`**. This dossier specifies proposed work; it does not implement or activate an optimizer. Current means the research was refreshed, not that the design is deployed or task-qualified.
 
 ## Research question
 
-What should Jackin own, reuse, and automatically activate to reduce resource consumption per accepted task without weakening correctness, recovery, cache behavior, or capsule isolation?
+What should Jackin package, configure and automatically activate to improve complete accepted tasks while preserving the configured execution, editing, authentication, isolation and model policy?
 
 ## Headline findings
 
-### Thesis
+### Decision and confidence
 
-Build the narrow Jackin-specific control and evidence contracts. Reuse appropriate upstream implementations behind replaceable boundaries. Do not adopt six global installers, make a complete external runtime mandatory, or rewrite a usable Rust library merely because its product also has a Python wrapper.
+**Build a small Rust control and recovery boundary, preserve native agent behavior, and reuse qualified components behind replaceable adapters.** The target is useful automatic optimization: Jackin delivers the reviewed components and enables a capability for a verified host/version/content combination without requiring unrelated installers. No external transform currently has the complete Jackin qualification record needed for automatic activation.
 
-The current recommendation is a selected `headroom-core` transform spike, restricted LeanCTX and LemonCrow retrieval comparisons, qualified RTK command filtering, and restrained instruction assets inspired by Ponytail and Caveman. These are architecture candidates, not a performance ranking. [Current comparison](/research/context/tools/05-head-to-head/).
+The first implementation should eliminate duplicate delivery of Jackin-owned instruction assets, provide concise role guidance that preserves requirements and tests, and retain native caching, discovery and compaction. The first substantial automatic-transform candidate is a pinned **RTK OSS `pipe --filter <named-family>` subprocess for one qualified test/diagnostic format**, after capture, recovery, fidelity and task gates. It must not rewrite or rerun the producer command. Headroom Rust/Python and Caveman's Go engine remain competing transform treatments; native retrieval, LeanCTX and LemonCrow Runtime Lite remain competing retrieval treatments. There is no defensible universal backend winner. [Reuse decision](/research/context/engine/09-reuse-decision-matrix/).
 
-### What capsule ownership actually provides
+Confidence is high in the inspected boundaries and reproduced component defects, moderate in the proposed ownership architecture, and limited in whole-task benefit: this investigation did not run paid agent comparisons. Compression percentages, component tests and source availability cannot supply that missing outcome evidence. [Evidence protocol](/research/context/tools/07-evidence-and-claims/).
 
-Jackin can generate capsule-local configuration, package immutable artifacts, supervise workers, scope state, and connect observations to usage records. It cannot infer complete model-bound traffic merely from a PTY or container. A native agent tool that does not pass through a proven hook or MCP route remains outside the optimization boundary.
+### Three profiles, with readiness stated separately
 
-Therefore every capability needs an explicit activation probe. Changing terminal display is not changing model input. Adding MCP tools does not make native tools disappear. An installed hook is not proof that its output replacement was accepted. [Host-specific implementation plan](/research/context/tools/11-jackin-integration/).
-
-### Layers and responsibilities
-
-| Layer | Responsibility | Boundary rule |
+| Proposed profile | Concrete behavior | Readiness at this snapshot |
 |---|---|---|
-| Measurement | Usage receipts, estimates, accepted outcomes, activation and recovery evidence | Keep actual provider fields separate from counterfactual estimates |
-| Retrieval | Exact search, symbols, outlines, bounded source ranges | Preserve source freshness and native edit prerequisites |
-| Observations | Selected typed reductions and recovery handles | Execute once; preserve observed original; do not blindly rewrite commands |
-| Instructions | Role-aware narration and reuse-first policy | Never reduce requirement coverage or repository testing standards |
-| State | Scoped artifacts, context epochs, index and exposure identity | Shared source data is not shared model memory |
-| Optional provider path | Protocol-specific request compression | Separate auth/cache/streaming qualification; disabled by default |
+| `auto` | Preserve native optimizations; install one versioned owned policy; activate only qualified host/content adapters; automatically bypass incompatible optional transforms | Native behavior exists. Asset consolidation and the qualification selector are proposed. No external transform is qualified for automatic activation yet. |
+| `experimental` | Select one pinned filter, retrieval backend or exact upstream policy per treatment; retain raw recovery and fixed model/effort; expose effective versions and limits | Several component builds/tests exist; actual Jackin host and complete-task qualification remains open. |
+| `off` / raw | Disable new transforms, retrieval steering and owned optimization policy; keep configured security and native behavior; continue serving already-referenced recovery artifacts | Required implementation contract, not an existing manifest field. Raw means the authorized observation, including native bounds and mandatory redaction. |
 
-The detailed feature-layer pages below remain design sketches. Their proposed defaults, economic examples, and candidate dependencies are not automatically approved by this refresh. Use the current integration plan and reuse matrix for implementation decisions; no universal token multiplier, quota conversion, or whole-boundary coverage claim follows from a single session's measurements.
+The operator can disable everything or one component, select alternatives and inspect the effective configuration. A nonworking hook must report its bypass reason; it cannot count as an optimization. [Rollout and exact gates](/research/context/engine/10-rollout-and-validation/).
+
+### Current architecture changes the integration plan
+
+Jackin registers **twelve** agent types. Its reviewed entrypoint has launch cases for **six**: Claude, Codex, Amp, Kimi, OpenCode and Grok. An isolated execution of that case statement returned exit 2 for the other six names. This is a launch-dispatch finding, not a full container test. Existing status hooks cover Claude, Codex and OpenCode; Codex already installs seven lifecycle events. Those hooks report state, not transformed results. [Source audit and executable probe](https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/docker/runtime/entrypoint.sh) and <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json">captured evidence</RepoFile>.
+
+The six launch cases deliberately select permissive native-agent modes. Preserving security therefore means preserving the **actual configured Jackin isolation, credential and authorization boundary**, not claiming native approval prompts are enabled. A new optimizer must never broaden that authority or turn a denied operation into passthrough. The optimization research does not change launch permissions.
+
+### Ownership that makes reuse safe
+
+| State or action | Proposed single owner | Consequence |
+|---|---|---|
+| Native command, edit and provider connection | Existing host and Jackin security path | MCP registration or PTY ownership does not replace every native tool |
+| Each transformed observation | One selected host adapter and transform worker | No stacked filters, nested recovery markers or repeated producer execution |
+| Original authorized observation | Jackin recovery broker | Durable acknowledgement before lossy replacement; scoped retrieval and retained completeness metadata |
+| Repository index | One selected backend per declared source/security scope | Immutable index data may be shared; mutable exposure state may not |
+| Model exposure | Consumer session and context epoch | Compaction, resume, fork and agent changes cannot inherit an unproven “already seen” claim |
+| Instruction delivery | Versioned Jackin asset manifest | Avoid duplicate schemas and preserve project/user policy precedence |
+
+The existing `SessionIdentity` contains only OS UID/GID. It is not a repository, logical session or context epoch. The proposed observation scope must add those identities without repurposing credential capabilities. [Architecture](/research/context/engine/02-architecture/), [memory and state](/research/context/engine/07-memory-and-state/).
 
 ## Method and evidence
 
-The current dossier inspected live releases and selected tagged implementation files, checked independent-study eligibility, and reconciled source/API changes. It did not run a six-way paid benchmark or build the upstream packages. No independent current-release accepted-task proof was established for a universal default.
+The refreshed investigation reopens the existing detailed chapters, current Jackin code, primary host documentation, release source and executable evidence from all six product workstreams. Headroom's no-ML Rust build and selected Python tests passed; LemonCrow Lite's package/source correspondence and worktree tests passed; LeanCTX lifecycle probes demonstrate that a source cache is not model memory. These are useful feasibility results with narrow scopes. The product pages preserve failed/incomplete attempts separately from passing checks.
 
-Current RTK includes recall and structural diff-parser corrections. LemonCrow publishes its engine source and bounds advisory-state locking. LeanCTX's current preview facade is `lean-ctx-embed`. Headroom exposes Rust transforms. These facts update integration feasibility, not outcome qualification. [Evidence ledger](/research/context/tools/07-evidence-and-claims/).
-
-### Default enablement
-
-Target an `auto` profile that installs reviewed assets and selects only host/version/content combinations with qualification records. Keep an `off` path and raw verifier lane. Initial measurement and restrained instruction delivery are followed by build, host, fidelity, accepted-task, and rollback gates before larger reductions activate.
-
-Keep the selected model, reasoning effort, native execution, editing, approvals, and provider authentication unchanged by default. Model routing is a separate intervention and must not masquerade as compression savings. A configured raw fallback may skip a failed optional transform, never an authorization or path-integrity check.
+Material reversals include RTK's new typed engine API and split license, Caveman's current Apache engine, Headroom's Python-only line-boundary fix, and LemonCrow's current public Lite/private advanced-engine split. The old blanket Apache RTK extraction, BSL Caveman exclusion, full-public LemonCrow assumption and preferred Headroom integration are retired. [Release register](/research/context/tools/08-current-release-register/), [six-tool comparison](/research/context/tools/05-head-to-head/).
 
 ## Limitations and open questions
 
-The remaining decisions require executable proof: dependency resolution on Jackin targets, real host result replacement, recovery after compaction/resume, concurrent worktree isolation, native read-before-edit behavior, and net benefit after schema, indexing, recovery, and extra-turn costs. Public APIs and released fixes are narrower evidence than those tests.
+No real Claude/Codex model-bound replacement, native edit-receipt, full capsule launch, paid task outcome or production rollout was executed by this workstream. Native hook documentation is a contract to test, not proof of installed behavior. The smallest decisive work is one host's captured-result round trip, durable recovery under failure, an epoch/reset/concurrent-root test, then the paired task protocol. Keep the selected model and reasoning effort fixed throughout compression comparisons.
 
 ## How to read
 
-| Page | Contents |
+| Page | Decision it owns |
 |---|---|
-| [Goals and non-goals](/research/context/engine/01-goals-and-non-goals/) | Objectives and evidence bars. |
-| [Architecture](/research/context/engine/02-architecture/) | Proposed structure and integration boundaries. |
-| [Observation pipeline](/research/context/engine/03-observation-pipeline/) | Reduction and recovery mechanisms to qualify. |
-| [Retrieval](/research/context/engine/04-retrieval-layer/) | Source-selection design alternatives. |
-| [Output and prompt](/research/context/engine/05-output-and-prompt-layer/) | Instruction-policy design. |
-| [Routing and fleet](/research/context/engine/06-routing-and-fleet-economics/) | Separate model/fleet experiments, not default compression. |
-| [Memory and state](/research/context/engine/07-memory-and-state/) | Artifact and handoff design. |
-| [Measurement](/research/context/engine/08-measurement-and-verification/) | Usage and harness requirements. |
-| [Current reuse matrix](/research/context/engine/09-reuse-decision-matrix/) | Current build/embed/adapt/bundle choices. |
-| [Rollout](/research/context/engine/10-rollout-and-validation/) | Rollout sketch; apply current qualification requirements. |
-| [Current integration plan](/research/context/tools/11-jackin-integration/) | Concrete host adapters, reuse choices, and completion gates. |
+| [Goals](/research/context/engine/01-goals-and-non-goals/) | Accepted-task objective and exclusions |
+| [Architecture](/research/context/engine/02-architecture/) | Current owners, proposed scope and interfaces |
+| [Observations](/research/context/engine/03-observation-pipeline/) | Capture, eligibility, transformation and recovery |
+| [Retrieval](/research/context/engine/04-retrieval-layer/) | Exact selection, freshness and native editing |
+| [Output and prompt](/research/context/engine/05-output-and-prompt-layer/) | Distinct instruction-policy treatments |
+| [Routing and fleet](/research/context/engine/06-routing-and-fleet-economics/) | Separate model/effort and economic interventions |
+| [Memory and state](/research/context/engine/07-memory-and-state/) | Epochs, retention, handoffs and authorization |
+| [Measurement](/research/context/engine/08-measurement-and-verification/) | Current accounting gaps and required receipts |
+| [Reuse](/research/context/engine/09-reuse-decision-matrix/) | Library, process, asset, upstream and native choices |
+| [Rollout](/research/context/engine/10-rollout-and-validation/) | Automatic, experimental and off profiles with gates |
+| [Integration](/research/context/tools/11-jackin-integration/) | Concrete repository anchors and host qualification |
 
 ## Related work
 
-- [Token-optimization tools](/research/context/tools/)
-- [Current evidence protocol](/research/context/tools/07-evidence-and-claims/)
-- [Token-optimization techniques](/research/context/techniques/)
+- [Optimization tools](/research/context/tools/)
+- [Optimization techniques](/research/context/techniques/)
+- <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/README.md">Architecture evidence and old-claim dispositions</RepoFile>

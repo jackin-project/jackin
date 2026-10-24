@@ -1,122 +1,121 @@
 ---
 title: "27 — Current verdict and stack guidance"
-description: "Current conclusions and stack guidance across quota, multimodal, latency, fleet, portability, governance, and quality evidence."
+description: "Evidence-based stack choices across task cost, quota, multimodal inputs, latency, fleets, portability, and unresolved mechanisms."
 ---
+
+**Research state:** Current
+
+Source cutoff: **2026-10-24T01:15:00Z**. This verdict integrates the refreshed product, provider, benchmark and frontier evidence. It is a decision framework, not a measured current Jackin savings forecast.
 
 ## Summary
 
-The current evidence preserves the central dollar verdict: about **2.5× is defensible without a quality trade**, and about **5–6.2× is conditional on a routing change passing the acceptance harness**. No reviewed mechanism supports an honest 10× claim at equal quality. Frontier-model thinking billed as output and the cache-read floor of genuinely useful context remain binding constraints.
+**No universal 2.5×, 5–6.2× or 10× accepted-task improvement is established.** The former daily workload and composed multipliers were not independently recovered or validated. That does not prove large gains impossible on a particular wasteful workload; it requires measuring the real native baseline and the deployed treatment.
 
-For subscription users, the primary metric changes from dollars per task to **accepted tasks per usage cap**. That reorders the levers: prefix stability, context-window discipline, and request volume rise; uncontrolled fan-out can lose despite appearing cheap in API-dollar arithmetic. Provider quota weights remain partly opaque, so quota conclusions stay bounded where direct measurement is unavailable.
+Start with supported native behavior and small, inspectable improvements. Evaluate one runtime intervention at a verified observation boundary before composing it with another. Preserve the selected model, effort, authentication, execution, editing and permission policy. Report API cost, credits, subscription utilization, task acceptance and waiting time as distinct outcomes.
 
-## Question and scope
+## Question and method
 
-What reduction remains defensible after composing the durable findings, quota constraints, and unresolved frontier ideas?
+What can Jackin adopt or investigate after accounting for current capabilities, quality, recovery, cache classes, failed attempts, overhead and maintenance? The [benchmark audit](/research/context/tools/07-evidence-and-claims/) separates first-party, competitor and independent results; [composition](/research/context/techniques/15-composed-stacks/) avoids duplicate credit.
 
-## Method
+No paid six-product benchmark, personal quota experiment or current full-stack accepted-task comparison ran in this refresh. Executed source/build/fixture checks establish narrower component facts. A current research page is not a production qualification stamp.
 
-The verdict recomposes only independent, quality-gated effects from the durable chapters, then reports subscription and API-priced outcomes separately with unresolved inputs left explicit.
+## Current evidence by topic
 
-## Findings
-
-### Current evidence by topic
-
-| Topic | Current finding | Detail |
+| Topic | Current finding | Practical consequence |
 |---|---|---|
-| Subscription quota | Use tasks per cap; apply API dollars only to credits or explicitly off-cap traffic | [19 — Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/) |
-| Multimodal | Vision-tier routing can reduce image tokens by 67%; text-over-PDF can save about 50% on document tokens in measured cases | [20 — Multimodal token economics](/research/context/techniques/20-multimodal-token-economics/) |
-| Latency | A token-saving path is unacceptable when added wall-clock or human wait exceeds its value | [21 — Latency and time economics](/research/context/techniques/21-latency-and-time-economics/) |
-| Fleet | Prefix identity, dynamic sections, start timing, and provider cache scope determine cross-agent reuse | [22 — Fleet and multi-tenant cache](/research/context/techniques/22-fleet-and-multitenant-cache/) |
-| Portability | Instruction-level techniques travel broadly; hooks, provider betas, and storage surfaces do not | [23 — Portability matrix](/research/context/techniques/23-cross-agent-portability/) |
-| Literature | KV-cache compression is meaningful for self-hosted inference but does not reduce hosted API-billed tokens | [24 — Literature and market scan](/research/context/techniques/24-fresh-literature-and-market-delta/) |
-| Governance | Measurement overhead, retries, raw recovery, and live quality checks belong in net accounting | [25 — Governance and online quality](/research/context/techniques/25-meta-cost-governance-and-online-quality/) |
-| Frontier | Conditional ideas remain gated by feasibility, provider support, and paired quality tests | [26 — Frontier mechanisms](/research/context/techniques/26-extension-frontier/) |
+| Task economics | Token payloads, cache classes and accepted outcomes have different denominators | Count every attempt and applicable charge; do not price an unweighted token ratio |
+| Subscription quota | Included limits, purchased credits and eligible monthly API credits are distinct | Observe the existing account route; no API-dollar-to-cap conversion |
+| Multimodal | Model/settings, dimensions, content and extraction fidelity control the result | Test the actual media; no universal 67% or 50% task saving |
+| Latency | Tools, queues, recovery and human blocking can dominate generation | Measure critical-path and whole-task p95, not just output speed |
+| Fleet reuse | Exact prefix, authorized scope, timing and current source identity matter | Preserve tenant/worktree separation; count native stagger behavior and paid warms |
+| Portability | Hook payload, error behavior, provider access and effective defaults differ | Versioned per-host qualification; config translation is not proof |
+| Literature | Learned representations and KV systems have model/serving requirements | Separate self-hosted compute gains from hosted billing and task outcomes |
+| Governance | Optimization and monitoring add cost and can miss failures | Include maintenance, judge cost, false clears and rollback delay |
+| Frontier | All K1–K16 and V1–V8 remain explicit hypotheses or scoped capabilities | Promote from decisive tests, not a forecast multiplier |
 
-### Dollar verdict
+Details: [quota](/research/context/techniques/19-subscription-and-quota-economics/), [media](/research/context/techniques/20-multimodal-token-economics/), [latency](/research/context/techniques/21-latency-and-time-economics/), [fleet](/research/context/techniques/22-fleet-and-multitenant-cache/), [portability](/research/context/techniques/23-cross-agent-portability/), [literature](/research/context/techniques/24-fresh-literature-and-market-delta/), [governance](/research/context/techniques/25-meta-cost-governance-and-online-quality/).
 
-The added mechanisms change choices at the margins but do not remove the two structural floors:
+## Dollar and multiplier verdict
 
-1. Thinking from a frontier model is billed as output and is reachable mainly through effort control or model routing.
-2. Context the model genuinely needs still incurs a cache-read floor even under stable-prefix caching.
+A measured stack multiplier is the baseline's all-attempt cost per accepted task divided by the candidate's corresponding cost, on representative task clusters with comparable acceptance. Failed attempts, recovery, retries, extra schemas/instructions, compaction, auxiliary calls and local operating costs belong in that comparison. Missing costs remain unknown.
 
-Multimodal substitution matters when media is a material share of the workload. Cached-context retrieval can reduce fresh-input cost, but it remains a context-architecture and caching lever rather than a new independent multiplier. Savings from overlapping layers must not be multiplied as if each acted on the full baseline.
+For an unchanged trajectory, removing fraction <code>r</code> of an addressable cost share <code>f</code> with overhead share <code>h</code> gives the illustrative ratio <code>1 − f·r + h</code>. Perfectly eliminating a 10% cost slice cannot make the whole task ten times cheaper. Conversely, a better trajectory can eliminate repeated failures or unnecessary exploration; that causal benefit must be observed rather than inferred from a frozen replay.
 
-### Quota verdict
+Useful context still has a processing price on a hosted route, and generation remains billable under its contract. These are accounting facts, not a universal workload floor. Their relative shares vary by task, cache policy, model, host and billing route. A provider's self-hosted memory reduction or a local 90% payload cut cannot identify those shares.
 
-For a capped subscription, use a two-part objective:
+Current evidence is mixed: the release-matched RTK study improved its small Claude answer score while increasing reported cost; historical fuller-runtime LemonCrow results cannot be transferred to public Runtime Lite 0.8.0; competitor studies use other versions, configurations and exclusions. None establishes an all-six current winner. [Study methods and recomputations](/research/context/tools/07-evidence-and-claims/).
 
-```text
-accepted tasks per cap = accepted tasks / provider-accounted usage
-overage cost           = credits or API traffic × applicable rates
-```
+## Quota verdict
 
-The provider does not publish a stable conversion from all token classes to cap consumption. Measure relative changes from the provider surface and session records; do not present an inferred quota weight as a provider fact. Cache stability and fewer requests are robust priorities because both reduce avoidable repeated work even when the exact cap denominator is hidden.
+For an included plan, measure **accepted tasks per relevant window**, observed utilization points per accepted task, time waiting and any paid spill. Record plan, model, effort, connection mode, reset times and other activity sharing the balance. Use multiple matched windows because delayed/quantized observations can overwhelm a small difference.
 
-### Conservative stack
+Prefix stability, smaller useful observations and fewer unnecessary turns are candidates, not a published cap-weight formula. Cache hits can lower API prices without proving the same proportional quota change. Extra subagents can improve completion time while consuming a shared limit faster. Fewer calls can be harmful if they remove verification or retrieval required for acceptance.
 
-- Stabilize system, tool, and project prefixes.
-- Keep raw recovery for every transformed observation.
-- Use retrieval to avoid irrelevant reads before compressing relevant ones.
-- Apply deterministic output discipline.
-- Measure fresh input, cache write, cache read, thinking, visible output, turns, rereads, latency, and accepted-task quality separately.
+Current Max/Team monthly API credits do not automatically cover every headless/native run; Codex credits do not inherit OpenAI API cache-write billing. Keep those distinctions from [chapter 19](/research/context/techniques/19-subscription-and-quota-economics/). Waiting, enabling paid spill, changing accounts and changing models are different policies. Preserve the user's existing authorization.
 
-### Quota-bound subscriber stack
+## Stack guidance
 
-- Add request-volume and context-window budgets.
-- Stagger or pre-warm fleet starts only when measurement shows prefix reuse.
-- Gate fan-out by expected task value and cap pressure.
-- Attribute each capsule's provider-reported usage where the provider exposes it.
+### Native-preserving profile
 
-### Conditional routing stack
+Use the host's current precise reads/search, normal edits, tool discovery, cache handling and compaction as the starting point. Remove demonstrably duplicated instruction/hook delivery, use concise complete narration, and retain requirements, diagnostics and provenance. Audit actual model-visible context before imposing a size budget.
 
-- Route only task classes that pass the paired acceptance harness.
-- Preserve an advisor or escalation path for hard cases.
-- Recompute savings for the actual current model pair and tokenizer family.
-- Reject the route when retries, cache fragmentation, or quality loss erase the nominal price benefit.
+These improvements can be worthwhile without a 20% savings target or a new runtime. They still need proportionate correctness checks: a partial read can miss a condition and a terse response can omit a failed test. Preserve normal escalation and full-read options.
 
-### Cross-layer caveats
+### Guarded runtime experiment
 
-Server-side provider cache scope is not the same as a local file cache. Local recovery stores make compressed observations reversible; they do not prove shared provider-prefix reuse. Subagent cache behavior is version- and execution-path-dependent, so inspect current session records before relying on it.
+Select one narrow implementation: RTK OSS diagnostic filtering, selected Headroom transforms, scoped LeanCTX retrieval or LemonCrow Runtime Lite retrieval. They overlap at important boundaries; installing all four is not a composition strategy.
 
-Absolute dollar examples tied to one model price can age while ratios and structural constraints remain valid. Apply the [provider-sensitive claim verification contract](/research/context/techniques/28-drift-delta/) before using provider-sensitive numbers.
+Require caller-owned original capture, producer status and completeness, explicit repository/worktree/session/context epoch, durable recovery acknowledgement, bounded transform time and a genuine host replacement channel. Retain native execution, edit and approval contracts. Current product probes identify concrete promotion blockers: RTK Git compaction omissions, Headroom duplicate-key/recovery boundaries, LeanCTX persisted exposure state and process-global embedding configuration, and LemonCrow failed-spill unchanged markers.
 
-## Implications for jackin❯
+Compare native + A, native + B and native + A + B only after individual activation and fidelity gates. Full proxy, full upstream tool replacement, skill/plugin and restricted Jackin adaptations remain separately named arms. See [product boundaries](/research/context/tools/05-head-to-head/) and [integration](/research/context/tools/11-jackin-integration/).
 
-### Current tier adjustments
+### Quota- or latency-constrained profile
 
-| Mechanism | Current treatment | Reason |
-|---|---|---|
-| Prefix stability and cache preservation | Promote for quota-bound work | Repeated prefix writes and cache misses consume avoidable allowance |
-| Request-volume discipline | Promote | Extra turns repeat fixed context and create more opportunities for cache misses |
-| Uncontrolled subagent fan-out | Downgrade for quota-bound work | Parallel agents can multiply requests and fixed-prefix consumption |
-| Vision-tier routing and cropping | Conditional | Strong local savings only when media is present and still legible |
-| Text extraction before full PDF/image ingestion | Conditional | Useful when structure and exact text survive extraction |
-| Per-request gateway routing | Keep harness-gated | Model savings can be erased by cache fragmentation or quality loss |
-| Hosted KV-cache compression claims | Reject | Self-host GPU-memory savings are not hosted API token savings |
-| Compression without raw recovery | Reject | Exact identifiers, errors, configuration, and security evidence require recovery |
+First make the constraint observable. Defer authorized discretionary work when useful; bound fan-out; preserve native same-prefix staggering; choose an explicit supported speed or warm policy only when its whole-task tradeoff is favorable.
 
-### Current stack guidance
+Keep deadline misses, cold starts, unused warms, output, validation and retries in the ledger. Do not treat autonomous work as having zero time value or an attached human as valuing every second equally. A higher API bill may be acceptable under an explicit latency preference; it is not token compression or a universally better stack.
 
-For jackin❯, the current verdict and stack guidance evidence identifies which mechanisms are safe to adopt directly and which still require workload-specific validation.
+### Separate routing or training research
 
-## Limitations and unknowns
+Another model, lower effort, advisor policy, fine-tune or self-hosted deployment can change quality and cost substantially. These require separate user-authorized policy and acceptance evidence. Preserve the selected model/effort in the primary optimizer study, include escalation/verification and do not relabel a routing gain as a context-transform result.
 
-### Rejected or downgraded claims
+## Qualification and promotion
 
-- No evidence supports stacking every reported percentage into a 10× accepted-task claim.
-- A payload-reduction benchmark is not a task-level, quota-level, or quality result.
-- Self-host KV eviction does not lower billed hosted tokens.
-- A flat-rate subscription does not make unlimited retries or fan-out free; the usage cap is the scarce resource.
-- A cheaper route is not a saving when quality failures cause escalation, rereads, or repeated turns.
+For a **new complex optimizer**, apply the proposed canonical gates to the entire deployed composition:
 
-## Sources
+- Zero observed new critical correctness, security, permission, provenance or recovery failures.
+- Representative paired/task-cluster acceptance evidence with a one-sided 95% lower bound above −1 percentage point. This is an uncertainty tolerance, not permission to knowingly sacrifice correctness.
+- At least 20% lower all-attempt cost per accepted task to justify added deployment/maintenance, with a one-sided 95% upper cost-ratio bound at or below 0.80 using paired task clusters. Insufficient precision leaves the optimizer experimental or provisional; default promotion cannot waive this bound.
+- Whole-task p95 latency no more than 10% worse unless an explicit tradeoff profile is accepted; also predeclare absolute cold/warm overhead budgets.
 
-Evidence and repository references are cited inline beside the claims they support.
+These are proposed decision criteria, not results achieved by the six products. A 12–30-task pilot can expose problems but cannot certify a tight margin; confirmation needs power and representative independent task clusters. Small native-preserving improvements are not retroactively required to clear a new-engine economic threshold. [Canonical protocol](/research/context/techniques/16-validation-harness/).
+
+## Cross-layer decisions and rejected claims
+
+| Claim or mechanism | Current treatment |
+|---|---|
+| Stable prefixes and concise complete instructions | Useful candidates; preserve truth, instruction authority and actual native loading |
+| Request reduction | Remove demonstrably unnecessary work; retain verification and recovery |
+| Uncontrolled fan-out | Reject as a default economic assumption; measure total tree and critical path |
+| Vision routing, cropping or text extraction | Conditional; preserve evidence and fixed-model treatment identity |
+| Local recovery implies provider-cache reuse | Reject: storage/recovery and provider prefix identity are different systems |
+| Compression is safe because the original exists | Reject: original must be durable, scoped, discoverable and usable by the current consumer |
+| Hosted KV compression automatically lowers API tokens | Reject: serving memory and provider billing are different denominators |
+| Async judge makes aggressive compression safe | Reject: sampling and delayed detection cannot prevent every failure |
+| Stack percentages can be multiplied globally | Reject: overlap, changed trajectories and overhead require direct measurement |
+| No observed universal 10× means 10× is impossible | Reject: absence of suitable evidence is not an impossibility proof |
+
+Price ratios as well as absolute dollars can change. Recheck model, endpoint, cache policy, host, billing route and effective date through [chapter 28](/research/context/techniques/28-drift-delta/).
+
+## Implications and remaining unknowns
+
+Jackin's next useful work is a qualified native profile, an instrumented baseline, and a small restricted intervention with an explicit owner and exit condition. A full proxy, general installer, broad policy rewrite or historical-engine fork carries a separate maintenance and permission boundary; source availability alone does not justify it.
+
+Unknowns include current task distributions, billed cache classes and quota observations, actual host delivery, long-session recovery and latency/resource tails. Resolve those with the smallest experiment that can change the decision. Frontier [K1–K16](/research/context/techniques/14-frontier-ideas/) and [V1–V8](/research/context/techniques/26-extension-frontier/) remain available mechanisms with explicit dispositions, rather than silently discarded ideas or promised savings.
 
 ## Related work
 
 - [Executive summary](/research/context/techniques/00-executive-summary/)
 - [Composed stacks](/research/context/techniques/15-composed-stacks/)
-- [Validation harness](/research/context/techniques/16-validation-harness/)
-- [Coverage and gap map](/research/context/techniques/18-extension-overview/)
-- [Provider-sensitive claim verification](/research/context/techniques/28-drift-delta/)
+- [Baseline audit](/research/context/techniques/02-baseline-audit/)
+- [Coverage and gaps](/research/context/techniques/18-extension-overview/)

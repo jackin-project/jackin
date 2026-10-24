@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+    "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/verify_coverage_reconciliation.py"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+  "environment_overrides": {
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "started_utc": "2026-10-24T08:29:22.239215+00:00",
+  "ended_utc": "2026-10-24T08:29:22.701472+00:00",
+  "exit_code": 0,
+  "script_sha256": "b86b3bff05e90396875d0fb8d21fa03536dd2805c564ba822750169cf7e25285",
+  "stdout": "logs/coverage-integrity.stdout",
+  "stderr": "logs/coverage-integrity.stderr",
+  "earlier_harness_failures": [
+    "coverage-integrity-operation-initial.json",
+    "coverage-integrity-operation-second.json"
+  ]
+}

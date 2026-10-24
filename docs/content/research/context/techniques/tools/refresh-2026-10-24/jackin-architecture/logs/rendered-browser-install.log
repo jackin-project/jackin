@@ -1,0 +1,41 @@
+Downloading Chrome Headless Shell 151.0.7922.34 (playwright chromium-headless-shell v1234)[2m from https://cdn.playwright.dev/builds/cft/151.0.7922.34/linux64/chrome-headless-shell-linux64.zip[22m
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 0 MiB
+Error: End of central directory record signature not found. Either not a zip file, or file is truncated.
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:38081:18
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:38607:9
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:37504:11
+    at FSReqCallback.wrapper [as oncomplete] (node:fs:731:5)
+Downloading Chrome Headless Shell 151.0.7922.34 (playwright chromium-headless-shell v1234)[2m from https://cdn.playwright.dev/builds/cft/151.0.7922.34/linux64/chrome-headless-shell-linux64.zip[22m
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 0 MiB
+Error: End of central directory record signature not found. Either not a zip file, or file is truncated.
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:38081:18
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:38607:9
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:37504:11
+    at FSReqCallback.wrapper [as oncomplete] (node:fs:731:5)
+Downloading Chrome Headless Shell 151.0.7922.34 (playwright chromium-headless-shell v1234)[2m from https://cdn.playwright.dev/builds/cft/151.0.7922.34/linux64/chrome-headless-shell-linux64.zip[22m
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 0 MiB
+Error: End of central directory record signature not found. Either not a zip file, or file is truncated.
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:38081:18
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:38607:9
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:37504:11
+    at FSReqCallback.wrapper [as oncomplete] (node:fs:731:5)
+Downloading Chrome Headless Shell 151.0.7922.34 (playwright chromium-headless-shell v1234)[2m from https://cdn.playwright.dev/builds/cft/151.0.7922.34/linux64/chrome-headless-shell-linux64.zip[22m
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 0 MiB
+Error: End of central directory record signature not found. Either not a zip file, or file is truncated.
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:38081:18
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:38607:9
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:37504:11
+    at FSReqCallback.wrapper [as oncomplete] (node:fs:731:5)
+Downloading Chrome Headless Shell 151.0.7922.34 (playwright chromium-headless-shell v1234)[2m from https://cdn.playwright.dev/builds/cft/151.0.7922.34/linux64/chrome-headless-shell-linux64.zip[22m
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 0 MiB
+Error: End of central directory record signature not found. Either not a zip file, or file is truncated.
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:38081:18
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:38607:9
+    at /opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/utilsBundle.js:37504:11
+    at FSReqCallback.wrapper [as oncomplete] (node:fs:731:5)
+Failed to install browsers
+Error: Failed to download Chrome Headless Shell 151.0.7922.34 (playwright chromium-headless-shell v1234), caused by
+Error: Download failure, code=1
+    at ChildProcess.<anonymous> (/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/lib/coreBundle.js:32015:32)
+    at ChildProcess.emit (node:events:509:28)
+    at ChildProcess._handle.onexit (node:internal/child_process:295:12)

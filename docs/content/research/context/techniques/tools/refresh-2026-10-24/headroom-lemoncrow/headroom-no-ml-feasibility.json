@@ -1,0 +1,666 @@
+{
+  "normal_dependency_count_from_tree": 185,
+  "dependencies_with_rust_version": [
+    {
+      "name": "tree-sitter-language",
+      "version": "0.1.8",
+      "rust_version": "1.90"
+    },
+    {
+      "name": "tree-sitter",
+      "version": "0.27.0",
+      "rust_version": "1.90"
+    },
+    {
+      "name": "icu_locale_core",
+      "version": "2.2.0",
+      "rust_version": "1.86"
+    },
+    {
+      "name": "icu_collections",
+      "version": "2.2.0",
+      "rust_version": "1.86"
+    },
+    {
+      "name": "icu_provider",
+      "version": "2.2.0",
+      "rust_version": "1.86"
+    },
+    {
+      "name": "icu_segmenter",
+      "version": "2.2.0",
+      "rust_version": "1.86"
+    },
+    {
+      "name": "icu_locale_data",
+      "version": "2.2.0",
+      "rust_version": "1.86"
+    },
+    {
+      "name": "icu_locale",
+      "version": "2.2.0",
+      "rust_version": "1.86"
+    },
+    {
+      "name": "icu_segmenter_data",
+      "version": "2.2.0",
+      "rust_version": "1.86"
+    },
+    {
+      "name": "sha2",
+      "version": "0.11.0",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "cpufeatures",
+      "version": "0.3.0",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "tiktoken-rs",
+      "version": "0.12.1",
+      "rust_version": "1.85.0"
+    },
+    {
+      "name": "ureq",
+      "version": "3.3.0",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "digest",
+      "version": "0.11.3",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "hybrid-array",
+      "version": "0.4.12",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "ureq-proto",
+      "version": "0.6.0",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "toml_datetime",
+      "version": "1.1.1+spec-1.1.0",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "toml_writer",
+      "version": "1.1.2+spec-1.1.0",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "indexmap",
+      "version": "2.14.0",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "const-oid",
+      "version": "0.10.2",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "constant_time_eq",
+      "version": "0.4.2",
+      "rust_version": "1.85.0"
+    },
+    {
+      "name": "crypto-common",
+      "version": "0.2.2",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "hashlink",
+      "version": "0.12.1",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "unicode-segmentation",
+      "version": "1.13.3",
+      "rust_version": "1.85.0"
+    },
+    {
+      "name": "toml_parser",
+      "version": "1.1.3+spec-1.1.0",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "block-buffer",
+      "version": "0.12.1",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "zeroize",
+      "version": "1.9.0",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "md-5",
+      "version": "0.11.0",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "hashbrown",
+      "version": "0.17.1",
+      "rust_version": "1.85.0"
+    },
+    {
+      "name": "serde_spanned",
+      "version": "1.1.1",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "toml",
+      "version": "1.1.6+spec-1.1.0",
+      "rust_version": "1.85"
+    },
+    {
+      "name": "zerovec",
+      "version": "0.11.6",
+      "rust_version": "1.83"
+    },
+    {
+      "name": "potential_utf",
+      "version": "0.1.5",
+      "rust_version": "1.82"
+    },
+    {
+      "name": "litemap",
+      "version": "0.8.2",
+      "rust_version": "1.82"
+    },
+    {
+      "name": "zerotrie",
+      "version": "0.2.4",
+      "rust_version": "1.82"
+    },
+    {
+      "name": "writeable",
+      "version": "0.6.3",
+      "rust_version": "1.82"
+    },
+    {
+      "name": "tinystr",
+      "version": "0.8.3",
+      "rust_version": "1.82"
+    },
+    {
+      "name": "yoke",
+      "version": "0.8.3",
+      "rust_version": "1.82"
+    },
+    {
+      "name": "rayon-core",
+      "version": "1.13.0",
+      "rust_version": "1.80"
+    },
+    {
+      "name": "rayon",
+      "version": "1.12.0",
+      "rust_version": "1.80"
+    },
+    {
+      "name": "monostate-impl",
+      "version": "0.1.18",
+      "rust_version": "1.79"
+    },
+    {
+      "name": "monostate",
+      "version": "0.1.18",
+      "rust_version": "1.79"
+    },
+    {
+      "name": "daachorse",
+      "version": "3.0.3",
+      "rust_version": "1.77"
+    },
+    {
+      "name": "thiserror",
+      "version": "2.0.21",
+      "rust_version": "1.77"
+    },
+    {
+      "name": "thiserror-impl",
+      "version": "2.0.21",
+      "rust_version": "1.77"
+    },
+    {
+      "name": "rustc-hash",
+      "version": "2.1.2",
+      "rust_version": "1.77"
+    },
+    {
+      "name": "parking_lot_core",
+      "version": "0.9.12",
+      "rust_version": "1.71.0"
+    },
+    {
+      "name": "zerofrom",
+      "version": "0.1.8",
+      "rust_version": "1.71.1"
+    },
+    {
+      "name": "rustls-webpki",
+      "version": "0.103.15",
+      "rust_version": "1.71"
+    },
+    {
+      "name": "console",
+      "version": "0.16.3",
+      "rust_version": "1.71"
+    },
+    {
+      "name": "lock_api",
+      "version": "0.4.14",
+      "rust_version": "1.71.0"
+    },
+    {
+      "name": "zmij",
+      "version": "1.0.21",
+      "rust_version": "1.71"
+    },
+    {
+      "name": "unicode-ident",
+      "version": "1.0.24",
+      "rust_version": "1.71"
+    },
+    {
+      "name": "zerofrom-derive",
+      "version": "0.1.7",
+      "rust_version": "1.71.1"
+    },
+    {
+      "name": "serde_derive",
+      "version": "1.0.229",
+      "rust_version": "1.71"
+    },
+    {
+      "name": "syn",
+      "version": "3.0.3",
+      "rust_version": "1.71"
+    },
+    {
+      "name": "indicatif",
+      "version": "0.18.4",
+      "rust_version": "1.71"
+    },
+    {
+      "name": "ryu",
+      "version": "1.0.23",
+      "rust_version": "1.71"
+    },
+    {
+      "name": "serde_json",
+      "version": "1.0.151",
+      "rust_version": "1.71"
+    },
+    {
+      "name": "log",
+      "version": "0.4.33",
+      "rust_version": "1.71.0"
+    },
+    {
+      "name": "quote",
+      "version": "1.0.46",
+      "rust_version": "1.71"
+    },
+    {
+      "name": "rustls",
+      "version": "0.23.45",
+      "rust_version": "1.71"
+    },
+    {
+      "name": "syn",
+      "version": "2.0.118",
+      "rust_version": "1.71"
+    },
+    {
+      "name": "webpki-roots",
+      "version": "1.0.8",
+      "rust_version": "1.70"
+    },
+    {
+      "name": "onig",
+      "version": "6.5.3",
+      "rust_version": "1.70.0"
+    },
+    {
+      "name": "onig_sys",
+      "version": "69.9.3",
+      "rust_version": "1.70.0"
+    },
+    {
+      "name": "proc-macro2",
+      "version": "1.0.106",
+      "rust_version": "1.68"
+    },
+    {
+      "name": "anyhow",
+      "version": "1.0.104",
+      "rust_version": "1.68"
+    },
+    {
+      "name": "itoa",
+      "version": "1.0.18",
+      "rust_version": "1.68"
+    },
+    {
+      "name": "flate2",
+      "version": "1.1.10",
+      "rust_version": "1.67.0"
+    },
+    {
+      "name": "unicode-width",
+      "version": "0.2.2",
+      "rust_version": "1.66"
+    },
+    {
+      "name": "fancy-regex",
+      "version": "0.19.2",
+      "rust_version": "1.66"
+    },
+    {
+      "name": "ring",
+      "version": "0.17.14",
+      "rust_version": "1.66.0"
+    },
+    {
+      "name": "regex",
+      "version": "1.13.1",
+      "rust_version": "1.65"
+    },
+    {
+      "name": "winnow",
+      "version": "1.0.3",
+      "rust_version": "1.65.0"
+    },
+    {
+      "name": "tracing-attributes",
+      "version": "0.1.31",
+      "rust_version": "1.65.0"
+    },
+    {
+      "name": "tracing-core",
+      "version": "0.1.36",
+      "rust_version": "1.65.0"
+    },
+    {
+      "name": "once_cell",
+      "version": "1.21.4",
+      "rust_version": "1.65"
+    },
+    {
+      "name": "regex-syntax",
+      "version": "0.8.11",
+      "rust_version": "1.65"
+    },
+    {
+      "name": "libc",
+      "version": "0.2.186",
+      "rust_version": "1.65"
+    },
+    {
+      "name": "tracing",
+      "version": "0.1.44",
+      "rust_version": "1.65.0"
+    },
+    {
+      "name": "dashmap",
+      "version": "6.2.1",
+      "rust_version": "1.65"
+    },
+    {
+      "name": "regex-automata",
+      "version": "0.4.16",
+      "rust_version": "1.65"
+    },
+    {
+      "name": "bstr",
+      "version": "1.13.1",
+      "rust_version": "1.65"
+    },
+    {
+      "name": "either",
+      "version": "1.16.0",
+      "rust_version": "1.63.0"
+    },
+    {
+      "name": "rayon-cond",
+      "version": "0.4.0",
+      "rust_version": "1.63.0"
+    },
+    {
+      "name": "crc32fast",
+      "version": "1.5.2",
+      "rust_version": "1.63"
+    },
+    {
+      "name": "hashbrown",
+      "version": "0.14.5",
+      "rust_version": "1.63.0"
+    },
+    {
+      "name": "libm",
+      "version": "0.2.16",
+      "rust_version": "1.63"
+    },
+    {
+      "name": "getrandom",
+      "version": "0.3.4",
+      "rust_version": "1.63"
+    },
+    {
+      "name": "itertools",
+      "version": "0.14.0",
+      "rust_version": "1.63.0"
+    },
+    {
+      "name": "rand",
+      "version": "0.9.4",
+      "rust_version": "1.63"
+    },
+    {
+      "name": "rand_core",
+      "version": "0.9.5",
+      "rust_version": "1.63"
+    },
+    {
+      "name": "rand_chacha",
+      "version": "0.9.0",
+      "rust_version": "1.63"
+    },
+    {
+      "name": "crossbeam-epoch",
+      "version": "0.9.20",
+      "rust_version": "1.61"
+    },
+    {
+      "name": "crossbeam-deque",
+      "version": "0.8.6",
+      "rust_version": "1.61"
+    },
+    {
+      "name": "ppv-lite86",
+      "version": "0.2.21",
+      "rust_version": "1.61"
+    },
+    {
+      "name": "memchr",
+      "version": "2.8.2",
+      "rust_version": "1.61"
+    },
+    {
+      "name": "ahash",
+      "version": "0.8.12",
+      "rust_version": "1.60.0"
+    },
+    {
+      "name": "rustls-pki-types",
+      "version": "1.15.1",
+      "rust_version": "1.60"
+    },
+    {
+      "name": "crossbeam-utils",
+      "version": "0.8.21",
+      "rust_version": "1.60"
+    },
+    {
+      "name": "foldhash",
+      "version": "0.2.0",
+      "rust_version": "1.60"
+    },
+    {
+      "name": "byteorder",
+      "version": "1.5.0",
+      "rust_version": "1.60"
+    },
+    {
+      "name": "aho-corasick",
+      "version": "1.1.5",
+      "rust_version": "1.60.0"
+    },
+    {
+      "name": "http",
+      "version": "1.5.0",
+      "rust_version": "1.57.0"
+    },
+    {
+      "name": "bytes",
+      "version": "1.12.1",
+      "rust_version": "1.57"
+    },
+    {
+      "name": "darling_core",
+      "version": "0.20.11",
+      "rust_version": "1.56"
+    },
+    {
+      "name": "displaydoc",
+      "version": "0.2.6",
+      "rust_version": "1.56.0"
+    },
+    {
+      "name": "zerocopy",
+      "version": "0.8.52",
+      "rust_version": "1.56.0"
+    },
+    {
+      "name": "streaming-iterator",
+      "version": "0.1.9",
+      "rust_version": "1.56"
+    },
+    {
+      "name": "darling_macro",
+      "version": "0.20.11",
+      "rust_version": "1.56"
+    },
+    {
+      "name": "serde_core",
+      "version": "1.0.229",
+      "rust_version": "1.56"
+    },
+    {
+      "name": "bitflags",
+      "version": "2.13.0",
+      "rust_version": "1.56.0"
+    },
+    {
+      "name": "darling",
+      "version": "0.20.11",
+      "rust_version": "1.56"
+    },
+    {
+      "name": "serde",
+      "version": "1.0.229",
+      "rust_version": "1.56"
+    },
+    {
+      "name": "strsim",
+      "version": "0.11.1",
+      "rust_version": "1.56"
+    },
+    {
+      "name": "percent-encoding",
+      "version": "2.3.2",
+      "rust_version": "1.51"
+    },
+    {
+      "name": "arrayvec",
+      "version": "0.7.7",
+      "rust_version": "1.51"
+    },
+    {
+      "name": "nom",
+      "version": "7.1.3",
+      "rust_version": "1.48"
+    },
+    {
+      "name": "base64",
+      "version": "0.22.1",
+      "rust_version": "1.48.0"
+    },
+    {
+      "name": "typenum",
+      "version": "1.20.1",
+      "rust_version": "1.41.0"
+    },
+    {
+      "name": "pin-project-lite",
+      "version": "0.2.17",
+      "rust_version": "1.37"
+    },
+    {
+      "name": "encoding_rs",
+      "version": "0.8.35",
+      "rust_version": "1.36"
+    },
+    {
+      "name": "portable-atomic",
+      "version": "1.13.1",
+      "rust_version": "1.34"
+    },
+    {
+      "name": "cfg-if",
+      "version": "1.0.4",
+      "rust_version": "1.32"
+    },
+    {
+      "name": "paste",
+      "version": "1.0.15",
+      "rust_version": "1.31"
+    },
+    {
+      "name": "unit-prefix",
+      "version": "0.5.2",
+      "rust_version": "1.31.0"
+    },
+    {
+      "name": "rustversion",
+      "version": "1.0.22",
+      "rust_version": "1.31"
+    },
+    {
+      "name": "equivalent",
+      "version": "1.0.2",
+      "rust_version": "1.6"
+    }
+  ],
+  "ml_crates_in_no_ml_tree": [],
+  "native_dependencies_in_no_ml_tree": [
+    "tree-sitter-language",
+    "tree-sitter-javascript",
+    "onig_sys",
+    "tree-sitter-java",
+    "tree-sitter-c",
+    "dirs-sys",
+    "tree-sitter",
+    "tree-sitter-go",
+    "tree-sitter-typescript",
+    "libsqlite3-sys",
+    "tree-sitter-python",
+    "tree-sitter-cpp",
+    "tree-sitter-rust"
+  ]
+}

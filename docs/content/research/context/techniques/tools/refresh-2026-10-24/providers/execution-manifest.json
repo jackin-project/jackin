@@ -1,0 +1,15 @@
+{
+  "utc": "2026-10-24T01:55:56.091472+00:00",
+  "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/providers",
+  "command": [
+    "python",
+    "cache_scenarios.py"
+  ],
+  "python": "3.12.14",
+  "exit_code": 0,
+  "paid_requests": 0,
+  "network_requests": 0,
+  "base_repository_revision": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+  "script_sha256": "169a6db45a385190580c915ae61f73e0f2f777ac18f46c7e4185c85a1c6ff562",
+  "limitation": "Synthetic arithmetic only, not tokenization, actual provider bills, quota, host integration, latency, quality or product benchmark."
+}

@@ -1,0 +1,7 @@
+python 3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]
+headroom 0.41.0 /workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/venv/lib/python3.12/site-packages/headroom/__init__.py
+compiled_core /workspace/scratch/1335a158b2a9/research/headroom-lemoncrow/venv/lib/python3.12/site-packages/headroom/_core.abi3.so
+{"path": "compress.py", "package_source_equal": true, "sha256": "5dcf51dc0b4349dd53e68deedcac7070ccbbfca2789807a214b5b1ccf230ef77"}
+{"path": "transforms/kompress_compressor.py", "package_source_equal": true, "sha256": "3446a8446723d65a3799dcdf77025572007ffb4948d62f7953edf3d5bc065c8f"}
+{"path": "transforms/content_router.py", "package_source_equal": true, "sha256": "96ded380886d2f491f1441dd2d510f4d73ad0bc978e7ebd53e45912fad4b6b45"}
+{"probe": "parsed_json_duplicate_key_roundtrip", "result": true}

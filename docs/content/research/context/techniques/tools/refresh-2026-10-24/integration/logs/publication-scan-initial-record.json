@@ -1,0 +1,56 @@
+{
+  "head_parent": "9971e26249c2a601912419c84aad99980f88d28b",
+  "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+  "staged_tree": "b9d36770704e7adf4045b4116247884d1cc0a27b",
+  "research_files_against_main": 405,
+  "source_boundary": "Fresh isolated Git/index/worktree from exact staged tree; original object store is read-only alternate; no source/config mutation and no credential validation/update requests. Explicit verified Git identity supplied to the isolated process.",
+  "environment_overrides": {
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_AUTHOR_NAME": "Alexey Zhokhov",
+    "GIT_AUTHOR_EMAIL": "alexey@zhokhov.com",
+    "GIT_COMMITTER_NAME": "Alexey Zhokhov",
+    "GIT_COMMITTER_EMAIL": "alexey@zhokhov.com",
+    "XDG_CACHE_HOME": "/workspace/scratch/1335a158b2a9/tooling/security-cache"
+  },
+  "whitespace_check": {
+    "command": [
+      "git",
+      "-c",
+      "core.whitespace=cr-at-eol",
+      "diff",
+      "--cached",
+      "--check",
+      "--",
+      ".",
+      ":(exclude)docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/**"
+    ],
+    "exit_code": 0,
+    "scope": "Recognizes retained RFC4180 CRLF records and excludes byte-identical raw captured logs from source whitespace styling only. Secret scanners include all staged data."
+  },
+  "commands": [
+    {
+      "scanner": "kingfisher",
+      "command": [
+        "kingfisher",
+        "scan",
+        ".",
+        "--staged",
+        "--no-validate",
+        "--redact",
+        "--no-update-check",
+        "--baseline-file",
+        ".kingfisher-baseline.yml"
+      ],
+      "cwd": "/tmp/jackin-research-scan-8gatbffu",
+      "started_utc": "2026-10-24T08:57:41.694075+00:00",
+      "finished_utc": "2026-10-24T08:57:47.142200+00:00",
+      "duration_seconds": 5.448,
+      "exit_code": 200,
+      "log": "/workspace/scratch/1335a158b2a9/tooling/logs/publication-scan-kingfisher.log",
+      "log_sha256": "5d8a9caaa097cab7f5e8b7b4e016905c385093e120603a701922d861493c0e32",
+      "blobs_scanned": 355,
+      "enumeration_errors": false
+    }
+  ]
+}

@@ -1,216 +1,153 @@
 ---
-title: "16 — Validation Harness: the No-Quality-Loss Proof Protocol"
-description: "Runnable paired-task protocol for proving token savings, task quality, latency, safety, and statistical confidence."
+title: "16 — Validation harness and acceptance protocol"
+description: "A staged fixed-model experiment for acceptance, all-attempt cost, latency, fidelity, recovery, and statistically defensible promotion."
 ---
+
+**Research state:** Current
+
+Source cutoff: **2026-10-24T01:15:00Z**. This is a proposed paid-task protocol plus executed offline/component evidence. It does not claim that new model trials ran.
 
 ## Summary
 
-This file is a runnable protocol, not a literature review.
-Any technique or stack in this dossier earns "no quality loss" only by passing this harness.
+A candidate must preserve correctness and permission boundaries, reduce the cost of accepted work after failures and overhead, and fit the latency profile. A small pilot can discover decisive failures. It cannot prove equivalence because a significance test did not reject the null.
 
-- **Paired-task A/B**: same ≥12 tasks per arm (baseline vs technique), headless `claude -p`
- runs, objective pass/fail checks, usage read from the JSON result envelope.
-- **Decision rule**: non-inferiority on success rate with a 5-percentage-point margin at n=12
- (screening) or n=30 (confirmation); cost compared only between arms with statistically
- indistinguishable success.
-- **Six canary classes** target the known compression failure modes: negation, ordering, numeric
- precision, "don't do X" constraints, multi-step sequences, caveat retention — each with an
- exact string-level assertion.
-- **Tokens by class** come from `usage` in `claude -p --output-format json` (plus OTel or session
- JSONL for per-call decomposition); dollars are computed with the live price table in
- [01 — Token Economics and Measurement](/research/context/techniques/01-economics-and-measurement/).
-- A technique is **NEGATIVE-COST** only if it wins cost *and* its success rate is ≥ baseline at
- n≥30 — the bar folklore numbers never clear.
+The previous automatic 5-point non-inferiority gate at 12/30 tasks is withdrawn. The canonical default-promotion gates for a new complex optimizer are in [tools 07](/research/context/tools/07-evidence-and-claims/): zero identified new critical failures; one-sided 95% acceptance lower bound above −1 point; one-sided 95% upper bound on its all-attempt cost-per-accepted-task ratio at most 0.80; and whole-task p95 no worse than +10%, absent an explicitly chosen tradeoff profile. Insufficient precision leaves the optimizer experimental or provisional. Native or simple changes retain proportionate conformance checks.
 
 ## Question and scope
 
-What paired-task protocol can prove lower token use with non-inferior quality, bounded latency, and reliable rollback?
+How should Jackin test the actual proposed integration without substituting local token counts, easy task completion or a proxy health check for useful accepted work?
 
 ## Method
 
-The protocol runs paired baseline and candidate tasks from identical repository state, records provider usage and latency, applies objective acceptance checks, and rejects any quality regression.
+Use staged gates. Keep selected model, reasoning effort and auth route fixed within a comparison. Pin agent/optimizer builds, instruction/schema hashes, task commits, native tool behavior and outcome criteria before executing the task matrix. Any model-routing experiment requires its own separately authorized treatment.
 
 ## Findings
 
-### 1. Design
+### Stage 1: eligibility and activation
 
-Two arms, identical except for the technique under test:
+Verify license/distribution mode, reproducible package identity, runtime features and host support. Start in a disposable explicit configuration directory and worktree. Capture which hooks fire and exactly what reaches the model. A listening process or reduced dashboard number does not prove the intended mechanism activated.
 
-- **Arm A (baseline):** default Claude Code settings, no style compression, default context
- habits, fixed model + effort.
-- **Arm B (technique):** baseline + exactly one technique (or one composed stack — stacks are
- validated as a unit because savings interact).
+Separate the arms:
 
-Run all tasks in both arms, fresh session per task (no cross-task contamination), same repo
-fixture state per task (reset via git between runs). Order randomized; one run per task per arm
-per round to keep API nondeterminism comparable.
-
-Measured per task: success (objective check), $ per task (usage × live prices), tokens by class
-(uncached input / cache write / cache read / output), turns (assistant API calls), wall time.
-
-### 2. Task suite (n = 12, objective checks)
-
-Tasks are repo-generic; instantiate against any pinned fixture repo (for this repo, pin a commit
-and use a worktree). Each has a deterministic checker — no judge needed for the primary metric.
-
-| # | Task prompt (abridged) | Objective check |
-|---|---|---|
-| 1 | Fix the failing test `&lt;T&gt;` (introduce a known 1-line bug first) | `cargo nextest run &lt;T&gt;` exits 0 |
-| 2 | Add a unit test covering function `&lt;F&gt;`'s error branch | new test exists and fails when branch is broken, passes otherwise |
-| 3 | Rename symbol `&lt;S&gt;` to `&lt;S2&gt;` across the crate | `grep -rw &lt;S&gt; src/` empty AND `cargo check` exits 0 |
-| 4 | Explain what `&lt;module&gt;` does and list its public functions | answer contains all `pub fn` names (scripted set comparison) |
-| 5 | Find where config value `&lt;K&gt;` is parsed; report file:line | reported location matches `grep -n` ground truth |
-| 6 | Apply a provided 20-line spec diff to `&lt;file&gt;` | `git diff` equals expected patch modulo whitespace |
-| 7 | Write a CLI subcommand `&lt;cmd&gt;` per 10-line spec | scripted invocation produces specified stdout |
-| 8 | Summarize the last 5 commits' intent in ≤5 bullets | all 5 commit subjects' key nouns present (set check) |
-| 9 | Identify the bug causing provided failing-test output | names the actual defective function (string match) |
-| 10 | Update a doc page to reflect a changed flag name | old flag absent, new flag present, page builds |
-| 11 | Add input validation rejecting negative `&lt;param&gt;` | property test with negative input now errors; positive path unchanged |
-| 12 | Triage: which of 3 provided diffs introduced the regression | names the correct diff |
-
-Success = checker exit 0. Tasks 4, 8, 9, 12 use scripted string/set assertions (still objective;
-no LLM judge). If a task needs judgment (rare), use the rubric judge in §5 — but never for the
-headline number.
-
-### 3. Canary tasks (compression failure modes)
-
-Run in **both arms**; any Arm-B-only failure is a quality regression regardless of the task
-suite score. Exact assertions:
-
-| Canary | Prompt core | Assertion (scripted) |
-|---|---|---|
-| C1 Negation | "List the steps to deploy. Do NOT include the rollback step." | output lacks "rollback" content step; includes deploy steps |
-| C2 Ordering | "Print migration steps; backup MUST precede schema drop." | index("backup") < index("drop") in the answer |
-| C3 Numeric precision | "The timeout is 4.75 seconds; write the config snippet." | literal `4.75` present (not 4.7, 5, or 4750ms unless converted correctly) |
-| C4 Don't-do-X | "Refactor this function. Do not change its public signature." | signature line byte-identical post-run |
-| C5 Multi-step | 7-step setup where step 5 depends on step 3's output | all 7 steps present, dependency order preserved |
-| C6 Caveat retention | Ask for a command that has a destructive flag; reference answer carries a warning | warning semantics present in answer (keyword set) |
-
-Rationale: these are precisely what register compression (caveman/wenyan), terse-output prompts,
-summarization, and aggressive pruning are most likely to silently drop — short connectives,
-negations, and qualifiers carry disproportionate meaning per token ([04 — Style and Language Compression — Beyond Caveman](/research/context/techniques/04-style-and-language-compression/)).
-
-### 4. Runner (concrete)
-
-Headless driver; one invocation per task per arm. `claude -p` returns a JSON envelope with the
-result text and cumulative `usage` (the same fields as the API usage object).
-
-```bash
-#!/usr/bin/env bash
-# run_arm.sh &lt;arm-name&gt; &lt;settings-dir&gt; &lt;tasks.tsv&gt; &lt;out.jsonl&gt;
-set -euo pipefail
-ARM=$1; SETTINGS=$2; TASKS=$3; OUT=$4
-while IFS=$'\t' read -r ID PROMPT CHECK; do
- git -C fixture reset --hard "$FIXTURE_SHA" -q
- R=$(CLAUDE_CONFIG_DIR="$SETTINGS" claude -p "$PROMPT" \
- --output-format json --max-turns 40 --cwd fixture 2>/dev/null)
- PASS=0; (cd fixture && bash -c "$CHECK") && PASS=1
- jq -nc --arg id "$ID" --arg arm "$ARM" --argjson pass "$PASS" \
- --argjson r "$R" \
- '{id:$id, arm:$arm, pass:$pass,
- usage:$r.usage, cost_usd:$r.total_cost_usd,
- turns:$r.num_turns, duration_ms:$r.duration_ms}' >> "$OUT"
-done < "$TASKS"
-```
-
-Technique arms are realized as a separate `CLAUDE_CONFIG_DIR` (own settings.json, hooks,
-CLAUDE.md, plugins) so arms cannot leak into each other. For techniques that are session habits
-rather than config (e.g. "/clear between tasks"), encode the habit in the driver, not the prompt.
-
-Dollars: prefer `total_cost_usd` from the envelope; recompute from `usage` × the price table
-([01 — Token Economics and Measurement](/research/context/techniques/01-economics-and-measurement/) §1) as a cross-check. Per-call class decomposition when needed:
-enable OTel (`claude_code.token.usage` by `type`) or parse the session JSONL **deduplicating by
-`message.id`** (trap documented in [02 — Baseline audit of the research environment](/research/context/techniques/02-baseline-audit/) §1).
-
-### 5. Judging
-
-- **Primary: objective checkers only** (above). Tests pass, diff correct, string assertions.
-- **Secondary (only where unavoidable):** LLM judge, fixed rubric, judge model ≠ tested model
- family where possible; rubric: task satisfied (0/1), constraints respected (0/1), factual
- errors (count), missing caveats (count). Judge sees both arms' outputs blinded and shuffled;
- ties broken by a second judge run with order swapped. Judge verdicts never override an
- objective checker.
-
-### 6. The statistical bar for "no quality loss"
-
-Success rates p_A, p_B over n tasks/arm. Declare **no quality loss** when Arm B is
-*non-inferior* with margin δ = 5 percentage points:
-
-- **Screening (n = 12):** require `successes_B ≥ successes_A − 1` AND zero canary regressions.
- Power is honestly low at n=12 — this only filters out gross degradation (it will catch drops
- ≳25pp reliably, not 10pp).
-- **Confirmation (n = 30, required before a technique enters a recommended stack):** one-sided
- bootstrap (10,000 resamples of paired per-task outcomes) for Δ = p_A − p_B; require the 95th
- percentile of Δ < 5pp, plus zero canary regressions in 3 repetitions of the canary set.
-- **Cost comparison is only valid between arms passing the bar:** report median and mean $/task
- with bootstrap 95% CIs, and tokens by class so the saving's *location* is visible (a claimed
- output saving showing up as cache-read movement means the mechanism is misattributed —
- investigate before believing).
-
-Paired bootstrap (tasks are paired across arms) in ~15 lines:
-
-```python
-import json, random, sys
-rows = [json.loads(l) for l in open(sys.argv[1])]
-A = {r['id']: r for r in rows if r['arm']=='A'}
-B = {r['id']: r for r in rows if r['arm']=='B'}
-ids = sorted(set(A) & set(B)); n = len(ids)
-deltas = []
-for _ in range(10_000):
- s = [random.choice(ids) for _ in range(n)]
- deltas.append(sum(A[i]['pass'] for i in s)/n - sum(B[i]['pass'] for i in s)/n)
-deltas.sort
-print(f"Δ success (A−B) p95 = {deltas[int(.95*10_000)]:.3f} (non-inferior if < 0.05)")
-print(f"cost/task A median {sorted(A[i]['cost_usd'] for i in ids)[n//2]:.3f} "
- f"B median {sorted(B[i]['cost_usd'] for i in ids)[n//2]:.3f}")
-```
-
-### 7. Per-technique falsification experiments
-
-Every technique record in files [04 — Style and Language Compression — Beyond Caveman](/research/context/techniques/04-style-and-language-compression/) through [14 — Frontier — unrealistic but maybe real](/research/context/techniques/14-frontier-ideas/) names its falsification experiment; they all reduce to an
-instantiation of this harness:
-
-- **Style layers (caveman/wenyan):** arms differ only in the style hook; canaries C1–C6 are the
- decisive part (register compression's failure mode is dropped qualifiers, not wrong code).
-- **Context pruning/masking:** Arm B evicts stale tool results; add task variants that *require*
- recalling early-session facts — tests whether eviction drops load-bearing history.
-- **Model routing:** Arm B routes named subtasks to a cheaper model; the task suite must include
- the routed task class (e.g. tasks 4, 5, 8 for Haiku exploration).
-- **Caching techniques:** quality-neutral by construction (identical tokens, different pricing) —
- validation is purely arithmetic: verify `cache_read_input_tokens` moved as predicted, success
- untouched.
-- **Effort/thinking budget cuts:** the highest-risk class (touches reasoning itself). Confirmation
- n=30 mandatory; include tasks 1, 9, 11, 12 (the reasoning-heavy ones).
-
-### 8. Where to read the numbers (recap)
-
-| Surface | Use |
+| Arm family | Treatments kept distinct |
 |---|---|
-| `claude -p --output-format json` envelope | per-run usage, `total_cost_usd`, turns — the harness's primary source |
-| API `usage` object fields | ground truth class decomposition (01 §4) |
-| `/cost`, `/context` | interactive spot checks |
-| OTel `claude_code.token.usage` / `cost.usage` | fleet dashboards; per-`agent.name` attribution |
-| Session JSONL | post-hoc per-call analysis (dedup by `message.id`; thinking is redacted — infer per 02 §6) |
+| Native | Real host tools, existing truncation/cache/compaction/discovery; no optimizer |
+| Output/implementation policy | Actual Caveman skill, actual Ponytail plugin, Jackin adaptation |
+| RTK | OSS stdin diagnostic filter; actual command-rewriting hook; BUSL engine/proxy if separately eligible |
+| Headroom | Selected Rust transforms with recorded features; full proxy with recorded cache/retrieval mode |
+| LeanCTX | Restricted read/search MCP; Preview embedded facade after feasibility gates |
+| LemonCrow | Current Runtime Lite restricted retrieval; full authorized runtime only as its own product surface |
+| Caveman input | Eligible engine/proxy separately from response skill |
+| Composition | Individual qualified components plus their exact combined order and state policy |
+
+Do not compare a proxy in aggressive token mode against a cache-preserving library and label them the same treatment. Do not replace the baseline's bounded read with an imaginary full-file dump.
+
+### Stage 2: free conformance and decisive failure probes
+
+| Risk | Required fixture and outcome |
+|---|---|
+| Execution semantics | Quotes, pipes, redirects, environment, cwd, command substitution, &&/||, exit status, stdout/stderr, signals, partial output; native producer executes once |
+| Exact bytes | CRLF, Unicode, missing final newline, binary/invalid UTF-8, machine JSON/porcelain, over-size output; declared passthrough or explicit failure |
+| Code and diff fidelity | Header-like hunk content, truncated patch, renamed files, compiler context, successful warnings, malformed syntax; no misleading complete result |
+| Retrieval | Missing, expired, refused and oversized handles; path/version/hash provenance; reconstruction outcome visible |
+| Model exposure | Repeat read, changed content, compaction, resume with a fresh model context, new epoch, different agent, branch switch and concurrent worktree |
+| Permissions | Denied read stays denied; no executable fallback bypass; tool output cannot escalate into policy; full read cannot disclose another scope |
+| Operations | Cold start/index build, warm calls, restart, cancellation, interrupted writes, resource caps, stale cache and uninstall/rollback |
+
+Existing RTK/LeanCTX and the other product probes cover specified subsets; their exact records are linked on the product pages. Missing host paths remain unexecuted. Any critical corruption or permission/recovery regression blocks an arm before paid trials.
+
+The structured Headroom BFCL checker inspection illustrates why the grader also needs a probe: its published function accepted a wrong function call containing just one expected argument substring. Our offline counterexample is retained in the evaluation artifacts.
+
+### Stage 3: representative pilot, then confirmation
+
+Use 12–30 diverse tasks as a **pilot design range**, not a universal sample-size requirement. Sample from intended work, including:
+
+| Task family | Acceptance evidence |
+|---|---|
+| Rust error-path repair | Reported failure reproduced; focused regression fails before/passes after; relevant existing checks remain green |
+| Multi-crate rename/refactor | All affected public callers/config/tests updated; architectural review; build and behavior checks |
+| TUI/input/rendering change | Event/state and visual behavior checked; no lost accessibility or interaction requirement |
+| TypeScript/Java investigation | Correct causal explanation and source evidence; no guessed location accepted by keyword alone |
+| CLI/configuration change | Exact stdout/stderr/exit semantics, malformed input, compatibility requirement and docs behavior |
+| Long-session continuation | Facts needed after compaction/restart recovered with correct provenance |
+| Concurrent worktrees/delegates | Distinct roots, permissions and exposure histories; no cross-task contamination |
+| Docs/explanation/review | Complete factual requirements and caveats under a blinded rubric; readability and verification quality |
+| Large diagnostics/retrieval | Relevant warning/failure preserved and acted on; native truncation control included |
+| No-op/small task | Optimizer overhead and nonactivation counted without excluding the case |
+
+A fixed expected patch is appropriate only when the task truly requires that exact edit. Ignoring whitespace is unsafe for whitespace-sensitive formats. Merely naming a function or repeating commit nouns is insufficient for explanatory acceptance. Hidden tests are valuable but do not prove security, maintainability or requirement coverage alone.
+
+### Randomization and isolation
+
+Pair task starts by repository commit and dirty patch. Randomize arm order within task/round, or use a recorded interleaving schedule when full randomization is impractical. Repetitions are clustered within task; multiple seeds on one task remain one task family. Separate pilot tuning data from held-out confirmation.
+
+Cross two conditions: genuinely cold first use, including index/model loading and cache writes; and warm repeated use with explicitly retained state. Avoid giving the candidate warmed provider prefixes while always running the baseline first. Control machine load, concurrency, provider route, timeout budget, agent version and model alias date. Record deviations rather than silently replacing the affected attempt.
+
+Use separate disposable worktrees instead of destructive reset of the user's checkout. Treat task prompts and repository files as untrusted input to the runner. Invoke approved checker argv, not an arbitrary shell expression taken from an unreviewed task row.
+
+### Attempt ledger
+
+~~~json
+{
+  "task_id": "pinned-fixture",
+  "pair_id": "task-round",
+  "arm": "native-or-candidate",
+  "attempt_id": "unique",
+  "source_commit": "exact",
+  "agent_digest": "exact",
+  "optimizer_digest": "exact-or-none",
+  "provider_route": "api-key-or-specified-subscription",
+  "model": "selected-model",
+  "effort": "selected-effort",
+  "cache_condition": "cold-or-warm",
+  "accepted": false,
+  "failure_class": "ungraded",
+  "provider_cost_usd": null,
+  "usage_receipt_paths": [],
+  "child_attempt_ids": [],
+  "elapsed_ms": null,
+  "activation_verified": false
+}
+~~~
+
+A real run adds task/permission/profile/schema hashes, optimizer settings, grader revision/output, patch, actual loaded features, resource timings and failure reasons. Record every attempt before launch so setup crashes and timeouts cannot disappear. Preserve zero versus unknown. Include rejected patches, all provider-billed retries, child agents, recovery, compaction and auxiliary judging in the economic ledger.
+
+### Statistical plan
+
+Let acceptance difference be candidate minus baseline. Predeclare a paired or clustered non-inferiority method and power target based on pilot discordance, expected effect and intended task distribution. A one-sided 95% lower bound above −0.01 is the statistical uncertainty gate. Zero identified critical new failures remains a separate hard condition; a favorable average cannot buy off a known defect.
+
+A simple caution comes from a different, elementary endpoint: with zero observed independent failures, the exact one-sided 95% upper bound on their probability is <code>1 − 0.05^(1/n)</code>. It is about 22.1% at n=12, 9.5% at n=30 and 1.0% at n=299. This is **not** the paired acceptance sample-size calculation; it shows why thirty clean examples cannot establish a tiny rare-failure probability. Repeated correlated tasks weaken that inference further.
+
+For economics, resample paired **task clusters**, preserving all repetitions, failures and child costs. Compute total spend divided by accepted outcomes inside each resample; handle zero acceptances explicitly. Report the point estimate, upper confidence bound, equal-task-weighted sensitivity and outlier contributions. Unknown receipts prevent a complete economic qualification. Do not replace missing bills with a local character estimate.
+
+Use an interval method appropriate to the acceptance data; a naïve bootstrap on all-identical pilot outcomes can produce a misleading zero-width interval. Small task counts need conservative methods and more representative data, not more bootstrap iterations.
+
+Predeclare multiplicity handling for many arms and stopping rules for pilot failures. Tune on pilots, then freeze. Do not change acceptance margins, exclusions or configuration after seeing confirmation outcomes. Report both all-attempt intent-to-treat economics and any clearly labeled diagnostic clean subset.
+
+### Latency, human review and online signals
+
+Measure end-to-end task completion, p50/p95 with uncertainty, provider TTFT, tool latency, recovery, cancellation, index/build time and parallel contention. Sum of all agent runtimes is not elapsed wall time. Assign absolute cold/warm startup and transform budgets before trials, based on the chosen deployment profile.
+
+Blind reviewers to arm names and randomize output order. Deterministic checks lead where they encode the requirement; rubric review fills their gaps. An LLM judge may assist after calibration against human-labeled cases, but it cannot overrule a failing objective requirement. Count its tokens and human review time.
+
+After offline promotion, deploy narrowly with activation/escape/recovery counters, sampled accepted-patch review and rollback triggers. Online monitoring does not repair an invalid offline comparison. [Governance](/research/context/techniques/25-meta-cost-governance-and-online-quality/).
 
 ## Implications for jackin❯
 
-For jackin❯, the validation harness: the no-quality-loss proof protocol evidence identifies which mechanisms are safe to adopt directly and which still require workload-specific validation.
+The smallest decisive next experiments are:
+
+1. Native captured diagnostic versus RTK OSS stdin filter, with actual host output caps and exact diff/machine-output escape paths.
+2. Native exact read/search versus one scoped retrieval backend on tasks requiring repeated reads across compaction and worktree changes.
+3. Native tool discovery versus selected schema strategy, including extra lookup turns and changed cache writes.
+4. Native concise-complete guidance versus the actual upstream style/policy, including required caveats, full caller coverage and readable code.
+5. Only then, the combined candidate versus native, with all overhead and failure costs retained.
+
+These are proposed work packages. Current evidence authorizes prioritization, not a fabricated completed paid experiment.
+
+## Executed validation and artifacts
+
+The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md">evaluation pack</RepoFile> records source/harness inspection, public raw-data reaggregation and offline accounting tests. Product packs record actual binary/API fixtures and incomplete builds. No source build or unit test is presented as model-quality evidence.
 
 ## Limitations and unknowns
 
-Quantitative conclusions are workload- and model-specific. Re-measure volatile provider inputs and validate transfers on representative jackin❯ tasks.
-
-## Sources
-
-| Item | Basis |
-|---|---|
-| `claude -p --output-format json` envelope fields (usage, total_cost_usd, num_turns) | Claude Code headless mode docs — code.claude.com/docs; field names cross-checked against local CLI output format |
-| Price table used for $ math | [01 — Token Economics and Measurement](/research/context/techniques/01-economics-and-measurement/) (live-) |
-| JSONL dedup + thinking-redaction traps | Local measurement, [02 — Baseline audit of the research environment](/research/context/techniques/02-baseline-audit/) |
-| δ=5pp, n=12/30, bootstrap procedure | Design choices (stated, not claimed as external standard); power statements are arithmetic over binomial outcomes — ESTIMATE |
-
-## Related work
-
-- [Token-optimization techniques dossier](/research/context/techniques/)
-- [Economics and measurement](/research/context/techniques/01-economics-and-measurement/)
-- [Context engine](/research/context/engine/)
+No current six-way matched accepted-task dataset exists in this workspace. Missing historical receipts and proprietary harnesses cannot be reconstructed from headline percentages. Confirmation sample size, absolute local latency budgets and cost-benefit estimates remain workload-specific design inputs.
