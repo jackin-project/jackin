@@ -11,6 +11,9 @@ mod macos_wait;
 mod secure_install;
 
 #[cfg(unix)]
+mod secure_source;
+
+#[cfg(unix)]
 pub use unix::current_dir;
 
 /// Pinned descriptor-relative inspection for private installation trees.
@@ -19,6 +22,15 @@ pub use unix::current_dir;
 /// select or authenticate the external pathname used to obtain the root.
 #[cfg(unix)]
 pub use secure_install::{CheckedInstallFile, CheckedInstallRoot, InstallFileKind};
+
+/// Pinned descriptor-relative inspection of a selected source tree.
+///
+/// These capabilities check current filesystem objects and retain the
+/// selected root's parent/name and relative directory edges for rechecking.
+/// They do not authenticate source, establish a complete build-input closure,
+/// or attest a build or running image.
+#[cfg(unix)]
+pub use secure_source::{CheckedSourceFile, CheckedSourceRoot};
 
 /// On macOS, inspect the current process's fixed SIGCHLD action, expose
 /// non-consuming direct-child selectors, and provide a diagnostic-only
