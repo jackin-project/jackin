@@ -7,15 +7,74 @@
 //! writers. It does not make a same-uid namespace hostile to its owner.
 
 use anyhow::{Context as _, ensure};
-use rustix::fs::{AtFlags, FlockOperation, Mode, OFlags, flock, open, statat};
+use rustix::fs::{
+    AtFlags, FlockOperation, Mode, OFlags, RenameFlags, fchmod, flock, fsync, ftruncate, open,
+    openat, renameat_with, statat, unlinkat,
+};
 use std::fs::{File, Metadata};
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct RootIdentity {
-    device: u64,
-    inode: u64,
+pub(super) struct RootIdentity {
+    pub(super) device: u64,
+    pub(super) inode: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct EntryStat {
+    pub(super) device: u64,
+    pub(super) inode: u64,
+    pub(super) mode: u32,
+    pub(super) owner: u32,
+    pub(super) links: u64,
+    pub(super) size: u64,
+}
+
+impl EntryStat {
+    pub(super) fn from_stat(stat: rustix::fs::Stat) -> anyhow::Result<Self> {
+        Ok(Self {
+            device: u64::try_from(i128::from(stat.st_dev))
+                .context("invalid marker entry device")?,
+            inode: u64::try_from(i128::from(stat.st_ino)).context("invalid marker entry inode")?,
+            mode: u32::try_from(i128::from(stat.st_mode)).context("invalid marker entry mode")?,
+            owner: u32::try_from(i128::from(stat.st_uid)).context("invalid marker entry owner")?,
+            links: u64::try_from(i128::from(stat.st_nlink))
+                .context("invalid marker entry link count")?,
+            size: u64::try_from(i128::from(stat.st_size)).context("invalid marker entry size")?,
+        })
+    }
+
+    pub(super) fn is_regular(self) -> bool {
+        self.mode & 0o170_000 == 0o100_000
+    }
+
+    pub(super) fn permissions(self) -> u32 {
+        self.mode & 0o7777
+    }
+}
+
+fn permission_mode(mode: u32) -> anyhow::Result<Mode> {
+    ensure!(
+        mode & !0o777 == 0,
+        "invalid marker entry permission mode: {mode:o}"
+    );
+
+    let mut permissions = Mode::empty();
+    for (bit, flag) in [
+        (0o400, Mode::RUSR),
+        (0o200, Mode::WUSR),
+        (0o100, Mode::XUSR),
+        (0o040, Mode::RGRP),
+        (0o020, Mode::WGRP),
+        (0o010, Mode::XGRP),
+        (0o004, Mode::ROTH),
+        (0o002, Mode::WOTH),
+        (0o001, Mode::XOTH),
+    ] {
+        permissions.set(flag, mode & bit != 0);
+    }
+    Ok(permissions)
 }
 
 impl RootIdentity {
@@ -128,6 +187,125 @@ impl MarkerPairLease {
             self.root.display()
         );
         Ok(())
+    }
+
+    pub(super) fn root_identity(&self) -> RootIdentity {
+        self.identity
+    }
+
+    pub(super) fn root_path(&self) -> &Path {
+        &self.root
+    }
+
+    pub(super) fn open_entry(&self, name: &str, flags: OFlags) -> anyhow::Result<File> {
+        self.ensure_root_identity()?;
+        let descriptor = openat(
+            &self.directory,
+            name,
+            flags | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+            Mode::empty(),
+        )
+        .with_context(|| format!("cannot open marker root entry {name} without following links"))?;
+        let file = File::from(descriptor);
+        self.ensure_root_identity()?;
+        Ok(file)
+    }
+
+    pub(super) fn create_entry(&self, name: &str, mode: u32) -> anyhow::Result<File> {
+        self.ensure_root_identity()?;
+        let native_mode = permission_mode(mode)?;
+        let descriptor = openat(
+            &self.directory,
+            name,
+            OFlags::WRONLY
+                | OFlags::CREATE
+                | OFlags::EXCL
+                | OFlags::NOFOLLOW
+                | OFlags::CLOEXEC
+                | OFlags::NONBLOCK,
+            native_mode,
+        )
+        .with_context(|| format!("cannot create marker root entry {name} exclusively"))?;
+        let file = File::from(descriptor);
+        let stat = EntryStat::from_stat(rustix::fs::fstat(&file)?)?;
+        if stat.permissions() != mode {
+            fchmod(&file, native_mode)
+                .with_context(|| format!("cannot set newly created marker entry mode: {name}"))?;
+        }
+        self.ensure_file_name_matches(name, &file)?;
+        Ok(file)
+    }
+
+    pub(super) fn ensure_file_name_matches(&self, name: &str, file: &File) -> anyhow::Result<()> {
+        self.ensure_root_identity()?;
+        let descriptor = EntryStat::from_stat(rustix::fs::fstat(file)?)?;
+        let named = self
+            .entry_stat(name)?
+            .ok_or_else(|| anyhow::anyhow!("marker root entry disappeared: {name}"))?;
+        ensure!(
+            descriptor == named,
+            "marker root entry identity changed while open: {name}"
+        );
+        self.ensure_root_identity()
+    }
+
+    pub(super) fn sync_file(&self, file: &File) -> anyhow::Result<()> {
+        self.ensure_root_identity()?;
+        fsync(file).context("cannot sync marker transaction file")?;
+        self.ensure_root_identity()
+    }
+
+    pub(super) fn sync_root(&self) -> anyhow::Result<()> {
+        self.ensure_root_identity()?;
+        fsync(&self.directory).context("cannot sync marker root directory")?;
+        self.ensure_root_identity()
+    }
+
+    pub(super) fn truncate_file(&self, file: &File) -> anyhow::Result<()> {
+        self.ensure_root_identity()?;
+        ftruncate(file, 0).context("cannot truncate transaction-owned marker file")?;
+        self.ensure_root_identity()
+    }
+
+    pub(super) fn set_file_mode(&self, file: &File, mode: u32) -> anyhow::Result<()> {
+        self.ensure_root_identity()?;
+        let native_mode = permission_mode(mode)?;
+        fchmod(file, native_mode).context("cannot set transaction-owned marker mode")?;
+        self.ensure_root_identity()
+    }
+
+    pub(super) fn rename_entry(&self, from: &str, to: &str) -> anyhow::Result<()> {
+        self.ensure_root_identity()?;
+        renameat_with(
+            &self.directory,
+            from,
+            &self.directory,
+            to,
+            RenameFlags::empty(),
+        )
+        .with_context(|| format!("cannot rename marker transaction entry {from} to {to}"))?;
+        self.ensure_root_identity()
+    }
+
+    pub(super) fn unlink_entry(&self, name: &str) -> anyhow::Result<()> {
+        self.ensure_root_identity()?;
+        unlinkat(&self.directory, name, AtFlags::empty())
+            .with_context(|| format!("cannot unlink marker transaction entry {name}"))?;
+        self.ensure_root_identity()
+    }
+
+    pub(super) fn entry_stat(&self, name: &str) -> anyhow::Result<Option<EntryStat>> {
+        self.ensure_root_identity()?;
+        let stat = match statat(&self.directory, name, AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(stat) => stat,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("cannot inspect marker root entry {name}"));
+            }
+        };
+        self.ensure_root_identity()?;
+        Ok(Some(EntryStat::from_stat(stat)?))
     }
 
     /// Refuses any reserved journal entry without opening or modifying it.
