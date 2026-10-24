@@ -17,6 +17,145 @@ use std::collections::BTreeMap;
 
 use std::path::Path;
 
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _};
+
+#[cfg(unix)]
+use anyhow::Context as _;
+
+#[cfg(unix)]
+struct PreparedContainerRoot {
+    path: std::path::PathBuf,
+    directory: std::fs::File,
+    device: u64,
+    inode: u64,
+}
+
+#[cfg(unix)]
+impl PreparedContainerRoot {
+    fn open(path: &Path) -> anyhow::Result<Self> {
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) => validate_container_root(&metadata, path)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let mut builder = std::fs::DirBuilder::new();
+                builder.recursive(true);
+                builder.mode(0o700);
+                builder.create(path).with_context(|| {
+                    format!("cannot create private container root {}", path.display())
+                })?;
+            }
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("cannot inspect container root {}", path.display()));
+            }
+        }
+
+        let descriptor = rustix::fs::open(
+            path,
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::DIRECTORY
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::empty(),
+        )
+        .map(std::fs::File::from)
+        .with_context(|| {
+            format!(
+                "cannot open container root {} without following its final component",
+                path.display()
+            )
+        })?;
+        let named = std::fs::symlink_metadata(path)
+            .with_context(|| format!("cannot recheck container root {}", path.display()))?;
+        let opened = descriptor
+            .metadata()
+            .context("cannot inspect opened container root")?;
+        validate_container_root(&named, path)?;
+        validate_container_root(&opened, path)?;
+        anyhow::ensure!(
+            named.dev() == opened.dev() && named.ino() == opened.ino(),
+            "container root identity changed while it was opened: {}",
+            path.display()
+        );
+
+        let lease = Self {
+            path: path.to_path_buf(),
+            directory: descriptor,
+            device: opened.dev(),
+            inode: opened.ino(),
+        };
+        lease.ensure_identity()?;
+        Ok(lease)
+    }
+
+    fn ensure_identity(&self) -> anyhow::Result<()> {
+        let opened = self
+            .directory
+            .metadata()
+            .context("cannot recheck opened container root")?;
+        let named = std::fs::symlink_metadata(&self.path)
+            .with_context(|| format!("cannot recheck container root {}", self.path.display()))?;
+        validate_container_root(&opened, &self.path)?;
+        validate_container_root(&named, &self.path)?;
+        anyhow::ensure!(
+            opened.dev() == self.device
+                && opened.ino() == self.inode
+                && named.dev() == self.device
+                && named.ino() == self.inode,
+            "container root identity changed during preparation: {}",
+            self.path.display()
+        );
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+fn validate_container_root(metadata: &std::fs::Metadata, path: &Path) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !metadata.file_type().is_symlink() && metadata.is_dir(),
+        "container root must be a non-symlink directory: {}",
+        path.display()
+    );
+    anyhow::ensure!(
+        metadata.uid() == rustix::process::geteuid().as_raw(),
+        "container root must be owned by the effective user: {}",
+        path.display()
+    );
+    anyhow::ensure!(
+        metadata.mode() & 0o022 == 0,
+        "container root must not be group- or other-writable: {}",
+        path.display()
+    );
+    Ok(())
+}
+
+#[cfg(not(unix))]
+struct PreparedContainerRoot;
+
+#[cfg(not(unix))]
+impl PreparedContainerRoot {
+    fn open(path: &Path) -> anyhow::Result<Self> {
+        std::fs::create_dir_all(path)?;
+        Ok(Self)
+    }
+
+    fn ensure_identity(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+fn prepare_container_directories(
+    root_guard: &PreparedContainerRoot,
+    home_dir: &Path,
+    jackin_state_dir: &Path,
+) -> anyhow::Result<()> {
+    root_guard.ensure_identity()?;
+    std::fs::create_dir_all(home_dir)?;
+    std::fs::create_dir_all(jackin_state_dir)?;
+    root_guard.ensure_identity()?;
+    Ok(())
+}
+
 impl RoleState {
     pub fn prepare(
         paths: &JackinPaths,
@@ -91,16 +230,17 @@ impl RoleState {
         agent: jackin_core::Agent,
     ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
         let root = paths.data_dir.join(container_name);
+        let root_guard = PreparedContainerRoot::open(&root)?;
         let gh_config_dir = root.join(".config/gh");
         let home_dir = root.join("home");
         let jackin_state_dir = root.join("state");
 
-        std::fs::create_dir_all(&home_dir)?;
-        std::fs::create_dir_all(&jackin_state_dir)?;
+        prepare_container_directories(&root_guard, &home_dir, &jackin_state_dir)?;
 
         let hosts_yml = gh_config_dir.join("hosts.yml");
         let github_context = github.clone();
         let bindings = capture_selected_account_sources(bindings, host_home, &root)?;
+        root_guard.ensure_identity()?;
 
         let host_home_path = host_home.to_path_buf();
         let root_path = root.clone();
@@ -183,6 +323,7 @@ impl RoleState {
 
             anyhow::Ok((gh_provision_outcome, auth_provisions))
         })?;
+        root_guard.ensure_identity()?;
 
         let mut auth = ProvisionedAuth::default();
         let mut auth_outcomes = BTreeMap::new();
@@ -204,6 +345,7 @@ impl RoleState {
             model: manifest.agent_model(agent).map(str::to_owned),
         };
 
+        root_guard.ensure_identity()?;
         Ok((
             Self {
                 root,

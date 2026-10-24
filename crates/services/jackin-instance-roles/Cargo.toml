@@ -28,6 +28,7 @@ jackin-instance-agents      = { workspace = true }
 jackin-instance-credentials = { workspace = true }
 
 anyhow = { workspace = true }
+rustix = { workspace = true, features = ["process"] }
 
 [features]
 test-support = []
