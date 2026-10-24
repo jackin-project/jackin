@@ -1,0 +1,75 @@
+{
+  "rtk-crates": {
+    "url": "https://crates.io/api/v1/crates/rtk/1.0.1",
+    "status": 404,
+    "body": "{\"errors\":[{\"detail\":\"crate `rtk` does not have a version `1.0.1`\"}]}"
+  },
+  "rtk-engine-crates": {
+    "url": "https://crates.io/api/v1/crates/rtk-engine/1.0.1",
+    "status": 404,
+    "body": "{\"errors\":[{\"detail\":\"crate `rtk-engine` does not exist\"}]}"
+  },
+  "lean-ctx-crates": {
+    "url": "https://crates.io/api/v1/crates/lean-ctx/3.11.4",
+    "status": 200,
+    "metadata": {
+      "num": "3.11.4",
+      "crate": "lean-ctx",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/yvgude/lean-ctx",
+      "homepage": "https://leanctx.com",
+      "checksum": "425390789a81473ed13df0f3293fe1a5954cd80b4fa77ef35aab34c5895f6f9f",
+      "created_at": "2026-10-11T21:46:43.711652Z",
+      "yanked": false,
+      "rust_version": null
+    }
+  },
+  "lean-ctx-embed-crates": {
+    "url": "https://crates.io/api/v1/crates/lean-ctx-embed/0.1.0",
+    "status": 404,
+    "body": "{\"errors\":[{\"detail\":\"crate `lean-ctx-embed` does not exist\"}]}"
+  },
+  "lean-ctx-bin-npm": {
+    "url": "https://registry.npmjs.org/lean-ctx-bin/3.11.4",
+    "status": 200,
+    "metadata": {
+      "name": "lean-ctx-bin",
+      "version": "3.11.4",
+      "license": "Apache-2.0",
+      "repository": {
+        "url": "git+https://github.com/yvgude/lean-ctx.git",
+        "type": "git",
+        "directory": "packages/lean-ctx-bin"
+      },
+      "homepage": "https://leanctx.com",
+      "dist": {
+        "shasum": "ff7c72b4715e2efa5bc53ca83a7558d4f170de69",
+        "tarball": "https://registry.npmjs.org/lean-ctx-bin/-/lean-ctx-bin-3.11.4.tgz",
+        "fileCount": 5,
+        "integrity": "sha512-x2Um1+nInMAv+ZGbX25SlBi92CPvQicGvC7HT8skuVBia0MFY4KXe4rFqlCZRS+teINOdLyA44QY/XWKFEHL6Q==",
+        "signatures": [
+          {
+            "sig": "MEYCIQDrWJrisygaoDUaTzyzBA7xHva+2uy4xlQuSD/0En1IggIhANdFQkAs3YYPQB+kSWDj7GxSUz8RGZ9Evxl8ZETMdgn+",
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+          },
+          {
+            "sig": "MEUCIDkiYu7ztNHil7WcLIh4EpXIdse8jj2HV9HjvfOqRMqvAiEAscH4XbSBFYwEk4FKNwyU6U+Mjp95b7hfX/8La18aZCA=",
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+          }
+        ],
+        "attestations": {
+          "url": "https://registry.npmjs.org/-/npm/v1/attestations/lean-ctx-bin@3.11.4",
+          "provenance": {
+            "predicateType": "https://slsa.dev/provenance/v1"
+          }
+        },
+        "unpackedSize": 23445
+      },
+      "scripts": {
+        "preinstall": "node preinstall.js",
+        "postinstall": "node postinstall.js"
+      }
+    }
+  },
+  "retrieved_at_utc": "2026-10-24T01:28:50Z"
+}

@@ -1,0 +1,470 @@
+{
+  "source_cutoff": "2026-10-24T01:15:00Z",
+  "verification_date": "2026-10-24",
+  "evidence_class": "tagged-source inspection; no claim of executing every source test",
+  "sources": [
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "Cargo.toml",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/Cargo.toml",
+      "sha256": "95ab10a9abb2f4f9e31d0c56e11877c82ba8f0b4fb237a885de658d3c3f267f2",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "Cargo.lock",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/Cargo.lock",
+      "sha256": "3542525eba4aa8798a2132188121e93f3a99cfd2363149ab2a70407ea1f7f4f3",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/lib.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/lib.rs",
+      "sha256": "53d051c380f717fc3cd7bdfa6e6b812105673806fe48dc7a68d1566356b7616e",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "engine/Cargo.toml",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/Cargo.toml",
+      "sha256": "053407d64513bd9366cdb62ab4946bd24476614005c301c69889b211df1c20c9",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "engine/LICENSE",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/LICENSE",
+      "sha256": "4e3d24d5ae066274a03b82b400b31ad057628c40911cd08aa5a19ff31787dc98",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "engine/src/lib.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/src/lib.rs",
+      "sha256": "33f05bd8b9e6b48c3a044d701a09ac2c2bb82d94a77de3027ddf11632342e066",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "engine/src/method.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/src/method.rs",
+      "sha256": "67a5b6e939c70c41b4a249d23ea285f667132397cd1f4ebc3d960213f0be0bc0",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "engine/builtin/default.toml",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/builtin/default.toml",
+      "sha256": "dc5d258e0abf720a17165b195a979a8d6f07d735320af48162fe3281214fb295",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "plugin/Cargo.toml",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/plugin/Cargo.toml",
+      "sha256": "4330bfb6a336f36a8971b48346253a5a9b101e1425b07ae90c7b9ea951da3216",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "text/Cargo.toml",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/text/Cargo.toml",
+      "sha256": "9b7588b504dfce9fd311d1e2ea1bdf1683e85a0c9bba1fbf2f566c1c33b960b7",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "text/src/lib.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/text/src/lib.rs",
+      "sha256": "c711aabf1961de3a3e9a31818c160eb3c42c68d31293eca4803df8e16f7165a6",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "proxy/Cargo.toml",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/proxy/Cargo.toml",
+      "sha256": "3da161d8abd19e02dd4112d314430772010f342013c439a3ca27ade4b207a337",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "proxy/LICENSE",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/proxy/LICENSE",
+      "sha256": "b77ec08c3c0d11672f7d10c3d9cdb032bae4f1dae06b24ed674a486804be40ef",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "proxy/README.md",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/proxy/README.md",
+      "sha256": "b97ab14a383ec9957573aadc5e4d4740a8dfac6e4587539625582eb687143f68",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/cmds/system/pipe_cmd.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/cmds/system/pipe_cmd.rs",
+      "sha256": "f1903288278ff0134e5cbe36a7963eaaa90a6422fda6474aa2379bbac15cf004",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/cmds/git/diff_cmd.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/cmds/git/diff_cmd.rs",
+      "sha256": "de21bfa8dcc0ff11ae8c32ff45ec0efb86806727b828f7e363aeaec485a29dc9",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/cmds/git/git_cmd.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/cmds/git/git_cmd.rs",
+      "sha256": "d2589f25bb1235c581beb3400015ab07874e43600e1a3ba74efc9052824264b0",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/core/retriever.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/core/retriever.rs",
+      "sha256": "0ccf1a2b049ed33c0414983ef4546171df408fa868028dfb57694a365d900277",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/core/tee.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/core/tee.rs",
+      "sha256": "ff167e0fee82eedf2ef7c49af833061059099f93a64a9157959d6fbc9e82129b",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/core/stream.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/core/stream.rs",
+      "sha256": "3953c190b2fe586374355c622adc57f3c7312836443f56a846e68f855c13fc61",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/core/config.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/core/config.rs",
+      "sha256": "4f9befbdf1a4ace06d7178b8aaac328a44071416c7dc40a23096262d96951789",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/core/telemetry.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/core/telemetry.rs",
+      "sha256": "e40bfc0abc09bd6c059401793f1cbd8fcb04d3c4d8eae0b6e9364734f3e87837",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/hooks/rewrite_cmd.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/hooks/rewrite_cmd.rs",
+      "sha256": "2d1185a8d2eafe0ddbc0dfd7bbfa03f296efa427c3bcc82e97357de7b9b1aa94",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/hooks/posthook.rs",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/hooks/posthook.rs",
+      "sha256": "aeb13266e6f9b2765f9813347071b06c7a2cf68daae5206ef4dd63e6f6646810",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/hooks/README.md",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/hooks/README.md",
+      "sha256": "78c3a67c0ff0293d2a527beddc78150b41fe7a99c5a10e8cc4de2478fcb7818b",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "docs/guide/getting-started/supported-agents.md",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/docs/guide/getting-started/supported-agents.md",
+      "sha256": "21a349deab0c7340c6270cd52e66d62865d4dcdc17da5ed00b20844f51d991ac",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "CHANGELOG.md",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/CHANGELOG.md",
+      "sha256": "aa04a7345fcb97c6db7135468d0437998d313249d4bebc0e2fe212e245bd297f",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "LICENSE.md",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/LICENSE.md",
+      "sha256": "e4f77f5ec9d509f0014ddefe2b81afac9a7d095cdff283348c680fb207d95746",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "LICENSE_MATRIX.toml",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/LICENSE_MATRIX.toml",
+      "sha256": "85cec4d2167eb8cba0493b0152ae7aafd75e89074ad4e1a306233e5e4d2b3a83",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "LICENSE",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/LICENSE",
+      "sha256": "16cbd2ce016ef3b37cb2dc50db37cba7c46a186b51a3f1ff3460fd2fad05f8f9",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "THIRD_PARTY_NOTICES",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/THIRD_PARTY_NOTICES",
+      "sha256": "8e7c3f6fef105ed301421a861b5b25e08335238fd53f43ba8fc92a24405fc05a",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "BENCHMARKS.md",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/BENCHMARKS.md",
+      "sha256": "3b17e295ee127512b16a57dd944b507d900c02c9bf740217fc2d225a7b370da8",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "CHANGELOG.md",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/CHANGELOG.md",
+      "sha256": "a3a48a99eabad104da641da0d7d8ce38194b382560843574f69249a4f20623cc",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/Cargo.toml",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/Cargo.toml",
+      "sha256": "a4cd44eeb45d9b365f7a6163bd5b02d5b38e489bcc79507c3ac7950973194839",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/Cargo.lock",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/Cargo.lock",
+      "sha256": "adb751a04610ce52a7338b4c0ad5a4e0b6e1c4cf5ac1fe4727fe29e512d2702f",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/crates/lean-ctx-embed/Cargo.toml",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/crates/lean-ctx-embed/Cargo.toml",
+      "sha256": "83eeac8d9fb16180a45e80fd5261b8442e6eb31e01549666b5d30243099f288f",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/crates/lean-ctx-embed/README.md",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/crates/lean-ctx-embed/README.md",
+      "sha256": "0b0e02e8f839cbcaa43edeb04237b781df5a76e0e59a10ce185654af3dcd53a9",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/crates/lean-ctx-embed/src/engine.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/crates/lean-ctx-embed/src/engine.rs",
+      "sha256": "800824aca97d0ed8434ec7c777720ccf4b7706debb6d59f291a1454d2fe63338",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/crates/lean-ctx-embed/src/lib.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/crates/lean-ctx-embed/src/lib.rs",
+      "sha256": "261ae962e0f9d7b54e95f563c9816635914a892a74163344156aef0ee69d927b",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/tools/registered/ctx_read.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/tools/registered/ctx_read.rs",
+      "sha256": "69b46ad4f216cb35a803491ede7606a3d3056f35bcec1fe6eff455aa6fe9d0d8",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/core/conversation.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/conversation.rs",
+      "sha256": "78e55cc0dd60789790d65890d67cc0ca619485e86a8d5537557ede44cd3a4053",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/core/agent_identity.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/agent_identity.rs",
+      "sha256": "2be8f24fba57ddcce47e60137daaba2c1b1d318a1bed2ae91f0674fb25b9171f",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/core/read_stub_index.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/read_stub_index.rs",
+      "sha256": "d2a1ba1515bc1a8a52111b2a938526e7ac362f2f05792b1dfa35e93559383d5e",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/server/compaction_sync.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/server/compaction_sync.rs",
+      "sha256": "34210b8ec150b6f98a832d8bfae91f3372ab02199b04791aaf220d9ca5aa25a5",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/core/config/sections.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/config/sections.rs",
+      "sha256": "8ae3f0abda1d24039c877a309edb0e32c576e345a5998be55d134183c2c9c375",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/server/server_handler.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/server/server_handler.rs",
+      "sha256": "24d1c0967c9eff36c0a8eb00e2ba5f93ebf7f5a055edf4d39bf36c49688a9723",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/cli/dispatch/server.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/cli/dispatch/server.rs",
+      "sha256": "5e7e09474c68bddffbedb5b0e0fc84cb99fa090e8fbd3f0bc63dc7ea966d89a8",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/core/tool_profiles.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/tool_profiles.rs",
+      "sha256": "a84fcfb2986ef671fc8bef2d61404f70af66eee601c39349705ba53989760792",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/core/archive.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/archive.rs",
+      "sha256": "415e71e86b8448e1a0d20bdc5cc595fc75d6a05ca8fcaca4ea9ff2eeced0f14b",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/server/reference_store.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/server/reference_store.rs",
+      "sha256": "f64f58b66d8a10ea0157bd3b13b050be2dcf88d29e93ffc14d1a3b932fd27612",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/core/recovery_verify.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/recovery_verify.rs",
+      "sha256": "15584a9a6c04c4145c48e8c88eecdaea3d29a84faa8a61663f39518603d68d49",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/uninstall/mod.rs",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/uninstall/mod.rs",
+      "sha256": "e4fae3231efb6f2f45fb1ce32654515023e99441d60d0b699c405108d4afbec6",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "packages/lean-ctx-bin/package.json",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/packages/lean-ctx-bin/package.json",
+      "sha256": "1f3cdf51cbfcdf8066e7e96d968c4ee9565cf74320a363dd0664a71f2c92f21b",
+      "worktree_matches_tag": true
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "docs/concepts/measurement-scope.md",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/docs/concepts/measurement-scope.md",
+      "sha256": "5793f6e01a74a1b155a82403c8418792e576142e19916155f7c8740667b6d8c0",
+      "worktree_matches_tag": true
+    }
+  ],
+  "web_sources": [
+    {
+      "url": "https://github.com/yvgude/lean-ctx/issues/1305",
+      "class": "vendor-transcribed historical external evaluation plus remediation targets",
+      "decision": "Retain +10.60% historical token result as attributed; no raw external harness recovered; target -55% is not a result."
+    },
+    {
+      "url": "https://github.com/yvgude/lean-ctx/issues/1319",
+      "class": "vendor proposed harness issue",
+      "decision": "Example JSON is not an experiment; closed status not outcome evidence."
+    },
+    {
+      "url": "https://wavect.io/blog/lean-ctx-agency-experience/",
+      "class": "external customer observational field report",
+      "decision": "July26 tracking snapshot; review date is not experimental refresh; tool-local estimates not current paired bills."
+    },
+    {
+      "url": "https://api.github.com/repos/rtk-ai/rtk/releases/latest",
+      "class": "official release metadata",
+      "tag": "v1.0.1",
+      "published_at": "2026-10-14T13:31:42Z",
+      "rechecked_on": "2026-10-24"
+    },
+    {
+      "url": "https://api.github.com/repos/yvgude/lean-ctx/releases/latest",
+      "class": "official release metadata",
+      "tag": "v3.11.4",
+      "published_at": "2026-10-11T21:31:12Z",
+      "rechecked_on": "2026-10-24"
+    }
+  ]
+}

@@ -1,0 +1,223 @@
+{
+  "public_http": {
+    "caveman_releases": {
+      "url": "https://api.github.com/repos/JuliusBrussee/caveman/releases?per_page=30",
+      "accessed_at_utc": "2026-10-24T01:28:39Z",
+      "status": 200,
+      "final_url": "https://api.github.com/repos/JuliusBrussee/caveman/releases?per_page=30",
+      "releases": [
+        {
+          "tag_name": "bin-v4.0.2",
+          "published_at": "2026-10-23T05:22:07Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "v4.0.1",
+          "published_at": "2026-10-13T18:34:04Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "v4.0.0",
+          "published_at": "2026-10-13T16:32:02Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "bin-v4.0.1",
+          "published_at": "2026-10-13T18:21:34Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "bin-v4.0.0",
+          "published_at": "2026-10-13T16:21:19Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "v3.2.0",
+          "published_at": "2026-10-08T05:42:14Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "middleware-ts-v1.0.1",
+          "published_at": "2026-10-08T05:16:11Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "bin-v2.1.0",
+          "published_at": "2026-10-08T05:26:41Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "bin-v2.0.2",
+          "published_at": "2026-10-04T01:50:00Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "v3.1.0",
+          "published_at": "2026-10-04T04:30:46Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "v3.0.0",
+          "published_at": "2026-09-30T19:25:17Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "sdk-ts-v1.2.0",
+          "published_at": "2026-09-30T22:22:05Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "sdk-python-v1.2.0",
+          "published_at": "2026-09-30T22:27:49Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "middleware-ts-v1.0.0",
+          "published_at": "2026-09-30T22:30:31Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "middleware-python-v1.0.0",
+          "published_at": "2026-09-30T22:34:52Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "contracts-v2.0.0",
+          "published_at": "2026-09-30T22:27:43Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "bin-v2.0.0",
+          "published_at": "2026-09-30T20:16:59Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "v2.7.0",
+          "published_at": "2026-09-15T04:01:16Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "bin-v1.1.7",
+          "published_at": "2026-09-15T01:20:27Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "v2.6.0",
+          "published_at": "2026-09-04T00:19:58Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "bin-v1.1.6",
+          "published_at": "2026-09-04T00:23:53Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "v2.5.0",
+          "published_at": "2026-09-02T13:40:03Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "bin-v1.1.5",
+          "published_at": "2026-09-02T13:43:33Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "v2.4.0",
+          "published_at": "2026-08-29T22:15:14Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "bin-v1.1.4",
+          "published_at": "2026-08-29T21:02:30Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "v2.3.1",
+          "published_at": "2026-08-23T09:01:48Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "v2.3.0",
+          "published_at": "2026-08-23T08:55:50Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "bin-v1.1.3",
+          "published_at": "2026-08-23T08:51:23Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "v2.2.0",
+          "published_at": "2026-08-20T11:20:50Z",
+          "prerelease": false,
+          "draft": false
+        },
+        {
+          "tag_name": "bin-v1.1.2",
+          "published_at": "2026-08-20T11:16:04Z",
+          "prerelease": false,
+          "draft": false
+        }
+      ]
+    },
+    "ponytail_releases": {
+      "url": "https://api.github.com/repos/DietrichGebert/ponytail/releases?per_page=10",
+      "accessed_at_utc": "2026-10-24T01:28:39Z",
+      "error": "HTTP Error 403: Forbidden"
+    },
+    "caveman_cli": {
+      "url": "https://registry.npmjs.org/@caveman-ai%2fcli",
+      "accessed_at_utc": "2026-10-24T01:28:39Z",
+      "status": 200,
+      "final_url": "https://registry.npmjs.org/@caveman-ai%2fcli",
+      "latest": "4.0.1"
+    },
+    "ponytail_package": {
+      "url": "https://registry.npmjs.org/@dietrichgebert%2fponytail",
+      "accessed_at_utc": "2026-10-24T01:28:39Z",
+      "status": 200,
+      "final_url": "https://registry.npmjs.org/@dietrichgebert%2fponytail",
+      "latest": "5.3.2"
+    }
+  },
+  "ponytail_connector_fallback": {
+    "via": "GitHub connector",
+    "url": "https://api.github.com/repos/DietrichGebert/ponytail/releases/latest",
+    "tag_name": "v5.3.2",
+    "published_at": "2026-10-16T23:15:15Z",
+    "prerelease": false,
+    "draft": false,
+    "html_url": "https://github.com/DietrichGebert/ponytail/releases/tag/v5.3.2",
+    "assets": [],
+    "accessed_on_utc": "2026-10-24",
+    "second_resolution_access_time": "not captured"
+  }
+}

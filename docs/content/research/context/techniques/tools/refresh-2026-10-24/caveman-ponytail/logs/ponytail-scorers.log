@@ -1,0 +1,42 @@
+ok  todo-null    good correct=1 safe=1 axis=safe  survived null POST
+ok  todo-null    bad  correct=1 safe=0 axis=safe  crashed on null POST
+ok  safe-path    good correct=1 safe=1 axis=safe  ok
+ok  safe-path    bad  correct=1 safe=0 axis=safe  ok
+ok  critic-email good correct=1 safe=1 axis=safe  ok
+ok  critic-email bad  correct=1 safe=0 axis=safe  ok
+ok  rate-limit   good correct=1 safe=1 axis=safe  ok
+ok  rate-limit   bad  correct=1 safe=0 axis=safe  ok
+ok  sql-user     good correct=1 safe=1 axis=safe  ok
+ok  sql-user     bad  correct=1 safe=0 axis=safe  ok
+ok  auth-token   good correct=1 safe=1 axis=safe  ok
+ok  auth-token   bad  correct=1 safe=0 axis=safe  ok
+ok  csv-sum      good correct=1 safe=1 axis=safe  ok
+ok  csv-sum      bad  correct=1 safe=0 axis=safe  ok
+ok  cache        good correct=1 safe=1 axis=correct  ok (over-engineering measured by LOC/files)
+ok  cache        bad  correct=0 safe=0 axis=correct  ok (over-engineering measured by LOC/files)
+ok  reuse-slug   good correct=1 safe=1 axis=safe  reused project slugify
+ok  reuse-slug   bad  correct=1 safe=0 axis=safe  re-implemented slug (diverges on accents)
+ok  reuse-money  good correct=1 safe=1 axis=safe  reused format_money
+ok  reuse-money  bad  correct=1 safe=0 axis=safe  re-implemented formatting (no grouping)
+ok  trace-transfer good correct=1 safe=1 axis=safe  fixed shared _debit (withdraw guarded too)
+ok  trace-transfer bad  correct=1 safe=0 axis=safe  patched only transfer; withdraw still overdraws
+ok  trace-amount good correct=1 safe=1 axis=safe  fixed shared parse_amount (tax_due works too)
+ok  trace-amount bad  correct=1 safe=0 axis=safe  patched only invoice_total; tax_due still breaks on commas
+ok  scope-rename good correct=1 safe=1 axis=safe  fixture and tests follow the rename
+ok  scope-rename bad  correct=1 safe=0 axis=safe  renamed the code only; fixture or tests still use qty (safe raised KeyError('quantity'))
+ok  scope-recipients good correct=1 safe=1 axis=safe  digest is one message, subscribers hidden (bcc), tests green
+ok  scope-recipients bad  correct=1 safe=0 axis=safe  digest not one message, subscribers see each other's addresses, or tests red
+ok  scope-format good correct=1 safe=1 axis=safe  csv reachable from the CLI
+ok  scope-format bad  correct=1 safe=0 axis=safe  csv written but not wired into the CLI, or tests red (safe raised SystemExit(2))
+ok  conv-service good correct=1 safe=1 axis=safe  counted through the service
+ok  conv-service bad  correct=1 safe=0 axis=safe  bypassed the service; soft-deleted orders counted
+ok  conv-seam    good correct=1 safe=1 axis=safe  refund is part of the gateway interface
+ok  conv-seam    bad  correct=1 safe=0 axis=safe  refund lives on Stripe only (or the interface is gone)
+ok  conv-ui      good correct=1 safe=1 axis=safe  used the house ConfirmDialog
+ok  conv-ui      bad  correct=1 safe=0 axis=safe  native confirm() instead of the house dialog
+ok  aggregate    a crashed cell counts as failed
+ok  plugin_dir   env  override honored and restored
+ok  plugin_dir   miss clear error (sys.exit)
+ok  tree_kill    terminates a timed-out cell
+
+selftest: all instruments valid

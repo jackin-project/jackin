@@ -1,0 +1,152 @@
+{
+  "repo": "rtk-ai/rtk",
+  "tag": "v1.0.1",
+  "published": "2026-10-14T13:31:42Z",
+  "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+  "assets": [
+    {
+      "name": "checksums.txt",
+      "size": 2236,
+      "digest": "sha256:3dc6975d97c9faa43aa997a5d68a3255ceccea43ffa2d9d9ac22950b1b2d93a2",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/checksums.txt"
+    },
+    {
+      "name": "rtk-1.0.1-1.x86_64.rpm",
+      "size": 5427090,
+      "digest": "sha256:d5c0f7d9bbfa5d5c74336e1e01df17ca99cfb0f19c07b47375acb22a7e612e7b",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-1.0.1-1.x86_64.rpm"
+    },
+    {
+      "name": "rtk-aarch64-apple-darwin.tar.gz",
+      "size": 5870140,
+      "digest": "sha256:4aae2f60cfc49c9e81b8c8c57020aa0cb824da608c78b4f0cf5c0988e19e824e",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "rtk-aarch64-unknown-linux-gnu.tar.gz",
+      "size": 6171573,
+      "digest": "sha256:cd627c4091ad90b5e5aca83ca5af66ee4b8aa8537a736533fa90544f461f1c2b",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "rtk-oss-1.0.1-1.x86_64.rpm",
+      "size": 4673026,
+      "digest": "sha256:32f14e75a61e4b659e15690b78f62f58530f467008a36778665b2317e6b18114",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-oss-1.0.1-1.x86_64.rpm"
+    },
+    {
+      "name": "rtk-oss-aarch64-apple-darwin.tar.gz",
+      "size": 4999666,
+      "digest": "sha256:4a4d9d09656ff29423336aa506e680afc3f7b6dafe84f0194a1c9a523a3c80e1",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-oss-aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "rtk-oss-aarch64-unknown-linux-gnu.tar.gz",
+      "size": 5246576,
+      "digest": "sha256:ee24a43dac9162de55fea8460b5efcd56d401ec28b5117c921bffa8a57bc136e",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-oss-aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "rtk-oss-x86_64-apple-darwin.tar.gz",
+      "size": 5428609,
+      "digest": "sha256:2cf4d6dd2cabccbc74aa6aba2a48e60aad85b1a31e3d740e6ca0b2fa0060b06a",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-oss-x86_64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "rtk-oss-x86_64-pc-windows-msvc.zip",
+      "size": 5708680,
+      "digest": "sha256:0e53e2eca471e15fbd3636e64e6bc0b182cbc278ed0339c80450a2dd03f4cd6b",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-oss-x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "rtk-oss-x86_64-unknown-linux-musl.tar.gz",
+      "size": 5766270,
+      "digest": "sha256:a44e8ffc43981100b4ddf1710399a1649a6c874591aa6d0c0727fe6cbd983c41",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-oss-x86_64-unknown-linux-musl.tar.gz"
+    },
+    {
+      "name": "rtk-oss.x86_64.rpm",
+      "size": 4673026,
+      "digest": "sha256:32f14e75a61e4b659e15690b78f62f58530f467008a36778665b2317e6b18114",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-oss.x86_64.rpm"
+    },
+    {
+      "name": "rtk-oss_1.0.1-1_amd64.deb",
+      "size": 4319864,
+      "digest": "sha256:1d7d52ea6aac3137cf015d0667aa5378505fef8eba4ef03564f5f6819462a800",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-oss_1.0.1-1_amd64.deb"
+    },
+    {
+      "name": "rtk-oss_amd64.deb",
+      "size": 4319864,
+      "digest": "sha256:1d7d52ea6aac3137cf015d0667aa5378505fef8eba4ef03564f5f6819462a800",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-oss_amd64.deb"
+    },
+    {
+      "name": "rtk-proxy-aarch64-apple-darwin.tar.gz",
+      "size": 7616700,
+      "digest": "sha256:3022be214b6a97455d6b9466c4ba81830854d2ae0cbdeef6f7757c7a2d32064d",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-proxy-aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "rtk-proxy-aarch64-unknown-linux-gnu.tar.gz",
+      "size": 8303588,
+      "digest": "sha256:2c8864b98e7fb701867ead0664b192072e2780b2b1dd9e9fde0d3a528b06f089",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-proxy-aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "rtk-proxy-x86_64-apple-darwin.tar.gz",
+      "size": 7807075,
+      "digest": "sha256:b31e7073f471e756a48868a3a13676475c2a25d4dc3b791b2a9961b9755848f6",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-proxy-x86_64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "rtk-proxy-x86_64-pc-windows-msvc.zip",
+      "size": 6971674,
+      "digest": "sha256:6d3e239580f349b70cea67549e97f4ca777b75ed468d5432bdbfdd4a30fcd4ed",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-proxy-x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "rtk-proxy-x86_64-unknown-linux-musl.tar.gz",
+      "size": 8560842,
+      "digest": "sha256:808bae5d092dbeeca4f317ba06a2bca51acb32d040473e13101004a3bc888470",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-proxy-x86_64-unknown-linux-musl.tar.gz"
+    },
+    {
+      "name": "rtk-x86_64-apple-darwin.tar.gz",
+      "size": 6375200,
+      "digest": "sha256:4b716b2f45d677de41c99f77d9a71199ad060b98ec2f78ef712885312b3a6578",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-x86_64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "rtk-x86_64-pc-windows-msvc.zip",
+      "size": 6730722,
+      "digest": "sha256:64b4807c50b61dddf2ac1e86751dbda9117ab94ed02bf266e6584da571c39896",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "rtk-x86_64-unknown-linux-musl.tar.gz",
+      "size": 6778173,
+      "digest": "sha256:5b919c3bccb799b67a61866d0e617410a4fcdf173e2614440e59de2fa2003436",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk-x86_64-unknown-linux-musl.tar.gz"
+    },
+    {
+      "name": "rtk.x86_64.rpm",
+      "size": 5427090,
+      "digest": "sha256:d5c0f7d9bbfa5d5c74336e1e01df17ca99cfb0f19c07b47375acb22a7e612e7b",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk.x86_64.rpm"
+    },
+    {
+      "name": "rtk_1.0.1-1_amd64.deb",
+      "size": 5011900,
+      "digest": "sha256:b7f7ed3ce136aa842f56599b5ca88b956bd788a111ec7bd085909f9aeb0d1bc4",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk_1.0.1-1_amd64.deb"
+    },
+    {
+      "name": "rtk_amd64.deb",
+      "size": 5011900,
+      "digest": "sha256:b7f7ed3ce136aa842f56599b5ca88b956bd788a111ec7bd085909f9aeb0d1bc4",
+      "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.1/rtk_amd64.deb"
+    }
+  ]
+}

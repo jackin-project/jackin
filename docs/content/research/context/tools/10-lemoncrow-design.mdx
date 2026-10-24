@@ -1,62 +1,125 @@
 ---
 title: "10 — LemonCrow: current design"
-description: "LemonCrow 0.7.4: integrated retrieval, current source availability, bounded state, evidence limits, and Jackin evaluation."
+description: "LemonCrow 0.8.0: public Runtime Lite, changed source boundary, tested worktree routing, recovery limits and retrieval reuse."
 ---
+
+**Research state:** Current
+
 
 ## Summary
 
-Cutoff: **2026-09-23 UTC**. Reviewed release: [LemonCrow v0.7.4](https://github.com/lemoncrow-lab/lemoncrow/releases/tag/v0.7.4). LemonCrow is a serious integrated context-runtime candidate. Its current tagged tree includes `src/lemoncrow/pro`; rejecting it as missing that source would be incorrect. It is not, however, an independently proven winner for Jackin's workloads.
+Snapshot: **2026-10-24 01:15:00 UTC**. Stable [v0.8.0](https://github.com/lemoncrow-lab/lemoncrow/releases/tag/v0.8.0), published **2026-10-19 15:18:45 UTC**, resolves to `d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d`. The canonical repository remains `lemoncrow-lab/lemoncrow`.
+
+**Evaluate the public Runtime Lite as a restricted retrieval sidecar; do not label LemonCrow the winner or install its complete tool replacement by default.** Version 0.8 changes the relevant product: local Runtime Lite is a small standard-library client with deterministic indexing, while advanced hosted/enterprise intelligence is now private. Explicit-root and concurrent-worktree probes passed, but recovery failure and model-exposure state still need Jackin-owned controls.
 
 ## Question and scope
 
-Can its retrieval and bounded-observation architecture improve complete coding tasks while preserving worktree isolation, native editing, and reliable agent execution?
+Can Jackin package useful indexed retrieval without replacing native execution/editing, inheriting a global installer or confusing the old full engine's benchmarks with the new local kernel?
 
 ## Method
 
-Inspect the release, source directory, engine package, license, benchmark document, state-lock implementation, and maintainer discussion of worktree handling. Separate source availability, upstream fix confirmation, executable conformance, and accepted-task evidence.
+Reopened the current release, licensing/source boundary, product packaging, Runtime Lite dispatcher/index, historical full MCP state and worktree code, PR #46 and benchmark provenance. Compared the published Runtime client archive with the release source, ran 45 selected Runtime Lite upstream tests and an independent offline boundary probe using real Git worktrees. No model, hosted-service or subscription session was executed. See the <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md">commands and evidence</RepoFile>.
 
 ## Findings
 
-### Integrated rather than additive in its full configuration
+### Current components and source boundary
 
-The [runtime documentation](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/README.md) describes ranked code search, targeted reads, edits, shell execution, and web fetching. The full host integration aims to replace overlapping native tools rather than simply add another catalog. This can reduce exploration cycles, but also changes the agent's tool contracts and behavior.
+| Component | Current identity and behavior | Jackin consequence |
+|---|---|---|
+| Runtime Lite | Public local lexical/symbol/import index, bounded reads and execution helpers; one stdio process | Can be evaluated without a LemonCrow application server or account. |
+| Published Runtime client | `lemoncrow-runtime-client-0.8.0-py3-none-any.whl` inside the GitHub release archive | Actual distributed name differs from source project's `lemoncrow-client`. Python 3.12–3.13; wheel declares no dependencies. |
+| Review client/engine | Separate release archives and installers; optional loopback service/frontend | Not required for the retrieval experiment. Review capture and hosted behavior are a different data boundary. |
+| Public full source | `lemoncrow==0.8.0`, `lemoncrow-client==0.8.0`; many optional dependencies and legacy/full MCP paths | Source package presence does not mean the public runtime exposes every historical capability. |
+| Hosted/Enterprise Runtime | Advanced private code intelligence, semantic engine, managed execution and organization services | Not reproducible from the public repository; separate service terms and permission review. |
 
-A read-only Jackin experiment is a different treatment from the complete runtime. Neither positive full-runtime results nor negative additive-integration results can automatically qualify the other.
+The [public source boundary](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/docs/reference/open-source-boundary.md) states that releases through **0.7.4** published the advanced engine under Apache-2.0 and retain that grant. Later public trees keep contracts, neutral rendering and local capability glue in `src/lemoncrow/pro`; the advanced implementation comes from the private distribution. The [mirror allowlist](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/scripts/public-paths.txt) confirms the distinction. Both older blanket claims—“engine source is missing” and “the current entire engine is open”—need version and component qualification.
 
-### Current source and license
+The [license](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/LICENSE) grants Apache-2.0 for public/local source, requires preserving applicable notices, and excludes the proprietary enterprise tree. It does not grant access to absent advanced code. Historical Apache source remains a possible fork input, but that would be a deliberate old-engine maintenance commitment, not a current upstream dependency.
 
-The [tagged source directory](https://github.com/lemoncrow-lab/lemoncrow/tree/v0.7.4/src/lemoncrow/pro) and [engine package](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/pro/__init__.py) are present. The [license](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/LICENSE) declares Apache-2.0 across the source, including the engine. This resolves the specific source-directory availability concern, not every reproducibility question. This review did not reproduce the release build or audit every bundled dependency.
+### Package correspondence and release qualification
 
-The implementation is Python with optional native compilation, not a Rust crate. A packaged sidecar can still be appropriate: language alignment is an operational advantage, not a substitute for outcome quality.
+The Runtime archive's SHA-256 is `73bb7c7d062f1f622dff50a851d36a71b1c8efa9ebebd7017d1d09cf81529e94`, matching GitHub's release digest. All **87 packaged `lemoncrow_client` files** compared byte-for-byte with the pinned source; there were no changed or source-missing files in that comparison. This establishes selected package/source correspondence, not bit-reproducible construction of every release bundle. The checked PyPI version endpoints for `lemoncrow/0.8.0` and `lemoncrow-client/0.8.0` returned 404; install the reviewed release artifact rather than infer public registry availability from a manifest or README command.
 
-### Current state handling
+The release explicitly discloses **no complete passing G11 qualification stamp**: its first-party Reader-open p95 exceeded the 950 ms target, and other exhaustive performance evidence was incomplete. That Reader measurement is not Runtime Lite retrieval latency. The release's reported multi-platform checks are upstream claims; this investigation independently executed only the selected Linux/Python checks listed here. [Release disclosure](https://github.com/lemoncrow-lab/lemoncrow/releases/tag/v0.8.0).
 
-The tagged [smart-state implementation](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/gateway/adapters/mcp/smart_state.py) uses nonblocking flock attempts and a deadline, with a five-second default. It still describes cumulative state shared across sibling processes. Bounded contention is better than an unbounded wait, but hot-path advisory counters and shared state still require load tests and capsule scoping.
+### What Runtime Lite sees and changes
 
-The maintainer [confirms the worktree fix landed](https://github.com/lemoncrow-lab/lemoncrow/pull/46#issuecomment-5570558170). The proposal's documented process-global working-directory inference is not a sufficient multi-session isolation contract for Jackin. Use an explicit per-session root, or a separate process per worktree; do not infer another session's root from its last shell command.
+The [Lite architecture](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/docs/architecture/runtime-lite.md) and [dispatcher](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/lite/mcp.py) define local index/search and selected tools. They do not intercept native host reads, shell results, edits or provider requests automatically. Full upstream guidance routes work through LemonCrow's tools; a Jackin read-only integration must be evaluated as its own treatment.
 
-### Evidence
+| Intervention | Mechanism | Correctness and cost boundary |
+|---|---|---|
+| Lexical retrieval | SQLite FTS5, exact/partial symbols, path evidence, bounded import expansion and deterministic ranking | Selects evidence lossily; ranking and small snippets do not guarantee recall. Keep native search/read fallback. |
+| File/symbol reads | Bounded source reads and source hydration | A native host may still require its own read before native editing. Preserve byte-sensitive CRLF/no-final-newline paths separately. |
+| Shell/edit replacement | Local command policy, execution, compaction, redaction, delta markers and edit validation | Changes native contracts and approvals. Exclude from the restricted retrieval arm. |
+| Optional semantic helper | Separate Model2Vec helper with preprovisioned local weights; lexical fallback | Not the private advanced semantic engine. Model download/setup and cold memory are separate opt-ins. |
+| Hosted client | Revision-bound remote source/view transport and tools | Uploads/access controls differ from local Lite; exclude from local defaults. |
 
-The current [benchmark document](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/BENCHMARKS.md) links author-produced runs, data, and a combined runtime/persona treatment. Those runs do not establish an independent 0.7.4 result. A benchmark copied into a new release does not become a benchmark of that release. A single repetition cannot distinguish a regression from noise reliably. JetBrains has not validated this runtime in the three cited policy/filter articles.
+The visible tool list is **`bash`, `edit`, `read`, `code_search`, `web_fetch`**; our compact-JSON schema measurement was **4,058 UTF-8 bytes**, not provider-billed tokens. Other locally placed tools are callable even when absent from `tools/list`; an unadvertised `grep` call succeeded in the probe. Filtering tool descriptions alone is therefore not a read-only security boundary. The adapter must reject disallowed dispatches server-side. [Executable placement policy](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/lite/policy.py).
+
+### Worktrees: improved Lite routing, a different legacy/full path
+
+PR [#46](https://github.com/lemoncrow-lab/lemoncrow/pull/46) is **closed, not merged as that public PR**; the maintainer says the fix was mirrored into v0.7.1. Its original change inferred edit roots from the process's most recent shell cwd. The current full-source [MCP wrapper](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/src/lemoncrow/gateway/adapters/mcp_server.py) still contains `_last_session_cwd` and an explicit shared-process debt note. Do not promote that path merely because the old issue was addressed.
+
+Runtime Lite instead calls `WorktreeCatalog.route(arguments, active=None)` on each request: **there is no sticky active-worktree state**. Its [path router](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/worktrees.py) recognizes Git-registered checkouts, rejects one request spanning several trees, and gives each checkout separate index and session-memory objects. The module's general sticky-routing description is not the Lite call site's effective behavior.
+
+Executed boundary results:
+
+- Two parallel `LiteMcp` objects with explicit roots returned their own different `app.py` content.
+- A shared process's `bash(cwd=worktree-A)` did not redirect a subsequent relative read away from the launch root; an explicit worktree-A file path selected A correctly.
+- One read naming files in both A and B was refused.
+- All 45 tests in `client/tests/test_runtime_lite.py` passed, including no-network, freshness, linked-worktree, WAL and concurrent-dispatch cases present in that file.
+
+These are fixture results, not proof of every host session or race. Launch one process per explicit worktree/session initially. A main-root process cannot infer that an otherwise unqualified relative path means another agent's worktree; Jackin must bind the intended root rather than rely on the user's preceding shell command.
+
+### Index lifecycle, state and recovery
+
+Lite stores the lexical index in `.lemoncrow/workspace/runtime-lite-v3.sqlite3`, uses WAL and generation refresh, and excludes its state from the repository walk. Versioned files avoid rewriting an older live process's index schema; compatible older state can be copied using SQLite backup. Initialization starts a session-owned background index thread; indexed operations wait up to 20 seconds then return an explicit indexing-in-progress result, while direct reads/shell/edit do not wait. Optional semantic generation files are separate. [Index implementation](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/lite/index.py).
+
+The independent two-file fixture measured approximately **34 ms cold prepare / 0.45 ms warm prepare**. This is a tiny local fixture, not a repository-scale latency claim. Full indexing CPU, RAM, disk growth, cancellation and long-session contention remain unmeasured here. The implementation may return the previous committed generation while a refresh runs; callers must preserve freshness/provenance metadata and avoid treating a selected stale result as a complete current-tree answer.
+
+The historical [smart-state lock](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/src/lemoncrow/gateway/adapters/mcp/smart_state.py) still defaults to five seconds, then proceeds without the cross-process lock. That prevents indefinite advisory-counter blocking but permits lost updates. It is part of the fuller MCP path, not evidence that the Lite index uses the same global state. A timeout can still exceed a useful tool-latency budget.
+
+Shell output history is now per `SessionMemory`; identical successful output over 500 characters can become an `unchanged` marker. Its [RunHistory](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/kit/output_delta.py) tracks process/session exposure, not a model context epoch. A surviving process is not proof that the current model context still contains the earlier bytes. Disable `LEMONCROW_BASH_UNCHANGED_DELTA` in a Jackin experiment unless epoch/reset handling is qualified.
+
+[Spill storage](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/localtools/shell.py) defaults to a per-user temporary directory, **512 files per kind** and **24-hour retention**, with explicit overrides. It is ephemeral, not a session-complete transcript. In the independent probe, making the spill location unusable caused a repeated shell result to remain an `unchanged` marker **without an original or recovery path**. `spill_text` returns `None` on failure and presentation continues. This is a concrete promotion blocker for output replacement, not for using an isolated retrieval-only backend.
+
+The hosted thin client's separate [search deduplicator](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/client/src/lemoncrow_client/search_dedup.py) has session/view/revision and compaction-epoch scoping plus `force=true` recovery. That improvement must not be attributed automatically to Lite shell history or every host. Shared immutable indexes and shared model-exposure state need different owners.
+
+### Installation, networking and cleanup
+
+Runtime Lite has no application server, resident daemon or listener on its standard stdio path. Default lexical execution does not need a LemonCrow account or upload source. Explicit `web_fetch` is still network access; hosted/remote MCP and Review are separate optional paths. The semantic helper sets offline mode for query-time use and requires weights provisioned outside the search path. [Architecture](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/docs/architecture/runtime-lite.md).
+
+The general installer selects products and can modify shell setup; product update and first-use lazy installation can fetch release scripts. Runtime host registration is opt-in. Pin the Runtime artifact, supply the interpreter and explicit root/state directory, disable lazy installation and updates, and skip Review/hosted/remote services. The [Runtime uninstaller](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/scripts/uninstall_runtime.sh) removes runtime state and owned host registrations while preserving account/Review and pairing state. Per-repository indexes and temporary spills need an explicit Jackin retention/cleanup owner.
+
+Local Lite traces default on under the configured LemonCrow home, with **14-day / 256-MB retention** and an off switch. They record arguments except bulk bodies, which become size/digest metadata. Local traces are not a provider receipt or a subscription-quota meter. No global installer or telemetry service was activated in this research.
+
+### Evidence does not establish a current winner
+
+The [benchmark document](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/BENCHMARKS.md) preserves vendor-operated June/July and September results. Its 50-task, five-repetition SWE-bench Verified result tested the fuller `lemoncrow:auto` treatment and a historical model/harness; 250 trials represent 50 task clusters. Later single-repetition results use old baselines or changing bind-mounted source and explicitly disclose provenance gaps. None is a controlled comparison of public Runtime Lite 0.8.0 against native Jackin tools.
+
+The newer [Runtime credit gate](https://github.com/lemoncrow-lab/lemoncrow/blob/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/docs/operations/runtime-credit-gate.md) appropriately requires paired provider usage and independent acceptance evidence rather than sidecar estimates. A gate specification is not evidence that the stable release passed it; the release explicitly withholds complete G11 qualification. JetBrains' studies of other tools supply no LemonCrow result. No source reviewed here establishes LemonCrow as the overall winner.
 
 ## Implications for jackin❯
 
-**Best part:** ranked retrieval and bounded exact-range access that can remove unnecessary search/read cycles.
+**Recommended experiment:** package the pinned Runtime client as a per-worktree/session sidecar, expose only `code_search` and bounded reads behind a server-side allowlist, retain native search/read/edit/shell/approval flows, and measure the additional schema and indexing cost. Keep raw observations and provenance in Jackin-owned storage; disable output/history dedup until context-epoch handling is proven. This is an adaptation with its own test arm, not the exact upstream product.
 
-**Integration choice:** evaluate a pinned per-worktree read-only sidecar against native tools and LeanCTX. Enforce the allowlist server-side and retain native reads required before native edits. Measure schema overhead, index freshness, cold indexing, recovery, and parallel-session contention. Test the full upstream configuration as a separate arm before considering replacement of editing or execution.
+**Alternatives:** native precise reads/search first; compare LeanCTX and other retrieval primitives under the same tasks. A small wrapper around the public Lite API is preferable to reimplementing its ranking without evidence. Ask upstream for a supported read-only dispatch surface, fallible spill/storage protocol, explicit context-epoch reset and stable embedding contract. The current Python implementation is not rejected on language grounds.
 
-**Default decision:** do not install the full runtime, public tunnel, telemetry, model downloads, or global configuration automatically. Privacy and launch behavior require artifact-level checks. Source publication now permits a stronger audit; it does not remove that audit requirement.
+**Default:** do not activate shell/edit replacement, hosted transport, owned agent execution, policy/persona replacement, automatic semantic downloads or the general installer. Full-product adoption needs its own native-tool/approval/cancellation/resume and task-quality qualification. A fork of historical 0.7.4 advanced code would need an owner, security/update policy, regression corpus and retirement plan; no present result justifies that burden.
 
 ## Limitations and unknowns
 
-No paid task benchmark, complete build reproduction, network trace, or multi-worktree runtime test was performed here. Source presence and maintainer closure are narrower claims than end-to-end conformance. Independent current-version accepted-task evidence remains unestablished.
+The selected tests do not prove artifact bit-reproducibility, cross-platform behavior, every concurrent process topology, crash/disk-full durability, full engine correctness or complete-task savings. The advanced current private engine cannot be inspected from the public mirror. Actual Claude Code/Codex delivery, read-before-edit prerequisites and compaction/resume were not executed with a model. A library result or visible MCP schema is insufficient activation evidence.
+
+The smallest decisive tests are a strict read-only adapter with direct denied-call controls; restart/stale-index/branch-change and parallel-host fixtures; failed-spill passthrough before output replacement; and a randomized native-versus-Lite retrieval task trial at fixed model/effort. These resolve the current choice without purchasing or adopting the entire runtime first.
 
 ## Sources
 
-Tagged code, licensing, benchmark methodology, and the maintainer's fix confirmation are linked inline.
+Current implementation links are pinned to `d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d`. Release metadata, artifact hashes, exact commands, selected test results and boundary outputs are in the <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md">reproduction record</RepoFile>.
 
 ## Related work
 
 - [LeanCTX](/research/context/tools/04-leanctx-design/)
-- [Evidence](/research/context/tools/07-evidence-and-claims/)
+- [Evidence and protocol](/research/context/tools/07-evidence-and-claims/)
+- [Composition](/research/context/tools/06-combining/)
 - [Jackin integration](/research/context/tools/11-jackin-integration/)

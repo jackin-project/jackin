@@ -1,0 +1,112 @@
+[
+  {
+    "path": "README.md",
+    "bytes": 10372,
+    "sha256": "598b4ac9b020494c49713748e4f4e135794a4e04367c5d1f8b87df5fdc5edc76"
+  },
+  {
+    "path": "command-results.json",
+    "bytes": 9745,
+    "sha256": "76b1d3dbfa61056bfc06bc0d1e002838b55c07d014b00b6447361f66b193a7f3"
+  },
+  {
+    "path": "coverage-dispositions.json",
+    "bytes": 16171,
+    "sha256": "bcdaa2d7337230ae77900de2e33a6f22093bbb33bb495762f8abc9e3eb69a90b"
+  },
+  {
+    "path": "headroom-no-ml-feasibility.json",
+    "bytes": 12970,
+    "sha256": "4a79cf262a53a189d435d4bd9254e9350ec4a289c9a0128728c62e9be0a53173"
+  },
+  {
+    "path": "issue-resolution-register.json",
+    "bytes": 1170,
+    "sha256": "d6b3245631f41ea61ec63ee5fdd94eb5ab1c3bb6953f2561ffb4c059508f0845"
+  },
+  {
+    "path": "lemoncrow-artifact-correspondence.json",
+    "bytes": 3956,
+    "sha256": "d63cbce278f6b774ba54dee926c1e7ed8c2a7421a05acbc5f7da4d8136fa6730"
+  },
+  {
+    "path": "logs/headroom-cargo-check-no-ml.log",
+    "bytes": 14402,
+    "sha256": "7200b01a942e3401c68547e77378a1a11ec0b5b7f6a840330e8c90860f2405c0"
+  },
+  {
+    "path": "logs/headroom-densify-pytest.log",
+    "bytes": 14710,
+    "sha256": "f824d7bbb058ebdb3558d87ad97d12cdeb8afc62c7e7e93dee3315e8948c9790"
+  },
+  {
+    "path": "logs/headroom-fidelity.log",
+    "bytes": 9403,
+    "sha256": "c0c021d8b8b51ab724a13f60c86e1fade0cbb0549b551e3450c15c95a5f5d653"
+  },
+  {
+    "path": "logs/headroom-no-ml-tree.log",
+    "bytes": 15353,
+    "sha256": "fdfde85b1ecf72a2f205fed17de65969bae6d17c8b7ff4c0bb09bfdde62888be"
+  },
+  {
+    "path": "logs/headroom-python-package-identity.log",
+    "bytes": 823,
+    "sha256": "bd830a061155ffd20a535235ad4b1215450456b41ca31df051f2ed743af891c9"
+  },
+  {
+    "path": "logs/headroom-wheel-tests-confirmed.log",
+    "bytes": 99,
+    "sha256": "ded6db631d20838be4d8f7ce20178bb4378933b08c9509f168068c0960b61d4d"
+  },
+  {
+    "path": "logs/lemoncrow-boundaries.log",
+    "bytes": 1753,
+    "sha256": "de5d2042e7fc63b86be0baa41ce976464d74f1d9147e200647510fef8b059b2f"
+  },
+  {
+    "path": "logs/lemoncrow-runtime-lite-pytest.log",
+    "bytes": 99,
+    "sha256": "f2b195a0665ff96d8e8fa2e2892848bd22d3948c8c2bff35c8edb4d99dd7dfcd"
+  },
+  {
+    "path": "logs/python-environment.txt",
+    "bytes": 1241,
+    "sha256": "570dbf95cd4b601671cc5cac6e9ab30fc24be664eec87e3c42c2b2f1b5b9fd9a"
+  },
+  {
+    "path": "probes/headroom_fidelity.rs",
+    "bytes": 1907,
+    "sha256": "e88a42f2497083a5286201e619feaa5c3d6980753bc546fd6565f073bee6ae63"
+  },
+  {
+    "path": "probes/headroom_package_identity.py",
+    "bytes": 1000,
+    "sha256": "906be2ed931d70b9dee01facbf3b5df99c0de1ac064a08bb928c42e2ba9898b3"
+  },
+  {
+    "path": "probes/lemoncrow_artifact_correspondence.py",
+    "bytes": 1590,
+    "sha256": "41ea24647963c73005d05b7f1796a3739d589c257c5c38d791f29327b3da5d82"
+  },
+  {
+    "path": "probes/lemoncrow_boundaries.py",
+    "bytes": 4506,
+    "sha256": "d9633084147b8e96570499bd28918a90a80aa066daf34fe117983e222cd5fdc5"
+  },
+  {
+    "path": "release-recheck.json",
+    "bytes": 1319,
+    "sha256": "770c41deb24e1116200ae7b1cf630984eff59e25700c3792b3d14b5066c09862"
+  },
+  {
+    "path": "release-register.json",
+    "bytes": 25469,
+    "sha256": "7b9e34c3dbc5a6027f8593a5bf47c176f1ddbc9d9eeecf9f0f13b76e7da4de09"
+  },
+  {
+    "path": "source-register.json",
+    "bytes": 20245,
+    "sha256": "7996ef2aa2f9209e5570100cd2f4fad27aea84f4cfebcc989375521789f0761c"
+  }
+]
