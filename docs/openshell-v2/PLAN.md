@@ -47,6 +47,8 @@ SOURCE and UNIT evidence cannot fill a LIVE test result.
 Later target qualification repeats the runtime journeys on each required tuple.
 A source review does not establish a platform capability.
 An isolated successful component does not establish the combined account and session journey.
+Record a separate result for each `(task_id, case_id)` assignment.
+The global case status cannot replace the result for the current task.
 
 ## Integration gates
 
@@ -123,7 +125,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 | T30 | Implement private developer service forwards | Product subagent | T13, T23 |
 | T31 | Implement caches prewarm diagnostics and resource views | Operations subagent | T15, T28, T29, T33 |
 | T32 | Replace the independent verification worker | Verifier subagent | U02, T13, T20, T10 |
-| T33 | Integrate the managed engine capability into Jackin | Companion adapter subagent | U08, T13, T23 |
+| T33 | Integrate the managed engine capability into Jackin | Companion adapter subagent | U08, T13, T23, T27 |
 | T34 | Complete workflow and product behavior coverage | Operations subagent | T32, T26, T27, T29, T30, T31 |
 | T35 | Qualify local containers and remote container gateways | Qualification subagent | T29, T30, T31, T34, U03 |
 | T36 | Qualify isolated VM profiles and engine domains | Qualification subagent | T29, T30, T31, T33, T34, U03 |
@@ -949,19 +951,19 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 3. Implement file create, edit, rename, delete, and watch behavior.
 4. Define concurrent writer behavior and result ownership.
 5. Reject escaping symlinks, hardlinks, path traversal, and unsupported special files.
-6. Test Compose bind mounts against daemon-side paths.
-7. Test edits from both the coding sandbox and Docker children.
+6. Test local projection operations, ownership, and path rejection in the companion data module.
+7. Record the absolute path and bind requirements for complete U08 qualification.
 8. Propagate projection errors without a wider mount fallback.
 9. Record data retention and deletion independently from engine cache state.
 
 #### Pass conditions
 
-- Host secrets and unrelated directories remain inaccessible.
-- Live edit and rename events reach the intended consumers.
-- Compose sees the same approved absolute project path.
-- Build-context upload alone does not pass the bind-compatibility test.
+- The projection exposes only approved project data to the companion data plane.
+- File create, edit, rename, delete, and watch behavior matches the projection contract.
+- Escaping links, hardlinks, traversal, and unsupported special files remain confined.
+- Projection errors never trigger a wider host-mount fallback.
 
-**Acceptance cases:** A32, A33, A34.
+**Acceptance cases:** None.
 
 #### Removal and replacement
 
@@ -1077,13 +1079,16 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 2. Test default-off behavior on a third domain.
 3. Run online pull, build, run, exec, logs, and events.
 4. Run Compose with live project binds and dynamic ports.
-5. Run real Testcontainers traffic after two ordinary source edits.
-6. Test callbacks, port exhaustion, and simultaneous domains.
-7. Attempt cross-domain access and unapproved egress.
-8. Kill the gateway, parent, and provisioning process at defined transition points.
-9. Verify stop, restart, recreation, deletion, and orphan cleanup.
-10. Have a different test agent repeat the complete journey from fresh resources.
-11. Publish the qualified capability and exact tuple.
+5. Test confined project access from the daemon and privileged Docker children.
+6. Edit, rename, create, and delete files from both sides. Verify file watches.
+7. Probe escaping links, traversal paths, and unsupported special files through child containers.
+8. Run real Testcontainers traffic after two ordinary source edits.
+9. Test callbacks, port exhaustion, and simultaneous domains.
+10. Attempt cross-domain access and unapproved egress.
+11. Kill the gateway, parent, and provisioning process at defined transition points.
+12. Verify stop, restart, recreation, deletion, and orphan cleanup.
+13. Have a different test agent repeat the complete journey from fresh resources.
+14. Publish the qualified capability and exact tuple.
 
 #### Pass conditions
 
@@ -1091,8 +1096,11 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - All child resources have confirmed cleanup receipts.
 - The disabled profile leaves no engine endpoint, credential, or prewarm artifact.
 - The independent repeat matches the required assertions.
+- Compose sees live edits at the agreed absolute project path.
+- Docker children cannot widen the project projection through path attacks.
+- A streamed build context does not satisfy bind compatibility.
 
-**Acceptance cases:** A28, A30, A31, A32, A35, A36, A37, A38, A39.
+**Acceptance cases:** A28, A30, A31, A32, A33, A34, A35, A36, A37, A38, A39.
 
 #### Removal and replacement
 
@@ -1427,7 +1435,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Unknown fields and unsupported versions in user, role, and project schemas fail.
 - Ambiguous IDs fail without a first-match fallback.
 
-**Acceptance cases:** A07, A49, A50, A51.
+**Acceptance cases:** A07, A49.
 
 #### Removal and replacement
 
@@ -1493,8 +1501,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A remote gateway cannot receive a local image ID as its pull reference.
 - Wrong architecture and missing registry authorization fail before activation.
 - An unavailable separate builder does not disable status or stop operations.
+- Secret bytes stay out of build logs, and secret-dependent output follows its declared cache policy.
 
-**Acceptance cases:** A52, A53, A54.
+**Acceptance cases:** A51, A52, A53, A54.
 
 #### Removal and replacement
 
@@ -1559,8 +1568,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Every advertised agent reports the recorded version and starts its declared route.
 - OpenShell ENTRYPOINT behavior cannot skip required setup silently.
 - The canonical Capsule starts with zero sessions.
+- An image that lacks a declared agent executable fails validation.
 
-**Acceptance cases:** A56, A57, A58.
+**Acceptance cases:** A50, A56, A57, A58.
 
 #### Removal and replacement
 
@@ -1967,7 +1977,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Reconnect never switches to the current default account.
 - A real authenticated task passes for every advertised route.
 
-**Acceptance cases:** A75, A76, A77.
+**Acceptance cases:** A76, A77.
 
 #### Removal and replacement
 
@@ -2107,7 +2117,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Interrupt affects only the selected session.
 - A dead Capsule does not appear as a reconnectable old PTY.
 
-**Acceptance cases:** A08, A72, A81, A82, A83.
+**Acceptance cases:** A08, A72, A75, A81, A82, A83.
 
 #### Removal and replacement
 
@@ -2672,7 +2682,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Owner:** Companion adapter subagent.
 
-**Dependencies:** U08, T13, T23.
+**Dependencies:** U08, T13, T23, T27.
 
 **Source basis:** SPEC L286-L324; L503.
 
@@ -3103,6 +3113,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 10. Audit every host subprocess and Docker API call by ownership.
 11. Compare the final tree against every inventory record.
 12. Run clean-build and installation tests from fresh directories.
+13. Rerun A13 and A14 against the final graph and composition after legacy deletion.
 
 #### Pass conditions
 
@@ -3111,8 +3122,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - No old backend remains behind a feature flag or generic command helper.
 - Every retained Docker call belongs to approved image infrastructure.
 - Fresh installation requires no old executable, state, or configuration.
+- The final crate graph and application composition pass the production-boundary checks.
 
-**Acceptance cases:** A120, A121, A122.
+**Acceptance cases:** A120, A121, A122, A13, A14.
 
 #### Removal and replacement
 

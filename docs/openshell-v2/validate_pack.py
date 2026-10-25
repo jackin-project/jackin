@@ -86,11 +86,12 @@ def render_task_card(task: dict[str, Any]) -> str:
 
 def render_acceptance_case(case: dict[str, Any]) -> str:
     tasks = ", ".join(case["tasks"])
+    assignments = "; ".join(f"{task_id}=NOT_RUN" for task_id in case["tasks"])
     return "\n".join(
         [
             f"### {case['id']} — {case['title']}",
             "",
-            f"**Evidence:** {case['level']}. **Tasks:** {tasks}. **Initial status:** NOT_RUN.",
+            f"**Evidence:** {case['level']}. **Tasks:** {tasks}. **Initial status:** NOT_RUN. **Initial assignment status:** {assignments}.",
             "",
             f"**Setup:** {case['setup']}",
             "",
@@ -99,6 +100,16 @@ def render_acceptance_case(case: dict[str, Any]) -> str:
             f"**Required result:** {case['expected']}",
         ]
     )
+
+
+def case_status_summary(statuses: list[str]) -> str:
+    if "FAIL" in statuses:
+        return "FAIL"
+    if "BLOCKED" in statuses:
+        return "BLOCKED"
+    if statuses and all(status == "PASS" for status in statuses):
+        return "PASS"
+    return "NOT_RUN"
 
 
 def render_task_index(tasks: list[dict[str, Any]]) -> list[str]:
@@ -170,7 +181,9 @@ def main() -> int:
 
     required = ["README.md", "SPEC.md", "GOAL.md", "CONTRACTS.md", "SUBAGENTS.md", "PLAN.md",
                 "ACCEPTANCE.md", "SOURCE-AUDIT.md", "TERMS.md", "TASKS.md", "TRACEABILITY.md",
-                "PACK-CHECKS.md", "task-graph.json", "acceptance-cases.json", "traceability.json"]
+                "PACK-CHECKS.md", "validate_assignment_fixtures.py",
+                "validation/assignment-results-receipts.json", "task-graph.json",
+                "acceptance-cases.json", "traceability.json"]
     missing = [name for name in required if not (root / name).is_file()]
     check("Required pack files exist", not missing, missing)
     if missing:
@@ -204,7 +217,6 @@ def main() -> int:
           {"expected": PARALLEL_AGENT_LIMIT, "actual": graph.get("parallel_agent_limit")})
     tasks = graph["tasks"]
     cases = cases_file["cases"]
-    cases_by_id = {case["id"]: case for case in cases}
     task_ids = [task["id"] for task in tasks]
     case_ids = [case["id"] for case in cases]
     task_set, case_set = set(task_ids), set(case_ids)
@@ -271,16 +283,79 @@ def main() -> int:
            "expected_group_count": len(expected_group_lists),
            "stored_group_count": len(stored_group_lists)})
 
+    assignment_errors: list[dict[str, Any]] = []
+    assignment_summary_errors: list[dict[str, Any]] = []
+    assignment_status_by_case_and_task: dict[tuple[str, str], str] = {}
+    expected_owners_by_case = {
+        case_id: {task["id"] for task in tasks if case_id in task["test_cases"]}
+        for case_id in case_set
+    }
+    for case in cases:
+        case_id = case["id"]
+        expected_owners = expected_owners_by_case[case_id]
+        rows = case.get("assignment_results")
+        if not isinstance(rows, list):
+            assignment_errors.append({"case": case_id, "problem": "assignment_results must be a list"})
+            continue
+
+        seen: set[str] = set()
+        row_statuses: dict[str, str] = {}
+        case_has_errors = False
+        for index, row in enumerate(rows):
+            location = {"case": case_id, "index": index}
+            if not isinstance(row, dict) or set(row) != {"task_id", "status"}:
+                assignment_errors.append({**location, "problem": "assignment row must contain only task_id and status"})
+                case_has_errors = True
+                continue
+
+            task_id = row["task_id"]
+            status = row["status"]
+            if not isinstance(task_id, str):
+                assignment_errors.append({**location, "problem": "task_id must be a string"})
+                case_has_errors = True
+            elif task_id not in expected_owners:
+                assignment_errors.append({**location, "problem": "unexpected task_id", "task_id": task_id})
+                case_has_errors = True
+            elif task_id in seen:
+                assignment_errors.append({**location, "problem": "duplicate task_id", "task_id": task_id})
+                case_has_errors = True
+            else:
+                seen.add(task_id)
+
+            if not isinstance(status, str) or status not in case_statuses:
+                assignment_errors.append({**location, "problem": "undocumented assignment status", "status": status})
+                case_has_errors = True
+            elif isinstance(task_id, str) and task_id in expected_owners and task_id not in row_statuses:
+                row_statuses[task_id] = status
+
+        missing = sorted(expected_owners - seen)
+        if missing:
+            assignment_errors.append({"case": case_id, "problem": "missing task assignments", "task_ids": missing})
+            case_has_errors = True
+        if not case_has_errors and set(row_statuses) == expected_owners:
+            statuses = [row_statuses[task_id] for task_id in sorted(expected_owners)]
+            for task_id, status in row_statuses.items():
+                assignment_status_by_case_and_task[(case_id, task_id)] = status
+            expected_summary = case_status_summary(statuses)
+            if case["status"] != expected_summary:
+                assignment_summary_errors.append({"case": case_id, "expected": expected_summary,
+                                                  "actual": case["status"]})
+
+    check("Assignment results have exact unique case owners and valid statuses",
+          not assignment_errors, assignment_errors)
+    check("Case status matches assignment summary",
+          not assignment_summary_errors, assignment_summary_errors)
+
     unknown_cases = [(task["id"], cid) for task in tasks for cid in task["test_cases"] if cid not in case_set]
     check("Task test references exist", not unknown_cases, unknown_cases)
     pass_case_errors = [
         {"task": task["id"], "case": case_id,
-         "status": cases_by_id.get(case_id, {}).get("status", "MISSING")}
+         "status": assignment_status_by_case_and_task.get((case_id, task["id"]), "MISSING")}
         for task in tasks if task["status"] == "PASS"
         for case_id in task["test_cases"]
-        if cases_by_id.get(case_id, {}).get("status") != "PASS"
+        if assignment_status_by_case_and_task.get((case_id, task["id"])) != "PASS"
     ]
-    check("PASS tasks have passing assigned cases", not pass_case_errors, pass_case_errors)
+    check("PASS tasks have passing assigned case results", not pass_case_errors, pass_case_errors)
     covered = {cid for task in tasks for cid in task["test_cases"]}
     check("Every case has a task owner", covered == case_set, sorted(case_set - covered))
     reverse_errors = []
@@ -446,7 +521,21 @@ def main() -> int:
     if args.initial:
         bad_status = [task["id"] for task in tasks if task["status"] != "NOT_STARTED"]
         bad_status += [case["id"] for case in cases if case["status"] != "NOT_RUN"]
-        check("Initial task and test statuses claim no execution", not bad_status, bad_status)
+        bad_assignments = []
+        for case in cases:
+            rows = case.get("assignment_results")
+            if not isinstance(rows, list):
+                bad_assignments.append({"case": case["id"], "problem": "assignment_results must be a list"})
+                continue
+            for row in rows:
+                if not isinstance(row, dict):
+                    bad_assignments.append({"case": case["id"], "problem": "assignment row must be an object"})
+                elif row.get("status") != "NOT_RUN":
+                    bad_assignments.append({"case": case["id"], "task": row.get("task_id"),
+                                            "status": row.get("status")})
+        check("Initial task, case, and assignment statuses claim no execution",
+              not bad_status and not bad_assignments,
+              {"task_or_case_statuses": bad_status, "assignment_statuses": bad_assignments})
         check("Pack records no runtime tests or delegated reviews",
               graph["subagents_used_for_this_pack"] is False
               and graph["runtime_tests_executed_for_this_pack"] is False)

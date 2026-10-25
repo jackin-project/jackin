@@ -787,26 +787,22 @@
         "Implement file create, edit, rename, delete, and watch behavior.",
         "Define concurrent writer behavior and result ownership.",
         "Reject escaping symlinks, hardlinks, path traversal, and unsupported special files.",
-        "Test Compose bind mounts against daemon-side paths.",
-        "Test edits from both the coding sandbox and Docker children.",
+        "Test local projection operations, ownership, and path rejection in the companion data module.",
+        "Record the absolute path and bind requirements for complete U08 qualification.",
         "Propagate projection errors without a wider mount fallback.",
         "Record data retention and deletion independently from engine cache state."
       ],
       "acceptance": [
-        "Host secrets and unrelated directories remain inaccessible.",
-        "Live edit and rename events reach the intended consumers.",
-        "Compose sees the same approved absolute project path.",
-        "Build-context upload alone does not pass the bind-compatibility test."
+        "The projection exposes only approved project data to the companion data plane.",
+        "File create, edit, rename, delete, and watch behavior matches the projection contract.",
+        "Escaping links, hardlinks, traversal, and unsupported special files remain confined.",
+        "Projection errors never trigger a wider host-mount fallback."
       ],
       "remove_or_replace": [
         "Do not use raw host virtiofs sharing as isolated projection.",
         "Do not broaden a host mount to solve a mount-budget limit."
       ],
-      "test_cases": [
-        "A32",
-        "A33",
-        "A34"
-      ],
+      "test_cases": [],
       "source_basis": "SPEC L308; L318-L320",
       "status": "NOT_STARTED",
       "stop_conditions": [
@@ -914,6 +910,9 @@
         "Test default-off behavior on a third domain.",
         "Run online pull, build, run, exec, logs, and events.",
         "Run Compose with live project binds and dynamic ports.",
+        "Test confined project access from the daemon and privileged Docker children.",
+        "Edit, rename, create, and delete files from both sides. Verify file watches.",
+        "Probe escaping links, traversal paths, and unsupported special files through child containers.",
         "Run real Testcontainers traffic after two ordinary source edits.",
         "Test callbacks, port exhaustion, and simultaneous domains.",
         "Attempt cross-domain access and unapproved egress.",
@@ -926,7 +925,10 @@
         "No external fixture supplies lifecycle ownership missing from OpenShell.",
         "All child resources have confirmed cleanup receipts.",
         "The disabled profile leaves no engine endpoint, credential, or prewarm artifact.",
-        "The independent repeat matches the required assertions."
+        "The independent repeat matches the required assertions.",
+        "Compose sees live edits at the agreed absolute project path.",
+        "Docker children cannot widen the project projection through path attacks.",
+        "A streamed build context does not satisfy bind compatibility."
       ],
       "remove_or_replace": [
         "Remove experimental external-engine substitutes from supported product tests.",
@@ -937,6 +939,8 @@
         "A30",
         "A31",
         "A32",
+        "A33",
+        "A34",
         "A35",
         "A36",
         "A37",
@@ -1270,9 +1274,7 @@
       ],
       "test_cases": [
         "A07",
-        "A49",
-        "A50",
-        "A51"
+        "A49"
       ],
       "source_basis": "SPEC L68-L111; L113-L127; L146; L402-L463; L475",
       "status": "NOT_STARTED",
@@ -1329,13 +1331,15 @@
         "An ambient DOCKER_HOST cannot redirect source or build secrets.",
         "A remote gateway cannot receive a local image ID as its pull reference.",
         "Wrong architecture and missing registry authorization fail before activation.",
-        "An unavailable separate builder does not disable status or stop operations."
+        "An unavailable separate builder does not disable status or stop operations.",
+        "Secret bytes stay out of build logs, and secret-dependent output follows its declared cache policy."
       ],
       "remove_or_replace": [
         "Replace old image transport tied to role-container discovery.",
         "Keep only reviewed build, image-inspect, delivery, and cache operations."
       ],
       "test_cases": [
+        "A51",
         "A52",
         "A53",
         "A54"
@@ -1394,13 +1398,15 @@
         "The role starts without root, sudo, chown, setuid, or firewall setup.",
         "Every advertised agent reports the recorded version and starts its declared route.",
         "OpenShell ENTRYPOINT behavior cannot skip required setup silently.",
-        "The canonical Capsule starts with zero sessions."
+        "The canonical Capsule starts with zero sessions.",
+        "An image that lacks a declared agent executable fails validation."
       ],
       "remove_or_replace": [
         "Delete the old privileged Capsule entrypoint and runtime provisioning assets.",
         "Delete direct Docker version probes, including runtime-image version.rs."
       ],
       "test_cases": [
+        "A50",
         "A56",
         "A57",
         "A58"
@@ -1797,7 +1803,6 @@
         "Do not retain a generic refresh broker workaround."
       ],
       "test_cases": [
-        "A75",
         "A76",
         "A77"
       ],
@@ -1939,6 +1944,7 @@
       "test_cases": [
         "A08",
         "A72",
+        "A75",
         "A81",
         "A82",
         "A83"
@@ -2504,7 +2510,8 @@
       "depends_on": [
         "U08",
         "T13",
-        "T23"
+        "T23",
+        "T27"
       ],
       "write_scope": [
         "crates/adapters/jackin-openshell/src/companions/",
@@ -2942,14 +2949,16 @@
         "Regenerate CI through the actual pinned generator recorded by P01.",
         "Audit every host subprocess and Docker API call by ownership.",
         "Compare the final tree against every inventory record.",
-        "Run clean-build and installation tests from fresh directories."
+        "Run clean-build and installation tests from fresh directories.",
+        "Rerun A13 and A14 against the final graph and composition after legacy deletion."
       ],
       "acceptance": [
         "Every legacy inventory record has a verified final disposition.",
         "No production path can execute an agent outside OpenShell.",
         "No old backend remains behind a feature flag or generic command helper.",
         "Every retained Docker call belongs to approved image infrastructure.",
-        "Fresh installation requires no old executable, state, or configuration."
+        "Fresh installation requires no old executable, state, or configuration.",
+        "The final crate graph and application composition pass the production-boundary checks."
       ],
       "remove_or_replace": [
         "Delete the old implementation, not only its workspace references.",
@@ -2958,7 +2967,9 @@
       "test_cases": [
         "A120",
         "A121",
-        "A122"
+        "A122",
+        "A13",
+        "A14"
       ],
       "source_basis": "SPEC L5-L7; L125-L127; L156; L334; L404-L419; L503-L509",
       "status": "NOT_STARTED",
@@ -3097,8 +3108,7 @@
     ],
     [
       "T24",
-      "T30",
-      "T33"
+      "T30"
     ],
     [
       "T25",
@@ -3106,7 +3116,8 @@
       "T27"
     ],
     [
-      "T28"
+      "T28",
+      "T33"
     ],
     [
       "T29"

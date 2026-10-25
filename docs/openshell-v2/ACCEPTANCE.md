@@ -4,6 +4,9 @@
 
 No case in this pack has been executed.
 Every case starts as `NOT_RUN`.
+Every task assignment for a case also starts as `NOT_RUN`.
+Run a shared case separately for every task that owns it.
+The case-level status is only a summary of those task results.
 Use `PASS`, `FAIL`, `BLOCKED`, and `NOT_RUN` as distinct test results.
 Do not mark a missing credential, host, cluster, or upstream capability as PASS.
 
@@ -142,7 +145,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A01 — Safe source freeze
 
-**Evidence:** SOURCE. **Tasks:** P00. **Initial status:** NOT_RUN.
+**Evidence:** SOURCE. **Tasks:** P00. **Initial status:** NOT_RUN. **Initial assignment status:** P00=NOT_RUN.
 
 **Setup:** Use a checkout with one committed file and one uncommitted sentinel.
 
@@ -152,7 +155,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A02 — Complete call inventory
 
-**Evidence:** SOURCE. **Tasks:** P01. **Initial status:** NOT_RUN.
+**Evidence:** SOURCE. **Tasks:** P01. **Initial status:** NOT_RUN. **Initial assignment status:** P01=NOT_RUN.
 
 **Setup:** Use the frozen baseline and all executable repository paths.
 
@@ -162,7 +165,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A03 — Product behavior coverage
 
-**Evidence:** SOURCE. **Tasks:** P01. **Initial status:** NOT_RUN.
+**Evidence:** SOURCE. **Tasks:** P01. **Initial status:** NOT_RUN. **Initial assignment status:** P01=NOT_RUN.
 
 **Setup:** Use the current CLI, account, role, project, Capsule, and workflow behavior register.
 
@@ -172,7 +175,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A04 — Real upstream contract map
 
-**Evidence:** SOURCE. **Tasks:** P02. **Initial status:** NOT_RUN.
+**Evidence:** SOURCE. **Tasks:** P02. **Initial status:** NOT_RUN. **Initial assignment status:** P02=NOT_RUN.
 
 **Setup:** Use the exact candidate SDK, protobufs, handlers, and drivers.
 
@@ -182,7 +185,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A05 — SDK mutual TLS
 
-**Evidence:** LIVE. **Tasks:** P02, T12. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** P02, T12. **Initial status:** NOT_RUN. **Initial assignment status:** P02=NOT_RUN; T12=NOT_RUN.
 
 **Setup:** Use a disposable gateway with valid, invalid, and missing client certificates.
 
@@ -192,7 +195,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A06 — Concurrent explicit targets
 
-**Evidence:** LIVE. **Tasks:** P02, T12. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** P02, T12. **Initial status:** NOT_RUN. **Initial assignment status:** P02=NOT_RUN; T12=NOT_RUN.
 
 **Setup:** Use two gateways with identical friendly sandbox names and different content sentinels.
 
@@ -202,7 +205,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A07 — Strict v2 schemas
 
-**Evidence:** UNIT. **Tasks:** T14. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T14. **Initial status:** NOT_RUN. **Initial assignment status:** T14=NOT_RUN.
 
 **Setup:** Prepare valid v2 configurations and variants with unknown fields, wrong versions, and ambiguous IDs.
 
@@ -212,7 +215,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A08 — Domain identity rules
 
-**Evidence:** UNIT. **Tasks:** T24. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T24. **Initial status:** NOT_RUN. **Initial assignment status:** T24=NOT_RUN.
 
 **Setup:** Prepare two accounts, two policies, two trust classes, and one logical instance.
 
@@ -222,7 +225,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A09 — Operation state contract
 
-**Evidence:** UNIT. **Tasks:** T10. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T10. **Initial status:** NOT_RUN. **Initial assignment status:** T10=NOT_RUN.
 
 **Setup:** Enumerate every frozen phase, outcome, error, and recovery transition.
 
@@ -232,7 +235,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A10 — Honest test gate
 
-**Evidence:** UNIT. **Tasks:** P04. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** P04. **Initial status:** NOT_RUN. **Initial assignment status:** P04=NOT_RUN.
 
 **Setup:** Prepare one passing case, one failed assertion, one missing case, and one unavailable target.
 
@@ -242,7 +245,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A11 — Disposable resource ownership
 
-**Evidence:** LIVE. **Tasks:** P04. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** P04. **Initial status:** NOT_RUN. **Initial assignment status:** P04=NOT_RUN.
 
 **Setup:** Create owned test resources and unrelated sentinel resources in the same environment.
 
@@ -252,7 +255,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A12 — Evidence secret protection
 
-**Evidence:** UNIT. **Tasks:** P04. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** P04. **Initial status:** NOT_RUN. **Initial assignment status:** P04=NOT_RUN.
 
 **Setup:** Use synthetic credential canaries in allowed secret inputs and denied ordinary records.
 
@@ -262,7 +265,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A13 — Production dependency boundary
 
-**Evidence:** SOURCE. **Tasks:** P05. **Initial status:** NOT_RUN.
+**Evidence:** SOURCE. **Tasks:** P05, T39. **Initial status:** NOT_RUN. **Initial assignment status:** P05=NOT_RUN; T39=NOT_RUN.
 
 **Setup:** Use Cargo metadata for the final candidate graph.
 
@@ -272,7 +275,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A14 — No production backend selection
 
-**Evidence:** SOURCE. **Tasks:** P05. **Initial status:** NOT_RUN.
+**Evidence:** SOURCE. **Tasks:** P05, T39. **Initial status:** NOT_RUN. **Initial assignment status:** P05=NOT_RUN; T39=NOT_RUN.
 
 **Setup:** Use the active crate graph and application composition.
 
@@ -282,7 +285,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A15 — Authoritative activation observations
 
-**Evidence:** LIVE. **Tasks:** U00, T13. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U00, T13. **Initial status:** NOT_RUN. **Initial assignment status:** U00=NOT_RUN; T13=NOT_RUN.
 
 **Setup:** Create a sandbox and prepare forged helper claims plus real gateway observations.
 
@@ -292,7 +295,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A16 — Effective policy source
 
-**Evidence:** LIVE. **Tasks:** U00, T13. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U00, T13. **Initial status:** NOT_RUN. **Initial assignment status:** U00=NOT_RUN; T13=NOT_RUN.
 
 **Setup:** Use a sandbox policy and a different gateway global policy.
 
@@ -302,7 +305,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A17 — Provider authority observation
 
-**Evidence:** LIVE. **Tasks:** U00, T13. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U00, T13. **Initial status:** NOT_RUN. **Initial assignment status:** U00=NOT_RUN; T13=NOT_RUN.
 
 **Setup:** Use a provider binding that adds approved endpoint access.
 
@@ -312,7 +315,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A18 — Same-name replacement fencing
 
-**Evidence:** LIVE. **Tasks:** U01, T13. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U01, T13. **Initial status:** NOT_RUN. **Initial assignment status:** U01=NOT_RUN; T13=NOT_RUN.
 
 **Setup:** Record sandbox A identity and generation. Replace it with B under the same name.
 
@@ -322,7 +325,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A19 — Mutation replay integrity
 
-**Evidence:** LIVE. **Tasks:** U01, T13. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U01, T13. **Initial status:** NOT_RUN. **Initial assignment status:** U01=NOT_RUN; T13=NOT_RUN.
 
 **Setup:** Use one effect with a persisted request ID and canonical digest.
 
@@ -332,7 +335,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A20 — Scope and permission masking
 
-**Evidence:** LIVE. **Tasks:** U01, T13. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U01, T13. **Initial status:** NOT_RUN. **Initial assignment status:** U01=NOT_RUN; T13=NOT_RUN.
 
 **Setup:** Use two workspaces and a caller without authority in one scope.
 
@@ -342,7 +345,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A21 — Lost effectful exec response
 
-**Evidence:** LIVE. **Tasks:** U01, T13. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U01, T13. **Initial status:** NOT_RUN. **Initial assignment status:** U01=NOT_RUN; T13=NOT_RUN.
 
 **Setup:** Start a counted effect through the qualified exec API and drop its response.
 
@@ -352,7 +355,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A22 — Strict worker immutability
 
-**Evidence:** LIVE. **Tasks:** U02, T32. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U02, T32. **Initial status:** NOT_RUN. **Initial assignment status:** U02=NOT_RUN; T32=NOT_RUN.
 
 **Setup:** Use a worker with immutable candidate, checks, and root plus approved scratch.
 
@@ -362,7 +365,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A23 — Worker resource limits
 
-**Evidence:** LIVE. **Tasks:** U02, T32. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U02, T32. **Initial status:** NOT_RUN. **Initial assignment status:** U02=NOT_RUN; T32=NOT_RUN.
 
 **Setup:** Use fixed memory, CPU, PID, disk, output, and deadline limits.
 
@@ -372,7 +375,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A24 — Worker authority denial
 
-**Evidence:** LIVE. **Tasks:** U02, T32. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U02, T32. **Initial status:** NOT_RUN. **Initial assignment status:** U02=NOT_RUN; T32=NOT_RUN.
 
 **Setup:** Use a strict worker with no account, provider, host mount, or ordinary network grant.
 
@@ -382,7 +385,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A25 — Trustworthy worker completion
 
-**Evidence:** LIVE. **Tasks:** U02, T32. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U02, T32. **Initial status:** NOT_RUN. **Initial assignment status:** U02=NOT_RUN; T32=NOT_RUN.
 
 **Setup:** Use success, nonzero exit, signal, OOM, timeout, and lost-status fixtures.
 
@@ -392,7 +395,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A26 — Ordinary native rebuilds
 
-**Evidence:** LIVE. **Tasks:** U03. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U03. **Initial status:** NOT_RUN. **Initial assignment status:** U03=NOT_RUN.
 
 **Setup:** Use an approved native Rust network test and a fixed executable path.
 
@@ -402,7 +405,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A27 — Replaced executable authority
 
-**Evidence:** LIVE. **Tasks:** U03. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U03. **Initial status:** NOT_RUN. **Initial assignment status:** U03=NOT_RUN.
 
 **Setup:** Use a protected provider route and an untrusted replacement executable.
 
@@ -412,7 +415,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A28 — Default-off engine
 
-**Evidence:** LIVE. **Tasks:** U08, T33. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U08, T33. **Initial status:** NOT_RUN. **Initial assignment status:** U08=NOT_RUN; T33=NOT_RUN.
 
 **Setup:** Use a role and target with engine access disabled.
 
@@ -422,7 +425,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A29 — Companion ownership identity
 
-**Evidence:** LIVE. **Tasks:** U05, T33. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U05, T33. **Initial status:** NOT_RUN. **Initial assignment status:** U05=NOT_RUN; T33=NOT_RUN.
 
 **Setup:** Use two domains and a restarted parent generation.
 
@@ -432,7 +435,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A30 — Companion lifecycle
 
-**Evidence:** LIVE. **Tasks:** U05, U08, T33. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U05, U08, T33. **Initial status:** NOT_RUN. **Initial assignment status:** U05=NOT_RUN; U08=NOT_RUN; T33=NOT_RUN.
 
 **Setup:** Use an admitted domain with engine data and running Docker children.
 
@@ -442,7 +445,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A31 — Companion failure cleanup
 
-**Evidence:** LIVE. **Tasks:** U05, U08, T33. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U05, U08, T33. **Initial status:** NOT_RUN. **Initial assignment status:** U05=NOT_RUN; U08=NOT_RUN; T33=NOT_RUN.
 
 **Setup:** Use checkpoints at every companion provisioning and cleanup transition.
 
@@ -452,7 +455,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A32 — Confined project projection
 
-**Evidence:** LIVE. **Tasks:** U06, U08. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U08. **Initial status:** NOT_RUN. **Initial assignment status:** U08=NOT_RUN.
 
 **Setup:** Place approved project files beside forbidden host and account sentinels.
 
@@ -462,7 +465,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A33 — Live Docker bind behavior
 
-**Evidence:** LIVE. **Tasks:** U06. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U08. **Initial status:** NOT_RUN. **Initial assignment status:** U08=NOT_RUN.
 
 **Setup:** Use Compose binds at the agreed absolute project path.
 
@@ -472,7 +475,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A34 — Projection path attacks
 
-**Evidence:** LIVE. **Tasks:** U06. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U08. **Initial status:** NOT_RUN. **Initial assignment status:** U08=NOT_RUN.
 
 **Setup:** Add escaping links, traversal paths, and unsupported special-file fixtures.
 
@@ -482,7 +485,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A35 — Complete Docker API behavior
 
-**Evidence:** LIVE. **Tasks:** U07, U08. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U07, U08. **Initial status:** NOT_RUN. **Initial assignment status:** U07=NOT_RUN; U08=NOT_RUN.
 
 **Setup:** Use the authenticated managed engine endpoint.
 
@@ -492,7 +495,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A36 — Outer engine egress
 
-**Evidence:** LIVE. **Tasks:** U07, U08. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U07, U08. **Initial status:** NOT_RUN. **Initial assignment status:** U07=NOT_RUN; U08=NOT_RUN.
 
 **Setup:** Define one allowed destination and denied destinations for the companion.
 
@@ -502,7 +505,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A37 — Dynamic ports and callbacks
 
-**Evidence:** LIVE. **Tasks:** U07, U08. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U07, U08. **Initial status:** NOT_RUN. **Initial assignment status:** U07=NOT_RUN; U08=NOT_RUN.
 
 **Setup:** Use concurrent Testcontainers services with dynamic published ports.
 
@@ -512,7 +515,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A38 — Aggregate engine budgets
 
-**Evidence:** LIVE. **Tasks:** U07, U08. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U07, U08. **Initial status:** NOT_RUN. **Initial assignment status:** U07=NOT_RUN; U08=NOT_RUN.
 
 **Setup:** Set one domain budget for the engine and all children.
 
@@ -522,7 +525,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A39 — Real Compose and Testcontainers
 
-**Evidence:** LIVE. **Tasks:** U08, T33. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U08, T33. **Initial status:** NOT_RUN. **Initial assignment status:** U08=NOT_RUN; T33=NOT_RUN.
 
 **Setup:** Use two managed companions, a live project, and an ordinary native test project.
 
@@ -532,7 +535,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A40 — Journal crash boundaries
 
-**Evidence:** UNIT. **Tasks:** T10. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T10. **Initial status:** NOT_RUN. **Initial assignment status:** T10=NOT_RUN.
 
 **Setup:** Use fault points before and after each local commit and simulated external effect.
 
@@ -542,7 +545,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A41 — Unknown outcome recovery
 
-**Evidence:** LIVE. **Tasks:** T38. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T38. **Initial status:** NOT_RUN. **Initial assignment status:** T38=NOT_RUN.
 
 **Setup:** Lose responses from create, exec, stop, delete, and publication effects.
 
@@ -552,7 +555,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A42 — Fresh v2 state
 
-**Evidence:** UNIT. **Tasks:** T10. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T10. **Initial status:** NOT_RUN. **Initial assignment status:** T10=NOT_RUN.
 
 **Setup:** Provide a clean directory, a valid v2 database, and an old-format database.
 
@@ -562,7 +565,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A43 — Local IPC authentication
 
-**Evidence:** LIVE. **Tasks:** T11. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T11. **Initial status:** NOT_RUN. **Initial assignment status:** T11=NOT_RUN.
 
 **Setup:** Use the host service, another local user, and unsafe socket-path fixtures.
 
@@ -572,7 +575,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A44 — Host service death
 
-**Evidence:** LIVE. **Tasks:** T19. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T19. **Initial status:** NOT_RUN. **Initial assignment status:** T19=NOT_RUN.
 
 **Setup:** Run a remote Capsule with a live PTY and a durable operation record.
 
@@ -582,7 +585,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A45 — Approval-service outage
 
-**Evidence:** LIVE. **Tasks:** T26. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T26. **Initial status:** NOT_RUN. **Initial assignment status:** T26=NOT_RUN.
 
 **Setup:** Run a domain that requests a host-approved action. Stop the host control service.
 
@@ -592,7 +595,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A46 — Authentication expiry
 
-**Evidence:** LIVE. **Tasks:** T12. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T12. **Initial status:** NOT_RUN. **Initial assignment status:** T12=NOT_RUN.
 
 **Setup:** Use qualified mTLS and intended token-based routes with invalid and expired credentials.
 
@@ -602,7 +605,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A47 — Connection secret redaction
 
-**Evidence:** UNIT. **Tasks:** T12. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T12. **Initial status:** NOT_RUN. **Initial assignment status:** T12=NOT_RUN.
 
 **Setup:** Construct transport errors and Debug output with synthetic certificates, keys, and tokens.
 
@@ -612,7 +615,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A48 — Partial inventory and false absence
 
-**Evidence:** LIVE. **Tasks:** T13. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T13. **Initial status:** NOT_RUN. **Initial assignment status:** T13=NOT_RUN.
 
 **Setup:** Use paginated resources and inject permission, authentication, and transport failures.
 
@@ -622,7 +625,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A49 — Complete role cache identity
 
-**Evidence:** UNIT. **Tasks:** T14. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T14. **Initial status:** NOT_RUN. **Initial assignment status:** T14=NOT_RUN.
 
 **Setup:** Vary each declared build input independently.
 
@@ -632,7 +635,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A50 — Complete installed agent set
 
-**Evidence:** BUILD. **Tasks:** T14. **Initial status:** NOT_RUN.
+**Evidence:** BUILD. **Tasks:** T16. **Initial status:** NOT_RUN. **Initial assignment status:** T16=NOT_RUN.
 
 **Setup:** Declare two agents but provide a candidate image that lacks one.
 
@@ -642,7 +645,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A51 — Ignore rules and secret-dependent builds
 
-**Evidence:** BUILD. **Tasks:** T14. **Initial status:** NOT_RUN.
+**Evidence:** BUILD. **Tasks:** T15. **Initial status:** NOT_RUN. **Initial assignment status:** T15=NOT_RUN.
 
 **Setup:** Use ignored files, included files, and an explicitly secret-dependent build fixture.
 
@@ -652,7 +655,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A52 — Explicit builder routing
 
-**Evidence:** BUILD. **Tasks:** T15. **Initial status:** NOT_RUN.
+**Evidence:** BUILD. **Tasks:** T15. **Initial status:** NOT_RUN. **Initial assignment status:** T15=NOT_RUN.
 
 **Setup:** Configure builder A and an ambient DOCKER_HOST for builder B.
 
@@ -662,7 +665,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A53 — Remote immutable image delivery
 
-**Evidence:** BUILD. **Tasks:** T15. **Initial status:** NOT_RUN.
+**Evidence:** BUILD. **Tasks:** T15. **Initial status:** NOT_RUN. **Initial assignment status:** T15=NOT_RUN.
 
 **Setup:** Use a local image ID and a reachable registry artifact with an immutable digest.
 
@@ -672,7 +675,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A54 — Platform artifact identity
 
-**Evidence:** BUILD. **Tasks:** T15. **Initial status:** NOT_RUN.
+**Evidence:** BUILD. **Tasks:** T15. **Initial status:** NOT_RUN. **Initial assignment status:** T15=NOT_RUN.
 
 **Setup:** Use a multi-platform OCI index and mismatched architecture fixtures.
 
@@ -682,7 +685,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A55 — Separate builder outage
 
-**Evidence:** LIVE. **Tasks:** T35. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T35. **Initial status:** NOT_RUN. **Initial assignment status:** T35=NOT_RUN.
 
 **Setup:** Run a healthy remote gateway and then stop only its independent builder.
 
@@ -692,7 +695,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A56 — Unprivileged role ABI
 
-**Evidence:** LIVE. **Tasks:** T16. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T16. **Initial status:** NOT_RUN. **Initial assignment status:** T16=NOT_RUN.
 
 **Setup:** Build the complete role with the C08 layout.
 
@@ -702,7 +705,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A57 — Advertised agent validation
 
-**Evidence:** LIVE. **Tasks:** T16. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T16. **Initial status:** NOT_RUN. **Initial assignment status:** T16=NOT_RUN.
 
 **Setup:** Use the built role and its complete executable inventory.
 
@@ -712,7 +715,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A58 — Empty canonical Capsule startup
 
-**Evidence:** LIVE. **Tasks:** T16. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T16. **Initial status:** NOT_RUN. **Initial assignment status:** T16=NOT_RUN.
 
 **Setup:** Create a domain with canonical restart policy Never.
 
@@ -722,7 +725,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A59 — Frame allocation limits
 
-**Evidence:** UNIT. **Tasks:** T17. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T17. **Initial status:** NOT_RUN. **Initial assignment status:** T17=NOT_RUN.
 
 **Setup:** Feed maximum, excessive, truncated, and nested protocol frames.
 
@@ -732,7 +735,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A60 — Protocol compatibility
 
-**Evidence:** UNIT. **Tasks:** T17. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T17. **Initial status:** NOT_RUN. **Initial assignment status:** T17=NOT_RUN.
 
 **Setup:** Use golden v2 frames and incompatible major-version peers.
 
@@ -742,7 +745,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A61 — Protocol fuzzing
 
-**Evidence:** UNIT. **Tasks:** T17. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T17. **Initial status:** NOT_RUN. **Initial assignment status:** T17=NOT_RUN.
 
 **Setup:** Use bounded random frames and valid messages with mutated identifiers.
 
@@ -752,7 +755,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A62 — Nonroot Capsule process
 
-**Evidence:** UNIT. **Tasks:** T18. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T18. **Initial status:** NOT_RUN. **Initial assignment status:** T18=NOT_RUN.
 
 **Setup:** Run the Capsule test fixture as an ordinary user with no agent credentials.
 
@@ -762,7 +765,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A63 — Session child lifetime
 
-**Evidence:** UNIT. **Tasks:** T18. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T18. **Initial status:** NOT_RUN. **Initial assignment status:** T18=NOT_RUN.
 
 **Setup:** Use deterministic PTY fixture children and grandchildren.
 
@@ -772,7 +775,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A64 — Bounded replay and snapshots
 
-**Evidence:** UNIT. **Tasks:** T18. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T18. **Initial status:** NOT_RUN. **Initial assignment status:** T18=NOT_RUN.
 
 **Setup:** Produce output beyond retention with one stalled viewer.
 
@@ -782,7 +785,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A65 — Binary relay transport
 
-**Evidence:** LIVE. **Tasks:** T19. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T19. **Initial status:** NOT_RUN. **Initial assignment status:** T19=NOT_RUN.
 
 **Setup:** Use a real OpenShell exec stream without an outer PTY.
 
@@ -792,7 +795,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A66 — Same-PTY reconnect
 
-**Evidence:** LIVE. **Tasks:** T19. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T19. **Initial status:** NOT_RUN. **Initial assignment status:** T19=NOT_RUN.
 
 **Setup:** Record a live inner process identity and output sequence.
 
@@ -802,7 +805,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A67 — Single input writer
 
-**Evidence:** LIVE. **Tasks:** T19. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T19. **Initial status:** NOT_RUN. **Initial assignment status:** T19=NOT_RUN.
 
 **Setup:** Attach two viewers and one writer to a session.
 
@@ -812,7 +815,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A68 — Portable worktree and unpushed commits
 
-**Evidence:** LIVE. **Tasks:** T20. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T20. **Initial status:** NOT_RUN. **Initial assignment status:** T20=NOT_RUN.
 
 **Setup:** Use a linked worktree with unpushed commits and dirty selected files.
 
@@ -822,7 +825,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A69 — Atomic materialization
 
-**Evidence:** LIVE. **Tasks:** T20. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T20. **Initial status:** NOT_RUN. **Initial assignment status:** T20=NOT_RUN.
 
 **Setup:** Import a multi-file source into a unique staging epoch.
 
@@ -832,7 +835,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A70 — Archive and path safety
 
-**Evidence:** UNIT. **Tasks:** T20. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T20. **Initial status:** NOT_RUN. **Initial assignment status:** T20=NOT_RUN.
 
 **Setup:** Prepare traversal, escaping-link, special-file, excessive-size, and credential-store fixtures.
 
@@ -842,7 +845,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A71 — Source mode and host Git safety
 
-**Evidence:** LIVE. **Tasks:** T20. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T20. **Initial status:** NOT_RUN. **Initial assignment status:** T20=NOT_RUN.
 
 **Setup:** Use Shared, Worktree, and Clone fixtures with malicious repository command configuration.
 
@@ -852,7 +855,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A72 — Stable account selection
 
-**Evidence:** LIVE. **Tasks:** T24. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T24. **Initial status:** NOT_RUN. **Initial assignment status:** T24=NOT_RUN.
 
 **Setup:** Save an instance with account A and later change the user's default to B.
 
@@ -862,7 +865,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A73 — Private authority scope
 
-**Evidence:** LIVE. **Tasks:** T21. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T21. **Initial status:** NOT_RUN. **Initial assignment status:** T21=NOT_RUN.
 
 **Setup:** Use a private account, personal workspace, and team workspace with another member.
 
@@ -872,7 +875,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A74 — Account-provider activation binding
 
-**Evidence:** LIVE. **Tasks:** T23. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T23. **Initial status:** NOT_RUN. **Initial assignment status:** T23=NOT_RUN.
 
 **Setup:** Use a saved grant and change its provider or policy revision before activation.
 
@@ -882,7 +885,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A75 — Native credential isolation
 
-**Evidence:** LIVE. **Tasks:** T22. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T24. **Initial status:** NOT_RUN. **Initial assignment status:** T24=NOT_RUN.
 
 **Setup:** Use two approved native-login accounts and one generic shell domain.
 
@@ -892,7 +895,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A76 — Atomic rotating refresh state
 
-**Evidence:** LIVE. **Tasks:** T22. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T22. **Initial status:** NOT_RUN. **Initial assignment status:** T22=NOT_RUN.
 
 **Setup:** Use a native-login route with rotating tokens and explicit single-writer scope.
 
@@ -902,7 +905,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A77 — Real advertised agent routes
 
-**Evidence:** LIVE. **Tasks:** T22. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T22. **Initial status:** NOT_RUN. **Initial assignment status:** T22=NOT_RUN.
 
 **Setup:** Use approved disposable credentials for every advertised authentication route.
 
@@ -912,7 +915,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A78 — Activation barrier negatives
 
-**Evidence:** LIVE. **Tasks:** T23. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T23. **Initial status:** NOT_RUN. **Initial assignment status:** T23=NOT_RUN.
 
 **Setup:** Prepare mismatched image, generation, account grant, materialization epoch, and missing policy observations.
 
@@ -922,7 +925,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A79 — Launch interruption and replay
 
-**Evidence:** LIVE. **Tasks:** T23. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T23. **Initial status:** NOT_RUN. **Initial assignment status:** T23=NOT_RUN.
 
 **Setup:** Inject loss after build, create, publication, activation receipt, and StartSession.
 
@@ -932,7 +935,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A80 — Complete native vertical path
 
-**Evidence:** LIVE. **Tasks:** T23. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T23. **Initial status:** NOT_RUN. **Initial assignment status:** T23=NOT_RUN.
 
 **Setup:** Use one actual role, project, target, account, and fresh configuration.
 
@@ -942,7 +945,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A81 — Domain split and collaboration
 
-**Evidence:** LIVE. **Tasks:** T24. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T24. **Initial status:** NOT_RUN. **Initial assignment status:** T24=NOT_RUN.
 
 **Setup:** Use two accounts with separate materializations and a proposed shared-write option.
 
@@ -952,7 +955,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A82 — Default and in-domain shells
 
-**Evidence:** LIVE. **Tasks:** T24. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T24. **Initial status:** NOT_RUN. **Initial assignment status:** T24=NOT_RUN.
 
 **Setup:** Use an account domain and its logical instance.
 
@@ -962,7 +965,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A83 — Session and instance lifecycle
 
-**Evidence:** LIVE. **Tasks:** T24. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T24. **Initial status:** NOT_RUN. **Initial assignment status:** T24=NOT_RUN.
 
 **Setup:** Use several sessions across two domains.
 
@@ -972,7 +975,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A84 — Usage cache identity
 
-**Evidence:** UNIT. **Tasks:** T25. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T25. **Initial status:** NOT_RUN. **Initial assignment status:** T25=NOT_RUN.
 
 **Setup:** Use two accounts, two credential revisions, and stale or failed provider responses.
 
@@ -982,7 +985,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A85 — Ended-run usage denial
 
-**Evidence:** LIVE. **Tasks:** T25. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T25. **Initial status:** NOT_RUN. **Initial assignment status:** T25=NOT_RUN.
 
 **Setup:** End an account grant while a delayed usage request remains queued.
 
@@ -992,7 +995,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A86 — Host affordance injection
 
-**Evidence:** LIVE. **Tasks:** T26. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T26. **Initial status:** NOT_RUN. **Initial assignment status:** T26=NOT_RUN.
 
 **Setup:** Emit hostile terminal escape sequences and unsolicited helper clipboard, URL, and export requests.
 
@@ -1002,7 +1005,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A87 — Bound approval semantics
 
-**Evidence:** LIVE. **Tasks:** T26. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T26. **Initial status:** NOT_RUN. **Initial assignment status:** T26=NOT_RUN.
 
 **Setup:** Approve one fixed tool request, then vary domain, image, argv, inputs, destination, expiry, or replay identity.
 
@@ -1012,7 +1015,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A88 — Isolated secret consumer
 
-**Evidence:** LIVE. **Tasks:** T26. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T26. **Initial status:** NOT_RUN. **Initial assignment status:** T26=NOT_RUN.
 
 **Setup:** Use a coding domain and a separately approved tool domain with a synthetic secret.
 
@@ -1022,7 +1025,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A89 — Independent checkpoint restore
 
-**Evidence:** LIVE. **Tasks:** T27. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T27. **Initial status:** NOT_RUN. **Initial assignment status:** T27=NOT_RUN.
 
 **Setup:** Create an accepted checkpoint outside source-owned storage.
 
@@ -1032,7 +1035,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A90 — Dirty untracked and unpushed retention
 
-**Evidence:** LIVE. **Tasks:** T27. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T27. **Initial status:** NOT_RUN. **Initial assignment status:** T27=NOT_RUN.
 
 **Setup:** Use tracked changes, selected untracked files, deletions, and unpushed commits.
 
@@ -1042,7 +1045,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A91 — Checkpoint credential exclusion
 
-**Evidence:** LIVE. **Tasks:** T27. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T27. **Initial status:** NOT_RUN. **Initial assignment status:** T27=NOT_RUN.
 
 **Setup:** Place known account and token canaries beside allowlisted conversation data.
 
@@ -1052,7 +1055,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A92 — Conflict-aware export
 
-**Evidence:** LIVE. **Tasks:** T27. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T27. **Initial status:** NOT_RUN. **Initial assignment status:** T27=NOT_RUN.
 
 **Setup:** Launch from baseline A and change the host checkout to B before return.
 
@@ -1062,7 +1065,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A93 — Failed handoff safety
 
-**Evidence:** LIVE. **Tasks:** T28. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T28. **Initial status:** NOT_RUN. **Initial assignment status:** T28=NOT_RUN.
 
 **Setup:** Use an accepted checkpoint and independently authorized destination.
 
@@ -1072,7 +1075,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A94 — Scoped eject and exile
 
-**Evidence:** LIVE. **Tasks:** T28. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T28. **Initial status:** NOT_RUN. **Initial assignment status:** T28=NOT_RUN.
 
 **Setup:** Use instances across two projects and two targets.
 
@@ -1082,7 +1085,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A95 — Purge ownership guards
 
-**Evidence:** LIVE. **Tasks:** T28. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T28. **Initial status:** NOT_RUN. **Initial assignment status:** T28=NOT_RUN.
 
 **Setup:** Use original checkouts, owned runtime data, external PVCs, shared providers, and masked absence.
 
@@ -1092,7 +1095,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A96 — CLI and JSON contract
 
-**Evidence:** UNIT. **Tasks:** T29. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T29. **Initial status:** NOT_RUN. **Initial assignment status:** T29=NOT_RUN.
 
 **Setup:** Use all frozen command forms, ambiguous selectors, and old backend flags.
 
@@ -1102,7 +1105,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A97 — Partial fleet visibility
 
-**Evidence:** LIVE. **Tasks:** T29. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T29. **Initial status:** NOT_RUN. **Initial assignment status:** T29=NOT_RUN.
 
 **Setup:** Use three targets, paginated scopes, and one unreachable target.
 
@@ -1112,7 +1115,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A98 — Trusted status presentation
 
-**Evidence:** LIVE. **Tasks:** T29. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T29. **Initial status:** NOT_RUN. **Initial assignment status:** T29=NOT_RUN.
 
 **Setup:** Make an agent print false account labels, done events, and a fabricated passing result.
 
@@ -1122,7 +1125,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A99 — Private developer forward
 
-**Evidence:** LIVE. **Tasks:** T30. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T30. **Initial status:** NOT_RUN. **Initial assignment status:** T30=NOT_RUN.
 
 **Setup:** Run a private sandbox service and an authorized local client.
 
@@ -1132,7 +1135,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A100 — Public exposure separation
 
-**Evidence:** LIVE. **Tasks:** T30. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T30. **Initial status:** NOT_RUN. **Initial assignment status:** T30=NOT_RUN.
 
 **Setup:** Request a public service and a Capsule control endpoint.
 
@@ -1142,7 +1145,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A101 — Artifact liveness under outage
 
-**Evidence:** LIVE. **Tasks:** T31. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T31. **Initial status:** NOT_RUN. **Initial assignment status:** T31=NOT_RUN.
 
 **Setup:** Reference an image from an active domain and a retained checkpoint on an unavailable target.
 
@@ -1152,7 +1155,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A102 — Safe prewarm
 
-**Evidence:** LIVE. **Tasks:** T31. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T31. **Initial status:** NOT_RUN. **Initial assignment status:** T31=NOT_RUN.
 
 **Setup:** Use a role with an optional account and optional engine capability.
 
@@ -1162,7 +1165,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A103 — Diagnostics and resource attribution
 
-**Evidence:** LIVE. **Tasks:** T31. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T31. **Initial status:** NOT_RUN. **Initial assignment status:** T31=NOT_RUN.
 
 **Setup:** Vary builder, gateway, host, and companion availability independently.
 
@@ -1172,7 +1175,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A104 — Frozen verification binding
 
-**Evidence:** LIVE. **Tasks:** T32. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T32. **Initial status:** NOT_RUN. **Initial assignment status:** T32=NOT_RUN.
 
 **Setup:** Change the candidate, image, check bundle, argv, or budget after a prior passing check.
 
@@ -1182,7 +1185,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A105 — Verification outcome classes
 
-**Evidence:** LIVE. **Tasks:** T32. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T32. **Initial status:** NOT_RUN. **Initial assignment status:** T32=NOT_RUN.
 
 **Setup:** Run successful, failing, timed-out, cancelled, killed, and disconnected checks.
 
@@ -1192,7 +1195,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A106 — No verification fallback
 
-**Evidence:** LIVE. **Tasks:** T32. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T32. **Initial status:** NOT_RUN. **Initial assignment status:** T32=NOT_RUN.
 
 **Setup:** Make the OpenShell verifier unavailable while host Python and Docker remain available.
 
@@ -1202,7 +1205,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A107 — Engine capability change
 
-**Evidence:** LIVE. **Tasks:** T33. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T33. **Initial status:** NOT_RUN. **Initial assignment status:** T33=NOT_RUN.
 
 **Setup:** Use a running engine-disabled domain with retained work.
 
@@ -1212,7 +1215,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A108 — Full retained product coverage
 
-**Evidence:** LIVE. **Tasks:** T34. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T34. **Initial status:** NOT_RUN. **Initial assignment status:** T34=NOT_RUN.
 
 **Setup:** Use the P01 behavior register and the integrated v2 application.
 
@@ -1222,7 +1225,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A109 — External metadata outage
 
-**Evidence:** LIVE. **Tasks:** T34. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T34. **Initial status:** NOT_RUN. **Initial assignment status:** T34=NOT_RUN.
 
 **Setup:** Run a useful local session and make pull-request or CI metadata unavailable.
 
@@ -1232,7 +1235,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A110 — Local container target matrix
 
-**Evidence:** LIVE. **Tasks:** T35. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T35. **Initial status:** NOT_RUN. **Initial assignment status:** T35=NOT_RUN.
 
 **Setup:** Prepare native Linux, macOS Docker Desktop, and macOS OrbStack rows.
 
@@ -1242,7 +1245,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A111 — Remote container target matrix
 
-**Evidence:** LIVE. **Tasks:** T35. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T35. **Initial status:** NOT_RUN. **Initial assignment status:** T35=NOT_RUN.
 
 **Setup:** Prepare independent remote Linux and required remote macOS gateways.
 
@@ -1252,7 +1255,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A112 — VM identity and resource shapes
 
-**Evidence:** LIVE. **Tasks:** T36. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T36. **Initial status:** NOT_RUN. **Initial assignment status:** T36=NOT_RUN.
 
 **Setup:** Prepare required architectures and separate small and large VM gateways.
 
@@ -1262,7 +1265,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A113 — VM storage and shutdown
 
-**Evidence:** LIVE. **Tasks:** T36. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T36. **Initial status:** NOT_RUN. **Initial assignment status:** T36=NOT_RUN.
 
 **Setup:** Use guest-owned project data, restricted projections, and an independent checkpoint.
 
@@ -1272,7 +1275,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A114 — Coherent Kubernetes tuple
 
-**Evidence:** LIVE. **Tasks:** T37. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T37. **Initial status:** NOT_RUN. **Initial assignment status:** T37=NOT_RUN.
 
 **Setup:** Deploy official resources with dedicated supervisors and a fully pinned tuple.
 
@@ -1282,7 +1285,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A115 — Kubernetes network and control denial
 
-**Evidence:** LIVE. **Tasks:** T37. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T37. **Initial status:** NOT_RUN. **Initial assignment status:** T37=NOT_RUN.
 
 **Setup:** Use the real CNI and scoped developer identity.
 
@@ -1292,7 +1295,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A116 — Kubernetes storage and image delivery
 
-**Evidence:** LIVE. **Tasks:** T37. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T37. **Initial status:** NOT_RUN. **Initial assignment status:** T37=NOT_RUN.
 
 **Setup:** Use automatic /sandbox storage, explicit StorageClass, quotas, and scoped pull credentials.
 
@@ -1302,7 +1305,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A117 — Combined real-agent journey
 
-**Evidence:** LIVE. **Tasks:** T35, T36, T37, T38. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T35, T36, T37, T38. **Initial status:** NOT_RUN. **Initial assignment status:** T35=NOT_RUN; T36=NOT_RUN; T37=NOT_RUN; T38=NOT_RUN.
 
 **Setup:** Use one qualified target mechanism, two approved accounts, a real role, and a generic shell.
 
@@ -1312,7 +1315,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A118 — Cross-area failure sweep
 
-**Evidence:** LIVE. **Tasks:** T38. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T38. **Initial status:** NOT_RUN. **Initial assignment status:** T38=NOT_RUN.
 
 **Setup:** Use the full product and every recorded external-effect boundary.
 
@@ -1322,7 +1325,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A119 — Honest performance and resource report
 
-**Evidence:** LIVE. **Tasks:** T38. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T38. **Initial status:** NOT_RUN. **Initial assignment status:** T38=NOT_RUN.
 
 **Setup:** Use declared hosts, cache states, fixed workloads, and approved resource budgets.
 
@@ -1332,7 +1335,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A120 — Complete legacy deletion
 
-**Evidence:** SOURCE. **Tasks:** T39. **Initial status:** NOT_RUN.
+**Evidence:** SOURCE. **Tasks:** T39. **Initial status:** NOT_RUN. **Initial assignment status:** T39=NOT_RUN.
 
 **Setup:** Use the frozen P01 inventory and final source tree.
 
@@ -1342,7 +1345,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A121 — Semantic runtime-call audit
 
-**Evidence:** SOURCE. **Tasks:** T39. **Initial status:** NOT_RUN.
+**Evidence:** SOURCE. **Tasks:** T39. **Initial status:** NOT_RUN. **Initial assignment status:** T39=NOT_RUN.
 
 **Setup:** Inspect production subprocess sites, APIs, scripts, transitive imports, and packaged assets.
 
@@ -1352,7 +1355,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A122 — Clean packaging and installation
 
-**Evidence:** BUILD. **Tasks:** T39. **Initial status:** NOT_RUN.
+**Evidence:** BUILD. **Tasks:** T39. **Initial status:** NOT_RUN. **Initial assignment status:** T39=NOT_RUN.
 
 **Setup:** Use a fresh checkout and empty v2 configuration and state directories.
 
@@ -1362,7 +1365,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A123 — Complete release gate
 
-**Evidence:** SOURCE. **Tasks:** T40. **Initial status:** NOT_RUN.
+**Evidence:** SOURCE. **Tasks:** T40. **Initial status:** NOT_RUN. **Initial assignment status:** T40=NOT_RUN.
 
 **Setup:** Use every task report, target row, acceptance result, and independent review.
 
@@ -1372,7 +1375,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A124 — Accurate operational documentation
 
-**Evidence:** SOURCE. **Tasks:** T40. **Initial status:** NOT_RUN.
+**Evidence:** SOURCE. **Tasks:** T40. **Initial status:** NOT_RUN. **Initial assignment status:** T40=NOT_RUN.
 
 **Setup:** Use fresh-install, account, target, checkpoint, recovery, and capability documentation.
 
@@ -1382,7 +1385,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A125 — Release provenance and authorization
 
-**Evidence:** BUILD. **Tasks:** T40. **Initial status:** NOT_RUN.
+**Evidence:** BUILD. **Tasks:** T40. **Initial status:** NOT_RUN. **Initial assignment status:** T40=NOT_RUN.
 
 **Setup:** Use the final source commit, approved tuples, patch records, and package digests.
 

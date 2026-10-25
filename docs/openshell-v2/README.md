@@ -32,7 +32,9 @@ Status: Plan for a breaking rewrite. No product implementation is included.
 | [TRACEABILITY.md](./TRACEABILITY.md) | Every specification section mapped to implementation tasks. |
 | [traceability.json](./traceability.json) | The machine-readable section mapping. |
 | [PACK-CHECKS.md](./PACK-CHECKS.md) | Static pack checks and explicit validation limits. |
-| [validate_pack.py](./validate_pack.py) | Checks task links, dependencies, coverage, and task sentence lengths. |
+| [validate_pack.py](./validate_pack.py) | Checks task links, per-task case results, dependencies, and task sentence lengths. |
+| [validate_assignment_fixtures.py](./validate_assignment_fixtures.py) | Records causal fixtures for per-task acceptance results. |
+| [assignment-results-receipts.json](./validation/assignment-results-receipts.json) | Raw validator fixture commands and results. |
 
 ## Source authority
 
@@ -68,6 +70,9 @@ Do not label this pack as certified ASD-STE100 documentation.
 
 ## Delivery status
 
-All task statuses start as `NOT_STARTED`. All test statuses start as `NOT_RUN`.
+All task statuses start as `NOT_STARTED`.
+All case and per-task assignment results start as `NOT_RUN`.
+The case-level status is a summary of its per-task results.
+The validator requires `assignment_results`; older manifests without this field fail validation.
 This pack includes no passing runtime evidence.
 Do not change a status to `PASS` because a source file or proposed test exists.

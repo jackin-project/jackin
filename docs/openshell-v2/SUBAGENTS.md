@@ -152,6 +152,11 @@ Allowed task statuses are `NOT_STARTED`, `READY`, `RUNNING`, `REVIEW`, `PASS`, `
 A coordinator derives `READY` from dependencies and write ownership.
 Only reviewed, merged evidence permits `PASS`.
 
+Record each acceptance result in `assignment_results` under its `task_id`.
+Run a shared case for each task that owns it.
+Never use another task's passing result to close your assignment.
+The case-level `status` is a derived summary, not task evidence.
+
 ## Review packet
 
 Give the review subagent the original task card and input commit.

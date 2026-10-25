@@ -33,7 +33,7 @@ Do not treat section coverage as an exhaustive callsite audit.
 | Command semantics | 356–372 | T23, T24, T28, T29 |
 | Fleet view and developer experience | 373–384 | T29, T31, T34 |
 | Proposed command examples | 385–401 | T29 |
-| Rust architecture and configuration | 402–464 | P03, P05, T10, T12, T14 |
+| Rust architecture and configuration | 402–464 | P03, P05, T10, T12, T14, T39 |
 | Performance and resource contracts | 465–476 | P04, T31, T38 |
 | Dependency register and qualification gates | 477–492 | P02, P04, U00, U01, U02, U03, U04, U05, U06, U07, U08, T40 |
 | Implementation sequence | 493–510 | P00, P04, P05, T23, T39, T40 |

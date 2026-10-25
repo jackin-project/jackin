@@ -502,6 +502,11 @@ Include supervisor and companion overhead in logical-instance accounting.
 Do not merge account domains to reduce memory use.
 
 Test status is one of `NOT_RUN`, `PASS`, `FAIL`, or `BLOCKED`.
+A shared acceptance case has one result for each assigned task, identified by `task_id`.
+Never reuse one task's result for another task.
+The case-level `status` is `PASS` only when every assignment passes.
+It is `FAIL` when any assignment fails, `BLOCKED` when none fail and any assignment is blocked, and `NOT_RUN` otherwise.
+A task can pass only when its own result passes for every assigned case.
 A mock test does not qualify a runtime target.
 A skipped environment cannot produce a passing release gate.
 

@@ -40,7 +40,7 @@
 | T30 | Implement private developer service forwards | Product subagent | T13, T23 |
 | T31 | Implement caches prewarm diagnostics and resource views | Operations subagent | T15, T28, T29, T33 |
 | T32 | Replace the independent verification worker | Verifier subagent | U02, T13, T20, T10 |
-| T33 | Integrate the managed engine capability into Jackin | Companion adapter subagent | U08, T13, T23 |
+| T33 | Integrate the managed engine capability into Jackin | Companion adapter subagent | U08, T13, T23, T27 |
 | T34 | Complete workflow and product behavior coverage | Operations subagent | T32, T26, T27, T29, T30, T31 |
 | T35 | Qualify local containers and remote container gateways | Qualification subagent | T29, T30, T31, T34, U03 |
 | T36 | Qualify isolated VM profiles and engine domains | Qualification subagent | T29, T30, T31, T33, T34, U03 |
