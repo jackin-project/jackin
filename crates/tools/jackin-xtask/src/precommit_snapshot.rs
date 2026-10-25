@@ -62,6 +62,27 @@ struct SetupSignals {
     route: SignalRoute,
 }
 
+#[derive(Clone)]
+struct OwnerBudgets {
+    setup: Duration,
+    gate: Duration,
+    recovery: Duration,
+    #[cfg(test)]
+    test_git_program: Option<std::path::PathBuf>,
+}
+
+impl OwnerBudgets {
+    const fn production() -> Self {
+        Self {
+            setup: Duration::from_mins(10),
+            gate: Duration::from_mins(30),
+            recovery: Duration::from_mins(10),
+            #[cfg(test)]
+            test_git_program: None,
+        }
+    }
+}
+
 #[expect(
     unsafe_code,
     reason = "signal callback touches only preallocated lock-free atomic flags"
@@ -104,10 +125,6 @@ impl SetupSignals {
 
     fn setup_gate_controls(&self, budget: Duration) -> process::SetupControls {
         process::SetupControls::new(Arc::clone(&self.route.setup_gate_cancellation), budget)
-    }
-
-    fn arm_recovery(&self) -> Result<process::SetupControls> {
-        self.arm_recovery_with_budget(Duration::from_mins(10))
     }
 
     fn arm_recovery_with_budget(&self, budget: Duration) -> Result<process::SetupControls> {
@@ -158,11 +175,19 @@ pub(crate) fn run_installed_from_hook(
     generation: &std::path::Path,
     arguments: &[OsString],
 ) -> Result<ExitCode> {
+    run_installed_from_hook_with_budgets(generation, arguments, OwnerBudgets::production())
+}
+
+fn run_installed_from_hook_with_budgets(
+    generation: &std::path::Path,
+    arguments: &[OsString],
+    budgets: OwnerBudgets,
+) -> Result<ExitCode> {
     let signals = SetupSignals::register()?;
     if let Some(code) = signals.exit_code() {
         return Ok(code);
     }
-    match run_installed_with_signals(generation, arguments, &signals) {
+    match run_installed_with_signals(generation, arguments, &signals, budgets) {
         Err(error) if process::is_clean_cancellation(&error) => {
             let _write_result = writeln!(
                 std::io::stderr().lock(),
@@ -183,8 +208,9 @@ fn run_installed_with_signals(
     generation: &std::path::Path,
     arguments: &[OsString],
     signals: &SetupSignals,
+    budgets: OwnerBudgets,
 ) -> Result<ExitCode> {
-    let setup_controls = signals.setup_gate_controls(Duration::from_mins(10));
+    let setup_controls = signals.setup_gate_controls(budgets.setup);
     if let Some(code) = signals.exit_code() {
         return Ok(code);
     }
@@ -198,6 +224,10 @@ fn run_installed_with_signals(
         return Ok(code);
     }
     let mut snapshot = git::OwnedSnapshot::create(&live)?;
+    #[cfg(test)]
+    if let Some(program) = budgets.test_git_program.as_deref() {
+        snapshot.set_test_git_program(program)?;
+    }
     let result = (|| -> Result<ExitCode> {
         if let Some(code) = signals.exit_code() {
             setup_controls.check_start()?;
@@ -229,7 +259,7 @@ fn run_installed_with_signals(
             setup_controls.check_start()?;
             return Ok(code);
         }
-        let gate_controls = signals.setup_gate_controls(Duration::from_mins(30));
+        let gate_controls = signals.setup_gate_controls(budgets.gate);
         let mut completion = snapshot.run_gate(&tools, arguments, &gate_controls)?;
         if !completion.cleanup.group_drained || completion.cleanup.recovery.is_some() {
             drop(completion.cleanup.recovery);
@@ -263,7 +293,7 @@ fn run_installed_with_signals(
         if !completion.success {
             snapshot.report_gate_output();
         }
-        let recovery_controls = signals.arm_recovery()?;
+        let recovery_controls = signals.arm_recovery_with_budget(budgets.recovery)?;
         git::OwnedSnapshot::verify_live_index(&live)?;
         let fixes = snapshot.collect_fixes(&tree, &recovery_controls)?;
         let evidence = if fixes.is_empty() {

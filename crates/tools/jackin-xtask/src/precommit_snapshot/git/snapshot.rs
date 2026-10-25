@@ -83,6 +83,8 @@ impl OwnedSnapshot {
             invocation_dir: live.invocation_dir.clone(),
             extra_alternates: live.alternates.clone(),
             controls: live.controls.clone(),
+            #[cfg(test)]
+            test_git_program: None,
         };
         snapshot.write_alternates(&live.objects)?;
         if let Some(path) = &live.shallow {
@@ -163,6 +165,20 @@ impl OwnedSnapshot {
             return Some(directory.keep());
         }
         None
+    }
+
+    #[cfg(test)]
+    pub(in crate::precommit_snapshot) fn set_test_git_program(
+        &mut self,
+        program: &Path,
+    ) -> Result<()> {
+        ensure!(
+            program.is_absolute(),
+            "test Git executable must be absolute"
+        );
+        ensure!(program.is_file(), "test Git executable is missing");
+        self.test_git_program = Some(program.to_path_buf());
+        Ok(())
     }
 
     pub(in crate::precommit_snapshot) fn spool_failure_error(
@@ -383,6 +399,19 @@ impl OwnedSnapshot {
     }
 
     fn git_command(&self, args: &[impl AsRef<OsStr>]) -> Command {
+        #[cfg(test)]
+        if let Some(program) = self.test_git_program.as_deref() {
+            return super::isolated_git_with_program(
+                program,
+                &self.invocation_dir,
+                &self.root,
+                &self.git_dir,
+                &self.index,
+                &self.objects,
+                self.extra_alternates.as_deref(),
+                args,
+            );
+        }
         isolated_git(
             &self.invocation_dir,
             &self.root,
