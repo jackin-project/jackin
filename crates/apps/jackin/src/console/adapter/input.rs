@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-pub(crate) mod editor;
-
 mod dispatch;
 
 pub use dispatch::handle_key;
@@ -14,5 +12,3 @@ pub type InputOutcome = jackin_console::tui::message::ConsoleInputOutcome<
     crate::console::ConsoleInstanceAction,
     jackin_core::LaunchSelection,
 >;
-
-pub(super) mod fixtures;

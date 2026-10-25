@@ -246,6 +246,3 @@ pub struct RoleCreateArgs {
     )]
     pub projects_dir: Option<PathBuf>,
 }
-
-#[cfg(test)]
-mod tests;

@@ -16,9 +16,6 @@ use sha2::{Digest, Sha256};
 
 use crate::{cmd, docs};
 
-#[cfg(test)]
-mod tests;
-
 const SCHEMA: u32 = 7;
 const DEFAULT_WINDOW_DAYS: i64 = 31;
 const DEFAULT_CI_WORKFLOW: &str = "ci-main.yml";

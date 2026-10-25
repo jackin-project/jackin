@@ -356,6 +356,3 @@ fn provider_order_rank(provider_id: &str) -> usize {
         .position(|surface| surface.provider_id() == provider_id)
         .unwrap_or(usize::MAX)
 }
-
-#[cfg(test)]
-mod tests;

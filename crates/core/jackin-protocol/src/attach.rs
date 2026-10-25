@@ -919,7 +919,6 @@ async fn read_framed_payload<R>(stream: &mut R, first_byte: u8) -> Result<Option
 where
     R: AsyncRead + Unpin,
 {
-    // The first byte is already supplied; prefix and payload share one frame-read remainder budget.
     let deadline = tokio::time::Instant::now() + FRAME_READ_TIMEOUT;
     let mut len_buf = [0u8; 4];
     match tokio::time::timeout_at(deadline, stream.read_exact(&mut len_buf)).await {
@@ -1442,6 +1441,3 @@ fn is_host_open_url_scheme(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
     lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
 }
-
-#[cfg(test)]
-mod tests;

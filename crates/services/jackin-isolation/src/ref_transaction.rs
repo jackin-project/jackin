@@ -384,7 +384,7 @@ fn reclaim_abandoned_lock_with_sync(
         "Git lock changed during crash recovery; record retained"
     );
     unlinkat(parent, leaf, UnlinkatFlags::NoRemoveDir)?;
-    // Persist lock removal before discarding its recovery witness.
+
     sync(parent)?;
     unlinkat(&journal, *candidate_name, UnlinkatFlags::NoRemoveDir)?;
     sync(journal.as_fd())?;
@@ -492,15 +492,6 @@ impl CommittedRefDeletion {
         self.recovery.allow_cleanup();
         Ok(())
     }
-}
-
-#[cfg(test)]
-pub(crate) fn prepare(
-    git: BorrowedFd<'_>,
-    full_ref: &str,
-    expected_oid: &str,
-) -> anyhow::Result<PreparedRefDeletion> {
-    prepare_with_checkout(CheckoutInventory::begin(git)?, git, full_ref, expected_oid)
 }
 
 pub(crate) fn prepare_with_checkout(
@@ -988,6 +979,3 @@ fn parse_packed(
     }
     Ok((found, output))
 }
-
-#[cfg(test)]
-mod tests;

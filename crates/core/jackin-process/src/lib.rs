@@ -182,34 +182,25 @@ pub struct ExecResult {
     pub timed_out: bool,
 }
 
-/// The child pipe reported `BrokenPipe` while delivering requested stdin.
-///
-/// The process was still observed, drained, and reaped under the original
-/// request deadline. Its result is available even though incomplete input
-/// remains an execution error and must not be retried automatically.
 pub struct StdinDeliveryError {
     source: io::Error,
     operation: StdinDeliveryOperation,
     result: ExecResult,
 }
 
-/// The stdin operation that failed after the child closed its input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StdinDeliveryOperation {
-    /// Writing request bytes to the child's stdin.
     Write,
-    /// Shutting down the child's stdin after writing request bytes.
+
     Shutdown,
 }
 
 impl StdinDeliveryError {
-    /// Return the observed result from the child after bounded capture and wait.
     #[must_use]
     pub const fn result(&self) -> &ExecResult {
         &self.result
     }
 
-    /// Return which stdin operation observed the closed pipe.
     #[must_use]
     pub const fn operation(&self) -> StdinDeliveryOperation {
         self.operation
@@ -345,8 +336,6 @@ fn spawn_and_register_async(
             .spawn()
             .with_context(|| format!("spawning {}", display_request(request)))?;
         let Some(pid) = child.id() else {
-            // Tokio reports no ID only after its child has already been
-            // polled to completion; this fresh child has not been polled.
             bail!("newly spawned Tokio child had no live PID before registration");
         };
         let registration = registry.register_prepared(pid, slot);
@@ -359,7 +348,7 @@ struct OwnedChild {
     child: tokio::process::Child,
     #[cfg(unix)]
     group: Option<nix::unistd::Pid>,
-    // Field order matters: drop the Tokio Child before releasing its PID token.
+
     #[cfg(target_os = "macos")]
     registration: Option<ChildRegistration>,
 }
@@ -707,6 +696,3 @@ pub fn capture_stdout_sync(request: &ExecRequest) -> Result<Vec<u8>> {
     }
     Ok(result.stdout)
 }
-
-#[cfg(test)]
-mod tests;

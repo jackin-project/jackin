@@ -23,5 +23,5 @@ pub use paths::{
 pub use permissions::{
     PermissionRepairFailure, maybe_inject_permission_repair_failure, repair_permissions,
 };
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 pub use permissions::{PermissionRepairFailureGuard, inject_permission_repair_failure};

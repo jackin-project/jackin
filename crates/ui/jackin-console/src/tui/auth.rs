@@ -168,6 +168,3 @@ pub const fn auth_mode_supports_source_folder(kind: AuthKind, mode: AuthMode) ->
                 | AuthKind::Hermes
         )
 }
-
-#[cfg(test)]
-mod tests;

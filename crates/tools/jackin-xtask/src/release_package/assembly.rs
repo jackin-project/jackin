@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Copy only admitted leaf bytes; no archive builder or compiler is reachable here.
-
 use super::handoff::{TaskInput, TaskRequest};
 use anyhow::{Result, ensure};
 use nix::{
@@ -21,8 +19,6 @@ pub(super) fn assemble(output: &Path, handoff: &TaskRequest) -> Result<()> {
     for input in &handoff.inputs {
         copy_input(input, output)?;
     }
-    // Recheck every original after the complete copy phase, including inputs
-    // copied first. Native admission independently pins/rechecks these too.
     for input in &handoff.inputs {
         ensure!(
             crate::release_sbom::archive_sha256(Path::new(&input.path))? == input.sha256,

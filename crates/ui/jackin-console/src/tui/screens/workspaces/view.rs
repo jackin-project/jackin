@@ -12,8 +12,6 @@ mod prelude;
 mod roles;
 mod row_labels;
 mod subpanels;
-#[cfg(test)]
-mod tests;
 mod tree;
 pub(crate) use display_rows::panel;
 pub use display_rows::{
@@ -56,8 +54,4 @@ pub use subpanels::{
     render_mounts_subpanel, workspace_env_rows,
 };
 
-#[cfg(test)]
-pub(crate) use crate::tui::components::editor_rows::action_row_style;
-#[cfg(test)]
-pub(crate) use instance_lines::live_instance_lines;
 pub(crate) use tree::{push_tree_instance_line, push_tree_workspace_line};

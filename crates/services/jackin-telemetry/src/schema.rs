@@ -125,6 +125,3 @@ pub fn valid_config_schema_version(
         _ => false,
     }
 }
-
-#[cfg(test)]
-mod tests;

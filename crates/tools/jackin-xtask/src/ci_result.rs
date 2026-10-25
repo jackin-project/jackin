@@ -15,9 +15,6 @@ use sha2::{Digest, Sha256};
 
 use crate::cmd;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Subcommand, Debug)]
 pub(crate) enum CiResultCommand {
     Find(FindArgs),

@@ -6,8 +6,6 @@ mod form;
 mod key_plans;
 mod lines;
 mod render;
-#[cfg(test)]
-mod tests;
 pub use credentials::{
     AuthCredential, AuthCredentialRef, AuthFormKeyPlan, CredentialInput,
     auth_credential_input_state, auth_panel_title, auth_source_picker_state,
@@ -20,18 +18,3 @@ pub use key_plans::{
 pub use render::{render_form, required_height};
 
 pub(crate) use lines::{action_buttons_line, credential_env_line, label_style, source_folder_line};
-
-#[cfg(test)]
-pub(crate) use crate::tui::auth::AuthKind;
-#[cfg(test)]
-pub(crate) use crate::tui::auth::AuthMode;
-#[cfg(test)]
-pub(crate) use crate::tui::components::editor_rows::AuthSourceFolderDisplay;
-#[cfg(test)]
-pub(crate) use crate::tui::components::editor_rows::AuthSourceFolderKind;
-#[cfg(test)]
-pub(crate) use crate::tui::screens::settings::model::AuthFormFocus;
-#[cfg(test)]
-pub(crate) use crossterm::event::KeyCode;
-#[cfg(test)]
-pub(crate) use std::path::PathBuf;

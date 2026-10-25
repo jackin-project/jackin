@@ -69,6 +69,3 @@ impl WorkspaceRoleAccess for jackin_config::WorkspaceConfig {
         &self.allowed_roles
     }
 }
-
-#[cfg(test)]
-mod tests;

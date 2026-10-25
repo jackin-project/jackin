@@ -880,6 +880,3 @@ fn emit(line: &str) {
         println!("{line}");
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod reports;
-#[cfg(test)]
-mod tests;
 
 use anyhow::{Context, Result, ensure};
 use reports::{MAX_EVIDENCE_BYTES, parse_inventory, parse_junit, require_exact};

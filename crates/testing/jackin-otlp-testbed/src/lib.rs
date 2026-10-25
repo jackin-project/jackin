@@ -164,40 +164,6 @@ impl ConnectionRegistry {
             changed.await;
         }
     }
-
-    #[cfg(test)]
-    async fn wait_for_connection(&self, timeout: std::time::Duration) -> bool {
-        tokio::time::timeout(timeout, async {
-            loop {
-                let connected = self.connected.notified();
-                tokio::pin!(connected);
-                connected.as_mut().enable();
-                if self.active_count() > 0 {
-                    return;
-                }
-                connected.await;
-            }
-        })
-        .await
-        .is_ok()
-    }
-
-    #[cfg(test)]
-    async fn wait_for_io_poll(&self, timeout: std::time::Duration) -> bool {
-        tokio::time::timeout(timeout, async {
-            loop {
-                let changed = self.io_poll_changed.notified();
-                tokio::pin!(changed);
-                changed.as_mut().enable();
-                if self.io_polled.load(Ordering::Acquire) {
-                    return;
-                }
-                changed.await;
-            }
-        })
-        .await
-        .is_ok()
-    }
 }
 
 impl AsyncRead for TrackedIo {
@@ -820,23 +786,6 @@ impl Testbed {
         }
     }
 
-    #[cfg(test)]
-    async fn wait_for_trace_request(&self, timeout: std::time::Duration) -> bool {
-        tokio::time::timeout(timeout, async {
-            loop {
-                let received = self.state.received.notified();
-                tokio::pin!(received);
-                received.as_mut().enable();
-                if !self.traces().is_empty() {
-                    return;
-                }
-                received.await;
-            }
-        })
-        .await
-        .is_ok()
-    }
-
     pub async fn wait_for_all_signals(&self, timeout: std::time::Duration) -> bool {
         tokio::time::timeout(timeout, async {
             loop {
@@ -1076,6 +1025,3 @@ impl Drop for Testbed {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

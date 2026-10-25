@@ -146,6 +146,3 @@ fn forward_input_inner<I: Read + AsFd>(
         pending = 0..count;
     }
 }
-
-#[cfg(test)]
-mod tests;

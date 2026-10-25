@@ -193,24 +193,13 @@ impl Dialog {
         view.tabs.get(next).cloned()
     }
 
-    #[cfg(test)]
-    pub(crate) fn usage_selected_tab(&self) -> Option<UsageDialogTab> {
-        let Self::Usage { selected, .. } = self else {
-            return None;
-        };
-        Some(*selected)
-    }
-
     fn usage_meter(
         meter_percent: jackin_protocol::control::MeterPercentPoints,
         _meter_side: jackin_protocol::control::UsageMeterSide,
     ) -> String {
         const WIDTH: usize = 32;
-        // The bar fills the selected quantity directly; the side stays paired
-        // with its source label and must not invert the continuous geometry.
         let percent = meter_percent.get();
         let fill_cells = percent * WIDTH as f64 / 100.0;
-        // Quantize to whole glyph cells only at the final rendering step.
         let filled = (0..WIDTH)
             .take_while(|cell| fill_cells >= (*cell + 1) as f64)
             .count();

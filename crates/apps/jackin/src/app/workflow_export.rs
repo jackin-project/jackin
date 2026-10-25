@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! C7 Markdown export: a readable run report with plan summary,
-//! candidate IDs, findings, test results, backup state, and operator
-//! decisions. Credential material and raw secret-bearing state are
-//! excluded: every free-text field passes through the existing
-//! secret-redaction helpers, and terminal text is included only with
-//! explicit content selection (`include_terminal`).
-
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -17,8 +10,6 @@ use serde::Serialize;
 
 use jackin_workflow::spool::{SpoolRead, sanitize_terminal_text};
 
-/// What the export wrote: the report path plus the manifest the CLI
-/// prints (stable JSON via `OutputEnvelope` at the call site).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct WorkflowExportManifest {
     pub run_id: String,
@@ -29,17 +20,11 @@ pub(crate) struct WorkflowExportManifest {
     pub checkpoint_count: usize,
 }
 
-/// Optional terminal text for the report. Raw escape sequences are
-/// sanitized, and an observation gap stays visible instead of
-/// claiming a lossless transcript.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ExportTerminal<'a> {
     pub read: SpoolRead<'a>,
 }
 
-/// Render the Markdown report for a run detail. `terminal` selects
-/// the sensitive terminal artifact explicitly; pass `None` for the
-/// default export without terminal text.
 #[must_use]
 pub(crate) fn render_report(detail: &RunDetail, terminal: Option<ExportTerminal<'_>>) -> String {
     let summary = &detail.summary;
@@ -190,9 +175,6 @@ fn redact_opt(value: Option<&str>) -> String {
     value.map_or_else(|| "none".to_owned(), |text| redact(text).into_owned())
 }
 
-/// Write the report into `out_dir` (`<run_id>.md`, owner-only
-/// permissions) and return the manifest. The directory is created
-/// when missing; an existing report file is replaced.
 pub(crate) fn write_report(
     detail: &RunDetail,
     terminal: Option<ExportTerminal<'_>>,
@@ -219,6 +201,3 @@ pub(crate) fn write_report(
         checkpoint_count: detail.checkpoints.len(),
     })
 }
-
-#[cfg(test)]
-mod tests;

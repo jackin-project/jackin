@@ -85,9 +85,7 @@ fn window_value_label(
     match (&bucket.used_label, &bucket.limit_label) {
         (Some(used), Some(limit)) => format!("{used} of {limit}"),
         (Some(used), None) => used.clone(),
-        // A limit-only label is not observed consumption. Keep it in the
-        // typed Money fields and bucket presentation, but leave the legacy
-        // window value empty unless it has a source value to display.
+
         (None, Some(_)) => String::new(),
         (None, None) => money_used_percent.map_or_else(String::new, |used| {
             format!("{}% used", used.display_value())

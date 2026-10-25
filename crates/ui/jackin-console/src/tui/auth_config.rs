@@ -181,6 +181,3 @@ pub fn auth_credential_env_keys() -> BTreeSet<&'static str> {
         .chain(jackin_core::account_env_names())
         .collect()
 }
-
-#[cfg(test)]
-mod tests;

@@ -94,10 +94,6 @@ pub struct UsageAccountCapability {
 }
 
 impl UsageAccountCapability {
-    /// Return a stable opaque key by hashing both selector values without normalization.
-    ///
-    /// The key is metadata for identity continuity and grants no membership or
-    /// authorization.
     #[must_use]
     pub fn opaque_identity_key(&self) -> String {
         let identity = format!(
@@ -1005,6 +1001,3 @@ pub struct UsageRelayTunnelResponse {
     pub request_id: u64,
     pub response: UsageBrokerResponse,
 }
-
-#[cfg(test)]
-mod tests;

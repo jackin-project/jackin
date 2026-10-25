@@ -29,7 +29,6 @@ nix = { workspace = true, features = ["signal", "process", "fs", "user"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

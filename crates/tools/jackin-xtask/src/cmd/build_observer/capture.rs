@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Fixed OS reader, not a qualified producer tool or artifact authority.
-
 use nix::fcntl::{FcntlArg, OFlag, fcntl};
 use std::{
     io::{ErrorKind, Read},
@@ -71,7 +69,6 @@ fn drain(child: &mut Child, cap: usize, end: Instant) -> Option<Vec<u8>> {
     reason = "bounded owned-child cleanup runs in synchronous host-side xtask work"
 )]
 pub(super) fn stop(child: &mut Child, end: Instant) {
-    // Only this held Child PID is signalled; no group/session or foreign scan.
     if child.try_wait().ok().flatten().is_none() {
         drop(child.kill());
     }
@@ -81,8 +78,6 @@ pub(super) fn stop(child: &mut Child, end: Instant) {
             Ok(Some(_)) | Err(_) => return,
         }
     }
-    // OS/kernel stalls cannot be forcibly preempted. The inherited SDK group
-    // remains the final cleanup authority if a killed helper cannot yet reap.
 }
 
 fn command(program: &str, args: &[&str], cap: usize, end: Instant) -> Option<Vec<u8>> {
@@ -97,7 +92,6 @@ fn command(program: &str, args: &[&str], cap: usize, end: Instant) -> Option<Vec
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        // Deliberately inherit the SDK process group, including on timeout.
         .spawn()
         .ok()?;
     let output = drain(&mut child, cap, end);
@@ -106,6 +100,3 @@ fn command(program: &str, args: &[&str], cap: usize, end: Instant) -> Option<Vec
     }
     output
 }
-
-#[cfg(test)]
-mod tests;

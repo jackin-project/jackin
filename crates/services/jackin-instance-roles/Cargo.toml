@@ -37,12 +37,6 @@ test-support = []
 jackin-diagnostics          = { workspace = true, features = ["test-support"] }
 jackin-instance-agents      = { workspace = true, features = ["test-support"] }
 jackin-instance-credentials = { workspace = true, features = ["test-support"] }
-jackin-omp-store             = { workspace = true, features = ["test-support"] }
-serde_json = { workspace = true }
-nix        = { workspace = true, features = ["dir", "fs", "user"] }
-tempfile   = { workspace = true }
-rusqlite   = { workspace = true }
-tracing    = { workspace = true }
 
 [lints]
 workspace = true

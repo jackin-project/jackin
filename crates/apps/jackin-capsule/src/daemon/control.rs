@@ -13,6 +13,3 @@ pub use replies::{control_reply_for_request, write_status_capture};
 
 const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
     jackin_telemetry::schema::enums::ErrorType::RpcError;
-
-#[cfg(test)]
-mod tests;

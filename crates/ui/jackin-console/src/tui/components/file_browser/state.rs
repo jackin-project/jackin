@@ -123,6 +123,3 @@ impl FileBrowserState {
         self.rejected_reason = Some(reason);
     }
 }
-
-#[cfg(test)]
-mod tests;

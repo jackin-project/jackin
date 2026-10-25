@@ -59,9 +59,6 @@ pub(super) fn validate_auth_source_folder(
         .map_err(|e| e.to_string())
 }
 
-#[cfg(test)]
-pub(crate) use jackin_console::services::role_source::resolve_role_input_source;
-
 pub use adapter::{ConsoleStage, ConsoleState, run_console};
 pub use jackin_console::services::launch::{WorkspaceChoice, build_workspace_choice};
 pub use terminal::TerminalSession;

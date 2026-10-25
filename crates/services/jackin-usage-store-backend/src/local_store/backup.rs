@@ -21,7 +21,6 @@ const READY_NAME: &str = "backup_ready.manifest";
 const BACKUP_NAME: &str = "rollback.sqlite";
 const MIGRATED_NAME: &str = "migration_committed.manifest";
 
-/// Opaque proof that a new logical backup was validated and durably published.
 pub struct BackupReceipt {
     pub(super) directory: PathBuf,
     path_hash: String,
@@ -71,7 +70,6 @@ impl fmt::Debug for BackupReceipt {
     }
 }
 
-/// Opaque receipt published only after the caller commits and validates the new schema.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MigrationReceipt {
     kind: ManagedStoreKind,
@@ -79,9 +77,6 @@ pub struct MigrationReceipt {
     generation: String,
 }
 
-/// One-use post-COMMIT proof tied to a fresh connection from the retained Database.
-/// Consumers validate their complete current schema and typed rows through this
-/// connection before consuming it in a receipt-marking call.
 pub struct CommittedMigrationValidation {
     connection: Connection,
     path_hash: String,

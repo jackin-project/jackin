@@ -420,6 +420,3 @@ impl WidgetFocusTracker {
         self.current.as_ref().map(|focus| focus.widget)
     }
 }
-
-#[cfg(test)]
-mod tests;

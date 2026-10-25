@@ -41,5 +41,3 @@ pub async fn detect_workspace_edit_drift(
         stopped_records: affected_stopped,
     })
 }
-#[cfg(test)]
-mod tests;

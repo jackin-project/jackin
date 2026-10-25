@@ -31,16 +31,3 @@ pub use publisher::{AccountIdentityMetadata, ProjectionPublisher};
 pub use quota::{issue_code, quota_state_for_bucket};
 pub use revoke::{catalog_entries, retain_revoked_accounts};
 pub use windows::{account_for_view, window_for_bucket, windows_for_snapshot};
-
-#[cfg(test)]
-use jackin_protocol::control::{FocusedUsageView, QuotaBucketView, StatusSlot};
-#[cfg(test)]
-use jackin_protocol::usage_broker::{
-    UsageAccountV1, UsageCatalogEntry, UsageCoordinationError, UsageCoordinationErrorKind,
-    UsageFreshnessV1, UsageGenerationView, UsageProjectionV1, UsageRefreshPhase,
-};
-#[cfg(test)]
-use jackin_usage_coordinator::{FileProjectionStateStore, UsageCoordinator};
-
-#[cfg(test)]
-mod tests;

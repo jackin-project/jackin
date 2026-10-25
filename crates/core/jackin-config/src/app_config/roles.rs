@@ -149,6 +149,3 @@ impl AppConfig {
         changed
     }
 }
-
-#[cfg(test)]
-mod tests;

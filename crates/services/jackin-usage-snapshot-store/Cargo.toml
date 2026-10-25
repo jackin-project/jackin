@@ -31,8 +31,5 @@ jackin-usage-store-backend = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 
-[dev-dependencies]
-tempfile = { workspace = true }
-
 [lints]
 workspace = true

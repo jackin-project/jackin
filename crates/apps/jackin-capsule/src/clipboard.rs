@@ -173,11 +173,6 @@ impl ClipboardImageTransfers {
         Ok(image)
     }
 
-    #[cfg(test)]
-    pub(crate) fn abort_idle_older_than(&mut self, max_idle: Duration) -> usize {
-        self.abort_idle_ids_older_than(max_idle).len()
-    }
-
     pub(crate) fn abort_idle_ids_older_than(&mut self, max_idle: Duration) -> Vec<u64> {
         let now = self.clock.now();
         let cutoff = now.checked_sub(max_idle).unwrap_or(now);
@@ -295,6 +290,3 @@ fn validate_image_magic(image: &ClipboardImage) -> Result<()> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

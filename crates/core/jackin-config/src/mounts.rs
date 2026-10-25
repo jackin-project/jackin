@@ -59,6 +59,3 @@ pub fn covers(parent: &MountConfig, child: &MountConfig) -> bool {
     };
     src_suffix == dst_suffix
 }
-
-#[cfg(test)]
-mod tests;

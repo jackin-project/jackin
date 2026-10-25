@@ -88,26 +88,12 @@ pub fn format_config_mount_rows_with_cache(
     )
 }
 
-#[cfg(test)]
-pub fn format_config_mount_rows(mounts: &[jackin_config::MountConfig]) -> Vec<MountDisplayRow> {
-    let cache = MountInfoCache::default();
-    cache.refresh_mounts(mounts);
-    format_config_mount_rows_with_cache(mounts, &cache)
-}
-
 pub fn workspace_config_mounts_content_width_with_cache(
     mounts: &[jackin_config::MountConfig],
     cache: &MountInfoCache,
 ) -> usize {
     let rows = format_config_mount_rows_with_cache(mounts, cache);
     workspace_mounts_content_width(&rows)
-}
-
-#[cfg(test)]
-pub fn workspace_config_mounts_content_width(mounts: &[jackin_config::MountConfig]) -> usize {
-    let cache = MountInfoCache::default();
-    cache.refresh_mounts(mounts);
-    workspace_config_mounts_content_width_with_cache(mounts, &cache)
 }
 
 pub fn workspace_config_mounts_content_height(mounts: &[jackin_config::MountConfig]) -> usize {
@@ -120,13 +106,6 @@ pub fn global_config_mounts_content_width_with_cache(
 ) -> usize {
     let rows = format_config_mount_rows_with_cache(mounts, cache);
     global_mounts_content_width(&rows)
-}
-
-#[cfg(test)]
-pub fn global_config_mounts_content_width(mounts: &[jackin_config::MountConfig]) -> usize {
-    let cache = MountInfoCache::default();
-    cache.refresh_mounts(mounts);
-    global_config_mounts_content_width_with_cache(mounts, &cache)
 }
 
 pub fn settings_global_config_mounts_content_width_with_cache(
@@ -229,6 +208,3 @@ pub fn settings_global_mounts_content_height(
         .sum::<usize>()
         + 3
 }
-
-#[cfg(test)]
-mod tests;

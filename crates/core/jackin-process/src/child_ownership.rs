@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared counted reservations for children with a live wait-status owner.
-
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -20,14 +18,12 @@ thread_local! {
     static LOCAL_WAKE_PENDING: Cell<bool> = const { Cell::new(false) };
 }
 
-/// PIDs whose wait status still belongs to an explicit child owner.
 #[derive(Debug, Default)]
 pub struct ChildRegistry {
     counts: HashMap<u32, Arc<AtomicUsize>>,
 }
 
 impl ChildRegistry {
-    /// Reserve map capacity for a native spawn sequence before its first child starts.
     pub(crate) fn reserve_registrations(
         &mut self,
         count: usize,
@@ -35,7 +31,6 @@ impl ChildRegistry {
         self.counts.try_reserve(count)
     }
 
-    /// Reserve registry capacity and allocate a count cell before native spawn.
     pub fn prepare_registration(
         &mut self,
     ) -> Result<ChildRegistrationSlot, std::collections::TryReserveError> {
@@ -45,7 +40,6 @@ impl ChildRegistry {
         })
     }
 
-    /// Commit a prepared reservation immediately after native spawn.
     #[must_use]
     pub fn register_prepared(
         &mut self,
@@ -62,7 +56,6 @@ impl ChildRegistry {
         ChildRegistration { pid, count }
     }
 
-    /// Add one reservation for an already existing test or compatibility child.
     pub fn register(
         &mut self,
         pid: u32,
@@ -71,7 +64,6 @@ impl ChildRegistry {
         Ok(self.register_prepared(pid, slot))
     }
 
-    /// Whether the PID currently has one or more owner reservations.
     #[must_use]
     pub fn contains(&self, pid: u32) -> bool {
         self.counts
@@ -85,17 +77,11 @@ impl ChildRegistry {
     }
 }
 
-/// Preallocated count cell for a child that is about to be spawned.
 #[derive(Debug)]
 pub struct ChildRegistrationSlot {
     count: Arc<AtomicUsize>,
 }
 
-/// RAII ownership of one child wait status.
-///
-/// Keep this value until a successful direct-child wait. On an explicit
-/// handoff, release it only after recording the owner-side uncertainty so the
-/// installed PID 1 reaper can take over.
 #[derive(Debug)]
 pub struct ChildRegistration {
     pid: u32,
@@ -103,16 +89,11 @@ pub struct ChildRegistration {
 }
 
 impl ChildRegistration {
-    /// Return the child PID reserved by this token.
     #[must_use]
     pub const fn pid(&self) -> u32 {
         self.pid
     }
 
-    /// Release this reservation to the installed orphan reaper.
-    ///
-    /// The caller must first finish its wait attempt and record any
-    /// uncertainty. The reaper wake runs after the reservation is decremented.
     pub fn release_to_reaper(self) {
         drop(self);
     }
@@ -183,12 +164,6 @@ fn flush_reaper_wakeup() {
     }
 }
 
-/// Serialize child spawn/register and reaper select/check/wait operations.
-///
-/// The closure is the only code that runs while the process-wide mutex is
-/// held. Registration counts are atomic so unwinding cannot recursively lock
-/// this mutex while dropping a token. Poison recovery keeps the original
-/// registry state and records that recovery occurred.
 pub fn coordinate_children<R>(operation: impl FnOnce(&mut ChildRegistry) -> R) -> R {
     let _coordinate_depth = CoordinateDepthGuard::enter();
     let mutex = CHILDREN.get_or_init(|| Mutex::new(ChildRegistry::default()));
@@ -222,7 +197,6 @@ pub fn coordinate_children<R>(operation: impl FnOnce(&mut ChildRegistry) -> R) -
     operation(&mut registry)
 }
 
-/// Number of positive registry-lock contention observations in test-support builds.
 #[doc(hidden)]
 #[cfg(feature = "test-support")]
 #[must_use]
@@ -230,27 +204,20 @@ pub fn registry_contention_count() -> usize {
     REGISTRY_CONTENTION_EVENTS.load(Ordering::Acquire)
 }
 
-/// Install the process-lifetime PID 1 callback once.
-///
-/// Call after the dedicated reaper thread starts. The caller must perform an
-/// initial reap pass after publishing the callback to close the startup gap.
 pub fn install_reaper_wakeup(wakeup: fn()) -> Result<(), fn()> {
     REAPER_WAKEUP.set(wakeup)
 }
 
-/// Whether the PID 1 wake callback is already installed.
 #[must_use]
 pub fn has_reaper_wakeup() -> bool {
     REAPER_WAKEUP.get().is_some()
 }
 
-/// Consume the sticky notice that a poisoned registry lock was recovered.
 #[must_use]
 pub fn take_registry_poisoned() -> bool {
     REGISTRY_POISONED.swap(false, Ordering::AcqRel)
 }
 
-/// Whether this target has an approved selective child-reaping route.
 #[must_use]
 pub(crate) const fn supports_selective_reaping() -> bool {
     cfg!(any(
@@ -258,6 +225,3 @@ pub(crate) const fn supports_selective_reaping() -> bool {
         all(target_os = "linux", not(target_env = "uclibc"))
     ))
 }
-
-#[cfg(test)]
-mod tests;

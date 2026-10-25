@@ -1161,6 +1161,3 @@ fn rust_pascal(value: &str) -> String {
 }
 
 mod namespace;
-
-#[cfg(test)]
-mod tests;

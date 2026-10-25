@@ -28,11 +28,5 @@ jackin-usage-destination = { workspace = true }
 icu_collator = { workspace = true }
 icu_locale = { workspace = true }
 
-[dev-dependencies]
-jackin-config = { workspace = true }
-jackin-console = { workspace = true }
-jackin-usage-provider-core = { workspace = true }
-ratatui = { workspace = true }
-
 [lints]
 workspace = true

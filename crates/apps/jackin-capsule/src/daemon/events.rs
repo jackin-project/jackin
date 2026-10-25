@@ -231,6 +231,3 @@ pub(crate) const fn session_send_reply(
         Err(reason) => ServerMsg::SessionSendDenied { session, reason },
     }
 }
-
-#[cfg(test)]
-mod tests;

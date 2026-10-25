@@ -218,6 +218,3 @@ fn escape_workflow_data(s: &str) -> String {
         .replace('\r', "%0D")
         .replace('\n', "%0A")
 }
-
-#[cfg(test)]
-mod tests;

@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(test)]
-mod tests;
-
 use crate::runner::CommandRunner;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

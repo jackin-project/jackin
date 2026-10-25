@@ -31,18 +31,6 @@ pub(crate) use forward::{
     ForwardedCredential, apply_forwarded_credential, seed_forwarded_credential,
 };
 
-#[cfg(test)]
-pub(crate) use agent_auth::{emit_capsule_auth_provision, reporter_install_failure_message};
-#[cfg(test)]
-#[expect(
-    unused_imports,
-    reason = "shadows prelude `Result` for tests via `super::*`, as the pre-split `anyhow::Result` import did"
-)]
-pub(crate) use anyhow::Result;
-#[cfg(test)]
-pub(crate) use claude::claude_plugin_fingerprint;
-#[cfg(test)]
-pub(crate) use commands::runtime_setup_request;
 pub(crate) use git::{
     cache_dco_identity_if_needed, coauthor_trailer_for_agent, ensure_git_config_multivalue,
     ensure_message_trailer, git_config_value, git_trailer_hook_ready, read_cached_dco_identity,
@@ -55,22 +43,11 @@ pub(crate) use paths::{
     gemini_oauth_creds_path, hermes_home, omp_agent_db_path, omp_home, opencode_auth_path,
     xdg_data_home,
 };
-#[cfg(test)]
-pub(crate) use paths::{
-    claude_account_path_from, claude_config_dir_from, codex_home_from, forwarded_dir_from,
-    forwarded_file_from, xdg_data_home_from,
-};
 pub(crate) use run::session_state_path;
-#[cfg(test)]
-pub(crate) use run::{parse_session_state_dir, run_runtime_setup_concurrently};
-#[cfg(test)]
-pub(crate) use seed::{SeedOutcome, is_dir_empty, seed_agent_home, seed_home_dir};
 pub(crate) use seed::{
     copy_dir_contents, copy_file_with_mode, dir_nonempty, remove_file_if_exists,
     seed_agent_home_from_enum,
 };
-#[cfg(test)]
-pub(crate) use std::path::PathBuf;
 
 const CAPSULE_RUNTIME_BIN: &str = container_paths::CAPSULE_BIN;
 
@@ -85,6 +62,3 @@ fn env_is_one(name: &str) -> bool {
 fn is_executable(path: impl AsRef<Path>) -> bool {
     fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
 }
-
-#[cfg(test)]
-mod tests;

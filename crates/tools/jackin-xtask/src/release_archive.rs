@@ -18,9 +18,6 @@ use build_origin::{BuildVersion, NativeBuildOrigin};
 pub(crate) mod layout;
 use layout::{ArchiveLayout, ArchiveProfile};
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub(crate) enum ArchivePackage {
     Jackin,
@@ -262,7 +259,6 @@ fn build(
 ) -> Result<()> {
     let mut command = cmd::command("cargo");
     command.args(build_arguments(package, target, layout.profile()));
-    // Neither stable nor preview may inherit the retired whole-graph CGU override.
     command.env_remove("CARGO_PROFILE_RELEASE_CODEGEN_UNITS");
     command.env_remove("CARGO_PROFILE_PREVIEW_CODEGEN_UNITS");
     command.env("CARGO_BUILD_JOBS", jobs.to_string());

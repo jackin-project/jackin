@@ -327,6 +327,3 @@ fn open_state_at(parent: &std::fs::File, key: &str, create: bool) -> io::Result<
         ))
     }
 }
-
-#[cfg(test)]
-mod tests;

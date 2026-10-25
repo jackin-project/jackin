@@ -24,8 +24,5 @@ jackin-protocol = { workspace = true }
 jackin-usage-coordinator = { workspace = true }
 jackin-usage-provider-core = { workspace = true }
 
-[dev-dependencies]
-tempfile = { workspace = true }
-
 [lints]
 workspace = true

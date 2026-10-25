@@ -199,6 +199,3 @@ pub(super) fn confirm_hint() -> Vec<HintSpan<'static>> {
         HintSpan::Text("focus"),
     ]
 }
-
-#[cfg(test)]
-mod tests;

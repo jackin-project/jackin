@@ -31,7 +31,6 @@ pub struct LaunchProgress {
 enum Renderer {
     Rich(RichDriver),
     Done,
-    Test,
 }
 
 impl LaunchProgress {
@@ -60,22 +59,6 @@ impl LaunchProgress {
             host,
             cancel_token,
         })
-    }
-
-    #[doc(hidden)]
-    pub fn for_test(diagnostics: Arc<dyn LaunchDiagnostics>) -> Self {
-        Self {
-            diagnostics,
-            renderer: Renderer::Test,
-            view: Arc::new(std::sync::Mutex::new(initial_view())),
-            host: crate::fixtures::test_host_terminal(),
-            cancel_token: CancellationToken::new(),
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn view_for_test(&self) -> &SharedView {
-        &self.view
     }
 
     pub fn run_id(&self) -> &str {
@@ -262,9 +245,6 @@ fn failure_acknowledged(view: &SharedView) -> bool {
         Err(poisoned) => poisoned.into_inner().failure_ack,
     }
 }
-
-#[cfg(test)]
-mod tests;
 
 pub fn prelaunch_select_choice(
     no_motion: bool,

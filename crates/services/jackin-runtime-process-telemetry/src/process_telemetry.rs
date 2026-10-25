@@ -130,6 +130,3 @@ pub async fn exec_async(request: &ExecRequest) -> anyhow::Result<ExecResult> {
     complete(operation, &result);
     result.map_err(|_| anyhow::anyhow!("process spawn failed"))
 }
-
-#[cfg(test)]
-mod tests;

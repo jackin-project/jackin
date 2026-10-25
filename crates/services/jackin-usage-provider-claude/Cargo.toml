@@ -35,8 +35,5 @@ zeroize = { workspace = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { workspace = true }
 
-[dev-dependencies]
-tempfile = { workspace = true }
-
 [lints]
 workspace = true

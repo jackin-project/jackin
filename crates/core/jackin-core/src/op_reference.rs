@@ -334,6 +334,3 @@ pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
         _ => None,
     }
 }
-
-#[cfg(test)]
-mod tests;

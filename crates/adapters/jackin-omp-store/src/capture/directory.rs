@@ -87,9 +87,7 @@ fn open_entry(
     .map_err(|_| OmpError::Unavailable)?;
     let next = File::from(opened);
     let actual = fstat(&next).map_err(|_| OmpError::Unavailable)?;
-    // Ancestor entries may gain unrelated children; bind the opened object and
-    // its authority without treating that churn as mutation of the source.
-    // The final source directory retains the complete mutable identity check.
+
     if !same_object_and_security(expected, &actual)
         || (final_component
             && FileIdentity::from_stat(expected) != FileIdentity::from_stat(&actual))

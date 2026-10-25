@@ -92,11 +92,6 @@ pub struct ContainerRow {
     pub labels: HashMap<String, String>,
 }
 
-/// Host-side readback of a container's launch-critical settings.
-///
-/// Returned by [`DockerApi::inspect_full_container_by_id`]. Used for the
-/// grant-vs-actual comparison before the first agent prompt: launch must stop
-/// when the actual settings differ from the admitted workflow grant.
 #[expect(
     clippy::struct_excessive_bools,
     reason = "inspect readback mirrors the Docker HostConfig/Config flag set one-to-one for grant comparison"
@@ -124,14 +119,12 @@ pub struct ContainerFullInspection {
     pub image: String,
 }
 
-/// Identity snapshot carried inside [`ContainerFullInspection`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ContainerHandleSnapshot {
     pub name: String,
     pub id: String,
 }
 
-/// One bind/volume mount as reported by container inspect.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ContainerMountSnapshot {
     pub source: String,
@@ -229,27 +222,17 @@ pub trait DockerApi {
         container: &ContainerHandle,
         cmd: &[&str],
     ) -> anyhow::Result<String>;
-    /// Pause all processes in the container (SIGSTOP via the daemon).
-    ///
-    /// Used by the checkpoint capture barrier. Callers must confirm the
-    /// paused state with [`DockerApi::inspect_container_by_id`] before
-    /// copying source bytes, and must never `docker exec` into the paused
-    /// container for capture.
+
     async fn pause_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()> {
         let _ = container;
         anyhow::bail!("Docker backend does not support pausing containers")
     }
-    /// Resume a container paused with [`DockerApi::pause_container_by_id`].
+
     async fn unpause_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()> {
         let _ = container;
         anyhow::bail!("Docker backend does not support unpausing containers")
     }
-    /// Full host-side readback of launch-critical settings
-    /// (HostConfig/Config/mounts/network) for grant-vs-actual comparison.
-    ///
-    /// Unlike [`DockerApi::inspect_container_by_id`], which returns state and
-    /// handle only, this returns the actual limits, privilege flags, mounts,
-    /// and ownership labels needed to verify the admitted workflow grant.
+
     async fn inspect_full_container_by_id(
         &self,
         container: &ContainerHandle,

@@ -278,10 +278,7 @@ pub async fn build_agent_image(
         "create_build_context",
         None,
     );
-    // Render exactly the staged variant: single-agent prewarm builds stage one
-    // agent's binaries, so rendering the full supported set would emit steps
-    // for CLIs that were never staged. The launch path stages every supported
-    // agent, so its Dockerfile is unchanged.
+
     let agents_to_install: Vec<Agent> = validated_repo
         .manifest
         .supported_agents()

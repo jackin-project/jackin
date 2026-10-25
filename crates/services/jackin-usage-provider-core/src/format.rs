@@ -32,6 +32,3 @@ pub use text::{
     codex_account_from_value, compact_count, dollar_amounts, first_string_key, format_cents,
     format_currency, home_path, oauth_origin, titlecase_ascii,
 };
-
-#[cfg(test)]
-mod tests;

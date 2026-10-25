@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Held-anchor process-group ownership and finite cleanup transitions.
-
 use std::fmt;
 use std::io;
 use std::os::unix::process::CommandExt;
@@ -325,16 +323,10 @@ impl OwnedGroup {
         self.cleanup_deadline
     }
 
-    #[cfg(test)]
-    pub(super) fn expire_cleanup_deadline_for_test(&mut self) {
-        self.cleanup_deadline = Some(Instant::now());
-    }
-
     pub(super) fn cleanup_complete(&self) -> bool {
         self.phase == GroupPhase::ReapedOrUncertain || self.phase == GroupPhase::Finished
     }
 
-    /// Perform one bounded, nonblocking cleanup transition.
     pub(super) fn cleanup_step(&mut self, failures: &mut Vec<SpoolFailure>) {
         self.begin_finalization();
         if self.cleanup_complete() || self.enforce_cleanup_deadline(failures) {
@@ -420,8 +412,6 @@ impl OwnedGroup {
         }
     }
 
-    // The anchor wait remains ordered after target disposition. No group
-    // signal is permitted after the transition to DestructiveClosed.
     fn poll_anchor_after_target(&mut self, failures: &mut Vec<SpoolFailure>) {
         if !self.target_wait.permits_anchor_wait()
             || !matches!(self.anchor_wait, ChildWait::Pending)
@@ -565,9 +555,7 @@ impl Drop for OwnedGroup {
             drop(target.stdout.take());
             drop(target.stderr.take());
         }
-        // The active owner has now either drained the group or exhausted its
-        // original finite deadline. Only uncertain direct-child wait custody
-        // is handed to the reaper; destructive PGID authority is already closed.
+
         if let Some(registration) = self.target_registration.take() {
             registration.release_to_reaper();
         }
@@ -596,20 +584,6 @@ impl RecoveryChild {
 
     pub(super) fn retained(&self) -> bool {
         self.registration.is_some()
-    }
-
-    #[cfg(test)]
-    pub(super) fn terminate_and_reap_for_test(&mut self) -> io::Result<()> {
-        if self.child.try_wait()?.is_none() {
-            match self.child.kill() {
-                Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::InvalidInput => {}
-                Err(error) => return Err(error),
-            }
-        }
-        self.child.wait()?;
-        self.registration.take();
-        Ok(())
     }
 }
 

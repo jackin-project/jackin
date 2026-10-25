@@ -39,7 +39,6 @@ pub fn cursor_dashboard_post(
 
 #[derive(Debug, Clone)]
 pub struct CursorPeriodUsage {
-    pub(crate) enabled: bool,
     pub(crate) total_percent_used: Option<f64>,
     pub(crate) limit: Option<f64>,
     pub(crate) total_spend: Option<f64>,
@@ -77,10 +76,6 @@ pub fn parse_cursor_period_usage(value: &serde_json::Value) -> Option<CursorPeri
             .and_then(json_number)
             .is_some_and(|pooled| pooled > 0.0);
     Some(CursorPeriodUsage {
-        enabled: usage
-            .get("enabled")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(true),
         total_percent_used,
         limit,
         total_spend,

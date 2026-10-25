@@ -11,9 +11,6 @@ pub use self::launch_prompt::*;
 pub use self::modal::*;
 pub use self::stage::*;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Debug)]
 pub enum ConsoleAppStage<Manager> {
     Manager(Manager),

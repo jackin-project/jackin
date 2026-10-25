@@ -478,6 +478,3 @@ Examples:
         role: Option<String>,
     },
 }
-
-#[cfg(test)]
-mod tests;

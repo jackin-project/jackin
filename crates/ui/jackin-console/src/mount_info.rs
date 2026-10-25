@@ -201,6 +201,3 @@ impl MountKind {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

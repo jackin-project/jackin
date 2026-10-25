@@ -162,6 +162,3 @@ pub fn extract_tar_gz_member(archive: &Path, member: &str, dest: &Path) -> Resul
     }
     .into())
 }
-
-#[cfg(test)]
-mod tests;

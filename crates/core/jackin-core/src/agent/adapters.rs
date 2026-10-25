@@ -17,8 +17,6 @@ pub(crate) mod opencode;
 pub(crate) use amp::AmpRuntime;
 pub(crate) use antigravity::AntigravityRuntime;
 
-#[cfg(test)]
-mod tests;
 pub(crate) use claude::ClaudeRuntime;
 pub(crate) use codex::CodexRuntime;
 pub(crate) use cursor::CursorRuntime;

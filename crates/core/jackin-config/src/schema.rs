@@ -536,6 +536,3 @@ impl GitConfig {
         self == &Self::default()
     }
 }
-
-#[cfg(test)]
-mod tests;

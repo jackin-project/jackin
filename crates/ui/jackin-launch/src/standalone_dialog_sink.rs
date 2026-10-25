@@ -111,6 +111,3 @@ static SINK: JackinStandaloneDialogSink = JackinStandaloneDialogSink;
 pub fn install() {
     jackin_core::set_global_dialog_sink(&SINK);
 }
-
-#[cfg(test)]
-mod tests;

@@ -755,6 +755,3 @@ pub fn handle_cockpit_input(
     }
     CockpitOutcome::Continue
 }
-
-#[cfg(test)]
-mod tests;

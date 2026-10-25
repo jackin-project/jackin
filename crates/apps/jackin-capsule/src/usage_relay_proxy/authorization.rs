@@ -63,14 +63,6 @@ impl UsageRelayAuthorization {
         }
         self.by_peer.get(&(peer.uid, peer.gid)) == Some(capability)
     }
-
-    #[cfg(test)]
-    pub(crate) fn for_peer(peer: PeerIdentity, capability: UsageAccountCapability) -> Self {
-        Self {
-            by_peer: BTreeMap::from([((peer.uid, peer.gid), capability.clone())]),
-            launch_capabilities: BTreeSet::from([capability]),
-        }
-    }
 }
 
 fn operation_capability(operation: &UsageBrokerOperation) -> Option<&UsageAccountCapability> {

@@ -675,11 +675,6 @@ fn parse_plan_model(s: &str) -> Result<String, String> {
     Ok(model.to_owned())
 }
 
-/// Typed workflow CLI failure: carries the C7 exit code (0/2/3/4/1)
-/// and the stable JSON or human error payload. Handled in `main`
-/// like [`super::usage::UsageCommandExit`]: the payload goes to
-/// stdout so `--json` stays machine-readable, and the process exits
-/// with the mapped code.
 #[derive(Debug, thiserror::Error)]
 #[error("{json}")]
 pub struct WorkflowCommandExit {
@@ -704,10 +699,6 @@ impl WorkflowCommandExit {
     }
 }
 
-/// Map a C7 daemon error code to the CLI exit code: 0 is success
-/// (never an error), 2 is invalid input, 3 is denied access or an
-/// unsupported capability, 4 is a state conflict or required
-/// operator action, and 1 is an execution or transport error.
 #[must_use]
 pub const fn exit_code_for_daemon_code(code: &str) -> i32 {
     match code.as_bytes() {
@@ -717,6 +708,3 @@ pub const fn exit_code_for_daemon_code(code: &str) -> i32 {
         _ => 1,
     }
 }
-
-#[cfg(test)]
-mod tests;

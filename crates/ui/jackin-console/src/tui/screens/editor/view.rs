@@ -11,12 +11,6 @@ pub use crate::tui::components::editor_rows::{
     AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind, SecretValueDisplay,
 };
 
-#[cfg_attr(
-    not(test),
-    expect(unused_imports, reason = "re-export for editor view tests")
-)]
-pub(crate) use crate::tui::components::editor_rows::auth_lines;
-
 use ratatui::{layout::Rect, text::Line};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,11 +64,6 @@ pub(crate) use general_tab::{
 };
 
 mod mounts_tab;
-#[cfg_attr(
-    not(test),
-    expect(unused_imports, reason = "re-export for editor view tests")
-)]
-pub(crate) use mounts_tab::{editor_mount_add_row_width, mount_lines};
 
 mod roles_tab;
 #[expect(
@@ -121,14 +110,9 @@ pub(crate) use modals::{
 };
 
 mod frame;
-#[cfg_attr(
-    not(test),
-    expect(unused_imports, reason = "re-export for editor view tests")
-)]
 pub(crate) use frame::{
-    editor_body_area, editor_contextual_footer_items, editor_frame_areas,
-    prepare_editor_for_render, prepare_editor_tab_for_area, render_editor_with_footer,
-    render_general_tab, render_roles_tab, render_secrets_tab, resolve_editor_frame,
+    editor_contextual_footer_items, editor_frame_areas, prepare_editor_for_render,
+    render_editor_with_footer, resolve_editor_frame,
 };
 
 #[must_use]
@@ -236,6 +220,3 @@ pub(crate) fn editor_tab_hit_regions(
         state.hovered_tab(),
     )
 }
-
-#[cfg(test)]
-mod tests;

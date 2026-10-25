@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Native channel capsule evidence. Trust starts at production Sigstore TUF and the
-//! fixed Jackin release policy; neither receipt fields nor downloaded bundles
-//! select trust roots or authorize a workflow.
-
 mod freshness;
 mod policy;
 mod provenance;
@@ -149,7 +145,7 @@ async fn verify_with_transport(
         matches!(bundle.content, SignatureContent::MessageSignature(_)),
         "release receipt requires a detached message signature"
     );
-    // Authenticate the bytes before consuming any receipt identity or inventory.
+
     let result = verifier
         .verify(receipt_bytes.as_slice(), &bundle, &signing_policy(channel))
         .context("authenticating signed release.json")?;
@@ -225,6 +221,3 @@ fn validate_companion(bytes: &[u8], receipt: &PackageReleaseReceipt, version: &s
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

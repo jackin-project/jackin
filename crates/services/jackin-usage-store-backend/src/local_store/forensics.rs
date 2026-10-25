@@ -2,8 +2,7 @@ use std::collections::HashSet;
 use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-#[cfg(test)]
-use std::sync::{Mutex, OnceLock};
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
@@ -12,8 +11,7 @@ use super::StoreError;
 use super::manifest::{
     create_generation_dir, create_private_file, manifest_bytes, write_immutable,
 };
-#[cfg(test)]
-use super::path::resolve_source_path;
+
 use super::path::{FileIdentity, ResolvedPath, identity_fields, path_digest, sidecar_path};
 
 #[derive(Clone)]
@@ -119,8 +117,7 @@ fn prepare_preopen_capture(
         .collect::<HashSet<_>>();
     let identity_lease =
         super::registry::reserve_capture_identities(permit, source_identities.iter().copied())?;
-    #[cfg(test)]
-    block_capture_reservation_for_test(&path_hash);
+
     Ok(CapturePlan {
         path_hash,
         directory,
@@ -141,7 +138,7 @@ fn capture_source_records(
         .iter()
         .zip(plan.initial.iter())
         .map(|((source, destination, name), stamp)| {
-            capture_one(source, destination, name, &plan.path_hash, stamp.as_ref())
+            capture_one(source, destination, name, stamp.as_ref())
         })
         .collect::<Result<Vec<_>, _>>()?;
     for ((source, _, _), before) in plan.source_paths.iter().zip(plan.initial.iter()) {
@@ -246,7 +243,6 @@ fn capture_one(
     source_path: &Path,
     destination_path: &Path,
     name: &'static str,
-    path_hash: &str,
     before: Option<&FileStamp>,
 ) -> Result<FileRecord, StoreError> {
     let Some(before_stamp) = before else {
@@ -259,14 +255,6 @@ fn capture_one(
         });
     };
 
-    // Check pathname custody before open. This closes stable rename/hardlink
-    // aliases and O_NOFOLLOW rejects a symlink leaf. The source path may not be
-    // inside the private 0700 evidence directory, and stat plus O_NOFOLLOW
-    // cannot defeat a hostile same-UID replacement between check and open. The
-    // supported custody model is owner-controlled source access; captured
-    // artifacts themselves live in a private 0700 directory and are published
-    // once without replacement. Do not treat these checks as a hostile-user
-    // filesystem boundary.
     if file_stamp(source_path)? != Some(before_stamp.clone()) {
         return Err(StoreError::SourceChangedDuringCapture);
     }
@@ -278,7 +266,6 @@ fn capture_one(
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits());
     }
-    fail_capture_at(path_hash, CaptureFaultPhase::SourceOpen)?;
     #[expect(
         clippy::disallowed_methods,
         reason = "all source-file capture runs inside spawn_blocking before backend open"
@@ -286,18 +273,9 @@ fn capture_one(
     let mut source = options
         .open(source_path)
         .map_err(|source| StoreError::io("open preopen source file", source))?;
-    record_event(path_hash, CaptureEvent::SourceOpened);
-    #[cfg(test)]
-    block_capture_for_test(path_hash);
-    let result = capture_open_file(
-        &mut source,
-        source_path,
-        destination_path,
-        before_stamp,
-        path_hash,
-    );
+
+    let result = capture_open_file(&mut source, source_path, destination_path, before_stamp);
     drop(source);
-    record_event(path_hash, CaptureEvent::SourceClosed);
     let sha256 = result?;
     let artifact_metadata = fs::symlink_metadata(destination_path)
         .map_err(|source| StoreError::io("inspect forensic artifact", source))?;
@@ -325,7 +303,6 @@ fn capture_open_file(
     source_path: &Path,
     destination_path: &Path,
     before: &FileStamp,
-    path_hash: &str,
 ) -> Result<String, StoreError> {
     if stamp_from_metadata(
         &source
@@ -335,16 +312,13 @@ fn capture_open_file(
     {
         return Err(StoreError::SourceChangedDuringCapture);
     }
-    let source_hash = hash_file(source, path_hash)?;
+    let source_hash = hash_file(source)?;
     verify_unchanged(source, source_path, before)?;
-    fail_capture_at(path_hash, CaptureFaultPhase::CopySeek)?;
     source
         .seek(SeekFrom::Start(0))
         .map_err(|source| StoreError::io("rewind preopen source file", source))?;
     let mut destination = create_private_file(destination_path)?;
-    fail_capture_at(path_hash, CaptureFaultPhase::ArtifactPermission)?;
-    let copied_hash = copy_and_hash(source, &mut destination, path_hash)?;
-    fail_capture_at(path_hash, CaptureFaultPhase::ArtifactSync)?;
+    let copied_hash = copy_and_hash(source, &mut destination)?;
     destination
         .sync_all()
         .map_err(|source| StoreError::io("sync forensic artifact", source))?;
@@ -356,14 +330,12 @@ fn capture_open_file(
     Ok(hex::encode(source_hash))
 }
 
-fn hash_file(file: &mut File, path_hash: &str) -> Result<[u8; 32], StoreError> {
-    fail_capture_at(path_hash, CaptureFaultPhase::HashSeek)?;
+fn hash_file(file: &mut File) -> Result<[u8; 32], StoreError> {
     file.seek(SeekFrom::Start(0))
         .map_err(|source| StoreError::io("rewind source for hash", source))?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0_u8; 64 * 1024].into_boxed_slice();
     loop {
-        fail_capture_at(path_hash, CaptureFaultPhase::HashRead)?;
         let read = file
             .read(&mut buffer)
             .map_err(|source| StoreError::io("read source for hash", source))?;
@@ -375,22 +347,16 @@ fn hash_file(file: &mut File, path_hash: &str) -> Result<[u8; 32], StoreError> {
     Ok(hasher.finalize().into())
 }
 
-fn copy_and_hash(
-    source: &mut File,
-    destination: &mut File,
-    path_hash: &str,
-) -> Result<[u8; 32], StoreError> {
+fn copy_and_hash(source: &mut File, destination: &mut File) -> Result<[u8; 32], StoreError> {
     let mut hasher = Sha256::new();
     let mut buffer = vec![0_u8; 64 * 1024].into_boxed_slice();
     loop {
-        fail_capture_at(path_hash, CaptureFaultPhase::CopyRead)?;
         let read = source
             .read(&mut buffer)
             .map_err(|source| StoreError::io("copy forensic source", source))?;
         if read == 0 {
             break;
         }
-        fail_capture_at(path_hash, CaptureFaultPhase::ArtifactWrite)?;
         destination
             .write_all(&buffer[..read])
             .map_err(|source| StoreError::io("write forensic artifact", source))?;
@@ -444,197 +410,4 @@ fn stamp_from_metadata(metadata: &Metadata) -> FileStamp {
         #[cfg(unix)]
         changed_ns,
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum CaptureEvent {
-    SourceOpened,
-    SourceClosed,
-    BuilderStarted,
-    ArtifactOpened(Option<FileIdentity>),
-    #[cfg(test)]
-    ReservationPaused,
-    #[cfg(test)]
-    ReservationReleased,
-    #[cfg(test)]
-    ReservationWaitTimedOut,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(super) enum CaptureFaultPhase {
-    SourceOpen,
-    HashSeek,
-    HashRead,
-    CopySeek,
-    CopyRead,
-    ArtifactWrite,
-    ArtifactPermission,
-    ArtifactSync,
-}
-
-#[cfg(test)]
-pub(super) fn fail_next_capture_at(path: &Path, phase: CaptureFaultPhase) {
-    let key = resolve_source_path(path)
-        .map_or_else(|_| path_digest(path), |source| path_digest(&source.path));
-    if let Ok(mut failures) = capture_faults().lock() {
-        failures.insert(key, phase);
-    }
-}
-
-#[cfg(test)]
-fn capture_faults() -> &'static Mutex<std::collections::HashMap<String, CaptureFaultPhase>> {
-    static FAILURES: OnceLock<Mutex<std::collections::HashMap<String, CaptureFaultPhase>>> =
-        OnceLock::new();
-    FAILURES.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
-}
-
-#[cfg(test)]
-struct CaptureReservationPause {
-    ready: std::sync::mpsc::Sender<()>,
-    release: std::sync::mpsc::Receiver<()>,
-    is_reservation: bool,
-}
-
-#[cfg(test)]
-fn capture_pauses() -> &'static Mutex<std::collections::HashMap<String, CaptureReservationPause>> {
-    static PAUSES: OnceLock<Mutex<std::collections::HashMap<String, CaptureReservationPause>>> =
-        OnceLock::new();
-    PAUSES.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
-}
-
-#[cfg(test)]
-fn set_capture_pause_kind(
-    path: &Path,
-    is_reservation: bool,
-) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
-    let key = resolve_source_path(path)
-        .map_or_else(|_| path_digest(path), |source| path_digest(&source.path));
-    let (ready_sender, ready_receiver) = std::sync::mpsc::channel();
-    let (release_sender, release_receiver) = std::sync::mpsc::channel();
-    if let Ok(mut pauses) = capture_pauses().lock() {
-        pauses.insert(
-            key,
-            CaptureReservationPause {
-                ready: ready_sender,
-                release: release_receiver,
-                is_reservation,
-            },
-        );
-    }
-    (ready_receiver, release_sender)
-}
-
-#[cfg(test)]
-pub(super) fn set_capture_pause(
-    path: &Path,
-) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
-    set_capture_pause_kind(path, false)
-}
-
-#[cfg(test)]
-pub(super) fn set_capture_reservation_pause(
-    path: &Path,
-) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
-    set_capture_pause_kind(path, true)
-}
-
-#[cfg(test)]
-fn block_capture_pause_for_test(path_hash: &str, is_reservation: bool) {
-    let pause = capture_pauses().lock().ok().and_then(|mut pauses| {
-        pauses
-            .get(path_hash)
-            .is_some_and(|pause| pause.is_reservation == is_reservation)
-            .then(|| pauses.remove(path_hash))
-            .flatten()
-    });
-    if let Some(pause) = pause {
-        if pause.is_reservation {
-            record_event(path_hash, CaptureEvent::ReservationPaused);
-        }
-        let _send_result = pause.ready.send(());
-        match pause
-            .release
-            .recv_timeout(std::time::Duration::from_secs(10))
-        {
-            Ok(()) if pause.is_reservation => {
-                record_event(path_hash, CaptureEvent::ReservationReleased);
-            }
-            Err(_) if pause.is_reservation => {
-                record_event(path_hash, CaptureEvent::ReservationWaitTimedOut);
-            }
-            _ => {}
-        }
-    }
-}
-
-#[cfg(test)]
-fn block_capture_reservation_for_test(path_hash: &str) {
-    block_capture_pause_for_test(path_hash, true);
-}
-
-#[cfg(test)]
-fn block_capture_for_test(path_hash: &str) {
-    block_capture_pause_for_test(path_hash, false);
-}
-
-#[cfg(test)]
-fn fail_capture_at(path_hash: &str, phase: CaptureFaultPhase) -> Result<(), StoreError> {
-    let injected = capture_faults()
-        .lock()
-        .ok()
-        .and_then(|mut failures| {
-            (failures.get(path_hash) == Some(&phase)).then(|| failures.remove(path_hash))
-        })
-        .is_some();
-    if injected {
-        Err(StoreError::io(
-            "injected preopen capture fault",
-            std::io::Error::other("injected test failure"),
-        ))
-    } else {
-        Ok(())
-    }
-}
-
-#[cfg(not(test))]
-fn fail_capture_at(_path_hash: &str, _phase: CaptureFaultPhase) -> Result<(), StoreError> {
-    Ok(())
-}
-
-#[cfg(test)]
-fn event_map() -> &'static Mutex<std::collections::HashMap<String, Vec<CaptureEvent>>> {
-    static EVENTS: OnceLock<Mutex<std::collections::HashMap<String, Vec<CaptureEvent>>>> =
-        OnceLock::new();
-    EVENTS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
-}
-
-#[cfg(test)]
-fn record_event(path_hash: &str, event: CaptureEvent) {
-    if let Ok(mut events) = event_map().lock() {
-        events.entry(path_hash.to_owned()).or_default().push(event);
-    }
-}
-
-#[cfg(not(test))]
-fn record_event(_path_hash: &str, _event: CaptureEvent) {}
-
-#[cfg(test)]
-pub(super) fn take_events(path: &Path) -> Vec<CaptureEvent> {
-    let hash = resolve_source_path(path).map_or_else(
-        |_| path_digest(path),
-        |resolved| path_digest(&resolved.path),
-    );
-    event_map()
-        .lock()
-        .ok()
-        .and_then(|mut events| events.remove(&hash))
-        .unwrap_or_default()
-}
-
-pub(super) fn record_builder_started(path: &Path) {
-    record_event(&path_digest(path), CaptureEvent::BuilderStarted);
-}
-
-pub(super) fn record_artifact_open(path: &Path, identity: Option<FileIdentity>) {
-    record_event(&path_digest(path), CaptureEvent::ArtifactOpened(identity));
 }

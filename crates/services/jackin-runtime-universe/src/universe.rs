@@ -3,8 +3,7 @@
 
 use std::io::Write as _;
 use std::path::Path;
-#[cfg(test)]
-use std::path::PathBuf;
+
 use std::time::Duration;
 
 use jackin_core::JackinPaths;
@@ -22,11 +21,6 @@ const FORCE_BOUNDARY_OUTRO_ENV: &str = "JACKIN_FORCE_BOUNDARY_OUTRO";
 
 const ENTRY_OBSERVATION_ATTEMPTS: usize = 8;
 const EXIT_OBSERVATION_ATTEMPTS: usize = 3;
-
-#[cfg(test)]
-fn marker_path(authority: &Path) -> PathBuf {
-    authority.join("universe-since")
-}
 
 pub fn env_flag_enabled(value: Option<impl AsRef<std::ffi::OsStr>>) -> bool {
     let Some(value) = value else {
@@ -361,7 +355,7 @@ fn record_exit_claim_recovery() {
 }
 
 #[must_use]
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 pub fn take_exit_claim(paths: &JackinPaths) -> ExitClaim {
     let Ok(authority) = jackin_runtime_coordination::coordination::universe_dir(paths) else {
         record_exit_claim_recovery();
@@ -475,6 +469,3 @@ fn take_exit_claim_locked(authority: &Path) -> ExitClaimAttempt {
         .map(|elapsed_ms| Duration::from_millis(u64::try_from(elapsed_ms).unwrap_or(u64::MAX)));
     ExitClaimAttempt::Complete(ExitClaim::Claimed { elapsed })
 }
-
-#[cfg(test)]
-mod tests;

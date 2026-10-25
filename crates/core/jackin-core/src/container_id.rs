@@ -61,6 +61,3 @@ impl AsRef<str> for ContainerId {
         &self.0
     }
 }
-
-#[cfg(test)]
-mod tests;

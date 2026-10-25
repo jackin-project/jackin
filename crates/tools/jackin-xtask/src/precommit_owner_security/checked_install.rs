@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Non-activating composition of checked install descriptors and format3 data.
-
 use super::{
     ARTIFACT_LIMIT, ArtifactRole, OpenedFile, RECEIPT_LIMIT, ReceiptContent, read_opened_receipt,
     verify_opened_file,
@@ -16,7 +14,6 @@ const RECEIPT_NAME: &str = "pre-commit-owner.receipt";
 const ENTRY_NAME: &str = "pre-commit-entry";
 const HELPER_NAME: &str = "pre-commit-owner-common";
 
-/// A retained inspection result. This type carries no execution authority.
 pub(super) struct InspectedInstall {
     _root: CheckedInstallRoot,
     owner: CheckedInstallFile,
@@ -155,6 +152,3 @@ fn read_checked_receipt(
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

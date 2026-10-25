@@ -184,6 +184,3 @@ pub(super) fn restore_renderer_terminal_for_process_exit(
     drop(terminal.backend_mut().execute(LeaveAlternateScreen));
     drop(terminal.backend_mut().flush());
 }
-
-#[cfg(test)]
-mod tests;

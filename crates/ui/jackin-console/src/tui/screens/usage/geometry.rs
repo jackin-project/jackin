@@ -15,35 +15,24 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
-/// Stable semantic owner for a rendered usage-list row.
-///
-/// A target returned by [`UsageListGeometry::target_at`] reflects the supplied
-/// prepared geometry; it does not authorize live input against a newer frame
-/// or a different owner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UsageRowTarget {
     Overview,
     Account(String),
 }
 
-/// Direction of a usage-pane wheel query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WheelDirection {
     Up,
     Down,
 }
 
-/// Pure semantic action produced by a usage-pane wheel query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsageWheelAction {
     MoveSelection(isize),
     ScrollDetail(i8),
 }
 
-/// Shared rectangles for the rendered usage frame.
-///
-/// These rectangles describe the requested layout. They do not certify that a
-/// particular frame was painted or that input still belongs to this layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UsageFrameLayout {
     pub list_outer: Rect,
@@ -54,20 +43,12 @@ pub struct UsageFrameLayout {
     pub detail_body: Rect,
 }
 
-/// Detail scroll geometry consumed by one successful Usage paint.
-///
-/// The raw screen offset may exceed the visible document after a resize or
-/// content change. The renderer and live wheel route share this bounded value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct UsageDetailScrollGeometry {
     pub(super) maximum: u16,
     pub(super) painted: u16,
 }
 
-/// Prepared usage-list lines and their semantic row ownership.
-///
-/// Use the same inner rectangle and scroll offset as the frame being queried;
-/// this geometry is not a live-input or owner-authority token.
 #[derive(Debug, Clone)]
 pub struct UsageListGeometry {
     pub(crate) lines: Vec<Line<'static>>,
@@ -78,10 +59,6 @@ pub struct UsageListGeometry {
 }
 
 impl UsageListGeometry {
-    /// Resolve an inner-list coordinate against this prepared geometry.
-    ///
-    /// `scroll` must match the offset used when preparing the corresponding
-    /// frame. The result alone does not validate a later frame or input owner.
     #[must_use]
     pub fn target_at(&self, x: u16, y: u16, scroll: u16) -> Option<UsageRowTarget> {
         if !contains(self.inner, x, y) {
@@ -103,10 +80,6 @@ struct TaggedLine {
     target: Option<UsageRowTarget>,
 }
 
-/// Compute the shared usage-frame rectangles for `area`.
-///
-/// This computes layout only; callers that process live input must separately
-/// validate that the corresponding frame and owner are still current.
 #[must_use]
 pub fn usage_frame_layout(area: Rect) -> UsageFrameLayout {
     let body = crate::tui::view::workspace_frame_areas(area).body;
@@ -145,11 +118,6 @@ pub(super) fn detail_areas(inner: Rect) -> UsageDetailAreas {
     }
 }
 
-/// Prepare the usage list's exact lines and semantic ownership for one frame.
-///
-/// `inner` and the screen's scroll offset must be the ones used by the renderer.
-/// The resulting query describes prepared paint geometry but does not itself
-/// authorize live input or establish that a later frame is unchanged.
 #[must_use]
 pub fn list_geometry(
     screen: &UsageScreenState,
@@ -271,10 +239,6 @@ pub fn list_geometry(
     }
 }
 
-/// Map a wheel coordinate to a usage-local action for the prepared frame.
-///
-/// The supplied layout and screen must describe the frame being processed.
-/// The action is pure and carries no live owner, revision, or frame authority.
 #[must_use]
 pub fn usage_wheel_action(
     layout: UsageFrameLayout,

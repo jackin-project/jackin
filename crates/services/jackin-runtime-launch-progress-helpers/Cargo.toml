@@ -29,9 +29,6 @@ anyhow = { workspace = true }
 
 [dev-dependencies]
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
-jackin-launch = { workspace = true }
-jackin-otlp-testbed = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 
 [lints]
 workspace = true

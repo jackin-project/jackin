@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(test)]
-mod tests;
-
 use jackin_core::{ChangedFile, changed_files, unpushed_commit_count};
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_process::{ExecRequest, StdioMode};

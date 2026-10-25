@@ -34,11 +34,9 @@ directories = { workspace = true }
 nix = { workspace = true, features = ["poll", "socket"] }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "signal", "time"] }
-tracing = { workspace = true }
 
 [dev-dependencies]
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

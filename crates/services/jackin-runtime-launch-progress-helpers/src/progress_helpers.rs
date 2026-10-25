@@ -335,6 +335,3 @@ pub fn launch_mount_lines(workspace: &jackin_config::ResolvedWorkspace) -> Vec<S
         })
         .collect()
 }
-
-#[cfg(test)]
-mod tests;

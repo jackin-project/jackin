@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::Path;
-#[cfg(test)]
-use std::process::Command;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -240,20 +238,6 @@ fn validated_http_url(url: &str) -> Option<String> {
     matches!(parsed.scheme(), "http" | "https").then(|| url.to_owned())
 }
 
-#[cfg(test)]
-pub(crate) fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
-    let mut request = jackin_process::ExecRequest::new(command.get_program(), command.get_args())
-        .stdout_mode(jackin_process::StdioMode::Capture)
-        .stderr_mode(jackin_process::StdioMode::Null);
-    if let Some(cwd) = command.get_current_dir() {
-        request = request.cwd(cwd);
-    }
-    crate::util::command_stdout_trimmed_with_timeout(
-        &request,
-        crate::git_context::GIT_CONTEXT_COMMAND_TIMEOUT,
-    )
-}
-
 fn run_command_capturing_output(
     request: &jackin_process::ExecRequest,
     timeout: Duration,
@@ -359,6 +343,3 @@ fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
         },
     )
 }
-
-#[cfg(test)]
-mod tests;

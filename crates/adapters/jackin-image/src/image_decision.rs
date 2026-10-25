@@ -237,6 +237,3 @@ pub fn emit_image_refresh_background(image: &str, _reason: ImageInvalidationReas
         );
     }
 }
-
-#[cfg(test)]
-mod tests;

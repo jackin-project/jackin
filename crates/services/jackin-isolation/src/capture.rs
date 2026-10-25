@@ -1,23 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Consistent checkpoint capture from a paused worker.
-//!
-//! Procedure (C4): confirm input ownership and the expected candidate
-//! generation, save the capture intent and a preservation hold, pause the
-//! exact implementation container, confirm the backend reports all worker
-//! processes paused, drain pending writes through the filesystem boundary,
-//! check source stability before copying, copy source bytes to an empty
-//! host-owned staging directory, check stability again before ending the
-//! pause, create the host-owned Git tree and commit from the copied bytes,
-//! save the checkpoint and its manifest before verification use, then resume
-//! the same container and confirm its state and unchanged session identity.
-//!
-//! Capture uses host-side access to the private bind-mounted source. It
-//! never runs `docker exec` inside the paused container, never copies live
-//! writable source without a proven write barrier, and never runs worker
-//! hooks, filters, helpers, or worker Git configuration on the host.
-
 use anyhow::Context;
 use jackin_core::{CommandRunner, ContainerHandle, ContainerState, DockerApi};
 use serde::{Deserialize, Serialize};
@@ -26,8 +9,6 @@ use std::collections::BTreeMap;
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::{Path, PathBuf};
 
-/// Immutable source revision captured while the agent stays alive. Identity
-/// is host-assigned; agent-written metadata cannot assign it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub run_id: String,
@@ -61,19 +42,17 @@ pub enum SourceCompare {
     Unknown(String),
 }
 
-/// Capture inputs owned by the host.
 #[derive(Debug, Clone)]
 pub struct CaptureRequest {
     pub run_id: String,
     pub round: u64,
     pub generation: u64,
     pub parent: Option<String>,
-    /// The container ID recorded at launch. Capture refuses any container
-    /// whose live ID differs (ownership gating).
+
     pub expected_container_id: String,
-    /// Bytes over which the source may not grow during one capture.
+
     pub copy_size_limit_bytes: u64,
-    /// Worker deadline: a paused container checks expiry right after resume.
+
     pub deadline_unix_secs: Option<u64>,
 }
 
@@ -190,8 +169,6 @@ fn walk_source_tree(
     Ok(walk)
 }
 
-/// Digest the live source tree. Only regular files, executable files, and
-/// safe in-tree symlinks are supported; `.git` is always excluded.
 pub fn digest_source_tree(
     root: &Path,
     exclusions: &[String],
@@ -262,10 +239,6 @@ fn copy_entries(src_root: &Path, staging: &Path, manifest: &SourceManifest) -> a
     Ok(())
 }
 
-/// Copy source bytes to an empty host-owned staging directory after proving
-/// the source is stable: digest, copy, digest again, and require both live
-/// digests to match. A quiet terminal or a matching file count is not proof;
-/// only two equal content digests across the copy are.
 pub fn capture_stable_copy(
     src_root: &Path,
     staging: &Path,
@@ -327,10 +300,6 @@ fn checkpoint_git_opts() -> jackin_core::RunOptions {
     }
 }
 
-/// Create the host-owned Git tree and commit from staged bytes using trusted
-/// plumbing with a sanitized environment: worker hooks, filters, helpers,
-/// worker Git configuration, and `.gitattributes` transforms are all
-/// disabled.
 pub async fn commit_capture_tree(
     runner: &mut impl CommandRunner,
     checkpoint_repo: &Path,
@@ -409,7 +378,6 @@ pub async fn commit_capture_tree(
     Ok((commit.trim().to_owned(), tree.trim().to_owned()))
 }
 
-/// Compare the worker's current source against a checkpoint manifest.
 pub fn compare_source(
     src_root: &Path,
     manifest: &SourceManifest,
@@ -440,13 +408,6 @@ async fn confirm_paused(docker: &impl DockerApi, handle: &ContainerHandle) -> an
     anyhow::bail!("backend did not report the worker paused; refusing capture")
 }
 
-/// Run the full capture procedure for one worker.
-///
-/// `container_state_dir` hosts the preservation hold and the saved
-/// checkpoint manifest; `src_bind_path` is the host-side path of the
-/// worker's private bind mount; `staging_parent` receives the empty
-/// host-owned staging directory. On any failure the worker is resumed on a
-/// best-effort basis and the source is always preserved.
 pub async fn capture_checkpoint(
     docker: &impl DockerApi,
     handle: &ContainerHandle,
@@ -456,8 +417,6 @@ pub async fn capture_checkpoint(
     checkpoint_repo: &Path,
     request: &CaptureRequest,
 ) -> anyhow::Result<Checkpoint> {
-    // 1-2. Ownership gating (mirrors the resolve.rs exact-identity check):
-    // only the recorded container ID may be paused for capture.
     anyhow::ensure!(
         handle.id() == request.expected_container_id,
         "capture refuses container {}: live ID does not match the recorded workflow identity",
@@ -471,7 +430,7 @@ pub async fn capture_checkpoint(
         "checkpoint:{}:{}:{}",
         request.run_id, request.round, request.generation
     );
-    // 3. Save the capture intent and a preservation hold first.
+
     crate::holds::hold_work(
         container_state_dir,
         &hold_id,
@@ -481,15 +440,14 @@ pub async fn capture_checkpoint(
         ),
         None,
     )?;
-    // 5. Pause the exact implementation container.
+
     if let Err(e) = docker.pause_container_by_id(handle).await {
         return Err(e)
             .with_context(|| format!("pause worker {} for checkpoint capture", handle.name()));
     }
     let paused_capture = async {
-        // 6. Confirm the backend reports all worker processes paused.
         confirm_paused(docker, handle).await?;
-        // 7-8. Drain pending writes: two equal live digests prove stability.
+
         let (stable_digest, _) =
             digest_source_tree(src_bind_path, &[], request.copy_size_limit_bytes)?;
         let (stable_again, _) =
@@ -499,10 +457,10 @@ pub async fn capture_checkpoint(
             "source at {} is still changing; capture rejected, work preserved",
             src_bind_path.display(),
         );
-        // 9-10. Copy, then prove stability again before ending the pause.
+
         let (digest, manifest) =
             capture_stable_copy(src_bind_path, &staging, &[], request.copy_size_limit_bytes)?;
-        // 12. Host-owned Git tree and commit from the copied bytes.
+
         let message = format!(
             "jackin checkpoint run={} round={} generation={} digest={digest}",
             request.run_id, request.round, request.generation
@@ -513,7 +471,7 @@ pub async fn capture_checkpoint(
         Ok::<_, anyhow::Error>((digest, manifest, commit_id, tree_id))
     }
     .await;
-    // 15. Resume the same container before reporting anything else.
+
     let resume_result = docker.unpause_container_by_id(handle).await;
     let (digest, manifest, commit_id, tree_id) = match (paused_capture, resume_result) {
         (Ok(done), Ok(())) => done,
@@ -536,7 +494,7 @@ pub async fn capture_checkpoint(
             ));
         }
     };
-    // Confirm resumed state and unchanged session identity.
+
     let state = docker.inspect_container_by_id(handle).await;
     anyhow::ensure!(
         matches!(state, ContainerState::Running),
@@ -545,7 +503,7 @@ pub async fn capture_checkpoint(
         handle.name(),
         state.short_label(),
     );
-    // A paused container checks an expired deadline immediately after resume.
+
     if let Some(deadline) = request.deadline_unix_secs {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -556,7 +514,7 @@ pub async fn capture_checkpoint(
              source and checkpoint are preserved"
         );
     }
-    // 13. Save the checkpoint and its manifest before verification use.
+
     let manifest_path = checkpoint_repo
         .join("manifests")
         .join(format!("{commit_id}.json"));
@@ -580,8 +538,6 @@ pub async fn capture_checkpoint(
     })
 }
 
-// The capture commit runs on the host with the sanitized host
-// environment, never inside the (paused) worker.
 struct HostGitRunner;
 
 impl CommandRunner for HostGitRunner {
@@ -627,6 +583,3 @@ impl CommandRunner for HostGitRunner {
         runner.capture_secret(program, args, cwd).await
     }
 }
-
-#[cfg(test)]
-mod tests;

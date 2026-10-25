@@ -59,11 +59,6 @@ pub(super) struct RootAnchor {
     owner_uid: u32,
 }
 
-/// A non-cloneable, process-scoped gate for supported authority writers.
-///
-/// The descriptor is opened independently from `RootAnchor::directory`, so
-/// closing another root descriptor cannot release this open-file-description
-/// lock.
 pub(super) struct InitializationGuard {
     directory: File,
     identity: FileIdentity,
@@ -85,7 +80,6 @@ impl InitializationGuard {
     }
 }
 
-/// Acquires the root-local writer gate on a fresh directory open description.
 pub(super) fn acquire_initialization_guard(
     root: &RootAnchor,
 ) -> Result<InitializationGuard, CatalogAuthorityError> {
@@ -181,7 +175,6 @@ impl RootAnchor {
     }
 }
 
-/// A pinned, nofollow handle to the caller-provisioned private authority root.
 pub struct CatalogAuthorityStore {
     pub(super) root: Arc<RootAnchor>,
 }
@@ -195,14 +188,12 @@ impl std::fmt::Debug for CatalogAuthorityStore {
 }
 
 impl CatalogAuthorityStore {
-    /// Anchors an existing absolute private directory without creating or repairing it.
     pub fn open(root: &Path) -> Result<Self, CatalogAuthorityError> {
         Ok(Self {
             root: RootAnchor::open(root)?,
         })
     }
 
-    /// Loads the already-adopted authority without creating any filesystem objects.
     pub fn load_existing(&self) -> Result<Arc<CatalogRevisionAuthority>, CatalogAuthorityError> {
         self.root.verify_path()?;
         let layout = inspect_root(self.root.directory())?;
@@ -225,10 +216,6 @@ impl CatalogAuthorityStore {
         Ok(authority)
     }
 
-    /// Performs only an explicit first-use or legacy-adoption transaction.
-    ///
-    /// The intent records the caller's decision. It does not independently
-    /// validate any legacy evidence or establish a provider identity.
     pub fn initialize_explicit(
         &self,
         intent: InitializationIntent,
@@ -306,7 +293,6 @@ impl CatalogAuthorityStore {
             evidence_digest,
         );
         publish_initial_state(&self.root, &initial)?;
-        pause_after_initial_state_published_for_test_run()?;
         publish_authority_set(&self.root, &lock, initial, &key, &epoch)?;
         self.root.verify_path()?;
         load_adopted(&self.root, &lock)
@@ -346,7 +332,6 @@ fn create_or_recover_lock_temp(
 
 fn prepare_lock_temp(root: &RootAnchor, lock_temp: &File) -> Result<(), CatalogAuthorityError> {
     ensure_private_descriptor(root.directory().as_fd())?;
-    failure_point(FailurePoint::LockTempCreated)?;
     acquire_lock(lock_temp, true)?;
     verify_open_regular(
         lock_temp,
@@ -356,7 +341,7 @@ fn prepare_lock_temp(root: &RootAnchor, lock_temp: &File) -> Result<(), CatalogA
         None,
     )?;
     fsync(lock_temp).map_err(storage_error)?;
-    failure_point(FailurePoint::LockTempSynced)
+    Ok(())
 }
 
 fn publish_lock_name(
@@ -416,9 +401,7 @@ fn finish_lock_publication(
     {
         return Err(CatalogAuthorityError::RecoveryRequired);
     }
-    failure_point(FailurePoint::LockLinked)?;
     unlinkat(root.directory(), LOCK_TEMP_NAME, AtFlags::empty()).map_err(storage_error)?;
-    failure_point(FailurePoint::LockTempUnlinked)?;
     verify_named_descriptor(
         root.directory(),
         LOCK_NAME,
@@ -428,7 +411,7 @@ fn finish_lock_publication(
         0,
     )?;
     fsync(root.directory()).map_err(storage_error)?;
-    failure_point(FailurePoint::LockRootSynced)
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -703,7 +686,6 @@ fn publish_initial_state(
         return Err(CatalogAuthorityError::RecoveryRequired);
     }
     let temp = create_private_file(root.directory(), INITIAL_STATE_TEMP_NAME, root.owner_uid())?;
-    failure_point(FailurePoint::InitialStateTempCreated)?;
     let encoded = initial.encode();
     prepare_initial_state_temp(root, &temp, &encoded)?;
     ensure_private_descriptor(root.directory().as_fd())?;
@@ -716,9 +698,7 @@ fn publish_initial_state(
     )
     .map_err(storage_error)?;
     verify_linked_initial_state(root, &temp, encoded.len())?;
-    failure_point(FailurePoint::InitialStateLinked)?;
     unlinkat(root.directory(), INITIAL_STATE_TEMP_NAME, AtFlags::empty()).map_err(storage_error)?;
-    failure_point(FailurePoint::InitialStateUnlinked)?;
     verify_named_descriptor(
         root.directory(),
         STATE_NAME,
@@ -728,7 +708,6 @@ fn publish_initial_state(
         signed_file_size(encoded.len())?,
     )?;
     fsync(root.directory()).map_err(storage_error)?;
-    failure_point(FailurePoint::InitialStatePublished)?;
     root.verify_path()
 }
 
@@ -765,9 +744,8 @@ fn prepare_initial_state_temp(
         PRIVATE_FILE_MODE,
         signed_file_size(encoded.len())?,
     )?;
-    failure_point(FailurePoint::InitialStateWritten)?;
     fsync(temp).map_err(storage_error)?;
-    failure_point(FailurePoint::InitialStateSynced)
+    Ok(())
 }
 
 fn verify_linked_initial_state(
@@ -812,18 +790,14 @@ fn publish_authority_set(
     let (directory, directory_identity) = create_authority_directory(root)?;
 
     let key_file = create_private_file(&directory, KEY_NAME, root.owner_uid())?;
-    failure_point(FailurePoint::KeyCreated)?;
     let key_encoded = encode_key_file(key, epoch);
     write_key_payload(&directory, &key_file, root.owner_uid(), &key_encoded)?;
 
     let marker_file = create_private_file(&directory, MARKER_NAME, root.owner_uid())?;
-    failure_point(FailurePoint::MarkerCreated)?;
     let marker = encode_marker(epoch, initial.lock_identity);
     write_marker_payload(&directory, &marker_file, root.owner_uid(), &marker)?;
     fsync(&directory).map_err(storage_error)?;
-    failure_point(FailurePoint::AuthorityDirectorySynced)?;
     fsync(root.directory()).map_err(storage_error)?;
-    failure_point(FailurePoint::AuthorityRootSynced)?;
 
     let key_identity = identity_from_file(&key_file)?;
     let marker_identity = identity_from_file(&marker_file)?;
@@ -912,7 +886,6 @@ fn create_authority_directory(
         directory_identity,
         root.owner_uid(),
     )?;
-    failure_point(FailurePoint::AuthorityDirectoryCreated)?;
     Ok((directory, directory_identity))
 }
 
@@ -943,9 +916,8 @@ fn write_key_payload(
         PRIVATE_FILE_MODE,
         signed_file_size(key_encoded.len())?,
     )?;
-    failure_point(FailurePoint::KeyWritten)?;
     fsync(key_file).map_err(storage_error)?;
-    failure_point(FailurePoint::KeySynced)
+    Ok(())
 }
 
 fn write_marker_payload(
@@ -975,9 +947,8 @@ fn write_marker_payload(
         PRIVATE_FILE_MODE,
         signed_file_size(marker.len())?,
     )?;
-    failure_point(FailurePoint::MarkerWritten)?;
     fsync(marker_file).map_err(storage_error)?;
-    failure_point(FailurePoint::MarkerSynced)
+    Ok(())
 }
 
 fn publish_adopted_state(
@@ -1003,7 +974,6 @@ fn publish_adopted_state(
         return Err(CatalogAuthorityError::RecoveryRequired);
     }
     let temp = create_private_file(root.directory(), ADOPTED_STATE_TEMP_NAME, root.owner_uid())?;
-    failure_point(FailurePoint::AdoptedStateTempCreated)?;
     let encoded = adopted.encode();
     prepare_adopted_state_temp(root, &temp, &encoded)?;
     verify_current_state_before_adopted_replace(root, current_state)?;
@@ -1014,9 +984,7 @@ fn publish_adopted_state(
         STATE_NAME,
     )
     .map_err(storage_error)?;
-    failure_point(FailurePoint::AdoptedStateRenamed)?;
     fsync(root.directory()).map_err(storage_error)?;
-    failure_point(FailurePoint::AdoptedStateRootSynced)?;
     root.verify_path()
 }
 
@@ -1045,9 +1013,7 @@ fn prepare_adopted_state_temp(
         signed_file_size(encoded.len())?,
         None,
     )?;
-    failure_point(FailurePoint::AdoptedStateWritten)?;
     fsync(temp).map_err(storage_error)?;
-    failure_point(FailurePoint::AdoptedStateSynced)?;
     verify_named_descriptor(
         root.directory(),
         ADOPTED_STATE_TEMP_NAME,
@@ -1469,10 +1435,6 @@ fn validate_intent(intent: &InitializationIntent) -> Result<(), CatalogAuthority
 }
 
 fn fill_random(destination: &mut [u8]) -> Result<(), CatalogAuthorityError> {
-    #[cfg(test)]
-    if RANDOM_FAILURE.with(|slot| slot.replace(false)) {
-        return Err(CatalogAuthorityError::RandomnessUnavailable);
-    }
     getrandom_fill(destination).map_err(|_| CatalogAuthorityError::RandomnessUnavailable)
 }
 
@@ -1556,20 +1518,6 @@ fn validate_directory_descriptor(
     Ok(stat)
 }
 
-#[cfg(test)]
-pub(super) fn validate_root_owner_for_test(
-    root: &RootAnchor,
-    candidate_owner_uid: u32,
-) -> Result<(), CatalogAuthorityError> {
-    validate_directory_descriptor(
-        root.directory(),
-        candidate_owner_uid,
-        Some(PRIVATE_DIRECTORY_MODE),
-        Some(root.identity),
-    )
-    .map(|_| ())
-}
-
 fn identity_from_file(file: &File) -> Result<FileIdentity, CatalogAuthorityError> {
     let stat = fstat(file).map_err(storage_error)?;
     Ok(identity_from_stat(&stat))
@@ -1608,133 +1556,4 @@ fn storage_error(error: Errno) -> CatalogAuthorityError {
     } else {
         CatalogAuthorityError::StorageFailure
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum FailurePoint {
-    LockTempCreated,
-    LockTempSynced,
-    LockLinked,
-    LockTempUnlinked,
-    LockRootSynced,
-    InitialStateTempCreated,
-    InitialStateWritten,
-    InitialStateSynced,
-    InitialStateLinked,
-    InitialStateUnlinked,
-    InitialStatePublished,
-    AuthorityDirectoryCreated,
-    KeyCreated,
-    KeyWritten,
-    KeySynced,
-    MarkerCreated,
-    MarkerWritten,
-    MarkerSynced,
-    AuthorityDirectorySynced,
-    AuthorityRootSynced,
-    AdoptedStateTempCreated,
-    AdoptedStateWritten,
-    AdoptedStateSynced,
-    AdoptedStateRenamed,
-    AdoptedStateRootSynced,
-}
-
-#[cfg(test)]
-thread_local! {
-    static FAILURE_POINT: std::cell::Cell<Option<FailurePoint>> = const { std::cell::Cell::new(None) };
-    static RANDOM_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    static INITIAL_STATE_PUBLISH_PAUSE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
-}
-
-#[cfg(test)]
-pub(super) struct FailureGuard;
-
-#[cfg(test)]
-impl Drop for FailureGuard {
-    fn drop(&mut self) {
-        FAILURE_POINT.with(|slot| slot.set(None));
-        RANDOM_FAILURE.with(|slot| slot.set(false));
-    }
-}
-
-#[cfg(test)]
-pub(super) fn fail_at_for_test(point: FailurePoint) -> FailureGuard {
-    FAILURE_POINT.with(|slot| slot.set(Some(point)));
-    FailureGuard
-}
-
-#[cfg(test)]
-pub(super) fn fail_random_for_test() -> FailureGuard {
-    RANDOM_FAILURE.with(|slot| slot.set(true));
-    FailureGuard
-}
-
-#[cfg(test)]
-pub(super) struct InitialStatePauseGuard;
-
-#[cfg(test)]
-impl Drop for InitialStatePauseGuard {
-    fn drop(&mut self) {
-        INITIAL_STATE_PUBLISH_PAUSE.with(|slot| slot.borrow_mut().take());
-    }
-}
-
-#[cfg(test)]
-pub(super) fn pause_after_initial_state_published_for_test(
-    control: &Path,
-) -> InitialStatePauseGuard {
-    INITIAL_STATE_PUBLISH_PAUSE.with(|slot| {
-        let previous = slot.borrow_mut().replace(control.to_path_buf());
-        assert!(
-            previous.is_none(),
-            "one initial-state pause is allowed per thread"
-        );
-    });
-    InitialStatePauseGuard
-}
-
-#[cfg(test)]
-fn pause_after_initial_state_published_for_test_run() -> Result<(), CatalogAuthorityError> {
-    let control = INITIAL_STATE_PUBLISH_PAUSE.with(|slot| slot.borrow().clone());
-    let Some(control) = control else {
-        return Ok(());
-    };
-    let mut ready = super::tests::create_new_test_file(&control.join("INITIAL_STATE_READY"))
-        .map_err(|_| CatalogAuthorityError::StorageFailure)?;
-    ready
-        .write_all(b"ready")
-        .map_err(|_| CatalogAuthorityError::StorageFailure)?;
-    ready
-        .sync_all()
-        .map_err(|_| CatalogAuthorityError::StorageFailure)?;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while !control.join("RELEASE_INITIALIZER").is_file() {
-        if std::time::Instant::now() >= deadline {
-            return Err(CatalogAuthorityError::StorageFailure);
-        }
-        std::thread::park_timeout(std::time::Duration::from_millis(10));
-    }
-    Ok(())
-}
-
-#[cfg(not(test))]
-fn pause_after_initial_state_published_for_test_run() -> Result<(), CatalogAuthorityError> {
-    Ok(())
-}
-
-#[cfg(test)]
-fn failure_point(point: FailurePoint) -> Result<(), CatalogAuthorityError> {
-    FAILURE_POINT.with(|slot| {
-        if slot.get() == Some(point) {
-            slot.set(None);
-            Err(CatalogAuthorityError::StorageFailure)
-        } else {
-            Ok(())
-        }
-    })
-}
-
-#[cfg(not(test))]
-fn failure_point(_point: FailurePoint) -> Result<(), CatalogAuthorityError> {
-    Ok(())
 }

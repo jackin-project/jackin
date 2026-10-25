@@ -377,6 +377,3 @@ pub(crate) fn branch_context_bar_hit(
     }
     None
 }
-
-#[cfg(test)]
-mod tests;

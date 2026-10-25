@@ -3,6 +3,3 @@
 
 pub use jackin_config::{CollapseError, CollapsePlan, Removal, plan_collapse};
 pub(crate) use jackin_config::{apply_isolation_overrides, plan_create, plan_edit};
-
-#[cfg(test)]
-mod tests;

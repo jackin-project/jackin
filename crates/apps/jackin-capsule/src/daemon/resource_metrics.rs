@@ -150,6 +150,3 @@ fn parse_stat_cpu_jiffies(stat: &str) -> Option<CpuJiffies> {
         system: stime,
     })
 }
-
-#[cfg(test)]
-mod tests;

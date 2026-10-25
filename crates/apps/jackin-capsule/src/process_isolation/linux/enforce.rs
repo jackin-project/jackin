@@ -15,8 +15,6 @@ use std::mem::size_of;
 
 pub(crate) fn install_landlock(rules: &[Rule]) -> Result<()> {
     #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
-    // SAFETY: Landlock's version query is defined as a null attribute
-    // pointer with zero size and a version-query flag.
     let abi = unsafe {
         libc::syscall(
             libc::SYS_landlock_create_ruleset,
@@ -37,8 +35,6 @@ pub(crate) fn install_landlock(rules: &[Rule]) -> Result<()> {
             },
     };
     #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
-    // SAFETY: `handled` is a valid, initialized ruleset attribute and its
-    // size matches the ABI structure passed to the kernel.
     let ruleset = unsafe {
         libc::syscall(
             libc::SYS_landlock_create_ruleset,
@@ -66,8 +62,6 @@ pub(crate) fn install_landlock(rules: &[Rule]) -> Result<()> {
         let path = CString::new(rule.path.as_os_str().as_encoded_bytes())
             .with_context(|| format!("invalid isolated path {}", rule.path.display()))?;
         #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
-        // SAFETY: `path` is a NUL-terminated path owned for this call;
-        // O_PATH|O_CLOEXEC requests only a kernel path handle.
         let parent = unsafe { libc::open(path.as_ptr(), libc::O_PATH | libc::O_CLOEXEC) };
         if parent < 0 {
             close_fd(ruleset);
@@ -88,8 +82,6 @@ pub(crate) fn install_landlock(rules: &[Rule]) -> Result<()> {
             parent_fd: parent,
         };
         #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
-        // SAFETY: `beneath` is a valid path-beneath attribute whose fd is
-        // open for the duration of the syscall.
         let result = unsafe {
             libc::syscall(
                 libc::SYS_landlock_add_rule,
@@ -107,16 +99,12 @@ pub(crate) fn install_landlock(rules: &[Rule]) -> Result<()> {
         }
     }
     #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
-    // SAFETY: `prctl` changes only the calling thread's no-new-privs
-    // attribute and receives no pointer arguments.
     if unsafe { libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) } != 0 {
         close_fd(ruleset);
         return Err(std::io::Error::last_os_error())
             .context("enable no-new-privileges for Landlock");
     }
     #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
-    // SAFETY: `ruleset` is the valid fd returned by Landlock and remains
-    // open until this syscall completes.
     let result = unsafe { libc::syscall(libc::SYS_landlock_restrict_self, ruleset, 0u32) };
     close_fd(ruleset);
     if result < 0 {
@@ -132,25 +120,19 @@ pub(crate) fn drop_privileges(identity: SessionIdentity) -> Result<()> {
         "session identity cannot be root"
     );
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
-    // SAFETY: `prctl` changes only this thread's keep-caps flag and
-    // receives no pointer arguments.
     if unsafe { libc::prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0) } != 0 {
         return Err(std::io::Error::last_os_error()).context("retain session DAC capabilities");
     }
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
-    // SAFETY: a zero count with a null group list is the documented way
-    // to clear supplementary groups for this process.
     if unsafe { libc::setgroups(0, std::ptr::null()) } != 0 {
         return Err(std::io::Error::last_os_error())
             .context("clear supervisor supplementary groups");
     }
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
-    // SAFETY: all three gid values are the validated non-root session gid.
     if unsafe { libc::setresgid(identity.gid, identity.gid, identity.gid) } != 0 {
         return Err(std::io::Error::last_os_error()).context("drop session gid");
     }
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
-    // SAFETY: all three uid values are the validated non-root session uid.
     if unsafe { libc::setresuid(identity.uid, identity.uid, identity.uid) } != 0 {
         return Err(std::io::Error::last_os_error()).context("drop session uid");
     }
@@ -173,28 +155,22 @@ pub(crate) fn drop_privileges(identity: SessionIdentity) -> Result<()> {
         },
     ];
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
-    // SAFETY: `header` and the two-element capability data array are
-    // initialized to the kernel's documented capset ABI.
     if unsafe { libc::syscall(libc::SYS_capset, &header, data.as_mut_ptr()) } != 0 {
         return Err(std::io::Error::last_os_error()).context("retain session DAC capabilities");
     }
     let capability = CAP_DAC_OVERRIDE;
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
-    // SAFETY: this raises the one capability just installed in the
-    // calling thread's ambient set.
     if unsafe { libc::prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, capability, 0, 0) } != 0 {
         return Err(std::io::Error::last_os_error())
             .context("make session DAC boundary capabilities survive exec");
     }
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
-    // SAFETY: `geteuid` has no pointer arguments and reports this process.
     let effective_uid = unsafe { libc::geteuid() };
     anyhow::ensure!(
         effective_uid == identity.uid,
         "session uid drop did not stick"
     );
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
-    // SAFETY: `getegid` has no pointer arguments and reports this process.
     let effective_gid = unsafe { libc::getegid() };
     anyhow::ensure!(
         effective_gid == identity.gid,
@@ -209,8 +185,6 @@ pub(crate) const fn retained_capability_mask() -> u32 {
 
 #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
 pub(crate) fn close_fd(fd: libc::c_int) {
-    // SAFETY: callers pass file descriptors returned by the kernel and no
-    // longer use them after this close.
     unsafe {
         libc::close(fd);
     }

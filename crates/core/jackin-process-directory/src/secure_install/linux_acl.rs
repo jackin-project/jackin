@@ -1,15 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Linux descriptor xattr checks for access and default ACL absence.
-
 use rustix::fd::AsFd;
 use rustix::fs::fgetxattr;
 use rustix::io::Errno;
 use std::io;
-
-#[cfg(test)]
-use rustix::fs::{XattrFlags, fsetxattr};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum XattrProbe {
@@ -59,24 +54,4 @@ pub(super) fn classify_probe(result: Result<usize, Errno>) -> XattrProbe {
 
 fn is_unsupported(error: Errno) -> bool {
     error == Errno::NOTSUP || error == Errno::OPNOTSUPP || error == Errno::NOSYS
-}
-
-#[cfg(test)]
-pub(super) fn set_extended_acl_fixture(descriptor: impl AsFd, default: bool) -> io::Result<()> {
-    // Linux UAPI v2: little-endian version followed by user_obj, named user,
-    // group_obj, mask, and other entries. The mask preserves mode `0755`.
-    const EXTENDED_ACL_V2: [u8; 44] = [
-        0x02, 0x00, 0x00, 0x00, // version 2
-        0x01, 0x00, 0x07, 0x00, 0xff, 0xff, 0xff, 0xff, // user_obj rwx
-        0x02, 0x00, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, // named user r--
-        0x04, 0x00, 0x05, 0x00, 0xff, 0xff, 0xff, 0xff, // group_obj r-x
-        0x10, 0x00, 0x05, 0x00, 0xff, 0xff, 0xff, 0xff, // mask r-x
-        0x20, 0x00, 0x05, 0x00, 0xff, 0xff, 0xff, 0xff, // other r-x
-    ];
-    let name = if default {
-        c"system.posix_acl_default"
-    } else {
-        c"system.posix_acl_access"
-    };
-    fsetxattr(descriptor, name, &EXTENDED_ACL_V2, XattrFlags::empty()).map_err(Into::into)
 }

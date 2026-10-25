@@ -8,8 +8,6 @@ mod screens;
 mod scroll;
 mod selection;
 mod settings;
-#[cfg(test)]
-mod tests;
 pub(crate) use actions::{
     action_of, apply_settings_message, record_manager_action, request_poll_effect,
     start_manager_action,

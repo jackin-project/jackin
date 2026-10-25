@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Non-activating receipt inspection for the private pre-commit owner protocol.
-
 #[cfg(unix)]
 mod precommit_owner_security;
 

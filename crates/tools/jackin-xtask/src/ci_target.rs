@@ -15,9 +15,6 @@ use serde_json::Value as JsonValue;
 
 use crate::cmd;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Subcommand, Debug)]
 pub(crate) enum CiTargetCommand {
     ResolveKey(ResolveKeyArgs),

@@ -70,22 +70,6 @@ impl OpCli {
         self.account = account;
         self
     }
-
-    #[cfg(test)]
-    #[expect(
-        dead_code,
-        reason = "test constructor is used by selected op-cli test builds"
-    )]
-    pub(super) const fn with_binary_and_timeout(
-        binary: String,
-        timeout: std::time::Duration,
-    ) -> Self {
-        Self {
-            binary,
-            timeout,
-            account: None,
-        }
-    }
 }
 
 impl Default for OpCli {
@@ -93,9 +77,6 @@ impl Default for OpCli {
         Self::new()
     }
 }
-
-#[cfg(test)]
-mod tests;
 
 fn format_exit_status(status: std::process::ExitStatus) -> String {
     status
@@ -266,8 +247,6 @@ fn op_read_args<'a>(reference: &'a str, account: Option<&'a str>) -> Vec<&'a str
 
 impl OpRunner for OpCli {
     fn read_with_account(&self, reference: &str, account: Option<&str>) -> anyhow::Result<String> {
-        // A per-ref account overrides the instance default so a workspace
-        // holding refs from several accounts resolves each against its own.
         match account {
             Some(_) => Self {
                 binary: self.binary.clone(),
@@ -403,16 +382,6 @@ fn run_op_with_timeout(
 #[derive(Clone, Copy)]
 enum OpTransportFault {
     None,
-    #[cfg(test)]
-    MissingStdout,
-    #[cfg(test)]
-    MissingStderr,
-    #[cfg(test)]
-    Wait,
-    #[cfg(test)]
-    StdoutRead,
-    #[cfg(test)]
-    StderrRead,
 }
 
 fn run_op_with_timeout_inner(
@@ -424,7 +393,6 @@ fn run_op_with_timeout_inner(
     use std::io::Read;
     use std::process::{Command, Stdio};
 
-    #[cfg(not(test))]
     let _ = fault;
 
     let (mut child, operation) = spawn_op_with_retry(|| {
@@ -441,15 +409,6 @@ fn run_op_with_timeout_inner(
         operation.spawn_failed();
         op_spawn_error(binary, &error)
     })?;
-
-    #[cfg(test)]
-    if matches!(fault, OpTransportFault::MissingStdout) {
-        drop(child.stdout.take());
-    }
-    #[cfg(test)]
-    if matches!(fault, OpTransportFault::MissingStderr) {
-        drop(child.stderr.take());
-    }
 
     let (tx, rx) = std::sync::mpsc::channel();
     let Some(mut stdout) = child.stdout.take() else {
@@ -473,13 +432,7 @@ fn run_op_with_timeout_inner(
         jackin_telemetry::spawn::thread_stream("op.stderr", move || drain_bounded_stderr(stderr));
 
     let child = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
-    #[cfg(test)]
-    if matches!(fault, OpTransportFault::Wait) {
-        drop(tx.send(Err(std::io::Error::other("injected wait failure"))));
-    } else {
-        spawn_wait_thread(std::sync::Arc::clone(&child), tx);
-    }
-    #[cfg(not(test))]
+
     spawn_wait_thread(std::sync::Arc::clone(&child), tx);
 
     let cmd_label = format!("op {}", args.join(" "));
@@ -511,18 +464,7 @@ fn run_op_with_timeout_inner(
     let stderr_bytes = stderr_handle
         .join()
         .unwrap_or_else(|_| Err(std::io::Error::other("stderr reader panicked")));
-    #[cfg(test)]
-    let stdout_bytes = if matches!(fault, OpTransportFault::StdoutRead) {
-        Err(std::io::Error::other("injected stdout read failure"))
-    } else {
-        stdout_bytes
-    };
-    #[cfg(test)]
-    let stderr_bytes = if matches!(fault, OpTransportFault::StderrRead) {
-        Err(std::io::Error::other("injected stderr read failure"))
-    } else {
-        stderr_bytes
-    };
+
     let (Ok(stdout_bytes), Ok(stderr_bytes)) = (stdout_bytes, stderr_bytes) else {
         operation.io_failed();
         anyhow::bail!("1Password CLI output pipe read failed");

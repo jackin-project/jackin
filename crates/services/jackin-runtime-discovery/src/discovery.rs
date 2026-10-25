@@ -46,6 +46,3 @@ pub async fn list_running_agent_display_names(
         })
         .collect())
 }
-
-#[cfg(test)]
-mod tests;

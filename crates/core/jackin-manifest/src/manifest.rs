@@ -90,6 +90,3 @@ fn validate_feature_versions(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

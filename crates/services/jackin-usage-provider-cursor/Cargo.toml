@@ -26,8 +26,5 @@ base64 = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 serde_json = { workspace = true }
 
-[dev-dependencies]
-tempfile = { workspace = true }
-
 [lints]
 workspace = true

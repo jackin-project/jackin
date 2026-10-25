@@ -25,8 +25,6 @@ anyhow = { workspace = true }
 tokio = { workspace = true, features = ["process"] }
 
 [dev-dependencies]
-jackin-diagnostics = { workspace = true, features = ["test-support"] }
-tracing = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]

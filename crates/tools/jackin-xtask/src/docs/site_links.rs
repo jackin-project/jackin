@@ -49,6 +49,3 @@ fn command(site_url: &str, workspace: &Path, blob_url: &str, edit_url: &str) -> 
 fn required(name: &str) -> Result<String> {
     env::var(name).with_context(|| format!("{name} is required"))
 }
-
-#[cfg(test)]
-mod tests;

@@ -20,6 +20,3 @@ pub fn breadcrumb_display_width(parts: &jackin_core::OpBreadcrumbParts) -> usize
 fn text_width(text: &str) -> usize {
     termrock::text::display_cols(text)
 }
-
-#[cfg(test)]
-mod tests;

@@ -21,7 +21,6 @@ path = "src/lib.rs"
 [dependencies]
 jackin-config = { workspace = true }
 jackin-core = { workspace = true }
-jackin-diagnostics = { workspace = true }
 jackin-docker = { workspace = true }
 jackin-runtime-image = { workspace = true }
 jackin-runtime-launch-dind = { workspace = true }

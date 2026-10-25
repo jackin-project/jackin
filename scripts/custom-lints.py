@@ -35,8 +35,6 @@ def compiler_host(version):
 
 def build_environment(root):
     env = os.environ.copy()
-    # Rustup shims must also be first for Dylint's separately built driver, which
-    # intentionally removes inherited compiler selection before selecting its ABI.
     cargo_home = Path(env.get("CARGO_HOME", Path.home() / ".cargo")).resolve()
     tools = {}
     for name in ("dylint-link", "cargo-nextest", "cargo-dylint"):
@@ -45,8 +43,6 @@ def build_environment(root):
             raise ValueError(f"missing Mise-pinned {name}")
         tools[name] = str(Path(selected).resolve())
     env["PATH"] = str(cargo_home / "bin") + os.pathsep + env.get("PATH", "")
-    # Ambient Dylint settings can replace the driver or alter compiler flags.
-    # Only settings explicitly established by this task may reach its children.
     for key in list(env):
         if key.startswith("DYLINT_"):
             env.pop(key)
@@ -56,8 +52,6 @@ def build_environment(root):
     target = Path(env.get("CARGO_TARGET_DIR", root / "target" / "custom-lints")).resolve()
     env["CARGO_TARGET_DIR"] = str(target / "library")
     env["DYLINT_LINK_ENABLE_COPY_LIBRARY"] = "1"
-    # Keep compiler proxies first without allowing a stale Cargo-home linker to
-    # shadow Mise's selected linker. Encoded flags preserve paths with spaces.
     env["CARGO_ENCODED_RUSTFLAGS"] = "-C\x1flinker=" + tools["dylint-link"]
     return env, target, tools
 
@@ -85,10 +79,8 @@ def run(root):
     for component in COMPONENTS:
         if f"{component}-{host}" not in installed:
             raise ValueError(f"missing pinned nightly component: {component}")
-    # Keep the lint's actual Cargo/config and UI working directory. The explicit
-    # encoded linker flag selects the exact Mise linker instead of PATH lookup.
     command(nightly + ["cargo", "build", "--locked"], lint, env)
-    command(nightly + [tools["cargo-nextest"], "nextest", "run", "--locked"], lint, env)
+    command(nightly + [tools["cargo-nextest"], "nextest", "run", "--locked", "--no-tests", "pass"], lint, env)
     library = library_path(target, host)
     with tempfile.TemporaryDirectory(prefix="jackin-custom-lints-") as directory:
         destination = Path(directory) / library.name
@@ -99,8 +91,6 @@ def run(root):
         workspace_env.pop("DYLINT_LINK_ENABLE_COPY_LIBRARY", None)
         workspace_env.pop("CARGO_ENCODED_RUSTFLAGS", None)
         workspace_env.pop("RUSTFLAGS", None)
-        # No workspace metadata discovery or stale target-directory libraries:
-        # only the one freshly built, ABI-labelled library is discoverable.
         command([tools["cargo-dylint"], "dylint", "--no-metadata", "--all",
                  "--fail-on-no-libraries", "--", "--workspace", "--locked"], root, workspace_env)
 

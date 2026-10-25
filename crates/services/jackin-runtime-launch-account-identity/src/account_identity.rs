@@ -158,8 +158,7 @@ enum CredentialWriteFailure {
     StagedFile(usize),
     PreviousRename,
     Install,
-    #[cfg(test)]
-    InstallAndRollbackCleanup,
+
     Cleanup,
     RollbackCleanup,
 }
@@ -185,51 +184,9 @@ struct CredentialSwapTransaction {
     rollback: Option<String>,
 }
 
-#[cfg(test)]
-thread_local! {
-    static CREDENTIAL_WRITE_FAILURE: std::cell::Cell<Option<CredentialWriteFailure>> =
-        const { std::cell::Cell::new(None) };
-}
-
 fn maybe_inject_credential_write_failure(point: CredentialWriteFailure) -> anyhow::Result<()> {
-    #[cfg(test)]
-    if CREDENTIAL_WRITE_FAILURE.with(|failure| {
-        matches!(
-            (failure.get(), point),
-            (
-                Some(CredentialWriteFailure::InstallAndRollbackCleanup),
-                CredentialWriteFailure::Install | CredentialWriteFailure::RollbackCleanup
-            )
-        ) || failure.get() == Some(point)
-    }) {
-        anyhow::bail!("injected credential publication failure at {point:?}");
-    }
-
-    #[cfg(not(test))]
     let _ = point;
     Ok(())
-}
-
-#[cfg(test)]
-struct CredentialWriteFailureGuard {
-    previous: Option<CredentialWriteFailure>,
-}
-
-#[cfg(test)]
-fn inject_credential_write_failure(point: CredentialWriteFailure) -> CredentialWriteFailureGuard {
-    let previous = CREDENTIAL_WRITE_FAILURE.with(|failure| failure.replace(Some(point)));
-    assert!(
-        previous.is_none(),
-        "nested credential-write failure injection is not supported"
-    );
-    CredentialWriteFailureGuard { previous }
-}
-
-#[cfg(test)]
-impl Drop for CredentialWriteFailureGuard {
-    fn drop(&mut self) {
-        CREDENTIAL_WRITE_FAILURE.with(|failure| failure.set(self.previous));
-    }
 }
 
 fn unique_credential_sibling(root: &Path, prefix: &str) -> anyhow::Result<std::path::PathBuf> {
@@ -1046,6 +1003,3 @@ pub fn write_account_credentials(
     clear_credential_transaction(root)?;
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

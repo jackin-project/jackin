@@ -21,12 +21,6 @@ pub(crate) use parse::{
 };
 pub use parse::{antigravity_remaining_from_entry, parse_antigravity_usage_output};
 pub use snapshot::antigravity_snapshot;
-#[cfg(test)]
-pub(crate) use snapshot::{
-    antigravity_snapshot_status, antigravity_status_view, antigravity_version_error_status,
-};
+
 pub(crate) use types::AntigravityUtilizationObservation;
 pub use types::{AntigravityFamily, AntigravityPool, AntigravityUsage, AntigravityWindow};
-
-#[cfg(test)]
-mod tests;

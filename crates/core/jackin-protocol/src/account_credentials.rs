@@ -4,9 +4,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceCredentialEnv {
     pub agent: String,

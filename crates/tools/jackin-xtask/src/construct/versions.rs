@@ -1,5 +1,3 @@
-//! Construct tool selection: Mise follows the root project minimum.
-
 use std::fs;
 
 use anyhow::{Context, Result, bail};

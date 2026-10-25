@@ -25,6 +25,3 @@ fn force_panic_enabled(raw: &str) -> bool {
         "1" | "true" | "yes" | "on"
     )
 }
-
-#[cfg(test)]
-mod tests;

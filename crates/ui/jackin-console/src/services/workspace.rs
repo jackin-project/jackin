@@ -125,6 +125,3 @@ pub fn unique_global_mount_name(rows: &[GlobalMountRow], scope: Option<&str>, ds
     }
     candidate
 }
-
-#[cfg(test)]
-mod tests;

@@ -527,6 +527,3 @@ pub fn hyperlink_overlay(area: Rect, state: &ContainerInfoState) -> Vec<u8> {
     }
     out
 }
-
-#[cfg(test)]
-mod tests;

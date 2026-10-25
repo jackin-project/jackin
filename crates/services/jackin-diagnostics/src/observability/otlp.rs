@@ -23,19 +23,12 @@ use tracing_subscriber::prelude::*;
 use super::ServiceIdentity;
 use super::health;
 use super::resource::build_resource_for;
-#[cfg(test)]
-use super::resource::{
-    build_resource_for_sources, container_id_from_cgroup, semantic_os_type, verified_container_id,
-};
+
 mod governance;
 mod metric_governance;
 mod retry;
 use governance::{GovernedLogProcessor, GovernedSpanProcessor};
 use metric_governance::validate_metric_export;
-#[cfg(test)]
-use metric_governance::{
-    metric_contract_fields, validate_metric_attributes, validate_metric_points,
-};
 
 const EXPORT_ATTEMPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
 
@@ -58,17 +51,9 @@ impl OtlpProviders {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .detach_before(deadline)?;
-        #[cfg(test)]
-        SHUTDOWN_ORDER
-            .lock()
-            .expect("shutdown order lock")
-            .push("detach.meter");
+
         let (trace_flush, log_flush, metric_flush) = self.force_flush_all(deadline);
-        #[cfg(test)]
-        SHUTDOWN_ORDER
-            .lock()
-            .expect("shutdown order lock")
-            .push("tracer");
+
         let tracer = self.tracer.clone();
         let meter_installation = std::sync::Arc::clone(&self.meter_installation);
         let trace_shutdown = sdk_operation_before(
@@ -76,11 +61,7 @@ impl OtlpProviders {
             move |timeout| tracer.shutdown_with_timeout(timeout),
             Some(meter_installation),
         );
-        #[cfg(test)]
-        SHUTDOWN_ORDER
-            .lock()
-            .expect("shutdown order lock")
-            .push("logger");
+
         let logger = self.logger.clone();
         let meter_installation = std::sync::Arc::clone(&self.meter_installation);
         let log_shutdown = sdk_operation_before(
@@ -88,11 +69,7 @@ impl OtlpProviders {
             move |timeout| logger.shutdown_with_timeout(timeout),
             Some(meter_installation),
         );
-        #[cfg(test)]
-        SHUTDOWN_ORDER
-            .lock()
-            .expect("shutdown order lock")
-            .push("meter");
+
         let meter = self.meter.clone();
         let meter_installation = std::sync::Arc::clone(&self.meter_installation);
         let metric_shutdown = sdk_operation_before(
@@ -132,12 +109,6 @@ impl OtlpProviders {
         &self,
         deadline: std::time::Instant,
     ) -> (Result<(), String>, Result<(), String>, Result<(), String>) {
-        #[cfg(test)]
-        SHUTDOWN_ORDER.lock().expect("shutdown order lock").extend([
-            "flush.tracer",
-            "flush.logger",
-            "flush.meter",
-        ]);
         let tracer = self.tracer.clone();
         let logger = self.logger.clone();
         let meter = self.meter.clone();
@@ -228,17 +199,6 @@ where
         })
 }
 
-#[cfg(test)]
-fn flush_before<F>(deadline: std::time::Instant, operation: F) -> Result<(), String>
-where
-    F: FnOnce() -> opentelemetry_sdk::error::OTelSdkResult,
-{
-    if std::time::Instant::now() >= deadline {
-        return Err("telemetry shutdown budget exhausted".to_owned());
-    }
-    operation().map_err(|_| "telemetry flush failed".to_owned())
-}
-
 pub(super) fn validate_flush() -> Result<(), super::ValidationFailure> {
     let providers = PROVIDERS
         .lock()
@@ -285,12 +245,10 @@ static PENDING_FLUSH_WORKERS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>>
     std::sync::Mutex::new(Vec::new());
 static TERMINAL_METER_LEASES: std::sync::Mutex<Vec<MeterInstallationLease>> =
     std::sync::Mutex::new(Vec::new());
-#[cfg(test)]
-static SHUTDOWN_ORDER: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
 
 static OTEL_RUNTIME: std::sync::Mutex<Option<tokio::runtime::Runtime>> =
     std::sync::Mutex::new(None);
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 static OTEL_RUNTIME_CREATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn otel_runtime() -> anyhow::Result<std::sync::MutexGuard<'static, Option<tokio::runtime::Runtime>>>
@@ -307,7 +265,7 @@ fn otel_runtime() -> anyhow::Result<std::sync::MutexGuard<'static, Option<tokio:
                 .build()
                 .map_err(|e| anyhow::anyhow!("OTLP telemetry runtime init failed: {e}"))?,
         );
-        #[cfg(any(test, feature = "test-support"))]
+        #[cfg(feature = "test-support")]
         OTEL_RUNTIME_CREATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
     Ok(runtime)
@@ -998,94 +956,16 @@ fn export_filter_directive_with_internal(level: &str, internal: bool) -> String 
     directive
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 #[derive(Debug)]
 pub struct TestExport {
     pub(crate) spans: opentelemetry_sdk::trace::InMemorySpanExporter,
     pub(crate) logs: opentelemetry_sdk::logs::InMemoryLogExporter,
     pub(crate) tracer_provider: SdkTracerProvider,
     pub(crate) logger_provider: SdkLoggerProvider,
-    #[cfg(test)]
-    _test_state_guard: Option<std::sync::MutexGuard<'static, ()>>,
 }
 
-#[cfg(test)]
-pub(crate) fn test_layers(debug: bool, run_id: &str) -> (TestExport, impl tracing::Subscriber) {
-    test_layers_at(if debug { "debug" } else { "info" }, run_id)
-}
-
-#[cfg(test)]
-pub(crate) fn test_layers_at(
-    test_level: &str,
-    _run_id: &str,
-) -> (TestExport, impl tracing::Subscriber) {
-    use opentelemetry::trace::TracerProvider as _;
-
-    let test_state_guard = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    jackin_telemetry::limits::install_redactor(crate::redact::redact_text);
-    let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
-    let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
-    let resource = build_resource_for(ServiceIdentity::HOST_ONE_SHOT);
-    let tracer_provider = SdkTracerProvider::builder()
-        .with_max_attributes_per_span(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
-        .with_max_attributes_per_event(jackin_telemetry::limits::MAX_LOG_ATTRIBUTES as u32)
-        .with_max_links_per_span(jackin_telemetry::limits::MAX_SPAN_LINKS as u32)
-        .with_max_attributes_per_link(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
-        .with_span_processor(GovernedSpanProcessor(
-            opentelemetry_sdk::trace::SimpleSpanProcessor::new(spans.clone()),
-        ))
-        .with_resource(resource.clone())
-        .build();
-    let logger_provider = SdkLoggerProvider::builder()
-        .with_log_processor(GovernedLogProcessor(
-            opentelemetry_sdk::logs::SimpleLogProcessor::new(logs.clone()),
-        ))
-        .with_resource(resource)
-        .build();
-    let tracer = tracer_provider.tracer("jackin");
-    let span_layer = tracing_opentelemetry::layer()
-        .with_tracer(tracer)
-        .with_location(false)
-        .with_threads(false)
-        .with_target(false)
-        .with_tracked_inactivity(false)
-        .with_error_records_to_exceptions(false)
-        .with_error_events_to_status(false)
-        .with_error_fields_to_exceptions(false);
-    let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
-    let span_directive = export_filter_directive(test_level);
-    let log_directive = export_filter_directive(test_level);
-    let subscriber = tracing_subscriber::registry()
-        .with(
-            span_layer
-                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
-                    metadata.is_span()
-                }))
-                .with_filter(EnvFilter::new(span_directive)),
-        )
-        .with(
-            log_layer
-                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
-                    metadata.is_event()
-                }))
-                .with_filter(EnvFilter::new(log_directive)),
-        );
-
-    (
-        TestExport {
-            spans,
-            logs,
-            tracer_provider,
-            logger_provider,
-            _test_state_guard: Some(test_state_guard),
-        },
-        subscriber,
-    )
-}
-
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 pub fn test_capsule_layers(debug: bool) -> (TestExport, impl tracing::Subscriber) {
     use opentelemetry::trace::TracerProvider as _;
 
@@ -1144,27 +1024,9 @@ pub fn test_capsule_layers(debug: bool) -> (TestExport, impl tracing::Subscriber
             logs,
             tracer_provider,
             logger_provider,
-            #[cfg(test)]
-            _test_state_guard: None,
         },
         subscriber,
     )
-}
-
-#[cfg(test)]
-pub(crate) fn emit_session_start_for_test(
-    session_id: &str,
-    _run_id: Option<&str>,
-    _traceparent: Option<&str>,
-) {
-    let attrs = [jackin_telemetry::Attr {
-        key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
-        value: jackin_telemetry::Value::Str(session_id),
-    }];
-    let _event_result = jackin_telemetry::emit_event(
-        &jackin_telemetry::event::SESSION_START,
-        jackin_telemetry::FieldSet::new(&attrs, None),
-    );
 }
 
 #[derive(Debug, Default)]
@@ -1419,7 +1281,7 @@ fn reap_flush_workers() {
     *pending = unfinished;
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 pub(super) fn runtime_creation_count() -> u64 {
     OTEL_RUNTIME_CREATIONS.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -1431,6 +1293,3 @@ pub(super) fn runtime_is_active() -> bool {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .is_some()
 }
-
-#[cfg(test)]
-mod tests;

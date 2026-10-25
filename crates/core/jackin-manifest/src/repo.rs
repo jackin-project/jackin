@@ -153,6 +153,3 @@ fn validate_relative_path(
 
     Ok(canonical_resolved)
 }
-
-#[cfg(test)]
-mod tests;

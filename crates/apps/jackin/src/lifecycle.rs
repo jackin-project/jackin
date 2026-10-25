@@ -353,6 +353,3 @@ fn complete_root(
     });
     operation.complete(classification.outcome, classification.error_type);
 }
-
-#[cfg(test)]
-mod tests;

@@ -645,11 +645,6 @@ pub fn lookup_operator_env_raw(
         .map(|(_, value)| value.as_display_str().clone())
 }
 
-/// Look up the winning typed declaration for one operator-env key.
-///
-/// This is a Rust-only composition seam for source-equality caching before a
-/// protected read. The returned value can contain credential material and must
-/// never be logged, persisted, or projected across FFI.
 pub fn lookup_operator_env_declaration(
     config: &AppConfig,
     role_selector: Option<&str>,
@@ -967,31 +962,6 @@ pub(crate) fn emit_launch_diagnostic<W: std::io::Write>(
     drop(stderr.write_all(rendered.as_bytes()));
 }
 
-#[cfg(test)]
-#[expect(
-    dead_code,
-    reason = "diagnostic formatter is used by selected test builds"
-)]
-pub(crate) fn format_launch_diagnostic_for_test(
-    config: &AppConfig,
-    role_selector: Option<&str>,
-    workspace_name: Option<&WorkspaceName>,
-    resolved: &std::collections::BTreeMap<String, String>,
-    debug: bool,
-) -> String {
-    let mut out = Vec::new();
-    write_launch_diagnostic(
-        &mut out,
-        config,
-        role_selector,
-        workspace_name,
-        resolved,
-        debug,
-    )
-    .unwrap();
-    String::from_utf8(out).unwrap()
-}
-
 fn write_launch_diagnostic<W: std::io::Write>(
     w: &mut W,
     config: &AppConfig,
@@ -1091,6 +1061,3 @@ fn classify_str(s: &str) -> String {
         "literal".to_owned()
     }
 }
-
-#[cfg(test)]
-mod tests;

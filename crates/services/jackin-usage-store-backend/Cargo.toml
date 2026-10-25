@@ -30,12 +30,7 @@ tokio = { workspace = true, features = ["rt", "sync"] }
 turso = { workspace = true }
 
 [dev-dependencies]
-anyhow = { workspace = true }
-jackin-diagnostics = { workspace = true, features = ["test-support"] }
-jackin-otlp-testbed = { workspace = true }
-tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
-tracing = { workspace = true }
 
 [lints]
 workspace = true

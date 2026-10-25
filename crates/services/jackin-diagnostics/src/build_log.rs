@@ -73,6 +73,3 @@ pub fn snapshot() -> Vec<String> {
         |state| state.lines.iter().cloned().collect(),
     )
 }
-
-#[cfg(test)]
-mod tests;

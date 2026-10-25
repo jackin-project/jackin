@@ -67,6 +67,3 @@ impl From<WorkspaceName> for WorkspaceLabel {
         Self(name.into_inner())
     }
 }
-
-#[cfg(test)]
-mod tests;

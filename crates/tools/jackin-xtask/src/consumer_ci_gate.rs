@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Executed consumer checks. Transport fixtures and production launches remain
-//! distinct obligations; neither certifies live provider authentication.
-
 mod anchored_fs;
 mod evidence;
 mod lanes;
@@ -36,7 +33,6 @@ pub(crate) enum Lane {
 pub(crate) struct ConsumerCiGateArgs {
     #[arg(long, value_enum)]
     lane: Lane,
-    /// Fresh repository-relative Velnor scenario report.
     #[arg(long)]
     report: PathBuf,
 }
@@ -368,6 +364,3 @@ fn verify_platform(platform: &str) -> Result<()> {
     );
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

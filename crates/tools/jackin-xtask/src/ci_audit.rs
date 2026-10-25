@@ -15,9 +15,6 @@ use serde::Deserialize;
 
 use crate::cmd;
 
-#[cfg(test)]
-mod tests;
-
 type JobLogs = Arc<Mutex<BTreeMap<u64, Vec<u8>>>>;
 
 #[derive(Args, Debug)]

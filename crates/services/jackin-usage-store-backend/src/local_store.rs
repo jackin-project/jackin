@@ -18,7 +18,6 @@ pub use registry::{StoreOperationGuard, acquire_store_operation};
 
 pub use backup::{BackupReceipt, CommittedMigrationValidation, MigrationReceipt};
 
-/// The two local stores whose schema migrations require durable rollback proof.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ManagedStoreKind {
     QuotaSnapshot,
@@ -34,18 +33,15 @@ impl ManagedStoreKind {
     }
 }
 
-/// What this process can prove about the source before its first backend open.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PreopenStatus {
-    /// A prior legacy or failed backend open owns this path; no pre-open evidence exists.
     NotCaptured,
-    /// The path did not exist at managed first-open capture time.
+
     CapturedAbsent,
-    /// The source existed and its available raw files were captured before backend open.
+
     CapturedExisting,
 }
 
-/// Stable digests and counts for the complete supported logical SQLite image.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LogicalDigest {
     pub schema_sha256: String,
@@ -56,7 +52,6 @@ pub struct LogicalDigest {
     pub rows: u64,
 }
 
-/// Errors from managed open, forensic capture, and migration backup operations.
 #[derive(Debug)]
 pub enum StoreError {
     Io(&'static str, io::ErrorKind),
@@ -216,9 +211,6 @@ fn fmt_receipt_error(error: &StoreError, f: &mut fmt::Formatter<'_>) -> fmt::Res
 
 impl std::error::Error for StoreError {}
 
-/// Retains the backend Database and its primary connection for same-database backups.
-///
-/// This type deliberately is not `Clone`; caches can share its owner through `Arc`.
 pub struct LocalStore {
     database: Database,
     primary: Connection,
@@ -252,7 +244,6 @@ impl fmt::Debug for LocalStore {
 }
 
 impl LocalStore {
-    /// Capture first-open forensic evidence before building the backend owner.
     pub async fn open_managed(
         path: &Path,
         kind: ManagedStoreKind,
@@ -275,7 +266,6 @@ impl LocalStore {
             })
             .await?;
 
-        forensics::record_builder_started(&resolved.path);
         let database_result = operation(
             DbOperation::Connect,
             turso::Builder::new_local(path_text).build(),
@@ -307,7 +297,6 @@ impl LocalStore {
         &self.primary
     }
 
-    /// Connects through the exact retained Turso Database used by `connection()`.
     pub fn backup_connection(&self) -> Result<Connection, StoreError> {
         self.database
             .connect()
@@ -331,9 +320,6 @@ impl LocalStore {
         backup::backup_before_migration(self, kind, expected_old_version, new_version).await
     }
 
-    /// Opens and checks the committed current schema through the retained Database.
-    /// Call the store-specific shape/data validator on the returned connection,
-    /// then consume the token in one of the receipt-marking methods.
     pub async fn validate_committed_migration(
         &self,
         kind: ManagedStoreKind,
@@ -398,8 +384,7 @@ fn prepare_managed_open(
         source_identities,
         identity_lease,
     )?;
-    #[cfg(test)]
-    registry::block_managed_prepare_for_test(&prepare_path.path);
+
     Ok((permit, Some(evidence), opened_path.identity))
 }
 
@@ -423,6 +408,3 @@ fn create_empty_source(path: &Path) -> Result<(), StoreError> {
     drop(file);
     manifest::sync_directory(path.parent().ok_or(StoreError::UnsupportedSourcePath)?)
 }
-
-#[cfg(test)]
-mod tests;

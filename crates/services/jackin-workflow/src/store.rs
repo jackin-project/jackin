@@ -1,15 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Durable run store on a dedicated Turso file.
-//!
-//! Workflow tables live in a SEPARATE database file opened only via
-//! [`jackin_usage_store_backend::connect_local`](jackin_usage_store_backend::connect_local);
-//! usage tables are never touched here. Every state change is saved
-//! together with its event row and its next effect intent in one
-//! transaction. Prompt/output bytes are written through temporary
-//! files (flush + rename) before their digests are recorded.
-
 use std::future::Future;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -23,7 +14,6 @@ use super::{CommandState, EffectKind, EffectStatus, RunStatus, Stage, WorkflowEr
 
 const SCHEMA_VERSION: &str = "1";
 
-/// One stored run row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredRun {
     pub run_id: String,
@@ -40,7 +30,6 @@ pub struct StoredRun {
     pub pause_kind: Option<String>,
 }
 
-/// One stored command row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredCommand {
     pub command_id: String,
@@ -54,7 +43,6 @@ pub struct StoredCommand {
     pub resolution: Option<String>,
 }
 
-/// One stored session row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredSession {
     pub run_id: String,
@@ -67,7 +55,6 @@ pub struct StoredSession {
     pub auth_profile: Option<String>,
 }
 
-/// One stored effect row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredEffect {
     pub operation_id: String,
@@ -80,14 +67,12 @@ pub struct StoredEffect {
     pub preservation: Option<String>,
 }
 
-/// Content-addressed artifact written through tmpfile-flush-rename.
 #[derive(Debug, Clone)]
 pub struct ArtifactRef {
     pub digest: String,
     pub path: PathBuf,
 }
 
-/// One stored event row: the durable per-run history (C7 replay).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredEvent {
     pub seq: i64,
@@ -97,8 +82,6 @@ pub struct StoredEvent {
     pub evidence_ref: Option<String>,
 }
 
-/// One stored evidence row: a test/review finding with its source,
-/// quality, result, policy hash, and artifact digest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredEvidence {
     pub candidate: String,
@@ -110,8 +93,6 @@ pub struct StoredEvidence {
     pub artifact_digest: Option<String>,
 }
 
-/// One stored checkpoint row: candidate identity, exact commit/tree,
-/// source manifest, backup state, preservation hold.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredCheckpoint {
     pub candidate: String,
@@ -123,8 +104,6 @@ pub struct StoredCheckpoint {
     pub preservation_hold: Option<String>,
 }
 
-/// Durable store handle. Single service owner; synchronous API over a
-/// shared current-thread runtime.
 #[derive(Debug)]
 pub struct RunStore {
     conn: Connection,
@@ -133,8 +112,6 @@ pub struct RunStore {
 }
 
 impl RunStore {
-    /// Open (creating) the store, initialize the schema, and persist
-    /// the incremented owner epoch for this service instance.
     pub fn open(db_path: &Path, artifacts_dir: &Path) -> Result<Self, WorkflowError> {
         std::fs::create_dir_all(artifacts_dir).map_err(|err| {
             WorkflowError::storage(format!("create workflow artifact dir failed: {err}"))
@@ -164,8 +141,6 @@ impl RunStore {
         Ok(store)
     }
 
-    /// Owner epoch persisted by this service instance. Automatic input
-    /// stamped with an older epoch is rejected.
     #[must_use]
     pub const fn epoch(&self) -> u64 {
         self.epoch
@@ -185,7 +160,6 @@ impl RunStore {
         })
     }
 
-    /// Insert a new run plus its `run_started` event in one transaction.
     pub fn create_run(
         &self,
         run_id: &str,
@@ -226,7 +200,6 @@ impl RunStore {
         })
     }
 
-    /// Load a run by ID.
     pub fn load_run(&self, run_id: &str) -> Result<Option<StoredRun>, WorkflowError> {
         block_on_store(async {
             let mut rows = jackin_usage_store_backend::operation(
@@ -252,7 +225,6 @@ impl RunStore {
         })
     }
 
-    /// Load a run by idempotency key.
     pub fn load_run_by_key(
         &self,
         idempotency_key: &str,
@@ -281,7 +253,6 @@ impl RunStore {
         })
     }
 
-    /// The single active run slot: any non-terminal run.
     pub fn active_run(&self) -> Result<Option<StoredRun>, WorkflowError> {
         block_on_store(async {
             let mut rows = jackin_usage_store_backend::operation(
@@ -309,9 +280,6 @@ impl RunStore {
         })
     }
 
-    /// Bounded run list, newest first (C7 `workflow.list`). The cap
-    /// keeps the CLI/Console list response bounded; pass a positive
-    /// limit.
     pub fn list_runs(&self, limit: u32) -> Result<Vec<StoredRun>, WorkflowError> {
         let limit = i64::from(limit.max(1));
         block_on_store(async {
@@ -339,10 +307,6 @@ impl RunStore {
         })
     }
 
-    /// Bounded durable event history for one run at/after `after_seq`
-    /// (C7 `workflow.events` resume cursor). Gaps are the caller's
-    /// signal: a missing leading sequence means output fell outside
-    /// the retained window.
     pub fn load_events(
         &self,
         run_id: &str,
@@ -380,8 +344,6 @@ impl RunStore {
         })
     }
 
-    /// All evidence rows for one run (test/review findings for the
-    /// C7 detail view and Markdown export).
     pub fn load_evidence(&self, run_id: &str) -> Result<Vec<StoredEvidence>, WorkflowError> {
         block_on_store(async {
             let mut rows = jackin_usage_store_backend::operation(
@@ -415,8 +377,6 @@ impl RunStore {
         })
     }
 
-    /// All checkpoint rows for one run (preserved work, backup
-    /// state, and safe-path display for the C7 detail view).
     pub fn load_checkpoints(&self, run_id: &str) -> Result<Vec<StoredCheckpoint>, WorkflowError> {
         block_on_store(async {
             let mut rows = jackin_usage_store_backend::operation(
@@ -450,9 +410,6 @@ impl RunStore {
         })
     }
 
-    /// Apply a host-computed transition plus its event and optional
-    /// next effect intent in ONE transaction. Fails when the row
-    /// version moved underneath the caller.
     pub fn apply_transition(&self, transition: &RunTransition<'_>) -> Result<(), WorkflowError> {
         let now = now_secs();
         block_on_store(async {
@@ -514,9 +471,6 @@ impl RunStore {
         })
     }
 
-    /// Insert a command already committed to `dispatching`, plus its
-    /// event, in one transaction. Callers commit dispatch BEFORE the
-    /// transport send; the receipt later moves it to `written`.
     pub fn insert_dispatching_command(
         &self,
         run_id: &str,
@@ -537,8 +491,6 @@ impl RunStore {
         })
     }
 
-    /// Insert an operator follow-up command as `queued`: it is sent
-    /// only after input admission succeeds.
     pub fn insert_queued_command(
         &self,
         run_id: &str,
@@ -610,8 +562,6 @@ impl RunStore {
         })
     }
 
-    /// Record a worker session attachment (instance, Capsule epoch,
-    /// process identity, profiles) for recovery comparison.
     pub fn record_session(&self, session: &SessionAttachment<'_>) -> Result<(), WorkflowError> {
         block_on_store(async {
             jackin_usage_store_backend::operation(
@@ -644,7 +594,6 @@ impl RunStore {
         })
     }
 
-    /// All recorded sessions of a run.
     pub fn load_sessions(&self, run_id: &str) -> Result<Vec<StoredSession>, WorkflowError> {
         block_on_store(async {
             let mut rows = jackin_usage_store_backend::operation(
@@ -670,9 +619,6 @@ impl RunStore {
         })
     }
 
-    /// Move a command to a new delivery state plus its event, in one
-    /// transaction. There is no automatic resubmit path: callers only
-    /// move forward, or to `delivery_unknown` on recovery.
     pub fn set_command_state(
         &self,
         command_id: &str,
@@ -733,7 +679,6 @@ impl RunStore {
         })
     }
 
-    /// Load one command by ID.
     pub fn load_command(&self, command_id: &str) -> Result<Option<StoredCommand>, WorkflowError> {
         block_on_store(async {
             let mut rows = jackin_usage_store_backend::operation(
@@ -758,7 +703,6 @@ impl RunStore {
         })
     }
 
-    /// All commands of a run currently in `state`.
     pub fn commands_in_state(
         &self,
         run_id: &str,
@@ -788,8 +732,6 @@ impl RunStore {
         })
     }
 
-    /// Record a standalone event (recovery findings, operator notes)
-    /// outside a state transition.
     pub fn append_event(
         &self,
         run_id: &str,
@@ -805,8 +747,6 @@ impl RunStore {
         })
     }
 
-    /// Upsert an effect intent. Same `(run, kind, ownership_label)`
-    /// returns the existing row: intents never duplicate.
     pub fn ensure_effect(
         &self,
         run_id: &str,
@@ -898,8 +838,6 @@ impl RunStore {
             .ok_or_else(|| "effect vanished after insert".to_owned())
     }
 
-    /// Adopt or complete an effect with its exact external identity,
-    /// plus an event, in one transaction.
     pub fn set_effect(
         &self,
         run_id: &str,
@@ -954,7 +892,6 @@ impl RunStore {
         })
     }
 
-    /// All effects of a run, oldest first.
     pub fn load_effects(&self, run_id: &str) -> Result<Vec<StoredEffect>, WorkflowError> {
         block_on_store(async {
             let mut rows = jackin_usage_store_backend::operation(
@@ -980,8 +917,6 @@ impl RunStore {
         })
     }
 
-    /// Record one evidence row (test/review finding, policy hash,
-    /// artifact digest).
     pub fn record_evidence(&self, evidence: &EvidenceRecord<'_>) -> Result<(), WorkflowError> {
         block_on_store(async {
             jackin_usage_store_backend::operation(
@@ -1010,9 +945,6 @@ impl RunStore {
         })
     }
 
-    /// Discard partial test/review evidence rows for a candidate so
-    /// recovery starts at most one fresh verification attempt.
-    /// Returns the discarded row count.
     pub fn discard_partial_evidence(
         &self,
         run_id: &str,
@@ -1036,8 +968,6 @@ impl RunStore {
         })
     }
 
-    /// Record a checkpoint row (candidate identity, exact commit/tree,
-    /// source manifest, backup state, preservation hold).
     pub fn record_checkpoint(
         &self,
         checkpoint: &CheckpointRecord<'_>,
@@ -1076,9 +1006,6 @@ impl RunStore {
         })
     }
 
-    /// Write artifact bytes through a temporary file (create, write,
-    /// flush, rename) and return the content digest. The digest is
-    /// recorded in the database only after the rename completes.
     pub fn write_artifact(&self, name: &str, bytes: &[u8]) -> Result<ArtifactRef, WorkflowError> {
         let mut hasher = Sha256::new();
         hasher.update(bytes);
@@ -1122,7 +1049,6 @@ impl RunStore {
         })
     }
 
-    /// Verify a recorded artifact digest still matches bytes on disk.
     pub fn verify_artifact(&self, name: &str, digest: &str) -> Result<bool, WorkflowError> {
         let safe: String = name
             .chars()
@@ -1150,8 +1076,6 @@ impl RunStore {
     }
 }
 
-/// One host-computed run transition with its event row and optional
-/// next effect intent, applied atomically.
 #[derive(Debug, Clone)]
 pub struct RunTransition<'a> {
     pub run_id: &'a str,
@@ -1167,7 +1091,6 @@ pub struct RunTransition<'a> {
     pub effect: Option<NewEffect>,
 }
 
-/// One command row insert with its event row, applied atomically.
 #[derive(Debug, Clone)]
 pub struct NewCommand<'a> {
     pub run_id: &'a str,
@@ -1179,7 +1102,6 @@ pub struct NewCommand<'a> {
     pub state: CommandState,
 }
 
-/// One worker session attachment for recovery comparison.
 #[derive(Debug, Clone)]
 pub struct SessionAttachment<'a> {
     pub run_id: &'a str,
@@ -1192,8 +1114,6 @@ pub struct SessionAttachment<'a> {
     pub auth_profile: Option<&'a str>,
 }
 
-/// One checkpoint row: candidate identity, exact commit/tree, source
-/// manifest, backup state, preservation hold.
 #[derive(Debug, Clone)]
 pub struct CheckpointRecord<'a> {
     pub run_id: &'a str,
@@ -1206,8 +1126,6 @@ pub struct CheckpointRecord<'a> {
     pub preservation_hold: Option<&'a str>,
 }
 
-/// One evidence row: a test/review finding with its source,
-/// quality, result, policy hash, and artifact digest.
 #[derive(Debug, Clone)]
 pub struct EvidenceRecord<'a> {
     pub run_id: &'a str,
@@ -1220,8 +1138,6 @@ pub struct EvidenceRecord<'a> {
     pub artifact_digest: Option<&'a str>,
 }
 
-/// A new effect intent saved atomically with its triggering state
-/// change.
 #[derive(Debug, Clone)]
 pub struct NewEffect {
     pub operation_id: String,
@@ -1404,8 +1320,6 @@ async fn run_exists(conn: &Connection, run_id: &str) -> Result<bool, String> {
         .map_err(|err| format!("read workflow run check failed: {err}"))
 }
 
-/// Name the optimistic-concurrency loss: a moved row version versus
-/// a missing run.
 async fn version_conflict(conn: &Connection, run_id: &str) -> Result<String, String> {
     if run_exists(conn, run_id).await? {
         Ok("stale run version".to_owned())

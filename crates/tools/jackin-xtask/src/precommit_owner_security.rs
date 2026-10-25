@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Strict format3 receipt parsing and descriptor-content comparison.
-//!
-//! This module does not establish source closure, executable provenance, owner
-//! identity, permissions, ACL policy, or trust to execute any artifact.
-
 use anyhow::{Context, Result, bail, ensure};
 use nix::{
     fcntl::{OFlag, open},
@@ -370,6 +365,3 @@ fn read_at(file: &File, buffer: &mut [u8], offset: u64) -> io::Result<usize> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

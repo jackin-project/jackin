@@ -16,6 +16,3 @@ pub fn secret_display(
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

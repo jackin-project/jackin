@@ -17,8 +17,5 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 jackin-process = { workspace = true }
 
-[dev-dependencies]
-tempfile = { workspace = true }
-
 [lints]
 workspace = true

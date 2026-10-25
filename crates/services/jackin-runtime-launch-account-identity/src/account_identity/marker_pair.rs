@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Cooperative serialization for the selected and admission marker pair.
-//!
-//! This gate assumes an existing trusted container root and cooperating
-//! writers. It does not make a same-uid namespace hostile to its owner.
-
 use anyhow::{Context as _, ensure};
 use rustix::fs::{
     AtFlags, FlockOperation, Mode, OFlags, RenameFlags, fchmod, flock, fsync, ftruncate, open,
@@ -86,7 +81,6 @@ impl RootIdentity {
     }
 }
 
-/// Holds an independently-opened root descriptor and its nonblocking flock.
 pub(super) struct MarkerPairLease {
     root: PathBuf,
     directory: File,
@@ -166,7 +160,6 @@ impl MarkerPairLease {
         Ok(Some(lease))
     }
 
-    /// Rechecks that the opened directory is still the safe named root.
     pub(super) fn ensure_root_identity(&self) -> anyhow::Result<()> {
         let descriptor = self
             .directory
@@ -308,7 +301,6 @@ impl MarkerPairLease {
         Ok(Some(EntryStat::from_stat(stat)?))
     }
 
-    /// Refuses any reserved journal entry without opening or modifying it.
     pub(super) fn ensure_no_reserved_journal(&self, name: &str) -> anyhow::Result<()> {
         self.ensure_root_identity()?;
         match statat(&self.directory, name, AtFlags::SYMLINK_NOFOLLOW) {
@@ -346,49 +338,7 @@ fn validate_root_metadata(metadata: &Metadata, root: &Path) -> anyhow::Result<()
     Ok(())
 }
 
-#[cfg(test)]
-type SelectedRenameHook = Box<dyn FnOnce(&Path) -> anyhow::Result<()> + 'static>;
-
-#[cfg(test)]
-thread_local! {
-    static SELECTED_RENAME_HOOK: std::cell::RefCell<Option<SelectedRenameHook>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-#[cfg(test)]
-pub(super) struct SelectedRenameHookGuard;
-
-#[cfg(test)]
-pub(super) fn pause_after_selected_rename_once(
-    hook: impl FnOnce(&Path) -> anyhow::Result<()> + 'static,
-) -> SelectedRenameHookGuard {
-    SELECTED_RENAME_HOOK.with(|slot| {
-        let mut slot = slot.borrow_mut();
-        assert!(
-            slot.is_none(),
-            "nested marker publication hooks are not supported"
-        );
-        *slot = Some(Box::new(hook));
-    });
-    SelectedRenameHookGuard
-}
-
-#[cfg(test)]
-impl Drop for SelectedRenameHookGuard {
-    fn drop(&mut self) {
-        SELECTED_RENAME_HOOK.with(|slot| {
-            slot.borrow_mut().take();
-        });
-    }
-}
-
 pub(super) fn pause_after_selected_rename(root: &Path) -> anyhow::Result<()> {
-    #[cfg(test)]
-    if let Some(hook) = SELECTED_RENAME_HOOK.with(|slot| slot.borrow_mut().take()) {
-        hook(root)?;
-    }
-
-    #[cfg(not(test))]
     let _ = root;
 
     Ok(())

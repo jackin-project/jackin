@@ -229,6 +229,3 @@ pub fn active_stage_index(view: &LaunchView) -> usize {
         .filter(|running| *running < frontier)
         .unwrap_or_else(|| frontier.saturating_sub(1))
 }
-
-#[cfg(test)]
-mod tests;

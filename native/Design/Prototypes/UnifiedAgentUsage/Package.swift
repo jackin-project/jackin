@@ -8,9 +8,5 @@ let package = Package(
             name: "UnifiedAgentUsageProto",
             resources: [.process("Resources")]
         ),
-        .testTarget(
-            name: "UnifiedAgentUsageProtoTests",
-            dependencies: ["UnifiedAgentUsageProto"]
-        ),
     ]
 )

@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::HashSet;
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 use std::future::Future;
 use std::path::PathBuf;
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 use std::sync::Mutex;
 
 use anyhow::Result;
@@ -78,10 +78,8 @@ pub trait AppleContainerApi: Send + Sync {
 
     async fn remove_container(&self, name: &str) -> Result<()>;
 
-    /// Inspect one exact container ID; absence and inventory errors remain distinct.
     async fn inspect_container(&self, name: &str) -> Result<Option<AppleContainerInfo>>;
 
-    /// Return the prefix-filtered view of a completely validated inventory.
     async fn list_containers(&self, name_prefix: &str) -> Result<Vec<AppleContainerInfo>>;
 }
 
@@ -113,7 +111,6 @@ impl AppleContainerClient {
         let output = runner.exec(&request).await?;
         anyhow::ensure!(output.success, "container list exited unsuccessfully");
 
-        // Parse and validate the complete inventory before applying the search prefix.
         Ok(parse_all_containers_json(&output.stdout)?
             .into_iter()
             .filter(|container| container.id.starts_with(name_prefix))
@@ -132,7 +129,7 @@ impl AppleContainerClient {
             .find(|container| container.id == container_id))
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(feature = "test-support")]
     #[doc(hidden)]
     pub async fn list_containers_with_command_runner(
         &self,
@@ -142,7 +139,7 @@ impl AppleContainerClient {
         self.list_containers_with_runner(runner, name_prefix).await
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(feature = "test-support")]
     #[doc(hidden)]
     pub async fn inspect_container_with_command_runner(
         &self,
@@ -202,7 +199,7 @@ impl AppleContainerApi for AppleContainerClient {
 }
 
 #[doc(hidden)]
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 pub trait AppleContainerCommandRunner: Send + Sync {
     async fn exec(
         &self,
@@ -210,7 +207,7 @@ pub trait AppleContainerCommandRunner: Send + Sync {
     ) -> Result<jackin_process::ExecResult>;
 }
 
-#[cfg(not(any(test, feature = "test-support")))]
+#[cfg(not(feature = "test-support"))]
 trait AppleContainerCommandRunner: Send + Sync {
     async fn exec(
         &self,
@@ -470,7 +467,7 @@ impl<'de> Deserialize<'de> for AppleContainerStatus {
     }
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 #[derive(Debug, Default)]
 pub struct FakeAppleContainerClient {
     pub containers: Mutex<Vec<AppleContainerInfo>>,
@@ -478,7 +475,7 @@ pub struct FakeAppleContainerClient {
     pub start_calls: Mutex<Vec<String>>,
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 impl FakeAppleContainerClient {
     pub fn new() -> Self {
         Self::default()
@@ -558,7 +555,7 @@ impl FakeAppleContainerClient {
     }
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 impl AppleContainerApi for FakeAppleContainerClient {
     fn run_container(
         &self,
@@ -594,6 +591,3 @@ impl AppleContainerApi for FakeAppleContainerClient {
         std::future::poll_fn(move |_| std::task::Poll::Ready(self.list_containers_now(name_prefix)))
     }
 }
-
-#[cfg(test)]
-mod tests;

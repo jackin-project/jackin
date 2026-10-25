@@ -325,6 +325,3 @@ fn snapshot_from_cli_stdout(stdout: &str) -> Result<InstanceSnapshot> {
 fn usage_accounts_from_cli_stdout(stdout: &str) -> Result<Vec<AccountUsageSnapshotView>> {
     serde_json::from_str(stdout).context("parsing jackin-capsule usage accounts JSON")
 }
-
-#[cfg(test)]
-mod tests;

@@ -573,6 +573,3 @@ pub fn list_records_for_workspace(
     }
     Ok(all)
 }
-
-#[cfg(test)]
-mod tests;

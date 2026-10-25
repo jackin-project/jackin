@@ -166,11 +166,6 @@ pub(super) struct ManagedOpenPermit {
     active_builder: bool,
 }
 
-/// In-process inode custody held while a raw artifact or source path is used.
-///
-/// The source file descriptor still closes before the backend builder. This
-/// lease only prevents another owned source builder from acquiring that inode
-/// during the raw read.
 pub(super) struct IdentityLease {
     identities: Vec<FileIdentity>,
     active: bool,
@@ -238,68 +233,6 @@ impl Drop for ManagedOpenPermit {
     }
 }
 
-#[cfg(test)]
-struct ManagedPreparePause {
-    ready: std::sync::mpsc::Sender<()>,
-    release: std::sync::mpsc::Receiver<()>,
-}
-
-#[cfg(test)]
-static MANAGED_PREPARE_PAUSES: OnceLock<
-    StdMutex<HashMap<std::path::PathBuf, ManagedPreparePause>>,
-> = OnceLock::new();
-
-#[cfg(test)]
-pub(super) fn set_managed_prepare_pause(
-    path: &Path,
-) -> Result<(std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>), StoreError> {
-    let resolved = resolve_source_path(path)?;
-    let (ready_sender, ready_receiver) = std::sync::mpsc::channel();
-    let (release_sender, release_receiver) = std::sync::mpsc::channel();
-    MANAGED_PREPARE_PAUSES
-        .get_or_init(|| StdMutex::new(HashMap::new()))
-        .lock()
-        .map_err(|_| StoreError::RegistryState)?
-        .insert(
-            resolved.path,
-            ManagedPreparePause {
-                ready: ready_sender,
-                release: release_receiver,
-            },
-        );
-    Ok((ready_receiver, release_sender))
-}
-
-#[cfg(test)]
-pub(super) fn clear_managed_prepare_pause(path: &Path) {
-    let Ok(resolved) = resolve_source_path(path) else {
-        return;
-    };
-    let Some(pauses) = MANAGED_PREPARE_PAUSES.get() else {
-        return;
-    };
-    if let Ok(mut pauses) = pauses.lock() {
-        pauses.remove(&resolved.path);
-    }
-}
-
-#[cfg(test)]
-pub(super) fn block_managed_prepare_for_test(path: &Path) {
-    let Ok(resolved) = resolve_source_path(path) else {
-        return;
-    };
-    let pause = MANAGED_PREPARE_PAUSES
-        .get()
-        .and_then(|pauses| pauses.lock().ok())
-        .and_then(|mut pauses| pauses.remove(&resolved.path));
-    if let Some(pause) = pause {
-        let _send_result = pause.ready.send(());
-        let _wait_result = pause
-            .release
-            .recv_timeout(std::time::Duration::from_secs(10));
-    }
-}
-
 pub(super) async fn reserve_managed_open(
     path: &ResolvedPath,
 ) -> Result<ManagedOpenPermit, StoreError> {
@@ -352,7 +285,6 @@ pub(super) async fn reserve_managed_open(
                     });
                     let busy = aliases.iter().any(|alias| alias_is_busy(&state, alias));
                     if busy {
-                        // Another alias owns pre-open capture or a builder.
                     } else {
                         let needs_capture = aliases.is_empty();
                         insert_managed_entry(
@@ -511,7 +443,6 @@ pub(super) async fn begin_legacy_builder(
                     });
                     let busy = aliases.iter().any(|alias| alias_is_busy(&state, alias));
                     if busy {
-                        // Wait until the identity owner finishes its builder.
                     } else if source_ids_conflict(
                         &state,
                         &source_identities,
@@ -774,20 +705,6 @@ fn remove_transient_identity(state: &mut RegistryState, identity: FileIdentity) 
     if remove {
         state.transient_identity_reservations.remove(&identity);
     }
-}
-
-#[cfg(test)]
-pub(super) fn is_opened_ever(path: &Path) -> bool {
-    let Ok(path) = resolve_source_path(path) else {
-        return false;
-    };
-    OPENED
-        .get_or_init(OpenRegistry::default)
-        .state
-        .lock()
-        .ok()
-        .and_then(|state| state.entries.get(&path.path).map(|entry| entry.opened_ever))
-        .unwrap_or(false)
 }
 
 fn add_identity_path(state: &mut RegistryState, identity: FileIdentity, path: &Path) {

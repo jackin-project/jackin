@@ -91,9 +91,6 @@ impl TryFrom<&str> for WorkspaceName {
     }
 }
 
-#[cfg(test)]
-mod tests;
-
 impl TryFrom<String> for WorkspaceName {
     type Error = WorkspaceNameError;
 

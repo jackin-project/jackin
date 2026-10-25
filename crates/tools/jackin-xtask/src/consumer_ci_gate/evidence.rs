@@ -3,7 +3,5 @@
 
 mod artifact;
 
-#[cfg(test)]
-pub(super) use super::anchored_fs::RepositoryDirectory;
 pub(super) use super::managed_target::{RunDirectory, TargetDirectory};
 pub(super) use artifact::{artifact, capsule_artifact};

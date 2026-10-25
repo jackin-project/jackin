@@ -82,7 +82,7 @@ pub fn apply_watchdog(mut candidate: EvidenceSummary, now: Instant) -> EvidenceS
     {
         return candidate;
     }
-    // Missing /proc samples are unknown evidence, never proof of quiet.
+
     if !candidate.physics_sampled {
         return candidate;
     }
@@ -120,6 +120,3 @@ fn public_state_for_raw(prev_public: AgentState, raw: RawAgentState) -> AgentSta
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

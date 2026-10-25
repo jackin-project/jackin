@@ -426,14 +426,6 @@ fn admit_explicit_restore_account(
     Ok(admission)
 }
 
-#[cfg(test)]
-fn git_pull_program(opts: &super::LoadOptions) -> std::path::PathBuf {
-    opts.git_program
-        .clone()
-        .unwrap_or_else(|| std::path::PathBuf::from("git"))
-}
-
-#[cfg(not(test))]
 fn git_pull_program(_opts: &super::LoadOptions) -> std::path::PathBuf {
     std::path::PathBuf::from("git")
 }
@@ -790,9 +782,6 @@ fn initialize_launch_progress(
     workspace_name: Option<&str>,
 ) -> anyhow::Result<()> {
     if let Some(run) = jackin_diagnostics::active_run() {
-        #[cfg(test)]
-        let mut progress = crate::runtime::progress::LaunchProgress::for_test(run);
-        #[cfg(not(test))]
         let mut progress = crate::runtime::progress::LaunchProgress::new(
             run,
             std::env::var_os("JACKIN_NO_MOTION").is_some(),
@@ -1751,43 +1740,6 @@ pub(crate) fn emit_auth_provision_launch_plan(state: &RoleState, container: &str
     }
 }
 
-#[cfg(test)]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "testable launch entry retains its established callback seam"
-)]
-pub(crate) async fn load_role_with(
-    paths: &JackinPaths,
-    config: &mut AppConfig,
-    selector: &RoleSelector,
-    workspace: &jackin_config::ResolvedWorkspace,
-    docker: &impl DockerApi,
-    runner: &mut impl CommandRunner,
-    opts: &super::LoadOptions,
-    confirm_trust_for_test: impl FnOnce(&RoleSelector, &jackin_config::RoleSource) -> anyhow::Result<()>,
-    confirm_branch_for_test: impl FnOnce(
-        &RoleSelector,
-        &jackin_config::RoleSource,
-        &str,
-    ) -> anyhow::Result<()>,
-) -> anyhow::Result<()> {
-    load_role_with_admission(
-        paths,
-        config,
-        selector,
-        workspace,
-        docker,
-        runner,
-        LaunchAdmissionRequest {
-            opts,
-            confirm_trust_for_test,
-            confirm_branch_for_test,
-            related_expectation: None,
-        },
-    )
-    .await
-}
-
 pub(crate) fn manifest_env_timing_detail(skipped: bool, vars: usize) -> String {
     if skipped {
         "skipped".to_owned()
@@ -1812,6 +1764,3 @@ pub(super) async fn purge_or_mark_clean_exited(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

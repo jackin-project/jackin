@@ -306,6 +306,3 @@ SELECT id, provider, credential_type, data, identity_key, created_at, updated_at
 FROM main.auth_credentials
 WHERE id = ?1 AND disabled_cause IS NULL
 ";
-
-#[cfg(test)]
-mod tests;

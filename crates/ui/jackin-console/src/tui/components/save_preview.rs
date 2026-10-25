@@ -5,8 +5,6 @@ mod diff_lines;
 mod mount_diff;
 mod settings_lines;
 mod settings_types;
-#[cfg(test)]
-mod tests;
 mod workspace_lines;
 mod workspace_types;
 pub use diff_lines::append_env_map_diff_lines;

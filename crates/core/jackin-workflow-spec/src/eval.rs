@@ -1,21 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Frozen Pkl evaluation inside a killable helper process.
-//!
-//! The caller freezes the versioned schema module plus one workflow
-//! module to bytes ([`FrozenBundle`]). Evaluation runs in the
-//! `jackin-workflow-eval` helper spawned through `jackin-process` with
-//! a deadline, a cleared environment, and bounded captured output. The
-//! helper caps its own heap with a counting allocator (see the helper
-//! binary) and evaluates with `pklr` capabilities that serve only the
-//! supplied modules: ambient file reads, environment reads, remote
-//! imports, temp dirs, and globs are denied by the capability
-//! implementation and by an empty resource allowlist, never by a text
-//! scan. A deadline breach or a helper death maps to
-//! `evaluation_limit`; a Pkl-level failure maps to
-//! `invalid_definition`. No Tokio timeout wraps the evaluation.
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -25,27 +10,22 @@ use serde::{Deserialize, Serialize};
 use crate::digest::sha256_hex;
 use crate::error::{Diagnostic, ErrorCode, WorkflowError, WorkflowResult};
 
-/// Name the workflow schema module must have inside a bundle.
 pub const SCHEMA_MODULE_NAME: &str = "Workflow.pkl";
 
-/// pklr release this crate was verified against (crates.io, 2026-10-07).
 pub const PKLR_VERSION: &str = "5.1.1";
 
-/// Bounds for one evaluation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EvalLimits {
-    /// Kill the helper after this long and report `evaluation_limit`.
     pub deadline: Duration,
-    /// Heap cap enforced inside the helper, in bytes.
+
     pub memory_bytes: u64,
-    /// Maximum captured helper stdout, in bytes.
+
     pub max_stdout_bytes: usize,
-    /// Maximum captured helper stderr, in bytes.
+
     pub max_stderr_bytes: usize,
 }
 
 impl EvalLimits {
-    /// Production bounds: 30s deadline, 256MiB heap, 4MiB/256KiB output.
     #[must_use]
     pub const fn defaults() -> Self {
         Self {
@@ -57,27 +37,21 @@ impl EvalLimits {
     }
 }
 
-/// One frozen module: virtual name plus exact bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrozenModule {
-    /// Virtual path inside the bundle (for example `/bundle/repair.pkl`).
     pub name: String,
-    /// Frozen source bytes.
+
     pub bytes: Vec<u8>,
 }
 
-/// Supplied local modules frozen before evaluation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrozenBundle {
-    /// Virtual path of the entry module.
     pub entry: String,
-    /// Frozen modules, including the entry and the versioned schema.
+
     pub modules: Vec<FrozenModule>,
 }
 
 impl FrozenBundle {
-    /// Freeze the schema and workflow sources from text. The entry must
-    /// be one of the modules; UTF-8 is required for Pkl sources.
     pub fn from_texts(
         entry: impl Into<String>,
         modules: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
@@ -105,8 +79,6 @@ impl FrozenBundle {
         })
     }
 
-    /// Hex SHA-256 over the entry name plus every module name and byte,
-    /// in sorted name order.
     #[must_use]
     pub fn digest(&self) -> String {
         let mut ordered: Vec<&FrozenModule> = self.modules.iter().collect();
@@ -123,7 +95,6 @@ impl FrozenBundle {
         sha256_hex(&bytes)
     }
 
-    /// Hex digests per module, keyed by virtual name.
     #[must_use]
     pub fn module_digests(&self) -> BTreeMap<String, String> {
         self.modules
@@ -133,42 +104,33 @@ impl FrozenBundle {
     }
 }
 
-/// Successful bounded evaluation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvaluatedDefinition {
-    /// Evaluated workflow document.
     pub json: serde_json::Value,
-    /// Hex digests of the frozen modules that produced it.
+
     pub module_digests: BTreeMap<String, String>,
-    /// Environment reads observed during evaluation (always empty: the
-    /// allowlist denies them before the capability runs).
+
     pub env_reads: BTreeMap<String, Option<String>>,
 }
 
-/// Request bytes sent to the helper's stdin.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HelperRequest {
-    /// Virtual path of the entry module.
     pub entry: String,
-    /// Virtual name to source text.
+
     pub modules: BTreeMap<String, String>,
 }
 
-/// Response JSON printed by the helper on stdout.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HelperResponse {
-    /// Whether evaluation completed.
     pub ok: bool,
-    /// Evaluated document when `ok` is true.
+
     pub value: Option<serde_json::Value>,
-    /// Environment reads observed (always empty).
+
     pub env_reads: Option<BTreeMap<String, Option<String>>>,
-    /// Pkl failure message when `ok` is false.
+
     pub error: Option<String>,
 }
 
-/// Locate the helper next to the current executable. Returns `None`
-/// when it is not installed there.
 #[must_use]
 pub fn resolve_helper_binary() -> Option<PathBuf> {
     let current = std::env::current_exe().ok()?;
@@ -177,9 +139,6 @@ pub fn resolve_helper_binary() -> Option<PathBuf> {
     candidate.is_file().then_some(candidate)
 }
 
-/// Evaluate a frozen bundle with bounds. Synchronous: the helper is a
-/// real OS process reaped by `jackin-process`; no blocking thread is
-/// left behind on a deadline breach.
 pub fn evaluate_bounded(
     bundle: &FrozenBundle,
     file_label: &str,
@@ -342,16 +301,12 @@ fn stderr_excerpt(bytes: &[u8]) -> String {
     text.chars().take(400).collect()
 }
 
-/// Capabilities that serve only the supplied frozen modules. Every
-/// other access is denied here, and resource reads additionally fail
-/// the evaluator's empty allowlist before reaching this code.
 #[derive(Debug)]
 pub struct FrozenCapabilities {
     modules: BTreeMap<PathBuf, Vec<u8>>,
 }
 
 impl FrozenCapabilities {
-    /// Serve exactly these virtual-name to source mappings.
     #[must_use]
     pub fn new(modules: BTreeMap<String, String>) -> Self {
         Self {
@@ -435,9 +390,6 @@ impl pklr::EvalCapabilities for FrozenCapabilities {
     }
 }
 
-/// Evaluate one helper request. Shared by the helper binary so its
-/// protocol stays in one place; the sandbox (capabilities, allowlist,
-/// offline mode) is applied here.
 pub fn evaluate_request(request: &HelperRequest) -> HelperResponse {
     let capabilities = FrozenCapabilities::new(request.modules.clone());
     let mut evaluator = pklr::Evaluator::with_capabilities(capabilities);

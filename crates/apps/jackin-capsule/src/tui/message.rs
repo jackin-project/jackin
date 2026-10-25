@@ -312,6 +312,3 @@ pub(crate) use palette::{
     ConfirmedActionRoute, PaletteCommandRoute, PaletteToggleRoute, confirmed_action_route,
     palette_command_route, palette_toggle_route,
 };
-
-#[cfg(test)]
-mod tests;

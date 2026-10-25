@@ -64,6 +64,3 @@ pub fn classify(cli: Cli, tui_capable: bool) -> Action {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

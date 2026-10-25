@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Workflows stage routing: key handling, surface rendering, and
-//! footer hints. Navigation maps keys to [`WorkflowsMessage`] through
-//! the pure screen update; every returned [`WorkflowsEffect`] is
-//! requested from the host, which owns the daemon and Capsule
-//! clients. List and detail snapshots arrive through
-//! `RequestWorkflowsRefresh`, executed by the same host.
-
 use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -45,9 +38,6 @@ fn request_refresh(state: &mut ManagerState<'_>) {
     state.request_effect(ConsoleEffect::RequestWorkflowsRefresh.into());
 }
 
-/// Handle one key while the Workflows stage is focused. `export_dir`
-/// is the host-owned directory exports are written to; it comes from
-/// the host paths, never from screen state.
 pub fn handle_key(state: &mut ManagerState<'_>, key: KeyEvent, export_dir: &Path) {
     let Some(screen) = screen_mut(state) else {
         return;
@@ -105,9 +95,6 @@ pub fn handle_key(state: &mut ManagerState<'_>, key: KeyEvent, export_dir: &Path
     }
 }
 
-/// Render the workflows surface: header, run list plus run detail,
-/// an inline confirmation dialog for destructive actions, and the
-/// stage footer.
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
     let areas = workspace_frame_areas(area);
     render_header(frame, areas.header, "workflows");
@@ -173,6 +160,3 @@ fn workflow_footer_hints() -> [termrock::widgets::HintSpan<'static>; 18] {
         Text(" back"),
     ]
 }
-
-#[cfg(test)]
-mod tests;

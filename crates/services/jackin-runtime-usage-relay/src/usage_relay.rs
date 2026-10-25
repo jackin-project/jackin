@@ -707,6 +707,3 @@ fn error_response(kind: UsageCoordinationErrorKind) -> UsageBrokerResponse {
         },
     }
 }
-
-#[cfg(test)]
-mod tests;

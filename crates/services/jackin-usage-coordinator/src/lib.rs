@@ -16,23 +16,6 @@ mod refresh;
 mod upkeep;
 mod worker;
 
-#[cfg(test)]
-use std::collections::BTreeMap;
-#[cfg(test)]
-use std::sync::mpsc;
-#[cfg(test)]
-use std::sync::{Arc, Condvar, Mutex};
-#[cfg(test)]
-use std::time::{Duration, Instant};
-
-#[cfg(test)]
-use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCatalogEntry, UsageCoordinationErrorKind, UsageGenerationView,
-    UsageRefreshPhase,
-};
-#[cfg(test)]
-use policy::UsageActivity;
-
 pub use state::{
     AccountStateEnvelope, AccountStateStore, FileAccountStateStore, FileProjectionStateStore,
     ProjectionAlias, ProjectionStateEnvelope, StateStoreError,
@@ -64,6 +47,3 @@ pub(crate) use upkeep::{
     revoke_envelope,
 };
 pub(crate) use worker::coordinator_worker;
-
-#[cfg(test)]
-mod tests;

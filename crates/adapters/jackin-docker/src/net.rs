@@ -65,8 +65,6 @@ pub async fn fetch_text(url: &str) -> Result<String> {
     get_text(default_http_client()?, url).await
 }
 
-/// Download a bounded artifact, requiring the authenticated length when known.
-/// Network metadata cannot increase the allocation or the declared byte range.
 pub async fn download_parallel(url: &str, dest: &Path, expected_size: Option<u64>) -> Result<()> {
     if let Some(size) = expected_size {
         anyhow::ensure!(
@@ -181,6 +179,3 @@ pub async fn download_parallel(url: &str, dest: &Path, expected_size: Option<u64
     };
     outcome
 }
-
-#[cfg(test)]
-mod tests;

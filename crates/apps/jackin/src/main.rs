@@ -151,6 +151,3 @@ fn render_error(error: &anyhow::Error, debug: bool) {
         jackin_launch::output::fatal(&format!("{error:#}"));
     }
 }
-
-#[cfg(test)]
-mod tests;

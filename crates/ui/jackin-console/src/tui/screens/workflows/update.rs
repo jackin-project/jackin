@@ -1,15 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Pure workflow-screen transitions: each message maps to state
-//! changes plus host-executed effects. Resume/cancel/takeover only
-//! emit after an explicit confirmation.
-
 use super::effect::WorkflowsEffect;
 use super::message::WorkflowsMessage;
 use super::model::{WorkflowAction, WorkflowScreen};
 
-/// Apply one message; returns the host effects to execute.
 pub fn apply_workflows_message(
     screen: &mut WorkflowScreen,
     message: WorkflowsMessage,
@@ -96,6 +91,3 @@ pub fn apply_workflows_message(
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

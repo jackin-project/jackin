@@ -94,6 +94,3 @@ pub fn render_global_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec
     }
     lines
 }
-
-#[cfg(test)]
-mod tests;

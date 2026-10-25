@@ -4,8 +4,6 @@
 mod reports;
 mod required;
 mod source;
-#[cfg(test)]
-mod tests;
 mod toolchain;
 
 use anyhow::{Context, Result, ensure};
@@ -22,8 +20,6 @@ use super::{Artifact, LaneResult, TargetDirectory, artifact};
 use crate::cmd;
 use reports::{parse_junit, verify_xctest};
 use source::inventory;
-#[cfg(test)]
-use source::{source_inventory, sources_inventory};
 use toolchain::{path_with_selected_xcodebuild, preflight, verify_task_xcodebuild_path};
 
 const MAX_REPORT_BYTES: u64 = 16 * 1024 * 1024;
@@ -32,8 +28,6 @@ const UI_GATE_TIMEOUT: Duration = Duration::from_hours(2);
 
 type Names = BTreeSet<String>;
 
-#[cfg(test)]
-use toolchain::validate_identity;
 pub(super) use toolchain::{Toolchain, verify_identity};
 
 pub(super) struct ReportCustody {

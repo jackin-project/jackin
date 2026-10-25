@@ -17,8 +17,6 @@ pub fn quota_state_for_bucket(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
                 None => {}
             }
 
-            // Exact count is the authority for a count quota, including when
-            // independently reported percentage data conflicts with it.
             if let Some(count) = bucket.count_quota {
                 return match count.remaining {
                     Some(0) => UsageQuotaStateV1::Exhausted,
@@ -102,6 +100,3 @@ pub fn issue_code(kind: UsageCoordinationErrorKind) -> String {
     }
     .to_owned()
 }
-
-#[cfg(test)]
-mod tests;

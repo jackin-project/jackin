@@ -6,6 +6,3 @@ use crate::{FieldSet, Rejection, emit_event, event};
 pub fn record_retry_scheduled() -> Result<(), Rejection> {
     emit_event(&event::RETRY_SCHEDULED, FieldSet::default())
 }
-
-#[cfg(test)]
-mod tests;

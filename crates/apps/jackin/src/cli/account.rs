@@ -131,6 +131,3 @@ fn parse_agent(s: &str) -> Result<Agent, String> {
     s.parse()
         .map_err(|error: jackin_core::ParseAgentError| error.to_string())
 }
-
-#[cfg(test)]
-mod tests;

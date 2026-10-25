@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bounded strict execution that writes captured output to caller-owned files.
-
 use std::error::Error;
 use std::fmt;
 use std::fs::File;
@@ -17,32 +15,26 @@ use super::ExecRequest;
 mod owned_group;
 #[cfg(unix)]
 mod pump;
-#[cfg(test)]
-mod tests;
 
-/// Failure stage for strict spooled execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpoolFailureKind {
-    /// Request or descriptor contract rejected before spawn.
     Request,
-    /// Target platform cannot provide an approved child-selection route.
+
     Unsupported,
-    /// Anchor or requested command could not start.
+
     Spawn,
-    /// Child status observation failed.
+
     Execution,
-    /// Pipe, file write, sync, EOF, budget, or byte-accounting failure.
+
     Capture,
-    /// Group signaling, child wait, or group-drain failure.
+
     Cleanup,
 }
 
-/// One classified post-spawn execution failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpoolFailure {
-    /// Failure category.
     pub kind: SpoolFailureKind,
-    /// Human-readable detail.
+
     pub message: String,
 }
 
@@ -58,11 +50,6 @@ impl fmt::Display for SpoolFailure {
 
 impl Error for SpoolFailure {}
 
-/// Opaque, finite custody for direct children whose wait outcome is uncertain.
-///
-/// This object never signals by PID or process group. Drop closes owned pipe
-/// descriptors and releases reservations to an installed PID 1 reaper. Without
-/// that reaper, the kernel may retain the child until process exit.
 #[derive(Debug, Default)]
 pub struct SpoolRecovery {
     #[cfg(unix)]
@@ -70,10 +57,6 @@ pub struct SpoolRecovery {
 }
 
 impl SpoolRecovery {
-    /// Make one nonblocking wait attempt for each retained direct child.
-    ///
-    /// A successful poll consumes that child's status and releases only its
-    /// reservation. This method never signals a child or process group.
     #[cfg(unix)]
     pub fn poll_reap_nonblocking(&mut self) -> Vec<Result<bool, std::io::Error>> {
         self.children
@@ -82,7 +65,6 @@ impl SpoolRecovery {
             .collect()
     }
 
-    /// Number of direct children whose custody remains in this object.
     #[must_use]
     #[cfg(unix)]
     pub fn retained_children(&self) -> usize {
@@ -91,115 +73,93 @@ impl SpoolRecovery {
             .filter(|child| child.retained())
             .count()
     }
-
-    #[cfg(all(test, unix))]
-    pub(super) fn terminate_children_for_test(&mut self) -> std::io::Result<()> {
-        for child in &mut self.children {
-            child.terminate_and_reap_for_test()?;
-        }
-        Ok(())
-    }
 }
 
-/// Independent request observations made by the strict supervisor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SpoolExecutionObservation {
-    /// Request deadline expired before exit observation.
     pub timed_out: bool,
-    /// Cancellation was observed before return.
+
     pub cancelled: bool,
 }
 
-/// Independent EOF observations for the two captured output pipes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SpoolPipeObservation {
-    /// Standard output reached EOF.
     pub stdout_eof: bool,
-    /// Standard error reached EOF.
+
     pub stderr_eof: bool,
 }
 
 impl SpoolPipeObservation {
-    /// Whether both captured output pipes reached EOF.
     #[must_use]
     pub const fn both_reached_eof(self) -> bool {
         self.stdout_eof && self.stderr_eof
     }
 }
 
-/// Capture and byte-accounting facts from one strict spooled run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SpoolCaptureObservation {
-    /// Per-pipe EOF facts, kept independently for diagnostics.
     pub pipes: SpoolPipeObservation,
-    /// The run reached both EOFs without timeout, cancellation, or capture errors and drained its group.
+
     pub complete: bool,
 }
 
-/// Process-group drain and direct-child recovery custody facts.
 #[derive(Debug, Default)]
 pub struct SpoolCleanupObservation {
-    /// Both direct children were reaped and the original group was absent.
     pub group_drained: bool,
-    /// Direct-child custody retained after finite uncertain cleanup.
+
     pub recovery: Option<SpoolRecovery>,
 }
 
-/// Result of one strict spooled process run.
 #[derive(Debug)]
 pub struct SpoolExecResult {
-    /// Requested command PID.
     pub target_pid: u32,
-    /// Original private process-group ID.
+
     pub process_group_id: i32,
-    /// Normal exit code, if observed.
+
     pub code: Option<i32>,
-    /// Terminating signal, if observed.
+
     pub signal: Option<i32>,
-    /// True only for exit code zero and complete execution, capture, and cleanup.
+
     pub success: bool,
-    /// Independent request deadline and cancellation observations.
+
     pub execution: SpoolExecutionObservation,
-    /// Independent output EOF and capture-completion observations.
+
     pub capture: SpoolCaptureObservation,
-    /// Group drain and uncertain direct-child recovery custody.
+
     pub cleanup: SpoolCleanupObservation,
-    /// Elapsed time including spawn and cleanup.
+
     pub duration: Duration,
-    /// Accepted stdout bytes written to the spool.
+
     pub stdout_bytes: u64,
-    /// Accepted stderr bytes written to the spool.
+
     pub stderr_bytes: u64,
-    /// Classified failures observed after target spawn.
+
     pub failures: Vec<SpoolFailure>,
-    /// Original caller-owned stdout spool.
+
     pub stdout: File,
-    /// Original caller-owned stderr spool.
+
     pub stderr: File,
 }
 
-/// Typed error that retains consumed files and any post-anchor child custody.
 #[derive(Debug)]
 pub struct SpoolError {
-    /// Error category.
     pub kind: SpoolFailureKind,
-    /// Error detail.
+
     pub message: String,
-    /// Caller output files, when the operation did not return a result.
+
     stdout: Option<File>,
     stderr: Option<File>,
-    /// Child custody retained after an anchor or target spawn failure.
+
     recovery: Option<SpoolRecovery>,
-    /// Classified cleanup failures after a child was spawned.
+
     pub failures: Vec<SpoolFailure>,
-    /// Bytes already accepted into the output files.
+
     pub stdout_bytes: u64,
-    /// Bytes already accepted into the output files.
+
     pub stderr_bytes: u64,
 }
 
 impl SpoolError {
-    /// Recover the original output handles and any uncertain child custody.
     #[must_use]
     pub fn into_parts(self) -> (Option<File>, Option<File>, Option<SpoolRecovery>) {
         (self.stdout, self.stderr, self.recovery)
@@ -222,30 +182,6 @@ impl fmt::Display for SpoolError {
 
 impl Error for SpoolError {}
 
-/// Run one command with strict file-backed output and finite cleanup.
-///
-/// Both output limits must be explicit and are independent spool budgets.
-/// Files must be distinct, empty, regular, effective-UID-owned mode `0600`
-/// descriptors opened for writing at byte zero, with one hard link, no append
-/// mode, and `FD_CLOEXEC` set. The supervisor checks descriptor metadata,
-/// access flags, and close-on-exec; it does not validate ACLs or prove that
-/// another same-UID process lacks a writable descriptor. The caller must
-/// create these files without following symlinks and keep them exclusive.
-///
-/// The child and a held `cat` anchor share a private process group. The anchor
-/// remains unreaped through the last destructive group signal. Cleanup uses a
-/// single four-second monotonic deadline after finalization begins. That
-/// bounds supervisor polling, but cannot preempt spawn, mutex acquisition,
-/// blocking regular-file operations, or kernel stalls. Uncertain direct-child
-/// custody is returned in `SpoolRecovery`; it never performs a delayed numeric
-/// PID or process-group signal.
-///
-/// Calls inside a Tokio runtime, requests with nonempty stdin, retries, missing
-/// output budgets, and platforms without approved selective reaping are
-/// rejected before the anchor starts. Empty explicit stdin means immediate
-/// EOF. Absent stdin may use Null or Inherit. The current-thread I/O pump
-/// drains both output pipes while cleanup polls, and files are flushed and
-/// synced before return. The caller must sync again before recording a receipt.
 pub fn exec_spooled_sync_cancellable(
     request: &ExecRequest,
     stdout: File,

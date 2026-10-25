@@ -3,9 +3,9 @@
 
 use base64::Engine as _;
 use jackin_usage_provider_core::first_string_key;
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 use jackin_usage_provider_core::read_json_file;
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 use std::path::Path;
 
 #[derive(Clone)]
@@ -22,7 +22,7 @@ impl std::fmt::Debug for CodexOAuthCredentials {
     }
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 pub fn load_codex_oauth_credentials(path: &Path) -> Option<CodexOAuthCredentials> {
     codex_oauth_from_value(&read_json_file(path)?)
 }

@@ -37,7 +37,6 @@ serde-saphyr = { workspace = true }
 sha2 = { workspace = true }
 syn = { workspace = true, features = ["full", "visit", "parsing", "extra-traits"] }
 tar = { workspace = true }
-tempfile = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "rt"] }
 toml = { workspace = true }
 zip = { workspace = true }

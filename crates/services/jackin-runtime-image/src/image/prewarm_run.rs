@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#![cfg(not(test))]
-
 use super::published::published_image_is_stale;
 
 use jackin_core::Agent;

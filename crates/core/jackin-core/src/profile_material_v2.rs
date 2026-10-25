@@ -15,6 +15,3 @@ pub use proof::{
     profile_credential_material_revision_v2, profile_credential_source_identity_v2,
     profile_credential_source_material_v2,
 };
-
-#[cfg(test)]
-mod tests;

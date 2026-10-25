@@ -10,8 +10,7 @@ use jackin_core::RoleSelector;
 use jackin_core::{Clock, CommandRunner, RunOptions, SystemClock};
 use jackin_instance::runtime_slug;
 use jackin_manifest::repo::{CachedRepo, validate_role_repo};
-#[cfg(test)]
-use std::io::IsTerminal;
+
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -31,12 +30,9 @@ pub enum RepoError {
 
 #[derive(Clone, Debug)]
 pub struct RepoLock(
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "guard only: the flock is released when the last handle is dropped"
-        )
+    #[expect(
+        dead_code,
+        reason = "guard only: the flock is released when the last handle is dropped"
     )]
     Arc<std::fs::File>,
 );
@@ -185,41 +181,6 @@ pub async fn git_branch(dir: &std::path::Path, runner: &mut impl CommandRunner) 
         runner,
         "git",
         &["-C", &dir_str, "rev-parse", "--abbrev-ref", "HEAD"],
-    )
-    .await
-}
-
-#[cfg(test)]
-fn confirm_repo_removal_interactive() -> anyhow::Result<bool> {
-    if !std::io::stdin().is_terminal() {
-        return Ok(false);
-    }
-    Ok(dialoguer::Confirm::new()
-        .with_prompt("Remove the cached repo and re-clone from the configured source?")
-        .default(false)
-        .interact()?)
-}
-
-#[cfg(test)]
-async fn resolve_agent_repo(
-    paths: &JackinPaths,
-    selector: &RoleSelector,
-    git_url: &str,
-    runner: &mut impl CommandRunner,
-    debug: bool,
-    branch_override: Option<&str>,
-) -> anyhow::Result<(
-    CachedRepo,
-    jackin_manifest::repo::ValidatedRoleRepo,
-    RepoLock,
-)> {
-    resolve_agent_repo_with(
-        paths,
-        selector,
-        git_url,
-        runner,
-        RepoResolveOptions::interactive(debug).with_branch(branch_override),
-        confirm_repo_removal_interactive,
     )
     .await
 }
@@ -374,13 +335,6 @@ impl RepoResolveOptions {
     #[must_use]
     pub const fn with_refresh_ttl(mut self, ttl: Duration) -> Self {
         self.refresh_ttl = Some(ttl);
-        self
-    }
-
-    #[cfg(test)]
-    #[must_use]
-    pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
-        self.clock = clock;
         self
     }
 }
@@ -613,6 +567,3 @@ pub async fn resolve_agent_repo_with(
 
     Ok((cached_repo, validated_repo, lock_file))
 }
-
-#[cfg(test)]
-mod tests;

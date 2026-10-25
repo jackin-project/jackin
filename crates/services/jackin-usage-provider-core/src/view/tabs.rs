@@ -13,8 +13,6 @@ enum UsageTabIdentity {
     Unbound(String),
 }
 
-/// Return the legacy display-only tab key for an unbound label pair.
-/// This value must never select a broker capability.
 pub fn usage_account_tab_id(provider_label: &str, account_label: &str) -> String {
     account_key_hash(provider_label, account_label)
 }

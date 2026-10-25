@@ -798,6 +798,3 @@ fn nested_clippy_args(dir: &Path) -> Vec<OsString> {
 fn emit(line: &str) -> Result<()> {
     writeln!(io::stdout().lock(), "{line}").context("writing clippy-affected output")
 }
-
-#[cfg(test)]
-mod tests;

@@ -60,8 +60,6 @@ where
 }
 
 impl GrokBillingConfig {
-    /// `creditUsagePercent` is a provider-reported used percentage in points.
-    /// Keep malformed explicit values distinguishable from an omitted field.
     pub(crate) fn credit_usage_percent_value(&self) -> Result<Option<CanonicalUsedPercent>, ()> {
         let Some(value) = &self.credit_usage_percent else {
             return Ok(None);

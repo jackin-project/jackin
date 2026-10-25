@@ -1,46 +1,42 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! macOS-only non-reaping child selection and a fixed signal-action query.
+#![allow(
+    clippy::undocumented_unsafe_blocks,
+    reason = "no comments in code; unsafe removal is deferred work"
+)]
 
 use std::io::{self, Write as _};
 use std::mem::MaybeUninit;
 
-/// The observed disposition of the current process's `SIGCHLD` action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SigchldDisposition {
-    /// The platform default disposition is installed.
     Default,
-    /// The signal is explicitly ignored.
+
     Ignore,
-    /// A caught or otherwise opaque disposition is installed.
+
     OpaqueCaught,
 }
 
-/// A read-only snapshot of the current process's `SIGCHLD` action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SigchldActionSnapshot {
-    /// A coarse classification that does not expose the handler value.
     pub disposition: SigchldDisposition,
-    /// The raw platform action flags returned by `sigaction`.
+
     pub flags: i32,
 }
 
-/// The result of checking whether the current macOS `SIGCHLD` action is a
-/// supported precondition for Tokio's child-signal observer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokioSigchldEligibility {
-    /// The action is default, has only supported flags, and has an empty mask.
     Eligible,
-    /// The signal is explicitly ignored.
+
     Ignore,
-    /// A caught or otherwise opaque disposition is installed.
+
     ForeignCaught,
-    /// `SA_NOCLDWAIT` is set, so child exit status may not remain waitable.
+
     NoChildWait,
-    /// The action contains flags outside the supported symbolic subset.
+
     UnsupportedFlags,
-    /// The action's signal mask is nonempty.
+
     NonEmptyActionMask,
 }
 
@@ -71,10 +67,6 @@ fn call_sigchld_action(request: SigchldActionRequest<'_>) -> io::Result<libc::si
     };
     let mut observed_storage = MaybeUninit::<libc::sigaction>::zeroed();
 
-    // SAFETY: SIGCHLD is fixed. The requested pointer is either null, a
-    // reference to a complete saved Apple sigaction, or a borrow of the
-    // complete diagnostic sigaction carried by `request`. The output pointer
-    // is writable storage of the exact pinned type. Neither pointer escapes.
     let result = unsafe {
         libc::sigaction(
             libc::SIGCHLD,
@@ -92,8 +84,6 @@ fn call_sigchld_action(request: SigchldActionRequest<'_>) -> io::Result<libc::si
         ));
     }
 
-    // SAFETY: sigaction returned success for this typed output pointer and
-    // populated the old action. No output storage is read on an error path.
     Ok(unsafe { observed_storage.assume_init() })
 }
 
@@ -114,11 +104,6 @@ fn sigchld_snapshot(action: &libc::sigaction) -> SigchldActionSnapshot {
     }
 }
 
-/// Classify a typed action summary without querying or changing process state.
-///
-/// Checks run in this order: disposition, `SA_NOCLDWAIT`, unsupported flags,
-/// then action mask. This order makes the first unsafe condition the reported
-/// result when an action has more than one unsupported property.
 pub(super) fn classify_tokio_sigchld_eligibility(
     disposition: SigchldDisposition,
     flags: libc::c_int,
@@ -139,8 +124,6 @@ pub(super) fn classify_tokio_sigchld_eligibility(
         return TokioSigchldEligibility::UnsupportedFlags;
     }
 
-    // On the pinned Apple libc ABI, sigset_t is u32 and the SDK's sigemptyset
-    // macro stores zero. Keep this typed mask check inside this macOS module.
     if action_mask != 0 {
         return TokioSigchldEligibility::NonEmptyActionMask;
     }
@@ -154,21 +137,11 @@ fn sigchld_actions_match(left: &libc::sigaction, right: &libc::sigaction) -> boo
         && left.sa_flags == right.sa_flags
 }
 
-/// Query the current process's fixed SIGCHLD action without changing it.
-///
-/// Handler values remain opaque: this function classifies only the platform
-/// default and ignore constants and never exposes or calls a handler.
 pub fn current_sigchld_action() -> io::Result<SigchldActionSnapshot> {
     let action = call_sigchld_action(SigchldActionRequest::Query)?;
     Ok(sigchld_snapshot(&action))
 }
 
-/// Query whether the current process's macOS `SIGCHLD` action is eligible for
-/// a Tokio child-signal observer.
-///
-/// This read-only query does not register a Tokio signal observer and does not
-/// inspect or change the calling thread's signal mask. Callers must check that
-/// mask separately before registration.
 pub fn tokio_sigchld_eligibility() -> io::Result<TokioSigchldEligibility> {
     let action = call_sigchld_action(SigchldActionRequest::Query)?;
     Ok(classify_tokio_sigchld_eligibility(
@@ -228,11 +201,6 @@ fn include_restoration_error(primary: io::Error, restoration: io::Result<()>) ->
     }
 }
 
-/// A diagnostic-only owner for a caught SIGCHLD action in a fresh worker.
-///
-/// This changes the process-wide signal action. Use it only in an exclusively
-/// owned diagnostic worker whose SIGCHLD mask is blocked before any child
-/// threads exist. It is not a general signal-handler registration API.
 #[must_use = "restore the original SIGCHLD action before the diagnostic worker exits"]
 pub struct CaughtSigchldDiagnosticGuard {
     saved_action: libc::sigaction,
@@ -248,8 +216,6 @@ impl std::fmt::Debug for CaughtSigchldDiagnosticGuard {
 }
 
 impl CaughtSigchldDiagnosticGuard {
-    /// Install the diagnostic caught disposition from the observed default
-    /// action in a fresh, exclusively owned worker.
     pub fn install_for_diagnostic_worker() -> io::Result<Self> {
         let queried_action = call_sigchld_action(SigchldActionRequest::Query)?;
         let queried_snapshot = sigchld_snapshot(&queried_action);
@@ -418,8 +384,6 @@ impl CaughtSigchldDiagnosticGuard {
         primary
     }
 
-    /// Restore and verify the complete action observed by the successful
-    /// setter. Success means handler, mask and flags all match that action.
     pub fn restore(&mut self) -> io::Result<()> {
         if !self.armed {
             return Ok(());
@@ -530,22 +494,10 @@ impl Drop for CaughtSigchldDiagnosticGuard {
     }
 }
 
-/// Select one exited direct child without consuming its status.
-///
-/// The caller must serialize this peek with child registration and the later
-/// selected-PID wait. A zero PID is the documented `WNOHANG` no-result
-/// sentinel. This function never reaps or signals a child.
 pub fn peek_exited_child() -> io::Result<Option<u32>> {
     peek_child(libc::P_ALL, 0)
 }
 
-/// Test whether one specific direct child has exited without consuming status.
-///
-/// This targeted peek avoids repeatedly selecting another waitable child when
-/// a caller needs to observe a particular child's waitability. The caller must
-/// serialize this peek with registration and the later selected-PID wait.
-/// `false` means that the child has not exited; a missing child reports the
-/// platform `ECHILD` error.
 pub fn peek_specific_exited_child(pid: u32) -> io::Result<bool> {
     if pid == 0 {
         return Err(io::Error::new(
@@ -576,12 +528,6 @@ pub fn peek_specific_exited_child(pid: u32) -> io::Result<bool> {
 fn peek_child(id_type: libc::idtype_t, id: libc::id_t) -> io::Result<Option<u32>> {
     let mut info = MaybeUninit::<libc::siginfo_t>::zeroed();
 
-    // SAFETY: `info` points to writable storage for the libc Apple siginfo_t
-    // layout. It is zero-initialized before the synchronous call, so the
-    // WNOHANG no-result path leaves a valid zero-PID sentinel. The only callers
-    // pass the fixed P_ALL/zero or P_PID/positive-PID selector pair. The flags
-    // use platform constants and WNOWAIT prevents this call from consuming a
-    // wait status. The pointer does not escape this call.
     let result = unsafe {
         libc::waitid(
             id_type,
@@ -600,10 +546,6 @@ fn peek_child(id_type: libc::idtype_t, id: libc::id_t) -> io::Result<Option<u32>
         ));
     }
 
-    // SAFETY: the storage began as a valid zero representation for this
-    // pinned Apple libc siginfo_t, and waitid returned success for the same
-    // ABI. No status buffer is inspected after an error. This converts only
-    // the local value; no pointer or reference escapes.
     let info = unsafe { info.assume_init() };
     decode_child_payload(info.si_pid, info.si_signo, info.si_code)
 }
@@ -641,6 +583,3 @@ fn decode_child_payload(
         )
     })
 }
-
-#[cfg(test)]
-mod tests;

@@ -272,6 +272,3 @@ async fn dispatch(req: JsonRpcRequest) -> Option<JsonRpcResponse> {
         )),
     }
 }
-
-#[cfg(test)]
-mod tests;

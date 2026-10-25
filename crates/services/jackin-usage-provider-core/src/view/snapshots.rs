@@ -51,8 +51,6 @@ pub fn account_snapshot_views_from_cache(
     accounts
 }
 
-/// Preserve the legacy CLI scalar summary; `quota_bucket` is authoritative for
-/// new consumers and retains the exact typed observations.
 pub fn quota_amounts_for_account_snapshot(
     bucket: &QuotaBucketView,
 ) -> (Option<i64>, Option<String>, Option<i64>, Option<String>) {
@@ -70,9 +68,7 @@ pub fn quota_amounts_for_account_snapshot(
                 .map(|money| money.currency.clone()),
         );
     }
-    // Percentages and counts belong to the exact typed bucket payload. The
-    // legacy signed scalar columns are reserved for the independent Money
-    // record path and must not quantize new quota observations.
+
     (None, None, None, None)
 }
 

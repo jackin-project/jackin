@@ -20,10 +20,6 @@ path = "src/lib.rs"
 default = []
 
 [dependencies]
-jackin-protocol = { workspace = true }
-jackin-diagnostics = { workspace = true }
-jackin-telemetry = { workspace = true }
-jackin-usage-provider-core = { workspace = true }
 jackin-usage-provider-zai = { workspace = true }
 jackin-usage-provider-kimi = { workspace = true }
 jackin-usage-provider-amp = { workspace = true }
@@ -36,8 +32,6 @@ jackin-usage-provider-codex = { workspace = true }
 jackin-usage-provider-hermes = { workspace = true }
 jackin-usage-provider-gemini = { workspace = true }
 jackin-usage-provider-muse = { workspace = true }
-jackin-usage-provider-opencode = { workspace = true }
-jackin-usage-provider-claude = { workspace = true }
 jackin-usage-output = { workspace = true }
 jackin-usage-coordinator = { workspace = true }
 jackin-usage-store-backend = { workspace = true }
@@ -46,19 +40,13 @@ jackin-usage-token-monitor = { workspace = true }
 jackin-usage-capsule-telemetry = { workspace = true }
 jackin-usage-credential-resolver = { workspace = true }
 jackin-usage-host-runtime = { workspace = true }
-base64 = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-tracing = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
-jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-usage-provider-codex = { workspace = true, features = ["test-support"] }
-jackin-usage-provider-claude = { workspace = true, features = ["test-support"] }
 jackin-usage-snapshot-store = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true }
-tracing = { workspace = true }
+jackin-protocol = { workspace = true }
 
 [lints]
 workspace = true

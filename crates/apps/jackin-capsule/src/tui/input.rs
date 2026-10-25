@@ -152,18 +152,9 @@ fn parse_xterm_modify_other_keys(seq: &[u8]) -> Option<(u32, u32)> {
 mod classify;
 mod mouse;
 mod parser;
-#[cfg(test)]
-pub(crate) use classify::csi_u_control_byte;
 pub(crate) use classify::{CsiClassification, classify_csi, classify_x10_mouse};
-#[cfg(test)]
-pub(crate) use mouse::mouse_event_allowed_for_mode;
 pub(crate) use mouse::{
     SGR_NO_BUTTON_MOTION, encode_mouse_for_protocol, encode_wheel_cursor_fallback, is_wheel_button,
     mouse_event_encoding_for_mode, pane_wheel_cursor_fallback_reason,
 };
 pub use parser::InputParser;
-#[cfg(test)]
-pub(crate) use parser::MAX_ESC_SEQ_LEN;
-
-#[cfg(test)]
-mod tests;

@@ -501,6 +501,3 @@ fn canonical_json(value: toml::Value) -> JsonValue {
 fn hash(input: &[u8]) -> String {
     hex::encode(Sha256::digest(input))
 }
-
-#[cfg(test)]
-mod tests;

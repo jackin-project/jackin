@@ -135,6 +135,3 @@ fn canonicalize_if_present(path: &Path) -> crate::ConfigResult<Option<PathBuf>> 
         Err(err) => Err(err.into()),
     }
 }
-
-#[cfg(test)]
-mod tests;

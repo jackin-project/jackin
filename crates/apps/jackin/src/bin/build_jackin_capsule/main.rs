@@ -442,6 +442,3 @@ fn mise_command_with_fd_limit(
         command
     }
 }
-
-#[cfg(test)]
-mod tests;

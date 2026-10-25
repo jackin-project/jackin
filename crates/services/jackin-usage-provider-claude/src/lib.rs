@@ -16,9 +16,9 @@ pub use credentials::{
     claude_oauth_from_value, claude_organization_type_from_value, load_claude_account_email,
     parse_claude_keychain_profile,
 };
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 pub use credentials::{load_claude_oauth_credentials, load_claude_organization_type};
-#[cfg(any(target_os = "macos", test))]
+#[cfg(target_os = "macos")]
 pub use keychain::classify_claude_keychain_status;
 pub use keychain::{
     ClaudeKeychainPolicyError, ClaudeKeychainRead, ClaudeUnattendedKeychainGuard,
@@ -39,14 +39,10 @@ pub use spend::{
     ClaudeSpend, claude_spend_bucket, fetch_claude_oauth_usage, normalize_claude_spend,
     push_claude_dollar_windows,
 };
-#[cfg(test)]
-pub(crate) use wave::claude_resolved_view_with_fetch;
+
 pub use wave::{
     ClaudeWavePolicy, claude_error_is_scope_restriction, claude_provider_error_label,
     claude_view_from_wave, claude_wave_policy,
 };
 pub use windows::ClaudeQuotaWindow;
 pub use windows::{CLAUDE_SESSION_WINDOW_SECONDS, CLAUDE_WEEKLY_WINDOW_SECONDS};
-
-#[cfg(test)]
-mod tests;

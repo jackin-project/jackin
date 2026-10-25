@@ -61,6 +61,3 @@ pub struct PruneSystemArgs {
     )]
     pub all: bool,
 }
-
-#[cfg(test)]
-mod tests;

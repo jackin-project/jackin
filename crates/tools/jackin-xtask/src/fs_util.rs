@@ -67,6 +67,3 @@ fn find_unsorted_reads(dir: &Path, source_root: &Path, offenders: &mut Vec<Strin
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

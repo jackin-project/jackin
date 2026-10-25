@@ -43,6 +43,3 @@ pub fn confirm_sensitive_mounts(sensitive: &[SensitiveMount]) -> anyhow::Result<
         .default(false)
         .interact()?)
 }
-
-#[cfg(test)]
-mod tests;

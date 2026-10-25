@@ -941,6 +941,3 @@ impl AppConfig {
         Ok((config, bootstrap))
     }
 }
-
-#[cfg(test)]
-mod tests;

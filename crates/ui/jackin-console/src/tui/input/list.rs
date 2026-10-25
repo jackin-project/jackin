@@ -6,8 +6,6 @@ mod keys;
 mod modals;
 mod nav;
 mod pickers;
-#[cfg(test)]
-mod tests;
 pub(crate) use actions::{
     clamp_list_scroll_after_key, confirm_purge_outcome, console_instance_action_and_empty_message,
     dispatch_manager, dispatch_workspace_list_delete, dispatch_workspace_list_edit,

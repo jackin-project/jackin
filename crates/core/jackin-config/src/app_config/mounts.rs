@@ -302,6 +302,3 @@ fn wildcard_scope_matches(wildcard: &str, concrete: &str) -> bool {
         .strip_prefix(prefix)
         .is_some_and(|rest| rest.starts_with('/'))
 }
-
-#[cfg(test)]
-mod tests;

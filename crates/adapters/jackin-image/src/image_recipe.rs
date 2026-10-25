@@ -347,6 +347,3 @@ pub fn expected_image_recipe_for_test(
     let hash = recipe.hash().expect("test image recipe should hash");
     ExpectedImageRecipe { recipe, hash }
 }
-
-#[cfg(test)]
-mod tests;

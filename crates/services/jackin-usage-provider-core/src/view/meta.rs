@@ -122,7 +122,6 @@ pub fn bucket(
     }
 }
 
-/// Attach an explicitly classified used-percent observation to a bucket.
 #[must_use]
 pub fn with_used_percent(
     mut view: QuotaBucketView,

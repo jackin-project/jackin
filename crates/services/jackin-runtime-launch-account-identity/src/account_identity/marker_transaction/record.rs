@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Private transaction record schema, validation, and codec.
-
 use super::super::marker_pair::{EntryStat, MarkerPairLease, RootIdentity};
 use super::super::{ACCOUNT_ADMISSION_FILE, ACCOUNT_FINGERPRINT_FILE};
 use super::{

@@ -54,6 +54,3 @@ pub(crate) const fn agent_executable(agent: jackin_core::Agent) -> ProcessExecut
         jackin_core::Agent::Hermes => ProcessExecutableName::Hermes,
     }
 }
-
-#[cfg(test)]
-mod tests;

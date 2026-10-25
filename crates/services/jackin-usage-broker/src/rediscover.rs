@@ -121,21 +121,6 @@ pub(crate) fn refresh_binding_outcome(
     }
 }
 
-#[cfg(test)]
-pub(crate) fn provider_probe_outcome(
-    view: jackin_protocol::control::FocusedUsageView,
-) -> ProviderProbeOutcome {
-    provider_probe_outcome_with_rate_limit(view, None)
-}
-
-#[cfg(test)]
-pub(crate) fn provider_probe_outcome_with_rate_limit(
-    view: jackin_protocol::control::FocusedUsageView,
-    rate_limit: Option<jackin_usage_provider_core::ProviderRateLimit>,
-) -> ProviderProbeOutcome {
-    provider_probe_outcome_with_metadata(view, rate_limit, None)
-}
-
 pub(crate) fn provider_probe_outcome_with_metadata(
     view: jackin_protocol::control::FocusedUsageView,
     rate_limit: Option<jackin_usage_provider_core::ProviderRateLimit>,

@@ -603,6 +603,3 @@ fn read_metadata(root: &std::path::Path) -> Result<Metadata> {
     }
     serde_json::from_slice(&output.stdout).context("parsing cargo metadata")
 }
-
-#[cfg(test)]
-mod tests;

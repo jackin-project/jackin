@@ -39,10 +39,6 @@ chrono = { workspace = true, features = ["clock"] }
 serde_json = { workspace = true }
 zeroize = { workspace = true }
 
-[dev-dependencies]
-tempfile = { workspace = true }
-toml = { workspace = true }
-
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { workspace = true }
 

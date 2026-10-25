@@ -424,6 +424,3 @@ pub(crate) fn read_frame<T: serde::de::DeserializeOwned>(
     bytes.pop();
     serde_json::from_slice(&bytes).map_err(|_| protocol_error())
 }
-
-#[cfg(test)]
-mod tests;

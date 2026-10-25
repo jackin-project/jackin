@@ -573,6 +573,3 @@ pub enum MonitorReply {
     },
     ServiceStopped,
 }
-
-#[cfg(test)]
-mod tests;

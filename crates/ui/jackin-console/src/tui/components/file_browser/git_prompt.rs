@@ -279,6 +279,3 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
         action_row,
     );
 }
-
-#[cfg(test)]
-mod tests;

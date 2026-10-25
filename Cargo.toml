@@ -168,7 +168,6 @@ repository = "https://github.com/jackin-project/jackin"
 
 [workspace.dependencies]
 anyhow = "1.0"
-assert_cmd = "=2.2.2"
 base64 = "0.23.1"
 cap = "=0.1.2"
 chrono = { version = "0.4", default-features = false }
@@ -176,12 +175,10 @@ clap = "4.6"
 clap_mangen = "0.3.3"
 criterion = "=0.8.2"
 crossterm = "0.29"
-dhat = "=0.3.3"
 dialoguer = "0.12"
 directories = "6.0"
 dockerfile-parser-rs = "3.4.0"
 fast-down = "7.0.0"
-filetime = "=0.2.29"
 flate2 = "1.1.10"
 fs4 = "1.1.0"
 futures-util = "0.3.34"
@@ -191,7 +188,6 @@ httpdate = "1"
 icu_collator = "2.3.1"
 icu_locale = "2.3.1"
 libc = "0.2"
-insta = "=1.49.0"
 jackin-build-meta = { version = "0.6.4", path = "crates/core/jackin-build-meta" }
 jackin-brand = { version = "0.6.4", path = "crates/core/jackin-brand" }
 jackin-agent-status = { version = "0.6.4", path = "crates/services/jackin-agent-status" }
@@ -213,7 +209,6 @@ jackin-launch = { version = "0.6.4", path = "crates/ui/jackin-launch" }
 jackin-manifest = { version = "0.6.4", path = "crates/core/jackin-manifest" }
 jackin-workflow-spec = { version = "0.6.4", path = "crates/core/jackin-workflow-spec" }
 jackin-omp-store = { version = "0.6.4", path = "crates/adapters/jackin-omp-store" }
-jackin-otlp-testbed = { version = "0.6.4", path = "crates/testing/jackin-otlp-testbed" }
 jackin-process = { version = "0.6.4", path = "crates/core/jackin-process" }
 jackin-process-directory = { version = "0.6.4", path = "crates/core/jackin-process-directory" }
 jackin-protocol = { version = "0.6.4", path = "crates/core/jackin-protocol" }
@@ -346,17 +341,13 @@ opentelemetry-proto = { version = "0.33", default-features = false, features = [
 owo-colors = "4"
 pklr = { version = "=5.1.2", default-features = false, features = ["eval-core"] }
 portable-pty = "0.9"
-predicates = "=3.1.4"
-proptest = "1.12"
 proc-macro2 = { version = "1", features = ["span-locations"] }
 procfs = "0.18"
 quick-xml = "0.42.0"
 rand = "0.10"
-rcgen = "0.14.10"
 ratatui = "0.30"
 termpane = { version = "0.1.0", git = "https://github.com/tailrocks/termpane.git", tag = "v0.1.0" }
 termrock = { version = "=0.11.0", git = "https://github.com/tailrocks/termrock.git", rev = "1ac0d0793b8cfd9edc61ced241e2b2ecb89162b4", features = ["crossterm", "serde"] }
-termrock-raster = { version = "=0.11.0", git = "https://github.com/tailrocks/termrock.git", rev = "1ac0d0793b8cfd9edc61ced241e2b2ecb89162b4" }
 regex = "1"
 reqwest = { version = "0.13", default-features = false }
 rustls = { version = "0.23", default-features = false }
@@ -391,7 +382,6 @@ tower = "0.5.3"
 tracing-subscriber = "0.3"
 tonic = { version = "0.14.6", default-features = false, features = ["transport", "router", "codegen", "gzip"] }
 turso = { version = "=0.8.3", default-features = false }
-unicode-width = "0.2"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 zeroize = { version = "=1.9.1", default-features = false, features = ["alloc"] }

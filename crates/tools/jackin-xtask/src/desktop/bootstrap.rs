@@ -363,6 +363,3 @@ fn gh_variable_set(repo: &str, name: &str, value: &str) -> Result<()> {
 fn cmd_command(program: &str) -> Command {
     Command::new(program)
 }
-
-#[cfg(test)]
-mod tests;

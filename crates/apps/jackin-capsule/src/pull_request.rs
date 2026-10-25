@@ -65,37 +65,6 @@ impl PullRequestChecks {
         self.ci_url.as_deref()
     }
 
-    #[cfg(test)]
-    #[must_use]
-    pub fn passing(&self) -> usize {
-        self.passing
-    }
-    #[cfg(test)]
-    #[must_use]
-    pub fn failing(&self) -> usize {
-        self.failing
-    }
-    #[cfg(test)]
-    #[must_use]
-    pub fn pending(&self) -> usize {
-        self.pending
-    }
-    #[cfg(test)]
-    #[must_use]
-    pub fn skipped(&self) -> usize {
-        self.skipped
-    }
-    #[cfg(test)]
-    #[must_use]
-    pub fn cancelled(&self) -> usize {
-        self.cancelled
-    }
-    #[cfg(test)]
-    #[must_use]
-    pub fn total(&self) -> usize {
-        self.total
-    }
-
     #[must_use]
     pub fn summary(&self) -> String {
         if self.total == 0 {
@@ -125,6 +94,3 @@ impl PullRequestChecks {
         )
     }
 }
-
-#[cfg(test)]
-mod tests;

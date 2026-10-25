@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Restart recovery owns reconciliation without replaying uncertain effects.
 use super::{
     InstanceInventory, RecoveryReport, StoredEffect, StoredSession, TransitionRequest,
     WorkflowService,
@@ -9,10 +8,6 @@ use super::{
 use crate::{CommandState, EffectKind, EffectStatus, RunStatus, Stage, WorkflowError};
 
 impl WorkflowService {
-    /// Recover incomplete runs after a restart against a live instance
-    /// inventory (C5 recovery table). Crash-left `dispatching`
-    /// commands become `delivery_unknown` and are never resubmitted
-    /// automatically.
     pub fn recover(&self, inventory: &InstanceInventory) -> Result<RecoveryReport, WorkflowError> {
         let run = self.store.active_run()?;
         let Some(run) = run else {
@@ -44,8 +39,6 @@ impl WorkflowService {
         })
     }
 
-    /// Crash-left `dispatching` commands become `delivery_unknown` and
-    /// block automatic input. They are never resubmitted.
     fn recover_commands(&self, run_id: &str) -> Result<Vec<String>, WorkflowError> {
         let mut actions = Vec::new();
         for command in self
@@ -74,9 +67,6 @@ impl WorkflowService {
         Ok(actions)
     }
 
-    /// Adopt matching launch instances by ownership label, report
-    /// paused capture staging, and hold uncertain backups for an
-    /// exact remote-ref query.
     fn recover_effects(
         &self,
         run_id: &str,
@@ -117,8 +107,6 @@ impl WorkflowService {
         Ok(actions)
     }
 
-    /// Adopt the exact live instance matching a launch intent, or
-    /// require backend-absence confirmation before any relaunch.
     fn recover_launch(
         &self,
         run_id: &str,
@@ -151,8 +139,6 @@ impl WorkflowService {
         }
     }
 
-    /// Confirm a backup at its exact remote ref, or hold it uncertain
-    /// until that ref is queried. Never pushes without comparison.
     fn recover_backup(
         &self,
         run_id: &str,
@@ -183,8 +169,6 @@ impl WorkflowService {
         }
     }
 
-    /// Record lost sessions without claiming same-session
-    /// continuation. Sources are always kept.
     fn recover_sessions(
         &self,
         run_id: &str,
@@ -209,7 +193,6 @@ impl WorkflowService {
         Ok(actions)
     }
 
-    /// Verify recorded prompt artifacts still match bytes on disk.
     fn recover_artifacts(&self, run_id: &str) -> Result<Vec<String>, WorkflowError> {
         let mut actions = Vec::new();
         for command in self
@@ -240,7 +223,6 @@ impl WorkflowService {
         Ok(actions)
     }
 
-    /// Move a run to `needs_operator`, keeping its stage and round.
     fn escalate_to_operator(&self, run_id: &str, event_kind: &str) -> Result<(), WorkflowError> {
         let stored = self
             .store
@@ -273,10 +255,6 @@ impl WorkflowService {
     }
 }
 
-/// A recorded worker session is lost when its instance is gone,
-/// its session died, or its Capsule epoch / process identity changed.
-/// The source is always kept; recovery never claims same-session
-/// continuation.
 fn session_lost(session: &StoredSession, inventory: &InstanceInventory) -> bool {
     let live = session.instance_id.as_deref().and_then(|identity| {
         inventory
@@ -305,8 +283,6 @@ fn session_lost(session: &StoredSession, inventory: &InstanceInventory) -> bool 
     })
 }
 
-/// A capture effect needs inspection when a live instance with the
-/// same ownership label is left paused mid-staging.
 fn capture_staging_paused(effect: &StoredEffect, inventory: &InstanceInventory) -> bool {
     inventory.instances.iter().any(|instance| {
         instance.capture_paused

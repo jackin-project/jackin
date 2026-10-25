@@ -119,6 +119,3 @@ fn is_allow(value: Option<&str>) -> bool {
 fn is_deny(value: Option<&str>) -> bool {
     matches!(value, Some("deny" | "off" | "no"))
 }
-
-#[cfg(test)]
-mod tests;

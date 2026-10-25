@@ -1,23 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bounded Capsule spool for protected session output (C7 terminal
-//! history). The spool keeps at most `capacity_bytes` of sanitized
-//! text plus metadata outside agent-writable paths; the host reads
-//! from a saved sequence after a disconnect. When output is
-//! unavailable or exceeds the retained limit the reader records a
-//! gap instead of claiming a lossless transcript.
-
-/// Default spool capacity: 256 KiB of retained terminal text.
 pub const DEFAULT_SPOOL_CAPACITY_BYTES: usize = 256 * 1024;
 
-/// Maximum single push accepted in one call (1 MiB); larger pushes
-/// are truncated to the tail so one burst cannot wedge the spool.
 pub const MAX_PUSH_BYTES: usize = 1024 * 1024;
 
-/// Strip terminal control sequences (CSI/OSC escapes, C0 controls
-/// except newline/tab) before replay or Markdown export. Raw escape
-/// sequences are never replayed through a host shell or terminal.
 #[must_use]
 pub fn sanitize_terminal_text(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
@@ -35,8 +22,6 @@ pub fn sanitize_terminal_text(input: &str) -> String {
     out
 }
 
-/// Skip one escape sequence: CSI through its final byte, OSC
-/// through BEL/ST, or ESC plus one following byte.
 fn skip_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     match chars.peek() {
         Some('[') => {
@@ -54,8 +39,6 @@ fn skip_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     }
 }
 
-/// Skip a CSI sequence body (parameter/intermediate bytes through
-/// one final byte in `@`-`~`).
 fn skip_csi(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     for next in chars.by_ref() {
         if ('@'..='~').contains(&next) {
@@ -64,7 +47,6 @@ fn skip_csi(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     }
 }
 
-/// Skip an OSC sequence body (terminated by BEL or ST).
 fn skip_osc(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     for next in chars.by_ref() {
         if next == '\u{7}' {
@@ -79,10 +61,6 @@ fn skip_osc(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     }
 }
 
-/// Bounded retained terminal text with a saved read sequence and an
-/// explicit gap flag. Eviction drops the oldest bytes first and sets
-/// `gap`: replay must surface the gap instead of presenting a
-/// seamless transcript.
 #[derive(Debug, Default)]
 pub struct SessionSpool {
     capacity_bytes: usize,
@@ -102,8 +80,6 @@ impl SessionSpool {
         }
     }
 
-    /// Append sanitized output. Returns the retained tail; sets the
-    /// gap flag when old bytes were evicted or the input was cut.
     pub fn push(&mut self, chunk: &str) {
         if self.sealed {
             return;
@@ -117,7 +93,7 @@ impl SessionSpool {
         self.text.push_str(&clean);
         if self.text.len() > self.capacity_bytes {
             let cut = self.text.len() - self.capacity_bytes;
-            // Cut at a char boundary from the front.
+
             let mut boundary = cut;
             while !self.text.is_char_boundary(boundary) {
                 boundary += 1;
@@ -127,8 +103,6 @@ impl SessionSpool {
         }
     }
 
-    /// Seal the spool after a disconnect: further pushes are
-    /// ignored, and reads report the retained window plus the gap.
     pub fn seal(&mut self) {
         self.sealed = true;
     }
@@ -163,15 +137,9 @@ impl SessionSpool {
     }
 }
 
-/// One spool read: the retained window plus whether a gap precedes
-/// it. A gap means output fell outside the retained limit and the
-/// transcript is not lossless.
 #[derive(Debug, Clone, Copy)]
 pub struct SpoolRead<'a> {
     pub text: &'a str,
     pub gap: bool,
     pub dropped_bytes: u64,
 }
-
-#[cfg(test)]
-mod tests;

@@ -58,7 +58,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Prepare offline requests and account for explicit measurement receipts.
     #[command(subcommand)]
     Measurement(research_measurement::ResearchMeasurementCommand),
     AffectedCrates(affected_crates::AffectedCratesArgs),

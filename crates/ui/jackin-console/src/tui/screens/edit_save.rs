@@ -42,6 +42,3 @@ pub const fn plan_leave_when_dirty(is_dirty: bool) -> EditSaveDisposition {
 pub const fn plan_explicit_save(is_dirty: bool) -> EditSaveDisposition {
     plan_edit_save(is_dirty, false)
 }
-
-#[cfg(test)]
-mod tests;

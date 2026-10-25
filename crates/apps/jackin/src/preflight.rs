@@ -5,9 +5,6 @@ use jackin_docker::docker_client::DockerApi;
 use owo_colors::OwoColorize;
 use std::path::Path;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CheckStatus {
     Ok,

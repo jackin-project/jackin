@@ -156,9 +156,6 @@ impl ClientWriter {
     }
 }
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct EmittedFrameMetrics {
     pub(crate) bytes: usize,

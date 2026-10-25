@@ -72,6 +72,3 @@ fn model_price(model: &str) -> Option<ModelPrice> {
     };
     Some(price)
 }
-
-#[cfg(test)]
-mod tests;

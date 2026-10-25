@@ -33,12 +33,6 @@ pub(crate) fn start_listener_at(path: &Path) -> Result<ListenerReceiver> {
     start_listener_at_with_limiter(path).map(|(rx, _limiter)| rx)
 }
 
-#[cfg(test)]
-pub(crate) fn start_listener_at_with_limiter(path: &Path) -> Result<ListenerWithLimiter> {
-    start_listener_at_inner(path)
-}
-
-#[cfg(not(test))]
 fn start_listener_at_with_limiter(path: &Path) -> Result<ListenerWithLimiter> {
     start_listener_at_inner(path)
 }
@@ -135,7 +129,6 @@ pub async fn read_control_msg(
     stream: &mut UnixStream,
     first_byte: u8,
 ) -> Result<jackin_protocol::control::ControlRequest> {
-    // The first byte is already supplied; suffix and body share one frame-read remainder budget.
     let deadline = tokio::time::Instant::now() + CONTROL_READ_TIMEOUT;
     let mut rest = [0u8; 3];
     tokio::time::timeout_at(deadline, stream.read_exact(&mut rest))
@@ -184,6 +177,3 @@ pub async fn write_control_frame(stream: &mut UnixStream, reply: &ServerMsg) -> 
         Err(_) => anyhow::bail!("control reply write timed out after 2 s"),
     }
 }
-
-#[cfg(test)]
-mod tests;

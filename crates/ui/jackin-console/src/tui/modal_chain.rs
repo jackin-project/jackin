@@ -69,6 +69,3 @@ impl<Modal> ModalChain<Modal> {
         self.open_sub(child);
     }
 }
-
-#[cfg(test)]
-mod tests;

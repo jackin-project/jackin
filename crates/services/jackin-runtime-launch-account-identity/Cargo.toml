@@ -31,9 +31,5 @@ sha2 = { workspace = true }
 tempfile = { workspace = true }
 rustix = { workspace = true, features = ["process"] }
 
-[dev-dependencies]
-jackin-env = { workspace = true }
-toml = { workspace = true }
-
 [lints]
 workspace = true

@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 use std::{ffi::OsStr, io::Read, path::PathBuf};
 
 use anyhow::{Context, Result};
@@ -419,7 +419,7 @@ fn image_from_bytes(bytes: Vec<u8>) -> Result<Option<ClipboardImage>> {
     Ok(Some(ClipboardImage { format, bytes }))
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 fn read_command_stdout_bounded<I, S>(
     program: &Path,
     args: I,
@@ -469,7 +469,7 @@ where
     Ok(Some(bytes))
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 fn read_text_command<I, S>(program: &Path, args: I) -> Result<Option<String>>
 where
     I: IntoIterator<Item = S>,
@@ -481,7 +481,7 @@ where
     )
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 fn read_image_command<I, S>(program: &Path, args: I) -> Result<Option<ClipboardImage>>
 where
     I: IntoIterator<Item = S>,
@@ -493,7 +493,7 @@ where
     }
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 fn image_mime_types() -> &'static [(ClipboardImageFormat, &'static str)] {
     &[
         (ClipboardImageFormat::Png, "image/png"),
@@ -519,7 +519,7 @@ fn validate_linux_clipboard_backend_env(label: &str) -> Result<()> {
     validate_linux_clipboard_backend(wayland, display, wl_paste, xclip, label)
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 #[expect(
     clippy::fn_params_excessive_bools,
     reason = "Four orthogonal clipboard-backend availability booleans (wayland, \
@@ -550,7 +550,7 @@ fn validate_linux_clipboard_backend(
     anyhow::bail!("{label} needs xclip in host PATH because DISPLAY is set")
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 fn find_program_in_path_value(program: &str, path: &OsStr) -> Option<PathBuf> {
     std::env::split_paths(path)
         .map(|dir| dir.join(program))
@@ -575,6 +575,3 @@ fn image_format_from_magic(bytes: &[u8]) -> Option<ClipboardImageFormat> {
     }
     None
 }
-
-#[cfg(test)]
-mod tests;

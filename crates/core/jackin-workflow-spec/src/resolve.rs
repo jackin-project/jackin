@@ -1,14 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Input resolution. Task, reference, and test-bundle bytes are read
-//! relative to the workflow file's directory and hashed before the
-//! plan hash is computed. The repository `HEAD` selector is resolved to
-//! an exact commit once via `git`; the selector itself is never stored.
-//! Agent selections are explicit facts gathered by the workflow CLI
-//! from the existing workspace configuration. A missing or ambiguous
-//! selection is a typed error, never an interactive prompt.
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -18,45 +10,38 @@ use crate::error::{Diagnostic, ErrorCode, WorkflowError, WorkflowResult};
 use crate::model::RepositoryInput;
 use crate::rules::{CheckedDefinition, Selections};
 
-/// Maximum total test-bundle bytes frozen into a plan.
 const MAX_BUNDLE_BYTES: u64 = 16 * 1024 * 1024;
 
-/// One frozen input with its digest.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrozenInput {
-    /// Path relative to the workflow file's directory.
     pub logical_path: String,
-    /// Frozen bytes.
+
     pub bytes: Vec<u8>,
-    /// Hex SHA-256 over the bytes.
+
     pub digest: String,
 }
 
-/// Everything [`crate::rules::compile_plan`] needs beyond the checked
-/// definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedInputs {
-    /// Frozen task file.
     pub task: FrozenInput,
-    /// Frozen reference files.
+
     pub references: Vec<FrozenInput>,
-    /// Frozen test bundle name.
+
     pub test_bundle_name: String,
-    /// Frozen test bundle files.
+
     pub test_bundle: Vec<FrozenInput>,
-    /// Hex digest over the bundle bytes.
+
     pub test_bundle_digest: String,
-    /// Digest of the test image the bundle runs in.
+
     pub check_image_digest: String,
-    /// Frozen repository state.
+
     pub repository: RepositoryInput,
-    /// Frozen module digests from evaluation, keyed by virtual name.
+
     pub module_digests: BTreeMap<String, String>,
-    /// Resolved agent selections.
+
     pub selections: Selections,
 }
 
-/// Read and freeze one file below `dir`.
 fn freeze_file(dir: &Path, file_label: &str, logical: &str) -> WorkflowResult<FrozenInput> {
     let path = dir.join(logical);
     let bytes = std::fs::read(&path).map_err(|_| {
@@ -75,26 +60,23 @@ fn freeze_file(dir: &Path, file_label: &str, logical: &str) -> WorkflowResult<Fr
     })
 }
 
-/// Inputs for [`resolve_workflow_files`].
 #[derive(Debug, Clone)]
 pub struct FileResolution {
-    /// Workflow file the relative inputs resolve from.
     pub workflow_file: PathBuf,
-    /// Label used in diagnostics.
+
     pub file_label: String,
-    /// Directory holding the frozen test bundle files.
+
     pub check_bundle_dir: PathBuf,
-    /// Digest of the test image the bundle runs in.
+
     pub check_image_digest: String,
-    /// Frozen module digests from evaluation, keyed by virtual name.
+
     pub module_digests: BTreeMap<String, String>,
-    /// Frozen repository state.
+
     pub repository: RepositoryInput,
-    /// Resolved agent selections.
+
     pub selections: Selections,
 }
 
-/// Resolve task, reference, and test-bundle inputs for a workflow file.
 pub fn resolve_workflow_files(
     resolution: &FileResolution,
     checked: &CheckedDefinition,
@@ -189,9 +171,6 @@ pub fn resolve_workflow_files(
     })
 }
 
-/// Resolve the repository `HEAD` selector in `repo_dir` to an exact
-/// commit. The manifest digest covers the tracked files below the
-/// directory.
 pub fn resolve_repository(
     repo_dir: &Path,
     file_label: &str,
@@ -230,15 +209,6 @@ pub fn resolve_repository(
     })
 }
 
-/// Resolve the workspace repository from ordered absolute host-path
-/// candidates: the workspace workdir first, then each mount source in
-/// order. The first candidate that is a git checkout with a HEAD commit
-/// wins; its HEAD is frozen exactly once with its manifest digest via
-/// [`resolve_repository`]. The workflow file's own directory is never
-/// a candidate: Pkl source `workspace` means the workspace repository,
-/// not the checkout the definition file happens to live in. When no
-/// candidate qualifies, the error is a typed [`ErrorCode::MissingInput`]
-/// on `repository.revision` naming the workspace.
 pub fn resolve_workspace_repository(
     candidates: &[PathBuf],
     file_label: &str,
@@ -259,8 +229,6 @@ pub fn resolve_workspace_repository(
     )))
 }
 
-/// Best-effort HEAD probe: `Some(commit)` when `dir` is a git checkout
-/// with at least one commit, `None` otherwise.
 fn head_commit(dir: &Path) -> Option<String> {
     let request = jackin_process::ExecRequest::new("git", ["rev-parse", "HEAD"])
         .cwd(dir)
@@ -277,53 +245,38 @@ fn head_commit(dir: &Path) -> Option<String> {
     }
 }
 
-/// Live facts for one agent gathered by the workflow CLI from the
-/// existing workspace configuration. Every field is an identifier, a
-/// digest, or a reference: token, password, and key material must
-/// never appear here (the type carries no field that could hold it).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiveAgentFacts {
-    /// Agent runtime name (`claude` or `codex` in this release).
     pub runtime: String,
-    /// Agent slug from the existing selection.
+
     pub agent_slug: String,
-    /// Account ID resolved from the existing selection.
+
     pub account_id: String,
-    /// Authentication mode identifier (for example `profile`).
+
     pub auth_mode: String,
-    /// Requested model ID, `None` when the operator configured none.
+
     pub requested_model: Option<String>,
-    /// Vendor-reported model ID, `None` when the vendor cannot
-    /// report it (per C1 the plan keeps requested and actual apart).
+
     pub actual_model: Option<String>,
-    /// `sha256:<hex>` over the agent binary bytes.
+
     pub binary_digest: String,
-    /// Digest of the role image the worker runs.
+
     pub image_digest: String,
 }
 
-/// Live facts for both workers gathered by the workflow CLI from the
-/// existing workspace configuration: the workspace named by the
-/// definition (or the current workspace context), its role manifest,
-/// and the resolved account bindings. Identifiers and digests only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiveSelectionEnv {
-    /// Workspace name the selections were read from.
     pub workspace_name: String,
-    /// Role ID shared by both workers in this release.
+
     pub role_id: String,
-    /// Exact role revision (digest over the role manifest bytes).
+
     pub role_revision: String,
-    /// Implementer facts (claude in this release).
+
     pub implementer: LiveAgentFacts,
-    /// Reviewer facts (codex in this release).
+
     pub reviewer: LiveAgentFacts,
 }
 
-/// Resolve live agent selections from facts the workflow CLI read out
-/// of the existing workspace configuration. A missing or ambiguous
-/// selection is a typed [`ErrorCode::MissingInput`] error, never an
-/// interactive prompt.
 pub fn resolve_live_selections(
     file_label: &str,
     env: &LiveSelectionEnv,
@@ -380,8 +333,6 @@ pub fn resolve_live_selections(
     })
 }
 
-/// Resolve one agent's facts, checking the fixed runtime pairing and
-/// that every identifier the plan freezes is present.
 fn resolve_live_agent(
     file_label: &str,
     side: &str,

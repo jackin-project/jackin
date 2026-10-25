@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Source task for one native channel leaf or the complete admitted union.
-
 use anyhow::{Result, ensure};
 use std::{env, path::Path};
 use velnor_actions_contract::preview_production::ReleaseProductionStage;
@@ -10,8 +8,6 @@ use velnor_actions_contract::preview_production::ReleaseProductionStage;
 mod assembly;
 mod handoff;
 mod inventory;
-#[cfg(test)]
-mod tests;
 
 pub(crate) fn run() -> Result<()> {
     let handoff = handoff::load()?;

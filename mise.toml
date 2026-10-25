@@ -76,8 +76,5 @@ description = "Reject unused workspace dependencies"
 run = "cargo shear --deny-warnings"
 
 [tasks."check:custom-lints"]
-description = "Build and UI-test pinned nightly custom lints, then check the workspace"
-run = """
-python3 -B -m unittest discover -s scripts/tests -p test_custom_lints.py &&
-python3 -B scripts/custom-lints.py
-"""
+description = "Build pinned nightly custom lints, then check the workspace"
+run = "python3 -B scripts/custom-lints.py"

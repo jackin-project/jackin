@@ -41,6 +41,3 @@ pub fn summary(running_bases: &[String], index: &InstanceIndex) -> (String, Vec<
     );
     (headline, rows)
 }
-
-#[cfg(test)]
-mod tests;

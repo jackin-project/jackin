@@ -1,28 +1,23 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bounded output and host process deadline primitives for verification.
 use super::{BoundedOutput, MAX_TEST_OUTPUT_BYTES, TestExecution};
 use crate::WorkflowError;
 use std::time::{Duration, Instant};
 
-/// Timeout joining output-reader threads after the test process ends.
 const READER_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 impl BoundedOutput {
-    /// Kept bytes, lossy-decoded for feedback use.
     #[must_use]
     pub fn text(&self) -> String {
         String::from_utf8_lossy(&self.bytes).into_owned()
     }
 
-    /// Whether output beyond the bound was dropped.
     #[must_use]
     pub const fn truncated(&self) -> bool {
         self.truncated
     }
 
-    /// Kept raw bytes.
     #[must_use]
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
@@ -83,52 +78,26 @@ pub(super) fn run_host_command_until(
 }
 
 impl TestExecution {
-    /// Actual process exit code, or `-1` when killed by a signal.
     #[must_use]
     pub const fn exit_code(&self) -> i32 {
         self.exit_code
     }
 
-    /// Whether the deadline killed the process. Timeouts are recorded
-    /// separately from code failures: one clean retry is allowed for a
-    /// recorded infrastructure failure, never for a code failure.
     #[must_use]
     pub const fn timed_out(&self) -> bool {
         self.timed_out
     }
 
-    /// Bounded captured stdout.
     #[must_use]
     pub const fn stdout(&self) -> &BoundedOutput {
         &self.stdout
     }
 
-    /// Bounded captured stderr.
     #[must_use]
     pub const fn stderr(&self) -> &BoundedOutput {
         &self.stderr
     }
 
-    #[cfg(test)]
-    pub fn from_test_parts(exit_code: i32, output: &str) -> Self {
-        let text = output.as_bytes();
-        let half = text.len() / 2;
-        Self {
-            exit_code,
-            timed_out: false,
-            stdout: BoundedOutput {
-                bytes: text[..half].to_vec(),
-                truncated: false,
-            },
-            stderr: BoundedOutput {
-                bytes: text[half..].to_vec(),
-                truncated: false,
-            },
-        }
-    }
-
-    /// Short exit label for evidence and feedback (`exit 0`, `exit 3`,
-    /// `signal`, `timeout`).
     #[must_use]
     pub fn exit_label(&self) -> String {
         if self.timed_out {

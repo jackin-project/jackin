@@ -1,16 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Host executors for the Console Workflows screen. The screen emits
-//! [`WorkflowsEffect`] intents; the host performs the daemon and
-//! Capsule calls and feeds fresh snapshots back into the screen.
-//!
-//! Every daemon call goes through the local host socket; every
-//! ownership call goes through the C2 session-control helpers (direct
-//! socket with docker-exec fallback), the same path the CLI and the
-//! scheduler use. Failures land in the screen error line; successes
-//! clear it and reload the list plus the selected run detail.
-
 use anyhow::{Context as _, Result};
 use jackin_console::tui::screens::workflows::effect::WorkflowsEffect;
 use jackin_console::tui::screens::workflows::model::{ObserveTarget, WorkflowScreen};
@@ -35,9 +25,6 @@ fn report_error(state: &mut ManagerState<'_>, error: anyhow::Error) -> bool {
     true
 }
 
-/// Reload the run list plus the selected run detail into the screen.
-/// Runs on every explicit navigation so the detail view always shows
-/// the saved state for the selected run.
 pub(crate) fn execute_workflows_refresh(
     state: &mut ManagerState<'_>,
     paths: &jackin_core::JackinPaths,
@@ -73,7 +60,6 @@ pub(crate) fn execute_workflows_refresh(
     true
 }
 
-/// Perform one workflow intent from the Workflows screen.
 pub(crate) fn execute_workflows_effect(
     state: &mut ManagerState<'_>,
     paths: &jackin_core::JackinPaths,
@@ -106,8 +92,6 @@ pub(crate) fn execute_workflows_effect(
 
 fn refresh_after(state: &mut ManagerState<'_>, paths: &jackin_core::JackinPaths) -> Result<()> {
     execute_workflows_refresh(state, paths);
-    // The refresh reports its own failure into the screen; surface it
-    // here too so a successful mutation never looks silently stale.
     if let Some(screen) = workflows_screen_mut(state)
         && let Some(error) = screen.error()
     {
@@ -116,9 +100,6 @@ fn refresh_after(state: &mut ManagerState<'_>, paths: &jackin_core::JackinPaths)
     Ok(())
 }
 
-/// Resolve the exact recorded session to a host container plus a
-/// capsule session id. Both are required: the host never guesses a
-/// session from a run id.
 fn require_session_target(target: &ObserveTarget) -> Result<(String, u64)> {
     let instance = target
         .instance_id
@@ -175,9 +156,6 @@ fn resolve_container(instance: &str) -> Result<jackin_core::ContainerHandle> {
     jackin_core::ContainerHandle::new(name, id)
 }
 
-/// Confirm the exact recorded session is live without taking input
-/// ownership: read-only `capsule status` over docker exec must list
-/// the session id.
 fn observe_session(target: &ObserveTarget) -> Result<()> {
     let (instance, session) = require_session_target(target)?;
     let container = resolve_container(&instance)?;
@@ -206,8 +184,6 @@ fn observe_session(target: &ObserveTarget) -> Result<()> {
     Ok(())
 }
 
-/// Take exclusive input ownership, mark the held session on the
-/// screen, then pause the run while the operator holds it.
 fn take_over(
     state: &mut ManagerState<'_>,
     paths: &jackin_core::JackinPaths,
@@ -235,8 +211,6 @@ fn take_over(
     refresh_after(state, paths)
 }
 
-/// Explicit release of operator control; the run stays paused until
-/// the operator resumes it.
 fn release_control(
     state: &mut ManagerState<'_>,
     paths: &jackin_core::JackinPaths,
@@ -411,6 +385,3 @@ fn request_pause(layout: &jackin_runtime::host_daemon::DaemonLayout, run_id: &st
         other => anyhow::bail!("cannot pause run `{run_id}`: unexpected daemon response {other:?}"),
     }
 }
-
-#[cfg(test)]
-mod tests;

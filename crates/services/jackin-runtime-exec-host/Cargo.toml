@@ -30,9 +30,6 @@ serde_json = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "net"] }
 
 [dev-dependencies]
-jackin-diagnostics = { workspace = true, features = ["test-support"] }
-tempfile = { workspace = true }
-tracing = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 
 [lints]

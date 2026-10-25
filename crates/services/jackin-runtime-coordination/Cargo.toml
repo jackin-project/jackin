@@ -24,9 +24,6 @@ jackin-telemetry = { workspace = true }
 hex = { workspace = true }
 sha2 = { workspace = true }
 
-[dev-dependencies]
-tempfile = { workspace = true }
-
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs", "user"] }
 

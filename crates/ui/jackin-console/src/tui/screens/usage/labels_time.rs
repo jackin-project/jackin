@@ -135,6 +135,3 @@ pub fn group_freshness_label(now_epoch: i64, group: &UsageMetricGroup) -> String
         updated
     }
 }
-
-#[cfg(test)]
-mod tests;

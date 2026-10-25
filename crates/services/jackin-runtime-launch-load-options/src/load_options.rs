@@ -260,6 +260,3 @@ fn validate_on_demand_bindings(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

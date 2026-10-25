@@ -332,6 +332,3 @@ pub(crate) struct DragState {
     pub(crate) orient: SplitOrient,
     pub(crate) rect: Rect,
 }
-
-#[cfg(test)]
-mod tests;

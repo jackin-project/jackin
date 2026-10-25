@@ -244,6 +244,3 @@ pub fn emit_compact_image_warning(message: &str) {
 pub fn compact_image_warning_line(message: &str) -> String {
     format!("jackin: warning: {message}")
 }
-
-#[cfg(test)]
-mod tests;

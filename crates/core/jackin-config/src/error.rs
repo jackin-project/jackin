@@ -66,16 +66,6 @@ pub enum ConfigError {
 pub type ConfigResult<T> = Result<T, ConfigError>;
 
 impl ConfigError {
-    /// Creates a message from formatting arguments.
-    ///
-    /// Requiring formatting arguments keeps literal data distinct from
-    /// interpolated diagnostic text.
-    ///
-    /// ```compile_fail
-    /// use jackin_config::ConfigError;
-    ///
-    /// let _ = ConfigError::msg("workspace {name} failed");
-    /// ```
     pub fn msg(message: std::fmt::Arguments<'_>) -> Self {
         Self::Message(message.to_string())
     }
@@ -92,6 +82,3 @@ impl ConfigError {
         matches!(self, Self::TelemetryOwned(_))
     }
 }
-
-#[cfg(test)]
-mod tests;

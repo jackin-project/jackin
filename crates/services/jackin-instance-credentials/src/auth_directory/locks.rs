@@ -101,7 +101,7 @@ pub fn lock_source_dir(path: &Path) -> anyhow::Result<Option<LockedSource>> {
     lock_source_dir_with_timeout(path, SOURCE_LOCK_TIMEOUT)
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 pub fn lock_source_dir_for_test(
     path: &Path,
     timeout: Duration,

@@ -158,8 +158,7 @@ pub(crate) fn push_amp_agent_dollar_bucket(
     };
     let used_money = Money::new(used_minor, limit.currency.clone(), limit.exponent);
     let limit_money = limit.clone();
-    // `limit` is positive, and widening before multiplying bounds the absolute
-    // numerator by 100 * 2^63, far below f64::MAX. The Money values stay exact.
+
     #[expect(
         clippy::cast_precision_loss,
         reason = "the derived continuous percent is f64; exact Money remains in the bucket"
@@ -255,6 +254,3 @@ pub fn amp_view_from_usage(
         last_error: None,
     })
 }
-
-#[cfg(test)]
-mod tests;

@@ -23,9 +23,5 @@ jackin-docker = { workspace = true }
 jackin-runtime-naming = { workspace = true }
 anyhow = { workspace = true }
 
-[dev-dependencies]
-jackin-test-support = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt"] }
-
 [lints]
 workspace = true

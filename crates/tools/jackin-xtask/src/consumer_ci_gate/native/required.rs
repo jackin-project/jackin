@@ -4,9 +4,6 @@
 use super::{Names, source::Inventory};
 use anyhow::{Result, ensure};
 
-// This independently specified contract survives deleted/renamed source tests.
-// Additive source tests are allowed and must also execute. Removing a required
-// identity requires an explicit change to this gate contract.
 pub(super) const XCTEST: &[&str] = &[
     "ArchitectureTests.testApplicationDelegateOpensRuntimeOnLaunch",
     "ArchitectureTests.testDesktopSourcesContainNoForbiddenUsagePresentation",

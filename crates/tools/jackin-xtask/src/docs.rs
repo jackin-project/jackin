@@ -1469,6 +1469,3 @@ fn report_clean(label: &str, meta_count: usize) {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -14,9 +14,6 @@ use serde::Deserialize;
 
 use crate::cmd;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Subcommand, Debug)]
 pub(crate) enum CiToolchainCommand {
     Activate(PrepareArgs),

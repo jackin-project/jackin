@@ -35,8 +35,5 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "io-std", "macros", "rt", "sync", "time"] }
 
-[dev-dependencies]
-tempfile = { workspace = true }
-
 [lints]
 workspace = true

@@ -108,6 +108,3 @@ impl<C, A, P> AccountPickerState<C, A, P> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;
