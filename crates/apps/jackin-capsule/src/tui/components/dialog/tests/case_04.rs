@@ -43,11 +43,7 @@ fn usage_dialog_provider_tabs_are_clickable() {
 
     assert!(d.clickable_at(tab_row, tab_col, 32, 120, None));
     match d.handle_click(tab_row, tab_col, 32, 120, None) {
-        DialogAction::SwitchUsageProvider {
-            provider_label,
-            account_id,
-        } => {
-            assert_eq!(provider_label, "Claude");
+        DialogAction::SwitchUsageProvider { account_id } => {
             assert_eq!(account_id, "test-tab-claude");
         }
         other => panic!("expected provider switch, got {other:?}"),
