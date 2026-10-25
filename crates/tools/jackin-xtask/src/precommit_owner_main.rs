@@ -7,6 +7,11 @@
 #[path = "shared/fs_util.rs"]
 mod fs_util;
 #[cfg(unix)]
+type Environment = BTreeMap<OsString, OsString>;
+#[cfg(unix)]
+#[path = "custom_lints/paths.rs"]
+mod cargo_paths;
+#[cfg(unix)]
 mod precommit_owner_security;
 #[cfg(unix)]
 mod precommit_provision;
@@ -17,6 +22,7 @@ pub(crate) mod precommit_snapshot;
 use anyhow::{Context, Result, bail, ensure};
 #[cfg(unix)]
 use std::{
+    collections::BTreeMap,
     env,
     ffi::{OsStr, OsString},
     io::{self, Write},

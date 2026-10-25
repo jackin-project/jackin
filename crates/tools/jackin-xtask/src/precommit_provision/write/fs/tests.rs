@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(target_os = "macos")]
 use super::*;
+#[cfg(target_os = "macos")]
 use anyhow::Result;
 
 #[cfg(target_os = "macos")]

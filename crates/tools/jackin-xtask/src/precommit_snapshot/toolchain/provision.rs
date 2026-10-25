@@ -2,9 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    collections::BTreeMap,
-    env,
-    ffi::OsString,
     fs,
     path::Path,
     sync::{Arc, atomic::AtomicBool},
@@ -15,10 +12,7 @@ use anyhow::{Context, Result, ensure};
 
 use super::super::process::SetupControls;
 use super::verify::verify_rust_toolchain;
-use super::{
-    effective_cargo, find_executable, resolve_rust_tools_with_controls, runtime_environment,
-    rust_release,
-};
+use super::{effective_cargo, find_executable, resolve_rust_tools_with_controls, rust_release};
 
 pub(super) fn verify_tool_paths(
     source_root: &Path,
@@ -26,22 +20,27 @@ pub(super) fn verify_tool_paths(
     rustc_path: &Path,
 ) -> Result<()> {
     let source_root = fs::canonicalize(source_root).context("resolving bootstrap source root")?;
+    let isolation = tempfile::Builder::new()
+        .prefix("jackin-provision-mise-")
+        .tempdir()
+        .context("creating private tool qualification directory")?;
+    let inputs = super::HostInputs::capture(&source_root, isolation.path())?;
     let controls = SetupControls::new(Arc::new(AtomicBool::new(false)), Duration::from_mins(10));
     let pin = rust_release(&source_root.join("rust-toolchain.toml"))?;
-    let inherited_path = env::var_os("PATH").unwrap_or_default();
-    let mise = find_executable("mise", &inherited_path).context("missing Mise executable")?;
+    let inherited_path = inputs.search_path();
+    let home = inputs.home.as_deref().map(Path::new);
+    let mise = find_executable("mise", inherited_path).context("missing Mise executable")?;
     let mise = fs::canonicalize(mise).context("resolving Mise executable")?;
-    let rustup = find_executable("rustup", &inherited_path).context("missing rustup executable")?;
-    let mise_environment = mise_environment(&source_root, &inherited_path);
+    let rustup = find_executable("rustup", inherited_path).context("missing rustup executable")?;
+    let rustup = fs::canonicalize(rustup).context("resolving rustup executable")?;
+    let mise_environment = inputs.command_environment(&source_root);
     let expected_cargo = effective_cargo(&mise, &mise_environment, &source_root, &controls)?;
-    let rustup_home = env::var_os("RUSTUP_HOME");
-    let home = env::var_os("HOME");
     let expected_rust_tools = resolve_rust_tools_with_controls(
         &rustup,
         &pin,
-        &inherited_path,
-        rustup_home.as_deref(),
-        home.as_deref(),
+        std::ffi::OsStr::new(super::FIXED_SYSTEM_PATH),
+        inputs.rustup_home.as_deref(),
+        home.map(Path::as_os_str),
         &controls,
     )
     .context("resolving pinned Rust tools")?;
@@ -72,19 +71,4 @@ pub(super) fn verify_tool_paths(
         "bootstrap rustc differs from the pinned Rust toolchain"
     );
     Ok(())
-}
-
-fn mise_environment(root: &Path, inherited_path: &std::ffi::OsStr) -> BTreeMap<OsString, OsString> {
-    let mut environment = runtime_environment();
-    environment.insert(OsString::from("PATH"), inherited_path.to_owned());
-    environment.insert(
-        OsString::from("MISE_TRUSTED_CONFIG_PATHS"),
-        root.as_os_str().to_owned(),
-    );
-    environment.insert(OsString::from("MISE_AUTO_INSTALL"), OsString::from("0"));
-    environment.insert(
-        OsString::from("MISE_EXEC_AUTO_INSTALL"),
-        OsString::from("false"),
-    );
-    environment
 }

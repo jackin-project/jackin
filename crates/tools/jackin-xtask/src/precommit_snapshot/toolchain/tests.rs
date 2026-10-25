@@ -2,11 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use std::collections::BTreeSet;
 #[cfg(not(target_os = "macos"))]
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::{ffi::OsStrExt, process::ExitStatusExt};
-use std::process::{ExitStatus, Output};
+use std::process::{Command, ExitStatus, Output};
 
 fn write_executable(path: &Path, contents: &[u8]) {
     fs::write(path, contents).expect("tool file");
@@ -19,6 +18,10 @@ fn command_result(status: i32, stdout: &[u8]) -> Output {
         stdout: stdout.to_vec(),
         stderr: Vec::new(),
     }
+}
+
+fn physical_path(path: &Path, cwd: &Path) -> PathBuf {
+    crate::cargo_paths::resolve(path, cwd).expect("physical fixture path")
 }
 
 #[test]
@@ -89,62 +92,144 @@ fn rustup_path_resolution_handles_actual_raw_unix_paths() {
 }
 
 #[test]
-fn managed_mise_gate_discards_ambient_config_overrides_and_preserves_gate_context() {
-    let trusted_root = Path::new("/private/staged/repository");
-    let mut environment = BTreeMap::from([
+fn host_input_constructor_admits_named_context_and_private_mise_config() {
+    let temporary = tempfile::tempdir().expect("temporary root");
+    let root = temporary.path().join("reviewed");
+    let isolation = temporary.path().join("isolation");
+    let custom_data = temporary.path().join("custom mise data with spaces");
+    fs::create_dir_all(&root).expect("reviewed root");
+    fs::create_dir(&isolation).expect("isolation root");
+    let inherited = BTreeMap::from([
+        (OsString::from("PATH"), OsString::from("/host/bin")),
         (
-            OsString::from("MISE_ENV"),
-            OsString::from("attacker-profile"),
+            OsString::from("HOME"),
+            temporary.path().join("home").into_os_string(),
         ),
         (
-            OsString::from("MISE_ENV_FILE"),
-            OsString::from("/tmp/attacker.env"),
-        ),
-        (
-            OsString::from("MISE_CONFIG_DIR"),
-            OsString::from("/tmp/attacker-config"),
-        ),
-        (
-            OsString::from("MISE_CONFIG_FILE"),
-            OsString::from("/tmp/attacker.toml"),
-        ),
-        (
-            OsString::from("MISE_GLOBAL_CONFIG_FILE"),
-            OsString::from("/tmp/attacker-global.toml"),
+            OsString::from("CARGO_HOME"),
+            temporary.path().join("cargo home").into_os_string(),
         ),
         (
             OsString::from("MISE_DATA_DIR"),
-            OsString::from("/tmp/attacker-data"),
+            custom_data.clone().into_os_string(),
+        ),
+        (
+            OsString::from("MISE_CONFIG_DIR"),
+            OsString::from("/host/global/mise"),
+        ),
+        (
+            OsString::from("MISE_SYSTEM_CONFIG_DIR"),
+            OsString::from("/host/system/mise"),
+        ),
+        (
+            OsString::from("MISE_CONFIG_FILE"),
+            OsString::from("/host/secret.toml"),
+        ),
+        (OsString::from("MISE_ENV"), OsString::from("host-profile")),
+        (
+            OsString::from("XDG_CACHE_HOME"),
+            temporary.path().join("xdg cache").into_os_string(),
+        ),
+        (
+            OsString::from("XDG_STATE_HOME"),
+            temporary.path().join("xdg state").into_os_string(),
         ),
         (
             OsString::from("MBX_CACHE_DIR"),
-            OsString::from("/cache/mbx"),
+            temporary.path().join("mbx cache").into_os_string(),
         ),
         (
             OsString::from("MBX_SESSION_PATH"),
-            OsString::from("/session/mbx"),
+            temporary.path().join("session file").into_os_string(),
+        ),
+        (OsString::from("BASH_ENV"), OsString::from("/host/bash-env")),
+        (OsString::from("CARGO_ALIAS_POISON"), OsString::from("true")),
+        (
+            OsString::from("CARGO_BUILD_RUSTFLAGS"),
+            OsString::from("--cfg hostile_build_flags"),
+        ),
+        (
+            OsString::from("CARGO_TARGET_DIR"),
+            OsString::from("/host/target"),
+        ),
+        (OsString::from("RUSTFLAGS"), OsString::from("--cfg hostile")),
+        (OsString::from("RUSTC_BOOTSTRAP"), OsString::from("1")),
+        (
+            OsString::from("LD_PRELOAD"),
+            OsString::from("/host/loader.dylib"),
+        ),
+        (
+            OsString::from("DYLD_INSERT_LIBRARIES"),
+            OsString::from("/host/injected.dylib"),
+        ),
+        (
+            OsString::from("GIT_CONFIG_PARAMETERS"),
+            OsString::from("poison"),
         ),
         (OsString::from("HK_LOG_FORMAT"), OsString::from("json")),
-        (OsString::from("PATH"), OsString::from("/qualified/path")),
+        (OsString::from("MBX_GC_AUTO"), OsString::from("1")),
     ]);
+    let inputs = HostInputs::from_environment(
+        &inherited,
+        temporary.path(),
+        Some(temporary.path().join("passwd home").into_os_string()),
+        &root,
+        &isolation,
+    )
+    .expect("admitted host inputs");
 
-    configure_managed_mise_environment(&mut environment, trusted_root);
+    let discovery = inputs.command_environment(&root);
+    let provisioning = inputs.command_environment(&root);
+    let gate_path = OsString::from(format!("/private/tools:{FIXED_SYSTEM_PATH}"));
+    let gate = inputs.environment_for(&root, &gate_path);
+    let fixed_path = OsString::from(FIXED_SYSTEM_PATH);
+    for (environment, expected_path) in [
+        (&discovery, &fixed_path),
+        (&provisioning, &fixed_path),
+        (&gate, &gate_path),
+    ] {
+        assert_admitted_host_environment(
+            environment,
+            expected_path,
+            &root,
+            &custom_data,
+            temporary.path(),
+            &isolation,
+        );
+    }
+}
 
+fn assert_admitted_host_environment(
+    environment: &BTreeMap<OsString, OsString>,
+    expected_path: &OsString,
+    root: &Path,
+    custom_data: &Path,
+    temporary: &Path,
+    isolation: &Path,
+) {
     assert_eq!(
-        environment
-            .keys()
-            .filter(|key| key.to_string_lossy().starts_with("MISE_"))
-            .cloned()
-            .collect::<BTreeSet<_>>(),
-        BTreeSet::from([
-            OsString::from("MISE_AUTO_INSTALL"),
-            OsString::from("MISE_EXEC_AUTO_INSTALL"),
-            OsString::from("MISE_TRUSTED_CONFIG_PATHS"),
-        ])
+        environment.get(OsStr::new("MISE_DATA_DIR")),
+        Some(&physical_path(custom_data, temporary).into_os_string())
+    );
+    assert_eq!(
+        environment.get(OsStr::new("MISE_CACHE_DIR")),
+        Some(
+            &physical_path(&temporary.join("xdg cache"), temporary)
+                .join("mise")
+                .into_os_string()
+        )
+    );
+    assert_eq!(
+        environment.get(OsStr::new("MISE_STATE_DIR")),
+        Some(
+            &physical_path(&temporary.join("xdg state"), temporary)
+                .join("mise")
+                .into_os_string()
+        )
     );
     assert_eq!(
         environment.get(OsStr::new("MISE_TRUSTED_CONFIG_PATHS")),
-        Some(&trusted_root.as_os_str().to_owned())
+        Some(&root.as_os_str().to_owned())
     );
     assert_eq!(
         environment.get(OsStr::new("MISE_AUTO_INSTALL")),
@@ -154,9 +239,406 @@ fn managed_mise_gate_discards_ambient_config_overrides_and_preserves_gate_contex
         environment.get(OsStr::new("MISE_EXEC_AUTO_INSTALL")),
         Some(&OsString::from("false"))
     );
-    for key in ["MBX_CACHE_DIR", "MBX_SESSION_PATH", "HK_LOG_FORMAT", "PATH"] {
-        assert!(environment.contains_key(OsStr::new(key)), "lost {key}");
+    assert_eq!(
+        environment.get(OsStr::new("MISE_CONFIG_DIR")),
+        Some(
+            &fs::canonicalize(isolation.join("mise-config"))
+                .unwrap()
+                .into_os_string()
+        )
+    );
+    assert_eq!(
+        environment.get(OsStr::new("MISE_SYSTEM_CONFIG_DIR")),
+        Some(
+            &fs::canonicalize(isolation.join("mise-system-config"))
+                .unwrap()
+                .into_os_string()
+        )
+    );
+    assert_eq!(
+        environment.get(OsStr::new("MBX_CACHE_DIR")),
+        Some(&physical_path(&temporary.join("mbx cache"), temporary).into_os_string())
+    );
+    assert_eq!(
+        environment.get(OsStr::new("MBX_SESSION_PATH")),
+        Some(&physical_path(&temporary.join("session file"), temporary).into_os_string())
+    );
+    assert_eq!(
+        environment.get(OsStr::new("MBX_CARGO_SHIM_MODE")),
+        Some(&OsString::from("1"))
+    );
+    assert_eq!(
+        environment.get(OsStr::new("CARGO_HOME")),
+        Some(&physical_path(&temporary.join("cargo home"), temporary).into_os_string())
+    );
+    for key in [
+        "BASH_ENV",
+        "CARGO_ALIAS_POISON",
+        "CARGO_BUILD_RUSTFLAGS",
+        "CARGO_TARGET_DIR",
+        "RUSTFLAGS",
+        "RUSTC_BOOTSTRAP",
+        "LD_PRELOAD",
+        "DYLD_INSERT_LIBRARIES",
+        "GIT_CONFIG_PARAMETERS",
+        "MISE_CONFIG_FILE",
+        "MISE_ENV",
+        "MBX_GC_AUTO",
+    ] {
+        assert!(
+            !environment.contains_key(OsStr::new(key)),
+            "unexpected {key}"
+        );
     }
+    assert_eq!(environment.get(OsStr::new("PATH")), Some(expected_path));
+}
+
+#[test]
+fn fake_mise_receives_private_global_and_system_config_roots_in_each_phase() {
+    let temporary = tempfile::tempdir().expect("temporary root");
+    let root = temporary.path().join("reviewed");
+    let isolation = temporary.path().join("isolation");
+    let custom_data = temporary.path().join("custom data root with spaces");
+    let marker = temporary.path().join("mise phases");
+    fs::create_dir_all(&root).expect("reviewed root");
+    fs::create_dir(&isolation).expect("isolation root");
+    let inherited = BTreeMap::from([
+        (OsString::from("PATH"), OsString::from("/host/bin")),
+        (
+            OsString::from("HOME"),
+            temporary.path().join("home").into_os_string(),
+        ),
+        (
+            OsString::from("CARGO_HOME"),
+            temporary.path().join("cargo home").into_os_string(),
+        ),
+        (
+            OsString::from("MISE_DATA_DIR"),
+            custom_data.clone().into_os_string(),
+        ),
+        (
+            OsString::from("MISE_CONFIG_DIR"),
+            OsString::from("/host/mise/global"),
+        ),
+        (
+            OsString::from("MISE_SYSTEM_CONFIG_DIR"),
+            OsString::from("/host/mise/system"),
+        ),
+        (
+            OsString::from("MISE_GLOBAL_CONFIG_FILE"),
+            OsString::from("/host/global.toml"),
+        ),
+        (
+            OsString::from("XDG_CACHE_HOME"),
+            temporary.path().join("cache with spaces").into_os_string(),
+        ),
+    ]);
+    let inputs =
+        HostInputs::from_environment(&inherited, temporary.path(), None, &root, &isolation)
+            .expect("admit fake Mise inputs");
+    let fake_mise = temporary.path().join("fake-mise");
+    let script = format!(
+        "#!/bin/sh\nset -eu\ntest \"$MISE_CONFIG_DIR\" = '{}'\ntest \"$MISE_SYSTEM_CONFIG_DIR\" = '{}'\ntest \"$MISE_DATA_DIR\" = '{}'\ntest \"$MISE_INSTALLS_DIR\" = '{}/installs'\ntest \"$MISE_CACHE_DIR\" = '{}/mise'\ntest \"$MISE_AUTO_INSTALL\" = 0\ntest \"$MISE_EXEC_AUTO_INSTALL\" = false\ntest \"${{MISE_GLOBAL_CONFIG_FILE+x}}\" != x\ntest \"${{MISE_CONFIG_FILE+x}}\" != x\ntest -z \"$(/bin/ls -A \"$MISE_CONFIG_DIR\")\"\ntest -z \"$(/bin/ls -A \"$MISE_SYSTEM_CONFIG_DIR\")\"\nprintf x >> '{}'\n",
+        fs::canonicalize(isolation.join("mise-config"))
+            .unwrap()
+            .display(),
+        fs::canonicalize(isolation.join("mise-system-config"))
+            .unwrap()
+            .display(),
+        physical_path(&custom_data, temporary.path()).display(),
+        physical_path(&custom_data, temporary.path()).display(),
+        physical_path(
+            &temporary.path().join("cache with spaces"),
+            temporary.path()
+        )
+        .display(),
+        marker.display(),
+    );
+    write_executable(&fake_mise, script.as_bytes());
+
+    let discovery = inputs.command_environment(&root);
+    let provisioning = inputs.command_environment(&root);
+    let gate = inputs.environment_for(&root, OsStr::new(FIXED_SYSTEM_PATH));
+    for environment in [&discovery, &provisioning, &gate] {
+        let status = Command::new(&fake_mise)
+            .env_clear()
+            .envs(environment)
+            .status()
+            .expect("run fake Mise phase probe");
+        assert!(status.success(), "fake Mise rejected admitted environment");
+    }
+    assert_eq!(fs::read(&marker).expect("phase marker"), b"xxx");
+}
+
+#[test]
+fn actual_bash_ignores_hostile_bash_env_and_inherited_path_wrappers() {
+    let temporary = tempfile::tempdir().expect("temporary root");
+    let root = temporary.path().join("reviewed");
+    let isolation = temporary.path().join("isolation");
+    let wrapper_dir = temporary.path().join("host wrappers");
+    fs::create_dir_all(&root).expect("reviewed root");
+    fs::create_dir(&isolation).expect("isolation root");
+    fs::create_dir(&wrapper_dir).expect("host wrappers");
+    let bash_env = temporary.path().join("hostile bash env");
+    let marker = temporary.path().join("hostile marker");
+    fs::write(
+        &bash_env,
+        format!("#!/bin/sh\nprintf ran > '{}'\nexit 0\n", marker.display()),
+    )
+    .expect("hostile BASH_ENV");
+    let inherited = BTreeMap::from([
+        (OsString::from("PATH"), wrapper_dir.as_os_str().to_owned()),
+        (OsString::from("HOME"), root.join("home").into_os_string()),
+        (
+            OsString::from("CARGO_HOME"),
+            root.join("cargo home").into_os_string(),
+        ),
+        (OsString::from("BASH_ENV"), bash_env.into_os_string()),
+    ]);
+    for name in ["bash", "find", "xargs"] {
+        let wrapper = wrapper_dir.join(name);
+        write_executable(
+            &wrapper,
+            format!("#!/bin/sh\nprintf ran > '{}'\nexit 0\n", marker.display()).as_bytes(),
+        );
+    }
+    let inputs =
+        HostInputs::from_environment(&inherited, temporary.path(), None, &root, &isolation)
+            .expect("admit safe fixture environment");
+    let environment = inputs.command_environment(&root);
+    let status = Command::new("/bin/bash")
+        .args([
+            "-c",
+            "bash -c ':' && find / -maxdepth 0 >/dev/null && printf x | xargs cat >/dev/null; exit 23",
+        ])
+        .current_dir(&root)
+        .env_clear()
+        .envs(&environment)
+        .status()
+        .expect("run actual system bash");
+    assert_eq!(status.code(), Some(23));
+    assert!(!marker.exists(), "host shell setup or PATH wrappers ran");
+}
+
+#[test]
+fn cargo_config_admission_allows_missing_or_empty_external_files_and_preserves_credentials() {
+    let temporary = tempfile::tempdir().expect("temporary root");
+    let parent = temporary.path();
+    let root = parent.join("workspace/reviewed");
+    let isolation = parent.join("isolation");
+    let cargo_home = parent.join("shared cargo home");
+    fs::create_dir_all(&root).expect("reviewed root");
+    fs::create_dir(&isolation).expect("isolation root");
+    fs::create_dir(&cargo_home).expect("shared Cargo home");
+    let credentials = cargo_home.join("credentials.toml");
+    fs::write(&credentials, b"token = 'sentinel-do-not-read-or-mutate'\n")
+        .expect("credentials fixture");
+    let inherited = BTreeMap::from([
+        (OsString::from("PATH"), OsString::from("/host/bin")),
+        (OsString::from("HOME"), parent.join("home").into_os_string()),
+        (
+            OsString::from("CARGO_HOME"),
+            cargo_home.clone().into_os_string(),
+        ),
+    ]);
+    let missing = HostInputs::from_environment(&inherited, parent, None, &root, &isolation)
+        .expect("missing external Cargo config files are allowed");
+    assert_eq!(missing.cargo_home(), physical_path(&cargo_home, parent));
+
+    let ancestor_config = parent.join(".cargo/config");
+    fs::create_dir_all(ancestor_config.parent().unwrap()).expect("external Cargo config dir");
+    fs::write(&ancestor_config, b"# deliberately empty\n\n").expect("empty ancestor config");
+    fs::write(
+        cargo_home.join("config.toml"),
+        "# empty global configuration\n",
+    )
+    .expect("empty global config");
+    let empty = HostInputs::from_environment(&inherited, parent, None, &root, &isolation)
+        .expect("empty external Cargo config files are allowed");
+    assert_eq!(empty.cargo_home(), physical_path(&cargo_home, parent));
+    assert_eq!(
+        fs::read(credentials).expect("credentials remain unchanged"),
+        b"token = 'sentinel-do-not-read-or-mutate'\n"
+    );
+
+    let staged_config_dir = root.join(".cargo");
+    fs::create_dir(&staged_config_dir).expect("reviewed Cargo config dir");
+    fs::write(staged_config_dir.join("config.toml"), "[build]\njobs = 1\n")
+        .expect("reviewed staged Cargo config");
+    HostInputs::from_environment(&inherited, parent, None, &root, &isolation)
+        .expect("reviewed staged Cargo config is admitted");
+
+    let home_fallback = BTreeMap::from([
+        (OsString::from("PATH"), OsString::from("/host/bin")),
+        (
+            OsString::from("HOME"),
+            parent.join("fallback home").into_os_string(),
+        ),
+    ]);
+    let fallback = HostInputs::from_environment(&home_fallback, parent, None, &root, &isolation)
+        .expect("HOME fallback for effective Cargo home");
+    assert_eq!(
+        fallback.cargo_home(),
+        physical_path(&parent.join("fallback home/.cargo"), parent)
+    );
+
+    let passwd_fallback = BTreeMap::from([(OsString::from("PATH"), OsString::from("/host/bin"))]);
+    let passwd_home = parent.join("real uid home");
+    let passwd_selected = HostInputs::from_environment(
+        &passwd_fallback,
+        parent,
+        Some(passwd_home.clone().into_os_string()),
+        &root,
+        &isolation,
+    )
+    .expect("real UID passwd home fallback");
+    assert_eq!(
+        passwd_selected.cargo_home(),
+        physical_path(&passwd_home.join(".cargo"), parent)
+    );
+    assert_eq!(
+        passwd_selected.home.as_deref(),
+        Some(physical_path(&passwd_home, parent).as_os_str())
+    );
+}
+
+#[test]
+fn nonempty_external_cargo_configs_fail_without_exposing_contents() {
+    let temporary = tempfile::tempdir().expect("temporary root");
+    let parent = temporary.path();
+    let root = parent.join("workspace/reviewed");
+    let isolation = parent.join("isolation");
+    let cargo_home = parent.join("cargo home");
+    fs::create_dir_all(&root).expect("reviewed root");
+    fs::create_dir(&isolation).expect("isolation root");
+    fs::create_dir(&cargo_home).expect("Cargo home");
+    let credentials = cargo_home.join("credentials.toml");
+    fs::write(&credentials, b"token = 'private-sentinel'\n").expect("credential fixture");
+    let global_config = cargo_home.join("config.toml");
+    let inherited = BTreeMap::from([
+        (OsString::from("PATH"), OsString::from("/host/bin")),
+        (OsString::from("HOME"), parent.join("home").into_os_string()),
+        (OsString::from("CARGO_HOME"), cargo_home.into_os_string()),
+    ]);
+    for config in [
+        "[build]\nrustflags = ['--cfg secret']\n",
+        "[alias]\nsecret = 'build'\n",
+        "[env]\nSECRET = { value = 'private-sentinel', force = true }\n",
+        "include = []\n",
+        "unknown_host_setting = 'private-sentinel'\n",
+    ] {
+        fs::write(&global_config, config).expect("write hostile external Cargo config");
+        let Err(error) = HostInputs::from_environment(&inherited, parent, None, &root, &isolation)
+        else {
+            panic!("nonempty external Cargo config must be rejected");
+        };
+        let message = format!("{error:#}");
+        assert!(message.contains(&global_config.display().to_string()));
+        assert!(!message.contains("private-sentinel"));
+        let credentials_after = fs::read(&credentials).expect("read credential sentinel");
+        assert_eq!(credentials_after, b"token = 'private-sentinel'\n");
+    }
+
+    let external_config = parent.join("external config.toml");
+    fs::write(&external_config, "[build]\njobs = 1\n").expect("external target");
+    let staged_config_dir = root.join(".cargo");
+    fs::create_dir(&staged_config_dir).expect("staged Cargo config dir");
+    symlink(&external_config, staged_config_dir.join("config.toml"))
+        .expect("escaping staged config symlink");
+    let Err(error) = HostInputs::from_environment(&inherited, parent, None, &root, &isolation)
+    else {
+        panic!("staged Cargo config symlink must not escape reviewed root");
+    };
+    assert!(format!("{error:#}").contains("escapes the reviewed snapshot"));
+
+    let staged_config = staged_config_dir.join("config.toml");
+    fs::remove_file(&staged_config).expect("remove staged config symlink");
+    fs::write(
+        &staged_config,
+        "include = ['../../../external config.toml']\n",
+    )
+    .expect("staged Cargo include escaping reviewed root");
+    let Err(error) = HostInputs::from_environment(&inherited, parent, None, &root, &isolation)
+    else {
+        panic!("staged Cargo config include must not escape reviewed root");
+    };
+    assert!(format!("{error:#}").contains("escapes the reviewed snapshot"));
+}
+
+#[test]
+fn hostile_external_cargo_config_fails_before_mise_or_rustup_child_probes() {
+    const CHILD_MARKER: &str = "JACKIN_EXTERNAL_CARGO_CONFIG_PROBE_CHILD";
+    const FIXTURE_ROOT: &str = "JACKIN_EXTERNAL_CARGO_CONFIG_PROBE_ROOT";
+    const PROBE_MARKER: &str = "JACKIN_EXTERNAL_CARGO_CONFIG_PROBE_MARKER";
+    const TEST_NAME: &str = "precommit_snapshot::toolchain::tests::hostile_external_cargo_config_fails_before_mise_or_rustup_child_probes";
+
+    if env::var_os(CHILD_MARKER).is_some() {
+        let root = PathBuf::from(env::var_os(FIXTURE_ROOT).expect("fixture root"));
+        let cargo_home = PathBuf::from(env::var_os("CARGO_HOME").expect("Cargo home"));
+        let config = cargo_home.join("config.toml");
+        let marker = PathBuf::from(env::var_os(PROBE_MARKER).expect("probe marker"));
+        for contents in [
+            "[build]\nrustflags = ['--cfg secret']\n",
+            "[alias]\nsecret = 'build'\n",
+            "[env]\nSECRET = { value = 'private-sentinel', force = true }\n",
+            "include = []\n",
+            "unknown_host_setting = 'private-sentinel'\n",
+        ] {
+            fs::write(&config, contents).expect("hostile Cargo config");
+            let Err(error) = verify_provision_tool_paths(
+                &root,
+                Path::new("/unused/cargo"),
+                Path::new("/unused/rustc"),
+            ) else {
+                panic!("external Cargo config must fail admission");
+            };
+            let message = format!("{error:#}");
+            assert!(message.contains(&config.display().to_string()));
+            assert!(!message.contains("private-sentinel"));
+            assert!(!marker.exists(), "Mise or rustup child probe ran");
+        }
+        return;
+    }
+
+    let temporary = tempfile::tempdir().expect("temporary root");
+    let parent = temporary.path();
+    let root = parent.join("reviewed");
+    let cargo_home = parent.join("shared cargo home");
+    let home = parent.join("home");
+    let temp = parent.join("temp");
+    let fake_bin = parent.join("fake tool bin");
+    let marker = parent.join("probe marker");
+    for directory in [&root, &cargo_home, &home, &temp, &fake_bin] {
+        fs::create_dir(directory).expect("probe fixture directory");
+    }
+    fs::write(
+        root.join("rust-toolchain.toml"),
+        "[toolchain]\nchannel = '1.99.1'\n",
+    )
+    .expect("exact Rust pin");
+    let script = format!(
+        "#!/bin/sh\nprintf probe >> '{}'\nexit 71\n",
+        marker.display()
+    );
+    for name in ["mise", "rustup"] {
+        write_executable(&fake_bin.join(name), script.as_bytes());
+    }
+
+    let status = Command::new(env::current_exe().expect("current test executable"))
+        .args(["--exact", TEST_NAME, "--nocapture"])
+        .current_dir(&root)
+        .env_clear()
+        .env(CHILD_MARKER, "1")
+        .env(FIXTURE_ROOT, &root)
+        .env(PROBE_MARKER, &marker)
+        .env("PATH", &fake_bin)
+        .env("HOME", &home)
+        .env("CARGO_HOME", &cargo_home)
+        .env("TMPDIR", &temp)
+        .status()
+        .expect("run isolated hostile-config child test");
+    assert!(status.success(), "hostile-config child failed: {status}");
+    assert!(!marker.exists(), "Mise or rustup child probe ran");
 }
 
 #[test]
@@ -252,8 +734,7 @@ fn pinned_swiftlint_precedes_an_ambient_global_tool() {
     let resolved =
         resolve_tool_paths(&["swiftlint"], |_| Ok(pinned.clone())).expect("mock Mise resolution");
     symlink(&resolved["swiftlint"], managed.join("swiftlint")).expect("managed SwiftLint link");
-    let inherited = env::join_paths([&ambient]).expect("ambient PATH");
-    let path = qualified_path(&managed, &rust_bin, &inherited).expect("qualified PATH");
+    let path = qualified_path(&managed, &rust_bin).expect("qualified PATH");
     let selected = find_executable("swiftlint", &path).expect("qualified SwiftLint");
 
     assert_eq!(
@@ -283,7 +764,7 @@ fn local_guard_in_home_is_admitted_and_qualified_without_inherited_path_entry() 
         fs::canonicalize(&guard).expect("physical guard path")
     );
     symlink(&resolved, managed.join("rust-build-guard")).expect("managed guard link");
-    let qualified = qualified_path(&managed, &rust_bin, &inherited).expect("qualified PATH");
+    let qualified = qualified_path(&managed, &rust_bin).expect("qualified PATH");
     let selected = find_executable("rust-build-guard", &qualified).expect("qualified guard");
     assert_eq!(
         fs::canonicalize(selected).expect("selected physical guard"),

@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     env,
     ffi::{OsStr, OsString},
     fs,
-    os::unix::fs::{PermissionsExt, symlink},
+    os::unix::{
+        ffi::OsStrExt,
+        fs::{PermissionsExt, symlink},
+    },
     path::{Path, PathBuf},
     process::Command,
 };
@@ -42,6 +45,46 @@ const MANAGED_TOOLS: &[&str] = &[
     "dylint-link",
 ];
 
+const FIXED_SYSTEM_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
+
+const HOST_INPUT_KEYS: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "LANG",
+    "LANGUAGE",
+    "LC_ALL",
+    "LC_COLLATE",
+    "LC_CTYPE",
+    "LC_MESSAGES",
+    "LC_MONETARY",
+    "LC_NUMERIC",
+    "LC_TIME",
+    "TERM",
+    "RUSTUP_HOME",
+    "CARGO_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_STATE_HOME",
+    "MISE_DATA_DIR",
+    "MISE_CACHE_DIR",
+    "MISE_STATE_DIR",
+    "MISE_TMP_DIR",
+    "MISE_INSTALLS_DIR",
+    "MISE_INSTALL_STORE_DIR",
+    "MISE_PLUGINS_DIR",
+    "MISE_DOWNLOADS_DIR",
+    "MISE_SYSTEM_DATA_DIR",
+    "MISE_SYSTEM_INSTALLS_DIR",
+    "MISE_SYSTEM_SHIMS_DIR",
+    "MBX_CACHE_DIR",
+    "MBX_SESSION_PATH",
+];
+
 pub(super) struct QualifiedTools {
     pub(super) gate: PathBuf,
     pub(super) cargo: PathBuf,
@@ -49,34 +92,276 @@ pub(super) struct QualifiedTools {
     pub(super) environment: BTreeMap<OsString, OsString>,
 }
 
+struct HostInputs {
+    search_path: OsString,
+    home: Option<OsString>,
+    rustup_home: Option<OsString>,
+    cargo_home: PathBuf,
+    environment: BTreeMap<OsString, OsString>,
+    mise_config_dir: PathBuf,
+    mise_system_config_dir: PathBuf,
+}
+
+impl HostInputs {
+    fn capture(reviewed_root: &Path, isolation_root: &Path) -> Result<Self> {
+        let mut inherited = BTreeMap::new();
+        for key in HOST_INPUT_KEYS {
+            if let Some(value) = env::var_os(key) {
+                inherited.insert(OsString::from(key), value);
+            }
+        }
+
+        let cwd = env::current_dir().context("reading native hook working directory")?;
+        let passwd_home = if inherited.contains_key(OsStr::new("HOME")) {
+            None
+        } else {
+            crate::cargo_paths::passwd_home_for_real_uid()?
+        };
+        Self::from_environment(&inherited, &cwd, passwd_home, reviewed_root, isolation_root)
+    }
+
+    fn from_environment(
+        inherited: &BTreeMap<OsString, OsString>,
+        cwd: &Path,
+        passwd_home: Option<OsString>,
+        reviewed_root: &Path,
+        isolation_root: &Path,
+    ) -> Result<Self> {
+        let reviewed_root = fs::canonicalize(reviewed_root)
+            .context("resolving reviewed Cargo configuration root")?;
+        let isolation_root =
+            fs::canonicalize(isolation_root).context("resolving private Mise isolation root")?;
+        ensure!(
+            cwd.is_absolute(),
+            "host input capture requires an absolute cwd"
+        );
+
+        let cargo_home = crate::cargo_paths::cargo_home(inherited, || Ok(passwd_home.clone()))?;
+        let cargo_home = crate::cargo_paths::resolve(&cargo_home, cwd)?;
+        ensure!(
+            cargo_home.is_absolute(),
+            "effective Cargo home must be absolute"
+        );
+        validate_cargo_configuration(&reviewed_root, &cargo_home)?;
+
+        let home = inherited.get(OsStr::new("HOME")).cloned();
+        let effective_home = match home.as_deref() {
+            Some(value) if !value.is_empty() => {
+                Some(normalize_host_path(value, home.as_deref(), cwd)?)
+            }
+            Some(_) => Some(PathBuf::from(std::path::MAIN_SEPARATOR_STR)),
+            None => passwd_home
+                .as_deref()
+                .map(|value| normalize_host_path(value, None, cwd))
+                .transpose()?,
+        };
+
+        let search_path = inherited
+            .get(OsStr::new("PATH"))
+            .cloned()
+            .unwrap_or_default();
+        let rustup_home = inherited
+            .get(OsStr::new("RUSTUP_HOME"))
+            .map(|value| {
+                normalize_host_path(value, effective_home.as_deref().map(Path::as_os_str), cwd)
+            })
+            .transpose()?
+            .map(PathBuf::into_os_string);
+
+        let mise_config_dir = create_private_mise_config_dir(&isolation_root, "mise-config")?;
+        let mise_system_config_dir =
+            create_private_mise_config_dir(&isolation_root, "mise-system-config")?;
+
+        let mut environment = BTreeMap::new();
+        for key in [
+            "HOME",
+            "USER",
+            "LOGNAME",
+            "LANG",
+            "LANGUAGE",
+            "LC_ALL",
+            "LC_COLLATE",
+            "LC_CTYPE",
+            "LC_MESSAGES",
+            "LC_MONETARY",
+            "LC_NUMERIC",
+            "LC_TIME",
+            "TERM",
+        ] {
+            if let Some(value) = inherited.get(OsStr::new(key)) {
+                environment.insert(OsString::from(key), value.clone());
+            }
+        }
+        if home.as_deref().is_some_and(|value| !value.is_empty())
+            && let Some(effective_home) = &effective_home
+        {
+            environment.insert(
+                OsString::from("HOME"),
+                effective_home.as_os_str().to_owned(),
+            );
+        }
+        for key in ["TMPDIR", "TMP", "TEMP"] {
+            if let Some(value) = inherited.get(OsStr::new(key)) {
+                environment.insert(
+                    OsString::from(key),
+                    normalize_host_path(
+                        value,
+                        effective_home.as_deref().map(Path::as_os_str),
+                        cwd,
+                    )?
+                    .into_os_string(),
+                );
+            }
+        }
+        environment.insert(
+            OsString::from("CARGO_HOME"),
+            cargo_home.as_os_str().to_owned(),
+        );
+        if let Some(rustup_home) = &rustup_home {
+            environment.insert(OsString::from("RUSTUP_HOME"), rustup_home.clone());
+        }
+
+        add_mise_storage_environment(inherited, cwd, effective_home.as_deref(), &mut environment)?;
+        for key in ["MBX_CACHE_DIR", "MBX_SESSION_PATH"] {
+            if let Some(value) = inherited.get(OsStr::new(key)) {
+                environment.insert(
+                    OsString::from(key),
+                    normalize_host_path(
+                        value,
+                        effective_home.as_deref().map(Path::as_os_str),
+                        cwd,
+                    )?
+                    .into_os_string(),
+                );
+            }
+        }
+        environment.insert(OsString::from("MBX_CARGO_SHIM_MODE"), OsString::from("1"));
+
+        Ok(Self {
+            search_path,
+            home: effective_home
+                .as_deref()
+                .map(|path| path.as_os_str().to_owned()),
+            rustup_home,
+            cargo_home,
+            environment,
+            mise_config_dir,
+            mise_system_config_dir,
+        })
+    }
+
+    fn search_path(&self) -> &OsStr {
+        &self.search_path
+    }
+
+    fn environment_for(&self, trusted_root: &Path, path: &OsStr) -> BTreeMap<OsString, OsString> {
+        let mut environment = self.environment.clone();
+        environment.insert(OsString::from("PATH"), path.to_owned());
+        environment.insert(
+            OsString::from("MISE_CONFIG_DIR"),
+            self.mise_config_dir.as_os_str().to_owned(),
+        );
+        environment.insert(
+            OsString::from("MISE_SYSTEM_CONFIG_DIR"),
+            self.mise_system_config_dir.as_os_str().to_owned(),
+        );
+        environment.insert(
+            OsString::from("MISE_TRUSTED_CONFIG_PATHS"),
+            trusted_root.as_os_str().to_owned(),
+        );
+        environment.insert(OsString::from("MISE_AUTO_INSTALL"), OsString::from("0"));
+        environment.insert(
+            OsString::from("MISE_EXEC_AUTO_INSTALL"),
+            OsString::from("false"),
+        );
+        environment
+    }
+
+    fn command_environment(&self, trusted_root: &Path) -> BTreeMap<OsString, OsString> {
+        self.environment_for(trusted_root, OsStr::new(FIXED_SYSTEM_PATH))
+    }
+
+    fn cargo_home(&self) -> &Path {
+        &self.cargo_home
+    }
+}
+
+fn add_mise_storage_environment(
+    inherited: &BTreeMap<OsString, OsString>,
+    cwd: &Path,
+    home: Option<&Path>,
+    environment: &mut BTreeMap<OsString, OsString>,
+) -> Result<()> {
+    for (mise_key, xdg_key, default_suffix) in [
+        ("MISE_DATA_DIR", "XDG_DATA_HOME", ".local/share/mise"),
+        (
+            "MISE_CACHE_DIR",
+            "XDG_CACHE_HOME",
+            if cfg!(target_os = "macos") {
+                "Library/Caches/mise"
+            } else {
+                ".cache/mise"
+            },
+        ),
+        ("MISE_STATE_DIR", "XDG_STATE_HOME", ".local/state/mise"),
+    ] {
+        let root = selected_storage_root(inherited, mise_key, xdg_key, default_suffix, home, cwd)?;
+        environment.insert(OsString::from(mise_key), root.into_os_string());
+    }
+
+    let data_root = PathBuf::from(
+        environment
+            .get(OsStr::new("MISE_DATA_DIR"))
+            .context("effective Mise data root is missing")?,
+    );
+    let installs_root = if let Some(value) = inherited.get(OsStr::new("MISE_INSTALLS_DIR")) {
+        normalize_host_path(value, home.map(Path::as_os_str), cwd)?
+    } else {
+        data_root.join("installs")
+    };
+    environment.insert(
+        OsString::from("MISE_INSTALLS_DIR"),
+        installs_root.into_os_string(),
+    );
+
+    for key in [
+        "MISE_TMP_DIR",
+        "MISE_INSTALL_STORE_DIR",
+        "MISE_PLUGINS_DIR",
+        "MISE_DOWNLOADS_DIR",
+        "MISE_SYSTEM_DATA_DIR",
+        "MISE_SYSTEM_INSTALLS_DIR",
+        "MISE_SYSTEM_SHIMS_DIR",
+    ] {
+        if let Some(value) = inherited.get(OsStr::new(key)) {
+            environment.insert(
+                OsString::from(key),
+                normalize_host_path(value, home.map(Path::as_os_str), cwd)?.into_os_string(),
+            );
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     let controls = &snapshot.controls;
-    let inherited_path = env::var_os("PATH").unwrap_or_default();
-    let home = env::var_os("HOME").map(PathBuf::from);
-    let guard = resolve_guard(&inherited_path, home.as_deref())?;
+    let inputs = HostInputs::capture(&snapshot.root, &snapshot.scratch_root)?;
+    let inherited_path = inputs.search_path();
+    let home = inputs.home.as_deref().map(Path::new);
+    let guard = resolve_guard(inherited_path, home)?;
     let pin = rust_release(&snapshot.root.join("rust-toolchain.toml"))?;
-    let mise = find_executable("mise", &inherited_path).context("missing Mise executable")?;
+    let mise = find_executable("mise", inherited_path).context("missing Mise executable")?;
     let mise = fs::canonicalize(mise).context("resolving Mise executable")?;
-    let mut mise_env = runtime_environment();
-    mise_env.insert(OsString::from("PATH"), inherited_path.clone());
-    mise_env.insert(
-        OsString::from("MISE_TRUSTED_CONFIG_PATHS"),
-        snapshot.root.as_os_str().to_owned(),
-    );
-    mise_env.insert(OsString::from("MISE_AUTO_INSTALL"), OsString::from("0"));
-    mise_env.insert(
-        OsString::from("MISE_EXEC_AUTO_INSTALL"),
-        OsString::from("false"),
-    );
-    let rustup = find_executable("rustup", &inherited_path).context("missing rustup executable")?;
-    let rustup_home = env::var_os("RUSTUP_HOME");
+    let mise_env = inputs.command_environment(&snapshot.root);
+    let rustup = find_executable("rustup", inherited_path).context("missing rustup executable")?;
+    let rustup = fs::canonicalize(rustup).context("resolving rustup executable")?;
     let resolved = resolve_managed_tools(&mise, &mise_env, &snapshot.root, controls)?;
     let rust_tools = resolve_rust_tools_with_controls(
         &rustup,
         &pin,
-        &inherited_path,
-        rustup_home.as_deref(),
-        home.as_deref().map(Path::as_os_str),
+        OsStr::new(FIXED_SYSTEM_PATH),
+        inputs.rustup_home.as_deref(),
+        home.map(Path::as_os_str),
         controls,
     )?;
     let cargo = effective_cargo(&mise, &mise_env, &snapshot.root, controls)?;
@@ -107,14 +392,8 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     symlink("/usr/bin/xcrun", managed_dir.join("xcrun"))
         .context("linking fixed Xcode tool resolver")?;
 
-    let environment = build_qualified_environment(
-        snapshot,
-        &managed_dir,
-        &cargo,
-        &pin,
-        &rust_tools,
-        &inherited_path,
-    )?;
+    let environment =
+        build_qualified_environment(snapshot, &managed_dir, &cargo, &pin, &rust_tools, &inputs)?;
     Ok(QualifiedTools {
         gate: resolved["hk"].clone(),
         cargo,
@@ -129,53 +408,16 @@ fn build_qualified_environment(
     cargo: &Path,
     pin: &str,
     rust_tools: &BTreeMap<&'static str, PathBuf>,
-    inherited_path: &OsStr,
+    inputs: &HostInputs,
 ) -> Result<BTreeMap<OsString, OsString>> {
-    let mut environment = env::vars_os().collect::<BTreeMap<_, _>>();
-    environment.retain(|key, _| {
-        let key = key.to_string_lossy();
-        !key.starts_with("CARGO_ALIAS_") && !key.starts_with("DYLINT_")
-    });
-    configure_managed_mise_environment(&mut environment, &snapshot.root);
-    for key in [
-        "CARGO",
-        "RUSTUP_TOOLCHAIN",
-        "RUSTC",
-        "RUSTDOC",
-        "RUSTC_WRAPPER",
-        "RUSTC_WORKSPACE_WRAPPER",
-        "RUSTFLAGS",
-        "CARGO_ENCODED_RUSTFLAGS",
-        "CARGO_BUILD_RUSTC",
-        "CARGO_BUILD_RUSTDOC",
-        "CARGO_BUILD_RUSTC_WRAPPER",
-        "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
-        "CLIPPY_DRIVER",
-        "RUSTFMT",
-        "CARGO_TARGET_DIR",
-        "CARGO_BUILD_BUILD_DIR",
-        "CARGO_BUILD_TARGET",
-        "GIT_DIR",
-        "GIT_WORK_TREE",
-        "GIT_COMMON_DIR",
-        "GIT_INDEX_FILE",
-        "GIT_OBJECT_DIRECTORY",
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-        "GIT_CONFIG",
-        "GIT_CONFIG_PARAMETERS",
-        "GIT_CONFIG_COUNT",
-        "GIT_PREFIX",
-        "GIT_SHALLOW_FILE",
-    ] {
-        environment.remove(OsStr::new(key));
-    }
+    let mut environment = inputs.environment_for(&snapshot.root, OsStr::new(FIXED_SYSTEM_PATH));
     let rust_bin = rust_tools["rustc"]
         .parent()
         .context("rustc path has no bin directory")?
         .to_path_buf();
     environment.insert(
         OsString::from("PATH"),
-        qualified_path(managed_dir, &rust_bin, inherited_path)?,
+        qualified_path(managed_dir, &rust_bin)?,
     );
     let selected_path = environment
         .get(OsStr::new("PATH"))
@@ -186,6 +428,10 @@ fn build_qualified_environment(
         "qualified PATH does not resolve to the admitted MBX Cargo wrapper"
     );
     environment.insert(OsString::from("RUSTUP_TOOLCHAIN"), OsString::from(pin));
+    environment.insert(
+        OsString::from("CARGO_HOME"),
+        inputs.cargo_home().as_os_str().to_owned(),
+    );
     environment.insert(
         OsString::from("RUSTC"),
         rust_tools["rustc"].as_os_str().to_owned(),
@@ -228,22 +474,6 @@ fn build_qualified_environment(
         snapshot.scratch_root.join("build").into_os_string(),
     );
     Ok(environment)
-}
-
-fn configure_managed_mise_environment(
-    environment: &mut BTreeMap<OsString, OsString>,
-    trusted_root: &Path,
-) {
-    environment.retain(|key, _| !key.to_string_lossy().starts_with("MISE_"));
-    environment.insert(
-        OsString::from("MISE_TRUSTED_CONFIG_PATHS"),
-        trusted_root.as_os_str().to_owned(),
-    );
-    environment.insert(OsString::from("MISE_AUTO_INSTALL"), OsString::from("0"));
-    environment.insert(
-        OsString::from("MISE_EXEC_AUTO_INSTALL"),
-        OsString::from("false"),
-    );
 }
 
 fn resolve_managed_tools(
@@ -293,10 +523,10 @@ where
     Ok(resolved)
 }
 
-fn qualified_path(managed_dir: &Path, rust_bin: &Path, inherited_path: &OsStr) -> Result<OsString> {
+fn qualified_path(managed_dir: &Path, rust_bin: &Path) -> Result<OsString> {
     let path_entries = std::iter::once(managed_dir.to_path_buf())
         .chain(std::iter::once(rust_bin.to_path_buf()))
-        .chain(env::split_paths(inherited_path));
+        .chain(env::split_paths(OsStr::new(FIXED_SYSTEM_PATH)));
     env::join_paths(path_entries).context("building qualified tool path")
 }
 
@@ -395,16 +625,337 @@ fn effective_cargo(
     Ok(path)
 }
 
-fn runtime_environment() -> BTreeMap<OsString, OsString> {
-    let mut environment = BTreeMap::new();
-    for key in [
-        "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "TERM",
-    ] {
-        if let Some(value) = env::var_os(key) {
-            environment.insert(OsString::from(key), value);
+fn create_private_mise_config_dir(isolation_root: &Path, name: &str) -> Result<PathBuf> {
+    let path = isolation_root.join(name);
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) => ensure!(
+            metadata.is_dir() && !metadata.file_type().is_symlink(),
+            "private Mise config path is not a real directory: {}",
+            path.display()
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir(&path).with_context(|| {
+                format!("creating private Mise config directory: {}", path.display())
+            })?;
+        }
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!(
+                    "inspecting private Mise config directory: {}",
+                    path.display()
+                )
+            });
         }
     }
-    environment
+    let physical = fs::canonicalize(&path).with_context(|| {
+        format!(
+            "resolving private Mise config directory: {}",
+            path.display()
+        )
+    })?;
+    ensure!(
+        physical.starts_with(isolation_root),
+        "private Mise config path escapes its isolation root: {}",
+        path.display()
+    );
+    ensure!(
+        fs::read_dir(&physical)
+            .with_context(|| format!(
+                "reading private Mise config directory: {}",
+                physical.display()
+            ))?
+            .next()
+            .is_none(),
+        "private Mise config directory is not empty: {}",
+        physical.display()
+    );
+    Ok(physical)
+}
+
+fn validate_cargo_configuration(reviewed_root: &Path, cargo_home: &Path) -> Result<()> {
+    let mut staged_visited = BTreeSet::new();
+    let mut external_visited = BTreeSet::new();
+    inspect_cargo_config_directory(
+        reviewed_root,
+        reviewed_root,
+        true,
+        &mut staged_visited,
+        &mut external_visited,
+    )?;
+
+    let mut ancestor = reviewed_root.parent();
+    while let Some(path) = ancestor {
+        inspect_cargo_config_directory(
+            path,
+            reviewed_root,
+            false,
+            &mut staged_visited,
+            &mut external_visited,
+        )?;
+        ancestor = path.parent();
+    }
+
+    for name in ["config", "config.toml"] {
+        let path = cargo_home.join(name);
+        if cargo_home.starts_with(reviewed_root) {
+            inspect_staged_cargo_config(&path, reviewed_root, &mut staged_visited)?;
+        } else {
+            inspect_external_cargo_config(&path, &mut external_visited)?;
+        }
+    }
+    Ok(())
+}
+
+fn inspect_cargo_config_directory(
+    directory: &Path,
+    reviewed_root: &Path,
+    staged: bool,
+    staged_visited: &mut BTreeSet<PathBuf>,
+    external_visited: &mut BTreeSet<PathBuf>,
+) -> Result<()> {
+    let cargo_dir = directory.join(".cargo");
+    let metadata = match fs::symlink_metadata(&cargo_dir) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!("inspecting Cargo config directory: {}", cargo_dir.display())
+            });
+        }
+    };
+    let physical = fs::canonicalize(&cargo_dir)
+        .with_context(|| format!("resolving Cargo config directory: {}", cargo_dir.display()))?;
+    ensure!(
+        metadata.is_dir() || metadata.file_type().is_symlink(),
+        "Cargo config path is not a directory: {}",
+        cargo_dir.display()
+    );
+    ensure!(
+        physical.is_dir(),
+        "Cargo config path is not a directory: {}",
+        cargo_dir.display()
+    );
+    if staged {
+        ensure!(
+            physical.starts_with(reviewed_root),
+            "staged Cargo config directory escapes the reviewed snapshot: {}",
+            cargo_dir.display()
+        );
+    }
+
+    for name in ["config", "config.toml"] {
+        let config = physical.join(name);
+        if staged {
+            inspect_staged_cargo_config(&config, reviewed_root, staged_visited)?;
+        } else {
+            inspect_external_cargo_config(&config, external_visited)?;
+        }
+    }
+    Ok(())
+}
+
+fn inspect_external_cargo_config(path: &Path, visited: &mut BTreeSet<PathBuf>) -> Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!("inspecting external Cargo config path: {}", path.display())
+            });
+        }
+    };
+    ensure!(
+        !metadata.is_dir(),
+        "external Cargo config path is not a file: {}",
+        path.display()
+    );
+    let physical = fs::canonicalize(path)
+        .with_context(|| format!("resolving external Cargo config path: {}", path.display()))?;
+    ensure!(
+        fs::metadata(&physical)
+            .with_context(|| format!("inspecting external Cargo config path: {}", path.display()))?
+            .is_file(),
+        "external Cargo config path is not a regular file: {}",
+        path.display()
+    );
+    if !visited.insert(physical.clone()) {
+        return Ok(());
+    }
+    let contents = fs::read_to_string(&physical)
+        .with_context(|| format!("reading external Cargo config path: {}", path.display()))?;
+    let value = toml::from_str::<toml::Value>(&contents).map_err(|_| {
+        anyhow::anyhow!(
+            "external Cargo config is not valid TOML: {}",
+            path.display()
+        )
+    })?;
+    ensure!(
+        value.as_table().is_some_and(toml::map::Map::is_empty),
+        "external Cargo config is nonempty and not admitted: {}",
+        path.display()
+    );
+    Ok(())
+}
+
+fn inspect_staged_cargo_config(
+    path: &Path,
+    reviewed_root: &Path,
+    visited: &mut BTreeSet<PathBuf>,
+) -> Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!("inspecting staged Cargo config path: {}", path.display())
+            });
+        }
+    };
+    ensure!(
+        !metadata.is_dir(),
+        "staged Cargo config path is not a file: {}",
+        path.display()
+    );
+    let physical = fs::canonicalize(path)
+        .with_context(|| format!("resolving staged Cargo config path: {}", path.display()))?;
+    ensure!(
+        physical.starts_with(reviewed_root),
+        "staged Cargo config symlink escapes the reviewed snapshot: {}",
+        path.display()
+    );
+    ensure!(
+        fs::metadata(&physical)
+            .with_context(|| format!("inspecting staged Cargo config path: {}", path.display()))?
+            .is_file(),
+        "staged Cargo config path is not a regular file: {}",
+        path.display()
+    );
+    if !visited.insert(physical.clone()) {
+        return Ok(());
+    }
+    let contents = fs::read_to_string(&physical)
+        .with_context(|| format!("reading staged Cargo config path: {}", path.display()))?;
+    let value = toml::from_str::<toml::Value>(&contents).map_err(|_| {
+        anyhow::anyhow!("staged Cargo config is not valid TOML: {}", path.display())
+    })?;
+    let table = value.as_table().with_context(|| {
+        format!(
+            "staged Cargo config is not a TOML table: {}",
+            path.display()
+        )
+    })?;
+    let Some(includes) = table.get("include") else {
+        return Ok(());
+    };
+    let includes = includes.as_array().with_context(|| {
+        format!(
+            "staged Cargo config include list is invalid: {}",
+            path.display()
+        )
+    })?;
+    for include in includes {
+        let (include_path, optional) = if let Some(value) = include.as_str() {
+            (PathBuf::from(value), false)
+        } else {
+            let include = include.as_table().with_context(|| {
+                format!(
+                    "staged Cargo config include entry is invalid: {}",
+                    path.display()
+                )
+            })?;
+            ensure!(
+                include.keys().all(|key| key == "path" || key == "optional"),
+                "staged Cargo config include entry has unknown fields: {}",
+                path.display()
+            );
+            let include_path = include
+                .get("path")
+                .and_then(toml::Value::as_str)
+                .with_context(|| {
+                    format!(
+                        "staged Cargo config include has no path: {}",
+                        path.display()
+                    )
+                })?;
+            let optional = include
+                .get("optional")
+                .map(|value| {
+                    value.as_bool().with_context(|| {
+                        format!(
+                            "staged Cargo config include optional flag is invalid: {}",
+                            path.display()
+                        )
+                    })
+                })
+                .transpose()?
+                .unwrap_or(false);
+            (PathBuf::from(include_path), optional)
+        };
+        let candidate = if include_path.is_absolute() {
+            include_path
+        } else {
+            path.parent()
+                .context("staged Cargo config path has no parent")?
+                .join(include_path)
+        };
+        if optional && !candidate.exists() && !candidate.is_symlink() {
+            continue;
+        }
+        ensure!(
+            optional || candidate.exists() || candidate.is_symlink(),
+            "staged Cargo config include is missing: {}",
+            path.display()
+        );
+        inspect_staged_cargo_config(&candidate, reviewed_root, visited)?;
+    }
+    Ok(())
+}
+
+fn normalize_host_path(value: &OsStr, home: Option<&OsStr>, cwd: &Path) -> Result<PathBuf> {
+    let bytes = value.as_bytes();
+    let path = if bytes == b"~" || bytes.starts_with(b"~/") {
+        let home = home.context("tilde path requires an admitted HOME")?;
+        let suffix = if bytes == b"~" { &[][..] } else { &bytes[2..] };
+        let mut expanded = PathBuf::from(home);
+        if !suffix.is_empty() {
+            expanded.push(OsStr::from_bytes(suffix));
+        }
+        expanded
+    } else {
+        ensure!(
+            !bytes.starts_with(b"~"),
+            "host path uses an unsupported named-user expansion"
+        );
+        PathBuf::from(value)
+    };
+    let resolved = crate::cargo_paths::resolve(&path, cwd)?;
+    ensure!(
+        resolved.is_absolute(),
+        "admitted host path must be absolute"
+    );
+    Ok(resolved)
+}
+
+fn selected_storage_root(
+    inherited: &BTreeMap<OsString, OsString>,
+    mise_key: &str,
+    xdg_key: &str,
+    default_suffix: &str,
+    home: Option<&Path>,
+    cwd: &Path,
+) -> Result<PathBuf> {
+    if let Some(value) = inherited.get(OsStr::new(mise_key)) {
+        return normalize_host_path(value, home.map(Path::as_os_str), cwd);
+    }
+    if let Some(value) = inherited
+        .get(OsStr::new(xdg_key))
+        .filter(|value| !value.is_empty())
+    {
+        let base = normalize_host_path(value, home.map(Path::as_os_str), cwd)?;
+        return Ok(base.join("mise"));
+    }
+    let home = home.with_context(|| format!("{mise_key} needs an admitted home directory"))?;
+    Ok(home.join(default_suffix))
 }
 
 fn rust_release(path: &Path) -> Result<String> {
