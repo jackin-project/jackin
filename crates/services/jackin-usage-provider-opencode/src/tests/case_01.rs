@@ -432,3 +432,64 @@ fn opencode_malformed_explicit_alias_is_authoritative_over_fallbacks() {
         );
     }
 }
+
+#[test]
+fn opencode_api_key_request_is_built_with_a_redacted_bearer_header() {
+    let client = reqwest::blocking::Client::new();
+    let request = build_opencode_usage_request(&client, "  fixture-key  ")
+        .expect("valid fixture key builds a request");
+
+    assert_eq!(request.method(), &reqwest::Method::GET);
+    assert_eq!(
+        request.url().as_str(),
+        "https://opencode.ai/zen/go/v1/usage"
+    );
+    let authorization = request
+        .headers()
+        .get(reqwest::header::AUTHORIZATION)
+        .expect("authorization header");
+    assert_eq!(authorization, "Bearer fixture-key");
+    assert!(authorization.is_sensitive());
+    assert_eq!(
+        request
+            .headers()
+            .get(reqwest::header::ACCEPT)
+            .and_then(|value| value.to_str().ok()),
+        Some("application/json")
+    );
+}
+
+#[test]
+fn opencode_api_key_request_rejects_empty_and_malformed_keys() {
+    let client = reqwest::blocking::Client::new();
+    assert!(matches!(
+        build_opencode_usage_request(&client, " \t "),
+        Err(OpenCodeUsageError::Key(message)) if message == "OpenCode API key is empty"
+    ));
+    assert!(matches!(
+        build_opencode_usage_request(&client, "fixture\nkey"),
+        Err(OpenCodeUsageError::Key(message)) if message == "OpenCode API key is malformed"
+    ));
+}
+
+#[test]
+fn opencode_api_key_view_names_only_the_declared_environment_source() {
+    let now = 1_776_000_000;
+    let quota = parse_opencode_usage(
+        usage_fixture(
+            window_fixture("ok", serde_json::json!({"percent": 25})),
+            window_fixture("ok", serde_json::json!({"percent": 10})),
+            window_fixture("ok", serde_json::json!({"percent": 5})),
+        ),
+        now,
+    )
+    .expect("fixture usage parses");
+
+    let view = opencode_api_key_view("opencode", Ok(quota), now);
+
+    assert_eq!(view.status, UsageSnapshotStatus::Fresh);
+    assert_eq!(
+        view.account.credential_origin.as_deref(),
+        Some("API key · env OPENCODE_API_KEY")
+    );
+}

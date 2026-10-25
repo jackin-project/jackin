@@ -31,6 +31,9 @@ pub trait CredentialSnapshotVendors {
     fn minimax_key_view(&self, secret: &str, now: i64) -> FocusedUsageView;
     fn grok_key_view(&self, key_name: &str, now: i64) -> FocusedUsageView;
     fn gemini_key_view(&self, key_name: &str, now: i64) -> FocusedUsageView;
+    fn opencode_key_view(&self, _secret: &str, now: i64) -> FocusedUsageView {
+        unsupported_snapshot("opencode", None, now)
+    }
 }
 
 #[must_use]
@@ -54,6 +57,12 @@ pub fn provider_credential_snapshot_with_metadata<V: CredentialSnapshotVendors>(
     Option<ProviderFailureMetadata>,
 ) {
     let now = now_epoch();
+    if surface_id == "opencode" || key_name == jackin_core::OPENCODE_API_KEY_ENV_NAME {
+        if surface_id == "opencode" && key_name == jackin_core::OPENCODE_API_KEY_ENV_NAME {
+            return (vendors.opencode_key_view(secret, now), None, None);
+        }
+        return (unsupported_snapshot(surface_id, None, now), None, None);
+    }
     if surface_id == "claude" {
         if key_name == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME {
             return vendors.claude_oauth_wave_view(secret, now);
