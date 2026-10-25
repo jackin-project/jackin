@@ -56,6 +56,8 @@ confirmed_root=$(CDPATH='' cd -P "$confirmed_root" && pwd -P) || fail 'cannot re
 reviewed_tree=$(git write-tree) || fail 'cannot capture reviewed staged tree'
 case "$reviewed_tree" in *[!0-9a-f]*|'') fail 'staged tree id is invalid' ;; esac
 [ "${#reviewed_tree}" -eq 40 ] || [ "${#reviewed_tree}" -eq 64 ] || fail 'staged tree id has an unsupported length'
+object_format=$(git rev-parse --show-object-format) || fail 'cannot determine repository object format'
+case "$object_format" in sha1|sha256) ;; *) fail 'repository object format is unsupported' ;; esac
 
 for reviewed_file in scripts/hooks-native-bootstrap scripts/hooks-install; do
     [ -f "$reviewed_file" ] && [ ! -L "$reviewed_file" ] || fail "$reviewed_file is not a physical regular file"
@@ -120,7 +122,7 @@ export HOME="$home"
 
 objects=$(git rev-parse --path-format=absolute --git-path objects) || fail 'cannot resolve Git object store'
 objects=$(CDPATH='' cd -P "$objects" && pwd -P) || fail 'cannot resolve physical Git object store'
-git init --quiet --template="$scratch/template" "$source_root" || fail 'cannot create isolated source repository'
+git init --quiet --object-format="$object_format" --template="$scratch/template" "$source_root" || fail 'cannot create isolated source repository'
 source_root=$(CDPATH='' cd -P "$source_root" && pwd -P) || fail 'cannot resolve private source path'
 mkdir -p "$source_root/.git/objects/info" "$source_root/.git/info" || fail 'cannot prepare private Git metadata'
 printf '%s\n' "$objects" > "$source_root/.git/objects/info/alternates"
@@ -215,12 +217,8 @@ common_git_dir=$(CDPATH='' cd -P "$common_git_dir" && pwd -P) || fail 'cannot re
 case "$common_git_dir" in *"$newline"*) fail 'Git common directory contains a newline' ;; esac
 owner_root=$common_git_dir/jackin-precommit-owner
 generation_path=$owner_root/generations/$generation
-active_file=$owner_root/active
 manifest_file=$generation_path/install.manifest
 owner_file=$generation_path/owner
-[ -f "$active_file" ] && [ ! -L "$active_file" ] || fail 'published active pointer is not a regular file'
-printf '%s\n' "$generation" > "$scratch/active.expected"
-cmp -s "$active_file" "$scratch/active.expected" || fail 'published active pointer differs from owner response'
 [ -f "$manifest_file" ] && [ ! -L "$manifest_file" ] || fail 'published install manifest is not a regular file'
 [ -f "$owner_file" ] && [ ! -L "$owner_file" ] && [ -x "$owner_file" ] || fail 'published owner is not an executable regular file'
 manifest_owner_hash=$(hash_file "$owner_file") || fail 'cannot hash published owner executable'

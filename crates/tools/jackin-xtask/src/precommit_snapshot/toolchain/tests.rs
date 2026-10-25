@@ -2,10 +2,82 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::collections::BTreeSet;
 
 fn write_executable(path: &Path, contents: &[u8]) {
     fs::write(path, contents).expect("tool file");
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("executable mode");
+}
+
+#[test]
+fn managed_mise_gate_discards_ambient_config_overrides_and_preserves_gate_context() {
+    let trusted_root = Path::new("/private/staged/repository");
+    let mut environment = BTreeMap::from([
+        (
+            OsString::from("MISE_ENV"),
+            OsString::from("attacker-profile"),
+        ),
+        (
+            OsString::from("MISE_ENV_FILE"),
+            OsString::from("/tmp/attacker.env"),
+        ),
+        (
+            OsString::from("MISE_CONFIG_DIR"),
+            OsString::from("/tmp/attacker-config"),
+        ),
+        (
+            OsString::from("MISE_CONFIG_FILE"),
+            OsString::from("/tmp/attacker.toml"),
+        ),
+        (
+            OsString::from("MISE_GLOBAL_CONFIG_FILE"),
+            OsString::from("/tmp/attacker-global.toml"),
+        ),
+        (
+            OsString::from("MISE_DATA_DIR"),
+            OsString::from("/tmp/attacker-data"),
+        ),
+        (
+            OsString::from("MBX_CACHE_DIR"),
+            OsString::from("/cache/mbx"),
+        ),
+        (
+            OsString::from("MBX_SESSION_PATH"),
+            OsString::from("/session/mbx"),
+        ),
+        (OsString::from("HK_LOG_FORMAT"), OsString::from("json")),
+        (OsString::from("PATH"), OsString::from("/qualified/path")),
+    ]);
+
+    configure_managed_mise_environment(&mut environment, trusted_root);
+
+    assert_eq!(
+        environment
+            .keys()
+            .filter(|key| key.to_string_lossy().starts_with("MISE_"))
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            OsString::from("MISE_AUTO_INSTALL"),
+            OsString::from("MISE_EXEC_AUTO_INSTALL"),
+            OsString::from("MISE_TRUSTED_CONFIG_PATHS"),
+        ])
+    );
+    assert_eq!(
+        environment.get(OsStr::new("MISE_TRUSTED_CONFIG_PATHS")),
+        Some(&trusted_root.as_os_str().to_owned())
+    );
+    assert_eq!(
+        environment.get(OsStr::new("MISE_AUTO_INSTALL")),
+        Some(&OsString::from("0"))
+    );
+    assert_eq!(
+        environment.get(OsStr::new("MISE_EXEC_AUTO_INSTALL")),
+        Some(&OsString::from("false"))
+    );
+    for key in ["MBX_CACHE_DIR", "MBX_SESSION_PATH", "HK_LOG_FORMAT", "PATH"] {
+        assert!(environment.contains_key(OsStr::new(key)), "lost {key}");
+    }
 }
 
 #[test]

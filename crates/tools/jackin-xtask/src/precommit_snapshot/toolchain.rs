@@ -128,6 +128,7 @@ fn build_qualified_environment(
         let key = key.to_string_lossy();
         !key.starts_with("CARGO_ALIAS_") && !key.starts_with("DYLINT_")
     });
+    configure_managed_mise_environment(&mut environment, &snapshot.root);
     for key in [
         "CARGO",
         "RUSTUP_TOOLCHAIN",
@@ -146,7 +147,6 @@ fn build_qualified_environment(
         "CARGO_TARGET_DIR",
         "CARGO_BUILD_BUILD_DIR",
         "CARGO_BUILD_TARGET",
-        "MISE_TRUSTED_CONFIG_PATHS",
         "GIT_DIR",
         "GIT_WORK_TREE",
         "GIT_COMMON_DIR",
@@ -219,16 +219,23 @@ fn build_qualified_environment(
         OsString::from("CARGO_BUILD_BUILD_DIR"),
         snapshot.scratch_root.join("build").into_os_string(),
     );
+    Ok(environment)
+}
+
+fn configure_managed_mise_environment(
+    environment: &mut BTreeMap<OsString, OsString>,
+    trusted_root: &Path,
+) {
+    environment.retain(|key, _| !key.to_string_lossy().starts_with("MISE_"));
     environment.insert(
         OsString::from("MISE_TRUSTED_CONFIG_PATHS"),
-        snapshot.root.as_os_str().to_owned(),
+        trusted_root.as_os_str().to_owned(),
     );
     environment.insert(OsString::from("MISE_AUTO_INSTALL"), OsString::from("0"));
     environment.insert(
         OsString::from("MISE_EXEC_AUTO_INSTALL"),
         OsString::from("false"),
     );
-    Ok(environment)
 }
 
 fn resolve_managed_tools(
