@@ -156,12 +156,12 @@ git commit -s -m "feat(scope): description"
 For a published commit without a sign-off, the original contributor can append an individual DCO remediation commit. Use the original commit's full 40-character SHA:
 
 ```sh
-git commit -s \
+git commit -s --allow-empty \
   -m "DCO remediation for ORIGINAL AUTHOR <author@email>" \
   -m "I, ORIGINAL AUTHOR <author@email>, hereby add my Signed-off-by to this commit: <full 40-character commit SHA>"
 ```
 
-This adds an append-only certification and preserves the published PR history. The remediation commit must be authored by the same contributor named in its declaration. Third-party remediation is disabled, and DCO sign-off remains required for organization members.
+The certification commit may be empty, without unrelated file changes. This adds an append-only certification and preserves the published PR history. The remediation commit must be authored by the same contributor named in its declaration. Third-party remediation is disabled, and DCO sign-off remains required for organization members.
 
 ## Merge-Readiness Check
 
