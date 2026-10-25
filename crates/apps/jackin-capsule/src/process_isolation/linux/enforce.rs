@@ -191,6 +191,10 @@ pub(crate) const fn retained_capability_mask() -> u32 {
     1u32 << CAP_DAC_OVERRIDE
 }
 
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the per-block expect(unsafe_code) attributes; repo rule forbids SAFETY comments"
+)]
 #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
 pub(crate) fn close_fd(fd: libc::c_int) {
     unsafe {

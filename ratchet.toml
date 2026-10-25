@@ -437,7 +437,7 @@ key = "clippy::type_complexity@jackin-usage-provider-claude"
 bound = 2
 [[family.entry]]
 key = "clippy::undocumented_unsafe_blocks@jackin-capsule"
-bound = 8
+bound = 10
 [[family.entry]]
 key = "clippy::unwrap_used@jackin-capsule"
 bound = 1

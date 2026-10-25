@@ -27,6 +27,10 @@ pub(super) use paths::{
 };
 pub(super) use rules::rules_for;
 
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the per-block expect(unsafe_code) attributes; repo rule forbids SAFETY comments"
+)]
 pub(crate) fn run(
     config: &CapsuleConfig,
     instance: Option<&str>,
