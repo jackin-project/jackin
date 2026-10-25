@@ -96,6 +96,7 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         let key = key.to_string_lossy();
         !key.starts_with("CARGO_ALIAS_") && !key.starts_with("DYLINT_")
     });
+    configure_managed_mise_environment(&mut environment, &snapshot.root);
     for key in [
         "CARGO",
         "RUSTUP_TOOLCHAIN",
@@ -114,7 +115,6 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         "CARGO_TARGET_DIR",
         "CARGO_BUILD_BUILD_DIR",
         "CARGO_BUILD_TARGET",
-        "MISE_TRUSTED_CONFIG_PATHS",
         "GIT_DIR",
         "GIT_WORK_TREE",
         "GIT_COMMON_DIR",
@@ -187,21 +187,28 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         OsString::from("CARGO_BUILD_BUILD_DIR"),
         snapshot.scratch_root.join("build").into_os_string(),
     );
-    environment.insert(
-        OsString::from("MISE_TRUSTED_CONFIG_PATHS"),
-        snapshot.root.as_os_str().to_owned(),
-    );
-    environment.insert(OsString::from("MISE_AUTO_INSTALL"), OsString::from("0"));
-    environment.insert(
-        OsString::from("MISE_EXEC_AUTO_INSTALL"),
-        OsString::from("false"),
-    );
     Ok(QualifiedTools {
         gate: resolved["hk"].clone(),
         cargo,
         rustc: rust_tools["rustc"].clone(),
         environment,
     })
+}
+
+fn configure_managed_mise_environment(
+    environment: &mut BTreeMap<OsString, OsString>,
+    trusted_root: &Path,
+) {
+    environment.retain(|key, _| !key.to_string_lossy().starts_with("MISE_"));
+    environment.insert(
+        OsString::from("MISE_TRUSTED_CONFIG_PATHS"),
+        trusted_root.as_os_str().to_owned(),
+    );
+    environment.insert(OsString::from("MISE_AUTO_INSTALL"), OsString::from("0"));
+    environment.insert(
+        OsString::from("MISE_EXEC_AUTO_INSTALL"),
+        OsString::from("false"),
+    );
 }
 
 fn resolve_managed_tools(

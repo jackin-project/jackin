@@ -9,6 +9,8 @@ use std::{
     process::{Command, Stdio},
 };
 
+mod bootstrap;
+
 fn private_temporary_directory() -> Result<tempfile::TempDir> {
     let home = std::env::var_os("HOME").context("HOME is required for the private test fixture")?;
     let home = std::path::PathBuf::from(home).canonicalize()?;

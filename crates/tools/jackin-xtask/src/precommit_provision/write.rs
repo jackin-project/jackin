@@ -40,24 +40,34 @@ pub(super) fn install(verified: VerifiedBootstrapInstall) -> Result<String> {
     let generation = generation_id(&verified.request_bytes, &owner_sha256);
     let manifest = render_manifest(&verified, &generation, &owner_sha256);
     crate::precommit_snapshot::validate_provision_manifest(&manifest)?;
-    publish_generation(
-        &directories.generations,
+    publish_install_artifacts(
+        &directories,
         &generation,
         &owner,
         &manifest,
         &owner_sha256,
+        &verified.source_tree,
     )?;
-    publish_pending(&directories.pending, &generation, &verified.source_tree)?;
     bundle::recheck_live(&verified)?;
-    validate_current_active(&directories.root, &directories.generations)?;
-    publish_record(
-        &directories.root,
-        "active",
-        &format!("{generation}\n"),
-        0o600,
-    )?;
-    sync(&directories.root).context("syncing native hook owner root")?;
     Ok(generation)
+}
+
+fn publish_install_artifacts(
+    directories: &InstallDirectories,
+    generation: &str,
+    owner: &[u8],
+    manifest: &[u8],
+    owner_hash: &str,
+    source_tree: &str,
+) -> Result<()> {
+    publish_generation(
+        &directories.generations,
+        generation,
+        owner,
+        manifest,
+        owner_hash,
+    )?;
+    publish_pending(&directories.pending, generation, source_tree)
 }
 
 fn validate_owner_digest(actual: &str, admitted: &str) -> Result<()> {
@@ -183,24 +193,6 @@ fn publish_record(directory: &File, name: &str, contents: &str, mode: u32) -> Re
         };
     }
     sync(directory).context("syncing native hook pointer directory")
-}
-
-fn validate_current_active(root: &File, generations: &File) -> Result<()> {
-    if !exists(root, "active")? {
-        return Ok(());
-    }
-    let active = read_file(root, "active", 65, 0o600)?;
-    ensure!(
-        active.len() == 65
-            && active.last() == Some(&b'\n')
-            && active[..64]
-                .iter()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte)),
-        "active native hook pointer is malformed"
-    );
-    let generation = std::str::from_utf8(&active[..64])?;
-    drop(open_directory(generations, generation, 0o500)?);
-    Ok(())
 }
 
 fn render_manifest(
