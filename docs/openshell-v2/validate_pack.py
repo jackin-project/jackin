@@ -190,10 +190,11 @@ def main() -> int:
         "traceability.json": trace.get("schema_version"),
     }
     unsupported_versions = {name: version for name, version in manifest_versions.items()
-                            if version != SUPPORTED_SCHEMA_VERSION}
-    check("Manifest schema versions match the supported version",
+                            if type(version) is not int or version != SUPPORTED_SCHEMA_VERSION}
+    check("Manifest schema versions are supported integers",
           not unsupported_versions,
-          {"supported": SUPPORTED_SCHEMA_VERSION, "actual": manifest_versions})
+          {"supported": SUPPORTED_SCHEMA_VERSION, "actual": manifest_versions,
+           "unsupported": unsupported_versions})
     source_pin_errors = {field: {"expected": expected, "actual": graph.get(field)}
                          for field, expected in SOURCE_PINS.items()
                          if graph.get(field) != expected}

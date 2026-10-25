@@ -24,6 +24,7 @@ The ordinary command accepts documented progress states.
 The `--initial` command adds a check that all task and case statuses remain `NOT_STARTED` and `NOT_RUN`.
 Omit `--initial` after execution starts.
 The validator checks the plan. It is not the product acceptance harness described in P04.
+Schema versions must be JSON integer `1`; booleans and floating-point values do not qualify.
 Missing required files produce a structured report and exit 1.
 With `--json`, manifest read or shape errors also produce a structured error report and exit 2.
 That report has empty counts because validation stopped before counts were available.
@@ -49,7 +50,7 @@ Keep no more than eight actual subagents active at once.
 | Task statuses use documented values | PASS |
 | Acceptance case statuses use documented values | PASS |
 | Acceptance evidence levels use documented values | PASS |
-| Manifest schema versions match the supported version | PASS |
+| Manifest schema versions are supported integers | PASS |
 | Machine source pins match C01 | PASS |
 | Parallel agent limit matches the subagent contract | PASS |
 | Task IDs are unique | PASS |
