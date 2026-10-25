@@ -11,6 +11,7 @@ Shared working agreement: keep this section byte-identical across projects. Proj
 - Test observable behavior through public APIs: assert resulting state, not interaction sequences; no mirror-logic assertions and no unreviewed snapshots.
 - Keep tests hermetic and deterministic: real collaborators in isolation, seeded randomness, fake clocks, no live network. Quarantine flakes immediately; never skip, weaken, edit, or delete a test to go green.
 - Run narrow per change and the full relevant suite before done.
+- Verify every new test with an independent subagent before merge: it must fail on broken code, cover observable behavior without mocks of owned code, and stay hermetic and deterministic.
 - No comments in code. Code is the source of truth; a comment creates ambiguity about what is right, code or comment. Keep a comment only when functionality requires it: SPDX license headers for REUSE compliance, clap `#[command]`/`#[arg]` help text and similar string literals consumed by tools, parser directives such as Dockerfile `# syntax=`, and machine-generated files that the repo's own generators verify byte-identical. Never keep explanatory, TODO, or SAFETY comments; when code seems to need explanation, rewrite the code instead.
 - Judge correctness, consistency, and project fit. Never defer a known-wrong state for ROI, cost, effort, or edge cases.
 - Stop only when the required change is proven impossible with the available tools or model. When uncertain, inspect, test, and measure first.
