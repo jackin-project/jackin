@@ -514,6 +514,46 @@ fn watch_batch_timeout_does_not_end_the_absolute_cli_deadline() {
 }
 
 #[test]
+fn watch_monitor_identifier_accepts_generated_form_and_rejects_invalid_syntax() {
+    validate_watch_monitor_identifier("monitor-00000001")
+        .expect("generated monitor IDs pass lexical preflight");
+    validate_watch_monitor_identifier(&"a".repeat(128))
+        .expect("the inclusive 128-byte limit is accepted");
+
+    let too_long = "a".repeat(129);
+    for invalid in ["", "bad id", "ümlaut", "bad\nid", too_long.as_str()] {
+        assert!(
+            validate_watch_monitor_identifier(invalid).is_err(),
+            "accepted {invalid:?}"
+        );
+    }
+}
+
+#[test]
+fn watch_rejects_invalid_identifier_before_broker_attach() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let too_long = "a".repeat(129);
+
+    for invalid in ["", "bad id", "ümlaut", "bad\nid", too_long.as_str()] {
+        let error = run_watch(
+            &paths,
+            &UsageWatchArgs {
+                monitor: invalid.to_owned(),
+                timeout_secs: Some(1),
+            },
+        )
+        .expect_err("invalid watch monitor ID must fail before broker attachment");
+        let exit = error
+            .downcast_ref::<UsageCommandExit>()
+            .expect("watch preflight emits a CLI error");
+        assert_eq!(exit.exit_code(), 3, "invalid {invalid:?}");
+        let value: serde_json::Value = serde_json::from_str(exit.json()).unwrap();
+        assert_eq!(value["error"]["code"], "invalid_argument", "{invalid:?}");
+    }
+}
+
+#[test]
 fn wait_timeout_is_appended_as_a_typed_transient_status_issue() {
     let mut issues = vec![MonitorIssue {
         code: MonitorIssueCode::ResetDueUnverified,

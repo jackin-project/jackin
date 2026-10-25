@@ -27,10 +27,12 @@ use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
 use jackin_runtime::instance::{InstanceIndex, InstanceStatus};
 use jackin_runtime::runtime::snapshot;
 
+mod errors;
 mod spend;
 mod statusline;
 mod store;
 mod verify;
+use errors::validate_watch_monitor_identifier;
 use spend::{parse_sgd_budget, parse_sgd_budget_arg, read_spend_record};
 #[cfg(test)]
 use verify::{normalize_usage_provider_label, verify_usage_accounts};
@@ -1176,6 +1178,7 @@ fn reply_status(reply: &MonitorReply) -> Option<&MonitorStatus> {
 }
 
 fn run_watch(paths: &JackinPaths, args: &UsageWatchArgs) -> Result<()> {
+    validate_watch_monitor_identifier(&args.monitor)?;
     let client = attach_client(paths);
     let deadline = args
         .timeout_secs
