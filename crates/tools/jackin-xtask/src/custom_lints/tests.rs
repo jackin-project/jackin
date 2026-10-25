@@ -9,6 +9,7 @@ use super::paths::{cargo_home as cargo_home_path, resolve};
 use super::{
     COMPILER_COMMIT, COMPILER_RELEASE, COMPONENTS, Environment, NIGHTLY, build_environment_with,
     build_exec_request, compiler_host, finish_with_cleanup, library_path, run_with, run_with_home,
+    tool_search_path,
 };
 
 mod case_01;
@@ -42,6 +43,145 @@ fn command_tools(path: &Path) {
         {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).expect("executable mode");
+        }
+    }
+}
+
+fn assert_missing_path_search_contract(root: &Path, temporary: &Path) {
+    let tools = temporary.join("system default tools");
+    command_tools(&tools);
+    let mut calls = Vec::new();
+    let search_path =
+        tool_search_path(&Environment::new(), root, &mut |argv, cwd, env, capture| {
+            calls.push((argv.to_vec(), cwd.to_path_buf(), env.clone(), capture));
+            Ok(format!("{}\n", tools.display()).into_bytes())
+        })
+        .expect("system default path");
+    assert_eq!(search_path, tools.as_os_str());
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, ["/usr/bin/getconf", "PATH"]);
+    assert_eq!(calls[0].1, root);
+    assert!(calls[0].2.is_empty());
+    assert!(calls[0].3);
+
+    for output in [b"".as_slice(), b"/first\nsecond\n".as_slice()] {
+        let mut calls = 0;
+        let fallback = tool_search_path(&Environment::new(), root, &mut |_, _, _, _| {
+            calls += 1;
+            Ok(output.to_vec())
+        })
+        .expect("malformed getconf output falls back");
+        assert_eq!(fallback, OsStr::new("/bin:/usr/bin"));
+        assert_eq!(calls, 1, "getconf must not be retried");
+    }
+
+    let mut calls = 0;
+    let fallback = tool_search_path(&Environment::new(), root, &mut |_, _, _, _| {
+        calls += 1;
+        anyhow::bail!("simulated getconf failure")
+    })
+    .expect("getconf failure falls back");
+    assert_eq!(fallback, OsStr::new("/bin:/usr/bin"));
+    assert_eq!(calls, 1, "getconf must not be retried");
+
+    let mut explicit_path = Environment::new();
+    explicit_path.insert(OsString::from("PATH"), OsString::from("/explicit/tools"));
+    let mut calls = 0;
+    assert_eq!(
+        tool_search_path(&explicit_path, root, &mut |_, _, _, _| {
+            calls += 1;
+            Ok(Vec::new())
+        })
+        .expect("explicit PATH"),
+        OsStr::new("/explicit/tools")
+    );
+    assert_eq!(calls, 0, "explicit PATH must bypass getconf");
+
+    let mut empty_path = Environment::new();
+    empty_path.insert(OsString::from("PATH"), OsString::new());
+    let mut calls = 0;
+    let mut passwd_calls = 0;
+    assert!(
+        run_with_home(
+            root,
+            empty_path,
+            || {
+                passwd_calls += 1;
+                Ok(None)
+            },
+            |_, _, _, _| {
+                calls += 1;
+                Ok(Vec::new())
+            }
+        )
+        .is_err()
+    );
+    assert_eq!(calls, 0, "empty PATH must fail before getconf");
+    assert_eq!(passwd_calls, 0, "empty PATH must fail before passwd lookup");
+
+    let cargo_home = temporary.join("cargo home");
+    fs::create_dir_all(cargo_home.join("bin")).expect("Cargo home bin");
+    let mut inherited = Environment::new();
+    inherited.insert(
+        OsString::from("CARGO_HOME"),
+        cargo_home.as_os_str().to_owned(),
+    );
+    let (child_env, _, selected) = build_environment_with(root, inherited, &search_path, || {
+        panic!("explicit CARGO_HOME should bypass passwd lookup")
+    })
+    .expect("child environment with missing inherited PATH");
+    for name in ["dylint-link", "cargo-nextest", "cargo-dylint"] {
+        assert_eq!(
+            selected[name],
+            fs::canonicalize(tools.join(name)).expect("tool")
+        );
+    }
+    let child_path = std::env::split_paths(child_env.get(OsStr::new("PATH")).expect("child PATH"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        child_path,
+        [
+            fs::canonicalize(cargo_home.join("bin")).expect("Cargo bin"),
+            PathBuf::new()
+        ]
+    );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let denied_tools = temporary.join("inaccessible tools");
+        let later_tools = temporary.join("later tools");
+        command_tools(&denied_tools);
+        command_tools(&later_tools);
+        let denied_mode = if nix::unistd::getuid().is_root() {
+            0o600
+        } else {
+            0o001
+        };
+        for name in ["dylint-link", "cargo-nextest", "cargo-dylint"] {
+            fs::set_permissions(
+                denied_tools.join(name),
+                fs::Permissions::from_mode(denied_mode),
+            )
+            .expect("inaccessible tool mode");
+        }
+        let lookup_path =
+            std::env::join_paths([&denied_tools, &later_tools]).expect("tool lookup PATH");
+        let mut inherited = Environment::new();
+        inherited.insert(
+            OsString::from("CARGO_HOME"),
+            cargo_home.as_os_str().to_owned(),
+        );
+        let (_, _, selected) = build_environment_with(root, inherited, &lookup_path, || {
+            panic!("explicit CARGO_HOME should bypass passwd lookup")
+        })
+        .expect("later usable tools");
+        for name in ["dylint-link", "cargo-nextest", "cargo-dylint"] {
+            assert_eq!(
+                selected[name],
+                fs::canonicalize(later_tools.join(name)).expect("later tool")
+            );
         }
     }
 }
@@ -110,12 +250,14 @@ fn library_name(host: &str) -> String {
 #[test]
 fn environment_cleans_inherited_compiler_and_dylint_state_and_preserves_spaced_paths() {
     let temp = tempfile::tempdir().expect("temporary directory");
+    let root = temp.path().join("repository");
+    fs::create_dir_all(&root).expect("repository");
+    assert_missing_path_search_contract(&root, temp.path());
+
     let tools = temp.path().join("pinned tools");
     command_tools(&tools);
     let cargo_home = temp.path().join("cargo home");
     fs::create_dir_all(cargo_home.join("bin")).expect("Cargo home bin");
-    let root = temp.path().join("repository");
-    fs::create_dir_all(&root).expect("repository");
     let mut inherited = BTreeMap::new();
     inherited.insert(OsString::from("PATH"), tools.as_os_str().to_owned());
     inherited.insert(
@@ -149,10 +291,11 @@ fn environment_cleans_inherited_compiler_and_dylint_state_and_preserves_spaced_p
     );
     inherited.insert(OsString::from("KEEP_ME"), OsString::from("preserved"));
 
-    let (env, target, selected) = build_environment_with(&root, inherited, || {
-        panic!("explicit CARGO_HOME should bypass passwd lookup")
-    })
-    .expect("build environment");
+    let (env, target, selected) =
+        build_environment_with(&root, inherited, tools.as_os_str(), || {
+            panic!("explicit CARGO_HOME should bypass passwd lookup")
+        })
+        .expect("build environment");
     let current_dir = std::env::current_dir().expect("current directory");
     let resolved_current_dir =
         resolve(&current_dir, &current_dir).expect("resolved current directory");

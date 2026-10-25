@@ -39,7 +39,9 @@ where
     H: FnOnce() -> Result<Option<OsString>>,
 {
     let lint = root.join("crates/tools/jackin-lints");
-    let (base_env, target, tools) = build_environment_with(root, inherited, passwd_home)?;
+    let search_path = tool_search_path(&inherited, root, &mut execute)?;
+    let (base_env, target, tools) =
+        build_environment_with(root, inherited, &search_path, passwd_home)?;
     let mut nightly = vec![OsString::from("rustup"), OsString::from("run")];
     nightly.push(OsString::from(NIGHTLY));
 
@@ -139,18 +141,19 @@ fn finish_with_cleanup<T>(body: Result<T>, cleanup: std::io::Result<()>) -> Resu
 fn build_environment_with<H>(
     root: &Path,
     inherited: Environment,
+    search_path: &OsStr,
     passwd_home: H,
 ) -> Result<(Environment, PathBuf, BTreeMap<&'static str, PathBuf>)>
 where
     H: FnOnce() -> Result<Option<OsString>>,
 {
-    let path = inherited
+    let child_path = inherited
         .get(OsStr::new("PATH"))
         .cloned()
         .unwrap_or_default();
     let mut tools = BTreeMap::new();
     for name in TOOL_NAMES {
-        let selected = find_executable(OsStr::new(name), &path)
+        let selected = find_executable(OsStr::new(name), search_path)
             .with_context(|| format!("missing Mise-pinned {name}"))?;
         tools.insert(*name, selected);
     }
@@ -172,7 +175,7 @@ where
     let mut env = inherited;
     env.insert(
         OsString::from("PATH"),
-        std::env::join_paths(std::iter::once(cargo_bin).chain(std::env::split_paths(&path)))
+        std::env::join_paths(std::iter::once(cargo_bin).chain(std::env::split_paths(&child_path)))
             .context("prepending Cargo home to PATH")?,
     );
     for key in env
@@ -211,13 +214,47 @@ where
     Ok((env, target, tools))
 }
 
+fn tool_search_path<F>(inherited: &Environment, root: &Path, execute: &mut F) -> Result<OsString>
+where
+    F: FnMut(&[OsString], &Path, &Environment, bool) -> Result<Vec<u8>>,
+{
+    match inherited.get(OsStr::new("PATH")) {
+        Some(path) if path.is_empty() => bail!("PATH is empty"),
+        Some(path) => Ok(path.clone()),
+        None => {
+            let argv = [OsString::from("/usr/bin/getconf"), OsString::from("PATH")];
+            let empty_env = Environment::new();
+            let search_path = execute(&argv, root, &empty_env, true)
+                .ok()
+                .and_then(|output| parse_getconf_path(&output));
+            Ok(search_path.unwrap_or_else(|| OsString::from("/bin:/usr/bin")))
+        }
+    }
+}
+
+fn parse_getconf_path(output: &[u8]) -> Option<OsString> {
+    let output = std::str::from_utf8(output).ok()?;
+    let output = output
+        .strip_suffix("\r\n")
+        .or_else(|| output.strip_suffix('\n'))
+        .unwrap_or(output);
+    if output.is_empty()
+        || output
+            .chars()
+            .any(|character| matches!(character, '\r' | '\n' | '\0'))
+    {
+        return None;
+    }
+    Some(OsString::from(output))
+}
+
 fn find_executable(name: &OsStr, path: &OsStr) -> Result<PathBuf> {
     for directory in std::env::split_paths(path) {
         let candidate = directory.join(name);
         let Ok(metadata) = fs::metadata(&candidate) else {
             continue;
         };
-        if !metadata.is_file() || !is_executable(&metadata) {
+        if !metadata.is_file() || !is_executable(&candidate) {
             continue;
         }
         return fs::canonicalize(&candidate)
@@ -230,13 +267,14 @@ fn find_executable(name: &OsStr, path: &OsStr) -> Result<PathBuf> {
 }
 
 #[cfg(unix)]
-fn is_executable(metadata: &fs::Metadata) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    metadata.permissions().mode() & 0o111 != 0
+fn is_executable(path: &Path) -> bool {
+    use nix::unistd::{AccessFlags, access};
+
+    access(path, AccessFlags::F_OK | AccessFlags::X_OK).is_ok()
 }
 
 #[cfg(not(unix))]
-fn is_executable(_: &fs::Metadata) -> bool {
+fn is_executable(_: &Path) -> bool {
     true
 }
 
