@@ -3,6 +3,11 @@
 
 use super::*;
 
+fn write_executable(path: &Path, contents: &[u8]) {
+    fs::write(path, contents).expect("tool file");
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("executable mode");
+}
+
 #[test]
 fn cargo_path_selects_the_qualified_mbx_wrapper_before_rustup_cargo() {
     let temporary = tempfile::tempdir().unwrap();
@@ -11,8 +16,8 @@ fn cargo_path_selects_the_qualified_mbx_wrapper_before_rustup_cargo() {
     fs::create_dir(&managed).unwrap();
     fs::create_dir(&rust_bin).unwrap();
     let mbx_cargo = temporary.path().join("mbx-cargo");
-    fs::write(&mbx_cargo, b"MBX wrapper").unwrap();
-    fs::write(rust_bin.join("cargo"), b"rustup cargo").unwrap();
+    write_executable(&mbx_cargo, b"MBX wrapper");
+    write_executable(&rust_bin.join("cargo"), b"rustup cargo");
     symlink(&mbx_cargo, managed.join("cargo")).unwrap();
     let path = env::join_paths([&managed, &rust_bin]).unwrap();
     let selected = find_executable("cargo", &path).unwrap();
@@ -33,9 +38,9 @@ fn pinned_swiftlint_precedes_an_ambient_global_tool() {
         fs::create_dir_all(directory).expect("tool directory");
     }
     let pinned = pinned_bin.join("swiftlint");
-    fs::write(&pinned, b"Mise-pinned SwiftLint 0.65.1").expect("pinned SwiftLint");
+    write_executable(&pinned, b"Mise-pinned SwiftLint 0.65.1");
     let ambient_tool = ambient.join("swiftlint");
-    fs::write(&ambient_tool, b"ambient SwiftLint").expect("ambient SwiftLint");
+    write_executable(&ambient_tool, b"ambient SwiftLint");
     let resolved =
         resolve_tool_paths(&["swiftlint"], |_| Ok(pinned.clone())).expect("mock Mise resolution");
     symlink(&resolved["swiftlint"], managed.join("swiftlint")).expect("managed SwiftLint link");
@@ -46,6 +51,73 @@ fn pinned_swiftlint_precedes_an_ambient_global_tool() {
     assert_eq!(
         fs::canonicalize(selected).expect("selected SwiftLint"),
         fs::canonicalize(pinned).expect("physical pinned SwiftLint")
+    );
+}
+
+#[test]
+fn local_guard_in_home_is_admitted_and_qualified_without_inherited_path_entry() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let home = temporary.path().join("home");
+    let local_bin = home.join(".local/bin");
+    let inherited_bin = temporary.path().join("inherited");
+    let managed = temporary.path().join("managed");
+    let rust_bin = temporary.path().join("rust-bin");
+    for directory in [&local_bin, &inherited_bin, &managed, &rust_bin] {
+        fs::create_dir_all(directory).expect("tool directory");
+    }
+    let guard = local_bin.join("rust-build-guard");
+    write_executable(&guard, b"trusted guard");
+    let inherited = env::join_paths([&inherited_bin]).expect("inherited PATH");
+
+    let resolved = resolve_guard(&inherited, Some(&home)).expect("home guard fallback");
+    assert_eq!(
+        resolved,
+        fs::canonicalize(&guard).expect("physical guard path")
+    );
+    symlink(&resolved, managed.join("rust-build-guard")).expect("managed guard link");
+    let qualified = qualified_path(&managed, &rust_bin, &inherited).expect("qualified PATH");
+    let selected = find_executable("rust-build-guard", &qualified).expect("qualified guard");
+    assert_eq!(
+        fs::canonicalize(selected).expect("selected physical guard"),
+        resolved
+    );
+}
+
+#[test]
+fn missing_local_guard_fails_closed() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let home = temporary.path().join("home");
+    let inherited_bin = temporary.path().join("inherited");
+    fs::create_dir_all(&home).expect("home directory");
+    fs::create_dir_all(&inherited_bin).expect("inherited PATH directory");
+    let inherited = env::join_paths([&inherited_bin]).expect("inherited PATH");
+
+    let error = resolve_guard(&inherited, Some(&home)).expect_err("missing guard must fail");
+    assert!(
+        error
+            .to_string()
+            .contains("rust-build-guard is not installed")
+    );
+}
+
+#[test]
+fn inherited_path_guard_precedes_the_home_fallback() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let home = temporary.path().join("home");
+    let home_bin = home.join(".local/bin");
+    let inherited_bin = temporary.path().join("inherited");
+    fs::create_dir_all(&home_bin).expect("home guard directory");
+    fs::create_dir_all(&inherited_bin).expect("inherited guard directory");
+    let home_guard = home_bin.join("rust-build-guard");
+    let path_guard = inherited_bin.join("rust-build-guard");
+    write_executable(&home_guard, b"home guard");
+    write_executable(&path_guard, b"PATH guard");
+    let inherited = env::join_paths([&inherited_bin]).expect("inherited PATH");
+
+    let resolved = resolve_guard(&inherited, Some(&home)).expect("PATH guard");
+    assert_eq!(
+        resolved,
+        fs::canonicalize(path_guard).expect("physical PATH guard")
     );
 }
 

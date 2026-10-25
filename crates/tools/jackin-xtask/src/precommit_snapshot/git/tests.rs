@@ -83,6 +83,37 @@ fn materializes_the_index_tree_without_changing_the_live_index_or_worktree() {
 }
 
 #[test]
+fn git_path_record_parser_preserves_non_utf8_and_trailing_newline_bytes() {
+    assert_eq!(
+        super::without_record_terminator(b"/repo/\xff\n\n").expect("one record terminator"),
+        b"/repo/\xff\n"
+    );
+    super::without_record_terminator(b"/repo/\xff")
+        .expect_err("missing record terminator must fail");
+}
+
+#[test]
+fn spool_cleanup_error_reports_the_retained_snapshot_path() {
+    let fixture = fixture();
+    let live = LiveRepository::capture_at(fixture.path()).expect("capture fixture");
+    let mut snapshot = OwnedSnapshot::create(&live).expect("private snapshot");
+    let retained_path = snapshot.scratch_root.clone();
+    let error = snapshot.spool_failure_error(
+        "fixture cleanup uncertainty",
+        Some(jackin_process::SpoolRecovery::default()),
+    );
+
+    assert!(
+        error
+            .to_string()
+            .contains(&retained_path.display().to_string())
+    );
+    assert!(retained_path.is_dir(), "snapshot custody must be retained");
+    drop(snapshot);
+    fs::remove_dir_all(retained_path).expect("remove retained test snapshot");
+}
+
+#[test]
 fn rejects_live_index_changes_during_capture_and_after_gate() {
     let second_fixture = fixture();
     let live = LiveRepository::capture_at(second_fixture.path()).expect("capture fixture");

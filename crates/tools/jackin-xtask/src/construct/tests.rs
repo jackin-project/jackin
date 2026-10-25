@@ -163,18 +163,59 @@ exit 0
     )
     .unwrap();
     fs::set_permissions(&curl, fs::Permissions::from_mode(0o755)).unwrap();
+    let mise = bin.join("mise");
+    fs::write(
+        &mise,
+        r#"#!/bin/sh
+printf '%s\n' "$@" > "$JACKIN_TEST_MISE_ARGS"
+printf '%s\n' "${JACKIN_TEST_MISE_VERSION:-2027.1.2}"
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&mise, fs::Permissions::from_mode(0o755)).unwrap();
     let captured = fixture.path().join("mise-url");
+    let mise_args = fixture.path().join("mise-args");
     let mut command = Command::new("bash");
     command
         .arg(construct.join("check-upstream-assets.sh"))
         .env("JACKIN_TEST_URL", &captured)
+        .env("JACKIN_TEST_MISE_ARGS", &mise_args)
         .env("MISE_VERSION", "1900.1.1")
         .env(
             "PATH",
             format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
         );
     crate::cmd::output_timeout(&mut command, std::time::Duration::from_secs(10)).unwrap_err();
+    let args = fs::read_to_string(&mise_args).unwrap();
+    let args: Vec<_> = args.lines().collect();
+    assert_eq!(
+        &args[..6],
+        [
+            "--no-config",
+            "--no-env",
+            "--no-hooks",
+            "config",
+            "get",
+            "--file"
+        ]
+    );
+    assert!(args[6].ends_with("/mise.toml"));
+    assert_eq!(args[7], "min_version");
     let url = fs::read_to_string(captured).unwrap();
     assert!(url.contains("https://github.com/jdx/mise/releases/download/v2027.1.2/SHASUMS256.txt"));
     assert!(!url.contains("1900.1.1"));
+
+    let invalid_url = fixture.path().join("invalid-mise-url");
+    let mut invalid = Command::new("bash");
+    invalid
+        .arg(construct.join("check-upstream-assets.sh"))
+        .env("JACKIN_TEST_URL", &invalid_url)
+        .env("JACKIN_TEST_MISE_ARGS", &mise_args)
+        .env("JACKIN_TEST_MISE_VERSION", "2027.1.2/other")
+        .env(
+            "PATH",
+            format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+        );
+    crate::cmd::output_timeout(&mut invalid, std::time::Duration::from_secs(10)).unwrap_err();
+    assert!(!invalid_url.exists());
 }

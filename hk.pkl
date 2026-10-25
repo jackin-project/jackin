@@ -14,26 +14,34 @@ fail_fast = false
 steps {
   ["mise"] = Builtins.mise
   ["gitleaks"] = Builtins.gitleaks
-  // `--all`: the root Cargo.toml is a virtual manifest (selected through rustfmt.toml), where a plain
-  // `cargo fmt --manifest-path` fails with "Failed to find targets".
+  // `--all`: the root Cargo.toml is a virtual manifest, where `cargo fmt --manifest-path` fails with
+  // "Failed to find targets". Run from hk's matched workspace directory instead.
   ["cargo_fmt"] = (Builtins.cargo_fmt) {
-    check { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" fmt-check" }
-    check_list_files { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" fmt-files" }
-    fix { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" fmt-fix" }
+    workspace_indicator = "Cargo.toml"
+    dir = "{{workspace}}"
+    prefix = "rust-build-guard -- mise exec --"
+    check { command = "cargo fmt --all --check" }
+    check_list_files { command = "cargo fmt --all --check -- --files-with-diff" }
+    fix { command = "cargo fmt --all" }
   }
   // crates/tools/jackin-lints is outside the workspace and needs the pinned nightly with rustc-dev; it is built,
   // UI-tested and run by the native xtask via `mise run check:custom-lints`, which invokes
   // `cargo run --locked -p jackin-xtask -- custom-lints`, never by stable cargo.
   ["cargo_check"] = (Builtins.cargo_check) {
     workspace_indicator = "Cargo.toml"
+    dir = "{{workspace}}"
+    prefix = "rust-build-guard -- mise exec --"
     exclude = List("crates/tools/jackin-lints/**")
-    check { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" check" }
-    fix { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" check-fix" }
+    check { command = "cargo check --locked --quiet" }
+    fix { command = "cargo fix --locked --allow-dirty --allow-staged --quiet" }
   }
   ["cargo_clippy"] = (Builtins.cargo_clippy) {
+    workspace_indicator = "Cargo.toml"
+    dir = "{{workspace}}"
+    prefix = "rust-build-guard -- mise exec --"
     exclude = List("crates/tools/jackin-lints/**")
-    check { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" clippy" }
-    fix { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" clippy-fix" }
+    check { command = "cargo clippy --locked --quiet" }
+    fix { command = "cargo clippy --locked --fix --allow-dirty --allow-staged --quiet" }
   }
   // deny.toml governs the root workspace (as in CI). The fuzz/ crates and crates/tools/jackin-lints are separate
   // workspaces with their own lockfiles and path-wildcard fuzz dependencies outside that policy.

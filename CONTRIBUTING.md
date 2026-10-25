@@ -26,16 +26,17 @@ root; the version is pinned in `mise.toml`/`mise.lock`). Install per checkout â€
 idempotent, safe to re-run:
 
 ```sh
-scripts/hooks-install   # installs scripts/pre-commit-snapshot and the hk pre-push hook
+scripts/hooks-install   # provisions the native snapshot owner and installs the hk pre-push hook
 ```
 
 No shell activation needed. Requirements: Git 2.56+ (config-based hooks with
-named-hook disabling) and `mise` on Git's runtime PATH â€”
-true in terminals with mise shims, otherwise the hook fails closed with
-`mise: command not found` (use a terminal or add the shims directory to
-the GUI client's PATH). Each hook invocation builds in its own temporary Cargo target directory.
-Compiler artifacts cannot collide with builds in the live checkout.
-Python 3 (pinned in mise) provides process group isolation and symlink checks.
+named-hook disabling), `mise` on Git's runtime PATH, and the executable
+`rust-build-guard` in that PATH or `$HOME/.local/bin`. Provisioning builds the
+native owner from the reviewed staged tree and registers its exact immutable
+generation. Each hook invocation qualifies the staged toolchain and builds in
+its own private snapshot and temporary Cargo target directory. The native
+owner handles process cleanup, source custody, and symlink checks. Compiler
+artifacts cannot collide with builds in the live checkout.
 The installer disables the named `hk-pre-commit` hook locally so an inherited
 global hook cannot bypass the repository-owned snapshot boundary. Global
 configuration and unrelated hooks remain unchanged.
@@ -46,7 +47,7 @@ and the same step list backs `hk check` and `hk fix`:
 
 - `mise` (hk builtin): `mise fmt --check` on `mise.toml`
 - `gitleaks` (hk builtin) and `kingfisher-staged`: secret scans of the staged change
-- `cargo_fmt`, `cargo_check`, `cargo_clippy`, `cargo_deny` (hk builtins) for affected Cargo manifests
+- `cargo_fmt`, `cargo_check`, `cargo_clippy`, `cargo_deny` (hk builtins) for affected Cargo manifests; format, check and Clippy use hk's workspace directory and the guarded Mise execution prefix
 - `rust-toolchain-mirror`: `rust-toolchain.toml` must mirror the `mise.toml` rust entry
   (channel, profile, components, targets)
 - `rumdl` (hk builtin): Markdown

@@ -3,6 +3,116 @@
 
 use super::*;
 
+#[cfg(target_os = "linux")]
+#[test]
+fn captures_non_utf8_repository_and_linked_worktree_paths_without_live_mutation() {
+    assert_captures_special_paths(
+        OsString::from_vec(b"repository-\xff\n".to_vec()),
+        OsString::from_vec(b"linked-worktree-\xfe\n".to_vec()),
+    );
+}
+
+#[test]
+fn captures_trailing_newline_repository_and_linked_worktree_paths_without_live_mutation() {
+    assert_captures_special_paths(
+        OsString::from("repository-\n"),
+        OsString::from("linked-worktree-\n"),
+    );
+}
+
+fn assert_captures_special_paths(repository_name: OsString, linked_name: OsString) {
+    let temporary = tempfile::tempdir().expect("fixture parent");
+    let repository = temporary.path().join(repository_name);
+    fs::create_dir(&repository).expect("create special-byte repository path");
+    git(&repository, &["init", "--quiet", "-b", "main"]);
+    git(&repository, &["config", "user.name", "Fixture"]);
+    git(
+        &repository,
+        &["config", "user.email", "fixture@example.invalid"],
+    );
+    fs::write(repository.join("staged.txt"), "base\n").expect("base file");
+    git(&repository, &["add", "staged.txt"]);
+    git(&repository, &["commit", "--quiet", "-m", "base"]);
+
+    fs::write(repository.join("staged.txt"), "repository staged\n").expect("stage content");
+    git(&repository, &["add", "staged.txt"]);
+    fs::write(repository.join("staged.txt"), "repository worktree\n").expect("unstaged content");
+    let live = LiveRepository::capture_at(&repository).expect("capture raw-byte repo path");
+    assert_eq!(
+        live.root.as_os_str().as_bytes(),
+        fs::canonicalize(&repository)
+            .expect("canonical repository path")
+            .as_os_str()
+            .as_bytes()
+    );
+    assert_snapshot_preserves_live_state(
+        &live,
+        &repository,
+        b"repository staged\n",
+        b"repository worktree\n",
+    );
+
+    let linked = temporary.path().join(linked_name);
+    let mut add = Command::new("git");
+    add.args(["worktree", "add", "--quiet", "-b", "linked"])
+        .arg(&linked)
+        .current_dir(&repository);
+    let output = capture(&mut add).expect("start linked worktree creation");
+    assert!(
+        output.status.success(),
+        "add special-byte linked worktree failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::write(linked.join("staged.txt"), "linked staged\n").expect("linked stage content");
+    git(&linked, &["add", "staged.txt"]);
+    fs::write(linked.join("staged.txt"), "linked worktree\n").expect("linked worktree content");
+    let linked_live = LiveRepository::capture_at(&linked).expect("capture raw-byte linked path");
+    assert_ne!(linked_live.worktree_git_dir, linked_live.common_git_dir);
+    assert_eq!(
+        linked_live.root.as_os_str().as_bytes(),
+        fs::canonicalize(&linked)
+            .expect("canonical linked-worktree path")
+            .as_os_str()
+            .as_bytes()
+    );
+    assert_snapshot_preserves_live_state(
+        &linked_live,
+        &linked,
+        b"linked staged\n",
+        b"linked worktree\n",
+    );
+}
+
+fn assert_snapshot_preserves_live_state(
+    live: &LiveRepository,
+    root: &Path,
+    staged: &[u8],
+    worktree: &[u8],
+) {
+    let index_before = fs::read(&live.index).expect("live index bytes");
+    let worktree_before = fs::read(root.join("staged.txt")).expect("live worktree bytes");
+    assert_eq!(worktree_before, worktree);
+    let snapshot = OwnedSnapshot::create(live).expect("private snapshot");
+    let tree = snapshot.capture_staged_tree().expect("staged tree");
+    snapshot
+        .materialize(&tree, live)
+        .expect("materialize staged tree");
+    snapshot.admit(&tree).expect("admit staged tree");
+    assert_eq!(
+        fs::read(snapshot.root.join("staged.txt")).expect("staged snapshot file"),
+        staged
+    );
+    assert_eq!(
+        fs::read(&live.index).expect("live index remains"),
+        index_before
+    );
+    assert_eq!(
+        fs::read(root.join("staged.txt")).expect("live worktree remains"),
+        worktree_before
+    );
+    OwnedSnapshot::verify_live_index(live).expect("live index custody remains valid");
+}
+
 #[test]
 fn expands_split_sparse_index_in_private_tree() {
     let directory = tempfile::tempdir().expect("fixture directory");

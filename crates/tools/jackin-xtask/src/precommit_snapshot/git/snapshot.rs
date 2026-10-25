@@ -9,8 +9,8 @@ use crate::precommit_snapshot::{
     process::{capture, capture_limited},
     toolchain::QualifiedTools,
 };
-use anyhow::{Context, Result, bail, ensure};
-use jackin_process::{ExecRequest, StdioMode, exec_spooled_sync_cancellable};
+use anyhow::{Context, Result, anyhow, bail, ensure};
+use jackin_process::{ExecRequest, SpoolRecovery, StdioMode, exec_spooled_sync_cancellable};
 use std::{
     ffi::{OsStr, OsString},
     fs,
@@ -151,6 +151,22 @@ impl OwnedSnapshot {
         None
     }
 
+    pub(in crate::precommit_snapshot) fn spool_failure_error(
+        &mut self,
+        detail: &str,
+        recovery: Option<SpoolRecovery>,
+    ) -> anyhow::Error {
+        let retained_path = recovery.as_ref().and_then(|_| self.retain());
+        drop(recovery);
+        match retained_path {
+            Some(path) => anyhow!(
+                "native pre-commit gate failed: {detail}; recovery snapshot retained at {}",
+                path.display()
+            ),
+            None => anyhow!("native pre-commit gate failed: {detail}"),
+        }
+    }
+
     pub(in crate::precommit_snapshot) fn report_gate_output(&self) {
         for (label, path) in [
             ("stdout", self.scratch_root.join("stdout.log")),
@@ -229,11 +245,7 @@ impl OwnedSnapshot {
                 match error.downcast::<jackin_process::SpoolError>() {
                     Ok(spool) => {
                         let (_, _, recovery) = spool.into_parts();
-                        if recovery.is_some() {
-                            let _retained_path = self.retain();
-                        }
-                        drop(recovery);
-                        bail!("native pre-commit gate failed: {detail}");
+                        Err(self.spool_failure_error(&detail, recovery))
                     }
                     Err(error) => Err(error).context("running the native pre-commit gate"),
                 }

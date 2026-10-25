@@ -6,7 +6,7 @@ use std::{
     env,
     ffi::{OsStr, OsString},
     fs,
-    os::unix::fs::symlink,
+    os::unix::fs::{PermissionsExt, symlink},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -50,8 +50,10 @@ pub(super) struct QualifiedTools {
 }
 
 pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
-    let pin = rust_release(&snapshot.root.join("rust-toolchain.toml"))?;
     let inherited_path = env::var_os("PATH").unwrap_or_default();
+    let home = env::var_os("HOME").map(PathBuf::from);
+    let guard = resolve_guard(&inherited_path, home.as_deref())?;
+    let pin = rust_release(&snapshot.root.join("rust-toolchain.toml"))?;
     let mise = find_executable("mise", &inherited_path).context("missing Mise executable")?;
     let mise = fs::canonicalize(mise).context("resolving Mise executable")?;
     let mut mise_env = runtime_environment();
@@ -82,6 +84,8 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         symlink(&resolved[*name], managed_dir.join(name))
             .with_context(|| format!("linking qualified Mise tool {name}"))?;
     }
+    symlink(&guard, managed_dir.join("rust-build-guard"))
+        .context("linking qualified rust-build-guard")?;
     symlink(&mise, managed_dir.join("mise")).context("linking qualified Mise executable")?;
     #[cfg(target_os = "macos")]
     symlink("/usr/bin/xcrun", managed_dir.join("xcrun"))
@@ -340,11 +344,32 @@ fn rust_release(path: &Path) -> Result<String> {
 fn find_executable(name: &str, path: &OsStr) -> Result<PathBuf> {
     for directory in env::split_paths(path) {
         let candidate = directory.join(name);
-        if candidate.is_file() {
+        if is_executable(&candidate) {
             return Ok(candidate);
         }
     }
     bail!("tool is missing from PATH: {name}")
+}
+
+fn resolve_guard(inherited_path: &OsStr, home: Option<&Path>) -> Result<PathBuf> {
+    let candidate = match find_executable("rust-build-guard", inherited_path) {
+        Ok(candidate) => candidate,
+        Err(_) => home
+            .map(|home| home.join(".local/bin/rust-build-guard"))
+            .filter(|candidate| is_executable(candidate))
+            .context("rust-build-guard is not installed")?,
+    };
+    let physical = fs::canonicalize(candidate).context("resolving rust-build-guard executable")?;
+    ensure!(
+        is_executable(&physical),
+        "rust-build-guard is not executable"
+    );
+    Ok(physical)
+}
+
+fn is_executable(path: &Path) -> bool {
+    fs::metadata(path)
+        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
 }
 
 #[cfg(test)]
