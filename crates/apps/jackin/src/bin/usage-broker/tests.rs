@@ -140,19 +140,32 @@ fn explicit_auth_holds_foreground_service_and_reports_only_safe_readiness() {
 #[test]
 fn foreground_bootstrap_maps_safe_outcomes_to_stable_codes() {
     let args = prepare_auth_args(&[]);
+    assert_eq!(
+        ForegroundBootstrapOutcome::from(ClaudeCredentialBootstrapOutcome::AccessUnavailable),
+        ForegroundBootstrapOutcome::AccessUnavailable
+    );
     let malformed = jackin_usage_provider_claude::diagnose_claude_profile_payload(
         br#"{"claudeAiOauth":{"accessToken":"fixture-token"}}"#,
     );
-    for (outcome, expected) in [
-        (ForegroundBootstrapOutcome::Missing, "auth_missing"),
-        (ForegroundBootstrapOutcome::Denied, "auth_denied"),
+    for (outcome, expected, expected_message) in [
+        (ForegroundBootstrapOutcome::Missing, "auth_missing", None),
+        (ForegroundBootstrapOutcome::Denied, "auth_denied", None),
         (
             ForegroundBootstrapOutcome::InteractionRequired,
             "interaction_required",
+            Some(
+                "authentication preparation requires stdin, stdout, and stderr attached to a terminal",
+            ),
+        ),
+        (
+            ForegroundBootstrapOutcome::AccessUnavailable,
+            "keychain_access_unavailable",
+            Some("Keychain credential access is unavailable during authentication preparation"),
         ),
         (
             ForegroundBootstrapOutcome::Malformed(malformed.clone()),
             "auth_malformed",
+            None,
         ),
     ] {
         let result = prepare_auth_with(
@@ -165,6 +178,9 @@ fn foreground_bootstrap_maps_safe_outcomes_to_stable_codes() {
         assert_eq!(exit_code, 2);
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value["error"]["code"], expected);
+        if let Some(expected_message) = expected_message {
+            assert_eq!(value["error"]["message"], expected_message);
+        }
         assert_eq!(
             value["error"].get("diagnostic").is_some(),
             expected == "auth_malformed"

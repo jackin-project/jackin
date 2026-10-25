@@ -56,6 +56,28 @@ fn bootstrap_fails_before_keychain_access_without_tty_and_validates_selected_sou
 }
 
 #[test]
+fn bootstrap_preserves_access_unavailable_without_caching_or_interaction_claim() {
+    let _serial = serialized_bootstrap();
+    clear_bootstrapped_claude_credential();
+    let read_count = Mutex::new(0);
+
+    let outcome = bootstrap_claude_credential_with("selected", true, || {
+        *read_count.lock().unwrap() += 1;
+        ClaudeKeychainRead::AccessUnavailable
+    })
+    .expect("unavailable access is a typed bootstrap outcome");
+
+    assert!(matches!(
+        outcome,
+        ClaudeCredentialBootstrapOutcome::AccessUnavailable
+    ));
+    assert_eq!(*read_count.lock().unwrap(), 1);
+    assert!(bootstrapped_claude_service().is_none());
+    assert!(cached_claude_keychain_payload("selected").is_none());
+    clear_bootstrapped_claude_credential();
+}
+
+#[test]
 fn bootstrap_retains_one_bounded_zeroizing_exact_source_until_last_lease_drops() {
     let _serial = serialized_bootstrap();
     clear_bootstrapped_claude_credential();

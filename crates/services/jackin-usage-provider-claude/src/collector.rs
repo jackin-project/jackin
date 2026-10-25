@@ -331,7 +331,7 @@ fn payload_from_keychain_read(read: ClaudeKeychainRead) -> Option<Zeroizing<Stri
         ClaudeKeychainRead::Payload { json } => Some(json),
         ClaudeKeychainRead::Denied
         | ClaudeKeychainRead::Missing
-        | ClaudeKeychainRead::ConsentRequired => None,
+        | ClaudeKeychainRead::AccessUnavailable => None,
     }
 }
 

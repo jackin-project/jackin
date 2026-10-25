@@ -170,11 +170,11 @@ fn operator_prepare_searches_without_changing_ui_state_after_tty_gate() {
 }
 
 #[test]
-fn headless_operator_prepare_returns_consent_required_without_keychain_calls() {
+fn headless_operator_prepare_reports_access_unavailable_without_keychain_calls() {
     let keychain = FakeKeychain::new();
     assert!(matches!(
         keychain.prepare(false),
-        ClaudeKeychainRead::ConsentRequired
+        ClaudeKeychainRead::AccessUnavailable
     ));
     assert_eq!(keychain.query_count.get(), 0);
     assert_eq!(keychain.disable_count.get(), 0);
@@ -208,14 +208,14 @@ fn fake_keychain_read_maps_search_outcomes_only_while_ui_is_disabled() {
     enum ExpectedRead {
         Missing,
         Denied,
-        ConsentRequired,
+        AccessUnavailable,
     }
 
     for (status, expected) in [
         (-25300, ExpectedRead::Missing),
         (-25293, ExpectedRead::Denied),
         (-128, ExpectedRead::Denied),
-        (-25308, ExpectedRead::ConsentRequired),
+        (-25308, ExpectedRead::AccessUnavailable),
         (-1, ExpectedRead::Missing),
     ] {
         let keychain = FakeKeychain::new();
@@ -226,8 +226,8 @@ fn fake_keychain_read_maps_search_outcomes_only_while_ui_is_disabled() {
         match expected {
             ExpectedRead::Missing => assert!(matches!(outcome, ClaudeKeychainRead::Missing)),
             ExpectedRead::Denied => assert!(matches!(outcome, ClaudeKeychainRead::Denied)),
-            ExpectedRead::ConsentRequired => {
-                assert!(matches!(outcome, ClaudeKeychainRead::ConsentRequired));
+            ExpectedRead::AccessUnavailable => {
+                assert!(matches!(outcome, ClaudeKeychainRead::AccessUnavailable));
             }
         }
         assert_eq!(keychain.query_count.get(), 1);
@@ -277,7 +277,7 @@ fn fake_keychain_query_and_disable_errors_never_run_search() {
     query_failure.query_error.set(true);
     assert!(matches!(
         query_failure.read_unattended(),
-        ClaudeKeychainRead::ConsentRequired
+        ClaudeKeychainRead::AccessUnavailable
     ));
     assert_eq!(query_failure.query_count.get(), 1);
     assert_eq!(query_failure.disable_count.get(), 0);
@@ -288,7 +288,7 @@ fn fake_keychain_query_and_disable_errors_never_run_search() {
     disable_failure.disable_error.set(true);
     assert!(matches!(
         disable_failure.read_unattended(),
-        ClaudeKeychainRead::ConsentRequired
+        ClaudeKeychainRead::AccessUnavailable
     ));
     assert_eq!(disable_failure.query_count.get(), 1);
     assert_eq!(disable_failure.disable_count.get(), 1);

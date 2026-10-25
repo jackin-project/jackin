@@ -130,14 +130,14 @@ pub enum ClaudeKeychainRead {
     Payload { json: Zeroizing<String> },
     Denied,
     Missing,
-    ConsentRequired,
+    AccessUnavailable,
 }
 
 #[cfg(any(target_os = "macos", test))]
 pub fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
     match code {
         -128 | -25293 => ClaudeKeychainRead::Denied,
-        -25308 => ClaudeKeychainRead::ConsentRequired,
+        -25308 => ClaudeKeychainRead::AccessUnavailable,
         _ => ClaudeKeychainRead::Missing,
     }
 }
@@ -280,7 +280,7 @@ fn read_claude_keychain_item_with<Guard>(
         disable_user_interaction,
         read,
     )
-    .unwrap_or(ClaudeKeychainRead::ConsentRequired)
+    .unwrap_or(ClaudeKeychainRead::AccessUnavailable)
 }
 
 fn read_claude_keychain_item_for_foreground_with(
@@ -288,7 +288,7 @@ fn read_claude_keychain_item_for_foreground_with(
     read_item: impl FnOnce() -> ClaudeKeychainRead,
 ) -> ClaudeKeychainRead {
     if !all_stdio_are_terminal {
-        return ClaudeKeychainRead::ConsentRequired;
+        return ClaudeKeychainRead::AccessUnavailable;
     }
     read_item()
 }
