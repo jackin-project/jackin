@@ -26,16 +26,6 @@ fn hook_fixture() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
         b"#!/bin/sh\nprintf '%s\\n' bootstrap >> bootstrap-events\n",
     )
     .unwrap();
-    fs::write(
-        scripts.join("pre-commit-snapshot"),
-        b"#!/bin/sh\nprintf '%s\\n' snapshot >> hook-events\n",
-    )
-    .unwrap();
-    fs::set_permissions(
-        scripts.join("pre-commit-snapshot"),
-        fs::Permissions::from_mode(0o755),
-    )
-    .unwrap();
     let global = temporary.path().join("global.gitconfig");
     let system = temporary.path().join("empty-system.gitconfig");
     fs::write(&global, b"").unwrap();

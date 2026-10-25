@@ -7,7 +7,10 @@ use std::{
     ffi::{OsStr, OsString},
     fs,
     io::{Read, Write},
-    os::unix::{ffi::OsStrExt, fs::MetadataExt},
+    os::unix::{
+        ffi::{OsStrExt, OsStringExt},
+        fs::MetadataExt,
+    },
     path::{Path, PathBuf},
     process::{Command, Output},
 };
@@ -56,21 +59,18 @@ impl LiveRepository {
 
     pub(super) fn capture_at(root: &Path) -> Result<Self> {
         let invocation_dir = fs::canonicalize(root).context("resolving invocation directory")?;
-        let root = PathBuf::from(output_live_at(
-            &invocation_dir,
-            &["rev-parse", "--show-toplevel"],
-        )?);
+        let root = output_live_path_at(&invocation_dir, &["rev-parse", "--show-toplevel"])?;
         let root = fs::canonicalize(&root).context("resolving physical repository root")?;
         let index = match env::var_os("GIT_INDEX_FILE") {
             Some(path) => absolute_from(&invocation_dir, PathBuf::from(path)),
-            None => PathBuf::from(output_live_at(
+            None => output_live_path_at(
                 &root,
                 &["rev-parse", "--path-format=absolute", "--git-path", "index"],
-            )?),
+            )?,
         };
         let objects = match env::var_os("GIT_OBJECT_DIRECTORY") {
             Some(path) => absolute_from(&invocation_dir, PathBuf::from(path)),
-            None => PathBuf::from(output_live_at(
+            None => output_live_path_at(
                 &root,
                 &[
                     "rev-parse",
@@ -78,28 +78,25 @@ impl LiveRepository {
                     "--git-path",
                     "objects",
                 ],
-            )?),
+            )?,
         };
-        let common_git_dir = PathBuf::from(output_live_at(
+        let common_git_dir = output_live_path_at(
             &root,
             &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        )?);
-        let worktree_git_dir =
-            PathBuf::from(output_live_at(&root, &["rev-parse", "--absolute-git-dir"])?);
+        )?;
+        let worktree_git_dir = output_live_path_at(&root, &["rev-parse", "--absolute-git-dir"])?;
         let shallow = match env::var_os("GIT_SHALLOW_FILE") {
             Some(path) => absolute_from(&invocation_dir, PathBuf::from(path)),
-            None => PathBuf::from(
-                output_live_at(
-                    &root,
-                    &[
-                        "rev-parse",
-                        "--path-format=absolute",
-                        "--git-path",
-                        "shallow",
-                    ],
-                )
-                .unwrap_or_default(),
-            ),
+            None => output_live_path_at(
+                &root,
+                &[
+                    "rev-parse",
+                    "--path-format=absolute",
+                    "--git-path",
+                    "shallow",
+                ],
+            )
+            .unwrap_or_default(),
         };
         let object_format = OsString::from(output_live_at(
             &root,
@@ -279,14 +276,42 @@ fn isolated_git(
     command
 }
 
+fn output_live_path_at(root: &Path, args: &[&str]) -> Result<PathBuf> {
+    let mut command = Command::new("git");
+    command.args(args).current_dir(root);
+    let output =
+        capture(&mut command).with_context(|| format!("running git {}", args.join(" ")))?;
+    let bytes = checked(output, "reading live Git path")?;
+    let path = without_record_terminator(&bytes)?;
+    ensure!(
+        !path.is_empty() && !path.contains(&0),
+        "Git returned an invalid path record"
+    );
+    Ok(PathBuf::from(OsString::from_vec(path.to_vec())))
+}
+
 fn output_live_at(root: &Path, args: &[&str]) -> Result<String> {
     let mut command = Command::new("git");
     command.args(args).current_dir(root);
     let output =
         capture(&mut command).with_context(|| format!("running git {}", args.join(" ")))?;
-    String::from_utf8(checked(output, "reading live Git state")?)
-        .map(|value| value.trim_end_matches(['\r', '\n']).to_owned())
-        .context("decoding live Git path")
+    let bytes = checked(output, "reading live Git text state")?;
+    let record = without_record_terminator(&bytes)?;
+    ensure!(
+        !record.contains(&0) && !record.contains(&b'\n') && !record.contains(&b'\r'),
+        "Git returned a malformed text record"
+    );
+    let text = std::str::from_utf8(record).context("decoding live Git text state")?;
+    ensure!(text.is_ascii(), "Git returned non-ASCII text state");
+    Ok(text.to_owned())
+}
+
+fn without_record_terminator(bytes: &[u8]) -> Result<&[u8]> {
+    ensure!(
+        bytes.last() == Some(&b'\n'),
+        "Git output is missing its record terminator"
+    );
+    Ok(&bytes[..bytes.len() - 1])
 }
 
 fn checked(output: Output, operation: &str) -> Result<Vec<u8>> {
