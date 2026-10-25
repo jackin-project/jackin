@@ -238,11 +238,7 @@
         "Remove old backend variants from the new schema designs.",
         "Do not add a v1 parser, importer, or compatibility field."
       ],
-      "test_cases": [
-        "A07",
-        "A08",
-        "A09"
-      ],
+      "test_cases": [],
       "source_basis": "SPEC L68-L111; L148-L190; L336-L369; L402-L463",
       "status": "NOT_STARTED",
       "stop_conditions": [
@@ -686,10 +682,7 @@
         "Do not reuse the Jackin DinD manager as the companion owner.",
         "Do not introduce shared engine pools."
       ],
-      "test_cases": [
-        "A28",
-        "A29"
-      ],
+      "test_cases": [],
       "source_basis": "SPEC L286-L324; L482",
       "status": "NOT_STARTED",
       "stop_conditions": [
@@ -1010,8 +1003,8 @@
         "Do not copy the old workflow database format as the v2 schema."
       ],
       "test_cases": [
+        "A09",
         "A40",
-        "A41",
         "A42"
       ],
       "source_basis": "SPEC L87-L93; L336-L354; L413-L419",
@@ -1072,9 +1065,7 @@
         "Do not create a required team server or fleet scheduler."
       ],
       "test_cases": [
-        "A43",
-        "A44",
-        "A45"
+        "A43"
       ],
       "source_basis": "SPEC L66; L176; L180-L188; L346",
       "status": "NOT_STARTED",
@@ -1244,15 +1235,17 @@
       ],
       "write_scope": [
         "crates/services/jackin-roles/src/resolve/",
-        "crates/core/jackin-config role-schema implementation",
+        "crates/core/jackin-config user, role, and project schema implementation",
         "Role resolution tests"
       ],
       "inputs": [
-        "RoleRecipe and ResolvedRole schemas.",
+        "Frozen strict user, role, and project schemas.",
+        "RoleRecipe and ResolvedRole definitions.",
         "P01 role, agent, tool, plugin, and hook inventory."
       ],
       "steps": [
-        "Parse only the strict v2 role schema.",
+        "Parse strict v2 user, role, and project schemas.",
+        "Reject unknown fields, unsupported versions, ambiguous IDs, and old-schema fallbacks.",
         "Resolve every declared agent, tool, plugin, hook, and base image to an explicit input.",
         "Keep the full selectable agent set in the resolved role.",
         "Reject undeclared or unavailable agent selections.",
@@ -1267,18 +1260,21 @@
         "Changing any declared agent or plugin input changes the cache identity.",
         "An Amp selection cannot reuse an image without Amp.",
         "An unknown version cannot silently match a reproducible cache entry.",
-        "Ignoring a file affects the key exactly as the build context requires."
+        "Ignoring a file affects the key exactly as the build context requires.",
+        "Unknown fields and unsupported versions in user, role, and project schemas fail.",
+        "Ambiguous IDs fail without a first-match fallback."
       ],
       "remove_or_replace": [
         "Replace old selected-agent cache shortcuts and runtime-role labels.",
         "Do not retain implicit fallback installers."
       ],
       "test_cases": [
+        "A07",
         "A49",
         "A50",
         "A51"
       ],
-      "source_basis": "SPEC L113-L127; L146; L475",
+      "source_basis": "SPEC L68-L111; L113-L127; L146; L402-L463; L475",
       "status": "NOT_STARTED",
       "stop_conditions": [
         "Block the role when required inputs cannot be resolved or verified.",
@@ -1587,6 +1583,7 @@
         "Implement multiple viewers and one renewable input-writer lease.",
         "Discard input from stale lease generations.",
         "Do not replay unacknowledged input after disconnect.",
+        "Restart host control during a live PTY and reconnect without replaying uncertain agent startup.",
         "Close only the attachment after relay EOF or cancellation.",
         "Restore the host terminal after every exit path."
       ],
@@ -1595,6 +1592,7 @@
         "Detach and network interruption preserve the same live inner PTY.",
         "A new relay does not reuse admission replay as output replay.",
         "Two viewers cannot both send accepted writer input.",
+        "Host-service restart preserves remote execution and binding without replaying uncertain agent startup.",
         "Host terminal state is restored after errors and interrupts."
       ],
       "remove_or_replace": [
@@ -1602,11 +1600,12 @@
         "Delete old attachment fallback chains."
       ],
       "test_cases": [
+        "A44",
         "A65",
         "A66",
         "A67"
       ],
-      "source_basis": "SPEC L158-L188; L361-L364",
+      "source_basis": "SPEC L158-L188; L336-L355; L361-L364",
       "status": "NOT_STARTED",
       "stop_conditions": [
         "Block input when binding, boot, or writer generation is stale.",
@@ -1733,9 +1732,7 @@
         "Do not create a second generic provider or credential store."
       ],
       "test_cases": [
-        "A72",
-        "A73",
-        "A74"
+        "A73"
       ],
       "source_basis": "SPEC L95-L111; L228-L248",
       "status": "NOT_STARTED",
@@ -1851,6 +1848,8 @@
         "Create one admitted OpenShell domain with canonical Capsule restart policy Never.",
         "Observe the runtime, image, policy, and provider configuration.",
         "Materialize the project and verify its active epoch.",
+        "Recheck account, provider, and policy revisions before StartSession.",
+        "Re-admit activation when any required revision changes.",
         "Record the full activation receipt in one local transaction.",
         "Start the selected agent only after every required field matches.",
         "Attach through a fresh relay without duplicating agent startup.",
@@ -1859,6 +1858,7 @@
       ],
       "acceptance": [
         "A missing receipt or stale revision prevents StartSession.",
+        "Stale account, provider, or policy revisions block StartSession until the current binding is admitted.",
         "SandboxReady alone does not activate an agent.",
         "Two identical launch retries do not create duplicate agent processes.",
         "A real role reaches useful agent output and reconnects to the same live session."
@@ -1868,11 +1868,12 @@
         "Do not keep a Docker execution fallback for failed OpenShell startup."
       ],
       "test_cases": [
+        "A74",
         "A78",
         "A79",
         "A80"
       ],
-      "source_basis": "SPEC L115; L150-L152; L336-L360; L497",
+      "source_basis": "SPEC L115; L150-L152; L228-L241; L336-L360; L497",
       "status": "NOT_STARTED",
       "stop_conditions": [
         "Block activation after any authority or image mismatch.",
@@ -1911,7 +1912,9 @@
       "steps": [
         "Group several execution domains under one logical instance.",
         "Reuse a domain only when its complete admitted trust context matches.",
-        "Create separate domains for changed accounts or capability sets.",
+        "Create separate domains when account, policy, trust class, or capability changes.",
+        "Keep saved account selection when the user's default changes.",
+        "Require re-admission after the saved account revision changes.",
         "Use independent writable materializations by default.",
         "Require explicit collaboration approval for shared writable source.",
         "Create the default project shell lazily in a credential-free domain.",
@@ -1922,6 +1925,8 @@
       ],
       "acceptance": [
         "Two accounts and the generic shell use distinct required domains.",
+        "Changing the default account does not silently reassign a saved instance.",
+        "A changed account revision requires re-admission before activation.",
         "An in-domain shell displays and inherits the selected domain authority.",
         "Interrupt affects only the selected session.",
         "A dead Capsule does not appear as a reconnectable old PTY."
@@ -1931,6 +1936,8 @@
         "Delete automatic account reassignment on reconnect."
       ],
       "test_cases": [
+        "A08",
+        "A72",
         "A81",
         "A82",
         "A83"
@@ -2040,6 +2047,8 @@
         "Keep clipboard, URL opening, export destinations, and approval dialogs on the host.",
         "Require a matching local operator action and scoped correlation record.",
         "Treat terminal escape sequences and helper events as untrusted data.",
+        "Keep approved actions pending while host control is stopped.",
+        "Restore host control without killing the remote session or granting default approval.",
         "Normalize each tool request into fixed image identity and exact argv.",
         "Bind approval to domain, operation, arguments, input digests, destination, expiry, and replay identity.",
         "Invalidate approval after any material change.",
@@ -2053,6 +2062,7 @@
         "Unsolicited OSC or helper messages cannot open URLs or change the clipboard.",
         "A wrong-domain or changed-input approval fails.",
         "A replayed approval cannot repeat its effect.",
+        "Stopping host control blocks the action without killing the remote session or granting approval.",
         "No secret enters the coding-agent PTY or arbitrary host shell."
       ],
       "remove_or_replace": [
@@ -2060,11 +2070,12 @@
         "Delete host shell execution of agent-supplied strings."
       ],
       "test_cases": [
+        "A45",
         "A86",
         "A87",
         "A88"
       ],
-      "source_basis": "SPEC L61; L176; L240",
+      "source_basis": "SPEC L61; L176; L240; L336-L346",
       "status": "NOT_STARTED",
       "stop_conditions": [
         "Block an action without a fixed executable identity and approved scope.",
@@ -2845,6 +2856,7 @@
         "Test lost responses, duplicate requests, stale generations, and same-name replacements.",
         "Test wrong workspace, wrong account, and ended-grant requests.",
         "Kill clients, relays, Capsule, host service, gateway, and companion at distinct boundaries.",
+        "Restart host control after uncertain create, exec, stop, delete, and publication effects.",
         "Test dirty work, interrupted transfers, storage errors, and unknown cleanup.",
         "Run the complete combined journey on each required target mechanism.",
         "Have an independent agent repeat critical journeys from fresh resources.",
@@ -2855,6 +2867,8 @@
       ],
       "acceptance": [
         "No injected failure causes unrelated-resource deletion or silent data loss.",
+        "Each external effect is replayed safely or remains explicitly uncertain.",
+        "Runtime and publication uncertainty never appears as guessed success.",
         "All stale-authority and same-name replacement cases fail safely.",
         "Every mandatory target journey has independent fresh evidence.",
         "Measurements distinguish requested limits, enforced scopes, and observed usage."
@@ -2864,11 +2878,12 @@
         "Do not erase failing historical fixtures."
       ],
       "test_cases": [
+        "A41",
         "A117",
         "A118",
         "A119"
       ],
-      "source_basis": "SPEC L471-L491; L505-L509",
+      "source_basis": "SPEC L336-L355; L471-L491; L505-L509",
       "status": "NOT_STARTED",
       "stop_conditions": [
         "Block release after any missing negative case or unexplained failure.",

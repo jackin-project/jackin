@@ -374,7 +374,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Operation unknown outcomes have explicit recovery rules.
 - All technical terms use the same names across schemas and task cards.
 
-**Acceptance cases:** A07, A08, A09.
+**Acceptance cases:** None.
 
 #### Removal and replacement
 
@@ -832,7 +832,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - The API does not expose the physical host daemon.
 - The contract identifies every resource owner and deletion receipt.
 
-**Acceptance cases:** A28, A29.
+**Acceptance cases:** None.
 
 #### Removal and replacement
 
@@ -1158,7 +1158,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - No database write transaction waits for a network call.
 - A v1 database produces a fresh-setup error, not an import.
 
-**Acceptance cases:** A40, A41, A42.
+**Acceptance cases:** A09, A40, A42.
 
 #### Removal and replacement
 
@@ -1223,7 +1223,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Killing the host service leaves the remote Capsule and PTYs alive.
 - Restart recovers operation state without replaying an uncertain effect.
 
-**Acceptance cases:** A43, A44, A45.
+**Acceptance cases:** A43.
 
 #### Removal and replacement
 
@@ -1388,33 +1388,35 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Dependencies:** P03, P05.
 
-**Source basis:** SPEC L113-L127; L146; L475.
+**Source basis:** SPEC L68-L111; L113-L127; L146; L402-L463; L475.
 
 #### Write scope
 
 - crates/services/jackin-roles/src/resolve/
-- crates/core/jackin-config role-schema implementation
+- crates/core/jackin-config user, role, and project schema implementation
 - Role resolution tests
 
 #### Required inputs
 
-- RoleRecipe and ResolvedRole schemas.
+- Frozen strict user, role, and project schemas.
+- RoleRecipe and ResolvedRole definitions.
 - P01 role, agent, tool, plugin, and hook inventory.
 
 **Task test directory:** `tests/v2/tasks/T14/`.
 
 #### Procedure
 
-1. Parse only the strict v2 role schema.
-2. Resolve every declared agent, tool, plugin, hook, and base image to an explicit input.
-3. Keep the full selectable agent set in the resolved role.
-4. Reject undeclared or unavailable agent selections.
-5. Compute the effective build context with actual ignore rules.
-6. Include every required C07 input in the cache identity.
-7. Separate secret references from nonsecret build identity.
-8. Define cache behavior for secret-dependent output.
-9. Record provenance and an executable inventory.
-10. Require explicit role trust before build-side source or secret exposure.
+1. Parse strict v2 user, role, and project schemas.
+2. Reject unknown fields, unsupported versions, ambiguous IDs, and old-schema fallbacks.
+3. Resolve every declared agent, tool, plugin, hook, and base image to an explicit input.
+4. Keep the full selectable agent set in the resolved role.
+5. Reject undeclared or unavailable agent selections.
+6. Compute the effective build context with actual ignore rules.
+7. Include every required C07 input in the cache identity.
+8. Separate secret references from nonsecret build identity.
+9. Define cache behavior for secret-dependent output.
+10. Record provenance and an executable inventory.
+11. Require explicit role trust before build-side source or secret exposure.
 
 #### Pass conditions
 
@@ -1422,8 +1424,10 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - An Amp selection cannot reuse an image without Amp.
 - An unknown version cannot silently match a reproducible cache entry.
 - Ignoring a file affects the key exactly as the build context requires.
+- Unknown fields and unsupported versions in user, role, and project schemas fail.
+- Ambiguous IDs fail without a first-match fallback.
 
-**Acceptance cases:** A49, A50, A51.
+**Acceptance cases:** A07, A49, A50, A51.
 
 #### Removal and replacement
 
@@ -1721,7 +1725,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Dependencies:** T18, T13, T11.
 
-**Source basis:** SPEC L158-L188; L361-L364.
+**Source basis:** SPEC L158-L188; L336-L355; L361-L364.
 
 #### Write scope
 
@@ -1747,8 +1751,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 7. Implement multiple viewers and one renewable input-writer lease.
 8. Discard input from stale lease generations.
 9. Do not replay unacknowledged input after disconnect.
-10. Close only the attachment after relay EOF or cancellation.
-11. Restore the host terminal after every exit path.
+10. Restart host control during a live PTY and reconnect without replaying uncertain agent startup.
+11. Close only the attachment after relay EOF or cancellation.
+12. Restore the host terminal after every exit path.
 
 #### Pass conditions
 
@@ -1756,9 +1761,10 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Detach and network interruption preserve the same live inner PTY.
 - A new relay does not reuse admission replay as output replay.
 - Two viewers cannot both send accepted writer input.
+- Host-service restart preserves remote execution and binding without replaying uncertain agent startup.
 - Host terminal state is restored after errors and interrupts.
 
-**Acceptance cases:** A65, A66, A67.
+**Acceptance cases:** A44, A65, A66, A67.
 
 #### Removal and replacement
 
@@ -1892,7 +1898,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A helper cannot enumerate unrelated accounts or grant itself a provider.
 - A provider placeholder is treated as authority, not as harmless public text.
 
-**Acceptance cases:** A72, A73, A74.
+**Acceptance cases:** A73.
 
 #### Removal and replacement
 
@@ -1990,7 +1996,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Dependencies:** T16, T19, T20, T21, T22, T11.
 
-**Source basis:** SPEC L115; L150-L152; L336-L360; L497.
+**Source basis:** SPEC L115; L150-L152; L228-L241; L336-L360; L497.
 
 #### Write scope
 
@@ -2013,20 +2019,23 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 4. Create one admitted OpenShell domain with canonical Capsule restart policy Never.
 5. Observe the runtime, image, policy, and provider configuration.
 6. Materialize the project and verify its active epoch.
-7. Record the full activation receipt in one local transaction.
-8. Start the selected agent only after every required field matches.
-9. Attach through a fresh relay without duplicating agent startup.
-10. Handle cancellation and lost responses through the journal.
-11. Publish the complete operation and binding to inspection.
+7. Recheck account, provider, and policy revisions before StartSession.
+8. Re-admit activation when any required revision changes.
+9. Record the full activation receipt in one local transaction.
+10. Start the selected agent only after every required field matches.
+11. Attach through a fresh relay without duplicating agent startup.
+12. Handle cancellation and lost responses through the journal.
+13. Publish the complete operation and binding to inspection.
 
 #### Pass conditions
 
 - A missing receipt or stale revision prevents StartSession.
+- Stale account, provider, or policy revisions block StartSession until the current binding is admitted.
 - SandboxReady alone does not activate an agent.
 - Two identical launch retries do not create duplicate agent processes.
 - A real role reaches useful agent output and reconnects to the same live session.
 
-**Acceptance cases:** A78, A79, A80.
+**Acceptance cases:** A74, A78, A79, A80.
 
 #### Removal and replacement
 
@@ -2076,23 +2085,27 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 1. Group several execution domains under one logical instance.
 2. Reuse a domain only when its complete admitted trust context matches.
-3. Create separate domains for changed accounts or capability sets.
-4. Use independent writable materializations by default.
-5. Require explicit collaboration approval for shared writable source.
-6. Create the default project shell lazily in a credential-free domain.
-7. Provide an explicit in-domain shell with a trusted authority warning.
-8. Implement session start, stop, interrupt, detach, and agent switching.
-9. Keep session exit separate from domain and instance exit.
-10. Show new-process resume explicitly after retained-state recovery.
+3. Create separate domains when account, policy, trust class, or capability changes.
+4. Keep saved account selection when the user's default changes.
+5. Require re-admission after the saved account revision changes.
+6. Use independent writable materializations by default.
+7. Require explicit collaboration approval for shared writable source.
+8. Create the default project shell lazily in a credential-free domain.
+9. Provide an explicit in-domain shell with a trusted authority warning.
+10. Implement session start, stop, interrupt, detach, and agent switching.
+11. Keep session exit separate from domain and instance exit.
+12. Show new-process resume explicitly after retained-state recovery.
 
 #### Pass conditions
 
 - Two accounts and the generic shell use distinct required domains.
+- Changing the default account does not silently reassign a saved instance.
+- A changed account revision requires re-admission before activation.
 - An in-domain shell displays and inherits the selected domain authority.
 - Interrupt affects only the selected session.
 - A dead Capsule does not appear as a reconnectable old PTY.
 
-**Acceptance cases:** A81, A82, A83.
+**Acceptance cases:** A08, A72, A81, A82, A83.
 
 #### Removal and replacement
 
@@ -2188,7 +2201,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Dependencies:** T24, T21, T13.
 
-**Source basis:** SPEC L61; L176; L240.
+**Source basis:** SPEC L61; L176; L240; L336-L346.
 
 #### Write scope
 
@@ -2208,23 +2221,26 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 1. Keep clipboard, URL opening, export destinations, and approval dialogs on the host.
 2. Require a matching local operator action and scoped correlation record.
 3. Treat terminal escape sequences and helper events as untrusted data.
-4. Normalize each tool request into fixed image identity and exact argv.
-5. Bind approval to domain, operation, arguments, input digests, destination, expiry, and replay identity.
-6. Invalidate approval after any material change.
-7. Run the approved consumer in a separate OpenShell domain.
-8. Give that consumer only its admitted capability or secret.
-9. Keep project hooks and writable configuration from selecting the consumer executable.
-10. Record denial, cancellation, timeout, revocation, and uncertain completion.
-11. Keep secret-consuming output separate from ordinary terminal replay.
+4. Keep approved actions pending while host control is stopped.
+5. Restore host control without killing the remote session or granting default approval.
+6. Normalize each tool request into fixed image identity and exact argv.
+7. Bind approval to domain, operation, arguments, input digests, destination, expiry, and replay identity.
+8. Invalidate approval after any material change.
+9. Run the approved consumer in a separate OpenShell domain.
+10. Give that consumer only its admitted capability or secret.
+11. Keep project hooks and writable configuration from selecting the consumer executable.
+12. Record denial, cancellation, timeout, revocation, and uncertain completion.
+13. Keep secret-consuming output separate from ordinary terminal replay.
 
 #### Pass conditions
 
 - Unsolicited OSC or helper messages cannot open URLs or change the clipboard.
 - A wrong-domain or changed-input approval fails.
 - A replayed approval cannot repeat its effect.
+- Stopping host control blocks the action without killing the remote session or granting approval.
 - No secret enters the coding-agent PTY or arbitrary host shell.
 
-**Acceptance cases:** A86, A87, A88.
+**Acceptance cases:** A45, A86, A87, A88.
 
 #### Removal and replacement
 
@@ -2987,7 +3003,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Dependencies:** T35, T36, T37, T32, T33.
 
-**Source basis:** SPEC L471-L491; L505-L509.
+**Source basis:** SPEC L336-L355; L471-L491; L505-L509.
 
 #### Write scope
 
@@ -3008,22 +3024,25 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 2. Test lost responses, duplicate requests, stale generations, and same-name replacements.
 3. Test wrong workspace, wrong account, and ended-grant requests.
 4. Kill clients, relays, Capsule, host service, gateway, and companion at distinct boundaries.
-5. Test dirty work, interrupted transfers, storage errors, and unknown cleanup.
-6. Run the complete combined journey on each required target mechanism.
-7. Have an independent agent repeat critical journeys from fresh resources.
-8. Measure one-instance and two-instance resource totals and launch phases.
-9. Record cache state, sample count, median, range, and host details.
-10. Report percentiles only when the declared sample requirement is met.
-11. Review every failure without deleting inconvenient evidence.
+5. Restart host control after uncertain create, exec, stop, delete, and publication effects.
+6. Test dirty work, interrupted transfers, storage errors, and unknown cleanup.
+7. Run the complete combined journey on each required target mechanism.
+8. Have an independent agent repeat critical journeys from fresh resources.
+9. Measure one-instance and two-instance resource totals and launch phases.
+10. Record cache state, sample count, median, range, and host details.
+11. Report percentiles only when the declared sample requirement is met.
+12. Review every failure without deleting inconvenient evidence.
 
 #### Pass conditions
 
 - No injected failure causes unrelated-resource deletion or silent data loss.
+- Each external effect is replayed safely or remains explicitly uncertain.
+- Runtime and publication uncertainty never appears as guessed success.
 - All stale-authority and same-name replacement cases fail safely.
 - Every mandatory target journey has independent fresh evidence.
 - Measurements distinguish requested limits, enforced scopes, and observed usage.
 
-**Acceptance cases:** A117, A118, A119.
+**Acceptance cases:** A41, A117, A118, A119.
 
 #### Removal and replacement
 

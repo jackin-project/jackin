@@ -85,7 +85,7 @@
       "expected": "Valid inputs resolve once. Invalid inputs fail explicitly. No old schema or first-match fallback succeeds.",
       "status": "NOT_RUN",
       "tasks": [
-        "P03"
+        "T14"
       ]
     },
     {
@@ -97,7 +97,7 @@
       "expected": "Only identical admitted trust sets can reuse a domain. Human labels cannot replace stable identity.",
       "status": "NOT_RUN",
       "tasks": [
-        "P03"
+        "T24"
       ]
     },
     {
@@ -109,7 +109,7 @@
       "expected": "Legal transitions preserve receipts. Illegal transitions fail. Local cancellation does not imply remote termination.",
       "status": "NOT_RUN",
       "tasks": [
-        "P03"
+        "T10"
       ]
     },
     {
@@ -348,7 +348,6 @@
       "expected": "No engine VM, endpoint, credential, engine prewarm, or engine-owned storage appears.",
       "status": "NOT_RUN",
       "tasks": [
-        "U04",
         "U08",
         "T33"
       ]
@@ -362,7 +361,6 @@
       "expected": "Only the current owning domain can use its endpoint. Names alone cannot transfer ownership.",
       "status": "NOT_RUN",
       "tasks": [
-        "U04",
         "U05",
         "T33"
       ]
@@ -518,7 +516,7 @@
       "expected": "Each operation resolves through qualified replay or stays explicitly uncertain. No guessed success appears.",
       "status": "NOT_RUN",
       "tasks": [
-        "T10"
+        "T38"
       ]
     },
     {
@@ -554,7 +552,7 @@
       "expected": "Remote execution continues. Recovery preserves the binding and does not replay uncertain agent startup.",
       "status": "NOT_RUN",
       "tasks": [
-        "T11"
+        "T19"
       ]
     },
     {
@@ -566,7 +564,7 @@
       "expected": "The action stays unavailable or pending. The remote coding session does not die or gain default approval.",
       "status": "NOT_RUN",
       "tasks": [
-        "T11"
+        "T26"
       ]
     },
     {
@@ -890,7 +888,7 @@
       "expected": "Account A remains selected. A revision change requires re-admission instead of silent reassignment.",
       "status": "NOT_RUN",
       "tasks": [
-        "T21"
+        "T24"
       ]
     },
     {
@@ -914,7 +912,7 @@
       "expected": "Activation fails until the current authorized binding and effective policy are observed and admitted.",
       "status": "NOT_RUN",
       "tasks": [
-        "T21"
+        "T23"
       ]
     },
     {

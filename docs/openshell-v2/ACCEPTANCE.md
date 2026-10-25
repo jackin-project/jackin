@@ -202,7 +202,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A07 — Strict v2 schemas
 
-**Evidence:** UNIT. **Tasks:** P03. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T14. **Initial status:** NOT_RUN.
 
 **Setup:** Prepare valid v2 configurations and variants with unknown fields, wrong versions, and ambiguous IDs.
 
@@ -212,7 +212,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A08 — Domain identity rules
 
-**Evidence:** UNIT. **Tasks:** P03. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T24. **Initial status:** NOT_RUN.
 
 **Setup:** Prepare two accounts, two policies, two trust classes, and one logical instance.
 
@@ -222,7 +222,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A09 — Operation state contract
 
-**Evidence:** UNIT. **Tasks:** P03. **Initial status:** NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T10. **Initial status:** NOT_RUN.
 
 **Setup:** Enumerate every frozen phase, outcome, error, and recovery transition.
 
@@ -412,7 +412,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A28 — Default-off engine
 
-**Evidence:** LIVE. **Tasks:** U04, U08, T33. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U08, T33. **Initial status:** NOT_RUN.
 
 **Setup:** Use a role and target with engine access disabled.
 
@@ -422,7 +422,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A29 — Companion ownership identity
 
-**Evidence:** LIVE. **Tasks:** U04, U05, T33. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U05, T33. **Initial status:** NOT_RUN.
 
 **Setup:** Use two domains and a restarted parent generation.
 
@@ -542,7 +542,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A41 — Unknown outcome recovery
 
-**Evidence:** LIVE. **Tasks:** T10. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T38. **Initial status:** NOT_RUN.
 
 **Setup:** Lose responses from create, exec, stop, delete, and publication effects.
 
@@ -572,7 +572,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A44 — Host service death
 
-**Evidence:** LIVE. **Tasks:** T11. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T19. **Initial status:** NOT_RUN.
 
 **Setup:** Run a remote Capsule with a live PTY and a durable operation record.
 
@@ -582,7 +582,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A45 — Approval-service outage
 
-**Evidence:** LIVE. **Tasks:** T11. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T26. **Initial status:** NOT_RUN.
 
 **Setup:** Run a domain that requests a host-approved action. Stop the host control service.
 
@@ -852,7 +852,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A72 — Stable account selection
 
-**Evidence:** LIVE. **Tasks:** T21. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T24. **Initial status:** NOT_RUN.
 
 **Setup:** Save an instance with account A and later change the user's default to B.
 
@@ -872,7 +872,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A74 — Account-provider activation binding
 
-**Evidence:** LIVE. **Tasks:** T21. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T23. **Initial status:** NOT_RUN.
 
 **Setup:** Use a saved grant and change its provider or policy revision before activation.
 
