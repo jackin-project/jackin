@@ -108,7 +108,7 @@ pub(crate) fn is_attachable_env_source(
         ProfileValidation::Anonymous(_) => true,
         ProfileValidation::Missing
         | ProfileValidation::Denied
-        | ProfileValidation::ConsentRequired
+        | ProfileValidation::AccessUnavailable
         | ProfileValidation::Malformed => false,
     }
 }

@@ -169,6 +169,7 @@ enum ForegroundBootstrapOutcome {
     Missing,
     Denied,
     InteractionRequired,
+    AccessUnavailable,
     Malformed(ClaudeCredentialPayloadDiagnostic),
 }
 
@@ -182,6 +183,7 @@ impl From<ClaudeCredentialBootstrapOutcome> for ForegroundBootstrapOutcome {
             ClaudeCredentialBootstrapOutcome::Missing => Self::Missing,
             ClaudeCredentialBootstrapOutcome::Denied => Self::Denied,
             ClaudeCredentialBootstrapOutcome::InteractionRequired => Self::InteractionRequired,
+            ClaudeCredentialBootstrapOutcome::AccessUnavailable => Self::AccessUnavailable,
             ClaudeCredentialBootstrapOutcome::Malformed(diagnostic) => Self::Malformed(diagnostic),
         }
     }
@@ -348,7 +350,12 @@ fn prepare_auth_with<'a>(
         ForegroundBootstrapOutcome::Acquired => Ok(()),
         ForegroundBootstrapOutcome::InteractionRequired => Err(auth_error(
             "interaction_required",
-            "Keychain requires operator consent; run preparation in an attached terminal",
+            "authentication preparation requires stdin, stdout, and stderr attached to a terminal",
+            2,
+        )),
+        ForegroundBootstrapOutcome::AccessUnavailable => Err(auth_error(
+            "keychain_access_unavailable",
+            "Keychain credential access is unavailable during authentication preparation",
             2,
         )),
         ForegroundBootstrapOutcome::Missing => Err(auth_error(

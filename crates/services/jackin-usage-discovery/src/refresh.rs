@@ -21,7 +21,7 @@ pub(crate) fn read_json(
             .map_err(|_| ProfileValidation::Malformed),
         ProfileReadOutcome::Missing => Ok(None),
         ProfileReadOutcome::Denied => Err(ProfileValidation::Denied),
-        ProfileReadOutcome::ConsentRequired => Err(ProfileValidation::ConsentRequired),
+        ProfileReadOutcome::AccessUnavailable => Err(ProfileValidation::AccessUnavailable),
     }
 }
 

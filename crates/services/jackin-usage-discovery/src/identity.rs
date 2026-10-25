@@ -85,8 +85,8 @@ pub(crate) fn append_profile_read(
         }
         ProfileReadOutcome::Missing => evidence.push(format!("{label}:missing")),
         ProfileReadOutcome::Denied => evidence.push(format!("{label}:denied")),
-        ProfileReadOutcome::ConsentRequired => {
-            evidence.push(format!("{label}:consent-required"));
+        ProfileReadOutcome::AccessUnavailable => {
+            evidence.push(format!("{label}:access-unavailable"));
         }
     }
 }

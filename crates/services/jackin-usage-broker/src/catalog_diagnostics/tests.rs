@@ -60,6 +60,27 @@ fn interaction_required_maps_to_typed_codes_without_scope_text() {
 }
 
 #[test]
+fn keychain_access_unavailable_maps_to_typed_code_without_scope_text() {
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: None,
+        accounts: Vec::new(),
+        diagnostics: vec![UsageDiscoveryDiagnostic {
+            surface_id: Some("claude".to_owned()),
+            scope_label: "/private/keychain/scope must not be projected".to_owned(),
+            unresolved_source: None,
+            issue: UsageDiscoveryIssue::KeychainAccessUnavailable,
+        }],
+        candidates: Vec::new(),
+        bindings: Vec::new(),
+    };
+
+    let mapped = from_discovery(&discovery);
+    let debug = format!("{mapped:?}");
+    assert!(debug.contains("KeychainAccessUnavailable"));
+    assert!(!debug.contains("/private/keychain/scope"));
+}
+
+#[test]
 fn unknown_surface_diagnostic_is_dropped_instead_of_exported() {
     let discovery = ValidatedUsageDiscovery {
         config_generation: None,

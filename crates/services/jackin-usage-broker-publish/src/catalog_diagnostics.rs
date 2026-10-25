@@ -17,7 +17,7 @@ pub enum CatalogDiagnosticCode {
     ConfigTransientConflict,
     CredentialMissing,
     CredentialDenied,
-    KeychainConsentRequired,
+    KeychainAccessUnavailable,
     CredentialMalformed,
     InteractionRequired,
 }
@@ -31,7 +31,7 @@ impl CatalogDiagnosticCode {
             Self::ConfigTransientConflict => "config_transient_conflict",
             Self::CredentialMissing => "credential_missing",
             Self::CredentialDenied => "credential_denied",
-            Self::KeychainConsentRequired => "keychain_consent_required",
+            Self::KeychainAccessUnavailable => "keychain_access_unavailable",
             Self::CredentialMalformed => "credential_malformed",
             Self::InteractionRequired => "interaction_required",
         }
@@ -45,9 +45,7 @@ impl CatalogDiagnosticCode {
             Self::ConfigTransientConflict => "Configuration changed while it was being read",
             Self::CredentialMissing => "Credentials are missing",
             Self::CredentialDenied => "Credential access was denied",
-            Self::KeychainConsentRequired => {
-                "Keychain consent required; approve jackin in Keychain Access"
-            }
+            Self::KeychainAccessUnavailable => "Keychain credential access is unavailable",
             Self::CredentialMalformed => "Credentials are malformed",
             Self::InteractionRequired => "Credential access requires interaction",
         }
@@ -62,7 +60,7 @@ impl CatalogDiagnosticCode {
             Self::ConfigInvalid
             | Self::CredentialMissing
             | Self::CredentialDenied
-            | Self::KeychainConsentRequired
+            | Self::KeychainAccessUnavailable
             | Self::CredentialMalformed
             | Self::InteractionRequired => UsageIssueRecoverabilityV1::ActionRequired,
         }
@@ -73,26 +71,26 @@ impl CatalogDiagnosticCode {
             self,
             Self::CredentialMissing
                 | Self::CredentialDenied
-                | Self::KeychainConsentRequired
                 | Self::CredentialMalformed
                 | Self::InteractionRequired
         )
     }
+}
 
-    fn from_id(id: &str) -> Option<Self> {
-        match id {
-            "config_unreadable" => Some(Self::ConfigUnreadable),
-            "config_invalid" => Some(Self::ConfigInvalid),
-            "config_version_unsupported" => Some(Self::ConfigVersionUnsupported),
-            "config_transient_conflict" => Some(Self::ConfigTransientConflict),
-            "credential_missing" => Some(Self::CredentialMissing),
-            "credential_denied" => Some(Self::CredentialDenied),
-            "keychain_consent_required" => Some(Self::KeychainConsentRequired),
-            "credential_malformed" => Some(Self::CredentialMalformed),
-            "interaction_required" => Some(Self::InteractionRequired),
-            _ => None,
-        }
-    }
+fn is_catalog_owned_issue_id(id: &str) -> bool {
+    matches!(
+        id,
+        "config_unreadable"
+            | "config_invalid"
+            | "config_version_unsupported"
+            | "config_transient_conflict"
+            | "credential_missing"
+            | "credential_denied"
+            | "keychain_access_unavailable"
+            | "keychain_consent_required"
+            | "credential_malformed"
+            | "interaction_required"
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -161,11 +159,11 @@ pub(crate) fn apply_catalog_diagnostics(
 ) {
     projection
         .issues
-        .retain(|issue| CatalogDiagnosticCode::from_id(&issue.code).is_none());
+        .retain(|issue| !is_catalog_owned_issue_id(&issue.code));
     for provider in &mut projection.providers {
         provider
             .issues
-            .retain(|issue| CatalogDiagnosticCode::from_id(&issue.code).is_none());
+            .retain(|issue| !is_catalog_owned_issue_id(&issue.code));
     }
     projection.unresolved.clear();
     projection
@@ -265,6 +263,8 @@ fn unresolved_state(codes: impl Iterator<Item = CatalogDiagnosticCode>) -> Usage
     let codes = codes.collect::<BTreeSet<_>>();
     if codes.contains(&CatalogDiagnosticCode::ConfigVersionUnsupported) {
         UsageLifecycleV1::Unsupported
+    } else if codes.contains(&CatalogDiagnosticCode::KeychainAccessUnavailable) {
+        UsageLifecycleV1::Unavailable
     } else if codes.iter().any(|code| code.needs_secret()) {
         UsageLifecycleV1::NeedsSecret
     } else {

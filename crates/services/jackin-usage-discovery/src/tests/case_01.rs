@@ -51,7 +51,7 @@ fn opencode_profile_database_only_uses_reader_abstraction() {
 }
 
 #[test]
-fn disc_claude_keychain_consent_is_not_reported_missing() {
+fn disc_claude_keychain_access_unavailable_is_not_reported_missing() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("home");
     let root = home.join(".claude");
@@ -71,19 +71,56 @@ fn disc_claude_keychain_consent_is_not_reported_missing() {
         }],
     };
 
-    let validated =
-        validate_usage_sources_with_reader(catalog, &NoEnvResolver, &ConsentKeychainReader);
+    let validated = validate_usage_sources_with_reader(
+        catalog,
+        &NoEnvResolver,
+        &AccessUnavailableKeychainReader,
+    );
 
     assert!(validated.accounts.is_empty());
     assert_eq!(validated.diagnostics.len(), 1);
     assert_eq!(
         validated.diagnostics[0].issue,
-        UsageDiscoveryIssue::KeychainConsentRequired
+        UsageDiscoveryIssue::KeychainAccessUnavailable
     );
     assert_eq!(
         validated.diagnostics[0].issue.id(),
-        "keychain_consent_required"
+        "keychain_access_unavailable"
     );
+    assert_eq!(
+        validated.diagnostics[0].issue.display_message(),
+        "Keychain credential access is unavailable"
+    );
+    assert!(matches!(
+        antigravity_profile_identity(&AccessUnavailableKeychainReader),
+        ProfileValidation::AccessUnavailable
+    ));
+}
+
+#[test]
+fn antigravity_keychain_observation_revisions_are_stable_and_distinct() {
+    let revision = |outcome| {
+        profile_credential_revision(
+            &FixedAntigravityRead(outcome),
+            Agent::Antigravity,
+            Path::new("/synthetic/antigravity"),
+            Path::new("/synthetic/operator"),
+        )
+    };
+
+    let unavailable = revision(ProfileReadOutcome::AccessUnavailable);
+    let repeated_unavailable = revision(ProfileReadOutcome::AccessUnavailable);
+    let missing = revision(ProfileReadOutcome::Missing);
+    let denied = revision(ProfileReadOutcome::Denied);
+    let payload = revision(ProfileReadOutcome::Bytes(zeroize::Zeroizing::new(
+        b"fixture-secret".to_vec(),
+    )));
+
+    assert_eq!(unavailable, repeated_unavailable);
+    assert_ne!(unavailable, missing);
+    assert_ne!(unavailable, denied);
+    assert_ne!(unavailable, payload);
+    assert!(!unavailable.contains("fixture-secret"));
 }
 
 #[test]

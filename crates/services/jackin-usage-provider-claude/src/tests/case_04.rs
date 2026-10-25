@@ -45,7 +45,7 @@ impl FakeClaudeCredentialSource {
 }
 
 #[test]
-fn classify_claude_keychain_status_distinguishes_denial_absence_and_consent() {
+fn classify_claude_keychain_status_distinguishes_denial_absence_and_unavailability() {
     assert!(matches!(
         classify_claude_keychain_status(-128),
         ClaudeKeychainRead::Denied
@@ -60,7 +60,7 @@ fn classify_claude_keychain_status_distinguishes_denial_absence_and_consent() {
     ));
     assert!(matches!(
         classify_claude_keychain_status(-25308),
-        ClaudeKeychainRead::ConsentRequired
+        ClaudeKeychainRead::AccessUnavailable
     ));
     assert!(matches!(
         classify_claude_keychain_status(-1),

@@ -11,7 +11,7 @@ pub enum UsageDiscoveryIssue {
     ConfigTransientConflict,
     CredentialMissing,
     CredentialDenied,
-    KeychainConsentRequired,
+    KeychainAccessUnavailable,
     CredentialMalformed,
     InteractionRequired,
 }
@@ -26,7 +26,7 @@ impl UsageDiscoveryIssue {
             Self::ConfigTransientConflict => "config_transient_conflict",
             Self::CredentialMissing => "credential_missing",
             Self::CredentialDenied => "credential_denied",
-            Self::KeychainConsentRequired => "keychain_consent_required",
+            Self::KeychainAccessUnavailable => "keychain_access_unavailable",
             Self::CredentialMalformed => "credential_malformed",
             Self::InteractionRequired => "interaction_required",
         }
@@ -41,9 +41,7 @@ impl UsageDiscoveryIssue {
             Self::ConfigTransientConflict => "Configuration changed while it was being read",
             Self::CredentialMissing => "Credentials are missing",
             Self::CredentialDenied => "Credential access was denied",
-            Self::KeychainConsentRequired => {
-                "Keychain consent required; approve jackin in Keychain Access"
-            }
+            Self::KeychainAccessUnavailable => "Keychain credential access is unavailable",
             Self::CredentialMalformed => "Credentials are malformed",
             Self::InteractionRequired => "Credential access requires interaction",
         }
