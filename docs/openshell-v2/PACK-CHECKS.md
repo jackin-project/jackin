@@ -40,7 +40,7 @@ Markdown assignment labels record initial `NOT_RUN` status and stay fixed during
 `validate_assignment_fixtures.py` runs the validator on temporary pack copies.
 Its raw receipts include each actual argument vector, stdout, stderr, exit code, and fixture source hashes.
 It writes one JSON report to stdout and does not modify the pack.
-Redirect stdout to a temporary file to retain the report.
+Redirect stdout outside the repository to retain raw receipts.
 
 ## Counts
 
@@ -68,13 +68,17 @@ Keep no more than eight actual subagents active at once.
 | Dependencies reference known tasks | PASS |
 | Task and case statuses use documented values | PASS |
 | Acceptance evidence levels use documented values | PASS |
+| Acceptance cases have unique string task owners | PASS |
 | Dependency graph has no cycle and stored groups match | PASS |
 | Assignment rows have exact unique owners and valid statuses | PASS |
 | Case status matches its assignment summary | PASS |
+| `NOT_STARTED` tasks have `NOT_RUN` assignments | PASS |
 | Task progress waits for completed dependencies | PASS |
 | `PASS` tasks have passing results for their own assignments | PASS |
 | Task test references, case coverage, and ownership maps agree | PASS |
 | Task graph matches indexes and task cards | PASS |
+| Acceptance detailed-case anchor is unique | PASS |
+| Acceptance policy before detailed cases matches fixed checksum | PASS |
 | Acceptance case blocks match the manifest | PASS |
 | Traceability headings, ranges, owners, and representations match | PASS |
 | Checked procedural sentences stay within the word limit | PASS |
@@ -83,7 +87,8 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All scenarios passed with the expected validator exit code.
+All 39 scenarios passed their exact report and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 21 targeted scenarios cover assignment ownership, fixed acceptance policy, and malformed validator reports.
 The downstream case below is A22, owned by U02 and T32.
 
 | Temporary-copy fixture | Expected validator result | Observed |
@@ -102,9 +107,19 @@ The downstream case below is A22, owned by U02 and T32.
 | T33 runs before T27 checkpoint task passes | Reject, exit 1 | PASS, exit 1 |
 | `BLOCKED` task and its blocked assignments | Accept as blocked, exit 0 | PASS, exit 0 |
 | U06 `PASS` with no assigned acceptance cases | Accept under existing no-case completion rule, exit 0 | PASS, exit 0 |
+| `NOT_STARTED` owner has `PASS`, `FAIL`, or `BLOCKED` assignment | Reject, exit 1 | PASS, exit 1 |
+| `BLOCKED` U02 retains its prior `PASS` while T32 remains `NOT_RUN` | Accept, exit 0 | PASS, exit 0 |
+| Duplicate case owner with synchronized acceptance block | Reject, exit 1 | PASS, exit 1 |
+| Copied pack lacks validator; real external validator runs | Reject missing required file, exit 1 | PASS, exit 1 |
+| Acceptance policy prefix is mutated or a line is removed | Reject checksum mismatch, exit 1 | PASS, exit 1 |
+| Empty, invalid, non-object, incomplete, or mistyped validator report | Reject malformed report | PASS |
+| Inconsistent counts, checks, failures, scope, or exit code | Reject malformed report | PASS |
+| Duplicate or malformed check records | Reject malformed report | PASS |
+| Unexpected extra failure name | Reject report against exact expected failures | PASS |
 
-The first shared-case fixture shows an upstream `PASS` cannot close T32's assignment.
-The full raw output and argument vectors are in the JSON report.
+The upstream `PASS` fixture shows U02 cannot close T32's assignment.
+Each receipt records actual arguments, stdout, stderr, exit code, executable and fixture hashes, plus report-validation results.
+The runner does not write receipts inside the repository.
 
 ## Language and evidence limits
 

@@ -728,14 +728,9 @@
       "expected": "Required API behavior works without a host socket. Stream cancellation does not corrupt ownership.",
       "status": "NOT_RUN",
       "tasks": [
-        "U07",
         "U08"
       ],
       "assignment_results": [
-        {
-          "task_id": "U07",
-          "status": "NOT_RUN"
-        },
         {
           "task_id": "U08",
           "status": "NOT_RUN"
@@ -751,14 +746,9 @@
       "expected": "All three layers obey outer egress. Agent binary policy alone does not satisfy this assertion.",
       "status": "NOT_RUN",
       "tasks": [
-        "U07",
         "U08"
       ],
       "assignment_results": [
-        {
-          "task_id": "U07",
-          "status": "NOT_RUN"
-        },
         {
           "task_id": "U08",
           "status": "NOT_RUN"
@@ -774,14 +764,9 @@
       "expected": "Each route reaches its owner. Failures are bounded. Revoked routes cannot be reused through stale credentials.",
       "status": "NOT_RUN",
       "tasks": [
-        "U07",
         "U08"
       ],
       "assignment_results": [
-        {
-          "task_id": "U07",
-          "status": "NOT_RUN"
-        },
         {
           "task_id": "U08",
           "status": "NOT_RUN"
@@ -797,14 +782,9 @@
       "expected": "The aggregate admitted budget remains enforced. Per-child limits alone do not pass.",
       "status": "NOT_RUN",
       "tasks": [
-        "U07",
         "U08"
       ],
       "assignment_results": [
-        {
-          "task_id": "U07",
-          "status": "NOT_RUN"
-        },
         {
           "task_id": "U08",
           "status": "NOT_RUN"
@@ -1509,11 +1489,11 @@
       "expected": "Each advertised route completes its declared task. Version output or mocked login cannot substitute.",
       "status": "NOT_RUN",
       "tasks": [
-        "T22"
+        "T23"
       ],
       "assignment_results": [
         {
-          "task_id": "T22",
+          "task_id": "T23",
           "status": "NOT_RUN"
         }
       ]

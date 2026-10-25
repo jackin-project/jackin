@@ -847,25 +847,23 @@
         "Enforce aggregate CPU, memory, PID, disk, and network budgets.",
         "Handle port collision, exhaustion, release, and reuse.",
         "Keep policy-update stream interruption visible.",
-        "Revoke routes and credentials during companion stop and delete."
+        "Revoke routes and credentials during companion stop and delete.",
+        "Add focused API, egress, callback, budget, and revocation tests for each local component."
       ],
       "acceptance": [
-        "Wrong-domain API requests fail.",
-        "Daemon, build-step, and child-container egress all follow the admitted boundary.",
-        "Dynamic ports work without a fixed historical port assumption.",
-        "Child containers cannot exceed the aggregate domain budget.",
-        "A guest-init script alone cannot satisfy networking qualification."
+        "Local API tests reject credentials that belong to another domain.",
+        "Network-policy tests cover daemon, build-step, and child-container egress paths.",
+        "Route-manager tests cover owners, collisions, exhaustion, release, and reuse.",
+        "Callback and credential tests cover revocation during stop and delete.",
+        "Aggregate-budget tests account for daemon and child workloads together.",
+        "Policy-stream interruption remains visible to the engine client.",
+        "A guest-init script alone does not satisfy local network checks."
       ],
       "remove_or_replace": [
         "Do not inherit agent binary policy as an assumed child-container boundary.",
         "Do not add a general public port forward."
       ],
-      "test_cases": [
-        "A35",
-        "A36",
-        "A37",
-        "A38"
-      ],
+      "test_cases": [],
       "source_basis": "SPEC L304-L318; L320-L322",
       "status": "NOT_STARTED",
       "stop_conditions": [
@@ -914,10 +912,11 @@
         "Edit, rename, create, and delete files from both sides. Verify file watches.",
         "Probe escaping links, traversal paths, and unsupported special files through child containers.",
         "Run real Testcontainers traffic after two ordinary source edits.",
-        "Test callbacks, port exhaustion, and simultaneous domains.",
+        "Test callbacks, port collisions, exhaustion, release, reuse, and simultaneous domains.",
         "Attempt cross-domain access and unapproved egress.",
+        "Exceed combined CPU, memory, PID, disk, and network budgets across daemon and child containers.",
         "Kill the gateway, parent, and provisioning process at defined transition points.",
-        "Verify stop, restart, recreation, deletion, and orphan cleanup.",
+        "Verify stop, restart, recreation, deletion, route revocation, credential revocation, and orphan cleanup.",
         "Have a different test agent repeat the complete journey from fresh resources.",
         "Publish the qualified capability and exact tuple."
       ],
@@ -928,7 +927,11 @@
         "The independent repeat matches the required assertions.",
         "Compose sees live edits at the agreed absolute project path.",
         "Docker children cannot widen the project projection through path attacks.",
-        "A streamed build context does not satisfy bind compatibility."
+        "A streamed build context does not satisfy bind compatibility.",
+        "Required API behavior works without a host socket. Stream cancellation preserves ownership.",
+        "Daemon, build-step, and child-container egress follow the outer policy.",
+        "Dynamic ports and callbacks stay with their owner. Revoked routes cannot be reused.",
+        "Aggregate domain budgets remain enforced across the daemon and all child containers."
       ],
       "remove_or_replace": [
         "Remove experimental external-engine substitutes from supported product tests.",
@@ -1789,22 +1792,20 @@
         "Do not copy host home, SSH trees, or all-account stores.",
         "Filter account environment from generic shells and other domains.",
         "Preserve selected model, endpoint, and effort options only through validated agent adapters.",
-        "Test each advertised authenticated route with approved disposable credentials.",
+        "Exercise each adapter's credential expansion, argv, and environment with approved disposable credentials.",
         "Record unsupported routes without a fallback or false success."
       ],
       "acceptance": [
         "Two accounts cannot read each other's native credential files.",
         "An interrupted publication leaves one valid credential revision.",
-        "Reconnect never switches to the current default account.",
-        "A real authenticated task passes for every advertised route."
+        "Adapter reconnect preserves the account binding supplied by the admitted launch."
       ],
       "remove_or_replace": [
         "Replace old auth-home seeding, UID-based account isolation, and broad credential mounts.",
         "Do not retain a generic refresh broker workaround."
       ],
       "test_cases": [
-        "A76",
-        "A77"
+        "A76"
       ],
       "source_basis": "SPEC L97-L111; L234-L238; L487",
       "status": "NOT_STARTED",
@@ -1859,6 +1860,7 @@
         "Record the full activation receipt in one local transaction.",
         "Start the selected agent only after every required field matches.",
         "Attach through a fresh relay without duplicating agent startup.",
+        "Run an authenticated coding task through each advertised route with approved disposable credentials.",
         "Handle cancellation and lost responses through the journal.",
         "Publish the complete operation and binding to inspection."
       ],
@@ -1867,7 +1869,8 @@
         "Stale account, provider, or policy revisions block StartSession until the current binding is admitted.",
         "SandboxReady alone does not activate an agent.",
         "Two identical launch retries do not create duplicate agent processes.",
-        "A real role reaches useful agent output and reconnects to the same live session."
+        "A real role reaches useful agent output and reconnects to the same live session.",
+        "Every advertised route completes a real coding task through the native launch path."
       ],
       "remove_or_replace": [
         "Replace the old launch pipeline, backend selector, and restore shortcuts.",
@@ -1875,6 +1878,7 @@
       ],
       "test_cases": [
         "A74",
+        "A77",
         "A78",
         "A79",
         "A80"

@@ -1019,16 +1019,19 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 8. Handle port collision, exhaustion, release, and reuse.
 9. Keep policy-update stream interruption visible.
 10. Revoke routes and credentials during companion stop and delete.
+11. Add focused API, egress, callback, budget, and revocation tests for each local component.
 
 #### Pass conditions
 
-- Wrong-domain API requests fail.
-- Daemon, build-step, and child-container egress all follow the admitted boundary.
-- Dynamic ports work without a fixed historical port assumption.
-- Child containers cannot exceed the aggregate domain budget.
-- A guest-init script alone cannot satisfy networking qualification.
+- Local API tests reject credentials that belong to another domain.
+- Network-policy tests cover daemon, build-step, and child-container egress paths.
+- Route-manager tests cover owners, collisions, exhaustion, release, and reuse.
+- Callback and credential tests cover revocation during stop and delete.
+- Aggregate-budget tests account for daemon and child workloads together.
+- Policy-stream interruption remains visible to the engine client.
+- A guest-init script alone does not satisfy local network checks.
 
-**Acceptance cases:** A35, A36, A37, A38.
+**Acceptance cases:** None.
 
 #### Removal and replacement
 
@@ -1083,12 +1086,13 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 6. Edit, rename, create, and delete files from both sides. Verify file watches.
 7. Probe escaping links, traversal paths, and unsupported special files through child containers.
 8. Run real Testcontainers traffic after two ordinary source edits.
-9. Test callbacks, port exhaustion, and simultaneous domains.
+9. Test callbacks, port collisions, exhaustion, release, reuse, and simultaneous domains.
 10. Attempt cross-domain access and unapproved egress.
-11. Kill the gateway, parent, and provisioning process at defined transition points.
-12. Verify stop, restart, recreation, deletion, and orphan cleanup.
-13. Have a different test agent repeat the complete journey from fresh resources.
-14. Publish the qualified capability and exact tuple.
+11. Exceed combined CPU, memory, PID, disk, and network budgets across daemon and child containers.
+12. Kill the gateway, parent, and provisioning process at defined transition points.
+13. Verify stop, restart, recreation, deletion, route revocation, credential revocation, and orphan cleanup.
+14. Have a different test agent repeat the complete journey from fresh resources.
+15. Publish the qualified capability and exact tuple.
 
 #### Pass conditions
 
@@ -1099,6 +1103,10 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Compose sees live edits at the agreed absolute project path.
 - Docker children cannot widen the project projection through path attacks.
 - A streamed build context does not satisfy bind compatibility.
+- Required API behavior works without a host socket. Stream cancellation preserves ownership.
+- Daemon, build-step, and child-container egress follow the outer policy.
+- Dynamic ports and callbacks stay with their owner. Revoked routes cannot be reused.
+- Aggregate domain budgets remain enforced across the daemon and all child containers.
 
 **Acceptance cases:** A28, A30, A31, A32, A33, A34, A35, A36, A37, A38, A39.
 
@@ -1967,17 +1975,16 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 7. Do not copy host home, SSH trees, or all-account stores.
 8. Filter account environment from generic shells and other domains.
 9. Preserve selected model, endpoint, and effort options only through validated agent adapters.
-10. Test each advertised authenticated route with approved disposable credentials.
+10. Exercise each adapter's credential expansion, argv, and environment with approved disposable credentials.
 11. Record unsupported routes without a fallback or false success.
 
 #### Pass conditions
 
 - Two accounts cannot read each other's native credential files.
 - An interrupted publication leaves one valid credential revision.
-- Reconnect never switches to the current default account.
-- A real authenticated task passes for every advertised route.
+- Adapter reconnect preserves the account binding supplied by the admitted launch.
 
-**Acceptance cases:** A76, A77.
+**Acceptance cases:** A76.
 
 #### Removal and replacement
 
@@ -2036,8 +2043,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 9. Record the full activation receipt in one local transaction.
 10. Start the selected agent only after every required field matches.
 11. Attach through a fresh relay without duplicating agent startup.
-12. Handle cancellation and lost responses through the journal.
-13. Publish the complete operation and binding to inspection.
+12. Run an authenticated coding task through each advertised route with approved disposable credentials.
+13. Handle cancellation and lost responses through the journal.
+14. Publish the complete operation and binding to inspection.
 
 #### Pass conditions
 
@@ -2046,8 +2054,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - SandboxReady alone does not activate an agent.
 - Two identical launch retries do not create duplicate agent processes.
 - A real role reaches useful agent output and reconnects to the same live session.
+- Every advertised route completes a real coding task through the native launch path.
 
-**Acceptance cases:** A74, A78, A79, A80.
+**Acceptance cases:** A74, A77, A78, A79, A80.
 
 #### Removal and replacement
 

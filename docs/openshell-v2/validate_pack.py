@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 ORIGINAL_SPEC_SHA256 = "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe767523a3e"
+ACCEPTANCE_POLICY_SHA256 = "56501d9b997996535e14e5014ff477c19784366fbacf83fe613a100da7cebd1b"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
@@ -181,7 +182,7 @@ def main() -> int:
 
     required = ["README.md", "SPEC.md", "GOAL.md", "CONTRACTS.md", "SUBAGENTS.md", "PLAN.md",
                 "ACCEPTANCE.md", "SOURCE-AUDIT.md", "TERMS.md", "TASKS.md", "TRACEABILITY.md",
-                "PACK-CHECKS.md", "validate_assignment_fixtures.py", "task-graph.json",
+                "PACK-CHECKS.md", "validate_pack.py", "validate_assignment_fixtures.py", "task-graph.json",
                 "acceptance-cases.json", "traceability.json"]
     missing = [name for name in required if not (root / name).is_file()]
     check("Required pack files exist", not missing, missing)
@@ -232,6 +233,14 @@ def main() -> int:
     check("Acceptance evidence levels use documented values", not bad_case_levels, bad_case_levels)
     check("Task IDs are unique", len(task_set) == len(tasks))
     check("Case IDs are unique", len(case_set) == len(cases))
+    case_owner_errors = []
+    for case in cases:
+        owners = case.get("tasks")
+        if not isinstance(owners, list) or any(not isinstance(owner, str) for owner in owners):
+            case_owner_errors.append({"case": case.get("id"), "problem": "tasks must be a list of strings"})
+        elif len(owners) != len(set(owners)):
+            case_owner_errors.append({"case": case.get("id"), "problem": "duplicate task owner", "tasks": owners})
+    check("Acceptance cases have unique string task owners", not case_owner_errors, case_owner_errors)
     check("Declared task count matches", graph["task_count"] == len(tasks), len(tasks))
     check("Declared case count matches", graph["acceptance_case_count"] == len(cases), len(cases))
     check("Expected task count", len(tasks) == 46, len(tasks))
@@ -344,6 +353,13 @@ def main() -> int:
           not assignment_errors, assignment_errors)
     check("Case status matches assignment summary",
           not assignment_summary_errors, assignment_summary_errors)
+    not_started_assignment_errors = [
+        {"case": case_id, "task": task_id, "status": status}
+        for (case_id, task_id), status in assignment_status_by_case_and_task.items()
+        if tasks_by_id.get(task_id, {}).get("status") == "NOT_STARTED" and status != "NOT_RUN"
+    ]
+    check("NOT_STARTED tasks have NOT_RUN assignments",
+          not not_started_assignment_errors, not_started_assignment_errors)
 
     unknown_cases = [(task["id"], cid) for task in tasks for cid in task["test_cases"] if cid not in case_set]
     check("Task test references exist", not unknown_cases, unknown_cases)
@@ -413,8 +429,22 @@ def main() -> int:
     check("Task graph fields match PLAN task cards", not plan_task_errors, plan_task_errors)
     check("Task graph fields match individual task cards", not card_errors, card_errors)
 
-    acceptance = (root / "ACCEPTANCE.md").read_text(encoding="utf-8")
-    case_section_start = acceptance.find("## Detailed cases")
+    acceptance_bytes = (root / "ACCEPTANCE.md").read_bytes()
+    marker_offsets = []
+    offset = 0
+    for line in acceptance_bytes.splitlines(keepends=True):
+        if line.rstrip(b"\r\n") == b"## Detailed cases":
+            marker_offsets.append(offset)
+        offset += len(line)
+    check("Acceptance detailed-case anchor is unique", len(marker_offsets) == 1,
+          {"matches": len(marker_offsets)})
+    acceptance_policy_digest = (hashlib.sha256(acceptance_bytes[:marker_offsets[0]]).hexdigest()
+                                if len(marker_offsets) == 1 else None)
+    check("Acceptance policy before detailed cases matches fixed checksum",
+          acceptance_policy_digest == ACCEPTANCE_POLICY_SHA256,
+          {"expected": ACCEPTANCE_POLICY_SHA256, "actual": acceptance_policy_digest})
+    acceptance = acceptance_bytes.decode("utf-8")
+    case_section_start = acceptance.find("## Detailed cases") if len(marker_offsets) == 1 else -1
     case_section = acceptance[case_section_start:] if case_section_start != -1 else ""
     case_headings = list(re.finditer(r"(?m)^### (.+)$", case_section))
     expected_case_headings = [f"{case['id']} — {case['title']}" for case in cases]

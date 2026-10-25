@@ -485,7 +485,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A35 — Complete Docker API behavior
 
-**Evidence:** LIVE. **Tasks:** U07, U08. **Initial status:** NOT_RUN. **Initial assignment status:** U07=NOT_RUN; U08=NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U08. **Initial status:** NOT_RUN. **Initial assignment status:** U08=NOT_RUN.
 
 **Setup:** Use the authenticated managed engine endpoint.
 
@@ -495,7 +495,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A36 — Outer engine egress
 
-**Evidence:** LIVE. **Tasks:** U07, U08. **Initial status:** NOT_RUN. **Initial assignment status:** U07=NOT_RUN; U08=NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U08. **Initial status:** NOT_RUN. **Initial assignment status:** U08=NOT_RUN.
 
 **Setup:** Define one allowed destination and denied destinations for the companion.
 
@@ -505,7 +505,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A37 — Dynamic ports and callbacks
 
-**Evidence:** LIVE. **Tasks:** U07, U08. **Initial status:** NOT_RUN. **Initial assignment status:** U07=NOT_RUN; U08=NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U08. **Initial status:** NOT_RUN. **Initial assignment status:** U08=NOT_RUN.
 
 **Setup:** Use concurrent Testcontainers services with dynamic published ports.
 
@@ -515,7 +515,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A38 — Aggregate engine budgets
 
-**Evidence:** LIVE. **Tasks:** U07, U08. **Initial status:** NOT_RUN. **Initial assignment status:** U07=NOT_RUN; U08=NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U08. **Initial status:** NOT_RUN. **Initial assignment status:** U08=NOT_RUN.
 
 **Setup:** Set one domain budget for the engine and all children.
 
@@ -905,7 +905,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A77 — Real advertised agent routes
 
-**Evidence:** LIVE. **Tasks:** T22. **Initial status:** NOT_RUN. **Initial assignment status:** T22=NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T23. **Initial status:** NOT_RUN. **Initial assignment status:** T23=NOT_RUN.
 
 **Setup:** Use approved disposable credentials for every advertised authentication route.
 
