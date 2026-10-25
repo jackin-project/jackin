@@ -73,55 +73,6 @@ pub(super) fn validate_acl_sealed_directory(directory: &File) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn validate_hook_config_custody(common_path: &Path, selected_path: &Path) -> Result<()> {
-    ensure!(
-        common_path.file_name().is_some_and(|name| name == "config"),
-        "common Git config path has an unexpected leaf"
-    );
-    ensure!(
-        selected_path == common_path
-            || selected_path
-                .file_name()
-                .is_some_and(|name| name == "config.worktree"),
-        "selected Git config path has an unexpected leaf"
-    );
-    validate_config_leaf(common_path, false)?;
-    if selected_path != common_path {
-        validate_config_leaf(selected_path, false)?;
-    }
-    validate_config_leaf(&append_lock_suffix(selected_path)?, true)
-}
-
-fn append_lock_suffix(path: &Path) -> Result<std::path::PathBuf> {
-    let mut name = path
-        .file_name()
-        .context("Git config path has no leaf name")?
-        .to_os_string();
-    name.push(".lock");
-    Ok(path.with_file_name(name))
-}
-
-fn validate_config_leaf(path: &Path, required: bool) -> Result<()> {
-    let parent_path = path
-        .parent()
-        .context("Git config leaf has no parent directory")?;
-    let parent = CheckedSourceRoot::from_absolute_directory(parent_path)
-        .context("validating Git config parent ownership, mode, and ACL")?;
-    let name = path
-        .file_name()
-        .context("Git config path has no leaf name")?;
-    match parent.open_file(Path::new(name)) {
-        Ok(config) => config
-            .recheck()
-            .context("rechecking Git config leaf custody")?,
-        Err(error) if !required && error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(());
-        }
-        Err(error) => return Err(error).context("validating existing Git config leaf custody"),
-    }
-    Ok(())
-}
-
 pub(super) fn ensure_directory(parent: &File, name: &str, mode: u32) -> Result<File> {
     validate_component(name)?;
     let created = match mkdirat(parent, name, native_mode(mode)?) {

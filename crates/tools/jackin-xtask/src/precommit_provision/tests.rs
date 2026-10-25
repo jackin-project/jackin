@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{bundle::parse_request, validate_hook_config};
+use super::{activate_hook_config, bundle::parse_request, validate_hook_config};
 use anyhow::{Context, Result};
 use std::{
     fs,
@@ -93,6 +93,32 @@ fn hook_config_custody_checks_selected_config_and_existing_lock() -> Result<()> 
     #[cfg(unix)]
     std::os::unix::fs::symlink(&external, &config)?;
     assert!(validate_hook_config(&repository).is_err());
+    Ok(())
+}
+
+#[test]
+fn hook_config_activation_replaces_the_selected_config_and_removes_the_lock() -> Result<()> {
+    let temporary = private_temporary_directory()?;
+    let repository = temporary.path().canonicalize()?.join("repository");
+    fs::create_dir(&repository)?;
+    let initialized = Command::new("git")
+        .args(["init", "--quiet"])
+        .current_dir(&repository)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .status()?;
+    assert!(initialized.success());
+
+    let config = repository.join(".git/config");
+    let lock = repository.join(".git/config.lock");
+    let previous = fs::read(&config)?;
+    let next = b"[core]\nrepositoryformatversion = 0\n[hook]\nactivation = durable\n";
+    fs::write(&lock, next)?;
+    activate_hook_config(&repository)?;
+
+    assert_eq!(fs::read(config)?, next);
+    assert_ne!(fs::read(repository.join(".git/config"))?, previous);
+    assert!(!lock.exists());
     Ok(())
 }
 

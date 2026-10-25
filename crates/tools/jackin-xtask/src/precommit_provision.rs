@@ -23,3 +23,13 @@ pub(crate) fn validate_hook_config(repository: &std::path::Path) -> anyhow::Resu
     let (common_config, selected_config) = bundle::hook_config_paths(&repository)?;
     write::validate_hook_config_custody(&common_config, &selected_config)
 }
+
+pub(crate) fn activate_hook_config(repository: &std::path::Path) -> anyhow::Result<()> {
+    let repository = bundle::physical_directory(repository, "repository")?;
+    let (common_config, selected_config) = bundle::hook_config_paths(&repository)?;
+    write::activate_hook_config(&common_config, &selected_config)
+}
+
+pub(crate) fn activation_failed_after_rename(error: &anyhow::Error) -> bool {
+    write::activation_failed_after_rename(error)
+}

@@ -100,6 +100,63 @@ fn cargo_path_selects_the_qualified_mbx_wrapper_before_rustup_cargo() {
 }
 
 #[test]
+fn pinned_rustup_resolution_preserves_only_the_admitted_rustup_home() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let rustup_home = temporary.path().join("custom rustup home");
+    let toolchain_bin = rustup_home.join("toolchains/fixture-pin/bin");
+    fs::create_dir_all(&toolchain_bin).expect("custom rustup toolchain directory");
+    for name in ["rustc", "rustdoc", "clippy-driver", "rustfmt"] {
+        write_executable(&toolchain_bin.join(name), b"fixture tool");
+    }
+    let rustup = temporary.path().join("rustup");
+    let rustup_script = concat!(
+        "#!/bin/sh\n",
+        "set -eu\n",
+        "if [ -n \"${RUSTUP_HOME:-}\" ]; then\n",
+        "  [ \"${HOME+x}\" != x ] || exit 71\n",
+        "else\n",
+        "  [ -n \"${HOME:-}\" ] || exit 70\n",
+        "  RUSTUP_HOME=\"$HOME/.rustup\"\n",
+        "fi\n",
+        "[ \"${RUSTUP_TOOLCHAIN+x}\" != x ] || exit 72\n",
+        "[ \"$1\" = which ] && [ \"$2\" = --toolchain ] && [ \"$3\" = fixture-pin ] || exit 73\n",
+        "path=\"$RUSTUP_HOME/toolchains/$3/bin/$4\"\n",
+        "[ -f \"$path\" ] || exit 74\n",
+        "printf '%s\\n' \"$path\"\n",
+    );
+    write_executable(&rustup, rustup_script.as_bytes());
+
+    let resolved = resolve_rust_tools(
+        &rustup,
+        "fixture-pin",
+        OsStr::new("/inherited/path"),
+        Some(rustup_home.as_os_str()),
+        Some(OsStr::new("/unselected/home")),
+    )
+    .expect("resolve tools from the admitted custom rustup root");
+
+    assert_eq!(resolved.len(), 4);
+    for name in ["rustc", "rustdoc", "clippy-driver", "rustfmt"] {
+        assert_eq!(
+            resolved[name],
+            fs::canonicalize(toolchain_bin.join(name)).expect("physical fixture tool")
+        );
+    }
+    let home = temporary.path().join("default rustup home");
+    fs::create_dir(&home).expect("custom HOME");
+    symlink(&rustup_home, home.join(".rustup")).expect("HOME-selected rustup root");
+    let default_resolved = resolve_rust_tools(
+        &rustup,
+        "fixture-pin",
+        OsStr::new("/inherited/path"),
+        None,
+        Some(home.as_os_str()),
+    )
+    .expect("resolve tools from the admitted HOME without RUSTUP_HOME");
+    assert_eq!(default_resolved, resolved);
+}
+
+#[test]
 fn pinned_swiftlint_precedes_an_ambient_global_tool() {
     let temporary = tempfile::tempdir().expect("temporary directory");
     let managed = temporary.path().join("managed");

@@ -121,7 +121,7 @@ fn prepare_bootstrap_generation(repository: &Path) -> PathBuf {
     fs::create_dir_all(&generation).unwrap();
     fs::write(
         generation.join("owner"),
-        b"#!/bin/sh\nif [ \"$1\" = validate-hook-config ]; then [ \"$2\" = --repository ] && [ \"$3\" = \"$PWD\" ]; exit $?; fi\n[ \"$1\" = run-installed-snapshot ] || exit 90\ncase \"$2\" in */.git/jackin-precommit-owner/generations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) ;; *) exit 91 ;; esac\nprintf '%s\\n' snapshot >> hook-events\n",
+        b"#!/bin/sh\nset -eu\ncase \"$1\" in\nvalidate-hook-config) [ \"$2\" = --repository ] && [ \"$3\" = \"$PWD\" ] ;;\nactivate-hook-config) [ \"$2\" = --repository ] && [ \"$3\" = \"$PWD\" ] || exit 92; config=$(git rev-parse --path-format=absolute --git-path config.worktree); mv \"$config.lock\" \"$config\" ;;\nrun-installed-snapshot) case \"$2\" in */.git/jackin-precommit-owner/generations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) ;; *) exit 91 ;; esac; printf '%s\\n' snapshot >> hook-events ;;\n*) exit 90 ;;\nesac\n",
     )
     .unwrap();
     fs::set_permissions(generation.join("owner"), fs::Permissions::from_mode(0o755)).unwrap();

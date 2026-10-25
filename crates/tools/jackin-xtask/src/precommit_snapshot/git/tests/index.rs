@@ -129,6 +129,11 @@ fn expands_split_sparse_index_in_private_tree() {
     git(directory.path(), &["add", "--all"]);
     git(directory.path(), &["commit", "--quiet", "-m", "fixture"]);
     git(directory.path(), &["update-index", "--split-index"]);
+    let stale_shared_index = directory.path().join(".git/sharedindex.inactive");
+    fs::write(&stale_shared_index, b"inactive split-index generation")
+        .expect("inactive shared-index generation");
+    let stale_non_regular = directory.path().join(".git/sharedindex.not-a-file");
+    fs::create_dir(&stale_non_regular).expect("non-regular shared-index entry");
     git(
         directory.path(),
         &["sparse-checkout", "init", "--cone", "--sparse-index"],
@@ -137,8 +142,17 @@ fn expands_split_sparse_index_in_private_tree() {
     assert!(!directory.path().join("excluded/b.txt").exists());
 
     let live = LiveRepository::capture_at(directory.path()).expect("capture sparse repository");
+    let shared_index = live
+        .shared_index
+        .as_ref()
+        .expect("Git identifies the active split-index backing file");
+    assert!(shared_index.is_file());
     let index_before = fs::read(&live.index).expect("sparse index bytes");
     let snapshot = OwnedSnapshot::create(&live).expect("private snapshot");
+    fs::remove_file(&stale_shared_index).expect("expire inactive shared-index generation");
+    fs::remove_dir(&stale_non_regular).expect("remove unrelated non-regular entry");
+    OwnedSnapshot::verify_live_index(&live)
+        .expect("inactive shared-index maintenance leaves the active index unchanged");
     let tree = snapshot.capture_staged_tree().expect("capture sparse tree");
     snapshot
         .materialize(&tree, &live)
@@ -156,19 +170,7 @@ fn expands_split_sparse_index_in_private_tree() {
     );
     assert!(!directory.path().join("excluded/b.txt").exists());
 
-    let shared_index = live
-        .index_inputs
-        .iter()
-        .find(|input| {
-            input
-                .path
-                .file_name()
-                .unwrap()
-                .as_bytes()
-                .starts_with(b"sharedindex.")
-        })
-        .expect("split index backing file captured");
-    fs::write(&shared_index.path, b"changed split index backing file")
+    fs::write(shared_index, b"changed split index backing file")
         .expect("mutate split index backing file");
     assert!(OwnedSnapshot::verify_live_index(&live).is_err());
 }

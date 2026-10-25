@@ -22,7 +22,7 @@ use files::{
 };
 pub(super) use files::{physical_directory, read_executable};
 pub(super) use git::hook_config_paths;
-use git::{git_output, git_output_bytes, index_snapshot, verify_tree_context};
+use git::{git_output, git_output_bytes, git_path_output, index_snapshot, verify_tree_context};
 
 const REQUEST_LIMIT: usize = 4096;
 const PATH_LIMIT: usize = 64 * 1024;
@@ -87,10 +87,11 @@ pub(super) fn verify(
         &evidence.cargo_path,
         &evidence.rustc_path,
     )?;
-    let common_git_dir = PathBuf::from(git_output(
+    let common_git_dir = git_path_output(
         &repository,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    )?);
+        false,
+    )?;
     let common_git_dir =
         fs::canonicalize(common_git_dir).context("resolving common Git directory")?;
     Ok(VerifiedBootstrapInstall {

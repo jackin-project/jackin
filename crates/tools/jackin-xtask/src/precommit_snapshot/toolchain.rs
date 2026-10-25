@@ -68,8 +68,15 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         OsString::from("false"),
     );
     let rustup = find_executable("rustup", &inherited_path).context("missing rustup executable")?;
+    let rustup_home = env::var_os("RUSTUP_HOME");
     let resolved = resolve_managed_tools(&mise, &mise_env, &snapshot.root)?;
-    let rust_tools = resolve_rust_tools(&rustup, &pin, &inherited_path)?;
+    let rust_tools = resolve_rust_tools(
+        &rustup,
+        &pin,
+        &inherited_path,
+        rustup_home.as_deref(),
+        home.as_deref().map(Path::as_os_str),
+    )?;
     let cargo = effective_cargo(&mise, &mise_env, &snapshot.root)?;
     verify_rust_toolchain(&pin, &rust_tools, &mise, &mise_env, &snapshot.root)?;
 
@@ -262,6 +269,8 @@ fn resolve_rust_tools(
     rustup: &Path,
     pin: &str,
     inherited_path: &OsStr,
+    rustup_home: Option<&OsStr>,
+    home: Option<&OsStr>,
 ) -> Result<BTreeMap<&'static str, PathBuf>> {
     let mut rust_tools = BTreeMap::new();
     for name in ["rustc", "rustdoc", "clippy-driver", "rustfmt"] {
@@ -275,6 +284,11 @@ fn resolve_rust_tools(
             ])
             .env_clear()
             .env("PATH", inherited_path);
+        if let Some(rustup_home) = rustup_home {
+            command.env("RUSTUP_HOME", rustup_home);
+        } else if let Some(home) = home {
+            command.env("HOME", home);
+        }
         let output = capture(&mut command)
             .with_context(|| format!("resolving pinned rustup tool {name}"))?;
         let value = command_output(output, &format!("resolving pinned rustup tool {name}"))?;

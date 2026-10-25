@@ -1,23 +1,19 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
+use anyhow::{Context, Result, bail, ensure};
+use jackin_process::SpoolCleanupObservation;
+use sha2::{Digest, Sha256};
 use std::{
     collections::VecDeque,
     env,
     ffi::{OsStr, OsString},
     fs,
     io::{Read, Write},
-    os::unix::{
-        ffi::{OsStrExt, OsStringExt},
-        fs::MetadataExt,
-    },
+    os::unix::{ffi::OsStringExt, fs::MetadataExt},
     path::{Path, PathBuf},
     process::{Command, Output},
 };
-
-use anyhow::{Context, Result, bail, ensure};
-use jackin_process::SpoolCleanupObservation;
-use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 use super::process::capture;
@@ -28,6 +24,7 @@ pub(super) struct LiveRepository {
     pub(super) invocation_dir: PathBuf,
     pub(super) root: PathBuf,
     pub(super) index: PathBuf,
+    pub(super) shared_index: Option<PathBuf>,
     pub(super) objects: PathBuf,
     pub(super) common_git_dir: PathBuf,
     pub(super) worktree_git_dir: PathBuf,
@@ -61,32 +58,37 @@ impl LiveRepository {
         let invocation_dir = fs::canonicalize(root).context("resolving invocation directory")?;
         let root = output_live_path_at(&invocation_dir, &["rev-parse", "--show-toplevel"])?;
         let root = fs::canonicalize(&root).context("resolving physical repository root")?;
-        let index = match env::var_os("GIT_INDEX_FILE") {
-            Some(path) => absolute_from(&invocation_dir, PathBuf::from(path)),
-            None => output_live_path_at(
-                &root,
-                &["rev-parse", "--path-format=absolute", "--git-path", "index"],
-            )?,
-        };
-        let objects = match env::var_os("GIT_OBJECT_DIRECTORY") {
-            Some(path) => absolute_from(&invocation_dir, PathBuf::from(path)),
-            None => output_live_path_at(
-                &root,
-                &[
-                    "rev-parse",
-                    "--path-format=absolute",
-                    "--git-path",
-                    "objects",
-                ],
-            )?,
-        };
+        let index = output_live_path_at(
+            &root,
+            &["rev-parse", "--path-format=absolute", "--git-path", "index"],
+        )?;
+        let shared_index = output_live_optional_path_at(
+            &root,
+            &["rev-parse", "--path-format=absolute", "--shared-index-path"],
+        )?;
+        let objects = output_live_path_at(
+            &root,
+            &[
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-path",
+                "objects",
+            ],
+        )?;
         let common_git_dir = output_live_path_at(
             &root,
             &["rev-parse", "--path-format=absolute", "--git-common-dir"],
         )?;
         let worktree_git_dir = output_live_path_at(&root, &["rev-parse", "--absolute-git-dir"])?;
         let shallow = match env::var_os("GIT_SHALLOW_FILE") {
-            Some(path) => absolute_from(&invocation_dir, PathBuf::from(path)),
+            Some(path) => {
+                let path = PathBuf::from(path);
+                if path.is_absolute() {
+                    path
+                } else {
+                    root.join(path)
+                }
+            }
             None => output_live_path_at(
                 &root,
                 &[
@@ -107,7 +109,7 @@ impl LiveRepository {
             .map(OsString::from);
         let head_tree =
             output_live_at(&root, &["rev-parse", "--verify", "--quiet", "HEAD^{tree}"]).ok();
-        let index_inputs = index_inputs(&index)?;
+        let index_inputs = index_inputs(&index, shared_index.as_deref())?;
         let alternates = env::var_os("GIT_ALTERNATE_OBJECT_DIRECTORIES");
         ensure!(objects.is_dir(), "Git object directory is missing");
         ensure!(common_git_dir.is_dir(), "Git common directory is missing");
@@ -119,6 +121,7 @@ impl LiveRepository {
             invocation_dir,
             root,
             index,
+            shared_index,
             objects,
             common_git_dir,
             worktree_git_dir,
@@ -132,16 +135,8 @@ impl LiveRepository {
     }
 }
 
-fn absolute_from(root: &Path, path: PathBuf) -> PathBuf {
-    if path.is_absolute() {
-        path
-    } else {
-        root.join(path)
-    }
-}
-
-fn index_inputs(index: &Path) -> Result<Vec<IndexInput>> {
-    let mut paths = Vec::new();
+fn index_inputs(index: &Path, shared_index: Option<&Path>) -> Result<Vec<IndexInput>> {
+    let mut paths = Vec::with_capacity(2);
     match fs::symlink_metadata(index) {
         Ok(_) => paths.push(index.to_path_buf()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -150,16 +145,8 @@ fn index_inputs(index: &Path) -> Result<Vec<IndexInput>> {
                 .with_context(|| format!("inspecting live index {}", index.display()));
         }
     }
-    if let Some(parent) = index.parent()
-        && parent.is_dir()
-    {
-        for entry in
-            crate::fs_util::read_dir_sorted(parent).context("reading live index directory")?
-        {
-            if entry.file_name().as_bytes().starts_with(b"sharedindex.") {
-                paths.push(entry.path());
-            }
-        }
+    if let Some(shared_index) = shared_index {
+        paths.push(shared_index.to_path_buf());
     }
     paths.sort();
     let mut inputs = Vec::with_capacity(paths.len());
@@ -277,17 +264,21 @@ fn isolated_git(
 }
 
 fn output_live_path_at(root: &Path, args: &[&str]) -> Result<PathBuf> {
+    output_live_optional_path_at(root, args)?.context("Git returned an empty path record")
+}
+
+fn output_live_optional_path_at(root: &Path, args: &[&str]) -> Result<Option<PathBuf>> {
     let mut command = Command::new("git");
     command.args(args).current_dir(root);
     let output =
         capture(&mut command).with_context(|| format!("running git {}", args.join(" ")))?;
     let bytes = checked(output, "reading live Git path")?;
+    if bytes.is_empty() {
+        return Ok(None);
+    }
     let path = without_record_terminator(&bytes)?;
-    ensure!(
-        !path.is_empty() && !path.contains(&0),
-        "Git returned an invalid path record"
-    );
-    Ok(PathBuf::from(OsString::from_vec(path.to_vec())))
+    ensure!(!path.contains(&0), "Git returned an invalid path record");
+    Ok((!path.is_empty()).then(|| PathBuf::from(OsString::from_vec(path.to_vec()))))
 }
 
 fn output_live_at(root: &Path, args: &[&str]) -> Result<String> {

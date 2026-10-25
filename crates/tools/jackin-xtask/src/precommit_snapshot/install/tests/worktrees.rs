@@ -83,7 +83,7 @@ fn set_generation_bootstrap(repository: &Path, common: &Path, generation_id: &st
     fs::create_dir_all(&generation).unwrap();
     fs::write(
         generation.join("owner"),
-        b"#!/bin/sh\nset -eu\ncase \"$1\" in validate-hook-config) exit 0 ;; *) exit 0 ;; esac\n",
+        b"#!/bin/sh\nset -eu\ncase \"$1\" in\nvalidate-hook-config) exit 0 ;;\nactivate-hook-config) config=$(git -C \"$3\" rev-parse --path-format=absolute --git-path config.worktree); mv \"$config.lock\" \"$config\" ;;\n*) exit 64 ;;\nesac\n",
     )
     .unwrap();
     fs::set_permissions(generation.join("owner"), fs::Permissions::from_mode(0o755)).unwrap();

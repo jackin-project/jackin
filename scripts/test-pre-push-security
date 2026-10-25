@@ -25,6 +25,10 @@ cat > "$fixture/native-generation/owner" <<'EOF'
 set -eu
 case "$1" in
   validate-hook-config) exit 0 ;;
+  activate-hook-config)
+    config=$(git -C "$3" rev-parse --path-format=absolute --git-path config.worktree)
+    mv "$config.lock" "$config"
+    ;;
   run-installed-snapshot) printf '%s\n' snapshot >> "$HOOK_EVENTS" ;;
   *) exit 64 ;;
 esac

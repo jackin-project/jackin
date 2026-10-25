@@ -83,6 +83,10 @@ fn run() -> Result<ExitCode> {
         return validate_hook_config(&mut args);
     }
 
+    if command == OsStr::new("activate-hook-config") {
+        return activate_hook_config(&mut args);
+    }
+
     if command != OsStr::new("inspect-receipt") {
         bail!("{}", usage());
     }
@@ -147,14 +151,39 @@ fn validate_hook_config(args: &mut impl Iterator<Item = OsString>) -> Result<Exi
 }
 
 #[cfg(unix)]
+fn activate_hook_config(args: &mut impl Iterator<Item = OsString>) -> Result<ExitCode> {
+    let repository = parse_repository_argument(args, "activate-hook-config")?;
+    if let Err(error) = precommit_provision::activate_hook_config(&repository) {
+        if precommit_provision::activation_failed_after_rename(&error) {
+            if writeln!(io::stderr().lock(), "error: {error:#}").is_err() {
+                return Ok(ExitCode::from(2));
+            }
+            return Ok(ExitCode::from(2));
+        }
+        return Err(error);
+    }
+    writeln!(
+        io::stdout().lock(),
+        "activated Git hook config after file and directory syncs"
+    )
+    .context("writing Git hook config activation result")?;
+    Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(unix)]
 fn parse_hook_config_arguments(args: &mut impl Iterator<Item = OsString>) -> Result<PathBuf> {
+    parse_repository_argument(args, "validate-hook-config")
+}
+
+#[cfg(unix)]
+fn parse_repository_argument(
+    args: &mut impl Iterator<Item = OsString>,
+    command: &str,
+) -> Result<PathBuf> {
     expect_option(args, "--repository")?;
     let repository = required_path(args, "physical repository")?;
     ensure!(repository.is_absolute(), "repository must be absolute");
-    ensure!(
-        args.next().is_none(),
-        "validate-hook-config accepts one repository"
-    );
+    ensure!(args.next().is_none(), "{command} accepts one repository");
     Ok(repository)
 }
 
@@ -200,7 +229,7 @@ fn expect_option(args: &mut impl Iterator<Item = OsString>, expected: &str) -> R
 
 #[cfg(unix)]
 fn usage() -> &'static str {
-    "usage: jackin-precommit-owner --protocol | inspect-receipt <receipt> <owner> <entry> <helper> | inspect-install <physical-root> | run-installed-snapshot <generation-dir> [hook arguments...] | provision-reviewed-snapshot --bootstrap-root <absolute-path> --repository <absolute-path> --reviewed-tree <git-tree-id> | validate-hook-config --repository <absolute-path>"
+    "usage: jackin-precommit-owner --protocol | inspect-receipt <receipt> <owner> <entry> <helper> | inspect-install <physical-root> | run-installed-snapshot <generation-dir> [hook arguments...] | provision-reviewed-snapshot --bootstrap-root <absolute-path> --repository <absolute-path> --reviewed-tree <git-tree-id> | validate-hook-config --repository <absolute-path> | activate-hook-config --repository <absolute-path>"
 }
 
 #[cfg(test)]
