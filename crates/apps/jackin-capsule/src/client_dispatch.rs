@@ -42,6 +42,7 @@ SUBCOMMANDS:
     usage verify                   Verify all provider quota rows are cached and trusted
     protocol-check [--expected-major <major>]  Check the Capsule protocol major
     usage-relay-proxy              Internal scoped usage stdio tunnel
+    usage-relay-proxy-v2           Internal locked usage relay owner
     --focus <session_id>           Connect and focus the given session
     exec <command> [args…]         Run a command with operator-approved on-demand credentials
     mcp-server                     Run the jackin-exec MCP stdio server (spawned by the agent)
@@ -78,6 +79,7 @@ connecting as a client.",
         Some("attach-proxy") => client::run_attach_proxy().await,
         Some("usage") => run_usage_subcommand(args).await,
         Some("usage-relay-proxy") => usage_relay_proxy::run().await,
+        Some("usage-relay-proxy-v2") => usage_relay_proxy::run_v2(&args[2..]).await,
         Some("agents") => {
             let json_format = args.iter().any(|a| a == "--format=json")
                 || args
@@ -137,7 +139,7 @@ connecting as a client.",
         }
         Some(other) => {
             bail!(
-                "unknown jackin-capsule subcommand {other:?} — known: status, status explain <id>, status capture <id>, snapshot, attach-proxy, usage accounts, usage verify, protocol-check, usage-relay-proxy, token-usage <id>, agents [--format json], report-event --event <name> [--payload-stdin], exec <command>, mcp-server, runtime-setup, sudo-provision, firewall-apply, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                "unknown jackin-capsule subcommand {other:?} — known: status, status explain <id>, status capture <id>, snapshot, attach-proxy, usage accounts, usage verify, protocol-check, usage-relay-proxy, usage-relay-proxy-v2, token-usage <id>, agents [--format json], report-event --event <name> [--payload-stdin], exec <command>, mcp-server, runtime-setup, sudo-provision, firewall-apply, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
             )
         }
     }
