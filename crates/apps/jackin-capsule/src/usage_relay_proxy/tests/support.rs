@@ -84,6 +84,7 @@ pub(super) async fn denied_relay_response(
             supervisor,
             authorization,
             Some(peer),
+            Arc::new(|_| true),
             proxy_input,
             proxy_output,
         )

@@ -22,6 +22,13 @@ pub(crate) struct SupervisorIdentity {
 }
 
 impl SupervisorIdentity {
+    pub(crate) fn is_current(self) -> bool {
+        let Some(start_time) = self.start_time else {
+            return false;
+        };
+        process_start_time(self.pid) == Some(start_time)
+    }
+
     pub(crate) fn matches(self, peer: PeerIdentity) -> bool {
         peer.uid == 0
             && peer.gid == 0
@@ -48,7 +55,11 @@ pub(crate) fn process_start_time(pid: u32) -> Option<u64> {
 pub(crate) fn parse_proc_stat_start_time(stat: &str) -> Option<u64> {
     let after_comm = stat.rsplit_once(')')?.1;
     let mut fields = after_comm.split_ascii_whitespace();
-    fields.nth(19)?.parse::<u64>().ok()
+    let state = fields.next()?;
+    if !matches!(state, "R" | "S" | "D" | "T" | "t" | "K" | "W" | "P" | "I") {
+        return None;
+    }
+    fields.nth(18)?.parse::<u64>().ok()
 }
 
 impl From<SessionIdentity> for PeerIdentity {
