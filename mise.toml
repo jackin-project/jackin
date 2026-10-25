@@ -76,8 +76,8 @@ description = "Reject unused workspace dependencies"
 run = "cargo shear --deny-warnings"
 
 [tasks."check:custom-lints"]
-description = "Build and UI-test pinned nightly custom lints, then check the workspace"
+description = "Run custom-lint regression tests, then build the pinned nightly lint and check the workspace"
 run = """
-python3 -B -m unittest discover -s scripts/tests -p test_custom_lints.py &&
-python3 -B scripts/custom-lints.py
+mbx nextest run --locked --package jackin-xtask --bin jackin-xtask --filterset 'test(/^custom_lints::tests::(compiler_identity_accepts_only_qualified_commit_release_and_safe_host|library_lookup_rejects_missing_and_symlinked_libraries|environment_cleans_inherited_compiler_and_dylint_state_and_preserves_spaced_paths|pipeline_checks_components_builds_one_fresh_abi_library_and_runs_workspace_dylint|missing_nightly_component_stops_before_compilation|nightly_build_failure_stops_before_nextest_and_workspace_lints)$/)' --retries 0 --test-threads 1 --no-tests=fail &&
+cargo run --locked -p jackin-xtask -- custom-lints
 """

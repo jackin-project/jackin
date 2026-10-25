@@ -21,6 +21,7 @@ mod cmd;
 mod construct;
 mod consumer_ci_gate;
 mod container_paths_gate;
+mod custom_lints;
 mod desktop;
 mod docs;
 mod frame_timing;
@@ -61,6 +62,8 @@ enum Command {
     /// Prepare offline requests and account for explicit measurement receipts.
     #[command(subcommand)]
     Measurement(research_measurement::ResearchMeasurementCommand),
+    /// Build, UI-test, and run the pinned custom lint library.
+    CustomLints,
     AffectedCrates(affected_crates::AffectedCratesArgs),
     Ci(ci::CiArgs),
     #[command(name = "ci-audit")]
@@ -203,6 +206,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Measurement(command) => research_measurement::run(command),
+        Command::CustomLints => docs::repo_root().and_then(|root| custom_lints::run(&root)),
         Command::AffectedCrates(args) => affected_crates::run(args),
         Command::ClippyAffected(args) => clippy_affected::run(args),
         Command::Construct(cmd) => construct::run(cmd),
