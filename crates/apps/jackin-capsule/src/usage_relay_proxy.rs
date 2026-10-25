@@ -16,7 +16,9 @@ use tokio::io::{
     AsyncBufRead, AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite,
     AsyncWriteExt as _, BufReader,
 };
-use tokio::net::{UnixListener, UnixStream};
+use tokio::net::UnixListener;
+#[cfg(test)]
+use tokio::net::UnixStream;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
 mod authorization;
@@ -36,6 +38,12 @@ const TUNNEL_CAPACITY: usize = 128;
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(35);
 
 type Pending = Arc<Mutex<BTreeMap<u64, oneshot::Sender<UsageBrokerResponse>>>>;
+type SupervisorLiveness = Arc<dyn Fn(SupervisorIdentity) -> bool + Send + Sync>;
+
+struct SupervisorCheck {
+    identity: SupervisorIdentity,
+    is_current: SupervisorLiveness,
+}
 
 pub(crate) async fn run() -> Result<()> {
     let config = crate::config::load().context("loading Capsule config for usage relay")?;
@@ -62,7 +70,16 @@ where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
-    run_at_with_peer(socket_path, supervisor, authorization, None, input, output).await
+    run_at_with_peer(
+        socket_path,
+        supervisor,
+        authorization,
+        None,
+        Arc::new(SupervisorIdentity::is_current),
+        input,
+        output,
+    )
+    .await
 }
 
 async fn run_at_with_peer<R, W>(
@@ -70,6 +87,7 @@ async fn run_at_with_peer<R, W>(
     supervisor: SupervisorIdentity,
     authorization: UsageRelayAuthorization,
     forced_peer: Option<PeerIdentity>,
+    supervisor_liveness: SupervisorLiveness,
     input: R,
     output: W,
 ) -> Result<()>
@@ -124,6 +142,7 @@ where
                 let requests = requests.clone();
                 let pending = Arc::clone(&pending);
                 let authorization = Arc::clone(&authorization);
+                let supervisor_liveness = Arc::clone(&supervisor_liveness);
                 let peer = forced_peer.or_else(|| peer_identity(&stream));
                 let request_id = request_ids.fetch_add(1, Ordering::Relaxed);
                 drop(jackin_telemetry::spawn::spawn_stream(
@@ -133,9 +152,12 @@ where
                         request_id,
                         requests,
                         pending,
-                        supervisor,
                         authorization,
                         peer,
+                        SupervisorCheck {
+                            identity: supervisor,
+                            is_current: supervisor_liveness,
+                        },
                     ),
                 ));
             }
@@ -151,23 +173,32 @@ where
     }
 }
 
-async fn handle_local(
-    mut stream: UnixStream,
+async fn handle_local<S>(
+    mut stream: S,
     request_id: u64,
     requests: mpsc::Sender<UsageRelayTunnelRequest>,
     pending: Pending,
-    supervisor: SupervisorIdentity,
     authorization: Arc<UsageRelayAuthorization>,
     peer: Option<PeerIdentity>,
-) {
+    supervisor_check: SupervisorCheck,
+) where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let request = {
         let mut reader = BufReader::new(&mut stream);
         read_frame::<_, UsageBrokerRequest>(&mut reader).await
     };
-    let supervisor_ok = supervisor_peer_allows(supervisor, peer);
+    let supervisor_ok = supervisor_peer_allows(supervisor_check.identity, peer);
+    let supervisor_is_current = if request.is_ok() {
+        (supervisor_check.is_current)(supervisor_check.identity)
+    } else {
+        false
+    };
     let response = match request {
+        Ok(_) if !supervisor_is_current => supervisor_unauthorized_response(),
+        Ok(_) if !supervisor_ok => supervisor_unauthorized_response(),
         Ok(request)
-            if supervisor_ok && authorization.authorizes(supervisor, peer, &request.operation) =>
+            if authorization.authorizes(supervisor_check.identity, peer, &request.operation) =>
         {
             let (response_tx, response_rx) = oneshot::channel();
             pending.lock().await.insert(request_id, response_tx);
@@ -187,8 +218,7 @@ async fn handle_local(
                 unavailable_response()
             }
         }
-        Ok(_) if supervisor_ok => capability_unauthorized_response(),
-        Ok(_) => supervisor_unauthorized_response(),
+        Ok(_) => capability_unauthorized_response(),
         Err(_) => protocol_response(),
     };
     drop(write_frame(&mut stream, &response).await);

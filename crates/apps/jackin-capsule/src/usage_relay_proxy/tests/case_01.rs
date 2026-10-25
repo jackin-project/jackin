@@ -24,6 +24,7 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
             supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
             authorization,
             Some(forced_peer),
+            Arc::new(|_| true),
             proxy_input,
             proxy_output,
         )
