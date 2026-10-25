@@ -4,6 +4,7 @@
 use std::{
     collections::BTreeMap,
     ffi::OsString,
+    os::unix::ffi::OsStringExt,
     path::{Path, PathBuf},
     process::{Command, Output},
 };
@@ -114,8 +115,29 @@ fn version_commit(output: &str) -> Option<&str> {
 }
 
 pub(super) fn command_output(output: Output, operation: &str) -> Result<String> {
+    let stdout = command_stdout(output, operation)?;
+    String::from_utf8(stdout).with_context(|| format!("decoding {operation} output"))
+}
+
+pub(super) fn command_path_output(output: Output, operation: &str) -> Result<PathBuf> {
+    let stdout = command_stdout(output, operation)?;
+    let path = stdout
+        .strip_suffix(b"\n")
+        .with_context(|| format!("{operation} output is missing its path record terminator"))?;
+    ensure!(
+        !path.is_empty(),
+        "{operation} returned an empty path record"
+    );
+    ensure!(
+        !path.contains(&0),
+        "{operation} returned an invalid path record"
+    );
+    Ok(PathBuf::from(OsString::from_vec(path.to_vec())))
+}
+
+fn command_stdout(output: Output, operation: &str) -> Result<Vec<u8>> {
     if !output.status.success() {
         bail!("{operation} failed with {}", output.status);
     }
-    String::from_utf8(output.stdout).with_context(|| format!("decoding {operation} output"))
+    Ok(output.stdout)
 }

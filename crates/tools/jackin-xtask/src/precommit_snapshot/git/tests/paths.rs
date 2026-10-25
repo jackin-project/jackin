@@ -56,6 +56,81 @@ fn git_relative_path_overrides_resolve_from_repository_root_and_snapshot_selecte
     );
 }
 
+#[test]
+fn snapshot_resolves_relative_tmpdir_before_child_git_commands() {
+    const CHILD_MARKER: &str = "JACKIN_RELATIVE_TMPDIR_SNAPSHOT_CHILD";
+    const FIXTURE_ROOT: &str = "JACKIN_RELATIVE_TMPDIR_SNAPSHOT_FIXTURE";
+    const TEST_NAME: &str = "precommit_snapshot::git::tests::paths::snapshot_resolves_relative_tmpdir_before_child_git_commands";
+
+    if std::env::var_os(CHILD_MARKER).is_some() {
+        let root = PathBuf::from(std::env::var_os(FIXTURE_ROOT).expect("child fixture root"));
+        let invocation = root.join("nested");
+        let live = LiveRepository::capture_at(&invocation).expect("capture fixture repository");
+        let snapshot = OwnedSnapshot::create(&live).expect("create absolute private snapshot");
+        let expected_temp_parent =
+            fs::canonicalize(root.join("relative tmp")).expect("physical relative TMPDIR");
+
+        assert!(snapshot.scratch_root.is_absolute());
+        assert!(snapshot.root.is_absolute());
+        assert!(snapshot.git_dir.is_absolute());
+        assert_eq!(
+            snapshot.scratch_root.parent(),
+            Some(expected_temp_parent.as_path())
+        );
+
+        let tree = snapshot
+            .capture_staged_tree()
+            .expect("run Git from snapshot child cwd");
+        snapshot
+            .materialize(&tree, &live)
+            .expect("materialize snapshot tree");
+
+        std::env::set_current_dir(&root).expect("change parent process cwd");
+        let mut command = Command::new("git");
+        command
+            .args(["rev-parse", "--show-toplevel"])
+            .current_dir(&snapshot.root)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_COMMON_DIR");
+        let output = capture(&mut command).expect("run Git from absolute snapshot cwd");
+        assert!(output.status.success(), "snapshot child Git failed");
+        assert_eq!(
+            fs::canonicalize(
+                String::from_utf8(output.stdout)
+                    .expect("UTF-8 snapshot root")
+                    .trim()
+            )
+            .expect("physical child Git root"),
+            snapshot.root
+        );
+        return;
+    }
+
+    let fixture = tempfile::tempdir().expect("fixture directory");
+    let root = fs::canonicalize(fixture.path()).expect("physical repository path");
+    prepare_relative_path_fixture(&root);
+    fs::create_dir(root.join("relative tmp")).expect("relative TMPDIR parent");
+
+    let status = Command::new(std::env::current_exe().expect("current test executable"))
+        .args(["--exact", TEST_NAME, "--nocapture"])
+        .current_dir(root.join("nested"))
+        .env(CHILD_MARKER, "1")
+        .env(FIXTURE_ROOT, &root)
+        .env("TMPDIR", "../relative tmp")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_COMMON_DIR")
+        .status()
+        .expect("run relative-TMPDIR snapshot child");
+    assert!(
+        status.success(),
+        "relative-TMPDIR snapshot child failed: {status}"
+    );
+}
+
 fn assert_child_git_path_resolution(root: &Path) {
     let invocation = root.join("nested");
     let controls = SetupControls::for_test(std::time::Duration::from_mins(10));

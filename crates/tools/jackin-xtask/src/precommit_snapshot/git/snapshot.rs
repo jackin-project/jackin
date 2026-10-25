@@ -14,6 +14,7 @@ use crate::precommit_snapshot::{
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use jackin_process::{ExecRequest, SpoolRecovery, StdioMode, exec_spooled_sync_cancellable};
 use std::{
+    env,
     ffi::{OsStr, OsString},
     fs,
     io::{BufReader, Read, Write},
@@ -34,9 +35,17 @@ impl OwnedSnapshot {
             live.common_git_dir.is_dir(),
             "Git common directory disappeared"
         );
+        let temp_parent = env::temp_dir();
+        let temp_parent = if temp_parent.is_absolute() {
+            temp_parent
+        } else {
+            env::current_dir()?.join(temp_parent)
+        };
+        let temp_parent =
+            fs::canonicalize(temp_parent).context("resolving physical temporary directory")?;
         let directory = tempfile::Builder::new()
             .prefix("jackin-pre-commit-")
-            .tempdir()
+            .tempdir_in(temp_parent)
             .context("creating private pre-commit snapshot")?;
         fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700))?;
         let root = directory.path().join("worktree");

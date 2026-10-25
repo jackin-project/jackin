@@ -17,7 +17,7 @@ use super::git::OwnedSnapshot;
 use super::process::{CommandBudget, EnvironmentMode, SetupControls, capture_strict};
 mod provision;
 mod verify;
-use verify::{command_output, verify_rust_toolchain};
+use verify::{command_path_output, verify_rust_toolchain};
 
 pub(super) fn verify_provision_tool_paths(
     source_root: &Path,
@@ -268,8 +268,7 @@ fn resolve_managed_tools(
             CommandBudget::Probe,
         )
         .with_context(|| format!("resolving staged Mise tool {name}"))?;
-        let value = command_output(output, &format!("resolving staged Mise tool {name}"))?;
-        let path = PathBuf::from(value.trim());
+        let path = command_path_output(output, &format!("resolving staged Mise tool {name}"))?;
         let path = fs::canonicalize(&path)
             .with_context(|| format!("resolving staged Mise tool path for {name}"))?;
         ensure!(
@@ -347,8 +346,8 @@ fn resolve_rust_tools_with_controls(
             CommandBudget::Probe,
         )
         .with_context(|| format!("resolving pinned rustup tool {name}"))?;
-        let value = command_output(output, &format!("resolving pinned rustup tool {name}"))?;
-        let path = fs::canonicalize(value.trim())
+        let path = command_path_output(output, &format!("resolving pinned rustup tool {name}"))?;
+        let path = fs::canonicalize(path)
             .with_context(|| format!("resolving pinned rustup tool path for {name}"))?;
         ensure!(
             path.is_file(),
@@ -387,8 +386,8 @@ fn effective_cargo(
         CommandBudget::Probe,
     )
     .context("resolving the configured MBX Cargo wrapper")?;
-    let value = command_output(output, "resolving the configured MBX Cargo wrapper")?;
-    let path = fs::canonicalize(value.trim()).context("resolving effective MBX Cargo path")?;
+    let path = command_path_output(output, "resolving the configured MBX Cargo wrapper")?;
+    let path = fs::canonicalize(path).context("resolving effective MBX Cargo path")?;
     ensure!(
         path.is_file(),
         "effective MBX Cargo path is not a regular file"

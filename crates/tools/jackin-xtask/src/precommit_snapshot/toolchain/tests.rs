@@ -3,10 +3,89 @@
 
 use super::*;
 use std::collections::BTreeSet;
+#[cfg(not(target_os = "macos"))]
+use std::os::unix::ffi::OsStringExt;
+use std::os::unix::{ffi::OsStrExt, process::ExitStatusExt};
+use std::process::{ExitStatus, Output};
 
 fn write_executable(path: &Path, contents: &[u8]) {
     fs::write(path, contents).expect("tool file");
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("executable mode");
+}
+
+fn command_result(status: i32, stdout: &[u8]) -> Output {
+    Output {
+        status: ExitStatus::from_raw(status << 8),
+        stdout: stdout.to_vec(),
+        stderr: Vec::new(),
+    }
+}
+
+#[test]
+fn path_record_parser_preserves_raw_unix_path_bytes_and_one_trailing_newline() {
+    let path = b" leading \tpath\r\nwith internal line \xff\n";
+    let mut record = path.to_vec();
+    record.push(b'\n');
+
+    let resolved = command_path_output(command_result(0, &record), "resolving fixture path")
+        .expect("parse path record");
+
+    assert_eq!(resolved.as_os_str().as_bytes(), path);
+}
+
+#[test]
+fn path_record_parser_rejects_missing_empty_and_nul_records_and_nonzero_status() {
+    for record in [&b"/repo"[..], b"\n", b"/repo\0path\n"] {
+        command_path_output(command_result(0, record), "fixture path")
+            .expect_err("malformed path record must fail");
+    }
+
+    let error = command_path_output(command_result(7, b"/repo\n"), "fixture path")
+        .expect_err("nonzero command status must fail before path decoding");
+    assert!(error.to_string().contains("failed with exit status: 7"));
+    verify::command_output(command_result(0, b"/repo/\xff\n"), "fixture text")
+        .expect_err("text output must reject non-UTF-8 bytes");
+}
+
+#[test]
+fn rustup_path_resolution_handles_actual_raw_unix_paths() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    #[cfg(target_os = "macos")]
+    let raw_component = OsString::from(" rustup \t\r\n ");
+    #[cfg(not(target_os = "macos"))]
+    let raw_component = OsString::from_vec(b" rustup \t\r\n\xff ".to_vec());
+    let rustup_home = temporary.path().join(raw_component);
+    let toolchain_bin = rustup_home.join("toolchains/fixture-pin/bin");
+    fs::create_dir_all(&toolchain_bin).expect("raw path toolchain directory");
+    for name in ["rustc", "rustdoc", "clippy-driver", "rustfmt"] {
+        write_executable(&toolchain_bin.join(name), b"fixture tool");
+    }
+    let rustup = temporary.path().join("rustup");
+    let rustup_script = concat!(
+        "#!/bin/sh\n",
+        "set -eu\n",
+        "[ \"$1\" = which ] && [ \"$2\" = --toolchain ] && [ \"$3\" = fixture-pin ] || exit 73\n",
+        "path=\"$RUSTUP_HOME/toolchains/$3/bin/$4\"\n",
+        "[ -f \"$path\" ] || exit 74\n",
+        "printf '%s\\n' \"$path\"\n",
+    );
+    write_executable(&rustup, rustup_script.as_bytes());
+
+    let resolved = resolve_rust_tools(
+        &rustup,
+        "fixture-pin",
+        OsStr::new("/inherited/path"),
+        Some(rustup_home.as_os_str()),
+        None,
+    )
+    .expect("resolve raw Unix tool paths");
+
+    for name in ["rustc", "rustdoc", "clippy-driver", "rustfmt"] {
+        assert_eq!(
+            resolved[name],
+            fs::canonicalize(toolchain_bin.join(name)).expect("physical raw tool path")
+        );
+    }
 }
 
 #[test]
