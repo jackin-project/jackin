@@ -133,7 +133,9 @@ jackin-test-support = { workspace = true }
 jackin-image = { workspace = true }
 jackin-manifest = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
+serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
+uuid = { workspace = true }
 
 [build-dependencies]
 jackin-build-meta = { workspace = true }
