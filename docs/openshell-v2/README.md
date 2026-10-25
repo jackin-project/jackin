@@ -66,13 +66,6 @@ The task prose uses short commands and a controlled technical glossary.
 An independent ASD-STE100 dictionary and conformance review has not been completed.
 Do not label this pack as certified ASD-STE100 documentation.
 
-## Model settings
-
-Use GPT-6 Astra with ultra effort for planning reviews when the runner exposes that configuration.
-Record the actual model and effort setting. Prompt text cannot change an unavailable model setting.
-Use the configured execution model for implementation and test tasks.
-Do not report a model setting or a subagent run that did not occur.
-
 ## Delivery status
 
 All task statuses start as `NOT_STARTED`. All test statuses start as `NOT_RUN`.
