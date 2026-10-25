@@ -125,7 +125,7 @@ impl Multiplexer {
             DialogAction::RefreshUsage => {
                 self.request_usage_refresh_for_provider(None);
             }
-            DialogAction::SwitchUsageProvider { account_id, .. } => {
+            DialogAction::SwitchUsageProvider { account_id } => {
                 let view = self.focused_usage_snapshot_for_account_id(&account_id);
                 if let Some(dialog) = self.dialog_top_mut() {
                     *dialog = Dialog::new_usage(view);

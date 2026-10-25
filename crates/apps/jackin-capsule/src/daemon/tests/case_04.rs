@@ -353,7 +353,6 @@ fn apply_dialog_action_switch_usage_provider_rejects_empty_selector() {
     ));
 
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
-        provider_label: "Claude".to_owned(),
         account_id: String::new(),
     });
 
