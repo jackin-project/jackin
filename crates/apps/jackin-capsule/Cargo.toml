@@ -14,6 +14,10 @@ license.workspace = true
 readme = "README.md"
 publish = false
 
+[package.metadata.jackin.capsule-artifact]
+schema = 1
+features = []
+
 [features]
 default = []
 codex-app-server-authority = ["jackin-agent-status/codex-app-server-authority"]

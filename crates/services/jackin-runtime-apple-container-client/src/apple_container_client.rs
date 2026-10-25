@@ -41,6 +41,7 @@ pub struct AppleContainerSpec {
     pub env_file: Option<PathBuf>,
     pub mounts: Vec<AppleContainerMount>,
     pub caps_add: Vec<String>,
+    pub launch_generation: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +62,7 @@ impl AppleContainerStatus {
 pub struct AppleContainerInfo {
     pub id: String,
     pub status: AppleContainerStatus,
+    pub launch_generation: Option<String>,
 }
 
 impl AppleContainerInfo {
@@ -71,6 +73,10 @@ impl AppleContainerInfo {
 
 pub trait AppleContainerApi: Send + Sync {
     async fn run_container(&self, name: &str, spec: &AppleContainerSpec) -> Result<()>;
+
+    async fn supports_launch_generation_label(&self) -> bool {
+        false
+    }
 
     async fn start_container(&self, name: &str) -> Result<()>;
 
@@ -129,6 +135,17 @@ impl AppleContainerClient {
             .find(|container| container.id == container_id))
     }
 
+    async fn launch_generation_label_supported_with_runner(
+        &self,
+        runner: &impl AppleContainerCommandRunner,
+    ) -> bool {
+        let output = match runner.exec(&container_run_help_request()).await {
+            Ok(output) if output.success => output,
+            Ok(_) | Err(_) => return false,
+        };
+        help_advertises_launch_generation_label(&output.stdout, &output.stderr)
+    }
+
     #[cfg(feature = "test-support")]
     #[doc(hidden)]
     pub async fn list_containers_with_command_runner(
@@ -163,7 +180,7 @@ impl AppleContainerApi for AppleContainerClient {
             spec.user == jackin_runtime_identity::identity::CAPSULE_SUPERVISOR_USER,
             "apple-container capsule supervisor must launch as root"
         );
-        let args = container_run_args(name, spec);
+        let args = container_run_args(name, spec)?;
 
         let output = jackin_runtime_process_telemetry::process_telemetry::exec_async(
             &jackin_process::ExecRequest::new("container", &args),
@@ -173,6 +190,11 @@ impl AppleContainerApi for AppleContainerClient {
             anyhow::bail!("container run exited unsuccessfully");
         }
         Ok(())
+    }
+
+    async fn supports_launch_generation_label(&self) -> bool {
+        self.launch_generation_label_supported_with_runner(&ProcessTelemetryRunner)
+            .await
     }
 
     async fn start_container(&self, name: &str) -> Result<()> {
@@ -230,7 +252,45 @@ fn container_list_request() -> jackin_process::ExecRequest {
     jackin_process::ExecRequest::new("container", ["list", "--all", "--format", "json"])
 }
 
-fn container_run_args(name: &str, spec: &AppleContainerSpec) -> Vec<std::ffi::OsString> {
+fn container_run_help_request() -> jackin_process::ExecRequest {
+    jackin_process::ExecRequest::new("container", ["run", "--help"])
+}
+
+fn help_advertises_launch_generation_label(stdout: &[u8], stderr: &[u8]) -> bool {
+    let (Ok(stdout), Ok(stderr)) = (std::str::from_utf8(stdout), std::str::from_utf8(stderr))
+    else {
+        return false;
+    };
+    let declarations = stdout
+        .lines()
+        .chain(stderr.lines())
+        .filter(|line| {
+            let line = line.trim_start();
+            let Some(remainder) = line.strip_prefix("--label") else {
+                return false;
+            };
+            remainder.is_empty()
+                || remainder.starts_with('=')
+                || remainder.starts_with(' ')
+                || remainder.starts_with('\t')
+        })
+        .count();
+    declarations == 1
+}
+
+fn is_canonical_uuid(value: &str) -> bool {
+    if value.len() != 36 {
+        return false;
+    }
+    value.bytes().enumerate().all(|(index, byte)| match index {
+        8 | 13 | 18 | 23 => byte == b'-',
+        _ => byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte),
+    })
+}
+
+const LAUNCH_GENERATION_LABEL: &str = "com.jackin.launch-generation";
+
+fn container_run_args(name: &str, spec: &AppleContainerSpec) -> Result<Vec<std::ffi::OsString>> {
     let mut args: Vec<std::ffi::OsString> = vec![
         "run".into(),
         "--name".into(),
@@ -261,8 +321,18 @@ fn container_run_args(name: &str, spec: &AppleContainerSpec) -> Vec<std::ffi::Os
     for capability in &spec.caps_add {
         args.extend(["--cap-add".into(), capability.into()]);
     }
+    if let Some(generation) = &spec.launch_generation {
+        anyhow::ensure!(
+            is_canonical_uuid(generation),
+            "Apple Container launch generation is not a canonical UUID"
+        );
+        args.extend([
+            "--label".into(),
+            format!("{LAUNCH_GENERATION_LABEL}={generation}").into(),
+        ]);
+    }
     args.extend([spec.image.clone().into(), "jackin-capsule".into()]);
-    args
+    Ok(args)
 }
 
 fn parse_all_containers_json(json_output: &[u8]) -> Result<Vec<AppleContainerInfo>> {
@@ -294,6 +364,7 @@ fn parse_all_containers_json(json_output: &[u8]) -> Result<Vec<AppleContainerInf
         containers.push(AppleContainerInfo {
             id: row.id,
             status: row.status.state,
+            launch_generation: row.configuration.launch_generation,
         });
     }
     Ok(containers)
@@ -375,6 +446,7 @@ impl<'de> Deserialize<'de> for AppleContainerRow {
 
 struct AppleContainerConfiguration {
     id: String,
+    launch_generation: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for AppleContainerConfiguration {
@@ -396,19 +468,84 @@ impl<'de> Deserialize<'de> for AppleContainerConfiguration {
                 A: MapAccess<'de>,
             {
                 let mut id = None;
+                let mut labels = None;
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "id" => set_once(&mut id, &mut map, "id")?,
+                        "labels" => set_once(&mut labels, &mut map, "labels")?,
                         _ => skip_map_value(&mut map)?,
                     }
                 }
                 Ok(AppleContainerConfiguration {
                     id: id.ok_or_else(|| de::Error::missing_field("id"))?,
+                    launch_generation: labels
+                        .and_then(|labels: AppleContainerLabels| labels.launch_generation),
                 })
             }
         }
 
         deserializer.deserialize_map(ConfigurationVisitor)
+    }
+}
+
+struct AppleContainerLabels {
+    launch_generation: Option<String>,
+}
+
+fn read_launch_generation_label<'de, A>(
+    key: String,
+    map: &mut A,
+    launch_generation: &mut Option<String>,
+) -> std::result::Result<(), A::Error>
+where
+    A: MapAccess<'de>,
+{
+    if key != LAUNCH_GENERATION_LABEL {
+        skip_map_value(map)?;
+        return Ok(());
+    }
+    if launch_generation.is_some() {
+        return Err(de::Error::custom(
+            "Apple Container labels contain a duplicate launch generation",
+        ));
+    }
+    let value = map.next_value::<String>()?;
+    if !is_canonical_uuid(&value) {
+        return Err(de::Error::custom(
+            "Apple Container launch generation is not a canonical UUID",
+        ));
+    }
+    *launch_generation = Some(value);
+    Ok(())
+}
+
+impl<'de> Deserialize<'de> for AppleContainerLabels {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct LabelsVisitor;
+
+        impl<'de> Visitor<'de> for LabelsVisitor {
+            type Value = AppleContainerLabels;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("an Apple Container labels object")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut launch_generation = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    read_launch_generation_label(key, &mut map, &mut launch_generation)?;
+                }
+                Ok(AppleContainerLabels { launch_generation })
+            }
+        }
+
+        deserializer.deserialize_map(LabelsVisitor)
     }
 }
 
@@ -473,6 +610,7 @@ pub struct FakeAppleContainerClient {
     pub containers: Mutex<Vec<AppleContainerInfo>>,
     pub inspect_calls: Mutex<Vec<String>>,
     pub start_calls: Mutex<Vec<String>>,
+    pub launch_generation_label_supported: Mutex<bool>,
 }
 
 #[cfg(feature = "test-support")]
@@ -481,7 +619,13 @@ impl FakeAppleContainerClient {
         Self::default()
     }
 
-    fn run_container_now(&self, name: &str) -> Result<()> {
+    fn run_container_now(&self, name: &str, spec: &AppleContainerSpec) -> Result<()> {
+        if let Some(generation) = &spec.launch_generation {
+            anyhow::ensure!(
+                is_canonical_uuid(generation),
+                "Apple Container launch generation is not a canonical UUID"
+            );
+        }
         let mut containers = self
             .containers
             .lock()
@@ -489,8 +633,15 @@ impl FakeAppleContainerClient {
         containers.push(AppleContainerInfo {
             id: name.to_owned(),
             status: AppleContainerStatus::Running,
+            launch_generation: spec.launch_generation.clone(),
         });
         Ok(())
+    }
+
+    fn launch_generation_label_supported_now(&self) -> bool {
+        self.launch_generation_label_supported
+            .lock()
+            .is_ok_and(|supported| *supported)
     }
 
     fn start_container_now(&self, name: &str) -> Result<()> {
@@ -560,9 +711,15 @@ impl AppleContainerApi for FakeAppleContainerClient {
     fn run_container(
         &self,
         name: &str,
-        _spec: &AppleContainerSpec,
+        spec: &AppleContainerSpec,
     ) -> impl Future<Output = Result<()>> {
-        std::future::poll_fn(move |_| std::task::Poll::Ready(self.run_container_now(name)))
+        std::future::poll_fn(move |_| std::task::Poll::Ready(self.run_container_now(name, spec)))
+    }
+
+    fn supports_launch_generation_label(&self) -> impl Future<Output = bool> {
+        std::future::poll_fn(move |_| {
+            std::task::Poll::Ready(self.launch_generation_label_supported_now())
+        })
     }
 
     fn start_container(&self, name: &str) -> impl Future<Output = Result<()>> {

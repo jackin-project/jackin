@@ -232,9 +232,6 @@ bound = 1
 key = "clippy::print_stderr@jackin"
 bound = 4
 [[family.entry]]
-key = "clippy::print_stderr@jackin-capsule"
-bound = 1
-[[family.entry]]
 key = "clippy::print_stderr@jackin-dev"
 bound = 1
 [[family.entry]]
@@ -436,6 +433,9 @@ bound = 1
 key = "clippy::type_complexity@jackin-usage-provider-claude"
 bound = 2
 [[family.entry]]
+key = "clippy::undocumented_unsafe_blocks@jackin-capsule"
+bound = 6
+[[family.entry]]
 key = "clippy::unwrap_used@jackin-capsule"
 bound = 1
 [[family.entry]]
@@ -515,7 +515,7 @@ key = "unreachable_pub@jackin-usage-coordinator"
 bound = 3
 [[family.entry]]
 key = "unsafe_code@jackin-capsule"
-bound = 16
+bound = 23
 [[family.entry]]
 key = "unsafe_code@jackin-process-directory"
 bound = 6
@@ -539,10 +539,10 @@ mode = "enforce"
 cap = 0
 [[family.entry]]
 key = "AGENTS.md"
-bound = 2892
+bound = 2924
 [[family.entry]]
 key = "CLAUDE.md"
-bound = 2892
+bound = 2924
 [[family.entry]]
 key = "crates/adapters/jackin-docker/README.md"
 bound = 1864
@@ -983,7 +983,7 @@ key = "crates/tools/jackin-dev/README.md"
 bound = 1198
 [[family.entry]]
 key = "crates/tools/jackin-lints/README.md"
-bound = 1781
+bound = 1776
 [[family.entry]]
 key = "crates/tools/jackin-pr-trailers/README.md"
 bound = 1882
@@ -1095,7 +1095,6 @@ bound = 8
 key = "jackin-manifest"
 bound = 5
 [[family.entry]]
-# B2.1 adds the versioned credential_update_v2 transcript API.
 key = "jackin-protocol"
 bound = 11
 [[family.entry]]

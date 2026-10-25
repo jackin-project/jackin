@@ -77,4 +77,4 @@ run = "cargo shear --deny-warnings"
 
 [tasks."check:custom-lints"]
 description = "Build pinned nightly custom lints, then check the workspace"
-run = "python3 -B scripts/custom-lints.py"
+run = "cargo run --locked -p jackin-xtask -- custom-lints"

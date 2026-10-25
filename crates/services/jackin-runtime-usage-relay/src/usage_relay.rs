@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs::File;
+use std::future::Future;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result};
@@ -27,6 +30,8 @@ use tokio::io::{
 use tokio::sync::{mpsc, oneshot};
 
 const TUNNEL_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+const LEASE_WAIT_RETRY_BASE: std::time::Duration = std::time::Duration::from_millis(10);
+const LEASE_WAIT_RETRY_MAX: std::time::Duration = std::time::Duration::from_secs(1);
 
 pub fn docker_runtime_mount(socket_dir: &Path) -> Result<String> {
     let source = socket_dir.to_str().ok_or_else(|| {
@@ -78,7 +83,41 @@ pub struct UsageRelayGuard {
     shutdown: Option<oneshot::Sender<()>>,
 }
 
+pub struct LeasedUsageRelayGuard {
+    task: Option<tokio::task::JoinHandle<()>>,
+    shutdown: Option<oneshot::Sender<()>>,
+    completion: Option<oneshot::Receiver<Result<()>>>,
+}
+
+impl std::fmt::Debug for LeasedUsageRelayGuard {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LeasedUsageRelayGuard")
+            .finish_non_exhaustive()
+    }
+}
+
 struct AbortTaskOnDrop<T>(tokio::task::JoinHandle<T>);
+
+struct RetainedUsageRelayLease(Option<File>);
+
+impl RetainedUsageRelayLease {
+    fn new(file: File) -> Self {
+        Self(Some(file))
+    }
+
+    fn release(mut self) {
+        drop(self.0.take());
+    }
+}
+
+impl Drop for RetainedUsageRelayLease {
+    fn drop(&mut self) {
+        if let Some(file) = self.0.take() {
+            let _retained = std::mem::ManuallyDrop::new(file);
+        }
+    }
+}
 
 impl<T> AbortTaskOnDrop<T> {
     fn is_finished(&self) -> bool {
@@ -106,6 +145,32 @@ impl Drop for UsageRelayGuard {
             let _sent = shutdown.send(());
         } else if let Some(task) = &self.task {
             task.abort();
+        }
+    }
+}
+
+impl Drop for LeasedUsageRelayGuard {
+    fn drop(&mut self) {
+        if let Some(shutdown) = self.shutdown.take() {
+            let _sent = shutdown.send(());
+        }
+    }
+}
+
+impl LeasedUsageRelayGuard {
+    pub fn shutdown_and_wait(mut self) -> impl Future<Output = Result<()>> + Send + 'static {
+        if let Some(shutdown) = self.shutdown.take() {
+            let _sent = shutdown.send(());
+        }
+        drop(self.task.take());
+        let completion = self.completion.take();
+        async move {
+            if let Some(completion) = completion {
+                completion
+                    .await
+                    .context("usage relay cleanup owner ended without a result")??;
+            }
+            Ok(())
         }
     }
 }
@@ -324,6 +389,63 @@ impl PreparedUsageRelay {
         self.canonical_launch_usage_capabilities
             .apply_to_launch_config(launch_config)
     }
+
+    #[must_use]
+    pub fn saved_proof(&self) -> (UsageCredentialScope, Vec<UsageAccountCapability>) {
+        (self.credential_scope.clone(), self.capabilities.clone())
+    }
+}
+
+pub async fn prepare_for_saved_proof(
+    paths: &JackinPaths,
+    credential_scope: UsageCredentialScope,
+    capabilities: Vec<UsageAccountCapability>,
+) -> Result<PreparedUsageRelay> {
+    prepare_for_saved_proof_with_ensure(paths, credential_scope, capabilities, |paths| {
+        prepare_saved_proof_broker_client(&paths)
+    })
+    .await
+}
+
+async fn prepare_for_saved_proof_with_ensure<F>(
+    paths: &JackinPaths,
+    credential_scope: UsageCredentialScope,
+    capabilities: Vec<UsageAccountCapability>,
+    ensure_broker: F,
+) -> Result<PreparedUsageRelay>
+where
+    F: FnOnce(JackinPaths) -> Result<UsageBrokerClient> + Send + 'static,
+{
+    let test_layout = paths.test_layout;
+    let paths = paths.clone();
+    let broker = jackin_telemetry::spawn::joined_blocking(move || ensure_broker(paths))
+        .await
+        .context("usage broker saved-proof preparation task panicked")??;
+    if test_layout {
+        return Ok(prepare_saved_proof_from_broker(
+            broker,
+            UsageCredentialScope::default(),
+            Vec::new(),
+        ));
+    }
+    Ok(prepare_saved_proof_from_broker(
+        broker,
+        credential_scope,
+        capabilities,
+    ))
+}
+
+fn prepare_saved_proof_from_broker(
+    broker: UsageBrokerClient,
+    credential_scope: UsageCredentialScope,
+    capabilities: Vec<UsageAccountCapability>,
+) -> PreparedUsageRelay {
+    PreparedUsageRelay {
+        broker,
+        capabilities,
+        canonical_launch_usage_capabilities: CanonicalLaunchUsageCapabilities::default(),
+        credential_scope,
+    }
 }
 
 pub fn start_docker_tunnel(
@@ -354,6 +476,32 @@ pub fn start_apple_tunnel(
         prepared.credential_scope,
         "container",
         apple_tunnel_args(container_name),
+    )
+}
+
+pub fn start_apple_tunnel_with_lease(
+    container_name: &str,
+    prepared: PreparedUsageRelay,
+    locked_lease: File,
+) -> Result<LeasedUsageRelayGuard> {
+    if prepared.capabilities.is_empty() {
+        drop(locked_lease);
+        return Ok(LeasedUsageRelayGuard {
+            task: None,
+            shutdown: None,
+            completion: None,
+        });
+    }
+    let request = jackin_process::ExecRequest::new("container", apple_tunnel_args(container_name))
+        .stdin_mode(jackin_process::StdioMode::Capture)
+        .stdout_mode(jackin_process::StdioMode::Capture)
+        .stderr_mode(jackin_process::StdioMode::Inherit);
+    start_tunnel_process_with_lease(
+        request,
+        prepared.broker,
+        prepared.capabilities,
+        prepared.credential_scope,
+        locked_lease,
     )
 }
 
@@ -457,6 +605,167 @@ fn start_tunnel_process(
     })
 }
 
+fn start_tunnel_process_with_lease(
+    request: jackin_process::ExecRequest,
+    broker: UsageBrokerClient,
+    capabilities: Vec<UsageAccountCapability>,
+    credential_scope: UsageCredentialScope,
+    locked_lease: File,
+) -> Result<LeasedUsageRelayGuard> {
+    let (operation, mut child) =
+        jackin_runtime_process_telemetry::process_telemetry::spawn_async(&request)
+            .context("starting scoped usage stdio tunnel")?;
+    let lease = RetainedUsageRelayLease::new(locked_lease);
+
+    let reader = child.stdout.take();
+    let Some(reader) = reader else {
+        let error = anyhow::anyhow!("usage relay stdout was unavailable");
+        spawn_lease_cleanup_after_pipe_error(child, lease, operation, error.to_string());
+        return Err(error);
+    };
+    let Some(writer) = child.stdin.take() else {
+        let error = anyhow::anyhow!("usage relay stdin was unavailable");
+        spawn_lease_cleanup_after_pipe_error(child, lease, operation, error.to_string());
+        return Err(error);
+    };
+
+    let allowlist = UsageCapabilitySet::new(capabilities);
+    let (shutdown, mut shutdown_rx) = oneshot::channel();
+    let (completion, completion_rx) = oneshot::channel();
+    let task = jackin_telemetry::spawn::spawn_stream("usage_relay.tunnel", async move {
+        let relay_result = tokio::select! {
+            result = serve_stdio_tunnel(reader, writer, broker, allowlist, credential_scope) => result,
+            _ = &mut shutdown_rx => Ok(()),
+        };
+        reap_leased_child(
+            child,
+            lease,
+            operation,
+            relay_result,
+            Some(completion),
+            false,
+        )
+        .await;
+    });
+    Ok(LeasedUsageRelayGuard {
+        task: Some(task),
+        shutdown: Some(shutdown),
+        completion: Some(completion_rx),
+    })
+}
+
+fn spawn_lease_cleanup_after_pipe_error(
+    child: tokio::process::Child,
+    lease: RetainedUsageRelayLease,
+    operation: jackin_runtime_process_telemetry::process_telemetry::ChildOperation,
+    error: String,
+) {
+    drop(jackin_telemetry::spawn::spawn_stream(
+        "usage_relay.tunnel_pipe_cleanup",
+        async move {
+            reap_leased_child(
+                child,
+                lease,
+                operation,
+                Err(anyhow::anyhow!(error)),
+                None,
+                true,
+            )
+            .await;
+        },
+    ));
+}
+
+async fn reap_leased_child(
+    mut child: tokio::process::Child,
+    lease: RetainedUsageRelayLease,
+    operation: jackin_runtime_process_telemetry::process_telemetry::ChildOperation,
+    relay_result: Result<()>,
+    mut completion: Option<oneshot::Sender<Result<()>>>,
+    kill_before_wait: bool,
+) {
+    if kill_before_wait {
+        request_child_kill_and_record(&mut child);
+    } else {
+        let wait_result =
+            tokio::time::timeout(TUNNEL_SHUTDOWN_TIMEOUT, wait_for_child(&mut child)).await;
+        match wait_result {
+            Ok(Ok(status)) => {
+                complete_reaped_child(status, operation, lease, relay_result, completion);
+                return;
+            }
+            Ok(Err(error)) => {
+                notify_unconfirmed_cleanup(&mut completion, &error);
+                request_child_kill_and_record(&mut child);
+            }
+            Err(_) => {
+                request_child_kill_and_record(&mut child);
+            }
+        }
+    }
+
+    let mut retry_delay = LEASE_WAIT_RETRY_BASE;
+    loop {
+        match wait_for_child(&mut child).await {
+            Ok(status) => {
+                complete_reaped_child(status, operation, lease, relay_result, completion);
+                return;
+            }
+            Err(error) => {
+                notify_unconfirmed_cleanup(&mut completion, &error);
+                tokio::time::sleep(retry_delay).await;
+                retry_delay = retry_delay.saturating_mul(2).min(LEASE_WAIT_RETRY_MAX);
+            }
+        }
+    }
+}
+
+fn complete_reaped_child(
+    status: std::process::ExitStatus,
+    operation: jackin_runtime_process_telemetry::process_telemetry::ChildOperation,
+    lease: RetainedUsageRelayLease,
+    relay_result: Result<()>,
+    completion: Option<oneshot::Sender<Result<()>>>,
+) {
+    let relay_failed = relay_result.is_err();
+    operation.complete_status(status);
+    lease.release();
+    if relay_failed {
+        let _recorded =
+            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::RpcError);
+    }
+    if let Some(completion) = completion {
+        let result = relay_result.context("usage relay tunnel failed");
+        let _sent = completion.send(result);
+    }
+}
+
+fn notify_unconfirmed_cleanup(
+    completion: &mut Option<oneshot::Sender<Result<()>>>,
+    error: &io::Error,
+) {
+    if let Some(completion) = completion.take() {
+        let _sent = completion.send(Err(anyhow::anyhow!(
+            "LeaseCleanupUnconfirmed: usage relay child wait failed: {error}"
+        )));
+    }
+}
+
+async fn wait_for_child(child: &mut tokio::process::Child) -> io::Result<std::process::ExitStatus> {
+    child.wait().await
+}
+
+fn request_child_kill(child: &mut tokio::process::Child) -> io::Result<()> {
+    child.start_kill()
+}
+
+fn request_child_kill_and_record(child: &mut tokio::process::Child) {
+    if request_child_kill(child).is_err() {
+        let _recorded =
+            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+    }
+}
+
 fn prepare_broker_client(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -508,6 +817,20 @@ fn prepare_broker_client(
         ));
     }
     Ok((client, capabilities, canonical_launch_usage_capabilities))
+}
+
+fn prepare_saved_proof_broker_client(paths: &JackinPaths) -> Result<UsageBrokerClient> {
+    let broker_config = UsageBrokerConfig::for_data_dir(paths.data_dir.clone());
+    let fallback = broker_config.client();
+    if paths.test_layout {
+        return Ok(fallback);
+    }
+    let scope = UsageDiscoveryScope::HostDesktop {
+        config_root: paths.config_dir.clone(),
+        operator_home: paths.home_dir.clone(),
+    };
+    ensure_usage_broker_process(broker_config, &scope)
+        .map_err(|error| anyhow::anyhow!("usage broker activation failed: {}", error.message))
 }
 
 fn canonical_capabilities_from_resolution(

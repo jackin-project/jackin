@@ -184,10 +184,6 @@ impl Drop for DarwinWorkerFatalGuard {
 }
 
 #[cfg(target_os = "macos")]
-#[expect(
-    clippy::print_stderr,
-    reason = "isolated Darwin qualification requires the actual post-registration PID before fatal startup failure"
-)]
 fn register_darwin_signal_listener(
     runtime: &tokio::runtime::Runtime,
 ) -> anyhow::Result<(TokioSignal, DarwinRegistrationFatalGuard)> {

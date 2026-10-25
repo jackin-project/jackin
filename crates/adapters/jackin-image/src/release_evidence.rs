@@ -6,9 +6,11 @@ mod policy;
 mod provenance;
 mod transport;
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt};
 
 use anyhow::{Context, Result, ensure};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 use sha2::{Digest as _, Sha256};
 use sigstore_types::{Artifact, Bundle, MediaType, Sha256Hash, SignatureContent};
 use sigstore_verify::{IdentityMatcher, VerificationPolicy, Verifier};
@@ -194,28 +196,276 @@ async fn verify_with_transport(
     })
 }
 
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CapsuleManifest {
-    version: String,
-    targets: BTreeMap<String, String>,
+const CAPSULE_MANIFEST_V2_SCHEMA: &str = "jackin.capsule-manifest.v2";
+const CAPSULE_FEATURE_USAGE_RELAY_PROXY_V2: &str = "usage-relay-proxy-v2";
+const CAPSULE_BINARY_MEMBER: &str = "jackin-capsule";
+
+#[derive(Debug)]
+enum StrictJson {
+    Scalar,
+    String(String),
+    Array(Vec<Self>),
+    Object(BTreeMap<String, Self>),
+}
+
+fn insert_unique_json_object_entry<'de, A>(
+    values: &mut BTreeMap<String, StrictJson>,
+    map: &mut A,
+    key: String,
+) -> std::result::Result<(), A::Error>
+where
+    A: MapAccess<'de>,
+{
+    if values.contains_key(&key) {
+        return Err(de::Error::custom(format!(
+            "duplicate JSON object key {key:?}"
+        )));
+    }
+    values.insert(key, map.next_value()?);
+    Ok(())
+}
+
+impl<'de> Deserialize<'de> for StrictJson {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct StrictJsonVisitor;
+
+        impl<'de> Visitor<'de> for StrictJsonVisitor {
+            type Value = StrictJson;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a JSON value with unique object keys")
+            }
+
+            fn visit_unit<E>(self) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(StrictJson::Scalar)
+            }
+
+            fn visit_bool<E>(self, _value: bool) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(StrictJson::Scalar)
+            }
+
+            fn visit_i64<E>(self, _value: i64) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(StrictJson::Scalar)
+            }
+
+            fn visit_u64<E>(self, _value: u64) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(StrictJson::Scalar)
+            }
+
+            fn visit_f64<E>(self, _value: f64) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(StrictJson::Scalar)
+            }
+
+            fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(StrictJson::String(value.to_owned()))
+            }
+
+            fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(StrictJson::String(value))
+            }
+
+            fn visit_seq<A>(self, mut sequence: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut values = Vec::new();
+                while let Some(value) = sequence.next_element()? {
+                    values.push(value);
+                }
+                Ok(StrictJson::Array(values))
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut values = BTreeMap::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    insert_unique_json_object_entry(&mut values, &mut map, key)?;
+                }
+                Ok(StrictJson::Object(values))
+            }
+        }
+
+        deserializer.deserialize_any(StrictJsonVisitor)
+    }
+}
+
+fn object<'a>(value: &'a StrictJson, label: &str) -> Result<&'a BTreeMap<String, StrictJson>> {
+    match value {
+        StrictJson::Object(fields) => Ok(fields),
+        _ => anyhow::bail!("{label} must be an object"),
+    }
+}
+
+fn string<'a>(value: &'a StrictJson, label: &str) -> Result<&'a str> {
+    match value {
+        StrictJson::String(value) => Ok(value),
+        _ => anyhow::bail!("{label} must be a string"),
+    }
+}
+
+fn exact_fields(
+    fields: &BTreeMap<String, StrictJson>,
+    expected: &[&str],
+    label: &str,
+) -> Result<()> {
+    anyhow::ensure!(
+        fields.len() == expected.len() && expected.iter().all(|key| fields.contains_key(*key)),
+        "{label} has missing or unknown fields"
+    );
+    Ok(())
+}
+
+fn canonical_sha256(value: &str, label: &str) -> Result<()> {
+    anyhow::ensure!(
+        value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+        "{label} must be a canonical lowercase SHA-256 digest"
+    );
+    Ok(())
 }
 
 fn validate_companion(bytes: &[u8], receipt: &PackageReleaseReceipt, version: &str) -> Result<()> {
-    let manifest: CapsuleManifest =
+    let manifest: StrictJson =
         serde_json::from_slice(bytes).context("parsing authenticated capsule companion")?;
-    ensure!(
-        manifest.version == version,
+    let fields = object(&manifest, "capsule companion")?;
+    let is_v2 = match fields.get("schema") {
+        None => false,
+        Some(schema) => {
+            anyhow::ensure!(
+                string(schema, "capsule companion schema")? == CAPSULE_MANIFEST_V2_SCHEMA,
+                "unsupported authenticated capsule companion schema"
+            );
+            true
+        }
+    };
+    if is_v2 {
+        exact_fields(fields, &["schema", "version", "targets"], "V2 companion")?;
+    } else {
+        exact_fields(fields, &["version", "targets"], "legacy companion")?;
+    }
+    anyhow::ensure!(
+        string(
+            fields
+                .get("version")
+                .context("capsule companion version missing")?,
+            "version",
+        )? == version,
         "capsule companion version mismatch"
     );
-    ensure!(
-        manifest.targets.len() == policy::LINUX_TARGETS.len(),
+    let targets = object(
+        fields
+            .get("targets")
+            .context("capsule companion targets missing")?,
+        "capsule companion targets",
+    )?;
+    anyhow::ensure!(
+        targets.len() == policy::LINUX_TARGETS.len()
+            && policy::LINUX_TARGETS
+                .iter()
+                .all(|target| targets.contains_key(*target)),
         "capsule companion must contain exactly the two supported Linux targets"
     );
+    let mut declared_features: Option<Vec<String>> = None;
     for target in policy::LINUX_TARGETS {
+        let value = targets.get(target).context("capsule target missing")?;
+        let archive_sha256 = if is_v2 {
+            let target_fields = object(value, "V2 capsule target")?;
+            exact_fields(
+                target_fields,
+                &[
+                    "archive_sha256",
+                    "binary_member",
+                    "binary_sha256",
+                    "features",
+                ],
+                "V2 capsule target",
+            )?;
+            let binary_member = string(
+                target_fields
+                    .get("binary_member")
+                    .context("binary member missing")?,
+                "binary member",
+            )?;
+            anyhow::ensure!(
+                binary_member == CAPSULE_BINARY_MEMBER,
+                "V2 capsule target names an unsupported binary member"
+            );
+            let binary_sha256 = string(
+                target_fields
+                    .get("binary_sha256")
+                    .context("binary digest missing")?,
+                "binary digest",
+            )?;
+            canonical_sha256(binary_sha256, "binary digest")?;
+            let Some(StrictJson::Array(features)) = target_fields.get("features") else {
+                anyhow::bail!("V2 capsule target features must be an array");
+            };
+            anyhow::ensure!(!features.is_empty(), "V2 target must declare a feature");
+            let mut target_features: Vec<String> = Vec::new();
+            for feature in features {
+                let feature = string(feature, "capsule feature")?;
+                anyhow::ensure!(
+                    feature == CAPSULE_FEATURE_USAGE_RELAY_PROXY_V2,
+                    "unsupported authenticated capsule feature"
+                );
+                if let Some(previous) = target_features.last() {
+                    anyhow::ensure!(
+                        previous.as_str() < feature,
+                        "capsule features must be unique and sorted"
+                    );
+                }
+                target_features.push(feature.to_owned());
+            }
+            if let Some(previous) = &declared_features {
+                anyhow::ensure!(
+                    previous.as_slice() == target_features.as_slice(),
+                    "V2 targets must declare the same capsule features"
+                );
+            } else {
+                declared_features = Some(target_features);
+            }
+            string(
+                target_fields
+                    .get("archive_sha256")
+                    .context("archive digest missing")?,
+                "archive digest",
+            )?
+        } else {
+            string(value, "legacy target archive digest")?
+        };
+        canonical_sha256(archive_sha256, "archive digest")?;
         let name = format!("jackin-capsule-{target}.tar.gz");
-        ensure!(
-            manifest.targets.get(target) == Some(&asset(receipt, &name)?.sha256),
+        let expected_archive_sha256 = asset(receipt, &name)?;
+        anyhow::ensure!(
+            archive_sha256 == expected_archive_sha256.sha256.as_str(),
             "capsule companion target/digest mismatch for {target}"
         );
     }

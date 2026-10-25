@@ -165,6 +165,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         env_file: host_env_file.as_ref().map(|file| file.path().to_path_buf()),
         mounts: container_mounts,
         caps_add: vec![],
+        launch_generation: None,
     };
 
     let run_result = with_admitted_final_apple_spec(paths, state, spec, |spec| async move {

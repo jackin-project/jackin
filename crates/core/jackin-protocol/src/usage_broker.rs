@@ -14,6 +14,88 @@ use crate::usage_monitor::{MonitorIssue, MonitorOperation, MonitorReply};
 pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v9";
 
 pub const USAGE_BROKER_MAX_FRAME_BYTES: usize = 1024 * 1024;
+pub const USAGE_RELAY_READY_MAX_FRAME_BYTES: usize = 128;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct UsageRelayReadyV1 {
+    pub kind: UsageRelayReadyKindV1,
+    pub protocol: UsageRelayReadyProtocolV2,
+    pub version: UsageRelayReadyVersionV1,
+}
+
+impl UsageRelayReadyV1 {
+    #[must_use]
+    pub const fn canonical() -> Self {
+        Self {
+            kind: UsageRelayReadyKindV1::UsageRelayReady,
+            protocol: UsageRelayReadyProtocolV2::V2,
+            version: UsageRelayReadyVersionV1,
+        }
+    }
+
+    pub fn encode_frame(self) -> Result<Vec<u8>, String> {
+        let mut frame = serde_json::to_vec(&self).map_err(|error| error.to_string())?;
+        frame.push(b'\n');
+        if frame.len() > USAGE_RELAY_READY_MAX_FRAME_BYTES {
+            return Err("usage relay readiness frame exceeds its size limit".to_owned());
+        }
+        Ok(frame)
+    }
+
+    pub fn decode_frame(frame: &[u8]) -> Result<Self, String> {
+        if frame.is_empty() || frame.len() > USAGE_RELAY_READY_MAX_FRAME_BYTES {
+            return Err("usage relay readiness frame has invalid framing".to_owned());
+        }
+        let Some(payload) = frame.strip_suffix(b"\n") else {
+            return Err("usage relay readiness frame has invalid framing".to_owned());
+        };
+        if payload.contains(&b'\n') {
+            return Err("usage relay readiness frame has invalid framing".to_owned());
+        }
+        let value: Self = serde_json::from_slice(payload).map_err(|error| error.to_string())?;
+        if value != Self::canonical() || value.encode_frame()?.as_slice() != frame {
+            return Err("usage relay readiness frame is not canonical".to_owned());
+        }
+        Ok(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum UsageRelayReadyKindV1 {
+    #[serde(rename = "usage_relay_ready")]
+    UsageRelayReady,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum UsageRelayReadyProtocolV2 {
+    #[serde(rename = "usage-relay-owner-v2")]
+    V2,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(try_from = "u8", into = "u8")]
+pub struct UsageRelayReadyVersionV1;
+
+impl TryFrom<u8> for UsageRelayReadyVersionV1 {
+    type Error = String;
+
+    fn try_from(version: u8) -> Result<Self, Self::Error> {
+        if version == 1 {
+            Ok(Self)
+        } else {
+            Err(format!(
+                "unsupported usage relay readiness version {version}"
+            ))
+        }
+    }
+}
+
+impl From<UsageRelayReadyVersionV1> for u8 {
+    fn from(_: UsageRelayReadyVersionV1) -> Self {
+        1
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(tag = "kind", rename_all = "snake_case")]
