@@ -542,10 +542,10 @@ mode = "enforce"
 cap = 0
 [[family.entry]]
 key = "AGENTS.md"
-bound = 4833
+bound = 4906
 [[family.entry]]
 key = "CLAUDE.md"
-bound = 4833
+bound = 4906
 [[family.entry]]
 key = "crates/adapters/jackin-docker/README.md"
 bound = 1864

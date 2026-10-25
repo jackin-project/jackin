@@ -14,9 +14,6 @@ publish = false
 default = []
 codex-app-server-authority = []
 
-[lib]
-test = false
-
 [dependencies]
 anyhow = { workspace = true }
 jackin-core = { workspace = true }
