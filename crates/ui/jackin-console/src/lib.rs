@@ -12,3 +12,6 @@ pub trait ConsoleHostTerminal: Send + Sync {
     fn set_host_screen_owned(&self, owned: bool);
     fn host_screen_owned(&self) -> bool;
 }
+
+#[cfg(test)]
+mod tests;

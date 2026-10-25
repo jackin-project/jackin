@@ -6,3 +6,6 @@ pub use resolver::{
     CachedProviderCredentialResolver, ProviderCredentialSecretOutcome,
     ProviderCredentialSecretResolution, ProviderCredentialSecretSource,
 };
+
+#[cfg(test)]
+mod tests;

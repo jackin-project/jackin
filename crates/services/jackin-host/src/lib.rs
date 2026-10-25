@@ -4,3 +4,6 @@ pub mod host_desktop;
 pub(crate) mod naming;
 mod process_telemetry;
 pub(crate) mod universe;
+
+#[cfg(test)]
+mod tests;

@@ -97,6 +97,9 @@ bound = 2
 key = "clippy::disallowed_methods@jackin-process"
 bound = 1
 [[family.entry]]
+key = "clippy::disallowed_methods@jackin-process-directory"
+bound = 3
+[[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime-host-attach"
 bound = 1
 [[family.entry]]
@@ -539,10 +542,10 @@ mode = "enforce"
 cap = 0
 [[family.entry]]
 key = "AGENTS.md"
-bound = 4493
+bound = 4833
 [[family.entry]]
 key = "CLAUDE.md"
-bound = 4493
+bound = 4833
 [[family.entry]]
 key = "crates/adapters/jackin-docker/README.md"
 bound = 1864

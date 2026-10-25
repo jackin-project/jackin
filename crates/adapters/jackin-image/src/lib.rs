@@ -20,3 +20,6 @@ pub use naming::{
     LABEL_IMAGE_RECIPE_HASH, LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, image_name,
     image_name_for_branch, role_base_image_name, short_git_sha,
 };
+
+#[cfg(test)]
+mod tests;

@@ -192,3 +192,6 @@ fn validate_env_interpolation(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

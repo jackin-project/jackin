@@ -84,3 +84,6 @@ pub(crate) use rediscover::{
 pub(crate) use serve::{ServeConfig, serve, write_response};
 
 pub(crate) use startup::BrokerStartupCleanup;
+
+#[cfg(test)]
+mod tests;

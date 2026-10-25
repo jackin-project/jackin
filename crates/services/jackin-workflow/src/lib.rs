@@ -131,3 +131,6 @@ impl std::fmt::Display for WorkflowError {
 }
 
 impl std::error::Error for WorkflowError {}
+
+#[cfg(test)]
+mod tests;

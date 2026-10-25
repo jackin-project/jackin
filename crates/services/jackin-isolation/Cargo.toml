@@ -40,7 +40,8 @@ tokio = { workspace = true, features = ["rt"] }
 
 [dev-dependencies]
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
-tokio = { workspace = true, features = ["test-util", "process"] }
+tokio = { workspace = true, features = ["macros", "test-util", "process"] }
+tempfile = { workspace = true }
 
 [features]
 test-support = []

@@ -133,3 +133,6 @@ fn is_valid_container_name(value: &str) -> bool {
 fn is_reserved_builtin_role_name(value: &str) -> bool {
     value.starts_with(CONTAINER_PREFIX_DASH)
 }
+
+#[cfg(test)]
+mod tests;

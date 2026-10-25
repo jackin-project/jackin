@@ -31,6 +31,7 @@ ratatui = { workspace = true, features = ["unstable-rendered-line-info"] }
 
 [dev-dependencies]
 jackin-config = { workspace = true, features = ["test-support"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [features]
 test-support = ["jackin-config/test-support"]

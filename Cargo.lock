@@ -2884,6 +2884,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
 ]
@@ -2971,6 +2972,7 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "nix 0.31.3",
+ "tempfile",
  "tokio",
 ]
 
@@ -2980,6 +2982,7 @@ version = "0.6.4"
 dependencies = [
  "libc",
  "rustix 1.1.5",
+ "tempfile",
 ]
 
 [[package]]
@@ -3131,6 +3134,7 @@ dependencies = [
  "jackin-runtime-isolation",
  "jackin-runtime-launch-attach-outcome",
  "jackin-telemetry",
+ "tokio",
 ]
 
 [[package]]
@@ -3419,6 +3423,8 @@ dependencies = [
  "jackin-telemetry",
  "nix 0.31.3",
  "sha2 0.11.1",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -3447,6 +3453,7 @@ dependencies = [
  "jackin-docker",
  "jackin-runtime-discovery",
  "jackin-runtime-isolation",
+ "tokio",
 ]
 
 [[package]]
@@ -4063,6 +4070,7 @@ dependencies = [
  "jackin-core",
  "jackin-manifest",
  "jackin-telemetry",
+ "tempfile",
 ]
 
 [[package]]
@@ -4482,6 +4490,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

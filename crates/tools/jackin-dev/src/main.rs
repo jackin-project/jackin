@@ -966,6 +966,9 @@ fn print_sync_summary(pr: u64, paths: &PrPaths, info: &PullRequestInfo, auto: &A
     }
 }
 
+#[cfg(test)]
+mod tests;
+
 fn emit_line(line: impl AsRef<str>) {
     #[expect(
         clippy::print_stdout,

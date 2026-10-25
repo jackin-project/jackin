@@ -39,3 +39,6 @@ pub fn install_default_tls_provider() {
         Ok(()) | Err(_) => {}
     }
 }
+
+#[cfg(test)]
+mod tests;

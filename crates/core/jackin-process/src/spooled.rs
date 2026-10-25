@@ -658,3 +658,6 @@ fn sync_spool(spool_name: &str, spool: &mut impl OutputSpool, failures: &mut Vec
         });
     }
 }
+
+#[cfg(test)]
+mod tests;

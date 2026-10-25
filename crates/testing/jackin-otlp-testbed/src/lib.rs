@@ -1025,3 +1025,5 @@ impl Drop for Testbed {
         }
     }
 }
+#[cfg(test)]
+mod tests;

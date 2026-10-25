@@ -77,3 +77,6 @@ fn normal_components(path: &Path) -> Vec<OsString> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests;
