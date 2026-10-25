@@ -3,10 +3,10 @@
 Regenerate these canary-only fixtures with:
 
 ```sh
-python3 crates/services/jackin-instance/src/auth/tests/fixtures/generate_omp_fixtures.py
+mise exec -- mbx +1.99.1 xtask fixture-omp
 ```
 
-The generator uses Python's standard-library `sqlite3` module to create the
+The xtask uses its workspace-pinned bundled SQLite library to create the
 database, committed WAL transactions, and before/after checkpoint images. It
 also saves a schema-and-credential WAL-only database and constructs a reused
 WAL whose valid new-generation prefix is followed by real old-generation

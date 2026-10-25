@@ -5011,6 +5011,7 @@ dependencies = [
  "proc-macro2",
  "quick-xml",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde-saphyr",
  "serde_json",

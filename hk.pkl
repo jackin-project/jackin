@@ -22,7 +22,7 @@ steps {
     fix { command = "cargo fmt --all --manifest-path {{workspace_indicator}}" }
   }
   // crates/tools/jackin-lints is outside the workspace and needs the pinned nightly with rustc-dev; it is built,
-  // UI-tested and run by `mise run check:custom-lints` (scripts/custom-lints.py), never by stable cargo.
+  // UI-tested and run by `mise run check:custom-lints` (jackin-xtask custom-lints), never by stable cargo.
   ["cargo_check"] = (Builtins.cargo_check) { exclude = List("crates/tools/jackin-lints/**") }
   ["cargo_clippy"] = (Builtins.cargo_clippy) { exclude = List("crates/tools/jackin-lints/**") }
   // deny.toml governs the root workspace (as in CI). The fuzz/ crates and crates/tools/jackin-lints are separate
