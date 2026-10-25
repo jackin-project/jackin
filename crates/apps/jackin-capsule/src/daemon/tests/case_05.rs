@@ -109,6 +109,23 @@ fn apply_dialog_action_switch_usage_provider_resolves_bound_full_tuple() {
             .account_id,
         "test-claude-b"
     );
+
+    let pending_b = mux.usage.pending_usage_refresh.clone();
+    mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
+        provider_label: "Anthropic · b@example.com".to_owned(),
+        account_id: String::new(),
+    });
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+        panic!("switch usage provider action must keep usage dialog open");
+    };
+    assert_eq!(view.status, UsageSnapshotStatus::Unavailable);
+    assert_eq!(
+        view.account.account_label,
+        "usage unavailable: account not cached"
+    );
+    assert!(view.account.account_capability.is_none());
+    assert!(view.buckets.is_empty());
+    assert_eq!(mux.usage.pending_usage_refresh, pending_b);
 }
 
 struct BoundUsageFixture<'a> {

@@ -332,7 +332,7 @@ fn apply_action_refresh_usage_queues_refresh_without_replacing_dialog() {
 }
 
 #[test]
-fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
+fn apply_dialog_action_switch_usage_provider_rejects_empty_selector() {
     let mut mux = single_pane_tab_mux();
     let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
     mux.session_supervisor.sessions.insert(1, session);
@@ -360,17 +360,14 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
         panic!("switch usage provider action must keep usage dialog open");
     };
-    assert_eq!(view.focused_provider.as_deref(), Some("Claude"));
-    assert_eq!(view.account.provider_label, "Anthropic");
     assert_eq!(
-        mux.usage.pending_usage_refresh,
-        Some(crate::usage::UsageRefreshTarget {
-            agent: "codex".to_owned(),
-            provider: Some("Claude".to_owned()),
-            capability: jackin_protocol::usage_broker::UsageAccountCapability {
-                account_id: "test-codex".to_owned(),
-                surface_id: "codex".to_owned(),
-            },
-        })
+        view.status,
+        jackin_protocol::control::UsageSnapshotStatus::Unavailable
     );
+    assert_eq!(
+        view.account.account_label,
+        "usage unavailable: account not cached"
+    );
+    assert!(view.account.account_capability.is_none());
+    assert_eq!(mux.usage.pending_usage_refresh, None);
 }
