@@ -269,6 +269,181 @@ fn companion_and_asset_bytes_bind_exact_size_digest_and_version() {
     .expect_err("invalid evidence must be rejected");
 }
 
+fn v2_companion(receipt: &PackageReleaseReceipt) -> Value {
+    let mut targets = serde_json::Map::new();
+    for target in policy::LINUX_TARGETS {
+        targets.insert(
+            target.to_owned(),
+            json!({
+                "archive_sha256": asset(receipt, &format!("jackin-capsule-{target}.tar.gz"))
+                    .unwrap()
+                    .sha256,
+                "binary_member": "jackin-capsule",
+                "binary_sha256": "f".repeat(64),
+                "features": ["usage-relay-proxy-v2"]
+            }),
+        );
+    }
+    json!({
+        "schema": CAPSULE_MANIFEST_V2_SCHEMA,
+        "version": receipt.version.value,
+        "targets": targets
+    })
+}
+
+#[test]
+fn authenticated_v2_companion_requires_exact_supported_targets_and_feature() {
+    let receipt = receipt();
+    let manifest = v2_companion(&receipt);
+    validate_companion(
+        &serde_json::to_vec(&manifest).unwrap(),
+        &receipt,
+        &receipt.version.value,
+    )
+    .unwrap();
+
+    let mut unknown = manifest.clone();
+    unknown["targets"][policy::LINUX_TARGETS[0]]["features"] = json!(["unknown-feature"]);
+    validate_companion(
+        &serde_json::to_vec(&unknown).unwrap(),
+        &receipt,
+        &receipt.version.value,
+    )
+    .expect_err("unknown authenticated feature must fail closed");
+
+    let mut duplicate_feature = manifest.clone();
+    duplicate_feature["targets"][policy::LINUX_TARGETS[0]]["features"] =
+        json!(["usage-relay-proxy-v2", "usage-relay-proxy-v2"]);
+    validate_companion(
+        &serde_json::to_vec(&duplicate_feature).unwrap(),
+        &receipt,
+        &receipt.version.value,
+    )
+    .expect_err("duplicate feature declarations must fail");
+
+    let mut malformed_digest = manifest.clone();
+    malformed_digest["targets"][policy::LINUX_TARGETS[0]]["binary_sha256"] = json!("A".repeat(64));
+    validate_companion(
+        &serde_json::to_vec(&malformed_digest).unwrap(),
+        &receipt,
+        &receipt.version.value,
+    )
+    .expect_err("noncanonical binary digest must fail");
+
+    let mut wrong_archive = manifest.clone();
+    wrong_archive["targets"][policy::LINUX_TARGETS[0]]["archive_sha256"] = json!("a".repeat(64));
+    validate_companion(
+        &serde_json::to_vec(&wrong_archive).unwrap(),
+        &receipt,
+        &receipt.version.value,
+    )
+    .expect_err("V2 archive digest must match the signed release receipt");
+
+    let mut unsupported_schema = manifest;
+    unsupported_schema["schema"] = json!("jackin.capsule-manifest.v3");
+    validate_companion(
+        &serde_json::to_vec(&unsupported_schema).unwrap(),
+        &receipt,
+        &receipt.version.value,
+    )
+    .expect_err("unknown authenticated schemas must fail, not fall back");
+}
+
+#[test]
+fn malformed_authenticated_v2_never_falls_back_to_legacy() {
+    let receipt = receipt();
+    let mut malformed = json!({
+        "schema": CAPSULE_MANIFEST_V2_SCHEMA,
+        "version": receipt.version.value,
+        "targets": {}
+    });
+    for target in policy::LINUX_TARGETS {
+        malformed["targets"][target] = json!(
+            asset(&receipt, &format!("jackin-capsule-{target}.tar.gz"))
+                .unwrap()
+                .sha256
+        );
+    }
+    validate_companion(
+        &serde_json::to_vec(&malformed).unwrap(),
+        &receipt,
+        &receipt.version.value,
+    )
+    .expect_err("V2 target strings cannot be accepted as legacy entries");
+}
+
+#[test]
+fn companion_rejects_duplicate_decoded_keys_at_every_object_level() {
+    let receipt = receipt();
+    let json_string = |value: &str| serde_json::to_string(value).unwrap();
+    let json_object = |fields: &str| format!("{{{fields}}}");
+    let version = json_string(&receipt.version.value);
+    let target_a = policy::LINUX_TARGETS[0];
+    let target_b = policy::LINUX_TARGETS[1];
+    let target_a_key = json_string(target_a);
+    let target_b_key = json_string(target_b);
+    let target_a_digest = json_string(
+        &asset(&receipt, &format!("jackin-capsule-{target_a}.tar.gz"))
+            .unwrap()
+            .sha256,
+    );
+    let target_b_digest = json_string(
+        &asset(&receipt, &format!("jackin-capsule-{target_b}.tar.gz"))
+            .unwrap()
+            .sha256,
+    );
+
+    let v1_targets = json_object(&format!(
+        "{target_a_key}:{target_a_digest},{target_b_key}:{target_b_digest}"
+    ));
+    let duplicate_root_key = json_object(&format!(
+        r#""version":{version},"\u0076ersion":{version},"targets":{v1_targets}"#
+    ));
+    let duplicate_target_key = json_object(&format!(
+        r#""version":{version},"targets":{}"#,
+        json_object(&format!(
+            "{target_a_key}:{target_a_digest},{target_a_key}:{target_a_digest},{target_b_key}:{target_b_digest}"
+        )),
+    ));
+
+    let binary_member = json_string(CAPSULE_BINARY_MEMBER);
+    let binary_digest = json_string(&"f".repeat(64));
+    let feature = json_string(CAPSULE_FEATURE_USAGE_RELAY_PROXY_V2);
+    let v2_target_b = json_object(&format!(
+        r#""archive_sha256":{target_b_digest},"binary_member":{binary_member},"binary_sha256":{binary_digest},"features":[{feature}]"#
+    ));
+    let v2_root = |v2_target_a: &str| {
+        let targets = json_object(&format!(
+            "{target_a_key}:{v2_target_a},{target_b_key}:{v2_target_b}"
+        ));
+        json_object(&format!(
+            r#""schema":{schema},"version":{version},"targets":{targets}"#,
+            schema = json_string(CAPSULE_MANIFEST_V2_SCHEMA),
+        ))
+    };
+    let duplicate_v2_features = json_object(&format!(
+        r#""archive_sha256":{target_a_digest},"binary_member":{binary_member},"binary_sha256":{binary_digest},"features":[{feature}],"features":[{feature}]"#
+    ));
+    let duplicate_v2_archive_digest = json_object(&format!(
+        r#""archive_sha256":{target_a_digest},"archive_sha256":{target_a_digest},"binary_member":{binary_member},"binary_sha256":{binary_digest},"features":[{feature}]"#
+    ));
+
+    let duplicates = [
+        duplicate_root_key,
+        duplicate_target_key,
+        v2_root(&duplicate_v2_features),
+        v2_root(&duplicate_v2_archive_digest),
+    ];
+    for raw in duplicates {
+        let error = validate_companion(raw.as_bytes(), &receipt, &receipt.version.value)
+            .expect_err("duplicate decoded JSON keys must be rejected");
+        assert!(
+            format!("{error:#}").contains("duplicate JSON object key"),
+            "otherwise-valid duplicate-key fixture reached a different rejection: {error:#}"
+        );
+    }
+}
+
 fn statement(receipt: &PackageReleaseReceipt) -> (Value, BTreeMap<String, String>) {
     let subjects: BTreeMap<_, _> = receipt
         .evidence

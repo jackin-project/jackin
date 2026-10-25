@@ -3,7 +3,8 @@
 
 use super::*;
 use handoff::{TaskInput, TaskRequest};
-use serde_json::Value;
+use serde_json::{Value, json};
+use sha2::{Digest as _, Sha256};
 use std::{fs, path::Path};
 use velnor_actions_contract::{
     PACKAGE_RELEASE_PLAN_SCHEMA_V1, PackageReleasePlan, PackageReleasePlanProduct,
@@ -168,15 +169,21 @@ fn inventory_binds_exactly_six_payloads_sboms_and_capsule_companion() {
         serde_json::from_slice(&fs::read(output.path().join("capsule-manifest.json")).unwrap())
             .unwrap();
     assert_eq!(companion["targets"].as_object().unwrap().len(), 2);
+    assert!(
+        companion.get("schema").is_none(),
+        "empty declaration keeps legacy V1"
+    );
     for (target, digest) in companion["targets"].as_object().unwrap() {
+        let archive = output
+            .path()
+            .join(format!("jackin-capsule-{target}.tar.gz"));
         assert_eq!(
             digest,
-            &crate::release_sbom::archive_sha256(
-                &output
-                    .path()
-                    .join(format!("jackin-capsule-{target}.tar.gz"))
-            )
-            .unwrap()
+            &crate::release_sbom::archive_sha256(&archive).unwrap()
+        );
+        assert_eq!(
+            inventory::capsule_binary_sha256(&archive).unwrap(),
+            hex::encode(Sha256::digest(b"jackin-capsule"))
         );
     }
     assert_eq!(
@@ -189,6 +196,182 @@ fn inventory_binds_exactly_six_payloads_sboms_and_capsule_companion() {
             .len(),
         14
     );
+}
+
+fn write_capsule_archive(path: &Path, members: &[(&str, &[u8], u32, tar::EntryType)]) {
+    let gzip = flate2::write::GzEncoder::new(
+        fs::File::create(path).unwrap(),
+        flate2::Compression::default(),
+    );
+    let mut archive = tar::Builder::new(gzip);
+    for (name, bytes, mode, entry_type) in members {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(*mode);
+        header.set_entry_type(*entry_type);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_mtime(0);
+        header.set_cksum();
+        archive.append_data(&mut header, *name, *bytes).unwrap();
+    }
+    archive.into_inner().unwrap().finish().unwrap();
+}
+
+fn write_capsule_archive_with_raw_name(path: &Path, raw_name: &[u8]) {
+    let gzip = flate2::write::GzEncoder::new(
+        fs::File::create(path).unwrap(),
+        flate2::Compression::default(),
+    );
+    let mut archive = tar::Builder::new(gzip);
+    let contents = b"fixture-binary";
+    let mut header = tar::Header::new_gnu();
+    header.set_path("jackin-capsule").unwrap();
+    header.set_size(contents.len() as u64);
+    header.set_mode(0o755);
+    header.set_entry_type(tar::EntryType::Regular);
+    header.set_uid(0);
+    header.set_gid(0);
+    header.set_mtime(0);
+    let name = &mut header.as_mut_bytes()[..100];
+    name.fill(0);
+    name[..raw_name.len()].copy_from_slice(raw_name);
+    header.set_cksum();
+    archive.append(&header, &contents[..]).unwrap();
+    archive.into_inner().unwrap().finish().unwrap();
+}
+
+#[test]
+fn capsule_companion_v2_binds_binary_digest_and_allowlisted_feature() {
+    assert!(inventory::declared_capsule_features().unwrap().is_empty());
+    inventory::refuse_unverified_feature_declarations(&[]).unwrap();
+    inventory::refuse_unverified_feature_declarations(&["usage-relay-proxy-v2".to_owned()])
+        .expect_err("production feature issuance must stay disabled without its gate");
+    let mut targets = std::collections::BTreeMap::new();
+    for target in ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"] {
+        targets.insert(
+            target.to_owned(),
+            inventory::CapsuleTargetDigests {
+                archive_sha256: "a".repeat(64),
+                binary_sha256: Some("b".repeat(64)),
+            },
+        );
+    }
+    let features = vec!["usage-relay-proxy-v2".to_owned()];
+    let bytes = inventory::render_capsule_companion_fixture("1.2.3", &targets, &features).unwrap();
+    let manifest: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(manifest["schema"], "jackin.capsule-manifest.v2");
+    assert_eq!(manifest["version"], "1.2.3");
+    for target in targets.keys() {
+        assert_eq!(
+            manifest["targets"][target]["archive_sha256"],
+            "a".repeat(64)
+        );
+        assert_eq!(
+            manifest["targets"][target]["binary_member"],
+            "jackin-capsule"
+        );
+        assert_eq!(manifest["targets"][target]["binary_sha256"], "b".repeat(64));
+        assert_eq!(manifest["targets"][target]["features"], json!(features));
+    }
+
+    let mut missing_binary_digest = targets.clone();
+    missing_binary_digest
+        .get_mut("aarch64-unknown-linux-gnu")
+        .unwrap()
+        .binary_sha256 = None;
+    inventory::render_capsule_companion_fixture("1.2.3", &missing_binary_digest, &features)
+        .expect_err("V2 feature declarations require a binary digest");
+
+    inventory::render_capsule_companion_fixture("1.2.3", &targets, &["unknown".into()])
+        .expect_err("unknown feature IDs must be rejected");
+    inventory::render_capsule_companion_fixture(
+        "1.2.3",
+        &targets,
+        &["usage-relay-proxy-v2".into(), "usage-relay-proxy-v2".into()],
+    )
+    .expect_err("duplicate feature IDs must be rejected");
+}
+
+#[test]
+fn capsule_archive_member_must_be_one_regular_executable_binary() {
+    let temp = tempfile::tempdir().unwrap();
+    let expected = hex::encode(Sha256::digest(b"fixture-binary"));
+
+    let valid = temp.path().join("valid.tar.gz");
+    write_capsule_archive(
+        &valid,
+        &[(
+            "jackin-capsule",
+            b"fixture-binary",
+            0o755,
+            tar::EntryType::Regular,
+        )],
+    );
+    assert_eq!(inventory::capsule_binary_sha256(&valid).unwrap(), expected);
+
+    let wrong_member = temp.path().join("wrong-member.tar.gz");
+    write_capsule_archive(
+        &wrong_member,
+        &[("other", b"fixture-binary", 0o755, tar::EntryType::Regular)],
+    );
+    inventory::capsule_binary_sha256(&wrong_member)
+        .expect_err("unexpected archive member must be rejected");
+
+    let duplicate = temp.path().join("duplicate.tar.gz");
+    write_capsule_archive(
+        &duplicate,
+        &[
+            ("jackin-capsule", b"first", 0o755, tar::EntryType::Regular),
+            ("jackin-capsule", b"second", 0o755, tar::EntryType::Regular),
+        ],
+    );
+    inventory::capsule_binary_sha256(&duplicate)
+        .expect_err("duplicate archive member must be rejected");
+
+    let non_executable = temp.path().join("non-executable.tar.gz");
+    write_capsule_archive(
+        &non_executable,
+        &[(
+            "jackin-capsule",
+            b"fixture-binary",
+            0o644,
+            tar::EntryType::Regular,
+        )],
+    );
+    inventory::capsule_binary_sha256(&non_executable)
+        .expect_err("non-executable member must be rejected");
+
+    let special_permission_bits = temp.path().join("special-permission-bits.tar.gz");
+    write_capsule_archive(
+        &special_permission_bits,
+        &[(
+            "jackin-capsule",
+            b"fixture-binary",
+            0o4755,
+            tar::EntryType::Regular,
+        )],
+    );
+    inventory::capsule_binary_sha256(&special_permission_bits)
+        .expect_err("noncanonical permission bits must be rejected");
+
+    let non_regular = temp.path().join("non-regular.tar.gz");
+    write_capsule_archive(
+        &non_regular,
+        &[("jackin-capsule", b"", 0o755, tar::EntryType::Directory)],
+    );
+    inventory::capsule_binary_sha256(&non_regular)
+        .expect_err("non-regular member must be rejected");
+
+    for (name, raw_name) in [
+        ("dot-prefix", &b"./jackin-capsule"[..]),
+        ("trailing-separator", &b"jackin-capsule/"[..]),
+    ] {
+        let archive = temp.path().join(format!("{name}.tar.gz"));
+        write_capsule_archive_with_raw_name(&archive, raw_name);
+        inventory::capsule_binary_sha256(&archive)
+            .expect_err("noncanonical raw member path must be rejected");
+    }
 }
 
 #[test]
