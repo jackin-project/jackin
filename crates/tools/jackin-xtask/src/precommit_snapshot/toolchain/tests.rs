@@ -3,10 +3,63 @@
 
 use super::*;
 use std::collections::BTreeSet;
+#[cfg(not(target_os = "macos"))]
+use std::os::unix::ffi::OsStringExt;
+use std::os::unix::{ffi::OsStrExt, process::ExitStatusExt};
+use std::process::{ExitStatus, Output};
 
 fn write_executable(path: &Path, contents: &[u8]) {
     fs::write(path, contents).expect("tool file");
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("executable mode");
+}
+
+fn command_result(status: i32, stdout: &[u8]) -> Output {
+    Output {
+        status: ExitStatus::from_raw(status << 8),
+        stdout: stdout.to_vec(),
+        stderr: Vec::new(),
+    }
+}
+
+#[test]
+fn rustup_path_resolution_handles_actual_raw_unix_paths() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    #[cfg(target_os = "macos")]
+    let raw_component = OsString::from(" rustup \t\r\n ");
+    #[cfg(not(target_os = "macos"))]
+    let raw_component = OsString::from_vec(b" rustup \t\r\n\xff ".to_vec());
+    let rustup_home = temporary.path().join(raw_component);
+    let toolchain_bin = rustup_home.join("toolchains/fixture-pin/bin");
+    fs::create_dir_all(&toolchain_bin).expect("raw path toolchain directory");
+    for name in ["rustc", "rustdoc", "clippy-driver", "rustfmt"] {
+        write_executable(&toolchain_bin.join(name), b"fixture tool");
+    }
+    let rustup = temporary.path().join("rustup");
+    let rustup_script = concat!(
+        "#!/bin/sh\n",
+        "set -eu\n",
+        "[ \"$1\" = which ] && [ \"$2\" = --toolchain ] && [ \"$3\" = fixture-pin ] || exit 73\n",
+        "path=\"$RUSTUP_HOME/toolchains/$3/bin/$4\"\n",
+        "[ -f \"$path\" ] || exit 74\n",
+        "printf '%s\\n' \"$path\"\n",
+    );
+    write_executable(&rustup, rustup_script.as_bytes());
+
+    let resolved = resolve_rust_tools(
+        &rustup,
+        "fixture-pin",
+        OsStr::new("/inherited/path"),
+        Some(rustup_home.as_os_str()),
+        None,
+    )
+    .expect("resolve raw Unix tool paths");
+
+    for name in ["rustc", "rustdoc", "clippy-driver", "rustfmt"] {
+        assert_eq!(
+            resolved[name],
+            fs::canonicalize(toolchain_bin.join(name)).expect("physical raw tool path")
+        );
+    }
 }
 
 #[test]
@@ -96,13 +149,7 @@ fn managed_mise_gate_discards_ambient_config_overrides_and_preserves_gate_contex
 
 #[test]
 fn path_output_removes_only_one_terminal_protocol_lf() {
-    use std::os::unix::{ffi::OsStrExt, process::ExitStatusExt};
-
-    let output = std::process::Output {
-        status: std::process::ExitStatus::from_raw(0),
-        stdout: b"/tmp/path \xff with spaces\nembedded\n\n".to_vec(),
-        stderr: Vec::new(),
-    };
+    let output = command_result(0, b"/tmp/path \xff with spaces\nembedded\n\n");
     let path = command_path(output, "reading path").expect("raw path record");
     assert_eq!(
         path.as_os_str().as_bytes(),
@@ -112,22 +159,23 @@ fn path_output_removes_only_one_terminal_protocol_lf() {
 
 #[test]
 fn path_output_rejects_missing_terminator_and_nul() {
-    use std::os::unix::process::ExitStatusExt;
-
     for (bytes, reason) in [
         (
             b"/tmp/path".to_vec(),
             "path record is missing its LF terminator",
         ),
         (b"/tmp\0/path\n".to_vec(), "path record contains NUL"),
+        (b"\n".to_vec(), "empty path record"),
     ] {
-        let output = std::process::Output {
-            status: std::process::ExitStatus::from_raw(0),
-            stdout: bytes,
-            stderr: Vec::new(),
-        };
+        let output = command_result(0, &bytes);
         command_path(output, "reading path").expect_err(reason);
     }
+
+    let error = command_path(command_result(7, b"/repo\n"), "reading path")
+        .expect_err("nonzero command must fail before path decoding");
+    assert!(error.to_string().contains("failed with exit status: 7"));
+    verify::command_output(command_result(0, b"/repo/\xff\n"), "fixture text")
+        .expect_err("text output must reject non-UTF-8 bytes");
 }
 
 #[test]

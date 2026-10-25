@@ -156,7 +156,10 @@ members = [
     "crates/ui/jackin-launch",
     "crates/ui/jackin-tui",
 ]
-exclude = ["crates/tools/jackin-lints"]
+exclude = [
+    "crates/tools/jackin-lints",
+    "vendor/branches-0.4.6",
+]
 resolver = "3"
 
 [workspace.package]
@@ -542,3 +545,12 @@ lto = "thin"
 codegen-units = 1
 strip = false
 debug = "line-tables-only"
+
+# Turso 0.8.3 requires branches ^0.4.3; this preserves 0.4.6's API and features
+# while backporting the abort intrinsic fixed upstream at branches 0.5.1.
+# Source: crates.io branches-0.4.6 archive SHA256 7436b21fd6195415058eb41c9090e156b556bc7e0377bb57c5c026a421521525
+# Fix reference: upstream branches commit b52da4234d8f2e534786df4db3284c7615abfd2e.
+# Remove this patch when Turso's allowed range includes a compatible upstream 0.4.x fix,
+# or after a deliberately reviewed Turso upgrade makes the patch unnecessary.
+[patch.crates-io]
+branches = { path = "vendor/branches-0.4.6" }

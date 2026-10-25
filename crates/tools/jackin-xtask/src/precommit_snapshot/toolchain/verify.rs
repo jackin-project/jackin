@@ -115,22 +115,28 @@ fn version_commit(output: &str) -> Option<&str> {
 }
 
 pub(super) fn command_output(output: Output, operation: &str) -> Result<String> {
+    let stdout = command_stdout(output, operation)?;
+    String::from_utf8(stdout).with_context(|| format!("decoding {operation} output"))
+}
+
+fn command_stdout(output: Output, operation: &str) -> Result<Vec<u8>> {
     if !output.status.success() {
         bail!("{operation} failed with {}", output.status);
     }
-    String::from_utf8(output.stdout).with_context(|| format!("decoding {operation} output"))
+    Ok(output.stdout)
 }
 
 pub(super) fn command_path(output: Output, operation: &str) -> Result<PathBuf> {
-    if !output.status.success() {
-        bail!("{operation} failed with {}", output.status);
-    }
-    let mut bytes = output.stdout;
+    let mut bytes = command_stdout(output, operation)?;
     ensure!(
         bytes.last() == Some(&b'\n'),
         "{operation} output is missing its record terminator"
     );
     bytes.pop();
+    ensure!(
+        !bytes.is_empty(),
+        "{operation} returned an empty path record"
+    );
     ensure!(!bytes.contains(&0), "{operation} output contains NUL");
     Ok(PathBuf::from(OsString::from_vec(bytes)))
 }
