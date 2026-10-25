@@ -14,7 +14,7 @@ use std::{
 use anyhow::{Context, Result, bail, ensure};
 
 use super::git::OwnedSnapshot;
-use super::process::capture;
+use super::process::{CommandBudget, EnvironmentMode, SetupControls, capture_strict};
 mod provision;
 mod verify;
 use verify::{command_output, verify_rust_toolchain};
@@ -50,6 +50,7 @@ pub(super) struct QualifiedTools {
 }
 
 pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
+    let controls = &snapshot.controls;
     let inherited_path = env::var_os("PATH").unwrap_or_default();
     let home = env::var_os("HOME").map(PathBuf::from);
     let guard = resolve_guard(&inherited_path, home.as_deref())?;
@@ -68,10 +69,17 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         OsString::from("false"),
     );
     let rustup = find_executable("rustup", &inherited_path).context("missing rustup executable")?;
-    let resolved = resolve_managed_tools(&mise, &mise_env, &snapshot.root)?;
-    let rust_tools = resolve_rust_tools(&rustup, &pin, &inherited_path)?;
-    let cargo = effective_cargo(&mise, &mise_env, &snapshot.root)?;
-    verify_rust_toolchain(&pin, &rust_tools, &mise, &mise_env, &snapshot.root)?;
+    let resolved = resolve_managed_tools(&mise, &mise_env, &snapshot.root, controls)?;
+    let rust_tools = resolve_rust_tools(&rustup, &pin, &inherited_path, controls)?;
+    let cargo = effective_cargo(&mise, &mise_env, &snapshot.root, controls)?;
+    verify_rust_toolchain(
+        &pin,
+        &rust_tools,
+        &mise,
+        &mise_env,
+        &snapshot.root,
+        controls,
+    )?;
 
     let managed_dir = snapshot.scratch_root.join("tools");
     fs::create_dir(&managed_dir).context("creating private qualified tool directory")?;
@@ -91,6 +99,30 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     symlink("/usr/bin/xcrun", managed_dir.join("xcrun"))
         .context("linking fixed Xcode tool resolver")?;
 
+    let environment = build_qualified_environment(
+        snapshot,
+        &managed_dir,
+        &cargo,
+        &pin,
+        &rust_tools,
+        &inherited_path,
+    )?;
+    Ok(QualifiedTools {
+        gate: resolved["hk"].clone(),
+        cargo,
+        rustc: rust_tools["rustc"].clone(),
+        environment,
+    })
+}
+
+fn build_qualified_environment(
+    snapshot: &OwnedSnapshot,
+    managed_dir: &Path,
+    cargo: &Path,
+    pin: &str,
+    rust_tools: &BTreeMap<&'static str, PathBuf>,
+    inherited_path: &OsStr,
+) -> Result<BTreeMap<OsString, OsString>> {
     let mut environment = env::vars_os().collect::<BTreeMap<_, _>>();
     environment.retain(|key, _| {
         let key = key.to_string_lossy();
@@ -135,7 +167,7 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         .to_path_buf();
     environment.insert(
         OsString::from("PATH"),
-        qualified_path(&managed_dir, &rust_bin, &inherited_path)?,
+        qualified_path(managed_dir, &rust_bin, inherited_path)?,
     );
     let selected_path = environment
         .get(OsStr::new("PATH"))
@@ -196,18 +228,14 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         OsString::from("MISE_EXEC_AUTO_INSTALL"),
         OsString::from("false"),
     );
-    Ok(QualifiedTools {
-        gate: resolved["hk"].clone(),
-        cargo,
-        rustc: rust_tools["rustc"].clone(),
-        environment,
-    })
+    Ok(environment)
 }
 
 fn resolve_managed_tools(
     mise: &Path,
     environment: &BTreeMap<OsString, OsString>,
     root: &Path,
+    controls: &SetupControls,
 ) -> Result<BTreeMap<&'static str, PathBuf>> {
     resolve_tool_paths(MANAGED_TOOLS, |name| {
         let mut command = Command::new(mise);
@@ -216,8 +244,15 @@ fn resolve_managed_tools(
             .current_dir(root)
             .env_clear()
             .envs(environment);
-        let output =
-            capture(&mut command).with_context(|| format!("resolving staged Mise tool {name}"))?;
+        let output = capture_strict(
+            &mut command,
+            controls,
+            EnvironmentMode::Clear,
+            super::process::METADATA_OUTPUT_LIMIT,
+            1024 * 1024,
+            CommandBudget::Probe,
+        )
+        .with_context(|| format!("resolving staged Mise tool {name}"))?;
         let value = command_output(output, &format!("resolving staged Mise tool {name}"))?;
         let path = PathBuf::from(value.trim());
         let path = fs::canonicalize(&path)
@@ -255,6 +290,7 @@ fn resolve_rust_tools(
     rustup: &Path,
     pin: &str,
     inherited_path: &OsStr,
+    controls: &SetupControls,
 ) -> Result<BTreeMap<&'static str, PathBuf>> {
     let mut rust_tools = BTreeMap::new();
     for name in ["rustc", "rustdoc", "clippy-driver", "rustfmt"] {
@@ -268,8 +304,15 @@ fn resolve_rust_tools(
             ])
             .env_clear()
             .env("PATH", inherited_path);
-        let output = capture(&mut command)
-            .with_context(|| format!("resolving pinned rustup tool {name}"))?;
+        let output = capture_strict(
+            &mut command,
+            controls,
+            EnvironmentMode::Clear,
+            super::process::METADATA_OUTPUT_LIMIT,
+            1024 * 1024,
+            CommandBudget::Probe,
+        )
+        .with_context(|| format!("resolving pinned rustup tool {name}"))?;
         let value = command_output(output, &format!("resolving pinned rustup tool {name}"))?;
         let path = fs::canonicalize(value.trim())
             .with_context(|| format!("resolving pinned rustup tool path for {name}"))?;
@@ -286,6 +329,7 @@ fn effective_cargo(
     mise: &Path,
     environment: &BTreeMap<OsString, OsString>,
     root: &Path,
+    controls: &SetupControls,
 ) -> Result<PathBuf> {
     let mut command = Command::new(mise);
     command
@@ -300,7 +344,15 @@ fn effective_cargo(
         .current_dir(root)
         .env_clear()
         .envs(environment);
-    let output = capture(&mut command).context("resolving the configured MBX Cargo wrapper")?;
+    let output = capture_strict(
+        &mut command,
+        controls,
+        EnvironmentMode::Clear,
+        super::process::METADATA_OUTPUT_LIMIT,
+        1024 * 1024,
+        CommandBudget::Probe,
+    )
+    .context("resolving the configured MBX Cargo wrapper")?;
     let value = command_output(output, "resolving the configured MBX Cargo wrapper")?;
     let path = fs::canonicalize(value.trim()).context("resolving effective MBX Cargo path")?;
     ensure!(

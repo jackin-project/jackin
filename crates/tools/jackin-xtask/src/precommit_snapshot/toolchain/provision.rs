@@ -1,10 +1,19 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{collections::BTreeMap, env, ffi::OsString, fs, path::Path};
+use std::{
+    collections::BTreeMap,
+    env,
+    ffi::OsString,
+    fs,
+    path::Path,
+    sync::{Arc, atomic::AtomicBool},
+    time::Duration,
+};
 
 use anyhow::{Context, Result, ensure};
 
+use super::super::process::SetupControls;
 use super::verify::verify_rust_toolchain;
 use super::{
     effective_cargo, find_executable, resolve_rust_tools, runtime_environment, rust_release,
@@ -16,14 +25,15 @@ pub(super) fn verify_tool_paths(
     rustc_path: &Path,
 ) -> Result<()> {
     let source_root = fs::canonicalize(source_root).context("resolving bootstrap source root")?;
+    let controls = SetupControls::new(Arc::new(AtomicBool::new(false)), Duration::from_mins(10));
     let pin = rust_release(&source_root.join("rust-toolchain.toml"))?;
     let inherited_path = env::var_os("PATH").unwrap_or_default();
     let mise = find_executable("mise", &inherited_path).context("missing Mise executable")?;
     let mise = fs::canonicalize(mise).context("resolving Mise executable")?;
     let rustup = find_executable("rustup", &inherited_path).context("missing rustup executable")?;
     let mise_environment = mise_environment(&source_root, &inherited_path);
-    let expected_cargo = effective_cargo(&mise, &mise_environment, &source_root)?;
-    let expected_rust_tools = resolve_rust_tools(&rustup, &pin, &inherited_path)
+    let expected_cargo = effective_cargo(&mise, &mise_environment, &source_root, &controls)?;
+    let expected_rust_tools = resolve_rust_tools(&rustup, &pin, &inherited_path, &controls)
         .context("resolving pinned Rust tools")?;
     verify_rust_toolchain(
         &pin,
@@ -31,6 +41,7 @@ pub(super) fn verify_tool_paths(
         &mise,
         &mise_environment,
         &source_root,
+        &controls,
     )?;
     let cargo_path = fs::canonicalize(cargo_path).context("resolving bootstrap Cargo path")?;
     let rustc_path = fs::canonicalize(rustc_path).context("resolving bootstrap rustc path")?;

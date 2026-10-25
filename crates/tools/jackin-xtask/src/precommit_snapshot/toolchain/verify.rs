@@ -10,7 +10,7 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 
-use super::super::process::capture;
+use super::super::process::{CommandBudget, EnvironmentMode, SetupControls, capture_strict};
 
 pub(super) fn verify_rust_toolchain(
     pin: &str,
@@ -18,6 +18,7 @@ pub(super) fn verify_rust_toolchain(
     mise: &Path,
     mise_environment: &BTreeMap<OsString, OsString>,
     root: &Path,
+    controls: &SetupControls,
 ) -> Result<()> {
     let bin = tools["rustc"]
         .parent()
@@ -36,14 +37,22 @@ pub(super) fn verify_rust_toolchain(
         .current_dir(root)
         .env_clear()
         .envs(mise_environment);
-    let cargo = capture(&mut command).context("running locked MBX Cargo version check")?;
+    let cargo = capture_strict(
+        &mut command,
+        controls,
+        EnvironmentMode::Clear,
+        super::super::process::METADATA_OUTPUT_LIMIT,
+        1024 * 1024,
+        CommandBudget::Probe,
+    )
+    .context("running locked MBX Cargo version check")?;
     let cargo = command_output(cargo, "running locked MBX Cargo version check")?;
     ensure!(
         cargo.starts_with(&format!("cargo {pin} ")),
         "hook Cargo version does not match Rust {pin}"
     );
-    let rustc = run_version(&tools["rustc"], &["--version", "--verbose"])?;
-    let rustdoc = run_version(&tools["rustdoc"], &["--version", "--verbose"])?;
+    let rustc = run_version(&tools["rustc"], &["--version", "--verbose"], controls)?;
+    let rustdoc = run_version(&tools["rustdoc"], &["--version", "--verbose"], controls)?;
     for (name, output) in [("rustc", &rustc), ("rustdoc", &rustdoc)] {
         ensure!(
             output.lines().any(|line| line == format!("release: {pin}")),
@@ -59,8 +68,8 @@ pub(super) fn verify_rust_toolchain(
         field(&rustdoc, "commit-hash: ") == Some(commit),
         "hook rustdoc compiler identity mismatch"
     );
-    let clippy = run_version(&tools["clippy-driver"], &["--version"])?;
-    let rustfmt = run_version(&tools["rustfmt"], &["--version"])?;
+    let clippy = run_version(&tools["clippy-driver"], &["--version"], controls)?;
+    let rustfmt = run_version(&tools["rustfmt"], &["--version"], controls)?;
     ensure!(
         version_commit(&clippy).is_some_and(|value| commit.starts_with(value)),
         "hook Clippy compiler identity mismatch"
@@ -72,10 +81,18 @@ pub(super) fn verify_rust_toolchain(
     Ok(())
 }
 
-fn run_version(program: &Path, args: &[&str]) -> Result<String> {
+fn run_version(program: &Path, args: &[&str], controls: &SetupControls) -> Result<String> {
     let mut command = Command::new(program);
     command.args(args).env_clear();
-    let output = capture(&mut command).with_context(|| {
+    let output = capture_strict(
+        &mut command,
+        controls,
+        EnvironmentMode::Clear,
+        super::super::process::METADATA_OUTPUT_LIMIT,
+        1024 * 1024,
+        CommandBudget::Probe,
+    )
+    .with_context(|| {
         format!(
             "running qualified {} version check",
             program.file_name().unwrap_or_default().to_string_lossy()

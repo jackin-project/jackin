@@ -20,8 +20,13 @@ use jackin_process::SpoolCleanupObservation;
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
-use super::process::capture;
+use super::process::{CommandBudget, EnvironmentMode, SetupControls, capture_strict};
+#[cfg(test)]
+use std::time::Duration;
 mod snapshot;
+
+const LIVE_GIT_STDOUT_LIMIT: usize = super::process::METADATA_OUTPUT_LIMIT;
+const LIVE_GIT_STDERR_LIMIT: usize = 1024 * 1024;
 
 #[derive(Debug)]
 pub(super) struct LiveRepository {
@@ -37,6 +42,7 @@ pub(super) struct LiveRepository {
     pub(super) head: Option<OsString>,
     pub(super) head_tree: Option<String>,
     index_inputs: Vec<IndexInput>,
+    controls: SetupControls,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -53,19 +59,29 @@ struct IndexInput {
 }
 
 impl LiveRepository {
-    pub(super) fn capture() -> Result<Self> {
-        Self::capture_at(&env::current_dir().context("reading current directory")?)
+    pub(super) fn capture(controls: &SetupControls) -> Result<Self> {
+        Self::capture_at_with_controls(
+            &env::current_dir().context("reading current directory")?,
+            controls,
+        )
     }
 
+    #[cfg(test)]
     pub(super) fn capture_at(root: &Path) -> Result<Self> {
+        Self::capture_at_with_controls(root, &SetupControls::for_test(Duration::from_secs(10 * 60)))
+    }
+
+    fn capture_at_with_controls(root: &Path, controls: &SetupControls) -> Result<Self> {
         let invocation_dir = fs::canonicalize(root).context("resolving invocation directory")?;
-        let root = output_live_path_at(&invocation_dir, &["rev-parse", "--show-toplevel"])?;
+        let root =
+            output_live_path_at(&invocation_dir, &["rev-parse", "--show-toplevel"], controls)?;
         let root = fs::canonicalize(&root).context("resolving physical repository root")?;
         let index = match env::var_os("GIT_INDEX_FILE") {
             Some(path) => absolute_from(&invocation_dir, PathBuf::from(path)),
             None => output_live_path_at(
                 &root,
                 &["rev-parse", "--path-format=absolute", "--git-path", "index"],
+                controls,
             )?,
         };
         let objects = match env::var_os("GIT_OBJECT_DIRECTORY") {
@@ -78,13 +94,16 @@ impl LiveRepository {
                     "--git-path",
                     "objects",
                 ],
+                controls,
             )?,
         };
         let common_git_dir = output_live_path_at(
             &root,
             &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+            controls,
         )?;
-        let worktree_git_dir = output_live_path_at(&root, &["rev-parse", "--absolute-git-dir"])?;
+        let worktree_git_dir =
+            output_live_path_at(&root, &["rev-parse", "--absolute-git-dir"], controls)?;
         let shallow = match env::var_os("GIT_SHALLOW_FILE") {
             Some(path) => absolute_from(&invocation_dir, PathBuf::from(path)),
             None => output_live_path_at(
@@ -95,18 +114,25 @@ impl LiveRepository {
                     "--git-path",
                     "shallow",
                 ],
-            )
-            .unwrap_or_default(),
+                controls,
+            )?,
         };
         let object_format = OsString::from(output_live_at(
             &root,
             &["rev-parse", "--show-object-format"],
+            controls,
         )?);
-        let head = output_live_at(&root, &["rev-parse", "--verify", "--quiet", "HEAD"])
-            .ok()
-            .map(OsString::from);
-        let head_tree =
-            output_live_at(&root, &["rev-parse", "--verify", "--quiet", "HEAD^{tree}"]).ok();
+        let head = optional_live_at(
+            &root,
+            &["rev-parse", "--verify", "--quiet", "HEAD"],
+            controls,
+        )?
+        .map(OsString::from);
+        let head_tree = optional_live_at(
+            &root,
+            &["rev-parse", "--verify", "--quiet", "HEAD^{tree}"],
+            controls,
+        )?;
         let index_inputs = index_inputs(&index)?;
         let alternates = env::var_os("GIT_ALTERNATE_OBJECT_DIRECTORIES");
         ensure!(objects.is_dir(), "Git object directory is missing");
@@ -128,6 +154,7 @@ impl LiveRepository {
             head,
             head_tree,
             index_inputs,
+            controls: controls.clone(),
         })
     }
 }
@@ -239,12 +266,16 @@ pub(super) struct OwnedSnapshot {
     objects: PathBuf,
     invocation_dir: PathBuf,
     extra_alternates: Option<OsString>,
+    pub(in crate::precommit_snapshot) controls: SetupControls,
 }
 
 pub(super) struct GateCompletion {
     pub(super) success: bool,
     pub(super) code: Option<i32>,
     pub(super) signal: Option<i32>,
+    pub(super) execution: jackin_process::SpoolExecutionObservation,
+    pub(super) capture: jackin_process::SpoolCaptureObservation,
+    pub(super) failures: Vec<jackin_process::SpoolFailure>,
     pub(super) cleanup: SpoolCleanupObservation,
 }
 
@@ -276,11 +307,18 @@ fn isolated_git(
     command
 }
 
-fn output_live_path_at(root: &Path, args: &[&str]) -> Result<PathBuf> {
+fn output_live_path_at(root: &Path, args: &[&str], controls: &SetupControls) -> Result<PathBuf> {
     let mut command = Command::new("git");
     command.args(args).current_dir(root);
-    let output =
-        capture(&mut command).with_context(|| format!("running git {}", args.join(" ")))?;
+    let output = capture_strict(
+        &mut command,
+        controls,
+        EnvironmentMode::Inherit,
+        LIVE_GIT_STDOUT_LIMIT,
+        LIVE_GIT_STDERR_LIMIT,
+        CommandBudget::Probe,
+    )
+    .with_context(|| format!("running git {}", args.join(" ")))?;
     let bytes = checked(output, "reading live Git path")?;
     let path = without_record_terminator(&bytes)?;
     ensure!(
@@ -290,11 +328,18 @@ fn output_live_path_at(root: &Path, args: &[&str]) -> Result<PathBuf> {
     Ok(PathBuf::from(OsString::from_vec(path.to_vec())))
 }
 
-fn output_live_at(root: &Path, args: &[&str]) -> Result<String> {
+fn output_live_at(root: &Path, args: &[&str], controls: &SetupControls) -> Result<String> {
     let mut command = Command::new("git");
     command.args(args).current_dir(root);
-    let output =
-        capture(&mut command).with_context(|| format!("running git {}", args.join(" ")))?;
+    let output = capture_strict(
+        &mut command,
+        controls,
+        EnvironmentMode::Inherit,
+        LIVE_GIT_STDOUT_LIMIT,
+        LIVE_GIT_STDERR_LIMIT,
+        CommandBudget::Probe,
+    )
+    .with_context(|| format!("running git {}", args.join(" ")))?;
     let bytes = checked(output, "reading live Git text state")?;
     let record = without_record_terminator(&bytes)?;
     ensure!(
@@ -304,6 +349,38 @@ fn output_live_at(root: &Path, args: &[&str]) -> Result<String> {
     let text = std::str::from_utf8(record).context("decoding live Git text state")?;
     ensure!(text.is_ascii(), "Git returned non-ASCII text state");
     Ok(text.to_owned())
+}
+
+fn optional_live_at(
+    root: &Path,
+    args: &[&str],
+    controls: &SetupControls,
+) -> Result<Option<String>> {
+    let mut command = Command::new("git");
+    command.args(args).current_dir(root);
+    let output = capture_strict(
+        &mut command,
+        controls,
+        EnvironmentMode::Inherit,
+        LIVE_GIT_STDOUT_LIMIT,
+        LIVE_GIT_STDERR_LIMIT,
+        CommandBudget::Probe,
+    )
+    .with_context(|| format!("running git {}", args.join(" ")))?;
+    match output.status.code() {
+        Some(0) => {
+            let record = without_record_terminator(&output.stdout)?;
+            ensure!(
+                !record.contains(&0) && !record.contains(&b'\n') && !record.contains(&b'\r'),
+                "Git returned a malformed text record"
+            );
+            let text = std::str::from_utf8(record).context("decoding live Git text state")?;
+            ensure!(text.is_ascii(), "Git returned non-ASCII text state");
+            Ok(Some(text.to_owned()))
+        }
+        Some(1) => Ok(None),
+        _ => bail!("git {} failed with {}", args.join(" "), output.status),
+    }
 }
 
 fn without_record_terminator(bytes: &[u8]) -> Result<&[u8]> {

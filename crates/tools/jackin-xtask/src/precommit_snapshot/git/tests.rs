@@ -156,7 +156,9 @@ fn collects_tracked_and_new_path_fixes_against_captured_tree() {
         .expect("materialize tree");
     fs::write(snapshot.root.join("staged.txt"), "fixed\n").expect("tracked fix");
     fs::write(snapshot.root.join("created file\nname"), "new\n").expect("new fix");
-    let patch = snapshot.collect_fixes(&tree).expect("collect patch");
+    let patch = snapshot
+        .collect_fixes(&tree, &snapshot.controls)
+        .expect("collect patch");
     assert!(patch.starts_with(b"diff --git "));
     assert!(String::from_utf8_lossy(&patch).contains("created file\\nname"));
     assert!(String::from_utf8_lossy(&patch).contains("fixed"));
@@ -181,7 +183,9 @@ fn collects_new_files_whose_names_look_like_git_pathspec_magic() {
         "must be included in evidence\n",
     )
     .expect("create pathspec-shaped filename");
-    let patch = snapshot.collect_fixes(&tree).expect("collect patch");
+    let patch = snapshot
+        .collect_fixes(&tree, &snapshot.controls)
+        .expect("collect patch");
     let patch = String::from_utf8_lossy(&patch);
     assert!(patch.contains("must be included in evidence"));
     assert!(patch.contains("(exclude)*"));
@@ -202,12 +206,9 @@ fn runs_gate_with_the_process_supervisor_and_original_hook_arguments() {
         rustc: Path::new("/usr/bin/true").to_path_buf(),
         environment: BTreeMap::<OsString, OsString>::new(),
     };
+    let controls = snapshot.controls.clone();
     let completion = snapshot
-        .run_gate(
-            &tools,
-            &[OsString::from("fixture argument")],
-            &std::sync::atomic::AtomicBool::new(false),
-        )
+        .run_gate(&tools, &[OsString::from("fixture argument")], &controls)
         .expect("supervised gate");
     assert!(completion.success);
     assert!(completion.cleanup.group_drained);
@@ -237,8 +238,9 @@ fn failed_gate_keeps_bounded_diagnostics_in_private_spools() {
         rustc: Path::new("/usr/bin/true").to_path_buf(),
         environment: BTreeMap::<OsString, OsString>::new(),
     };
+    let controls = snapshot.controls.clone();
     let completion = snapshot
-        .run_gate(&tools, &[], &std::sync::atomic::AtomicBool::new(false))
+        .run_gate(&tools, &[], &controls)
         .expect("supervised failing gate");
     assert!(!completion.success);
     assert_eq!(completion.code, Some(23));
@@ -279,17 +281,24 @@ fn setup_signal_after_snapshot_allocation_drops_private_snapshot() {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while (signals.signal_status().is_none()
             || !signals
-                .cancellation
+                .route
+                .setup_gate_cancellation
                 .load(std::sync::atomic::Ordering::Relaxed))
             && std::time::Instant::now() < deadline
         {
             thread::park_timeout(std::time::Duration::from_millis(10));
         }
         assert_eq!(signals.signal_status(), Some(143));
-        assert!(signals.term.load(std::sync::atomic::Ordering::Relaxed));
         assert!(
             signals
-                .cancellation
+                .route
+                .term
+                .load(std::sync::atomic::Ordering::Relaxed)
+        );
+        assert!(
+            signals
+                .route
+                .setup_gate_cancellation
                 .load(std::sync::atomic::Ordering::Relaxed)
         );
         drop(snapshot);

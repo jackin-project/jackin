@@ -1,9 +1,21 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::process::Command;
+use std::{
+    ffi::OsString,
+    fs,
+    os::unix::{ffi::OsStringExt, process::CommandExt},
+    path::Path,
+    process::{Command, Stdio},
+    sync::{Arc, atomic::AtomicBool},
+    thread,
+    time::{Duration, Instant},
+};
 
-use super::capture_limited;
+use super::{
+    CaptureFailureKind, CommandBudget, EnvironmentMode, SetupControls, capture_limited,
+    capture_spooled, capture_strict,
+};
 
 #[test]
 fn bounded_capture_preserves_complete_output_at_the_limit() {
@@ -27,4 +39,424 @@ fn bounded_capture_drains_and_rejects_overflow_without_returning_partial_output(
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         assert!(error.to_string().contains("exceeded 4 byte limit"));
     }
+}
+
+#[test]
+fn strict_capture_preserves_non_utf8_arguments_cwd_and_environment_operations() {
+    let directory = tempfile::tempdir().expect("creating capture fixture");
+    #[cfg(target_os = "macos")]
+    let non_utf8_root = directory.path().join("cwd");
+    #[cfg(not(target_os = "macos"))]
+    let non_utf8_root = directory
+        .path()
+        .join(OsString::from_vec(b"cwd-\xff".to_vec()));
+    fs::create_dir(&non_utf8_root).expect("creating non-UTF-8 cwd");
+    let argument = OsString::from_vec(b"arg-\xfe".to_vec());
+    let controls = SetupControls::for_test(Duration::from_secs(10));
+    let mut command = Command::new("/bin/sh");
+    command
+        .args([
+            "-c",
+            "printf '%s' \"$1\"; test \"$KEEP\" = yes; test -z \"${DROP+x}\"",
+            "sh",
+        ])
+        .arg(&argument)
+        .current_dir(&non_utf8_root)
+        .env_clear()
+        .env("KEEP", "yes")
+        .env("DROP", "no")
+        .env_remove("DROP");
+
+    let output = capture_strict(
+        &mut command,
+        &controls,
+        EnvironmentMode::Clear,
+        1024,
+        1024,
+        CommandBudget::Probe,
+    )
+    .expect("strict capture completes");
+    assert!(output.status.success());
+    assert_eq!(output.stdout, argument.as_encoded_bytes());
+}
+
+#[test]
+fn strict_capture_exposes_complete_target_nonzero_status() {
+    let controls = SetupControls::for_test(Duration::from_secs(10));
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", "printf 'observed'; exit 23"]);
+
+    let output = capture_strict(
+        &mut command,
+        &controls,
+        EnvironmentMode::Inherit,
+        1024,
+        1024,
+        CommandBudget::Probe,
+    )
+    .expect("complete target nonzero is distinct from supervisor failure");
+    assert_eq!(output.status.code(), Some(23));
+    assert_eq!(output.stdout, b"observed");
+}
+
+#[test]
+fn strict_capture_drains_descendant_that_inherits_output_pipes() {
+    let directory = tempfile::tempdir().expect("creating capture fixture");
+    let tick_path = directory.path().join("ticks");
+    let controls = SetupControls::for_test(Duration::from_secs(5));
+    let mut command = Command::new("/bin/sh");
+    command.args([
+        "-c",
+        "(trap '' TERM HUP INT; printf x >> \"$1\"; while :; do /bin/sleep 0.02; printf x >> \"$1\"; done) & exit 0",
+        "sh",
+    ]);
+    command.arg(&tick_path);
+
+    let output = capture_strict(
+        &mut command,
+        &controls,
+        EnvironmentMode::Inherit,
+        1024,
+        1024,
+        CommandBudget::Probe,
+    )
+    .expect("supervisor drains a descendant that inherited output pipes");
+    assert!(output.status.success());
+    let tick_count = fs::metadata(&tick_path)
+        .expect("descendant wrote its readiness tick")
+        .len();
+    assert!(tick_count > 0);
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(
+        fs::metadata(tick_path)
+            .expect("descendant tick remains available")
+            .len(),
+        tick_count,
+        "the process group is drained before successful capture returns"
+    );
+}
+
+#[test]
+fn strict_capture_rejects_surviving_pipe_holder_after_zero_exit() {
+    const CHILD_MODE: &str = "JACKIN_STRICT_PIPE_HOLDER_CHILD";
+    const CONTROLLER_MODE: &str = "JACKIN_STRICT_PIPE_HOLDER_CONTROLLER";
+    const HOLDER_MODE: &str = "JACKIN_STRICT_PIPE_HOLDER_HOLDER";
+    const READY_PATH: &str = "JACKIN_STRICT_PIPE_HOLDER_READY_PATH";
+    const HEARTBEAT_PATH: &str = "JACKIN_STRICT_PIPE_HOLDER_HEARTBEAT_PATH";
+    const RELEASE_PATH: &str = "JACKIN_STRICT_PIPE_HOLDER_RELEASE_PATH";
+    const STOPPED_PATH: &str = "JACKIN_STRICT_PIPE_HOLDER_STOPPED_PATH";
+    const TEST_NAME: &str = "precommit_snapshot::process::tests::strict_capture_rejects_surviving_pipe_holder_after_zero_exit";
+
+    struct PipeHolderCleanup {
+        release_path: std::path::PathBuf,
+        stopped_path: std::path::PathBuf,
+        completed: bool,
+        wait_attempted: bool,
+    }
+
+    impl PipeHolderCleanup {
+        fn release_and_wait(&mut self) -> bool {
+            if self.completed {
+                return true;
+            }
+            if self.wait_attempted {
+                return false;
+            }
+            if fs::write(&self.release_path, b"release\n").is_err() {
+                return false;
+            }
+
+            self.wait_attempted = true;
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while Instant::now() < deadline {
+                if fs::read(&self.stopped_path).is_ok_and(|contents| contents == b"reaped\n") {
+                    self.completed = true;
+                    return true;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            false
+        }
+    }
+
+    impl Drop for PipeHolderCleanup {
+        fn drop(&mut self) {
+            // Keep this bounded on assertion failure. The controller has its
+            // own monotonic lifetime and owns/reaps the actual pipe-holder Child.
+            let _ = self.release_and_wait();
+        }
+    }
+
+    fn redirect_helper_stdio_to_dev_null() {
+        let null = fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/null")
+            .expect("open /dev/null for helper stdio");
+        nix::unistd::dup2_stdout(&null).expect("redirect helper stdout");
+        nix::unistd::dup2_stderr(&null).expect("redirect helper stderr");
+    }
+
+    if std::env::var_os(HOLDER_MODE).is_some() {
+        let release_path = std::env::var_os(RELEASE_PATH).expect("pipe-holder release path");
+        let heartbeat_path = std::env::var_os(HEARTBEAT_PATH).expect("pipe-holder heartbeat path");
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let mut heartbeat = 0_u64;
+        let heartbeat_temp_path = Path::new(&heartbeat_path).with_extension("tmp");
+        while !Path::new(&release_path).exists() && Instant::now() < deadline {
+            heartbeat += 1;
+            fs::write(&heartbeat_temp_path, heartbeat.to_string())
+                .and_then(|()| fs::rename(&heartbeat_temp_path, &heartbeat_path))
+                .expect("atomically publish pipe-holder heartbeat");
+            thread::sleep(Duration::from_millis(10));
+        }
+        return;
+    }
+
+    if std::env::var_os(CONTROLLER_MODE).is_some() {
+        let release_path = std::env::var_os(RELEASE_PATH).expect("pipe-holder release path");
+        let ready_path = std::env::var_os(READY_PATH).expect("pipe-holder ready path");
+        let heartbeat_path = std::env::var_os(HEARTBEAT_PATH).expect("pipe-holder heartbeat path");
+        let stopped_path = std::env::var_os(STOPPED_PATH).expect("pipe-holder stopped path");
+        let mut holder = Command::new(std::env::current_exe().expect("test executable"));
+        holder
+            .args(["--exact", TEST_NAME, "--nocapture"])
+            .env(HOLDER_MODE, "1")
+            .env(RELEASE_PATH, release_path)
+            .env(HEARTBEAT_PATH, heartbeat_path)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        let mut holder = holder.spawn().expect("spawn controlled pipe holder");
+        fs::write(ready_path, b"ready\n").expect("publish pipe-holder readiness");
+
+        // This controller has a monotonic upper bound independent of the
+        // parent guard. It owns the exact Child handle throughout and reaps it.
+        let deadline = Instant::now() + Duration::from_secs(9);
+        let mut reaped = false;
+        loop {
+            if holder
+                .try_wait()
+                .expect("poll controlled pipe holder")
+                .is_some()
+            {
+                reaped = true;
+                break;
+            }
+            if Instant::now() >= deadline {
+                let _kill_result = holder.kill();
+                let reap_deadline = Instant::now() + Duration::from_secs(1);
+                while Instant::now() < reap_deadline {
+                    if holder
+                        .try_wait()
+                        .expect("poll killed pipe holder")
+                        .is_some()
+                    {
+                        reaped = true;
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        if reaped {
+            holder.wait().expect("reap controlled pipe holder");
+        }
+        redirect_helper_stdio_to_dev_null();
+        let cleanup_status: &[u8] = if reaped { b"reaped\n" } else { b"uncertain\n" };
+        fs::write(stopped_path, cleanup_status).expect("publish pipe-holder cleanup status");
+        return;
+    }
+
+    if std::env::var_os(CHILD_MODE).is_some() {
+        let release_path = std::env::var_os(RELEASE_PATH).expect("pipe-holder release path");
+        let ready_path = std::env::var_os(READY_PATH).expect("pipe-holder ready path");
+        let heartbeat_path = std::env::var_os(HEARTBEAT_PATH).expect("pipe-holder heartbeat path");
+        let stopped_path = std::env::var_os(STOPPED_PATH).expect("pipe-holder stopped path");
+        let mut controller = Command::new(std::env::current_exe().expect("test executable"));
+        controller
+            .args(["--exact", TEST_NAME, "--nocapture"])
+            .env(CONTROLLER_MODE, "1")
+            .env(RELEASE_PATH, release_path)
+            .env(READY_PATH, &ready_path)
+            .env(HEARTBEAT_PATH, heartbeat_path)
+            .env(STOPPED_PATH, stopped_path)
+            .process_group(0);
+        let _controller = controller.spawn().expect("spawn pipe-holder controller");
+
+        // The separate controller is bounded and survives the supervisor's
+        // cleanup of this test process group. Wait until it owns the holder.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !Path::new(&ready_path).exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(Path::new(&ready_path).exists(), "controller started holder");
+        return;
+    }
+
+    let directory = tempfile::tempdir().expect("creating capture fixture");
+    let ready_path = directory.path().join("pipe-holder.ready");
+    let heartbeat_path = directory.path().join("pipe-holder.heartbeat");
+    let release_path = directory.path().join("pipe-holder.release");
+    let stopped_path = directory.path().join("pipe-holder.stopped");
+    let mut cleanup = PipeHolderCleanup {
+        release_path: release_path.clone(),
+        stopped_path: stopped_path.clone(),
+        completed: false,
+        wait_attempted: false,
+    };
+    let mut child = Command::new(std::env::current_exe().expect("test executable"));
+    child
+        .args(["--exact", TEST_NAME, "--nocapture"])
+        .env(CHILD_MODE, "1")
+        .env(READY_PATH, &ready_path)
+        .env(HEARTBEAT_PATH, &heartbeat_path)
+        .env(RELEASE_PATH, &release_path)
+        .env(STOPPED_PATH, &stopped_path);
+    let controls = SetupControls::for_test(Duration::from_millis(750));
+    let error = capture_strict(
+        &mut child,
+        &controls,
+        EnvironmentMode::Inherit,
+        1024 * 1024,
+        1024 * 1024,
+        CommandBudget::PhaseRemainder,
+    )
+    .expect_err("an escaped descendant that still holds a pipe is incomplete");
+    let failure = error
+        .downcast_ref::<super::CaptureFailure>()
+        .expect("incomplete strict capture remains typed");
+    assert_eq!(failure.kind, CaptureFailureKind::Capture);
+    let detail = error.to_string();
+    assert!(detail.contains("code=Some(0)"), "{detail}");
+    assert!(detail.contains("capture_complete=false"), "{detail}");
+    assert!(detail.contains("group_drained=true"), "{detail}");
+    assert!(
+        detail.contains("stdout_eof=false") || detail.contains("stderr_eof=false"),
+        "{detail}"
+    );
+    assert_eq!(
+        fs::read(&ready_path).expect("controller owns holder"),
+        b"ready\n"
+    );
+    let previous_heartbeat = fs::read_to_string(&heartbeat_path)
+        .expect("pipe holder publishes a heartbeat after capture returned")
+        .parse::<u64>()
+        .expect("valid pipe-holder heartbeat");
+    let heartbeat_deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        thread::sleep(Duration::from_millis(20));
+        let current_heartbeat = fs::read_to_string(&heartbeat_path)
+            .expect("pipe-holder heartbeat remains available")
+            .parse::<u64>()
+            .expect("valid pipe-holder heartbeat");
+        if current_heartbeat > previous_heartbeat {
+            break;
+        }
+        assert!(
+            Instant::now() < heartbeat_deadline,
+            "pipe holder remains alive after incomplete capture return"
+        );
+    }
+    assert!(
+        !stopped_path.exists(),
+        "controller has not yet reaped the live pipe holder"
+    );
+    let diagnostics = detail
+        .split_once("diagnostic spools retained at ")
+        .expect("failure retains diagnostic spool")
+        .1
+        .trim();
+    let diagnostics = Path::new(diagnostics);
+    assert!(
+        diagnostics.starts_with(std::env::temp_dir()),
+        "{diagnostics:?}"
+    );
+    assert!(
+        diagnostics.file_name().is_some_and(|name| name
+            .as_encoded_bytes()
+            .starts_with(b"jackin-native-capture-")),
+        "{diagnostics:?}"
+    );
+    assert!(
+        cleanup.release_and_wait(),
+        "controller released and reaped holder"
+    );
+    fs::remove_dir_all(diagnostics).expect("removing retained incomplete-capture diagnostics");
+}
+
+#[test]
+fn strict_capture_retains_bounded_prefix_when_output_overflows() {
+    let controls = SetupControls::for_test(Duration::from_secs(10));
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", "printf '123456789'"]);
+    let error = match capture_spooled(
+        &mut command,
+        &controls,
+        EnvironmentMode::Inherit,
+        4,
+        4,
+        CommandBudget::Probe,
+    ) {
+        Ok(_) => panic!("overflow cannot be represented as a complete output"),
+        Err(error) => error,
+    };
+    let failure = error
+        .downcast_ref::<super::CaptureFailure>()
+        .expect("strict capture failure is typed");
+    assert_eq!(failure.kind, CaptureFailureKind::Capture);
+    let diagnostics = error.to_string();
+    let retained = diagnostics
+        .split_once("diagnostic spools retained at ")
+        .expect("failure reports retained spool directory")
+        .1
+        .trim();
+    assert_eq!(
+        fs::read(Path::new(retained).join("stdout.log")).unwrap(),
+        b"1234"
+    );
+    fs::remove_dir_all(retained).expect("removing drained overflow spool");
+}
+
+#[test]
+fn strict_capture_preserves_spool_files_by_descriptor_and_drops_successful_scratch() {
+    let controls = SetupControls::for_test(Duration::from_secs(10));
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", "printf 'stdout'; printf 'stderr' >&2"]);
+    let spooled = capture_spooled(
+        &mut command,
+        &controls,
+        EnvironmentMode::Inherit,
+        1024,
+        1024,
+        CommandBudget::Probe,
+    )
+    .expect("strict spooled capture completes");
+    let root = spooled.stdout_path().parent().unwrap().to_path_buf();
+    assert!(spooled.stdout_path().exists());
+    assert!(spooled.stderr_path().exists());
+    assert_eq!(spooled.status().code(), Some(0));
+    drop(spooled);
+    assert!(!root.exists(), "successful capture scratch is disposable");
+}
+
+#[test]
+fn strict_capture_checks_cancellation_before_spawning() {
+    let cancellation = Arc::new(AtomicBool::new(true));
+    let controls = SetupControls::new(cancellation, Duration::from_secs(10));
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", "exit 0"]);
+    let error = capture_strict(
+        &mut command,
+        &controls,
+        EnvironmentMode::Inherit,
+        1024,
+        1024,
+        CommandBudget::Probe,
+    )
+    .expect_err("cancelled setup must not launch another child");
+    assert_eq!(
+        error.downcast_ref::<super::CaptureFailure>().unwrap().kind,
+        CaptureFailureKind::Cancelled
+    );
 }
