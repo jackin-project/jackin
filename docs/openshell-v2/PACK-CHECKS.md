@@ -50,7 +50,7 @@ Redirect stdout outside the repository to retain raw receipts.
 | Acceptance cases | 125 |
 | Mapped specification headings | 30 |
 | Topological readiness groups | 20 |
-| Checked procedural sentences | 1523 |
+| Checked procedural sentences | 1534 |
 
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
