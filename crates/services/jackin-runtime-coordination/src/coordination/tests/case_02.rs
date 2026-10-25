@@ -50,6 +50,32 @@ fn state_read_is_noncreating_and_publish_reopens_private_bounded_leaf() {
 }
 
 #[test]
+fn oversized_publish_does_not_create_an_absent_coordination_namespace() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    std::fs::create_dir_all(&paths.home_dir).unwrap();
+    let namespace = paths.home_dir.join(".jackin-coordination");
+    assert!(!namespace.exists());
+    let directory = universe_dir(&paths).unwrap();
+
+    let result = publish_state_bytes_in_namespace(&directory, "oversized-absent", b"012345678", 8);
+    assert!(!namespace.exists(), "rejection must leave namespace absent");
+    assert!(
+        !directory.exists(),
+        "rejection must leave the universe absent"
+    );
+    let error = result.expect_err("oversized state must be rejected");
+    let StatePublishError::NotPublished(error) = error else {
+        panic!("oversized state must not be published: {error:?}");
+    };
+    assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    assert_eq!(
+        error.to_string(),
+        "coordination state exceeds the configured size limit"
+    );
+}
+
+#[test]
 fn pre_rename_failure_preserves_old_inode_bytes_and_removes_only_its_temp() {
     use std::io::{Read as _, Write as _};
     use std::os::unix::fs::MetadataExt as _;
