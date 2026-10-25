@@ -514,42 +514,81 @@ fn watch_batch_timeout_does_not_end_the_absolute_cli_deadline() {
 }
 
 #[test]
-fn watch_monitor_identifier_accepts_generated_form_and_rejects_invalid_syntax() {
-    validate_watch_monitor_identifier("monitor-00000001")
-        .expect("generated monitor IDs pass lexical preflight");
-    validate_watch_monitor_identifier(&"a".repeat(128))
-        .expect("the inclusive 128-byte limit is accepted");
+fn monitor_identifier_accepts_generated_form_and_rejects_invalid_syntax() {
+    let generated =
+        MonitorId::parse("monitor-00000001").expect("generated monitor IDs pass lexical preflight");
+    assert_eq!(generated.as_str(), "monitor-00000001");
+    MonitorId::parse(&"a".repeat(128)).expect("the inclusive 128-byte limit is accepted");
 
     let too_long = "a".repeat(129);
     for invalid in ["", "bad id", "ümlaut", "bad\nid", too_long.as_str()] {
-        assert!(
-            validate_watch_monitor_identifier(invalid).is_err(),
-            "accepted {invalid:?}"
-        );
+        assert!(MonitorId::parse(invalid).is_err(), "accepted {invalid:?}");
     }
 }
 
 #[test]
-fn watch_rejects_invalid_identifier_before_broker_attach() {
+fn all_monitor_operations_reject_invalid_ids_before_broker_attach() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let too_long = "a".repeat(129);
 
     for invalid in ["", "bad id", "ümlaut", "bad\nid", too_long.as_str()] {
-        let error = run_watch(
-            &paths,
-            &UsageWatchArgs {
-                monitor: invalid.to_owned(),
-                timeout_secs: Some(1),
-            },
-        )
-        .expect_err("invalid watch monitor ID must fail before broker attachment");
-        let exit = error
-            .downcast_ref::<UsageCommandExit>()
-            .expect("watch preflight emits a CLI error");
-        assert_eq!(exit.exit_code(), 3, "invalid {invalid:?}");
-        let value: serde_json::Value = serde_json::from_str(exit.json()).unwrap();
-        assert_eq!(value["error"]["code"], "invalid_argument", "{invalid:?}");
+        let id_args = || UsageMonitorIdArgs {
+            monitor: invalid.to_owned(),
+        };
+        let results = [
+            (
+                "status",
+                run_local_scope(&paths, &UsageScope::Status(id_args())),
+            ),
+            (
+                "refresh",
+                run_local_scope(&paths, &UsageScope::Refresh(id_args())),
+            ),
+            (
+                "monitor stop",
+                run_local_scope(
+                    &paths,
+                    &UsageScope::Monitor(UsageMonitorArgs {
+                        command: UsageMonitorCommand::Stop(id_args()),
+                    }),
+                ),
+            ),
+            (
+                "watch",
+                run_local_scope(
+                    &paths,
+                    &UsageScope::Watch(UsageWatchArgs {
+                        monitor: invalid.to_owned(),
+                        timeout_secs: Some(1),
+                    }),
+                ),
+            ),
+            (
+                "wait",
+                run_local_scope(
+                    &paths,
+                    &UsageScope::Wait(UsageWaitArgs {
+                        monitor: invalid.to_owned(),
+                        until: UsageWaitCondition::Runnable,
+                        timeout_secs: 1,
+                    }),
+                ),
+            ),
+        ];
+
+        for (operation, result) in results {
+            let error = result.expect_err("invalid monitor ID must fail before broker attach");
+            let exit = error
+                .downcast_ref::<UsageCommandExit>()
+                .expect("monitor ID preflight emits a CLI error");
+            assert_eq!(exit.exit_code(), 3, "{operation}, invalid {invalid:?}");
+            let value: serde_json::Value = serde_json::from_str(exit.json()).unwrap();
+            assert_eq!(
+                value["error"]["code"], "invalid_argument",
+                "{operation}, invalid {invalid:?}"
+            );
+        }
     }
 }
 

@@ -32,7 +32,7 @@ mod spend;
 mod statusline;
 mod store;
 mod verify;
-use errors::validate_watch_monitor_identifier;
+use errors::MonitorId;
 use spend::{parse_sgd_budget, parse_sgd_budget_arg, read_spend_record};
 #[cfg(test)]
 use verify::{normalize_usage_provider_label, verify_usage_accounts};
@@ -644,13 +644,13 @@ fn run_local_scope(paths: &JackinPaths, scope: &UsageScope) -> Result<()> {
         UsageScope::Status(command) => run_monitor_read(
             paths,
             MonitorOperation::Status {
-                monitor_id: command.monitor.clone(),
+                monitor_id: MonitorId::parse(&command.monitor)?.into_string(),
             },
         ),
         UsageScope::Refresh(command) => run_monitor_read(
             paths,
             MonitorOperation::Refresh {
-                monitor_id: command.monitor.clone(),
+                monitor_id: MonitorId::parse(&command.monitor)?.into_string(),
             },
         ),
         UsageScope::Watch(command) => run_watch(paths, command),
@@ -822,9 +822,10 @@ fn run_monitor(paths: &JackinPaths, command: &UsageMonitorArgs) -> Result<()> {
             emit_monitor_reply(&reply)
         }
         UsageMonitorCommand::Stop(args) => {
+            let monitor_id = MonitorId::parse(&args.monitor)?;
             let reply = attach_client(paths)
                 .monitor(MonitorOperation::Stop {
-                    monitor_id: args.monitor.clone(),
+                    monitor_id: monitor_id.into_string(),
                 })
                 .map_err(|issue| issue_error(issue, 3))?;
             emit_json(&reply)
@@ -1178,7 +1179,7 @@ fn reply_status(reply: &MonitorReply) -> Option<&MonitorStatus> {
 }
 
 fn run_watch(paths: &JackinPaths, args: &UsageWatchArgs) -> Result<()> {
-    validate_watch_monitor_identifier(&args.monitor)?;
+    let monitor_id = MonitorId::parse(&args.monitor)?;
     let client = attach_client(paths);
     let deadline = args
         .timeout_secs
@@ -1191,7 +1192,7 @@ fn run_watch(paths: &JackinPaths, args: &UsageWatchArgs) -> Result<()> {
         }
         let reply = client
             .monitor(MonitorOperation::Watch {
-                monitor_id: args.monitor.clone(),
+                monitor_id: monitor_id.as_str().to_owned(),
                 after_sequence: sequence,
                 timeout_ms,
             })
@@ -1251,14 +1252,14 @@ fn advance_watch_cursor(
 fn run_wait(paths: &JackinPaths, args: &UsageWaitArgs) -> Result<()> {
     match args.until {
         UsageWaitCondition::Runnable => {
-            run_wait_until_runnable(paths, &args.monitor, args.timeout_secs)
+            run_wait_until_runnable(paths, MonitorId::parse(&args.monitor)?, args.timeout_secs)
         }
     }
 }
 
 fn run_wait_until_runnable(
     paths: &JackinPaths,
-    monitor_id: &str,
+    monitor_id: MonitorId,
     timeout_seconds: u64,
 ) -> Result<()> {
     let client = attach_client(paths);
@@ -1267,7 +1268,7 @@ fn run_wait_until_runnable(
     loop {
         let status_reply = client
             .monitor(MonitorOperation::Status {
-                monitor_id: monitor_id.to_owned(),
+                monitor_id: monitor_id.as_str().to_owned(),
             })
             .map_err(|issue| issue_error(issue, 3))?;
         let MonitorReply::Status { status } = status_reply else {
@@ -1289,7 +1290,7 @@ fn run_wait_until_runnable(
             .min(1_000);
         let reply = client
             .monitor(MonitorOperation::Watch {
-                monitor_id: monitor_id.to_owned(),
+                monitor_id: monitor_id.as_str().to_owned(),
                 after_sequence: sequence,
                 timeout_ms,
             })
@@ -1316,7 +1317,7 @@ fn run_wait_until_runnable(
     }
     let reply = client
         .monitor(MonitorOperation::Status {
-            monitor_id: monitor_id.to_owned(),
+            monitor_id: monitor_id.as_str().to_owned(),
         })
         .map_err(|issue| issue_error(issue, 3))?;
     let MonitorReply::Status { mut status } = reply else {
