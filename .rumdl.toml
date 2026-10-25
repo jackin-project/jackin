@@ -12,4 +12,5 @@ exclude = [
   "**/target/**",
   "**/AGENTS.md", # agent instruction files, not product documentation
   "**/CLAUDE.md",
+  "docs/openshell-v2/**", # execution pack, must stay byte-identical; validated by its own validate_pack.py
 ]
