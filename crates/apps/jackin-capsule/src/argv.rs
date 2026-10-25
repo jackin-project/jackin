@@ -22,9 +22,23 @@ pub(crate) fn is_daemon_entrypoint_args(args: &[String]) -> bool {
         None => false,
         Some(focus) if focus.starts_with("--focus") => false,
         Some(
-            "status" | "snapshot" | "send" | "events" | "usage" | "agents" | "runtime-setup"
-            | "mcp-server" | "prepare-commit-msg" | "new" | "usage-relay-proxy" | "protocol-check"
-            | "--version" | "-V" | "--help" | "-h",
+            "status"
+            | "snapshot"
+            | "send"
+            | "events"
+            | "usage"
+            | "agents"
+            | "runtime-setup"
+            | "mcp-server"
+            | "prepare-commit-msg"
+            | "new"
+            | "usage-relay-proxy"
+            | "usage-relay-proxy-v2"
+            | "protocol-check"
+            | "--version"
+            | "-V"
+            | "--help"
+            | "-h",
         ) => false,
         Some(_) => true,
     }
@@ -48,9 +62,24 @@ pub(crate) fn parse_focus_flag(args: &[String]) -> Option<u64> {
     let scan_start = match args.get(1).map(String::as_str) {
         Some("new") => 3,
         Some(
-            "status" | "snapshot" | "send" | "events" | "attach-proxy" | "usage" | "agents"
-            | "runtime-setup" | "mcp-server" | "prepare-commit-msg" | "sudo-provision"
-            | "firewall-apply" | "usage-relay-proxy" | "--version" | "-V" | "--help" | "-h",
+            "status"
+            | "snapshot"
+            | "send"
+            | "events"
+            | "attach-proxy"
+            | "usage"
+            | "agents"
+            | "runtime-setup"
+            | "mcp-server"
+            | "prepare-commit-msg"
+            | "sudo-provision"
+            | "firewall-apply"
+            | "usage-relay-proxy"
+            | "usage-relay-proxy-v2"
+            | "--version"
+            | "-V"
+            | "--help"
+            | "-h",
         ) => args.len(),
         _ => 1,
     };

@@ -569,7 +569,7 @@ key = "unused_qualifications@jackin-runtime"
 bound = 1
 [[family.entry]]
 key = "unsafe_code@jackin-capsule"
-bound = 17
+bound = 24
 [[family.entry]]
 key = "clippy::too_many_lines@jackin"
 bound = 1

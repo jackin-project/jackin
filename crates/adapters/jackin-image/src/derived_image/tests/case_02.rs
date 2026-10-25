@@ -165,7 +165,7 @@ fn renders_dockerfile_targets_agent_user_not_claude() {
     assert!(!dockerfile.contains("groupmod "));
     assert!(!dockerfile.contains("usermod "));
     assert!(dockerfile.contains(
-        "install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials"
+        "install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials \\\n    && install -d -o agent -g 0 -m 0700 /jackin/usage-relay-v2 \\\n    && install -o agent -g 0 -m 0600 /dev/null /jackin/usage-relay-v2/owner.lock"
     ));
     assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
     assert!(!dockerfile.contains("chown -R agent:agent /jackin/state"));
