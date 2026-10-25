@@ -9,6 +9,7 @@ use jackin_usage_provider_core::{
     UsageSurface, UsageViewInput, bucket, parse_iso_epoch, provider_http_client, timed_bucket,
     usage_view, with_used_percent,
 };
+use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderValue};
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
@@ -126,15 +127,22 @@ pub fn fetch_opencode_usage(path: &Path) -> Result<OpenCodeQuota, OpenCodeUsageE
             OpenCodeUsageError::Schema(error)
         }
     })?;
+    fetch_opencode_usage_with_key(&token)
+}
+
+fn fetch_opencode_usage_with_key(key: &str) -> Result<OpenCodeQuota, OpenCodeUsageError> {
+    let key = key.trim();
+    if key.is_empty() {
+        return Err(OpenCodeUsageError::Key(
+            "OpenCode API key is empty".to_owned(),
+        ));
+    }
     let client = provider_http_client().map_err(OpenCodeUsageError::Transport)?;
-    let response = client
-        .get(OPENCODE_USAGE_URL)
-        .bearer_auth(token)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .send()
-        .map_err(|error| {
-            OpenCodeUsageError::Transport(format!("OpenCode usage request failed: {error}"))
-        })?;
+    let request = build_opencode_usage_request(&client, key)?;
+    let response = client.execute(request).map_err(|error| {
+        let message = format!("OpenCode usage request failed: {error}");
+        OpenCodeUsageError::Transport(message.replace(key, "[redacted]"))
+    })?;
     let status = response.status();
     if !status.is_success() {
         let body = response.text().unwrap_or_default();
@@ -145,6 +153,29 @@ pub fn fetch_opencode_usage(path: &Path) -> Result<OpenCodeQuota, OpenCodeUsageE
     })?;
     parse_opencode_usage(response, chrono::Utc::now().timestamp())
         .map_err(OpenCodeUsageError::Schema)
+}
+
+pub(crate) fn build_opencode_usage_request(
+    client: &reqwest::blocking::Client,
+    key: &str,
+) -> Result<reqwest::blocking::Request, OpenCodeUsageError> {
+    let key = key.trim();
+    if key.is_empty() {
+        return Err(OpenCodeUsageError::Key(
+            "OpenCode API key is empty".to_owned(),
+        ));
+    }
+    let mut authorization = HeaderValue::from_str(&format!("Bearer {key}"))
+        .map_err(|_| OpenCodeUsageError::Key("OpenCode API key is malformed".to_owned()))?;
+    authorization.set_sensitive(true);
+    client
+        .get(OPENCODE_USAGE_URL)
+        .header(AUTHORIZATION, authorization)
+        .header(ACCEPT, "application/json")
+        .build()
+        .map_err(|_| {
+            OpenCodeUsageError::Transport("OpenCode usage request could not be built".to_owned())
+        })
 }
 
 fn opencode_window_percent(
@@ -305,8 +336,30 @@ pub fn opencode_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -> Foc
     opencode_profile_view(agent, result, now)
 }
 
+pub fn opencode_api_key_snapshot(agent: &str, key: &str, now: i64) -> FocusedUsageView {
+    let result = fetch_opencode_usage_with_key(key);
+    opencode_api_key_view(agent, result, now)
+}
+
 pub(crate) fn opencode_profile_view(
     agent: &str,
+    result: Result<OpenCodeQuota, OpenCodeUsageError>,
+    now: i64,
+) -> FocusedUsageView {
+    opencode_view(agent, "API token · opencode-go", result, now)
+}
+
+pub(crate) fn opencode_api_key_view(
+    agent: &str,
+    result: Result<OpenCodeQuota, OpenCodeUsageError>,
+    now: i64,
+) -> FocusedUsageView {
+    opencode_view(agent, "API key · env OPENCODE_API_KEY", result, now)
+}
+
+fn opencode_view(
+    agent: &str,
+    credential_origin: &str,
     result: Result<OpenCodeQuota, OpenCodeUsageError>,
     now: i64,
 ) -> FocusedUsageView {
@@ -371,7 +424,7 @@ pub(crate) fn opencode_profile_view(
         account_label: "OpenCode account (unresolved)".to_owned(),
         username: None,
         plan_label: Some("OpenCode Go".to_owned()),
-        credential_origin: Some("API token · opencode-go".to_owned()),
+        credential_origin: Some(credential_origin.to_owned()),
         buckets,
         status,
         source: if status == UsageSnapshotStatus::Fresh {

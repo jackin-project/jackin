@@ -4577,6 +4577,7 @@ dependencies = [
  "jackin-usage-provider-grok",
  "jackin-usage-provider-kimi",
  "jackin-usage-provider-minimax",
+ "jackin-usage-provider-opencode",
  "jackin-usage-provider-openrouter",
  "jackin-usage-provider-zai",
 ]

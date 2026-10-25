@@ -125,15 +125,12 @@ impl Multiplexer {
             DialogAction::RefreshUsage => {
                 self.request_usage_refresh_for_provider(None);
             }
-            DialogAction::SwitchUsageProvider {
-                provider_label,
-                account_id,
-            } => {
-                let view = self.focused_usage_snapshot_for_account_id(&account_id, &provider_label);
+            DialogAction::SwitchUsageProvider { account_id } => {
+                let view = self.focused_usage_snapshot_for_account_id(&account_id);
                 if let Some(dialog) = self.dialog_top_mut() {
                     *dialog = Dialog::new_usage(view);
                 }
-                self.request_usage_refresh_for_account_id(&account_id, &provider_label);
+                self.request_usage_refresh_for_account_id(&account_id);
             }
             DialogAction::SplitDirection(direction) => {
                 let agents = self.launch_env.available_instances.clone();
@@ -160,11 +157,7 @@ impl Multiplexer {
     fn focused_usage_snapshot_for_account_id(
         &mut self,
         account_id: &str,
-        provider_label: &str,
     ) -> jackin_protocol::control::FocusedUsageView {
-        if account_id.is_empty() {
-            return self.focused_usage_snapshot_for_provider(Some(provider_label));
-        }
         if let Some(view) = self
             .usage
             .usage_cache
@@ -178,11 +171,7 @@ impl Multiplexer {
         )
     }
 
-    fn request_usage_refresh_for_account_id(&mut self, account_id: &str, provider_label: &str) {
-        if account_id.is_empty() {
-            self.request_usage_refresh_for_provider(Some(provider_label));
-            return;
-        }
+    fn request_usage_refresh_for_account_id(&mut self, account_id: &str) {
         let Some(target) = self.usage_refresh_target_for_account_id(account_id) else {
             return;
         };

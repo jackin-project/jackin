@@ -10,7 +10,6 @@ fn usage_dialog_right_arrow_switches_to_next_provider() {
     assert_eq!(
         d.handle_key(b"\x1b[C", None),
         DialogAction::SwitchUsageProvider {
-            provider_label: "Claude".to_owned(),
             account_id: "test-tab-claude".to_owned(),
         }
     );

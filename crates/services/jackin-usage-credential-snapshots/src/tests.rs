@@ -61,6 +61,9 @@ impl CredentialSnapshotVendors for MockVendors {
     fn gemini_key_view(&self, _key_name: &str, now: i64) -> FocusedUsageView {
         self.view("gemini", now)
     }
+    fn opencode_key_view(&self, _secret: &str, now: i64) -> FocusedUsageView {
+        self.view("opencode-key", now)
+    }
 }
 
 #[test]
@@ -82,13 +85,30 @@ fn surfaces_route_to_vendor_arms() {
         ("minimax", "MINIMAX_API_KEY", "minimax"),
         ("grok", "XAI_API_KEY", "grok"),
         ("google", "GEMINI_API_KEY", "gemini"),
+        ("opencode", "OPENCODE_API_KEY", "opencode-key"),
     ] {
         let (view, _, _) =
             provider_credential_snapshot_with_metadata(surface, key, "secret", &vendors);
         assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
         assert_eq!(vendors.calls.borrow().last(), Some(&expected.to_owned()));
     }
-    assert_eq!(vendors.calls.borrow().len(), 9);
+    assert_eq!(vendors.calls.borrow().len(), 10);
+}
+
+#[test]
+fn opencode_api_key_route_requires_the_exact_surface_and_key_pair() {
+    let vendors = MockVendors {
+        calls: RefCell::new(Vec::new()),
+    };
+
+    let wrong_key =
+        provider_credential_snapshot("opencode", "OPENROUTER_API_KEY", "secret", &vendors);
+    let wrong_surface =
+        provider_credential_snapshot("openrouter", "OPENCODE_API_KEY", "secret", &vendors);
+
+    assert_eq!(wrong_key.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(wrong_surface.status, UsageSnapshotStatus::Unsupported);
+    assert!(vendors.calls.borrow().is_empty());
 }
 
 #[test]

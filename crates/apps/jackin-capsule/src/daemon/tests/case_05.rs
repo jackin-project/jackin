@@ -64,7 +64,6 @@ fn apply_dialog_action_switch_usage_provider_resolves_bound_full_tuple() {
     mux.launch_env.launch_config.usage_capabilities =
         BTreeMap::from([("claude".to_owned(), capability_b.clone())]);
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
-        provider_label: "Anthropic · b@example.com".to_owned(),
         account_id: id_b.clone(),
     });
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
@@ -89,7 +88,6 @@ fn apply_dialog_action_switch_usage_provider_resolves_bound_full_tuple() {
     );
 
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
-        provider_label: "Anthropic · b@example.com".to_owned(),
         account_id: "sha256:unknown".to_owned(),
     });
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
@@ -109,6 +107,22 @@ fn apply_dialog_action_switch_usage_provider_resolves_bound_full_tuple() {
             .account_id,
         "test-claude-b"
     );
+
+    let pending_b = mux.usage.pending_usage_refresh.clone();
+    mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
+        account_id: String::new(),
+    });
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+        panic!("switch usage provider action must keep usage dialog open");
+    };
+    assert_eq!(view.status, UsageSnapshotStatus::Unavailable);
+    assert_eq!(
+        view.account.account_label,
+        "usage unavailable: account not cached"
+    );
+    assert!(view.account.account_capability.is_none());
+    assert!(view.buckets.is_empty());
+    assert_eq!(mux.usage.pending_usage_refresh, pending_b);
 }
 
 struct BoundUsageFixture<'a> {
@@ -490,7 +504,6 @@ fn select_and_assert_bound_b(scenario: &mut SelectedAccountScenario) {
     let mux = &mut scenario.mux;
     let selected_b_id = capability_b.opaque_identity_key();
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
-        provider_label: "Anthropic · shared@example.test".to_owned(),
         account_id: selected_b_id.clone(),
     });
     let _refreshed = mux.refresh_open_usage_dialog_from_cache();
@@ -727,7 +740,6 @@ fn navigate_from_unavailable_b_to_codex(
     let restored_b_view = overview_view.as_ref().clone();
     mux.dialog_push(Dialog::new_usage(restored_b_view));
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
-        provider_label: codex_tab.label,
         account_id: codex_tab.id,
     });
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("switched Codex view") else {
@@ -1013,7 +1025,6 @@ fn account_refresh_search_continues_after_invalid_matching_session() {
 
         mux.dialog_push(Dialog::new_usage(FocusedUsageView::unavailable("seed", 1)));
         mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
-            provider_label: "OpenAI · same@example.test".to_owned(),
             account_id: capability.opaque_identity_key(),
         });
         assert_eq!(
@@ -1031,7 +1042,6 @@ fn account_refresh_search_continues_after_invalid_matching_session() {
             .usage_capabilities
             .remove("codex");
         mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
-            provider_label: "OpenAI · same@example.test".to_owned(),
             account_id: capability.opaque_identity_key(),
         });
         assert_eq!(mux.usage.pending_usage_refresh, None);
@@ -1062,7 +1072,6 @@ fn account_refresh_search_continues_after_invalid_matching_session() {
         .insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &capability, target_view);
     wrong_surface_mux.dialog_push(Dialog::new_usage(FocusedUsageView::unavailable("seed", 1)));
     wrong_surface_mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
-        provider_label: "OpenAI · same@example.test".to_owned(),
         account_id: capability.opaque_identity_key(),
     });
     assert_eq!(wrong_surface_mux.usage.pending_usage_refresh, None);

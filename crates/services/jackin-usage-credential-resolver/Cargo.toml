@@ -32,6 +32,7 @@ jackin-usage-provider-gemini = { workspace = true }
 jackin-usage-provider-grok = { workspace = true }
 jackin-usage-provider-kimi = { workspace = true }
 jackin-usage-provider-minimax = { workspace = true }
+jackin-usage-provider-opencode = { workspace = true }
 jackin-usage-provider-openrouter = { workspace = true }
 jackin-usage-provider-zai = { workspace = true }
 

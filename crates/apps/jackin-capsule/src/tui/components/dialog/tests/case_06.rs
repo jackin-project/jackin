@@ -230,7 +230,6 @@ fn s8_usage_content_arrows_scroll_two_axes() {
     assert_eq!(
         d.handle_key(b"\x1b[C", None),
         DialogAction::SwitchUsageProvider {
-            provider_label: "Claude".to_owned(),
             account_id: "test-tab-claude".to_owned(),
         }
     );
@@ -272,7 +271,6 @@ fn s8_usage_left_from_overview_goes_to_last_tab() {
     assert_eq!(
         d.handle_key(b"\x1b[D", None),
         DialogAction::SwitchUsageProvider {
-            provider_label: "MiniMax".to_owned(),
             account_id: "test-tab-minimax".to_owned(),
         }
     );
