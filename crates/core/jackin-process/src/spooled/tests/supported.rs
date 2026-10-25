@@ -464,6 +464,59 @@ fn invalid_request_returns_original_output_handles_before_spawn() {
 }
 
 #[test]
+fn null_stdout_mode_is_rejected_before_spawn_and_returns_original_handles() {
+    let spool_files = output_pair();
+    let (stdout, stderr) = spool_files.files();
+    let stdout_fd = stdout.as_raw_fd();
+    let stderr_fd = stderr.as_raw_fd();
+    let stdout_identity = stdout.metadata().expect("inspect original stdout spool");
+    let stderr_identity = stderr.metadata().expect("inspect original stderr spool");
+    let marker = spool_files.stdout_path().with_file_name("target-started");
+    assert!(!marker.exists());
+
+    let request = ExecRequest::new("/bin/sh", ["-c", ": > \"$JACKIN_SPOOL_MARKER\""])
+        .envs([("JACKIN_SPOOL_MARKER", marker.as_os_str())])
+        .stdout_mode(crate::StdioMode::Null)
+        .output_limits(8, 8);
+    let result = exec_spooled_sync_cancellable(&request, stdout, stderr, &AtomicBool::new(false));
+    assert!(
+        !marker.exists(),
+        "Null stdout must be rejected before child side effects"
+    );
+    let error = typed_error(result.expect_err("Null stdout must be rejected as a request error"));
+    assert_eq!(error.kind, SpoolFailureKind::Request);
+    assert_eq!(
+        error.message,
+        "spooled execution requires Capture stdout and stderr"
+    );
+    assert_eq!(error.stdout_bytes, 0);
+    assert_eq!(error.stderr_bytes, 0);
+
+    let (stdout, stderr, recovery) = error.into_parts();
+    assert!(recovery.is_none());
+    let stdout = stdout.expect("return original stdout descriptor");
+    let stderr = stderr.expect("return original stderr descriptor");
+    assert_eq!(stdout.as_raw_fd(), stdout_fd);
+    assert_eq!(stderr.as_raw_fd(), stderr_fd);
+    let returned_stdout = stdout.metadata().expect("inspect returned stdout spool");
+    let returned_stderr = stderr.metadata().expect("inspect returned stderr spool");
+    assert_eq!(
+        (returned_stdout.dev(), returned_stdout.ino()),
+        (stdout_identity.dev(), stdout_identity.ino())
+    );
+    assert_eq!(
+        (returned_stderr.dev(), returned_stderr.ino()),
+        (stderr_identity.dev(), stderr_identity.ino())
+    );
+    assert_eq!(returned_stdout.len(), 0);
+    assert_eq!(returned_stderr.len(), 0);
+    assert!(
+        !marker.exists(),
+        "rejected request must not start its target"
+    );
+}
+
+#[test]
 fn nonempty_stdin_is_a_named_pre_spawn_rejection() {
     let spool_files = output_pair();
     let (stdout, stderr) = spool_files.files();
