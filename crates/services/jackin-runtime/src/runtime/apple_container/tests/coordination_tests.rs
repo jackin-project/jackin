@@ -56,6 +56,7 @@ fn apple_final_complete_spec_blocks_coordination_before_submission() {
                     env_file: None,
                     mounts,
                     caps_add: Vec::new(),
+                    launch_generation: None,
                 };
                 let submitted = std::cell::Cell::new(0usize);
                 let result = with_admitted_final_apple_spec(&paths, &state, spec, |_spec| {
@@ -131,6 +132,7 @@ fn apple_final_complete_spec_rejects_coordination_aliases_before_submission() {
                 env_file: None,
                 mounts,
                 caps_add: Vec::new(),
+                launch_generation: None,
             };
             let submissions = std::cell::Cell::new(0usize);
             let result = with_admitted_final_apple_spec(&paths, &state, spec, |_spec| {

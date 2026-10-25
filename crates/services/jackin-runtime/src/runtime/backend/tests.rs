@@ -124,6 +124,7 @@ async fn apple_backend_eject_and_purge_use_apple_client() {
     client.containers.lock().unwrap().push(AppleContainerInfo {
         id: "jk-agent-smith".to_owned(),
         status: AppleContainerStatus::Running,
+        launch_generation: None,
     });
     let backend = AppleContainerBackend::new(client);
 
@@ -152,6 +153,7 @@ async fn apple_backend_reconnect_uses_injected_client_after_admission_and_abstai
     client.containers.lock().unwrap().push(AppleContainerInfo {
         id: name.to_owned(),
         status: AppleContainerStatus::Unknown,
+        launch_generation: None,
     });
     let backend = AppleContainerBackend::new(client);
     let mut runner = FakeRunner::default();
@@ -179,6 +181,7 @@ async fn apple_backend_reconnect_keeps_account_admission_as_a_precondition() {
     client.containers.lock().unwrap().push(AppleContainerInfo {
         id: name.to_owned(),
         status: AppleContainerStatus::Running,
+        launch_generation: None,
     });
     let backend = AppleContainerBackend::new(client);
     let mut runner = FakeRunner::default();

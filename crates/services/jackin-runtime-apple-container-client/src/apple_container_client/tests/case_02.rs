@@ -14,6 +14,8 @@ const APPLE_1_2_LISTING: &[u8] = br#"[
     {"id":"jk-12-stopping","configuration":{"id":"jk-12-stopping"},"status":{"state":"stopping","progress":0.5}}
 ]"#;
 
+const GENERATION: &str = "b08d2c9d-58b4-4c0e-a4bf-8e7031f54c1a";
+
 #[test]
 fn versioned_official_listing_fixtures_keep_typed_states_and_additive_metadata() {
     let apple_10 = parse_all_containers_json(APPLE_1_0_LISTING).unwrap();
@@ -29,6 +31,22 @@ fn versioned_official_listing_fixtures_keep_typed_states_and_additive_metadata()
     assert_eq!(apple_12[0].status, AppleContainerStatus::Unknown);
     assert_eq!(apple_12[1].status, AppleContainerStatus::Stopping);
     assert!(apple_12.iter().all(|container| !container.is_running()));
+}
+
+#[test]
+fn reserved_generation_label_is_optional_and_unrelated_labels_remain_compatible() {
+    let json = format!(
+        r#"[{{"id":"jk-a","configuration":{{"id":"jk-a","labels":{{"owner":{{"team":"fixture"}},"com.jackin.launch-generation":"{GENERATION}"}}}},"status":{{"state":"running"}}}}]"#
+    );
+    let parsed = parse_all_containers_json(json.as_bytes()).unwrap();
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0].launch_generation.as_deref(), Some(GENERATION));
+
+    let legacy = parse_all_containers_json(
+        br#"[{"id":"jk-legacy","configuration":{"id":"jk-legacy","labels":{"owner":"fixture"}},"status":{"state":"stopped"}}]"#,
+    )
+    .unwrap();
+    assert_eq!(legacy[0].launch_generation, None);
 }
 
 #[test]
@@ -83,6 +101,22 @@ fn all_required_shapes_are_maps_and_duplicate_required_fields_fail() {
         br#"[{"id":"jk-a","configuration":{"id":"jk-a","id":"jk-a"},"status":{"state":"running"}}]"#,
         br#"[{"id":"jk-a","configuration":{"id":"jk-a"},"status":["running"]}]"#,
         br#"[{"id":"jk-a","configuration":{"id":"jk-a"},"status":{"state":"running","state":"stopped"}}]"#,
+    ];
+    for invalid in invalid_rows {
+        parse_all_containers_json(invalid).unwrap_err();
+    }
+}
+
+#[test]
+fn malformed_generation_labels_and_duplicate_reserved_keys_fail_closed() {
+    let invalid_rows: [&[u8]; 7] = [
+        br#"[{"id":"jk-a","configuration":{"id":"jk-a","labels":null},"status":{"state":"running"}}]"#.as_slice(),
+        br#"[{"id":"jk-a","configuration":{"id":"jk-a","labels":"not-an-object"},"status":{"state":"running"}}]"#,
+        br#"[{"id":"jk-a","configuration":{"id":"jk-a","labels":{"com.jackin.launch-generation":null}},"status":{"state":"running"}}]"#,
+        br#"[{"id":"jk-a","configuration":{"id":"jk-a","labels":{"com.jackin.launch-generation":"not-a-uuid"}},"status":{"state":"running"}}]"#,
+        br#"[{"id":"jk-a","configuration":{"id":"jk-a","labels":{"com.jackin.launch-generation":"B08D2C9D-58B4-4C0E-A4BF-8E7031F54C1A"}},"status":{"state":"running"}}]"#,
+        br#"[{"id":"jk-a","configuration":{"id":"jk-a","labels":{"com.jackin.launch-generation":"b08d2c9d-58b4-4c0e-a4bf-8e7031f54c1a","com.jackin.launch-generation":"b08d2c9d-58b4-4c0e-a4bf-8e7031f54c1a"}},"status":{"state":"running"}}]"#,
+        br#"[{"id":"jk-a","configuration":{"id":"jk-a","labels":{},"labels":{}},"status":{"state":"running"}}]"#,
     ];
     for invalid in invalid_rows {
         parse_all_containers_json(invalid).unwrap_err();

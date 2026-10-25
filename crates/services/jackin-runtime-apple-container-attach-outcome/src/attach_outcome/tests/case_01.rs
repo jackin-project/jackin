@@ -7,6 +7,7 @@ fn info(id: &str, status: AppleContainerStatus) -> AppleContainerInfo {
     AppleContainerInfo {
         id: id.to_owned(),
         status,
+        launch_generation: None,
     }
 }
 

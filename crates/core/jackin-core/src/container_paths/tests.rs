@@ -24,6 +24,9 @@ const ALL_PUB_CONSTS: &[(&str, &str)] = &[
     ("CAPSULE_CONFIG", CAPSULE_CONFIG),
     ("CLIPBOARD_DIR", CLIPBOARD_DIR),
     ("USAGE_ACCOUNTS", USAGE_ACCOUNTS),
+    ("USAGE_RELAY_V2_DIR", USAGE_RELAY_V2_DIR),
+    ("USAGE_RELAY_V2_SOCK", USAGE_RELAY_V2_SOCK),
+    ("USAGE_RELAY_V2_LOCK", USAGE_RELAY_V2_LOCK),
     ("GIT_HOOKS_DIR", GIT_HOOKS_DIR),
     ("EXIT_ACTION", EXIT_ACTION),
     ("USAGE_SNAPSHOT_STORE", USAGE_SNAPSHOT_STORE),
@@ -191,6 +194,9 @@ fn canonical_root_migration_preserves_all_existing_path_bytes() {
     for (actual, expected) in ORIGINAL_PATH_BYTES {
         assert_eq!(actual, expected);
     }
+    assert_eq!(USAGE_RELAY_V2_DIR, "/jackin/usage-relay-v2");
+    assert_eq!(USAGE_RELAY_V2_SOCK, "/jackin/usage-relay-v2/usage.sock");
+    assert_eq!(USAGE_RELAY_V2_LOCK, "/jackin/usage-relay-v2/owner.lock");
     assert_eq!(CHECKS_PREFIX, "/jackin/checks/");
     assert_eq!(ACCOUNT_CREDENTIALS_DIR, "/jackin/account-credentials");
 }

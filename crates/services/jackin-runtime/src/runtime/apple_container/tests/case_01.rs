@@ -125,6 +125,7 @@ impl LifecycleClient {
         let info = AppleContainerInfo {
             id: "jk-a".to_owned(),
             status,
+            launch_generation: None,
         };
         Self {
             inspection: Inspection::Found(info.clone()),
@@ -291,6 +292,7 @@ async fn mismatched_exact_id_and_start_failure_abstain_before_later_effects() {
         inspection: Inspection::Found(AppleContainerInfo {
             id: "jk-a-extra".to_owned(),
             status: AppleContainerStatus::Stopped,
+            launch_generation: None,
         }),
         inventory: Inventory::Rows(Vec::new()),
         start_calls: Mutex::new(Vec::new()),
@@ -336,6 +338,7 @@ async fn purge_requires_a_valid_inventory_and_blocks_every_exact_target_state() 
         inventory: Inventory::Rows(vec![AppleContainerInfo {
             id: "jk-a-extra".to_owned(),
             status: AppleContainerStatus::Stopped,
+            launch_generation: None,
         }]),
         start_calls: Mutex::new(Vec::new()),
         fail_start: false,

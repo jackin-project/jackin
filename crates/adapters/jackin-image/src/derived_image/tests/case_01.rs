@@ -56,7 +56,7 @@ fn renders_runtime_finalization_in_one_layer() {
     ));
     assert!(
         dockerfile
-            .contains("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\\n    && install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials"),
+            .contains("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\\n    && install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials \\\n    && install -d -o agent -g 0 -m 0700 /jackin/usage-relay-v2 \\\n    && install -o agent -g 0 -m 0600 /dev/null /jackin/usage-relay-v2/owner.lock"),
         "runtime dir setup should share finalization and assign ownership at mkdir time: {dockerfile}"
     );
     assert!(
@@ -94,7 +94,7 @@ fn renders_runtime_finalization_in_one_layer() {
     assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
     assert!(dockerfile.contains("\nRUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'"));
     assert!(!dockerfile.contains(
-        "\nRUN install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials"
+            "\nRUN install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials \\\n    && install -d -o agent -g 0 -m 0700 /jackin/usage-relay-v2 \\\n    && install -o agent -g 0 -m 0600 /dev/null /jackin/usage-relay-v2/owner.lock"
     ));
     assert_eq!(
         dockerfile
