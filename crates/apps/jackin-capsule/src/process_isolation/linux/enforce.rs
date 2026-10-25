@@ -13,6 +13,10 @@ use jackin_protocol::SessionIdentity;
 use std::ffi::CString;
 use std::mem::size_of;
 
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the per-block expect(unsafe_code) attributes; repo rule forbids SAFETY comments"
+)]
 pub(crate) fn install_landlock(rules: &[Rule]) -> Result<()> {
     #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
     let abi = unsafe {
@@ -114,6 +118,10 @@ pub(crate) fn install_landlock(rules: &[Rule]) -> Result<()> {
     Ok(())
 }
 
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the per-block expect(unsafe_code) attributes; repo rule forbids SAFETY comments"
+)]
 pub(crate) fn drop_privileges(identity: SessionIdentity) -> Result<()> {
     anyhow::ensure!(
         identity.uid > 0 && identity.gid > 0,

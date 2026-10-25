@@ -14,10 +14,12 @@ struct EmptyDocker;
 
 impl DockerApi for EmptyDocker {
     async fn ping(&self) -> anyhow::Result<()> {
+        std::future::ready(()).await;
         Ok(())
     }
 
     async fn inspect_container_by_name(&self, name: &str) -> ContainerInspection {
+        std::future::ready(()).await;
         let _ = name;
         ContainerInspection {
             handle: None,
@@ -26,6 +28,7 @@ impl DockerApi for EmptyDocker {
     }
 
     async fn inspect_container_by_id(&self, container: &ContainerHandle) -> ContainerState {
+        std::future::ready(()).await;
         let _ = container;
         ContainerState::NotFound
     }

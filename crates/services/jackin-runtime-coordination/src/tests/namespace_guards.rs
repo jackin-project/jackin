@@ -17,9 +17,8 @@ fn rejects_traversal_and_empty_keys() -> std::io::Result<()> {
     let temp = tempfile::tempdir()?;
     let dir = temp.path().join(".jackin-coordination").join("records");
     for key in ["..", ".", "../evil", "a/b", ""] {
-        let error = match open_in_namespace(&dir, key) {
-            Ok(_) => return Err(unexpected(format!("key {key:?} was accepted"))),
-            Err(error) => error,
+        let Err(error) = open_in_namespace(&dir, key) else {
+            return Err(unexpected(format!("key {key:?} was accepted")));
         };
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
     }
