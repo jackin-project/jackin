@@ -5,10 +5,21 @@ use std::path::{Path, PathBuf};
 
 use jackin_process::{RetryPolicy, StdioMode};
 
+use super::paths::{cargo_home as cargo_home_path, resolve};
 use super::{
-    COMPILER_COMMIT, COMPILER_RELEASE, COMPONENTS, NIGHTLY, build_environment, build_exec_request,
-    compiler_host, library_path, run_with,
+    COMPILER_COMMIT, COMPILER_RELEASE, COMPONENTS, Environment, NIGHTLY, build_environment_with,
+    build_exec_request, compiler_host, library_path, run_with, run_with_home,
 };
+
+mod case_01;
+
+fn cargo_home<F>(inherited: &Environment, cwd: &Path, passwd_home: F) -> anyhow::Result<PathBuf>
+where
+    F: FnOnce() -> anyhow::Result<Option<OsString>>,
+{
+    let path = cargo_home_path(inherited, passwd_home)?;
+    resolve(&path, cwd)
+}
 
 fn host() -> String {
     match std::env::consts::OS {
@@ -138,13 +149,15 @@ fn environment_cleans_inherited_compiler_and_dylint_state_and_preserves_spaced_p
     );
     inherited.insert(OsString::from("KEEP_ME"), OsString::from("preserved"));
 
-    let (env, target, selected) = build_environment(&root, inherited).expect("build environment");
-    assert_eq!(
-        target,
-        std::env::current_dir()
-            .expect("current directory")
-            .join("target dir")
-    );
+    let (env, target, selected) = build_environment_with(&root, inherited, || {
+        panic!("explicit CARGO_HOME should bypass passwd lookup")
+    })
+    .expect("build environment");
+    let current_dir = std::env::current_dir().expect("current directory");
+    let resolved_current_dir =
+        resolve(&current_dir, &current_dir).expect("resolved current directory");
+    let resolved_cargo_home = resolve(&cargo_home, &current_dir).expect("resolved Cargo home");
+    assert_eq!(target, resolved_current_dir.join("target dir"));
     assert_eq!(
         env.get(OsStr::new("CARGO_TARGET_DIR")),
         Some(&target.join("library").into_os_string())
@@ -167,7 +180,7 @@ fn environment_cleans_inherited_compiler_and_dylint_state_and_preserves_spaced_p
     }
     let path =
         std::env::split_paths(env.get(OsStr::new("PATH")).expect("PATH")).collect::<Vec<_>>();
-    assert_eq!(path[0], cargo_home.join("bin"));
+    assert_eq!(path[0], resolved_cargo_home.join("bin"));
     assert_eq!(path[1], tools);
     let encoded = env
         .get(OsStr::new("CARGO_ENCODED_RUSTFLAGS"))

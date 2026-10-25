@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use jackin_process::{ExecRequest, ExecResult, StdioMode};
 
+mod paths;
+
 const NIGHTLY: &str = "nightly-2026-10-18";
 const COMPILER_COMMIT: &str = "8006091eb71ae7d9e9bccb66c6122c9d68af4466";
 const COMPILER_RELEASE: &str = "1.101.0-nightly";
@@ -19,12 +21,25 @@ pub(crate) fn run(root: &Path) -> Result<()> {
     run_with(root, std::env::vars_os().collect(), execute)
 }
 
-fn run_with<F>(root: &Path, inherited: Environment, mut execute: F) -> Result<()>
+fn run_with<F>(root: &Path, inherited: Environment, execute: F) -> Result<()>
 where
     F: FnMut(&[OsString], &Path, &Environment, bool) -> Result<Vec<u8>>,
 {
+    run_with_home(root, inherited, paths::passwd_home_for_real_uid, execute)
+}
+
+fn run_with_home<F, H>(
+    root: &Path,
+    inherited: Environment,
+    passwd_home: H,
+    mut execute: F,
+) -> Result<()>
+where
+    F: FnMut(&[OsString], &Path, &Environment, bool) -> Result<Vec<u8>>,
+    H: FnOnce() -> Result<Option<OsString>>,
+{
     let lint = root.join("crates/tools/jackin-lints");
-    let (base_env, target, tools) = build_environment(root, inherited)?;
+    let (base_env, target, tools) = build_environment_with(root, inherited, passwd_home)?;
     let mut nightly = vec![OsString::from("rustup"), OsString::from("run")];
     nightly.push(OsString::from(NIGHTLY));
 
@@ -106,10 +121,14 @@ where
     Ok(())
 }
 
-fn build_environment(
+fn build_environment_with<H>(
     root: &Path,
     inherited: Environment,
-) -> Result<(Environment, PathBuf, BTreeMap<&'static str, PathBuf>)> {
+    passwd_home: H,
+) -> Result<(Environment, PathBuf, BTreeMap<&'static str, PathBuf>)>
+where
+    H: FnOnce() -> Result<Option<OsString>>,
+{
     let path = inherited
         .get(OsStr::new("PATH"))
         .cloned()
@@ -121,23 +140,20 @@ fn build_environment(
         tools.insert(*name, selected);
     }
 
-    let cargo_home = match inherited.get(OsStr::new("CARGO_HOME")) {
+    let cargo_home = paths::cargo_home(&inherited, passwd_home)?;
+    let target = match inherited.get(OsStr::new("CARGO_TARGET_DIR")) {
         Some(value) => PathBuf::from(value),
-        None => PathBuf::from(
-            inherited
-                .get(OsStr::new("HOME"))
-                .context("HOME is missing and CARGO_HOME is unset")?,
-        )
-        .join(".cargo"),
+        None => root.join("target/custom-lints"),
     };
-    let cargo_bin = if cargo_home.is_absolute() {
-        cargo_home.join("bin")
+    let current_dir = if cargo_home.is_absolute() && target.is_absolute() {
+        None
     } else {
-        std::env::current_dir()
-            .context("reading current directory")?
-            .join(cargo_home)
-            .join("bin")
+        Some(std::env::current_dir().context("reading current directory")?)
     };
+    let current_dir = current_dir.as_deref().unwrap_or_else(|| Path::new("/"));
+    let cargo_home = paths::resolve(&cargo_home, current_dir)?;
+    let target = paths::resolve(&target, current_dir)?;
+    let cargo_bin = cargo_home.join("bin");
     let mut env = inherited;
     env.insert(
         OsString::from("PATH"),
@@ -165,17 +181,6 @@ fn build_environment(
         env.remove(OsStr::new(key));
     }
 
-    let target = match env.get(OsStr::new("CARGO_TARGET_DIR")) {
-        Some(value) => PathBuf::from(value),
-        None => root.join("target/custom-lints"),
-    };
-    let target = if target.is_absolute() {
-        target
-    } else {
-        std::env::current_dir()
-            .context("reading current directory")?
-            .join(target)
-    };
     env.insert(
         OsString::from("CARGO_TARGET_DIR"),
         target.join("library").into_os_string(),
