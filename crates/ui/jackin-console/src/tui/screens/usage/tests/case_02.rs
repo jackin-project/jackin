@@ -61,6 +61,13 @@ fn render_at_shares_one_epoch_between_list_and_detail() {
         .unwrap();
     let text = backend_text(&terminal);
 
+    let repeated_backend = TestBackend::new(200, 40);
+    let mut repeated_terminal = Terminal::new(repeated_backend).unwrap();
+    repeated_terminal
+        .draw(|frame| render_at(frame, frame.area(), &manager, now))
+        .unwrap();
+    assert_eq!(text, backend_text(&repeated_terminal));
+
     assert!(
         text.contains("updated 1m ago"),
         "list freshness drifted:\n{text}"
