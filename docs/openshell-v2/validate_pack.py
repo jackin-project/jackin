@@ -55,6 +55,14 @@ def main() -> int:
     task_ids = [task["id"] for task in tasks]
     case_ids = [case["id"] for case in cases]
     task_set, case_set = set(task_ids), set(case_ids)
+    task_statuses = {"NOT_STARTED", "READY", "RUNNING", "REVIEW", "PASS", "FAIL", "BLOCKED"}
+    case_statuses = {"NOT_RUN", "PASS", "FAIL", "BLOCKED"}
+    bad_task_statuses = [{"id": task["id"], "status": task["status"]} for task in tasks
+                         if task["status"] not in task_statuses]
+    bad_case_statuses = [{"id": case["id"], "status": case["status"]} for case in cases
+                         if case["status"] not in case_statuses]
+    check("Task statuses use documented values", not bad_task_statuses, bad_task_statuses)
+    check("Acceptance case statuses use documented values", not bad_case_statuses, bad_case_statuses)
     check("Task IDs are unique", len(task_set) == len(tasks))
     check("Case IDs are unique", len(case_set) == len(cases))
     check("Declared task count matches", graph["task_count"] == len(tasks), len(tasks))
