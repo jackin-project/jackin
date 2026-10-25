@@ -328,5 +328,392 @@ fn open_state_at(parent: &std::fs::File, key: &str, create: bool) -> io::Result<
     }
 }
 
+/// Result boundary for replacing a coordination state leaf.
+#[derive(Debug)]
+pub enum StatePublishError {
+    /// The final leaf was not replaced.
+    NotPublished(io::Error),
+    /// Rename replaced the final leaf, but durability or verification failed afterward.
+    VisibleButUncertain(io::Error),
+}
+
+impl std::fmt::Display for StatePublishError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotPublished(error) => write!(formatter, "state was not published: {error}"),
+            Self::VisibleButUncertain(error) => {
+                write!(
+                    formatter,
+                    "state is visible but durability is uncertain: {error}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for StatePublishError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::NotPublished(error) | Self::VisibleButUncertain(error) => Some(error),
+        }
+    }
+}
+
+/// Read an existing bounded JSON state leaf without creating its directory or file.
+///
+/// `key` is the stable logical key shared with [`open_in_namespace`]; this function
+/// reads `{key}.json`. The caller must hold the corresponding stable lock while the
+/// returned bytes are used as coordinated state.
+pub fn read_state_bytes_in_namespace(
+    directory: &Path,
+    key: &str,
+    maximum_bytes: usize,
+) -> io::Result<Option<Vec<u8>>> {
+    validate_key(key)?;
+    let parent = match open_directory_in_namespace(directory, false) {
+        Ok(parent) => parent,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let leaf = format!("{key}.json");
+    let file = match open_state_at(&parent, &leaf, false) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    read_bounded_state_file(file, maximum_bytes).map(Some)
+}
+
+/// Atomically replace `{key}.json` below a validated coordination directory.
+///
+/// The caller must hold the stable `{key}.lock` opened with [`open_in_namespace`]
+/// for the full operation and subsequent state use. The lock inode is not replaced.
+/// This serializes cooperating Jackin processes; it is not a compare-and-swap
+/// guarantee against unrelated filesystem actors.
+pub fn publish_state_bytes_in_namespace(
+    directory: &Path,
+    key: &str,
+    bytes: &[u8],
+    maximum_bytes: usize,
+) -> Result<(), StatePublishError> {
+    publish_state_bytes_with_faults(
+        directory,
+        key,
+        bytes,
+        maximum_bytes,
+        PublishTestFaults::default(),
+    )
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, Eq, PartialEq)]
+// Each publication test selects one injected failure boundary.
+enum PublishTestFailure {
+    TempSync,
+    Rename,
+    DirectorySync,
+    FinalReadback,
+}
+
+#[derive(Default)]
+struct PublishTestFaults {
+    #[cfg(unix)]
+    failure: Option<PublishTestFailure>,
+}
+
+fn publish_state_bytes_with_faults(
+    directory: &Path,
+    key: &str,
+    bytes: &[u8],
+    maximum_bytes: usize,
+    faults: PublishTestFaults,
+) -> Result<(), StatePublishError> {
+    validate_key(key).map_err(StatePublishError::NotPublished)?;
+    if bytes.len() > maximum_bytes {
+        return Err(StatePublishError::NotPublished(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "coordination state exceeds the configured size limit",
+        )));
+    }
+    let parent =
+        open_directory_in_namespace(directory, true).map_err(StatePublishError::NotPublished)?;
+    let leaf = format!("{key}.json");
+    #[cfg(unix)]
+    {
+        publish_state_at(&parent, &leaf, bytes, maximum_bytes, faults)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (parent, leaf, bytes, maximum_bytes, faults);
+        Err(StatePublishError::NotPublished(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "coordination state publication requires no-follow Unix access",
+        )))
+    }
+}
+
+fn read_bounded_state_file(mut file: std::fs::File, maximum_bytes: usize) -> io::Result<Vec<u8>> {
+    use std::io::Read as _;
+
+    let maximum_u64 = u64::try_from(maximum_bytes).unwrap_or(u64::MAX);
+    let metadata = file.metadata()?;
+    if metadata.len() > maximum_u64 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "coordination state exceeds the configured size limit",
+        ));
+    }
+    let capacity = usize::try_from(metadata.len())
+        .unwrap_or(maximum_bytes)
+        .min(maximum_bytes);
+    let mut bytes = Vec::with_capacity(capacity);
+    let read_limit = maximum_u64.saturating_add(1);
+    {
+        let mut limited = (&mut file).take(read_limit);
+        limited.read_to_end(&mut bytes)?;
+    }
+    if bytes.len() > maximum_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "coordination state grew beyond the configured size limit",
+        ));
+    }
+    let observed_len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+    let final_len = file.metadata()?.len();
+    if final_len > maximum_u64 || final_len != observed_len {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "coordination state changed while being read",
+        ));
+    }
+    Ok(bytes)
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct StateInodeIdentity {
+    device: nix::libc::dev_t,
+    inode: nix::libc::ino_t,
+}
+
+#[cfg(unix)]
+fn state_inode_identity(file: &std::fs::File) -> io::Result<StateInodeIdentity> {
+    use nix::sys::stat::fstat;
+
+    let stat = fstat(file)?;
+    Ok(StateInodeIdentity {
+        device: stat.st_dev,
+        inode: stat.st_ino,
+    })
+}
+
+#[cfg(unix)]
+fn state_leaf_identity(
+    parent: &std::fs::File,
+    leaf: &str,
+) -> io::Result<Option<StateInodeIdentity>> {
+    match open_state_at(parent, leaf, false) {
+        Ok(file) => state_inode_identity(&file).map(Some),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(unix)]
+fn create_staged_state_file(
+    parent: &std::fs::File,
+) -> io::Result<(String, std::fs::File, StateInodeIdentity)> {
+    use nix::errno::Errno;
+    use nix::fcntl::{OFlag, openat};
+    use nix::sys::stat::{Mode, fstat};
+    use std::os::unix::fs::MetadataExt as _;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEMP_LEAF: AtomicU64 = AtomicU64::new(0);
+    let flags =
+        OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
+    let mode = Mode::from_bits_truncate(0o600);
+    for _ in 0..128 {
+        let sequence = NEXT_TEMP_LEAF.fetch_add(1, Ordering::Relaxed);
+        let leaf = format!(".jackin-state-{}-{sequence}", std::process::id());
+        match openat(parent, leaf.as_str(), flags, mode) {
+            Ok(descriptor) => {
+                let file = std::fs::File::from(descriptor);
+                let metadata = file.metadata()?;
+                let stat = fstat(&file)?;
+                if !metadata.is_file()
+                    || metadata.uid() != nix::unistd::geteuid().as_raw()
+                    || metadata.mode() & 0o077 != 0
+                    || metadata.nlink() != 1
+                    || stat.st_nlink != 1
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "staged coordination state must be a private owned regular inode",
+                    ));
+                }
+                let identity = StateInodeIdentity {
+                    device: stat.st_dev,
+                    inode: stat.st_ino,
+                };
+                return Ok((leaf, file, identity));
+            }
+            Err(Errno::EEXIST) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "could not allocate a unique staged coordination state leaf",
+    ))
+}
+
+#[cfg(unix)]
+fn remove_staged_state_file(
+    parent: &std::fs::File,
+    leaf: &str,
+    expected: StateInodeIdentity,
+) -> io::Result<()> {
+    use nix::errno::Errno;
+    use nix::fcntl::AtFlags;
+    use nix::sys::stat::{SFlag, fstat, fstatat};
+    use nix::unistd::{UnlinkatFlags, unlinkat};
+
+    let stat = match fstatat(parent, leaf, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => stat,
+        Err(Errno::ENOENT) => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let identity = StateInodeIdentity {
+        device: stat.st_dev,
+        inode: stat.st_ino,
+    };
+    if identity != expected
+        || SFlag::from_bits_truncate(stat.st_mode) != SFlag::S_IFREG
+        || stat.st_uid != nix::unistd::geteuid().as_raw()
+        || stat.st_mode & 0o077 != 0
+        || stat.st_nlink != 1
+    {
+        return Ok(());
+    }
+    let opened_file = std::fs::File::from(nix::fcntl::openat(
+        parent,
+        leaf,
+        nix::fcntl::OFlag::O_RDONLY
+            | nix::fcntl::OFlag::O_NOFOLLOW
+            | nix::fcntl::OFlag::O_CLOEXEC
+            | nix::fcntl::OFlag::O_NONBLOCK,
+        nix::sys::stat::Mode::empty(),
+    )?);
+    let opened_stat = fstat(&opened_file)?;
+    if opened_stat.st_dev != expected.device || opened_stat.st_ino != expected.inode {
+        return Ok(());
+    }
+    let final_stat = match fstatat(parent, leaf, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => stat,
+        Err(Errno::ENOENT) => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if final_stat.st_dev != expected.device
+        || final_stat.st_ino != expected.inode
+        || SFlag::from_bits_truncate(final_stat.st_mode) != SFlag::S_IFREG
+        || final_stat.st_uid != nix::unistd::geteuid().as_raw()
+        || final_stat.st_mode & 0o077 != 0
+        || final_stat.st_nlink != 1
+    {
+        return Ok(());
+    }
+    unlinkat(parent, leaf, UnlinkatFlags::NoRemoveDir).map_err(io::Error::from)
+}
+
+#[cfg(unix)]
+fn publish_state_at(
+    parent: &std::fs::File,
+    leaf: &str,
+    bytes: &[u8],
+    maximum_bytes: usize,
+    faults: PublishTestFaults,
+) -> Result<(), StatePublishError> {
+    use nix::fcntl::renameat;
+    use std::io::Write as _;
+
+    let previous_identity =
+        state_leaf_identity(parent, leaf).map_err(StatePublishError::NotPublished)?;
+    let mut staged_leaf = None;
+    let mut staged_inode = None;
+    let staged_identity_result = (|| -> io::Result<StateInodeIdentity> {
+        let (temporary_leaf, mut temporary_file, identity) = create_staged_state_file(parent)?;
+        staged_leaf = Some(temporary_leaf.clone());
+        staged_inode = Some(identity);
+        temporary_file.write_all(bytes)?;
+        if faults.failure == Some(PublishTestFailure::TempSync) {
+            return Err(io::Error::other("injected staged-file sync failure"));
+        }
+        temporary_file.sync_all()?;
+
+        let current_identity = state_leaf_identity(parent, leaf)?;
+        if current_identity != previous_identity {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "coordination state destination changed before replacement",
+            ));
+        }
+        if faults.failure == Some(PublishTestFailure::Rename) {
+            return Err(io::Error::other("injected state rename failure"));
+        }
+        renameat(parent, temporary_leaf.as_str(), parent, leaf).map_err(io::Error::from)?;
+        staged_leaf = None;
+        Ok(identity)
+    })();
+    let staged_identity = match staged_identity_result {
+        Ok(identity) => identity,
+        Err(error) => {
+            if let (Some(temporary_leaf), Some(temporary_identity)) = (staged_leaf, staged_inode)
+                && let Err(cleanup_error) =
+                    remove_staged_state_file(parent, &temporary_leaf, temporary_identity)
+            {
+                return Err(StatePublishError::NotPublished(io::Error::new(
+                    error.kind(),
+                    format!("{error}; staged-file cleanup failed: {cleanup_error}"),
+                )));
+            }
+            return Err(StatePublishError::NotPublished(error));
+        }
+    };
+
+    if faults.failure == Some(PublishTestFailure::DirectorySync) {
+        return Err(StatePublishError::VisibleButUncertain(io::Error::other(
+            "injected coordination-directory sync failure after replacement",
+        )));
+    }
+    parent
+        .sync_all()
+        .map_err(StatePublishError::VisibleButUncertain)?;
+    if faults.failure == Some(PublishTestFailure::FinalReadback) {
+        return Err(StatePublishError::VisibleButUncertain(io::Error::other(
+            "injected final state readback failure after replacement",
+        )));
+    }
+    let final_file =
+        open_state_at(parent, leaf, false).map_err(StatePublishError::VisibleButUncertain)?;
+    let final_identity =
+        state_inode_identity(&final_file).map_err(StatePublishError::VisibleButUncertain)?;
+    if final_identity != staged_identity {
+        return Err(StatePublishError::VisibleButUncertain(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "published coordination state inode differs from staged inode",
+        )));
+    }
+    let final_bytes = read_bounded_state_file(final_file, maximum_bytes)
+        .map_err(StatePublishError::VisibleButUncertain)?;
+    if final_bytes != bytes {
+        return Err(StatePublishError::VisibleButUncertain(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "published coordination state bytes differ from staged bytes",
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;

@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+mod relay_state;
+
 use super::*;
 
 fn test_binding() -> jackin_protocol::ExecBinding {
