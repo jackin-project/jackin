@@ -5,6 +5,8 @@ use jackin_instance_credentials::SyncSourceValidationError;
 
 use jackin_config::{AiProvider, ProfileSelector};
 use jackin_core::Agent;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use crate::{locked_claude_credentials, validate_omp_source_selection};
@@ -155,12 +157,47 @@ pub(crate) fn validate_locked_store_source_dir(
     source: &auth_directory::LockedSource,
     host_home: &Path,
 ) -> Result<(), SyncSourceValidationError> {
-    if agent == Agent::Omp {
-        return validate_omp_source_selection(&source.root, provider, selector).map_err(|error| {
-            SyncSourceValidationError::new(format!("OMP source snapshot failed: {error:#}"))
-        });
+    match agent {
+        Agent::Omp => {
+            validate_omp_source_selection(&source.root, provider, selector).map_err(|error| {
+                SyncSourceValidationError::new(format!("OMP source snapshot failed: {error:#}"))
+            })
+        }
+        Agent::Hermes => {
+            let snapshot_parent = tempfile::tempdir().map_err(|error| {
+                SyncSourceValidationError::new(format!(
+                    "Hermes source snapshot failed: creating snapshot parent: {error}"
+                ))
+            })?;
+            std::fs::set_permissions(
+                snapshot_parent.path(),
+                std::fs::Permissions::from_mode(0o700),
+            )
+            .map_err(|error| {
+                SyncSourceValidationError::new(format!(
+                    "Hermes source snapshot failed: restricting snapshot parent: {error}"
+                ))
+            })?;
+            let snapshot =
+                crate::create_source_snapshot_dir(snapshot_parent.path()).map_err(|error| {
+                    SyncSourceValidationError::new(format!(
+                        "Hermes source snapshot failed: {error:#}"
+                    ))
+                })?;
+            let snapshot_root =
+                auth_directory::open_directory_path(snapshot.path()).map_err(|error| {
+                    SyncSourceValidationError::new(format!(
+                        "Hermes source snapshot failed: opening snapshot: {error:#}"
+                    ))
+                })?;
+            auth_directory::snapshot_source(&source.root, &snapshot_root).map_err(|error| {
+                SyncSourceValidationError::new(format!("Hermes source snapshot failed: {error:#}"))
+            })?;
+
+            validate_store_source_dir(agent, provider, selector, snapshot.path(), host_home)
+        }
+        _ => validate_store_source_dir(agent, provider, selector, source_dir, host_home),
     }
-    validate_store_source_dir(agent, provider, selector, source_dir, host_home)
 }
 
 pub fn validate_store_source_dir(
@@ -322,3 +359,6 @@ pub(crate) fn usable_opencode_auth_entry(entry: &serde_json::Value) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tests;

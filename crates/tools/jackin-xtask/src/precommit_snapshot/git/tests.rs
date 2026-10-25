@@ -12,13 +12,16 @@ use std::{
     },
     path::{Path, PathBuf},
     process::Command,
+    sync::atomic::Ordering,
     thread,
 };
 
 use tempfile::TempDir;
 
-use super::super::SetupSignals;
-use super::super::process::capture;
+use super::super::{
+    SetupSignals,
+    process::{SetupControls, capture},
+};
 use super::{LiveRepository, OwnedSnapshot, validate_link};
 use crate::precommit_snapshot::toolchain::QualifiedTools;
 
@@ -99,7 +102,7 @@ fn rejects_overflowed_staged_inventory_without_changing_live_state() {
         .admit_with_inventory_limit(&tree, 1)
         .expect_err("staged inventory must fail closed when output exceeds its limit");
     assert!(
-        format!("{error:#}").contains("captured output exceeded 1 byte limit"),
+        format!("{error:#}").contains("stdout output exceeded spool budget 1"),
         "expected bounded-capture overflow, got: {error:#}"
     );
     assert_eq!(
@@ -181,12 +184,9 @@ fn runs_gate_with_the_process_supervisor_and_original_hook_arguments() {
         rustc: Path::new("/usr/bin/true").to_path_buf(),
         environment: BTreeMap::<OsString, OsString>::new(),
     };
+    let controls = snapshot.controls.clone();
     let completion = snapshot
-        .run_gate(
-            &tools,
-            &[OsString::from("fixture argument")],
-            &std::sync::atomic::AtomicBool::new(false),
-        )
+        .run_gate(&tools, &[OsString::from("fixture argument")], &controls)
         .expect("supervised gate");
     assert!(completion.success);
     assert!(completion.cleanup.group_drained);
@@ -216,8 +216,9 @@ fn failed_gate_keeps_bounded_diagnostics_in_private_spools() {
         rustc: Path::new("/usr/bin/true").to_path_buf(),
         environment: BTreeMap::<OsString, OsString>::new(),
     };
+    let controls = snapshot.controls.clone();
     let completion = snapshot
-        .run_gate(&tools, &[], &std::sync::atomic::AtomicBool::new(false))
+        .run_gate(&tools, &[], &controls)
         .expect("supervised failing gate");
     assert!(!completion.success);
     assert_eq!(completion.code, Some(23));
@@ -258,18 +259,20 @@ fn setup_signal_after_snapshot_allocation_drops_private_snapshot() {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while (signals.signal_status().is_none()
             || !signals
-                .cancellation
-                .load(std::sync::atomic::Ordering::Relaxed))
+                .route
+                .setup_gate_cancellation
+                .load(Ordering::Relaxed))
             && std::time::Instant::now() < deadline
         {
             thread::park_timeout(std::time::Duration::from_millis(10));
         }
         assert_eq!(signals.signal_status(), Some(143));
-        assert!(signals.term.load(std::sync::atomic::Ordering::Relaxed));
+        assert!(signals.route.term.load(Ordering::Relaxed));
         assert!(
             signals
-                .cancellation
-                .load(std::sync::atomic::Ordering::Relaxed)
+                .route
+                .setup_gate_cancellation
+                .load(Ordering::Relaxed)
         );
         drop(snapshot);
         assert_eq!(
@@ -367,3 +370,4 @@ fn setup_signal_after_snapshot_allocation_drops_private_snapshot() {
 
 mod index;
 mod paths;
+mod recovery;

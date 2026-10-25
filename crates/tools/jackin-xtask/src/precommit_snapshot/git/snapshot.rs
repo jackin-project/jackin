@@ -6,7 +6,9 @@ use super::{
     private_spool, validate_link, write_private_new,
 };
 use crate::precommit_snapshot::{
-    process::{capture, capture_limited},
+    process::{
+        CommandBudget, EnvironmentMode, SetupControls, SpoolOutput, capture_spooled, capture_strict,
+    },
     toolchain::QualifiedTools,
 };
 use anyhow::{Context, Result, anyhow, bail, ensure};
@@ -14,13 +16,16 @@ use jackin_process::{ExecRequest, SpoolRecovery, StdioMode, exec_spooled_sync_ca
 use std::{
     ffi::{OsStr, OsString},
     fs,
-    io::Write,
+    io::{BufReader, Read, Write},
     os::unix::{ffi::OsStrExt, fs::PermissionsExt},
     path::{Path, PathBuf},
     process::Command,
-    sync::atomic::AtomicBool,
-    time::Duration,
 };
+
+const STAGED_INDEX_OUTPUT_LIMIT: usize = 1024 * 1024 * 1024;
+const STAGED_INDEX_STDERR_LIMIT: usize = 32 * 1024 * 1024;
+const STAGED_INDEX_HEADER_LIMIT: usize = 256;
+const STAGED_SYMLINK_PATH_LIMIT: usize = 1024 * 1024;
 
 impl OwnedSnapshot {
     pub(in crate::precommit_snapshot) fn create(live: &LiveRepository) -> Result<Self> {
@@ -56,7 +61,15 @@ impl OwnedSnapshot {
             .env("PATH", "/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin")
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_CONFIG_GLOBAL", "/dev/null");
-        let init = capture(&mut init_command).context("initializing private Git repository")?;
+        let init = capture_strict(
+            &mut init_command,
+            &live.controls,
+            EnvironmentMode::Clear,
+            super::super::process::METADATA_OUTPUT_LIMIT,
+            1024 * 1024,
+            CommandBudget::Probe,
+        )
+        .context("initializing private Git repository")?;
         checked(init, "initializing private Git repository")?;
         let index = git_dir.join("index");
         let objects = git_dir.join("objects");
@@ -69,6 +82,9 @@ impl OwnedSnapshot {
             objects,
             invocation_dir: live.invocation_dir.clone(),
             extra_alternates: live.alternates.clone(),
+            controls: live.controls.clone(),
+            #[cfg(test)]
+            test_git_program: None,
         };
         snapshot.write_alternates(&live.objects)?;
         if let Some(path) = &live.shallow {
@@ -122,7 +138,7 @@ impl OwnedSnapshot {
     }
 
     pub(in crate::precommit_snapshot) fn admit(&self, tree: &OsStr) -> Result<()> {
-        self.admit_with_inventory_limit(tree, 64 * 1024 * 1024)
+        self.admit_with_inventory_limit(tree, STAGED_INDEX_OUTPUT_LIMIT)
     }
 
     pub(in crate::precommit_snapshot) fn admit_with_inventory_limit(
@@ -130,26 +146,18 @@ impl OwnedSnapshot {
         _tree: &OsStr,
         inventory_limit: usize,
     ) -> Result<()> {
-        let entries = self.git_bytes_limited(&["ls-files", "--stage", "-z"], inventory_limit)?;
-        for record in entries
-            .split(|byte| *byte == 0)
-            .filter(|record| !record.is_empty())
-        {
-            let separator = record
-                .iter()
-                .position(|byte| *byte == b'\t')
-                .context("parsing staged index entry")?;
-            let metadata = &record[..separator];
-            let path = &record[separator + 1..];
-            if metadata.starts_with(b"160000 ") {
-                bail!("staged submodules require an isolated source checkout");
-            }
-            if metadata.starts_with(b"120000 ") {
-                let link_path = self.root.join(OsStr::from_bytes(path));
-                validate_link(&self.root, &link_path)?;
-            }
-        }
-        Ok(())
+        let mut entries = self.git_spooled(
+            &["ls-files", "--stage", "-z"],
+            inventory_limit,
+            STAGED_INDEX_STDERR_LIMIT,
+            CommandBudget::PhaseRemainder,
+        )?;
+        ensure!(
+            entries.status().success(),
+            "running isolated Git command failed with {}",
+            entries.status()
+        );
+        admit_staged_index_entries(&self.root, entries.stdout_mut())
     }
 
     pub(in crate::precommit_snapshot) fn retain(&mut self) -> Option<PathBuf> {
@@ -157,6 +165,20 @@ impl OwnedSnapshot {
             return Some(directory.keep());
         }
         None
+    }
+
+    #[cfg(test)]
+    pub(in crate::precommit_snapshot) fn set_test_git_program(
+        &mut self,
+        program: &Path,
+    ) -> Result<()> {
+        ensure!(
+            program.is_absolute(),
+            "test Git executable must be absolute"
+        );
+        ensure!(program.is_file(), "test Git executable is missing");
+        self.test_git_program = Some(program.to_path_buf());
+        Ok(())
     }
 
     pub(in crate::precommit_snapshot) fn spool_failure_error(
@@ -216,7 +238,7 @@ impl OwnedSnapshot {
         &mut self,
         tools: &QualifiedTools,
         hook_arguments: &[OsString],
-        cancellation: &AtomicBool,
+        controls: &SetupControls,
     ) -> Result<GateCompletion> {
         let stdout = private_spool(&self.scratch_root.join("stdout.log"))?;
         let stderr = private_spool(&self.scratch_root.join("stderr.log"))?;
@@ -237,15 +259,18 @@ impl OwnedSnapshot {
         request.stdin_mode = StdioMode::Null;
         request.stdout_mode = StdioMode::Capture;
         request.stderr_mode = StdioMode::Capture;
-        request.timeout = Some(Duration::from_mins(30));
+        request.timeout = Some(controls.child_timeout(CommandBudget::PhaseRemainder)?);
         request.stdout_limit = Some(32 * 1024 * 1024);
         request.stderr_limit = Some(32 * 1024 * 1024);
         request.retry.max_retries = 0;
-        match exec_spooled_sync_cancellable(&request, stdout, stderr, cancellation) {
+        match exec_spooled_sync_cancellable(&request, stdout, stderr, controls.cancellation()) {
             Ok(result) => Ok(GateCompletion {
                 success: result.success,
                 code: result.code,
                 signal: result.signal,
+                execution: result.execution,
+                capture: result.capture,
+                failures: result.failures,
                 cleanup: result.cleanup,
             }),
             Err(error) => {
@@ -261,22 +286,30 @@ impl OwnedSnapshot {
         }
     }
 
-    pub(in crate::precommit_snapshot) fn collect_fixes(&self, tree: &OsStr) -> Result<Vec<u8>> {
+    pub(in crate::precommit_snapshot) fn collect_fixes(
+        &self,
+        tree: &OsStr,
+        controls: &SetupControls,
+    ) -> Result<Vec<u8>> {
         const PATH_LIST_LIMIT: usize = 64 * 1024 * 1024;
         const PATCH_LIMIT: usize = 256 * 1024 * 1024;
         let paths = self.scratch_root.join("new-paths");
-        let listed = self.git_bytes_limited(&["ls-files", "--others", "-z"], PATH_LIST_LIMIT)?;
+        let listed =
+            self.git_bytes_limited(&["ls-files", "--others", "-z"], PATH_LIST_LIMIT, controls)?;
         write_private_new(&paths, &listed)?;
         if !listed.is_empty() {
             let pathspec = OsString::from(format!("--pathspec-from-file={}", paths.display()));
-            self.git_os([
-                OsString::from("--literal-pathspecs"),
-                OsString::from("add"),
-                OsString::from("--force"),
-                OsString::from("--intent-to-add"),
-                pathspec,
-                OsString::from("--pathspec-file-nul"),
-            ])?;
+            self.git_os_with_controls(
+                [
+                    OsString::from("--literal-pathspecs"),
+                    OsString::from("add"),
+                    OsString::from("--force"),
+                    OsString::from("--intent-to-add"),
+                    pathspec,
+                    OsString::from("--pathspec-file-nul"),
+                ],
+                controls,
+            )?;
         }
         let args = vec![
             OsString::from("--literal-pathspecs"),
@@ -286,34 +319,99 @@ impl OwnedSnapshot {
             OsString::from("--"),
         ];
         // The tree hash is an object identifier from write-tree, never user input.
-        let output = self.git_bytes_limited(&args, PATCH_LIMIT)?;
+        let output = self.git_bytes_limited(&args, PATCH_LIMIT, controls)?;
         Ok(output)
     }
 
     fn git(&self, args: &[impl AsRef<OsStr>]) -> Result<OsString> {
-        let output =
-            capture(&mut self.git_command(args)).context("running isolated Git command")?;
+        let output = capture_strict(
+            &mut self.git_command(args),
+            &self.controls,
+            EnvironmentMode::Clear,
+            super::super::process::METADATA_OUTPUT_LIMIT,
+            1024 * 1024,
+            CommandBudget::Probe,
+        )
+        .context("running isolated Git command")?;
         let bytes = checked(output, "running isolated Git command")?;
         let text = String::from_utf8(bytes).context("decoding isolated Git output")?;
         Ok(OsString::from(text.trim_end_matches(['\r', '\n'])))
     }
 
     fn git_os(&self, args: impl IntoIterator<Item = OsString>) -> Result<OsString> {
+        self.git_os_with_controls(args, &self.controls)
+    }
+
+    fn git_os_with_controls(
+        &self,
+        args: impl IntoIterator<Item = OsString>,
+        controls: &SetupControls,
+    ) -> Result<OsString> {
         let args = args.into_iter().collect::<Vec<_>>();
-        let output =
-            capture(&mut self.git_command(&args)).context("running isolated Git command")?;
+        let output = capture_strict(
+            &mut self.git_command(&args),
+            controls,
+            EnvironmentMode::Clear,
+            super::super::process::METADATA_OUTPUT_LIMIT,
+            1024 * 1024,
+            CommandBudget::Probe,
+        )
+        .context("running isolated Git command")?;
         let text = String::from_utf8(checked(output, "running isolated Git command")?)
             .context("decoding isolated Git output")?;
         Ok(OsString::from(text.trim_end_matches(['\r', '\n'])))
     }
 
-    fn git_bytes_limited(&self, args: &[impl AsRef<OsStr>], limit: usize) -> Result<Vec<u8>> {
-        let output = capture_limited(&mut self.git_command(args), limit, 1024 * 1024)
-            .context("capturing bounded isolated Git output")?;
+    fn git_bytes_limited(
+        &self,
+        args: &[impl AsRef<OsStr>],
+        limit: usize,
+        controls: &SetupControls,
+    ) -> Result<Vec<u8>> {
+        let output = capture_strict(
+            &mut self.git_command(args),
+            controls,
+            EnvironmentMode::Clear,
+            limit,
+            1024 * 1024,
+            CommandBudget::PhaseRemainder,
+        )
+        .context("capturing bounded isolated Git output")?;
         checked(output, "running isolated Git command")
     }
 
+    fn git_spooled(
+        &self,
+        args: &[impl AsRef<OsStr>],
+        stdout_limit: usize,
+        stderr_limit: usize,
+        budget: CommandBudget,
+    ) -> Result<SpoolOutput> {
+        capture_spooled(
+            &mut self.git_command(args),
+            &self.controls,
+            EnvironmentMode::Clear,
+            stdout_limit,
+            stderr_limit,
+            budget,
+        )
+        .context("capturing descriptor-backed isolated Git output")
+    }
+
     fn git_command(&self, args: &[impl AsRef<OsStr>]) -> Command {
+        #[cfg(test)]
+        if let Some(program) = self.test_git_program.as_deref() {
+            return super::isolated_git_with_program(
+                program,
+                &self.invocation_dir,
+                &self.root,
+                &self.git_dir,
+                &self.index,
+                &self.objects,
+                self.extra_alternates.as_deref(),
+                args,
+            );
+        }
         isolated_git(
             &self.invocation_dir,
             &self.root,
@@ -375,4 +473,80 @@ impl OwnedSnapshot {
         encoded.extend_from_slice(b"\"\n");
         fs::write(file, encoded).context("writing Git-quoted object alternate")
     }
+}
+
+fn admit_staged_index_entries(root: &Path, stdout: &mut fs::File) -> Result<()> {
+    let mut reader = BufReader::with_capacity(64 * 1024, stdout);
+    let mut chunk = vec![0; 64 * 1024].into_boxed_slice();
+    let mut header = Vec::with_capacity(32);
+    let mut path = Vec::new();
+    let mut after_tab = false;
+    let mut path_is_symlink = false;
+    let mut path_has_bytes = false;
+
+    loop {
+        let count = reader
+            .read(&mut chunk)
+            .context("reading staged index spool")?;
+        if count == 0 {
+            break;
+        }
+        for byte in &chunk[..count] {
+            if !after_tab {
+                match *byte {
+                    0 => {
+                        bail!("parsing staged index entry without a path separator");
+                    }
+                    b'\t' => {
+                        ensure!(!header.is_empty(), "parsing empty staged index metadata");
+                        ensure!(
+                            !header.starts_with(b"160000 "),
+                            "staged submodules require an isolated source checkout"
+                        );
+                        path_is_symlink = header.starts_with(b"120000 ");
+                        after_tab = true;
+                    }
+                    _ => {
+                        ensure!(
+                            header.len() < STAGED_INDEX_HEADER_LIMIT,
+                            "staged index metadata record exceeds its limit"
+                        );
+                        header.push(*byte);
+                    }
+                }
+                continue;
+            }
+
+            if *byte == 0 {
+                ensure!(
+                    path_has_bytes,
+                    "parsing staged index entry with an empty path"
+                );
+                if path_is_symlink {
+                    let link_path = root.join(OsStr::from_bytes(&path));
+                    validate_link(root, &link_path)?;
+                }
+                header.clear();
+                path.clear();
+                after_tab = false;
+                path_is_symlink = false;
+                path_has_bytes = false;
+            } else {
+                path_has_bytes = true;
+                if path_is_symlink {
+                    ensure!(
+                        path.len() < STAGED_SYMLINK_PATH_LIMIT,
+                        "staged symlink path exceeds its resolution limit"
+                    );
+                    path.push(*byte);
+                }
+            }
+        }
+    }
+
+    ensure!(
+        !after_tab && header.is_empty(),
+        "staged index spool ended with an incomplete record"
+    );
+    Ok(())
 }

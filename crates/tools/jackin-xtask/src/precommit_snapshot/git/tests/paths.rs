@@ -58,26 +58,31 @@ fn git_relative_path_overrides_resolve_from_repository_root_and_snapshot_selecte
 
 fn assert_child_git_path_resolution(root: &Path) {
     let invocation = root.join("nested");
+    let controls = SetupControls::for_test(std::time::Duration::from_mins(10));
     let discovered_root =
-        super::super::output_live_at(&invocation, &["rev-parse", "--show-toplevel"])
+        super::super::output_live_at(&invocation, &["rev-parse", "--show-toplevel"], &controls)
             .expect("Git discovers repository from nested invocation");
     assert_eq!(
         fs::canonicalize(discovered_root).expect("physical discovered repository root"),
         root
     );
     assert_eq!(
-        super::super::output_live_at(&invocation, &["cat-file", "-t", "HEAD"])
+        super::super::output_live_at(&invocation, &["cat-file", "-t", "HEAD"], &controls)
             .expect("Git reads repository HEAD from nested invocation"),
         "commit"
     );
 
-    let shallow_state =
-        super::super::output_live_at(&invocation, &["rev-parse", "--is-shallow-repository"])
-            .expect("Git shallow state");
+    let shallow_state = super::super::output_live_at(
+        &invocation,
+        &["rev-parse", "--is-shallow-repository"],
+        &controls,
+    )
+    .expect("Git shallow state");
     assert_eq!(shallow_state, "true");
     let git_index = super::super::output_live_path_at(
         &invocation,
         &["rev-parse", "--path-format=absolute", "--git-path", "index"],
+        &controls,
     )
     .expect("Git-selected index path");
     let git_objects = super::super::output_live_path_at(
@@ -88,17 +93,22 @@ fn assert_child_git_path_resolution(root: &Path) {
             "--git-path",
             "objects",
         ],
+        &controls,
     )
     .expect("Git-selected object directory");
     let git_shared_index = super::super::output_live_optional_path_at(
         &invocation,
         &["rev-parse", "--path-format=absolute", "--shared-index-path"],
+        &controls,
     )
     .expect("Git shared-index path query")
     .expect("Git selected shared-index backing");
-    let git_directory =
-        super::super::output_live_path_at(&invocation, &["rev-parse", "--absolute-git-dir"])
-            .expect("Git-selected worktree directory");
+    let git_directory = super::super::output_live_path_at(
+        &invocation,
+        &["rev-parse", "--absolute-git-dir"],
+        &controls,
+    )
+    .expect("Git-selected worktree directory");
 
     // Git can refresh a split-index backing file's mtime while answering path
     // queries, so capture custody only after all Git oracle queries complete.
@@ -212,7 +222,9 @@ fn collects_tracked_and_new_path_fixes_against_captured_tree() {
         .expect("materialize tree");
     fs::write(snapshot.root.join("staged.txt"), "fixed\n").expect("tracked fix");
     fs::write(snapshot.root.join("created file\nname"), "new\n").expect("new fix");
-    let patch = snapshot.collect_fixes(&tree).expect("collect patch");
+    let patch = snapshot
+        .collect_fixes(&tree, &snapshot.controls)
+        .expect("collect patch");
     assert!(patch.starts_with(b"diff --git "));
     assert!(String::from_utf8_lossy(&patch).contains("created file\\nname"));
     assert!(String::from_utf8_lossy(&patch).contains("fixed"));
@@ -237,7 +249,9 @@ fn collects_new_files_whose_names_look_like_git_pathspec_magic() {
         "must be included in evidence\n",
     )
     .expect("create pathspec-shaped filename");
-    let patch = snapshot.collect_fixes(&tree).expect("collect patch");
+    let patch = snapshot
+        .collect_fixes(&tree, &snapshot.controls)
+        .expect("collect patch");
     let patch = String::from_utf8_lossy(&patch);
     assert!(patch.contains("must be included in evidence"));
     assert!(patch.contains("(exclude)*"));

@@ -1,221 +1,28 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use anyhow::{Context, Result, bail, ensure};
-use jackin_process::SpoolCleanupObservation;
-use sha2::{Digest, Sha256};
 use std::{
     collections::VecDeque,
-    env,
     ffi::{OsStr, OsString},
     fs,
-    io::{Read, Write},
-    os::unix::{ffi::OsStringExt, fs::MetadataExt},
+    io::Write,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Command,
 };
+
+use anyhow::{Context, Result, ensure};
+use jackin_process::SpoolCleanupObservation;
 use tempfile::TempDir;
 
-use super::process::capture;
+use super::process::SetupControls;
+
+mod capture;
 mod snapshot;
-
-#[derive(Debug)]
-pub(super) struct LiveRepository {
-    pub(super) invocation_dir: PathBuf,
-    pub(super) root: PathBuf,
-    pub(super) index: PathBuf,
-    pub(super) shared_index: Option<PathBuf>,
-    pub(super) objects: PathBuf,
-    pub(super) common_git_dir: PathBuf,
-    pub(super) worktree_git_dir: PathBuf,
-    pub(super) shallow: Option<PathBuf>,
-    pub(super) alternates: Option<OsString>,
-    pub(super) object_format: OsString,
-    pub(super) head: Option<OsString>,
-    pub(super) head_tree: Option<String>,
-    index_inputs: Vec<IndexInput>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct IndexInput {
-    path: PathBuf,
-    device: u64,
-    inode: u64,
-    mode: u32,
-    links: u64,
-    length: u64,
-    mtime: i64,
-    mtime_nsec: i64,
-    digest: [u8; 32],
-}
-
-impl LiveRepository {
-    pub(super) fn capture() -> Result<Self> {
-        Self::capture_at(&env::current_dir().context("reading current directory")?)
-    }
-
-    pub(super) fn capture_at(root: &Path) -> Result<Self> {
-        let invocation_dir = fs::canonicalize(root).context("resolving invocation directory")?;
-        let root = output_live_path_at(&invocation_dir, &["rev-parse", "--show-toplevel"])?;
-        let root = fs::canonicalize(&root).context("resolving physical repository root")?;
-        let index = output_live_path_at(
-            &root,
-            &["rev-parse", "--path-format=absolute", "--git-path", "index"],
-        )?;
-        let shared_index = output_live_optional_path_at(
-            &root,
-            &["rev-parse", "--path-format=absolute", "--shared-index-path"],
-        )?;
-        let objects = output_live_path_at(
-            &root,
-            &[
-                "rev-parse",
-                "--path-format=absolute",
-                "--git-path",
-                "objects",
-            ],
-        )?;
-        let common_git_dir = output_live_path_at(
-            &root,
-            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        )?;
-        let worktree_git_dir = output_live_path_at(&root, &["rev-parse", "--absolute-git-dir"])?;
-        let shallow = match env::var_os("GIT_SHALLOW_FILE") {
-            Some(path) => {
-                let path = PathBuf::from(path);
-                if path.is_absolute() {
-                    path
-                } else {
-                    root.join(path)
-                }
-            }
-            None => output_live_path_at(
-                &root,
-                &[
-                    "rev-parse",
-                    "--path-format=absolute",
-                    "--git-path",
-                    "shallow",
-                ],
-            )
-            .unwrap_or_default(),
-        };
-        let object_format = OsString::from(output_live_at(
-            &root,
-            &["rev-parse", "--show-object-format"],
-        )?);
-        let head = output_live_at(&root, &["rev-parse", "--verify", "--quiet", "HEAD"])
-            .ok()
-            .map(OsString::from);
-        let head_tree =
-            output_live_at(&root, &["rev-parse", "--verify", "--quiet", "HEAD^{tree}"]).ok();
-        let index_inputs = index_inputs(&index, shared_index.as_deref())?;
-        let alternates = env::var_os("GIT_ALTERNATE_OBJECT_DIRECTORIES");
-        ensure!(objects.is_dir(), "Git object directory is missing");
-        ensure!(common_git_dir.is_dir(), "Git common directory is missing");
-        ensure!(
-            worktree_git_dir.is_dir(),
-            "Git worktree directory is missing"
-        );
-        Ok(Self {
-            invocation_dir,
-            root,
-            index,
-            shared_index,
-            objects,
-            common_git_dir,
-            worktree_git_dir,
-            shallow: (!shallow.as_os_str().is_empty() && shallow.is_file()).then_some(shallow),
-            alternates,
-            object_format,
-            head,
-            head_tree,
-            index_inputs,
-        })
-    }
-}
-
-fn index_inputs(index: &Path, shared_index: Option<&Path>) -> Result<Vec<IndexInput>> {
-    let mut paths = Vec::with_capacity(2);
-    match fs::symlink_metadata(index) {
-        Ok(_) => paths.push(index.to_path_buf()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            return Err(error)
-                .with_context(|| format!("inspecting live index {}", index.display()));
-        }
-    }
-    if let Some(shared_index) = shared_index {
-        paths.push(shared_index.to_path_buf());
-    }
-    paths.sort();
-    let mut inputs = Vec::with_capacity(paths.len());
-    for path in paths {
-        let before = fs::symlink_metadata(&path)
-            .with_context(|| format!("inspecting live index input {}", path.display()))?;
-        ensure!(
-            before.file_type().is_file(),
-            "live index input is not a regular file: {}",
-            path.display()
-        );
-        let mut file = super::process::open_readonly(&path)
-            .with_context(|| format!("opening live index input {}", path.display()))?;
-        let opened = file.metadata().context("reading opened index metadata")?;
-        ensure!(
-            same_file_identity(&before, &opened),
-            "live index input changed while opening"
-        );
-        let mut hasher = Sha256::new();
-        let mut buffer = vec![0u8; 64 * 1024].into_boxed_slice();
-        loop {
-            let count = file.read(&mut buffer).context("hashing live index input")?;
-            if count == 0 {
-                break;
-            }
-            hasher.update(&buffer[..count]);
-        }
-        let after_fd = file.metadata().context("restating opened index input")?;
-        let after_path = fs::symlink_metadata(&path)
-            .with_context(|| format!("restating live index input {}", path.display()))?;
-        ensure!(
-            same_file_identity(&before, &after_fd)
-                && same_file_identity(&before, &after_path)
-                && same_file_content_state(&before, &after_fd)
-                && same_file_content_state(&before, &after_path),
-            "live index input changed while it was hashed"
-        );
-        inputs.push(IndexInput {
-            path,
-            device: before.dev(),
-            inode: before.ino(),
-            mode: before.mode(),
-            links: before.nlink(),
-            length: before.len(),
-            mtime: before.mtime(),
-            mtime_nsec: before.mtime_nsec(),
-            digest: hasher.finalize().into(),
-        });
-    }
-    if !inputs.iter().any(|input| input.path == index) {
-        ensure!(
-            !index.exists(),
-            "live Git index could not be admitted as a regular file"
-        );
-    }
-    Ok(inputs)
-}
-
-fn same_file_identity(left: &fs::Metadata, right: &fs::Metadata) -> bool {
-    left.dev() == right.dev() && left.ino() == right.ino() && left.file_type() == right.file_type()
-}
-
-fn same_file_content_state(left: &fs::Metadata, right: &fs::Metadata) -> bool {
-    left.mode() == right.mode()
-        && left.nlink() == right.nlink()
-        && left.len() == right.len()
-        && left.mtime() == right.mtime()
-        && left.mtime_nsec() == right.mtime_nsec()
-}
+pub(in crate::precommit_snapshot) use capture::{LiveRepository, checked, index_inputs};
+#[cfg(test)]
+pub(in crate::precommit_snapshot) use capture::{
+    output_live_at, output_live_optional_path_at, output_live_path_at, without_record_terminator,
+};
 
 pub(super) struct OwnedSnapshot {
     directory: Option<TempDir>,
@@ -226,12 +33,18 @@ pub(super) struct OwnedSnapshot {
     objects: PathBuf,
     invocation_dir: PathBuf,
     extra_alternates: Option<OsString>,
+    pub(in crate::precommit_snapshot) controls: SetupControls,
+    #[cfg(test)]
+    test_git_program: Option<PathBuf>,
 }
 
 pub(super) struct GateCompletion {
     pub(super) success: bool,
     pub(super) code: Option<i32>,
     pub(super) signal: Option<i32>,
+    pub(super) execution: jackin_process::SpoolExecutionObservation,
+    pub(super) capture: jackin_process::SpoolCaptureObservation,
+    pub(super) failures: Vec<jackin_process::SpoolFailure>,
     pub(super) cleanup: SpoolCleanupObservation,
 }
 
@@ -246,6 +59,56 @@ fn isolated_git(
 ) -> Command {
     let mut command = Command::new("git");
     command.args(args.iter().map(AsRef::as_ref));
+    configure_isolated_git(
+        &mut command,
+        invocation_dir,
+        root,
+        git_dir,
+        index,
+        objects,
+        extra_alternates,
+    );
+    command
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "private test seam mirrors the isolated Git command boundary"
+)]
+fn isolated_git_with_program(
+    program: &Path,
+    invocation_dir: &Path,
+    root: &Path,
+    git_dir: &Path,
+    index: &Path,
+    objects: &Path,
+    extra_alternates: Option<&OsStr>,
+    args: &[impl AsRef<OsStr>],
+) -> Command {
+    let mut command = Command::new(program);
+    command.args(args.iter().map(AsRef::as_ref));
+    configure_isolated_git(
+        &mut command,
+        invocation_dir,
+        root,
+        git_dir,
+        index,
+        objects,
+        extra_alternates,
+    );
+    command
+}
+
+fn configure_isolated_git(
+    command: &mut Command,
+    invocation_dir: &Path,
+    root: &Path,
+    git_dir: &Path,
+    index: &Path,
+    objects: &Path,
+    extra_alternates: Option<&OsStr>,
+) {
     command
         .current_dir(invocation_dir)
         .env_clear()
@@ -260,56 +123,6 @@ fn isolated_git(
     if let Some(alternates) = extra_alternates {
         command.env("GIT_ALTERNATE_OBJECT_DIRECTORIES", alternates);
     }
-    command
-}
-
-fn output_live_path_at(root: &Path, args: &[&str]) -> Result<PathBuf> {
-    output_live_optional_path_at(root, args)?.context("Git returned an empty path record")
-}
-
-fn output_live_optional_path_at(root: &Path, args: &[&str]) -> Result<Option<PathBuf>> {
-    let mut command = Command::new("git");
-    command.args(args).current_dir(root);
-    let output =
-        capture(&mut command).with_context(|| format!("running git {}", args.join(" ")))?;
-    let bytes = checked(output, "reading live Git path")?;
-    if bytes.is_empty() {
-        return Ok(None);
-    }
-    let path = without_record_terminator(&bytes)?;
-    ensure!(!path.contains(&0), "Git returned an invalid path record");
-    Ok((!path.is_empty()).then(|| PathBuf::from(OsString::from_vec(path.to_vec()))))
-}
-
-fn output_live_at(root: &Path, args: &[&str]) -> Result<String> {
-    let mut command = Command::new("git");
-    command.args(args).current_dir(root);
-    let output =
-        capture(&mut command).with_context(|| format!("running git {}", args.join(" ")))?;
-    let bytes = checked(output, "reading live Git text state")?;
-    let record = without_record_terminator(&bytes)?;
-    ensure!(
-        !record.contains(&0) && !record.contains(&b'\n') && !record.contains(&b'\r'),
-        "Git returned a malformed text record"
-    );
-    let text = std::str::from_utf8(record).context("decoding live Git text state")?;
-    ensure!(text.is_ascii(), "Git returned non-ASCII text state");
-    Ok(text.to_owned())
-}
-
-fn without_record_terminator(bytes: &[u8]) -> Result<&[u8]> {
-    ensure!(
-        bytes.last() == Some(&b'\n'),
-        "Git output is missing its record terminator"
-    );
-    Ok(&bytes[..bytes.len() - 1])
-}
-
-fn checked(output: Output, operation: &str) -> Result<Vec<u8>> {
-    if !output.status.success() {
-        bail!("{operation} failed with {}", output.status);
-    }
-    Ok(output.stdout)
 }
 
 fn private_spool(path: &Path) -> Result<fs::File> {

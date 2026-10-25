@@ -16,10 +16,11 @@ steps {
   ["gitleaks"] = Builtins.gitleaks
   // `--all`: the root Cargo.toml is a virtual manifest, where `cargo fmt --manifest-path` fails with
   // "Failed to find targets". Run from hk's matched workspace directory instead.
+  // The admission helper checks the matched manifest before allowing the guard to start Mise.
   ["cargo_fmt"] = (Builtins.cargo_fmt) {
     workspace_indicator = "Cargo.toml"
     dir = "{{workspace}}"
-    prefix = "rust-build-guard -- mise exec --"
+    prefix = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-workspace-admission\" \"$(pwd -P)/Cargo.toml\" -- mise exec --"
     check { command = "cargo fmt --all --check" }
     check_list_files { command = "cargo fmt --all --check -- --files-with-diff" }
     fix { command = "cargo fmt --all" }
@@ -30,7 +31,7 @@ steps {
   ["cargo_check"] = (Builtins.cargo_check) {
     workspace_indicator = "Cargo.toml"
     dir = "{{workspace}}"
-    prefix = "rust-build-guard -- mise exec --"
+    prefix = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-workspace-admission\" \"$(pwd -P)/Cargo.toml\" -- mise exec --"
     exclude = List("crates/tools/jackin-lints/**")
     check { command = "cargo check --locked --quiet" }
     fix { command = "cargo fix --locked --allow-dirty --allow-staged --quiet" }
@@ -38,7 +39,7 @@ steps {
   ["cargo_clippy"] = (Builtins.cargo_clippy) {
     workspace_indicator = "Cargo.toml"
     dir = "{{workspace}}"
-    prefix = "rust-build-guard -- mise exec --"
+    prefix = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-workspace-admission\" \"$(pwd -P)/Cargo.toml\" -- mise exec --"
     exclude = List("crates/tools/jackin-lints/**")
     check { command = "cargo clippy --locked --quiet" }
     fix { command = "cargo clippy --locked --fix --allow-dirty --allow-staged --quiet" }

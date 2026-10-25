@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+die() {
+  printf 'hk-workspace-admission: %s\n' "$1" >&2
+  exit "$2"
+}
+
+[[ $# -ge 6 ]] || die 'usage: hk-workspace-admission MANIFEST -- mise exec -- cargo ARGS...' 64
+manifest_input=$1
+shift
+[[ $1 == -- && $2 == mise && $3 == exec && $4 == -- && $5 == cargo ]] ||
+  die 'expected the guarded mise Cargo command' 64
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die 'cannot resolve the Git repository root' 65
+cd -P "$repo_root" || die 'cannot resolve the physical Git repository root' 65
+repo_root=$(pwd -P)
+case "$manifest_input" in
+  /*) manifest_path=$manifest_input ;;
+  *) manifest_path="$repo_root/$manifest_input" ;;
+esac
+manifest_name=${manifest_path##*/}
+[[ "$manifest_name" == Cargo.toml && ! -L "$manifest_path" && -f "$manifest_path" ]] ||
+  die "expected a regular Cargo.toml inside this repository: $manifest_path" 65
+manifest_dir=${manifest_path%/*}
+manifest_dir=$(cd -P "$manifest_dir" 2>/dev/null && pwd -P) ||
+  die 'cannot resolve the physical Cargo workspace directory' 65
+if [[ "$repo_root" == / ]]; then
+  [[ "$manifest_dir" == /* ]] || die 'manifest resolves outside this repository' 65
+else
+  [[ "$manifest_dir" == "$repo_root" || "$manifest_dir" == "$repo_root/"* ]] ||
+    die 'manifest resolves outside this repository' 65
+fi
+cd -P "$manifest_dir" || die 'cannot enter the physical Cargo workspace directory' 65
+
+guard_path=
+path_list=${PATH:-}
+while :; do
+  finished=0
+  case "$path_list" in
+    *:*) path_entry=${path_list%%:*}; path_list=${path_list#*:} ;;
+    *) path_entry=$path_list; path_list=; finished=1 ;;
+  esac
+  candidate="${path_entry:-.}/rust-build-guard"
+  if [[ -e "$candidate" || -L "$candidate" ]]; then
+    guard_path=$candidate
+    break
+  fi
+  [[ $finished -eq 0 ]] || break
+done
+[[ -n "$guard_path" ]] || die 'rust-build-guard is required but was not found in PATH' 69
+[[ -f "$guard_path" && -x "$guard_path" ]] || die 'rust-build-guard is not a regular executable' 69
+
+exec "$guard_path" "$@"

@@ -80,3 +80,7 @@ run = """
 mbx nextest run --locked --package jackin-xtask --bin jackin-xtask --filterset 'test(/^custom_lints::tests::(compiler_identity_accepts_only_qualified_commit_release_and_safe_host|library_lookup_rejects_missing_and_symlinked_libraries|environment_cleans_inherited_compiler_and_dylint_state_and_preserves_spaced_paths|pipeline_checks_components_builds_one_fresh_abi_library_and_runs_workspace_dylint|missing_nightly_component_stops_before_compilation|nightly_build_failure_stops_before_nextest_and_workspace_lints|case_01::(cargo_home_uses_explicit_home_or_real_uid_passwd_fallback|missing_passwd_home_stops_before_the_first_child_command|cargo_paths_follow_symlinks_before_parent_and_keep_missing_tail_behavior|non_strict_paths_keep_dangling_loop_and_not_directory_spellings|pipeline_keeps_target_binding_after_target_alias_is_repointed))$/)' --retries 0 --test-threads 1 --no-tests=fail &&
 cargo run --locked -p jackin-xtask -- custom-lints
 """
+
+[tasks."test:hk-workspace-admission"]
+description = "Exercise Cargo admission through the pinned hk 2.8.0 config"
+run = "bash scripts/test-hk-workspace-admission"

@@ -25,41 +25,128 @@ pub(crate) fn verify_provision_tool_paths(
     toolchain::verify_provision_tool_paths(source_root, cargo, rustc)
 }
 
-struct SetupSignals {
-    cancellation: Arc<AtomicBool>,
+#[derive(Clone, Copy)]
+enum OwnerSignal {
+    Hup,
+    Int,
+    Term,
+}
+
+#[derive(Clone)]
+struct SignalRoute {
+    recovery_armed: Arc<AtomicBool>,
+    setup_gate_cancellation: Arc<AtomicBool>,
+    recovery_cancellation: Arc<AtomicBool>,
     hup: Arc<AtomicBool>,
     int: Arc<AtomicBool>,
     term: Arc<AtomicBool>,
 }
 
+impl SignalRoute {
+    fn record(&self, signal: OwnerSignal) {
+        let recovery_phase = self.recovery_armed.load(Ordering::SeqCst);
+        if recovery_phase {
+            self.recovery_cancellation.store(true, Ordering::SeqCst);
+        } else {
+            self.setup_gate_cancellation.store(true, Ordering::SeqCst);
+        }
+        match signal {
+            OwnerSignal::Hup => self.hup.store(true, Ordering::SeqCst),
+            OwnerSignal::Int => self.int.store(true, Ordering::SeqCst),
+            OwnerSignal::Term => self.term.store(true, Ordering::SeqCst),
+        }
+    }
+}
+
+struct SetupSignals {
+    route: SignalRoute,
+}
+
+#[derive(Clone)]
+struct OwnerBudgets {
+    setup: Duration,
+    gate: Duration,
+    recovery: Duration,
+    #[cfg(test)]
+    test_git_program: Option<std::path::PathBuf>,
+}
+
+impl OwnerBudgets {
+    const fn production() -> Self {
+        Self {
+            setup: Duration::from_mins(10),
+            gate: Duration::from_mins(30),
+            recovery: Duration::from_mins(10),
+            #[cfg(test)]
+            test_git_program: None,
+        }
+    }
+}
+
+#[expect(
+    unsafe_code,
+    reason = "signal callback touches only preallocated lock-free atomic flags"
+)]
+fn register_phase_routed_signal(
+    signal: i32,
+    route: SignalRoute,
+    owner_signal: OwnerSignal,
+) -> Result<()> {
+    // SAFETY: signal-hook requires the callback to be async-signal-safe. It
+    // reads and writes only preallocated lock-free atomic flags; it cannot
+    // panic, allocate, lock, or manage a process.
+    unsafe { signal_hook::low_level::register(signal, move || route.record(owner_signal)) }
+        .context("registering native hook cancellation")?;
+    Ok(())
+}
+
 impl SetupSignals {
     fn register() -> Result<Self> {
         let signals = Self {
-            cancellation: Arc::new(AtomicBool::new(false)),
-            hup: Arc::new(AtomicBool::new(false)),
-            int: Arc::new(AtomicBool::new(false)),
-            term: Arc::new(AtomicBool::new(false)),
+            route: SignalRoute {
+                recovery_armed: Arc::new(AtomicBool::new(false)),
+                setup_gate_cancellation: Arc::new(AtomicBool::new(false)),
+                recovery_cancellation: Arc::new(AtomicBool::new(false)),
+                hup: Arc::new(AtomicBool::new(false)),
+                int: Arc::new(AtomicBool::new(false)),
+                term: Arc::new(AtomicBool::new(false)),
+            },
         };
-        for (signal, flag) in [
-            (signal_hook::consts::signal::SIGHUP, &signals.hup),
-            (signal_hook::consts::signal::SIGINT, &signals.int),
-            (signal_hook::consts::signal::SIGTERM, &signals.term),
-            (signal_hook::consts::signal::SIGHUP, &signals.cancellation),
-            (signal_hook::consts::signal::SIGINT, &signals.cancellation),
-            (signal_hook::consts::signal::SIGTERM, &signals.cancellation),
+        for (signal, owner_signal) in [
+            (signal_hook::consts::signal::SIGHUP, OwnerSignal::Hup),
+            (signal_hook::consts::signal::SIGINT, OwnerSignal::Int),
+            (signal_hook::consts::signal::SIGTERM, OwnerSignal::Term),
         ] {
-            flag::register(signal, Arc::clone(flag))
-                .context("registering native hook cancellation")?;
+            let route = signals.route.clone();
+            register_phase_routed_signal(signal, route, owner_signal)?;
         }
         Ok(signals)
     }
 
+    fn setup_gate_controls(&self, budget: Duration) -> process::SetupControls {
+        process::SetupControls::new(Arc::clone(&self.route.setup_gate_cancellation), budget)
+    }
+
+    fn arm_recovery_with_budget(&self, budget: Duration) -> Result<process::SetupControls> {
+        ensure!(
+            self.route
+                .recovery_armed
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok(),
+            "native hook recovery phase was armed more than once"
+        );
+        Ok(process::SetupControls::new(
+            Arc::clone(&self.route.recovery_cancellation),
+            budget,
+        ))
+    }
+
     fn signal_status(&self) -> Option<u8> {
-        if self.term.load(std::sync::atomic::Ordering::Relaxed) {
+        if self.route.term.load(Ordering::Relaxed) {
             Some(143)
-        } else if self.int.load(std::sync::atomic::Ordering::Relaxed) {
+        } else if self.route.int.load(Ordering::Relaxed) {
             Some(130)
-        } else if self.hup.load(std::sync::atomic::Ordering::Relaxed) {
+        } else if self.route.hup.load(Ordering::Relaxed) {
             Some(129)
         } else {
             None
@@ -75,24 +162,59 @@ use std::{
     ffi::OsString,
     io::Write,
     process::ExitCode,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
-use anyhow::{Context, Result};
-use signal_hook::flag;
+use anyhow::{Context, Result, ensure};
 
 pub(crate) fn run_installed_from_hook(
     generation: &std::path::Path,
     arguments: &[OsString],
 ) -> Result<ExitCode> {
-    // Install handlers before repository capture or private snapshot setup can
-    // allocate resources. Setup commands remain synchronous; each phase checks
-    // cancellation after its child has exited and been reaped.
+    run_installed_from_hook_with_budgets(generation, arguments, OwnerBudgets::production())
+}
+
+fn run_installed_from_hook_with_budgets(
+    generation: &std::path::Path,
+    arguments: &[OsString],
+    budgets: OwnerBudgets,
+) -> Result<ExitCode> {
     let signals = SetupSignals::register()?;
     if let Some(code) = signals.exit_code() {
         return Ok(code);
     }
-    let live = git::LiveRepository::capture()?;
+    match run_installed_with_signals(generation, arguments, &signals, budgets) {
+        Err(error) if process::is_clean_cancellation(&error) => {
+            let _write_result = writeln!(
+                std::io::stderr().lock(),
+                "native hook recovery stopped after strict child drain; {}",
+                format_args!("{error:#}")
+            );
+            if let Some(code) = signals.exit_code() {
+                Ok(code)
+            } else {
+                Err(error)
+            }
+        }
+        result => result,
+    }
+}
+
+fn run_installed_with_signals(
+    generation: &std::path::Path,
+    arguments: &[OsString],
+    signals: &SetupSignals,
+    budgets: OwnerBudgets,
+) -> Result<ExitCode> {
+    let setup_controls = signals.setup_gate_controls(budgets.setup);
+    if let Some(code) = signals.exit_code() {
+        return Ok(code);
+    }
+    let live = git::LiveRepository::capture(&setup_controls)?;
     if let Some(code) = signals.exit_code() {
         return Ok(code);
     }
@@ -102,37 +224,65 @@ pub(crate) fn run_installed_from_hook(
         return Ok(code);
     }
     let mut snapshot = git::OwnedSnapshot::create(&live)?;
+    #[cfg(test)]
+    if let Some(program) = budgets.test_git_program.as_deref() {
+        snapshot.set_test_git_program(program)?;
+    }
     let result = (|| -> Result<ExitCode> {
         if let Some(code) = signals.exit_code() {
+            setup_controls.check_start()?;
             return Ok(code);
         }
         let tree = snapshot.capture_staged_tree()?;
         if let Some(code) = signals.exit_code() {
+            setup_controls.check_start()?;
             return Ok(code);
         }
         installation.check_pending_tree(&tree.to_string_lossy())?;
         snapshot.materialize(&tree, &live)?;
         if let Some(code) = signals.exit_code() {
+            setup_controls.check_start()?;
             return Ok(code);
         }
         snapshot.admit(&tree)?;
         if let Some(code) = signals.exit_code() {
+            setup_controls.check_start()?;
             return Ok(code);
         }
         let tools = toolchain::qualify(&snapshot)?;
         if let Some(code) = signals.exit_code() {
+            setup_controls.check_start()?;
             return Ok(code);
         }
         installation.verify_tool_hashes(&tools.cargo, &tools.rustc)?;
         if let Some(code) = signals.exit_code() {
+            setup_controls.check_start()?;
             return Ok(code);
         }
-        let completion = snapshot.run_gate(&tools, arguments, &signals.cancellation)?;
+        let gate_controls = signals.setup_gate_controls(budgets.gate);
+        let mut completion = snapshot.run_gate(&tools, arguments, &gate_controls)?;
         if !completion.cleanup.group_drained || completion.cleanup.recovery.is_some() {
             drop(completion.cleanup.recovery);
             anyhow::bail!("native hook process cleanup is uncertain");
         }
-        git::OwnedSnapshot::verify_live_index(&live)?;
+        if completion.execution.timed_out {
+            anyhow::bail!("native pre-commit gate exceeded its phase deadline");
+        }
+        ensure!(
+            completion.capture.pipes.both_reached_eof(),
+            "native pre-commit gate output pipes did not reach EOF"
+        );
+        ensure!(
+            completion.failures.is_empty(),
+            "native pre-commit gate capture reported failures: {:?}",
+            completion.failures
+        );
+        if !completion.execution.cancelled {
+            ensure!(
+                completion.capture.complete,
+                "native pre-commit gate capture did not complete"
+            );
+        }
         if let Some(path) = retain_unsuccessful_completion(&mut snapshot, completion.success) {
             let _write_result = writeln!(
                 std::io::stderr().lock(),
@@ -143,14 +293,16 @@ pub(crate) fn run_installed_from_hook(
         if !completion.success {
             snapshot.report_gate_output();
         }
-        let fixes = snapshot.collect_fixes(&tree)?;
+        let recovery_controls = signals.arm_recovery_with_budget(budgets.recovery)?;
+        git::OwnedSnapshot::verify_live_index(&live)?;
+        let fixes = snapshot.collect_fixes(&tree, &recovery_controls)?;
         let evidence = if fixes.is_empty() {
             None
         } else {
             write_private_fixes_spool(&snapshot, &fixes)?;
             Some(evidence::persist(&live.common_git_dir, &fixes)?)
         };
-        drop(completion.cleanup.recovery);
+        drop(completion.cleanup.recovery.take());
         if let Some(path) = evidence {
             let mut stderr = std::io::stderr().lock();
             writeln!(
