@@ -695,6 +695,9 @@ fn mode_bits(stat: &libc::stat) -> libc::mode_t {
 )]
 fn ensure_no_acl_fd(file: &File) -> Result<()> {
     for name in [c"system.posix_acl_access", c"system.posix_acl_default"] {
+        // SAFETY: `file` remains live and its descriptor is borrowed for this call; `name`
+        // is NUL-terminated, and a null value pointer is valid with size zero. The next
+        // classification reads errno immediately if this probe fails.
         let result =
             unsafe { libc::fgetxattr(file.as_raw_fd(), name.as_ptr(), std::ptr::null_mut(), 0) };
         classify_linux_acl_probe(result, name)?;
@@ -710,6 +713,9 @@ fn ensure_no_acl_fd(file: &File) -> Result<()> {
 fn ensure_no_acl_path(path: &Path) -> Result<()> {
     let path = CString::new(path.as_os_str().as_bytes())?;
     for name in [c"system.posix_acl_access", c"system.posix_acl_default"] {
+        // SAFETY: `path` and `name` are live NUL-terminated strings for this call. `lgetxattr`
+        // does not follow the link, and a null value pointer is valid with size zero. The
+        // next classification reads errno immediately if this probe fails.
         let result =
             unsafe { libc::lgetxattr(path.as_ptr(), name.as_ptr(), std::ptr::null_mut(), 0) };
         classify_linux_acl_probe(result, name)?;
