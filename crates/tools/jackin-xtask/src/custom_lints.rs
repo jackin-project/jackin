@@ -1,11 +1,13 @@
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::io::{self, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
+use jackin_process::{ExecRequest, ExecResult, StdioMode};
+
+mod paths;
 
 const NIGHTLY: &str = "nightly-2026-10-18";
 const COMPILER_COMMIT: &str = "8006091eb71ae7d9e9bccb66c6122c9d68af4466";
@@ -19,12 +21,27 @@ pub(crate) fn run(root: &Path) -> Result<()> {
     run_with(root, std::env::vars_os().collect(), execute)
 }
 
-fn run_with<F>(root: &Path, inherited: Environment, mut execute: F) -> Result<()>
+fn run_with<F>(root: &Path, inherited: Environment, execute: F) -> Result<()>
 where
     F: FnMut(&[OsString], &Path, &Environment, bool) -> Result<Vec<u8>>,
 {
+    run_with_home(root, inherited, paths::passwd_home_for_real_uid, execute)
+}
+
+fn run_with_home<F, H>(
+    root: &Path,
+    inherited: Environment,
+    passwd_home: H,
+    mut execute: F,
+) -> Result<()>
+where
+    F: FnMut(&[OsString], &Path, &Environment, bool) -> Result<Vec<u8>>,
+    H: FnOnce() -> Result<Option<OsString>>,
+{
     let lint = root.join("crates/tools/jackin-lints");
-    let (mut base_env, target, tools) = build_environment(root, inherited)?;
+    let search_path = tool_search_path(&inherited, root, &mut execute)?;
+    let (mut base_env, target, tools) =
+        build_environment_with(root, inherited, &search_path, passwd_home)?;
     let _cargo_shim = create_cargo_shim(&mut base_env, &tools)?;
     let mut nightly = vec![OsString::from("rustup"), OsString::from("run")];
     nightly.push(OsString::from(NIGHTLY));
@@ -73,38 +90,42 @@ where
         .prefix("jackin-custom-lints-")
         .tempdir()
         .context("creating isolated Dylint library directory")?;
-    let destination = directory.path().join(
-        library
-            .file_name()
-            .context("nightly lint library has no filename")?,
-    );
-    fs::copy(&library, &destination).context("copying qualified nightly lint library")?;
+    let body_result = (|| -> Result<()> {
+        let destination = directory.path().join(
+            library
+                .file_name()
+                .context("nightly lint library has no filename")?,
+        );
+        fs::copy(&library, &destination).context("copying qualified nightly lint library")?;
 
-    let mut workspace_env = base_env;
-    workspace_env.insert(
-        OsString::from("CARGO_TARGET_DIR"),
-        target.join("workspace").into_os_string(),
-    );
-    workspace_env.insert(
-        OsString::from("DYLINT_LIBRARY_PATH"),
-        directory.path().as_os_str().to_owned(),
-    );
-    workspace_env.remove(OsStr::new("DYLINT_LINK_ENABLE_COPY_LIBRARY"));
-    workspace_env.remove(OsStr::new("CARGO_ENCODED_RUSTFLAGS"));
-    workspace_env.remove(OsStr::new("RUSTFLAGS"));
+        let mut workspace_env = base_env;
+        workspace_env.insert(
+            OsString::from("CARGO_TARGET_DIR"),
+            target.join("workspace").into_os_string(),
+        );
+        workspace_env.insert(
+            OsString::from("DYLINT_LIBRARY_PATH"),
+            directory.path().as_os_str().to_owned(),
+        );
+        workspace_env.remove(OsStr::new("DYLINT_LINK_ENABLE_COPY_LIBRARY"));
+        workspace_env.remove(OsStr::new("CARGO_ENCODED_RUSTFLAGS"));
+        workspace_env.remove(OsStr::new("RUSTFLAGS"));
 
-    let mut dylint = vec![tools["cargo-dylint"].as_os_str().to_owned()];
-    dylint.extend([
-        OsString::from("dylint"),
-        OsString::from("--no-metadata"),
-        OsString::from("--all"),
-        OsString::from("--fail-on-no-libraries"),
-        OsString::from("--"),
-        OsString::from("--workspace"),
-        OsString::from("--locked"),
-    ]);
-    execute(&dylint, root, &workspace_env, false)?;
-    Ok(())
+        let mut dylint = vec![tools["cargo-dylint"].as_os_str().to_owned()];
+        dylint.extend([
+            OsString::from("dylint"),
+            OsString::from("--no-metadata"),
+            OsString::from("--all"),
+            OsString::from("--fail-on-no-libraries"),
+            OsString::from("--"),
+            OsString::from("--workspace"),
+            OsString::from("--locked"),
+        ]);
+        execute(&dylint, root, &workspace_env, false)?;
+        Ok(())
+    })();
+
+    finish_with_cleanup(body_result, directory.close())
 }
 
 fn create_cargo_shim(
@@ -149,42 +170,55 @@ fn create_cargo_shim(
     }
 }
 
-fn build_environment(
+fn finish_with_cleanup<T>(body: Result<T>, cleanup: std::io::Result<()>) -> Result<T> {
+    match (body, cleanup) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(error).context("removing isolated Dylint library directory"),
+        (Err(body_error), Err(cleanup_error)) => Err(body_error).context(format!(
+            "removing isolated Dylint library directory also failed: {cleanup_error}"
+        )),
+    }
+}
+
+fn build_environment_with<H>(
     root: &Path,
     inherited: Environment,
-) -> Result<(Environment, PathBuf, BTreeMap<&'static str, PathBuf>)> {
-    let path = inherited
+    search_path: &OsStr,
+    passwd_home: H,
+) -> Result<(Environment, PathBuf, BTreeMap<&'static str, PathBuf>)>
+where
+    H: FnOnce() -> Result<Option<OsString>>,
+{
+    let child_path = inherited
         .get(OsStr::new("PATH"))
         .cloned()
         .unwrap_or_default();
     let mut tools = BTreeMap::new();
     for name in TOOL_NAMES {
-        let selected = find_executable(OsStr::new(name), &path)
+        let selected = find_executable(OsStr::new(name), search_path)
             .with_context(|| format!("missing Mise-pinned {name}"))?;
         tools.insert(*name, selected);
     }
 
-    let cargo_home = match inherited.get(OsStr::new("CARGO_HOME")) {
+    let cargo_home = paths::cargo_home(&inherited, passwd_home)?;
+    let target = match inherited.get(OsStr::new("CARGO_TARGET_DIR")) {
         Some(value) => PathBuf::from(value),
-        None => PathBuf::from(
-            inherited
-                .get(OsStr::new("HOME"))
-                .context("HOME is missing and CARGO_HOME is unset")?,
-        )
-        .join(".cargo"),
+        None => root.join("target/custom-lints"),
     };
-    let cargo_bin = if cargo_home.is_absolute() {
-        cargo_home.join("bin")
+    let current_dir = if cargo_home.is_absolute() && target.is_absolute() {
+        None
     } else {
-        std::env::current_dir()
-            .context("reading current directory")?
-            .join(cargo_home)
-            .join("bin")
+        Some(std::env::current_dir().context("reading current directory")?)
     };
+    let current_dir = current_dir.as_deref().unwrap_or_else(|| Path::new("/"));
+    let cargo_home = paths::resolve(&cargo_home, current_dir)?;
+    let target = paths::resolve(&target, current_dir)?;
+    let cargo_bin = cargo_home.join("bin");
     let mut env = inherited;
     env.insert(
         OsString::from("PATH"),
-        std::env::join_paths(std::iter::once(cargo_bin).chain(std::env::split_paths(&path)))
+        std::env::join_paths(std::iter::once(cargo_bin).chain(std::env::split_paths(&child_path)))
             .context("prepending Cargo home to PATH")?,
     );
     for key in env
@@ -210,17 +244,6 @@ fn build_environment(
         env.remove(OsStr::new(key));
     }
 
-    let target = match env.get(OsStr::new("CARGO_TARGET_DIR")) {
-        Some(value) => PathBuf::from(value),
-        None => root.join("target/custom-lints"),
-    };
-    let target = if target.is_absolute() {
-        target
-    } else {
-        std::env::current_dir()
-            .context("reading current directory")?
-            .join(target)
-    };
     env.insert(
         OsString::from("CARGO_TARGET_DIR"),
         target.join("library").into_os_string(),
@@ -236,13 +259,47 @@ fn build_environment(
     Ok((env, target, tools))
 }
 
+fn tool_search_path<F>(inherited: &Environment, root: &Path, execute: &mut F) -> Result<OsString>
+where
+    F: FnMut(&[OsString], &Path, &Environment, bool) -> Result<Vec<u8>>,
+{
+    match inherited.get(OsStr::new("PATH")) {
+        Some(path) if path.is_empty() => bail!("PATH is empty"),
+        Some(path) => Ok(path.clone()),
+        None => {
+            let argv = [OsString::from("/usr/bin/getconf"), OsString::from("PATH")];
+            let empty_env = Environment::new();
+            let search_path = execute(&argv, root, &empty_env, true)
+                .ok()
+                .and_then(|output| parse_getconf_path(&output));
+            Ok(search_path.unwrap_or_else(|| OsString::from("/bin:/usr/bin")))
+        }
+    }
+}
+
+fn parse_getconf_path(output: &[u8]) -> Option<OsString> {
+    let output = std::str::from_utf8(output).ok()?;
+    let output = output
+        .strip_suffix("\r\n")
+        .or_else(|| output.strip_suffix('\n'))
+        .unwrap_or(output);
+    if output.is_empty()
+        || output
+            .chars()
+            .any(|character| matches!(character, '\r' | '\n' | '\0'))
+    {
+        return None;
+    }
+    Some(OsString::from(output))
+}
+
 fn find_executable(name: &OsStr, path: &OsStr) -> Result<PathBuf> {
     for directory in std::env::split_paths(path) {
         let candidate = directory.join(name);
         let Ok(metadata) = fs::metadata(&candidate) else {
             continue;
         };
-        if !metadata.is_file() || !is_executable(&metadata) {
+        if !metadata.is_file() || !is_executable(&candidate) {
             continue;
         }
         return fs::canonicalize(&candidate)
@@ -255,13 +312,14 @@ fn find_executable(name: &OsStr, path: &OsStr) -> Result<PathBuf> {
 }
 
 #[cfg(unix)]
-fn is_executable(metadata: &fs::Metadata) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    metadata.permissions().mode() & 0o111 != 0
+fn is_executable(path: &Path) -> bool {
+    use nix::unistd::{AccessFlags, access};
+
+    access(path, AccessFlags::F_OK | AccessFlags::X_OK).is_ok()
 }
 
 #[cfg(not(unix))]
-fn is_executable(_: &fs::Metadata) -> bool {
+fn is_executable(_: &Path) -> bool {
     true
 }
 
@@ -321,67 +379,59 @@ fn execute(argv: &[OsString], cwd: &Path, env: &Environment, capture: bool) -> R
         .map(|part| part.to_string_lossy())
         .collect::<Vec<_>>()
         .join(" ");
-    writeln!(io::stderr().lock(), "custom-lints: {display}")
-        .context("writing custom-lints command trace")?;
-    let (program, args) = argv.split_first().context("empty custom-lints command")?;
-    let mut command = Command::new(program);
-    command.args(args).current_dir(cwd).env_clear().envs(env);
+    {
+        let mut stdout = std::io::stdout().lock();
+        writeln!(stdout, "custom-lints: {display}")
+            .context("writing custom-lints command trace")?;
+        stdout
+            .flush()
+            .context("flushing custom-lints command trace")?;
+    }
+    let request = build_exec_request(argv, cwd, env, capture)?;
+    let output = jackin_process::exec_sync(&request)
+        .with_context(|| format!("starting custom-lints command: {display}"))?;
     if capture {
-        let output = execute_request(&command, true)
-            .with_context(|| format!("starting custom-lints command: {display}"))?;
         check_output(&output, &display)
     } else {
-        let output = execute_request(&command, false)
-            .with_context(|| format!("starting custom-lints command: {display}"))?;
         check_status(&output, &display)?;
         Ok(Vec::new())
     }
 }
 
-fn execute_request(command: &Command, capture: bool) -> Result<jackin_process::ExecResult> {
-    let mut request = command_request(command);
+fn build_exec_request(
+    argv: &[OsString],
+    cwd: &Path,
+    env: &Environment,
+    capture: bool,
+) -> Result<ExecRequest> {
+    let (program, args) = argv.split_first().context("empty custom-lints command")?;
+    let mut request = ExecRequest::new(program.as_os_str(), args)
+        .cwd(cwd)
+        .env_clear()
+        .envs(env.iter())
+        .stdin_mode(StdioMode::Inherit)
+        .stderr_mode(StdioMode::Inherit);
     if !capture {
-        request = request
-            .stdin_mode(jackin_process::StdioMode::Inherit)
-            .stdout_mode(jackin_process::StdioMode::Inherit)
-            .stderr_mode(jackin_process::StdioMode::Inherit);
+        request = request.stdout_mode(StdioMode::Inherit);
     }
-    jackin_process::exec_sync(&request)
+    Ok(request)
 }
 
-fn check_status(output: &jackin_process::ExecResult, display: &str) -> Result<()> {
+fn check_status(output: &ExecResult, display: &str) -> Result<()> {
     if !output.success {
         bail!(
             "custom-lints command failed ({}): {display}",
-            output
-                .code
-                .map_or_else(|| "signal".to_owned(), |code| code.to_string())
+            status_description(output)
         );
     }
     Ok(())
 }
 
-fn command_request(command: &Command) -> jackin_process::ExecRequest {
-    let program = command.get_program();
-    let arguments: Vec<_> = command.get_args().collect();
-    let mut request = jackin_process::ExecRequest::new(program, arguments)
-        .env_clear()
-        .envs(command.get_envs().filter_map(|(key, value)| {
-            value.map(|value| (key.to_os_string(), value.to_os_string()))
-        }));
-    if let Some(cwd) = command.get_current_dir() {
-        request = request.cwd(cwd);
-    }
-    request
-}
-
-fn check_output(output: &jackin_process::ExecResult, display: &str) -> Result<Vec<u8>> {
+fn check_output(output: &ExecResult, display: &str) -> Result<Vec<u8>> {
     if !output.success {
         bail!(
             "custom-lints command failed ({}){}: {display}",
-            output
-                .code
-                .map_or_else(|| "signal".to_owned(), |code| code.to_string()),
+            status_description(output),
             if output.stderr.is_empty() {
                 String::new()
             } else {
@@ -390,6 +440,14 @@ fn check_output(output: &jackin_process::ExecResult, display: &str) -> Result<Ve
         );
     }
     Ok(output.stdout.clone())
+}
+
+fn status_description(output: &ExecResult) -> String {
+    match output.code {
+        Some(code) => format!("exit status: {code}"),
+        None if output.timed_out => "timed out".to_owned(),
+        None => "terminated without an exit code".to_owned(),
+    }
 }
 
 #[cfg(test)]

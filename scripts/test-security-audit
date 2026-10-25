@@ -1,4 +1,7 @@
 #!/bin/sh
 set -eu
 
+script_dir=$(CDPATH='' cd -P "$(dirname "$0")" && pwd)
+repo_root=$(CDPATH='' cd -P "$script_dir/.." && pwd)
+cd "$repo_root"
 exec mise exec --locked -- cargo run --locked -p jackin-xtask -- security-audit-fixtures
