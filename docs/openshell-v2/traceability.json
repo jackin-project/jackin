@@ -1,0 +1,325 @@
+{
+  "schema_version": 1,
+  "spec_sha256": "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe767523a3e",
+  "sections": [
+    {
+      "heading": "Decision and product scope",
+      "start_line": 1,
+      "end_line": 10,
+      "tasks": [
+        "P00",
+        "P03",
+        "P05",
+        "T39",
+        "T40"
+      ]
+    },
+    {
+      "heading": "Source baseline and evidence",
+      "start_line": 11,
+      "end_line": 25,
+      "tasks": [
+        "P00",
+        "P01",
+        "P02"
+      ]
+    },
+    {
+      "heading": "Architecture and ownership",
+      "start_line": 26,
+      "end_line": 67,
+      "tasks": [
+        "P03",
+        "P05",
+        "T11",
+        "T13",
+        "T18",
+        "U04"
+      ]
+    },
+    {
+      "heading": "Product and domain model",
+      "start_line": 68,
+      "end_line": 94,
+      "tasks": [
+        "P03",
+        "T10",
+        "T14",
+        "T24"
+      ]
+    },
+    {
+      "heading": "Domains and account isolation",
+      "start_line": 95,
+      "end_line": 104,
+      "tasks": [
+        "T21",
+        "T22",
+        "T24"
+      ]
+    },
+    {
+      "heading": "OpenShell workspace authority",
+      "start_line": 105,
+      "end_line": 112,
+      "tasks": [
+        "T12",
+        "T21",
+        "T37"
+      ]
+    },
+    {
+      "heading": "Roles and reproducible image construction",
+      "start_line": 113,
+      "end_line": 128,
+      "tasks": [
+        "T14",
+        "T15",
+        "T16",
+        "T31"
+      ]
+    },
+    {
+      "heading": "Portable role ABI",
+      "start_line": 129,
+      "end_line": 147,
+      "tasks": [
+        "T16",
+        "T35",
+        "T36"
+      ]
+    },
+    {
+      "heading": "Capsule v2 and persistent sessions",
+      "start_line": 148,
+      "end_line": 157,
+      "tasks": [
+        "T17",
+        "T18",
+        "T19"
+      ]
+    },
+    {
+      "heading": "Transport",
+      "start_line": 158,
+      "end_line": 165,
+      "tasks": [
+        "T12",
+        "T19"
+      ]
+    },
+    {
+      "heading": "Protocol and authority",
+      "start_line": 166,
+      "end_line": 177,
+      "tasks": [
+        "T17",
+        "T19",
+        "T26"
+      ]
+    },
+    {
+      "heading": "Persistence semantics",
+      "start_line": 178,
+      "end_line": 191,
+      "tasks": [
+        "T18",
+        "T19",
+        "T27",
+        "T28"
+      ]
+    },
+    {
+      "heading": "Workspace materialization and retention",
+      "start_line": 192,
+      "end_line": 223,
+      "tasks": [
+        "T20",
+        "T27",
+        "T28"
+      ]
+    },
+    {
+      "heading": "Handoff",
+      "start_line": 224,
+      "end_line": 227,
+      "tasks": [
+        "T28"
+      ]
+    },
+    {
+      "heading": "Credentials, account state and policy",
+      "start_line": 228,
+      "end_line": 241,
+      "tasks": [
+        "T21",
+        "T22",
+        "T23",
+        "T25",
+        "T26"
+      ]
+    },
+    {
+      "heading": "Policy ownership",
+      "start_line": 242,
+      "end_line": 249,
+      "tasks": [
+        "U00",
+        "T13",
+        "T21"
+      ]
+    },
+    {
+      "heading": "Target profiles and Kubernetes deployment",
+      "start_line": 250,
+      "end_line": 265,
+      "tasks": [
+        "P02",
+        "T35",
+        "T36",
+        "T37"
+      ]
+    },
+    {
+      "heading": "Kubernetes ownership and deployment",
+      "start_line": 266,
+      "end_line": 279,
+      "tasks": [
+        "T37"
+      ]
+    },
+    {
+      "heading": "Developer services",
+      "start_line": 280,
+      "end_line": 285,
+      "tasks": [
+        "T30"
+      ]
+    },
+    {
+      "heading": "Optional Docker capability",
+      "start_line": 286,
+      "end_line": 325,
+      "tasks": [
+        "U04",
+        "U05",
+        "U06",
+        "U07",
+        "U08",
+        "T33"
+      ]
+    },
+    {
+      "heading": "Independent verification workers",
+      "start_line": 326,
+      "end_line": 335,
+      "tasks": [
+        "U02",
+        "T32"
+      ]
+    },
+    {
+      "heading": "Application operations and failure handling",
+      "start_line": 336,
+      "end_line": 355,
+      "tasks": [
+        "T10",
+        "T11",
+        "T13",
+        "T19",
+        "T26",
+        "T38"
+      ]
+    },
+    {
+      "heading": "Command semantics",
+      "start_line": 356,
+      "end_line": 372,
+      "tasks": [
+        "T23",
+        "T24",
+        "T28",
+        "T29"
+      ]
+    },
+    {
+      "heading": "Fleet view and developer experience",
+      "start_line": 373,
+      "end_line": 384,
+      "tasks": [
+        "T29",
+        "T31",
+        "T34"
+      ]
+    },
+    {
+      "heading": "Proposed command examples",
+      "start_line": 385,
+      "end_line": 401,
+      "tasks": [
+        "T29"
+      ]
+    },
+    {
+      "heading": "Rust architecture and configuration",
+      "start_line": 402,
+      "end_line": 464,
+      "tasks": [
+        "P03",
+        "P05",
+        "T10",
+        "T12",
+        "T14"
+      ]
+    },
+    {
+      "heading": "Performance and resource contracts",
+      "start_line": 465,
+      "end_line": 476,
+      "tasks": [
+        "T31",
+        "T38"
+      ]
+    },
+    {
+      "heading": "Dependency register and qualification gates",
+      "start_line": 477,
+      "end_line": 492,
+      "tasks": [
+        "P02",
+        "U00",
+        "U01",
+        "U02",
+        "U03",
+        "U04",
+        "U05",
+        "U06",
+        "U07",
+        "U08",
+        "T40"
+      ]
+    },
+    {
+      "heading": "Implementation sequence",
+      "start_line": 493,
+      "end_line": 510,
+      "tasks": [
+        "P00",
+        "P05",
+        "T23",
+        "T39",
+        "T40"
+      ]
+    },
+    {
+      "heading": "Primary source references",
+      "start_line": 511,
+      "end_line": 549,
+      "tasks": [
+        "P00",
+        "P01",
+        "P02"
+      ]
+    }
+  ]
+}

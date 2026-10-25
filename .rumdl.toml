@@ -13,3 +13,6 @@ exclude = [
   "**/AGENTS.md", # agent instruction files, not product documentation
   "**/CLAUDE.md",
 ]
+
+[per-file-ignores]
+"docs/openshell-v2/SPEC.md" = ["MD025", "MD052"]

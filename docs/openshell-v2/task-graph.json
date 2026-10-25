@@ -1,0 +1,3127 @@
+{
+  "schema_version": 1,
+  "pack_date": "2026-10-25",
+  "status": "PLAN_ONLY",
+  "spec_sha256": "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe767523a3e",
+  "jackin_baseline": "faa2ab6c12e3de45a76ab6b98df0c64dac7aac6e",
+  "openshell_candidate": "c4688aa8715ea75d6c39fe468361dbbc16c691fa",
+  "openshell_release_comparator": "bdb956f2cd65a635f1294fccf1d138d263bf650f",
+  "task_count": 46,
+  "acceptance_case_count": 125,
+  "parallel_agent_limit": 8,
+  "subagents_used_for_this_pack": false,
+  "runtime_tests_executed_for_this_pack": false,
+  "source_inspection": "Complete supplied specification; targeted source review, not exhaustive repository inspection.",
+  "planning_model_requirement": "Use the runner's real subagents. Record actual delegation. This pack names no model or effort setting.",
+  "tasks": [
+    {
+      "id": "P00",
+      "title": "Freeze the work area and source evidence",
+      "owner": "Integration subagent",
+      "depends_on": [],
+      "write_scope": [
+        "docs/openshell-v2/evidence/source-lock.json",
+        "Local task worktrees and evidence directories"
+      ],
+      "inputs": [
+        "SPEC.md and SOURCE-AUDIT.md.",
+        "The current Jackin checkout and its existing changes."
+      ],
+      "steps": [
+        "Record the current commit, branch, dirty files, submodules, and tool versions.",
+        "Compare the checkout with the source baseline in C01.",
+        "Record each difference before you use the baseline inventory.",
+        "Create a v2 worktree without changing the original checkout.",
+        "Copy this execution pack into that worktree.",
+        "Verify the SPEC.md checksum against SOURCE-AUDIT.md.",
+        "Create separate work areas for Jackin and OpenShell changes.",
+        "Record actual subagent, model, and effort capabilities.",
+        "Create the task board with all tasks marked NOT_STARTED.",
+        "Record authorized disposable targets, registry destinations, and credential references."
+      ],
+      "acceptance": [
+        "The original checkout has the same uncommitted content after setup.",
+        "The source lock names immutable commits and the specification checksum.",
+        "No test target points to an unapproved production environment.",
+        "No missing tool or unavailable subagent appears as an executed capability."
+      ],
+      "remove_or_replace": [
+        "Remove nothing from the original checkout or existing runtime resources."
+      ],
+      "test_cases": [
+        "A01"
+      ],
+      "source_basis": "SPEC L13-L24; L493-L509",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block code changes when the source baseline cannot be identified.",
+        "Block remote effects when their environment or authorization is unknown."
+      ],
+      "report_path": "evidence/openshell-v2/P00/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/P00/implementation.json",
+        "evidence/openshell-v2/P00/review.json",
+        "evidence/openshell-v2/P00/test-results.json",
+        "evidence/openshell-v2/P00/commands.jsonl",
+        "evidence/openshell-v2/P00/source-map.json",
+        "evidence/openshell-v2/P00/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/P00/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/P00.md"
+    },
+    {
+      "id": "P01",
+      "title": "Inventory every old implementation path",
+      "owner": "Source audit subagent",
+      "depends_on": [
+        "P00"
+      ],
+      "write_scope": [
+        "docs/openshell-v2/evidence/inventory/",
+        "docs/openshell-v2/evidence/legacy-inventory.json",
+        "docs/openshell-v2/evidence/feature-register.json"
+      ],
+      "inputs": [
+        "Current Cargo manifests and all production source.",
+        "Current tests, scripts, role assets, documentation, packaging, and generated CI.",
+        "The source findings in SOURCE-AUDIT.md."
+      ],
+      "steps": [
+        "Dispatch the seven read-only reviews in SUBAGENTS.md.",
+        "List every direct and indirect runtime call with its caller.",
+        "Include multiline commands, command builders, shell scripts, FFI, and inactive code.",
+        "Classify each record as DELETE, REWRITE, PORT_PURE, or BUILD_ONLY.",
+        "Record the resource owner and trust boundary for each effect.",
+        "Map each current user journey to its v2 task and acceptance cases.",
+        "Keep a separate list of old behaviors that the specification explicitly removes.",
+        "Compare the current source with the older experiment inventory.",
+        "Mark historical paths that moved or no longer exist.",
+        "Have an independent auditor trace callers and check inventory completeness.",
+        "Freeze the inventory before deletion work starts."
+      ],
+      "acceptance": [
+        "The inventory includes version.rs Docker probes and verify.rs Docker workers.",
+        "The inventory includes every runtime-prefix crate and Capsule privilege path.",
+        "Each retained behavior has a replacement task and a test case.",
+        "Each removal has an explicit reason and final-audit rule.",
+        "No directory-only entry replaces a call-site record."
+      ],
+      "remove_or_replace": [
+        "Do not preserve obsolete behavior because an old test asserts it.",
+        "Do not delete code during this read-only task."
+      ],
+      "test_cases": [
+        "A02",
+        "A03"
+      ],
+      "source_basis": "SPEC L51-L64; L156; L375-L383; L503-L509",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block inventory approval when an executable path has no ownership classification.",
+        "Block a behavior removal that has no specification basis or planner decision."
+      ],
+      "report_path": "evidence/openshell-v2/P01/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/P01/implementation.json",
+        "evidence/openshell-v2/P01/review.json",
+        "evidence/openshell-v2/P01/test-results.json",
+        "evidence/openshell-v2/P01/commands.jsonl",
+        "evidence/openshell-v2/P01/source-map.json",
+        "evidence/openshell-v2/P01/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/P01/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/P01.md"
+    },
+    {
+      "id": "P02",
+      "title": "Verify the upstream API and compatibility tuple",
+      "owner": "Upstream API subagent",
+      "depends_on": [
+        "P00"
+      ],
+      "write_scope": [
+        "docs/openshell-v2/evidence/upstream-contracts.json",
+        "compatibility.lock.toml through the integration subagent"
+      ],
+      "inputs": [
+        "Pinned OpenShell SDK, protobufs, server handlers, driver code, and CLI registration code.",
+        "C01 and the dependency register in SPEC.md."
+      ],
+      "steps": [
+        "Read the actual symbols for each required API and transport operation.",
+        "Map create, read, list, start, stop, delete, exec, transfer, policy, provider, and forward operations.",
+        "Record scope fields, request IDs, error codes, replay rules, and identity preconditions.",
+        "Verify SDK mTLS and each intended authentication mode.",
+        "Verify gateway registration resolution without global gateway switching.",
+        "Verify canonical restart behavior and the dedicated Kubernetes topology.",
+        "Check canonical-name syntax and the role ABI for each proposed target.",
+        "Identify every missing authoritative observation and mutation precondition.",
+        "Create U00 through U08 work inputs from actual source paths.",
+        "Record one coherent candidate tuple with immutable artifact references.",
+        "Record unavailable credentials and test environments as blockers."
+      ],
+      "acceptance": [
+        "Each API mapping includes a source path, symbol, commit, and qualification case.",
+        "No invented RPC field or driver feature enters the adapter contract.",
+        "The mTLS distinction between the release and candidate source is recorded.",
+        "Every missing platform contract has an upstream task owner."
+      ],
+      "remove_or_replace": [
+        "Do not create a permanent custom authentication stack.",
+        "Do not use a moving main branch as a compatibility pin."
+      ],
+      "test_cases": [
+        "A04",
+        "A05",
+        "A06"
+      ],
+      "source_basis": "SPEC L24; L252-L278; L413-L415; L477-L491",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block a target when its tuple cannot be resolved or tested.",
+        "Block production claims for source-only capabilities."
+      ],
+      "report_path": "evidence/openshell-v2/P02/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/P02/implementation.json",
+        "evidence/openshell-v2/P02/review.json",
+        "evidence/openshell-v2/P02/test-results.json",
+        "evidence/openshell-v2/P02/commands.jsonl",
+        "evidence/openshell-v2/P02/source-map.json",
+        "evidence/openshell-v2/P02/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/P02/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/P02.md"
+    },
+    {
+      "id": "P03",
+      "title": "Freeze the internal contracts and schemas",
+      "owner": "Planning review subagent",
+      "depends_on": [
+        "P01",
+        "P02"
+      ],
+      "write_scope": [
+        "docs/openshell-v2/contracts/",
+        "crates/core shared schema designs through the integration subagent"
+      ],
+      "inputs": [
+        "The complete specification and CONTRACTS.md.",
+        "P01 feature register and P02 upstream contract map."
+      ],
+      "steps": [
+        "Define every domain entity in the specification table.",
+        "Freeze typed IDs, receipts, error classes, and operation transitions.",
+        "Freeze the strict user, role, and project TOML schemas.",
+        "Freeze the Capsule message schema and limits in C10.",
+        "Freeze activation fields and their authority sources.",
+        "Freeze account-domain reuse rules and scope requirements.",
+        "Freeze materialization and checkpoint manifest formats.",
+        "Freeze host-action approval fields and replay rules.",
+        "Write a table for each public command and its JSON result.",
+        "Record unsupported debugging and profiling without implied capability.",
+        "Resolve contract conflicts through the planning review subagent before implementation."
+      ],
+      "acceptance": [
+        "Every product entity and command has one unambiguous definition.",
+        "Different accounts cannot resolve to one shared credential domain.",
+        "Operation unknown outcomes have explicit recovery rules.",
+        "All technical terms use the same names across schemas and task cards."
+      ],
+      "remove_or_replace": [
+        "Remove old backend variants from the new schema designs.",
+        "Do not add a v1 parser, importer, or compatibility field."
+      ],
+      "test_cases": [],
+      "source_basis": "SPEC L68-L111; L148-L190; L336-L369; L402-L463",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block dependent implementation when a shared contract is unresolved.",
+        "Do not let an implementation worker invent a security-sensitive schema field."
+      ],
+      "report_path": "evidence/openshell-v2/P03/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/P03/implementation.json",
+        "evidence/openshell-v2/P03/review.json",
+        "evidence/openshell-v2/P03/test-results.json",
+        "evidence/openshell-v2/P03/commands.jsonl",
+        "evidence/openshell-v2/P03/source-map.json",
+        "evidence/openshell-v2/P03/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/P03/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/P03.md"
+    },
+    {
+      "id": "P04",
+      "title": "Build the evidence and acceptance harness",
+      "owner": "Qualification subagent",
+      "depends_on": [
+        "P03"
+      ],
+      "write_scope": [
+        "crates/tools/jackin-xtask/src/v2/",
+        "tests/v2/",
+        "docs/openshell-v2/evidence/test-manifest.json"
+      ],
+      "inputs": [
+        "ACCEPTANCE.md and the frozen schemas.",
+        "The current test toolchain and CI generator inventory."
+      ],
+      "steps": [
+        "Implement the test command contract in ACCEPTANCE.md.",
+        "Register every acceptance case with a concrete test entry point.",
+        "Record target tuples, commands, exit codes, assertions, and evidence hashes.",
+        "Keep PASS, FAIL, BLOCKED, and NOT_RUN distinct.",
+        "Fail the full gate when a required case is missing or skipped.",
+        "Add disposable-resource ownership labels and unique test names.",
+        "Add cleanup receipts that preserve uncertain failures.",
+        "Add secret redaction and canary-leak assertions.",
+        "Add source, dependency, and subprocess-boundary checks.",
+        "Make the harness usable before full product integration."
+      ],
+      "acceptance": [
+        "An omitted case makes the full gate fail.",
+        "An unavailable target produces BLOCKED, not PASS.",
+        "A failing assertion makes the command fail even when its subprocess exits zero.",
+        "The harness preserves failing evidence and unrelated resources."
+      ],
+      "remove_or_replace": [
+        "Replace old CI assumptions that equate a command exit with complete qualification.",
+        "Do not remove valid old regression assertions without a mapped replacement."
+      ],
+      "test_cases": [
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "source_basis": "SPEC L346-L354; L471-L491; L509",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block qualification when raw evidence cannot be retained safely.",
+        "Do not record mock execution as a live target test."
+      ],
+      "report_path": "evidence/openshell-v2/P04/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/P04/implementation.json",
+        "evidence/openshell-v2/P04/review.json",
+        "evidence/openshell-v2/P04/test-results.json",
+        "evidence/openshell-v2/P04/commands.jsonl",
+        "evidence/openshell-v2/P04/source-map.json",
+        "evidence/openshell-v2/P04/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/P04/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/P04.md"
+    },
+    {
+      "id": "P05",
+      "title": "Create the clean v2 crate graph",
+      "owner": "Integration subagent",
+      "depends_on": [
+        "P03",
+        "P04"
+      ],
+      "write_scope": [
+        "Root Cargo.toml and Cargo.lock",
+        "The fourteen production crate roots in C02",
+        "crates/tools/jackin-xtask and test-support registration"
+      ],
+      "inputs": [
+        "P01 disposition map.",
+        "The frozen dependency graph and the current Rust toolchain."
+      ],
+      "steps": [
+        "Create the production crates listed in C02.",
+        "Set the product version to 2.0.0-dev until release approval.",
+        "Remove old runtime crates from the production workspace graph.",
+        "Keep old source only as temporary deletion input outside the active graph.",
+        "Create application ports in the domain crate.",
+        "Wire concrete adapters only in application composition.",
+        "Add compile-time dependency-boundary tests.",
+        "Keep the existing qualified toolchain unless compatibility requires a reviewed change.",
+        "Make unfinished operations return explicit unsupported errors.",
+        "Do not add placeholder success paths."
+      ],
+      "acceptance": [
+        "The production graph contains no old runtime backend crate.",
+        "Core code imports no upstream protobuf, Docker, or database types.",
+        "Capsule imports no host credential or builder implementation.",
+        "A clean build fails on any forbidden dependency edge."
+      ],
+      "remove_or_replace": [
+        "Remove old workspace-member and feature edges.",
+        "Schedule physically retained old source for T39 deletion."
+      ],
+      "test_cases": [
+        "A13",
+        "A14"
+      ],
+      "source_basis": "SPEC L404-L419; L507-L509",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block an extra production crate until the planner approves its need.",
+        "Do not restore an old dependency merely to make compilation pass."
+      ],
+      "report_path": "evidence/openshell-v2/P05/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/P05/implementation.json",
+        "evidence/openshell-v2/P05/review.json",
+        "evidence/openshell-v2/P05/test-results.json",
+        "evidence/openshell-v2/P05/commands.jsonl",
+        "evidence/openshell-v2/P05/source-map.json",
+        "evidence/openshell-v2/P05/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/P05/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/P05.md"
+    },
+    {
+      "id": "U00",
+      "title": "Qualify authoritative runtime observations",
+      "owner": "Upstream API subagent",
+      "depends_on": [
+        "P02",
+        "P03",
+        "P04"
+      ],
+      "write_scope": [
+        "A separate OpenShell worktree: observation APIs and related tests identified by P02",
+        "Jackin evidence only; no embedded runtime implementation"
+      ],
+      "inputs": [
+        "P02 API map and C06 activation fields.",
+        "OpenShell policy, provider, image, identity, and runtime-status source."
+      ],
+      "steps": [
+        "Test each required activation observation through the scoped public API.",
+        "Identify its authority source and runtime generation.",
+        "Check whether ordinary authorized workspace users can obtain the required result.",
+        "Use an existing authoritative API when it meets the contract.",
+        "Add a narrow upstream observation contract when required data is absent.",
+        "Bind each result to the immutable sandbox ID and applicable revision.",
+        "Keep provider secret bytes outside observation payloads.",
+        "Reject helper-reported identity as a substitute.",
+        "Add old-server and unsupported-capability behavior.",
+        "Update the candidate tuple and upstream change record."
+      ],
+      "acceptance": [
+        "A submitted policy does not count as loaded policy evidence.",
+        "A helper echo cannot satisfy image or sandbox identity checks.",
+        "Provider readiness refers to the installed binding revision.",
+        "Unsupported observations prevent activation with a specific error."
+      ],
+      "remove_or_replace": [
+        "Do not add a Jackin-side supervisor or attestation service.",
+        "Do not require administrator credentials merely to hide an API gap."
+      ],
+      "test_cases": [
+        "A15",
+        "A16",
+        "A17"
+      ],
+      "source_basis": "SPEC L150-L176; L246-L248; L350; L415",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block activation qualification when an authority field remains unobservable.",
+        "Keep unmerged patches explicit in the compatibility tuple."
+      ],
+      "report_path": "evidence/openshell-v2/U00/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/U00/implementation.json",
+        "evidence/openshell-v2/U00/review.json",
+        "evidence/openshell-v2/U00/test-results.json",
+        "evidence/openshell-v2/U00/commands.jsonl",
+        "evidence/openshell-v2/U00/source-map.json",
+        "evidence/openshell-v2/U00/upstream-change.json"
+      ],
+      "test_write_scope": "tests/v2/tasks/U00/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/U00.md"
+    },
+    {
+      "id": "U01",
+      "title": "Add server-side mutation identity fences",
+      "owner": "Upstream API subagent",
+      "depends_on": [
+        "P02",
+        "P03",
+        "P04"
+      ],
+      "write_scope": [
+        "A separate OpenShell worktree: protobufs, admission, replay, effect handlers, and driver dispatch",
+        "Upstream race and replay tests"
+      ],
+      "inputs": [
+        "All effectful API mappings from P02.",
+        "C05 and historical same-name replacement failures."
+      ],
+      "steps": [
+        "List every effectful sandbox operation, including transfer and service changes.",
+        "Add expected immutable sandbox identity to each relevant request.",
+        "Add generation preconditions wherever process incarnation changes the effect target.",
+        "Choose unused protobuf field numbers from the actual pinned schema.",
+        "Check authorization before returning resource-sensitive identity details.",
+        "Validate preconditions at the server effect boundary, not only during a prior read.",
+        "Carry the immutable binding into asynchronous driver work.",
+        "Bind replay records to scope, identity, method, request ID, and request digest.",
+        "Reject the same request ID with a different payload.",
+        "Make old servers fail safely when the required contract is unavailable.",
+        "Test delayed requests against same-name replacements for every affected operation.",
+        "Document creation, start-generation, cancellation, and replay semantics."
+      ],
+      "acceptance": [
+        "Delayed stop, start, delete, exec, policy, provider, transfer, and service effects cannot reach a replacement.",
+        "Identical retries return the qualified original outcome without duplicate effects.",
+        "A cross-scope replay cannot expose or affect another resource.",
+        "The adapter can distinguish identity change from transport uncertainty."
+      ],
+      "remove_or_replace": [
+        "Do not treat a delete-only patch as complete fencing.",
+        "Do not claim atomicity from a client read followed by mutation."
+      ],
+      "test_cases": [
+        "A18",
+        "A19",
+        "A20",
+        "A21"
+      ],
+      "source_basis": "SPEC L348-L354; L484; L491",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block all affected production mutations until the complete contract passes.",
+        "Do not implement a Jackin lock as a substitute for upstream fencing."
+      ],
+      "report_path": "evidence/openshell-v2/U01/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/U01/implementation.json",
+        "evidence/openshell-v2/U01/review.json",
+        "evidence/openshell-v2/U01/test-results.json",
+        "evidence/openshell-v2/U01/commands.jsonl",
+        "evidence/openshell-v2/U01/source-map.json",
+        "evidence/openshell-v2/U01/upstream-change.json"
+      ],
+      "test_write_scope": "tests/v2/tasks/U01/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/U01.md"
+    },
+    {
+      "id": "U02",
+      "title": "Add strict verification-worker isolation",
+      "owner": "Upstream worker subagent",
+      "depends_on": [
+        "P02",
+        "P03",
+        "P04"
+      ],
+      "write_scope": [
+        "A separate OpenShell worktree: workload configuration, selected drivers, and worker tests"
+      ],
+      "inputs": [
+        "C15 and the historical metadata-mutation counterexample.",
+        "Actual workload-root and scratch configuration in the pinned drivers."
+      ],
+      "steps": [
+        "Expose a real workload read-only-root contract in OpenShell.",
+        "Define bounded writable control, temporary, and scratch paths.",
+        "Make candidate input and trusted checks immutable through the qualified runtime boundary.",
+        "Enforce memory, CPU, PID, disk, output, and deadline limits.",
+        "Block ordinary network access for the worker profile.",
+        "Provide authoritative command completion and infrastructure-failure outcomes.",
+        "Keep supervisor write needs separate from worker write permissions.",
+        "Test metadata operations as well as content writes.",
+        "Test child and grandchild cleanup after cancellation and timeout.",
+        "Qualify each driver that advertises strict worker support."
+      ],
+      "acceptance": [
+        "chmod, chown, rename, unlink, hardlink, xattr, and content changes fail outside approved scratch.",
+        "Scratch overflow and process exhaustion remain bounded.",
+        "No account, provider, host socket, or ordinary network path reaches the worker.",
+        "An OOM or uncertain completion cannot become a passing verdict."
+      ],
+      "remove_or_replace": [
+        "Do not replace read-only root with image chmod commands or Landlock content rules.",
+        "Do not retain the direct Docker verification path."
+      ],
+      "test_cases": [
+        "A22",
+        "A23",
+        "A24",
+        "A25"
+      ],
+      "source_basis": "SPEC L326-L334; L483; L491",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block strict verification on every unqualified driver.",
+        "Do not describe a weaker development test domain as an independent verifier."
+      ],
+      "report_path": "evidence/openshell-v2/U02/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/U02/implementation.json",
+        "evidence/openshell-v2/U02/review.json",
+        "evidence/openshell-v2/U02/test-results.json",
+        "evidence/openshell-v2/U02/commands.jsonl",
+        "evidence/openshell-v2/U02/source-map.json",
+        "evidence/openshell-v2/U02/upstream-change.json"
+      ],
+      "test_write_scope": "tests/v2/tasks/U02/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/U02.md"
+    },
+    {
+      "id": "U03",
+      "title": "Qualify rebuilt executable network identity",
+      "owner": "Upstream worker subagent",
+      "depends_on": [
+        "P02",
+        "P03",
+        "P04"
+      ],
+      "write_scope": [
+        "A separate OpenShell worktree: executable identity and policy lifecycle code identified by P02",
+        "Rebuild regression fixtures"
+      ],
+      "inputs": [
+        "Historical same-path rebuilt-binary failures.",
+        "Native policy and provider executable-identity rules."
+      ],
+      "steps": [
+        "Reproduce ordinary Cargo and nextest network tests on the candidate tuple.",
+        "Rebuild the executable twice at the same path with different content.",
+        "Record executable identity, policy revision, and each connection decision.",
+        "Implement or qualify an explicit safe identity-update contract.",
+        "Keep destination limits and provider authority separate from mutable executable paths.",
+        "Prevent unauthorized replacements from acquiring a protected provider grant.",
+        "Test concurrent rebuild and connect operations.",
+        "Test legitimate development traffic and hostile replacement traffic.",
+        "Supply the native rebuild fixture to U08 for its Testcontainers run.",
+        "Keep debugging and profiling unsupported unless separately qualified."
+      ],
+      "acceptance": [
+        "Normal approved rebuild cycles succeed without manual path changes.",
+        "A changed executable cannot inherit unrelated credential authority.",
+        "The solution does not disable identity checks globally.",
+        "Docker-executed tests do not substitute for the native rebuild regression."
+      ],
+      "remove_or_replace": [
+        "Do not add a blanket allow-all rule for compilers or interpreters.",
+        "Do not hide the defect with an alternate executable path."
+      ],
+      "test_cases": [
+        "A26",
+        "A27"
+      ],
+      "source_basis": "SPEC L485-L486; L491",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block the normal development claim until repeated native tests pass.",
+        "Request planner review when the safe identity lifecycle needs a new contract."
+      ],
+      "report_path": "evidence/openshell-v2/U03/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/U03/implementation.json",
+        "evidence/openshell-v2/U03/review.json",
+        "evidence/openshell-v2/U03/test-results.json",
+        "evidence/openshell-v2/U03/commands.jsonl",
+        "evidence/openshell-v2/U03/source-map.json",
+        "evidence/openshell-v2/U03/upstream-change.json"
+      ],
+      "test_write_scope": "tests/v2/tasks/U03/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/U03.md"
+    },
+    {
+      "id": "U04",
+      "title": "Freeze the upstream companion API and ownership",
+      "owner": "Companion lifecycle subagent",
+      "depends_on": [
+        "P02",
+        "P03",
+        "P04"
+      ],
+      "write_scope": [
+        "A separate OpenShell worktree: companion API proposal and contract tests",
+        "Upstream companion design record"
+      ],
+      "inputs": [
+        "C14 and SPEC optional Docker capability section.",
+        "The actual VM lifecycle extension points from P02."
+      ],
+      "steps": [
+        "Define one dedicated engine VM for each admitted execution domain.",
+        "Define the default-off admission field and capability revision.",
+        "Bind ownership to workspace, immutable sandbox ID, and runtime generation.",
+        "Define authenticated endpoint issuance and revocation.",
+        "Define project projection, ports, network limits, and aggregate budgets.",
+        "Define create, start, stop, recreate, delete, and orphan transitions.",
+        "Define partial-provision and uncertain-cleanup states.",
+        "Define capability discovery for unsupported gateways.",
+        "Assign exact upstream modules to U05, U06, and U07.",
+        "Obtain independent authority and lifecycle review before implementation."
+      ],
+      "acceptance": [
+        "Disabled capability creates no engine-related resource or secret.",
+        "No companion belongs to a friendly name alone.",
+        "The API does not expose the physical host daemon.",
+        "The contract identifies every resource owner and deletion receipt."
+      ],
+      "remove_or_replace": [
+        "Do not reuse the Jackin DinD manager as the companion owner.",
+        "Do not introduce shared engine pools."
+      ],
+      "test_cases": [],
+      "source_basis": "SPEC L286-L324; L482",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block companion implementation until its ownership and security contract is complete.",
+        "Do not present proposed API fields as existing OpenShell fields."
+      ],
+      "report_path": "evidence/openshell-v2/U04/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/U04/implementation.json",
+        "evidence/openshell-v2/U04/review.json",
+        "evidence/openshell-v2/U04/test-results.json",
+        "evidence/openshell-v2/U04/commands.jsonl",
+        "evidence/openshell-v2/U04/source-map.json",
+        "evidence/openshell-v2/U04/upstream-change.json"
+      ],
+      "test_write_scope": "tests/v2/tasks/U04/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/U04.md"
+    },
+    {
+      "id": "U05",
+      "title": "Implement companion VM lifecycle and cleanup",
+      "owner": "Companion lifecycle subagent",
+      "depends_on": [
+        "U04",
+        "U01"
+      ],
+      "write_scope": [
+        "A separate OpenShell worktree: companion lifecycle modules assigned by U04",
+        "Shared driver integration through the upstream integration owner"
+      ],
+      "inputs": [
+        "The approved companion state machine and identity-fencing contract.",
+        "VM lifecycle source and failure fixtures."
+      ],
+      "steps": [
+        "Create a disposable engine VM only after explicit capability admission.",
+        "Persist parent identity and child resource ownership before external effects.",
+        "Give the companion separate compute and private engine storage.",
+        "Keep the agent workload in its ordinary sandbox.",
+        "Implement create, start, stop, delete, and orphan reconciliation.",
+        "Issue new authenticated access for each runtime generation.",
+        "Revoke old access before stop completes.",
+        "Create a new engine after sandbox recreation.",
+        "Retain only the domain data allowed by the contract.",
+        "Resume interrupted cleanup from durable ownership records.",
+        "Keep deletion pending until destruction and revocation are confirmed."
+      ],
+      "acceptance": [
+        "A killed parent cannot leave an unmanaged live engine.",
+        "A provisioning crash is recoverable without duplicate ownership.",
+        "Old-generation endpoints fail after restart.",
+        "Deleting a same-name replacement cannot remove the original domain's unrelated data."
+      ],
+      "remove_or_replace": [
+        "Do not run a rootful daemon beside the agent's trusted runtime.",
+        "Do not create a Jackin companion supervisor."
+      ],
+      "test_cases": [
+        "A29",
+        "A30",
+        "A31"
+      ],
+      "source_basis": "SPEC L290-L324",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block engine support while cleanup can return false success.",
+        "Do not bypass ownership records during recovery."
+      ],
+      "report_path": "evidence/openshell-v2/U05/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/U05/implementation.json",
+        "evidence/openshell-v2/U05/review.json",
+        "evidence/openshell-v2/U05/test-results.json",
+        "evidence/openshell-v2/U05/commands.jsonl",
+        "evidence/openshell-v2/U05/source-map.json",
+        "evidence/openshell-v2/U05/upstream-change.json"
+      ],
+      "test_write_scope": "tests/v2/tasks/U05/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/U05.md"
+    },
+    {
+      "id": "U06",
+      "title": "Implement confined companion project projection",
+      "owner": "Companion data subagent",
+      "depends_on": [
+        "U04"
+      ],
+      "write_scope": [
+        "A separate OpenShell worktree: companion data-projection modules assigned by U04"
+      ],
+      "inputs": [
+        "The approved companion API and project-data contract.",
+        "The runtime's actual VM transport and filesystem facilities."
+      ],
+      "steps": [
+        "Expose only the approved project at the contract's fixed daemon-side path.",
+        "Keep account state and OpenShell control files outside the projection.",
+        "Implement file create, edit, rename, delete, and watch behavior.",
+        "Define concurrent writer behavior and result ownership.",
+        "Reject escaping symlinks, hardlinks, path traversal, and unsupported special files.",
+        "Test Compose bind mounts against daemon-side paths.",
+        "Test edits from both the coding sandbox and Docker children.",
+        "Propagate projection errors without a wider mount fallback.",
+        "Record data retention and deletion independently from engine cache state."
+      ],
+      "acceptance": [
+        "Host secrets and unrelated directories remain inaccessible.",
+        "Live edit and rename events reach the intended consumers.",
+        "Compose sees the same approved absolute project path.",
+        "Build-context upload alone does not pass the bind-compatibility test."
+      ],
+      "remove_or_replace": [
+        "Do not use raw host virtiofs sharing as isolated projection.",
+        "Do not broaden a host mount to solve a mount-budget limit."
+      ],
+      "test_cases": [
+        "A32",
+        "A33",
+        "A34"
+      ],
+      "source_basis": "SPEC L308; L318-L320",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block Compose and Testcontainers bind claims until real projection tests pass.",
+        "Reject unsupported link or file-watch behavior explicitly."
+      ],
+      "report_path": "evidence/openshell-v2/U06/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/U06/implementation.json",
+        "evidence/openshell-v2/U06/review.json",
+        "evidence/openshell-v2/U06/test-results.json",
+        "evidence/openshell-v2/U06/commands.jsonl",
+        "evidence/openshell-v2/U06/source-map.json",
+        "evidence/openshell-v2/U06/upstream-change.json"
+      ],
+      "test_write_scope": "tests/v2/tasks/U06/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/U06.md"
+    },
+    {
+      "id": "U07",
+      "title": "Implement companion network ports and budgets",
+      "owner": "Companion network subagent",
+      "depends_on": [
+        "U04"
+      ],
+      "write_scope": [
+        "A separate OpenShell worktree: companion network and resource modules assigned by U04"
+      ],
+      "inputs": [
+        "The approved companion API and resource budgets.",
+        "VM networking, endpoint transport, and upstream enforcement code."
+      ],
+      "steps": [
+        "Provide authenticated Docker API access only to the owning domain.",
+        "Support build, exec, logs, events, and long-lived streaming operations.",
+        "Enforce egress outside the daemon and every child container.",
+        "Support online image pulls without a physical host socket.",
+        "Implement dynamic published ports and service-host discovery.",
+        "Implement authenticated callback routes with explicit lifetimes.",
+        "Enforce aggregate CPU, memory, PID, disk, and network budgets.",
+        "Handle port collision, exhaustion, release, and reuse.",
+        "Keep policy-update stream interruption visible.",
+        "Revoke routes and credentials during companion stop and delete."
+      ],
+      "acceptance": [
+        "Wrong-domain API requests fail.",
+        "Daemon, build-step, and child-container egress all follow the admitted boundary.",
+        "Dynamic ports work without a fixed historical port assumption.",
+        "Child containers cannot exceed the aggregate domain budget.",
+        "A guest-init script alone cannot satisfy networking qualification."
+      ],
+      "remove_or_replace": [
+        "Do not inherit agent binary policy as an assumed child-container boundary.",
+        "Do not add a general public port forward."
+      ],
+      "test_cases": [
+        "A35",
+        "A36",
+        "A37",
+        "A38"
+      ],
+      "source_basis": "SPEC L304-L318; L320-L322",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block online Docker claims when the VM has no qualified network route.",
+        "Block engine support when child resource limits remain unenforced."
+      ],
+      "report_path": "evidence/openshell-v2/U07/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/U07/implementation.json",
+        "evidence/openshell-v2/U07/review.json",
+        "evidence/openshell-v2/U07/test-results.json",
+        "evidence/openshell-v2/U07/commands.jsonl",
+        "evidence/openshell-v2/U07/source-map.json",
+        "evidence/openshell-v2/U07/upstream-change.json"
+      ],
+      "test_write_scope": "tests/v2/tasks/U07/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/U07.md"
+    },
+    {
+      "id": "U08",
+      "title": "Qualify the complete managed companion",
+      "owner": "Qualification subagent",
+      "depends_on": [
+        "U05",
+        "U06",
+        "U07",
+        "U00",
+        "U03"
+      ],
+      "write_scope": [
+        "Upstream companion integration tests",
+        "Jackin evidence/openshell-v2/U08/"
+      ],
+      "inputs": [
+        "The complete patched OpenShell tuple.",
+        "Real Docker, Compose, and Testcontainers fixtures."
+      ],
+      "steps": [
+        "Create two fresh domains with separate companions.",
+        "Test default-off behavior on a third domain.",
+        "Run online pull, build, run, exec, logs, and events.",
+        "Run Compose with live project binds and dynamic ports.",
+        "Run real Testcontainers traffic after two ordinary source edits.",
+        "Test callbacks, port exhaustion, and simultaneous domains.",
+        "Attempt cross-domain access and unapproved egress.",
+        "Kill the gateway, parent, and provisioning process at defined transition points.",
+        "Verify stop, restart, recreation, deletion, and orphan cleanup.",
+        "Have a different test agent repeat the complete journey from fresh resources.",
+        "Publish the qualified capability and exact tuple."
+      ],
+      "acceptance": [
+        "No external fixture supplies lifecycle ownership missing from OpenShell.",
+        "All child resources have confirmed cleanup receipts.",
+        "The disabled profile leaves no engine endpoint, credential, or prewarm artifact.",
+        "The independent repeat matches the required assertions."
+      ],
+      "remove_or_replace": [
+        "Remove experimental external-engine substitutes from supported product tests.",
+        "Keep historical failure records as evidence."
+      ],
+      "test_cases": [
+        "A28",
+        "A30",
+        "A31",
+        "A32",
+        "A35",
+        "A36",
+        "A37",
+        "A38",
+        "A39"
+      ],
+      "source_basis": "SPEC L298-L324; L491; L503-L509",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block the managed-engine release gate after any missing lifecycle or isolation assertion.",
+        "Do not reduce the contract to build-only support."
+      ],
+      "report_path": "evidence/openshell-v2/U08/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/U08/implementation.json",
+        "evidence/openshell-v2/U08/review.json",
+        "evidence/openshell-v2/U08/test-results.json",
+        "evidence/openshell-v2/U08/commands.jsonl",
+        "evidence/openshell-v2/U08/source-map.json",
+        "evidence/openshell-v2/U08/upstream-change.json"
+      ],
+      "test_write_scope": "tests/v2/tasks/U08/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/U08.md"
+    },
+    {
+      "id": "T10",
+      "title": "Implement v2 state and operation recovery",
+      "owner": "State subagent",
+      "depends_on": [
+        "P04",
+        "P05"
+      ],
+      "write_scope": [
+        "crates/adapters/jackin-state/",
+        "crates/services/jackin-control/src/operations/",
+        "Related state tests"
+      ],
+      "inputs": [
+        "C03 through C06 and the frozen entity schemas.",
+        "The complete failure-phase table from P03."
+      ],
+      "steps": [
+        "Create a fresh v2 SQLite schema for all durable entities and receipts.",
+        "Add one write coordinator and explicit transaction boundaries.",
+        "Store account references separately from secret material.",
+        "Persist operation inputs and request IDs before each external effect.",
+        "Record partial receipts and OutcomeUnknown without guessed success.",
+        "Implement recovery for every crash point in the operation table.",
+        "Keep runtime and Capsule observations separate from operation state.",
+        "Add owner epochs for local leases and control-service recovery.",
+        "Keep canonical-name tombstones and immutable binding history.",
+        "Add v2-only database version checks and backup tests."
+      ],
+      "acceptance": [
+        "A crash before an effect does not lose its request identity.",
+        "A crash after an effect does not cause an automatic duplicate command.",
+        "No database write transaction waits for a network call.",
+        "A v1 database produces a fresh-setup error, not an import."
+      ],
+      "remove_or_replace": [
+        "Replace old instance manifests and backend-specific resource records.",
+        "Do not copy the old workflow database format as the v2 schema."
+      ],
+      "test_cases": [
+        "A09",
+        "A40",
+        "A42"
+      ],
+      "source_basis": "SPEC L87-L93; L336-L354; L413-L419",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block operations whose recovery disposition is undefined.",
+        "Reject secret bytes in ordinary serialized records."
+      ],
+      "report_path": "evidence/openshell-v2/T10/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T10/implementation.json",
+        "evidence/openshell-v2/T10/review.json",
+        "evidence/openshell-v2/T10/test-results.json",
+        "evidence/openshell-v2/T10/commands.jsonl",
+        "evidence/openshell-v2/T10/source-map.json",
+        "evidence/openshell-v2/T10/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T10/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T10.md"
+    },
+    {
+      "id": "T11",
+      "title": "Implement the per-user host control service",
+      "owner": "State subagent",
+      "depends_on": [
+        "T10"
+      ],
+      "write_scope": [
+        "crates/services/jackin-control/src/ipc/",
+        "crates/apps/jackin/src/control/",
+        "Host IPC tests"
+      ],
+      "inputs": [
+        "C05 and the per-user service contract.",
+        "The host-platform path and peer-authentication APIs."
+      ],
+      "steps": [
+        "Start the control service on demand from the CLI.",
+        "Use a permission-protected Unix socket and operating-system peer authentication.",
+        "Reject unsafe socket directories and symlink substitutions.",
+        "Give CLI and Console one application API.",
+        "Expose operation IDs and inspection without duplicating workflow logic.",
+        "Serialize local mutations through the write coordinator.",
+        "Keep remote Capsule lifetime independent from the host process.",
+        "Recover journaled operations after a host-service restart.",
+        "Report host-dependent approval unavailability without ending remote sessions."
+      ],
+      "acceptance": [
+        "Another local user cannot control the service.",
+        "A forged remote helper message does not become a local peer credential.",
+        "Killing the host service leaves the remote Capsule and PTYs alive.",
+        "Restart recovers operation state without replaying an uncertain effect."
+      ],
+      "remove_or_replace": [
+        "Replace old host-daemon runtime execution and process-relay ownership.",
+        "Do not create a required team server or fleet scheduler."
+      ],
+      "test_cases": [
+        "A43"
+      ],
+      "source_basis": "SPEC L66; L176; L180-L188; L346",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block host effects when peer identity or action correlation is absent.",
+        "Do not use remote helper identity as local IPC authentication."
+      ],
+      "report_path": "evidence/openshell-v2/T11/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T11/implementation.json",
+        "evidence/openshell-v2/T11/review.json",
+        "evidence/openshell-v2/T11/test-results.json",
+        "evidence/openshell-v2/T11/commands.jsonl",
+        "evidence/openshell-v2/T11/source-map.json",
+        "evidence/openshell-v2/T11/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T11/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T11.md"
+    },
+    {
+      "id": "T12",
+      "title": "Implement native OpenShell connection handling",
+      "owner": "Runtime adapter subagent",
+      "depends_on": [
+        "P02",
+        "P05"
+      ],
+      "write_scope": [
+        "crates/adapters/jackin-openshell/src/connection/",
+        "crates/adapters/jackin-openshell/src/registration/",
+        "Transport tests"
+      ],
+      "inputs": [
+        "The qualified SDK and registration contracts from P02.",
+        "C01 and C13."
+      ],
+      "steps": [
+        "Resolve existing upstream gateway registrations without copying their credential store.",
+        "Build scoped clients with verified server identity and supported authentication.",
+        "Use upstream Rust SDK transport from the qualified candidate.",
+        "Use raw RPC and streaming methods only where the SDK helpers are insufficient.",
+        "Pass gateway and workspace explicitly with every adapter call.",
+        "Keep local target identity separate from registration alias and TLS identity.",
+        "Implement bounded connection errors and supported token refresh.",
+        "Redact credentials from Debug, logs, and evidence.",
+        "Test simultaneous requests to two gateways with duplicate sandbox names.",
+        "Keep version negotiation inside this adapter."
+      ],
+      "acceptance": [
+        "Wrong certificates and wrong server identities fail closed.",
+        "Concurrent calls cannot switch each other's target.",
+        "The production adapter never sets insecure TLS verification.",
+        "An expired credential produces the correct authentication outcome."
+      ],
+      "remove_or_replace": [
+        "Remove old Docker and Apple connection clients from production composition.",
+        "Do not create a parallel gateway credential database."
+      ],
+      "test_cases": [
+        "A05",
+        "A06",
+        "A46",
+        "A47"
+      ],
+      "source_basis": "SPEC L55; L252; L413-L415",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block an authentication mode that the tuple does not qualify.",
+        "Do not guess SDK behavior from stale documentation."
+      ],
+      "report_path": "evidence/openshell-v2/T12/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T12/implementation.json",
+        "evidence/openshell-v2/T12/review.json",
+        "evidence/openshell-v2/T12/test-results.json",
+        "evidence/openshell-v2/T12/commands.jsonl",
+        "evidence/openshell-v2/T12/source-map.json",
+        "evidence/openshell-v2/T12/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T12/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T12.md"
+    },
+    {
+      "id": "T13",
+      "title": "Implement scoped runtime operations and observations",
+      "owner": "Runtime adapter subagent",
+      "depends_on": [
+        "T12",
+        "T10",
+        "U00",
+        "U01"
+      ],
+      "write_scope": [
+        "crates/adapters/jackin-openshell/src/sandboxes/",
+        "crates/adapters/jackin-openshell/src/policies/",
+        "crates/adapters/jackin-openshell/src/providers/",
+        "crates/adapters/jackin-openshell/src/transfer/",
+        "Adapter contract tests"
+      ],
+      "inputs": [
+        "P02 actual API map, U00 observations, and U01 fences.",
+        "C05, C06, and C13."
+      ],
+      "steps": [
+        "Implement create, inspect, list, start, stop, delete, and effectful exec through OpenShell.",
+        "Implement approved transfer, policy, provider, and service operations.",
+        "Attach stored request IDs and immutable preconditions to each effect.",
+        "Verify returned bindings before publishing receipts.",
+        "Map upstream errors to the frozen Jackin error classes.",
+        "Preserve authorization masking, incomplete pagination, and uncertain outcomes.",
+        "Collect authoritative policy, provider, image, and generation observations.",
+        "Prevent effect retries that lack a qualified replay contract.",
+        "Expose capability rejection before launch.",
+        "Keep infrastructure reconciliation upstream."
+      ],
+      "acceptance": [
+        "Every effect uses its explicit target, scope, identity, and required generation.",
+        "Lost responses do not cause duplicate commands.",
+        "A generic NOT_FOUND cannot delete retained application data.",
+        "An outage cannot create a replacement sandbox."
+      ],
+      "remove_or_replace": [
+        "Replace direct Docker run, exec, attach, inspect, stop, and remove consumers.",
+        "Do not retain a second runtime state machine."
+      ],
+      "test_cases": [
+        "A15",
+        "A16",
+        "A17",
+        "A18",
+        "A19",
+        "A20",
+        "A21",
+        "A48"
+      ],
+      "source_basis": "SPEC L51-L64; L244-L248; L348-L354; L413-L417",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block mutations against a server without the required fence contract.",
+        "Block activation when authoritative observations are incomplete."
+      ],
+      "report_path": "evidence/openshell-v2/T13/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T13/implementation.json",
+        "evidence/openshell-v2/T13/review.json",
+        "evidence/openshell-v2/T13/test-results.json",
+        "evidence/openshell-v2/T13/commands.jsonl",
+        "evidence/openshell-v2/T13/source-map.json",
+        "evidence/openshell-v2/T13/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T13/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T13.md"
+    },
+    {
+      "id": "T14",
+      "title": "Implement reproducible role resolution",
+      "owner": "Role-image subagent",
+      "depends_on": [
+        "P03",
+        "P05"
+      ],
+      "write_scope": [
+        "crates/services/jackin-roles/src/resolve/",
+        "crates/core/jackin-config user, role, and project schema implementation",
+        "Role resolution tests"
+      ],
+      "inputs": [
+        "Frozen strict user, role, and project schemas.",
+        "RoleRecipe and ResolvedRole definitions.",
+        "P01 role, agent, tool, plugin, and hook inventory."
+      ],
+      "steps": [
+        "Parse strict v2 user, role, and project schemas.",
+        "Reject unknown fields, unsupported versions, ambiguous IDs, and old-schema fallbacks.",
+        "Resolve every declared agent, tool, plugin, hook, and base image to an explicit input.",
+        "Keep the full selectable agent set in the resolved role.",
+        "Reject undeclared or unavailable agent selections.",
+        "Compute the effective build context with actual ignore rules.",
+        "Include every required C07 input in the cache identity.",
+        "Separate secret references from nonsecret build identity.",
+        "Define cache behavior for secret-dependent output.",
+        "Record provenance and an executable inventory.",
+        "Require explicit role trust before build-side source or secret exposure."
+      ],
+      "acceptance": [
+        "Changing any declared agent or plugin input changes the cache identity.",
+        "An Amp selection cannot reuse an image without Amp.",
+        "An unknown version cannot silently match a reproducible cache entry.",
+        "Ignoring a file affects the key exactly as the build context requires.",
+        "Unknown fields and unsupported versions in user, role, and project schemas fail.",
+        "Ambiguous IDs fail without a first-match fallback."
+      ],
+      "remove_or_replace": [
+        "Replace old selected-agent cache shortcuts and runtime-role labels.",
+        "Do not retain implicit fallback installers."
+      ],
+      "test_cases": [
+        "A07",
+        "A49",
+        "A50",
+        "A51"
+      ],
+      "source_basis": "SPEC L68-L111; L113-L127; L146; L402-L463; L475",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block the role when required inputs cannot be resolved or verified.",
+        "Do not claim an advertised executable is installed without evidence."
+      ],
+      "report_path": "evidence/openshell-v2/T14/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T14/implementation.json",
+        "evidence/openshell-v2/T14/review.json",
+        "evidence/openshell-v2/T14/test-results.json",
+        "evidence/openshell-v2/T14/commands.jsonl",
+        "evidence/openshell-v2/T14/source-map.json",
+        "evidence/openshell-v2/T14/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T14/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T14.md"
+    },
+    {
+      "id": "T15",
+      "title": "Implement explicit Buildx and image delivery",
+      "owner": "Role-image subagent",
+      "depends_on": [
+        "T14",
+        "T10",
+        "P02"
+      ],
+      "write_scope": [
+        "crates/adapters/jackin-buildx/",
+        "crates/services/jackin-roles/src/build/",
+        "crates/services/jackin-roles/src/delivery/",
+        "Build and registry tests"
+      ],
+      "inputs": [
+        "ResolvedRole build inputs and configured builders.",
+        "Actual local-engine and registry contracts from P02."
+      ],
+      "steps": [
+        "Run builds through an explicit builder endpoint and context.",
+        "Remove ambient Docker routing variables from the build subprocess environment.",
+        "Pass arguments as argv without host shell interpolation.",
+        "Use supported secret mounts without ordinary-log disclosure.",
+        "Record local image IDs, OCI manifests, and OCI indexes as distinct values.",
+        "Use a same-engine fast path only after endpoint identity matches.",
+        "Push remote artifacts to the approved registry by immutable reference.",
+        "Record the selected platform manifest and scoped pull authorization.",
+        "Verify delivery without a mutable-tag assumption.",
+        "Keep build failure separate from gateway and management availability."
+      ],
+      "acceptance": [
+        "An ambient DOCKER_HOST cannot redirect source or build secrets.",
+        "A remote gateway cannot receive a local image ID as its pull reference.",
+        "Wrong architecture and missing registry authorization fail before activation.",
+        "An unavailable separate builder does not disable status or stop operations."
+      ],
+      "remove_or_replace": [
+        "Replace old image transport tied to role-container discovery.",
+        "Keep only reviewed build, image-inspect, delivery, and cache operations."
+      ],
+      "test_cases": [
+        "A52",
+        "A53",
+        "A54",
+        "A55"
+      ],
+      "source_basis": "SPEC L119-L127; L371; L475",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block a build without a resolved builder identity.",
+        "Block activation when the executed artifact cannot match the recorded build."
+      ],
+      "report_path": "evidence/openshell-v2/T15/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T15/implementation.json",
+        "evidence/openshell-v2/T15/review.json",
+        "evidence/openshell-v2/T15/test-results.json",
+        "evidence/openshell-v2/T15/commands.jsonl",
+        "evidence/openshell-v2/T15/source-map.json",
+        "evidence/openshell-v2/T15/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T15/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T15.md"
+    },
+    {
+      "id": "T16",
+      "title": "Build and validate portable role images",
+      "owner": "Role-image subagent",
+      "depends_on": [
+        "T15",
+        "T13",
+        "T18"
+      ],
+      "write_scope": [
+        "Role image recipes and docker/construct replacement assets",
+        "crates/services/jackin-roles/src/validate/",
+        "Role ABI tests"
+      ],
+      "inputs": [
+        "C08, the new Capsule artifact, and P01 role journeys.",
+        "The qualified target identity and entrypoint contracts."
+      ],
+      "steps": [
+        "Build ordinary OCI images with the complete declared agent set.",
+        "Install the new Capsule at the fixed C08 path.",
+        "Create the named nonroot account and explicit writable directory layout.",
+        "Set HOME, XDG, tool paths, and nonsecret environment explicitly.",
+        "Replace privileged startup with an explicit unprivileged command.",
+        "Validate every advertised executable through metadata or an OpenShell probe.",
+        "Validate actual target UID, workdir, syscall, and filesystem behavior.",
+        "Test agent switching without an image rebuild or missing binary.",
+        "Repair required installer defects instead of hiding them behind a fallback.",
+        "Record role and Capsule compatibility in ResolvedRole."
+      ],
+      "acceptance": [
+        "The role starts without root, sudo, chown, setuid, or firewall setup.",
+        "Every advertised agent reports the recorded version and starts its declared route.",
+        "OpenShell ENTRYPOINT behavior cannot skip required setup silently.",
+        "The canonical Capsule starts with zero sessions."
+      ],
+      "remove_or_replace": [
+        "Delete the old privileged Capsule entrypoint and runtime provisioning assets.",
+        "Delete direct Docker version probes, including runtime-image version.rs."
+      ],
+      "test_cases": [
+        "A56",
+        "A57",
+        "A58"
+      ],
+      "source_basis": "SPEC L115-L146; L150-L156",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block a role that requires an unsupported identity or syscall.",
+        "Do not replace a failed real-agent route with a version-only success claim."
+      ],
+      "report_path": "evidence/openshell-v2/T16/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T16/implementation.json",
+        "evidence/openshell-v2/T16/review.json",
+        "evidence/openshell-v2/T16/test-results.json",
+        "evidence/openshell-v2/T16/commands.jsonl",
+        "evidence/openshell-v2/T16/source-map.json",
+        "evidence/openshell-v2/T16/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T16/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T16.md"
+    },
+    {
+      "id": "T17",
+      "title": "Implement the bounded Capsule protocol",
+      "owner": "Capsule subagent",
+      "depends_on": [
+        "P04",
+        "P05"
+      ],
+      "write_scope": [
+        "crates/core/jackin-session-protocol/",
+        "Protocol property tests and fuzz targets"
+      ],
+      "inputs": [
+        "Frozen C10 schema, limits, and compatibility rules.",
+        "Reviewed old terminal and protocol regression fixtures."
+      ],
+      "steps": [
+        "Implement the four-byte length prefix and bounded CBOR payload.",
+        "Implement Hello, Inspect, StartSession, StopSession, Attach, Detach, Resize, Input, and Snapshot messages.",
+        "Implement output, exit, replay-gap, and advisory-status events.",
+        "Carry boot, session, attachment, operation, and input-generation identifiers where applicable.",
+        "Reject incompatible major versions before side effects.",
+        "Reject oversized, truncated, deeply nested, and invalid frames before unsafe allocation.",
+        "Keep protocol bytes separate from diagnostic text.",
+        "Add stable golden frames and round-trip property tests.",
+        "Fuzz both decoder directions and arithmetic boundaries.",
+        "Do not import host authority into the protocol crate."
+      ],
+      "acceptance": [
+        "A malformed length cannot cause unbounded allocation.",
+        "Diagnostics cannot be parsed as control messages.",
+        "The same technical entity uses the same field meaning in both directions.",
+        "Unknown required capabilities fail before session creation."
+      ],
+      "remove_or_replace": [
+        "Replace the old Capsule wire protocol and Linux peer-PID proof fields.",
+        "Do not retain a legacy protocol negotiation path."
+      ],
+      "test_cases": [
+        "A59",
+        "A60",
+        "A61"
+      ],
+      "source_basis": "SPEC L158-L176; L408",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block transport integration until framing and negative tests pass.",
+        "Do not silently accept incompatible protocol versions."
+      ],
+      "report_path": "evidence/openshell-v2/T17/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T17/implementation.json",
+        "evidence/openshell-v2/T17/review.json",
+        "evidence/openshell-v2/T17/test-results.json",
+        "evidence/openshell-v2/T17/commands.jsonl",
+        "evidence/openshell-v2/T17/source-map.json",
+        "evidence/openshell-v2/T17/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T17/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T17.md"
+    },
+    {
+      "id": "T18",
+      "title": "Rewrite Capsule as an unprivileged resident service",
+      "owner": "Capsule subagent",
+      "depends_on": [
+        "T17"
+      ],
+      "write_scope": [
+        "crates/apps/jackin-capsule/src/service/",
+        "crates/apps/jackin-capsule/src/pty/",
+        "crates/apps/jackin-capsule/src/main.rs",
+        "Capsule process tests"
+      ],
+      "inputs": [
+        "C08 through C10.",
+        "P01 Capsule inventory and reviewed terminal-parser behavior."
+      ],
+      "steps": [
+        "Implement the serve command without root or PID1 requirements.",
+        "Create a fresh boot ID and an empty session inventory at startup.",
+        "Create inner PTYs only after an explicit StartSession request.",
+        "Deduplicate identical StartSession operations within the current boot.",
+        "Reject operation-ID reuse with different command inputs.",
+        "Manage process groups, terminal size, signals, and child reaping.",
+        "Keep Capsule alive after an agent child exits.",
+        "Keep bounded output replay and snapshot watermarks.",
+        "Drain PTYs when viewers disconnect or become slow.",
+        "Keep helper observations advisory and all host effects outside Capsule.",
+        "Start zero sessions after a crash or new boot."
+      ],
+      "acceptance": [
+        "The service runs under the qualified nonroot identity.",
+        "Client loss and child exit do not end unrelated PTYs.",
+        "Capsule restart loses old PTYs and never silently restarts old commands.",
+        "Slow output consumers cannot block PTY draining.",
+        "Process-group supervision is not represented as a hostile-agent security boundary."
+      ],
+      "remove_or_replace": [
+        "Delete root PID1 setup, UID switching, DAC capabilities, sudo, firewall, and Capsule Landlock enforcement.",
+        "Port only reviewed terminal parsing and process utilities."
+      ],
+      "test_cases": [
+        "A62",
+        "A63",
+        "A64"
+      ],
+      "source_basis": "SPEC L148-L156; L168-L190",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block a role that needs privileged Capsule startup.",
+        "Do not add a second workload enforcement layer."
+      ],
+      "report_path": "evidence/openshell-v2/T18/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T18/implementation.json",
+        "evidence/openshell-v2/T18/review.json",
+        "evidence/openshell-v2/T18/test-results.json",
+        "evidence/openshell-v2/T18/commands.jsonl",
+        "evidence/openshell-v2/T18/source-map.json",
+        "evidence/openshell-v2/T18/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T18/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T18.md"
+    },
+    {
+      "id": "T19",
+      "title": "Implement relay attachment and input ownership",
+      "owner": "Capsule subagent",
+      "depends_on": [
+        "T18",
+        "T13",
+        "T11"
+      ],
+      "write_scope": [
+        "crates/apps/jackin-capsule/src/relay/",
+        "crates/services/jackin-sessions/src/attach/",
+        "Host terminal adapter and attachment tests"
+      ],
+      "inputs": [
+        "The qualified OpenShell interactive exec contract.",
+        "C09 and C10."
+      ],
+      "steps": [
+        "Implement relay --stdio as a short-lived local-socket client.",
+        "Start each relay through explicit scoped OpenShell exec.",
+        "Use the absolute executable path with tty=false and no_login_shell=true.",
+        "Create a new upstream exec request ID for each new attachment.",
+        "Verify expected application binding and Capsule boot before input.",
+        "Implement output replay, snapshot watermarks, and replay-gap recovery.",
+        "Implement multiple viewers and one renewable input-writer lease.",
+        "Discard input from stale lease generations.",
+        "Do not replay unacknowledged input after disconnect.",
+        "Restart host control during a live PTY and reconnect without replaying uncertain agent startup.",
+        "Close only the attachment after relay EOF or cancellation.",
+        "Restore the host terminal after every exit path."
+      ],
+      "acceptance": [
+        "Binary frames survive without outer-PTY transformations.",
+        "Detach and network interruption preserve the same live inner PTY.",
+        "A new relay does not reuse admission replay as output replay.",
+        "Two viewers cannot both send accepted writer input.",
+        "Host-service restart preserves remote execution and binding without replaying uncertain agent startup.",
+        "Host terminal state is restored after errors and interrupts."
+      ],
+      "remove_or_replace": [
+        "Delete direct Docker attach, docker exec relay, and host-mounted Capsule socket transports.",
+        "Delete old attachment fallback chains."
+      ],
+      "test_cases": [
+        "A44",
+        "A65",
+        "A66",
+        "A67"
+      ],
+      "source_basis": "SPEC L158-L188; L336-L355; L361-L364",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block input when binding, boot, or writer generation is stale.",
+        "Do not convert a lost relay response into an automatic agent restart."
+      ],
+      "report_path": "evidence/openshell-v2/T19/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T19/implementation.json",
+        "evidence/openshell-v2/T19/review.json",
+        "evidence/openshell-v2/T19/test-results.json",
+        "evidence/openshell-v2/T19/commands.jsonl",
+        "evidence/openshell-v2/T19/source-map.json",
+        "evidence/openshell-v2/T19/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T19/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T19.md"
+    },
+    {
+      "id": "T20",
+      "title": "Implement portable project materialization",
+      "owner": "Project subagent",
+      "depends_on": [
+        "T13",
+        "T10"
+      ],
+      "write_scope": [
+        "crates/services/jackin-workspaces/src/materialize/",
+        "crates/services/jackin-workspaces/src/source/",
+        "Project transfer and storage tests"
+      ],
+      "inputs": [
+        "C11 and frozen materialization manifests.",
+        "Qualified transfer and storage contracts for each target."
+      ],
+      "steps": [
+        "Implement Shared, Worktree, and Clone as explicit source choices.",
+        "Keep source isolation separate from transfer and storage choices.",
+        "Capture the Git base, selected dirty files, untracked files, deletions, and exclusions.",
+        "Transfer required unpushed Git objects without host worktree pointers.",
+        "Detect nested repositories, submodules, and large-file pointers before transfer.",
+        "Use guarded host Git operations without repository-controlled host command execution.",
+        "Stage each import under a unique epoch through OpenShell facilities.",
+        "Reject escaping paths, unsafe links, special files, and transfer-budget violations.",
+        "Verify content digests before atomic project activation.",
+        "Use trusted live binds only on their qualified local profile.",
+        "Record the actual storage owner and durability class."
+      ],
+      "acceptance": [
+        "A remote worktree import has no broken host .git link.",
+        "Interrupted staging never becomes the active project.",
+        "Known account stores never enter a project archive.",
+        "A hostile Git configuration cannot execute a host command during materialization.",
+        "Snapshot mode does not silently replace a requested live-edit mode."
+      ],
+      "remove_or_replace": [
+        "Replace old mount planners and Docker-specific isolation materializers.",
+        "Do not retain raw host binds in isolated VM profiles."
+      ],
+      "test_cases": [
+        "A68",
+        "A69",
+        "A70",
+        "A71"
+      ],
+      "source_basis": "SPEC L192-L222; L250-L264",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block unsupported source content before altering either checkout.",
+        "Block a storage layout whose deletion or mount behavior is unknown."
+      ],
+      "report_path": "evidence/openshell-v2/T20/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T20/implementation.json",
+        "evidence/openshell-v2/T20/review.json",
+        "evidence/openshell-v2/T20/test-results.json",
+        "evidence/openshell-v2/T20/commands.jsonl",
+        "evidence/openshell-v2/T20/source-map.json",
+        "evidence/openshell-v2/T20/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T20/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T20.md"
+    },
+    {
+      "id": "T21",
+      "title": "Implement account grants and native providers",
+      "owner": "Account subagent",
+      "depends_on": [
+        "T13",
+        "T10"
+      ],
+      "write_scope": [
+        "crates/services/jackin-accounts/src/grants/",
+        "crates/services/jackin-accounts/src/providers/",
+        "Account and scope tests"
+      ],
+      "inputs": [
+        "C04, C06, C12, and C13.",
+        "P01 account routes and actual upstream provider contracts."
+      ],
+      "steps": [
+        "Resolve stable Account IDs separately from display labels and provider records.",
+        "Create explicit grants with account revision, agent, scope, lifetime, and generation.",
+        "Verify private scope membership before admitting private credentials.",
+        "Keep saved instance account selection stable across reconnect.",
+        "Attach only the selected provider bindings through OpenShell.",
+        "Observe installed provider and effective-policy revisions before activation.",
+        "Account for provider rules that add effective network access.",
+        "Re-admit after a relevant account or provider revision changes.",
+        "Reject delayed requests from ended grants.",
+        "Keep local leases distinct from mandatory upstream authorization."
+      ],
+      "acceptance": [
+        "Changing the user's default account does not change a saved instance.",
+        "A team workspace cannot silently receive a private account grant.",
+        "A helper cannot enumerate unrelated accounts or grant itself a provider.",
+        "A provider placeholder is treated as authority, not as harmless public text."
+      ],
+      "remove_or_replace": [
+        "Replace old account-to-container identity coupling.",
+        "Do not create a second generic provider or credential store."
+      ],
+      "test_cases": [
+        "A73"
+      ],
+      "source_basis": "SPEC L95-L111; L228-L248",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block a private grant when authorized scope membership cannot be established.",
+        "Do not claim local leases prevent cross-device access."
+      ],
+      "report_path": "evidence/openshell-v2/T21/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T21/implementation.json",
+        "evidence/openshell-v2/T21/review.json",
+        "evidence/openshell-v2/T21/test-results.json",
+        "evidence/openshell-v2/T21/commands.jsonl",
+        "evidence/openshell-v2/T21/source-map.json",
+        "evidence/openshell-v2/T21/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T21/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T21.md"
+    },
+    {
+      "id": "T22",
+      "title": "Implement native-login files and agent adapters",
+      "owner": "Account subagent",
+      "depends_on": [
+        "T21",
+        "T20",
+        "T14"
+      ],
+      "write_scope": [
+        "crates/adapters/jackin-agents/",
+        "crates/services/jackin-accounts/src/native_login/",
+        "Native-login and agent-route tests"
+      ],
+      "inputs": [
+        "P01 supported agent and authentication routes.",
+        "C08 and C12."
+      ],
+      "steps": [
+        "Implement explicit agent argv, environment, native-login, usage, and resume adapters.",
+        "Keep executable paths fixed by the resolved role inventory.",
+        "Stage only the admitted account files inside the private domain.",
+        "Publish credential revisions atomically.",
+        "Use one refresh writer within the declared deployment scope.",
+        "Reject unsupported cross-device rotating-refresh sharing.",
+        "Do not copy host home, SSH trees, or all-account stores.",
+        "Filter account environment from generic shells and other domains.",
+        "Preserve selected model, endpoint, and effort options only through validated agent adapters.",
+        "Test each advertised authenticated route with approved disposable credentials.",
+        "Record unsupported routes without a fallback or false success."
+      ],
+      "acceptance": [
+        "Two accounts cannot read each other's native credential files.",
+        "An interrupted publication leaves one valid credential revision.",
+        "Reconnect never switches to the current default account.",
+        "A real authenticated task passes for every advertised route."
+      ],
+      "remove_or_replace": [
+        "Replace old auth-home seeding, UID-based account isolation, and broad credential mounts.",
+        "Do not retain a generic refresh broker workaround."
+      ],
+      "test_cases": [
+        "A75",
+        "A76",
+        "A77"
+      ],
+      "source_basis": "SPEC L97-L111; L234-L238; L487",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block a live-account test when approved credentials are absent.",
+        "Do not count a --version result as authenticated-agent support."
+      ],
+      "report_path": "evidence/openshell-v2/T22/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T22/implementation.json",
+        "evidence/openshell-v2/T22/review.json",
+        "evidence/openshell-v2/T22/test-results.json",
+        "evidence/openshell-v2/T22/commands.jsonl",
+        "evidence/openshell-v2/T22/source-map.json",
+        "evidence/openshell-v2/T22/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T22/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T22.md"
+    },
+    {
+      "id": "T23",
+      "title": "Complete the native launch and activation path",
+      "owner": "Product subagent",
+      "depends_on": [
+        "T16",
+        "T19",
+        "T20",
+        "T21",
+        "T22",
+        "T11"
+      ],
+      "write_scope": [
+        "crates/services/jackin-control/src/launch/",
+        "crates/apps/jackin/src/cli/load.rs",
+        "Vertical-path tests"
+      ],
+      "inputs": [
+        "C05 and C06 activation protocol.",
+        "All build, role, account, project, and Capsule receipts."
+      ],
+      "steps": [
+        "Implement load through the complete recorded operation sequence.",
+        "Resolve the role, project, target, scope, selected agent, and account before effects.",
+        "Build or reuse the exact role artifact and deliver it.",
+        "Create one admitted OpenShell domain with canonical Capsule restart policy Never.",
+        "Observe the runtime, image, policy, and provider configuration.",
+        "Materialize the project and verify its active epoch.",
+        "Recheck account, provider, and policy revisions before StartSession.",
+        "Re-admit activation when any required revision changes.",
+        "Record the full activation receipt in one local transaction.",
+        "Start the selected agent only after every required field matches.",
+        "Attach through a fresh relay without duplicating agent startup.",
+        "Handle cancellation and lost responses through the journal.",
+        "Publish the complete operation and binding to inspection."
+      ],
+      "acceptance": [
+        "A missing receipt or stale revision prevents StartSession.",
+        "Stale account, provider, or policy revisions block StartSession until the current binding is admitted.",
+        "SandboxReady alone does not activate an agent.",
+        "Two identical launch retries do not create duplicate agent processes.",
+        "A real role reaches useful agent output and reconnects to the same live session."
+      ],
+      "remove_or_replace": [
+        "Replace the old launch pipeline, backend selector, and restore shortcuts.",
+        "Do not keep a Docker execution fallback for failed OpenShell startup."
+      ],
+      "test_cases": [
+        "A74",
+        "A78",
+        "A79",
+        "A80"
+      ],
+      "source_basis": "SPEC L115; L150-L152; L228-L241; L336-L360; L497",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block activation after any authority or image mismatch.",
+        "Treat this vertical path as a demonstration until all release gates pass."
+      ],
+      "report_path": "evidence/openshell-v2/T23/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T23/implementation.json",
+        "evidence/openshell-v2/T23/review.json",
+        "evidence/openshell-v2/T23/test-results.json",
+        "evidence/openshell-v2/T23/commands.jsonl",
+        "evidence/openshell-v2/T23/source-map.json",
+        "evidence/openshell-v2/T23/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T23/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T23.md"
+    },
+    {
+      "id": "T24",
+      "title": "Implement domains sessions and the default shell",
+      "owner": "Product subagent",
+      "depends_on": [
+        "T23"
+      ],
+      "write_scope": [
+        "crates/services/jackin-sessions/src/domains/",
+        "crates/services/jackin-sessions/src/lifecycle/",
+        "Shell and multi-account tests"
+      ],
+      "inputs": [
+        "C04, C09, and the complete agent inventory.",
+        "The logical-instance command contract."
+      ],
+      "steps": [
+        "Group several execution domains under one logical instance.",
+        "Reuse a domain only when its complete admitted trust context matches.",
+        "Create separate domains when account, policy, trust class, or capability changes.",
+        "Keep saved account selection when the user's default changes.",
+        "Require re-admission after the saved account revision changes.",
+        "Use independent writable materializations by default.",
+        "Require explicit collaboration approval for shared writable source.",
+        "Create the default project shell lazily in a credential-free domain.",
+        "Provide an explicit in-domain shell with a trusted authority warning.",
+        "Implement session start, stop, interrupt, detach, and agent switching.",
+        "Keep session exit separate from domain and instance exit.",
+        "Show new-process resume explicitly after retained-state recovery."
+      ],
+      "acceptance": [
+        "Two accounts and the generic shell use distinct required domains.",
+        "Changing the default account does not silently reassign a saved instance.",
+        "A changed account revision requires re-admission before activation.",
+        "An in-domain shell displays and inherits the selected domain authority.",
+        "Interrupt affects only the selected session.",
+        "A dead Capsule does not appear as a reconnectable old PTY."
+      ],
+      "remove_or_replace": [
+        "Delete one-container instance assumptions and environment-only account separation.",
+        "Delete automatic account reassignment on reconnect."
+      ],
+      "test_cases": [
+        "A08",
+        "A72",
+        "A81",
+        "A82",
+        "A83"
+      ],
+      "source_basis": "SPEC L72-L111; L180-L190; L358-L369",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block reuse when any trust-context field differs.",
+        "Do not merge account domains to reduce resource use."
+      ],
+      "report_path": "evidence/openshell-v2/T24/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T24/implementation.json",
+        "evidence/openshell-v2/T24/review.json",
+        "evidence/openshell-v2/T24/test-results.json",
+        "evidence/openshell-v2/T24/commands.jsonl",
+        "evidence/openshell-v2/T24/source-map.json",
+        "evidence/openshell-v2/T24/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T24/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T24.md"
+    },
+    {
+      "id": "T25",
+      "title": "Implement trusted usage and account presentation",
+      "owner": "Account subagent",
+      "depends_on": [
+        "T21",
+        "T22",
+        "T24"
+      ],
+      "write_scope": [
+        "crates/services/jackin-accounts/src/usage/",
+        "crates/adapters/jackin-agents usage modules",
+        "Host usage presentation tests"
+      ],
+      "inputs": [
+        "P01 usage semantics and current provider parsers.",
+        "C12 account authority and cache rules."
+      ],
+      "steps": [
+        "Keep usage requests and interpretation in trusted host code.",
+        "Port reviewed provider parsers into the new agent adapters.",
+        "Key each cache entry by Account ID and credential-source revision.",
+        "Keep unavailable, stale, error, and zero values distinct.",
+        "Restrict each request to the active grant and run.",
+        "Deny unrelated account enumeration.",
+        "Invalidate delayed requests after a run or grant ends.",
+        "Show account identity through trusted labels rather than agent text.",
+        "Retain useful provider-specific behavior without old runtime coupling."
+      ],
+      "acceptance": [
+        "A stale request cannot refresh or expose an ended grant.",
+        "Two account revisions cannot share a usage cache entry.",
+        "A provider failure cannot appear as zero usage.",
+        "Capsule never receives the global account catalog."
+      ],
+      "remove_or_replace": [
+        "Replace old per-container usage tunnels and broker wire coupling.",
+        "Do not keep a generic credential broker for usage convenience."
+      ],
+      "test_cases": [
+        "A84",
+        "A85"
+      ],
+      "source_basis": "SPEC L61; L238; L375-L379",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block a parser claim when its provider response format is unverified.",
+        "Do not weaken account scope to make usage polling succeed."
+      ],
+      "report_path": "evidence/openshell-v2/T25/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T25/implementation.json",
+        "evidence/openshell-v2/T25/review.json",
+        "evidence/openshell-v2/T25/test-results.json",
+        "evidence/openshell-v2/T25/commands.jsonl",
+        "evidence/openshell-v2/T25/source-map.json",
+        "evidence/openshell-v2/T25/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T25/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T25.md"
+    },
+    {
+      "id": "T26",
+      "title": "Implement host actions and approved tool domains",
+      "owner": "Product subagent",
+      "depends_on": [
+        "T24",
+        "T21",
+        "T13"
+      ],
+      "write_scope": [
+        "crates/services/jackin-control/src/host_actions/",
+        "crates/services/jackin-control/src/tool_actions/",
+        "Host action and approval tests"
+      ],
+      "inputs": [
+        "C12 approval fields and P01 host-affordance inventory.",
+        "Qualified OpenShell domain and credential mechanisms."
+      ],
+      "steps": [
+        "Keep clipboard, URL opening, export destinations, and approval dialogs on the host.",
+        "Require a matching local operator action and scoped correlation record.",
+        "Treat terminal escape sequences and helper events as untrusted data.",
+        "Keep approved actions pending while host control is stopped.",
+        "Restore host control without killing the remote session or granting default approval.",
+        "Normalize each tool request into fixed image identity and exact argv.",
+        "Bind approval to domain, operation, arguments, input digests, destination, expiry, and replay identity.",
+        "Invalidate approval after any material change.",
+        "Run the approved consumer in a separate OpenShell domain.",
+        "Give that consumer only its admitted capability or secret.",
+        "Keep project hooks and writable configuration from selecting the consumer executable.",
+        "Record denial, cancellation, timeout, revocation, and uncertain completion.",
+        "Keep secret-consuming output separate from ordinary terminal replay."
+      ],
+      "acceptance": [
+        "Unsolicited OSC or helper messages cannot open URLs or change the clipboard.",
+        "A wrong-domain or changed-input approval fails.",
+        "A replayed approval cannot repeat its effect.",
+        "Stopping host control blocks the action without killing the remote session or granting approval.",
+        "No secret enters the coding-agent PTY or arbitrary host shell."
+      ],
+      "remove_or_replace": [
+        "Delete Linux peer-PID and privileged Capsule authority assumptions.",
+        "Delete host shell execution of agent-supplied strings."
+      ],
+      "test_cases": [
+        "A45",
+        "A86",
+        "A87",
+        "A88"
+      ],
+      "source_basis": "SPEC L61; L176; L240; L336-L346",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block an action without a fixed executable identity and approved scope.",
+        "Do not claim secret non-disclosure for a worker that receives the secret."
+      ],
+      "report_path": "evidence/openshell-v2/T26/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T26/implementation.json",
+        "evidence/openshell-v2/T26/review.json",
+        "evidence/openshell-v2/T26/test-results.json",
+        "evidence/openshell-v2/T26/commands.jsonl",
+        "evidence/openshell-v2/T26/source-map.json",
+        "evidence/openshell-v2/T26/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T26/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T26.md"
+    },
+    {
+      "id": "T27",
+      "title": "Implement checkpoints and conflict-safe export",
+      "owner": "Project subagent",
+      "depends_on": [
+        "T20",
+        "T22",
+        "T24"
+      ],
+      "write_scope": [
+        "crates/services/jackin-workspaces/src/checkpoint/",
+        "crates/services/jackin-workspaces/src/export/",
+        "Checkpoint and apply tests"
+      ],
+      "inputs": [
+        "C11 and agent-specific resume formats.",
+        "Qualified external retention storage."
+      ],
+      "steps": [
+        "Capture the declared project baseline and selected dirty or untracked content.",
+        "Preserve required unpushed commits with verified object transfer.",
+        "Capture only allowlisted resumable agent state.",
+        "Exclude credential stores, tokens, and unrequested host files.",
+        "Record the quiesce method and the checkpoint consistency class.",
+        "Store the checkpoint outside sandbox-owned storage.",
+        "Verify checksums and perform a restore test before a complete receipt.",
+        "Return patches or artifacts with their original baseline.",
+        "Check host changes before applying returned work.",
+        "Preserve both versions on conflict and report the exact paths.",
+        "Report incomplete transfer, flush failure, and unknown cleanup visibly."
+      ],
+      "acceptance": [
+        "Deleting the source sandbox does not delete the accepted checkpoint.",
+        "Dirty and untracked selected files survive restore.",
+        "Known credential canaries do not enter checkpoint content or logs.",
+        "A changed host checkout is never overwritten blindly.",
+        "A checksum alone is not reported as application-level consistency."
+      ],
+      "remove_or_replace": [
+        "Replace Docker-layer snapshots and implicit copy-back paths.",
+        "Do not use Git alone as complete conversation and untracked-file retention."
+      ],
+      "test_cases": [
+        "A89",
+        "A90",
+        "A91",
+        "A92"
+      ],
+      "source_basis": "SPEC L204-L226; L234; L367-L368",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block destructive follow-up when the required external checkpoint is incomplete.",
+        "Do not claim arbitrary project data is secret-free merely because a scan passed."
+      ],
+      "report_path": "evidence/openshell-v2/T27/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T27/implementation.json",
+        "evidence/openshell-v2/T27/review.json",
+        "evidence/openshell-v2/T27/test-results.json",
+        "evidence/openshell-v2/T27/commands.jsonl",
+        "evidence/openshell-v2/T27/source-map.json",
+        "evidence/openshell-v2/T27/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T27/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T27.md"
+    },
+    {
+      "id": "T28",
+      "title": "Implement handoff eject exile and purge",
+      "owner": "Project subagent",
+      "depends_on": [
+        "T27",
+        "T13",
+        "T24"
+      ],
+      "write_scope": [
+        "crates/services/jackin-control/src/handoff/",
+        "crates/services/jackin-control/src/cleanup/",
+        "Lifecycle command tests"
+      ],
+      "inputs": [
+        "Checkpoint receipts, immutable runtime bindings, and retention owners.",
+        "The command semantics in SPEC.md."
+      ],
+      "steps": [
+        "Quiesce source writers through the qualified application procedure.",
+        "Admit a new destination with its own account and authority scope.",
+        "Materialize and verify the accepted checkpoint before destination resume.",
+        "Use agent-supported conversation resume, not PTY or process-memory migration.",
+        "Retire the source only after destination acceptance.",
+        "Implement eject as scoped stop with documented retained state.",
+        "Implement exile as bulk eject within explicit target and project scope.",
+        "Implement purge only for confirmed owned resources and selected retained data.",
+        "Use immutable fences for every runtime mutation.",
+        "Keep partial and uncertain cleanup results in the journal.",
+        "Protect original checkouts, shared providers, and externally owned volumes."
+      ],
+      "acceptance": [
+        "A failed handoff leaves the last accepted checkpoint recoverable.",
+        "An uncertain source action cannot be described as exactly-once migration.",
+        "A stale binding cannot stop or delete a replacement.",
+        "Bulk cleanup cannot expand beyond the selected scope.",
+        "Purge never deletes the original user checkout."
+      ],
+      "remove_or_replace": [
+        "Delete old container discovery, adoption, absent-resource cleanup, and DinD garbage collection.",
+        "Delete destructive NOT_FOUND shortcuts."
+      ],
+      "test_cases": [
+        "A93",
+        "A94",
+        "A95"
+      ],
+      "source_basis": "SPEC L214-L226; L348-L369",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block deletion when ownership, authority, or required retention is uncertain.",
+        "Do not create a replacement because observation timed out."
+      ],
+      "report_path": "evidence/openshell-v2/T28/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T28/implementation.json",
+        "evidence/openshell-v2/T28/review.json",
+        "evidence/openshell-v2/T28/test-results.json",
+        "evidence/openshell-v2/T28/commands.jsonl",
+        "evidence/openshell-v2/T28/source-map.json",
+        "evidence/openshell-v2/T28/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T28/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T28.md"
+    },
+    {
+      "id": "T29",
+      "title": "Rebuild CLI Console and fleet observations",
+      "owner": "Product subagent",
+      "depends_on": [
+        "T24",
+        "T25",
+        "T26",
+        "T28"
+      ],
+      "write_scope": [
+        "crates/apps/jackin/src/cli/",
+        "crates/apps/jackin/src/console/",
+        "CLI JSON and terminal UI tests"
+      ],
+      "inputs": [
+        "Frozen command and JSON contracts.",
+        "All application APIs and the P01 feature register."
+      ],
+      "steps": [
+        "Implement target list, load, hardline, shell, inspect, checkpoint, handoff, eject, exile, purge, and doctor entry points.",
+        "Use the shared host application API for every effect.",
+        "Group panes by project, instance, domain, and session.",
+        "Show trusted target, scope, account, policy, storage, resource, and freshness labels.",
+        "Keep agent activity separate from runtime state and verification verdicts.",
+        "Aggregate only authorized scopes with bounded concurrency and pagination.",
+        "Preserve stale rows and last-seen times during target failure.",
+        "Show fleet completeness and per-target errors.",
+        "Keep branch, pull-request, CI, clipboard-image, and export workflows through trusted adapters.",
+        "Regenerate completion and man-page sources from the new command model."
+      ],
+      "acceptance": [
+        "Two reachable targets remain usable when a third target fails.",
+        "Incomplete pagination never becomes a complete empty fleet.",
+        "Agent-reported done cannot authorize deletion or a passing verdict.",
+        "Ambiguous human selectors produce a selection error.",
+        "JSON output follows only the v2 schema."
+      ],
+      "remove_or_replace": [
+        "Replace old Docker-based status, Console discovery, and backend CLI flags.",
+        "Remove old JSON fields and compatibility aliases that contradict v2 semantics."
+      ],
+      "test_cases": [
+        "A96",
+        "A97",
+        "A98"
+      ],
+      "source_basis": "SPEC L356-L399; L413-L419",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block a UI effect that bypasses the application API.",
+        "Do not hide unavailable rows to present a healthy fleet."
+      ],
+      "report_path": "evidence/openshell-v2/T29/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T29/implementation.json",
+        "evidence/openshell-v2/T29/review.json",
+        "evidence/openshell-v2/T29/test-results.json",
+        "evidence/openshell-v2/T29/commands.jsonl",
+        "evidence/openshell-v2/T29/source-map.json",
+        "evidence/openshell-v2/T29/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T29/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T29.md"
+    },
+    {
+      "id": "T30",
+      "title": "Implement private developer service forwards",
+      "owner": "Product subagent",
+      "depends_on": [
+        "T13",
+        "T23"
+      ],
+      "write_scope": [
+        "crates/adapters/jackin-openshell/src/forwards/",
+        "crates/services/jackin-control/src/services/",
+        "Developer service tests"
+      ],
+      "inputs": [
+        "Actual forward and service API contracts from P02.",
+        "C13 service exposure rules."
+      ],
+      "steps": [
+        "Create authenticated private forwards through OpenShell.",
+        "Bind local listener endpoints to loopback by default.",
+        "Track forward lifetime, target binding, owner, and request identity.",
+        "Show the convenient URL through trusted host UI.",
+        "Require a separate capability for public exposure.",
+        "Show public listener TLS and application-authentication requirements explicitly.",
+        "Reject every attempt to expose Capsule control publicly.",
+        "Clean up only confirmed owned forwards.",
+        "Handle disconnect and policy-update interruption without broader access."
+      ],
+      "acceptance": [
+        "A private server is unreachable through an unintended public listener.",
+        "An unauthorized user cannot use the control-plane forward.",
+        "Public exposure never implies OIDC or CLI authentication protection.",
+        "Capsule control remains private."
+      ],
+      "remove_or_replace": [
+        "Remove direct Docker port inspection and publication paths.",
+        "Do not introduce a Jackin relay scheduler."
+      ],
+      "test_cases": [
+        "A99",
+        "A100"
+      ],
+      "source_basis": "SPEC L280-L284",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block public exposure without its explicit grant and authentication contract.",
+        "Do not invent a port route when the upstream API is unsupported."
+      ],
+      "report_path": "evidence/openshell-v2/T30/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T30/implementation.json",
+        "evidence/openshell-v2/T30/review.json",
+        "evidence/openshell-v2/T30/test-results.json",
+        "evidence/openshell-v2/T30/commands.jsonl",
+        "evidence/openshell-v2/T30/source-map.json",
+        "evidence/openshell-v2/T30/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T30/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T30.md"
+    },
+    {
+      "id": "T31",
+      "title": "Implement caches prewarm diagnostics and resource views",
+      "owner": "Operations subagent",
+      "depends_on": [
+        "T15",
+        "T28",
+        "T29"
+      ],
+      "write_scope": [
+        "crates/services/jackin-roles/src/cache/",
+        "crates/services/jackin-control/src/doctor/",
+        "crates/services/jackin-control/src/resources/",
+        "Cache and diagnostics tests"
+      ],
+      "inputs": [
+        "Artifact references, retained checkpoint records, and runtime observations.",
+        "C07 and C16."
+      ],
+      "steps": [
+        "Track builder cache, registry artifacts, prepared images, and recreation artifacts separately.",
+        "Compute artifact liveness from active and retained v2 references.",
+        "Keep uncertain remote consumers live for pruning decisions.",
+        "Prune only explicitly owned artifacts under the selected retention policy.",
+        "Prewarm immutable tools and images with bounded concurrency.",
+        "Do not attach accounts or start companions during ordinary prewarm.",
+        "Report builder, gateway, target, optional engine, and host health separately.",
+        "Report requested, enforced, reserved, and measured resources separately.",
+        "Include all domains, supervisors, caches, and companions in instance accounting.",
+        "Measure build, launch, attach, reconnect, checkpoint, stop, and cleanup phases."
+      ],
+      "acceptance": [
+        "A target outage cannot cause deletion of an image needed for recreation.",
+        "An unavailable separate builder cannot disable status or OpenShell management.",
+        "Default prewarm creates no account grant or engine.",
+        "Resource totals do not omit declared supervisor or companion overhead."
+      ],
+      "remove_or_replace": [
+        "Delete role-container-label image liveness and old DinD cache pruning.",
+        "Delete diagnostics that require a Docker agent backend."
+      ],
+      "test_cases": [
+        "A101",
+        "A102",
+        "A103"
+      ],
+      "source_basis": "SPEC L127; L371; L465-L475",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block pruning when ownership or retained consumers are unknown.",
+        "Do not present configured VM RAM as measured host RSS."
+      ],
+      "report_path": "evidence/openshell-v2/T31/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T31/implementation.json",
+        "evidence/openshell-v2/T31/review.json",
+        "evidence/openshell-v2/T31/test-results.json",
+        "evidence/openshell-v2/T31/commands.jsonl",
+        "evidence/openshell-v2/T31/source-map.json",
+        "evidence/openshell-v2/T31/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T31/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T31.md"
+    },
+    {
+      "id": "T32",
+      "title": "Replace the independent verification worker",
+      "owner": "Verifier subagent",
+      "depends_on": [
+        "U02",
+        "T13",
+        "T20",
+        "T10"
+      ],
+      "write_scope": [
+        "crates/services/jackin-control/src/verification/",
+        "Verification records and independent-worker tests"
+      ],
+      "inputs": [
+        "C15 and the qualified strict-worker contract.",
+        "Reviewed frozen-policy and result-binding logic from the old workflow code."
+      ],
+      "steps": [
+        "Freeze candidate, image, check-bundle, argv, budget, and deadline digests.",
+        "Create a separate credential-free OpenShell worker.",
+        "Use immutable candidate and trusted-check inputs.",
+        "Require the qualified read-only-root and bounded-scratch capability.",
+        "Disable ordinary network and coding-agent account access.",
+        "Observe command completion through the authoritative runtime contract.",
+        "Keep output bounded and mark truncation explicitly.",
+        "Record code failure, timeout, infrastructure failure, cancellation, and unknown outcome separately.",
+        "Bind the host verdict to the exact frozen inputs.",
+        "Confirm worker cleanup without deleting candidate or checkpoint evidence.",
+        "Reject unsupported worker profiles before launch."
+      ],
+      "acceptance": [
+        "A candidate cannot change the check bundle or produce its own passing host verdict.",
+        "A changed digest invalidates earlier verification evidence.",
+        "Worker metadata and content mutation negatives pass.",
+        "No Docker or host worker starts when OpenShell is unavailable."
+      ],
+      "remove_or_replace": [
+        "Delete jackin-workflow direct Docker run, image, inspect, wait, and remove code.",
+        "Retain only reviewed pure policy and verdict logic in the new module."
+      ],
+      "test_cases": [
+        "A22",
+        "A23",
+        "A24",
+        "A25",
+        "A104",
+        "A105",
+        "A106"
+      ],
+      "source_basis": "SPEC L326-L334; L503",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block verification when strict worker support or trustworthy completion is absent.",
+        "Do not treat an infrastructure timeout as a code-test pass."
+      ],
+      "report_path": "evidence/openshell-v2/T32/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T32/implementation.json",
+        "evidence/openshell-v2/T32/review.json",
+        "evidence/openshell-v2/T32/test-results.json",
+        "evidence/openshell-v2/T32/commands.jsonl",
+        "evidence/openshell-v2/T32/source-map.json",
+        "evidence/openshell-v2/T32/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T32/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T32.md"
+    },
+    {
+      "id": "T33",
+      "title": "Integrate the managed engine capability into Jackin",
+      "owner": "Companion adapter subagent",
+      "depends_on": [
+        "U08",
+        "T13",
+        "T23"
+      ],
+      "write_scope": [
+        "crates/adapters/jackin-openshell/src/companions/",
+        "crates/services/jackin-control/src/capabilities/",
+        "Role and target capability integration tests"
+      ],
+      "inputs": [
+        "Qualified upstream companion API and U08 evidence.",
+        "C14 and frozen domain-creation inputs."
+      ],
+      "steps": [
+        "Resolve the engine request before domain creation.",
+        "Reject unsupported target profiles before any runtime effect.",
+        "Request the upstream-owned companion through OpenShell only.",
+        "Record parent identity, capability revision, endpoint generation, and cleanup status.",
+        "Expose only the admitted engine endpoint to the owning domain.",
+        "Display Docker run, Compose, and Testcontainers support accurately.",
+        "Keep default-off domains free of engine secrets and resources.",
+        "Require checkpoint and reprovision when an existing domain enables engine access.",
+        "Observe companion lifecycle through upstream receipts.",
+        "Keep all engine VM reconciliation outside Jackin."
+      ],
+      "acceptance": [
+        "Engine=false produces no endpoint, credential, prewarm, or companion.",
+        "A Kubernetes target without the capability rejects the request before launch.",
+        "A wrong account domain cannot use another engine endpoint.",
+        "Stopping or deleting the parent revokes access and confirms owned cleanup."
+      ],
+      "remove_or_replace": [
+        "Delete the old launch-dind and cleanup-dind-gc implementations.",
+        "Do not retain external daemon configuration as a supported runtime fallback."
+      ],
+      "test_cases": [
+        "A28",
+        "A29",
+        "A30",
+        "A31",
+        "A39",
+        "A107"
+      ],
+      "source_basis": "SPEC L286-L324; L503",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block engine-enabled v2 completion until U08 passes.",
+        "Do not substitute a build-only service for Docker compatibility."
+      ],
+      "report_path": "evidence/openshell-v2/T33/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T33/implementation.json",
+        "evidence/openshell-v2/T33/review.json",
+        "evidence/openshell-v2/T33/test-results.json",
+        "evidence/openshell-v2/T33/commands.jsonl",
+        "evidence/openshell-v2/T33/source-map.json",
+        "evidence/openshell-v2/T33/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T33/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T33.md"
+    },
+    {
+      "id": "T34",
+      "title": "Complete workflow and product behavior coverage",
+      "owner": "Operations subagent",
+      "depends_on": [
+        "T32",
+        "T26",
+        "T27",
+        "T29"
+      ],
+      "write_scope": [
+        "crates/services/jackin-control/src/workflows/",
+        "Reviewed agent-status and project-context adapters",
+        "Product journey tests"
+      ],
+      "inputs": [
+        "P01 complete feature register.",
+        "Verified session, tool-action, checkpoint, and worker APIs."
+      ],
+      "steps": [
+        "Port required workflow state and repair semantics to v2 operations.",
+        "Keep host verdict authority outside coding agents and workers.",
+        "Use the new independent verifier for frozen checks.",
+        "Use the approved tool-domain route for privileged product actions.",
+        "Preserve project branch, pull-request, CI, and relevant agent-status behavior.",
+        "Use trusted host adapters for external product metadata.",
+        "Keep local project status useful when external services fail.",
+        "Map every retained P01 journey to an executed v2 test.",
+        "Document every deliberate removal with its specification basis.",
+        "Do not introduce team queues or a general scheduler as hidden prerequisites."
+      ],
+      "acceptance": [
+        "Every retained behavior has a passing implementation test or a visible release blocker.",
+        "External metadata failure does not terminate a useful local session.",
+        "Agent status cannot set workflow acceptance or erase failed verification.",
+        "No product route calls an old runtime helper."
+      ],
+      "remove_or_replace": [
+        "Delete obsolete workflow runtime and status integration code after its replacement tests pass.",
+        "Do not retain unused old foundations as claimed active guarantees."
+      ],
+      "test_cases": [
+        "A108",
+        "A109"
+      ],
+      "source_basis": "SPEC L61-L63; L326-L344; L375-L383; L499-L507",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block feature completion when the register contains an unmapped retained behavior.",
+        "Do not remove a required workflow to make the test matrix smaller."
+      ],
+      "report_path": "evidence/openshell-v2/T34/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T34/implementation.json",
+        "evidence/openshell-v2/T34/review.json",
+        "evidence/openshell-v2/T34/test-results.json",
+        "evidence/openshell-v2/T34/commands.jsonl",
+        "evidence/openshell-v2/T34/source-map.json",
+        "evidence/openshell-v2/T34/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T34/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T34.md"
+    },
+    {
+      "id": "T35",
+      "title": "Qualify local containers and remote container gateways",
+      "owner": "Qualification subagent",
+      "depends_on": [
+        "T29",
+        "T30",
+        "T31",
+        "T34",
+        "U03"
+      ],
+      "write_scope": [
+        "tests/v2/targets/container/",
+        "Container compatibility evidence and deployment instructions"
+      ],
+      "inputs": [
+        "Required container rows in ACCEPTANCE.md.",
+        "The complete v2 application and approved live-account fixtures."
+      ],
+      "steps": [
+        "Test native Linux Docker as a local OpenShell target.",
+        "Test macOS Docker Desktop and OrbStack as separate target rows.",
+        "Test an independently hosted remote Linux gateway.",
+        "Test the required remote macOS gateway row.",
+        "Use registry delivery for remote role images.",
+        "Run snapshot and Git materialization journeys.",
+        "Run trusted live Shared and Worktree journeys only on their admitted profiles.",
+        "Run the combined two-account, shell, real-agent, reconnect, action, recovery, and cleanup journey.",
+        "Test a separate builder outage while the gateway remains available.",
+        "Record exact artifacts, host versions, architecture, and effective enforcement.",
+        "Keep every missing target or account fixture blocked."
+      ],
+      "acceptance": [
+        "One local compiler example does not qualify another platform or remote target.",
+        "Host paths refer to the actual runtime host.",
+        "Live editing remains live and snapshot transfer remains explicit.",
+        "Unrelated resources survive failure and cleanup tests."
+      ],
+      "remove_or_replace": [
+        "Remove platform claims supported only by old Docker or Apple behavior.",
+        "Do not introduce platform-specific execution fallbacks."
+      ],
+      "test_cases": [
+        "A110",
+        "A111",
+        "A117"
+      ],
+      "source_basis": "SPEC L208; L252-L264; L487-L491; L505",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block each required target row without its own fresh evidence.",
+        "Do not infer Docker Desktop behavior from OrbStack results."
+      ],
+      "report_path": "evidence/openshell-v2/T35/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T35/implementation.json",
+        "evidence/openshell-v2/T35/review.json",
+        "evidence/openshell-v2/T35/test-results.json",
+        "evidence/openshell-v2/T35/commands.jsonl",
+        "evidence/openshell-v2/T35/source-map.json",
+        "evidence/openshell-v2/T35/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T35/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T35.md"
+    },
+    {
+      "id": "T36",
+      "title": "Qualify isolated VM profiles and engine domains",
+      "owner": "Qualification subagent",
+      "depends_on": [
+        "T29",
+        "T30",
+        "T31",
+        "T33",
+        "T34",
+        "U03"
+      ],
+      "write_scope": [
+        "tests/v2/targets/vm/",
+        "VM compatibility evidence and operator profiles"
+      ],
+      "inputs": [
+        "Fixed small and large VM profile definitions.",
+        "The qualified VM and companion tuples."
+      ],
+      "steps": [
+        "Test each required VM architecture and fixed resource shape.",
+        "Verify the actual assigned identity, tool paths, and work directory.",
+        "Use guest-owned storage without raw host binds.",
+        "Test role import, image preparation, and project transfer.",
+        "Test small and large profiles without pretending per-sandbox sizing is enforced.",
+        "Test mount limits without widening source exposure.",
+        "Test orderly and interrupted shutdown with flush failures visible.",
+        "Restore dirty work and conversation state from independent checkpoints.",
+        "Run engine-enabled and engine-disabled domain journeys.",
+        "Measure guest resources and host overhead separately."
+      ],
+      "acceptance": [
+        "A requested VM boundary never becomes a container silently.",
+        "A guest cannot access unrelated host directories through project projection.",
+        "Overlay deletion cannot erase the accepted external checkpoint.",
+        "Engine access does not place the trusted agent runtime inside daemon authority."
+      ],
+      "remove_or_replace": [
+        "Delete old Apple Container backend assets and VM compatibility assumptions.",
+        "Do not use raw virtiofs host sharing for isolated profiles."
+      ],
+      "test_cases": [
+        "A112",
+        "A113",
+        "A117"
+      ],
+      "source_basis": "SPEC L135-L144; L210-L222; L258-L264; L290-L322",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block a VM shape or architecture that lacks its own runtime evidence.",
+        "Do not report sparse disk capacity as allocated bytes."
+      ],
+      "report_path": "evidence/openshell-v2/T36/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T36/implementation.json",
+        "evidence/openshell-v2/T36/review.json",
+        "evidence/openshell-v2/T36/test-results.json",
+        "evidence/openshell-v2/T36/commands.jsonl",
+        "evidence/openshell-v2/T36/source-map.json",
+        "evidence/openshell-v2/T36/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T36/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T36.md"
+    },
+    {
+      "id": "T37",
+      "title": "Qualify the Kubernetes deployment tuple",
+      "owner": "Qualification subagent",
+      "depends_on": [
+        "T29",
+        "T30",
+        "T31",
+        "T34"
+      ],
+      "write_scope": [
+        "tests/v2/targets/kubernetes/",
+        "Operator deployment documentation and compatibility evidence"
+      ],
+      "inputs": [
+        "Official OpenShell Helm and Agent Sandbox resources.",
+        "The pinned dedicated-supervisor tuple and approved cluster access."
+      ],
+      "steps": [
+        "Deploy the official resources through the authorized operator workflow.",
+        "Use dedicated supervisors for the initial qualified profile.",
+        "Record chart, gateway, supervisor, trusted runtime, Agent Sandbox, CNI, kernel, runtime, and storage versions.",
+        "Use separate authority scopes for private and shared accounts.",
+        "Use separate staging and production registrations for materially different trust classes.",
+        "Test real ingress and egress enforcement with negative traffic.",
+        "Verify that developers cannot mutate enforcement or bootstrap resources.",
+        "Use automatic persistent /sandbox storage without an interfering child mount.",
+        "Test image-pull authorization, quotas, Pod replacement, stop/start, and Sandbox deletion.",
+        "Verify provider-private data stays outside shared PVCs.",
+        "Test gateway interruption, transport loss, and backup/restore expectations.",
+        "Reject managed-engine requests until this driver has its own qualified integration."
+      ],
+      "acceptance": [
+        "Policy-object existence alone cannot pass the network test.",
+        "Pod replacement preserves qualified retained files but not old PTYs.",
+        "Sandbox deletion follows documented storage ownership.",
+        "Agents receive no Pod-creation token or physical host Docker socket.",
+        "Jackin creates no Pods or custom operator resources."
+      ],
+      "remove_or_replace": [
+        "Remove any proposed Jackin Kubernetes controller or direct Pod lifecycle code.",
+        "Do not mix development and release components silently."
+      ],
+      "test_cases": [
+        "A114",
+        "A115",
+        "A116",
+        "A117"
+      ],
+      "source_basis": "SPEC L212; L266-L284; L489-L491",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block Kubernetes release support without the complete tested tuple.",
+        "Do not use cluster-admin credentials to hide missing developer-scope APIs."
+      ],
+      "report_path": "evidence/openshell-v2/T37/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T37/implementation.json",
+        "evidence/openshell-v2/T37/review.json",
+        "evidence/openshell-v2/T37/test-results.json",
+        "evidence/openshell-v2/T37/commands.jsonl",
+        "evidence/openshell-v2/T37/source-map.json",
+        "evidence/openshell-v2/T37/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T37/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T37.md"
+    },
+    {
+      "id": "T38",
+      "title": "Run cross-area failure security and resource tests",
+      "owner": "Qualification subagent",
+      "depends_on": [
+        "T35",
+        "T36",
+        "T37",
+        "T32",
+        "T33"
+      ],
+      "write_scope": [
+        "tests/v2/faults/",
+        "tests/v2/security/",
+        "Cross-target performance and review evidence"
+      ],
+      "inputs": [
+        "Every accepted task and target tuple.",
+        "Historical regression fixtures and the complete acceptance matrix."
+      ],
+      "steps": [
+        "Inject failure before and after every journaled external effect.",
+        "Test lost responses, duplicate requests, stale generations, and same-name replacements.",
+        "Test wrong workspace, wrong account, and ended-grant requests.",
+        "Kill clients, relays, Capsule, host service, gateway, and companion at distinct boundaries.",
+        "Restart host control after uncertain create, exec, stop, delete, and publication effects.",
+        "Test dirty work, interrupted transfers, storage errors, and unknown cleanup.",
+        "Run the complete combined journey on each required target mechanism.",
+        "Have an independent agent repeat critical journeys from fresh resources.",
+        "Measure one-instance and two-instance resource totals and launch phases.",
+        "Record cache state, sample count, median, range, and host details.",
+        "Report percentiles only when the declared sample requirement is met.",
+        "Review every failure without deleting inconvenient evidence."
+      ],
+      "acceptance": [
+        "No injected failure causes unrelated-resource deletion or silent data loss.",
+        "Each external effect is replayed safely or remains explicitly uncertain.",
+        "Runtime and publication uncertainty never appears as guessed success.",
+        "All stale-authority and same-name replacement cases fail safely.",
+        "Every mandatory target journey has independent fresh evidence.",
+        "Measurements distinguish requested limits, enforced scopes, and observed usage."
+      ],
+      "remove_or_replace": [
+        "Remove test exceptions that bypass real credential, worker, or companion paths.",
+        "Do not erase failing historical fixtures."
+      ],
+      "test_cases": [
+        "A41",
+        "A117",
+        "A118",
+        "A119"
+      ],
+      "source_basis": "SPEC L336-L355; L471-L491; L505-L509",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block release after any missing negative case or unexplained failure.",
+        "Do not replace a required runtime case with a mock."
+      ],
+      "report_path": "evidence/openshell-v2/T38/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T38/implementation.json",
+        "evidence/openshell-v2/T38/review.json",
+        "evidence/openshell-v2/T38/test-results.json",
+        "evidence/openshell-v2/T38/commands.jsonl",
+        "evidence/openshell-v2/T38/source-map.json",
+        "evidence/openshell-v2/T38/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T38/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T38.md"
+    },
+    {
+      "id": "T39",
+      "title": "Delete all obsolete implementation and rebuild packaging",
+      "owner": "Integration subagent",
+      "depends_on": [
+        "P01",
+        "T31",
+        "T34",
+        "T35",
+        "T36",
+        "T37",
+        "T38"
+      ],
+      "write_scope": [
+        "All paths classified DELETE or replaced by P01",
+        "Cargo files, CI sources, generated manifests, scripts, packaging, and current documentation"
+      ],
+      "inputs": [
+        "The complete P01 disposition inventory.",
+        "Passing replacement evidence and the new production dependency graph."
+      ],
+      "steps": [
+        "Delete every replaced runtime-prefix crate and the old Docker execution adapter.",
+        "Delete Apple backend source, backend enums, and obsolete resource manifests.",
+        "Delete old Capsule privilege, peer-PID, firewall, and sudo paths.",
+        "Delete DinD launch, discovery, adoption, and garbage collection.",
+        "Delete direct Docker probes, workers, attach routes, and snapshot routes.",
+        "Delete v1 parsers, importers, compatibility flags, and dormant feature-gated implementations.",
+        "Port only approved pure helpers with their new contract tests.",
+        "Remove obsolete dependencies, generated jobs, fixtures, completions, and installer entries.",
+        "Regenerate CI through the actual pinned generator recorded by P01.",
+        "Audit every host subprocess and Docker API call by ownership.",
+        "Compare the final tree against every inventory record.",
+        "Run clean-build and installation tests from fresh directories."
+      ],
+      "acceptance": [
+        "Every legacy inventory record has a verified final disposition.",
+        "No production path can execute an agent outside OpenShell.",
+        "No old backend remains behind a feature flag or generic command helper.",
+        "Every retained Docker call belongs to approved image infrastructure.",
+        "Fresh installation requires no old executable, state, or configuration."
+      ],
+      "remove_or_replace": [
+        "Delete the old implementation, not only its workspace references.",
+        "Keep historical evidence as non-executable documentation only."
+      ],
+      "test_cases": [
+        "A120",
+        "A121",
+        "A122"
+      ],
+      "source_basis": "SPEC L5-L7; L125-L127; L156; L334; L404-L419; L503-L509",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Block completion when one executable legacy path remains unclassified.",
+        "Do not delete a valid replacement test to make the clean build pass."
+      ],
+      "report_path": "evidence/openshell-v2/T39/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T39/implementation.json",
+        "evidence/openshell-v2/T39/review.json",
+        "evidence/openshell-v2/T39/test-results.json",
+        "evidence/openshell-v2/T39/commands.jsonl",
+        "evidence/openshell-v2/T39/source-map.json",
+        "evidence/openshell-v2/T39/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T39/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T39.md"
+    },
+    {
+      "id": "T40",
+      "title": "Approve the full v2 release candidate",
+      "owner": "Independent review subagent",
+      "depends_on": [
+        "T39"
+      ],
+      "write_scope": [
+        "Release-candidate documentation, final compatibility matrix, and acceptance summary",
+        "Version and packaging changes through the integration subagent"
+      ],
+      "inputs": [
+        "All task reports, independent reviews, and raw test evidence.",
+        "The frozen feature register and complete compatibility tuples."
+      ],
+      "steps": [
+        "Verify that every mandatory task and acceptance case passes.",
+        "Check that every upstream patch has a pinned diff, owner, upstream plan, and regression evidence.",
+        "Require explicit maintainer approval for any supported patched tuple.",
+        "Document fresh setup and manual preservation of old user data.",
+        "Do not add an old-state importer or runtime cleanup fallback.",
+        "Document changed commands, unsupported debugging, and each target's actual limits.",
+        "Document checkpoint restore, account scope, engine default-off behavior, and unknown-outcome recovery.",
+        "Set the approved release candidate version to 2.0.0.",
+        "Build and inspect packages from a clean checkout.",
+        "Produce the final removal inventory, test summary, blocker list, and source references.",
+        "Do not publish a release or alter production infrastructure without explicit authorization."
+      ],
+      "acceptance": [
+        "A blocked engine, verifier, mutation, account, or target gate prevents full release approval.",
+        "Documentation matches tested behavior rather than desired behavior.",
+        "The final report distinguishes code review, mock tests, live tests, and independent repeats.",
+        "No backward-compatibility path or legacy execution artifact ships."
+      ],
+      "remove_or_replace": [
+        "Remove temporary implementation scaffolding and obsolete v1 documentation from active guidance.",
+        "Do not remove source evidence or required failure records."
+      ],
+      "test_cases": [
+        "A123",
+        "A124",
+        "A125"
+      ],
+      "source_basis": "SPEC L9; L477-L509",
+      "status": "NOT_STARTED",
+      "stop_conditions": [
+        "Report partial completion when any mandatory gate remains blocked.",
+        "Do not relabel a demonstration as the completed rewrite."
+      ],
+      "report_path": "evidence/openshell-v2/T40/implementation.json",
+      "required_artifacts": [
+        "evidence/openshell-v2/T40/implementation.json",
+        "evidence/openshell-v2/T40/review.json",
+        "evidence/openshell-v2/T40/test-results.json",
+        "evidence/openshell-v2/T40/commands.jsonl",
+        "evidence/openshell-v2/T40/source-map.json",
+        "evidence/openshell-v2/T40/diff.patch"
+      ],
+      "test_write_scope": "tests/v2/tasks/T40/",
+      "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
+      "completion_rule": "All task checks pass at their declared evidence level. Required artifacts and an independent review exist.",
+      "task_file": "tasks/T40.md"
+    }
+  ],
+  "topological_ready_groups": [
+    [
+      "P00"
+    ],
+    [
+      "P01",
+      "P02"
+    ],
+    [
+      "P03"
+    ],
+    [
+      "P04"
+    ],
+    [
+      "P05",
+      "U00",
+      "U01",
+      "U02",
+      "U03",
+      "U04"
+    ],
+    [
+      "T10",
+      "T12",
+      "T14",
+      "T17",
+      "U05",
+      "U06",
+      "U07"
+    ],
+    [
+      "T11",
+      "T13",
+      "T15",
+      "T18",
+      "U08"
+    ],
+    [
+      "T16",
+      "T19",
+      "T20",
+      "T21"
+    ],
+    [
+      "T22",
+      "T32"
+    ],
+    [
+      "T23"
+    ],
+    [
+      "T24",
+      "T30",
+      "T33"
+    ],
+    [
+      "T25",
+      "T26",
+      "T27"
+    ],
+    [
+      "T28"
+    ],
+    [
+      "T29"
+    ],
+    [
+      "T31",
+      "T34"
+    ],
+    [
+      "T35",
+      "T36",
+      "T37"
+    ],
+    [
+      "T38"
+    ],
+    [
+      "T39"
+    ],
+    [
+      "T40"
+    ]
+  ]
+}
