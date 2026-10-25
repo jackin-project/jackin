@@ -7,7 +7,16 @@ use std::{
 };
 
 use super::*;
+use anyhow::Context;
 use jackin_process_directory::{CheckedInstallRoot, InstallFileKind};
+
+fn private_install_directory() -> Result<tempfile::TempDir> {
+    let home = std::env::var_os("HOME").context("HOME is required for the install fixture")?;
+    let home = std::path::PathBuf::from(home).canonicalize()?;
+    Ok(tempfile::Builder::new()
+        .prefix("jackin-install-test-")
+        .tempdir_in(home)?)
+}
 
 #[test]
 fn generation_id_binds_request_and_owner_bytes() {
@@ -89,7 +98,7 @@ fn descriptor_reads_reject_symlink_and_exclusive_file_creation_preserves_existin
 
 #[test]
 fn generation_publication_is_idempotent_and_rejects_conflicting_content() -> Result<()> {
-    let temporary = tempfile::tempdir()?;
+    let temporary = private_install_directory()?;
     fs::create_dir(temporary.path().join("generations"))?;
     fs::set_permissions(
         temporary.path().join("generations"),

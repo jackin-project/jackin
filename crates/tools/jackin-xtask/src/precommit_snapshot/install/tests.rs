@@ -170,7 +170,12 @@ fn install_fixture() -> (
     PathBuf,
     PathBuf,
 ) {
-    let temporary = tempfile::tempdir().unwrap();
+    let home = std::env::var_os("HOME").unwrap();
+    let home = PathBuf::from(home).canonicalize().unwrap();
+    let temporary = tempfile::Builder::new()
+        .prefix("jackin-native-install-test-")
+        .tempdir_in(home)
+        .unwrap();
     let common = temporary.path().join("common.git");
     fs::create_dir(&common).unwrap();
     let root = common.join("jackin-precommit-owner");
