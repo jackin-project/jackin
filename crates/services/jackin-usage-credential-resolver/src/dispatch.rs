@@ -17,6 +17,7 @@ use jackin_usage_provider_gemini::gemini_snapshot_with_presence;
 use jackin_usage_provider_grok::grok_snapshot_from_rpc_result;
 use jackin_usage_provider_kimi::kimi_snapshot;
 use jackin_usage_provider_minimax::minimax_snapshot;
+use jackin_usage_provider_opencode::opencode_api_key_snapshot;
 use jackin_usage_provider_openrouter::openrouter_snapshot_with_rate_limit;
 use jackin_usage_provider_zai::provider_key_snapshot;
 
@@ -98,6 +99,10 @@ impl CredentialSnapshotVendors for UsageCredentialVendors {
             &format!("API key · env {key_name}"),
             now,
         )
+    }
+
+    fn opencode_key_view(&self, secret: &str, now: i64) -> FocusedUsageView {
+        opencode_api_key_snapshot("opencode", secret, now)
     }
 }
 

@@ -79,10 +79,7 @@ impl Dialog {
                     b"\x1b[D" => self.usage_provider_tab_target(-1),
                     _ => None,
                 } {
-                    return DialogAction::SwitchUsageProvider {
-                        provider_label: tab.label,
-                        account_id: tab.id,
-                    };
+                    return DialogAction::SwitchUsageProvider { account_id: tab.id };
                 }
                 return DialogAction::Redraw;
             }
