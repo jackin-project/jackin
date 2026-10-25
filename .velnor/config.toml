@@ -125,20 +125,53 @@ formula = "Formula/jackin-preview.rb"
 [distribution.homebrew_tap.destinations.stable]
 formula = "Formula/jackin.rb"
 
-[distribution.homebrew_tap.updater]
-task = "package-update"
-inputs = [".velnor/config.toml", "Formula/jackin-preview.rb", "Formula/jackin.rb", "lib/jackin_formula_support.rb", "mise.lock", "mise.toml", "scripts/homebrew_install_policy.py", "scripts/package-update.py", "scripts/package-update.sh", "scripts/package_update_validation.py", "scripts/test-homebrew-install.sh", "scripts/test-package-update.sh", "scripts/test_homebrew_formulary_keg.rb", "scripts/test_homebrew_install_policy.py", "scripts/test_package_update.py"]
-tools = ["python"]
-timeout_minutes = 5
+[distribution.homebrew_formula]
+schema = "velnor.homebrew-formula-spec.v1"
+template = "velnor-homebrew-standalone-v1"
+description = "CLI for orchestrating autonomous AI coding agents"
+homepage = "https://github.com/jackin-project/jackin"
+license = "Apache-2.0"
 
-[distribution.homebrew_tap.updater.source]
-mise_config = "mise.toml"
-working_directory = "."
+[[distribution.homebrew_formula.channels]]
+channel = "preview"
+formula = "jackin-preview"
+formula_class = "JackinPreview"
+destination = "Formula/jackin-preview.rb"
+conflicts = ["jackin"]
 
-[distribution.homebrew_tap.updater.runner]
-label = "ubuntu-26.04"
-platform = "linux_x64"
-executor = "hosted"
+[[distribution.homebrew_formula.channels]]
+channel = "stable"
+formula = "jackin"
+formula_class = "Jackin"
+destination = "Formula/jackin.rb"
+conflicts = ["jackin-preview"]
+
+[distribution.homebrew_formula.host]
+product = "jackin"
+bins = ["jackin", "jackin-role", "jackin-usage-broker"]
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
+
+[[distribution.homebrew_formula.auxiliaries]]
+product = "jackin-capsule"
+targets = ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
+
+[[distribution.homebrew_formula.auxiliaries.files]]
+target = "aarch64-unknown-linux-gnu"
+member = "jackin-capsule"
+destination = "jackin-capsule/linux-arm64/jackin-capsule"
+mode = "executable"
+test = "linux_elf"
+
+[[distribution.homebrew_formula.auxiliaries.files]]
+target = "x86_64-unknown-linux-gnu"
+member = "jackin-capsule"
+destination = "jackin-capsule/linux-amd64/jackin-capsule"
+mode = "executable"
+test = "linux_elf"
+
+[distribution.homebrew_formula.stable_sentinel]
+date = "2026-10-20"
+reason = "has no native stable release yet"
 
 [distribution.homebrew_tap.protection_observer]
 app_id_variable = "HOMEBREW_TAP_PROTECTION_APP_ID"

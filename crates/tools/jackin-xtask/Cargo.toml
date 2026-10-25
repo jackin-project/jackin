@@ -35,6 +35,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["preserve_order"] }
 serde-saphyr = { workspace = true }
 sha2 = { workspace = true }
+signal-hook = "=0.3.18"
 syn = { workspace = true, features = ["full", "visit", "parsing", "extra-traits"] }
 tar = { workspace = true }
 tempfile = { workspace = true }

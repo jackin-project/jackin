@@ -21,8 +21,8 @@ use super::support::Fixture;
 use jackin_workflow_spec::model::TestBundleFile;
 use sha2::Digest as _;
 
-const BUGGY_CALCULATOR: &str = "def add(a: int, b: int) -> int:\n    return a - b\n";
-const FIXED_CALCULATOR: &str = "def add(a: int, b: int) -> int:\n    return a + b\n";
+const BUGGY_CALCULATOR: &str = "add() { printf '%s\\n' \"$(($1 - $2))\"; }\n";
+const FIXED_CALCULATOR: &str = "add() { printf '%s\\n' \"$(($1 + $2))\"; }\n";
 const PLAN_HASH: &str = "ebc1278fce36289d775a493f9f314a3b60d2cf4847f6396bab88fb4f03baf6f6";
 
 fn run_git(repo: &Path, args: &[&str]) -> String {
@@ -49,19 +49,19 @@ fn run_git(repo: &Path, args: &[&str]) -> String {
 fn init_fixture_source(root: &Path) -> (PathBuf, Checkpoint, Checkpoint) {
     let repo = root.join("fixture-src");
     std::fs::create_dir_all(&repo).expect("k5 fixture src dir");
-    std::fs::write(repo.join("calculator.py"), BUGGY_CALCULATOR).expect("write buggy calculator");
+    std::fs::write(repo.join("calculator.sh"), BUGGY_CALCULATOR).expect("write buggy calculator");
     run_git(&repo, &["init", "-q"]);
     run_git(&repo, &["config", "user.name", "k5-fixture"]);
     run_git(&repo, &["config", "user.email", "k5@local"]);
-    run_git(&repo, &["add", "calculator.py"]);
+    run_git(&repo, &["add", "calculator.sh"]);
     run_git(&repo, &["commit", "-qm", "seeded defect: add subtracts"]);
     let bug = Checkpoint::read(&repo);
     assert_eq!(
-        std::fs::read_to_string(repo.join("calculator.py")).expect("read calculator"),
+        std::fs::read_to_string(repo.join("calculator.sh")).expect("read calculator"),
         BUGGY_CALCULATOR
     );
-    std::fs::write(repo.join("calculator.py"), FIXED_CALCULATOR).expect("write fixed calculator");
-    run_git(&repo, &["add", "calculator.py"]);
+    std::fs::write(repo.join("calculator.sh"), FIXED_CALCULATOR).expect("write fixed calculator");
+    run_git(&repo, &["add", "calculator.sh"]);
     run_git(&repo, &["commit", "-qm", "repair: add sums"]);
     let fix = Checkpoint::read(&repo);
     assert_ne!(bug.commit, fix.commit, "repair must be a new commit");
@@ -84,21 +84,21 @@ impl Checkpoint {
 }
 
 /// Trusted bundle outside the worker source: a copy of the frozen
-/// `check_add.py`, never inside any implementation checkout.
+/// `check_add.sh`, never inside any implementation checkout.
 fn trusted_bundle(root: &Path) -> PathBuf {
     let dir = root.join("fixture-checks");
     std::fs::create_dir_all(&dir).expect("k5 bundle dir");
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../examples/workflows/checks/check_add.py");
-    let bytes = std::fs::read(&source).expect("read frozen check_add.py");
-    std::fs::write(dir.join("check_add.py"), &bytes).expect("stage trusted bundle");
+        .join("../../../examples/workflows/checks/check_add.sh");
+    let bytes = std::fs::read(&source).expect("read frozen check_add.sh");
+    std::fs::write(dir.join("check_add.sh"), &bytes).expect("stage trusted bundle");
     dir
 }
 
 fn policy_for(bundle_check: &Path, work_dir: &Path) -> TestPolicy {
     TestPolicy::freeze(
         vec![
-            "python3".to_owned(),
+            "sh".to_owned(),
             bundle_check.to_string_lossy().into_owned(),
             work_dir.to_string_lossy().into_owned(),
         ],
@@ -181,7 +181,7 @@ fn failing_review_bytes(candidate: &str, commit: &str, tree: &str) -> Vec<u8> {
         "findings": [{
             "id": "F1",
             "severity": "major",
-            "path": "calculator.py",
+            "path": "calculator.sh",
             "line_start": 1,
             "line_end": 2,
             "explanation": "add subtracts instead of summing",
@@ -272,7 +272,7 @@ fn row_pass() {
     let temp = tempfile::tempdir().expect("k5 tempdir");
     let (repo, _bug, fix) = init_fixture_source(temp.path());
     let bundle = trusted_bundle(temp.path());
-    let bundle_check = bundle.join("check_add.py");
+    let bundle_check = bundle.join("check_add.sh");
     let scratch = temp.path().join("scratch");
     let (spec, policy, _worker, execution) = test_round(
         &repo,
@@ -321,7 +321,7 @@ fn row_repair_accepted() {
     let temp = tempfile::tempdir().expect("k5 tempdir");
     let (repo, bug, fix) = init_fixture_source(temp.path());
     let bundle = trusted_bundle(temp.path());
-    let bundle_check = bundle.join("check_add.py");
+    let bundle_check = bundle.join("check_add.sh");
     let scratch = temp.path().join("scratch");
     let fixture = Fixture::new();
     let service = fixture.open();
@@ -373,7 +373,7 @@ fn row_repair_accepted() {
     .expect("record failing review");
     let failing = summarize_test_failure(&policy, &execution, result.excerpt());
     assert!(
-        failing.name.contains("check_add.py"),
+        failing.name.contains("check_add.sh"),
         "feedback names the failing check, got: {}",
         failing.name
     );
@@ -397,7 +397,7 @@ fn row_repair_accepted() {
     .expect("build repair feedback");
     assert!(feedback.contains("candidate-001"));
     assert!(
-        feedback.contains("calculator.py:1-2"),
+        feedback.contains("calculator.sh:1-2"),
         "feedback carries file:line, got: {feedback}"
     );
     let decision = decide_candidate(&green_evidence(
@@ -417,7 +417,7 @@ fn row_repair_accepted() {
     let (_, pre_manifest) =
         jackin_isolation::capture::digest_source_tree(worker.work_dir(), &[], 10_000_000)
             .expect("digest worker source before repair");
-    std::fs::write(worker.work_dir().join("calculator.py"), FIXED_CALCULATOR)
+    std::fs::write(worker.work_dir().join("calculator.sh"), FIXED_CALCULATOR)
         .expect("apply repair in worker tree");
     let (_, repaired_manifest) =
         jackin_isolation::capture::digest_source_tree(worker.work_dir(), &[], 10_000_000)
@@ -476,7 +476,7 @@ fn row_repair_rejected() {
     let temp = tempfile::tempdir().expect("k5 tempdir");
     let (repo, bug, _fix) = init_fixture_source(temp.path());
     let bundle = trusted_bundle(temp.path());
-    let bundle_check = bundle.join("check_add.py");
+    let bundle_check = bundle.join("check_add.sh");
     let scratch = temp.path().join("scratch");
 
     let mut round = 0;
@@ -513,7 +513,7 @@ fn row_repair_rejected() {
         round += 1;
         worker_dir = worker.work_dir().to_owned();
         // The incomplete repair touches nothing: the failed state stays.
-        let content = std::fs::read_to_string(worker_dir.join("calculator.py"))
+        let content = std::fs::read_to_string(worker_dir.join("calculator.sh"))
             .expect("read preserved worker source");
         assert_eq!(
             content, BUGGY_CALCULATOR,
@@ -534,7 +534,7 @@ fn row_repair_rejected() {
         "exhausted budget with failing verification must fail, got: {decision:?}"
     );
     assert_eq!(
-        std::fs::read_to_string(worker_dir.join("calculator.py")).expect("read final source"),
+        std::fs::read_to_string(worker_dir.join("calculator.sh")).expect("read final source"),
         BUGGY_CALCULATOR,
         "rejected failure stays in the tree"
     );
@@ -959,7 +959,7 @@ fn k5_evidence_binding_rows() {
     let temp = tempfile::tempdir().expect("k5 tempdir");
     let (repo, bug, _fix) = init_fixture_source(temp.path());
     let bundle = trusted_bundle(temp.path());
-    let bundle_check = bundle.join("check_add.py");
+    let bundle_check = bundle.join("check_add.sh");
     let scratch = temp.path().join("scratch");
     let fixture = Fixture::new();
     let service = fixture.open();

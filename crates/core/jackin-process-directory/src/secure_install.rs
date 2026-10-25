@@ -12,6 +12,7 @@ mod absolute_root;
 mod darwin_acl;
 #[cfg(target_os = "linux")]
 mod linux_acl;
+mod sealed_root;
 #[cfg(test)]
 mod tests;
 

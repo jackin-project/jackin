@@ -5013,6 +5013,7 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "sha2 0.11.1",
+ "signal-hook",
  "syn 3.0.9",
  "tar",
  "tempfile",
@@ -8785,8 +8786,8 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "velnor-actions-contract"
-version = "0.1.52"
-source = "git+https://github.com/tailrocks/velnor-new?rev=1bd31f8203ecf40d141c331e5195eb422e0904d3#1bd31f8203ecf40d141c331e5195eb422e0904d3"
+version = "0.1.53"
+source = "git+https://github.com/tailrocks/velnor-new?rev=778a02ed583288d907b457e459c3ac00314aa067#778a02ed583288d907b457e459c3ac00314aa067"
 dependencies = [
  "blake3",
  "serde",

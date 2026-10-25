@@ -1,7 +1,7 @@
 # Running custom lints
 
 ```sh
-# Dylint's nested driver build must resolve Cargo through rustup's shims.
+# Native MBX dispatch lets Dylint's driver resolve its pinned Rustup compiler.
 mise run check:custom-lints
 ```
 
@@ -14,10 +14,14 @@ rustup toolchain install nightly-2026-10-18 --profile minimal \
 
 The task verifies the full compiler commit and installed components, builds from
 this crate's directory for its Cargo configuration and UI paths, and runs
-the complete Nextest UI suite. The task resolves Mise's selected `dylint-link`
-and Cargo plugins before putting Rustup shims first. It invokes those exact
-plugins and selects that exact linker with encoded Cargo flags (including paths
-with spaces), so Cargo-home binaries cannot shadow Mise's selected tools. This intentionally replaces the
+the complete Nextest UI suite. The task resolves Mise's selected MBX, `dylint-link`,
+and Cargo plugins before constructing its private tool path. Library builds and
+Nextest run through that MBX under the explicit nightly. A private native `cargo`
+symlink to MBX routes Dylint's recursive Cargo commands through the same provider;
+MBX excludes its alias before selecting Cargo through Rustup's shims. The alias
+remains alive for the entire pipeline, with the selected Nextest directory ahead
+of Cargo home. The task selects its exact linker with encoded Cargo flags
+(including paths with spaces). This intentionally replaces the
 configuration's PATH-based linker selection. The supported linker produces
 the ABI-labelled library; the task never relabels a library built by another compiler. It copies
 only that library into a fresh search directory and invokes root Dylint with
@@ -31,10 +35,11 @@ The qualified compiler is `nightly-2026-10-18` (`rustc 1.101.0-nightly`,
 commit `8006091eb`, 2026-10-17). The date names the published nightly manifest;
 the compiler commit date is one day earlier. `rustup run` makes the lint's
 nightly take precedence over a parent workspace's Mise-selected stable Cargo.
-The shim-first PATH also lets Dylint's isolated driver build select its own
-written toolchain file after Dylint removes inherited compiler environment
-variables. Direct compiler-toolchain binaries or a Mise Cargo wrapper ahead of
-the shims would bypass that selection.
+The native MBX alias followed by Rustup shims also lets Dylint's isolated driver
+build select its own written toolchain file after Dylint removes inherited
+compiler environment variables. Putting a stable compiler's Cargo ahead of this
+dispatch chain would bypass that selection. Inherited MBX Cargo-shim dispatch
+variables are cleared; its cache, session, and scheduler settings are preserved.
 
 The UI test runs Dylint 6.2.0's supported compiletest harness inside Nextest and
 checks the positive, clean, and closure-boundary fixtures.
@@ -55,6 +60,6 @@ separate dependency correction; it is not suppressed or treated as a passing
 workspace lint run. The historical pilot result below is not a current result.
 
 The canonical Mise task runs its regression controls and complete check in one
-script. It installs no toolchain and makes
+native xtask. It installs no toolchain and makes
 no directory-level Rustup override. The task remains a local pilot, not a
 required native preview or CI gate.

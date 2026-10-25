@@ -17,14 +17,24 @@ steps {
   // `--all`: the root Cargo.toml is a virtual manifest (selected through rustfmt.toml), where a plain
   // `cargo fmt --manifest-path` fails with "Failed to find targets".
   ["cargo_fmt"] = (Builtins.cargo_fmt) {
-    check { command = "cargo fmt --all --check --manifest-path {{workspace_indicator}}" }
-    check_list_files { command = "cargo fmt --all --check --manifest-path {{workspace_indicator}} -- --files-with-diff" }
-    fix { command = "cargo fmt --all --manifest-path {{workspace_indicator}}" }
+    check { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" fmt-check" }
+    check_list_files { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" fmt-files" }
+    fix { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" fmt-fix" }
   }
   // crates/tools/jackin-lints is outside the workspace and needs the pinned nightly with rustc-dev; it is built,
-  // UI-tested and run by `mise run check:custom-lints` (scripts/custom-lints.py), never by stable cargo.
-  ["cargo_check"] = (Builtins.cargo_check) { exclude = List("crates/tools/jackin-lints/**") }
-  ["cargo_clippy"] = (Builtins.cargo_clippy) { exclude = List("crates/tools/jackin-lints/**") }
+  // UI-tested and run by the native xtask via `mise run check:custom-lints`, which invokes
+  // `cargo run --locked -p jackin-xtask -- custom-lints`, never by stable cargo.
+  ["cargo_check"] = (Builtins.cargo_check) {
+    workspace_indicator = "Cargo.toml"
+    exclude = List("crates/tools/jackin-lints/**")
+    check { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" check" }
+    fix { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" check-fix" }
+  }
+  ["cargo_clippy"] = (Builtins.cargo_clippy) {
+    exclude = List("crates/tools/jackin-lints/**")
+    check { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" clippy" }
+    fix { command = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-cargo.sh\" \"$(pwd -P)/{{workspace_indicator}}\" clippy-fix" }
+  }
   // deny.toml governs the root workspace (as in CI). The fuzz/ crates and crates/tools/jackin-lints are separate
   // workspaces with their own lockfiles and path-wildcard fuzz dependencies outside that policy.
   ["cargo_deny"] = (Builtins.cargo_deny) { exclude = List("fuzz/**", "crates/tools/jackin-lints/**") }
