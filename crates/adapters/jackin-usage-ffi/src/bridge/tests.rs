@@ -2172,6 +2172,113 @@ fn native_selection_and_details_keep_broker_canonical_identity_and_types() {
 }
 
 #[test]
+fn unavailable_selected_account_is_excluded_from_status_bar_rows() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge = open_bridge_with_surfaces(dir.path(), vec!["codex".to_owned()]);
+    let mut available = fixture_projection();
+    let sibling_window = &mut available.providers[0].accounts[1].windows[0];
+    sibling_window.value_label = "23% left".to_owned();
+    sibling_window.remaining_percent = Some(RawPercentPoints::new(23.0).expect("sibling quota"));
+    sibling_window.meter_percent = Some(MeterPercentPoints::new(23.0).expect("sibling meter"));
+    bridge
+        .apply_publication(available.clone())
+        .expect("publish selected and sibling accounts");
+
+    bridge
+        .set_selected_account("codex".to_owned(), "canonical-openai-b".to_owned())
+        .expect("select sibling account");
+    let sibling_rows = bridge
+        .status_bar_provider_glance_rows(3)
+        .expect("sibling status-bar rows");
+    assert_eq!(sibling_rows.len(), 1);
+    assert_eq!(sibling_rows[0].account_label, "bob@example.test");
+    assert_eq!(sibling_rows[0].glance_remaining_percent, Some(23.0));
+
+    bridge
+        .set_selected_account("codex".to_owned(), "canonical-openai-a".to_owned())
+        .expect("select canonical account");
+    let selected_rows = bridge
+        .status_bar_provider_glance_rows(3)
+        .expect("selected status-bar rows");
+    assert_eq!(selected_rows.len(), 1);
+    assert_eq!(selected_rows[0].account_label, "alice@example.test");
+    assert_eq!(selected_rows[0].glance_remaining_percent, Some(64.0));
+
+    let mut absent = available.clone();
+    absent.projection_id = "fixture-canonical-account-unavailable".to_owned();
+    absent.broker_generation += 1;
+    absent.providers[0]
+        .accounts
+        .retain(|account| account.canonical_account_id != "canonical-openai-a");
+    absent.providers[0].accounts[0].rank = 0;
+    bridge
+        .apply_publication(absent)
+        .expect("publish sibling without selected account");
+
+    let unavailable = bridge
+        .desktop_projection(3)
+        .expect("unavailable projection");
+    let codex = unavailable
+        .providers
+        .iter()
+        .find(|provider| provider.group.surface_id == "codex")
+        .expect("Codex provider remains visible");
+    assert_eq!(codex.selected_account_route.status, "unavailable");
+    assert_eq!(
+        codex.selected_account_route.notice.as_deref(),
+        Some("The selected account is not in the current broker publication")
+    );
+    assert_eq!(
+        codex.selected_account_route.account_key.as_deref(),
+        Some("canonical-openai-a")
+    );
+    let accounts = bridge
+        .list_accounts(Some("codex".to_owned()))
+        .expect("remaining sibling account");
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].account_key, "canonical-openai-b");
+    assert!(!accounts[0].selected);
+    assert!(unavailable.status_bar_glance_rows.is_empty());
+    assert!(
+        bridge
+            .status_bar_provider_glance_rows(3)
+            .expect("unavailable status-bar rows")
+            .is_empty()
+    );
+    assert_eq!(
+        bridge
+            .compact_status_bar_label_for("codex".to_owned())
+            .expect("unavailable compact label"),
+        None
+    );
+
+    let mut restored = available;
+    restored.projection_id = "fixture-canonical-account-restored".to_owned();
+    restored.broker_generation = 3;
+    bridge
+        .apply_publication(restored)
+        .expect("republish selected account and sibling");
+    let restored = bridge.desktop_projection(3).expect("restored projection");
+    let codex = restored
+        .providers
+        .iter()
+        .find(|provider| provider.group.surface_id == "codex")
+        .expect("Codex provider restored");
+    assert_eq!(codex.selected_account_route.status, "available");
+    assert_eq!(
+        codex.selected_account_route.account_key.as_deref(),
+        Some("canonical-openai-a")
+    );
+    let rows = bridge
+        .status_bar_provider_glance_rows(3)
+        .expect("restored status-bar rows");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].account_label, "alice@example.test");
+    assert_eq!(rows[0].glance_remaining_percent, Some(64.0));
+    bridge.shutdown().expect("shutdown");
+}
+
+#[test]
 fn projection_glance_preserves_percent_and_reset_preferences() {
     let dir = tempfile::tempdir().expect("tempdir");
     let bridge = open_bridge(dir.path());
