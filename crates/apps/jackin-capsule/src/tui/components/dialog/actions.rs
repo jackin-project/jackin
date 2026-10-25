@@ -88,7 +88,6 @@ pub enum DialogAction {
     Dismiss,
     RefreshUsage,
     SwitchUsageProvider {
-        provider_label: String,
         account_id: String,
     },
     Redraw,
