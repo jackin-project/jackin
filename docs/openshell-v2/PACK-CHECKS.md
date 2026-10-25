@@ -24,6 +24,9 @@ The ordinary command accepts documented progress states.
 The `--initial` command adds a check that all task and case statuses remain `NOT_STARTED` and `NOT_RUN`.
 Omit `--initial` after execution starts.
 The validator checks the plan. It is not the product acceptance harness described in P04.
+Missing required files produce a structured report and exit 1.
+With `--json`, manifest read or shape errors also produce a structured error report and exit 2.
+That report has empty counts because validation stopped before counts were available.
 
 ## Counts
 
@@ -45,11 +48,16 @@ Keep no more than eight actual subagents active at once.
 | Required pack files, including this report | PASS |
 | Task statuses use documented values | PASS |
 | Acceptance case statuses use documented values | PASS |
+| Acceptance evidence levels use documented values | PASS |
+| Manifest schema versions match the supported version | PASS |
+| Machine source pins match C01 | PASS |
+| Parallel agent limit matches the subagent contract | PASS |
 | Task IDs are unique | PASS |
 | Case IDs are unique | PASS |
 | Declared and expected task and case counts match | PASS |
 | Original specification matches its fixed checksum and both manifests | PASS |
 | Dependencies reference known tasks and the graph has no cycle | PASS |
+| Task progress waits for completed dependencies | PASS |
 | Stored readiness groups match dependencies with no duplicate task IDs | PASS |
 | Task test references exist and every case has a task owner | PASS |
 | Case and task ownership maps agree | PASS |

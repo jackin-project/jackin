@@ -11,6 +11,15 @@ from pathlib import Path
 from typing import Any
 
 ORIGINAL_SPEC_SHA256 = "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe767523a3e"
+SUPPORTED_SCHEMA_VERSION = 1
+PARALLEL_AGENT_LIMIT = 8
+ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
+PROGRESS_TASK_STATUSES = {"READY", "RUNNING", "REVIEW", "PASS"}
+SOURCE_PINS = {
+    "jackin_baseline": "faa2ab6c12e3de45a76ab6b98df0c64dac7aac6e",
+    "openshell_candidate": "c4688aa8715ea75d6c39fe468361dbbc16c691fa",
+    "openshell_release_comparator": "bdb956f2cd65a635f1294fccf1d138d263bf650f",
+}
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -165,13 +174,33 @@ def main() -> int:
     missing = [name for name in required if not (root / name).is_file()]
     check("Required pack files exist", not missing, missing)
     if missing:
-        result = {"passed": False, "checks": checks, "failures": failures}
+        result = {"passed": False, "scope": "Static planning-pack checks only",
+                  "not_checked": ["Product compilation", "Runtime capabilities", "Independent code review",
+                                  "Full ASD-STE100 dictionary conformity"],
+                  "counts": {}, "checks": checks, "failures": failures}
         print(json.dumps(result, indent=2))
         return 1
 
     graph = read_json(root / "task-graph.json")
     cases_file = read_json(root / "acceptance-cases.json")
     trace = read_json(root / "traceability.json")
+    manifest_versions = {
+        "task-graph.json": graph.get("schema_version"),
+        "acceptance-cases.json": cases_file.get("schema_version"),
+        "traceability.json": trace.get("schema_version"),
+    }
+    unsupported_versions = {name: version for name, version in manifest_versions.items()
+                            if version != SUPPORTED_SCHEMA_VERSION}
+    check("Manifest schema versions match the supported version",
+          not unsupported_versions,
+          {"supported": SUPPORTED_SCHEMA_VERSION, "actual": manifest_versions})
+    source_pin_errors = {field: {"expected": expected, "actual": graph.get(field)}
+                         for field, expected in SOURCE_PINS.items()
+                         if graph.get(field) != expected}
+    check("Machine source pins match C01", not source_pin_errors, source_pin_errors)
+    check("Parallel agent limit matches the subagent contract",
+          graph.get("parallel_agent_limit") == PARALLEL_AGENT_LIMIT,
+          {"expected": PARALLEL_AGENT_LIMIT, "actual": graph.get("parallel_agent_limit")})
     tasks = graph["tasks"]
     cases = cases_file["cases"]
     task_ids = [task["id"] for task in tasks]
@@ -179,12 +208,15 @@ def main() -> int:
     task_set, case_set = set(task_ids), set(case_ids)
     task_statuses = {"NOT_STARTED", "READY", "RUNNING", "REVIEW", "PASS", "FAIL", "BLOCKED"}
     case_statuses = {"NOT_RUN", "PASS", "FAIL", "BLOCKED"}
+    bad_case_levels = [{"id": case["id"], "level": case["level"]} for case in cases
+                       if case["level"] not in ACCEPTANCE_EVIDENCE_LEVELS]
     bad_task_statuses = [{"id": task["id"], "status": task["status"]} for task in tasks
                          if task["status"] not in task_statuses]
     bad_case_statuses = [{"id": case["id"], "status": case["status"]} for case in cases
                          if case["status"] not in case_statuses]
     check("Task statuses use documented values", not bad_task_statuses, bad_task_statuses)
     check("Acceptance case statuses use documented values", not bad_case_statuses, bad_case_statuses)
+    check("Acceptance evidence levels use documented values", not bad_case_levels, bad_case_levels)
     check("Task IDs are unique", len(task_set) == len(tasks))
     check("Case IDs are unique", len(case_set) == len(cases))
     check("Declared task count matches", graph["task_count"] == len(tasks), len(tasks))
@@ -202,6 +234,17 @@ def main() -> int:
     bad_dependencies = [(task["id"], dep) for task in tasks for dep in task["depends_on"]
                         if dep not in task_set or dep == task["id"]]
     check("Dependencies reference other known tasks", not bad_dependencies, bad_dependencies)
+    tasks_by_id = {task["id"]: task for task in tasks}
+    incomplete_dependencies = [
+        {"task": task["id"], "status": task["status"],
+         "dependencies_not_passed": sorted(
+             dep for dep in task["depends_on"]
+             if tasks_by_id.get(dep, {}).get("status") != "PASS")}
+        for task in tasks if task["status"] in PROGRESS_TASK_STATUSES
+        and any(tasks_by_id.get(dep, {}).get("status") != "PASS" for dep in task["depends_on"])
+    ]
+    check("Task progress waits for completed dependencies",
+          not incomplete_dependencies, incomplete_dependencies)
     done: set[str] = set()
     levels: list[list[str]] = []
     while len(done) < len(task_set):
@@ -417,5 +460,18 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except (OSError, ValueError, KeyError, TypeError) as error:
-        print(f"Pack validation failed: {error}", file=sys.stderr)
+        if "--json" in sys.argv:
+            result = {
+                "passed": False,
+                "scope": "Static planning-pack checks only",
+                "not_checked": ["Product compilation", "Runtime capabilities", "Independent code review",
+                                "Full ASD-STE100 dictionary conformity"],
+                "counts": {},
+                "checks": [{"check": "Planning pack input is valid", "passed": False,
+                            "detail": str(error)}],
+                "failures": ["Planning pack input is valid"],
+            }
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"Pack validation failed: {error}", file=sys.stderr)
         raise SystemExit(2)
