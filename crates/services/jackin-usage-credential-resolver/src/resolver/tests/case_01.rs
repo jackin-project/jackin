@@ -187,6 +187,41 @@ fn semantic_dispatch_routes_keep_claude_api_oauth_and_grok_deployment_distinct()
 }
 
 #[test]
+fn opencode_account_alias_keeps_the_canonical_environment_source() {
+    let mut config = AppConfig::default();
+    let alias = "JACKIN_USAGE_ACCOUNT_OPENCODE_API_KEY";
+    config.env.insert(
+        alias.to_owned(),
+        EnvValue::Plain("$OPENCODE_API_KEY".to_owned()),
+    );
+    let resolver = CachedProviderCredentialResolver::new(CountingSecretSource::default());
+    let entry = UsageCredentialEnvName {
+        name: alias,
+        owner: UsageCredentialOwner::OpenCode,
+    };
+
+    let resolutions = resolver.resolve_provider_credentials(&config, None, None, &[entry]);
+    assert_eq!(resolutions.len(), 1);
+    let ProviderCredentialEnvOutcome::Resolved(handle) = &resolutions[0].outcome else {
+        panic!("OpenCode account alias must resolve through its declared source");
+    };
+
+    let material = resolver
+        .source_material(
+            HostSurfaceId::OpenCode,
+            jackin_core::OPENCODE_API_KEY_ENV_NAME,
+            handle,
+        )
+        .expect("resolved OpenCode alias source material");
+    assert_eq!(
+        material.source,
+        UsageCredentialSourceIdentity::HostEnv {
+            name: jackin_core::OPENCODE_API_KEY_ENV_NAME.to_owned(),
+        }
+    );
+}
+
+#[test]
 fn source_cache_does_not_reuse_handle_across_repointed_declarations() {
     let mut config = AppConfig::default();
     config.env.insert(
