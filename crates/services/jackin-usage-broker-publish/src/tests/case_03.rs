@@ -280,7 +280,7 @@ fn unavailable_diagnostic_replaces_retired_catalog_rows_and_clean_scan_removes_i
             .any(|issue| issue.code == "provider_specific_issue")
     );
     assert_eq!(current.unresolved.len(), 1);
-    assert_eq!(current.unresolved[0].state, UsageLifecycleV1::NeedsSecret);
+    assert_eq!(current.unresolved[0].state, UsageLifecycleV1::Unavailable);
 
     let before = fixture.publisher.current_projection().unwrap();
     let clean = fixture

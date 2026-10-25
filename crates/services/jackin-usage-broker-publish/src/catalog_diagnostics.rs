@@ -71,7 +71,6 @@ impl CatalogDiagnosticCode {
             self,
             Self::CredentialMissing
                 | Self::CredentialDenied
-                | Self::KeychainAccessUnavailable
                 | Self::CredentialMalformed
                 | Self::InteractionRequired
         )
@@ -264,6 +263,8 @@ fn unresolved_state(codes: impl Iterator<Item = CatalogDiagnosticCode>) -> Usage
     let codes = codes.collect::<BTreeSet<_>>();
     if codes.contains(&CatalogDiagnosticCode::ConfigVersionUnsupported) {
         UsageLifecycleV1::Unsupported
+    } else if codes.contains(&CatalogDiagnosticCode::KeychainAccessUnavailable) {
+        UsageLifecycleV1::Unavailable
     } else if codes.iter().any(|code| code.needs_secret()) {
         UsageLifecycleV1::NeedsSecret
     } else {

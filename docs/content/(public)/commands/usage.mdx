@@ -303,17 +303,19 @@ conflict. A passive broker started by `usage service start` or an ordinary
 reused for the experimental collector; choose one service path per data
 directory.
 
-An interactive Keychain read may request authorization, but an
-`AccessUnavailable` result means the read could not be established under the
-current interaction policy. It does not establish that a matching item exists
-or that consent is the cause.
-Policy setup or query failures, and preparation without an attached terminal,
-can leave access unavailable. While the foreground service retains its
-exact-source cache, collection does not reread Keychain. Unattended reads use
-the no-UI guard and fail closed when access cannot be obtained. This does not
-promise permanent credential availability or prevent prompts from other
-processes. Do not run authentication preparation from a statusline hook or an
-automated lane.
+An attended Keychain read may request authorization. Before Keychain access,
+`auth prepare` requires stdin, stdout, and stderr to be terminals; otherwise it
+returns `interaction_required` and exits 2. After those checks pass, a Keychain
+read that cannot be established returns
+`keychain_access_unavailable` and exits 2, and unresolved catalog sources are
+reported as `unavailable`. This does not establish that a matching item exists,
+that consent is the cause, or that a particular action will restore access.
+Policy setup or query failures can also leave access unavailable. While the
+foreground service retains its exact-source cache, collection does not reread
+Keychain. Unattended reads use the no-UI guard and fail closed when access cannot
+be obtained. This does not promise permanent credential availability or prevent
+prompts from other processes. Do not run authentication preparation from a
+statusline hook or an automated lane.
 
 ### Experimental Claude collector (implementation in progress)
 

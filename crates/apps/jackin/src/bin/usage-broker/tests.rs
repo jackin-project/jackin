@@ -140,6 +140,10 @@ fn explicit_auth_holds_foreground_service_and_reports_only_safe_readiness() {
 #[test]
 fn foreground_bootstrap_maps_safe_outcomes_to_stable_codes() {
     let args = prepare_auth_args(&[]);
+    assert_eq!(
+        ForegroundBootstrapOutcome::from(ClaudeCredentialBootstrapOutcome::AccessUnavailable),
+        ForegroundBootstrapOutcome::AccessUnavailable
+    );
     let malformed = jackin_usage_provider_claude::diagnose_claude_profile_payload(
         br#"{"claudeAiOauth":{"accessToken":"fixture-token"}}"#,
     );
@@ -149,6 +153,13 @@ fn foreground_bootstrap_maps_safe_outcomes_to_stable_codes() {
         (
             ForegroundBootstrapOutcome::InteractionRequired,
             "interaction_required",
+            Some(
+                "authentication preparation requires stdin, stdout, and stderr attached to a terminal",
+            ),
+        ),
+        (
+            ForegroundBootstrapOutcome::AccessUnavailable,
+            "keychain_access_unavailable",
             Some("Keychain credential access is unavailable during authentication preparation"),
         ),
         (

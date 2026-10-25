@@ -17,6 +17,7 @@ pub enum ClaudeCredentialBootstrapOutcome {
     Missing,
     Denied,
     InteractionRequired,
+    AccessUnavailable,
     Malformed(ClaudeCredentialPayloadDiagnostic),
     Acquired(ClaudeCredentialLease),
 }
@@ -253,7 +254,7 @@ fn bootstrap_claude_credential_with(
         ClaudeKeychainRead::Denied => Ok(ClaudeCredentialBootstrapOutcome::Denied),
         ClaudeKeychainRead::Missing => Ok(ClaudeCredentialBootstrapOutcome::Missing),
         ClaudeKeychainRead::AccessUnavailable => {
-            Ok(ClaudeCredentialBootstrapOutcome::InteractionRequired)
+            Ok(ClaudeCredentialBootstrapOutcome::AccessUnavailable)
         }
     }
 }
