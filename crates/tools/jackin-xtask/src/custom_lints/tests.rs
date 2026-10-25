@@ -8,7 +8,7 @@ use jackin_process::{RetryPolicy, StdioMode};
 use super::paths::{cargo_home as cargo_home_path, resolve};
 use super::{
     COMPILER_COMMIT, COMPILER_RELEASE, COMPONENTS, Environment, NIGHTLY, build_environment_with,
-    build_exec_request, compiler_host, library_path, run_with, run_with_home,
+    build_exec_request, compiler_host, finish_with_cleanup, library_path, run_with, run_with_home,
 };
 
 mod case_01;
@@ -256,6 +256,7 @@ fn pipeline_checks_components_builds_one_fresh_abi_library_and_runs_workspace_dy
         OsString::from("DYLINT_LIBRARY_PATH"),
         OsString::from("stale"),
     );
+    let failure_inherited = inherited.clone();
 
     let stale_library = target
         .join("library/debug")
@@ -264,7 +265,13 @@ fn pipeline_checks_components_builds_one_fresh_abi_library_and_runs_workspace_dy
         .expect("stale library directory");
     fs::write(&stale_library, b"stale ABI library").expect("stale library");
 
-    let cargo_dylint = tools.join("cargo-dylint").into_os_string();
+    let cargo_dylint = fs::canonicalize(tools.join("cargo-dylint"))
+        .expect("selected Dylint executable")
+        .into_os_string();
+    let expected_workspace_target = fs::canonicalize(&target)
+        .expect("created target directory")
+        .join("workspace")
+        .into_os_string();
     let mut calls = Vec::new();
     run_with(&root, inherited, |argv, cwd, env, capture| {
         calls.push((argv.to_vec(), cwd.to_path_buf(), env.clone(), capture));
@@ -320,7 +327,7 @@ fn pipeline_checks_components_builds_one_fresh_abi_library_and_runs_workspace_dy
             assert_eq!(cwd, root);
             assert_eq!(
                 env.get(OsStr::new("CARGO_TARGET_DIR")),
-                Some(&target.join("workspace").into_os_string())
+                Some(&expected_workspace_target)
             );
             assert!(!env.contains_key(OsStr::new("CARGO_ENCODED_RUSTFLAGS")));
             assert!(!env.contains_key(OsStr::new("RUSTFLAGS")));
@@ -332,6 +339,7 @@ fn pipeline_checks_components_builds_one_fresh_abi_library_and_runs_workspace_dy
     .expect("custom lint pipeline");
 
     assert_eq!(calls.len(), 5);
+    assert_eq!(calls[4].0.first(), Some(&cargo_dylint));
     assert!(calls[0].3);
     assert!(calls[1].3);
     assert_eq!(calls[2].0[3..], ["cargo", "build", "--locked"]);
@@ -368,6 +376,94 @@ fn pipeline_checks_components_builds_one_fresh_abi_library_and_runs_workspace_dy
         !isolated_library_dir.exists(),
         "temporary Dylint library directory survived the pipeline"
     );
+
+    assert_workspace_failure_cleans_library(
+        &root,
+        &target,
+        &host,
+        failure_inherited,
+        &cargo_dylint,
+    );
+    assert_cleanup_result_combinations();
+}
+
+fn assert_workspace_failure_cleans_library(
+    root: &Path,
+    target: &Path,
+    host: &str,
+    inherited: Environment,
+    cargo_dylint: &OsString,
+) {
+    let mut failure_library_dir = None;
+    let error = run_with(root, inherited, |argv, _, env, _| {
+        if argv.ends_with(&[OsString::from("rustc"), OsString::from("-Vv")]) {
+            return Ok(version(host).into_bytes());
+        }
+        if argv.ends_with(&[OsString::from("--installed")]) {
+            let installed = COMPONENTS
+                .iter()
+                .fold(String::new(), |mut output, component| {
+                    output.push_str(component);
+                    output.push('-');
+                    output.push_str(host);
+                    output.push('\n');
+                    output
+                });
+            return Ok(installed.into_bytes());
+        }
+        if argv.ends_with(&[OsString::from("build"), OsString::from("--locked")]) {
+            let library = target.join("library/debug").join(library_name(host));
+            fs::create_dir_all(library.parent().expect("library parent"))
+                .expect("library directory");
+            fs::write(library, b"fresh qualified library").expect("built library");
+        }
+        if argv.first() == Some(cargo_dylint) {
+            failure_library_dir = Some(PathBuf::from(
+                env.get(OsStr::new("DYLINT_LIBRARY_PATH"))
+                    .expect("isolated library path"),
+            ));
+            anyhow::bail!("simulated workspace failure");
+        }
+        Ok(Vec::new())
+    })
+    .expect_err("workspace failure should be returned");
+    assert!(format!("{error:#}").contains("simulated workspace failure"));
+    assert!(
+        !failure_library_dir
+            .expect("workspace command was reached")
+            .exists(),
+        "temporary Dylint library directory survived a workspace failure"
+    );
+}
+
+fn assert_cleanup_result_combinations() {
+    assert_eq!(
+        finish_with_cleanup(Ok(7), Ok(())).expect("successful body and cleanup"),
+        7
+    );
+
+    let body_error = finish_with_cleanup::<()>(Err(anyhow::anyhow!("body failure")), Ok(()))
+        .expect_err("body failure should be returned");
+    assert_eq!(format!("{body_error:#}"), "body failure");
+
+    let cleanup_error =
+        finish_with_cleanup::<()>(Ok(()), Err(std::io::Error::other("cleanup failure")))
+            .expect_err("cleanup failure should be returned");
+    let cleanup_message = format!("{cleanup_error:#}");
+    assert!(cleanup_message.contains("removing isolated Dylint library directory"));
+    assert!(cleanup_message.contains("cleanup failure"));
+
+    let body_source = std::io::Error::other("body source");
+    let body_error = anyhow::Error::new(body_source).context("body context");
+    let both_errors = finish_with_cleanup::<()>(
+        Err(body_error),
+        Err(std::io::Error::other("cleanup failure")),
+    )
+    .expect_err("both failures should be reported");
+    let both_message = format!("{both_errors:#}");
+    assert!(both_message.contains("body context"));
+    assert!(both_message.contains("cleanup failure"));
+    assert_eq!(both_errors.root_cause().to_string(), "body source");
 }
 
 #[test]

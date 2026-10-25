@@ -87,38 +87,53 @@ where
         .prefix("jackin-custom-lints-")
         .tempdir()
         .context("creating isolated Dylint library directory")?;
-    let destination = directory.path().join(
-        library
-            .file_name()
-            .context("nightly lint library has no filename")?,
-    );
-    fs::copy(&library, &destination).context("copying qualified nightly lint library")?;
+    let body_result = (|| -> Result<()> {
+        let destination = directory.path().join(
+            library
+                .file_name()
+                .context("nightly lint library has no filename")?,
+        );
+        fs::copy(&library, &destination).context("copying qualified nightly lint library")?;
 
-    let mut workspace_env = base_env;
-    workspace_env.insert(
-        OsString::from("CARGO_TARGET_DIR"),
-        target.join("workspace").into_os_string(),
-    );
-    workspace_env.insert(
-        OsString::from("DYLINT_LIBRARY_PATH"),
-        directory.path().as_os_str().to_owned(),
-    );
-    workspace_env.remove(OsStr::new("DYLINT_LINK_ENABLE_COPY_LIBRARY"));
-    workspace_env.remove(OsStr::new("CARGO_ENCODED_RUSTFLAGS"));
-    workspace_env.remove(OsStr::new("RUSTFLAGS"));
+        let mut workspace_env = base_env;
+        workspace_env.insert(
+            OsString::from("CARGO_TARGET_DIR"),
+            target.join("workspace").into_os_string(),
+        );
+        workspace_env.insert(
+            OsString::from("DYLINT_LIBRARY_PATH"),
+            directory.path().as_os_str().to_owned(),
+        );
+        workspace_env.remove(OsStr::new("DYLINT_LINK_ENABLE_COPY_LIBRARY"));
+        workspace_env.remove(OsStr::new("CARGO_ENCODED_RUSTFLAGS"));
+        workspace_env.remove(OsStr::new("RUSTFLAGS"));
 
-    let mut dylint = vec![tools["cargo-dylint"].as_os_str().to_owned()];
-    dylint.extend([
-        OsString::from("dylint"),
-        OsString::from("--no-metadata"),
-        OsString::from("--all"),
-        OsString::from("--fail-on-no-libraries"),
-        OsString::from("--"),
-        OsString::from("--workspace"),
-        OsString::from("--locked"),
-    ]);
-    execute(&dylint, root, &workspace_env, false)?;
-    Ok(())
+        let mut dylint = vec![tools["cargo-dylint"].as_os_str().to_owned()];
+        dylint.extend([
+            OsString::from("dylint"),
+            OsString::from("--no-metadata"),
+            OsString::from("--all"),
+            OsString::from("--fail-on-no-libraries"),
+            OsString::from("--"),
+            OsString::from("--workspace"),
+            OsString::from("--locked"),
+        ]);
+        execute(&dylint, root, &workspace_env, false)?;
+        Ok(())
+    })();
+
+    finish_with_cleanup(body_result, directory.close())
+}
+
+fn finish_with_cleanup<T>(body: Result<T>, cleanup: std::io::Result<()>) -> Result<T> {
+    match (body, cleanup) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(error).context("removing isolated Dylint library directory"),
+        (Err(body_error), Err(cleanup_error)) => Err(body_error).context(format!(
+            "removing isolated Dylint library directory also failed: {cleanup_error}"
+        )),
+    }
 }
 
 fn build_environment_with<H>(
