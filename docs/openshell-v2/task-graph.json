@@ -12,7 +12,7 @@
   "subagents_used_for_this_pack": false,
   "runtime_tests_executed_for_this_pack": false,
   "source_inspection": "Complete supplied specification; targeted source review, not exhaustive repository inspection.",
-  "planning_model_requirement": "Use GPT-6 Astra with ultra effort when the actual runner exposes that setting. Record actual settings.",
+  "planning_model_requirement": "Use the runner's real subagents. Record actual delegation. This pack names no model or effort setting.",
   "tasks": [
     {
       "id": "P00",

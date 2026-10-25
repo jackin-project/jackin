@@ -70,8 +70,6 @@ Assign separate agents to independent implementation tasks.
 Assign a different agent to each implementation review.
 Use `SUBAGENTS.md` for task packets, write leases, and evidence reports.
 
-Use GPT-6 Astra with ultra effort for planning reviews when that runner setting exists.
-Record the actual model and effort setting.
 Do not claim that this prompt changes the runner configuration.
 Do not invent subagent calls or subagent reports.
 Record unavailable delegation and continue serial work when necessary.

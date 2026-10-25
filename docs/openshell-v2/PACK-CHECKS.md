@@ -29,7 +29,7 @@ This validator checks the plan. It is not the product acceptance harness describ
 | Acceptance cases | 125 |
 | Mapped specification headings | 30 |
 | Topological readiness groups | 19 |
-| Checked procedural sentences | 1494 |
+| Checked procedural sentences | 1492 |
 
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
