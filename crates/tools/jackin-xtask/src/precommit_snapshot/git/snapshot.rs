@@ -283,14 +283,17 @@ impl OwnedSnapshot {
         write_private_new(&paths, &listed)?;
         if !listed.is_empty() {
             let pathspec = OsString::from(format!("--pathspec-from-file={}", paths.display()));
-            self.git_os([
-                OsString::from("--literal-pathspecs"),
-                OsString::from("add"),
-                OsString::from("--force"),
-                OsString::from("--intent-to-add"),
-                pathspec,
-                OsString::from("--pathspec-file-nul"),
-            ])?;
+            self.git_os_with_controls(
+                [
+                    OsString::from("--literal-pathspecs"),
+                    OsString::from("add"),
+                    OsString::from("--force"),
+                    OsString::from("--intent-to-add"),
+                    pathspec,
+                    OsString::from("--pathspec-file-nul"),
+                ],
+                controls,
+            )?;
         }
         let args = vec![
             OsString::from("--literal-pathspecs"),
@@ -320,10 +323,18 @@ impl OwnedSnapshot {
     }
 
     fn git_os(&self, args: impl IntoIterator<Item = OsString>) -> Result<OsString> {
+        self.git_os_with_controls(args, &self.controls)
+    }
+
+    fn git_os_with_controls(
+        &self,
+        args: impl IntoIterator<Item = OsString>,
+        controls: &SetupControls,
+    ) -> Result<OsString> {
         let args = args.into_iter().collect::<Vec<_>>();
         let output = capture_strict(
             &mut self.git_command(&args),
-            &self.controls,
+            controls,
             EnvironmentMode::Clear,
             super::super::process::METADATA_OUTPUT_LIMIT,
             1024 * 1024,
