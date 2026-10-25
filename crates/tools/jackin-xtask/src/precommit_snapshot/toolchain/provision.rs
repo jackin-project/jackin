@@ -16,7 +16,8 @@ use anyhow::{Context, Result, ensure};
 use super::super::process::SetupControls;
 use super::verify::verify_rust_toolchain;
 use super::{
-    effective_cargo, find_executable, resolve_rust_tools, runtime_environment, rust_release,
+    effective_cargo, find_executable, resolve_rust_tools_with_controls, runtime_environment,
+    rust_release,
 };
 
 pub(super) fn verify_tool_paths(
@@ -33,8 +34,17 @@ pub(super) fn verify_tool_paths(
     let rustup = find_executable("rustup", &inherited_path).context("missing rustup executable")?;
     let mise_environment = mise_environment(&source_root, &inherited_path);
     let expected_cargo = effective_cargo(&mise, &mise_environment, &source_root, &controls)?;
-    let expected_rust_tools = resolve_rust_tools(&rustup, &pin, &inherited_path, &controls)
-        .context("resolving pinned Rust tools")?;
+    let rustup_home = env::var_os("RUSTUP_HOME");
+    let home = env::var_os("HOME");
+    let expected_rust_tools = resolve_rust_tools_with_controls(
+        &rustup,
+        &pin,
+        &inherited_path,
+        rustup_home.as_deref(),
+        home.as_deref(),
+        &controls,
+    )
+    .context("resolving pinned Rust tools")?;
     verify_rust_toolchain(
         &pin,
         &expected_rust_tools,

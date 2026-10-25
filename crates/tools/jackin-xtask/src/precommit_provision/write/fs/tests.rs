@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(target_os = "macos")]
 use super::*;
+use anyhow::Result;
 
 #[cfg(target_os = "macos")]
 #[test]
@@ -18,6 +18,7 @@ fn inherited_mutation_acl_is_rejected_on_the_held_install_directory() -> Result<
     let result = jackin_process::exec_sync(&request)?;
     ensure!(result.success, "installing macOS ACL fixture failed");
     let held = open_path(temporary.path())?;
-    assert!(validate_acl_directory(&held, "ACL test directory").is_err());
+    validate_acl_directory(&held, "ACL test directory")
+        .expect_err("the added ACL must be rejected");
     Ok(())
 }

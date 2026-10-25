@@ -69,8 +69,16 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         OsString::from("false"),
     );
     let rustup = find_executable("rustup", &inherited_path).context("missing rustup executable")?;
+    let rustup_home = env::var_os("RUSTUP_HOME");
     let resolved = resolve_managed_tools(&mise, &mise_env, &snapshot.root, controls)?;
-    let rust_tools = resolve_rust_tools(&rustup, &pin, &inherited_path, controls)?;
+    let rust_tools = resolve_rust_tools_with_controls(
+        &rustup,
+        &pin,
+        &inherited_path,
+        rustup_home.as_deref(),
+        home.as_deref().map(Path::as_os_str),
+        controls,
+    )?;
     let cargo = effective_cargo(&mise, &mise_env, &snapshot.root, controls)?;
     verify_rust_toolchain(
         &pin,
@@ -293,10 +301,24 @@ fn qualified_path(managed_dir: &Path, rust_bin: &Path, inherited_path: &OsStr) -
     env::join_paths(path_entries).context("building qualified tool path")
 }
 
+#[cfg(test)]
 fn resolve_rust_tools(
     rustup: &Path,
     pin: &str,
     inherited_path: &OsStr,
+    rustup_home: Option<&OsStr>,
+    home: Option<&OsStr>,
+) -> Result<BTreeMap<&'static str, PathBuf>> {
+    let controls = SetupControls::for_test(std::time::Duration::from_secs(30));
+    resolve_rust_tools_with_controls(rustup, pin, inherited_path, rustup_home, home, &controls)
+}
+
+fn resolve_rust_tools_with_controls(
+    rustup: &Path,
+    pin: &str,
+    inherited_path: &OsStr,
+    rustup_home: Option<&OsStr>,
+    home: Option<&OsStr>,
     controls: &SetupControls,
 ) -> Result<BTreeMap<&'static str, PathBuf>> {
     let mut rust_tools = BTreeMap::new();
@@ -311,6 +333,11 @@ fn resolve_rust_tools(
             ])
             .env_clear()
             .env("PATH", inherited_path);
+        if let Some(rustup_home) = rustup_home {
+            command.env("RUSTUP_HOME", rustup_home);
+        } else if let Some(home) = home {
+            command.env("HOME", home);
+        }
         let output = capture_strict(
             &mut command,
             controls,

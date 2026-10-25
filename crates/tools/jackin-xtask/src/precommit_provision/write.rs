@@ -9,6 +9,7 @@ use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
 
 use super::bundle::{self, VerifiedBootstrapInstall};
+mod activation;
 mod fs;
 use self::fs::{
     InstallDirectories, create_directory, create_file, exists, open_directory, open_lock,
@@ -25,7 +26,20 @@ pub(super) fn validate_hook_config_custody(
     common_path: &std::path::Path,
     selected_path: &std::path::Path,
 ) -> Result<()> {
-    fs::validate_hook_config_custody(common_path, selected_path)
+    activation::validate_hook_config_custody(common_path, selected_path)
+}
+
+pub(super) fn activate_hook_config(
+    common_path: &std::path::Path,
+    selected_path: &std::path::Path,
+) -> Result<()> {
+    activation::activate_hook_config(common_path, selected_path)
+}
+
+pub(super) fn activation_failed_after_rename(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<activation::ActivationAfterRenameError>()
+        .is_some()
 }
 
 pub(super) fn install(verified: VerifiedBootstrapInstall) -> Result<String> {

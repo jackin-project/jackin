@@ -339,13 +339,14 @@ pub(super) fn capture_spooled(
         Some(CaptureFailureKind::UncertainCleanup)
     } else if result.execution.timed_out {
         Some(CaptureFailureKind::Timeout)
-    } else if result.execution.cancelled {
-        Some(CaptureFailureKind::Cancelled)
-    } else if !result.capture.complete
-        || !result.capture.pipes.both_reached_eof()
+    } else if !result.capture.pipes.both_reached_eof()
         || !result.failures.is_empty()
         || files_synced.is_err()
     {
+        Some(CaptureFailureKind::Capture)
+    } else if result.execution.cancelled {
+        Some(CaptureFailureKind::Cancelled)
+    } else if !result.capture.complete {
         Some(CaptureFailureKind::Capture)
     } else {
         None

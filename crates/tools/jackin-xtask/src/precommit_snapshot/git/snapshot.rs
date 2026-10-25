@@ -425,26 +425,23 @@ impl OwnedSnapshot {
 
     fn copy_index(&self, live: &LiveRepository) -> Result<()> {
         ensure!(
-            index_inputs(&live.index)? == live.index_inputs,
+            index_inputs(&live.index, live.shared_index.as_deref())? == live.index_inputs,
             "live Git index changed after snapshot admission began"
         );
         if live.index.is_file() {
             fs::copy(&live.index, &self.index).context("copying active Git index")?;
-            let parent = live.index.parent().context("active index has no parent")?;
-            for entry in
-                crate::fs_util::read_dir_sorted(parent).context("reading active index directory")?
-            {
-                let name = entry.file_name();
-                if name.as_bytes().starts_with(b"sharedindex.") && entry.file_type()?.is_file() {
-                    fs::copy(entry.path(), self.git_dir.join(name))
-                        .context("copying split-index backing file")?;
-                }
+            if let Some(shared_index) = &live.shared_index {
+                let name = shared_index
+                    .file_name()
+                    .context("active shared index has no filename")?;
+                fs::copy(shared_index, self.git_dir.join(name))
+                    .context("copying active split-index backing file")?;
             }
         } else {
             self.git(&["read-tree", "--empty"])?;
         }
         ensure!(
-            index_inputs(&live.index)? == live.index_inputs,
+            index_inputs(&live.index, live.shared_index.as_deref())? == live.index_inputs,
             "live Git index changed while its private snapshot was copied"
         );
         Ok(())
@@ -452,7 +449,7 @@ impl OwnedSnapshot {
 
     pub(in crate::precommit_snapshot) fn verify_live_index(live: &LiveRepository) -> Result<()> {
         ensure!(
-            index_inputs(&live.index)? == live.index_inputs,
+            index_inputs(&live.index, live.shared_index.as_deref())? == live.index_inputs,
             "live Git index or split-index backing file changed while the native gate ran"
         );
         Ok(())

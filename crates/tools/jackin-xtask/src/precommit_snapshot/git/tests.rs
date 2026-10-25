@@ -18,8 +18,10 @@ use std::{
 
 use tempfile::TempDir;
 
-use super::super::SetupSignals;
-use super::super::process::{SetupControls, capture};
+use super::super::{
+    SetupSignals,
+    process::{SetupControls, capture},
+};
 use super::{LiveRepository, OwnedSnapshot, validate_link};
 use crate::precommit_snapshot::toolchain::QualifiedTools;
 
@@ -115,16 +117,6 @@ fn rejects_overflowed_staged_inventory_without_changing_live_state() {
 }
 
 #[test]
-fn git_path_record_parser_preserves_non_utf8_and_trailing_newline_bytes() {
-    assert_eq!(
-        super::without_record_terminator(b"/repo/\xff\n\n").expect("one record terminator"),
-        b"/repo/\xff\n"
-    );
-    super::without_record_terminator(b"/repo/\xff")
-        .expect_err("missing record terminator must fail");
-}
-
-#[test]
 fn spool_cleanup_error_reports_the_retained_snapshot_path() {
     let fixture = fixture();
     let live = LiveRepository::capture_at(fixture.path()).expect("capture fixture");
@@ -175,83 +167,6 @@ fn admits_internal_symlinks_and_rejects_escaping_chains() {
     symlink("../outside", directory.path().join("hop")).expect("escaping hop");
     symlink("hop/../inside", directory.path().join("chained")).expect("chained escape");
     assert!(validate_link(directory.path(), &directory.path().join("chained")).is_err());
-}
-
-#[test]
-fn collects_tracked_and_new_path_fixes_against_captured_tree() {
-    let fixture = fixture();
-    let live = LiveRepository::capture_at(fixture.path()).expect("capture fixture");
-    let snapshot = OwnedSnapshot::create(&live).expect("private snapshot");
-    let tree = snapshot.capture_staged_tree().expect("capture staged tree");
-    snapshot
-        .materialize(&tree, &live)
-        .expect("materialize tree");
-    fs::write(snapshot.root.join("staged.txt"), "fixed\n").expect("tracked fix");
-    fs::write(snapshot.root.join("created file\nname"), "new\n").expect("new fix");
-    let patch = snapshot
-        .collect_fixes(&tree, &snapshot.controls)
-        .expect("collect patch");
-    assert!(patch.starts_with(b"diff --git "));
-    assert!(String::from_utf8_lossy(&patch).contains("created file\\nname"));
-    assert!(String::from_utf8_lossy(&patch).contains("fixed"));
-    assert_eq!(
-        fs::read(fixture.path().join("staged.txt")).expect("live file"),
-        b"unstaged\n"
-    );
-}
-
-#[test]
-fn recovery_controls_collect_new_path_fixes_after_setup_cancellation() {
-    let fixture = fixture();
-    let live = LiveRepository::capture_at(fixture.path()).expect("capture fixture");
-    let snapshot = OwnedSnapshot::create(&live).expect("private snapshot");
-    let tree = snapshot.capture_staged_tree().expect("capture staged tree");
-    snapshot
-        .materialize(&tree, &live)
-        .expect("materialize staged tree");
-
-    let new_path = snapshot.root.join("recovery-created.txt");
-    fs::write(&new_path, "recovery patch\n").expect("write recovery-created file");
-    snapshot
-        .controls
-        .cancellation()
-        .store(true, Ordering::SeqCst);
-    let recovery_controls = SetupControls::for_test(std::time::Duration::from_secs(10));
-    assert!(snapshot.controls.cancellation().load(Ordering::SeqCst));
-    assert!(!recovery_controls.cancellation().load(Ordering::SeqCst));
-    recovery_controls
-        .check_start()
-        .expect("fresh recovery deadline remains live after setup cancellation");
-    let patch = snapshot
-        .collect_fixes(&tree, &recovery_controls)
-        .expect("fresh recovery controls admit new-path staging and diff capture");
-    assert!(
-        String::from_utf8_lossy(&patch).contains("recovery patch"),
-        "new-file fix remains available after setup cancellation"
-    );
-}
-
-#[test]
-fn collects_new_files_whose_names_look_like_git_pathspec_magic() {
-    let fixture = fixture();
-    let live = LiveRepository::capture_at(fixture.path()).expect("capture fixture");
-    let snapshot = OwnedSnapshot::create(&live).expect("private snapshot");
-    let tree = snapshot.capture_staged_tree().expect("capture staged tree");
-    snapshot
-        .materialize(&tree, &live)
-        .expect("materialize staged tree");
-    let filename = ":(exclude)*";
-    fs::write(
-        snapshot.root.join(filename),
-        "must be included in evidence\n",
-    )
-    .expect("create pathspec-shaped filename");
-    let patch = snapshot
-        .collect_fixes(&tree, &snapshot.controls)
-        .expect("collect patch");
-    let patch = String::from_utf8_lossy(&patch);
-    assert!(patch.contains("must be included in evidence"));
-    assert!(patch.contains("(exclude)*"));
 }
 
 #[test]
@@ -454,3 +369,5 @@ fn setup_signal_after_snapshot_allocation_drops_private_snapshot() {
 }
 
 mod index;
+mod paths;
+mod recovery;

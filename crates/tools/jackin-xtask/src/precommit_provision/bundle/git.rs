@@ -4,7 +4,9 @@
 //! Git source and staged-index identity checks.
 
 use std::{
+    ffi::OsString,
     fs,
+    os::unix::ffi::OsStringExt,
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
 };
@@ -73,20 +75,22 @@ fn worktree_diff_is_clean(source: &Path) -> bool {
 }
 
 pub(super) fn verify_private_source_git(source: &Path, repository: &Path) -> Result<()> {
-    let source_git = PathBuf::from(git_output(
+    let source_git = git_path_output(
         source,
         &["rev-parse", "--path-format=absolute", "--git-dir"],
-    )?);
+        false,
+    )?;
     let expected_git = source.join(".git");
     ensure!(
         fs::canonicalize(source_git)? == expected_git,
         "private source Git directory is not local"
     );
     super::files::physical_private_directory(&expected_git, "private source Git directory")?;
-    let private_index = PathBuf::from(git_output(
+    let private_index = git_path_output(
         source,
         &["rev-parse", "--path-format=absolute", "--git-path", "index"],
-    )?);
+        false,
+    )?;
     ensure!(
         fs::canonicalize(&private_index)? == expected_git.join("index"),
         "private source index is not local"
@@ -99,7 +103,7 @@ pub(super) fn verify_private_source_git(source: &Path, repository: &Path) -> Res
             && index_metadata.nlink() == 1,
         "private source index has unsafe custody"
     );
-    let source_objects = PathBuf::from(git_output(
+    let source_objects = git_path_output(
         source,
         &[
             "rev-parse",
@@ -107,13 +111,14 @@ pub(super) fn verify_private_source_git(source: &Path, repository: &Path) -> Res
             "--git-path",
             "objects",
         ],
-    )?);
+        false,
+    )?;
     let expected_objects = expected_git.join("objects");
     ensure!(
         fs::canonicalize(source_objects)? == expected_objects,
         "private source object directory is not local"
     );
-    let live_objects = git_output(
+    let live_objects = git_path_output(
         repository,
         &[
             "rev-parse",
@@ -121,6 +126,7 @@ pub(super) fn verify_private_source_git(source: &Path, repository: &Path) -> Res
             "--git-path",
             "objects",
         ],
+        false,
     )?;
     let live_objects =
         fs::canonicalize(live_objects).context("resolving read-only source alternate")?;
@@ -148,30 +154,42 @@ pub(super) fn verify_private_source_git(source: &Path, repository: &Path) -> Res
 }
 
 pub(super) fn index_snapshot(repository: &Path) -> Result<Vec<u8>> {
-    let index_path = git_output(
+    let index_path = git_path_output(
         repository,
         &["rev-parse", "--path-format=absolute", "--git-path", "index"],
+        false,
     )?;
-    let index_hash = super::files::hash_if_regular(Path::new(&index_path), OUTPUT_LIMIT)?
+    let index_hash = super::files::hash_if_regular(&index_path, OUTPUT_LIMIT)?
         .unwrap_or_else(|| "none".to_owned());
-    let shared_output = git_output_bytes(
+    let shared_path = git_path_output(
         repository,
         &["rev-parse", "--path-format=absolute", "--shared-index-path"],
+        true,
     )?;
-    let shared_path = std::str::from_utf8(&shared_output)
-        .context("decoding active shared index path")?
-        .trim_end_matches('\n');
-    ensure!(
-        !shared_path.contains('\n'),
-        "shared index path is not one record"
-    );
-    let shared_hash = if shared_path.is_empty() {
+    let shared_hash = if shared_path.as_os_str().is_empty() {
         "none".to_owned()
     } else {
-        super::files::hash_if_regular(Path::new(&shared_path), OUTPUT_LIMIT)?
+        super::files::hash_if_regular(&shared_path, OUTPUT_LIMIT)?
             .context("active shared index disappeared")?
     };
     Ok(format!("index={index_hash}\nshared-index={shared_hash}\n").into_bytes())
+}
+
+pub(super) fn git_path_output(root: &Path, args: &[&str], allow_empty: bool) -> Result<PathBuf> {
+    parse_git_path_record(git_output_bytes(root, args)?, allow_empty)
+}
+
+fn parse_git_path_record(mut bytes: Vec<u8>, allow_empty: bool) -> Result<PathBuf> {
+    if allow_empty && bytes.is_empty() {
+        return Ok(PathBuf::new());
+    }
+    ensure!(
+        bytes.pop() == Some(b'\n'),
+        "Git path output is missing its record terminator"
+    );
+    ensure!(!bytes.contains(&0), "Git path output contains a NUL byte");
+    ensure!(allow_empty || !bytes.is_empty(), "Git path output is empty");
+    Ok(PathBuf::from(OsString::from_vec(bytes)))
 }
 
 pub(super) fn git_output(root: &Path, args: &[&str]) -> Result<String> {
@@ -215,7 +233,7 @@ pub(in crate::precommit_provision) fn hook_config_paths(
         );
         false
     };
-    let common = PathBuf::from(git_output(
+    let common = git_path_output(
         repository,
         &[
             "rev-parse",
@@ -223,9 +241,10 @@ pub(in crate::precommit_provision) fn hook_config_paths(
             "--git-path",
             "config",
         ],
-    )?);
+        false,
+    )?;
     let selected = if worktree_config {
-        PathBuf::from(git_output(
+        git_path_output(
             repository,
             &[
                 "rev-parse",
@@ -233,7 +252,8 @@ pub(in crate::precommit_provision) fn hook_config_paths(
                 "--git-path",
                 "config.worktree",
             ],
-        )?)
+            false,
+        )?
     } else {
         common.clone()
     };

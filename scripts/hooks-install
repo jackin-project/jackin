@@ -185,16 +185,19 @@ if ! "$generation_path/owner" validate-hook-config --repository "$repo_root" >/d
     exit 1
 fi
 
-# Copy into the original-metadata lock, then rename once as the activation point.
+# Sync the completed lock, then rename and sync its held parent directory.
 cat "$config_candidate" > "$config_lock" || {
     printf '%s\n' 'error: cannot write the complete local Git config lock' >&2
     exit 1
 }
-mv "$config_lock" "$config_path" || {
-    printf '%s\n' 'error: cannot atomically install local Git config' >&2
+if "$generation_path/owner" activate-hook-config --repository "$repo_root" >/dev/null; then
+    config_committed=1
+else
+    activation_status=$?
+    if [ "$activation_status" -eq 2 ]; then config_committed=1; fi
+    printf '%s\n' 'error: cannot complete synced local Git config activation' >&2
     exit 1
-}
-config_committed=1
+fi
 rm -f "$config_candidate"
 config_candidate=
 trap - EXIT HUP INT TERM

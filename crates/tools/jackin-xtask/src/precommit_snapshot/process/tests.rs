@@ -395,6 +395,73 @@ fn strict_capture_rejects_surviving_pipe_holder_after_zero_exit() {
 }
 
 #[test]
+fn strict_capture_does_not_treat_incomplete_pipes_as_clean_cancellation() {
+    if run_pipe_holder_test_helper() {
+        return;
+    }
+
+    let directory = tempfile::tempdir().expect("creating capture fixture");
+    let ready_path = directory.path().join("pipe-holder.ready");
+    let heartbeat_path = directory.path().join("pipe-holder.heartbeat");
+    let release_path = directory.path().join("pipe-holder.release");
+    let stopped_path = directory.path().join("pipe-holder.stopped");
+    let mut cleanup = PipeHolderCleanup {
+        release_path: release_path.clone(),
+        stopped_path,
+        completed: false,
+        wait_attempted: false,
+    };
+    let mut child = Command::new(std::env::current_exe().expect("test executable"));
+    child
+        .args(["--exact", PIPE_HOLDER_TEST_NAME, "--nocapture"])
+        .env(PIPE_HOLDER_CHILD_MODE, "1")
+        .env(PIPE_HOLDER_READY_PATH, &ready_path)
+        .env(PIPE_HOLDER_HEARTBEAT_PATH, heartbeat_path)
+        .env(PIPE_HOLDER_RELEASE_PATH, release_path)
+        .env(PIPE_HOLDER_STOPPED_PATH, &cleanup.stopped_path);
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let controller_flag = Arc::clone(&cancellation);
+    let controller_ready_path = ready_path.clone();
+    let controller = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !controller_ready_path.exists() && Instant::now() < deadline {
+            thread::park_timeout(Duration::from_millis(10));
+        }
+        let ready = controller_ready_path.exists();
+        controller_flag.store(true, std::sync::atomic::Ordering::Release);
+        ready
+    });
+    let controls = SetupControls::new(cancellation, Duration::from_secs(10));
+    let error = capture_strict(
+        &mut child,
+        &controls,
+        EnvironmentMode::Inherit,
+        1024 * 1024,
+        1024 * 1024,
+        CommandBudget::PhaseRemainder,
+    )
+    .expect_err("cancellation cannot hide a pipe that did not reach EOF");
+    assert!(controller.join().expect("cancellation controller joined"));
+    let failure = error
+        .downcast_ref::<super::CaptureFailure>()
+        .expect("incomplete cancelled capture remains typed");
+    assert_eq!(failure.kind, CaptureFailureKind::Capture);
+    assert!(!super::is_clean_cancellation(&error));
+    let detail = error.to_string();
+    assert!(detail.contains("cancelled=true"), "{detail}");
+    assert!(detail.contains("group_drained=true"), "{detail}");
+    assert!(
+        detail.contains("stdout_eof=false") || detail.contains("stderr_eof=false"),
+        "{detail}"
+    );
+    assert!(detail.contains("did not reach EOF"), "{detail}");
+    assert!(
+        cleanup.release_and_wait(),
+        "controller released and reaped holder"
+    );
+}
+
+#[test]
 fn strict_capture_retains_bounded_prefix_when_output_overflows() {
     let controls = SetupControls::for_test(Duration::from_secs(10));
     let mut command = Command::new("/bin/sh");

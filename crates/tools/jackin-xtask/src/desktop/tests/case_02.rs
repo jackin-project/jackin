@@ -206,8 +206,9 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
             "check:repository-policy",
             "release:package",
             "renovate-upstream-sources",
+            "test:hk-workspace-admission",
         ],
-        "root Mise tasks must match the native checks, producer, and upstream check"
+        "root Mise tasks must match the native checks, producer, upstream check, and admission test"
     );
     for (id, command) in [
         ("check:dependency-usage", "cargo shear --deny-warnings"),
