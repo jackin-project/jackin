@@ -53,12 +53,16 @@ Keep no more than eight actual subagents active at once.
 | Stored readiness groups match dependencies with no duplicate task IDs | PASS |
 | Task test references exist and every case has a task owner | PASS |
 | Case and task ownership maps agree | PASS |
+| Task graph fields match TASKS index table | PASS |
+| Task graph fields match PLAN task index table | PASS |
 | PLAN task headings match the task graph | PASS |
 | Task graph fields match PLAN task cards | PASS |
 | Task graph fields match individual task cards | PASS |
 | Acceptance case headings have no missing, duplicate, or extra blocks | PASS |
 | Acceptance case fields match the acceptance-case manifest | PASS |
 | Every specification heading is mapped | PASS |
+| Traceability ranges match exact specification sections | PASS |
+| Traceability table matches its manifest | PASS |
 | Traceability uses known task owners | PASS |
 | Checked procedural sentences contain at most 20 whitespace-separated words | PASS |
 | Initial task and case statuses claim no execution (`--initial` only) | PASS |

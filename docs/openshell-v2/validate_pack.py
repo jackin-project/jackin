@@ -92,6 +92,58 @@ def render_acceptance_case(case: dict[str, Any]) -> str:
     )
 
 
+def render_task_index(tasks: list[dict[str, Any]]) -> list[str]:
+    lines = [
+        "| ID | Task | Subagent | Dependencies |",
+        "| --- | --- | --- | --- |",
+    ]
+    for task in tasks:
+        dependencies = ", ".join(task["depends_on"]) or "None"
+        lines.append(
+            f"| {task['id']} | {task['title']} | {task['owner']} | {dependencies} |"
+        )
+    return lines
+
+
+def task_index_table(document: str, heading: str, next_heading: str | None) -> list[str] | None:
+    heading_pattern = re.compile(rf"(?m)^{re.escape(heading)}\s*$")
+    matches = list(heading_pattern.finditer(document))
+    if len(matches) != 1:
+        return None
+    start = matches[0].end()
+    end = len(document)
+    if next_heading is not None:
+        next_pattern = re.compile(rf"(?m)^{re.escape(next_heading)}\s*$")
+        next_matches = [match for match in next_pattern.finditer(document) if match.start() > start]
+        if len(next_matches) != 1:
+            return None
+        end = next_matches[0].start()
+    section = document[start:end]
+    return [line.strip() for line in section.splitlines() if line.lstrip().startswith("|")]
+
+
+def render_traceability_table(sections: list[dict[str, Any]]) -> list[str]:
+    lines = [
+        "| Specification section | Lines | Responsible tasks |",
+        "| --- | --- | --- |",
+    ]
+    for section in sections:
+        tasks = ", ".join(section["tasks"])
+        lines.append(
+            f"| {section['heading']} | {section['start_line']}–{section['end_line']} | {tasks} |"
+        )
+    return lines
+
+
+def traceability_table(document: str) -> list[str] | None:
+    source_heading = re.compile(r"(?m)^## Source classes\s*$")
+    matches = list(source_heading.finditer(document))
+    if len(matches) != 1:
+        return None
+    section = document[:matches[0].start()]
+    return [line.strip() for line in section.splitlines() if line.lstrip().startswith("|")]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent)
@@ -185,7 +237,18 @@ def main() -> int:
             reverse_errors.append(case["id"])
     check("Case and task ownership maps agree", not reverse_errors, reverse_errors)
 
+    expected_index = render_task_index(tasks)
+    task_index = task_index_table((root / "TASKS.md").read_text(encoding="utf-8"),
+                                  "# Task index", None)
+    check("Task graph fields match TASKS index table", task_index == expected_index,
+          {"expected_rows": len(expected_index),
+           "actual_rows": len(task_index) if task_index is not None else None})
+
     plan = (root / "PLAN.md").read_text(encoding="utf-8")
+    plan_index = task_index_table(plan, "## Task index", "## Detailed task cards")
+    check("Task graph fields match PLAN task index table", plan_index == expected_index,
+          {"expected_rows": len(expected_index),
+           "actual_rows": len(plan_index) if plan_index is not None else None})
     task_section_start = plan.find("## Detailed task cards")
     task_section = plan[task_section_start:] if task_section_start != -1 else ""
     plan_headings = list(re.finditer(r"(?m)^### (.+)$", task_section))
@@ -259,9 +322,40 @@ def main() -> int:
     spec_lines = (root / "SPEC.md").read_text(encoding="utf-8").splitlines()
     actual_headings = [(i, re.sub(r"^#+ ", "", line)) for i, line in enumerate(spec_lines, 1)
                        if re.match(r"^#{1,2} ", line)]
+    expected_trace_sections = [
+        {"start_line": start_line,
+         "end_line": actual_headings[index + 1][0] - 1
+         if index + 1 < len(actual_headings) else len(spec_lines),
+         "heading": heading}
+        for index, (start_line, heading) in enumerate(actual_headings)
+    ]
     mapped_headings = [(section["start_line"], section["heading"]) for section in trace["sections"]]
-    check("Every specification heading is mapped", actual_headings == mapped_headings,
-          {"headings": len(actual_headings)})
+    expected_headings = [(section["start_line"], section["heading"])
+                         for section in expected_trace_sections]
+    check("Every specification heading is mapped", expected_headings == mapped_headings,
+          {"expected_count": len(expected_headings), "actual_count": len(mapped_headings)})
+    trace_range_errors = []
+    for index, expected in enumerate(expected_trace_sections):
+        if index >= len(trace["sections"]):
+            trace_range_errors.append({"index": index, "missing": expected})
+            continue
+        section = trace["sections"][index]
+        actual = {key: section.get(key) for key in ("start_line", "end_line", "heading")}
+        if actual != expected:
+            trace_range_errors.append({"index": index, "expected": expected, "actual": actual})
+    if len(trace["sections"]) > len(expected_trace_sections):
+        trace_range_errors.extend(
+            {"index": index, "unexpected": trace["sections"][index]}
+            for index in range(len(expected_trace_sections), len(trace["sections"]))
+        )
+    check("Traceability ranges match exact specification sections",
+          not trace_range_errors, trace_range_errors)
+    trace_doc = (root / "TRACEABILITY.md").read_text(encoding="utf-8")
+    actual_trace_table = traceability_table(trace_doc)
+    expected_trace_table = render_traceability_table(trace["sections"])
+    check("Traceability table matches its manifest", actual_trace_table == expected_trace_table,
+          {"expected_rows": len(expected_trace_table),
+           "actual_rows": len(actual_trace_table) if actual_trace_table is not None else None})
     bad_trace = [section["heading"] for section in trace["sections"]
                  if not section["tasks"] or not set(section["tasks"]).issubset(task_set)]
     check("Traceability uses known task owners", not bad_trace, bad_trace)
