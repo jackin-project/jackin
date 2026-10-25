@@ -4,7 +4,6 @@ Shared working agreement: keep this section byte-identical across projects. Proj
 
 - No legacy code. Finish every migration: remove old paths completely — no compatibility shims, aliases, or deprecation periods. Breaking changes are preferred.
 - Research project: unsafe, breaking changes expected, never production-ready. Break things when needed; deliver fast.
-- Verification gates: always verify from the repo root before committing or merging. Always run tests with `cargo nextest`; never use `cargo test`. Read `COMMITS.md` for the exact required commands, purposes, and usage details.
 - No comments in code. Code is the source of truth; a comment creates ambiguity about what is right, code or comment. Keep a comment only when functionality requires it: SPDX license headers for REUSE compliance, clap `#[command]`/`#[arg]` help text and similar string literals consumed by tools, parser directives such as Dockerfile `# syntax=`, and machine-generated files that the repo's own generators verify byte-identical. Never keep explanatory, TODO, or SAFETY comments; when code seems to need explanation, rewrite the code instead.
 - Judge correctness, consistency, and project fit. Never defer a known-wrong state for ROI, cost, effort, or edge cases.
 - Stop only when the required change is proven impossible with the available tools or model. When uncertain, inspect, test, and measure first.
