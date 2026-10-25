@@ -13,7 +13,6 @@ from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parent
 VALIDATOR = ROOT / "validate_pack.py"
-RECEIPTS = ROOT / "validation" / "assignment-results-receipts.json"
 
 
 def sha256(path: Path) -> str:
@@ -287,6 +286,7 @@ def main() -> int:
     ))
 
     payload = {
+        "passed": all(receipt["passed"] for receipt in receipts),
         "scope": "Static validator fixtures only. No product or runtime tests are performed.",
         "source_sha256": {
             "validate_pack.py": sha256(VALIDATOR),
@@ -296,12 +296,8 @@ def main() -> int:
         },
         "fixtures": receipts,
     }
-    RECEIPTS.parent.mkdir(parents=True, exist_ok=True)
-    RECEIPTS.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    for receipt in receipts:
-        print(f"{'PASS' if receipt['passed'] else 'FAIL'}: {receipt['scenario']} (exit {receipt['exit_code']})")
-    print(f"Raw receipts: {RECEIPTS}")
-    return 0 if all(receipt["passed"] for receipt in receipts) else 1
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    return 0 if payload["passed"] else 1
 
 
 if __name__ == "__main__":

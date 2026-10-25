@@ -181,8 +181,7 @@ def main() -> int:
 
     required = ["README.md", "SPEC.md", "GOAL.md", "CONTRACTS.md", "SUBAGENTS.md", "PLAN.md",
                 "ACCEPTANCE.md", "SOURCE-AUDIT.md", "TERMS.md", "TASKS.md", "TRACEABILITY.md",
-                "PACK-CHECKS.md", "validate_assignment_fixtures.py",
-                "validation/assignment-results-receipts.json", "task-graph.json",
+                "PACK-CHECKS.md", "validate_assignment_fixtures.py", "task-graph.json",
                 "acceptance-cases.json", "traceability.json"]
     missing = [name for name in required if not (root / name).is_file()]
     check("Required pack files exist", not missing, missing)

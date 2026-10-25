@@ -19,7 +19,7 @@ Run these commands from the repository root:
 ```sh
 python3 docs/openshell-v2/validate_pack.py --initial
 python3 docs/openshell-v2/validate_pack.py
-python3 docs/openshell-v2/validate_assignment_fixtures.py
+python3 docs/openshell-v2/validate_assignment_fixtures.py > /tmp/openshell-assignment-results-receipts.json
 ```
 
 The first command requires all task statuses to remain `NOT_STARTED` and all case and assignment statuses to remain `NOT_RUN`.
@@ -39,7 +39,8 @@ Markdown assignment labels record initial `NOT_RUN` status and stay fixed during
 
 `validate_assignment_fixtures.py` runs the validator on temporary pack copies.
 Its raw receipts include each actual argument vector, stdout, stderr, exit code, and fixture source hashes.
-The receipts are stored in `validation/assignment-results-receipts.json`.
+It writes one JSON report to stdout and does not modify the pack.
+Redirect stdout to a temporary file to retain the report.
 
 ## Counts
 
@@ -58,7 +59,7 @@ Keep no more than eight actual subagents active at once.
 
 | Check | Result |
 | --- | --- |
-| Required pack files, including fixture tool and receipts | PASS |
+| Required pack files, including fixture tool | PASS |
 | Manifest schema versions are supported integers | PASS |
 | Machine source pins match C01 | PASS |
 | Task IDs and case IDs are unique | PASS |
@@ -103,7 +104,7 @@ The downstream case below is A22, owned by U02 and T32.
 | U06 `PASS` with no assigned acceptance cases | Accept under existing no-case completion rule, exit 0 | PASS, exit 0 |
 
 The first shared-case fixture shows an upstream `PASS` cannot close T32's assignment.
-The full raw output and argument vectors are in the receipts file.
+The full raw output and argument vectors are in the JSON report.
 
 ## Language and evidence limits
 
