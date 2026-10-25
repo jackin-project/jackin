@@ -102,11 +102,19 @@ fn release_acl(acl: NonNull<c_void>) {
     let _released = unsafe { acl_free(acl.as_ptr()) };
 }
 
+pub(super) fn ensure_no_mutating_acl(descriptor: impl AsFd) -> io::Result<()> {
+    ensure_acl_policy(descriptor, false)
+}
+
+pub(super) fn ensure_no_acl_entries(descriptor: impl AsFd) -> io::Result<()> {
+    ensure_acl_policy(descriptor, true)
+}
+
 #[expect(
     unsafe_code,
     reason = "inspect Darwin ACLs through the audited opaque descriptor ABI"
 )]
-pub(super) fn ensure_no_mutating_acl(descriptor: impl AsFd) -> io::Result<()> {
+fn ensure_acl_policy(descriptor: impl AsFd, reject_all_entries: bool) -> io::Result<()> {
     let fd = descriptor.as_fd().as_raw_fd();
     // SAFETY: The borrowed descriptor is live for this call, and the type is a
     // fixed ACL_TYPE_EXTENDED value from the audited SDK header.
@@ -124,21 +132,13 @@ pub(super) fn ensure_no_mutating_acl(descriptor: impl AsFd) -> io::Result<()> {
 
     // SAFETY: `acl` owns the non-null opaque allocation through this call.
     let valid_result = unsafe { acl_valid(acl.as_ptr()) };
-    let valid_errno = if valid_result == -1 {
-        last_errno()
-    } else {
-        None
-    };
+    let valid_errno = errno_if_failed(valid_result);
     classify_zero_result(valid_result, valid_errno, "acl_valid")?;
 
     let mut maximal_mask = 0_u64;
     // SAFETY: The pointer refers to writable storage for the documented mask.
     let maximal_result = unsafe { acl_maximal_permset_mask_np(&raw mut maximal_mask) };
-    let maximal_errno = if maximal_result == -1 {
-        last_errno()
-    } else {
-        None
-    };
+    let maximal_errno = errno_if_failed(maximal_result);
     classify_zero_result(maximal_result, maximal_errno, "acl_maximal_permset_mask_np")?;
     validate_maximal_mask(maximal_mask)?;
 
@@ -152,11 +152,7 @@ pub(super) fn ensure_no_mutating_acl(descriptor: impl AsFd) -> io::Result<()> {
         let mut entry_pointer = std::ptr::null_mut();
         // SAFETY: `acl` remains live and `entry_pointer` is writable out-storage.
         let entry_result = unsafe { acl_get_entry(acl.as_ptr(), entry_id, &raw mut entry_pointer) };
-        let entry_errno = if entry_result == -1 {
-            last_errno()
-        } else {
-            None
-        };
+        let entry_errno = errno_if_failed(entry_result);
         match classify_entry_result(
             entry_result,
             entry_errno,
@@ -166,24 +162,26 @@ pub(super) fn ensure_no_mutating_acl(descriptor: impl AsFd) -> io::Result<()> {
             EntryStatus::End => return Ok(()),
             EntryStatus::Entry => {}
         }
+        if reject_all_entries {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "extended ACL entries are not accepted for confidential data",
+            ));
+        }
         entries_seen += 1;
         let entry = NonNull::new(entry_pointer).ok_or_else(invalid_acl_result)?;
 
         let mut tag = c_int::MIN;
         // SAFETY: `entry` was returned by the live `acl` object and `tag` is writable.
         let tag_result = unsafe { acl_get_tag_type(entry.as_ptr(), &raw mut tag) };
-        let tag_errno = if tag_result == -1 { last_errno() } else { None };
+        let tag_errno = errno_if_failed(tag_result);
         classify_zero_result(tag_result, tag_errno, "acl_get_tag_type")?;
 
         let mut permission_mask = 0_u64;
         // SAFETY: `entry` was returned by the live `acl` object and the mask is writable.
         let permission_result =
             unsafe { acl_get_permset_mask_np(entry.as_ptr(), &raw mut permission_mask) };
-        let permission_errno = if permission_result == -1 {
-            last_errno()
-        } else {
-            None
-        };
+        let permission_errno = errno_if_failed(permission_result);
         classify_zero_result(
             permission_result,
             permission_errno,
@@ -191,6 +189,10 @@ pub(super) fn ensure_no_mutating_acl(descriptor: impl AsFd) -> io::Result<()> {
         )?;
         validate_acl_entry(tag, permission_mask)?;
     }
+}
+
+fn errno_if_failed(result: c_int) -> Option<Errno> {
+    if result == -1 { last_errno() } else { None }
 }
 
 pub(super) fn classify_getter_result(

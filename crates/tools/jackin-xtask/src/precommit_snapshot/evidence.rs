@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    fs::{self, DirBuilder},
+    fs::{self, DirBuilder, Metadata},
     io::Write,
     os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
@@ -10,7 +10,13 @@ use std::{
 
 use super::process::create_private_new;
 use anyhow::{Context, Result, bail, ensure};
+use jackin_process_directory::{CheckedInstallRoot, InstallFileKind};
 use nix::unistd::geteuid;
+use nix::{
+    fcntl::{OFlag, open},
+    sys::stat::Mode,
+};
+use std::fs::File;
 use uuid::Uuid;
 
 pub(super) fn persist(common_git_dir: &Path, patch: &[u8]) -> Result<PathBuf> {
@@ -26,8 +32,11 @@ pub(super) fn persist(common_git_dir: &Path, patch: &[u8]) -> Result<PathBuf> {
     validate_ancestors(&physical)?;
 
     let root = physical.join("jackin-hook-evidence");
-    match fs::symlink_metadata(&root) {
-        Ok(metadata) => verify_private_directory(&root, &metadata, "hook evidence root")?,
+    let root_created = match fs::symlink_metadata(&root) {
+        Ok(metadata) => {
+            verify_private_directory(&root, &metadata, "hook evidence root")?;
+            false
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             DirBuilder::new()
                 .recursive(false)
@@ -37,21 +46,44 @@ pub(super) fn persist(common_git_dir: &Path, patch: &[u8]) -> Result<PathBuf> {
             let metadata =
                 fs::symlink_metadata(&root).context("checking private hook evidence root")?;
             verify_private_directory(&root, &metadata, "hook evidence root")?;
+            true
         }
         Err(error) => return Err(error).context("checking hook evidence root"),
+    };
+
+    let root_descriptor = open_private_directory(&root).context("checking private evidence ACL")?;
+    if root_created {
+        root_descriptor
+            .sync_all()
+            .context("syncing private hook evidence root")?;
+        sync_directory(&physical).context("syncing Git common directory entry")?;
     }
 
-    let directory = create_unique_directory(&root)?;
+    persist_invocation(&root, &root_descriptor, patch)
+}
+
+fn persist_invocation(root: &Path, root_descriptor: &File, patch: &[u8]) -> Result<PathBuf> {
+    let (directory, directory_identity) = create_unique_directory(root)?;
+    let mut cleanup = FailedInvocationCleanup::new(directory.clone(), directory_identity);
+    let invocation_descriptor =
+        open_private_directory(&directory).context("checking invocation evidence ACL")?;
+    invocation_descriptor
+        .sync_all()
+        .context("syncing private hook evidence invocation directory")?;
+    root_descriptor
+        .sync_all()
+        .context("syncing invocation directory entry")?;
     let patch_path = directory.join("fixes.patch");
     let mut file =
         create_private_new(&patch_path).context("creating private staged-source evidence")?;
+    let metadata = file
+        .metadata()
+        .context("checking private staged-source evidence")?;
+    cleanup.record_patch(&metadata);
     file.write_all(patch)
         .context("writing private staged-source evidence")?;
     file.sync_all()
         .context("syncing private staged-source evidence")?;
-    let metadata = file
-        .metadata()
-        .context("checking private staged-source evidence")?;
     ensure!(
         metadata.is_file() && metadata.nlink() == 1,
         "private staged-source evidence has unsafe file identity"
@@ -64,7 +96,119 @@ pub(super) fn persist(common_git_dir: &Path, patch: &[u8]) -> Result<PathBuf> {
         metadata.permissions().mode() & 0o777 == 0o600,
         "private staged-source evidence permissions are not 0600"
     );
+    let checked_root = CheckedInstallRoot::from_pinned_directory(
+        invocation_descriptor
+            .try_clone()
+            .context("duplicating private invocation directory")?,
+    )
+    .context("pinning private invocation directory")?;
+    let checked_file = checked_root
+        .open_file(Path::new("fixes.patch"), InstallFileKind::Receipt)
+        .context("reopening private staged-source evidence")?;
+    CheckedInstallRoot::validate_confidential_file(checked_file.file())
+        .context("checking private staged-source evidence ACL")?;
+    checked_file
+        .recheck()
+        .context("rechecking private staged-source evidence custody")?;
+    invocation_descriptor
+        .sync_all()
+        .context("syncing private staged-source evidence directory")?;
+    cleanup.disarm();
     Ok(directory.join("fixes.patch"))
+}
+
+struct FailedInvocationCleanup {
+    directory: PathBuf,
+    directory_identity: (u64, u64),
+    patch_identity: Option<(u64, u64)>,
+    armed: bool,
+}
+
+impl FailedInvocationCleanup {
+    fn new(directory: PathBuf, identity: (u64, u64)) -> Self {
+        Self {
+            directory,
+            directory_identity: identity,
+            patch_identity: None,
+            armed: true,
+        }
+    }
+
+    fn record_patch(&mut self, metadata: &Metadata) {
+        self.patch_identity = Some((metadata.dev(), metadata.ino()));
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for FailedInvocationCleanup {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+
+        if let (Some(expected), Ok(metadata)) = (
+            self.patch_identity,
+            fs::symlink_metadata(self.directory.join("fixes.patch")),
+        ) && metadata.is_file()
+            && !metadata.file_type().is_symlink()
+            && (metadata.dev(), metadata.ino()) == expected
+            && metadata.uid() == geteuid().as_raw()
+            && metadata.permissions().mode() & 0o777 == 0o600
+        {
+            drop(fs::remove_file(self.directory.join("fixes.patch")));
+        }
+
+        if let Ok(metadata) = fs::symlink_metadata(&self.directory)
+            && metadata.is_dir()
+            && !metadata.file_type().is_symlink()
+            && (metadata.dev(), metadata.ino()) == self.directory_identity
+            && metadata.uid() == geteuid().as_raw()
+            && metadata.permissions().mode() & 0o777 == 0o700
+        {
+            // remove_dir succeeds only if this invocation left it empty.
+            drop(fs::remove_dir(&self.directory));
+        }
+    }
+}
+
+fn open_private_directory(path: &Path) -> Result<File> {
+    let descriptor = open(
+        path,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .with_context(|| format!("opening private directory {}", path.display()))?;
+    let file = File::from(descriptor);
+    CheckedInstallRoot::validate_confidential_directory(&file)
+        .with_context(|| format!("validating private directory {}", path.display()))?;
+    let path_metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("rechecking private directory path {}", path.display()))?;
+    let descriptor_metadata = file
+        .metadata()
+        .with_context(|| format!("checking private directory descriptor {}", path.display()))?;
+    ensure!(
+        path_metadata.is_dir()
+            && !path_metadata.file_type().is_symlink()
+            && path_metadata.dev() == descriptor_metadata.dev()
+            && path_metadata.ino() == descriptor_metadata.ino(),
+        "private directory path no longer names its validated descriptor"
+    );
+    Ok(file)
+}
+
+fn sync_directory(path: &Path) -> Result<()> {
+    let descriptor = open(
+        path,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .with_context(|| format!("opening directory {} for sync", path.display()))?;
+    File::from(descriptor)
+        .sync_all()
+        .with_context(|| format!("syncing directory {}", path.display()))
 }
 
 fn validate_ancestors(path: &Path) -> Result<()> {
@@ -90,7 +234,7 @@ fn validate_ancestors(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn verify_private_directory(path: &Path, metadata: &fs::Metadata, role: &str) -> Result<()> {
+fn verify_private_directory(path: &Path, metadata: &Metadata, role: &str) -> Result<()> {
     ensure!(
         metadata.is_dir() && !metadata.file_type().is_symlink(),
         "{role} is not a physical directory"
@@ -107,7 +251,7 @@ fn verify_private_directory(path: &Path, metadata: &fs::Metadata, role: &str) ->
     Ok(())
 }
 
-fn create_unique_directory(root: &Path) -> Result<PathBuf> {
+fn create_unique_directory(root: &Path) -> Result<(PathBuf, (u64, u64))> {
     for _ in 0..8 {
         let name = format!("pre-commit-{}", Uuid::new_v4());
         let path = root.join(name);
@@ -116,7 +260,7 @@ fn create_unique_directory(root: &Path) -> Result<PathBuf> {
                 let metadata =
                     fs::symlink_metadata(&path).context("checking evidence directory")?;
                 verify_private_directory(&path, &metadata, "hook evidence invocation directory")?;
-                return Ok(path);
+                return Ok((path, (metadata.dev(), metadata.ino())));
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error).context("creating unique private evidence directory"),
@@ -124,3 +268,6 @@ fn create_unique_directory(root: &Path) -> Result<PathBuf> {
     }
     bail!("unable to allocate unique private hook evidence directory")
 }
+
+#[cfg(test)]
+mod tests;

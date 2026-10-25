@@ -1,7 +1,4 @@
 #!/bin/sh
 set -eu
 
-# Snapshot behavior is exercised by native owner integration tests. The old
-# shell fixture modeled the removed Python hook implementation and could no
-# longer exercise the static native-only launcher.
-exec mise exec --locked -- cargo nextest run --locked -p jackin-xtask --bin jackin-precommit-owner
+exec rust-build-guard -- mise exec -- cargo nextest run --locked -p jackin-xtask --bin jackin-precommit-owner

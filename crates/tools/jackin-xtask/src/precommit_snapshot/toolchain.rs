@@ -15,17 +15,8 @@ use anyhow::{Context, Result, bail, ensure};
 
 use super::git::OwnedSnapshot;
 use super::process::{CommandBudget, EnvironmentMode, SetupControls, capture_strict};
-mod provision;
 mod verify;
-use verify::{command_output, verify_rust_toolchain};
-
-pub(super) fn verify_provision_tool_paths(
-    source_root: &Path,
-    cargo_path: &Path,
-    rustc_path: &Path,
-) -> Result<()> {
-    provision::verify_tool_paths(source_root, cargo_path, rustc_path)
-}
+use verify::{command_path, verify_rust_toolchain};
 
 const MANAGED_TOOLS: &[&str] = &[
     #[cfg(target_os = "macos")]
@@ -44,8 +35,6 @@ const MANAGED_TOOLS: &[&str] = &[
 
 pub(super) struct QualifiedTools {
     pub(super) gate: PathBuf,
-    pub(super) cargo: PathBuf,
-    pub(super) rustc: PathBuf,
     pub(super) environment: BTreeMap<OsString, OsString>,
 }
 
@@ -80,15 +69,6 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         controls,
     )?;
     let cargo = effective_cargo(&mise, &mise_env, &snapshot.root, controls)?;
-    verify_rust_toolchain(
-        &pin,
-        &rust_tools,
-        &mise,
-        &mise_env,
-        &snapshot.root,
-        controls,
-    )?;
-
     let managed_dir = snapshot.scratch_root.join("tools");
     fs::create_dir(&managed_dir).context("creating private qualified tool directory")?;
     // `mise exec` has already resolved this to the configured MBX Cargo
@@ -115,10 +95,17 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         &rust_tools,
         &inherited_path,
     )?;
+    verify_managed_projection(&mise, &environment, &snapshot.root, controls)?;
+    verify_rust_toolchain(
+        &pin,
+        &rust_tools,
+        &mise,
+        &environment,
+        &snapshot.root,
+        controls,
+    )?;
     Ok(QualifiedTools {
         gate: resolved["hk"].clone(),
-        cargo,
-        rustc: rust_tools["rustc"].clone(),
         environment,
     })
 }
@@ -136,11 +123,24 @@ fn build_qualified_environment(
         let key = key.to_string_lossy();
         !key.starts_with("CARGO_ALIAS_") && !key.starts_with("DYLINT_")
     });
+    let mise_storage = ["MISE_DATA_DIR", "MISE_CACHE_DIR"]
+        .into_iter()
+        .filter_map(|key| {
+            environment
+                .get(OsStr::new(key))
+                .cloned()
+                .map(|value| (key, value))
+        })
+        .collect::<Vec<_>>();
     configure_managed_mise_environment(&mut environment, &snapshot.root);
+    for (key, value) in mise_storage {
+        environment.insert(OsString::from(key), value);
+    }
     for key in [
         "CARGO",
         "RUSTUP_TOOLCHAIN",
         "RUSTC",
+        "RUSTC_BOOTSTRAP",
         "RUSTDOC",
         "RUSTC_WRAPPER",
         "RUSTC_WORKSPACE_WRAPPER",
@@ -234,7 +234,19 @@ fn configure_managed_mise_environment(
     environment: &mut BTreeMap<OsString, OsString>,
     trusted_root: &Path,
 ) {
+    let storage = ["MISE_DATA_DIR", "MISE_CACHE_DIR"]
+        .into_iter()
+        .filter_map(|key| {
+            environment
+                .get(OsStr::new(key))
+                .cloned()
+                .map(|value| (key, value))
+        })
+        .collect::<Vec<_>>();
     environment.retain(|key, _| !key.to_string_lossy().starts_with("MISE_"));
+    for (key, value) in storage {
+        environment.insert(OsString::from(key), value);
+    }
     environment.insert(
         OsString::from("MISE_TRUSTED_CONFIG_PATHS"),
         trusted_root.as_os_str().to_owned(),
@@ -268,8 +280,7 @@ fn resolve_managed_tools(
             CommandBudget::Probe,
         )
         .with_context(|| format!("resolving staged Mise tool {name}"))?;
-        let value = command_output(output, &format!("resolving staged Mise tool {name}"))?;
-        let path = PathBuf::from(value.trim());
+        let path = command_path(output, &format!("resolving staged Mise tool {name}"))?;
         let path = fs::canonicalize(&path)
             .with_context(|| format!("resolving staged Mise tool path for {name}"))?;
         ensure!(
@@ -347,8 +358,8 @@ fn resolve_rust_tools_with_controls(
             CommandBudget::Probe,
         )
         .with_context(|| format!("resolving pinned rustup tool {name}"))?;
-        let value = command_output(output, &format!("resolving pinned rustup tool {name}"))?;
-        let path = fs::canonicalize(value.trim())
+        let path = command_path(output, &format!("resolving pinned rustup tool {name}"))?;
+        let path = fs::canonicalize(path)
             .with_context(|| format!("resolving pinned rustup tool path for {name}"))?;
         ensure!(
             path.is_file(),
@@ -387,8 +398,8 @@ fn effective_cargo(
         CommandBudget::Probe,
     )
     .context("resolving the configured MBX Cargo wrapper")?;
-    let value = command_output(output, "resolving the configured MBX Cargo wrapper")?;
-    let path = fs::canonicalize(value.trim()).context("resolving effective MBX Cargo path")?;
+    let path = command_path(output, "resolving the configured MBX Cargo wrapper")?;
+    let path = fs::canonicalize(path).context("resolving effective MBX Cargo path")?;
     ensure!(
         path.is_file(),
         "effective MBX Cargo path is not a regular file"
@@ -405,7 +416,47 @@ fn runtime_environment() -> BTreeMap<OsString, OsString> {
             environment.insert(OsString::from(key), value);
         }
     }
+    for key in ["MISE_DATA_DIR", "MISE_CACHE_DIR"] {
+        if let Some(value) = env::var_os(key) {
+            environment.insert(OsString::from(key), value);
+        }
+    }
     environment
+}
+
+fn verify_managed_projection(
+    mise: &Path,
+    environment: &BTreeMap<OsString, OsString>,
+    root: &Path,
+    controls: &SetupControls,
+) -> Result<()> {
+    let mut command = Command::new(mise);
+    command
+        .args([
+            "exec",
+            "--locked",
+            "--",
+            "/bin/sh",
+            "-c",
+            "test \"${RUSTC_BOOTSTRAP+x}\" != x",
+        ])
+        .current_dir(root)
+        .env_clear()
+        .envs(environment);
+    let output = capture_strict(
+        &mut command,
+        controls,
+        EnvironmentMode::Clear,
+        super::process::METADATA_OUTPUT_LIMIT,
+        1024 * 1024,
+        CommandBudget::Probe,
+    )
+    .context("checking staged Mise environment projection")?;
+    ensure!(
+        output.status.success(),
+        "staged Mise environment reintroduces RUSTC_BOOTSTRAP"
+    );
+    Ok(())
 }
 
 fn rust_release(path: &Path) -> Result<String> {

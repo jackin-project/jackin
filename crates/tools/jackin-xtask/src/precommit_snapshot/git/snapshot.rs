@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    GateCompletion, LiveRepository, OwnedSnapshot, checked, index_inputs, isolated_git,
+    GateCompletion, LiveRepository, OwnedSnapshot, checked, configure_isolated_git, index_inputs,
     private_spool, validate_link, write_private_new,
 };
 use crate::precommit_snapshot::{
@@ -39,6 +39,8 @@ impl OwnedSnapshot {
             .tempdir()
             .context("creating private pre-commit snapshot")?;
         fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700))?;
+        super::super::process::validate_confidential_directory(directory.path())
+            .context("validating private snapshot scratch directory")?;
         let root = directory.path().join("worktree");
         let scratch_root = directory.path().to_path_buf();
         fs::create_dir(&root).context("creating private snapshot worktree")?;
@@ -298,7 +300,8 @@ impl OwnedSnapshot {
             self.git_bytes_limited(&["ls-files", "--others", "-z"], PATH_LIST_LIMIT, controls)?;
         write_private_new(&paths, &listed)?;
         if !listed.is_empty() {
-            let pathspec = OsString::from(format!("--pathspec-from-file={}", paths.display()));
+            let mut pathspec = OsString::from("--pathspec-from-file=");
+            pathspec.push(paths.as_os_str());
             self.git_os_with_controls(
                 [
                     OsString::from("--literal-pathspecs"),
@@ -399,33 +402,28 @@ impl OwnedSnapshot {
     }
 
     fn git_command(&self, args: &[impl AsRef<OsStr>]) -> Command {
+        let mut command = Command::new("git");
         #[cfg(test)]
         if let Some(program) = self.test_git_program.as_deref() {
-            return super::isolated_git_with_program(
-                program,
-                &self.invocation_dir,
-                &self.root,
-                &self.git_dir,
-                &self.index,
-                &self.objects,
-                self.extra_alternates.as_deref(),
-                args,
-            );
+            command = Command::new(program);
         }
-        isolated_git(
+        command.args(args.iter().map(AsRef::as_ref));
+        configure_isolated_git(
+            &mut command,
             &self.invocation_dir,
             &self.root,
             &self.git_dir,
             &self.index,
             &self.objects,
             self.extra_alternates.as_deref(),
-            args,
-        )
+        );
+        command
     }
 
     fn copy_index(&self, live: &LiveRepository) -> Result<()> {
         ensure!(
-            index_inputs(&live.index, live.shared_index.as_deref())? == live.index_inputs,
+            index_inputs(&live.index, live.shared_index.as_deref(), &live.controls)?
+                == live.index_inputs,
             "live Git index changed after snapshot admission began"
         );
         if live.index.is_file() {
@@ -441,15 +439,19 @@ impl OwnedSnapshot {
             self.git(&["read-tree", "--empty"])?;
         }
         ensure!(
-            index_inputs(&live.index, live.shared_index.as_deref())? == live.index_inputs,
+            index_inputs(&live.index, live.shared_index.as_deref(), &live.controls)?
+                == live.index_inputs,
             "live Git index changed while its private snapshot was copied"
         );
         Ok(())
     }
 
-    pub(in crate::precommit_snapshot) fn verify_live_index(live: &LiveRepository) -> Result<()> {
+    pub(in crate::precommit_snapshot) fn verify_live_index(
+        live: &LiveRepository,
+        controls: &SetupControls,
+    ) -> Result<()> {
         ensure!(
-            index_inputs(&live.index, live.shared_index.as_deref())? == live.index_inputs,
+            index_inputs(&live.index, live.shared_index.as_deref(), controls)? == live.index_inputs,
             "live Git index or split-index backing file changed while the native gate ran"
         );
         Ok(())

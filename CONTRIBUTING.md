@@ -26,16 +26,18 @@ root; the version is pinned in `mise.toml`/`mise.lock`). Install per checkout �
 idempotent, safe to re-run:
 
 ```sh
-scripts/hooks-install   # provisions the native snapshot owner and installs the hk pre-push hook
+scripts/hooks-install   # guarded build-and-install of the native hook owner and hk pre-push hook
 ```
 
 No shell activation needed. Requirements: Git 2.56+ (config-based hooks with
 named-hook disabling), `mise` on Git's runtime PATH, and the executable
-`rust-build-guard` in that PATH or `$HOME/.local/bin`. Provisioning builds the
-native owner from the reviewed staged tree and registers its exact immutable
-generation. Each hook invocation qualifies the staged toolchain and builds in
-its own private snapshot and temporary Cargo target directory. The native
-owner handles process cleanup, source custody, and symlink checks. Compiler
+`rust-build-guard` in that PATH or `$HOME/.local/bin`. The installer runs the
+guarded locked Cargo command once, then publishes the resulting native owner at
+a stable path inside this worktree's Git directory. Re-running installation
+atomically replaces changed owner bytes and leaves identical bytes in place.
+Each hook invocation qualifies the staged toolchain and builds in its own
+private snapshot and temporary Cargo target directory. The native owner
+handles process cleanup, source custody, and symlink checks. Compiler
 artifacts cannot collide with builds in the live checkout.
 Git's [`extensions.worktreeConfig`](https://git-scm.com/docs/git-config#Documentation/git-config.txt-extensionsworktreeConfig)
 must already be enabled for the repository;
@@ -99,7 +101,7 @@ returning. Review patches remain until the author removes them. Bypass with
 One intentional divergence from CI: `hk check --all` scopes steps by `git status`
 (skips green on a clean tree). The global install
 (`hk install --global --mise`) is GUI-robust but forces `--staged`,
-which disables stashing — hence the repo-owned bootstrap above.
+which disables stashing — hence the repo-owned hook registration above.
 `scripts/hooks-install` sets `hook.hk-pre-commit.enabled=false` in this
 checkout's worktree config while keeping the repository-owned snapshot hook
 enabled. A global hk installation can remain active for other projects;

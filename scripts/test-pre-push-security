@@ -2,6 +2,12 @@
 set -eu
 
 repo_root=$(git rev-parse --show-toplevel)
+owner_bin=${JACKIN_PRECOMMIT_OWNER_TEST_BIN:-}
+case "$owner_bin" in
+    /*) ;;
+    *) printf '%s\n' 'error: JACKIN_PRECOMMIT_OWNER_TEST_BIN must name an absolute prebuilt native owner' >&2; exit 1 ;;
+esac
+[ -x "$owner_bin" ] || { printf '%s\n' 'error: JACKIN_PRECOMMIT_OWNER_TEST_BIN must be executable' >&2; exit 1; }
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/jackin-pre-push-fixture.XXXXXX")
 fake_bin=$(mktemp -d "${TMPDIR:-/tmp}/jackin-pre-push-bin.XXXXXX")
 trap 'rm -rf "$fixture" "$fake_bin"' EXIT
@@ -16,48 +22,26 @@ git -C "$fixture" init -q
 git -C "$fixture" config --local extensions.worktreeConfig true
 git -C "$fixture" config user.name 'Jackin pre-push fixture'
 git -C "$fixture" config user.email jackin-pre-push-fixture@example.invalid
-cp "$repo_root/scripts/hooks-install" "$fixture/scripts/hooks-install"
 cp "$repo_root/scripts/pre-push-security" "$fixture/scripts/pre-push-security"
-mkdir -p "$fixture/native-generation"
-# Provisioning is stubbed here; native owner custody is covered by Rust tests.
-cat > "$fixture/native-generation/owner" <<'EOF'
-#!/bin/sh
-set -eu
-case "$1" in
-  validate-hook-config) exit 0 ;;
-  activate-hook-config)
-    config=$(git -C "$3" rev-parse --path-format=absolute --git-path config.worktree)
-    mv "$config.lock" "$config"
-    ;;
-  run-installed-snapshot) printf '%s\n' snapshot >> "$HOOK_EVENTS" ;;
-  *) exit 64 ;;
-esac
-EOF
-chmod 755 "$fixture/native-generation/owner"
-cat > "$fixture/scripts/hooks-native-bootstrap" <<'EOF'
-#!/bin/sh
-set -eu
-printf '%s/native-generation\n' "$(pwd -P)"
-EOF
-cat > "$fixture/scripts/pre-push-probe" <<'EOF'
+cat > "$fixture/scripts/pre-push-probe" <<'EOF_PROBE'
 #!/bin/sh
 set -eu
 printf '%s\n' "$1" > "$FIXTURE_ROOT/observed-args"
 printf '%s' "$2" > "$FIXTURE_ROOT/observed-stdin"
 printf '%s\n' scan >> "$HOOK_EVENTS"
 exit "${PUSH_SCAN_STATUS:-0}"
-EOF
-cat > "$fixture/scripts/unrelated-push" <<'EOF'
+EOF_PROBE
+cat > "$fixture/scripts/unrelated-push" <<'EOF_PROBE'
 #!/bin/sh
 set -eu
 printf '%s\n' unrelated-push >> "$HOOK_EVENTS"
-EOF
-cat > "$fixture/scripts/unsafe-hk" <<'EOF'
+EOF_PROBE
+cat > "$fixture/scripts/unsafe-hk" <<'EOF_PROBE'
 #!/bin/sh
 set -eu
 printf '%s\n' unsafe-hk >> "$HOOK_EVENTS"
-EOF
-cat > "$fixture/hk.pkl" <<'EOF'
+EOF_PROBE
+cat > "$fixture/hk.pkl" <<'EOF_HK'
 amends "package://github.com/jdx/hk/releases/download/v2.8.0/hk@2.8.0#/Config.pkl"
 import "package://github.com/jdx/hk/releases/download/v2.8.0/hk@2.8.0#/Builtins.pkl"
 
@@ -71,7 +55,7 @@ hooks {
     }
   }
 }
-EOF
+EOF_HK
 git -C "$fixture" add scripts hk.pkl
 git -C "$fixture" commit -q -m fixture
 git -C "$fixture" remote add origin https://example.invalid/jackin
@@ -80,14 +64,14 @@ git -C "$fixture" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 
 export GIT_CONFIG_GLOBAL="$fake_bin/isolated-global.gitconfig"
 export GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1
-unset GIT_CONFIG GIT_CONFIG_COUNT
+unset GIT_CONFIG GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS
 git config --global hook.hk-pre-push.command 'sh scripts/unsafe-hk'
 git config --global hook.hk-pre-push.event pre-push
 git config --global hook.other-project-push.command 'sh scripts/unrelated-push'
 git config --global hook.other-project-push.event pre-push
 cp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-before"
+(cd "$fixture" && "$owner_bin" install-hooks)
 
-(cd "$fixture" && sh scripts/hooks-install)
 cmp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-before"
 test "$(git -C "$fixture" config --worktree --get hook.jackin-pre-push.command)" = 'sh scripts/pre-push-security'
 test "$(git -C "$fixture" config --worktree --get hook.jackin-pre-push.event)" = pre-push
@@ -99,13 +83,6 @@ git -C "$fixture" hook list --show-scope pre-push > "$fake_bin/effective-hooks"
 grep -Fx "$(printf 'global\tdisabled\thk-pre-push')" "$fake_bin/effective-hooks"
 grep -Fx "$(printf 'global\tother-project-push')" "$fake_bin/effective-hooks"
 grep -Fx "$(printf 'worktree\tjackin-pre-push')" "$fake_bin/effective-hooks"
-
-cp "$fixture/.git/config" "$fake_bin/common-before"
-cp "$fixture/.git/config.worktree" "$fake_bin/worktree-before"
-(cd "$fixture" && sh scripts/hooks-install)
-cmp "$fixture/.git/config" "$fake_bin/common-before"
-cmp "$fixture/.git/config.worktree" "$fake_bin/worktree-before"
-cmp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-before"
 
 events="$fixture/events"
 head=$(git -C "$fixture" rev-parse HEAD)

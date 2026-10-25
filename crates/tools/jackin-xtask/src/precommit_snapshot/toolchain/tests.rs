@@ -38,6 +38,10 @@ fn managed_mise_gate_discards_ambient_config_overrides_and_preserves_gate_contex
             OsString::from("/tmp/attacker-data"),
         ),
         (
+            OsString::from("MISE_CACHE_DIR"),
+            OsString::from("/tmp/attacker-cache"),
+        ),
+        (
             OsString::from("MBX_CACHE_DIR"),
             OsString::from("/cache/mbx"),
         ),
@@ -59,6 +63,8 @@ fn managed_mise_gate_discards_ambient_config_overrides_and_preserves_gate_contex
             .collect::<BTreeSet<_>>(),
         BTreeSet::from([
             OsString::from("MISE_AUTO_INSTALL"),
+            OsString::from("MISE_CACHE_DIR"),
+            OsString::from("MISE_DATA_DIR"),
             OsString::from("MISE_EXEC_AUTO_INSTALL"),
             OsString::from("MISE_TRUSTED_CONFIG_PATHS"),
         ])
@@ -75,8 +81,52 @@ fn managed_mise_gate_discards_ambient_config_overrides_and_preserves_gate_contex
         environment.get(OsStr::new("MISE_EXEC_AUTO_INSTALL")),
         Some(&OsString::from("false"))
     );
+    assert_eq!(
+        environment.get(OsStr::new("MISE_DATA_DIR")),
+        Some(&OsString::from("/tmp/attacker-data"))
+    );
+    assert_eq!(
+        environment.get(OsStr::new("MISE_CACHE_DIR")),
+        Some(&OsString::from("/tmp/attacker-cache"))
+    );
     for key in ["MBX_CACHE_DIR", "MBX_SESSION_PATH", "HK_LOG_FORMAT", "PATH"] {
         assert!(environment.contains_key(OsStr::new(key)), "lost {key}");
+    }
+}
+
+#[test]
+fn path_output_removes_only_one_terminal_protocol_lf() {
+    use std::os::unix::{ffi::OsStrExt, process::ExitStatusExt};
+
+    let output = std::process::Output {
+        status: std::process::ExitStatus::from_raw(0),
+        stdout: b"/tmp/path \xff with spaces\nembedded\n\n".to_vec(),
+        stderr: Vec::new(),
+    };
+    let path = command_path(output, "reading path").expect("raw path record");
+    assert_eq!(
+        path.as_os_str().as_bytes(),
+        b"/tmp/path \xff with spaces\nembedded\n"
+    );
+}
+
+#[test]
+fn path_output_rejects_missing_terminator_and_nul() {
+    use std::os::unix::process::ExitStatusExt;
+
+    for (bytes, reason) in [
+        (
+            b"/tmp/path".to_vec(),
+            "path record is missing its LF terminator",
+        ),
+        (b"/tmp\0/path\n".to_vec(), "path record contains NUL"),
+    ] {
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: bytes,
+            stderr: Vec::new(),
+        };
+        command_path(output, "reading path").expect_err(reason);
     }
 }
 

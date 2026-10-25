@@ -20,6 +20,94 @@ fn directory(path: &Path, mode: u32) -> io::Result<File> {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+fn regular_file(path: &Path) -> io::Result<File> {
+    fs::write(path, b"private")?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    Ok(File::from(open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )?))
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn confidential_descriptor_validation_accepts_clean_private_objects() -> io::Result<()> {
+    let temporary = tempfile::tempdir()?;
+    let directory = directory(&temporary.path().join("private"), 0o700)?;
+    let file = regular_file(&temporary.path().join("private-file"))?;
+    CheckedInstallRoot::validate_confidential_directory(&directory)?;
+    CheckedInstallRoot::validate_confidential_file(&file)?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn confidential_directory_and_file_validation_rejects_present_acls() -> io::Result<()> {
+    let temporary = tempfile::tempdir()?;
+    let private_directory = directory(&temporary.path().join("acl-directory"), 0o700)?;
+    super::super::linux_acl::set_confidential_acl_fixture(&private_directory, 0x07)?;
+    assert_eq!(
+        CheckedInstallRoot::validate_confidential_directory(&private_directory)
+            .expect_err("private data directory must have no ACL entries")
+            .kind(),
+        io::ErrorKind::PermissionDenied
+    );
+
+    let default_acl_directory = directory(&temporary.path().join("default-acl-directory"), 0o700)?;
+    super::super::linux_acl::set_extended_acl_fixture(&default_acl_directory, true)?;
+    assert_eq!(
+        CheckedInstallRoot::validate_confidential_directory(&default_acl_directory)
+            .expect_err("private data directory must reject default ACL entries")
+            .kind(),
+        io::ErrorKind::PermissionDenied
+    );
+
+    let file = regular_file(&temporary.path().join("acl-file"))?;
+    super::super::linux_acl::set_confidential_acl_fixture(&file, 0x06)?;
+    assert_eq!(
+        CheckedInstallRoot::validate_confidential_file(&file)
+            .expect_err("private data file must have no ACL entries")
+            .kind(),
+        io::ErrorKind::PermissionDenied
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn confidential_validation_rejects_read_acl_without_changing_generic_policy() -> io::Result<()> {
+    let temporary = tempfile::tempdir()?;
+    let acl_directory = directory(&temporary.path().join("acl-directory"), 0o700)?;
+    super::super::darwin_acl::set_test_acl(
+        &acl_directory,
+        super::super::darwin_acl::FixtureAcl::AllowRead,
+    )?;
+    CheckedInstallRoot::from_pinned_directory(acl_directory.try_clone()?)?;
+    assert_eq!(
+        CheckedInstallRoot::validate_confidential_directory(&acl_directory)
+            .expect_err("confidential directory must reject every ACL entry")
+            .kind(),
+        io::ErrorKind::PermissionDenied
+    );
+
+    let plain_root_path = temporary.path().join("plain-root");
+    let plain_root = directory(&plain_root_path, 0o700)?;
+    let file = regular_file(&plain_root_path.join("acl-file"))?;
+    super::super::darwin_acl::set_test_acl(&file, super::super::darwin_acl::FixtureAcl::AllowRead)?;
+    let root = CheckedInstallRoot::from_pinned_directory(plain_root)?;
+    let checked_file = root.open_file(Path::new("acl-file"), InstallFileKind::Receipt)?;
+    assert_eq!(
+        CheckedInstallRoot::validate_confidential_file(&file)
+            .expect_err("confidential file must reject every ACL entry")
+            .kind(),
+        io::ErrorKind::PermissionDenied
+    );
+    drop(checked_file);
+    Ok(())
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn sealed_validation_preserves_the_private_root_mode_contract() -> io::Result<()> {
     let temporary = tempfile::tempdir()?;

@@ -4,11 +4,35 @@
 //! Native ACL validation for an already-pinned sealed generation directory.
 
 use super::{
-    CheckedInstallRoot, File, Mode, NodeRole, fstat, io, permission_denied,
-    validate_directory_descriptor, validate_stat,
+    CheckedInstallRoot, File, InstallFileKind, Mode, NodeRole, ensure_confidential_acl, fstat, io,
+    permission_denied, validate_directory_descriptor, validate_stat,
 };
 
 impl CheckedInstallRoot {
+    /// Validate a caller-retained private data directory descriptor.
+    ///
+    /// This validates the held object only. The caller retains ownership of
+    /// the descriptor and must establish path custody separately. The
+    /// directory must be owned by the effective user, have exact mode `0700`,
+    /// and have no native extended ACL entries.
+    pub fn validate_confidential_directory(directory: &File) -> io::Result<()> {
+        let metadata = fstat(directory)?;
+        validate_stat(&metadata, NodeRole::Root)?;
+        ensure_confidential_acl(directory, true)
+    }
+
+    /// Validate a caller-retained private data file descriptor.
+    ///
+    /// This validates the held object only. The caller retains ownership of
+    /// the descriptor and must establish path custody separately. The file
+    /// must be owned by the effective user, have exact mode `0600`, have one
+    /// hard link, and have no native extended ACL entries.
+    pub fn validate_confidential_file(file: &File) -> io::Result<()> {
+        let metadata = fstat(file)?;
+        validate_stat(&metadata, NodeRole::Leaf(InstallFileKind::Receipt))?;
+        ensure_confidential_acl(file, false)
+    }
+
     /// Validate a caller-retained generation descriptor with exact mode `0500`.
     ///
     /// The descriptor must name a directory owned by the effective user and

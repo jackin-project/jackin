@@ -428,7 +428,38 @@ fn private_capture_dir() -> Result<TempDir> {
         .context("creating private process capture directory")?;
     fs::set_permissions(scratch.path(), fs::Permissions::from_mode(0o700))
         .context("protecting private process capture directory")?;
+    validate_confidential_directory(scratch.path())
+        .context("validating private process capture directory")?;
     Ok(scratch)
+}
+
+pub(super) fn validate_confidential_directory(path: &Path) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+
+    let before = fs::symlink_metadata(path).context("inspecting private scratch directory")?;
+    ensure!(before.is_dir(), "private scratch path is not a directory");
+    let descriptor = open(
+        path,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .context("opening private scratch directory")?;
+    let file = File::from(descriptor);
+    let opened = file
+        .metadata()
+        .context("reading private scratch directory descriptor")?;
+    ensure!(
+        before.dev() == opened.dev() && before.ino() == opened.ino(),
+        "private scratch directory changed while opening"
+    );
+    jackin_process_directory::CheckedInstallRoot::validate_confidential_directory(&file)
+        .context("checking private scratch directory ownership, mode, and ACL")?;
+    let after = fs::symlink_metadata(path).context("restating private scratch directory")?;
+    ensure!(
+        after.is_dir() && before.dev() == after.dev() && before.ino() == after.ino(),
+        "private scratch directory changed during confidentiality validation"
+    );
+    Ok(())
 }
 
 fn request_from_command(

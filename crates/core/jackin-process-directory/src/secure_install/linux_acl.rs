@@ -80,3 +80,63 @@ pub(super) fn set_extended_acl_fixture(descriptor: impl AsFd, default: bool) -> 
     };
     fsetxattr(descriptor, name, &EXTENDED_ACL_V2, XattrFlags::empty()).map_err(Into::into)
 }
+
+#[cfg(test)]
+pub(super) fn set_confidential_acl_fixture(
+    descriptor: impl AsFd,
+    owner_permissions: u8,
+) -> io::Result<()> {
+    let acl_with_empty_mask: [u8; 44] = [
+        0x02,
+        0x00,
+        0x00,
+        0x00, // version 2
+        0x01,
+        0x00,
+        owner_permissions,
+        0x00,
+        0xff,
+        0xff,
+        0xff,
+        0xff, // user_obj
+        0x02,
+        0x00,
+        0x04,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x00, // named user r--
+        0x04,
+        0x00,
+        0x00,
+        0x00,
+        0xff,
+        0xff,
+        0xff,
+        0xff, // group_obj ---
+        0x10,
+        0x00,
+        0x00,
+        0x00,
+        0xff,
+        0xff,
+        0xff,
+        0xff, // mask ---
+        0x20,
+        0x00,
+        0x00,
+        0x00,
+        0xff,
+        0xff,
+        0xff,
+        0xff, // other ---
+    ];
+    fsetxattr(
+        descriptor,
+        c"system.posix_acl_access",
+        &acl_with_empty_mask,
+        XattrFlags::empty(),
+    )
+    .map_err(Into::into)
+}

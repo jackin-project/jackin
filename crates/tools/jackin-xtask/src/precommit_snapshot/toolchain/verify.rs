@@ -4,6 +4,7 @@
 use std::{
     collections::BTreeMap,
     ffi::OsString,
+    os::unix::ffi::OsStringExt,
     path::{Path, PathBuf},
     process::{Command, Output},
 };
@@ -118,4 +119,18 @@ pub(super) fn command_output(output: Output, operation: &str) -> Result<String> 
         bail!("{operation} failed with {}", output.status);
     }
     String::from_utf8(output.stdout).with_context(|| format!("decoding {operation} output"))
+}
+
+pub(super) fn command_path(output: Output, operation: &str) -> Result<PathBuf> {
+    if !output.status.success() {
+        bail!("{operation} failed with {}", output.status);
+    }
+    let mut bytes = output.stdout;
+    ensure!(
+        bytes.last() == Some(&b'\n'),
+        "{operation} output is missing its record terminator"
+    );
+    bytes.pop();
+    ensure!(!bytes.contains(&0), "{operation} output contains NUL");
+    Ok(PathBuf::from(OsString::from_vec(bytes)))
 }

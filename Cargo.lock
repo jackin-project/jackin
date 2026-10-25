@@ -5012,6 +5012,7 @@ dependencies = [
  "quick-xml",
  "reqwest",
  "rusqlite",
+ "rustix 1.1.5",
  "serde",
  "serde-saphyr",
  "serde_json",
