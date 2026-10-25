@@ -121,8 +121,16 @@ impl OwnedSnapshot {
         Ok(())
     }
 
-    pub(in crate::precommit_snapshot) fn admit(&self, _tree: &OsStr) -> Result<()> {
-        let entries = self.git_bytes(&["ls-files", "--stage", "-z"])?;
+    pub(in crate::precommit_snapshot) fn admit(&self, tree: &OsStr) -> Result<()> {
+        self.admit_with_inventory_limit(tree, 64 * 1024 * 1024)
+    }
+
+    pub(in crate::precommit_snapshot) fn admit_with_inventory_limit(
+        &self,
+        _tree: &OsStr,
+        inventory_limit: usize,
+    ) -> Result<()> {
+        let entries = self.git_bytes_limited(&["ls-files", "--stage", "-z"], inventory_limit)?;
         for record in entries
             .split(|byte| *byte == 0)
             .filter(|record| !record.is_empty())
@@ -297,12 +305,6 @@ impl OwnedSnapshot {
         let text = String::from_utf8(checked(output, "running isolated Git command")?)
             .context("decoding isolated Git output")?;
         Ok(OsString::from(text.trim_end_matches(['\r', '\n'])))
-    }
-
-    fn git_bytes(&self, args: &[impl AsRef<OsStr>]) -> Result<Vec<u8>> {
-        let output =
-            capture(&mut self.git_command(args)).context("running isolated Git command")?;
-        checked(output, "running isolated Git command")
     }
 
     fn git_bytes_limited(&self, args: &[impl AsRef<OsStr>], limit: usize) -> Result<Vec<u8>> {

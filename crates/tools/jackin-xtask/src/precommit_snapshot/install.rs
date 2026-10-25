@@ -4,7 +4,7 @@
 //! Runtime validation for the immutable, locally provisioned native hook.
 
 use std::{
-    fs,
+    fs::{self, File},
     io::Read,
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
@@ -12,6 +12,11 @@ use std::{
 
 use anyhow::{Context, Result, ensure};
 use jackin_process_directory::{CheckedInstallRoot, InstallFileKind};
+use nix::{
+    fcntl::{AT_FDCWD, OFlag, openat},
+    sys::stat::Mode,
+    unistd::{UnlinkatFlags, fsync, unlinkat},
+};
 use sha2::{Digest, Sha256};
 
 const INSTALL_HEADER: &str = "jackin-native-precommit-install/1";
@@ -142,18 +147,49 @@ impl NativeInstall {
             return Ok(());
         };
         if head_tree == Some(expected) {
-            let path = self.root.join("pending").join(&self.manifest.generation);
-            validate_directory(
-                &self.root.join("pending"),
-                0o700,
-                "native hook pending directory",
-            )?;
-            let bytes = read_pending_file(&self.root, &self.manifest.generation)?;
+            let pending_path = self.root.join("pending");
+            CheckedInstallRoot::from_absolute_directory(&pending_path)
+                .context("checking native hook pending directory before finalization")?;
+            let pending_directory = File::from(
+                openat(
+                    AT_FDCWD,
+                    &pending_path,
+                    OFlag::O_RDONLY
+                        | OFlag::O_DIRECTORY
+                        | OFlag::O_NOFOLLOW
+                        | OFlag::O_NONBLOCK
+                        | OFlag::O_CLOEXEC,
+                    Mode::empty(),
+                )
+                .context("opening native hook pending directory for finalization")?,
+            );
+            let pending_root = CheckedInstallRoot::from_pinned_directory(
+                pending_directory
+                    .try_clone()
+                    .context("duplicating native hook pending directory")?,
+            )
+            .context("validating pinned native hook pending directory")?;
+            let pending_file = pending_root
+                .open_file(
+                    Path::new(&self.manifest.generation),
+                    InstallFileKind::Receipt,
+                )
+                .context("opening pending native hook tree for finalization")?;
+            let bytes = read_checked(&pending_file, 65, "pending native hook tree")?;
             ensure!(
                 parse_one_line(&bytes, "pending native hook tree")? == expected,
                 "pending native hook tree changed before finalization"
             );
-            fs::remove_file(path).context("finalizing completed native hook bootstrap")?;
+            pending_file
+                .recheck()
+                .context("rechecking pending native hook tree before finalization")?;
+            unlinkat(
+                &pending_directory,
+                self.manifest.generation.as_str(),
+                UnlinkatFlags::NoRemoveDir,
+            )
+            .context("removing completed native hook pending tree")?;
+            fsync(&pending_directory).context("syncing native hook pending directory")?;
             self.pending_tree = None;
         }
         Ok(())

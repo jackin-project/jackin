@@ -37,7 +37,7 @@ fn installer_keeps_old_hook_enabled_if_candidate_config_update_fails() {
         &repository,
         &global,
         &system,
-        "--local",
+        "--worktree",
         &[
             ("hook.hk-pre-commit.enabled", "true"),
             ("hook.hk-pre-commit.command", "sh scripts/old-hook"),
@@ -54,9 +54,9 @@ fn installer_keeps_old_hook_enabled_if_candidate_config_update_fails() {
         ),
     )
     .unwrap();
-    let local_config = repository.join(".git/config");
+    let local_config = repository.join(".git/config.worktree");
     let local_before = fs::read(&local_config).unwrap();
-    let lock_path = repository.join(".git/config.lock");
+    let lock_path = repository.join(".git/config.worktree.lock");
     let git = capture(Command::new("/usr/bin/which").arg("git")).unwrap();
     assert!(git.status.success());
     let real_git = String::from_utf8(git.stdout).unwrap().trim().to_owned();
@@ -100,7 +100,12 @@ fn installer_keeps_old_hook_enabled_if_candidate_config_update_fails() {
             &repository,
             &global,
             &system,
-            &["config", "--local", "--get", "hook.hk-pre-commit.enabled"],
+            &[
+                "config",
+                "--worktree",
+                "--get",
+                "hook.hk-pre-commit.enabled"
+            ],
         )
         .stdout,
         b"true\n"
@@ -112,7 +117,7 @@ fn installer_keeps_old_hook_enabled_if_candidate_config_update_fails() {
             &system,
             &[
                 "config",
-                "--local",
+                "--worktree",
                 "--get",
                 "hook.jackin-pre-commit.command",
             ],
@@ -140,7 +145,7 @@ fn installer_keeps_old_hook_enabled_if_candidate_config_update_fails() {
 }
 
 #[test]
-fn installer_updates_worktree_config_when_enabled() {
+fn installer_updates_worktree_config_and_preserves_common_config() {
     let (_temporary, repository, global, system) = hook_fixture();
     let generation = prepare_bootstrap_generation(&repository);
     assert!(
