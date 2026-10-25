@@ -5,16 +5,16 @@ Shared working agreement: keep this section byte-identical across projects. Proj
 - No legacy code. Finish every migration: remove old paths completely — no compatibility shims, aliases, or deprecation periods. Breaking changes are preferred.
 - Research project: unsafe, breaking changes expected, never production-ready. Break things when needed; deliver fast.
 - Verification gates: verify from the repo root before committing or merging. Run tests with cargo nextest, never cargo test.
-- Tests are not forbidden.
-- Never write a test without a reviewed plan first. The plan must state which required behavior it proves, which real positive and negative scenarios it covers, and why existing tests cannot cover them.
-- Write tests only to prove required functionality works and keeps working. Forbid tests written for coverage numbers or KPIs.
-- Test functional/integration-first through public APIs. Exercise observable behavior with real cases and real scenarios, never internals. Assert resulting state, not interaction sequences; no mirror-logic assertions and no unreviewed snapshots.
-- Never mock owned code. Mocks and fakes are permitted only at unowned I/O boundaries.
-- A red test must mean something is clearly broken. An expected change under analysis may stay red only within its plan; beyond that, quarantine it. Never let a test go red over a reshaped abstraction or a bad mock; design every test so its report is trusted without questioning the doubles.
-- Prefer fewer high-signal tests with real fault-catching power over many low-signal tests. Forbid judging a suite by count, coverage %, or speed.
-- When an issue escapes, forbid appending one more test. Analyze why current tests missed it, spawn an architect subagent to rethink coverage conceptually, then write or refactor the test the analysis designs.
-- Every kept test must be observed to fail on broken code and pass on fixed code, with the break recorded for independent subagent verification; reject tests never seen red. Every kept test must be hermetic and deterministic — no live network, seeded randomness, fake clocks — must pass independent subagent verification before it is kept, and flakes must be quarantined via #[ignore] with a tracking reference, never tolerated; never edit a test to make it green.
-- Run narrow per change and the full relevant suite before done, per the project's verification doc.
+- Tests are not forbidden. Write tests only where you add or change required behavior, to prove it works and keeps working; never write a test for coverage numbers or KPIs.
+- Never write a test without a reviewed plan first: the plan must state which required behavior it proves, which real positive and negative scenarios it covers, and why existing tests cannot cover them, confirmed by an independent subagent.
+- Prefer fewer high-signal tests over many low-signal tests; never judge a suite by count, coverage %, or speed.
+- Test functional/integration-first through public APIs, asserting resulting state not interaction sequences; test internals only for pure logic unreachable observably; forbid mirror-logic assertions and unreviewed snapshots.
+- Never mock owned code; mocks and fakes are permitted only at unowned external I/O (network, clock, filesystem, OS) behind interfaces you own.
+- A red test must name broken user-observable behavior, never a reshaped abstraction or a bad double; fix the test when reshaping or a bad double causes the red, and analyze an expected behavior change before updating its tests; an expected change under analysis may stay red only within its plan, beyond that quarantine it.
+- When an issue escapes, do not just append a test; analyze why current tests missed it and rethink coverage conceptually, with independent review for significant escapes, before writing or refactoring the test.
+- Keep a test only if observed red on broken code and green on fixed code, with the break recorded and verified by an independent subagent; reject tests never seen red.
+- Keep every test hermetic and deterministic — no live network, seeded randomness, fake clocks — and quarantine flakes at once via `#[ignore]` with a tracking reference, never tolerate them; never skip, weaken, edit, or delete a test to hide broken required behavior.
+- Run narrow tests per change and the full relevant suite before done, per the project's verification doc.
 - No comments in code. Code is the source of truth; a comment creates ambiguity about what is right, code or comment. Keep a comment only when functionality requires it: SPDX license headers for REUSE compliance, clap `#[command]`/`#[arg]` help text and similar string literals consumed by tools, parser directives such as Dockerfile `# syntax=`, and machine-generated files that the repo's own generators verify byte-identical. Never keep explanatory, TODO, or SAFETY comments; when code seems to need explanation, rewrite the code instead.
 - Judge correctness, consistency, and project fit. Never defer a known-wrong state for ROI, cost, effort, or edge cases.
 - Stop only when the required change is proven impossible with the available tools or model. When uncertain, inspect, test, and measure first.
