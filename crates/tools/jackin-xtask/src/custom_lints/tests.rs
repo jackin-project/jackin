@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use super::{
     COMPILER_COMMIT, COMPILER_RELEASE, COMPONENTS, NIGHTLY, build_environment, compiler_host,
-    library_path, run_with,
+    library_path, run_with, valid_host,
 };
 
 fn host() -> String {
@@ -88,6 +88,37 @@ fn compiler_identity_accepts_only_qualified_commit_release_and_safe_host() {
         version("aarch64--darwin"),
     ] {
         assert!(compiler_host(&invalid).is_err(), "accepted {invalid:?}");
+    }
+}
+
+#[test]
+fn compiler_host_accepts_supported_cross_platform_triples_and_rejects_unsafe_hosts() {
+    for valid in [
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    ] {
+        assert!(valid_host(valid), "rejected valid host {valid:?}");
+        assert_eq!(
+            compiler_host(&version(valid)).expect("qualified host"),
+            valid
+        );
+    }
+
+    for invalid in [
+        "",
+        "aarch64--darwin",
+        "Aarch64-apple-darwin",
+        "aarch64.apple-darwin",
+        "aarch64/../darwin",
+        "../x86_64-unknown-linux-gnu",
+    ] {
+        assert!(!valid_host(invalid), "accepted unsafe host {invalid:?}");
+        assert!(
+            compiler_host(&version(invalid)).is_err(),
+            "accepted unsafe compiler host {invalid:?}"
+        );
     }
 }
 

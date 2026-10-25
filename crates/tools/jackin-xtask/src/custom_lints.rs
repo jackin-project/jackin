@@ -289,7 +289,7 @@ fn valid_host(host: &str) -> bool {
             !segment.is_empty()
                 && segment
                     .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
         })
 }
 
