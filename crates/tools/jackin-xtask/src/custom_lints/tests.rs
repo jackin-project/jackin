@@ -787,7 +787,12 @@ fn nightly_build_failure_stops_before_nextest_and_workspace_lints() {
     inherited.insert(OsString::from("PATH"), tools.as_os_str().to_owned());
     inherited.insert(OsString::from("HOME"), temp.path().as_os_str().to_owned());
     let mut calls = Vec::new();
-    let result = run_with(&root, inherited, |argv, _, _, _| {
+    let mut shim_directory = None;
+    let result = run_with(&root, inherited, |argv, _, env, _| {
+        let path = std::env::split_paths(env.get(OsStr::new("PATH")).expect("PATH"))
+            .next()
+            .expect("private shim path");
+        shim_directory = Some(path);
         calls.push(argv.to_vec());
         if argv.ends_with(&[OsString::from("rustc"), OsString::from("-Vv")]) {
             return Ok(version(&host()).into_bytes());
@@ -818,4 +823,5 @@ fn nightly_build_failure_stops_before_nextest_and_workspace_lints() {
     );
     assert_eq!(calls.len(), 3);
     assert!(calls[2].ends_with(&[OsString::from("build"), OsString::from("--locked")]));
+    assert!(!shim_directory.expect("MBX shim directory").exists());
 }
