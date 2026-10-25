@@ -1338,8 +1338,7 @@
       "test_cases": [
         "A52",
         "A53",
-        "A54",
-        "A55"
+        "A54"
       ],
       "source_basis": "SPEC L119-L127; L371; L475",
       "status": "NOT_STARTED",
@@ -1435,7 +1434,7 @@
         "P05"
       ],
       "write_scope": [
-        "crates/core/jackin-session-protocol/",
+        "crates/core/jackin-session-protocol/ implementation excluding shared post-P03 wire-schema definitions",
         "Protocol property tests and fuzz targets"
       ],
       "inputs": [
@@ -1452,7 +1451,8 @@
         "Keep protocol bytes separate from diagnostic text.",
         "Add stable golden frames and round-trip property tests.",
         "Fuzz both decoder directions and arithmetic boundaries.",
-        "Do not import host authority into the protocol crate."
+        "Do not import host authority into the protocol crate.",
+        "Submit post-P03 wire-schema changes to integration as patch requests with exact change, dependency reason, and tests."
       ],
       "acceptance": [
         "A malformed length cannot cause unbounded allocation.",
@@ -1473,7 +1473,8 @@
       "status": "NOT_STARTED",
       "stop_conditions": [
         "Block transport integration until framing and negative tests pass.",
-        "Do not silently accept incompatible protocol versions."
+        "Do not silently accept incompatible protocol versions.",
+        "Do not edit shared wire-schema definitions after P03; submit a patch request to integration."
       ],
       "report_path": "evidence/openshell-v2/T17/implementation.json",
       "required_artifacts": [
@@ -2366,7 +2367,8 @@
       "depends_on": [
         "T15",
         "T28",
-        "T29"
+        "T29",
+        "T33"
       ],
       "write_scope": [
         "crates/services/jackin-roles/src/cache/",
@@ -2571,7 +2573,9 @@
         "T32",
         "T26",
         "T27",
-        "T29"
+        "T29",
+        "T30",
+        "T31"
       ],
       "write_scope": [
         "crates/services/jackin-control/src/workflows/",
@@ -2671,6 +2675,7 @@
         "Do not introduce platform-specific execution fallbacks."
       ],
       "test_cases": [
+        "A55",
         "A110",
         "A111",
         "A117"
@@ -2770,7 +2775,8 @@
         "T29",
         "T30",
         "T31",
-        "T34"
+        "T34",
+        "U03"
       ],
       "write_scope": [
         "tests/v2/targets/kubernetes/",
@@ -3061,20 +3067,20 @@
       "U04"
     ],
     [
+      "U05",
+      "U06",
+      "U07",
       "T10",
       "T12",
       "T14",
-      "T17",
-      "U05",
-      "U06",
-      "U07"
+      "T17"
     ],
     [
+      "U08",
       "T11",
       "T13",
       "T15",
-      "T18",
-      "U08"
+      "T18"
     ],
     [
       "T16",
@@ -3106,7 +3112,9 @@
       "T29"
     ],
     [
-      "T31",
+      "T31"
+    ],
+    [
       "T34"
     ],
     [

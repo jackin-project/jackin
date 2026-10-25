@@ -117,7 +117,8 @@ Use these required relationships:
 
 ```text
 Instance -> one or more ExecutionDomain records
-ExecutionDomain -> ResolvedRole + Materialization + AccountGrant + AuthorityScopeBinding
+ExecutionDomain -> ResolvedRole + Materialization + AuthorityScopeBinding + CredentialAuthority
+CredentialAuthority -> AccountBound(AccountGrant) | CredentialFree
 ExecutionDomain -> TargetProfile + SandboxBinding + admitted capability revision
 SandboxBinding -> explicit gateway reference + OpenShell workspace + name + immutable ID + observed generation
 Session -> one ExecutionDomain + one Capsule boot ID
@@ -130,7 +131,11 @@ Do not treat different environment variables, homes, or panes as security isolat
 Use separate writable materializations by default.
 Require an explicit collaboration grant for shared writable source.
 
-The default shell has no coding-agent account and uses a separate domain.
+Account-bound domains carry a complete account grant. Credential-free domains carry no
+account ID, grant generation, provider credential, or provider binding. Do not represent
+either variant by omitting only selected account fields.
+
+The default shell uses a separate credential-free domain with no coding-agent account.
 An explicit in-domain shell inherits that domain's authority.
 Show that authority in trusted host labels.
 
@@ -197,10 +202,15 @@ The receipt contains these matching values:
 | Sandbox ID and runtime generation | Authoritative OpenShell observation. |
 | Executed role artifact and platform | Qualified gateway or operator observation. |
 | Policy source and loaded revision | Authoritative policy observation. |
-| Provider bindings and accepted revision | Authoritative provider observation. |
-| Account ID and grant generation | Trusted Jackin account admission. |
+| Provider bindings and accepted revision | Account-bound domain: authoritative observation for each admitted binding. Credential-free domain: absent. |
+| Account ID and grant generation | Account-bound domain: both values from trusted Jackin account admission. Credential-free domain: absent. |
 | Materialization epoch and digest | Verified project publication receipt. |
 | Capsule boot and protocol | Helper handshake, used only for application compatibility. |
+
+The receipt records the domain's credential-authority variant. An account-bound receipt has a
+complete matching grant and both account values. A credential-free receipt has no account
+values, grant, provider credential, or provider binding. Missing one account value or mixing
+the variants blocks activation. All other C06 observations remain required and matching.
 
 Record the role manifest separately from an OpenShell-prepared image or VM root filesystem.
 Require a qualified derivation receipt when the runtime transforms the role artifact.

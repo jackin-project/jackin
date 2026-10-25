@@ -204,6 +204,7 @@ def main() -> int:
           {"expected": PARALLEL_AGENT_LIMIT, "actual": graph.get("parallel_agent_limit")})
     tasks = graph["tasks"]
     cases = cases_file["cases"]
+    cases_by_id = {case["id"]: case for case in cases}
     task_ids = [task["id"] for task in tasks]
     case_ids = [case["id"] for case in cases]
     task_set, case_set = set(task_ids), set(case_ids)
@@ -272,6 +273,14 @@ def main() -> int:
 
     unknown_cases = [(task["id"], cid) for task in tasks for cid in task["test_cases"] if cid not in case_set]
     check("Task test references exist", not unknown_cases, unknown_cases)
+    pass_case_errors = [
+        {"task": task["id"], "case": case_id,
+         "status": cases_by_id.get(case_id, {}).get("status", "MISSING")}
+        for task in tasks if task["status"] == "PASS"
+        for case_id in task["test_cases"]
+        if cases_by_id.get(case_id, {}).get("status") != "PASS"
+    ]
+    check("PASS tasks have passing assigned cases", not pass_case_errors, pass_case_errors)
     covered = {cid for task in tasks for cid in task["test_cases"]}
     check("Every case has a task owner", covered == case_set, sorted(case_set - covered))
     reverse_errors = []

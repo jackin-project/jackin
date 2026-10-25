@@ -36,8 +36,8 @@ That report has empty counts because validation stopped before counts were avail
 | Detailed task cards | 46 |
 | Acceptance cases | 125 |
 | Mapped specification headings | 30 |
-| Topological readiness groups | 19 |
-| Checked procedural sentences | 1510 |
+| Topological readiness groups | 20 |
+| Checked procedural sentences | 1512 |
 
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
@@ -59,6 +59,7 @@ Keep no more than eight actual subagents active at once.
 | Original specification matches its fixed checksum and both manifests | PASS |
 | Dependencies reference known tasks and the graph has no cycle | PASS |
 | Task progress waits for completed dependencies | PASS |
+| PASS tasks have passing assigned cases | PASS |
 | Stored readiness groups match dependencies with no duplicate task IDs | PASS |
 | Task test references exist and every case has a task owner | PASS |
 | Case and task ownership maps agree | PASS |
@@ -76,6 +77,25 @@ Keep no more than eight actual subagents active at once.
 | Checked procedural sentences contain at most 20 whitespace-separated words | PASS |
 | Initial task and case statuses claim no execution (`--initial` only) | PASS |
 | Pack records no runtime tests or delegated task reviews (`--initial` only) | PASS |
+
+## PASS and case lifecycle fixtures
+
+The ordinary validator rejects a `PASS` task while any assigned case is `NOT_RUN`, `FAIL`, or `BLOCKED`.
+It accepts `PASS` only when every assigned case is `PASS` and the existing dependency check passes.
+Tasks without assigned cases retain the existing completion contract.
+
+| Temporary-copy fixture | Expected result | Observed result |
+| --- | --- | --- |
+| Initial pack with `--initial` | Accept | PASS, exit 0 |
+| `PASS` task with assigned `NOT_RUN` cases | Reject | FAIL, exit 1 |
+| `PASS` task with an assigned `FAIL` case | Reject | FAIL, exit 1 |
+| `PASS` task with an assigned `BLOCKED` case | Reject | FAIL, exit 1 |
+| `PASS` task with all assigned cases `PASS` and dependencies `PASS` | Accept | PASS, exit 0 |
+| `PASS` task with no cases and all dependencies `PASS` | Accept | PASS, exit 0 |
+| `BLOCKED` task with a `BLOCKED` case in ordinary mode | Accept as blocked | PASS, exit 0 |
+| Progress status under `--initial` | Reject | FAIL, exit 1 |
+
+The fixtures used temporary copies. The active pack remains at all 46 tasks `NOT_STARTED` and all 125 cases `NOT_RUN`.
 
 ## Language limit
 

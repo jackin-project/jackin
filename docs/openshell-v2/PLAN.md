@@ -121,13 +121,13 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 | T28 | Implement handoff eject exile and purge | Project subagent | T27, T13, T24 |
 | T29 | Rebuild CLI Console and fleet observations | Product subagent | T24, T25, T26, T28 |
 | T30 | Implement private developer service forwards | Product subagent | T13, T23 |
-| T31 | Implement caches prewarm diagnostics and resource views | Operations subagent | T15, T28, T29 |
+| T31 | Implement caches prewarm diagnostics and resource views | Operations subagent | T15, T28, T29, T33 |
 | T32 | Replace the independent verification worker | Verifier subagent | U02, T13, T20, T10 |
 | T33 | Integrate the managed engine capability into Jackin | Companion adapter subagent | U08, T13, T23 |
-| T34 | Complete workflow and product behavior coverage | Operations subagent | T32, T26, T27, T29 |
+| T34 | Complete workflow and product behavior coverage | Operations subagent | T32, T26, T27, T29, T30, T31 |
 | T35 | Qualify local containers and remote container gateways | Qualification subagent | T29, T30, T31, T34, U03 |
 | T36 | Qualify isolated VM profiles and engine domains | Qualification subagent | T29, T30, T31, T33, T34, U03 |
-| T37 | Qualify the Kubernetes deployment tuple | Qualification subagent | T29, T30, T31, T34 |
+| T37 | Qualify the Kubernetes deployment tuple | Qualification subagent | T29, T30, T31, T34, U03 |
 | T38 | Run cross-area failure security and resource tests | Qualification subagent | T35, T36, T37, T32, T33 |
 | T39 | Delete all obsolete implementation and rebuild packaging | Integration subagent | P01, T31, T34, T35, T36, T37, T38 |
 | T40 | Approve the full v2 release candidate | Independent review subagent | T39 |
@@ -1494,7 +1494,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Wrong architecture and missing registry authorization fail before activation.
 - An unavailable separate builder does not disable status or stop operations.
 
-**Acceptance cases:** A52, A53, A54, A55.
+**Acceptance cases:** A52, A53, A54.
 
 #### Removal and replacement
 
@@ -1595,7 +1595,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 #### Write scope
 
-- crates/core/jackin-session-protocol/
+- crates/core/jackin-session-protocol/ implementation excluding shared post-P03 wire-schema definitions
 - Protocol property tests and fuzz targets
 
 #### Required inputs
@@ -1617,6 +1617,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 8. Add stable golden frames and round-trip property tests.
 9. Fuzz both decoder directions and arithmetic boundaries.
 10. Do not import host authority into the protocol crate.
+11. Submit post-P03 wire-schema changes to integration as patch requests with exact change, dependency reason, and tests.
 
 #### Pass conditions
 
@@ -1645,6 +1646,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 - Block transport integration until framing and negative tests pass.
 - Do not silently accept incompatible protocol versions.
+- Do not edit shared wire-schema definitions after P03; submit a patch request to integration.
 
 **Review:** A different subagent reviews the result. The integration subagent reruns affected tests after merge.
 
@@ -2537,7 +2539,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Owner:** Operations subagent.
 
-**Dependencies:** T15, T28, T29.
+**Dependencies:** T15, T28, T29, T33.
 
 **Source basis:** SPEC L127; L371; L465-L475.
 
@@ -2736,7 +2738,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Owner:** Operations subagent.
 
-**Dependencies:** T32, T26, T27, T29.
+**Dependencies:** T32, T26, T27, T29, T30, T31.
 
 **Source basis:** SPEC L61-L63; L326-L344; L375-L383; L499-L507.
 
@@ -2839,7 +2841,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Live editing remains live and snapshot transfer remains explicit.
 - Unrelated resources survive failure and cleanup tests.
 
-**Acceptance cases:** A110, A111, A117.
+**Acceptance cases:** A55, A110, A111, A117.
 
 #### Removal and replacement
 
@@ -2933,7 +2935,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Owner:** Qualification subagent.
 
-**Dependencies:** T29, T30, T31, T34.
+**Dependencies:** T29, T30, T31, T34, U03.
 
 **Source basis:** SPEC L212; L266-L284; L489-L491.
 

@@ -682,7 +682,7 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A55 — Separate builder outage
 
-**Evidence:** LIVE. **Tasks:** T15. **Initial status:** NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T35. **Initial status:** NOT_RUN.
 
 **Setup:** Run a healthy remote gateway and then stop only its independent builder.
 
