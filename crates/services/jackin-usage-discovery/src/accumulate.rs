@@ -132,11 +132,11 @@ pub(crate) fn accumulate_validated_source(
             &capability_id,
             UsageDiscoveryIssue::CredentialDenied,
         )),
-        ProfileValidation::ConsentRequired => diagnostics.push(source_diagnostic(
+        ProfileValidation::AccessUnavailable => diagnostics.push(source_diagnostic(
             surface,
             &provenance,
             &capability_id,
-            UsageDiscoveryIssue::KeychainConsentRequired,
+            UsageDiscoveryIssue::KeychainAccessUnavailable,
         )),
         ProfileValidation::Malformed => diagnostics.push(source_diagnostic(
             surface,

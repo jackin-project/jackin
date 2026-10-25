@@ -348,7 +348,7 @@ fn prepare_auth_with<'a>(
         ForegroundBootstrapOutcome::Acquired => Ok(()),
         ForegroundBootstrapOutcome::InteractionRequired => Err(auth_error(
             "interaction_required",
-            "Keychain requires operator consent; run preparation in an attached terminal",
+            "Keychain credential access is unavailable during authentication preparation",
             2,
         )),
         ForegroundBootstrapOutcome::Missing => Err(auth_error(

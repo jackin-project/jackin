@@ -12,7 +12,7 @@ pub(crate) enum ProfileReadOutcome {
     Bytes(Zeroizing<Vec<u8>>),
     Missing,
     Denied,
-    ConsentRequired,
+    AccessUnavailable,
 }
 
 pub(crate) trait ProfileCredentialReader {
@@ -113,8 +113,8 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
             jackin_usage_provider_claude::ClaudeKeychainRead::Missing => {
                 ProfileReadOutcome::Missing
             }
-            jackin_usage_provider_claude::ClaudeKeychainRead::ConsentRequired => {
-                ProfileReadOutcome::ConsentRequired
+            jackin_usage_provider_claude::ClaudeKeychainRead::AccessUnavailable => {
+                ProfileReadOutcome::AccessUnavailable
             }
         }
     }
@@ -127,7 +127,7 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
             let Ok(_unattended_keychain_guard) =
                 jackin_usage_provider_claude::unattended_keychain_guard()
             else {
-                return ProfileReadOutcome::ConsentRequired;
+                return ProfileReadOutcome::AccessUnavailable;
             };
 
             let mut options = ItemSearchOptions::new();
@@ -152,8 +152,8 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
                     jackin_usage_provider_claude::ClaudeKeychainRead::Missing => {
                         ProfileReadOutcome::Missing
                     }
-                    jackin_usage_provider_claude::ClaudeKeychainRead::ConsentRequired => {
-                        ProfileReadOutcome::ConsentRequired
+                    jackin_usage_provider_claude::ClaudeKeychainRead::AccessUnavailable => {
+                        ProfileReadOutcome::AccessUnavailable
                     }
                 },
             }
@@ -174,7 +174,7 @@ pub(crate) enum ProfileValidation {
     Anonymous(Option<Box<ProfileCredentialMaterial>>),
     Missing,
     Denied,
-    ConsentRequired,
+    AccessUnavailable,
     Malformed,
 }
 

@@ -67,7 +67,7 @@ pub(crate) fn antigravity_profile_identity(
         }
         ProfileReadOutcome::Missing => ProfileValidation::Missing,
         ProfileReadOutcome::Denied => ProfileValidation::Denied,
-        ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
+        ProfileReadOutcome::AccessUnavailable => ProfileValidation::AccessUnavailable,
     }
 }
 
@@ -114,7 +114,7 @@ pub(crate) fn opencode_profile_identity(
             }
         }
         ProfileReadOutcome::Denied => ProfileValidation::Denied,
-        ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
+        ProfileReadOutcome::AccessUnavailable => ProfileValidation::AccessUnavailable,
         ProfileReadOutcome::Bytes(bytes) => {
             let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
                 return ProfileValidation::Malformed;
@@ -177,7 +177,7 @@ pub(crate) fn claude_profile_identity(
             }
             ProfileReadOutcome::Missing => {}
             ProfileReadOutcome::Denied => return ProfileValidation::Denied,
-            ProfileReadOutcome::ConsentRequired => return ProfileValidation::ConsentRequired,
+            ProfileReadOutcome::AccessUnavailable => return ProfileValidation::AccessUnavailable,
         }
     }
     if let Some(credential) = credential {
@@ -233,7 +233,7 @@ pub(crate) fn claude_profile_identity(
         }
         ProfileReadOutcome::Missing => ProfileValidation::Missing,
         ProfileReadOutcome::Denied => ProfileValidation::Denied,
-        ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
+        ProfileReadOutcome::AccessUnavailable => ProfileValidation::AccessUnavailable,
     }
 }
 

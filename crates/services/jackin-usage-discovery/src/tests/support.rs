@@ -23,9 +23,9 @@ impl ProviderCredentialEnvResolver for NoEnvResolver {
     }
 }
 
-pub(super) struct ConsentKeychainReader;
+pub(super) struct AccessUnavailableKeychainReader;
 
-impl ProfileCredentialReader for ConsentKeychainReader {
+impl ProfileCredentialReader for AccessUnavailableKeychainReader {
     fn read(&self, _path: &Path) -> ProfileReadOutcome {
         ProfileReadOutcome::Missing
     }
@@ -38,11 +38,34 @@ impl ProfileCredentialReader for ConsentKeychainReader {
         &self,
         _scope: &jackin_core::ClaudeKeychainScope,
     ) -> ProfileReadOutcome {
-        ProfileReadOutcome::ConsentRequired
+        ProfileReadOutcome::AccessUnavailable
     }
 
     fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
-        ProfileReadOutcome::ConsentRequired
+        ProfileReadOutcome::AccessUnavailable
+    }
+}
+
+pub(super) struct FixedAntigravityRead(pub(super) ProfileReadOutcome);
+
+impl ProfileCredentialReader for FixedAntigravityRead {
+    fn read(&self, _path: &Path) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
+    }
+
+    fn exists(&self, _path: &Path) -> bool {
+        false
+    }
+
+    fn read_claude_keychain(
+        &self,
+        _scope: &jackin_core::ClaudeKeychainScope,
+    ) -> ProfileReadOutcome {
+        panic!("Claude Keychain is unused by the Antigravity revision fixture")
+    }
+
+    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
+        self.0.clone()
     }
 }
 

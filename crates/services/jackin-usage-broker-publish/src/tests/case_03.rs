@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use jackin_protocol::usage_broker::{UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1};
+use jackin_protocol::usage_broker::{
+    UsageFreshnessPhaseV1, UsageFreshnessV1, UsageIssueRecoverabilityV1, UsageIssueScopeV1,
+    UsageIssueV1, UsageLifecycleV1, UsageMembershipStateV1, UsageProjectionV1, UsageProviderV1,
+};
 
 #[test]
 fn broker_conflict_requires_operator_action_without_retry() {
@@ -42,6 +45,27 @@ impl CatalogFixture {
             .reconcile_catalog_if_projection_with_diagnostics(
                 Some(&before.projection_id),
                 "catalog-current".to_owned(),
+                vec![self.current_entry.clone()],
+                diagnostics,
+                1_002,
+            )
+            .unwrap()
+    }
+
+    fn reconcile_keychain_access_unavailable(&self) -> UsageProjectionV1 {
+        let mut diagnostics = CatalogDiagnostics::default();
+        diagnostics.push_provider_issue(
+            "claude",
+            "Claude",
+            CatalogDiagnosticCode::KeychainAccessUnavailable,
+        );
+        diagnostics.push_unresolved("claude", "Claude", "opaque-candidate".to_owned(), 1);
+
+        let before = self.publisher.current_projection().unwrap();
+        self.publisher
+            .reconcile_catalog_if_projection_with_diagnostics(
+                Some(&before.projection_id),
+                "catalog-keychain-access-unavailable".to_owned(),
                 vec![self.current_entry.clone()],
                 diagnostics,
                 1_002,
@@ -195,6 +219,201 @@ fn clean_catalog_scan_clears_catalog_diagnostics_and_keeps_unrelated_provider_is
             .any(|issue| issue.code == "interaction_required")
     );
     assert!(clean.unresolved.is_empty());
+}
+
+#[test]
+fn unavailable_diagnostic_replaces_retired_catalog_rows_and_clean_scan_removes_it() {
+    let fixture = seeded_catalog_fixture();
+    seed_retired_keychain_catalog_rows(&fixture);
+
+    let current = fixture.reconcile_keychain_access_unavailable();
+    assert!(
+        current
+            .issues
+            .iter()
+            .any(|issue| issue.code == "unrelated_projection_issue")
+    );
+    assert!(current.issues.iter().all(|issue| {
+        issue.code != "keychain_consent_required" && issue.code != "keychain_access_unavailable"
+    }));
+    assert!(
+        current
+            .providers
+            .iter()
+            .flat_map(|provider| &provider.issues)
+            .all(|issue| issue.code != "keychain_consent_required")
+    );
+    assert!(
+        current
+            .providers
+            .iter()
+            .all(|provider| provider.provider_id != "legacy-only")
+    );
+    let claude = current
+        .providers
+        .iter()
+        .find(|provider| provider.provider_id == "claude")
+        .unwrap();
+    let unavailable = claude
+        .issues
+        .iter()
+        .filter(|issue| issue.code == "keychain_access_unavailable")
+        .collect::<Vec<_>>();
+    assert_eq!(unavailable.len(), 1);
+    assert_eq!(unavailable[0].scope, UsageIssueScopeV1::Provider);
+    assert_eq!(
+        unavailable[0].recoverability,
+        UsageIssueRecoverabilityV1::ActionRequired
+    );
+    assert_eq!(
+        unavailable[0].message,
+        "Keychain credential access is unavailable"
+    );
+    assert!(
+        current
+            .providers
+            .iter()
+            .find(|provider| provider.provider_id == "unrelated")
+            .unwrap()
+            .issues
+            .iter()
+            .any(|issue| issue.code == "provider_specific_issue")
+    );
+    assert_eq!(current.unresolved.len(), 1);
+    assert_eq!(current.unresolved[0].state, UsageLifecycleV1::NeedsSecret);
+
+    let before = fixture.publisher.current_projection().unwrap();
+    let clean = fixture
+        .publisher
+        .reconcile_catalog_if_projection_with_diagnostics(
+            Some(&before.projection_id),
+            "catalog-clean-after-unavailable".to_owned(),
+            vec![fixture.current_entry.clone()],
+            CatalogDiagnostics::default(),
+            1_006,
+        )
+        .unwrap();
+    assert!(
+        clean
+            .providers
+            .iter()
+            .all(|provider| provider.provider_id != "legacy-only")
+    );
+    let clean_claude = clean
+        .providers
+        .iter()
+        .find(|provider| provider.provider_id == "claude")
+        .unwrap();
+    assert!(clean_claude.issues.iter().all(|issue| {
+        issue.code != "keychain_consent_required" && issue.code != "keychain_access_unavailable"
+    }));
+    assert!(
+        clean
+            .providers
+            .iter()
+            .find(|provider| provider.provider_id == "unrelated")
+            .unwrap()
+            .issues
+            .iter()
+            .any(|issue| issue.code == "provider_specific_issue")
+    );
+    assert!(
+        clean
+            .issues
+            .iter()
+            .any(|issue| issue.code == "unrelated_projection_issue")
+    );
+    assert!(clean.issues.iter().all(|issue| {
+        issue.code != "keychain_consent_required" && issue.code != "keychain_access_unavailable"
+    }));
+    assert!(
+        clean
+            .providers
+            .iter()
+            .flat_map(|provider| &provider.issues)
+            .all(|issue| issue.code != "keychain_consent_required"
+                && issue.code != "keychain_access_unavailable")
+    );
+
+    let before_repeat = fixture.publisher.current_projection().unwrap();
+    let repeated_clean = fixture
+        .publisher
+        .reconcile_catalog_if_projection_with_diagnostics(
+            Some(&before_repeat.projection_id),
+            "catalog-clean-repeat".to_owned(),
+            vec![fixture.current_entry.clone()],
+            CatalogDiagnostics::default(),
+            1_007,
+        )
+        .unwrap();
+    assert!(repeated_clean.issues.iter().all(|issue| {
+        issue.code != "keychain_consent_required" && issue.code != "keychain_access_unavailable"
+    }));
+    assert!(
+        repeated_clean
+            .providers
+            .iter()
+            .flat_map(|provider| &provider.issues)
+            .all(|issue| {
+                issue.code != "keychain_consent_required"
+                    && issue.code != "keychain_access_unavailable"
+            })
+    );
+}
+
+fn seed_retired_keychain_catalog_rows(fixture: &CatalogFixture) {
+    let mut projection = fixture.projection.lock().unwrap();
+    projection.issues.extend([
+        issue_fixture("keychain_consent_required", UsageIssueScopeV1::Projection),
+        issue_fixture("keychain_access_unavailable", UsageIssueScopeV1::Projection),
+        issue_fixture("unrelated_projection_issue", UsageIssueScopeV1::Projection),
+    ]);
+    projection.providers.push(UsageProviderV1 {
+        provider_id: "legacy-only".to_owned(),
+        display_name: "Legacy-only".to_owned(),
+        rank: 99,
+        membership_state: UsageMembershipStateV1::Current,
+        freshness: UsageFreshnessV1 {
+            generation: 0,
+            phase: UsageFreshnessPhaseV1::Failed,
+            last_good_at_epoch: None,
+            retry_at_epoch: None,
+            is_stale: false,
+        },
+        accounts: Vec::new(),
+        issues: vec![
+            issue_fixture("keychain_consent_required", UsageIssueScopeV1::Provider),
+            issue_fixture("keychain_access_unavailable", UsageIssueScopeV1::Provider),
+        ],
+    });
+    projection.providers.push(UsageProviderV1 {
+        provider_id: "unrelated".to_owned(),
+        display_name: "Unrelated".to_owned(),
+        rank: 100,
+        membership_state: UsageMembershipStateV1::Current,
+        freshness: UsageFreshnessV1 {
+            generation: 0,
+            phase: UsageFreshnessPhaseV1::Failed,
+            last_good_at_epoch: None,
+            retry_at_epoch: None,
+            is_stale: false,
+        },
+        accounts: Vec::new(),
+        issues: vec![issue_fixture(
+            "provider_specific_issue",
+            UsageIssueScopeV1::Provider,
+        )],
+    });
+}
+
+fn issue_fixture(code: &str, scope: UsageIssueScopeV1) -> UsageIssueV1 {
+    UsageIssueV1 {
+        code: code.to_owned(),
+        scope,
+        recoverability: UsageIssueRecoverabilityV1::ActionRequired,
+        message: "fixture diagnostic".to_owned(),
+        retry_at_epoch: None,
+    }
 }
 
 fn assert_interaction_issue(projection: &UsageProjectionV1) {

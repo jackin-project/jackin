@@ -61,8 +61,8 @@ const fn issue_code(issue: UsageDiscoveryIssue) -> CatalogDiagnosticCode {
         }
         UsageDiscoveryIssue::CredentialMissing => CatalogDiagnosticCode::CredentialMissing,
         UsageDiscoveryIssue::CredentialDenied => CatalogDiagnosticCode::CredentialDenied,
-        UsageDiscoveryIssue::KeychainConsentRequired => {
-            CatalogDiagnosticCode::KeychainConsentRequired
+        UsageDiscoveryIssue::KeychainAccessUnavailable => {
+            CatalogDiagnosticCode::KeychainAccessUnavailable
         }
         UsageDiscoveryIssue::CredentialMalformed => CatalogDiagnosticCode::CredentialMalformed,
         UsageDiscoveryIssue::InteractionRequired => CatalogDiagnosticCode::InteractionRequired,

@@ -303,10 +303,14 @@ conflict. A passive broker started by `usage service start` or an ordinary
 reused for the experimental collector; choose one service path per data
 directory.
 
-The interactive Keychain read may require operator consent. While the
-foreground service retains its exact-source cache, collection does not reread
-Keychain and the no-UI guard prevents Jackin's unattended lookup from opening a
-dialog. If consent is still required, the read fails closed. This does not
+An interactive Keychain read may request authorization, but an
+`AccessUnavailable` result means the read could not be established under the
+current interaction policy. It does not establish that a matching item exists
+or that consent is the cause.
+Policy setup or query failures, and preparation without an attached terminal,
+can leave access unavailable. While the foreground service retains its
+exact-source cache, collection does not reread Keychain. Unattended reads use
+the no-UI guard and fail closed when access cannot be obtained. This does not
 promise permanent credential availability or prevent prompts from other
 processes. Do not run authentication preparation from a statusline hook or an
 automated lane.
