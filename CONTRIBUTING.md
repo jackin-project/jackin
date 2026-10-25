@@ -37,9 +37,17 @@ generation. Each hook invocation qualifies the staged toolchain and builds in
 its own private snapshot and temporary Cargo target directory. The native
 owner handles process cleanup, source custody, and symlink checks. Compiler
 artifacts cannot collide with builds in the live checkout.
-The installer disables the named `hk-pre-commit` hook locally so an inherited
-global hook cannot bypass the repository-owned snapshot boundary. Global
-configuration and unrelated hooks remain unchanged.
+Git's [`extensions.worktreeConfig`](https://git-scm.com/docs/git-config#Documentation/git-config.txt-extensionsworktreeConfig)
+must already be enabled for the repository;
+the installer refuses to run otherwise and does not migrate existing config.
+This keeps hook registration scoped to the current checkout while leaving
+common config available to other worktrees. Review existing Git configuration
+and repository/worktree layout before enabling this extension manually; Git's
+documentation notes that existing `core.worktree` and `core.bare` settings may
+need to move into the main worktree config. The installer does not migrate them.
+The installer disables the named `hk-pre-commit` hook in this checkout's
+worktree config so an inherited global hook cannot bypass the repository-owned
+snapshot boundary. Global configuration and unrelated hooks remain unchanged.
 
 The hook selects steps from the staged diff (see `hk.pkl` for exact commands).
 It follows the owner hk standard: the pre-commit hook only checks (`fix = false`),
@@ -81,19 +89,22 @@ git add -p && git commit -m "..."
 
 `hk check` runs checks on modified files outside a commit. Partial commits
 remain safe: the hook never clears, restores, or cleans the live worktree.
-Success, failure, and catchable signals remove only the invocation's temporary
-repository and build outputs after terminating its tool process group. Review
-patches remain until the author removes them. Bypass with `HK=0 git commit`
-(emergencies only).
+A successfully completed gate removes the invocation's temporary repository
+and build outputs after terminating its tool process group. Failed gates and
+execution errors retain the private snapshot and diagnostics and print the
+evidence path. The launcher still terminates its tool process group before
+returning. Review patches remain until the author removes them. Bypass with
+`HK=0 git commit` (emergencies only).
 
 One intentional divergence from CI: `hk check --all` scopes steps by `git status`
 (skips green on a clean tree). The global install
 (`hk install --global --mise`) is GUI-robust but forces `--staged`,
 which disables stashing — hence the repo-owned bootstrap above.
-`scripts/hooks-install` sets `hook.hk-pre-commit.enabled=false` locally while
-keeping the repository-owned snapshot hook enabled. A global hk installation
-can remain active for other projects; reinstalling it does not remove this
-local ownership setting. Event-wide pre-commit disabling fails installation.
+`scripts/hooks-install` sets `hook.hk-pre-commit.enabled=false` in this
+checkout's worktree config while keeping the repository-owned snapshot hook
+enabled. A global hk installation can remain active for other projects;
+reinstalling it does not remove this checkout's ownership setting. Event-wide
+pre-commit disabling fails installation.
 
 Linux developers: same setup (`mise install`, `scripts/hooks-install`;
 hook commands are POSIX `sh` and the Swift steps skip themselves where

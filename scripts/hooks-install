@@ -11,6 +11,11 @@ unset GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
+if [ "$(git config --local --bool --get extensions.worktreeConfig 2>/dev/null || true)" != true ]; then
+    printf '%s\n' 'error: extensions.worktreeConfig must be enabled before installing hooks; no migration was performed' >&2
+    exit 1
+fi
+
 if [ ! -f scripts/hooks-native-bootstrap ] || [ -L scripts/hooks-native-bootstrap ]; then
     printf '%s\n' 'error: reviewed native hook bootstrap is missing or unsafe' >&2
     exit 1
@@ -59,12 +64,8 @@ for enabled in true false; do
     fi
 done
 
-# Preserve global hooks for other repositories while owning this boundary.
-if [ "$(git config --local --bool --get extensions.worktreeConfig 2>/dev/null || true)" = true ]; then
-    config_path=$(git rev-parse --path-format=absolute --git-path config.worktree)
-else
-    config_path=$(git rev-parse --path-format=absolute --git-path config)
-fi
+# Preserve common and global hooks for other worktrees/repositories while owning this checkout's boundary.
+config_path=$(git rev-parse --path-format=absolute --git-path config.worktree)
 case "$config_path" in *"$newline"*)
     printf '%s\n' 'error: local Git config path contains a newline' >&2
     exit 1

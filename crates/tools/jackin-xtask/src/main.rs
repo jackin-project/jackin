@@ -24,6 +24,7 @@ mod container_paths_gate;
 mod custom_lints;
 mod desktop;
 mod docs;
+mod fixture_omp;
 mod frame_timing;
 mod fs_util;
 mod github;
@@ -65,7 +66,9 @@ enum Command {
     Measurement(research_measurement::ResearchMeasurementCommand),
     /// Build, UI-test, and run the pinned custom lint library.
     CustomLints,
-    /// Validate security scanner allowlist and provenance fixtures.
+    /// Regenerate and validate synthetic OMP SQLite/WAL fixtures.
+    FixtureOmp,
+    /// Exercise the pinned secret scanners on synthetic fixtures.
     SecurityAuditFixtures,
     AffectedCrates(affected_crates::AffectedCratesArgs),
     Ci(ci::CiArgs),
@@ -210,6 +213,7 @@ fn main() -> ExitCode {
     let result = match cli.command {
         Command::Measurement(command) => research_measurement::run(command),
         Command::CustomLints => docs::repo_root().and_then(|root| custom_lints::run(&root)),
+        Command::FixtureOmp => docs::repo_root().and_then(|root| fixture_omp::run(&root)),
         Command::SecurityAuditFixtures => {
             docs::repo_root().and_then(|root| security_audit_fixtures::run(&root))
         }

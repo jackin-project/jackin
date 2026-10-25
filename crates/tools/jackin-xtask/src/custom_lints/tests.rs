@@ -1,13 +1,26 @@
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
-use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use jackin_process::{RetryPolicy, StdioMode};
+
+use super::paths::{cargo_home as cargo_home_path, resolve};
 use super::{
-    COMPILER_COMMIT, COMPILER_RELEASE, COMPONENTS, NIGHTLY, build_environment, compiler_host,
-    library_path, run_with, valid_host,
+    COMPILER_COMMIT, COMPILER_RELEASE, COMPONENTS, Environment, NIGHTLY, TOOL_NAMES,
+    build_environment_with, build_exec_request, compiler_host, finish_with_cleanup, library_path,
+    run_with, run_with_home, tool_search_path, valid_host,
 };
+
+mod case_01;
+
+fn cargo_home<F>(inherited: &Environment, cwd: &Path, passwd_home: F) -> anyhow::Result<PathBuf>
+where
+    F: FnOnce() -> anyhow::Result<Option<OsString>>,
+{
+    let path = cargo_home_path(inherited, passwd_home)?;
+    resolve(&path, cwd)
+}
 
 fn host() -> String {
     match std::env::consts::OS {
@@ -23,7 +36,7 @@ fn version(host: &str) -> String {
 
 fn command_tools(path: &Path) {
     fs::create_dir_all(path).expect("tool directory");
-    for name in ["dylint-link", "cargo-nextest", "cargo-dylint", "mbx"] {
+    for name in TOOL_NAMES {
         let tool = path.join(name);
         fs::write(&tool, b"tool").expect("tool file");
         #[cfg(unix)]
@@ -34,11 +47,7 @@ fn command_tools(path: &Path) {
     }
 }
 
-fn assert_mbx_shim_environment(
-    env: &BTreeMap<OsString, OsString>,
-    tools: &Path,
-    temp: &Path,
-) -> PathBuf {
+fn assert_mbx_shim_environment(env: &Environment, tools: &Path, temp: &Path) -> PathBuf {
     let path =
         std::env::split_paths(env.get(OsStr::new("PATH")).expect("PATH")).collect::<Vec<_>>();
     assert!(path[0].join("cargo").exists());
@@ -50,7 +59,10 @@ fn assert_mbx_shim_environment(
         path[1],
         fs::canonicalize(tools).expect("physical tools path")
     );
-    assert_eq!(path[2], temp.join(".cargo/bin"));
+    assert_eq!(
+        path[2],
+        resolve(&temp.join(".cargo/bin"), Path::new("/")).expect("resolved Cargo home bin")
+    );
     assert_eq!(
         env.get(OsStr::new("MBX_CARGO_SHIM_MODE")),
         Some(&OsString::from("1"))
@@ -74,6 +86,219 @@ fn assert_mbx_shim_environment(
     path[0].clone()
 }
 
+fn assert_exec_request_modes(argv: &[OsString], cwd: &Path, env: &Environment) {
+    let expected_env = env
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect::<Vec<_>>();
+    for (capture, stdio_mode) in [(true, StdioMode::Capture), (false, StdioMode::Inherit)] {
+        let request = build_exec_request(argv, cwd, env, capture).expect("execution request");
+        assert_eq!(request.program, PathBuf::from(argv[0].as_os_str()));
+        assert_eq!(request.args, argv[1..].to_vec());
+        assert_eq!(request.cwd.as_deref(), Some(cwd));
+        assert!(request.env_clear);
+        assert!(request.env_remove.is_empty());
+        assert_eq!(request.env, expected_env);
+        assert_eq!(request.stdin_mode, StdioMode::Inherit);
+        assert_eq!(request.stdout_mode, stdio_mode);
+        assert_eq!(request.stderr_mode, StdioMode::Inherit);
+        assert_eq!(request.retry, RetryPolicy::none());
+        assert_eq!(request.timeout, None);
+    }
+}
+
+fn assert_pipeline_commands_and_cleanup(
+    calls: &[(Vec<OsString>, PathBuf, Environment, bool)],
+    root: &Path,
+    tools: &Path,
+    cargo_dylint: &OsString,
+    shim_directories: &[PathBuf],
+) {
+    assert_eq!(calls.len(), 5);
+    assert_eq!(calls[4].0.first(), Some(cargo_dylint));
+    assert!(calls[0].3);
+    assert!(calls[1].3);
+    let pinned_mbx = fs::canonicalize(tools.join("mbx"))
+        .expect("pinned MBX")
+        .into_os_string();
+    assert_eq!(calls[2].0[3], pinned_mbx);
+    assert_eq!(calls[2].0[4..], ["build", "--locked"]);
+    assert_eq!(
+        calls[3].0[3], pinned_mbx,
+        "Nextest must be invoked through the pinned MBX provider"
+    );
+    assert_eq!(calls[3].0[4..], ["nextest", "run", "--locked"]);
+    assert_eq!(
+        calls[4].0[1..],
+        [
+            "dylint",
+            "--no-metadata",
+            "--all",
+            "--fail-on-no-libraries",
+            "--",
+            "--workspace",
+            "--locked"
+        ]
+    );
+    for (_, cwd, env, _) in calls.iter().take(4) {
+        assert_eq!(cwd, &root.join("crates/tools/jackin-lints"));
+        assert!(!env.contains_key(OsStr::new("DYLINT_LIBRARY_PATH")));
+    }
+    let isolated_library_dir = PathBuf::from(
+        calls[4]
+            .2
+            .get(OsStr::new("DYLINT_LIBRARY_PATH"))
+            .expect("isolated library path"),
+    );
+    assert!(
+        !isolated_library_dir.exists(),
+        "temporary Dylint library directory survived the pipeline"
+    );
+    assert!(
+        shim_directories.iter().all(|directory| !directory.exists()),
+        "private MBX Cargo shim directory survived the pipeline"
+    );
+}
+
+fn assert_missing_path_search_contract(root: &Path, temporary: &Path) {
+    let tools = temporary.join("system default tools");
+    command_tools(&tools);
+    let mut calls = Vec::new();
+    let search_path =
+        tool_search_path(&Environment::new(), root, &mut |argv, cwd, env, capture| {
+            calls.push((argv.to_vec(), cwd.to_path_buf(), env.clone(), capture));
+            Ok(format!("{}\n", tools.display()).into_bytes())
+        })
+        .expect("system default path");
+    assert_eq!(search_path, tools.as_os_str());
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, ["/usr/bin/getconf", "PATH"]);
+    assert_eq!(calls[0].1, root);
+    assert!(calls[0].2.is_empty());
+    assert!(calls[0].3);
+
+    for output in [b"".as_slice(), b"/first\nsecond\n".as_slice()] {
+        let mut calls = 0;
+        let fallback = tool_search_path(&Environment::new(), root, &mut |_, _, _, _| {
+            calls += 1;
+            Ok(output.to_vec())
+        })
+        .expect("malformed getconf output falls back");
+        assert_eq!(fallback, OsStr::new("/bin:/usr/bin"));
+        assert_eq!(calls, 1, "getconf must not be retried");
+    }
+
+    let mut calls = 0;
+    let fallback = tool_search_path(&Environment::new(), root, &mut |_, _, _, _| {
+        calls += 1;
+        anyhow::bail!("simulated getconf failure")
+    })
+    .expect("getconf failure falls back");
+    assert_eq!(fallback, OsStr::new("/bin:/usr/bin"));
+    assert_eq!(calls, 1, "getconf must not be retried");
+
+    let mut explicit_path = Environment::new();
+    explicit_path.insert(OsString::from("PATH"), OsString::from("/explicit/tools"));
+    let mut calls = 0;
+    assert_eq!(
+        tool_search_path(&explicit_path, root, &mut |_, _, _, _| {
+            calls += 1;
+            Ok(Vec::new())
+        })
+        .expect("explicit PATH"),
+        OsStr::new("/explicit/tools")
+    );
+    assert_eq!(calls, 0, "explicit PATH must bypass getconf");
+
+    let mut empty_path = Environment::new();
+    empty_path.insert(OsString::from("PATH"), OsString::new());
+    let mut calls = 0;
+    let mut passwd_calls = 0;
+    assert!(
+        run_with_home(
+            root,
+            empty_path,
+            || {
+                passwd_calls += 1;
+                Ok(None)
+            },
+            |_, _, _, _| {
+                calls += 1;
+                Ok(Vec::new())
+            }
+        )
+        .is_err()
+    );
+    assert_eq!(calls, 0, "empty PATH must fail before getconf");
+    assert_eq!(passwd_calls, 0, "empty PATH must fail before passwd lookup");
+
+    let cargo_home = temporary.join("cargo home");
+    fs::create_dir_all(cargo_home.join("bin")).expect("Cargo home bin");
+    let mut inherited = Environment::new();
+    inherited.insert(
+        OsString::from("CARGO_HOME"),
+        cargo_home.as_os_str().to_owned(),
+    );
+    let (child_env, _, selected) = build_environment_with(root, inherited, &search_path, || {
+        panic!("explicit CARGO_HOME should bypass passwd lookup")
+    })
+    .expect("child environment with missing inherited PATH");
+    for name in ["dylint-link", "cargo-nextest", "cargo-dylint"] {
+        assert_eq!(
+            selected[name],
+            fs::canonicalize(tools.join(name)).expect("tool")
+        );
+    }
+    let child_path = std::env::split_paths(child_env.get(OsStr::new("PATH")).expect("child PATH"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        child_path,
+        [
+            fs::canonicalize(cargo_home.join("bin")).expect("Cargo bin"),
+            PathBuf::new()
+        ]
+    );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let denied_tools = temporary.join("inaccessible tools");
+        let later_tools = temporary.join("later tools");
+        command_tools(&denied_tools);
+        command_tools(&later_tools);
+        let denied_mode = if nix::unistd::getuid().is_root() {
+            0o600
+        } else {
+            0o001
+        };
+        for name in ["dylint-link", "cargo-nextest", "cargo-dylint"] {
+            fs::set_permissions(
+                denied_tools.join(name),
+                fs::Permissions::from_mode(denied_mode),
+            )
+            .expect("inaccessible tool mode");
+        }
+        let lookup_path =
+            std::env::join_paths([&denied_tools, &later_tools]).expect("tool lookup PATH");
+        let mut inherited = Environment::new();
+        inherited.insert(
+            OsString::from("CARGO_HOME"),
+            cargo_home.as_os_str().to_owned(),
+        );
+        let (_, _, selected) = build_environment_with(root, inherited, &lookup_path, || {
+            panic!("explicit CARGO_HOME should bypass passwd lookup")
+        })
+        .expect("later usable tools");
+        for name in ["dylint-link", "cargo-nextest", "cargo-dylint"] {
+            assert_eq!(
+                selected[name],
+                fs::canonicalize(later_tools.join(name)).expect("later tool")
+            );
+        }
+    }
+}
+
 #[test]
 fn compiler_identity_accepts_only_qualified_commit_release_and_safe_host() {
     let host = host();
@@ -81,10 +306,17 @@ fn compiler_identity_accepts_only_qualified_commit_release_and_safe_host() {
         compiler_host(&version(&host)).expect("qualified compiler"),
         host
     );
+    for supported in ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu"] {
+        assert_eq!(
+            compiler_host(&version(supported)).expect("supported compiler host"),
+            supported
+        );
+    }
     for invalid in [
         version(&host).replace(COMPILER_COMMIT, "other-commit"),
         version(&host).replace(COMPILER_RELEASE, "1.99.1"),
         version("../../escape"),
+        version("x86_64-../../escape"),
         version("aarch64--darwin"),
     ] {
         assert!(compiler_host(&invalid).is_err(), "accepted {invalid:?}");
@@ -92,7 +324,7 @@ fn compiler_identity_accepts_only_qualified_commit_release_and_safe_host() {
 }
 
 #[test]
-fn compiler_host_accepts_supported_cross_platform_triples_and_rejects_unsafe_hosts() {
+fn compiler_host_accepts_supported_cross_platform_triplets_and_rejects_unsafe_hosts() {
     for valid in [
         "aarch64-apple-darwin",
         "x86_64-apple-darwin",
@@ -129,7 +361,7 @@ fn library_lookup_rejects_missing_and_symlinked_libraries() {
     let host = host();
     assert!(
         library_path(&target, &host)
-            .expect_err("missing library must be rejected")
+            .expect_err("missing library should be rejected")
             .to_string()
             .contains("reading nightly-labelled lint library")
     );
@@ -144,7 +376,7 @@ fn library_lookup_rejects_missing_and_symlinked_libraries() {
     std::os::windows::fs::symlink_file(&foreign, &tagged).expect("library symlink");
     assert!(
         library_path(&target, &host)
-            .expect_err("symlinked library must be rejected")
+            .expect_err("symlinked library should be rejected")
             .to_string()
             .contains("missing regular nightly-labelled lint library")
     );
@@ -162,12 +394,14 @@ fn library_name(host: &str) -> String {
 #[test]
 fn environment_cleans_inherited_compiler_and_dylint_state_and_preserves_spaced_paths() {
     let temp = tempfile::tempdir().expect("temporary directory");
+    let root = temp.path().join("repository");
+    fs::create_dir_all(&root).expect("repository");
+    assert_missing_path_search_contract(&root, temp.path());
+
     let tools = temp.path().join("pinned tools");
     command_tools(&tools);
     let cargo_home = temp.path().join("cargo home");
     fs::create_dir_all(cargo_home.join("bin")).expect("Cargo home bin");
-    let root = temp.path().join("repository");
-    fs::create_dir_all(&root).expect("repository");
     let mut inherited = BTreeMap::new();
     inherited.insert(OsString::from("PATH"), tools.as_os_str().to_owned());
     inherited.insert(
@@ -218,13 +452,16 @@ fn environment_cleans_inherited_compiler_and_dylint_state_and_preserves_spaced_p
     );
     inherited.insert(OsString::from("KEEP_ME"), OsString::from("preserved"));
 
-    let (env, target, selected) = build_environment(&root, inherited).expect("build environment");
-    assert_eq!(
-        target,
-        std::env::current_dir()
-            .expect("current directory")
-            .join("target dir")
-    );
+    let (env, target, selected) =
+        build_environment_with(&root, inherited, tools.as_os_str(), || {
+            panic!("explicit CARGO_HOME should bypass passwd lookup")
+        })
+        .expect("build environment");
+    let current_dir = std::env::current_dir().expect("current directory");
+    let resolved_current_dir =
+        resolve(&current_dir, &current_dir).expect("resolved current directory");
+    let resolved_cargo_home = resolve(&cargo_home, &current_dir).expect("resolved Cargo home");
+    assert_eq!(target, resolved_current_dir.join("target dir"));
     assert_eq!(
         env.get(OsStr::new("CARGO_TARGET_DIR")),
         Some(&target.join("library").into_os_string())
@@ -247,9 +484,20 @@ fn environment_cleans_inherited_compiler_and_dylint_state_and_preserves_spaced_p
     ] {
         assert!(!env.contains_key(OsStr::new(key)), "retained {key}");
     }
+    for (key, expected) in [
+        ("MBX_SESSION_PATH", "session"),
+        ("MBX_CACHE_DIR", "cache"),
+        ("MBX_SCHEDULER_SUSPEND", "suspend"),
+    ] {
+        assert_eq!(
+            env.get(OsStr::new(key)),
+            Some(&OsString::from(expected)),
+            "lost inherited MBX setting {key}"
+        );
+    }
     let path =
         std::env::split_paths(env.get(OsStr::new("PATH")).expect("PATH")).collect::<Vec<_>>();
-    assert_eq!(path[0], cargo_home.join("bin"));
+    assert_eq!(path[0], resolved_cargo_home.join("bin"));
     assert_eq!(path[1], tools);
     let encoded = env
         .get(OsStr::new("CARGO_ENCODED_RUSTFLAGS"))
@@ -264,6 +512,16 @@ fn environment_cleans_inherited_compiler_and_dylint_state_and_preserves_spaced_p
         parts[1],
         format!("linker={}", selected["dylint-link"].display())
     );
+
+    let cwd = root.join("crates/tools/jackin-lints");
+    let argv = vec![
+        OsString::from("rustup"),
+        OsString::from("run"),
+        OsString::from(NIGHTLY),
+        OsString::from("rustc"),
+        OsString::from("-Vv"),
+    ];
+    assert_exec_request_modes(&argv, &cwd, &env);
 }
 
 #[test]
@@ -304,20 +562,40 @@ fn pipeline_checks_components_builds_one_fresh_abi_library_and_runs_workspace_dy
         OsString::from("MBX_SCHEDULER_SUSPEND"),
         OsString::from("suspend"),
     );
+    let failure_inherited = inherited.clone();
 
+    let stale_library = target
+        .join("library/debug")
+        .join(library_name(&host).replace(NIGHTLY, "nightly-2026-10-17"));
+    fs::create_dir_all(stale_library.parent().expect("stale library directory"))
+        .expect("stale library directory");
+    fs::write(&stale_library, b"stale ABI library").expect("stale library");
+
+    let cargo_dylint = fs::canonicalize(tools.join("cargo-dylint"))
+        .expect("selected Dylint executable")
+        .into_os_string();
+    let expected_workspace_target = fs::canonicalize(&target)
+        .expect("created target directory")
+        .join("workspace")
+        .into_os_string();
     let mut calls = Vec::new();
-    let mut shim_directory = None;
+    let mut shim_directories = Vec::new();
     run_with(&root, inherited, |argv, cwd, env, capture| {
+        shim_directories.push(assert_mbx_shim_environment(env, &tools, temp.path()));
         calls.push((argv.to_vec(), cwd.to_path_buf(), env.clone(), capture));
-        shim_directory = Some(assert_mbx_shim_environment(env, &tools, temp.path()));
         if argv.ends_with(&[OsString::from("rustc"), OsString::from("-Vv")]) {
             return Ok(version(&host).into_bytes());
         }
         if argv.ends_with(&[OsString::from("--installed")]) {
-            let mut installed = String::new();
-            for component in COMPONENTS {
-                writeln!(installed, "{component}-{host}").expect("append component");
-            }
+            let installed = COMPONENTS
+                .iter()
+                .fold(String::new(), |mut output, component| {
+                    output.push_str(component);
+                    output.push('-');
+                    output.push_str(&host);
+                    output.push('\n');
+                    output
+                });
             return Ok(installed.into_bytes());
         }
         if argv.ends_with(&[OsString::from("build"), OsString::from("--locked")]) {
@@ -328,32 +606,36 @@ fn pipeline_checks_components_builds_one_fresh_abi_library_and_runs_workspace_dy
                 .expect("library directory");
             fs::write(library, b"fresh qualified library").expect("built library");
         }
-        let cargo_dylint = fs::canonicalize(tools.join("cargo-dylint"))
-            .expect("pinned cargo-dylint")
-            .into_os_string();
         if argv.first() == Some(&cargo_dylint) {
             let library_dir = PathBuf::from(
                 env.get(OsStr::new("DYLINT_LIBRARY_PATH"))
                     .expect("library path"),
             );
             let entries = crate::fs_util::read_dir_sorted(&library_dir)
-                .expect("isolated Dylint library directory")
-                .into_iter()
-                .map(|entry| entry.path())
-                .collect::<Vec<_>>();
+                .expect("isolated Dylint library directory");
             assert_eq!(entries.len(), 1);
+            assert!(
+                stale_library.is_file(),
+                "stale build output remains isolated"
+            );
             assert_eq!(
-                entries[0].file_name().expect("filename").to_string_lossy(),
+                entries[0].file_name().to_string_lossy(),
                 library_name(&host)
             );
             assert_eq!(
-                fs::read(&entries[0]).expect("library bytes"),
+                fs::read(entries[0].path()).expect("library bytes"),
                 b"fresh qualified library"
+            );
+            assert!(
+                !library_dir
+                    .join(stale_library.file_name().expect("stale filename"))
+                    .exists(),
+                "stale build output was copied into the Dylint search directory"
             );
             assert_eq!(cwd, root);
             assert_eq!(
                 env.get(OsStr::new("CARGO_TARGET_DIR")),
-                Some(&target.join("workspace").into_os_string())
+                Some(&expected_workspace_target)
             );
             assert!(!env.contains_key(OsStr::new("CARGO_ENCODED_RUSTFLAGS")));
             assert!(!env.contains_key(OsStr::new("RUSTFLAGS")));
@@ -364,39 +646,105 @@ fn pipeline_checks_components_builds_one_fresh_abi_library_and_runs_workspace_dy
     })
     .expect("custom lint pipeline");
 
-    assert_eq!(calls.len(), 5);
-    assert!(calls[0].3);
-    assert!(calls[1].3);
-    let pinned_mbx = fs::canonicalize(tools.join("mbx"))
-        .expect("pinned MBX")
-        .into_os_string();
-    assert_eq!(calls[2].0[3], pinned_mbx);
-    assert_eq!(calls[2].0[4..], ["build", "--locked"]);
-    assert_eq!(calls[3].0[3], pinned_mbx);
-    assert_eq!(calls[3].0[4..], ["nextest", "run", "--locked"]);
-    assert_eq!(
-        calls[4].0[0],
-        fs::canonicalize(tools.join("cargo-dylint"))
-            .expect("pinned cargo-dylint")
-            .into_os_string()
+    assert_pipeline_commands_and_cleanup(&calls, &root, &tools, &cargo_dylint, &shim_directories);
+
+    assert_workspace_failure_cleans_library(
+        &root,
+        &target,
+        &host,
+        failure_inherited,
+        &cargo_dylint,
     );
-    assert_eq!(
-        calls[4].0[1..],
-        [
-            "dylint",
-            "--no-metadata",
-            "--all",
-            "--fail-on-no-libraries",
-            "--",
-            "--workspace",
-            "--locked"
-        ]
+    assert_cleanup_result_combinations();
+}
+
+fn assert_workspace_failure_cleans_library(
+    root: &Path,
+    target: &Path,
+    host: &str,
+    inherited: Environment,
+    cargo_dylint: &OsString,
+) {
+    let mut failure_library_dir = None;
+    let mut shim_directory = None;
+    let error = run_with(root, inherited, |argv, _, env, _| {
+        shim_directory = Some(assert_mbx_shim_environment(
+            env,
+            Path::new(cargo_dylint).parent().expect("tool directory"),
+            target.parent().expect("fixture parent"),
+        ));
+        if argv.ends_with(&[OsString::from("rustc"), OsString::from("-Vv")]) {
+            return Ok(version(host).into_bytes());
+        }
+        if argv.ends_with(&[OsString::from("--installed")]) {
+            let installed = COMPONENTS
+                .iter()
+                .fold(String::new(), |mut output, component| {
+                    output.push_str(component);
+                    output.push('-');
+                    output.push_str(host);
+                    output.push('\n');
+                    output
+                });
+            return Ok(installed.into_bytes());
+        }
+        if argv.ends_with(&[OsString::from("build"), OsString::from("--locked")]) {
+            let library = target.join("library/debug").join(library_name(host));
+            fs::create_dir_all(library.parent().expect("library parent"))
+                .expect("library directory");
+            fs::write(library, b"fresh qualified library").expect("built library");
+        }
+        if argv.first() == Some(cargo_dylint) {
+            failure_library_dir = Some(PathBuf::from(
+                env.get(OsStr::new("DYLINT_LIBRARY_PATH"))
+                    .expect("isolated library path"),
+            ));
+            anyhow::bail!("simulated workspace failure");
+        }
+        Ok(Vec::new())
+    })
+    .expect_err("workspace failure should be returned");
+    assert!(format!("{error:#}").contains("simulated workspace failure"));
+    assert!(
+        !failure_library_dir
+            .expect("workspace command was reached")
+            .exists(),
+        "temporary Dylint library directory survived a workspace failure"
     );
-    for (_, cwd, env, _) in calls.iter().take(4) {
-        assert_eq!(cwd, &root.join("crates/tools/jackin-lints"));
-        assert!(!env.contains_key(OsStr::new("DYLINT_LIBRARY_PATH")));
-    }
-    assert!(!shim_directory.expect("MBX shim directory").exists());
+    assert!(
+        !shim_directory.expect("MBX shim directory").exists(),
+        "private MBX shim directory survived workspace failure"
+    );
+}
+
+fn assert_cleanup_result_combinations() {
+    assert_eq!(
+        finish_with_cleanup(Ok(7), Ok(())).expect("successful body and cleanup"),
+        7
+    );
+
+    let body_error = finish_with_cleanup::<()>(Err(anyhow::anyhow!("body failure")), Ok(()))
+        .expect_err("body failure should be returned");
+    assert_eq!(format!("{body_error:#}"), "body failure");
+
+    let cleanup_error =
+        finish_with_cleanup::<()>(Ok(()), Err(std::io::Error::other("cleanup failure")))
+            .expect_err("cleanup failure should be returned");
+    let cleanup_message = format!("{cleanup_error:#}");
+    assert!(cleanup_message.contains("removing isolated Dylint library directory"));
+    assert!(cleanup_message.contains("cleanup failure"));
+
+    let body_source = std::io::Error::other("body source");
+    let body_error = anyhow::Error::new(body_source).context("body context");
+    let both_errors = finish_with_cleanup::<()>(
+        Err(body_error),
+        Err(std::io::Error::other("cleanup failure")),
+    )
+    .expect_err("both failures should be reported");
+    let both_message = format!("{both_errors:#}");
+    assert!(both_message.contains("body context"));
+    assert!(both_message.contains("cleanup failure"));
+    assert_eq!(both_errors.root_cause().to_string(), "body source");
 }
 
 #[test]
@@ -450,10 +798,16 @@ fn nightly_build_failure_stops_before_nextest_and_workspace_lints() {
             return Ok(version(&host()).into_bytes());
         }
         if argv.ends_with(&[OsString::from("--installed")]) {
-            let mut installed = String::new();
-            for component in COMPONENTS {
-                writeln!(installed, "{component}-{}", host()).expect("append component");
-            }
+            let host = host();
+            let installed = COMPONENTS
+                .iter()
+                .fold(String::new(), |mut output, component| {
+                    output.push_str(component);
+                    output.push('-');
+                    output.push_str(&host);
+                    output.push('\n');
+                    output
+                });
             return Ok(installed.into_bytes());
         }
         if argv.ends_with(&[OsString::from("build"), OsString::from("--locked")]) {

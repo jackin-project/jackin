@@ -126,7 +126,10 @@ fn strict_capture_drains_descendant_that_inherits_output_pipes() {
         .expect("descendant wrote its readiness tick")
         .len();
     assert!(tick_count > 0);
-    thread::sleep(Duration::from_millis(50));
+    let observation_deadline = Instant::now() + Duration::from_millis(50);
+    while Instant::now() < observation_deadline {
+        thread::park_timeout(observation_deadline.saturating_duration_since(Instant::now()));
+    }
     assert_eq!(
         fs::metadata(tick_path)
             .expect("descendant tick remains available")
@@ -136,69 +139,80 @@ fn strict_capture_drains_descendant_that_inherits_output_pipes() {
     );
 }
 
-#[test]
-fn strict_capture_rejects_surviving_pipe_holder_after_zero_exit() {
-    const CHILD_MODE: &str = "JACKIN_STRICT_PIPE_HOLDER_CHILD";
-    const CONTROLLER_MODE: &str = "JACKIN_STRICT_PIPE_HOLDER_CONTROLLER";
-    const HOLDER_MODE: &str = "JACKIN_STRICT_PIPE_HOLDER_HOLDER";
-    const READY_PATH: &str = "JACKIN_STRICT_PIPE_HOLDER_READY_PATH";
-    const HEARTBEAT_PATH: &str = "JACKIN_STRICT_PIPE_HOLDER_HEARTBEAT_PATH";
-    const RELEASE_PATH: &str = "JACKIN_STRICT_PIPE_HOLDER_RELEASE_PATH";
-    const STOPPED_PATH: &str = "JACKIN_STRICT_PIPE_HOLDER_STOPPED_PATH";
-    const TEST_NAME: &str = "precommit_snapshot::process::tests::strict_capture_rejects_surviving_pipe_holder_after_zero_exit";
+const PIPE_HOLDER_CHILD_MODE: &str = "JACKIN_STRICT_PIPE_HOLDER_CHILD";
+const PIPE_HOLDER_CONTROLLER_MODE: &str = "JACKIN_STRICT_PIPE_HOLDER_CONTROLLER";
+const PIPE_HOLDER_HOLDER_MODE: &str = "JACKIN_STRICT_PIPE_HOLDER_HOLDER";
+const PIPE_HOLDER_READY_PATH: &str = "JACKIN_STRICT_PIPE_HOLDER_READY_PATH";
+const PIPE_HOLDER_HEARTBEAT_PATH: &str = "JACKIN_STRICT_PIPE_HOLDER_HEARTBEAT_PATH";
+const PIPE_HOLDER_RELEASE_PATH: &str = "JACKIN_STRICT_PIPE_HOLDER_RELEASE_PATH";
+const PIPE_HOLDER_STOPPED_PATH: &str = "JACKIN_STRICT_PIPE_HOLDER_STOPPED_PATH";
+const PIPE_HOLDER_TEST_NAME: &str = "precommit_snapshot::process::tests::strict_capture_rejects_surviving_pipe_holder_after_zero_exit";
 
-    struct PipeHolderCleanup {
-        release_path: std::path::PathBuf,
-        stopped_path: std::path::PathBuf,
-        completed: bool,
-        wait_attempted: bool,
-    }
+struct PipeHolderCleanup {
+    release_path: std::path::PathBuf,
+    stopped_path: std::path::PathBuf,
+    completed: bool,
+    wait_attempted: bool,
+}
 
-    impl PipeHolderCleanup {
-        fn release_and_wait(&mut self) -> bool {
-            if self.completed {
+impl PipeHolderCleanup {
+    fn release_and_wait(&mut self) -> bool {
+        if self.completed {
+            return true;
+        }
+        if self.wait_attempted {
+            return false;
+        }
+        if fs::write(&self.release_path, b"release\n").is_err() {
+            return false;
+        }
+
+        self.wait_attempted = true;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            if fs::read(&self.stopped_path).is_ok_and(|contents| contents == b"reaped\n") {
+                self.completed = true;
                 return true;
             }
-            if self.wait_attempted {
-                return false;
-            }
-            if fs::write(&self.release_path, b"release\n").is_err() {
-                return false;
-            }
-
-            self.wait_attempted = true;
-            let deadline = Instant::now() + Duration::from_secs(10);
-            while Instant::now() < deadline {
-                if fs::read(&self.stopped_path).is_ok_and(|contents| contents == b"reaped\n") {
-                    self.completed = true;
-                    return true;
-                }
-                thread::sleep(Duration::from_millis(10));
-            }
-            false
+            thread::park_timeout(Duration::from_millis(10));
         }
+        false
     }
+}
 
-    impl Drop for PipeHolderCleanup {
-        fn drop(&mut self) {
-            // Keep this bounded on assertion failure. The controller has its
-            // own monotonic lifetime and owns/reaps the actual pipe-holder Child.
-            let _ = self.release_and_wait();
+impl Drop for PipeHolderCleanup {
+    fn drop(&mut self) {
+        // Keep this bounded on assertion failure. The controller has its own
+        // monotonic lifetime and owns/reaps the actual pipe-holder Child.
+        let _ = self.release_and_wait();
+    }
+}
+
+fn wait_for_child_until(child: &mut std::process::Child, deadline: Instant) -> bool {
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) => {}
+            Err(error) => panic!("poll pipe-holder child: {error}"),
         }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        thread::park_timeout(Duration::from_millis(10));
     }
+}
 
-    fn redirect_helper_stdio_to_dev_null() {
-        let null = fs::OpenOptions::new()
-            .write(true)
-            .open("/dev/null")
-            .expect("open /dev/null for helper stdio");
-        nix::unistd::dup2_stdout(&null).expect("redirect helper stdout");
-        nix::unistd::dup2_stderr(&null).expect("redirect helper stderr");
-    }
+fn close_helper_output_pipes() {
+    nix::unistd::close(1).expect("close helper stdout pipe");
+    nix::unistd::close(2).expect("close helper stderr pipe");
+}
 
-    if std::env::var_os(HOLDER_MODE).is_some() {
-        let release_path = std::env::var_os(RELEASE_PATH).expect("pipe-holder release path");
-        let heartbeat_path = std::env::var_os(HEARTBEAT_PATH).expect("pipe-holder heartbeat path");
+fn run_pipe_holder_test_helper() -> bool {
+    if std::env::var_os(PIPE_HOLDER_HOLDER_MODE).is_some() {
+        let release_path =
+            std::env::var_os(PIPE_HOLDER_RELEASE_PATH).expect("pipe-holder release path");
+        let heartbeat_path =
+            std::env::var_os(PIPE_HOLDER_HEARTBEAT_PATH).expect("pipe-holder heartbeat path");
         let deadline = Instant::now() + Duration::from_secs(8);
         let mut heartbeat = 0_u64;
         let heartbeat_temp_path = Path::new(&heartbeat_path).with_extension("tmp");
@@ -207,90 +221,85 @@ fn strict_capture_rejects_surviving_pipe_holder_after_zero_exit() {
             fs::write(&heartbeat_temp_path, heartbeat.to_string())
                 .and_then(|()| fs::rename(&heartbeat_temp_path, &heartbeat_path))
                 .expect("atomically publish pipe-holder heartbeat");
-            thread::sleep(Duration::from_millis(10));
+            thread::park_timeout(Duration::from_millis(10));
         }
-        return;
+        return true;
     }
 
-    if std::env::var_os(CONTROLLER_MODE).is_some() {
-        let release_path = std::env::var_os(RELEASE_PATH).expect("pipe-holder release path");
-        let ready_path = std::env::var_os(READY_PATH).expect("pipe-holder ready path");
-        let heartbeat_path = std::env::var_os(HEARTBEAT_PATH).expect("pipe-holder heartbeat path");
-        let stopped_path = std::env::var_os(STOPPED_PATH).expect("pipe-holder stopped path");
+    if std::env::var_os(PIPE_HOLDER_CONTROLLER_MODE).is_some() {
+        let release_path =
+            std::env::var_os(PIPE_HOLDER_RELEASE_PATH).expect("pipe-holder release path");
+        let ready_path = std::env::var_os(PIPE_HOLDER_READY_PATH).expect("pipe-holder ready path");
+        let heartbeat_path =
+            std::env::var_os(PIPE_HOLDER_HEARTBEAT_PATH).expect("pipe-holder heartbeat path");
+        let stopped_path =
+            std::env::var_os(PIPE_HOLDER_STOPPED_PATH).expect("pipe-holder stopped path");
         let mut holder = Command::new(std::env::current_exe().expect("test executable"));
         holder
-            .args(["--exact", TEST_NAME, "--nocapture"])
-            .env(HOLDER_MODE, "1")
-            .env(RELEASE_PATH, release_path)
-            .env(HEARTBEAT_PATH, heartbeat_path)
+            .args(["--exact", PIPE_HOLDER_TEST_NAME, "--nocapture"])
+            .env(PIPE_HOLDER_HOLDER_MODE, "1")
+            .env(PIPE_HOLDER_RELEASE_PATH, release_path)
+            .env(PIPE_HOLDER_HEARTBEAT_PATH, heartbeat_path)
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
         let mut holder = holder.spawn().expect("spawn controlled pipe holder");
         fs::write(ready_path, b"ready\n").expect("publish pipe-holder readiness");
 
-        // This controller has a monotonic upper bound independent of the
-        // parent guard. It owns the exact Child handle throughout and reaps it.
+        // The separate controller is bounded and owns/reaps the exact Child.
         let deadline = Instant::now() + Duration::from_secs(9);
-        let mut reaped = false;
-        loop {
-            if holder
-                .try_wait()
-                .expect("poll controlled pipe holder")
-                .is_some()
-            {
-                reaped = true;
-                break;
-            }
-            if Instant::now() >= deadline {
-                let _kill_result = holder.kill();
-                let reap_deadline = Instant::now() + Duration::from_secs(1);
-                while Instant::now() < reap_deadline {
-                    if holder
-                        .try_wait()
-                        .expect("poll killed pipe holder")
-                        .is_some()
-                    {
-                        reaped = true;
-                        break;
-                    }
-                    thread::sleep(Duration::from_millis(10));
-                }
-                break;
-            }
-            thread::sleep(Duration::from_millis(10));
+        let mut reaped = wait_for_child_until(&mut holder, deadline);
+        if !reaped {
+            let _kill_result = holder.kill();
+            reaped = wait_for_child_until(&mut holder, Instant::now() + Duration::from_secs(1));
         }
         if reaped {
             holder.wait().expect("reap controlled pipe holder");
         }
-        redirect_helper_stdio_to_dev_null();
+        close_helper_output_pipes();
         let cleanup_status: &[u8] = if reaped { b"reaped\n" } else { b"uncertain\n" };
         fs::write(stopped_path, cleanup_status).expect("publish pipe-holder cleanup status");
-        return;
+        return true;
     }
 
-    if std::env::var_os(CHILD_MODE).is_some() {
-        let release_path = std::env::var_os(RELEASE_PATH).expect("pipe-holder release path");
-        let ready_path = std::env::var_os(READY_PATH).expect("pipe-holder ready path");
-        let heartbeat_path = std::env::var_os(HEARTBEAT_PATH).expect("pipe-holder heartbeat path");
-        let stopped_path = std::env::var_os(STOPPED_PATH).expect("pipe-holder stopped path");
+    if std::env::var_os(PIPE_HOLDER_CHILD_MODE).is_some() {
+        let release_path =
+            std::env::var_os(PIPE_HOLDER_RELEASE_PATH).expect("pipe-holder release path");
+        let ready_path = std::env::var_os(PIPE_HOLDER_READY_PATH).expect("pipe-holder ready path");
+        let heartbeat_path =
+            std::env::var_os(PIPE_HOLDER_HEARTBEAT_PATH).expect("pipe-holder heartbeat path");
+        let stopped_path =
+            std::env::var_os(PIPE_HOLDER_STOPPED_PATH).expect("pipe-holder stopped path");
         let mut controller = Command::new(std::env::current_exe().expect("test executable"));
         controller
-            .args(["--exact", TEST_NAME, "--nocapture"])
-            .env(CONTROLLER_MODE, "1")
-            .env(RELEASE_PATH, release_path)
-            .env(READY_PATH, &ready_path)
-            .env(HEARTBEAT_PATH, heartbeat_path)
-            .env(STOPPED_PATH, stopped_path)
+            .args(["--exact", PIPE_HOLDER_TEST_NAME, "--nocapture"])
+            .env(PIPE_HOLDER_CONTROLLER_MODE, "1")
+            .env(PIPE_HOLDER_RELEASE_PATH, release_path)
+            .env(PIPE_HOLDER_READY_PATH, &ready_path)
+            .env(PIPE_HOLDER_HEARTBEAT_PATH, heartbeat_path)
+            .env(PIPE_HOLDER_STOPPED_PATH, stopped_path)
             .process_group(0);
+        // This controller deliberately outlives its short-lived test-mode parent.
+        // It has its own fixed deadline, and the outer guard releases it and waits
+        // for its `reaped` acknowledgment after the supervisor's capture returns.
+        #[expect(
+            clippy::zombie_processes,
+            reason = "the bounded separate-group controller outlives this test child and self-reaps its owned holder"
+        )]
         let _controller = controller.spawn().expect("spawn pipe-holder controller");
 
-        // The separate controller is bounded and survives the supervisor's
-        // cleanup of this test process group. Wait until it owns the holder.
         let deadline = Instant::now() + Duration::from_secs(2);
         while !Path::new(&ready_path).exists() && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(10));
+            thread::park_timeout(Duration::from_millis(10));
         }
         assert!(Path::new(&ready_path).exists(), "controller started holder");
+        return true;
+    }
+    false
+}
+
+#[test]
+fn strict_capture_rejects_surviving_pipe_holder_after_zero_exit() {
+    if run_pipe_holder_test_helper() {
         return;
     }
 
@@ -307,12 +316,12 @@ fn strict_capture_rejects_surviving_pipe_holder_after_zero_exit() {
     };
     let mut child = Command::new(std::env::current_exe().expect("test executable"));
     child
-        .args(["--exact", TEST_NAME, "--nocapture"])
-        .env(CHILD_MODE, "1")
-        .env(READY_PATH, &ready_path)
-        .env(HEARTBEAT_PATH, &heartbeat_path)
-        .env(RELEASE_PATH, &release_path)
-        .env(STOPPED_PATH, &stopped_path);
+        .args(["--exact", PIPE_HOLDER_TEST_NAME, "--nocapture"])
+        .env(PIPE_HOLDER_CHILD_MODE, "1")
+        .env(PIPE_HOLDER_READY_PATH, &ready_path)
+        .env(PIPE_HOLDER_HEARTBEAT_PATH, &heartbeat_path)
+        .env(PIPE_HOLDER_RELEASE_PATH, &release_path)
+        .env(PIPE_HOLDER_STOPPED_PATH, &stopped_path);
     let controls = SetupControls::for_test(Duration::from_millis(750));
     let error = capture_strict(
         &mut child,
@@ -345,7 +354,7 @@ fn strict_capture_rejects_surviving_pipe_holder_after_zero_exit() {
         .expect("valid pipe-holder heartbeat");
     let heartbeat_deadline = Instant::now() + Duration::from_secs(1);
     loop {
-        thread::sleep(Duration::from_millis(20));
+        thread::park_timeout(Duration::from_millis(20));
         let current_heartbeat = fs::read_to_string(&heartbeat_path)
             .expect("pipe-holder heartbeat remains available")
             .parse::<u64>()
@@ -390,16 +399,15 @@ fn strict_capture_retains_bounded_prefix_when_output_overflows() {
     let controls = SetupControls::for_test(Duration::from_secs(10));
     let mut command = Command::new("/bin/sh");
     command.args(["-c", "printf '123456789'"]);
-    let error = match capture_spooled(
+    let Err(error) = capture_spooled(
         &mut command,
         &controls,
         EnvironmentMode::Inherit,
         4,
         4,
         CommandBudget::Probe,
-    ) {
-        Ok(_) => panic!("overflow cannot be represented as a complete output"),
-        Err(error) => error,
+    ) else {
+        panic!("overflow cannot be represented as a complete output")
     };
     let failure = error
         .downcast_ref::<super::CaptureFailure>()

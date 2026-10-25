@@ -68,7 +68,7 @@ impl LiveRepository {
 
     #[cfg(test)]
     pub(super) fn capture_at(root: &Path) -> Result<Self> {
-        Self::capture_at_with_controls(root, &SetupControls::for_test(Duration::from_secs(10 * 60)))
+        Self::capture_at_with_controls(root, &SetupControls::for_test(Duration::from_mins(10)))
     }
 
     fn capture_at_with_controls(root: &Path, controls: &SetupControls) -> Result<Self> {

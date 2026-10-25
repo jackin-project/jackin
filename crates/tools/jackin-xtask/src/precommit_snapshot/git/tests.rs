@@ -83,6 +83,37 @@ fn materializes_the_index_tree_without_changing_the_live_index_or_worktree() {
 }
 
 #[test]
+fn rejects_overflowed_staged_inventory_without_changing_live_state() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let live = LiveRepository::capture_at(root).expect("capture fixture");
+    let index_before = fs::read(&live.index).expect("live index bytes");
+    let worktree_before = fs::read(root.join("staged.txt")).expect("worktree bytes");
+    let snapshot = OwnedSnapshot::create(&live).expect("private snapshot");
+    let tree = snapshot.capture_staged_tree().expect("capture staged tree");
+    snapshot
+        .materialize(&tree, &live)
+        .expect("materialize staged tree");
+
+    let error = snapshot
+        .admit_with_inventory_limit(&tree, 1)
+        .expect_err("staged inventory must fail closed when output exceeds its limit");
+    assert!(
+        format!("{error:#}").contains("stdout output exceeded spool budget 1"),
+        "expected bounded-capture overflow, got: {error:#}"
+    );
+    assert_eq!(
+        fs::read(&live.index).expect("live index remains"),
+        index_before
+    );
+    assert_eq!(
+        fs::read(root.join("staged.txt")).expect("live worktree remains"),
+        worktree_before
+    );
+    OwnedSnapshot::verify_live_index(&live).expect("live index custody remains valid");
+}
+
+#[test]
 fn git_path_record_parser_preserves_non_utf8_and_trailing_newline_bytes() {
     assert_eq!(
         super::without_record_terminator(b"/repo/\xff\n\n").expect("one record terminator"),

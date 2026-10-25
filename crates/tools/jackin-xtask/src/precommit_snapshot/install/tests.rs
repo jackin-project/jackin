@@ -56,6 +56,26 @@ fn hook_fixture() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
         .status
         .success()
     );
+    assert!(
+        git_command(
+            &repository,
+            &global,
+            &system,
+            &["config", "--local", "extensions.worktreeConfig", "true",],
+        )
+        .status
+        .success()
+    );
+    assert!(
+        git_command(
+            &repository,
+            &global,
+            &system,
+            &["config", "--worktree", "jackin.fixtureScope", "true",],
+        )
+        .status
+        .success()
+    );
     (temporary, repository, global, system)
 }
 
@@ -367,6 +387,25 @@ fn finalizes_pending_admission_only_after_head_tree_is_observed() {
 }
 
 #[test]
+fn failed_pending_finalization_preserves_marker_and_admission_state() {
+    let (_temporary, common, generation, id, tree, _cargo, _rustc) = install_fixture();
+    let owner = generation.join("owner");
+    let mut install = NativeInstall::open_with_running_path(&common, &generation, &owner).unwrap();
+    let marker = common.join("jackin-precommit-owner/pending").join(&id);
+    install.finalize_if_committed(None).unwrap();
+    fs::write(&marker, format!("{}\n", "9".repeat(40))).unwrap();
+
+    assert!(install.finalize_if_committed(Some(&tree)).is_err());
+    assert_eq!(install.pending_tree.as_deref(), Some(tree.as_str()));
+    assert!(marker.exists());
+
+    fs::write(&marker, format!("{tree}\n")).unwrap();
+    install.finalize_if_committed(Some(&tree)).unwrap();
+    assert!(install.pending_tree.is_none());
+    assert!(!marker.exists());
+}
+
+#[test]
 fn rejects_pending_marker_symlink_and_malformed_tree() {
     let (_temporary, common, generation, id, _tree, _cargo, _rustc) = install_fixture();
     let pending = common.join("jackin-precommit-owner/pending").join(id);
@@ -378,3 +417,4 @@ fn rejects_pending_marker_symlink_and_malformed_tree() {
 
 mod hooks;
 mod hooks_config;
+mod worktrees;

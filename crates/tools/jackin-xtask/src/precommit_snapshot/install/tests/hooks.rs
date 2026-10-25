@@ -3,7 +3,7 @@
 
 use super::*;
 
-fn assert_installed_hook_config(
+pub(super) fn assert_installed_hook_config(
     repository: &Path,
     global: &Path,
     system: &Path,
@@ -28,7 +28,7 @@ fn assert_installed_hook_config(
             repository,
             global,
             system,
-            &["config", "--local", "--get", key],
+            &["config", "--worktree", "--get", key],
         );
         assert!(output.status.success(), "missing {key}");
         assert_eq!(
@@ -47,7 +47,7 @@ fn assert_installed_hook_config(
             repository,
             global,
             system,
-            &["config", "--local", "--get", key],
+            &["config", "--worktree", "--get", key],
         );
         assert!(!output.status.success(), "{key} remains configured");
     }
@@ -85,12 +85,13 @@ fn hook_installer_preserves_global_hooks_and_is_idempotent_in_a_fixture_repo() {
         &repository,
         &global,
         &system,
-        "--local",
+        "--worktree",
         &[
             ("hook.hk-pre-commit.command", "obsolete"),
             ("hook.hk-pre-commit.event", "pre-commit"),
         ],
     );
+    let common_before = fs::read(repository.join(".git/config")).unwrap();
     let global_before = fs::read(&global).unwrap();
 
     let installed = install_hooks(&repository, &global, &system);
@@ -99,13 +100,17 @@ fn hook_installer_preserves_global_hooks_and_is_idempotent_in_a_fixture_repo() {
         "hooks-install: {}",
         String::from_utf8_lossy(&installed.stderr)
     );
+    assert_eq!(
+        fs::read(repository.join(".git/config")).unwrap(),
+        common_before
+    );
     assert_eq!(fs::read(&global).unwrap(), global_before);
     assert_eq!(
         fs::read_to_string(repository.join("bootstrap-events")).unwrap(),
         "bootstrap\n"
     );
     assert_installed_hook_config(&repository, &global, &system, &generation);
-    let local_after_first = fs::read(repository.join(".git/config")).unwrap();
+    let local_after_first = fs::read(repository.join(".git/config.worktree")).unwrap();
     let installed_again = install_hooks(&repository, &global, &system);
     assert!(
         installed_again.status.success(),
@@ -113,7 +118,7 @@ fn hook_installer_preserves_global_hooks_and_is_idempotent_in_a_fixture_repo() {
         String::from_utf8_lossy(&installed_again.stderr)
     );
     assert_eq!(
-        fs::read(repository.join(".git/config")).unwrap(),
+        fs::read(repository.join(".git/config.worktree")).unwrap(),
         local_after_first
     );
     assert_eq!(fs::read(&global).unwrap(), global_before);
@@ -172,9 +177,51 @@ fn hook_installer_preserves_global_hooks_and_is_idempotent_in_a_fixture_repo() {
 }
 
 #[test]
+fn hook_installer_refuses_unenabled_worktree_config_before_bootstrap() {
+    let (_temporary, repository, global, system) = hook_fixture();
+    let bootstrap_events = repository.join("bootstrap-events");
+    fs::write(
+        repository.join("scripts/hooks-native-bootstrap"),
+        b"#!/bin/sh\nprintf '%s\\n' unexpectedly-ran >> bootstrap-events\nexit 23\n",
+    )
+    .unwrap();
+    assert!(
+        git_command(
+            &repository,
+            &global,
+            &system,
+            &["config", "--local", "--unset", "extensions.worktreeConfig"],
+        )
+        .status
+        .success()
+    );
+    let common_before = fs::read(repository.join(".git/config")).unwrap();
+    let worktree_before = fs::read(repository.join(".git/config.worktree")).unwrap();
+    let global_before = fs::read(&global).unwrap();
+
+    let result = install_hooks(&repository, &global, &system);
+
+    assert!(!result.status.success());
+    assert!(
+        String::from_utf8_lossy(&result.stderr)
+            .contains("extensions.worktreeConfig must be enabled")
+    );
+    assert!(!bootstrap_events.exists(), "bootstrap ran before refusal");
+    assert_eq!(
+        fs::read(repository.join(".git/config")).unwrap(),
+        common_before
+    );
+    assert_eq!(
+        fs::read(repository.join(".git/config.worktree")).unwrap(),
+        worktree_before
+    );
+    assert_eq!(fs::read(&global).unwrap(), global_before);
+}
+
+#[test]
 fn hook_installer_rejects_failed_native_bootstrap_before_config_mutation() {
     let (_temporary, repository, global, system) = hook_fixture();
-    let local_config = repository.join(".git/config");
+    let local_config = repository.join(".git/config.worktree");
     let local_before = fs::read(&local_config).unwrap();
     let global_before = fs::read(&global).unwrap();
     fs::write(
@@ -201,7 +248,7 @@ fn hook_installer_rejects_failed_native_bootstrap_before_config_mutation() {
 #[test]
 fn hook_installer_rejects_unverified_generation_path_before_config_mutation() {
     let (_temporary, repository, global, system) = hook_fixture();
-    let local_config = repository.join(".git/config");
+    let local_config = repository.join(".git/config.worktree");
     let local_before = fs::read(&local_config).unwrap();
     let global_before = fs::read(&global).unwrap();
     fs::write(
@@ -222,7 +269,7 @@ fn hook_installer_rejects_unverified_generation_path_before_config_mutation() {
 fn hook_installer_rejects_unsupported_git_without_config_mutation() {
     let (_temporary, repository, global, system) = hook_fixture();
     let _generation = prepare_bootstrap_generation(&repository);
-    let local_config = repository.join(".git/config");
+    let local_config = repository.join(".git/config.worktree");
     let before = fs::read(&local_config).unwrap();
     let mut find_git = Command::new("/usr/bin/which");
     let real_git = capture(find_git.arg("git")).expect("find git");

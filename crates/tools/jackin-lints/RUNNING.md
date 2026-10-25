@@ -59,7 +59,7 @@ unchanged. This pre-existing upstream dependency incompatibility requires a
 separate dependency correction; it is not suppressed or treated as a passing
 workspace lint run. The historical pilot result below is not a current result.
 
-The canonical Mise task runs its regression controls and complete check in one
-native xtask. It installs no toolchain and makes
+The canonical Mise task runs the 11 selected Rust regression tests through pinned
+Nextest before it starts the complete check. It installs no toolchain and makes
 no directory-level Rustup override. The task remains a local pilot, not a
 required native preview or CI gate.

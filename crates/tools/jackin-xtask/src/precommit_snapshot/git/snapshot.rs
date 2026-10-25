@@ -135,10 +135,18 @@ impl OwnedSnapshot {
         Ok(())
     }
 
-    pub(in crate::precommit_snapshot) fn admit(&self, _tree: &OsStr) -> Result<()> {
+    pub(in crate::precommit_snapshot) fn admit(&self, tree: &OsStr) -> Result<()> {
+        self.admit_with_inventory_limit(tree, STAGED_INDEX_OUTPUT_LIMIT)
+    }
+
+    pub(in crate::precommit_snapshot) fn admit_with_inventory_limit(
+        &self,
+        _tree: &OsStr,
+        inventory_limit: usize,
+    ) -> Result<()> {
         let mut entries = self.git_spooled(
             &["ls-files", "--stage", "-z"],
-            STAGED_INDEX_OUTPUT_LIMIT,
+            inventory_limit,
             STAGED_INDEX_STDERR_LIMIT,
             CommandBudget::PhaseRemainder,
         )?;
