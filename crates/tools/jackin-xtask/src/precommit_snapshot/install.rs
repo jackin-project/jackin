@@ -57,56 +57,54 @@ impl NativeInstall {
             owner_root == common_git_dir.join("jackin-precommit-owner"),
             "native hook install root is not physical"
         );
-        let root = CheckedInstallRoot::from_absolute_directory(&owner_root)
+        let _root = CheckedInstallRoot::from_absolute_directory(&owner_root)
             .context("checking native hook install root")?;
-        let active = root
-            .open_file(Path::new("active"), InstallFileKind::Receipt)
-            .context("opening active native hook generation")?;
-        let active_id = read_checked(&active, 65, "active generation")?;
-        let active_id = parse_one_line(&active_id, "active generation")?;
-        validate_hex(active_id, 64, "active generation")?;
-
-        let expected = owner_root.join("generations").join(active_id);
+        let generations_path = owner_root.join("generations");
         ensure!(
             selected_generation.is_absolute(),
             "selected native hook generation is not absolute"
         );
+        let generation_id = selected_generation
+            .file_name()
+            .and_then(|name| name.to_str())
+            .context("selected native hook generation has no canonical identifier")?;
+        validate_hex(generation_id, 64, "selected native hook generation")?;
+        let expected = generations_path.join(generation_id);
         ensure!(
-            selected_generation == expected,
-            "launcher selected a generation other than the active generation"
+            selected_generation.as_os_str() == expected.as_os_str(),
+            "launcher selected a generation outside the immutable install root"
         );
         let generation = fs::canonicalize(selected_generation)
             .context("resolving selected native hook generation")?;
         ensure!(
-            generation == selected_generation,
+            generation.as_os_str() == expected.as_os_str(),
             "selected native hook generation traverses a symlink"
         );
         validate_directory(
-            &owner_root.join("generations"),
+            &generations_path,
             0o700,
             "native hook generations directory",
         )?;
         validate_directory(&generation, 0o500, "native hook generation")?;
 
-        let generations_root =
-            CheckedInstallRoot::from_absolute_directory(&owner_root.join("generations"))
-                .context("checking immutable native hook generations root")?;
+        let generations_root = CheckedInstallRoot::from_absolute_directory(&generations_path)
+            .context("checking immutable native hook generations root")?;
         let manifest_file = generations_root
             .open_file(
-                Path::new(&format!("{active_id}/install.manifest")),
+                Path::new(&format!("{generation_id}/install.manifest")),
                 InstallFileKind::Script,
             )
             .context("opening immutable native hook manifest")?;
         let manifest_bytes = read_checked(&manifest_file, MANIFEST_LIMIT, "native hook manifest")?;
         let manifest = InstallManifest::parse(&manifest_bytes)?;
         ensure!(
-            manifest.generation == active_id,
+            manifest.generation == generation_id,
             "native hook manifest generation mismatch"
         );
         let owner_path = generation.join("owner");
         let owner_file = generations_root
             .open_file(
-                Path::new(&format!("{active_id}/owner")),
+                Path::new(&format!("{generation_id}/owner")),
                 InstallFileKind::SealedCopy,
             )
             .context("opening immutable native hook owner")?;
@@ -122,7 +120,7 @@ impl NativeInstall {
             "running native hook owner does not match selected generation"
         );
 
-        let pending_tree = read_pending(&owner_root, active_id)?;
+        let pending_tree = read_pending(&owner_root, generation_id)?;
         ensure!(
             pending_tree
                 .as_deref()

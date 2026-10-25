@@ -2,11 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{bundle::parse_request, validate_hook_config};
+use anyhow::{Context, Result};
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
     process::{Command, Stdio},
 };
+
+fn private_temporary_directory() -> Result<tempfile::TempDir> {
+    let home = std::env::var_os("HOME").context("HOME is required for the private test fixture")?;
+    let home = std::path::PathBuf::from(home).canonicalize()?;
+    Ok(tempfile::Builder::new()
+        .prefix("jackin-precommit-test-")
+        .tempdir_in(home)?)
+}
 
 fn request() -> Vec<u8> {
     format!(
@@ -24,7 +33,7 @@ fn request() -> Vec<u8> {
 }
 
 #[test]
-fn request_parser_accepts_only_the_fixed_ordered_record() -> anyhow::Result<()> {
+fn request_parser_accepts_only_the_fixed_ordered_record() -> Result<()> {
     let bytes = request();
     let parsed = parse_request(&bytes)?;
     assert_eq!(parsed.reviewed_tree, "a".repeat(40));
@@ -44,7 +53,7 @@ fn request_parser_accepts_only_the_fixed_ordered_record() -> anyhow::Result<()> 
 }
 
 #[test]
-fn request_parser_rejects_reordered_fields_and_wrong_digest_length() -> anyhow::Result<()> {
+fn request_parser_rejects_reordered_fields_and_wrong_digest_length() -> Result<()> {
     let valid = String::from_utf8(request())?;
     let reordered = valid.replacen("build-commit=", "source-sha256=", 1);
     assert!(parse_request(reordered.as_bytes()).is_err());
@@ -57,8 +66,8 @@ fn request_parser_rejects_reordered_fields_and_wrong_digest_length() -> anyhow::
 }
 
 #[test]
-fn hook_config_custody_checks_selected_config_and_existing_lock() -> anyhow::Result<()> {
-    let temporary = tempfile::tempdir()?;
+fn hook_config_custody_checks_selected_config_and_existing_lock() -> Result<()> {
+    let temporary = private_temporary_directory()?;
     let repository = temporary.path().canonicalize()?.join("repository");
     fs::create_dir(&repository)?;
     let initialized = Command::new("git")
@@ -86,8 +95,8 @@ fn hook_config_custody_checks_selected_config_and_existing_lock() -> anyhow::Res
 }
 
 #[test]
-fn hook_config_custody_selects_worktree_config_when_enabled() -> anyhow::Result<()> {
-    let temporary = tempfile::tempdir()?;
+fn hook_config_custody_selects_worktree_config_when_enabled() -> Result<()> {
+    let temporary = private_temporary_directory()?;
     let repository = temporary.path().canonicalize()?.join("repository");
     fs::create_dir(&repository)?;
     let initialized = Command::new("git")
@@ -129,8 +138,8 @@ fn hook_config_custody_selects_worktree_config_when_enabled() -> anyhow::Result<
 }
 
 #[test]
-fn hook_config_custody_accepts_linked_worktree_config_parent() -> anyhow::Result<()> {
-    let temporary = tempfile::tempdir()?;
+fn hook_config_custody_accepts_linked_worktree_config_parent() -> Result<()> {
+    let temporary = private_temporary_directory()?;
     let repository = temporary.path().canonicalize()?.join("repository");
     let worktree = temporary.path().canonicalize()?.join("linked-worktree");
     fs::create_dir(&repository)?;

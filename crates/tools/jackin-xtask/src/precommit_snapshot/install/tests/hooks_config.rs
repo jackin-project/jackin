@@ -6,7 +6,33 @@ use super::*;
 #[test]
 fn installer_keeps_old_hook_enabled_if_candidate_config_update_fails() {
     let (_temporary, repository, global, system) = hook_fixture();
-    let _generation = prepare_bootstrap_generation(&repository);
+    let generation_a = prepare_bootstrap_generation(&repository);
+    let generation_id_a = generation_a.file_name().unwrap().to_string_lossy();
+    let generation_id_d = "d".repeat(64);
+    let generation_d = generation_a.parent().unwrap().join(&generation_id_d);
+    fs::create_dir(&generation_d).unwrap();
+    fs::copy(generation_a.join("owner"), generation_d.join("owner")).unwrap();
+    fs::set_permissions(
+        generation_d.join("owner"),
+        fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    fs::set_permissions(&generation_d, fs::Permissions::from_mode(0o700)).unwrap();
+    let active = repository.join(".git/jackin-precommit-owner/active");
+    fs::write(&active, format!("{generation_id_a}\n")).unwrap();
+    fs::set_permissions(&active, fs::Permissions::from_mode(0o600)).unwrap();
+    let old_owner_command = format!(
+        "\"{}/owner\" run-installed-snapshot \"{}\"",
+        generation_a.display(),
+        generation_a.display()
+    );
+    let old_hook = repository.join("scripts/old-hook");
+    fs::write(
+        &old_hook,
+        b"#!/bin/sh\nprintf '%s\\n' old-hook >> hook-events\n",
+    )
+    .unwrap();
+    fs::set_permissions(&old_hook, fs::Permissions::from_mode(0o755)).unwrap();
     set_hook_values(
         &repository,
         &global,
@@ -16,8 +42,18 @@ fn installer_keeps_old_hook_enabled_if_candidate_config_update_fails() {
             ("hook.hk-pre-commit.enabled", "true"),
             ("hook.hk-pre-commit.command", "sh scripts/old-hook"),
             ("hook.hk-pre-commit.event", "pre-commit"),
+            ("hook.jackin-pre-commit.command", old_owner_command.as_str()),
+            ("hook.jackin-pre-commit.event", "pre-commit"),
+            ("hook.jackin-pre-commit.enabled", "true"),
         ],
     );
+    fs::write(
+        repository.join("scripts/hooks-native-bootstrap"),
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' bootstrap >> bootstrap-events\nprintf '%s\\n' '{generation_id_d}' > .git/jackin-precommit-owner/active\nchmod 600 .git/jackin-precommit-owner/active\nprintf '%s\\n' \"$PWD/.git/jackin-precommit-owner/generations/{generation_id_d}\"\n"
+        ),
+    )
+    .unwrap();
     let local_config = repository.join(".git/config");
     let local_before = fs::read(&local_config).unwrap();
     let lock_path = repository.join(".git/config.lock");
@@ -56,6 +92,10 @@ fn installer_keeps_old_hook_enabled_if_candidate_config_update_fails() {
     assert_eq!(fs::read(local_config).unwrap(), local_before);
     assert!(!lock_path.exists());
     assert_eq!(
+        fs::read_to_string(&active).unwrap(),
+        format!("{generation_id_d}\n")
+    );
+    assert_eq!(
         git_command(
             &repository,
             &global,
@@ -64,6 +104,38 @@ fn installer_keeps_old_hook_enabled_if_candidate_config_update_fails() {
         )
         .stdout,
         b"true\n"
+    );
+    assert_eq!(
+        git_command(
+            &repository,
+            &global,
+            &system,
+            &[
+                "config",
+                "--local",
+                "--get",
+                "hook.jackin-pre-commit.command",
+            ],
+        )
+        .stdout,
+        format!("{old_owner_command}\n").as_bytes()
+    );
+    let previous_hook = git_command(
+        &repository,
+        &global,
+        &system,
+        &["hook", "run", "pre-commit"],
+    );
+    assert!(
+        previous_hook.status.success(),
+        "previous immutable generation remains runnable after active advances: {}",
+        String::from_utf8_lossy(&previous_hook.stderr)
+    );
+    assert!(
+        fs::read_to_string(repository.join("hook-events"))
+            .unwrap()
+            .lines()
+            .any(|event| event == "snapshot")
     );
 }
 

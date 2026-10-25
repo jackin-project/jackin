@@ -5,7 +5,10 @@ use super::{
     GateCompletion, LiveRepository, OwnedSnapshot, checked, index_inputs, isolated_git,
     private_spool, validate_link, write_private_new,
 };
-use crate::precommit_snapshot::{process::capture, toolchain::QualifiedTools};
+use crate::precommit_snapshot::{
+    process::{capture, capture_limited},
+    toolchain::QualifiedTools,
+};
 use anyhow::{Context, Result, bail, ensure};
 use jackin_process::{ExecRequest, StdioMode, exec_spooled_sync_cancellable};
 use std::{
@@ -239,8 +242,10 @@ impl OwnedSnapshot {
     }
 
     pub(in crate::precommit_snapshot) fn collect_fixes(&self, tree: &OsStr) -> Result<Vec<u8>> {
+        const PATH_LIST_LIMIT: usize = 64 * 1024 * 1024;
+        const PATCH_LIMIT: usize = 256 * 1024 * 1024;
         let paths = self.scratch_root.join("new-paths");
-        let listed = self.git_bytes(&["ls-files", "--others", "-z"])?;
+        let listed = self.git_bytes_limited(&["ls-files", "--others", "-z"], PATH_LIST_LIMIT)?;
         write_private_new(&paths, &listed)?;
         if !listed.is_empty() {
             let pathspec = OsString::from(format!("--pathspec-from-file={}", paths.display()));
@@ -261,7 +266,7 @@ impl OwnedSnapshot {
             OsString::from("--"),
         ];
         // The tree hash is an object identifier from write-tree, never user input.
-        let output = self.git_bytes(&args)?;
+        let output = self.git_bytes_limited(&args, PATCH_LIMIT)?;
         Ok(output)
     }
 
@@ -285,6 +290,12 @@ impl OwnedSnapshot {
     fn git_bytes(&self, args: &[impl AsRef<OsStr>]) -> Result<Vec<u8>> {
         let output =
             capture(&mut self.git_command(args)).context("running isolated Git command")?;
+        checked(output, "running isolated Git command")
+    }
+
+    fn git_bytes_limited(&self, args: &[impl AsRef<OsStr>], limit: usize) -> Result<Vec<u8>> {
+        let output = capture_limited(&mut self.git_command(args), limit, 1024 * 1024)
+            .context("capturing bounded isolated Git output")?;
         checked(output, "running isolated Git command")
     }
 

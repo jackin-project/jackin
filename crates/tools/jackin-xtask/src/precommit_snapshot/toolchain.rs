@@ -28,6 +28,8 @@ pub(super) fn verify_provision_tool_paths(
 }
 
 const MANAGED_TOOLS: &[&str] = &[
+    #[cfg(target_os = "macos")]
+    "swiftlint",
     "hk",
     "jactionlint",
     "shellcheck",
@@ -127,11 +129,9 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         .parent()
         .context("rustc path has no bin directory")?
         .to_path_buf();
-    let mut path_entries = vec![managed_dir, rust_bin];
-    path_entries.extend(env::split_paths(&inherited_path));
     environment.insert(
         OsString::from("PATH"),
-        env::join_paths(path_entries).context("building qualified tool path")?,
+        qualified_path(&managed_dir, &rust_bin, &inherited_path)?,
     );
     let selected_path = environment
         .get(OsStr::new("PATH"))
@@ -205,8 +205,7 @@ fn resolve_managed_tools(
     environment: &BTreeMap<OsString, OsString>,
     root: &Path,
 ) -> Result<BTreeMap<&'static str, PathBuf>> {
-    let mut resolved = BTreeMap::new();
-    for name in MANAGED_TOOLS.iter().copied() {
+    resolve_tool_paths(MANAGED_TOOLS, |name| {
         let mut command = Command::new(mise);
         command
             .args([OsStr::new("which"), OsStr::new(name)])
@@ -223,9 +222,29 @@ fn resolve_managed_tools(
             path.is_file(),
             "staged Mise tool is not a regular file: {name}"
         );
-        resolved.insert(name, path);
+        Ok(path)
+    })
+}
+
+fn resolve_tool_paths<F>(
+    names: &[&'static str],
+    mut resolve: F,
+) -> Result<BTreeMap<&'static str, PathBuf>>
+where
+    F: FnMut(&'static str) -> Result<PathBuf>,
+{
+    let mut resolved = BTreeMap::new();
+    for name in names.iter().copied() {
+        resolved.insert(name, resolve(name)?);
     }
     Ok(resolved)
+}
+
+fn qualified_path(managed_dir: &Path, rust_bin: &Path, inherited_path: &OsStr) -> Result<OsString> {
+    let path_entries = std::iter::once(managed_dir.to_path_buf())
+        .chain(std::iter::once(rust_bin.to_path_buf()))
+        .chain(env::split_paths(inherited_path));
+    env::join_paths(path_entries).context("building qualified tool path")
 }
 
 fn resolve_rust_tools(

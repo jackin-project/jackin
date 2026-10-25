@@ -7,15 +7,17 @@ use std::{
     fs,
     io::Write,
     os::unix::{
-        ffi::OsStrExt,
+        ffi::{OsStrExt, OsStringExt},
         fs::{MetadataExt, PermissionsExt, symlink},
     },
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
+    thread,
 };
 
 use tempfile::TempDir;
 
+use super::super::SetupSignals;
 use super::super::process::capture;
 use super::{LiveRepository, OwnedSnapshot, validate_link};
 use crate::precommit_snapshot::toolchain::QualifiedTools;
@@ -218,6 +220,139 @@ fn failed_gate_keeps_bounded_diagnostics_in_private_spools() {
         b"gate-error\n"
     );
     assert!(completion.cleanup.group_drained);
+}
+
+#[test]
+fn setup_signal_after_snapshot_allocation_drops_private_snapshot() {
+    const CHILD_MARKER: &str = "JACKIN_SETUP_SIGNAL_CHILD";
+    const FIXTURE_ROOT: &str = "JACKIN_SETUP_SIGNAL_FIXTURE";
+    const READY_PATH: &str = "JACKIN_SETUP_SIGNAL_READY";
+
+    if std::env::var_os(CHILD_MARKER).is_some() {
+        let signals = SetupSignals::register().expect("register setup signals");
+        let root = PathBuf::from(std::env::var_os(FIXTURE_ROOT).expect("fixture root"));
+        let live = LiveRepository::capture_at(&root).expect("capture fixture");
+        let index_before = fs::read(&live.index).expect("read live index");
+        let file_before = fs::read(root.join("staged.txt")).expect("read live worktree");
+        let snapshot = OwnedSnapshot::create(&live).expect("private snapshot");
+        let scratch_root = snapshot.scratch_root.clone();
+        let tree = snapshot.capture_staged_tree().expect("capture staged tree");
+        snapshot
+            .materialize(&tree, &live)
+            .expect("materialize staged tree");
+        let ready = PathBuf::from(std::env::var_os(READY_PATH).expect("readiness path"));
+        let pending = ready.with_extension("pending");
+        fs::write(&pending, scratch_root.as_os_str().as_bytes()).expect("write readiness record");
+        fs::rename(pending, ready).expect("publish readiness record");
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while (signals.signal_status().is_none()
+            || !signals
+                .cancellation
+                .load(std::sync::atomic::Ordering::Relaxed))
+            && std::time::Instant::now() < deadline
+        {
+            thread::park_timeout(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(signals.signal_status(), Some(143));
+        assert!(signals.term.load(std::sync::atomic::Ordering::Relaxed));
+        assert!(
+            signals
+                .cancellation
+                .load(std::sync::atomic::Ordering::Relaxed)
+        );
+        drop(snapshot);
+        assert_eq!(
+            fs::read(&live.index).expect("live index remains"),
+            index_before
+        );
+        assert_eq!(
+            fs::read(root.join("staged.txt")).expect("live worktree remains"),
+            file_before
+        );
+        return;
+    }
+
+    let fixture = fixture();
+    let root = fixture.path();
+    let live = LiveRepository::capture_at(root).expect("capture fixture");
+    let index_before = fs::read(&live.index).expect("read live index");
+    let file_before = fs::read(root.join("staged.txt")).expect("read live worktree");
+    let control = tempfile::tempdir().expect("control directory");
+    let ready = control.path().join("ready");
+    struct ChildCleanup {
+        child: std::process::Child,
+        complete: bool,
+    }
+    impl Drop for ChildCleanup {
+        fn drop(&mut self) {
+            if !self.complete {
+                drop(self.child.kill());
+                drop(self.child.wait());
+            }
+        }
+    }
+    let mut child = ChildCleanup {
+        child: Command::new(
+            std::env::current_exe().expect("test executable"),
+        )
+        .args([
+            "--exact",
+            "precommit_snapshot::git::tests::setup_signal_after_snapshot_allocation_drops_private_snapshot",
+            "--nocapture",
+        ])
+        .env(CHILD_MARKER, "1")
+        .env(FIXTURE_ROOT, root)
+        .env(READY_PATH, &ready)
+        .spawn()
+        .expect("spawn isolated setup-signal test process"),
+        complete: false,
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !ready.exists() && std::time::Instant::now() < deadline {
+        if let Some(status) = child.child.try_wait().expect("check child status") {
+            child.complete = true;
+            panic!("child exited before setup readiness: {status}");
+        }
+        thread::park_timeout(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        ready.exists(),
+        "child must finish snapshot setup before signal"
+    );
+    let scratch_root = PathBuf::from(OsString::from_vec(
+        fs::read(&ready).expect("read private snapshot path"),
+    ));
+    let child_pid = child.child.id().to_string();
+    let signal = Command::new("/bin/kill")
+        .arg("-TERM")
+        .arg(child_pid)
+        .status()
+        .expect("send TERM to child");
+    assert!(signal.success(), "TERM delivery must succeed");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let status = loop {
+        if let Some(status) = child.child.try_wait().expect("check child completion") {
+            child.complete = true;
+            break status;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "child did not complete setup cancellation"
+        );
+        thread::park_timeout(std::time::Duration::from_millis(10));
+    };
+    assert!(status.success(), "signal must be handled: {status}");
+    assert!(!scratch_root.exists(), "private snapshot must be removed");
+    assert_eq!(
+        fs::read(&live.index).expect("live index remains"),
+        index_before
+    );
+    assert_eq!(
+        fs::read(root.join("staged.txt")).expect("live worktree remains"),
+        file_before
+    );
 }
 
 mod index;

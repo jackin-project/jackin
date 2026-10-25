@@ -228,6 +228,41 @@ fn install_fixture() -> (
     )
 }
 
+fn add_install_generation(common: &Path, generation_id: &str, tree: &str) -> PathBuf {
+    let install_root = common.join("jackin-precommit-owner");
+    let generations = install_root.join("generations");
+    let original_id = "a".repeat(64);
+    let original = generations.join(&original_id);
+    let generation = generations.join(generation_id);
+    fs::create_dir(&generation).unwrap();
+    let owner = fs::read(original.join("owner")).unwrap();
+    fs::write(generation.join("owner"), &owner).unwrap();
+    fs::set_permissions(generation.join("owner"), fs::Permissions::from_mode(0o500)).unwrap();
+    let original_manifest = fs::read_to_string(original.join("install.manifest")).unwrap();
+    let manifest = original_manifest.replace(
+        &format!("generation={original_id}\n"),
+        &format!("generation={generation_id}\n"),
+    );
+    fs::write(generation.join("install.manifest"), manifest).unwrap();
+    fs::set_permissions(
+        generation.join("install.manifest"),
+        fs::Permissions::from_mode(0o400),
+    )
+    .unwrap();
+    fs::set_permissions(&generation, fs::Permissions::from_mode(0o500)).unwrap();
+    fs::write(
+        install_root.join("pending").join(generation_id),
+        format!("{tree}\n"),
+    )
+    .unwrap();
+    fs::set_permissions(
+        install_root.join("pending").join(generation_id),
+        fs::Permissions::from_mode(0o600),
+    )
+    .unwrap();
+    generation
+}
+
 #[test]
 fn validates_selected_generation_and_pending_tree() {
     let (_temporary, common, generation, _id, tree, cargo, rustc) = install_fixture();
@@ -242,7 +277,7 @@ fn validates_selected_generation_and_pending_tree() {
 }
 
 #[test]
-fn rejects_owner_hash_active_generation_and_permission_mismatches() {
+fn rejects_owner_hash_and_permission_mismatches() {
     let (_temporary, common, generation, _id, _tree, _cargo, _rustc) = install_fixture();
     let owner = generation.join("owner");
     let mut changed = fs::read(&owner).unwrap();
@@ -252,21 +287,65 @@ fn rejects_owner_hash_active_generation_and_permission_mismatches() {
     fs::set_permissions(&owner, fs::Permissions::from_mode(0o500)).unwrap();
     assert!(NativeInstall::open_with_running_path(&common, &generation, &owner).is_err());
 
-    fs::write(
-        common.join("jackin-precommit-owner/active"),
-        format!("{}\n", "9".repeat(64)),
-    )
-    .unwrap();
-    fs::set_permissions(
-        common.join("jackin-precommit-owner/active"),
-        fs::Permissions::from_mode(0o600),
-    )
-    .unwrap();
-    assert!(NativeInstall::open_with_running_path(&common, &generation, &owner).is_err());
-
     let (_temporary, common, generation, _id, _tree, _cargo, _rustc) = install_fixture();
     let owner = generation.join("owner");
     fs::set_permissions(&owner, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(NativeInstall::open_with_running_path(&common, &generation, &owner).is_err());
+}
+
+#[test]
+fn selected_worktree_generation_is_independent_of_shared_active_pointer() {
+    let (_temporary, common, generation_a, id_a, tree, _cargo, _rustc) = install_fixture();
+    let id_d = "d".repeat(64);
+    let generation_d = add_install_generation(&common, &id_d, &tree);
+    let active = common.join("jackin-precommit-owner/active");
+
+    fs::write(&active, format!("{id_d}\n")).unwrap();
+    let owner_a = generation_a.join("owner");
+    NativeInstall::open_with_running_path(&common, &generation_a, &owner_a)
+        .expect("worktree A remains valid while shared active pointer selects D");
+
+    fs::write(&active, format!("{id_a}\n")).unwrap();
+    let owner_d = generation_d.join("owner");
+    NativeInstall::open_with_running_path(&common, &generation_d, &owner_d)
+        .expect("worktree D remains valid while shared active pointer selects A");
+}
+
+#[test]
+fn rejects_selected_generations_outside_or_not_physical_in_the_immutable_root() {
+    let (temporary, common, generation, _id, _tree, _cargo, _rustc) = install_fixture();
+    let generations = common.join("jackin-precommit-owner/generations");
+    let owner = generation.join("owner");
+    let outside = temporary.path().join("outside").join("b".repeat(64));
+    assert!(NativeInstall::open_with_running_path(&common, &outside, &owner).is_err());
+
+    let malformed = generations.join("not-a-generation-id");
+    assert!(NativeInstall::open_with_running_path(&common, &malformed, &owner).is_err());
+
+    let alias = generations.join("b".repeat(64));
+    std::os::unix::fs::symlink(&generation, &alias).unwrap();
+    let alias_owner = alias.join("owner");
+    assert!(NativeInstall::open_with_running_path(&common, &alias, &alias_owner).is_err());
+
+    let noncanonical = generations.join(".").join(generation.file_name().unwrap());
+    assert!(NativeInstall::open_with_running_path(&common, &noncanonical, &owner).is_err());
+}
+
+#[test]
+fn rejects_manifest_generation_that_disagrees_with_selected_path() {
+    let (_temporary, common, generation, _id, _tree, _cargo, _rustc) = install_fixture();
+    let manifest = generation.join("install.manifest");
+    fs::set_permissions(&generation, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::set_permissions(&manifest, fs::Permissions::from_mode(0o600)).unwrap();
+    let bytes = fs::read_to_string(&manifest).unwrap();
+    let changed = bytes.replace(
+        &format!("generation={}\n", "a".repeat(64)),
+        &format!("generation={}\n", "d".repeat(64)),
+    );
+    fs::write(&manifest, changed).unwrap();
+    fs::set_permissions(&manifest, fs::Permissions::from_mode(0o400)).unwrap();
+    fs::set_permissions(&generation, fs::Permissions::from_mode(0o500)).unwrap();
+    let owner = generation.join("owner");
     assert!(NativeInstall::open_with_running_path(&common, &generation, &owner).is_err());
 }
 

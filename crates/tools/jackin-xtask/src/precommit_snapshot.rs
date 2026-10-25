@@ -25,6 +25,52 @@ pub(crate) fn verify_provision_tool_paths(
     toolchain::verify_provision_tool_paths(source_root, cargo, rustc)
 }
 
+struct SetupSignals {
+    cancellation: Arc<AtomicBool>,
+    hup: Arc<AtomicBool>,
+    int: Arc<AtomicBool>,
+    term: Arc<AtomicBool>,
+}
+
+impl SetupSignals {
+    fn register() -> Result<Self> {
+        let signals = Self {
+            cancellation: Arc::new(AtomicBool::new(false)),
+            hup: Arc::new(AtomicBool::new(false)),
+            int: Arc::new(AtomicBool::new(false)),
+            term: Arc::new(AtomicBool::new(false)),
+        };
+        for (signal, flag) in [
+            (signal_hook::consts::signal::SIGHUP, &signals.hup),
+            (signal_hook::consts::signal::SIGINT, &signals.int),
+            (signal_hook::consts::signal::SIGTERM, &signals.term),
+            (signal_hook::consts::signal::SIGHUP, &signals.cancellation),
+            (signal_hook::consts::signal::SIGINT, &signals.cancellation),
+            (signal_hook::consts::signal::SIGTERM, &signals.cancellation),
+        ] {
+            flag::register(signal, Arc::clone(flag))
+                .context("registering native hook cancellation")?;
+        }
+        Ok(signals)
+    }
+
+    fn signal_status(&self) -> Option<u8> {
+        if self.term.load(std::sync::atomic::Ordering::Relaxed) {
+            Some(143)
+        } else if self.int.load(std::sync::atomic::Ordering::Relaxed) {
+            Some(130)
+        } else if self.hup.load(std::sync::atomic::Ordering::Relaxed) {
+            Some(129)
+        } else {
+            None
+        }
+    }
+
+    fn exit_code(&self) -> Option<ExitCode> {
+        self.signal_status().map(ExitCode::from)
+    }
+}
+
 use std::{
     ffi::OsString,
     io::Write,
@@ -39,42 +85,48 @@ pub(crate) fn run_installed_from_hook(
     generation: &std::path::Path,
     arguments: &[OsString],
 ) -> Result<ExitCode> {
+    // Install handlers before repository capture or private snapshot setup can
+    // allocate resources. Setup commands remain synchronous; each phase checks
+    // cancellation after its child has exited and been reaped.
+    let signals = SetupSignals::register()?;
+    if let Some(code) = signals.exit_code() {
+        return Ok(code);
+    }
     let live = git::LiveRepository::capture()?;
+    if let Some(code) = signals.exit_code() {
+        return Ok(code);
+    }
     let mut installation = install::NativeInstall::open(&live.common_git_dir, generation)?;
     installation.finalize_if_committed(live.head_tree.as_deref())?;
+    if let Some(code) = signals.exit_code() {
+        return Ok(code);
+    }
     let mut snapshot = git::OwnedSnapshot::create(&live)?;
+    if let Some(code) = signals.exit_code() {
+        return Ok(code);
+    }
     let tree = snapshot.capture_staged_tree()?;
+    if let Some(code) = signals.exit_code() {
+        return Ok(code);
+    }
     installation.check_pending_tree(&tree.to_string_lossy())?;
     snapshot.materialize(&tree, &live)?;
+    if let Some(code) = signals.exit_code() {
+        return Ok(code);
+    }
     snapshot.admit(&tree)?;
+    if let Some(code) = signals.exit_code() {
+        return Ok(code);
+    }
     let tools = toolchain::qualify(&snapshot)?;
+    if let Some(code) = signals.exit_code() {
+        return Ok(code);
+    }
     installation.verify_tool_hashes(&tools.cargo, &tools.rustc)?;
-    let cancellation = Arc::new(AtomicBool::new(false));
-    let hup = Arc::new(AtomicBool::new(false));
-    let int = Arc::new(AtomicBool::new(false));
-    let term = Arc::new(AtomicBool::new(false));
-    flag::register(signal_hook::consts::signal::SIGHUP, Arc::clone(&hup))
-        .context("registering HUP cancellation")?;
-    flag::register(signal_hook::consts::signal::SIGINT, Arc::clone(&int))
-        .context("registering INT cancellation")?;
-    flag::register(signal_hook::consts::signal::SIGTERM, Arc::clone(&term))
-        .context("registering TERM cancellation")?;
-    flag::register(
-        signal_hook::consts::signal::SIGHUP,
-        Arc::clone(&cancellation),
-    )
-    .context("registering HUP cancellation")?;
-    flag::register(
-        signal_hook::consts::signal::SIGINT,
-        Arc::clone(&cancellation),
-    )
-    .context("registering INT cancellation")?;
-    flag::register(
-        signal_hook::consts::signal::SIGTERM,
-        Arc::clone(&cancellation),
-    )
-    .context("registering TERM cancellation")?;
-    let completion = snapshot.run_gate(&tools, arguments, &cancellation)?;
+    if let Some(code) = signals.exit_code() {
+        return Ok(code);
+    }
+    let completion = snapshot.run_gate(&tools, arguments, &signals.cancellation)?;
     if !completion.cleanup.group_drained || completion.cleanup.recovery.is_some() {
         let retained = snapshot
             .retain()
@@ -113,14 +165,8 @@ pub(crate) fn run_installed_from_hook(
             return Ok(ExitCode::FAILURE);
         }
     }
-    if term.load(std::sync::atomic::Ordering::Relaxed) {
-        return Ok(ExitCode::from(143));
-    }
-    if int.load(std::sync::atomic::Ordering::Relaxed) {
-        return Ok(ExitCode::from(130));
-    }
-    if hup.load(std::sync::atomic::Ordering::Relaxed) {
-        return Ok(ExitCode::from(129));
+    if let Some(code) = signals.exit_code() {
+        return Ok(code);
     }
     if completion.success {
         Ok(ExitCode::SUCCESS)

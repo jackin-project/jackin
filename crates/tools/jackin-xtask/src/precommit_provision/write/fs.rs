@@ -313,7 +313,7 @@ fn validate_named_identity(parent: &File, name: &str, file: &File) -> Result<()>
     let named = fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
     let opened = file.metadata()?;
     ensure!(
-        u64::try_from(named.st_dev)? == opened.dev()
+        named_device_id(named.st_dev)? == opened.dev()
             && named.st_ino == opened.ino()
             && named.st_uid == nix::unistd::geteuid().as_raw(),
         "native hook file or directory name changed"
@@ -322,10 +322,24 @@ fn validate_named_identity(parent: &File, name: &str, file: &File) -> Result<()>
 }
 
 fn native_mode(mode: u32) -> Result<Mode> {
-    Ok(Mode::from_bits_truncate(
-        mode.try_into()
-            .context("mode is outside the platform range")?,
-    ))
+    native_mode_bits(mode).map(Mode::from_bits_truncate)
+}
+
+fn named_device_id<T>(device: T) -> Result<u64>
+where
+    u64: TryFrom<T>,
+    <u64 as TryFrom<T>>::Error: std::error::Error + Send + Sync + 'static,
+{
+    u64::try_from(device).context("device identifier is outside the platform range")
+}
+
+fn native_mode_bits<T>(mode: u32) -> Result<T>
+where
+    T: TryFrom<u32>,
+    T::Error: std::error::Error + Send + Sync + 'static,
+{
+    mode.try_into()
+        .context("mode is outside the platform range")
 }
 
 fn validate_component(name: &str) -> Result<()> {
