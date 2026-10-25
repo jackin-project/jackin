@@ -871,7 +871,7 @@ fn write_owner_toolchain(bin: &Path, ready: &Path, ticks: &Path, mode: OwnerFixt
     let holder = bin.join("holder");
     write_executable(
         &holder,
-        b"#!/bin/sh\ntrap '' HUP INT TERM\nprintf x >> \"$2\"\n: > \"$1\"\ncount=0\nwhile [ \"$count\" -lt 120 ]; do\n  /bin/sleep 0.05 || :\n  printf x >> \"$2\"\n  count=$((count + 1))\ndone\n",
+        b"#!/bin/sh\ntrap '' HUP INT TERM\nprintf x >> \"$2\"\n: > \"$1\"\ncount=0\nwhile [ \"$count\" -lt 400 ]; do\n  /bin/sleep 0.05 || :\n  printf x >> \"$2\"\n  count=$((count + 1))\ndone\n",
     );
     let rust_tools = String::from(
         "#!/bin/sh\nname=${0##*/}\ncase \"$name\" in\n  cargo) printf 'cargo 1.99.1 (fixture)\\n' ;;\n  rustc) printf 'rustc 1.99.1 (fixture)\\nbinary: rustc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  rustdoc) printf 'rustdoc 1.99.1 (fixture)\\nbinary: rustdoc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  clippy-driver) printf 'clippy 0.1.99 (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  rustfmt) printf 'rustfmt 1.99.1-stable (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  *) exit 91 ;;\nesac\n",
