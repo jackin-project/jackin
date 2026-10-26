@@ -38,9 +38,13 @@ const PRICED_FIELDS: [&str; 5] = [
 
 #[derive(Subcommand)]
 pub(crate) enum ResearchMeasurementCommand {
+    /// Prepare or explicitly send Anthropic text/file/sample count requests.
     CountTokens(CountTokensArgs),
+    /// Prepare or explicitly send synthetic PNG count requests.
     ImageTokens(ImageTokensArgs),
+    /// Audit explicitly supplied Claude JSONL receipts.
     SessionCost(SessionCostArgs),
+    /// Normalize one explicit provider API usage receipt without inference.
     ProviderUsage(provider_usage::ProviderUsageArgs),
 }
 
