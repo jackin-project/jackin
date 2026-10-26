@@ -16,11 +16,11 @@ ACCEPTANCE_POLICY_SHA256 = "83ede6731dcde4fb66fdbf9f3d041382db9a8aa398787e694b9c
 C02_CONTRACT_SECTION_SHA256 = "017714a83ab1ee7827dfcf8459ef6ca5e58c11787210083856211d1ba8e9cdf2"
 TASK_AUTHORED_SHA256 = "02be9157f75327ab1f4a2fee9dd888363ddb3ee168080f6725224efc2ace2d97"
 CASE_AUTHORED_SHA256 = "132dce6df85cf3cc5c657ae02e2db810088abc5081ab59f8e0eb3afafe8ff863"
-GRAPH_DECLARATIONS_SHA256 = "306e276f1b13e15900188a245c8a210f93d16d4587def937449ae615ad1d526f"
+GRAPH_DECLARATIONS_SHA256 = "74b34256350ce13e0c08e6859c0fa4c1880e48aeec7e974759e059baef14f01f"
 TRACEABILITY_AUTHORED_SHA256 = "33c969b0eec0852fa87dc459663540d8f9136e22f1ba22328a02724c9418c7ee"
 CONTRACTS_SHA256 = "da0f23654f30e8d1a37a12f07c9e5595d51027a5c4eaae3ce8072cb544dd3344"
 SUBAGENTS_SHA256 = "a4a9e5a967a73038b50ecdc4cadb9a51b1c83728f54c6b6fb9a87641566263f8"
-PACK_CHECKS_TEMPLATE_SHA256 = "026a999b6e5979339af2f0da93f15e20cd7db150129a8f3c920fc411e8939d5c"
+PACK_CHECKS_TEMPLATE_SHA256 = "5feb5ad7439145f785a46b5fb2f6fd24c79ebb68c2d5edc049b8159f3fbdeedf"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
@@ -892,7 +892,7 @@ def case_authored_projection(cases: list[dict[str, Any]]) -> list[dict[str, Any]
 
 def graph_declaration_projection(graph: dict[str, Any]) -> dict[str, Any]:
     mutable_or_derived = {
-        "status", "subagents_used_for_this_pack", "runtime_tests_executed_for_this_pack",
+        "subagents_used_for_this_pack", "runtime_tests_executed_for_this_pack",
         "tasks", "topological_ready_groups",
     }
     return {key: value for key, value in graph.items() if key not in mutable_or_derived}
@@ -1270,6 +1270,24 @@ def main() -> int:
             task_path_errors.append({"task": task_id, "field": "test_write_scope",
                                      "expected": expected_test_scope,
                                      "actual": task.get("test_write_scope")})
+    expected_task_packet_paths = sorted(
+        f"tasks/{task_id}.md" for task_id in task_ids
+        if isinstance(task_id, str) and CANONICAL_TASK_ID.fullmatch(task_id) is not None
+    )
+    task_root = root / "tasks"
+    actual_task_packet_paths = sorted(
+        path.relative_to(root).as_posix()
+        for path in task_root.rglob("*.md")
+        if path.is_file()
+    ) if task_root.is_dir() else []
+    missing_task_packet_paths = sorted(set(expected_task_packet_paths) - set(actual_task_packet_paths))
+    extra_task_packet_paths = sorted(set(actual_task_packet_paths) - set(expected_task_packet_paths))
+    if missing_task_packet_paths or extra_task_packet_paths:
+        task_path_errors.append({
+            "problem": "Markdown task packet paths must exactly match canonical manifest paths",
+            "missing": missing_task_packet_paths,
+            "extra": extra_task_packet_paths,
+        })
     check("Task file and test write scopes match canonical paths",
           not task_path_errors, task_path_errors)
     artifact_errors = []

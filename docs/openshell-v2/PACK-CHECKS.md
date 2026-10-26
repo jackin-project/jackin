@@ -13,6 +13,7 @@ These release-gate checks validate static planning structure only. They do not r
 Tasks without cases still require their task-card artifacts and independent review.
 The original specification remains unchanged.
 Task, case, graph, and traceability authoring fields are pinned independently of progress state.
+The graph root `PLAN_ONLY` value classifies this artifact; it is fixed while task, case, assignment, and aggregate progress remains mutable.
 Task, case, assignment, and aggregate statuses remain mutable during ordinary execution.
 Complete CONTRACTS and SUBAGENTS files are pinned after their reviewed policy decisions.
 The report template is pinned outside its named result and input-derived count slots.
@@ -48,6 +49,8 @@ Markdown assignment labels record initial `NOT_RUN` status and stay fixed during
 `validate_assignment_fixtures.py` runs the validator on temporary pack copies.
 Each receipt records the actual argument vector, stdout, stderr, exit code, executed validator path and hash, and fixture-source hashes.
 Each receipt hashes every tested pack input after mutation. It records changed-input hashes before and after mutation, with explicit `present` or `missing` states.
+The fixture runner keeps its check inventory independent from the validator under test.
+It snapshots pack inputs before importing the validator, immediately after import, and before and after execution. A subprocess fixture proves it detects an import-time README mutation on a temporary copy.
 The top-level source map hashes the validator, fixture runner, and every source-pack file.
 The runner writes one JSON report to stdout and does not modify the pack. It validates the original board in ordinary mode and records its before/after hashes. Redirect stdout outside the repository to retain raw receipts.
 
@@ -111,7 +114,7 @@ Keep no more than eight actual subagents active at once.
 | A17 keeps U00/T13 provider observations and T23 integrated StartSession/re-admission | PASS |
 | Target-matrix requests route through Integration; required and unavailable rows remain | PASS |
 | Task required artifacts match the canonical six receipts and report path | PASS |
-| Task-card and test-write paths match each task ID exactly | PASS |
+| Task-card and test-write paths match each task ID exactly; recursive Markdown packets match the manifest set | PASS |
 | Task graph matches indexes and task cards, including report paths | PASS |
 | Individual task packets match their ID and complete canonical instruction preamble | PASS |
 | Acceptance detailed-case anchor is unique | PASS |
@@ -122,7 +125,7 @@ Keep no more than eight actual subagents active at once.
 | Traceability headings, ranges, owners, and representations match | PASS |
 | Checked procedural sentences stay within the word limit | PASS |
 | Authored task and case fields match fixed projections, excluding progress state | PASS |
-| Graph declarations and complete traceability records match fixed projections | PASS |
+| Graph declarations, including the fixed `PLAN_ONLY` root classification, and complete traceability records match fixed projections | PASS |
 | Complete [CONTRACTS.md](CONTRACTS.md) and [SUBAGENTS.md](SUBAGENTS.md) match their fixed checksums | PASS |
 | PACK-CHECKS template is fixed outside mutable count and result slots | PASS |
 | Validator emits the canonical ordered ordinary and initial-only check inventories | PASS |
@@ -132,9 +135,10 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 208 scenarios passed their exact report, input-derived count, and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 190 targeted scenarios cover assignment ownership and progress, authored task and case fields, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates and result-cell grammar, owner-specific A13/A15/A16 qualification, A17 integrated activation, serialized target-matrix updates, malformed record refusal, and review-assignment completion.
+All 214 scenarios passed their exact report, input-derived count, and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 196 targeted scenarios cover assignment ownership and progress, authored task and case fields, source citations, canonical task paths and exact recursive packet sets, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates and result-cell grammar, independent check-inventory comparison, import-time input mutation detection, the fixed root planning classification, owner-specific A13/A15/A16 qualification, A17 integrated activation, serialized target-matrix updates, malformed record refusal, and review-assignment completion.
 Each fixture copy records source hashes, status-only normalization changes, normalized hashes, intentional mutations, and input and executable hashes before and after validation. The original board is never normalized or repaired.
+The existing missing-P00 fixture retains its packet-preamble failure and exit code 1; exact-path validation adds a second expected failure for the missing canonical path.
 A22 is owned by U02 and T32. Its mixed-result fixtures complete T32 dependencies before recording results.
 A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks FAIL precedence without bypassing dependencies.
 
@@ -196,6 +200,9 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | Report with a missing middle check, reordered checks, or an extra check | Reject malformed report | PASS |
 | Initial report without the required initial-only tail | Reject malformed report | PASS |
 | Report initial flag differs from the validator invocation | Reject malformed report | PASS |
+| Validator implementation and its own check inventory both omit the expected task-count check | Reject the shortened report using the fixture runner's independent inventory | PASS |
+| Graph root claims release approval instead of the fixed `PLAN_ONLY` classification | Reject, exit 1 | PASS, exit 1 |
+| Validator import mutates README in an isolated subprocess | Detect changed pre-import and post-import hashes | PASS |
 | Canonical review receipt removed with synchronized task graph, PLAN, and card | Reject, exit 1 | PASS, exit 1 |
 | Report path relocated with synchronized task graph, PLAN, and card | Reject, exit 1 | PASS, exit 1 |
 | U00 upstream-change receipt removed with synchronized task graph, PLAN, and card | Reject, exit 1 | PASS, exit 1 |
@@ -224,6 +231,9 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | Synchronized task packet changes the review rule to allow self-review | Reject, exit 1 | PASS, exit 1 |
 | Synchronized task packet removes the post-merge integration rerun | Reject, exit 1 | PASS, exit 1 |
 | Task-card and test-write paths are relocated, traversing, absolute, or colliding | Reject, exit 1 | PASS, exit 1 |
+| Exact task packet set matches every manifest ID | Accept, exit 0 | PASS, exit 0 |
+| Nested or archived Markdown is added under `tasks/` | Reject, exit 1 | PASS, exit 1 |
+| A canonical Markdown task packet is missing | Reject, exit 1 | PASS, exit 1 |
 | Empty roots remain valid; malformed lists fail before DAG checks; unknown, self, and cycle diagnostics remain | Accept root; reject invalid dependency, exit 1 | PASS |
 | A documented evidence level is changed for a case ID | Reject, exit 1 | PASS, exit 1 |
 | GOAL is truncated, removed, or given a conflicting execution-control clause | Reject, exit 1 | PASS |
@@ -274,6 +284,7 @@ It does not check every dictionary entry or every ASD-STE100 writing rule.
 Do not use this result as a full ASD-STE100 conformance claim.
 
 All 46 tasks remain `NOT_STARTED`.
+The graph root remains `PLAN_ONLY`; this classifies the planning artifact and does not freeze task progress.
 All 125 cases and their per-task assignment results remain `NOT_RUN`.
 The initial status text in `ACCEPTANCE.md` remains fixed during execution. Its additive policy prefix digest is `83ede6731dcde4fb66fdbf9f3d041382db9a8aa398787e694b9ccc5499202d08`.
 Implementation completion still requires the task, review, and runtime evidence in the pack.

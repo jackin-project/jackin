@@ -15,15 +15,6 @@ from typing import Any, Callable
 ROOT = Path(__file__).resolve().parent
 VALIDATOR = ROOT / "validate_pack.py"
 sys.dont_write_bytecode = True
-sys.path.insert(0, str(ROOT))
-from validate_pack import (  # noqa: E402
-    DuplicateJSONKeyError,
-    canonical_check_inventory,
-    render_task_card,
-    render_task_index,
-    render_task_packet,
-    strict_json_loads,
-)
 
 
 def sha256(path: Path) -> str:
@@ -44,10 +35,6 @@ def input_state(digest: str | None) -> dict[str, str | None]:
     return {"state": "present", "sha256": digest}
 
 
-def path_state(path: Path) -> dict[str, str | None]:
-    return input_state(sha256(path) if path.is_file() else None)
-
-
 def snapshot_states(snapshot: dict[str, str]) -> dict[str, dict[str, str | None]]:
     return {path: input_state(digest) for path, digest in snapshot.items()}
 
@@ -58,6 +45,122 @@ def snapshot_changes(before: dict[str, str], after: dict[str, str]) -> dict[str,
         for path in sorted(set(before) | set(after))
         if before.get(path) != after.get(path)
     }
+
+
+def path_state(path: Path) -> dict[str, str | None]:
+    return input_state(sha256(path) if path.is_file() else None)
+
+
+SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT = snapshot_files(ROOT)
+sys.path.insert(0, str(ROOT))
+from validate_pack import (  # noqa: E402
+    DuplicateJSONKeyError,
+    render_task_card,
+    render_task_index,
+    render_task_packet,
+    strict_json_loads,
+)
+
+SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT = snapshot_files(ROOT)
+VALIDATOR_IMPORT_CHANGES = snapshot_changes(
+    SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT,
+    SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT,
+)
+
+# Kept independent from validate_pack.py so fixture review detects a missing check.
+FIXTURE_ORDINARY_CHECK_NAMES = (
+    'Required pack files exist',
+    'Manifest schema versions are supported integers',
+    'C01 source pin table matches all four fixed references',
+    'C02 production crate graph and boundary section matches fixed bytes',
+    'Machine source pins match fixed references',
+    'Parallel agent limit matches the subagent contract',
+    'Authoritative concurrency declaration matches graph and subagent limit',
+    'Task statuses use documented values',
+    'Acceptance case statuses use documented values',
+    'Acceptance evidence levels use documented values',
+    'Acceptance case IDs map to fixed evidence levels',
+    'Acceptance manifest status uses documented values',
+    'Acceptance manifest status matches the case summary',
+    'Task IDs are unique',
+    'Case IDs are unique',
+    'Acceptance cases have unique string task owners',
+    'Declared task count matches',
+    'Declared case count matches',
+    'Expected task count',
+    'Expected acceptance case count',
+    'Task file and test write scopes match canonical paths',
+    'Task required artifacts match canonical evidence set and report path',
+    'Task completion rules match the fixed evidence contract',
+    'Task review rules match the different-subagent and post-merge contract',
+    'Task test_cases contain unique string IDs',
+    'A13 preserves separate current-graph and final-post-deletion runs',
+    'A15 separates observation, adapter, and integrated activation owners',
+    'A16 preserves accepted-revision observation and product-presentation owners',
+    'A17 preserves observation layers and integrated activation ownership',
+    'Release gate protocol matches fixed semantics',
+    'Original specification matches its fixed checksum and both manifests',
+    'GOAL.md matches its fixed checksum',
+    'Task SPEC citations use valid syntax',
+    'Task SPEC citation ranges are within SPEC.md',
+    'Dependency lists contain unique string task IDs',
+    'Dependencies reference other known tasks',
+    'Release gate references name T40 and its owned final cases',
+    'P04, T40, A123, and A125 mirror the fixed release gate contract',
+    'T40 finalization writes route through Integration',
+    'A125 verifies conditional patched-tuple approval',
+    'P02 bootstrap records, P04 imports, and T12 reruns A05/A06',
+    'P04 harness command registration and P05 build wiring scopes agree',
+    'Target matrix qualification requests route through Integration',
+    'PACK-CHECKS limits release-gate claims to static structure',
+    'P04 is listed under the Qualification subagent',
+    'Subagent task assignments exactly match graph owners',
+    'Review packet uses candidate input and post-merge completion stages',
+    'Task progress waits for completed dependencies',
+    'Dependency graph has no cycle',
+    'Stored ready groups match dependencies without duplicate task IDs',
+    'Assignment results have exact unique case owners and valid statuses',
+    'Case status matches assignment summary',
+    'NOT_STARTED and READY tasks have NOT_RUN assignments',
+    'BLOCKED tasks with incomplete dependencies have NOT_RUN assignments',
+    'REVIEW tasks have recorded results for every owned assignment',
+    'Task test references exist',
+    'PASS tasks have passing assigned case results',
+    'Every case has a task owner',
+    'Case and task ownership maps agree',
+    'Task graph fields match TASKS index table',
+    'Task graph fields match PLAN task index table',
+    'PLAN task headings match the task graph',
+    'Task graph fields match PLAN task cards',
+    'Task graph fields and canonical preamble match individual task packets',
+    'Acceptance detailed-case anchor is unique',
+    'Acceptance policy before detailed cases matches fixed checksum',
+    'Acceptance case headings have no missing, duplicate, or extra blocks',
+    'Acceptance case fields match the acceptance-case manifest',
+    'Every specification heading is mapped',
+    'Traceability ranges match exact specification sections',
+    'Task citations are represented in traceability',
+    'Traceability table matches its manifest',
+    'Traceability uses known task owners',
+    'Checked procedural sentences contain at most 20 whitespace-separated words',
+    'Task authored fields match fixed projection',
+    'Case authored fields match fixed projection',
+    'Graph declarations match fixed projection',
+    'Traceability authored sections match fixed projection',
+    'CONTRACTS.md matches its fixed checksum',
+    'SUBAGENTS.md matches its fixed checksum',
+    'PACK-CHECKS matches canonical template with mutable count and result slots',
+)
+FIXTURE_INITIAL_ONLY_CHECK_NAMES = (
+    'Initial task, case, and assignment statuses claim no execution',
+    'Pack records no runtime tests or delegated reviews',
+)
+FIXTURE_CHECK_INVENTORY_CHECK = 'Validator check inventory matches its canonical ordered sequence'
+
+
+def fixture_check_inventory(initial: bool = False) -> tuple[str, ...]:
+    initial_checks = FIXTURE_INITIAL_ONLY_CHECK_NAMES if initial else ()
+    return (*FIXTURE_ORDINARY_CHECK_NAMES, *initial_checks, FIXTURE_CHECK_INVENTORY_CHECK)
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -463,7 +566,7 @@ def inspect_report(stdout: str, exit_code: int, initial: bool = False) -> tuple[
     if malformed_checks:
         errors.append("checks contain malformed or duplicate records")
     elif not early_required_file_failure and not structured_input_error:
-        if check_names != list(canonical_check_inventory(initial)):
+        if check_names != list(fixture_check_inventory(initial)):
             errors.append("checks do not match the canonical ordered inventory")
 
     failed_checks = [
@@ -754,9 +857,76 @@ def validate_original_board() -> dict[str, Any]:
     }
 
 
+def import_time_readme_mutation_probe() -> dict[str, Any]:
+    with tempfile.TemporaryDirectory(prefix="jackin-import-mutation-") as temp_dir:
+        pack = Path(temp_dir) / "pack"
+        shutil.copytree(ROOT, pack)
+        validator = pack / "validate_pack.py"
+        runner = pack / "validate_assignment_fixtures.py"
+        readme = pack / "README.md"
+        initial_inputs = snapshot_files(pack)
+        validator_before = sha256(validator)
+        runner_before = sha256(runner)
+        readme_before = sha256(readme)
+        with validator.open("a", encoding="utf-8") as source:
+            source.write(
+                "\nfrom pathlib import Path as _ImportProbePath\n"
+                "(_ImportProbePath(__file__).resolve().parent / 'README.md').write_text("
+                "'idempotent import-time mutation\\n', encoding='utf-8')\n"
+            )
+        validator_mutated = sha256(validator)
+        command = [
+            sys.executable,
+            "-c",
+            "import importlib.util,json,sys; "
+            "spec=importlib.util.spec_from_file_location('fixture_probe',sys.argv[1]); "
+            "module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); "
+            "print(json.dumps({'before':module.SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT.get('README.md'),"
+            "'after':module.SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT.get('README.md'),"
+            "'changes':module.VALIDATOR_IMPORT_CHANGES}))",
+            str(runner),
+        ]
+        process = subprocess.run(command, cwd=pack, capture_output=True, text=True, check=False)
+        try:
+            observed = json.loads(process.stdout)
+        except json.JSONDecodeError:
+            observed = None
+        after_inputs = snapshot_files(pack)
+        expected_readme_after = sha256(readme)
+        detected = observed.get("changes", {}).get("README.md") if isinstance(observed, dict) else None
+        passed = (
+            process.returncode == 0
+            and isinstance(observed, dict)
+            and observed.get("before") == readme_before
+            and observed.get("after") == expected_readme_after
+            and readme_before != expected_readme_after
+            and isinstance(detected, dict)
+            and detected.get("before") == input_state(readme_before)
+            and detected.get("after") == input_state(expected_readme_after)
+        )
+        return {
+            "scenario": "isolated subprocess detects idempotent README mutation during validator import",
+            "passed": passed,
+            "argv": command,
+            "exit_code": process.returncode,
+            "stdout": process.stdout,
+            "stderr": process.stderr,
+            "fixture_source_sha256": runner_before,
+            "validator_executable_before_mutation_sha256": validator_before,
+            "validator_executable_after_mutation_sha256": validator_mutated,
+            "tested_inputs_before": snapshot_states(initial_inputs),
+            "tested_inputs_after": snapshot_states(after_inputs),
+            "input_changes": snapshot_changes(initial_inputs, after_inputs),
+            "readme_before_sha256": readme_before,
+            "readme_after_sha256": expected_readme_after,
+            "detected_import_changes": observed.get("changes") if isinstance(observed, dict) else None,
+        }
+
+
 def main() -> int:
     receipts: list[dict[str, Any]] = []
-    original_source_before = snapshot_files(ROOT)
+    original_source_before = SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT
+    receipts.append(import_time_readme_mutation_probe())
 
     def completed_t32_shared_summary(u02: str, t32: str, summary: str) -> Callable[[Path], None]:
         def mutate(pack: Path) -> None:
@@ -1808,7 +1978,7 @@ def main() -> int:
         if checks is None:
             checks = [
                 {"check": name, "passed": True, "detail": None}
-                for name in canonical_check_inventory(initial)
+                for name in fixture_check_inventory(initial)
             ]
         return json.dumps({
             "passed": passed,
@@ -1864,6 +2034,40 @@ def main() -> int:
     receipts.append(run_fixture(
         "initial baseline report contains ordinary and initial-only check inventories",
         lambda _pack: None, 0, [], initial=True,
+    ))
+    receipts.append(run_fixture(
+        "manifest owns the exact recursive Markdown task-packet set",
+        lambda _pack: None, 0, [],
+    ))
+
+    def change_graph_classification(pack: Path) -> None:
+        path = pack / "task-graph.json"
+        graph = read_json(path)
+        graph["status"] = "RELEASE_APPROVED"
+        write_json(path, graph)
+    receipts.append(run_fixture(
+        "graph root classification rejects a release-approval value",
+        change_graph_classification,
+        1, ["Graph declarations match fixed projection"],
+    ))
+
+    def remove_expected_task_count_check(pack: Path) -> None:
+        path = pack / "validate_pack.py"
+        source = path.read_text(encoding="utf-8")
+        replacements = (
+            ('    "Expected task count",\n', ""),
+            ('    check("Expected task count", len(tasks) == 46, len(tasks))\n', ""),
+        )
+        for old, new in replacements:
+            if source.count(old) != 1:
+                raise ValueError(f"Expected one task-count validator entry: {old.strip()}")
+            source = source.replace(old, new, 1)
+        path.write_text(source, encoding="utf-8")
+    receipts.append(run_fixture(
+        "fixture oracle detects removal of task-count implementation and inventory entry",
+        remove_expected_task_count_check,
+        0, [], expect_report_match=False,
+        expected_report_errors=["checks do not match the canonical ordered inventory"],
     ))
 
     wrong_nonempty_counts = json.loads(validator_report(True, []))
@@ -2404,7 +2608,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "missing task packet input identifies P00",
         remove_p00_task_packet,
-        1, ["Task graph fields and canonical preamble match individual task packets"],
+        1, [
+            "Task file and test write scopes match canonical paths",
+            "Task graph fields and canonical preamble match individual task packets",
+        ],
         expected_report_details={
             "Task graph fields and canonical preamble match individual task packets": ["P00"],
         },
@@ -2493,6 +2700,29 @@ def main() -> int:
         "Task file and test write scopes match canonical paths",
         "Task authored fields match fixed projection",
     ]
+
+    def add_nested_task_packet(pack: Path) -> None:
+        archived = pack / "tasks" / "archive" / "T99.md"
+        archived.parent.mkdir(parents=True)
+        archived.write_text("# Archived packet\n", encoding="utf-8")
+    receipts.append(run_fixture(
+        "exact manifest packet set rejects nested archived Markdown",
+        add_nested_task_packet,
+        1, ["Task file and test write scopes match canonical paths"],
+    ))
+
+    def hide_canonical_task_packet(pack: Path) -> None:
+        packet = pack / "tasks" / "P00.md"
+        packet.rename(packet.with_name("P00.md.disabled"))
+    receipts.append(run_fixture(
+        "exact manifest packet set rejects a missing canonical Markdown packet",
+        hide_canonical_task_packet,
+        1, [
+            "Task file and test write scopes match canonical paths",
+            "Task graph fields and canonical preamble match individual task packets",
+        ],
+    ))
+
     for scenario, task_file in (
         ("relocated", "tasks/archive/P00.md"),
         ("traversing", "tasks/../PLAN.md"),
@@ -3250,6 +3480,18 @@ print('{}')
     original_source_after = snapshot_files(ROOT)
     runner_source_changes = snapshot_changes(original_source_before, original_source_after)
     original_board["fixture_runner_source_changes"] = runner_source_changes
+    original_board["validator_import_source_sha256_before"] = snapshot_states(
+        SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT,
+    )
+    original_board["validator_import_source_sha256_after"] = snapshot_states(
+        SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT,
+    )
+    original_board["validator_import_source_changes"] = VALIDATOR_IMPORT_CHANGES
+    if VALIDATOR_IMPORT_CHANGES:
+        original_board["execution_errors"].append(
+            "validator import changed the original pack before fixture snapshots"
+        )
+        original_board["passed"] = False
     if runner_source_changes:
         original_board["execution_errors"].append("fixture runner changed the original pack")
         original_board["passed"] = False
@@ -3262,6 +3504,9 @@ print('{}')
             "validate_pack.py": sha256(VALIDATOR),
             "validate_assignment_fixtures.py": sha256(Path(__file__)),
             "pack_files": snapshot_files(ROOT),
+            "before_validator_import": snapshot_states(SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT),
+            "after_validator_import": snapshot_states(SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT),
+            "validator_import_changes": VALIDATOR_IMPORT_CHANGES,
         },
         "fixtures": receipts,
     }
