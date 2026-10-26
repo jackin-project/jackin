@@ -779,7 +779,7 @@ FIXED_FIXTURE_NAMES = (
     "PACK-CHECKS rejects a wrong initial check inventory count",
     "PACK-CHECKS scenario count must match its independent inventory",
 )
-FIXED_RUNNER_CHECK_COUNT = 20
+FIXED_RUNNER_CHECK_COUNT = 21
 FIXED_RUNNER_CHECK_NAMES = (
     "The fixture inventory rejects a missing scenario entry.",
     "The fixture inventory rejects a duplicate scenario entry.",
@@ -801,6 +801,7 @@ FIXED_RUNNER_CHECK_NAMES = (
     "The runner-control inventory accepts the complete fixed control list.",
     "The owned process group kills a no-pipe descendant after the direct child exits.",
     "Shared process liveness classifies running, zombie, dead, absent, and inaccessible processes.",
+    "Post-mutation linked count and report inputs are refused before reads or writes.",
 )
 
 
@@ -1536,6 +1537,15 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
             }
         normalized_inputs = snapshot_files(pack)
         mutate(pack)
+        fixture_input_policy_violations = certified_input_violations(pack)
+        if fixture_input_policy_violations:
+            return {
+                "scenario": name,
+                "copy_performed": True,
+                "fixture_input_policy_violations": fixture_input_policy_violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
         if not preserve_pack_check_count_mutation:
             synchronize_pack_check_counts(pack)
         fixture_input_policy_violations = certified_input_violations(pack)
@@ -2303,6 +2313,81 @@ def certified_input_security_probe() -> dict[str, Any]:
             "ancestor_runner_exit_code": ancestor_runner["exit_code"],
             "ancestor_runner_refused": ancestor_runner_refused,
         }
+
+
+def post_mutation_symlink_custody_probe() -> dict[str, Any]:
+    input_runs: list[dict[str, Any]] = []
+    with temporary_directory(prefix="jackin-post-mutation-custody-") as temp_dir:
+        temporary_root = Path(temp_dir)
+        for relative_path in ("PACK-CHECKS.md", "GOAL.md"):
+            external_target = temporary_root / f"external-{Path(relative_path).name}"
+            sentinel = f"Protected external content for {relative_path}.\n".encode("utf-8")
+            external_target.write_bytes(sentinel)
+            target_before = sha256(external_target)
+            watched: dict[str, Any] = {"armed": False, "entry": None, "accesses": []}
+
+            def link_input(pack: Path, path: str = relative_path,
+                           external: Path = external_target) -> None:
+                entry = pack / path
+                entry.unlink()
+                entry.symlink_to(external)
+                watched["entry"] = Path(os.path.abspath(os.fspath(entry)))
+                watched["armed"] = True
+
+            original_open = Path.open
+
+            def record_link_access(path: Path, *args: Any, **kwargs: Any) -> Any:
+                absolute_path = Path(os.path.abspath(os.fspath(path)))
+                if watched["armed"] and absolute_path in {
+                    watched["entry"],
+                    Path(os.path.abspath(os.fspath(external_target))),
+                }:
+                    mode = kwargs.get("mode", args[0] if args else "r")
+                    watched["accesses"].append({"path": str(path), "mode": mode})
+                return original_open(path, *args, **kwargs)
+
+            with patch.object(Path, "open", record_link_access):
+                receipt = run_fixture(
+                    f"post-mutation linked {relative_path} is refused before count synchronization",
+                    link_input,
+                    1,
+                    [],
+                )
+            watched["armed"] = False
+            target_after = sha256(external_target)
+            violations = receipt.get("fixture_input_policy_violations", [])
+            linked_path_refused = any(
+                violation.get("path") == relative_path
+                and violation.get("reason") == "symbolic link in certified inputs"
+                for violation in violations
+            )
+            no_validator_execution = (
+                receipt.get("validator_executed") is False
+                and receipt.get("exit_code") is None
+            )
+            no_target_access = not watched["accesses"]
+            target_unchanged = target_before == target_after
+            input_runs.append({
+                "path": relative_path,
+                "violations": violations,
+                "validator_executed": receipt.get("validator_executed"),
+                "target_sha256_before": target_before,
+                "target_sha256_after": target_after,
+                "target_accesses": watched["accesses"],
+                "linked_path_refused": linked_path_refused,
+                "no_validator_execution": no_validator_execution,
+                "no_target_access": no_target_access,
+                "target_unchanged": target_unchanged,
+                "passed": (
+                    linked_path_refused and no_validator_execution
+                    and no_target_access and target_unchanged
+                ),
+            })
+    return {
+        "scenario": "Post-mutation linked count and report inputs are refused before reads or writes.",
+        "passed": len(input_runs) == 2 and all(run["passed"] for run in input_runs),
+        "input_runs": input_runs,
+    }
 
 
 def validator_import_probe(mode: str) -> dict[str, Any]:
@@ -4258,12 +4343,42 @@ def main() -> int:
                 raise ValueError(f"Expected one task-count validator entry: {old.strip()}")
             source = source.replace(old, new, 1)
         path.write_text(source, encoding="utf-8")
-    receipts.append(run_fixture(
+        checks_path = pack / "PACK-CHECKS.md"
+        document = checks_path.read_text(encoding="utf-8")
+        old_counts = (
+            "The ordinary validator report contains 90 ordered checks; `--initial` "
+            "contains 92, including two initial-only checks and the final inventory check."
+        )
+        ordinary_count = len(FIXTURE_ORDINARY_CHECK_NAMES)
+        initial_count = ordinary_count + len(FIXTURE_INITIAL_ONLY_CHECK_NAMES)
+        new_counts = (
+            f"The ordinary validator report contains {ordinary_count} ordered checks; `--initial` "
+            f"contains {initial_count}, including two initial-only checks and the final inventory check."
+        )
+        if document.count(old_counts) != 1:
+            raise ValueError("Expected the copied validator's canonical check-count sentence")
+        checks_path.write_text(document.replace(old_counts, new_counts, 1), encoding="utf-8")
+
+    oracle_receipt = run_fixture(
         "fixture oracle detects removal of task-count implementation and inventory entry",
         remove_expected_task_count_check,
         0, [], expect_report_match=False,
         expected_report_errors=["checks do not match the canonical ordered inventory"],
-    ))
+    )
+    oracle_causal_assertion = {
+        "validator_exit_code_is_zero": oracle_receipt.get("exit_code") == 0,
+        "validator_failure_list_is_empty": oracle_receipt.get("actual_failures") == [],
+        "independent_inventory_detects_missing_check": (
+            oracle_receipt.get("report_match") is False
+            and oracle_receipt.get("report_errors")
+            == ["checks do not match the canonical ordered inventory"]
+        ),
+    }
+    oracle_receipt["causal_assertion"] = oracle_causal_assertion
+    oracle_receipt["passed"] = (
+        oracle_receipt.get("passed") and all(oracle_causal_assertion.values())
+    )
+    receipts.append(oracle_receipt)
 
     wrong_nonempty_counts = json.loads(validator_report(True, []))
     wrong_nonempty_counts["counts"]["tasks"] += 1
@@ -5953,6 +6068,7 @@ print('{}')
         runner_inventory_control_probe("complete"),
         no_pipe_descendant_timeout_probe(),
         process_liveness_classifier_probe(),
+        post_mutation_symlink_custody_probe(),
     ]
     runner_control_inventory = runner_check_inventory_report([
         check.get("scenario") for check in runner_checks
