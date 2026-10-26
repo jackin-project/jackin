@@ -14,10 +14,8 @@ pub(super) fn private_dir() -> Result<tempfile::TempDir> {
 
 pub(super) fn git(repository: &Path, args: &[&str]) -> Result<Output> {
     let output = Command::new("git")
-        .args([
-            "-C",
-            repository.to_str().context("fixture path is not UTF-8")?,
-        ])
+        .arg("-C")
+        .arg(repository.as_os_str())
         .args(args)
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())

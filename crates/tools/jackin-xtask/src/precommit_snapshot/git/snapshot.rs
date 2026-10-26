@@ -35,6 +35,7 @@ impl OwnedSnapshot {
             live.common_git_dir.is_dir(),
             "Git common directory disappeared"
         );
+        let alternate_records = live_alternate_records(live)?;
         let temp_parent = env::temp_dir();
         let temp_parent = if temp_parent.is_absolute() {
             temp_parent
@@ -97,7 +98,7 @@ impl OwnedSnapshot {
             #[cfg(test)]
             test_git_program: None,
         };
-        snapshot.write_alternates(&live.objects)?;
+        snapshot.write_alternates(&live.objects, &alternate_records)?;
         if let Some(path) = &live.shallow {
             fs::copy(path, snapshot.git_dir.join("shallow")).context("copying shallow boundary")?;
         }
@@ -466,9 +467,10 @@ impl OwnedSnapshot {
         Ok(())
     }
 
-    fn write_alternates(&self, objects: &Path) -> Result<()> {
+    fn write_alternates(&self, objects: &Path, alternate_records: &[u8]) -> Result<()> {
         let file = self.objects.join("info/alternates");
-        let mut encoded = Vec::with_capacity(objects.as_os_str().as_bytes().len() + 4);
+        let mut encoded =
+            Vec::with_capacity(objects.as_os_str().as_bytes().len() + alternate_records.len() + 4);
         encoded.push(b'"');
         for byte in objects.as_os_str().as_bytes() {
             match byte {
@@ -482,8 +484,62 @@ impl OwnedSnapshot {
             }
         }
         encoded.extend_from_slice(b"\"\n");
-        fs::write(file, encoded).context("writing Git-quoted object alternate")
+        encoded.extend_from_slice(alternate_records);
+        fs::write(file, encoded).context("writing Git object alternates")
     }
+}
+
+fn live_alternate_records(live: &LiveRepository) -> Result<Vec<u8>> {
+    let alternates_file = live.objects.join("info/alternates");
+    let has_alternates_file = match fs::symlink_metadata(&alternates_file) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error).context("inspecting live object alternates file"),
+    };
+    let has_environment_alternates = live
+        .alternates
+        .as_ref()
+        .is_some_and(|alternates| !alternates.is_empty());
+    if !has_alternates_file && !has_environment_alternates {
+        return Ok(Vec::new());
+    }
+
+    let mut command = Command::new("git");
+    command
+        .args(["count-objects", "-v"])
+        .current_dir(&live.invocation_dir);
+    let output = capture_strict(
+        &mut command,
+        &live.controls,
+        EnvironmentMode::Inherit,
+        super::super::process::METADATA_OUTPUT_LIMIT,
+        1024 * 1024,
+        CommandBudget::PhaseRemainder,
+    )
+    .context("enumerating Git object alternates")?;
+    let stdout = checked(output, "enumerating Git object alternates")?;
+    ensure!(
+        stdout.last() == Some(&b'\n'),
+        "Git alternate listing is missing its final record terminator"
+    );
+
+    let mut records = Vec::new();
+    for line in stdout.split(|byte| *byte == b'\n') {
+        let Some(path_record) = line.strip_prefix(b"alternate: ") else {
+            continue;
+        };
+        ensure!(
+            !path_record.is_empty(),
+            "Git returned an empty alternate path"
+        );
+        ensure!(
+            !path_record.contains(&0) && !path_record.contains(&b'\n'),
+            "Git returned a malformed alternate path record"
+        );
+        records.extend_from_slice(path_record);
+        records.push(b'\n');
+    }
+    Ok(records)
 }
 
 fn admit_staged_index_entries(root: &Path, stdout: &mut fs::File) -> Result<()> {

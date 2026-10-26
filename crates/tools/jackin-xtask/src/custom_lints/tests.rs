@@ -13,6 +13,8 @@ use super::{
 };
 
 mod case_01;
+#[cfg(unix)]
+mod case_02;
 
 fn cargo_home<F>(inherited: &Environment, cwd: &Path, passwd_home: F) -> anyhow::Result<PathBuf>
 where

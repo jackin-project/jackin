@@ -39,6 +39,13 @@ Each hook invocation qualifies the staged toolchain and builds in its own
 private snapshot and temporary Cargo target directory. The native owner
 handles process cleanup, source custody, and symlink checks. Compiler
 artifacts cannot collide with builds in the live checkout.
+
+The hook uses the developer's shared Cargo home, Mise configuration, storage
+roots, and inherited PATH after the qualified Rust and MBX tools. These remain
+developer-controlled inputs. Inherited compiler override variables and Bash startup
+injection are removed from the gate environment. The owner does not provide a
+host sandbox or authenticate how an already-built executable was compiled.
+
 Git's [`extensions.worktreeConfig`](https://git-scm.com/docs/git-config#Documentation/git-config.txt-extensionsworktreeConfig)
 must already be enabled for the repository;
 the installer refuses to run otherwise and does not migrate existing config.

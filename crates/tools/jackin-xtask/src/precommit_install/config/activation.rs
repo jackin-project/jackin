@@ -47,6 +47,14 @@ struct ConfigActivationEntry<'a> {
 }
 
 pub(super) fn validate_hook_config_custody(common_path: &Path, selected_path: &Path) -> Result<()> {
+    validate_hook_config_source_custody(common_path, selected_path)?;
+    validate_config_leaf(&append_lock_suffix(selected_path)?, true)
+}
+
+pub(super) fn validate_hook_config_source_custody(
+    common_path: &Path,
+    selected_path: &Path,
+) -> Result<()> {
     ensure!(
         common_path.file_name().is_some_and(|name| name == "config"),
         "common Git config path has an unexpected leaf"
@@ -62,7 +70,7 @@ pub(super) fn validate_hook_config_custody(common_path: &Path, selected_path: &P
     if selected_path != common_path {
         validate_config_leaf(selected_path, false)?;
     }
-    validate_config_leaf(&append_lock_suffix(selected_path)?, true)
+    Ok(())
 }
 
 pub(super) fn activate_hook_config(common_path: &Path, selected_path: &Path) -> Result<()> {

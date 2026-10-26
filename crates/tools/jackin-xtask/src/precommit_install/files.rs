@@ -13,7 +13,7 @@ use jackin_process_directory::{CheckedInstallRoot, CheckedSourceRoot, InstallFil
 use nix::{
     errno::Errno,
     fcntl::{AtFlags, OFlag, open, openat, renameat},
-    sys::stat::{Mode, fchmod, fstatat, mkdirat},
+    sys::stat::{Mode, fchmod, fstat, fstatat, mkdirat},
     unistd::{UnlinkatFlags, fsync, unlinkat},
 };
 
@@ -113,8 +113,9 @@ pub(super) fn install_owner(git_dir: &Path, owner: &[u8]) -> Result<OwnerInstall
     let named_root = fstatat(&parent_fd, INSTALL_ROOT, AtFlags::AT_SYMLINK_NOFOLLOW)
         .context("checking private worktree hook owner directory name")?;
     let opened_root = root.metadata()?;
+    let opened_root_stat = fstat(&root)?;
     ensure!(
-        u64::try_from(named_root.st_dev).ok() == Some(opened_root.dev())
+        named_root.st_dev == opened_root_stat.st_dev
             && named_root.st_ino == opened_root.ino()
             && named_root.st_uid == opened_root.uid()
             && opened_root.permissions().mode() & 0o777 == 0o700,
@@ -251,6 +252,7 @@ fn ensure_file_identity(
     length: u64,
 ) -> Result<()> {
     let opened = file.metadata()?;
+    let opened_stat = fstat(file)?;
     let named = fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
         .with_context(|| format!("checking private hook owner entry {name}"))?;
     ensure!(
@@ -259,7 +261,7 @@ fn ensure_file_identity(
             && opened.nlink() == 1
             && opened.permissions().mode() & 0o777 == mode
             && opened.len() == length
-            && u64::try_from(named.st_dev).ok() == Some(opened.dev())
+            && named.st_dev == opened_stat.st_dev
             && named.st_ino == opened.ino()
             && named.st_uid == opened.uid(),
         "private hook owner file has unsafe or changed custody"
@@ -280,9 +282,10 @@ fn remove_if_same(parent: &File, name: &str) -> Result<()> {
         Err(error) => return Err(error).context("opening temporary owner for cleanup"),
     };
     let opened = file.metadata()?;
+    let opened_stat = fstat(&file)?;
     let named = fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
         .with_context(|| format!("checking temporary owner entry {name} before cleanup"))?;
-    if u64::try_from(named.st_dev).ok() == Some(opened.dev()) && named.st_ino == opened.ino() {
+    if named.st_dev == opened_stat.st_dev && named.st_ino == opened.ino() {
         unlinkat(parent, name, UnlinkatFlags::NoRemoveDir)?;
         fsync(parent)?;
     }

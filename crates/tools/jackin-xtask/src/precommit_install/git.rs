@@ -1,10 +1,13 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(test)]
+mod tests;
+
 use std::{
     ffi::{OsStr, OsString},
     fs,
-    os::unix::ffi::OsStringExt,
+    os::unix::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
 };
 
@@ -143,25 +146,28 @@ pub(super) fn require_events_enabled(repository: &Path) -> Result<()> {
 
 pub(super) fn verify_installed_hooks(repository: &Path, owner: &Path) -> Result<()> {
     require_events_enabled(repository)?;
-    let owner_command = format!("{} run-snapshot", shell_quote_path(owner)?);
+    let mut owner_command = shell_quote_path(owner)?;
+    owner_command.push(" run-snapshot");
     for (key, expected) in [
-        ("hook.hk-pre-commit.enabled", "false"),
-        ("hook.jackin-pre-commit.command", owner_command.as_str()),
-        ("hook.jackin-pre-commit.event", "pre-commit"),
-        ("hook.jackin-pre-commit.enabled", "true"),
-        ("hook.hk-pre-push.enabled", "false"),
+        ("hook.hk-pre-commit.enabled", OsStr::new("false")),
+        ("hook.jackin-pre-commit.command", owner_command.as_os_str()),
+        ("hook.jackin-pre-commit.event", OsStr::new("pre-commit")),
+        ("hook.jackin-pre-commit.enabled", OsStr::new("true")),
+        ("hook.hk-pre-push.enabled", OsStr::new("false")),
         (
             "hook.jackin-pre-push.command",
-            "sh scripts/pre-push-security",
+            OsStr::new("sh scripts/pre-push-security"),
         ),
-        ("hook.jackin-pre-push.event", "pre-push"),
-        ("hook.jackin-pre-push.enabled", "true"),
+        ("hook.jackin-pre-push.event", OsStr::new("pre-push")),
+        ("hook.jackin-pre-push.enabled", OsStr::new("true")),
     ] {
         ensure!(
-            text_record(&git_output_bytes(
+            os_record(&git_output_bytes(
                 Some(repository),
                 &["config", "--worktree", "--get", key],
-            )?)? == expected,
+            )?)?
+            .as_os_str()
+                == expected,
             "installed Git hook config has an invalid {key}"
         );
     }
@@ -192,7 +198,14 @@ pub(super) fn git_output_bytes(cwd: Option<&Path>, args: &[&str]) -> Result<Vec<
     Ok(result.stdout)
 }
 
-pub(super) fn config_set(path: &Path, key: &str, value: &str) -> Result<()> {
+pub(super) fn config_set(path: &Path, key: &str, value: &OsStr) -> Result<()> {
+    ensure!(
+        !value
+            .as_bytes()
+            .iter()
+            .any(|byte| matches!(byte, b'\n' | b'\r' | 0)),
+        "Git config value contains an unsupported control byte"
+    );
     let result = git_result(
         path.parent(),
         [
@@ -201,7 +214,7 @@ pub(super) fn config_set(path: &Path, key: &str, value: &str) -> Result<()> {
             path.as_os_str().to_os_string(),
             OsString::from("--replace-all"),
             OsString::from(key),
-            OsString::from(value),
+            value.to_os_string(),
         ],
     )?;
     ensure!(
@@ -231,7 +244,7 @@ pub(super) fn config_unset_all(path: &Path, key: &str) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn config_get(path: &Path, key: &str) -> Result<String> {
+pub(super) fn config_get(path: &Path, key: &str) -> Result<OsString> {
     let result = git_result(
         path.parent(),
         [
@@ -247,7 +260,18 @@ pub(super) fn config_get(path: &Path, key: &str) -> Result<String> {
         result.success,
         "Git config value {key} is missing or ambiguous"
     );
-    text_record(&result.stdout).map(str::to_owned)
+    os_record(&result.stdout)
+}
+
+fn os_record(bytes: &[u8]) -> Result<OsString> {
+    let record = bytes
+        .strip_suffix(b"\n")
+        .context("Git path-valued output lacks its record terminator")?;
+    ensure!(
+        !record.iter().any(|byte| matches!(byte, b'\n' | b'\r' | 0)),
+        "Git path-valued output contains an unsupported control byte"
+    );
+    Ok(OsString::from_vec(record.to_vec()))
 }
 
 fn git_path(repository: &Path, args: &[&str]) -> Result<PathBuf> {
@@ -263,6 +287,10 @@ fn path_record(mut bytes: Vec<u8>, allow_empty: bool) -> Result<PathBuf> {
         "Git path output lacks its record terminator"
     );
     ensure!(!bytes.contains(&0), "Git path output contains NUL");
+    ensure!(
+        !bytes.iter().any(|byte| matches!(byte, b'\n' | b'\r')),
+        "Git path output contains an unsupported line break"
+    );
     ensure!(allow_empty || !bytes.is_empty(), "Git path output is empty");
     Ok(PathBuf::from(OsString::from_vec(bytes)))
 }
@@ -339,14 +367,21 @@ fn hook_config_result(
     exec_sync(&request).context("checking effective Git hook event configuration")
 }
 
-pub(super) fn shell_quote_path(path: &Path) -> Result<String> {
-    use std::os::unix::ffi::OsStrExt;
-
+pub(super) fn shell_quote_path(path: &Path) -> Result<OsString> {
     let bytes = path.as_os_str().as_bytes();
     ensure!(
         !bytes.iter().any(|byte| matches!(byte, b'\n' | b'\r' | 0)),
         "installed owner path contains an unsupported control byte"
     );
-    let text = std::str::from_utf8(bytes).context("installed owner path is not UTF-8")?;
-    Ok(format!("'{}'", text.replace('\'', "'\\''")))
+    let mut quoted = Vec::with_capacity(bytes.len() + 2);
+    quoted.push(b'\'');
+    for byte in bytes {
+        if *byte == b'\'' {
+            quoted.extend_from_slice(b"'\\''");
+        } else {
+            quoted.push(*byte);
+        }
+    }
+    quoted.push(b'\'');
+    Ok(OsString::from_vec(quoted))
 }

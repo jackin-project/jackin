@@ -170,7 +170,8 @@ fn seed_diagnostics(snapshot: &git::OwnedSnapshot) -> PathBuf {
         b"original stderr\n",
     )
     .expect("writing stderr fixture");
-    write_private_fixes_spool(snapshot, b"original fixes\n").expect("spooling fixes")
+    write_private_fixes_spool(snapshot, b"original fixes\n", &snapshot.controls)
+        .expect("spooling fixes")
 }
 
 fn assert_retained_diagnostics(root: &Path, fixes: &[u8]) {
@@ -302,11 +303,12 @@ fn evidence_persist_error_retains_fixes_before_owner_drop() {
     let (_repository, live, mut snapshot) = fixture();
     let root = snapshot.scratch_root.clone();
     let fixes = b"diff --git a/tracked.txt b/tracked.txt\n";
-    let spool = write_private_fixes_spool(&snapshot, fixes).expect("spooling collected fixes");
+    let spool = write_private_fixes_spool(&snapshot, fixes, &snapshot.controls)
+        .expect("spooling collected fixes");
     let collision = live.common_git_dir.join("jackin-hook-evidence");
     fs::write(collision, b"not a directory").expect("creating evidence-path collision");
 
-    let error = evidence::persist(&live.common_git_dir, fixes).unwrap_err();
+    let error = evidence::persist(&live.common_git_dir, fixes, &snapshot.controls).unwrap_err();
     let error = retain_snapshot_failure(&mut snapshot, error);
     let detail = format!("{error:#}");
     assert!(detail.contains("hook evidence root is not a physical directory"));
@@ -322,7 +324,8 @@ fn gate_spawn_error_without_recovery_retains_snapshot_after_owner_drop() {
     let (repository, _live, mut snapshot) = fixture();
     let root = snapshot.scratch_root.clone();
     let fixes = b"original fixes\n";
-    let spool = write_private_fixes_spool(&snapshot, fixes).expect("spooling fixes");
+    let spool =
+        write_private_fixes_spool(&snapshot, fixes, &snapshot.controls).expect("spooling fixes");
     let tools = QualifiedTools {
         gate: repository.path().join("missing-gate"),
         environment: std::collections::BTreeMap::new(),
@@ -633,8 +636,27 @@ fn generic_owner_observes_bootstrap_through_final_mise_cargo_and_gate_environmen
         "absent\n"
     );
     assert_eq!(
-        fs::read_to_string(clean.gate_marker).expect("gate environment marker"),
-        "absent\n"
+        fs::read_to_string(clean.gate_marker).expect("selected XDG provider gate marker"),
+        "XDG-selected gate; bootstrap absent\n"
+    );
+    let xdg = clean.xdg.as_ref().expect("isolated XDG roots");
+    assert_eq!(
+        fs::read_to_string(xdg.cache_home.join("mise/qualification"))
+            .expect("qualification cache marker"),
+        "qualification cache\n"
+    );
+    assert_eq!(
+        fs::read_to_string(xdg.cache_home.join("mise/exec")).expect("exec cache marker"),
+        "exec cache\n"
+    );
+    assert_eq!(
+        fs::read_to_string(xdg.state_home.join("mise/qualification"))
+            .expect("qualification state marker"),
+        "qualification state\n"
+    );
+    assert_eq!(
+        fs::read_to_string(xdg.state_home.join("mise/exec")).expect("exec state marker"),
+        "exec state\n"
     );
 
     let injected = InstalledOwnerFixture::new(OwnerFixtureMode::BootstrapInjected);
@@ -652,6 +674,31 @@ fn generic_owner_observes_bootstrap_through_final_mise_cargo_and_gate_environmen
     );
     assert!(!injected.cargo_marker.exists());
     assert!(!injected.gate_marker.exists());
+}
+
+#[test]
+fn generic_owner_blocks_inherited_bash_env_startup_before_running_the_gate() {
+    let fixture = InstalledOwnerFixture::new(OwnerFixtureMode::BashEnvGate);
+    let original_index = fs::read(fixture.index()).expect("read original index");
+    let mut owner = fixture.spawn_owner("status", 0, 20_000, 20_000, 20_000);
+    let output = owner.wait_output(std::time::Duration::from_secs(8));
+    assert!(
+        output.status.success(),
+        "generic-owner Bash startup isolation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read(&fixture.gate_marker).expect("gate body marker"),
+        b"gate body ran\n"
+    );
+    assert!(
+        !fixture.bash_env_marker.exists(),
+        "the inherited Bash startup file must not run"
+    );
+    assert_eq!(
+        fs::read(fixture.index()).expect("index after generic owner"),
+        original_index
+    );
 }
 
 #[test]
@@ -850,6 +897,51 @@ enum OwnerFixtureMode {
     IsolationGate,
     BootstrapClean,
     BootstrapInjected,
+    BashEnvGate,
+}
+
+struct XdgFixtureRoots {
+    config_home: PathBuf,
+    data_home: PathBuf,
+    cache_home: PathBuf,
+    state_home: PathBuf,
+    selected_gate: PathBuf,
+}
+
+impl XdgFixtureRoots {
+    fn create(scratch: &Path, gate_marker: &Path) -> Self {
+        let config_home = scratch.join("xdg-config");
+        let data_home = scratch.join("xdg-data");
+        let cache_home = scratch.join("xdg-cache");
+        let state_home = scratch.join("xdg-state");
+        fs::create_dir_all(config_home.join("mise")).expect("create XDG Mise config root");
+        fs::create_dir_all(data_home.join("mise/installs/hk/fixture/bin"))
+            .expect("create XDG Mise provider installation");
+        fs::create_dir_all(&cache_home).expect("create XDG cache root");
+        fs::create_dir_all(&state_home).expect("create XDG state root");
+        fs::write(
+            config_home.join("mise/config.toml"),
+            b"[tools]\nhk = \"fixture\"\n",
+        )
+        .expect("write XDG-selected Mise config");
+        let selected_gate = data_home.join("mise/installs/hk/fixture/bin/hk");
+        write_executable(
+            &selected_gate,
+            format!(
+                "#!/bin/sh\nif [ \"${{RUSTC_BOOTSTRAP+x}}\" = x ]; then printf 'XDG-selected gate; bootstrap present\\n' > {}; else printf 'XDG-selected gate; bootstrap absent\\n' > {}; fi\nexit 0\n",
+                shell_quote(gate_marker),
+                shell_quote(gate_marker)
+            )
+            .as_bytes(),
+        );
+        Self {
+            config_home,
+            data_home,
+            cache_home,
+            state_home,
+            selected_gate,
+        }
+    }
 }
 
 struct InstalledOwnerFixture {
@@ -863,6 +955,8 @@ struct InstalledOwnerFixture {
     recovery_ticks: PathBuf,
     cargo_marker: PathBuf,
     gate_marker: PathBuf,
+    bash_env_file: PathBuf,
+    bash_env_marker: PathBuf,
     inherited_bootstrap: bool,
     probe_output: PathBuf,
     gate_ready: PathBuf,
@@ -875,6 +969,7 @@ struct InstalledOwnerFixture {
     git_alias_config: PathBuf,
     expected_rustc: PathBuf,
     live_artifacts: PathBuf,
+    xdg: Option<XdgFixtureRoots>,
     mode: OwnerFixtureMode,
 }
 
@@ -895,12 +990,26 @@ impl InstalledOwnerFixture {
         let canaries = IsolationCanaries::create(&repository, &scratch, mode);
         let cargo_marker = scratch.join("cargo-environment");
         let gate_marker = scratch.join("gate-environment");
+        let xdg = matches!(mode, OwnerFixtureMode::BootstrapClean)
+            .then(|| XdgFixtureRoots::create(&scratch, &gate_marker));
+        let bash_env_file = scratch.join("bash-env-startup");
+        let bash_env_marker = scratch.join("bash-env-startup-ran");
+        if matches!(mode, OwnerFixtureMode::BashEnvGate) {
+            fs::write(
+                &bash_env_file,
+                format!(
+                    "printf 'startup ran\\n' > {}\nexit 0\n",
+                    shell_quote(&bash_env_marker)
+                ),
+            )
+            .expect("write hostile Bash startup file");
+        }
         let bin = scratch.join("bin");
         fs::create_dir(&bin).expect("create private fixture tools");
         fs::set_permissions(&bin, fs::Permissions::from_mode(0o700))
             .expect("protect fixture tools");
         let expected_rustc = bin.join("rustc");
-        write_owner_toolchain(&bin, &ready, &ticks, &gate_ready, mode);
+        write_owner_toolchain(&bin, &ready, &ticks, &gate_ready, mode, xdg.as_ref());
 
         let owner = scratch.join("owner");
         fs::copy(
@@ -926,6 +1035,8 @@ impl InstalledOwnerFixture {
             recovery_ticks,
             cargo_marker,
             gate_marker,
+            bash_env_file,
+            bash_env_marker,
             inherited_bootstrap: matches!(
                 mode,
                 OwnerFixtureMode::BootstrapClean | OwnerFixtureMode::BootstrapInjected
@@ -941,6 +1052,7 @@ impl InstalledOwnerFixture {
             git_alias_config: canaries.git_alias_config,
             expected_rustc,
             live_artifacts: canaries.live_artifacts,
+            xdg,
             mode,
         }
     }
@@ -1008,6 +1120,16 @@ impl InstalledOwnerFixture {
         if self.inherited_bootstrap {
             command.env("RUSTC_BOOTSTRAP", "1");
         }
+        if let Some(xdg) = &self.xdg {
+            command
+                .env("XDG_CONFIG_HOME", &xdg.config_home)
+                .env("XDG_DATA_HOME", &xdg.data_home)
+                .env("XDG_CACHE_HOME", &xdg.cache_home)
+                .env("XDG_STATE_HOME", &xdg.state_home);
+        }
+        if matches!(self.mode, OwnerFixtureMode::BashEnvGate) {
+            command.env("BASH_ENV", &self.bash_env_file);
+        }
         if matches!(self.mode, OwnerFixtureMode::IsolationGate) {
             command
                 .env(OWNER_DRIVER_PROBE_OUTPUT, &self.probe_output)
@@ -1022,6 +1144,7 @@ impl InstalledOwnerFixture {
                 )
                 .env("CARGO_ALIAS_F3_POISON", "!touch marker")
                 .env("CARGO", self.poison_bin.join("cargo"))
+                .env("CARGO_BUILD_RUSTFLAGS", "--cfg inherited_compiler_override")
                 .env("RUSTC", self.poison_bin.join("rustc"))
                 .env("RUSTC_WRAPPER", self.poison_bin.join("rustc-wrapper"))
                 .env("CARGO_TARGET_DIR", self.repository.join("target"))
@@ -1237,6 +1360,7 @@ fn write_owner_toolchain(
     ticks: &Path,
     gate_ready: &Path,
     mode: OwnerFixtureMode,
+    xdg: Option<&XdgFixtureRoots>,
 ) {
     let ready = shell_quote(ready);
     let ticks = shell_quote(ticks);
@@ -1270,9 +1394,11 @@ fn write_owner_toolchain(
     let gate_body = if matches!(mode, OwnerFixtureMode::IgnoredSourceGate) {
         "#!/bin/sh\nprintf 'ignored staged-source fixture\\n' > ignored-extra.txt\nexit 0\n"
             .to_owned()
+    } else if matches!(mode, OwnerFixtureMode::BashEnvGate) {
+        format!("#!/bin/bash\nprintf 'gate body ran\\n' > {gate_marker}\nexit 0\n")
     } else if matches!(mode, OwnerFixtureMode::IsolationGate) {
         format!(
-            "#!/bin/sh\nset -eu\nif git f3-poison-file >/dev/null 2>&1; then exit 81; fi\nif git poison >/dev/null 2>&1; then exit 82; fi\nif cargo f3-poison >/dev/null 2>&1; then exit 83; fi\nif [ \"${{CARGO+x}}\" = x ]; then \"$CARGO\" --version || exit 84; fi\nif [ -n \"${{RUSTC_WRAPPER:-}}\" ]; then \"$RUSTC_WRAPPER\" \"$RUSTC\" --version || exit 85; else \"$RUSTC\" --version >/dev/null || exit 86; fi\ncargo --version >/dev/null || exit 87\nmkdir -p \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" || exit 88\nprintf 'private target\\n' > \"$CARGO_TARGET_DIR/artifact\"\nprintf 'private build\\n' > \"$CARGO_BUILD_BUILD_DIR/artifact\"\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" \"$RUSTC\" \"$(command -v cargo)\" > \"${{JACKIN_F3_OWNER_DRIVER_PROBE_OUTPUT}}\"\n: > {}\nprintf x >> {}\ncount=0\nwhile [ ! -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] && [ \"$count\" -lt 300 ]; do /bin/sleep 0.05; printf x >> {}; count=$((count + 1)); done\n[ -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] || exit 89\nexit 0\n",
+            "#!/bin/sh\nset -eu\n[ \"${{CARGO_BUILD_RUSTFLAGS+x}}\" != x ] || exit 90\nif git f3-poison-file >/dev/null 2>&1; then exit 81; fi\nif git poison >/dev/null 2>&1; then exit 82; fi\nif cargo f3-poison >/dev/null 2>&1; then exit 83; fi\nif [ \"${{CARGO+x}}\" = x ]; then \"$CARGO\" --version || exit 84; fi\nif [ -n \"${{RUSTC_WRAPPER:-}}\" ]; then \"$RUSTC_WRAPPER\" \"$RUSTC\" --version || exit 85; else \"$RUSTC\" --version >/dev/null || exit 86; fi\ncargo --version >/dev/null || exit 87\nmkdir -p \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" || exit 88\nprintf 'private target\\n' > \"$CARGO_TARGET_DIR/artifact\"\nprintf 'private build\\n' > \"$CARGO_BUILD_BUILD_DIR/artifact\"\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" \"$RUSTC\" \"$(command -v cargo)\" > \"${{JACKIN_F3_OWNER_DRIVER_PROBE_OUTPUT}}\"\n: > {}\nprintf x >> {}\ncount=0\nwhile [ ! -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] && [ \"$count\" -lt 300 ]; do /bin/sleep 0.05; printf x >> {}; count=$((count + 1)); done\n[ -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] || exit 89\nexit 0\n",
             shell_quote(gate_ready),
             ticks,
             ticks,
@@ -1309,9 +1435,33 @@ fn write_owner_toolchain(
         } else {
             ""
         };
+        let (hk_resolution, qualification_storage, exec_storage) = if let Some(xdg) = xdg {
+            (
+                format!(
+                    "if [ \"$2\" = hk ]; then if [ \"${{XDG_CONFIG_HOME:-}}\" = {} ] && [ \"${{XDG_DATA_HOME:-}}\" = {} ] && grep -F 'hk = \"fixture\"' \"$XDG_CONFIG_HOME/mise/config.toml\" >/dev/null && [ -x \"$XDG_DATA_HOME/mise/installs/hk/fixture/bin/hk\" ]; then printf '%s\\n' {}; else printf '%s\\n' {}; fi; else printf '%s\\n' /usr/bin/true; fi",
+                    shell_quote(&xdg.config_home),
+                    shell_quote(&xdg.data_home),
+                    shell_quote(&xdg.selected_gate),
+                    shell_quote(&bin.join("hk")),
+                ),
+                "if [ -n \"${XDG_CACHE_HOME:-}\" ] && [ -n \"${XDG_STATE_HOME:-}\" ]; then mkdir -p \"$XDG_CACHE_HOME/mise\" \"$XDG_STATE_HOME/mise\"; printf 'qualification cache\\n' > \"$XDG_CACHE_HOME/mise/qualification\"; printf 'qualification state\\n' > \"$XDG_STATE_HOME/mise/qualification\"; fi".to_owned(),
+                "if [ -n \"${XDG_CACHE_HOME:-}\" ] && [ -n \"${XDG_STATE_HOME:-}\" ]; then mkdir -p \"$XDG_CACHE_HOME/mise\" \"$XDG_STATE_HOME/mise\"; printf 'exec cache\\n' > \"$XDG_CACHE_HOME/mise/exec\"; printf 'exec state\\n' > \"$XDG_STATE_HOME/mise/exec\"; fi".to_owned(),
+            )
+        } else {
+            (
+                format!(
+                    "if [ \"$2\" = hk ]; then printf '%s\\n' {}; else printf '%s\\n' /usr/bin/true; fi",
+                    shell_quote(&bin.join("hk"))
+                ),
+                String::new(),
+                String::new(),
+            )
+        };
         format!(
-            "#!/bin/sh\ncase \"$1\" in\n  which)\n    if [ \"$2\" = hk ]; then printf '%s\\n' {}; else printf '%s\\n' /usr/bin/true; fi ;;\n  exec)\n    {}\n    case \"$*\" in\n      *'cargo --version'*) \"$4\" \"$5\" ;;\n      *'command -v cargo'*) printf '%s\\n' {} ;;\n      *'RUSTC_BOOTSTRAP'*) \"$4\" \"$5\" \"$6\" ;;\n      *) exit 92 ;;\n    esac ;;\n  *) exit 90 ;;\nesac\n",
-            shell_quote(&bin.join("hk")),
+            "#!/bin/sh\ncase \"$1\" in\n  which)\n    {}\n    {} ;;\n  exec)\n    {}\n    {}\n    case \"$*\" in\n      *'cargo --version'*) \"$4\" \"$5\" ;;\n      *'command -v cargo'*) printf '%s\\n' {} ;;\n      *'RUSTC_BOOTSTRAP'*) \"$4\" \"$5\" \"$6\" ;;\n      *) exit 92 ;;\n    esac ;;\n  *) exit 90 ;;\nesac\n",
+            qualification_storage,
+            hk_resolution,
+            exec_storage,
             injection,
             shell_quote(&bin.join("cargo"))
         )
@@ -1322,9 +1472,10 @@ fn write_owner_toolchain(
         shell_quote(bin)
     );
     write_executable(&bin.join("rustup"), rustup_body.as_bytes());
-    let guard = PathBuf::from(env::var_os("HOME").expect("HOME is set"))
-        .join(".local/bin/rust-build-guard");
-    symlink(guard, bin.join("rust-build-guard")).expect("link trusted build guard");
+    write_executable(
+        &bin.join("rust-build-guard"),
+        b"#!/bin/sh\n[ \"$#\" -ge 2 ] && [ \"$1\" = -- ] || exit 64\nshift\nexec \"$@\"\n",
+    );
 }
 
 fn write_executable(path: &Path, bytes: &[u8]) {

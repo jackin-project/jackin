@@ -146,6 +146,7 @@ fn build_qualified_environment(
         "RUSTC_WORKSPACE_WRAPPER",
         "RUSTFLAGS",
         "CARGO_ENCODED_RUSTFLAGS",
+        "CARGO_BUILD_RUSTFLAGS",
         "CARGO_BUILD_RUSTC",
         "CARGO_BUILD_RUSTDOC",
         "CARGO_BUILD_RUSTC_WRAPPER",
@@ -166,6 +167,7 @@ fn build_qualified_environment(
         "GIT_CONFIG_COUNT",
         "GIT_PREFIX",
         "GIT_SHALLOW_FILE",
+        "BASH_ENV",
     ] {
         environment.remove(OsStr::new(key));
     }
@@ -410,7 +412,17 @@ fn effective_cargo(
 fn runtime_environment() -> BTreeMap<OsString, OsString> {
     let mut environment = BTreeMap::new();
     for key in [
-        "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "TERM",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "TMPDIR",
+        "LANG",
+        "LC_ALL",
+        "TERM",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_STATE_HOME",
     ] {
         if let Some(value) = env::var_os(key) {
             environment.insert(OsString::from(key), value);

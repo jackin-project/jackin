@@ -90,8 +90,12 @@ where
         .prefix("jackin-custom-lints-")
         .tempdir()
         .context("creating isolated Dylint library directory")?;
+    let directory_path = directory
+        .path()
+        .canonicalize()
+        .context("resolving isolated Dylint library directory")?;
     let body_result = (|| -> Result<()> {
-        let destination = directory.path().join(
+        let destination = directory_path.join(
             library
                 .file_name()
                 .context("nightly lint library has no filename")?,
@@ -105,7 +109,7 @@ where
         );
         workspace_env.insert(
             OsString::from("DYLINT_LIBRARY_PATH"),
-            directory.path().as_os_str().to_owned(),
+            directory_path.as_os_str().to_owned(),
         );
         workspace_env.remove(OsStr::new("DYLINT_LINK_ENABLE_COPY_LIBRARY"));
         workspace_env.remove(OsStr::new("CARGO_ENCODED_RUSTFLAGS"));
@@ -138,7 +142,11 @@ fn create_cargo_shim(
             .prefix("jackin-custom-lints-mbx-")
             .tempdir()
             .context("creating private MBX Cargo shim directory")?;
-        let alias = directory.path().join("cargo");
+        let directory_path = directory
+            .path()
+            .canonicalize()
+            .context("resolving private MBX Cargo shim directory")?;
+        let alias = directory_path.join("cargo");
         std::os::unix::fs::symlink(&tools["mbx"], &alias)
             .context("creating private native Cargo-to-MBX shim")?;
         let old_path = env.get(OsStr::new("PATH")).cloned().unwrap_or_default();
@@ -146,7 +154,7 @@ fn create_cargo_shim(
             .parent()
             .context("pinned cargo-nextest has no parent directory")?
             .to_path_buf();
-        let mut path = vec![directory.path().to_path_buf(), nextest_parent];
+        let mut path = vec![directory_path, nextest_parent];
         let mut previous_path = std::env::split_paths(&old_path);
         if let Some(cargo_bin) = previous_path.next() {
             path.push(cargo_bin);

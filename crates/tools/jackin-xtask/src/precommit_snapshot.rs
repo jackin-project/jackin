@@ -252,8 +252,12 @@ fn run_with_signals(
         let evidence = if fixes.is_empty() {
             None
         } else {
-            write_private_fixes_spool(&snapshot, &fixes)?;
-            Some(evidence::persist(&live.common_git_dir, &fixes)?)
+            write_private_fixes_spool(&snapshot, &fixes, &recovery_controls)?;
+            Some(evidence::persist(
+                &live.common_git_dir,
+                &fixes,
+                &recovery_controls,
+            )?)
         };
         drop(completion.cleanup.recovery.take());
         let staged_fixes = evidence.is_some();
@@ -316,13 +320,17 @@ fn retain_unsuccessful_completion(
 fn write_private_fixes_spool(
     snapshot: &git::OwnedSnapshot,
     fixes: &[u8],
+    controls: &process::SetupControls,
 ) -> Result<std::path::PathBuf> {
+    controls.check_start()?;
     anyhow::ensure!(!fixes.is_empty(), "refusing to spool empty hook fixes");
     let path = snapshot.scratch_root.join("fixes.patch");
     let mut file = process::create_private_new(&path).context("creating private fixes spool")?;
-    file.write_all(fixes)
+    evidence::write_controlled(&mut file, fixes, controls)
         .context("writing private fixes spool")?;
+    controls.check_start()?;
     file.sync_all().context("syncing private fixes spool")?;
+    controls.check_start()?;
     Ok(path)
 }
 

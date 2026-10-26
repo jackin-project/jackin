@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::process::create_private_new;
+use super::process::{SetupControls, create_private_new};
 use anyhow::{Context, Result, bail, ensure};
 use jackin_process_directory::{CheckedInstallRoot, InstallFileKind};
 use nix::unistd::geteuid;
@@ -19,7 +19,12 @@ use nix::{
 use std::fs::File;
 use uuid::Uuid;
 
-pub(super) fn persist(common_git_dir: &Path, patch: &[u8]) -> Result<PathBuf> {
+pub(super) fn persist(
+    common_git_dir: &Path,
+    patch: &[u8],
+    controls: &SetupControls,
+) -> Result<PathBuf> {
+    controls.check_start()?;
     ensure!(
         !patch.is_empty(),
         "refusing to persist an empty staged-source patch"
@@ -32,47 +37,46 @@ pub(super) fn persist(common_git_dir: &Path, patch: &[u8]) -> Result<PathBuf> {
     validate_ancestors(&physical)?;
 
     let root = physical.join("jackin-hook-evidence");
-    let root_created = match fs::symlink_metadata(&root) {
-        Ok(metadata) => {
-            verify_private_directory(&root, &metadata, "hook evidence root")?;
-            false
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            DirBuilder::new()
-                .recursive(false)
-                .mode(0o700)
-                .create(&root)
-                .context("creating private hook evidence root")?;
-            let metadata =
-                fs::symlink_metadata(&root).context("checking private hook evidence root")?;
-            verify_private_directory(&root, &metadata, "hook evidence root")?;
-            true
-        }
-        Err(error) => return Err(error).context("checking hook evidence root"),
-    };
+    match DirBuilder::new().mode(0o700).create(&root) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error).context("creating private hook evidence root"),
+    }
+    let metadata = fs::symlink_metadata(&root).context("checking private hook evidence root")?;
+    verify_private_directory(&root, &metadata, "hook evidence root")?;
 
     let root_descriptor = open_private_directory(&root).context("checking private evidence ACL")?;
-    if root_created {
-        root_descriptor
-            .sync_all()
-            .context("syncing private hook evidence root")?;
-        sync_directory(&physical).context("syncing Git common directory entry")?;
-    }
+    controls.check_start()?;
+    root_descriptor
+        .sync_all()
+        .context("syncing private hook evidence root")?;
+    controls.check_start()?;
+    sync_directory(&physical).context("syncing Git common directory entry")?;
+    controls.check_start()?;
 
-    persist_invocation(&root, &root_descriptor, patch)
+    persist_invocation(&root, &root_descriptor, patch, controls)
 }
 
-fn persist_invocation(root: &Path, root_descriptor: &File, patch: &[u8]) -> Result<PathBuf> {
+fn persist_invocation(
+    root: &Path,
+    root_descriptor: &File,
+    patch: &[u8],
+    controls: &SetupControls,
+) -> Result<PathBuf> {
+    controls.check_start()?;
     let (directory, directory_identity) = create_unique_directory(root)?;
     let mut cleanup = FailedInvocationCleanup::new(directory.clone(), directory_identity);
     let invocation_descriptor =
         open_private_directory(&directory).context("checking invocation evidence ACL")?;
+    controls.check_start()?;
     invocation_descriptor
         .sync_all()
         .context("syncing private hook evidence invocation directory")?;
+    controls.check_start()?;
     root_descriptor
         .sync_all()
         .context("syncing invocation directory entry")?;
+    controls.check_start()?;
     let patch_path = directory.join("fixes.patch");
     let mut file =
         create_private_new(&patch_path).context("creating private staged-source evidence")?;
@@ -80,10 +84,12 @@ fn persist_invocation(root: &Path, root_descriptor: &File, patch: &[u8]) -> Resu
         .metadata()
         .context("checking private staged-source evidence")?;
     cleanup.record_patch(&metadata);
-    file.write_all(patch)
+    write_controlled(&mut file, patch, controls)
         .context("writing private staged-source evidence")?;
+    controls.check_start()?;
     file.sync_all()
         .context("syncing private staged-source evidence")?;
+    controls.check_start()?;
     ensure!(
         metadata.is_file() && metadata.nlink() == 1,
         "private staged-source evidence has unsafe file identity"
@@ -110,11 +116,25 @@ fn persist_invocation(root: &Path, root_descriptor: &File, patch: &[u8]) -> Resu
     checked_file
         .recheck()
         .context("rechecking private staged-source evidence custody")?;
+    controls.check_start()?;
     invocation_descriptor
         .sync_all()
         .context("syncing private staged-source evidence directory")?;
+    controls.check_start()?;
     cleanup.disarm();
     Ok(directory.join("fixes.patch"))
+}
+
+pub(super) fn write_controlled(
+    file: &mut File,
+    bytes: &[u8],
+    controls: &SetupControls,
+) -> Result<()> {
+    for chunk in bytes.chunks(64 * 1024) {
+        controls.check_start()?;
+        file.write_all(chunk)?;
+    }
+    controls.check_start()
 }
 
 struct FailedInvocationCleanup {
