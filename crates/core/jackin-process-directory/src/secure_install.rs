@@ -636,7 +636,7 @@ fn same_identity(left: &Stat, right: &Stat) -> bool {
         && FileType::from_raw_mode(left.st_mode) == FileType::from_raw_mode(right.st_mode)
 }
 
-fn ensure_native_acl(descriptor: impl AsFd, is_directory: bool) -> io::Result<()> {
+pub(super) fn ensure_native_acl(descriptor: impl AsFd, is_directory: bool) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     {
         linux_acl::ensure_no_extended_acl(descriptor, is_directory)
@@ -654,6 +654,28 @@ fn ensure_native_acl(descriptor: impl AsFd, is_directory: bool) -> io::Result<()
             "native installation ACL inspection is not implemented on this Unix platform",
         ))
     }
+}
+
+pub(super) fn ensure_temporary_parent_acl(
+    descriptor: impl AsFd,
+    owner_uid: RawUid,
+    selected_parent: bool,
+) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    let include_default_acl = {
+        selected_parent
+            || absolute_root::should_check_default_acl(
+                NodeRole::Ancestor,
+                owner_uid,
+                geteuid().as_raw(),
+            )
+    };
+    #[cfg(not(target_os = "linux"))]
+    let include_default_acl = {
+        let _ = (owner_uid, selected_parent);
+        true
+    };
+    ensure_native_acl(descriptor, include_default_acl)
 }
 
 fn ensure_confidential_acl(descriptor: impl AsFd, is_directory: bool) -> io::Result<()> {

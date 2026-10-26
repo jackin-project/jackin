@@ -3,7 +3,6 @@
 
 //! Non-activating receipt inspection and native hook ownership.
 
-#[cfg(test)]
 #[path = "shared/fs_util.rs"]
 mod fs_util;
 #[cfg(unix)]

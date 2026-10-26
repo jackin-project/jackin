@@ -13,6 +13,7 @@ use std::{
 };
 
 mod pipe_holder;
+mod temp_parent;
 use super::{
     CaptureFailureKind, CommandBudget, EnvironmentMode, SetupControls, capture_limited,
     capture_spooled, capture_strict,

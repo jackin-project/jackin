@@ -611,7 +611,7 @@ key = "clippy::unused_async_trait_impl@jackin-isolation"
 bound = 1
 [[family.entry]]
 key = "unsafe_code@jackin-process-directory"
-bound = 7
+bound = 8
 [[family.entry]]
 key = "unsafe_code@jackin-usage-host-accounts"
 bound = 6

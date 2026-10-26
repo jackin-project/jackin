@@ -272,7 +272,10 @@ fn pinned_swiftlint_precedes_an_ambient_global_tool() {
         resolve_tool_paths(&["swiftlint"], |_| Ok(pinned.clone())).expect("mock Mise resolution");
     symlink(&resolved["swiftlint"], managed.join("swiftlint")).expect("managed SwiftLint link");
     let inherited = env::join_paths([&ambient]).expect("ambient PATH");
-    let path = qualified_path(&managed, &rust_bin, &inherited).expect("qualified PATH");
+    let path_aliases = tempfile::tempdir().expect("separator-safe PATH directory");
+    populate_path_aliases(path_aliases.path(), &managed, &BTreeMap::new())
+        .expect("populate separator-safe PATH directory");
+    let path = qualified_path(path_aliases.path(), &inherited).expect("qualified PATH");
     let selected = find_executable("swiftlint", &path).expect("qualified SwiftLint");
 
     assert_eq!(
@@ -302,11 +305,94 @@ fn local_guard_in_home_is_admitted_and_qualified_without_inherited_path_entry() 
         fs::canonicalize(&guard).expect("physical guard path")
     );
     symlink(&resolved, managed.join("rust-build-guard")).expect("managed guard link");
-    let qualified = qualified_path(&managed, &rust_bin, &inherited).expect("qualified PATH");
+    let path_aliases = tempfile::tempdir().expect("separator-safe PATH directory");
+    populate_path_aliases(path_aliases.path(), &managed, &BTreeMap::new())
+        .expect("populate separator-safe PATH directory");
+    let qualified = qualified_path(path_aliases.path(), &inherited).expect("qualified PATH");
     let selected = find_executable("rust-build-guard", &qualified).expect("qualified guard");
     assert_eq!(
         fs::canonicalize(selected).expect("selected physical guard"),
         resolved
+    );
+}
+
+#[test]
+fn colon_paths_use_private_separator_safe_aliases_and_run_qualified_tools() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let requested_tmp = temporary.path().join("requested:tmp");
+    let fallback = temporary.path().join("safe");
+    let managed = requested_tmp.join("managed tools");
+    let rust_bin = requested_tmp.join("rust toolchain/bin");
+    fs::create_dir_all(&managed).expect("managed tool directory");
+    fs::create_dir_all(&rust_bin).expect("colon-containing Rust bin directory");
+    fs::create_dir_all(&fallback).expect("separator-free fallback root");
+    let cargo_marker = temporary.path().join("cargo-provider");
+    let rustc_marker = temporary.path().join("rustc-provider");
+    let cargo = managed.join("cargo");
+    let rustc = rust_bin.join("rustc");
+    write_executable(&cargo, b"#!/bin/sh\nprintf 'mbx-cargo\\n' > \"$CARGO_PROVIDER_MARKER\"\nprintf 'cargo 1.99.1 (fixture)\\n'\n");
+    write_executable(&rustc, b"#!/bin/sh\nprintf 'pinned-rustc\\n' > \"$RUSTC_PROVIDER_MARKER\"\nprintf 'rustc 1.99.1 (fixture)\\n'\n");
+
+    let aliases = create_path_aliases(&requested_tmp, &fallback).expect("separator-safe aliases");
+    let rust_tools = BTreeMap::from([("rustc", rustc.clone())]);
+    populate_path_aliases(aliases.path(), &managed, &rust_tools)
+        .expect("populate qualified PATH aliases");
+    let inherited = env::var_os("PATH").unwrap_or_default();
+    let path = qualified_path(aliases.path(), &inherited).expect("qualified PATH");
+    assert!(
+        !aliases
+            .path()
+            .as_os_str()
+            .as_encoded_bytes()
+            .contains(&b':')
+    );
+    assert_eq!(
+        env::split_paths(&path).next().expect("first PATH entry"),
+        aliases.path()
+    );
+
+    let cargo_output = super::super::process::capture(
+        Command::new("cargo")
+            .arg("--version")
+            .env("PATH", &path)
+            .env("CARGO_PROVIDER_MARKER", &cargo_marker),
+    )
+    .expect("run aliased MBX Cargo provider");
+    assert!(cargo_output.status.success());
+    assert_eq!(
+        fs::read(&cargo_marker).expect("Cargo provider marker"),
+        b"mbx-cargo\n"
+    );
+    assert!(
+        String::from_utf8(cargo_output.stdout)
+            .expect("Cargo provider output")
+            .starts_with("cargo 1.99.1")
+    );
+
+    let rustc_output = super::super::process::capture(
+        Command::new("rustc")
+            .arg("--version")
+            .env("PATH", &path)
+            .env("RUSTC_PROVIDER_MARKER", &rustc_marker),
+    )
+    .expect("run aliased pinned rustc provider");
+    assert!(rustc_output.status.success());
+    assert_eq!(
+        fs::read(&rustc_marker).expect("rustc provider marker"),
+        b"pinned-rustc\n"
+    );
+    assert!(
+        String::from_utf8(rustc_output.stdout)
+            .expect("rustc provider output")
+            .starts_with("rustc 1.99.1")
+    );
+
+    let alias_path = aliases.path().to_path_buf();
+    drop(aliases);
+    assert!(!alias_path.exists(), "private PATH aliases are removed");
+    assert!(
+        requested_tmp.is_dir(),
+        "requested scratch root remains available"
     );
 }
 

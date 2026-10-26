@@ -182,6 +182,7 @@ fn runs_gate_with_the_process_supervisor_and_original_hook_arguments() {
     let tools = QualifiedTools {
         gate: Path::new("/usr/bin/true").to_path_buf(),
         environment: BTreeMap::<OsString, OsString>::new(),
+        _path_aliases: None,
     };
     let controls = snapshot.controls.clone();
     let completion = snapshot
@@ -212,6 +213,7 @@ fn failed_gate_keeps_bounded_diagnostics_in_private_spools() {
     let tools = QualifiedTools {
         gate: fake_gate,
         environment: BTreeMap::<OsString, OsString>::new(),
+        _path_aliases: None,
     };
     let controls = snapshot.controls.clone();
     let completion = snapshot
@@ -360,4 +362,5 @@ fn setup_signal_after_snapshot_allocation_drops_private_snapshot() {
 mod alternates;
 mod index;
 mod paths;
+mod quota;
 mod recovery;

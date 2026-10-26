@@ -78,14 +78,14 @@ fn linux_running_image_descriptor_is_readonly_private_and_close_on_exec() {
     use std::os::fd::AsRawFd;
 
     let running = RunningImage::capture().expect("capture current running image");
-    assert!(running._executable.as_raw_fd() > 2);
+    assert!(running.executable.as_raw_fd() > 2);
     assert_eq!(
-        fcntl_getfl(&running._executable).expect("read image descriptor status flags")
+        fcntl_getfl(&running.executable).expect("read image descriptor status flags")
             & OFlags::ACCMODE,
         OFlags::RDONLY,
     );
     assert!(
-        fcntl_getfd(&running._executable)
+        fcntl_getfd(&running.executable)
             .expect("read image descriptor flags")
             .contains(FdFlags::CLOEXEC)
     );
@@ -161,14 +161,10 @@ fn wait_for_exit(child: &mut Child, timeout: Duration) -> io::Result<ExitStatus>
     }
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "bounded test workers poll their own readiness markers outside a runtime"
-)]
 fn test_poll_delay(deadline: Instant) {
     let remaining = deadline.saturating_duration_since(Instant::now());
     if !remaining.is_zero() {
-        std::thread::sleep(Duration::from_millis(5).min(remaining));
+        std::thread::park_timeout(Duration::from_millis(5).min(remaining));
     }
 }
 

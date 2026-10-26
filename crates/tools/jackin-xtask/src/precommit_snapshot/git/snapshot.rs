@@ -13,15 +13,25 @@ use crate::precommit_snapshot::{
 };
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use jackin_process::{ExecRequest, SpoolRecovery, StdioMode, exec_spooled_sync_cancellable};
+use nix::{
+    fcntl::{OFlag, open},
+    sys::stat::Mode,
+};
+use sha2::{Digest, Sha256};
 use std::{
     env,
     ffi::{OsStr, OsString},
     fs,
     io::{BufReader, Read, Write},
-    os::unix::{ffi::OsStrExt, fs::PermissionsExt},
+    os::unix::{
+        ffi::OsStrExt,
+        fs::{MetadataExt, PermissionsExt},
+    },
     path::{Path, PathBuf},
     process::Command,
 };
+
+mod admission;
 
 const STAGED_INDEX_OUTPUT_LIMIT: usize = 1024 * 1024 * 1024;
 const STAGED_INDEX_STDERR_LIMIT: usize = 32 * 1024 * 1024;
@@ -36,14 +46,7 @@ impl OwnedSnapshot {
             "Git common directory disappeared"
         );
         let alternate_records = live_alternate_records(live)?;
-        let temp_parent = env::temp_dir();
-        let temp_parent = if temp_parent.is_absolute() {
-            temp_parent
-        } else {
-            env::current_dir()?.join(temp_parent)
-        };
-        let temp_parent =
-            fs::canonicalize(temp_parent).context("resolving physical temporary directory")?;
+        let temp_parent = super::super::process::canonical_temporary_parent(&env::temp_dir())?;
         let directory = tempfile::Builder::new()
             .prefix("jackin-pre-commit-")
             .tempdir_in(temp_parent)
@@ -122,6 +125,15 @@ impl OwnedSnapshot {
         tree: &OsStr,
         live: &LiveRepository,
     ) -> Result<()> {
+        self.materialize_with_staged_content_limit(tree, live, admission::STAGED_TREE_CONTENT_LIMIT)
+    }
+
+    pub(super) fn materialize_with_staged_content_limit(
+        &self,
+        tree: &OsStr,
+        live: &LiveRepository,
+        staged_content_limit: u64,
+    ) -> Result<()> {
         match fs::remove_file(&self.index) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -145,6 +157,7 @@ impl OwnedSnapshot {
         }
         self.git(&["config", "core.fileMode", "true"])?;
         self.git(&["config", "core.symlinks", "true"])?;
+        self.check_materialized_tree_size_with_limit(tree, staged_content_limit)?;
         self.git(&["checkout-index", "--all", "--force"])?;
         Ok(())
     }
@@ -436,17 +449,35 @@ impl OwnedSnapshot {
                 == live.index_inputs,
             "live Git index changed after snapshot admission began"
         );
-        if live.index.is_file() {
-            fs::copy(&live.index, &self.index).context("copying active Git index")?;
-            if let Some(shared_index) = &live.shared_index {
-                let name = shared_index
-                    .file_name()
-                    .context("active shared index has no filename")?;
-                fs::copy(shared_index, self.git_dir.join(name))
-                    .context("copying active split-index backing file")?;
-            }
+        if let Some(active_index) = live
+            .index_inputs
+            .iter()
+            .find(|input| input.admitted_path() == live.index)
+        {
+            copy_and_verify_index(
+                active_index,
+                &self.index,
+                "active Git index",
+                &live.controls,
+            )?;
         } else {
             self.git(&["read-tree", "--empty"])?;
+        }
+        if let Some(shared_index) = live.shared_index.as_deref()
+            && let Some(shared_input) = live
+                .index_inputs
+                .iter()
+                .find(|input| input.admitted_path() == shared_index)
+        {
+            let name = shared_index
+                .file_name()
+                .context("active shared index has no filename")?;
+            copy_and_verify_index(
+                shared_input,
+                &self.git_dir.join(name),
+                "active split-index backing file",
+                &live.controls,
+            )?;
         }
         ensure!(
             index_inputs(&live.index, live.shared_index.as_deref(), &live.controls)?
@@ -487,6 +518,79 @@ impl OwnedSnapshot {
         encoded.extend_from_slice(alternate_records);
         fs::write(file, encoded).context("writing Git object alternates")
     }
+}
+
+fn copy_and_verify_index(
+    input: &super::capture::IndexInput,
+    destination: &Path,
+    label: &str,
+    controls: &SetupControls,
+) -> Result<()> {
+    controls.check_start()?;
+    fs::copy(input.admitted_path(), destination).with_context(|| format!("copying {label}"))?;
+    verify_private_index_copy(input, destination, label, controls)
+}
+
+pub(in crate::precommit_snapshot) fn verify_private_index_copy(
+    input: &super::capture::IndexInput,
+    destination: &Path,
+    label: &str,
+    controls: &SetupControls,
+) -> Result<()> {
+    controls.check_start()?;
+    let metadata =
+        fs::symlink_metadata(destination).with_context(|| format!("inspecting private {label}"))?;
+    ensure!(
+        metadata.file_type().is_file() && metadata.len() == input.admitted_length(),
+        "private {label} differs in type or length from admitted input"
+    );
+    controls.check_start()?;
+    let mut file = fs::File::from(
+        open(
+            destination,
+            OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .with_context(|| format!("opening private {label}"))?,
+    );
+    let opened = file
+        .metadata()
+        .with_context(|| format!("restating private {label}"))?;
+    ensure!(
+        opened.file_type().is_file()
+            && opened.len() == input.admitted_length()
+            && opened.dev() == metadata.dev()
+            && opened.ino() == metadata.ino(),
+        "private {label} changed while opening"
+    );
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0_u8; 64 * 1024].into_boxed_slice();
+    let mut total = 0_u64;
+    loop {
+        controls.check_start()?;
+        let count = file
+            .read(&mut buffer)
+            .with_context(|| format!("hashing private {label}"))?;
+        if count == 0 {
+            break;
+        }
+        let count_u64 = u64::try_from(count).context("converting private Git index read length")?;
+        total = total
+            .checked_add(count_u64)
+            .context("counting private Git index bytes")?;
+        ensure!(
+            total <= input.admitted_length(),
+            "private {label} grew while it was hashed"
+        );
+        hasher.update(&buffer[..count]);
+    }
+    controls.check_start()?;
+    let digest: [u8; 32] = hasher.finalize().into();
+    ensure!(
+        total == input.admitted_length() && digest == *input.admitted_digest(),
+        "private {label} digest differs from admitted input"
+    );
+    Ok(())
 }
 
 fn live_alternate_records(live: &LiveRepository) -> Result<Vec<u8>> {

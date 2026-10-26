@@ -9,7 +9,9 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use jackin_process_directory::{CheckedInstallRoot, CheckedSourceRoot, InstallFileKind};
+use jackin_process_directory::{
+    CheckedInstallRoot, CheckedSourceRoot, InstallFileKind, RunningImage,
+};
 use nix::{
     errno::Errno,
     fcntl::{AtFlags, OFlag, open, openat, renameat},
@@ -32,7 +34,11 @@ impl OwnerInstallation {
     }
 }
 
-pub(super) fn read_current_owner(path: &Path, limit: u64) -> Result<Vec<u8>> {
+pub(super) fn read_current_owner(
+    path: &Path,
+    running_image: &RunningImage,
+    limit: u64,
+) -> Result<Vec<u8>> {
     let before = fs::symlink_metadata(path).context("checking running owner executable")?;
     ensure!(
         before.is_file()
@@ -53,6 +59,9 @@ pub(super) fn read_current_owner(path: &Path, limit: u64) -> Result<Vec<u8>> {
         opened.dev() == before.dev() && opened.ino() == before.ino() && opened.nlink() == 1,
         "running owner executable changed while opening"
     );
+    running_image
+        .verify_file_identity(&file)
+        .context("verifying running owner executable image")?;
     let mut bytes = Vec::new();
     Read::by_ref(&mut file)
         .take(limit + 1)

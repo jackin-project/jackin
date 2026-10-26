@@ -1,3 +1,5 @@
+mod hk_bypass;
+
 use std::{
     env,
     ffi::OsStr,
@@ -18,6 +20,9 @@ use super::{
 };
 use crate::precommit_snapshot::{evidence, git, process, toolchain::QualifiedTools};
 
+mod colon_paths;
+mod terminal_signals;
+
 const OWNER_DRIVER_CHILD: &str = "JACKIN_F3_OWNER_DRIVER_CHILD";
 const OWNER_DRIVER_EXPECTATION: &str = "JACKIN_F3_OWNER_DRIVER_EXPECTATION";
 const OWNER_DRIVER_STATUS: &str = "JACKIN_F3_OWNER_DRIVER_STATUS";
@@ -28,6 +33,12 @@ const OWNER_DRIVER_GIT_PROGRAM: &str = "JACKIN_F3_OWNER_DRIVER_GIT_PROGRAM";
 const OWNER_DRIVER_PROBE_OUTPUT: &str = "JACKIN_F3_OWNER_DRIVER_PROBE_OUTPUT";
 const OWNER_DRIVER_GATE_RELEASE: &str = "JACKIN_F3_OWNER_DRIVER_GATE_RELEASE";
 const OWNER_DRIVER_GATE_READY: &str = "JACKIN_F3_OWNER_DRIVER_GATE_READY";
+const OWNER_DRIVER_PATH_OUTPUT: &str = "JACKIN_F3_OWNER_DRIVER_PATH_OUTPUT";
+const OWNER_DRIVER_CARGO_PROVIDER: &str = "JACKIN_F3_OWNER_DRIVER_CARGO_PROVIDER";
+const OWNER_DRIVER_RUSTC_PROVIDER: &str = "JACKIN_F3_OWNER_DRIVER_RUSTC_PROVIDER";
+const OWNER_DRIVER_TERMINAL_READY: &str = "JACKIN_F3_OWNER_DRIVER_TERMINAL_READY";
+const OWNER_DRIVER_TERMINAL_RELEASE: &str = "JACKIN_F3_OWNER_DRIVER_TERMINAL_RELEASE";
+const OWNER_DRIVER_TERMINAL_TMPDIR: &str = "JACKIN_F3_OWNER_DRIVER_TERMINAL_TMPDIR";
 
 fn fixture() -> (tempfile::TempDir, git::LiveRepository, git::OwnedSnapshot) {
     let home =
@@ -191,6 +202,7 @@ fn assert_retained_diagnostics(root: &Path, fixes: &[u8]) {
 
 fn test_signals() -> SetupSignals {
     SetupSignals {
+        terminal: Arc::new(AtomicBool::new(false)),
         route: SignalRoute {
             recovery_armed: AtomicBool::new(false),
             cancellation: Arc::new(AtomicBool::new(false)),
@@ -329,6 +341,7 @@ fn gate_spawn_error_without_recovery_retains_snapshot_after_owner_drop() {
     let tools = QualifiedTools {
         gate: repository.path().join("missing-gate"),
         environment: std::collections::BTreeMap::new(),
+        _path_aliases: None,
     };
 
     let controls = snapshot.controls.clone();
@@ -398,6 +411,37 @@ fn installed_owner_driver_child() {
                 .parse::<u8>()
                 .expect("numeric status");
             assert_eq!(status, expected);
+        }
+        "terminal-signal" => {
+            assert_eq!(
+                result.expect("completed cleanup before terminal handoff"),
+                0
+            );
+            let temporary = PathBuf::from(
+                env::var_os(OWNER_DRIVER_TERMINAL_TMPDIR).expect("dedicated child TMPDIR"),
+            );
+            assert!(
+                crate::fs_util::read_dir_sorted(&temporary)
+                    .expect("read completed child TMPDIR")
+                    .is_empty(),
+                "snapshot cleanup completes before terminal handoff"
+            );
+            fs::write(
+                env::var_os(OWNER_DRIVER_TERMINAL_READY).expect("terminal-ready marker"),
+                b"cleanup complete\n",
+            )
+            .expect("publish terminal handoff readiness");
+            let release = PathBuf::from(
+                env::var_os(OWNER_DRIVER_TERMINAL_RELEASE).expect("terminal release marker"),
+            );
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+            while !release.exists() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "parent did not finish terminal signal delivery"
+                );
+                std::thread::park_timeout(std::time::Duration::from_millis(10));
+            }
         }
         "setup-deadline" | "recovery-deadline" => {
             let Err(error) = result else {
@@ -547,6 +591,49 @@ fn generic_owner_keeps_live_canaries_while_gate_uses_private_tools_and_artifacts
     let mut owner = fixture.spawn_owner("status", 0, 20_000, 20_000, 20_000);
     let release_gate = GateReleaseOnDrop(fixture.gate_release.clone());
     wait_for_owner_readiness(&mut owner, &fixture.gate_ready, &fixture.ticks);
+    let report = fs::read_to_string(&fixture.probe_output).expect("gate tool report while blocked");
+    let mut lines = report.lines();
+    let target = PathBuf::from(lines.next().expect("private target directory"));
+    let build = PathBuf::from(lines.next().expect("private build directory"));
+    assert_eq!(
+        PathBuf::from(lines.next().expect("selected compiler")),
+        fixture.expected_rustc
+    );
+    let selected_cargo = PathBuf::from(lines.next().expect("selected Cargo"));
+    assert!(
+        lines.next().is_none(),
+        "unexpected gate report fields: {report}"
+    );
+    let path = fs::read_to_string(&fixture.path_output).expect("qualified PATH while blocked");
+    let alias = env::split_paths(OsStr::new(path.trim_end_matches('\n')))
+        .next()
+        .expect("first qualified PATH entry");
+    assert!(
+        alias.is_dir(),
+        "private PATH aliases stay alive during the gate"
+    );
+    assert_eq!(
+        selected_cargo,
+        alias.join("cargo"),
+        "cargo uses admitted alias"
+    );
+    assert_eq!(
+        fs::canonicalize(&selected_cargo).expect("physical selected Cargo"),
+        fs::canonicalize(fixture.repository.join(".git/f3-test/bin/cargo"))
+            .expect("physical fixture MBX Cargo")
+    );
+    assert_eq!(
+        fs::canonicalize(alias.join("rustc")).expect("physical PATH-selected rustc"),
+        fixture.expected_rustc
+    );
+    assert_eq!(
+        fs::read(&fixture.cargo_provider).expect("Cargo provider marker"),
+        b"fixture-mbx-cargo\n"
+    );
+    assert_eq!(
+        fs::read(&fixture.rustc_provider).expect("rustc provider marker"),
+        b"fixture-pinned-rustc\n"
+    );
     assert_eq!(
         capture_live_canary_state(&fixture.repository),
         before,
@@ -578,23 +665,6 @@ fn generic_owner_keeps_live_canaries_while_gate_uses_private_tools_and_artifacts
     ] {
         assert!(!marker.exists(), "poison marker ran: {}", marker.display());
     }
-    let report = fs::read_to_string(&fixture.probe_output).expect("gate tool report");
-    let mut lines = report.lines();
-    let target = PathBuf::from(lines.next().expect("private target directory"));
-    let build = PathBuf::from(lines.next().expect("private build directory"));
-    assert_eq!(
-        PathBuf::from(lines.next().expect("selected compiler")),
-        fixture.expected_rustc
-    );
-    assert!(
-        PathBuf::from(lines.next().expect("selected Cargo"))
-            .starts_with(target.parent().unwrap_or(&target)),
-        "Cargo resolves from private qualified tooling: {report}"
-    );
-    assert!(
-        lines.next().is_none(),
-        "unexpected gate report fields: {report}"
-    );
     assert!(!target.starts_with(&fixture.repository), "{report}");
     assert!(!build.starts_with(&fixture.repository), "{report}");
     assert!(
@@ -604,6 +674,10 @@ fn generic_owner_keeps_live_canaries_while_gate_uses_private_tools_and_artifacts
     assert!(
         !build.exists(),
         "successful gate scratch is removed: {report}"
+    );
+    assert!(
+        !alias.exists(),
+        "private PATH aliases are removed after the gate"
     );
 }
 
@@ -971,6 +1045,12 @@ struct InstalledOwnerFixture {
     live_artifacts: PathBuf,
     xdg: Option<XdgFixtureRoots>,
     mode: OwnerFixtureMode,
+    tmpdir_override: Option<PathBuf>,
+    path_output: PathBuf,
+    cargo_provider: PathBuf,
+    rustc_provider: PathBuf,
+    terminal_ready: PathBuf,
+    terminal_release: PathBuf,
 }
 
 impl InstalledOwnerFixture {
@@ -1054,6 +1134,12 @@ impl InstalledOwnerFixture {
             live_artifacts: canaries.live_artifacts,
             xdg,
             mode,
+            tmpdir_override: None,
+            path_output: scratch.join("qualified-path"),
+            cargo_provider: scratch.join("cargo-provider"),
+            rustc_provider: scratch.join("rustc-provider"),
+            terminal_ready: scratch.join("terminal-ready"),
+            terminal_release: scratch.join("terminal-release"),
         }
     }
 
@@ -1149,6 +1235,24 @@ impl InstalledOwnerFixture {
                 .env("RUSTC_WRAPPER", self.poison_bin.join("rustc-wrapper"))
                 .env("CARGO_TARGET_DIR", self.repository.join("target"))
                 .env("CARGO_BUILD_BUILD_DIR", self.repository.join("target"));
+            command
+                .env(OWNER_DRIVER_PATH_OUTPUT, &self.path_output)
+                .env(OWNER_DRIVER_CARGO_PROVIDER, &self.cargo_provider)
+                .env(OWNER_DRIVER_RUSTC_PROVIDER, &self.rustc_provider);
+        }
+        if let Some(tmpdir) = &self.tmpdir_override {
+            command.env("TMPDIR", tmpdir);
+        }
+        if expectation == "terminal-signal" {
+            command
+                .env(OWNER_DRIVER_TERMINAL_READY, &self.terminal_ready)
+                .env(OWNER_DRIVER_TERMINAL_RELEASE, &self.terminal_release)
+                .env(
+                    OWNER_DRIVER_TERMINAL_TMPDIR,
+                    self.tmpdir_override
+                        .as_ref()
+                        .expect("terminal fixture has private TMPDIR"),
+                );
         }
         let child = command
             .stdout(Stdio::piped())
@@ -1380,7 +1484,7 @@ fn write_owner_toolchain(
             .join("cargo-alias-ran"),
     );
     let rust_tools = format!(
-        "#!/bin/sh\nname=${{0##*/}}\ncase \"$name\" in\n  cargo) if [ \"$1\" = f3-poison ]; then if [ \"${{CARGO_ALIAS_F3_POISON+x}}\" = x ]; then printf 'alias ran\\n' > {cargo_alias_marker}; exit 0; else exit 1; fi; fi; if [ \"${{RUSTC_BOOTSTRAP+x}}\" = x ]; then printf 'present\\n' > {cargo_marker}; else printf 'absent\\n' > {cargo_marker}; fi; printf 'cargo 1.99.1 (fixture)\\n' ;;\n  rustc) printf 'rustc 1.99.1 (fixture)\\nbinary: rustc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  rustdoc) printf 'rustdoc 1.99.1 (fixture)\\nbinary: rustdoc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  clippy-driver) printf 'clippy 0.1.99 (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  rustfmt) printf 'rustfmt 1.99.1-stable (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  *) exit 91 ;;\nesac\n"
+        "#!/bin/sh\nname=${{0##*/}}\ncase \"$name\" in\n  cargo) if [ \"$1\" = f3-poison ]; then if [ \"${{CARGO_ALIAS_F3_POISON+x}}\" = x ]; then printf 'alias ran\\n' > {cargo_alias_marker}; exit 0; else exit 1; fi; fi; if [ \"${{RUSTC_BOOTSTRAP+x}}\" = x ]; then printf 'present\\n' > {cargo_marker}; else printf 'absent\\n' > {cargo_marker}; fi; if [ -n \"${{JACKIN_F3_OWNER_DRIVER_CARGO_PROVIDER:-}}\" ]; then printf 'fixture-mbx-cargo\\n' > \"$JACKIN_F3_OWNER_DRIVER_CARGO_PROVIDER\"; fi; printf 'cargo 1.99.1 (fixture)\\n' ;;\n  rustc) if [ -n \"${{JACKIN_F3_OWNER_DRIVER_RUSTC_PROVIDER:-}}\" ]; then printf 'fixture-pinned-rustc\\n' > \"$JACKIN_F3_OWNER_DRIVER_RUSTC_PROVIDER\"; fi; printf 'rustc 1.99.1 (fixture)\\nbinary: rustc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  rustdoc) printf 'rustdoc 1.99.1 (fixture)\\nbinary: rustdoc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  clippy-driver) printf 'clippy 0.1.99 (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  rustfmt) printf 'rustfmt 1.99.1-stable (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  *) exit 91 ;;\nesac\n"
     );
     for name in ["cargo", "rustc", "rustdoc", "clippy-driver", "rustfmt"] {
         write_executable(&bin.join(name), rust_tools.as_bytes());
@@ -1398,7 +1502,7 @@ fn write_owner_toolchain(
         format!("#!/bin/bash\nprintf 'gate body ran\\n' > {gate_marker}\nexit 0\n")
     } else if matches!(mode, OwnerFixtureMode::IsolationGate) {
         format!(
-            "#!/bin/sh\nset -eu\n[ \"${{CARGO_BUILD_RUSTFLAGS+x}}\" != x ] || exit 90\nif git f3-poison-file >/dev/null 2>&1; then exit 81; fi\nif git poison >/dev/null 2>&1; then exit 82; fi\nif cargo f3-poison >/dev/null 2>&1; then exit 83; fi\nif [ \"${{CARGO+x}}\" = x ]; then \"$CARGO\" --version || exit 84; fi\nif [ -n \"${{RUSTC_WRAPPER:-}}\" ]; then \"$RUSTC_WRAPPER\" \"$RUSTC\" --version || exit 85; else \"$RUSTC\" --version >/dev/null || exit 86; fi\ncargo --version >/dev/null || exit 87\nmkdir -p \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" || exit 88\nprintf 'private target\\n' > \"$CARGO_TARGET_DIR/artifact\"\nprintf 'private build\\n' > \"$CARGO_BUILD_BUILD_DIR/artifact\"\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" \"$RUSTC\" \"$(command -v cargo)\" > \"${{JACKIN_F3_OWNER_DRIVER_PROBE_OUTPUT}}\"\n: > {}\nprintf x >> {}\ncount=0\nwhile [ ! -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] && [ \"$count\" -lt 300 ]; do /bin/sleep 0.05; printf x >> {}; count=$((count + 1)); done\n[ -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] || exit 89\nexit 0\n",
+            "#!/bin/sh\nset -eu\n[ \"${{CARGO_BUILD_RUSTFLAGS+x}}\" != x ] || exit 90\nif git f3-poison-file >/dev/null 2>&1; then exit 81; fi\nif git poison >/dev/null 2>&1; then exit 82; fi\nif cargo f3-poison >/dev/null 2>&1; then exit 83; fi\nif [ \"${{CARGO+x}}\" = x ]; then \"$CARGO\" --version || exit 84; fi\nif [ -n \"${{RUSTC_WRAPPER:-}}\" ]; then \"$RUSTC_WRAPPER\" \"$RUSTC\" --version || exit 85; else \"$RUSTC\" --version >/dev/null || exit 86; fi\ncargo --version >/dev/null || exit 87\nprintf '%s\\n' \"$PATH\" > \"${{JACKIN_F3_OWNER_DRIVER_PATH_OUTPUT}}\"\nmkdir -p \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" || exit 88\nprintf 'private target\\n' > \"$CARGO_TARGET_DIR/artifact\"\nprintf 'private build\\n' > \"$CARGO_BUILD_BUILD_DIR/artifact\"\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" \"$RUSTC\" \"$(command -v cargo)\" > \"${{JACKIN_F3_OWNER_DRIVER_PROBE_OUTPUT}}\"\n: > {}\nprintf x >> {}\ncount=0\nwhile [ ! -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] && [ \"$count\" -lt 300 ]; do /bin/sleep 0.05; printf x >> {}; count=$((count + 1)); done\n[ -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] || exit 89\nexit 0\n",
             shell_quote(gate_ready),
             ticks,
             ticks,

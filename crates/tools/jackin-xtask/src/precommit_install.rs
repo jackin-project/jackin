@@ -10,6 +10,7 @@ mod git;
 use std::env;
 
 use anyhow::{Context, Result};
+use jackin_process_directory::RunningImage;
 
 const OWNER_LIMIT: u64 = 256 * 1024 * 1024;
 
@@ -18,9 +19,10 @@ pub(crate) fn activation_failed_after_rename(error: &anyhow::Error) -> bool {
 }
 
 pub(crate) fn install_hooks() -> Result<()> {
+    let running_image = RunningImage::capture().context("capturing running hook owner image")?;
     let repository = git::repository_root()?;
     let source_path = env::current_exe().context("resolving running hook owner")?;
-    let owner = files::read_current_owner(&source_path, OWNER_LIMIT)?;
+    let owner = files::read_current_owner(&source_path, &running_image, OWNER_LIMIT)?;
     install_for_repository(&repository, &owner)?;
     Ok(())
 }

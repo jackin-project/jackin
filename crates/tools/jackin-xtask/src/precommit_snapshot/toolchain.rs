@@ -36,6 +36,7 @@ const MANAGED_TOOLS: &[&str] = &[
 pub(super) struct QualifiedTools {
     pub(super) gate: PathBuf,
     pub(super) environment: BTreeMap<OsString, OsString>,
+    pub(super) _path_aliases: Option<tempfile::TempDir>,
 }
 
 pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
@@ -72,7 +73,7 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     let managed_dir = snapshot.scratch_root.join("tools");
     fs::create_dir(&managed_dir).context("creating private qualified tool directory")?;
     // `mise exec` has already resolved this to the configured MBX Cargo
-    // wrapper. Put it before rustup's bin directory so `cargo` cannot silently
+    // wrapper. Put it in the first PATH projection so `cargo` cannot silently
     // resolve to rustup's Cargo and bypass the admitted wrapper.
     symlink(&cargo, managed_dir.join("cargo"))
         .context("linking the qualified MBX Cargo wrapper")?;
@@ -87,9 +88,11 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     symlink("/usr/bin/xcrun", managed_dir.join("xcrun"))
         .context("linking fixed Xcode tool resolver")?;
 
+    let path_aliases = create_path_aliases(&env::temp_dir(), Path::new("/tmp"))?;
     let environment = build_qualified_environment(
         snapshot,
         &managed_dir,
+        path_aliases.path(),
         &cargo,
         &pin,
         &rust_tools,
@@ -107,12 +110,14 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     Ok(QualifiedTools {
         gate: resolved["hk"].clone(),
         environment,
+        _path_aliases: Some(path_aliases),
     })
 }
 
 fn build_qualified_environment(
     snapshot: &OwnedSnapshot,
     managed_dir: &Path,
+    path_alias_dir: &Path,
     cargo: &Path,
     pin: &str,
     rust_tools: &BTreeMap<&'static str, PathBuf>,
@@ -171,13 +176,10 @@ fn build_qualified_environment(
     ] {
         environment.remove(OsStr::new(key));
     }
-    let rust_bin = rust_tools["rustc"]
-        .parent()
-        .context("rustc path has no bin directory")?
-        .to_path_buf();
+    populate_path_aliases(path_alias_dir, managed_dir, rust_tools)?;
     environment.insert(
         OsString::from("PATH"),
-        qualified_path(managed_dir, &rust_bin, inherited_path)?,
+        qualified_path(path_alias_dir, inherited_path)?,
     );
     let selected_path = environment
         .get(OsStr::new("PATH"))
@@ -307,10 +309,57 @@ where
     Ok(resolved)
 }
 
-fn qualified_path(managed_dir: &Path, rust_bin: &Path, inherited_path: &OsStr) -> Result<OsString> {
-    let path_entries = std::iter::once(managed_dir.to_path_buf())
-        .chain(std::iter::once(rust_bin.to_path_buf()))
-        .chain(env::split_paths(inherited_path));
+fn create_path_aliases(preferred: &Path, fallback: &Path) -> Result<tempfile::TempDir> {
+    let preferred = fs::canonicalize(preferred).context("resolving preferred PATH alias root")?;
+    let parent = if preferred.as_os_str().as_encoded_bytes().contains(&b':') {
+        // `/tmp` is the fixed separator-free fallback when TMPDIR cannot be encoded in PATH.
+        fs::canonicalize(fallback).context("resolving separator-safe PATH alias fallback")?
+    } else {
+        preferred
+    };
+    ensure!(
+        !parent.as_os_str().as_encoded_bytes().contains(&b':'),
+        "separator-safe PATH alias root contains the PATH delimiter"
+    );
+    let directory = tempfile::Builder::new()
+        .prefix("jackin-path-")
+        .tempdir_in(parent)
+        .context("creating private separator-safe PATH aliases")?;
+    fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700))?;
+    super::process::validate_confidential_directory(directory.path())
+        .context("validating private separator-safe PATH aliases")?;
+    ensure!(
+        !directory
+            .path()
+            .as_os_str()
+            .as_encoded_bytes()
+            .contains(&b':'),
+        "private PATH alias path contains the PATH delimiter"
+    );
+    Ok(directory)
+}
+
+fn populate_path_aliases(
+    path_alias_dir: &Path,
+    managed_dir: &Path,
+    rust_tools: &BTreeMap<&str, PathBuf>,
+) -> Result<()> {
+    for entry in
+        crate::fs_util::read_dir_sorted(managed_dir).context("reading private qualified tools")?
+    {
+        symlink(entry.path(), path_alias_dir.join(entry.file_name()))
+            .context("linking private tool into separator-safe PATH projection")?;
+    }
+    for (name, path) in rust_tools {
+        symlink(path, path_alias_dir.join(name))
+            .with_context(|| format!("linking qualified Rust tool {name}"))?;
+    }
+    Ok(())
+}
+
+fn qualified_path(path_alias_dir: &Path, inherited_path: &OsStr) -> Result<OsString> {
+    let path_entries =
+        std::iter::once(path_alias_dir.to_path_buf()).chain(env::split_paths(inherited_path));
     env::join_paths(path_entries).context("building qualified tool path")
 }
 

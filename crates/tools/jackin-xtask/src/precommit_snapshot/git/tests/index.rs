@@ -254,10 +254,10 @@ fn rejects_staged_escaping_symlinks_and_gitlinks_before_gate() {
     let tree = snapshot
         .capture_staged_tree()
         .expect("capture gitlink tree");
-    snapshot
+    let error = snapshot
         .materialize(&tree, &live)
-        .expect("materialize gitlink tree");
-    assert!(snapshot.admit(&tree).is_err());
+        .expect_err("gitlinks must be rejected before checkout");
+    assert!(format!("{error:#}").contains("staged submodules"));
 }
 
 #[test]

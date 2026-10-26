@@ -83,6 +83,10 @@ file metadata, the index, stash stack, and compiler outputs stay untouched.
 The isolated repository preserves the original HEAD and merge index, so hk
 and affected-package selection see the original staged diff. Unmerged index
 entries or staged symlinks escaping the snapshot fail before tools run.
+Before checkout, the launcher limits staged blob content to 1 GiB, counting each
+path separately. Temporary parents must preserve rename custody; standard
+root-owned sticky temporary directories are supported. Colon-containing scratch
+paths retain their location, with private PATH aliases under `/tmp` when needed.
 
 If a step still changes source, the commit fails. The launcher saves a private
 patch under the common Git directory's `jackin-hook-evidence/pre-commit.*/`
