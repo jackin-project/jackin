@@ -112,6 +112,37 @@ def set_task_status(pack: Path, task_id: str, status: str) -> None:
     graph_path.write_text(json.dumps(graph, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def set_task_states(pack: Path, statuses: dict[str, str]) -> None:
+    graph_path = pack / "task-graph.json"
+    graph = read_json(graph_path)
+    tasks = {task["id"]: task for task in graph["tasks"]}
+    for task_id, status in statuses.items():
+        tasks[task_id]["status"] = status
+
+    nonpass_roots = {task_id for task_id, status in statuses.items() if status != "PASS"}
+    descendants: set[str] = set()
+    frontier = list(nonpass_roots)
+    while frontier:
+        dependency = frontier.pop()
+        for task in graph["tasks"]:
+            task_id = task["id"]
+            if dependency in task["depends_on"] and task_id not in descendants:
+                descendants.add(task_id)
+                frontier.append(task_id)
+    descendants.difference_update(statuses)
+    for task_id in descendants:
+        tasks[task_id]["status"] = "BLOCKED"
+    write_json(graph_path, graph)
+
+    def update(cases: dict[str, dict[str, Any]]) -> None:
+        for case in cases.values():
+            for result in case["assignment_results"]:
+                if result["task_id"] in descendants:
+                    result["status"] = "NOT_RUN"
+            case["status"] = status_summary([row["status"] for row in case["assignment_results"]])
+    update_cases(pack, update)
+
+
 def sync_task_packet(pack: Path, task_id: str) -> None:
     graph = read_json(pack / "task-graph.json")
     task = next(task for task in graph["tasks"] if task["id"] == task_id)
@@ -131,16 +162,6 @@ def sync_task_packet(pack: Path, task_id: str) -> None:
     following = re.search(r"(?m)^### ", plan[matches[0].end():])
     end = matches[0].end() + following.start() if following else len(plan)
     plan_path.write_text(plan[:start] + rendered_card + "\n\n" + plan[end:].lstrip("\n"), encoding="utf-8")
-
-
-def set_shared_summary_with_blocked_owners(
-    u02: str, t32: str, summary: str,
-) -> Callable[[Path], None]:
-    def mutate(pack: Path) -> None:
-        set_task_status(pack, "U02", "BLOCKED")
-        set_task_status(pack, "T32", "BLOCKED")
-        update_cases(pack, set_shared_summary(u02, t32, summary))
-    return mutate
 
 
 def all_pass(pack: Path) -> None:
@@ -427,9 +448,28 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
 def main() -> int:
     receipts: list[dict[str, Any]] = []
 
+    def completed_t32_shared_summary(u02: str, t32: str, summary: str) -> Callable[[Path], None]:
+        def mutate(pack: Path) -> None:
+            all_pass(pack)
+            set_task_states(pack, {"T32": "BLOCKED"})
+            update_cases(pack, set_shared_summary(u02, t32, summary))
+        return mutate
+
+    def sibling_fail_precedence(pack: Path) -> None:
+        all_pass(pack)
+        set_task_states(pack, {"T35": "FAIL", "T36": "BLOCKED"})
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A117"]
+            for task_id, status in {
+                "T35": "FAIL", "T36": "BLOCKED", "T37": "PASS", "T38": "NOT_RUN",
+            }.items():
+                set_assignment(case, task_id, status)
+            case["status"] = "FAIL"
+        update_cases(pack, update)
+
     receipts.append(run_fixture(
         "shared PASS summary requires every owner",
-        set_shared_summary_with_blocked_owners("PASS", "PASS", "PASS"),
+        all_pass,
         0, [],
     ))
     receipts.append(run_fixture(
@@ -439,17 +479,17 @@ def main() -> int:
     ))
     receipts.append(run_fixture(
         "mixed PASS and NOT_RUN summarizes as NOT_RUN",
-        set_shared_summary_with_blocked_owners("PASS", "NOT_RUN", "NOT_RUN"),
+        completed_t32_shared_summary("PASS", "NOT_RUN", "NOT_RUN"),
         0, [],
     ))
     receipts.append(run_fixture(
         "mixed PASS and BLOCKED summarizes as BLOCKED",
-        set_shared_summary_with_blocked_owners("PASS", "BLOCKED", "BLOCKED"),
+        completed_t32_shared_summary("PASS", "BLOCKED", "BLOCKED"),
         0, [],
     ))
     receipts.append(run_fixture(
         "FAIL takes precedence over BLOCKED",
-        set_shared_summary_with_blocked_owners("BLOCKED", "FAIL", "FAIL"),
+        sibling_fail_precedence,
         0, [],
     ))
 
@@ -485,8 +525,8 @@ def main() -> int:
     ))
 
     def blocked_owner_with_prior_pass(pack: Path) -> None:
-        set_task_status(pack, "U02", "BLOCKED")
-        update_cases(pack, set_shared_summary("PASS", "NOT_RUN", "NOT_RUN"))
+        all_pass(pack)
+        set_task_states(pack, {"U02": "BLOCKED"})
     receipts.append(run_fixture(
         "BLOCKED owner can retain its passing assignment while T32 waits",
         blocked_owner_with_prior_pass,
@@ -504,7 +544,7 @@ def main() -> int:
 
     receipts.append(run_fixture(
         "legacy summary cannot PASS with incomplete assignment",
-        set_shared_summary_with_blocked_owners("PASS", "NOT_RUN", "PASS"),
+        completed_t32_shared_summary("PASS", "NOT_RUN", "PASS"),
         1, ["Case status matches assignment summary"],
     ))
 
@@ -637,30 +677,10 @@ def main() -> int:
 
     def t33_without_checkpoint_dependency(pack: Path) -> None:
         all_pass(pack)
-        graph_path = pack / "task-graph.json"
-        graph = read_json(graph_path)
-        tasks = {task["id"]: task for task in graph["tasks"]}
-        def depends_on_any(task_id: str, roots: set[str]) -> bool:
-            pending = list(tasks[task_id]["depends_on"])
-            seen: set[str] = set()
-            while pending:
-                dependency = pending.pop()
-                if dependency in roots:
-                    return True
-                if dependency not in seen:
-                    seen.add(dependency)
-                    pending.extend(tasks[dependency]["depends_on"])
-            return False
-
-        for task in graph["tasks"]:
-            if task["id"] == "T27":
-                task["status"] = "BLOCKED"
-            elif task["id"] != "T33" and depends_on_any(task["id"], {"T27", "T33"}):
-                task["status"] = "BLOCKED"
-        tasks["T33"]["status"] = "RUNNING"
+        set_task_states(pack, {"T27": "BLOCKED", "T33": "RUNNING"})
+        tasks = task_map(pack)
         assert all(tasks[dependency]["status"] == "PASS"
                    for dependency in tasks["T33"]["depends_on"] if dependency != "T27")
-        graph_path.write_text(json.dumps(graph, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     receipts.append(run_fixture(
         "T33 waits for T27 checkpoint completion",
         t33_without_checkpoint_dependency,
@@ -726,6 +746,46 @@ def main() -> int:
         0, [],
     ))
 
+    def blocked_task_with_incomplete_dependencies_and_result(status: str) -> Callable[[Path], None]:
+        def mutate(pack: Path) -> None:
+            set_task_status(pack, "T32", "BLOCKED")
+            def update(cases: dict[str, dict[str, Any]]) -> None:
+                case = cases["A22"]
+                set_assignment(case, "T32", status)
+                case["status"] = status_summary([row["status"] for row in case["assignment_results"]])
+            update_cases(pack, update)
+        return mutate
+
+    for status in ("PASS", "FAIL", "BLOCKED"):
+        receipts.append(run_fixture(
+            f"BLOCKED T32 with incomplete dependencies cannot retain {status} assignments",
+            blocked_task_with_incomplete_dependencies_and_result(status),
+            1, ["BLOCKED tasks with incomplete dependencies have NOT_RUN assignments"],
+        ))
+
+    def blocked_t32_with_incomplete_dependencies_not_run(pack: Path) -> None:
+        set_task_status(pack, "T32", "BLOCKED")
+    receipts.append(run_fixture(
+        "BLOCKED T32 with incomplete dependencies keeps NOT_RUN assignments",
+        blocked_t32_with_incomplete_dependencies_not_run,
+        0, [],
+    ))
+
+    def blocked_task_after_completed_dependencies_retains_results(pack: Path) -> None:
+        all_pass(pack)
+        set_task_status(pack, "T40", "BLOCKED")
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            for case_id, status in (("A123", "PASS"), ("A124", "FAIL"), ("A125", "BLOCKED")):
+                case = cases[case_id]
+                set_assignment(case, "T40", status)
+                case["status"] = status
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "BLOCKED task with completed dependencies retains prior case results",
+        blocked_task_after_completed_dependencies_retains_results,
+        0, [],
+    ))
+
     def no_case_task(pack: Path) -> None:
         all_pass(pack)
         if task_map(pack)["U06"]["test_cases"]:
@@ -781,17 +841,14 @@ def main() -> int:
 
     def manifest_failure_precedence(pack: Path) -> None:
         all_pass(pack)
-        graph_path = pack / "task-graph.json"
-        graph = read_json(graph_path)
-        for task in graph["tasks"]:
-            task["status"] = "BLOCKED"
-        write_json(graph_path, graph)
+        set_task_states(pack, {"T35": "FAIL", "T36": "BLOCKED"})
 
         def update(cases: dict[str, dict[str, Any]]) -> None:
-            for case_id, status in (("A01", "FAIL"), ("A02", "BLOCKED")):
+            for case_id, task_id, status in (
+                ("A55", "T35", "FAIL"), ("A112", "T36", "BLOCKED"),
+            ):
                 case = cases[case_id]
-                for result in case["assignment_results"]:
-                    result["status"] = status
+                set_assignment(case, task_id, status)
                 case["status"] = status
         update_cases(pack, update)
     receipts.append(run_fixture(
@@ -809,6 +866,27 @@ def main() -> int:
         "task completion rule cannot diverge from the shared evidence contract",
         corrupt_completion_rule,
         1, ["Task completion rules match the fixed evidence contract"],
+    ))
+
+    def set_review_rule(pack: Path, review_rule: str) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        next(task for task in graph["tasks"] if task["id"] == "T14")["review_rule"] = review_rule
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T14")
+
+    receipts.append(run_fixture(
+        "task review rule rejects self-review after synchronized cards",
+        lambda pack: set_review_rule(
+            pack,
+            "The task owner reviews the result. The integration subagent reruns affected tests after merge.",
+        ),
+        1, ["Task review rules match the different-subagent and post-merge contract"],
+    ))
+    receipts.append(run_fixture(
+        "task review rule requires a post-merge integration rerun",
+        lambda pack: set_review_rule(pack, "A different subagent reviews the result."),
+        1, ["Task review rules match the different-subagent and post-merge contract"],
     ))
 
     def remove_standard_task_artifact(pack: Path) -> None:
@@ -1508,6 +1586,99 @@ def main() -> int:
         "C01 source table rejects an altered historical commit",
         alter_c01_historical_sha,
         1, ["C01 source pin table matches all four fixed references"],
+    ))
+
+    def mutate_c02_bytes(pack: Path, old: bytes, new: bytes, scenario: str) -> None:
+        path = pack / "CONTRACTS.md"
+        document = path.read_bytes()
+        if document.count(old) != 1:
+            raise ValueError(f"Expected one C02 input for {scenario}")
+        path.write_bytes(document.replace(old, new, 1))
+
+    def remove_c02_row(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack,
+            b"| `crates/core/jackin-domain` | Typed records, IDs, errors, receipts, and application ports. |\n",
+            b"",
+            "deleted row",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects a deleted production crate row",
+        remove_c02_row,
+        1, ["C02 production crate graph and boundary section matches fixed bytes"],
+    ))
+
+    def alter_c02_row(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack,
+            b"| `crates/adapters/jackin-openshell` | The only sandbox execution adapter. |\n",
+            b"| `crates/adapters/jackin-openshell` | One of several sandbox execution adapters. |\n",
+            "altered row",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects an altered crate responsibility",
+        alter_c02_row,
+        1, ["C02 production crate graph and boundary section matches fixed bytes"],
+    ))
+
+    def weaken_c02_boundary(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack,
+            b"Service crates depend on domain ports, not concrete adapters.\n",
+            b"Service crates can depend on concrete adapters directly.\n",
+            "weakened boundary",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects a weakened dependency boundary",
+        weaken_c02_boundary,
+        1, ["C02 production crate graph and boundary section matches fixed bytes"],
+    ))
+
+    def duplicate_c02_heading(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack, b"## C02. Production crate graph\n",
+            b"## C02. Production crate graph\n## C02. Production crate graph\n",
+            "duplicate C02 heading",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects a duplicate section anchor",
+        duplicate_c02_heading,
+        1, ["C01 source pin table matches all four fixed references",
+            "C02 production crate graph and boundary section matches fixed bytes"],
+    ))
+
+    def remove_c02_heading(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack, b"## C02. Production crate graph\n", b"", "missing C02 heading",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects a missing section anchor",
+        remove_c02_heading,
+        1, ["C01 source pin table matches all four fixed references",
+            "C02 production crate graph and boundary section matches fixed bytes"],
+    ))
+
+    def remove_c03_boundary(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack, b"## C03. Configuration and identifiers\n", b"", "missing C03 boundary",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects a missing end boundary",
+        remove_c03_boundary,
+        1, ["C02 production crate graph and boundary section matches fixed bytes"],
+    ))
+
+    def duplicate_c03_boundary(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack,
+            b"## C03. Configuration and identifiers\n",
+            b"## C03. Configuration and identifiers\n## C03. Configuration and identifiers\n",
+            "duplicate C03 boundary",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects a duplicate end boundary",
+        duplicate_c03_boundary,
+        1, ["C02 production crate graph and boundary section matches fixed bytes"],
     ))
 
     def edit_task_packet(pack: Path, update: Callable[[str], str]) -> None:

@@ -57,7 +57,8 @@ The runner writes one JSON report to stdout and does not modify the pack. Redire
 | Topological readiness groups | 20 |
 | Checked procedural sentences | 1575 |
 
-The ordinary validator report contains 61 ordered checks; `--initial` contains 63, including two initial-only checks and the final inventory check.
+The ordinary validator report contains 64 ordered checks; `--initial` contains 66, including two initial-only checks and the final inventory check.
+The C02 digest checks fixed contract text only. It does not show that source code follows this plan.
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
 
@@ -68,6 +69,7 @@ Keep no more than eight actual subagents active at once.
 | Required pack files, including fixture tool | PASS |
 | Manifest schema versions are supported integers | PASS |
 | C01 source table matches all four exact fixed references | PASS |
+| C02 crate graph and dependency-boundary section matches its fixed bytes | PASS |
 | Machine source pins match the three fixed graph references | PASS |
 | Task IDs and case IDs are unique | PASS |
 | Declared and expected task and case counts match | PASS |
@@ -77,6 +79,7 @@ Keep no more than eight actual subagents active at once.
 | Acceptance evidence levels use documented values | PASS |
 | Acceptance manifest status uses documented values and matches the case summary | PASS |
 | Task case references are unique string IDs; completion rules match the fixed contract | PASS |
+| Each task uses the different-subagent review and post-merge integration rerun rule | PASS |
 | Release protocol includes conditional patched-tuple approval, T40 review authority, and Integration finalization writes | PASS |
 | A123 and A125 match the fixed refusal and patched-tuple authorization contracts | PASS |
 | T40 finalization write scope routes shared records through Integration | PASS |
@@ -89,6 +92,7 @@ Keep no more than eight actual subagents active at once.
 | Assignment rows have exact unique owners and valid statuses | PASS |
 | Case status matches its assignment summary | PASS |
 | `NOT_STARTED` and `READY` tasks have `NOT_RUN` assignments | PASS |
+| `BLOCKED` tasks with incomplete dependencies have `NOT_RUN` assignments | PASS |
 | Task progress waits for completed dependencies | PASS |
 | `PASS` tasks have passing results for their own assignments | PASS |
 | Task test references, case coverage, and ownership maps agree | PASS |
@@ -102,24 +106,25 @@ Keep no more than eight actual subagents active at once.
 | Every cited SPEC section lists its task owner in traceability | PASS |
 | Traceability headings, ranges, owners, and representations match | PASS |
 | Checked procedural sentences stay within the word limit | PASS |
-| Validator emits canonical ordered ordinary and initial-only check inventories | PASS |
+| Validator emits the canonical ordered ordinary and initial-only check inventories | PASS |
 | Initial states claim no task or case execution (`--initial` only) | PASS |
 | Pack records no runtime tests or delegated task reviews (`--initial` only) | PASS |
 | Validator inventory matches the fixed ordered check sequence | PASS |
 
 ## Assignment-result causal fixtures
 
-All 107 scenarios passed their exact report and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 89 targeted scenarios cover assignment ownership and progress, source citations, canonical task artifacts and packets, early LIVE ownership, command registration, fixed acceptance policy, malformed manifests, release-gate protocol structure, Integration write ownership, patched-tuple authorization, C01 source pins, and validator reports.
-The downstream case below is A22, owned by U02 and T32.
+All 121 scenarios passed their exact report and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 103 targeted scenarios cover assignment ownership and progress, source citations, canonical task artifacts and packets, early LIVE ownership, command registration, fixed acceptance policy, malformed manifests, release-gate protocol structure, Integration write ownership, patched-tuple authorization, C01 pins, C02 integrity, task review rules, and validator reports.
+A22 is owned by U02 and T32. Its mixed-result fixtures complete T32 dependencies before recording results.
+A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks FAIL precedence without bypassing dependencies.
 
 | Temporary-copy fixture | Expected validator result | Observed |
 | --- | --- | --- |
 | All assignments pass and the shared case summary is `PASS` | Accept, exit 0 | PASS, exit 0 |
 | Task `PASS` with its own case assignments `PASS` | Accept, exit 0 | PASS, exit 0 |
-| U02 `PASS`, T32 `NOT_RUN`, summary `NOT_RUN` | Accept, exit 0 | PASS, exit 0 |
-| U02 `PASS`, T32 `BLOCKED`, summary `BLOCKED` | Accept, exit 0 | PASS, exit 0 |
-| Any `FAIL` with a `BLOCKED` assignment, summary `FAIL` | Accept, exit 0 | PASS, exit 0 |
+| U02 `PASS`, T32 `NOT_RUN`, summary `NOT_RUN`, with completed prerequisites | Accept, exit 0 | PASS, exit 0 |
+| U02 `PASS`, T32 `BLOCKED`, summary `BLOCKED`, with completed prerequisites | Accept, exit 0 | PASS, exit 0 |
+| A117 has sibling `FAIL` and `BLOCKED` results; summary uses `FAIL` precedence | Accept, exit 0 | PASS, exit 0 |
 | T32 task `PASS` while T32/A22 remains `NOT_RUN` | Reject, exit 1 | PASS, exit 1 |
 | Legacy summary `PASS` while T32/A22 remains `NOT_RUN` | Reject, exit 1 | PASS, exit 1 |
 | Legacy manifest without `assignment_results` | Reject, exit 1 | PASS, exit 1 |
@@ -128,6 +133,7 @@ The downstream case below is A22, owned by U02 and T32.
 | Malformed assignment row under `--initial` | Reject cleanly, exit 1 | PASS, exit 1 |
 | T33 runs before T27 checkpoint task passes | Reject, exit 1 | PASS, exit 1 |
 | `BLOCKED` task and its blocked assignments | Accept as blocked, exit 0 | PASS, exit 0 |
+| `BLOCKED` task retains prior `PASS`, `FAIL`, and `BLOCKED` results after its dependencies pass | Accept, exit 0 | PASS, exit 0 |
 | U06 `PASS` with no assigned acceptance cases | Accept under existing no-case completion rule, exit 0 | PASS, exit 0 |
 | Duplicate or non-string task case references | Reject before set-based ownership checks, exit 1 | PASS, exit 1 |
 | Root acceptance status is stale or undocumented | Reject stale summary or unknown status, exit 1 | PASS, exit 1 |
@@ -144,6 +150,8 @@ The downstream case below is A22, owned by U02 and T32.
 | `READY` owner has `PASS`, `FAIL`, or `BLOCKED` assignment | Reject, exit 1 | PASS, exit 1 |
 | `READY` owner retains `NOT_RUN` assignment | Accept, exit 0 | PASS, exit 0 |
 | `BLOCKED` U02 retains its prior `PASS` while T32 remains `NOT_RUN` | Accept, exit 0 | PASS, exit 0 |
+| `BLOCKED` owner with incomplete dependencies has a `PASS`, `FAIL`, or `BLOCKED` assignment | Reject, exit 1 | PASS, exit 1 |
+| `BLOCKED` owner with incomplete dependencies retains only `NOT_RUN` assignments | Accept, exit 0 | PASS, exit 0 |
 | Duplicate case owner with synchronized acceptance block | Reject, exit 1 | PASS, exit 1 |
 | Copied pack lacks validator; real external validator runs | Reject missing required file, exit 1 | PASS, exit 1 |
 | Acceptance policy prefix is mutated or a line is removed | Reject checksum mismatch, exit 1 | PASS, exit 1 |
@@ -182,6 +190,11 @@ The downstream case below is A22, owned by U02 and T32.
 | Individual task packet omits its preamble or uses the wrong task ID | Reject, exit 1 | PASS, exit 1 |
 | Individual task packet weakens lease, dependency, or authorization instructions | Reject, exit 1 | PASS, exit 1 |
 | Individual task packet adds a conflicting instruction | Reject, exit 1 | PASS, exit 1 |
+| C02 crate row is removed or its responsibility changes | Reject, exit 1 | PASS, exit 1 |
+| C02 dependency-boundary prose is weakened | Reject, exit 1 | PASS, exit 1 |
+| C02 or C03 boundary heading is duplicated or missing | Reject, exit 1 | PASS, exit 1 |
+| Synchronized task packet changes the review rule to allow self-review | Reject, exit 1 | PASS, exit 1 |
+| Synchronized task packet removes the post-merge integration rerun | Reject, exit 1 | PASS, exit 1 |
 
 The upstream `PASS` fixture shows U02 cannot close T32's assignment.
 Each raw receipt binds every mutated file actually tested. The traceability-owner receipt hashes both `traceability.json` and `TRACEABILITY.md`; the missing-validator receipt records `validate_pack.py` as `missing`.

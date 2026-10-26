@@ -12,9 +12,14 @@ from typing import Any
 
 ORIGINAL_SPEC_SHA256 = "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe767523a3e"
 ACCEPTANCE_POLICY_SHA256 = "503b2bd2ed5560a311a3641409c0f59a7806f6847575b509641b85cbab3ed59a"
+C02_CONTRACT_SECTION_SHA256 = "017714a83ab1ee7827dfcf8459ef6ca5e58c11787210083856211d1ba8e9cdf2"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
+TASK_REVIEW_RULE = (
+    "A different subagent reviews the result. "
+    "The integration subagent reruns affected tests after merge."
+)
 PROGRESS_TASK_STATUSES = {"READY", "RUNNING", "REVIEW", "PASS", "FAIL"}
 CASE_STATUSES = {"NOT_RUN", "PASS", "FAIL", "BLOCKED"}
 TASK_COMPLETION_RULE = (
@@ -49,6 +54,7 @@ ORDINARY_CHECK_NAMES = (
     "Required pack files exist",
     "Manifest schema versions are supported integers",
     "C01 source pin table matches all four fixed references",
+    "C02 production crate graph and boundary section matches fixed bytes",
     "Machine source pins match fixed references",
     "Parallel agent limit matches the subagent contract",
     "Task statuses use documented values",
@@ -65,6 +71,7 @@ ORDINARY_CHECK_NAMES = (
     "Expected acceptance case count",
     "Task required artifacts match canonical evidence set and report path",
     "Task completion rules match the fixed evidence contract",
+    "Task review rules match the different-subagent and post-merge contract",
     "Task test_cases contain unique string IDs",
     "Release gate protocol matches fixed semantics",
     "Original specification matches its fixed checksum and both manifests",
@@ -87,6 +94,7 @@ ORDINARY_CHECK_NAMES = (
     "Assignment results have exact unique case owners and valid statuses",
     "Case status matches assignment summary",
     "NOT_STARTED and READY tasks have NOT_RUN assignments",
+    "BLOCKED tasks with incomplete dependencies have NOT_RUN assignments",
     "Task test references exist",
     "PASS tasks have passing assigned case results",
     "Every case has a task owner",
@@ -527,6 +535,22 @@ def source_pin_table_errors(document: str) -> list[dict[str, Any]]:
     return []
 
 
+def c02_contract_section_errors(document: bytes) -> list[dict[str, Any]]:
+    start_heading = rb"(?m)^## C02\. Production crate graph[ \t]*\r?$"
+    end_heading = rb"(?m)^## C03\. Configuration and identifiers[ \t]*\r?$"
+    starts = list(re.finditer(start_heading, document))
+    ends = list(re.finditer(end_heading, document))
+    if len(starts) != 1:
+        return [{"problem": "expected one C02 heading", "count": len(starts)}]
+    if len(ends) != 1 or ends[0].start() <= starts[0].start():
+        return [{"problem": "expected one C03 boundary after C02", "count": len(ends)}]
+    section = document[starts[0].start():ends[0].start()]
+    actual = hashlib.sha256(section).hexdigest()
+    if actual != C02_CONTRACT_SECTION_SHA256:
+        return [{"expected_sha256": C02_CONTRACT_SECTION_SHA256, "actual_sha256": actual}]
+    return []
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent)
@@ -571,11 +595,14 @@ def main() -> int:
           not unsupported_versions,
           {"supported": SUPPORTED_SCHEMA_VERSION, "actual": manifest_versions,
            "unsupported": unsupported_versions})
-    c01_source_table_errors = source_pin_table_errors(
-        (root / "CONTRACTS.md").read_text(encoding="utf-8"),
-    )
+    contracts_bytes = (root / "CONTRACTS.md").read_bytes()
+    contracts_document = contracts_bytes.decode("utf-8")
+    c01_source_table_errors = source_pin_table_errors(contracts_document)
     check("C01 source pin table matches all four fixed references",
           not c01_source_table_errors, c01_source_table_errors)
+    c02_contract_errors = c02_contract_section_errors(contracts_bytes)
+    check("C02 production crate graph and boundary section matches fixed bytes",
+          not c02_contract_errors, c02_contract_errors)
     source_pin_errors = {field: {"expected": expected, "actual": graph.get(field)}
                          for field, expected in SOURCE_PINS.items()
                          if graph.get(field) != expected}
@@ -649,6 +676,12 @@ def main() -> int:
     ]
     check("Task completion rules match the fixed evidence contract",
           not bad_completion_rules, bad_completion_rules)
+    bad_review_rules = [
+        {"task": task.get("id"), "review_rule": task.get("review_rule")}
+        for task in tasks if task.get("review_rule") != TASK_REVIEW_RULE
+    ]
+    check("Task review rules match the different-subagent and post-merge contract",
+          not bad_review_rules, bad_review_rules)
     task_case_reference_errors = []
     for task in tasks:
         references = task.get("test_cases")
@@ -951,6 +984,25 @@ def main() -> int:
     ]
     check("NOT_STARTED and READY tasks have NOT_RUN assignments",
           not not_started_assignment_errors, not_started_assignment_errors)
+    blocked_incomplete_assignment_errors = []
+    for task in tasks:
+        if task.get("status") != "BLOCKED":
+            continue
+        incomplete_dependencies = [
+            dependency for dependency in task.get("depends_on", [])
+            if tasks_by_id.get(dependency, {}).get("status") != "PASS"
+        ]
+        if not incomplete_dependencies:
+            continue
+        for case_id in task_cases_by_id[task["id"]]:
+            status = assignment_status_by_case_and_task.get((case_id, task["id"]))
+            if status != "NOT_RUN":
+                blocked_incomplete_assignment_errors.append({
+                    "task": task["id"], "case": case_id, "status": status,
+                    "dependencies_not_passed": sorted(incomplete_dependencies),
+                })
+    check("BLOCKED tasks with incomplete dependencies have NOT_RUN assignments",
+          not blocked_incomplete_assignment_errors, blocked_incomplete_assignment_errors)
 
     unknown_cases = [(task["id"], cid) for task in tasks for cid in task_cases_by_id[task["id"]]
                      if cid not in case_set]
