@@ -32,7 +32,7 @@ fn run_inherited_input_worker() {
     let executable = std::env::current_exe().expect("test executable path");
     let worker_name = "spooled::tests::supported::worker_inherited_piped_stdin_line";
     let mut child = Command::new(executable)
-        .args(["--exact", worker_name, "--nocapture"])
+        .args(["--exact", worker_name, "--nocapture", "--ignored"])
         .env(INHERITED_INPUT_WORKER_ENV, worker_name)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -392,6 +392,7 @@ fn inherited_piped_stdin_line_is_forwarded_by_the_child() {
 }
 
 #[test]
+#[ignore = "harness worker: standalone run is vacuous; real proof is the parent spawn"]
 fn worker_inherited_piped_stdin_line() {
     let worker_name = "spooled::tests::supported::worker_inherited_piped_stdin_line";
     if std::env::var(INHERITED_INPUT_WORKER_ENV).ok().as_deref() != Some(worker_name) {

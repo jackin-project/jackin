@@ -105,7 +105,7 @@ fn descriptor_zero_survives_child_standard_input_replacement() {
     let status = Command::new("sh")
         .args([
             "-c",
-            "exec 0<&-; exec \"$1\" --exact tests::descriptor_zero_child --nocapture",
+            "exec 0<&-; exec \"$1\" --exact tests::descriptor_zero_child --nocapture --ignored",
             "fixture",
         ])
         .arg(std::env::current_exe().unwrap())
@@ -116,6 +116,7 @@ fn descriptor_zero_survives_child_standard_input_replacement() {
 }
 
 #[test]
+#[ignore = "harness worker: standalone run is vacuous; real proof is the parent spawn"]
 fn descriptor_zero_child() {
     let Some(directory) = std::env::var_os("JACKIN_PINNED_DIRECTORY_FIXTURE") else {
         return;
