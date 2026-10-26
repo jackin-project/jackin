@@ -2612,6 +2612,7 @@ dependencies = [
  "termrock",
  "thiserror 2.0.21",
  "tokio",
+ "toml",
  "tracing",
 ]
 
@@ -3653,6 +3654,7 @@ dependencies = [
  "jackin-config",
  "jackin-core",
  "jackin-docker",
+ "jackin-env",
  "jackin-instance",
  "jackin-protocol",
  "rustix 1.1.5",
@@ -3660,6 +3662,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
+ "toml",
 ]
 
 [[package]]
