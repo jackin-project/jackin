@@ -10,7 +10,7 @@ use std::{
 
 use super::process::SetupControls;
 use anyhow::{Context, Result, bail, ensure};
-use jackin_process_directory::{CheckedInstallRoot, CheckedSourceRoot, InstallFileKind};
+use jackin_process_directory::{CheckedInstallRoot, InstallFileKind};
 use nix::unistd::{UnlinkatFlags, geteuid, unlinkat};
 use nix::{
     errno::Errno,
@@ -66,8 +66,12 @@ fn persist_invocation(
 ) -> Result<PathBuf> {
     controls.check_start()?;
     recheck_directory_path(root, root_descriptor)?;
-    let checked_root = CheckedSourceRoot::from_absolute_directory(root)
-        .context("retaining private evidence root custody")?;
+    let checked_root = CheckedInstallRoot::from_pinned_directory(
+        root_descriptor
+            .try_clone()
+            .context("duplicating private evidence root")?,
+    )
+    .context("retaining private evidence root custody")?;
     recheck_directory_path(root, root_descriptor)?;
     let (name, invocation_descriptor, mut cleanup) = create_unique_directory(root_descriptor)?;
     let directory = root.join(&name);
@@ -132,7 +136,7 @@ fn persist_invocation(
         .context("syncing private staged-source evidence directory")?;
     controls.check_start()?;
     let visible_file = checked_root
-        .open_file(&name.join("fixes.patch"))
+        .open_file(&name.join("fixes.patch"), InstallFileKind::Receipt)
         .context("rechecking reported staged-source evidence path")?;
     let visible_metadata = visible_file.file().metadata()?;
     ensure!(

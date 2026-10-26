@@ -97,6 +97,33 @@ fn persist_returns_synced_private_patch_under_physical_common_directory() -> any
 }
 
 #[test]
+fn persist_preserves_evidence_beneath_a_sticky_writable_ancestor() -> anyhow::Result<()> {
+    let temporary = tempfile::tempdir()?;
+    let ancestor = fs::canonicalize(temporary.path())?;
+    let common_git_dir = ancestor.join("repository.git");
+    fs::create_dir(&common_git_dir)?;
+    fs::set_permissions(&common_git_dir, fs::Permissions::from_mode(0o700))?;
+    fs::set_permissions(&ancestor, fs::Permissions::from_mode(0o1777))?;
+    let patch = b"private patch beneath sticky ancestor\n";
+
+    let result = persist(
+        &common_git_dir,
+        patch,
+        &super::SetupControls::for_test(std::time::Duration::from_secs(30)),
+    );
+    fs::set_permissions(&ancestor, fs::Permissions::from_mode(0o700))?;
+    let persisted = result?;
+
+    assert_eq!(fs::read(&persisted)?, patch);
+    assert_eq!(
+        fs::metadata(&persisted)?.permissions().mode() & 0o777,
+        0o600
+    );
+    assert!(persisted.starts_with(&common_git_dir));
+    Ok(())
+}
+
+#[test]
 fn failed_invocation_cleanup_preserves_prior_evidence() -> anyhow::Result<()> {
     let temporary = tempfile::tempdir()?;
     let root = temporary.path().join("evidence");
