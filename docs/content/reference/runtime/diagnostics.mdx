@@ -67,11 +67,16 @@ Generative-AI signals use standard semantic conventions only where content captu
 
 ## Verification
 
-Current wire tests cover direct host/daemon/Capsule delivery, exact Resource consistency, correlation rules, payload-wide privacy detectors, shutdown, serialized daemon and Capsule protocols, the production launch controller, registry-wide event delivery, and live-volume soak behavior. Universal error-ownership enforcement, production UI causality, production prewarm-path proof, calibrated active-path performance evidence, and fresh integrated CI gates remain unfinished.
+The in-tree test corpus was removed, so the wire, conformance, and soak coverage previously described here no longer exists. Universal error-ownership enforcement, production UI causality, production prewarm-path proof, calibrated active-path performance evidence, and fresh integrated CI gates remain unfinished.
 
-Run focused contract checks with:
+Run the contract check that still runs with:
 
 ```sh
 cargo xtask telemetry-registry
+```
+
+The nextest filterset below currently selects zero tests (conformance tests and the OTLP testbed were deleted); it is kept as the empty-run placeholder until coverage is rebuilt:
+
+```sh
 cargo nextest run -p jackin-diagnostics --all-features --locked -E 'test(/conformance/)'
 ```

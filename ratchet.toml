@@ -974,7 +974,7 @@ key = "crates/services/jackin-workflow/README.md"
 bound = 650
 [[family.entry]]
 key = "crates/testing/jackin-test-support/README.md"
-bound = 2647
+bound = 2584
 [[family.entry]]
 key = "crates/tools/jackin-dev/README.md"
 bound = 1182

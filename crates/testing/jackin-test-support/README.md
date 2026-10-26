@@ -23,11 +23,11 @@ Test-support tier: sits just above `jackin-core`. Allowed workspace dependencies
 
 ## Public API
 
-`FakeRunner`, `FakeDockerClient`, `seed_valid_role_repo`, `first_temp_role_repo`, `TEST_DOCKERFILE_FROM` — all re-exported from the crate root. Moved byte-for-byte (behavior-preserving) from `jackin-runtime`'s former `runtime::test_support` module; `jackin-runtime`'s `install_all_test_stubs` stayed behind (it needs `jackin_image` and has no consumer outside `jackin-runtime`'s own tests).
+`FakeRunner`, `FakeDockerClient`, `seed_valid_role_repo`, `first_temp_role_repo`, `TEST_DOCKERFILE_FROM` — all re-exported from the crate root. Moved byte-for-byte (behavior-preserving) from `jackin-runtime`'s former `runtime::test_support` module. (`install_all_test_stubs` once stayed behind in `jackin-runtime`; removed with the test corpus.)
 
 ## Dedupe candidates (follow-up, not done here)
 
-Three fakes duplicate these types elsewhere in the workspace and were deliberately left in place by this extraction (different call sites, different plan):
+Three fakes once duplicated these types elsewhere and were left in place by this extraction. All three were removed with the test corpus:
 
 - `crates/apps/jackin/tests/common/mod.rs` — a `FakeRunner`.
 - `crates/services/jackin-host/src/caffeinate/tests.rs` — its own `FakeDockerClient` + `FakeRunner`.
