@@ -15,7 +15,7 @@ ACCEPTANCE_POLICY_SHA256 = "503b2bd2ed5560a311a3641409c0f59a7806f6847575b509641b
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
-PROGRESS_TASK_STATUSES = {"READY", "RUNNING", "REVIEW", "PASS"}
+PROGRESS_TASK_STATUSES = {"READY", "RUNNING", "REVIEW", "PASS", "FAIL"}
 CASE_STATUSES = {"NOT_RUN", "PASS", "FAIL", "BLOCKED"}
 TASK_COMPLETION_RULE = (
     "All task checks pass at their declared evidence level. "
@@ -26,6 +26,98 @@ SOURCE_PINS = {
     "openshell_candidate": "c4688aa8715ea75d6c39fe468361dbbc16c691fa",
     "openshell_release_comparator": "bdb956f2cd65a635f1294fccf1d138d263bf650f",
 }
+SOURCE_PIN_TABLE_ROWS = [
+    "| Item | Reference |",
+    "| --- | --- |",
+    "| Jackin source baseline | `faa2ab6c12e3de45a76ab6b98df0c64dac7aac6e` |",
+    "| OpenShell candidate source | `c4688aa8715ea75d6c39fe468361dbbc16c691fa` |",
+    "| OpenShell release comparator | `v0.1.5`, `bdb956f2cd65a635f1294fccf1d138d263bf650f` |",
+    "| Historical experiment source | `a7689b48e2b6ef2ca5a4367ee27527887cf45ce8` |",
+]
+TASK_PACKET_INSTRUCTIONS = [
+    "## Instructions",
+    "",
+    "Read [../GOAL.md](../GOAL.md), [../CONTRACTS.md](../CONTRACTS.md), and [../SUBAGENTS.md](../SUBAGENTS.md) before this assignment.",
+    "Read every required input in this card.",
+    "Check dependencies in [../task-graph.json](../task-graph.json) before starting work.",
+    "Read the assigned cases in [../ACCEPTANCE.md](../ACCEPTANCE.md).",
+    "Use an exclusive file lease from the coordinator.",
+    "The task card does not authorize unrelated changes or production actions.",
+]
+CHECK_INVENTORY_CHECK = "Validator check inventory matches its canonical ordered sequence"
+ORDINARY_CHECK_NAMES = (
+    "Required pack files exist",
+    "Manifest schema versions are supported integers",
+    "C01 source pin table matches all four fixed references",
+    "Machine source pins match fixed references",
+    "Parallel agent limit matches the subagent contract",
+    "Task statuses use documented values",
+    "Acceptance case statuses use documented values",
+    "Acceptance evidence levels use documented values",
+    "Acceptance manifest status uses documented values",
+    "Acceptance manifest status matches the case summary",
+    "Task IDs are unique",
+    "Case IDs are unique",
+    "Acceptance cases have unique string task owners",
+    "Declared task count matches",
+    "Declared case count matches",
+    "Expected task count",
+    "Expected acceptance case count",
+    "Task required artifacts match canonical evidence set and report path",
+    "Task completion rules match the fixed evidence contract",
+    "Task test_cases contain unique string IDs",
+    "Release gate protocol matches fixed semantics",
+    "Original specification matches its fixed checksum and both manifests",
+    "Task SPEC citations use valid syntax",
+    "Task SPEC citation ranges are within SPEC.md",
+    "Dependencies reference other known tasks",
+    "Release gate references name T40 and its owned final cases",
+    "P04, T40, A123, and A125 mirror the fixed release gate contract",
+    "T40 finalization writes route through Integration",
+    "A125 verifies conditional patched-tuple approval",
+    "P02 bootstrap records, P04 imports, and T12 reruns A05/A06",
+    "P04 harness command registration and P05 build wiring scopes agree",
+    "PACK-CHECKS limits release-gate claims to static structure",
+    "P04 is listed under the Qualification subagent",
+    "Subagent task assignments exactly match graph owners",
+    "Review packet uses candidate input and post-merge completion stages",
+    "Task progress waits for completed dependencies",
+    "Dependency graph has no cycle",
+    "Stored ready groups match dependencies without duplicate task IDs",
+    "Assignment results have exact unique case owners and valid statuses",
+    "Case status matches assignment summary",
+    "NOT_STARTED and READY tasks have NOT_RUN assignments",
+    "Task test references exist",
+    "PASS tasks have passing assigned case results",
+    "Every case has a task owner",
+    "Case and task ownership maps agree",
+    "Task graph fields match TASKS index table",
+    "Task graph fields match PLAN task index table",
+    "PLAN task headings match the task graph",
+    "Task graph fields match PLAN task cards",
+    "Task graph fields and canonical preamble match individual task packets",
+    "Acceptance detailed-case anchor is unique",
+    "Acceptance policy before detailed cases matches fixed checksum",
+    "Acceptance case headings have no missing, duplicate, or extra blocks",
+    "Acceptance case fields match the acceptance-case manifest",
+    "Every specification heading is mapped",
+    "Traceability ranges match exact specification sections",
+    "Task citations are represented in traceability",
+    "Traceability table matches its manifest",
+    "Traceability uses known task owners",
+    "Checked procedural sentences contain at most 20 whitespace-separated words",
+)
+INITIAL_ONLY_CHECK_NAMES = (
+    "Initial task, case, and assignment statuses claim no execution",
+    "Pack records no runtime tests or delegated reviews",
+)
+
+
+def canonical_check_inventory(initial: bool = False) -> tuple[str, ...]:
+    initial_checks = INITIAL_ONLY_CHECK_NAMES if initial else ()
+    return (*ORDINARY_CHECK_NAMES, *initial_checks, CHECK_INVENTORY_CHECK)
+
+
 SOURCE_BASIS_PATTERN = re.compile(r"SPEC L\d+(?:-L\d+)?(?:; L\d+(?:-L\d+)?)*")
 SOURCE_CITATION_PATTERN = re.compile(r"L(\d+)(?:-L(\d+))?")
 RELEASE_GATE_PROTOCOL = {
@@ -262,6 +354,16 @@ def render_task_card(task: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_task_packet(task: dict[str, Any]) -> str:
+    return "\n".join([
+        f"# Task packet: {task['id']}",
+        "",
+        *TASK_PACKET_INSTRUCTIONS,
+        "",
+        render_task_card(task),
+    ])
+
+
 def render_acceptance_case(case: dict[str, Any]) -> str:
     tasks = ", ".join(case["tasks"])
     assignments = "; ".join(f"{task_id}=NOT_RUN" for task_id in case["tasks"])
@@ -408,6 +510,23 @@ def traceability_table(document: str) -> list[str] | None:
     return [line.strip() for line in section.splitlines() if line.lstrip().startswith("|")]
 
 
+def source_pin_table_errors(document: str) -> list[dict[str, Any]]:
+    heading = "## C01. Source and compatibility pins"
+    headings = list(re.finditer(r"(?m)^" + re.escape(heading) + r"\s*$", document))
+    if len(headings) != 1:
+        return [{"problem": "expected one C01 source-pin heading", "count": len(headings)}]
+    following = list(re.finditer(r"(?m)^## C02\. Production crate graph\s*$", document))
+    following = [match for match in following if match.start() > headings[0].end()]
+    if len(following) != 1:
+        return [{"problem": "expected one C02 heading after C01", "count": len(following)}]
+    section = document[headings[0].end():following[0].start()]
+    actual_rows = [line.strip() for line in section.splitlines()
+                   if line.lstrip().startswith("|")]
+    if actual_rows != SOURCE_PIN_TABLE_ROWS:
+        return [{"expected_rows": SOURCE_PIN_TABLE_ROWS, "actual_rows": actual_rows}]
+    return []
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent)
@@ -430,7 +549,8 @@ def main() -> int:
     missing = [name for name in required if not (root / name).is_file()]
     check("Required pack files exist", not missing, missing)
     if missing:
-        result = {"passed": False, "scope": "Static planning-pack checks only",
+        result = {"passed": False, "initial": args.initial,
+                  "scope": "Static planning-pack checks only",
                   "not_checked": ["Product compilation", "Runtime capabilities", "Independent code review",
                                   "Full ASD-STE100 dictionary conformity"],
                   "counts": {}, "checks": checks, "failures": failures}
@@ -451,10 +571,15 @@ def main() -> int:
           not unsupported_versions,
           {"supported": SUPPORTED_SCHEMA_VERSION, "actual": manifest_versions,
            "unsupported": unsupported_versions})
+    c01_source_table_errors = source_pin_table_errors(
+        (root / "CONTRACTS.md").read_text(encoding="utf-8"),
+    )
+    check("C01 source pin table matches all four fixed references",
+          not c01_source_table_errors, c01_source_table_errors)
     source_pin_errors = {field: {"expected": expected, "actual": graph.get(field)}
                          for field, expected in SOURCE_PINS.items()
                          if graph.get(field) != expected}
-    check("Machine source pins match C01", not source_pin_errors, source_pin_errors)
+    check("Machine source pins match fixed references", not source_pin_errors, source_pin_errors)
     check("Parallel agent limit matches the subagent contract",
           graph.get("parallel_agent_limit") == PARALLEL_AGENT_LIMIT,
           {"expected": PARALLEL_AGENT_LIMIT, "actual": graph.get("parallel_agent_limit")})
@@ -890,12 +1015,11 @@ def main() -> int:
             card_errors.append(task["id"])
             continue
         card_text = card.read_text(encoding="utf-8")
-        card_headings = list(re.finditer(r"(?m)^### (.+)$", card_text))
-        matching_card = [match for match in card_headings if match.group(0) == marker]
-        if len(matching_card) != 1 or card_text[matching_card[0].start():].strip() != expected:
+        if card_text.strip() != render_task_packet(task).strip():
             card_errors.append(task["id"])
     check("Task graph fields match PLAN task cards", not plan_task_errors, plan_task_errors)
-    check("Task graph fields match individual task cards", not card_errors, card_errors)
+    check("Task graph fields and canonical preamble match individual task packets",
+          not card_errors, card_errors)
 
     acceptance_bytes = (root / "ACCEPTANCE.md").read_bytes()
     marker_offsets = []
@@ -1062,7 +1186,15 @@ def main() -> int:
               graph["subagents_used_for_this_pack"] is False
               and graph["runtime_tests_executed_for_this_pack"] is False)
 
-    result = {"passed": not failures, "scope": "Static planning-pack checks only",
+    actual_check_names = [item["check"] for item in checks]
+    expected_check_names = canonical_check_inventory(args.initial)[:-1]
+    check_inventory_errors = [] if actual_check_names == list(expected_check_names) else [{
+        "expected": list(expected_check_names), "actual": actual_check_names,
+    }]
+    check(CHECK_INVENTORY_CHECK, not check_inventory_errors, check_inventory_errors)
+
+    result = {"passed": not failures, "initial": args.initial,
+              "scope": "Static planning-pack checks only",
               "not_checked": ["Product compilation", "Runtime capabilities", "Independent code review",
                               "Full ASD-STE100 dictionary conformity"],
               "counts": {"tasks": len(tasks), "cases": len(cases), "specification_sections": len(actual_headings),
@@ -1084,6 +1216,7 @@ if __name__ == "__main__":
         if "--json" in sys.argv:
             result = {
                 "passed": False,
+            "initial": "--initial" in sys.argv,
                 "scope": "Static planning-pack checks only",
                 "not_checked": ["Product compilation", "Runtime capabilities", "Independent code review",
                                 "Full ASD-STE100 dictionary conformity"],

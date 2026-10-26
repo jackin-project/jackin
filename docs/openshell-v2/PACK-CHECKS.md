@@ -57,6 +57,7 @@ The runner writes one JSON report to stdout and does not modify the pack. Redire
 | Topological readiness groups | 20 |
 | Checked procedural sentences | 1575 |
 
+The ordinary validator report contains 61 ordered checks; `--initial` contains 63, including two initial-only checks and the final inventory check.
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
 
@@ -66,7 +67,8 @@ Keep no more than eight actual subagents active at once.
 | --- | --- |
 | Required pack files, including fixture tool | PASS |
 | Manifest schema versions are supported integers | PASS |
-| Machine source pins match C01 | PASS |
+| C01 source table matches all four exact fixed references | PASS |
+| Machine source pins match the three fixed graph references | PASS |
 | Task IDs and case IDs are unique | PASS |
 | Declared and expected task and case counts match | PASS |
 | Original specification matches its fixed checksum and both manifests | PASS |
@@ -92,6 +94,7 @@ Keep no more than eight actual subagents active at once.
 | Task test references, case coverage, and ownership maps agree | PASS |
 | Task required artifacts match the canonical six receipts and report path | PASS |
 | Task graph matches indexes and task cards, including report paths | PASS |
+| Individual task packets match their ID and complete canonical instruction preamble | PASS |
 | Acceptance detailed-case anchor is unique | PASS |
 | Acceptance policy before detailed cases matches fixed checksum | PASS |
 | Acceptance case blocks match the manifest | PASS |
@@ -99,13 +102,15 @@ Keep no more than eight actual subagents active at once.
 | Every cited SPEC section lists its task owner in traceability | PASS |
 | Traceability headings, ranges, owners, and representations match | PASS |
 | Checked procedural sentences stay within the word limit | PASS |
+| Validator emits canonical ordered ordinary and initial-only check inventories | PASS |
 | Initial states claim no task or case execution (`--initial` only) | PASS |
 | Pack records no runtime tests or delegated task reviews (`--initial` only) | PASS |
+| Validator inventory matches the fixed ordered check sequence | PASS |
 
 ## Assignment-result causal fixtures
 
-All 83 scenarios passed their exact report and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 65 targeted scenarios cover assignment ownership, source citations, canonical task artifacts, early LIVE ownership, command registration, fixed acceptance policy, malformed manifests, release-gate protocol structure, Integration write ownership, patched-tuple authorization, and validator reports.
+All 107 scenarios passed their exact report and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 89 targeted scenarios cover assignment ownership and progress, source citations, canonical task artifacts and packets, early LIVE ownership, command registration, fixed acceptance policy, malformed manifests, release-gate protocol structure, Integration write ownership, patched-tuple authorization, C01 source pins, and validator reports.
 The downstream case below is A22, owned by U02 and T32.
 
 | Temporary-copy fixture | Expected validator result | Observed |
@@ -133,6 +138,9 @@ The downstream case below is A22, owned by U02 and T32.
 | P04 qualification ownership or review-before-merge requirements are missing | Reject, exit 1 | PASS, exit 1 |
 | Pack report omits the static-only release-gate scope statement | Reject, exit 1 | PASS, exit 1 |
 | `NOT_STARTED` owner has `PASS`, `FAIL`, or `BLOCKED` assignment | Reject, exit 1 | PASS, exit 1 |
+| `FAIL` task has an incomplete dependency | Reject, exit 1 | PASS, exit 1 |
+| `FAIL` task follows completed dependencies with `NOT_RUN` and `PASS` cases | Accept, exit 0 | PASS, exit 0 |
+| `BLOCKED` task waits on an incomplete dependency with `NOT_RUN` cases | Accept, exit 0 | PASS, exit 0 |
 | `READY` owner has `PASS`, `FAIL`, or `BLOCKED` assignment | Reject, exit 1 | PASS, exit 1 |
 | `READY` owner retains `NOT_RUN` assignment | Accept, exit 0 | PASS, exit 0 |
 | `BLOCKED` U02 retains its prior `PASS` while T32 remains `NOT_RUN` | Accept, exit 0 | PASS, exit 0 |
@@ -146,6 +154,12 @@ The downstream case below is A22, owned by U02 and T32.
 | Inconsistent counts, checks, failures, scope, or exit code, including an input-error report with exit 1 | Reject malformed report | PASS |
 | Duplicate or malformed check records | Reject malformed report | PASS |
 | Unexpected extra failure name | Reject report against exact expected failures | PASS |
+| Ordinary baseline report contains every check in canonical order | Accept, exit 0 | PASS, exit 0 |
+| Initial baseline report contains ordinary checks and initial-only checks in canonical order | Accept, exit 0 | PASS, exit 0 |
+| Truncated passing or failing report | Reject malformed report | PASS |
+| Report with a missing middle check, reordered checks, or an extra check | Reject malformed report | PASS |
+| Initial report without the required initial-only tail | Reject malformed report | PASS |
+| Report initial flag differs from the validator invocation | Reject malformed report | PASS |
 | Canonical review receipt removed with synchronized task graph, PLAN, and card | Reject, exit 1 | PASS, exit 1 |
 | Report path relocated with synchronized task graph, PLAN, and card | Reject, exit 1 | PASS, exit 1 |
 | U00 upstream-change receipt removed with synchronized task graph, PLAN, and card | Reject, exit 1 | PASS, exit 1 |
@@ -163,6 +177,11 @@ The downstream case below is A22, owned by U02 and T32.
 | Conditional patched-tuple approval is removed from the protocol | Reject, exit 1 | PASS, exit 1 |
 | Unpatched tuples are made to require approval records | Reject, exit 1 | PASS, exit 1 |
 | A125 omits its patched-tuple approval check | Reject, exit 1 | PASS, exit 1 |
+| C01 source table omits, duplicates, or adds a fixed reference | Reject, exit 1 | PASS, exit 1 |
+| C01 source table alters the release version or either commit | Reject, exit 1 | PASS, exit 1 |
+| Individual task packet omits its preamble or uses the wrong task ID | Reject, exit 1 | PASS, exit 1 |
+| Individual task packet weakens lease, dependency, or authorization instructions | Reject, exit 1 | PASS, exit 1 |
+| Individual task packet adds a conflicting instruction | Reject, exit 1 | PASS, exit 1 |
 
 The upstream `PASS` fixture shows U02 cannot close T32's assignment.
 Each raw receipt binds every mutated file actually tested. The traceability-owner receipt hashes both `traceability.json` and `TRACEABILITY.md`; the missing-validator receipt records `validate_pack.py` as `missing`.
