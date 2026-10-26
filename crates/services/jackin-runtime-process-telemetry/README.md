@@ -24,7 +24,7 @@ outcome matrix.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`process_telemetry.rs`](src/process_telemetry.rs) | wrappers + guard | `process_telemetry/tests/` |
+| [`process_telemetry.rs`](src/process_telemetry.rs) | wrappers + guard | — |
 
 ## Public API
 

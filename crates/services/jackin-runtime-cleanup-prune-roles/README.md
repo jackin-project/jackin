@@ -28,7 +28,7 @@ for cleanup.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`prune_roles.rs`](src/prune_roles.rs) | pruning | hub `cleanup` suite (`cleanup/tests/case_05.rs`) |
+| [`prune_roles.rs`](src/prune_roles.rs) | pruning | — |
 
 ## Public API
 

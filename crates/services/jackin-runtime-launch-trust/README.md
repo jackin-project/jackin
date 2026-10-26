@@ -18,8 +18,8 @@ mise paths.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`trust.rs`](src/trust.rs) | seeding | `trust/tests/` |
-| [`trust/`](src/trust/) | test suites | `trust/tests/` |
+| [`trust.rs`](src/trust.rs) | seeding | — |
+| [`trust/`](src/trust/) | test suites | — |
 
 ## Public API
 

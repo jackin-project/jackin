@@ -30,8 +30,8 @@ the operator span.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`universe.rs`](src/universe.rs) | boundaries | `universe/tests/` |
-| [`universe/`](src/universe/) | test suites | `universe/tests/` |
+| [`universe.rs`](src/universe.rs) | boundaries | — |
+| [`universe/`](src/universe/) | test suites | — |
 
 ## Public API
 

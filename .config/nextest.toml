@@ -21,29 +21,7 @@ final-status-level = "flaky"
 [profile.ci.junit]
 path = "junit.xml"
 
-[profile.soak]
-default-filter = 'test(/soak/)'
-slow-timeout = { period = "60s", terminate-after = 3, grace-period = "5s" }
-failure-output = "immediate-final"
-
 [test-groups]
 docker-e2e = { max-threads = 1 }
 load-agent = { max-threads = 2 }
 
-[[profile.default.overrides]]
-filter = 'test(/load_agent_skips|load_agent_cleans_up_when_parallel_sidecar/)'
-test-group = 'load-agent'
-slow-timeout = { period = "90s", terminate-after = 3, grace-period = "5s" }
-
-[[profile.default.overrides]]
-filter = 'test(/png_baselines_screens_match/)'
-slow-timeout = { period = "120s", terminate-after = 3, grace-period = "5s" }
-
-[[profile.ci.overrides]]
-filter = 'test(/load_agent_skips|load_agent_cleans_up_when_parallel_sidecar/)'
-test-group = 'load-agent'
-slow-timeout = { period = "90s", terminate-after = 3, grace-period = "5s" }
-
-[[profile.ci.overrides]]
-filter = 'test(/png_baselines_screens_match/)'
-slow-timeout = { period = "120s", terminate-after = 3, grace-period = "5s" }

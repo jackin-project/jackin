@@ -24,7 +24,7 @@ removal for cleanup.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`socket_dir.rs`](src/socket_dir.rs) | removal | hub `cleanup` suite (`cleanup/tests/`) |
+| [`socket_dir.rs`](src/socket_dir.rs) | removal | — |
 
 ## Public API
 

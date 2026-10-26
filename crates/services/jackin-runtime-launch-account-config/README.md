@@ -24,8 +24,8 @@ fingerprints.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`account_config.rs`](src/account_config.rs) | config | `account_config/tests/` |
-| [`account_config/`](src/account_config/) | bounds + suites | `account_config/tests/` |
+| [`account_config.rs`](src/account_config.rs) | config | — |
+| [`account_config/`](src/account_config/) | bounds + suites | — |
 
 ## Public API
 

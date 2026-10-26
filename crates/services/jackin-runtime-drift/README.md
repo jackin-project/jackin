@@ -22,8 +22,8 @@ preserved state.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`drift.rs`](src/drift.rs) | classifier | `drift/tests/` |
-| [`drift/`](src/drift/) | test suites | `drift/tests/` |
+| [`drift.rs`](src/drift.rs) | classifier | — |
+| [`drift/`](src/drift/) | test suites | — |
 
 ## Public API
 

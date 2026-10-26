@@ -18,7 +18,7 @@ vendor snapshot dispatch.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`resolver.rs`](src/resolver.rs) | secret cache | `tests/` |
+| [`resolver.rs`](src/resolver.rs) | secret cache | — |
 | [`dispatch.rs`](src/dispatch.rs) | vendor arms | via resolver |
 
 ## Public API

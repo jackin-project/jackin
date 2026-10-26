@@ -26,7 +26,7 @@ helper for cleanup.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`prune_dir.rs`](src/prune_dir.rs) | pruning | hub `cleanup` suite (`cleanup/tests/case_04.rs`, `case_05.rs`) |
+| [`prune_dir.rs`](src/prune_dir.rs) | pruning | — |
 
 ## Public API
 

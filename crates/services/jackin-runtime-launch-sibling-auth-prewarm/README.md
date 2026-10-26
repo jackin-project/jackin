@@ -23,7 +23,7 @@ role.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`sibling_auth_prewarm.rs`](src/sibling_auth_prewarm.rs) | spawn/await prewarm | hub `launch_runtime` suite (`launch_runtime/tests/case_01.rs`, `case_02.rs`) |
+| [`sibling_auth_prewarm.rs`](src/sibling_auth_prewarm.rs) | spawn/await prewarm | — |
 
 ## Public API
 

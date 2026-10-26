@@ -19,8 +19,8 @@ cache, never by opening this database.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| `write`/`upsert` | persistence | `tests/` cases |
-| `read`/`views`/`buckets` | read views | `tests/` cases |
+| `write`/`upsert` | persistence | — |
+| `read`/`views`/`buckets` | read views | — |
 
 ## Public API
 

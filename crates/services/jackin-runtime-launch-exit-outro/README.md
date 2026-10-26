@@ -28,7 +28,7 @@ universe boundary.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`exit_outro.rs`](src/exit_outro.rs) | outro rendering | hub `launch` suite (`launch/tests/case_21.rs`, `case_22.rs`) |
+| [`exit_outro.rs`](src/exit_outro.rs) | outro rendering | — |
 
 ## Public API
 

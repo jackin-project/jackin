@@ -36,8 +36,8 @@ pipeline.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`image.rs`](src/image.rs) | pipeline root | `image/tests/` |
-| [`image/`](src/image/) | build/prewarm/refresh | `image/tests/` |
+| [`image.rs`](src/image.rs) | pipeline root | — |
+| [`image/`](src/image/) | build/prewarm/refresh | — |
 
 ## Public API
 

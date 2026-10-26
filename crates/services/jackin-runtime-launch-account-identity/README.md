@@ -25,7 +25,7 @@ fingerprints.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`account_identity.rs`](src/account_identity.rs) | identity | `account_identity/tests/` |
+| [`account_identity.rs`](src/account_identity.rs) | identity | — |
 
 ## Public API
 

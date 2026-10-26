@@ -35,14 +35,14 @@ Typed repair-workflow definitions (Step 3 of the workflows MVP).
 
 | Module | Owns | Tests |
 |---|---|---|
-| `error` | Error codes, diagnostics, `WorkflowError` | `tests/workflow_k3.rs` |
-| `model` | Plan DTOs (`AgentSelection`, `InputFile`, `RepositoryInput`, `ResourceLimits`, `VerificationPolicy`, `BackupPolicy`, `ExecutionPlan`) | `tests/workflow_k3.rs` |
-| `eval` | Frozen bundle, helper protocol, bounded evaluation | `tests/workflow_k3.rs` |
-| `resolve` | File and repository input resolution | `tests/workflow_k3.rs` |
-| `rules` | Definition validation and plan compilation | `tests/workflow_k3.rs` |
-| `digest` | Canonical bytes and SHA-256 plan hash | `tests/workflow_k3.rs` |
-| `store` | Protected input store and verified reads | `tests/workflow_k3.rs` |
-| `jackin-workflow-eval` (bin) | Sandboxed evaluation helper | `tests/workflow_k3.rs` (spawned) |
+| `error` | Error codes, diagnostics, `WorkflowError` | — |
+| `model` | Plan DTOs (`AgentSelection`, `InputFile`, `RepositoryInput`, `ResourceLimits`, `VerificationPolicy`, `BackupPolicy`, `ExecutionPlan`) | — |
+| `eval` | Frozen bundle, helper protocol, bounded evaluation | — |
+| `resolve` | File and repository input resolution | — |
+| `rules` | Definition validation and plan compilation | — |
+| `digest` | Canonical bytes and SHA-256 plan hash | — |
+| `store` | Protected input store and verified reads | — |
+| `jackin-workflow-eval` (bin) | Sandboxed evaluation helper | — |
 
 ## Memory-limit note
 

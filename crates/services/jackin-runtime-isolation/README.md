@@ -23,7 +23,7 @@ for runtime call sites, with the
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`isolation.rs`](src/isolation.rs) | facade root | `isolation/tests/` |
+| [`isolation.rs`](src/isolation.rs) | facade root | — |
 
 ## Public API
 

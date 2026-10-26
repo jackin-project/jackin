@@ -25,7 +25,7 @@ runtime cleanup.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`prune_home.rs`](src/prune_home.rs) | pruning | hub `cleanup` suite (`cleanup/tests/case_05.rs`) |
+| [`prune_home.rs`](src/prune_home.rs) | pruning | — |
 
 ## Public API
 

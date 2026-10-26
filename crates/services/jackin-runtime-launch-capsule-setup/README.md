@@ -34,7 +34,7 @@ transport.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`capsule_setup.rs`](src/capsule_setup.rs) | setup | `capsule_setup/tests/` |
+| [`capsule_setup.rs`](src/capsule_setup.rs) | setup | — |
 
 ## Public API
 

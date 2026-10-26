@@ -21,8 +21,8 @@ env vars for role containers.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`exec_host.rs`](src/exec_host.rs) | listener + API root | `exec_host/tests/` |
-| [`exec_host/`](src/exec_host/) | test suites | `exec_host/tests/` |
+| [`exec_host.rs`](src/exec_host.rs) | listener + API root | — |
+| [`exec_host/`](src/exec_host/) | test suites | — |
 
 ## Public API
 

@@ -21,7 +21,7 @@ for a launch role
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`supported_agents.rs`](src/supported_agents.rs) | agent lookup | hub `launch` suite (`launch/tests/case_10.rs`) |
+| [`supported_agents.rs`](src/supported_agents.rs) | agent lookup | — |
 
 ## Public API
 

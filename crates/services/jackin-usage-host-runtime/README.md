@@ -20,7 +20,7 @@ There is no client-side discovery or credential resolver in this crate.
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | public `host` module | — |
 | [`host.rs`](src/host.rs) | narrow broker and projection exports | — |
-| [`host/projection/presentation.rs`](src/host/projection/presentation.rs) | projection validation, selection, and presentation | `host/tests/projection_presentation.rs` |
+| [`host/projection/presentation.rs`](src/host/projection/presentation.rs) | projection validation, selection, and presentation | — |
 
 ## Auth interaction limit
 

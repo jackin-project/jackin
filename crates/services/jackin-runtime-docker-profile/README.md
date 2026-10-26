@@ -20,8 +20,8 @@ resolution and flag emission.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`docker_profile.rs`](src/docker_profile.rs) | profile + flags root | `docker_profile/tests/` |
-| [`docker_profile/`](src/docker_profile/) | grants/probe/sizes | `docker_profile/tests/` |
+| [`docker_profile.rs`](src/docker_profile.rs) | profile + flags root | — |
+| [`docker_profile/`](src/docker_profile/) | grants/probe/sizes | — |
 
 ## Public API
 

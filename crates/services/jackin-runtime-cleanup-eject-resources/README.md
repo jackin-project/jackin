@@ -29,7 +29,7 @@ for cleanup.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`eject_resources.rs`](src/eject_resources.rs) | ejection | hub `cleanup` suite (`cleanup/tests/case_01.rs`) |
+| [`eject_resources.rs`](src/eject_resources.rs) | ejection | — |
 
 ## Public API
 

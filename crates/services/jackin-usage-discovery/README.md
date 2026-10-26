@@ -30,11 +30,11 @@ broker capabilities.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`scan.rs`](src/scan.rs) | enumeration | `tests/` |
-| [`validate.rs`](src/validate.rs) | validation | `tests/` |
-| [`refresh.rs`](src/refresh.rs) | refresh | `tests/` |
-| [`capabilities.rs`](src/capabilities.rs) | mapping | `tests/` |
-| others | providers/scope/issues | `tests/` |
+| [`scan.rs`](src/scan.rs) | enumeration | — |
+| [`validate.rs`](src/validate.rs) | validation | — |
+| [`refresh.rs`](src/refresh.rs) | refresh | — |
+| [`capabilities.rs`](src/capabilities.rs) | mapping | — |
+| others | providers/scope/issues | — |
 
 ## Public API
 

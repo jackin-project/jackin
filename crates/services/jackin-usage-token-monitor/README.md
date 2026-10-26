@@ -21,7 +21,7 @@ table.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| `monitor`/`session` | polling + totals | `tests/` cases |
+| `monitor`/`session` | polling + totals | — |
 | `amp`…`opencode` | vendor readers | per-module `tests.rs` |
 
 ## Public API
