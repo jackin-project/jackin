@@ -3,18 +3,121 @@
 from __future__ import annotations
 
 import hashlib
+import contextlib
+import io
 import json
+import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
-ROOT = Path(__file__).resolve().parent
-VALIDATOR = ROOT / "validate_pack.py"
-sys.dont_write_bytecode = True
+FIXTURE_TIMEOUT_SECONDS = 30
+ORIGINAL_BOARD_TIMEOUT_SECONDS = 30
+PROBE_TIMEOUT_SECONDS = 15
+
+
+class CertifiedInputError(ValueError):
+    """Identify a pack path that cannot be read or copied as a certified input."""
+
+    def __init__(self, violations: list[dict[str, Any]]) -> None:
+        self.violations = violations
+        super().__init__("The certified input path contains a symbolic link or an escaping path.")
+
+
+def path_component_violations(path: Path) -> list[dict[str, Any]]:
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current = current / part
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            break
+        except OSError as error:
+            return [{"path": str(current), "reason": "path component cannot be inspected",
+                     "detail": str(error)}]
+        if stat.S_ISLNK(metadata.st_mode):
+            return [{"path": str(current), "reason": "symbolic link in certified path",
+                     "target": os.readlink(current)}]
+    return []
+
+
+def certified_input_violations(root: Path, entry_path: Path | None = None) -> list[dict[str, Any]]:
+    root_path = Path(os.path.abspath(os.fspath(root)))
+    violations = path_component_violations(root_path)
+    if entry_path is not None:
+        entry_violations = path_component_violations(entry_path)
+        for violation in entry_violations:
+            if violation not in violations:
+                violations.append(violation)
+    if violations:
+        return violations
+
+    try:
+        root_metadata = root_path.lstat()
+    except OSError as error:
+        return [{"path": str(root_path), "reason": "certified root cannot be inspected",
+                 "detail": str(error)}]
+    if not stat.S_ISDIR(root_metadata.st_mode):
+        return [{"path": str(root_path), "reason": "certified root is not a directory"}]
+
+    root_resolved = root_path.resolve(strict=True)
+    if entry_path is not None:
+        entry_resolved = Path(os.path.abspath(os.fspath(entry_path))).resolve(strict=True)
+        if not entry_resolved.is_relative_to(root_resolved):
+            violations.append({"path": str(entry_path),
+                               "reason": "entry point resolves outside certified root"})
+
+    def walk_error(error: OSError) -> None:
+        violations.append({"path": error.filename or str(root_path),
+                           "reason": "certified input directory cannot be inspected",
+                           "detail": str(error)})
+
+    for directory, directories, files in os.walk(root_resolved, topdown=True,
+                                                  followlinks=False, onerror=walk_error):
+        current_directory = Path(directory)
+        for name in list(directories):
+            child = current_directory / name
+            if child.is_symlink():
+                violations.append({"path": child.relative_to(root_resolved).as_posix(),
+                                   "reason": "symbolic link in certified inputs",
+                                   "target": os.readlink(child)})
+                directories.remove(name)
+                continue
+            if name == "__pycache__":
+                directories.remove(name)
+                continue
+            resolved = child.resolve(strict=True)
+            if not resolved.is_relative_to(root_resolved):
+                violations.append({"path": child.relative_to(root_resolved).as_posix(),
+                                   "reason": "certified input resolves outside root",
+                                   "resolved_path": str(resolved)})
+                directories.remove(name)
+        for name in files:
+            child = current_directory / name
+            metadata = child.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                violations.append({"path": child.relative_to(root_resolved).as_posix(),
+                                   "reason": "symbolic link in certified inputs",
+                                   "target": os.readlink(child)})
+                continue
+            if child.suffix == ".pyc":
+                continue
+            if not stat.S_ISREG(metadata.st_mode):
+                violations.append({"path": child.relative_to(root_resolved).as_posix(),
+                                   "reason": "certified input is not a regular file"})
+                continue
+            resolved = child.resolve(strict=True)
+            if not resolved.is_relative_to(root_resolved):
+                violations.append({"path": child.relative_to(root_resolved).as_posix(),
+                                   "reason": "certified input resolves outside root",
+                                   "resolved_path": str(resolved)})
+    return sorted(violations, key=lambda item: (str(item.get("path")), str(item.get("reason"))))
 
 
 def sha256(path: Path) -> str:
@@ -22,11 +125,20 @@ def sha256(path: Path) -> str:
 
 
 def snapshot_files(root: Path) -> dict[str, str]:
-    return {
-        path.relative_to(root).as_posix(): sha256(path)
-        for path in sorted(root.rglob("*"))
-        if path.is_file()
-    }
+    if certified_input_violations(root):
+        return {}
+    root = Path(os.path.abspath(os.fspath(root))).resolve(strict=True)
+    snapshot: dict[str, str] = {}
+    for directory, directories, files in os.walk(root, topdown=True, followlinks=False):
+        current_directory = Path(directory)
+        directories[:] = [name for name in directories
+                          if name != "__pycache__" and not (current_directory / name).is_symlink()]
+        for name in files:
+            path = current_directory / name
+            if path.suffix == ".pyc" or path.is_symlink():
+                continue
+            snapshot[path.relative_to(root).as_posix()] = sha256(path)
+    return dict(sorted(snapshot.items()))
 
 
 def input_state(digest: str | None) -> dict[str, str | None]:
@@ -48,20 +160,128 @@ def snapshot_changes(before: dict[str, str], after: dict[str, str]) -> dict[str,
 
 
 def path_state(path: Path) -> dict[str, str | None]:
-    return input_state(sha256(path) if path.is_file() else None)
+    if path_component_violations(path):
+        return {"state": "unsafe", "sha256": None}
+    return input_state(sha256(path) if path.is_file() and not path.is_symlink() else None)
 
 
-SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT = snapshot_files(ROOT)
-sys.path.insert(0, str(ROOT))
-from validate_pack import (  # noqa: E402
-    DuplicateJSONKeyError,
-    render_task_card,
-    render_task_index,
-    render_task_packet,
-    strict_json_loads,
+def copy_certified_pack(source: Path, destination: Path) -> None:
+    violations = certified_input_violations(source)
+    if violations:
+        raise CertifiedInputError(violations)
+    destination_path_violations = path_component_violations(destination)
+    if destination_path_violations:
+        raise CertifiedInputError(destination_path_violations)
+    shutil.copytree(
+        source,
+        destination,
+        symlinks=True,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+    copied_violations = certified_input_violations(destination)
+    if copied_violations:
+        raise CertifiedInputError(copied_violations)
+
+
+def temporary_directory(prefix: str) -> tempfile.TemporaryDirectory[str]:
+    temporary_base = Path(tempfile.gettempdir()).resolve(strict=True)
+    base_violations = path_component_violations(temporary_base)
+    if base_violations:
+        raise CertifiedInputError(base_violations)
+    return tempfile.TemporaryDirectory(prefix=prefix, dir=temporary_base)
+
+
+def output_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def run_with_timeout(command: list[str], timeout_seconds: float,
+                     cwd: Path | None = None) -> dict[str, Any]:
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+        return {
+            "exit_code": process.returncode,
+            "stdout": output_text(stdout),
+            "stderr": output_text(stderr),
+            "timed_out": False,
+            "timeout_seconds": timeout_seconds,
+            "timeout_partial_stdout": "",
+            "timeout_partial_stderr": "",
+            "termination_sent": False,
+            "child_reaped": process.returncode is not None,
+        }
+    except subprocess.TimeoutExpired as error:
+        partial_stdout = output_text(error.output)
+        partial_stderr = output_text(error.stderr)
+        termination_sent = False
+        try:
+            process.kill()
+            termination_sent = True
+        except ProcessLookupError:
+            pass
+        stdout, stderr = process.communicate()
+        return {
+            "exit_code": process.returncode,
+            "stdout": output_text(stdout),
+            "stderr": output_text(stderr),
+            "timed_out": True,
+            "timeout_seconds": timeout_seconds,
+            "timeout_partial_stdout": partial_stdout,
+            "timeout_partial_stderr": partial_stderr,
+            "termination_sent": termination_sent,
+            "child_reaped": process.returncode is not None,
+        }
+
+
+ENTRY_FILE = Path(os.path.abspath(__file__))
+ROOT_CANDIDATE = ENTRY_FILE.parent
+BOOTSTRAP_INPUT_POLICY_VIOLATIONS = certified_input_violations(ROOT_CANDIDATE, ENTRY_FILE)
+ROOT = ROOT_CANDIDATE.resolve(strict=True) if not BOOTSTRAP_INPUT_POLICY_VIOLATIONS else ROOT_CANDIDATE
+VALIDATOR = ROOT / "validate_pack.py"
+sys.dont_write_bytecode = True
+SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT = (
+    snapshot_files(ROOT) if not BOOTSTRAP_INPUT_POLICY_VIOLATIONS else {}
 )
+VALIDATOR_IMPORT_STDOUT = io.StringIO()
+VALIDATOR_IMPORT_STDERR = io.StringIO()
+VALIDATOR_IMPORT_EXCEPTION: dict[str, str] | None = None
+if not BOOTSTRAP_INPUT_POLICY_VIOLATIONS:
+    sys.path.insert(0, str(ROOT))
+    try:
+        with contextlib.redirect_stdout(VALIDATOR_IMPORT_STDOUT), contextlib.redirect_stderr(
+            VALIDATOR_IMPORT_STDERR,
+        ):
+            from validate_pack import (  # noqa: E402
+                DuplicateJSONKeyError,
+                render_task_card,
+                render_task_index,
+                render_task_packet,
+                strict_json_loads,
+            )
+    except Exception as error:
+        VALIDATOR_IMPORT_EXCEPTION = {"type": type(error).__name__, "message": str(error)}
+else:
+    VALIDATOR_IMPORT_EXCEPTION = {
+        "type": "CertifiedInputError",
+        "message": "The fixture runner refused to import from an unsafe source path.",
+    }
 
-SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT = snapshot_files(ROOT)
+SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT = (
+    snapshot_files(ROOT) if not BOOTSTRAP_INPUT_POLICY_VIOLATIONS else {}
+)
 VALIDATOR_IMPORT_CHANGES = snapshot_changes(
     SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT,
     SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT,
@@ -160,6 +380,303 @@ FIXTURE_INITIAL_ONLY_CHECK_NAMES = (
 FIXTURE_CHECK_INVENTORY_CHECK = 'Validator check inventory matches its canonical ordered sequence'
 
 
+FIXED_FIXTURE_COUNT = 244
+FIXED_FIXTURE_NAMES = (
+    "isolated subprocess detects idempotent README mutation during validator import",
+    "shared PASS summary requires every owner",
+    "task PASS with its own assignment results",
+    "mixed PASS and NOT_RUN summarizes as NOT_RUN",
+    "mixed PASS and BLOCKED summarizes as BLOCKED",
+    "FAIL takes precedence over BLOCKED",
+    "NOT_STARTED owner cannot have PASS assignment",
+    "NOT_STARTED owner cannot have FAIL assignment",
+    "NOT_STARTED owner cannot have BLOCKED assignment",
+    "READY owner cannot have PASS assignment",
+    "READY owner cannot have FAIL assignment",
+    "READY owner cannot have BLOCKED assignment",
+    "READY owner can retain NOT_RUN assignment",
+    "ordinary validation rejects a missing runtime-execution marker",
+    "ordinary validation rejects a non-Boolean delegation marker",
+    "initial validation rejects non-Boolean execution markers",
+    "readiness groups reject an object with a structured input error",
+    "readiness groups reject a non-list group with a structured input error",
+    "readiness groups reject a non-string task identifier with a structured input error",
+    "serial SOURCE work passes without delegation or runtime claims",
+    "serial REVIEW work records its own passing assignment",
+    "LIVE PASS assignments require a true runtime-execution marker",
+    "LIVE PASS assignments are accepted with a true runtime-execution marker",
+    "LIVE FAIL assignments require a true runtime-execution marker",
+    "LIVE FAIL assignments are accepted with a true runtime-execution marker",
+    "LIVE BLOCKED results do not claim runtime execution",
+    "a BUILD assignment does not claim LIVE runtime execution",
+    "temporary normalization resets only valid true execution markers",
+    "temporary normalization does not recreate a missing execution marker",
+    "temporary normalization does not repair an invalid execution marker",
+    "progressed source with true execution markers passes ordinary validation",
+    "BLOCKED owner can retain its passing assignment while T32 waits",
+    "upstream PASS cannot close downstream assignment",
+    "legacy summary cannot PASS with incomplete assignment",
+    "legacy manifest without assignment_results is rejected",
+    "malformed assignment row is rejected",
+    "undocumented assignment status is rejected",
+    "duplicate task assignment is rejected",
+    "missing task assignment is rejected",
+    "extra task assignment is rejected",
+    "duplicate case owner fails when its Markdown block is synchronized",
+    "copied pack without validator fails under the real external validator",
+    "acceptance prefix mutation violates its fixed checksum",
+    "acceptance prefix deletion violates its fixed checksum",
+    "initial mode rejects assignment progress",
+    "initial mode rejects malformed assignment rows cleanly",
+    "temporary normalization changes only P00 and A01 status fields",
+    "consistent progressed P00 and A01 board passes ordinary validation",
+    "invalid temporary source board with missing A01 assignment is not repaired",
+    "T33 waits for T27 checkpoint completion",
+    "BLOCKED task and assignment remain blocked without failing validation",
+    "FAIL task must wait for completed dependencies",
+    "FAIL task remains valid after completed dependencies with NOT_RUN and PASS cases",
+    "BLOCKED task may wait on an incomplete dependency with NOT_RUN cases",
+    "BLOCKED T32 with incomplete dependencies cannot retain PASS assignments",
+    "BLOCKED T32 with incomplete dependencies cannot retain FAIL assignments",
+    "BLOCKED T32 with incomplete dependencies cannot retain BLOCKED assignments",
+    "BLOCKED T32 with incomplete dependencies keeps NOT_RUN assignments",
+    "BLOCKED task with completed dependencies retains prior case results",
+    "REVIEW task requires its own result when another owner has PASS",
+    "REVIEW task requires every owned assignment to have a result",
+    "REVIEW task accepts its own PASS assignment results",
+    "REVIEW task accepts its own FAIL assignment results",
+    "REVIEW task accepts its own BLOCKED assignment results",
+    "REVIEW task without acceptance cases remains valid",
+    "task without acceptance cases keeps completion rule",
+    "duplicate task case reference is rejected with synchronized task cards",
+    "non-string task case reference is rejected before ownership set logic",
+    "acceptance manifest root status cannot claim PASS for incomplete cases",
+    "acceptance manifest root status rejects undocumented values",
+    "manifest summary gives FAIL precedence over BLOCKED",
+    "task completion rule cannot diverge from the shared evidence contract",
+    "task review rule rejects self-review after synchronized cards",
+    "task review rule requires a post-merge integration rerun",
+    "canonical review receipt cannot be removed with synchronized cards",
+    "report path cannot move from its canonical task receipt directory",
+    "upstream task keeps its task-specific change receipt",
+    "P02 keeps the required early LIVE records with synchronized cards",
+    "P02 cannot omit actual early LIVE execution",
+    "T12 cannot reuse the earlier P02 LIVE results",
+    "P04 must validate and import early records without closing T12",
+    "P04 registration is limited to enum and dispatch through Integration",
+    "P05 retains only workspace and build graph registration",
+    "P05 must register xtask and test support in the workspace graph",
+    "P04 requests the initial target registration from Integration",
+    "T35 through T38 retain ordered qualified-target patch requests",
+    "P04 cannot receive direct write scope for the central target matrix",
+    "T35 cannot write the central target matrix directly",
+    "Required target rows remain and unavailable rows stay BLOCKED",
+    "release preflight cannot weaken the prior-task prerequisite",
+    "release finalization cannot omit A125",
+    "release finalization requires independent T40 review",
+    "release finalization requires merged-source checks",
+    "runtime requalification treats T40 version and package changes as triggers",
+    "unjustified runtime impact requires the full applicable LIVE matrix",
+    "runtime reruns preserve original case owners and let T40 coordinate",
+    "runtime reruns retain early failed blocked and repeat evidence",
+    "fresh LIVE results bind final inputs artifacts target run and review",
+    "missing stale failed or blocked LIVE reruns prevent finalization",
+    "finalization explicitly requires fresh bound LIVE results",
+    "preflight does not require future T40 runtime-change outputs",
+    "T39 task packet records post-deletion runtime impact and LIVE reruns",
+    "T40 card requires fresh affected LIVE results through original operators",
+    "T40 version and package changes cannot bypass fresh LIVE reruns",
+    "A123 refuses stale or missing post-deletion LIVE evidence",
+    "release preflight cannot issue approval",
+    "P04 task card retains the fixed protocol implementation requirement",
+    "T40 card retains fail-closed finalization conditions",
+    "T40 requires actual results for A123 through A125",
+    "A123 keeps prerequisite refusal assertions and finalization contract",
+    "pack report cannot claim runtime finalizer verification",
+    "review packet requires candidate review before merge",
+    "P04 remains owned by the Qualification subagent",
+    "cited task is required in every intersecting section even when mapped elsewhere",
+    "malformed task SPEC citation syntax is rejected",
+    "task SPEC citation beyond the document is rejected",
+    "malformed task manifest returns structured input error with exit two",
+    "task-graph.json rejects a null tasks record before owner evaluation",
+    "acceptance-cases.json rejects a null cases record before owner evaluation",
+    "traceability.json rejects a null sections record before owner evaluation",
+    "ordinary baseline report contains the complete ordered check inventory",
+    "initial baseline report contains ordinary and initial-only check inventories",
+    "manifest owns the exact recursive Markdown task-packet set",
+    "graph root classification rejects a release-approval value",
+    "fixture oracle detects removal of task-count implementation and inventory entry",
+    "canonical report rejects nonempty counts that differ from tested inputs",
+    "canonical report rejects nonempty all-zero counts",
+    "missing validator short form rejects fabricated README detail",
+    "missing tasks short form rejects fabricated cases detail",
+    "empty validator stdout is rejected",
+    "invalid JSON validator stdout is rejected",
+    "non-object validator JSON is rejected",
+    "validator report with missing fields is rejected",
+    "validator report with wrong field types is rejected",
+    "validator report with inconsistent counts is rejected",
+    "contradictory passed and failures fields are rejected",
+    "check list inconsistent with failures is rejected even at exit zero",
+    "malformed check records are rejected",
+    "duplicate check names are rejected",
+    "validator report with mismatched scope is rejected",
+    "report exit code must agree with passed even at exit zero",
+    "structured input-error report with contradictory exit one is rejected",
+    "truncated passing report is rejected",
+    "truncated failing report is rejected even when expected failure appears",
+    "report with a missing middle check is rejected",
+    "report with reordered checks is rejected",
+    "report with an extra check is rejected",
+    "initial report missing an initial-only tail check is rejected",
+    "report initial flag must match the validator invocation",
+    "unexpected extra failure name does not match exact expectation",
+    "Integration role row lists every graph-owned task",
+    "role assignment table matches every graph owner, not only Integration",
+    "T40 cannot bypass Integration for shared finalization writes",
+    "release finalization keeps shared writes with Integration",
+    "release finalization requires conditional approval for supported patched tuples",
+    "unpatched supported tuples do not require patch-approval records",
+    "A125 verifies conditional maintainer approval for each patched tuple",
+    "C01 source table rejects a missing historical reference",
+    "C01 source table rejects a duplicate reference",
+    "C01 source table rejects an extra reference",
+    "C01 source table rejects an altered release version",
+    "C01 source table rejects an altered release comparator commit",
+    "C01 source table rejects an altered historical commit",
+    "C02 digest rejects a deleted production crate row",
+    "C02 digest rejects an altered crate responsibility",
+    "C02 digest rejects a weakened dependency boundary",
+    "C02 digest rejects a duplicate section anchor",
+    "C02 digest rejects a missing section anchor",
+    "C02 digest rejects a missing end boundary",
+    "C02 digest rejects a duplicate end boundary",
+    "individual task packet rejects a missing instruction preamble",
+    "missing task packet input identifies P00",
+    "individual task packet rejects a mismatched packet ID",
+    "individual task packet rejects a weakened file lease instruction",
+    "individual task packet rejects a weakened dependency instruction",
+    "individual task packet rejects weakened change authorization",
+    "individual task packet rejects an extra conflicting instruction",
+    "exact manifest packet set rejects nested archived Markdown",
+    "exact manifest packet set rejects a missing canonical Markdown packet",
+    "task file path rejects relocated locations",
+    "task file path rejects traversing locations",
+    "task file path rejects absolute locations",
+    "task file path rejects colliding locations",
+    "task test-write scope rejects relocated locations",
+    "task test-write scope rejects traversing locations",
+    "task test-write scope rejects absolute locations",
+    "task test-write scope rejects colliding locations",
+    "empty root dependency list remains valid",
+    "dependency list rejects duplicate IDs before DAG operations",
+    "dependency list rejects non-string entries before DAG operations",
+    "dependency list rejects a non-list value before DAG operations",
+    "unknown dependency retains reference and readiness diagnostics",
+    "self dependency retains reference and cycle diagnostics",
+    "dependency cycle retains cycle and readiness diagnostics",
+    "valid evidence-level downgrade does not reclassify A11",
+    "valid evidence-level downgrade does not reclassify A50",
+    "GOAL.md rejects truncation",
+    "GOAL.md is a required input",
+    "GOAL.md rejects a conflicting execution-control clause",
+    "authoritative concurrency declaration rejects a changed limit",
+    "authoritative concurrency declaration cannot be missing",
+    "authoritative concurrency declaration cannot be duplicated",
+    "task graph rejects a duplicate top-level JSON key",
+    "task graph rejects a duplicate nested JSON key",
+    "acceptance rejects a duplicate top-level JSON key",
+    "acceptance rejects a duplicate nested JSON key",
+    "traceability rejects a duplicate top-level JSON key",
+    "traceability rejects a duplicate nested JSON key",
+    "task-graph.json rejects nonstandard JSON constant NaN",
+    "acceptance-cases.json rejects nonstandard JSON constant Infinity",
+    "traceability.json rejects nonstandard JSON constant -Infinity",
+    "fixture report parser rejects duplicate top-level JSON keys",
+    "fixture report parser rejects duplicate nested JSON keys",
+    "fixture report parser rejects nonstandard JSON constant NaN",
+    "fixture report parser rejects nonstandard JSON constant Infinity",
+    "fixture report parser rejects nonstandard JSON constant -Infinity",
+    "P05 cannot defer its A13 run to the final graph",
+    "T39 cannot omit its final post-deletion A13 rerun",
+    "A13 cannot omit P05 current-graph Cargo metadata",
+    "A13 cannot omit T39 final-graph Cargo metadata",
+    "A15 cannot omit the integrated T23 owner",
+    "T23 must qualify the full A15 StartSession barrier",
+    "U00 cannot collapse A15 and A16 into integrated behavior",
+    "T13 cannot collapse A15 and A16 into product behavior",
+    "U00 must bind A16's replacement source to its accepted revision",
+    "T13 must bind A16's replacement source to its accepted revision",
+    "A16 cannot omit the T29 product-presentation owner",
+    "T29 must display A16's accepted replacement source and revision",
+    "A17 cannot omit integrated T23 ownership",
+    "T23 retains integrated StartSession and re-admission for A17",
+    "A16 loads the global policy before querying and displaying it",
+    "Synchronized A22 prose cannot weaken owner-specific assertions",
+    "C06 credential-authority fail-open cannot alter the complete contracts",
+    "T23 cannot omit its T16 dependency after all graph mirrors are recomputed",
+    "T23 cannot add an extra dependency after all graph mirrors are recomputed",
+    "Worker task cannot claim shared root Cargo files",
+    "Extra contradictory task scope cannot override the authored lease",
+    "T23 cannot rebase its citation to SPEC L1 with synchronized traceability",
+    "SUBAGENTS shared-file authority cannot be weakened",
+    "PACK-CHECKS rejects conflicting prose outside its result slots",
+    "PACK-CHECKS mutable count and result slots remain editable",
+    "PACK-CHECKS check results reject release-approval prose",
+    "PACK-CHECKS observations reject release-approval prose",
+    "fixture runner detects input and validator changes during execution",
+)
+
+
+def fixture_inventory_report(observed_names: list[Any]) -> dict[str, Any]:
+    expected_names = list(FIXED_FIXTURE_NAMES)
+    actual_names = [name for name in observed_names if isinstance(name, str)]
+    invalid_observed_names = [
+        {"index": index, "value": name}
+        for index, name in enumerate(observed_names)
+        if not isinstance(name, str)
+    ]
+    expected_duplicates = sorted({
+        name for name in expected_names if expected_names.count(name) > 1
+    })
+    actual_duplicates = sorted({
+        name for name in actual_names if actual_names.count(name) > 1
+    })
+    expected_set = set(expected_names)
+    actual_set = set(actual_names)
+    errors = []
+    if len(expected_names) != FIXED_FIXTURE_COUNT:
+        errors.append("The fixed fixture-name inventory has the wrong number of entries.")
+    if expected_duplicates:
+        errors.append("The fixed fixture-name inventory contains duplicate names.")
+    if len(observed_names) != FIXED_FIXTURE_COUNT:
+        errors.append("The executed fixture count does not match the fixed count.")
+    if invalid_observed_names:
+        errors.append("The executed fixture inventory contains non-string names.")
+    if actual_duplicates:
+        errors.append("The executed fixture inventory contains duplicate names.")
+    missing_names = sorted(expected_set - actual_set)
+    unexpected_names = sorted(actual_set - expected_set)
+    if missing_names:
+        errors.append("The executed fixture inventory is missing fixed scenarios.")
+    if unexpected_names:
+        errors.append("The executed fixture inventory contains unexpected scenarios.")
+    return {
+        "passed": not errors,
+        "expected_count": FIXED_FIXTURE_COUNT,
+        "fixed_inventory_count": len(expected_names),
+        "observed_count": len(observed_names),
+        "expected_duplicate_names": expected_duplicates,
+        "observed_duplicate_names": actual_duplicates,
+        "invalid_observed_names": invalid_observed_names,
+        "missing_names": missing_names,
+        "unexpected_names": unexpected_names,
+        "errors": errors,
+    }
+
+
+
 def fixture_check_inventory(initial: bool = False) -> tuple[str, ...]:
     initial_checks = FIXTURE_INITIAL_ONLY_CHECK_NAMES if initial else ()
     return (*FIXTURE_ORDINARY_CHECK_NAMES, *initial_checks, FIXTURE_CHECK_INVENTORY_CHECK)
@@ -179,6 +696,11 @@ def write_json(path: Path, value: Any) -> None:
 def normalize_status_fields(pack: Path) -> tuple[list[dict[str, Any]], list[str]]:
     changes: list[dict[str, Any]] = []
     errors: list[str] = []
+    input_policy_violations = certified_input_violations(pack)
+    if input_policy_violations:
+        return changes, [
+            f"certified input paths are unsafe before normalization: {input_policy_violations}"
+        ]
 
     for relative_path in ("task-graph.json", "acceptance-cases.json"):
         path = pack / relative_path
@@ -685,35 +1207,109 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
                 expected_execution_errors: list[str] | None = None,
                 pre_normalization_mutation: Callable[[Path], None] | None = None,
                 expected_normalization_diff: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    with tempfile.TemporaryDirectory(prefix="jackin-assignment-") as temp_dir:
+    with temporary_directory(prefix="jackin-assignment-") as temp_dir:
         temporary_root = Path(temp_dir)
         pack = temporary_root / "pack"
-        shutil.copytree(ROOT, pack)
+        source_policy_violations = certified_input_violations(ROOT, ENTRY_FILE)
+        if source_policy_violations:
+            return {
+                "scenario": name,
+                "passed": False,
+                "copy_performed": False,
+                "source_input_policy_violations": source_policy_violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
+        try:
+            copy_certified_pack(ROOT, pack)
+        except CertifiedInputError as error:
+            return {
+                "scenario": name,
+                "passed": False,
+                "copy_performed": pack.exists(),
+                "source_input_policy_violations": error.violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
         source_inputs = snapshot_files(pack)
         if pre_normalization_mutation is not None:
             pre_normalization_mutation(pack)
+        pre_normalization_policy_violations = certified_input_violations(pack)
+        if pre_normalization_policy_violations:
+            return {
+                "scenario": name,
+                "passed": False,
+                "copy_performed": True,
+                "pre_normalization_input_policy_violations": pre_normalization_policy_violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
         pre_normalization_inputs = snapshot_files(pack)
         normalization_diff, normalization_errors = normalize_status_fields(pack)
+        normalized_input_policy_violations = certified_input_violations(pack)
+        if normalized_input_policy_violations:
+            return {
+                "scenario": name,
+                "passed": False,
+                "copy_performed": True,
+                "normalized_input_policy_violations": normalized_input_policy_violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
         normalized_inputs = snapshot_files(pack)
         mutate(pack)
+        fixture_input_policy_violations = certified_input_violations(pack)
+        if fixture_input_policy_violations:
+            return {
+                "scenario": name,
+                "passed": False,
+                "copy_performed": True,
+                "fixture_input_policy_violations": fixture_input_policy_violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
         inputs_after = snapshot_files(pack)
         expected_counts = derive_expected_counts(pack)
         validator_copy = pack / "validate_pack.py"
         if fake_stdout is not None:
             executable = fake_validator(temporary_root, fake_stdout, fake_stderr, expected_exit)
         else:
-            executable = (validator_executable or validator_copy).resolve()
+            executable = validator_executable or validator_copy
         command = [sys.executable, str(executable), "--root", str(pack), "--json"]
         if initial:
             command.append("--initial")
         execution_inputs_before = snapshot_files(pack)
+        execution_input_policy_before = certified_input_violations(pack)
+        executable_policy_violations = path_component_violations(executable)
+        if execution_input_policy_before or executable_policy_violations:
+            return {
+                "scenario": name,
+                "passed": False,
+                "copy_performed": True,
+                "execution_input_policy_before": execution_input_policy_before,
+                "validator_executable_policy_violations": executable_policy_violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
         executable_before = path_state(executable)
         validator_copy_before = path_state(validator_copy)
-        process = subprocess.run(command, capture_output=True, text=True, check=False)
+        process = run_with_timeout(command, FIXTURE_TIMEOUT_SECONDS)
         execution_inputs_after = snapshot_files(pack)
+        execution_input_policy_after = certified_input_violations(pack)
         executable_after = path_state(executable)
         validator_copy_after = path_state(validator_copy)
-        report, report_errors = inspect_report(process.stdout, process.returncode, initial=initial)
+        if process["timed_out"]:
+            report = None
+            report_errors = [
+                f"validator subprocess timed out after {process['timeout_seconds']} seconds"
+            ]
+        elif fixture_input_policy_violations or execution_input_policy_before or executable_policy_violations:
+            report = None
+            report_errors = ["fixture inputs or validator executable violate the certified-input policy"]
+        else:
+            report, report_errors = inspect_report(
+                process["stdout"], process["exit_code"], initial=initial,
+            )
         if report is not None and not report_errors and isinstance(report.get("counts"), dict):
             if report["counts"] and expected_counts is None:
                 report_errors.append("counts cannot be derived from tested fixture inputs")
@@ -752,7 +1348,12 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
             execution_errors.append("validator executable was missing after execution")
         expected_execution_errors = expected_execution_errors or []
         report_match = (
-            process.returncode == expected_exit
+            not process["timed_out"]
+            and not fixture_input_policy_violations
+            and not execution_input_policy_before
+            and not execution_input_policy_after
+            and not executable_policy_violations
+            and process["exit_code"] == expected_exit
             and not report_errors
             and isinstance(report, dict)
             and report.get("passed") is expected_report_passed
@@ -775,8 +1376,14 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
         return {
             "scenario": name,
             "argv": command,
-            "exit_code": process.returncode,
+            "exit_code": process["exit_code"],
             "expected_exit_code": expected_exit,
+            "timed_out": process["timed_out"],
+            "timeout_seconds": process["timeout_seconds"],
+            "timeout_partial_stdout": process["timeout_partial_stdout"],
+            "timeout_partial_stderr": process["timeout_partial_stderr"],
+            "termination_sent": process["termination_sent"],
+            "child_reaped": process["child_reaped"],
             "validator_executable": str(executable),
             "validator_executable_before": executable_before,
             "validator_executable_after": executable_after,
@@ -800,9 +1407,14 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
             "expected_execution_errors": expected_execution_errors,
             "execution_errors": execution_errors,
             "execution_integrity_match": execution_match,
+            "source_input_policy_violations": source_policy_violations,
+            "fixture_input_policy_violations": fixture_input_policy_violations,
+            "execution_input_policy_before": execution_input_policy_before,
+            "execution_input_policy_after": execution_input_policy_after,
+            "validator_executable_policy_violations": executable_policy_violations,
             "passed": passed,
-            "stdout": process.stdout,
-            "stderr": process.stderr,
+            "stdout": process["stdout"],
+            "stderr": process["stderr"],
             "source_input_sha256": snapshot_states(source_inputs),
             "normalization_diff": normalization_diff,
             "normalization_errors": normalization_errors,
@@ -830,13 +1442,46 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
 
 def validate_original_board() -> dict[str, Any]:
     command = [sys.executable, str(VALIDATOR), "--root", str(ROOT), "--json"]
+    input_policy_before = certified_input_violations(ROOT, ENTRY_FILE)
+    executable_policy_before = path_component_violations(VALIDATOR)
+    if input_policy_before or executable_policy_before:
+        return {
+            "passed": False,
+            "argv": command,
+            "exit_code": None,
+            "timed_out": False,
+            "timeout_seconds": ORIGINAL_BOARD_TIMEOUT_SECONDS,
+            "timeout_partial_stdout": "",
+            "timeout_partial_stderr": "",
+            "termination_sent": False,
+            "child_reaped": False,
+            "input_policy_violations_before": input_policy_before,
+            "input_policy_violations_after": input_policy_before,
+            "validator_executable_policy_violations": executable_policy_before,
+            "report_errors": ["original-board subprocess was refused before unsafe input access"],
+            "execution_errors": ["original-board inputs violate the certified-input policy"],
+            "stdout": "",
+            "stderr": "",
+        }
     inputs_before = snapshot_files(ROOT)
     executable_before = path_state(VALIDATOR)
-    process = subprocess.run(command, capture_output=True, text=True, check=False)
+    process = run_with_timeout(command, ORIGINAL_BOARD_TIMEOUT_SECONDS)
+    input_policy_after = certified_input_violations(ROOT, ENTRY_FILE)
     inputs_after = snapshot_files(ROOT)
     executable_after = path_state(VALIDATOR)
-    report, report_errors = inspect_report(process.stdout, process.returncode, initial=False)
-    expected_counts = derive_expected_counts(ROOT)
+    if process["timed_out"]:
+        report = None
+        report_errors = [
+            f"original-board subprocess timed out after {process['timeout_seconds']} seconds"
+        ]
+    elif input_policy_before or input_policy_after or path_component_violations(VALIDATOR):
+        report = None
+        report_errors = ["original-board inputs violate the certified-input policy"]
+    else:
+        report, report_errors = inspect_report(
+            process["stdout"], process["exit_code"], initial=False,
+        )
+    expected_counts = derive_expected_counts(ROOT) if report is not None else None
     if report is not None and not report_errors and isinstance(report.get("counts"), dict):
         if report["counts"] and expected_counts is None:
             report_errors.append("counts cannot be derived from original board inputs")
@@ -847,18 +1492,37 @@ def validate_original_board() -> dict[str, Any]:
         f"original board input changed during ordinary validation: {path}"
         for path in input_changes
     ]
+    if input_policy_before:
+        execution_errors.append("original board inputs were unsafe before ordinary validation")
+    if input_policy_after:
+        execution_errors.append("original board inputs became unsafe during ordinary validation")
     if executable_before != executable_after:
         execution_errors.append("original validator executable changed during ordinary validation")
+    if process["timed_out"]:
+        execution_errors.append(
+            f"original-board subprocess timed out after {process['timeout_seconds']} seconds"
+        )
     return {
         "passed": (
-            process.returncode == 0
+            not process["timed_out"]
+            and not input_policy_before
+            and not input_policy_after
+            and process["exit_code"] == 0
             and not report_errors
             and isinstance(report, dict)
             and report.get("passed") is True
             and not execution_errors
         ),
         "argv": command,
-        "exit_code": process.returncode,
+        "exit_code": process["exit_code"],
+        "timed_out": process["timed_out"],
+        "timeout_seconds": process["timeout_seconds"],
+        "timeout_partial_stdout": process["timeout_partial_stdout"],
+        "timeout_partial_stderr": process["timeout_partial_stderr"],
+        "termination_sent": process["termination_sent"],
+        "child_reaped": process["child_reaped"],
+        "input_policy_violations_before": input_policy_before,
+        "input_policy_violations_after": input_policy_after,
         "validator_executable_before": executable_before,
         "validator_executable_after": executable_after,
         "input_sha256_before": snapshot_states(inputs_before),
@@ -869,15 +1533,36 @@ def validate_original_board() -> dict[str, Any]:
         "report_errors": report_errors,
         "execution_errors": execution_errors,
         "report": report,
-        "stdout": process.stdout,
-        "stderr": process.stderr,
+        "stdout": process["stdout"],
+        "stderr": process["stderr"],
+    }
+
+
+def validator_import_receipt() -> dict[str, Any]:
+    captured_stdout = VALIDATOR_IMPORT_STDOUT.getvalue()
+    captured_stderr = VALIDATOR_IMPORT_STDERR.getvalue()
+    return {
+        "passed": (
+            not BOOTSTRAP_INPUT_POLICY_VIOLATIONS
+            and VALIDATOR_IMPORT_EXCEPTION is None
+            and not captured_stdout
+            and not captured_stderr
+            and not VALIDATOR_IMPORT_CHANGES
+        ),
+        "captured_stdout": captured_stdout,
+        "captured_stderr": captured_stderr,
+        "exception": VALIDATOR_IMPORT_EXCEPTION,
+        "source_path_policy_violations": BOOTSTRAP_INPUT_POLICY_VIOLATIONS,
+        "source_sha256_before_import": snapshot_states(SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT),
+        "source_sha256_after_import": snapshot_states(SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT),
+        "source_changes_during_import": VALIDATOR_IMPORT_CHANGES,
     }
 
 
 def import_time_readme_mutation_probe() -> dict[str, Any]:
-    with tempfile.TemporaryDirectory(prefix="jackin-import-mutation-") as temp_dir:
+    with temporary_directory(prefix="jackin-import-mutation-") as temp_dir:
         pack = Path(temp_dir) / "pack"
-        shutil.copytree(ROOT, pack)
+        copy_certified_pack(ROOT, pack)
         validator = pack / "validate_pack.py"
         runner = pack / "validate_assignment_fixtures.py"
         readme = pack / "README.md"
@@ -903,16 +1588,17 @@ def import_time_readme_mutation_probe() -> dict[str, Any]:
             "'changes':module.VALIDATOR_IMPORT_CHANGES}))",
             str(runner),
         ]
-        process = subprocess.run(command, cwd=pack, capture_output=True, text=True, check=False)
+        process = run_with_timeout(command, PROBE_TIMEOUT_SECONDS, cwd=pack)
         try:
-            observed = json.loads(process.stdout)
+            observed = json.loads(process["stdout"]) if not process["timed_out"] else None
         except json.JSONDecodeError:
             observed = None
         after_inputs = snapshot_files(pack)
         expected_readme_after = sha256(readme)
         detected = observed.get("changes", {}).get("README.md") if isinstance(observed, dict) else None
         passed = (
-            process.returncode == 0
+            not process["timed_out"]
+            and process["exit_code"] == 0
             and isinstance(observed, dict)
             and observed.get("before") == readme_before
             and observed.get("after") == expected_readme_after
@@ -925,9 +1611,16 @@ def import_time_readme_mutation_probe() -> dict[str, Any]:
             "scenario": "isolated subprocess detects idempotent README mutation during validator import",
             "passed": passed,
             "argv": command,
-            "exit_code": process.returncode,
-            "stdout": process.stdout,
-            "stderr": process.stderr,
+            "exit_code": process["exit_code"],
+            "timed_out": process["timed_out"],
+            "timeout_seconds": process["timeout_seconds"],
+            "timeout_partial_stdout": process["timeout_partial_stdout"],
+            "timeout_partial_stderr": process["timeout_partial_stderr"],
+            "termination_sent": process["termination_sent"],
+            "child_reaped": process["child_reaped"],
+            "stdout": process["stdout"],
+            "stderr": process["stderr"],
+            "input_path_policy_violations_before": certified_input_violations(pack),
             "fixture_source_sha256": runner_before,
             "validator_executable_before_mutation_sha256": validator_before,
             "validator_executable_after_mutation_sha256": validator_mutated,
@@ -940,7 +1633,305 @@ def import_time_readme_mutation_probe() -> dict[str, Any]:
         }
 
 
+def fixture_inventory_control_probe(mode: str) -> dict[str, Any]:
+    scenario_names = list(FIXED_FIXTURE_NAMES)
+    target_name = FIXED_FIXTURE_NAMES[0]
+    if mode == "missing":
+        scenario_names.remove(target_name)
+    elif mode == "duplicate":
+        scenario_names.append(target_name)
+    elif mode == "unexpected":
+        scenario_names.append("An undeclared fixture scenario was executed.")
+    else:
+        raise ValueError(f"Unsupported fixture inventory probe mode: {mode}")
+
+    report = fixture_inventory_report(scenario_names)
+    expected_failure = {
+        "missing": target_name in report["missing_names"],
+        "duplicate": target_name in report["observed_duplicate_names"],
+        "unexpected": "An undeclared fixture scenario was executed." in report["unexpected_names"],
+    }[mode]
+    return {
+        "scenario": (
+            "The fixture inventory rejects an unexpected scenario entry."
+            if mode == "unexpected"
+            else f"The fixture inventory rejects a {mode} scenario entry."
+        ),
+        "passed": expected_failure and not report["passed"],
+        "mode": mode,
+        "report": report,
+    }
+
+
+def certified_input_security_probe() -> dict[str, Any]:
+    with temporary_directory(prefix="jackin-input-custody-") as temp_dir:
+        temporary_root = Path(temp_dir)
+        source_policy = certified_input_violations(ROOT, ENTRY_FILE)
+        original_hashes = snapshot_files(ROOT)
+        self_contained_pack = temporary_root / "self-contained-pack"
+        copy_certified_pack(ROOT, self_contained_pack)
+        copied_hashes = snapshot_files(self_contained_pack)
+        self_contained_policy = certified_input_violations(self_contained_pack)
+
+        external_target = temporary_root / "external-target.txt"
+        external_target.write_text("This controlled fixture target must remain unchanged.\n",
+                                   encoding="utf-8")
+        external_target_sha256_before = sha256(external_target)
+        external_link = self_contained_pack / "external-target-link.md"
+        os.symlink(external_target, external_link)
+        external_link_violations = certified_input_violations(self_contained_pack)
+        external_copy = temporary_root / "copy-that-must-not-exist"
+        try:
+            copy_certified_pack(self_contained_pack, external_copy)
+            external_copy_refused = False
+            external_copy_error: list[dict[str, Any]] = []
+        except CertifiedInputError as error:
+            external_copy_refused = True
+            external_copy_error = error.violations
+        external_target_sha256_after = sha256(external_target)
+
+        physical_parent = temporary_root / "physical-parent"
+        physical_parent.mkdir()
+        ancestor_pack = physical_parent / "pack"
+        copy_certified_pack(ROOT, ancestor_pack)
+        ancestor_alias = temporary_root / "ancestor-link"
+        os.symlink(physical_parent, ancestor_alias, target_is_directory=True)
+        aliased_pack = ancestor_alias / "pack"
+        ancestor_violations = certified_input_violations(aliased_pack)
+        ancestor_copy = temporary_root / "ancestor-copy-that-must-not-exist"
+        try:
+            copy_certified_pack(aliased_pack, ancestor_copy)
+            ancestor_copy_refused = False
+            ancestor_copy_error: list[dict[str, Any]] = []
+        except CertifiedInputError as error:
+            ancestor_copy_refused = True
+            ancestor_copy_error = error.violations
+
+        external_link_detected = any(
+            item.get("path") == "external-target-link.md"
+            and item.get("reason") == "symbolic link in certified inputs"
+            and item.get("target") == str(external_target)
+            for item in external_link_violations
+        )
+        ancestor_link_detected = any(
+            item.get("reason") == "symbolic link in certified path"
+            and item.get("path") == str(ancestor_alias)
+            for item in ancestor_violations
+        )
+        passed = (
+            not source_policy
+            and original_hashes == copied_hashes
+            and not self_contained_policy
+            and external_link_detected
+            and external_copy_refused
+            and not external_copy.exists()
+            and external_copy_error == external_link_violations
+            and external_target_sha256_before == external_target_sha256_after
+            and ancestor_link_detected
+            and ancestor_copy_refused
+            and not ancestor_copy.exists()
+            and ancestor_copy_error == ancestor_violations
+        )
+        return {
+            "scenario": "The fixture runner refuses external and ancestor symlinks before copying.",
+            "passed": passed,
+            "source_input_policy_violations": source_policy,
+            "self_contained_source_sha256": original_hashes,
+            "self_contained_copy_sha256": copied_hashes,
+            "self_contained_copy_policy_violations": self_contained_policy,
+            "external_link_violations": external_link_violations,
+            "external_copy_refused": external_copy_refused,
+            "external_copy_error": external_copy_error,
+            "external_copy_created": external_copy.exists(),
+            "external_target_sha256_before": external_target_sha256_before,
+            "external_target_sha256_after": external_target_sha256_after,
+            "ancestor_link_violations": ancestor_violations,
+            "ancestor_copy_refused": ancestor_copy_refused,
+            "ancestor_copy_error": ancestor_copy_error,
+            "ancestor_copy_created": ancestor_copy.exists(),
+        }
+
+
+def validator_import_probe(mode: str) -> dict[str, Any]:
+    with temporary_directory(prefix="jackin-import-capture-") as temp_dir:
+        temporary_root = Path(temp_dir)
+        pack = temporary_root / "pack"
+        copy_certified_pack(ROOT, pack)
+        validator = pack / "validate_pack.py"
+        runner = pack / "validate_assignment_fixtures.py"
+        validator_before = path_state(validator)
+        runner_before = path_state(runner)
+        inputs_before = snapshot_files(pack)
+        if mode == "stdout":
+            with validator.open("a", encoding="utf-8") as source:
+                source.write("\nprint('Unexpected validator import output.')\n")
+            command = [sys.executable, str(runner)]
+        elif mode == "stderr":
+            with validator.open("a", encoding="utf-8") as source:
+                source.write("\nimport sys\nsys.stderr.write('Unexpected validator import error output.\\n')\n")
+            command = [sys.executable, str(runner)]
+        elif mode == "exception":
+            with validator.open("a", encoding="utf-8") as source:
+                source.write("\nraise RuntimeError('The validator import failed in this fixture.')\n")
+            command = [sys.executable, str(runner)]
+        elif mode == "quiet":
+            import_probe = (
+                "import importlib.util,json,sys; "
+                "spec=importlib.util.spec_from_file_location('quiet_probe',sys.argv[1]); "
+                "module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); "
+                "print(json.dumps({'captured_stdout':module.VALIDATOR_IMPORT_STDOUT.getvalue(),"
+                "'captured_stderr':module.VALIDATOR_IMPORT_STDERR.getvalue(),"
+                "'exception':module.VALIDATOR_IMPORT_EXCEPTION,"
+                "'source_changes':module.VALIDATOR_IMPORT_CHANGES}))"
+            )
+            command = [sys.executable, "-c", import_probe, str(runner)]
+        else:
+            raise ValueError(f"Unsupported validator import probe mode: {mode}")
+
+        validator_after_mutation = path_state(validator)
+        process = run_with_timeout(command, PROBE_TIMEOUT_SECONDS, cwd=pack)
+        inputs_after = snapshot_files(pack)
+        validator_after = path_state(validator)
+        runner_after = path_state(runner)
+        try:
+            observed = json.loads(process["stdout"]) if not process["timed_out"] else None
+        except json.JSONDecodeError:
+            observed = None
+
+        if mode == "quiet":
+            passed = (
+                not process["timed_out"]
+                and process["exit_code"] == 0
+                and isinstance(observed, dict)
+                and observed == {
+                    "captured_stdout": "",
+                    "captured_stderr": "",
+                    "exception": None,
+                    "source_changes": {},
+                }
+                and not process["stderr"]
+            )
+        else:
+            import_receipt = observed.get("validator_import") if isinstance(observed, dict) else None
+            expected_stdout = "Unexpected validator import output.\n" if mode == "stdout" else ""
+            expected_stderr = (
+                "Unexpected validator import error output.\n" if mode == "stderr" else ""
+            )
+            expected_exception = (
+                {"type": "RuntimeError",
+                 "message": "The validator import failed in this fixture."}
+                if mode == "exception" else None
+            )
+            passed = (
+                not process["timed_out"]
+                and process["exit_code"] == 1
+                and isinstance(observed, dict)
+                and observed.get("passed") is False
+                and isinstance(import_receipt, dict)
+                and import_receipt.get("captured_stdout") == expected_stdout
+                and import_receipt.get("captured_stderr") == expected_stderr
+                and import_receipt.get("exception") == expected_exception
+                and not process["stderr"]
+            )
+        return {
+            "scenario": f"The runner captures validator import {mode} without leaking output.",
+            "passed": passed,
+            "argv": command,
+            "exit_code": process["exit_code"],
+            "timed_out": process["timed_out"],
+            "timeout_seconds": process["timeout_seconds"],
+            "timeout_partial_stdout": process["timeout_partial_stdout"],
+            "timeout_partial_stderr": process["timeout_partial_stderr"],
+            "termination_sent": process["termination_sent"],
+            "child_reaped": process["child_reaped"],
+            "stdout": process["stdout"],
+            "stderr": process["stderr"],
+            "observed_json": observed,
+            "validator_sha256_before": validator_before,
+            "validator_sha256_after_mutation": validator_after_mutation,
+            "validator_sha256_after_process": validator_after,
+            "runner_sha256_before": runner_before,
+            "runner_sha256_after": runner_after,
+            "input_sha256_before": snapshot_states(inputs_before),
+            "input_sha256_after": snapshot_states(inputs_after),
+            "input_changes": snapshot_changes(inputs_before, inputs_after),
+        }
+
+
+def bounded_timeout_probe() -> dict[str, Any]:
+    with temporary_directory(prefix="jackin-timeout-probe-") as temp_dir:
+        temporary_root = Path(temp_dir)
+        sleeper = temporary_root / "bounded-sleeper.py"
+        sleeper.write_text(
+            "import sys\n"
+            "import time\n"
+            "print('Partial standard output.', flush=True)\n"
+            "print('Partial standard error.', file=sys.stderr, flush=True)\n"
+            "time.sleep(30)\n",
+            encoding="utf-8",
+        )
+        input_before = snapshot_files(temporary_root)
+        executable_before = path_state(sleeper)
+        process = run_with_timeout([sys.executable, str(sleeper)], 0.25, cwd=temporary_root)
+        input_after = snapshot_files(temporary_root)
+        executable_after = path_state(sleeper)
+        passed = (
+            process["timed_out"]
+            and process["exit_code"] is not None
+            and process["termination_sent"]
+            and process["child_reaped"]
+            and "Partial standard output." in process["timeout_partial_stdout"]
+            and "Partial standard error." in process["timeout_partial_stderr"]
+            and input_before == input_after
+            and executable_before == executable_after
+        )
+        return {
+            "scenario": "The bounded sleeper retains partial output and reaps its timed-out child.",
+            "passed": passed,
+            "argv": [sys.executable, str(sleeper)],
+            "timeout_seconds": process["timeout_seconds"],
+            "timed_out": process["timed_out"],
+            "exit_code": process["exit_code"],
+            "timeout_partial_stdout": process["timeout_partial_stdout"],
+            "timeout_partial_stderr": process["timeout_partial_stderr"],
+            "stdout": process["stdout"],
+            "stderr": process["stderr"],
+            "termination_sent": process["termination_sent"],
+            "child_reaped": process["child_reaped"],
+            "input_sha256_before": snapshot_states(input_before),
+            "input_sha256_after": snapshot_states(input_after),
+            "input_changes": snapshot_changes(input_before, input_after),
+            "executable_before": executable_before,
+            "executable_after": executable_after,
+        }
+
+
 def main() -> int:
+    import_receipt = validator_import_receipt()
+    if not import_receipt["passed"]:
+        policy_errors = BOOTSTRAP_INPUT_POLICY_VIOLATIONS
+        failure_payload = {
+            "passed": False,
+            "scope": "Static validator fixtures only. No product or runtime tests are performed.",
+            "validator_import": import_receipt,
+            "source_input_policy_violations": policy_errors,
+            "fixture_inventory": {
+                "passed": False,
+                "expected_count": FIXED_FIXTURE_COUNT,
+                "observed_count": 0,
+                "errors": ["The runner refused to execute fixtures after validator import failure."],
+            },
+            "runner_checks": [],
+            "fixtures": [],
+            "original_board": {
+                "passed": False,
+                "validator_not_started": True,
+                "reason": "The runner refused to continue after an unsafe or noisy validator import.",
+            },
+        }
+        print(json.dumps(failure_payload, indent=2, ensure_ascii=False))
+        return 1
+
     receipts: list[dict[str, Any]] = []
     original_source_before = SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT
     receipts.append(import_time_readme_mutation_probe())
@@ -3845,10 +4836,27 @@ print('{}')
         ],
     ))
 
+    fixture_inventory = fixture_inventory_report([
+        receipt.get("scenario") for receipt in receipts
+    ])
+    runner_checks = [
+        fixture_inventory_control_probe("missing"),
+        fixture_inventory_control_probe("duplicate"),
+        fixture_inventory_control_probe("unexpected"),
+        certified_input_security_probe(),
+        bounded_timeout_probe(),
+        validator_import_probe("stdout"),
+        validator_import_probe("stderr"),
+        validator_import_probe("exception"),
+        validator_import_probe("quiet"),
+    ]
+
     original_board = validate_original_board()
+    source_policy_after_runner = certified_input_violations(ROOT, ENTRY_FILE)
     original_source_after = snapshot_files(ROOT)
     runner_source_changes = snapshot_changes(original_source_before, original_source_after)
     original_board["fixture_runner_source_changes"] = runner_source_changes
+    original_board["source_input_policy_violations_after_runner"] = source_policy_after_runner
     original_board["validator_import_source_sha256_before"] = snapshot_states(
         SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT,
     )
@@ -3864,15 +4872,33 @@ print('{}')
     if runner_source_changes:
         original_board["execution_errors"].append("fixture runner changed the original pack")
         original_board["passed"] = False
+    if source_policy_after_runner:
+        original_board["execution_errors"].append(
+            "fixture runner left the original pack outside the certified-input policy"
+        )
+        original_board["passed"] = False
 
     payload = {
-        "passed": original_board["passed"] and all(receipt["passed"] for receipt in receipts),
+        "passed": (
+            import_receipt["passed"]
+            and fixture_inventory["passed"]
+            and original_board["passed"]
+            and all(receipt["passed"] for receipt in receipts)
+            and all(check["passed"] for check in runner_checks)
+        ),
         "scope": "Static validator fixtures only. No product or runtime tests are performed.",
+        "validator_import": import_receipt,
+        "fixture_inventory": fixture_inventory,
+        "runner_checks": runner_checks,
         "original_board": original_board,
         "source_sha256": {
-            "validate_pack.py": sha256(VALIDATOR),
-            "validate_assignment_fixtures.py": sha256(Path(__file__)),
-            "pack_files": snapshot_files(ROOT),
+            "validate_pack.py": (
+                sha256(VALIDATOR) if not path_component_violations(VALIDATOR) else None
+            ),
+            "validate_assignment_fixtures.py": (
+                sha256(ENTRY_FILE) if not path_component_violations(ENTRY_FILE) else None
+            ),
+            "pack_files": original_source_after,
             "before_validator_import": snapshot_states(SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT),
             "after_validator_import": snapshot_states(SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT),
             "validator_import_changes": VALIDATOR_IMPORT_CHANGES,

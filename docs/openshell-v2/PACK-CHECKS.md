@@ -53,10 +53,12 @@ Markdown assignment labels record initial `NOT_RUN` status and stay fixed during
 `validate_assignment_fixtures.py` runs the validator on temporary pack copies.
 Each receipt records the actual argument vector, stdout, stderr, exit code, executed validator path and hash, and fixture-source hashes.
 Each receipt hashes every tested pack input after mutation. It records changed-input hashes before and after mutation, with explicit `present` or `missing` states.
-The fixture runner keeps its check inventory independent from the validator under test.
-It snapshots pack inputs before importing the validator, immediately after import, and before and after execution. A subprocess fixture proves it detects an import-time README mutation on a temporary copy.
+The fixture runner keeps both its validator-check inventory and its 244 scenario names independent from the validator and fixture calls under test. It rejects missing, duplicate, and unexpected scenario names.
+Every child process has a finite timeout. A timed-out child is killed and reaped, and its receipt records the actual exit status, partial stdout and stderr, and input and executable hashes before and after execution. Partial output from a timed-out process never counts as a validation report.
+The runner snapshots pack inputs before importing the validator and immediately after import. It captures validator-import stdout and stderr, and reports import output or exceptions as structured failures before running fixtures. The runner still emits one JSON document. A subprocess fixture proves it detects an import-time README mutation on a temporary copy.
+The runner rejects symbolic links and certified paths that resolve outside the pack before it reads, imports, or copies them. It records link metadata without following or removing links. The supported self-contained pack copy has matching source and destination hashes.
 The top-level source map hashes the validator, fixture runner, and every source-pack file.
-The runner writes one JSON report to stdout and does not modify the pack. It validates the original board in ordinary mode and records its before/after hashes. Redirect stdout outside the repository to retain raw receipts.
+The runner does not modify the pack. It validates the original board in ordinary mode and records its before and after hashes. Redirect stdout outside the repository to retain raw receipts.
 
 ## Counts
 
@@ -81,6 +83,10 @@ Keep no more than eight actual subagents active at once.
 | Manifest schema versions are supported integers | PASS |
 | Both execution markers are exact Booleans in ordinary and initial modes | PASS |
 | LIVE `PASS` and `FAIL` assignments require the runtime-execution marker | PASS |
+| Fixture scenario names match the independent 244-name inventory with no missing, duplicate, or unexpected entries | PASS |
+| Fixture, original-board, and probe subprocesses use finite timeouts and preserve partial output and hashes | PASS |
+| Validator import output and exceptions become structured failures in one JSON report | PASS |
+| External and ancestor symlinks fail before certified input copying | PASS |
 | C01 source table matches all four exact fixed references | PASS |
 | C02 crate graph and dependency-boundary section matches its fixed bytes | PASS |
 | Machine source pins match the three fixed graph references | PASS |
