@@ -4,6 +4,7 @@
 )]
 
 mod fetch;
+mod money;
 mod parse;
 mod snapshot;
 mod types;

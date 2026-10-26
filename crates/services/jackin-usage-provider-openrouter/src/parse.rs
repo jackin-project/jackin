@@ -9,6 +9,7 @@ use jackin_usage_provider_core::{
     bucket, epoch_seconds_from_maybe_ms, expiry_label, format_cents, parse_iso_epoch, timed_bucket,
 };
 
+use super::money::{Decimal, format_money, sum_nonnegative};
 use super::{OpenRouterCreditsOutcome, OpenRouterCreditsResponse, OpenRouterKeyData};
 
 fn openrouter_cents(dollars: f64) -> Option<i64> {
@@ -26,7 +27,7 @@ fn openrouter_cents(dollars: f64) -> Option<i64> {
     Some(cents as i64)
 }
 
-fn openrouter_byok_spend(data: &serde_json::Value) -> Option<i64> {
+fn openrouter_byok_spend(data: &serde_json::Value) -> Option<Money> {
     let object = data.as_object()?;
     for key in [
         "byok_usage_monthly",
@@ -34,30 +35,48 @@ fn openrouter_byok_spend(data: &serde_json::Value) -> Option<i64> {
         "byok_usage_daily",
         "byok_usage",
     ] {
-        if let Some(cents) = object
+        if let Some(money) = object
             .get(key)
-            .and_then(serde_json::Value::as_f64)
-            .and_then(openrouter_cents)
-            .filter(|cents| *cents >= 0)
+            .and_then(Decimal::from_value)
+            .filter(|value| !value.is_negative())
+            .and_then(|value| value.to_money())
+            .filter(|money| money.amount_minor >= 0)
         {
-            return Some(cents);
+            return Some(money);
         }
     }
-    let mut total: i64 = 0;
-    let mut found = false;
-    for (key, value) in object {
+    let values = object.iter().filter_map(|(key, value)| {
         let lower = key.to_ascii_lowercase();
-        if lower.contains("byok")
-            && (lower.contains("usage") || lower.contains("spend") || lower.contains("cost"))
-            && let Some(cents) = value.as_f64().and_then(openrouter_cents)
-            && cents >= 0
-            && let Some(sum) = total.checked_add(cents)
-        {
-            total = sum;
-            found = true;
-        }
+        (lower.contains("byok")
+            && (lower.contains("usage") || lower.contains("spend") || lower.contains("cost")))
+        .then_some(value)
+    });
+    sum_nonnegative(values)
+}
+
+fn openrouter_money_field(data: &serde_json::Value, field: &str) -> Option<Money> {
+    Decimal::from_value(data.get(field)?)
+        .filter(|value| !value.is_negative())
+        .and_then(|value| value.to_money())
+        .filter(|money| money.amount_minor >= 0)
+}
+
+fn openrouter_cap_and_used(
+    cap: &Decimal,
+    cap_default: Money,
+    remaining: Option<&Decimal>,
+) -> (Money, Option<Money>) {
+    let Some(remaining) = remaining else {
+        return (cap_default, None);
+    };
+    let Some(used) = cap.saturating_sub(remaining) else {
+        return (cap_default, None);
+    };
+    let scale = cap.scale().max(remaining.scale()).max(2);
+    if let (Some(cap), Some(used)) = (cap.money_at_scale(scale), used.money_at_scale(scale)) {
+        return (cap, Some(used));
     }
-    found.then_some(total)
+    (cap_default, used.to_money())
 }
 
 fn openrouter_key_expiry(data: &serde_json::Value, now: i64) -> Option<String> {
@@ -106,67 +125,75 @@ pub fn parse_openrouter_key_usage(
     let key: OpenRouterKeyData = serde_json::from_value(data.clone())
         .map_err(|_| "OpenRouter key response is malformed".to_owned())?;
     let mut buckets = Vec::new();
-    if let Some(cap) = key.limit.and_then(openrouter_cents).filter(|cap| *cap > 0) {
+    if let Some(cap) = key
+        .limit
+        .and_then(|_| data.get("limit"))
+        .and_then(Decimal::from_value)
+        .filter(|cap| !cap.is_negative())
+        .filter(|cap| cap.to_money().is_some_and(|money| money.amount_minor > 0))
+        && let Some(cap_default) = cap.to_money().filter(|money| money.amount_minor > 0)
+    {
         let remaining = key
             .limit_remaining
-            .and_then(openrouter_cents)
-            .filter(|remaining| *remaining >= 0);
-        let used = remaining.map(|remaining| cap.saturating_sub(remaining).max(0));
-        let remaining_percent = remaining.and_then(|remaining| {
-            #[expect(
-                clippy::cast_precision_loss,
-                reason = "continuous ratio is derived from exact cent amounts"
-            )]
-            let points = (i128::from(remaining) * 100) as f64 / i128::from(cap) as f64;
+            .and_then(|_| data.get("limit_remaining"))
+            .and_then(Decimal::from_value)
+            .filter(|remaining| !remaining.is_negative())
+            .filter(|remaining| remaining.to_money().is_some());
+        let (limit_money, used_money) =
+            openrouter_cap_and_used(&cap, cap_default, remaining.as_ref());
+        let remaining_percent = remaining.as_ref().and_then(|remaining| {
+            let cap_value = cap.to_f64()?;
+            let remaining_value = remaining.to_f64()?;
+            let points = remaining_value * 100.0 / cap_value;
             CanonicalRemainingPercent::new(points)
                 .ok()
                 .map(|percent| (percent, PercentObservationOrigin::Derived))
         });
         let mut view = timed_bucket(
             "Key Limit",
-            used.map(format_cents),
-            Some(format_cents(cap)),
+            used_money.as_ref().map(format_money),
+            Some(format_money(&limit_money)),
             remaining_percent,
             openrouter_key_reset(&data),
             now,
             openrouter_key_expiry(&data, now).as_deref(),
             UsageSnapshotStatus::Fresh,
         );
-        view.used_money = used.map(|used| Money::new(used, "USD", 2));
-        view.limit_money = Some(Money::new(cap, "USD", 2));
+        view.used_money = used_money;
+        view.limit_money = Some(limit_money);
         view.status_slot = Some(StatusSlot::Spend);
         buckets.push(view);
     }
-    for (label, spend) in [
-        ("Spent today", key.usage_daily),
-        ("Spent this week", key.usage_weekly),
-        ("Spent this month", key.usage_monthly),
+    for (label, spend, field) in [
+        ("Spent today", key.usage_daily, "usage_daily"),
+        ("Spent this week", key.usage_weekly, "usage_weekly"),
+        ("Spent this month", key.usage_monthly, "usage_monthly"),
     ] {
-        if let Some(cents) = spend.and_then(openrouter_cents).filter(|cents| *cents >= 0) {
+        if let Some(money) = spend.and_then(|_| openrouter_money_field(&data, field)) {
             let mut view = bucket(
                 label,
-                Some(format_cents(cents)),
+                Some(format_money(&money)),
                 None,
                 None,
                 None,
                 None,
                 UsageSnapshotStatus::Fresh,
             );
-            view.used_money = Some(Money::new(cents, "USD", 2));
+            view.used_money = Some(money);
             buckets.push(view);
         }
     }
     if let Some(byok) = openrouter_byok_spend(&data) {
         let mut view = bucket(
             "BYOK spend",
-            Some(format_cents(byok)),
+            Some(format_money(&byok)),
             None,
             None,
             None,
             Some("billed to your own key"),
             UsageSnapshotStatus::Fresh,
         );
-        view.used_money = Some(Money::new(byok, "USD", 2));
+        view.used_money = Some(byok);
         buckets.push(view);
     }
     if buckets.iter().all(|bucket| bucket.status_slot.is_none())

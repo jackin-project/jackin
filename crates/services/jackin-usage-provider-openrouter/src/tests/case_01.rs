@@ -263,6 +263,112 @@ fn openrouter_byok_stays_a_separate_row() {
 }
 
 #[test]
+fn openrouter_subcent_cap_preserves_key_limit_and_money_geometry() {
+    let quota = parse_openrouter_key_usage(
+        serde_json::from_str(
+            r#"{"data":{"limit":0.001,"limit_remaining":0.0009,"is_free_tier":false}}"#,
+        )
+        .expect("subcent key JSON"),
+        1_780_000_000,
+    )
+    .expect("subcent key");
+    let cap = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "Key Limit")
+        .expect("subcent cap row");
+    assert_eq!(
+        cap.limit_money,
+        Some(jackin_protocol::control::Money::new(10, "USD", 4))
+    );
+    assert_eq!(cap.limit_label.as_deref(), Some("$0.001"));
+    assert_eq!(
+        cap.used_money,
+        Some(jackin_protocol::control::Money::new(1, "USD", 4))
+    );
+    assert_eq!(cap.used_label.as_deref(), Some("$0.0001"));
+    assert_eq!(
+        cap.remaining_percent
+            .map(jackin_protocol::control::CanonicalRemainingPercent::get),
+        Some(90.0)
+    );
+    assert_eq!(
+        cap.remaining_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::Derived)
+    );
+    assert_eq!(
+        jackin_usage_provider_core::money_used_percent(cap)
+            .map(jackin_protocol::control::RawPercentPoints::get),
+        Some(10.0)
+    );
+}
+
+#[test]
+fn openrouter_period_spend_preserves_decimal_scale() {
+    let quota = parse_openrouter_key_usage(
+        serde_json::from_str(r#"{"data":{"usage_monthly":0.100000000000000001}}"#)
+            .expect("high precision key JSON"),
+        1_780_000_000,
+    )
+    .expect("high precision key");
+    let month = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "Spent this month")
+        .expect("monthly spend row");
+    assert_eq!(
+        month.used_money,
+        Some(jackin_protocol::control::Money::new(
+            100_000_000_000_000_001,
+            "USD",
+            18
+        ))
+    );
+    assert_eq!(month.used_label.as_deref(), Some("$0.100000000000000001"));
+}
+
+#[test]
+fn openrouter_byok_fallback_sums_exact_subcent_values() {
+    let quota = parse_openrouter_key_usage(
+        serde_json::from_str(r#"{"data":{"byok_spend_a":0.001,"byok_cost_b":0.0009}}"#)
+            .expect("subcent BYOK JSON"),
+        1_780_000_000,
+    )
+    .expect("subcent BYOK key");
+    let byok = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "BYOK spend")
+        .expect("BYOK spend row");
+    assert_eq!(
+        byok.used_money,
+        Some(jackin_protocol::control::Money::new(19, "USD", 4))
+    );
+    assert_eq!(byok.used_label.as_deref(), Some("$0.0019"));
+}
+
+#[test]
+fn openrouter_byok_sums_fractional_carries_before_narrowing() {
+    let quota = parse_openrouter_key_usage(
+        serde_json::from_str(
+            r#"{"data":{"byok_spend_a":9223372036854775806,"byok_spend_b":0.1,"byok_spend_c":0.9}}"#,
+        )
+        .expect("fractional carry BYOK JSON"),
+        1_780_000_000,
+    )
+    .expect("fractional carry BYOK key");
+    let byok = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "BYOK spend")
+        .expect("BYOK spend row");
+    assert_eq!(
+        byok.used_money,
+        Some(jackin_protocol::control::Money::new(i64::MAX, "USD", 0))
+    );
+}
+
+#[test]
 fn openrouter_model_catalog_omission_is_unverified_not_rejection() {
     let catalog = serde_json::json!({"data": [{"id": "openrouter/auto"}]});
     assert!(matches!(
