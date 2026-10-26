@@ -108,7 +108,7 @@ fn strict_capture_drains_descendant_that_inherits_output_pipes() {
     let mut command = Command::new("/bin/sh");
     command.args([
         "-c",
-        "(trap '' TERM HUP INT; printf x >> \"$1\"; while :; do /bin/sleep 0.02; printf x >> \"$1\"; done) & exit 0",
+        "(trap '' TERM HUP INT; printf x >> \"$1\"; while :; do /bin/sleep 0.02; printf x >> \"$1\"; done) & attempts=0; while [ ! -s \"$1\" ]; do attempts=$((attempts + 1)); [ \"$attempts\" -lt 100 ] || exit 9; /bin/sleep 0.01; done; exit 0",
         "sh",
     ]);
     command.arg(&tick_path);

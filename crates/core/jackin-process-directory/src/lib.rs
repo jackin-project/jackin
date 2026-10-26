@@ -14,6 +14,9 @@ mod secure_install;
 mod secure_source;
 
 #[cfg(unix)]
+mod running_image;
+
+#[cfg(unix)]
 pub use unix::current_dir;
 
 /// Pinned descriptor-relative inspection for private installation trees.
@@ -31,6 +34,13 @@ pub use secure_install::{CheckedInstallFile, CheckedInstallRoot, InstallFileKind
 /// or attest a build or running image.
 #[cfg(unix)]
 pub use secure_source::{CheckedSourceFile, CheckedSourceRoot};
+
+/// Filesystem-object identity for the image mapped as the current process.
+///
+/// This capability identifies a regular filesystem object. It does not
+/// authenticate executable contents, provenance, permissions, or receipts.
+#[cfg(unix)]
+pub use running_image::RunningImage;
 
 /// On macOS, inspect the current process's fixed SIGCHLD action, expose
 /// non-consuming direct-child selectors, and provide a diagnostic-only
