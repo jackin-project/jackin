@@ -369,6 +369,84 @@ fn openrouter_byok_sums_fractional_carries_before_narrowing() {
 }
 
 #[test]
+fn openrouter_byok_omits_unrepresentable_numeric_fallback_groups() {
+    for json in [
+        r#"{"data":{"byok_spend_a":1,"byok_cost_b":1e-256}}"#,
+        r#"{"data":{"byok_spend_a":1,"byok_cost_b":1e30}}"#,
+    ] {
+        let quota = parse_openrouter_key_usage(
+            serde_json::from_str(json).expect("unrepresentable BYOK JSON"),
+            1_780_000_000,
+        )
+        .expect("unrepresentable BYOK key remains a valid response");
+        assert!(
+            quota
+                .buckets
+                .iter()
+                .all(|bucket| bucket.label != "BYOK spend")
+        );
+    }
+}
+
+#[test]
+fn openrouter_byok_omits_final_fallback_overflow() {
+    let quota = parse_openrouter_key_usage(
+        serde_json::from_str(r#"{"data":{"byok_spend_a":9223372036854775807,"byok_cost_b":1}}"#)
+            .expect("overflowing BYOK JSON"),
+        1_780_000_000,
+    )
+    .expect("overflowing BYOK key remains a valid response");
+    assert!(
+        quota
+            .buckets
+            .iter()
+            .all(|bucket| bucket.label != "BYOK spend")
+    );
+}
+
+#[test]
+fn openrouter_byok_skips_null_and_string_fallback_fields() {
+    let quota = parse_openrouter_key_usage(
+        serde_json::from_str(
+            r#"{"data":{"byok_spend_a":1,"byok_cost_null":null,"byok_usage_text":"1.00"}}"#,
+        )
+        .expect("mixed BYOK JSON"),
+        1_780_000_000,
+    )
+    .expect("mixed BYOK key");
+    let byok = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "BYOK spend")
+        .expect("numeric BYOK component remains available");
+    assert_eq!(
+        byok.used_money,
+        Some(jackin_protocol::control::Money::new(100, "USD", 2))
+    );
+    assert_eq!(byok.used_label.as_deref(), Some("$1"));
+}
+
+#[test]
+fn openrouter_byok_primary_skips_unrepresentable_month_and_selects_week() {
+    let quota = parse_openrouter_key_usage(
+        serde_json::from_str(r#"{"data":{"byok_usage_monthly":1e-256,"byok_usage_weekly":1}}"#)
+            .expect("period BYOK JSON"),
+        1_780_000_000,
+    )
+    .expect("period BYOK key");
+    let byok = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "BYOK spend")
+        .expect("weekly BYOK fallback");
+    assert_eq!(
+        byok.used_money,
+        Some(jackin_protocol::control::Money::new(100, "USD", 2))
+    );
+    assert_eq!(byok.used_label.as_deref(), Some("$1"));
+}
+
+#[test]
 fn openrouter_model_catalog_omission_is_unverified_not_rejection() {
     let catalog = serde_json::json!({"data": [{"id": "openrouter/auto"}]});
     assert!(matches!(
