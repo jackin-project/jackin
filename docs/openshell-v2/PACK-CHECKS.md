@@ -28,6 +28,7 @@ The ordinary validator accepts documented progress states.
 It requires one `assignment_results` row for every task owner on every case.
 Rows contain exactly `task_id` and `status`; duplicate, missing, and extra owners fail validation.
 Each `PASS` task needs `PASS` for its own case assignments.
+Both `NOT_STARTED` and `READY` tasks must keep every owned assignment at `NOT_RUN`.
 The case-level `status` remains for existing readers and is derived from all assignments.
 It is `PASS` only when all assignments pass.
 It is `FAIL` if any assignment fails.
@@ -72,7 +73,7 @@ Keep no more than eight actual subagents active at once.
 | Dependency graph has no cycle and stored groups match | PASS |
 | Assignment rows have exact unique owners and valid statuses | PASS |
 | Case status matches its assignment summary | PASS |
-| `NOT_STARTED` tasks have `NOT_RUN` assignments | PASS |
+| `NOT_STARTED` and `READY` tasks have `NOT_RUN` assignments | PASS |
 | Task progress waits for completed dependencies | PASS |
 | `PASS` tasks have passing results for their own assignments | PASS |
 | Task test references, case coverage, and ownership maps agree | PASS |
@@ -80,6 +81,8 @@ Keep no more than eight actual subagents active at once.
 | Acceptance detailed-case anchor is unique | PASS |
 | Acceptance policy before detailed cases matches fixed checksum | PASS |
 | Acceptance case blocks match the manifest | PASS |
+| Task SPEC citations have valid syntax and in-range lines | PASS |
+| Every cited SPEC section lists its task owner in traceability | PASS |
 | Traceability headings, ranges, owners, and representations match | PASS |
 | Checked procedural sentences stay within the word limit | PASS |
 | Initial states claim no task or case execution (`--initial` only) | PASS |
@@ -87,8 +90,8 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 39 scenarios passed their exact report and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 21 targeted scenarios cover assignment ownership, fixed acceptance policy, and malformed validator reports.
+All 48 scenarios passed their exact report and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 30 targeted scenarios cover assignment ownership, source citations, fixed acceptance policy, malformed manifests, and validator reports.
 The downstream case below is A22, owned by U02 and T32.
 
 | Temporary-copy fixture | Expected validator result | Observed |
@@ -108,12 +111,17 @@ The downstream case below is A22, owned by U02 and T32.
 | `BLOCKED` task and its blocked assignments | Accept as blocked, exit 0 | PASS, exit 0 |
 | U06 `PASS` with no assigned acceptance cases | Accept under existing no-case completion rule, exit 0 | PASS, exit 0 |
 | `NOT_STARTED` owner has `PASS`, `FAIL`, or `BLOCKED` assignment | Reject, exit 1 | PASS, exit 1 |
+| `READY` owner has `PASS`, `FAIL`, or `BLOCKED` assignment | Reject, exit 1 | PASS, exit 1 |
+| `READY` owner retains `NOT_RUN` assignment | Accept, exit 0 | PASS, exit 0 |
 | `BLOCKED` U02 retains its prior `PASS` while T32 remains `NOT_RUN` | Accept, exit 0 | PASS, exit 0 |
 | Duplicate case owner with synchronized acceptance block | Reject, exit 1 | PASS, exit 1 |
 | Copied pack lacks validator; real external validator runs | Reject missing required file, exit 1 | PASS, exit 1 |
 | Acceptance policy prefix is mutated or a line is removed | Reject checksum mismatch, exit 1 | PASS, exit 1 |
+| T14 is missing from one cited traceability section while mapped elsewhere, with both tables synchronized | Reject, exit 1 | PASS, exit 1 |
+| Task SPEC citation syntax is malformed or its line is out of range | Reject, exit 1 | PASS, exit 1 |
+| Malformed task manifest emits the structured input-error report | Reject input, exit 2 | PASS, exit 2 |
 | Empty, invalid, non-object, incomplete, or mistyped validator report | Reject malformed report | PASS |
-| Inconsistent counts, checks, failures, scope, or exit code | Reject malformed report | PASS |
+| Inconsistent counts, checks, failures, scope, or exit code, including an input-error report with exit 1 | Reject malformed report | PASS |
 | Duplicate or malformed check records | Reject malformed report | PASS |
 | Unexpected extra failure name | Reject report against exact expected failures | PASS |
 

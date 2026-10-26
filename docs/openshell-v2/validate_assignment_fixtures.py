@@ -24,6 +24,10 @@ def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def write_json(path: Path, value: Any) -> None:
+    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
 def task_map(pack: Path) -> dict[str, dict[str, Any]]:
     return {task["id"]: task for task in read_json(pack / "task-graph.json")["tasks"]}
 
@@ -61,6 +65,14 @@ def set_shared_summary(u02: str, t32: str, summary: str) -> Callable[[dict[str, 
         set_assignment(case, "U02", u02)
         set_assignment(case, "T32", t32)
         case["status"] = summary
+    return update
+
+
+def set_single_summary(task_id: str, status: str) -> Callable[[dict[str, dict[str, Any]]], None]:
+    def update(cases: dict[str, dict[str, Any]]) -> None:
+        case = cases["A01"]
+        set_assignment(case, task_id, status)
+        case["status"] = status
     return update
 
 
@@ -143,22 +155,35 @@ def inspect_report(stdout: str, exit_code: int) -> tuple[dict[str, Any] | None, 
         "tasks", "cases", "specification_sections", "task_ready_groups", "checked_sentences",
     }
     counts = report["counts"]
+    check_records = report["checks"]
+    early_required_file_failure = (
+        not report["passed"]
+        and report["failures"] == ["Required pack files exist"]
+        and len(check_records) == 1
+        and isinstance(check_records[0], dict)
+        and check_records[0].get("check") == "Required pack files exist"
+        and check_records[0].get("passed") is False
+        and isinstance(check_records[0].get("detail"), list)
+        and bool(check_records[0]["detail"])
+        and all(isinstance(item, str) and item for item in check_records[0]["detail"])
+    )
+    structured_input_error = (
+        not report["passed"]
+        and report["failures"] == ["Planning pack input is valid"]
+        and len(check_records) == 1
+        and isinstance(check_records[0], dict)
+        and check_records[0].get("check") == "Planning pack input is valid"
+        and check_records[0].get("passed") is False
+        and isinstance(check_records[0].get("detail"), str)
+        and bool(check_records[0]["detail"])
+    )
     if counts:
         if set(counts) != expected_count_names or any(
             type(value) is not int or value < 0 for value in counts.values()
         ):
             errors.append("counts have invalid keys or values")
     else:
-        early_required_file_failure = (
-            not report["passed"]
-            and report["failures"] == ["Required pack files exist"]
-            and isinstance(report["checks"], list)
-            and len(report["checks"]) == 1
-            and isinstance(report["checks"][0], dict)
-            and report["checks"][0].get("check") == "Required pack files exist"
-            and report["checks"][0].get("passed") is False
-        )
-        if not early_required_file_failure:
+        if not early_required_file_failure and not structured_input_error:
             errors.append("counts are empty outside the required-file failure report")
 
     check_names = []
@@ -187,10 +212,38 @@ def inspect_report(stdout: str, exit_code: int) -> tuple[dict[str, Any] | None, 
         errors.append("failures do not match failed checks")
     if report["passed"] is not (not report["failures"]):
         errors.append("passed does not match failures")
-    expected_exit = 0 if report["passed"] else 1
-    if exit_code != expected_exit:
-        errors.append("exit code does not match passed")
+    if structured_input_error:
+        if exit_code != 2:
+            errors.append("exit code does not match structured input-error report")
+    else:
+        expected_exit = 0 if report["passed"] else 1
+        if exit_code != expected_exit:
+            errors.append("exit code does not match passed")
     return report, errors
+
+
+def sync_trace_table(pack: Path) -> None:
+    trace_path = pack / "traceability.json"
+    trace = read_json(trace_path)
+    trace_doc_path = pack / "TRACEABILITY.md"
+    document = trace_doc_path.read_text(encoding="utf-8")
+    header = "| Specification section | Lines | Responsible tasks |"
+    heading = "## Source classes"
+    if document.count(header) != 1 or document.count(heading) != 1:
+        raise ValueError("Expected one traceability table and source-classes heading")
+    prefix, suffix = document.split(header, 1)
+    _, remainder = suffix.split(heading, 1)
+    rows = [
+        header,
+        "| --- | --- | --- |",
+        *[
+            f"| {section['heading']} | {section['start_line']}–{section['end_line']} | "
+            f"{', '.join(section['tasks'])} |"
+            for section in trace["sections"]
+        ],
+    ]
+    trace_doc_path.write_text(prefix + "\n".join(rows) + "\n\n" + heading + remainder,
+                             encoding="utf-8")
 
 
 def render_case(case: dict[str, Any]) -> str:
@@ -334,8 +387,26 @@ def main() -> int:
         receipts.append(run_fixture(
             f"NOT_STARTED owner cannot have {status} assignment",
             unstarted_assignment(status),
-            1, ["NOT_STARTED tasks have NOT_RUN assignments"],
+            1, ["NOT_STARTED and READY tasks have NOT_RUN assignments"],
         ))
+
+    def ready_assignment(status: str) -> Callable[[Path], None]:
+        def mutate(pack: Path) -> None:
+            set_task_status(pack, "P00", "READY")
+            update_cases(pack, set_single_summary("P00", status))
+        return mutate
+
+    for status in ("PASS", "FAIL", "BLOCKED"):
+        receipts.append(run_fixture(
+            f"READY owner cannot have {status} assignment",
+            ready_assignment(status),
+            1, ["NOT_STARTED and READY tasks have NOT_RUN assignments"],
+        ))
+    receipts.append(run_fixture(
+        "READY owner can retain NOT_RUN assignment",
+        ready_assignment("NOT_RUN"),
+        0, [],
+    ))
 
     def blocked_owner_with_prior_pass(pack: Path) -> None:
         set_task_status(pack, "U02", "BLOCKED")
@@ -474,7 +545,7 @@ def main() -> int:
         update_cases(pack, set_shared_summary("PASS", "NOT_RUN", "NOT_RUN"))
     receipts.append(run_fixture(
         "initial mode rejects assignment progress", assignment_progress,
-        1, ["NOT_STARTED tasks have NOT_RUN assignments",
+        1, ["NOT_STARTED and READY tasks have NOT_RUN assignments",
             "Initial task, case, and assignment statuses claim no execution"], initial=True,
     ))
 
@@ -549,6 +620,55 @@ def main() -> int:
         0, [],
     ))
 
+    def missing_intersecting_trace_owner(pack: Path) -> None:
+        trace_path = pack / "traceability.json"
+        trace = read_json(trace_path)
+        section = next(row for row in trace["sections"] if row["heading"] == "Portable role ABI")
+        section["tasks"].remove("T14")
+        write_json(trace_path, trace)
+        sync_trace_table(pack)
+    receipts.append(run_fixture(
+        "cited task is required in every intersecting section even when mapped elsewhere",
+        missing_intersecting_trace_owner,
+        1, ["Task citations are represented in traceability"],
+    ))
+
+    def malformed_source_citation(pack: Path, value: str) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == "T14")
+        previous = task["source_basis"]
+        task["source_basis"] = value
+        write_json(graph_path, graph)
+        for path in (pack / "PLAN.md", pack / task["task_file"]):
+            document = path.read_text(encoding="utf-8")
+            old_line = f"**Source basis:** {previous}."
+            new_line = f"**Source basis:** {value}."
+            if document.count(old_line) != 1:
+                raise ValueError(f"Expected one source-basis line in {path.name}")
+            path.write_text(document.replace(old_line, new_line, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "malformed task SPEC citation syntax is rejected",
+        lambda pack: malformed_source_citation(pack, "SPEC L113-Lbad"),
+        1, ["Task SPEC citations use valid syntax"],
+    ))
+    receipts.append(run_fixture(
+        "task SPEC citation beyond the document is rejected",
+        lambda pack: malformed_source_citation(pack, "SPEC L550"),
+        1, ["Task SPEC citation ranges are within SPEC.md"],
+    ))
+
+    def malformed_manifest(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        graph.pop("tasks")
+        write_json(graph_path, graph)
+    receipts.append(run_fixture(
+        "malformed task manifest returns structured input error with exit two",
+        malformed_manifest,
+        2, ["Planning pack input is valid"],
+    ))
+
     def validator_report(passed: bool, failures: list[str], checks: list[dict[str, Any]]) -> str:
         return json.dumps({
             "passed": passed,
@@ -564,7 +684,7 @@ def main() -> int:
                 "cases": 125,
                 "specification_sections": 30,
                 "task_ready_groups": 20,
-                "checked_sentences": 1523,
+                "checked_sentences": 1534,
             },
             "checks": checks,
             "failures": failures,
@@ -648,6 +768,26 @@ def main() -> int:
         "report exit code must agree with passed even at exit zero",
         validator_report(False, ["check A"], [{"check": "check A", "passed": False, "detail": None}]),
         ["exit code does not match passed"],
+    )
+    input_error_report = json.dumps({
+        "passed": False,
+        "scope": "Static planning-pack checks only",
+        "not_checked": [
+            "Product compilation",
+            "Runtime capabilities",
+            "Independent code review",
+            "Full ASD-STE100 dictionary conformity",
+        ],
+        "counts": {},
+        "checks": [{"check": "Planning pack input is valid", "passed": False,
+                    "detail": "'tasks'"}],
+        "failures": ["Planning pack input is valid"],
+    })
+    parser_fixture(
+        "structured input-error report with contradictory exit one is rejected",
+        input_error_report,
+        ["exit code does not match structured input-error report"],
+        exit_code=1, expected_exit=1, expected_failures=["Planning pack input is valid"],
     )
     parser_fixture(
         "unexpected extra failure name does not match exact expectation",

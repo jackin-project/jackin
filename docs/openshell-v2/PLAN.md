@@ -1409,7 +1409,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 #### Write scope
 
 - crates/services/jackin-roles/src/resolve/
-- crates/core/jackin-config user, role, and project schema implementation
+- crates/core/jackin-config user, role, and project parsing and strict validation; shared schema-definition edits go through the integration subagent
 - Role resolution tests
 
 #### Required inputs

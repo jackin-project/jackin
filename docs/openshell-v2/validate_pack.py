@@ -21,6 +21,8 @@ SOURCE_PINS = {
     "openshell_candidate": "c4688aa8715ea75d6c39fe468361dbbc16c691fa",
     "openshell_release_comparator": "bdb956f2cd65a635f1294fccf1d138d263bf650f",
 }
+SOURCE_BASIS_PATTERN = re.compile(r"SPEC L\d+(?:-L\d+)?(?:; L\d+(?:-L\d+)?)*")
+SOURCE_CITATION_PATTERN = re.compile(r"L(\d+)(?:-L(\d+))?")
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -247,11 +249,41 @@ def main() -> int:
     check("Expected acceptance case count", len(cases) == 125, len(cases))
 
     actual_digest = hashlib.sha256((root / "SPEC.md").read_bytes()).hexdigest()
+    spec_lines = (root / "SPEC.md").read_text(encoding="utf-8").splitlines()
     check("Original specification matches its fixed checksum and both manifests",
           actual_digest == ORIGINAL_SPEC_SHA256
           and graph["spec_sha256"] == ORIGINAL_SPEC_SHA256
           and trace["spec_sha256"] == ORIGINAL_SPEC_SHA256,
           {"actual": actual_digest, "graph": graph["spec_sha256"], "traceability": trace["spec_sha256"]})
+
+    source_citation_syntax_errors = []
+    source_citation_range_errors = []
+    source_citations_by_task: dict[str, list[tuple[int, int]]] = {}
+    for task in tasks:
+        task_id = task["id"]
+        source_basis = task.get("source_basis")
+        if not isinstance(source_basis, str) or SOURCE_BASIS_PATTERN.fullmatch(source_basis) is None:
+            source_citation_syntax_errors.append({"task": task_id, "source_basis": source_basis})
+            continue
+        citations = []
+        for citation in source_basis.removeprefix("SPEC ").split("; "):
+            match = SOURCE_CITATION_PATTERN.fullmatch(citation)
+            if match is None:
+                source_citation_syntax_errors.append({"task": task_id, "citation": citation})
+                continue
+            start_line = int(match.group(1))
+            end_line = int(match.group(2) or match.group(1))
+            if start_line < 1 or end_line < start_line or end_line > len(spec_lines):
+                source_citation_range_errors.append({
+                    "task": task_id, "citation": citation, "specification_lines": len(spec_lines),
+                })
+            else:
+                citations.append((start_line, end_line))
+        source_citations_by_task[task_id] = citations
+    check("Task SPEC citations use valid syntax", not source_citation_syntax_errors,
+          source_citation_syntax_errors)
+    check("Task SPEC citation ranges are within SPEC.md", not source_citation_range_errors,
+          source_citation_range_errors)
 
     bad_dependencies = [(task["id"], dep) for task in tasks for dep in task["depends_on"]
                         if dep not in task_set or dep == task["id"]]
@@ -356,9 +388,10 @@ def main() -> int:
     not_started_assignment_errors = [
         {"case": case_id, "task": task_id, "status": status}
         for (case_id, task_id), status in assignment_status_by_case_and_task.items()
-        if tasks_by_id.get(task_id, {}).get("status") == "NOT_STARTED" and status != "NOT_RUN"
+        if tasks_by_id.get(task_id, {}).get("status") in {"NOT_STARTED", "READY"}
+        and status != "NOT_RUN"
     ]
-    check("NOT_STARTED tasks have NOT_RUN assignments",
+    check("NOT_STARTED and READY tasks have NOT_RUN assignments",
           not not_started_assignment_errors, not_started_assignment_errors)
 
     unknown_cases = [(task["id"], cid) for task in tasks for cid in task["test_cases"] if cid not in case_set]
@@ -476,7 +509,6 @@ def main() -> int:
     check("Acceptance case fields match the acceptance-case manifest",
           not case_content_errors, case_content_errors)
 
-    spec_lines = (root / "SPEC.md").read_text(encoding="utf-8").splitlines()
     actual_headings = [(i, re.sub(r"^#+ ", "", line)) for i, line in enumerate(spec_lines, 1)
                        if re.match(r"^#{1,2} ", line)]
     expected_trace_sections = [
@@ -507,14 +539,38 @@ def main() -> int:
         )
     check("Traceability ranges match exact specification sections",
           not trace_range_errors, trace_range_errors)
+    trace_sections_by_heading = {
+        section.get("heading"): section
+        for section in trace.get("sections", [])
+        if isinstance(section, dict) and isinstance(section.get("heading"), str)
+    }
+    citation_owner_errors = []
+    for task_id, citations in source_citations_by_task.items():
+        for citation_start, citation_end in citations:
+            for expected_section in expected_trace_sections:
+                if (citation_start <= expected_section["end_line"]
+                        and citation_end >= expected_section["start_line"]):
+                    section = trace_sections_by_heading.get(expected_section["heading"], {})
+                    owners = section.get("tasks", []) if isinstance(section, dict) else []
+                    if not isinstance(owners, list) or task_id not in owners:
+                        citation_owner_errors.append({
+                            "task": task_id,
+                            "citation": f"L{citation_start}-L{citation_end}",
+                            "section": expected_section["heading"],
+                        })
+    check("Task citations are represented in traceability", not citation_owner_errors,
+          citation_owner_errors)
     trace_doc = (root / "TRACEABILITY.md").read_text(encoding="utf-8")
     actual_trace_table = traceability_table(trace_doc)
     expected_trace_table = render_traceability_table(trace["sections"])
     check("Traceability table matches its manifest", actual_trace_table == expected_trace_table,
           {"expected_rows": len(expected_trace_table),
            "actual_rows": len(actual_trace_table) if actual_trace_table is not None else None})
-    bad_trace = [section["heading"] for section in trace["sections"]
-                 if not section["tasks"] or not set(section["tasks"]).issubset(task_set)]
+    bad_trace = [section.get("heading") for section in trace["sections"]
+                 if not isinstance(section.get("tasks"), list)
+                 or not section["tasks"]
+                 or any(not isinstance(task_id, str) or task_id not in task_set
+                        for task_id in section["tasks"])]
     check("Traceability uses known task owners", not bad_trace, bad_trace)
 
     long_sentences = []
