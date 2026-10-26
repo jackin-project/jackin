@@ -13,6 +13,21 @@ use anyhow::{Context, Result};
 
 const OWNER_LIMIT: u64 = 256 * 1024 * 1024;
 
+#[cfg(target_os = "linux")]
+fn device_matches(named: nix::sys::stat::dev_t, opened: u64) -> bool {
+    named == opened
+}
+
+#[cfg(target_os = "macos")]
+fn device_matches(named: nix::sys::stat::dev_t, opened: u64) -> bool {
+    named.cast_unsigned() == (opened as u32)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn device_matches(named: nix::sys::stat::dev_t, opened: u64) -> bool {
+    u64::try_from(named).ok() == Some(opened)
+}
+
 pub(crate) fn activation_failed_after_rename(error: &anyhow::Error) -> bool {
     config::activation_failed_after_rename(error)
 }
@@ -39,3 +54,23 @@ fn install_for_repository(repository: &std::path::Path, owner: &[u8]) -> Result<
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, target_os = "linux"))]
+#[test]
+fn linux_named_and_opened_device_values_match_directly() {
+    let named = 4_294_967_297_u64;
+    assert!(device_matches(named, named));
+    assert!(!device_matches(named, named + 1));
+}
+
+#[cfg(all(test, target_os = "macos"))]
+#[test]
+fn macos_device_match_preserves_high_bit_patterns_on_both_sides() {
+    let named: nix::sys::stat::dev_t = i32::MIN;
+    let sign_extended_metadata = i64::from(i32::MIN).cast_unsigned();
+    let zero_extended_metadata = u64::from(i32::MIN.cast_unsigned());
+
+    assert!(device_matches(named, sign_extended_metadata));
+    assert!(device_matches(named, zero_extended_metadata));
+    assert!(!device_matches(named, zero_extended_metadata + 1));
+}

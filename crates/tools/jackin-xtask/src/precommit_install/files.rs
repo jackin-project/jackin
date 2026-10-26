@@ -114,7 +114,7 @@ pub(super) fn install_owner(git_dir: &Path, owner: &[u8]) -> Result<OwnerInstall
         .context("checking private worktree hook owner directory name")?;
     let opened_root = root.metadata()?;
     ensure!(
-        u64::try_from(named_root.st_dev).ok() == Some(opened_root.dev())
+        super::device_matches(named_root.st_dev, opened_root.dev())
             && named_root.st_ino == opened_root.ino()
             && named_root.st_uid == opened_root.uid()
             && opened_root.permissions().mode() & 0o777 == 0o700,
@@ -259,7 +259,7 @@ fn ensure_file_identity(
             && opened.nlink() == 1
             && opened.permissions().mode() & 0o777 == mode
             && opened.len() == length
-            && u64::try_from(named.st_dev).ok() == Some(opened.dev())
+            && super::device_matches(named.st_dev, opened.dev())
             && named.st_ino == opened.ino()
             && named.st_uid == opened.uid(),
         "private hook owner file has unsafe or changed custody"
@@ -282,7 +282,7 @@ fn remove_if_same(parent: &File, name: &str) -> Result<()> {
     let opened = file.metadata()?;
     let named = fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
         .with_context(|| format!("checking temporary owner entry {name} before cleanup"))?;
-    if u64::try_from(named.st_dev).ok() == Some(opened.dev()) && named.st_ino == opened.ino() {
+    if super::device_matches(named.st_dev, opened.dev()) && named.st_ino == opened.ino() {
         unlinkat(parent, name, UnlinkatFlags::NoRemoveDir)?;
         fsync(parent)?;
     }

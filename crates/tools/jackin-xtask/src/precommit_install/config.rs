@@ -273,7 +273,7 @@ fn remove_lock_if_same(path: &Path, lock: &File) -> Result<()> {
     if cleanup.metadata()?.dev() == opened.dev() && cleanup.metadata()?.ino() == opened.ino() {
         let named = fstatat(&parent, leaf, AtFlags::AT_SYMLINK_NOFOLLOW)?;
         ensure!(
-            u64::try_from(named.st_dev).ok() == Some(opened.dev()) && named.st_ino == opened.ino(),
+            super::device_matches(named.st_dev, opened.dev()) && named.st_ino == opened.ino(),
             "Git config lock name changed during cleanup"
         );
         unlinkat(&parent, leaf, UnlinkatFlags::NoRemoveDir)
