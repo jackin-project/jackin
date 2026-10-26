@@ -19,11 +19,15 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 criterion.workspace = true
+dhat.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 [[bench]]
 name = "disabled_fast_path"
 harness = false
+
+[[test]]
+name = "disabled_alloc"
 
 [lints]
 workspace = true
