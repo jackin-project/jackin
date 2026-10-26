@@ -18,9 +18,13 @@ const NOFOLLOW_STAT_FLAGS: AtFlags = AtFlags::SYMLINK_NOFOLLOW;
 ///
 /// Root and the effective user are trusted to preserve directory metadata and
 /// ACLs until callers create their children. Callers must retain their existing
-/// post-creation checks. This function does not retain descriptors. Root- or
-/// effective-user-owned directories with exact sticky mode `01777` are the
-/// only group- or other-writable exception.
+/// post-creation checks. This checks the physical directory chain resolved from
+/// `path` at inspection time; it does not return or retain a capability, or
+/// guarantee that a pathname remains bound to the same objects afterward.
+/// Callers that need later operations tied to these objects must separately
+/// retain descriptor custody and recheck identity. Root- or effective-user-
+/// owned directories with exact sticky mode `01777` are the only group- or
+/// other-writable exception.
 pub fn validate_temporary_parent(path: &Path) -> io::Result<()> {
     let absolute = if path.is_absolute() {
         path.to_path_buf()

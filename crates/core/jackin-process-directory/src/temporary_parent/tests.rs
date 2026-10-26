@@ -42,6 +42,32 @@ fn filesystem_validation_canonicalizes_relative_and_symlink_paths() {
 }
 
 #[test]
+fn filesystem_validation_rejects_unsafe_resolved_targets_and_ancestors() {
+    let fixture = tempfile::tempdir().expect("fixture directory");
+
+    let unsafe_target = fixture.path().join("unsafe-target");
+    fs::create_dir(&unsafe_target).expect("create unsafe target");
+    fs::set_permissions(&unsafe_target, fs::Permissions::from_mode(0o770))
+        .expect("make target group-writable");
+    let alias = fixture.path().join("unsafe-target-alias");
+    symlink(&unsafe_target, &alias).expect("create alias to unsafe target");
+    let target_error =
+        super::validate_temporary_parent(&alias).expect_err("unsafe resolved target is refused");
+    assert_eq!(target_error.kind(), std::io::ErrorKind::PermissionDenied);
+
+    let unsafe_ancestor = fixture.path().join("unsafe-ancestor");
+    fs::create_dir(&unsafe_ancestor).expect("create ancestor");
+    let private_leaf = unsafe_ancestor.join("private-leaf");
+    fs::create_dir(&private_leaf).expect("create private leaf");
+    fs::set_permissions(&private_leaf, fs::Permissions::from_mode(0o700)).expect("protect leaf");
+    fs::set_permissions(&unsafe_ancestor, fs::Permissions::from_mode(0o770))
+        .expect("make ancestor group-writable");
+    let ancestor_error = super::validate_temporary_parent(&private_leaf)
+        .expect_err("unsafe physical ancestor is refused");
+    assert_eq!(ancestor_error.kind(), std::io::ErrorKind::PermissionDenied);
+}
+
+#[test]
 fn filesystem_validation_accepts_effective_user_owned_sticky_parent() {
     let fixture = tempfile::tempdir().expect("fixture directory");
     let sticky = fixture.path().join("sticky-parent");
