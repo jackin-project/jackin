@@ -7,6 +7,7 @@ use jackin_protocol::usage_broker::{
     USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability, UsageBrokerOperation,
     UsageCoordinationError,
 };
+use jackin_protocol::usage_monitor::MonitorOperation;
 
 use jackin_protocol::{CapsuleConfig, SessionIdentity};
 
@@ -17,3 +18,5 @@ use tokio::io::BufReader;
 mod support;
 use support::*;
 mod case_01;
+mod case_02;
+mod case_03;

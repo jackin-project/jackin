@@ -67,11 +67,49 @@ pub(super) fn single_session_authorization(
     )
 }
 
+pub(super) async fn denied_relay_response(
+    authorization: UsageRelayAuthorization,
+    supervisor: SupervisorIdentity,
+    peer: PeerIdentity,
+    operation: UsageBrokerOperation,
+) -> UsageBrokerResponse {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("usage.sock");
+    let (_host_response_writer, proxy_input) = tokio::io::duplex(64 * 1024);
+    let (proxy_output, _host_request_reader) = tokio::io::duplex(64 * 1024);
+    let proxy_socket = socket.clone();
+    let proxy = tokio::spawn(async move {
+        run_at_with_peer(
+            &proxy_socket,
+            supervisor,
+            authorization,
+            Some(peer),
+            Arc::new(|_| true),
+            proxy_input,
+            proxy_output,
+        )
+        .await
+    });
+    wait_for_socket(&socket).await;
+    let response = send_request(socket, operation).await;
+    proxy.abort();
+    response
+}
+
 pub(super) const SUPERVISOR_START_TIME: u64 = 123_456;
 
 pub(super) fn supervisor(pid: u32) -> SupervisorIdentity {
     SupervisorIdentity {
         pid,
         start_time: Some(SUPERVISOR_START_TIME),
+    }
+}
+
+pub(super) fn root_peer(pid: u32, start_time: Option<u64>) -> PeerIdentity {
+    PeerIdentity {
+        pid: Some(pid),
+        start_time,
+        uid: 0,
+        gid: 0,
     }
 }
