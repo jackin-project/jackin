@@ -30,6 +30,6 @@ configs.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-programmatic-selection
+cargo nextest run -p jackin-runtime-launch-programmatic-selection --no-tests warn
 cargo clippy -p jackin-runtime-launch-programmatic-selection --all-targets -- -D warnings
 ```

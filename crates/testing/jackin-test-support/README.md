@@ -38,7 +38,7 @@ Future Phase 3 test-support helpers (deterministic builders, snapshot normalizat
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-test-support
+cargo nextest run -p jackin-test-support --no-tests warn
 cargo clippy -p jackin-test-support --all-targets -- -D warnings
 cargo tree -p jackin-test-support -i --edges normal   # inverse tree: no production crate should list it
 ```

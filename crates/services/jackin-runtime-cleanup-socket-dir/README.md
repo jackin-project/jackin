@@ -33,6 +33,6 @@ removal for cleanup.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-cleanup-socket-dir
+cargo nextest run -p jackin-runtime-cleanup-socket-dir --no-tests warn
 cargo clippy -p jackin-runtime-cleanup-socket-dir --all-targets -- -D warnings
 ```

@@ -73,6 +73,6 @@ V2 is the only active profile-proof API. The unused normalized V1 helper is reti
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-core
+cargo nextest run -p jackin-core --no-tests warn
 cargo clippy -p jackin-core --all-targets -- -D warnings
 ```

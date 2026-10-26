@@ -39,6 +39,6 @@ Resolved config/workspace types plus resolution and migration entry points. Sche
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-config
+cargo nextest run -p jackin-config --no-tests warn
 cargo clippy -p jackin-config --all-targets -- -D warnings
 ```

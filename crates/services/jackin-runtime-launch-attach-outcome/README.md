@@ -34,6 +34,6 @@ persistence.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-attach-outcome
+cargo nextest run -p jackin-runtime-launch-attach-outcome --no-tests warn
 cargo clippy -p jackin-runtime-launch-attach-outcome --all-targets -- -D warnings
 ```

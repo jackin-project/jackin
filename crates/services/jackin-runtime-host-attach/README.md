@@ -36,6 +36,6 @@ client.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-host-attach
+cargo nextest run -p jackin-runtime-host-attach --no-tests warn
 cargo clippy -p jackin-runtime-host-attach --all-targets -- -D warnings
 ```

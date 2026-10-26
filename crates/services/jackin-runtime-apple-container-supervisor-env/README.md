@@ -35,6 +35,6 @@ builder.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-supervisor-env
+cargo nextest run -p jackin-runtime-apple-container-supervisor-env --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-supervisor-env --all-targets -- -D warnings
 ```

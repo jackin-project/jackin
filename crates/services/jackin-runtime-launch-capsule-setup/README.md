@@ -45,6 +45,6 @@ transport.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-capsule-setup
+cargo nextest run -p jackin-runtime-launch-capsule-setup --no-tests warn
 cargo clippy -p jackin-runtime-launch-capsule-setup --all-targets -- -D warnings
 ```

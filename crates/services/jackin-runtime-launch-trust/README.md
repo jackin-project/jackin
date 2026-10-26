@@ -30,6 +30,6 @@ mise paths.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-trust
+cargo nextest run -p jackin-runtime-launch-trust --no-tests warn
 cargo clippy -p jackin-runtime-launch-trust --all-targets -- -D warnings
 ```

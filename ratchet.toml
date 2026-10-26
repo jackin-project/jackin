@@ -539,46 +539,46 @@ key = "CLAUDE.md"
 bound = 4998
 [[family.entry]]
 key = "crates/adapters/jackin-docker/README.md"
-bound = 1723
+bound = 1739
 [[family.entry]]
 key = "crates/adapters/jackin-image/README.md"
-bound = 2651
+bound = 2667
 [[family.entry]]
 key = "crates/adapters/jackin-oppicker/README.md"
-bound = 1575
+bound = 1591
 [[family.entry]]
 key = "crates/adapters/jackin-usage-ffi/README.md"
-bound = 3137
+bound = 3153
 [[family.entry]]
 key = "crates/apps/jackin-capsule/README.md"
-bound = 5598
+bound = 5614
 [[family.entry]]
 key = "crates/apps/jackin/README.md"
-bound = 2870
+bound = 2886
 [[family.entry]]
 key = "crates/core/jackin-brand/README.md"
-bound = 965
+bound = 981
 [[family.entry]]
 key = "crates/core/jackin-build-meta/README.md"
 bound = 628
 [[family.entry]]
 key = "crates/core/jackin-config/README.md"
-bound = 2229
+bound = 2245
 [[family.entry]]
 key = "crates/core/jackin-core/README.md"
-bound = 4969
+bound = 4985
 [[family.entry]]
 key = "crates/core/jackin-env/README.md"
-bound = 2735
+bound = 2751
 [[family.entry]]
 key = "crates/core/jackin-manifest/README.md"
-bound = 1633
+bound = 1649
 [[family.entry]]
 key = "crates/core/jackin-process-directory/README.md"
 bound = 1168
 [[family.entry]]
 key = "crates/core/jackin-process/README.md"
-bound = 1081
+bound = 1097
 [[family.entry]]
 key = "crates/core/jackin-protocol/README.md"
 bound = 2507
@@ -587,391 +587,391 @@ key = "crates/core/jackin-workflow-spec/README.md"
 bound = 3043
 [[family.entry]]
 key = "crates/services/jackin-agent-status/README.md"
-bound = 1928
+bound = 1944
 [[family.entry]]
 key = "crates/services/jackin-diagnostics/README.md"
-bound = 2021
+bound = 2037
 [[family.entry]]
 key = "crates/services/jackin-host/README.md"
-bound = 1850
+bound = 1866
 [[family.entry]]
 key = "crates/services/jackin-instance-agents/README.md"
-bound = 1947
+bound = 1963
 [[family.entry]]
 key = "crates/services/jackin-instance-credentials/README.md"
-bound = 1713
+bound = 1729
 [[family.entry]]
 key = "crates/services/jackin-instance-roles/README.md"
-bound = 1222
-[[family.entry]]
-key = "crates/services/jackin-instance/README.md"
-bound = 1994
-[[family.entry]]
-key = "crates/services/jackin-isolation/README.md"
-bound = 2531
-[[family.entry]]
-key = "crates/services/jackin-runtime-apple-container-activate-entry/README.md"
-bound = 819
-[[family.entry]]
-key = "crates/services/jackin-runtime-apple-container-attach-outcome/README.md"
-bound = 734
-[[family.entry]]
-key = "crates/services/jackin-runtime-apple-container-attach/README.md"
-bound = 779
-[[family.entry]]
-key = "crates/services/jackin-runtime-apple-container-check-dns/README.md"
-bound = 692
-[[family.entry]]
-key = "crates/services/jackin-runtime-apple-container-client/README.md"
-bound = 958
-[[family.entry]]
-key = "crates/services/jackin-runtime-apple-container-probe-version/README.md"
-bound = 765
-[[family.entry]]
-key = "crates/services/jackin-runtime-apple-container-running/README.md"
-bound = 784
-[[family.entry]]
-key = "crates/services/jackin-runtime-apple-container-session-contract/README.md"
-bound = 775
-[[family.entry]]
-key = "crates/services/jackin-runtime-apple-container-stop/README.md"
-bound = 628
-[[family.entry]]
-key = "crates/services/jackin-runtime-apple-container-supervisor-env/README.md"
-bound = 859
-[[family.entry]]
-key = "crates/services/jackin-runtime-apple-container-wait/README.md"
-bound = 748
-[[family.entry]]
-key = "crates/services/jackin-runtime-attach-admission/README.md"
-bound = 1050
-[[family.entry]]
-key = "crates/services/jackin-runtime-attach-capsule-ready/README.md"
-bound = 997
-[[family.entry]]
-key = "crates/services/jackin-runtime-attach-exec-args/README.md"
-bound = 831
-[[family.entry]]
-key = "crates/services/jackin-runtime-attach-inspect/README.md"
-bound = 858
-[[family.entry]]
-key = "crates/services/jackin-runtime-attach-running-gate/README.md"
-bound = 773
-[[family.entry]]
-key = "crates/services/jackin-runtime-attach-sessions/README.md"
-bound = 949
-[[family.entry]]
-key = "crates/services/jackin-runtime-attach-transport/README.md"
-bound = 964
-[[family.entry]]
-key = "crates/services/jackin-runtime-backend-selection/README.md"
-bound = 920
-[[family.entry]]
-key = "crates/services/jackin-runtime-cleanup-absent-guards/README.md"
-bound = 812
-[[family.entry]]
-key = "crates/services/jackin-runtime-cleanup-dind-gc/README.md"
-bound = 1117
-[[family.entry]]
-key = "crates/services/jackin-runtime-cleanup-eject-resources/README.md"
-bound = 839
-[[family.entry]]
-key = "crates/services/jackin-runtime-cleanup-prune-cache/README.md"
-bound = 736
-[[family.entry]]
-key = "crates/services/jackin-runtime-cleanup-prune-dir/README.md"
-bound = 751
-[[family.entry]]
-key = "crates/services/jackin-runtime-cleanup-prune-home/README.md"
-bound = 738
-[[family.entry]]
-key = "crates/services/jackin-runtime-cleanup-prune-images/README.md"
-bound = 750
-[[family.entry]]
-key = "crates/services/jackin-runtime-cleanup-prune-roles/README.md"
-bound = 752
-[[family.entry]]
-key = "crates/services/jackin-runtime-cleanup-resolve/README.md"
-bound = 783
-[[family.entry]]
-key = "crates/services/jackin-runtime-cleanup-socket-dir/README.md"
-bound = 775
-[[family.entry]]
-key = "crates/services/jackin-runtime-cleanup-timing/README.md"
-bound = 781
-[[family.entry]]
-key = "crates/services/jackin-runtime-coordination/README.md"
-bound = 833
-[[family.entry]]
-key = "crates/services/jackin-runtime-discovery/README.md"
-bound = 836
-[[family.entry]]
-key = "crates/services/jackin-runtime-docker-profile/README.md"
-bound = 901
-[[family.entry]]
-key = "crates/services/jackin-runtime-drift/README.md"
-bound = 730
-[[family.entry]]
-key = "crates/services/jackin-runtime-exec-host/README.md"
-bound = 935
-[[family.entry]]
-key = "crates/services/jackin-runtime-exit-summary/README.md"
-bound = 781
-[[family.entry]]
-key = "crates/services/jackin-runtime-host-attach/README.md"
-bound = 867
-[[family.entry]]
-key = "crates/services/jackin-runtime-host-daemon/README.md"
-bound = 944
-[[family.entry]]
-key = "crates/services/jackin-runtime-identity/README.md"
-bound = 779
-[[family.entry]]
-key = "crates/services/jackin-runtime-image/README.md"
-bound = 1076
-[[family.entry]]
-key = "crates/services/jackin-runtime-isolation/README.md"
-bound = 948
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-account-config/README.md"
-bound = 832
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-account-identity/README.md"
-bound = 1110
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-attach-outcome/README.md"
-bound = 924
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-auth-error/README.md"
-bound = 900
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-capsule-setup/README.md"
-bound = 1047
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-debug-envs/README.md"
-bound = 803
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-dind/README.md"
-bound = 1726
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-dry-run/README.md"
-bound = 888
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-exit-diagnosis/README.md"
-bound = 1274
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-exit-outro/README.md"
-bound = 828
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-failure/README.md"
-bound = 1039
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-git-pull/README.md"
-bound = 923
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-image-plan/README.md"
-bound = 666
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-load-cleanup/README.md"
-bound = 794
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-load-options/README.md"
-bound = 1315
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-mounts/README.md"
-bound = 883
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-plan/README.md"
-bound = 831
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-post-run-failure/README.md"
-bound = 841
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-programmatic-selection/README.md"
-bound = 812
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-progress-helpers/README.md"
-bound = 1083
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-restore/README.md"
-bound = 1632
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-run-envs/README.md"
-bound = 742
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-sibling-auth-prewarm/README.md"
-bound = 985
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-slot/README.md"
-bound = 885
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-supported-agents/README.md"
-bound = 764
-[[family.entry]]
-key = "crates/services/jackin-runtime-launch-trust/README.md"
-bound = 753
-[[family.entry]]
-key = "crates/services/jackin-runtime-naming/README.md"
-bound = 815
-[[family.entry]]
-key = "crates/services/jackin-runtime-prewarm-trigger/README.md"
-bound = 1356
-[[family.entry]]
-key = "crates/services/jackin-runtime-process-telemetry/README.md"
-bound = 1033
-[[family.entry]]
-key = "crates/services/jackin-runtime-progress/README.md"
-bound = 690
-[[family.entry]]
-key = "crates/services/jackin-runtime-prune-output/README.md"
-bound = 769
-[[family.entry]]
-key = "crates/services/jackin-runtime-reactive-daemon/README.md"
-bound = 970
-[[family.entry]]
-key = "crates/services/jackin-runtime-repo-cache/README.md"
-bound = 799
-[[family.entry]]
-key = "crates/services/jackin-runtime-session-control/README.md"
-bound = 993
-[[family.entry]]
-key = "crates/services/jackin-runtime-shared-runner/README.md"
-bound = 572
-[[family.entry]]
-key = "crates/services/jackin-runtime-snapshot/README.md"
-bound = 848
-[[family.entry]]
-key = "crates/services/jackin-runtime-spin-wait/README.md"
-bound = 708
-[[family.entry]]
-key = "crates/services/jackin-runtime-universe-claims/README.md"
-bound = 884
-[[family.entry]]
-key = "crates/services/jackin-runtime-universe/README.md"
-bound = 1019
-[[family.entry]]
-key = "crates/services/jackin-runtime-usage-relay/README.md"
-bound = 2244
-[[family.entry]]
-key = "crates/services/jackin-runtime/README.md"
-bound = 3524
-[[family.entry]]
-key = "crates/services/jackin-telemetry/README.md"
-bound = 2076
-[[family.entry]]
-key = "crates/services/jackin-usage-broker-publish/README.md"
-bound = 1565
-[[family.entry]]
-key = "crates/services/jackin-usage-broker-wire/README.md"
-bound = 1291
-[[family.entry]]
-key = "crates/services/jackin-usage-broker/README.md"
-bound = 1276
-[[family.entry]]
-key = "crates/services/jackin-usage-capsule-telemetry/README.md"
-bound = 943
-[[family.entry]]
-key = "crates/services/jackin-usage-coordinator/README.md"
-bound = 2468
-[[family.entry]]
-key = "crates/services/jackin-usage-credential-resolver/README.md"
-bound = 816
-[[family.entry]]
-key = "crates/services/jackin-usage-credential-snapshots/README.md"
-bound = 1071
-[[family.entry]]
-key = "crates/services/jackin-usage-destination/README.md"
-bound = 761
-[[family.entry]]
-key = "crates/services/jackin-usage-discovery/README.md"
-bound = 1299
-[[family.entry]]
-key = "crates/services/jackin-usage-host-accounts/README.md"
 bound = 1238
 [[family.entry]]
-key = "crates/services/jackin-usage-host-credentials/README.md"
-bound = 1251
+key = "crates/services/jackin-instance/README.md"
+bound = 2010
 [[family.entry]]
-key = "crates/services/jackin-usage-host-glance/README.md"
-bound = 720
+key = "crates/services/jackin-isolation/README.md"
+bound = 2547
 [[family.entry]]
-key = "crates/services/jackin-usage-host-presentation/README.md"
-bound = 1183
+key = "crates/services/jackin-runtime-apple-container-activate-entry/README.md"
+bound = 835
 [[family.entry]]
-key = "crates/services/jackin-usage-host-runtime/README.md"
-bound = 1541
+key = "crates/services/jackin-runtime-apple-container-attach-outcome/README.md"
+bound = 750
 [[family.entry]]
-key = "crates/services/jackin-usage-output/README.md"
-bound = 687
+key = "crates/services/jackin-runtime-apple-container-attach/README.md"
+bound = 795
 [[family.entry]]
-key = "crates/services/jackin-usage-projection/README.md"
-bound = 746
+key = "crates/services/jackin-runtime-apple-container-check-dns/README.md"
+bound = 708
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-amp/README.md"
-bound = 1202
+key = "crates/services/jackin-runtime-apple-container-client/README.md"
+bound = 974
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-antigravity/README.md"
-bound = 1338
+key = "crates/services/jackin-runtime-apple-container-probe-version/README.md"
+bound = 781
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-claude/README.md"
-bound = 1967
+key = "crates/services/jackin-runtime-apple-container-running/README.md"
+bound = 800
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-codex/README.md"
-bound = 1635
+key = "crates/services/jackin-runtime-apple-container-session-contract/README.md"
+bound = 791
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-core/README.md"
-bound = 1993
+key = "crates/services/jackin-runtime-apple-container-stop/README.md"
+bound = 644
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-cursor/README.md"
-bound = 1636
+key = "crates/services/jackin-runtime-apple-container-supervisor-env/README.md"
+bound = 875
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-gemini/README.md"
-bound = 1452
+key = "crates/services/jackin-runtime-apple-container-wait/README.md"
+bound = 764
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-grok/README.md"
-bound = 1206
+key = "crates/services/jackin-runtime-attach-admission/README.md"
+bound = 1066
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-hermes/README.md"
-bound = 1229
+key = "crates/services/jackin-runtime-attach-capsule-ready/README.md"
+bound = 1013
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-kimi/README.md"
-bound = 1320
+key = "crates/services/jackin-runtime-attach-exec-args/README.md"
+bound = 847
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-minimax/README.md"
-bound = 1409
+key = "crates/services/jackin-runtime-attach-inspect/README.md"
+bound = 874
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-muse/README.md"
-bound = 1323
+key = "crates/services/jackin-runtime-attach-running-gate/README.md"
+bound = 789
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-opencode/README.md"
-bound = 1216
+key = "crates/services/jackin-runtime-attach-sessions/README.md"
+bound = 965
 [[family.entry]]
-key = "crates/services/jackin-usage-provider-openrouter/README.md"
+key = "crates/services/jackin-runtime-attach-transport/README.md"
+bound = 980
+[[family.entry]]
+key = "crates/services/jackin-runtime-backend-selection/README.md"
+bound = 936
+[[family.entry]]
+key = "crates/services/jackin-runtime-cleanup-absent-guards/README.md"
+bound = 828
+[[family.entry]]
+key = "crates/services/jackin-runtime-cleanup-dind-gc/README.md"
 bound = 1133
 [[family.entry]]
+key = "crates/services/jackin-runtime-cleanup-eject-resources/README.md"
+bound = 855
+[[family.entry]]
+key = "crates/services/jackin-runtime-cleanup-prune-cache/README.md"
+bound = 752
+[[family.entry]]
+key = "crates/services/jackin-runtime-cleanup-prune-dir/README.md"
+bound = 767
+[[family.entry]]
+key = "crates/services/jackin-runtime-cleanup-prune-home/README.md"
+bound = 754
+[[family.entry]]
+key = "crates/services/jackin-runtime-cleanup-prune-images/README.md"
+bound = 766
+[[family.entry]]
+key = "crates/services/jackin-runtime-cleanup-prune-roles/README.md"
+bound = 768
+[[family.entry]]
+key = "crates/services/jackin-runtime-cleanup-resolve/README.md"
+bound = 799
+[[family.entry]]
+key = "crates/services/jackin-runtime-cleanup-socket-dir/README.md"
+bound = 791
+[[family.entry]]
+key = "crates/services/jackin-runtime-cleanup-timing/README.md"
+bound = 797
+[[family.entry]]
+key = "crates/services/jackin-runtime-coordination/README.md"
+bound = 849
+[[family.entry]]
+key = "crates/services/jackin-runtime-discovery/README.md"
+bound = 852
+[[family.entry]]
+key = "crates/services/jackin-runtime-docker-profile/README.md"
+bound = 917
+[[family.entry]]
+key = "crates/services/jackin-runtime-drift/README.md"
+bound = 746
+[[family.entry]]
+key = "crates/services/jackin-runtime-exec-host/README.md"
+bound = 951
+[[family.entry]]
+key = "crates/services/jackin-runtime-exit-summary/README.md"
+bound = 797
+[[family.entry]]
+key = "crates/services/jackin-runtime-host-attach/README.md"
+bound = 883
+[[family.entry]]
+key = "crates/services/jackin-runtime-host-daemon/README.md"
+bound = 960
+[[family.entry]]
+key = "crates/services/jackin-runtime-identity/README.md"
+bound = 795
+[[family.entry]]
+key = "crates/services/jackin-runtime-image/README.md"
+bound = 1092
+[[family.entry]]
+key = "crates/services/jackin-runtime-isolation/README.md"
+bound = 964
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-account-config/README.md"
+bound = 848
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-account-identity/README.md"
+bound = 1126
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-attach-outcome/README.md"
+bound = 940
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-auth-error/README.md"
+bound = 916
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-capsule-setup/README.md"
+bound = 1063
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-debug-envs/README.md"
+bound = 819
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-dind/README.md"
+bound = 1742
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-dry-run/README.md"
+bound = 904
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-exit-diagnosis/README.md"
+bound = 1290
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-exit-outro/README.md"
+bound = 844
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-failure/README.md"
+bound = 1055
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-git-pull/README.md"
+bound = 939
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-image-plan/README.md"
+bound = 682
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-load-cleanup/README.md"
+bound = 810
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-load-options/README.md"
+bound = 1331
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-mounts/README.md"
+bound = 899
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-plan/README.md"
+bound = 847
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-post-run-failure/README.md"
+bound = 857
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-programmatic-selection/README.md"
+bound = 828
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-progress-helpers/README.md"
+bound = 1099
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-restore/README.md"
+bound = 1648
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-run-envs/README.md"
+bound = 758
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-sibling-auth-prewarm/README.md"
+bound = 1001
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-slot/README.md"
+bound = 901
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-supported-agents/README.md"
+bound = 780
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-trust/README.md"
+bound = 769
+[[family.entry]]
+key = "crates/services/jackin-runtime-naming/README.md"
+bound = 831
+[[family.entry]]
+key = "crates/services/jackin-runtime-prewarm-trigger/README.md"
+bound = 1372
+[[family.entry]]
+key = "crates/services/jackin-runtime-process-telemetry/README.md"
+bound = 1049
+[[family.entry]]
+key = "crates/services/jackin-runtime-progress/README.md"
+bound = 706
+[[family.entry]]
+key = "crates/services/jackin-runtime-prune-output/README.md"
+bound = 785
+[[family.entry]]
+key = "crates/services/jackin-runtime-reactive-daemon/README.md"
+bound = 986
+[[family.entry]]
+key = "crates/services/jackin-runtime-repo-cache/README.md"
+bound = 815
+[[family.entry]]
+key = "crates/services/jackin-runtime-session-control/README.md"
+bound = 1009
+[[family.entry]]
+key = "crates/services/jackin-runtime-shared-runner/README.md"
+bound = 588
+[[family.entry]]
+key = "crates/services/jackin-runtime-snapshot/README.md"
+bound = 864
+[[family.entry]]
+key = "crates/services/jackin-runtime-spin-wait/README.md"
+bound = 724
+[[family.entry]]
+key = "crates/services/jackin-runtime-universe-claims/README.md"
+bound = 900
+[[family.entry]]
+key = "crates/services/jackin-runtime-universe/README.md"
+bound = 1035
+[[family.entry]]
+key = "crates/services/jackin-runtime-usage-relay/README.md"
+bound = 2260
+[[family.entry]]
+key = "crates/services/jackin-runtime/README.md"
+bound = 3540
+[[family.entry]]
+key = "crates/services/jackin-telemetry/README.md"
+bound = 2092
+[[family.entry]]
+key = "crates/services/jackin-usage-broker-publish/README.md"
+bound = 1581
+[[family.entry]]
+key = "crates/services/jackin-usage-broker-wire/README.md"
+bound = 1307
+[[family.entry]]
+key = "crates/services/jackin-usage-broker/README.md"
+bound = 1292
+[[family.entry]]
+key = "crates/services/jackin-usage-capsule-telemetry/README.md"
+bound = 959
+[[family.entry]]
+key = "crates/services/jackin-usage-coordinator/README.md"
+bound = 2484
+[[family.entry]]
+key = "crates/services/jackin-usage-credential-resolver/README.md"
+bound = 832
+[[family.entry]]
+key = "crates/services/jackin-usage-credential-snapshots/README.md"
+bound = 1087
+[[family.entry]]
+key = "crates/services/jackin-usage-destination/README.md"
+bound = 777
+[[family.entry]]
+key = "crates/services/jackin-usage-discovery/README.md"
+bound = 1315
+[[family.entry]]
+key = "crates/services/jackin-usage-host-accounts/README.md"
+bound = 1254
+[[family.entry]]
+key = "crates/services/jackin-usage-host-credentials/README.md"
+bound = 1267
+[[family.entry]]
+key = "crates/services/jackin-usage-host-glance/README.md"
+bound = 736
+[[family.entry]]
+key = "crates/services/jackin-usage-host-presentation/README.md"
+bound = 1199
+[[family.entry]]
+key = "crates/services/jackin-usage-host-runtime/README.md"
+bound = 1557
+[[family.entry]]
+key = "crates/services/jackin-usage-output/README.md"
+bound = 703
+[[family.entry]]
+key = "crates/services/jackin-usage-projection/README.md"
+bound = 762
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-amp/README.md"
+bound = 1218
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-antigravity/README.md"
+bound = 1354
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-claude/README.md"
+bound = 1983
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-codex/README.md"
+bound = 1651
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-core/README.md"
+bound = 2009
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-cursor/README.md"
+bound = 1652
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-gemini/README.md"
+bound = 1468
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-grok/README.md"
+bound = 1222
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-hermes/README.md"
+bound = 1245
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-kimi/README.md"
+bound = 1336
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-minimax/README.md"
+bound = 1425
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-muse/README.md"
+bound = 1339
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-opencode/README.md"
+bound = 1232
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-openrouter/README.md"
+bound = 1149
+[[family.entry]]
 key = "crates/services/jackin-usage-provider-zai/README.md"
-bound = 1202
+bound = 1218
 [[family.entry]]
 key = "crates/services/jackin-usage-snapshot-store/README.md"
-bound = 1169
+bound = 1185
 [[family.entry]]
 key = "crates/services/jackin-usage-store-backend/README.md"
-bound = 871
+bound = 887
 [[family.entry]]
 key = "crates/services/jackin-usage-token-monitor/README.md"
-bound = 1168
+bound = 1184
 [[family.entry]]
 key = "crates/services/jackin-usage/README.md"
-bound = 6047
+bound = 6063
 [[family.entry]]
 key = "crates/services/jackin-workflow/README.md"
 bound = 650
 [[family.entry]]
 key = "crates/testing/jackin-test-support/README.md"
-bound = 2584
+bound = 2600
 [[family.entry]]
 key = "crates/tools/jackin-dev/README.md"
-bound = 1182
+bound = 1198
 [[family.entry]]
 key = "crates/tools/jackin-lints/README.md"
 bound = 1776
@@ -980,16 +980,16 @@ key = "crates/tools/jackin-pr-trailers/README.md"
 bound = 1882
 [[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
-bound = 5510
+bound = 5526
 [[family.entry]]
 key = "crates/ui/jackin-console/README.md"
-bound = 2549
+bound = 2565
 [[family.entry]]
 key = "crates/ui/jackin-launch/README.md"
-bound = 1832
+bound = 1848
 [[family.entry]]
 key = "crates/ui/jackin-tui/README.md"
-bound = 2706
+bound = 2722
 [[family]]
 id = "perf"
 kind = "numeric"

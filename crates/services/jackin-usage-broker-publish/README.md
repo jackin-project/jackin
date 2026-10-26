@@ -46,6 +46,6 @@ publication error constructors.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-broker-publish
+cargo nextest run -p jackin-usage-broker-publish --no-tests warn
 cargo clippy -p jackin-usage-broker-publish --all-targets -- -D warnings
 ```

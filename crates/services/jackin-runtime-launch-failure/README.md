@@ -46,6 +46,6 @@ resolution.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-failure
+cargo nextest run -p jackin-runtime-launch-failure --no-tests warn
 cargo clippy -p jackin-runtime-launch-failure --all-targets -- -D warnings
 ```

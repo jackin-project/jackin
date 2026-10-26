@@ -39,6 +39,6 @@ State machine and view models consumed by the `jackin` console entry point.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-console
+cargo nextest run -p jackin-console --no-tests warn
 cargo clippy -p jackin-console --all-targets -- -D warnings
 ```

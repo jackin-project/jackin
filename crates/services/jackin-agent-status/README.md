@@ -32,6 +32,6 @@ Status-decision types and the arbitration entry point consumed by `jackin-capsul
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-agent-status
+cargo nextest run -p jackin-agent-status --no-tests warn
 cargo clippy -p jackin-agent-status --all-targets -- -D warnings
 ```

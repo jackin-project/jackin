@@ -32,6 +32,6 @@ fetch over the control socket.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-snapshot
+cargo nextest run -p jackin-runtime-snapshot --no-tests warn
 cargo clippy -p jackin-runtime-snapshot --all-targets -- -D warnings
 ```

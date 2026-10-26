@@ -30,6 +30,6 @@ The launch-cockpit entry point consumed by `jackin-runtime`'s launch flow. It co
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-launch
+cargo nextest run -p jackin-launch --no-tests warn
 cargo clippy -p jackin-launch --all-targets -- -D warnings
 ```

@@ -37,6 +37,6 @@ readiness waits.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-attach-capsule-ready
+cargo nextest run -p jackin-runtime-attach-capsule-ready --no-tests warn
 cargo clippy -p jackin-runtime-attach-capsule-ready --all-targets -- -D warnings
 ```

@@ -29,6 +29,6 @@ terminal.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-spin-wait
+cargo nextest run -p jackin-runtime-spin-wait --no-tests warn
 cargo clippy -p jackin-runtime-spin-wait --all-targets -- -D warnings
 ```

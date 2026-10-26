@@ -33,6 +33,6 @@ key-exchange policy, consumed by `jackin-usage`.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-muse
+cargo nextest run -p jackin-usage-provider-muse --no-tests warn
 cargo clippy -p jackin-usage-provider-muse --all-targets -- -D warnings
 ```

@@ -46,6 +46,6 @@ capability-mapping functions.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-discovery
+cargo nextest run -p jackin-usage-discovery --no-tests warn
 cargo clippy -p jackin-usage-discovery --all-targets -- -D warnings
 ```

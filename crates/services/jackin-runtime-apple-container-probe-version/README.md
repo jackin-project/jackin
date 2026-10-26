@@ -30,6 +30,6 @@ probe.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-probe-version
+cargo nextest run -p jackin-runtime-apple-container-probe-version --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-probe-version --all-targets -- -D warnings
 ```

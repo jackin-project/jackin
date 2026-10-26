@@ -39,6 +39,6 @@ persistence, and the view helpers.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-host-accounts
+cargo nextest run -p jackin-usage-host-accounts --no-tests warn
 cargo clippy -p jackin-usage-host-accounts --all-targets -- -D warnings
 ```

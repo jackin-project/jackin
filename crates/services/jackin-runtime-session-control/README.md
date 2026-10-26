@@ -35,6 +35,6 @@ Host client for capsule
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-session-control
+cargo nextest run -p jackin-runtime-session-control --no-tests warn
 cargo clippy -p jackin-runtime-session-control --all-targets -- -D warnings
 ```

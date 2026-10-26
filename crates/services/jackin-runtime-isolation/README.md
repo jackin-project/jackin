@@ -39,6 +39,6 @@ for runtime call sites, with the
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-isolation
+cargo nextest run -p jackin-runtime-isolation --no-tests warn
 cargo clippy -p jackin-runtime-isolation --all-targets -- -D warnings
 ```

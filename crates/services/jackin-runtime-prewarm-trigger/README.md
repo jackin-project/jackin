@@ -49,6 +49,6 @@ for runtime.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-prewarm-trigger
+cargo nextest run -p jackin-runtime-prewarm-trigger --no-tests warn
 cargo clippy -p jackin-runtime-prewarm-trigger --all-targets -- -D warnings
 ```

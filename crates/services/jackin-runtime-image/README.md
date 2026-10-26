@@ -50,6 +50,6 @@ pipeline.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-image
+cargo nextest run -p jackin-runtime-image --no-tests warn
 cargo clippy -p jackin-runtime-image --all-targets -- -D warnings
 ```

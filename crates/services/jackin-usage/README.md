@@ -108,6 +108,6 @@ exactly.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage -p jackin-usage-ffi
+cargo nextest run -p jackin-usage -p jackin-usage-ffi --no-tests warn
 cargo clippy -p jackin-usage -p jackin-usage-ffi --all-targets -- -D warnings
 ```

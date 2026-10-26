@@ -29,6 +29,6 @@ status-bar helpers.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-host-glance
+cargo nextest run -p jackin-usage-host-glance --no-tests warn
 cargo clippy -p jackin-usage-host-glance --all-targets -- -D warnings
 ```

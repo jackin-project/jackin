@@ -33,6 +33,6 @@ coordination.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-coordination
+cargo nextest run -p jackin-runtime-coordination --no-tests warn
 cargo clippy -p jackin-runtime-coordination --all-targets -- -D warnings
 ```

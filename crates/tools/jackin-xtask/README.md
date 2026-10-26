@@ -62,7 +62,7 @@ matching scoped ratchet after generation.
 ## How to verify
 
 ```sh
-mise exec -- mbx +1.99.1 nextest run -p jackin-xtask
+mise exec -- mbx +1.99.1 nextest run -p jackin-xtask --no-tests warn
 mise exec -- mbx +1.99.1 clippy -p jackin-xtask --all-targets -- -D warnings
 mise exec -- mbx +1.99.1 xtask docs brand
 mise exec -- mbx +1.99.1 xtask docs specs

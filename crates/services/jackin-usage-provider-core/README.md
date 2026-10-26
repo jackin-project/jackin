@@ -38,6 +38,6 @@ Cache, labels, views, and fetch helpers consumed by
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-core
+cargo nextest run -p jackin-usage-provider-core --no-tests warn
 cargo clippy -p jackin-usage-provider-core --all-targets -- -D warnings
 ```

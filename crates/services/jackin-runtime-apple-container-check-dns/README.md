@@ -28,6 +28,6 @@ DNS health check.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-check-dns
+cargo nextest run -p jackin-runtime-apple-container-check-dns --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-check-dns --all-targets -- -D warnings
 ```

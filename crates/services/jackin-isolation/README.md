@@ -33,6 +33,6 @@ Worktree add/adopt/prune and cleanup share a persistent OS lock in the repositor
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-isolation
+cargo nextest run -p jackin-isolation --no-tests warn
 cargo clippy -p jackin-isolation --all-targets -- -D warnings
 ```

@@ -39,6 +39,6 @@ fingerprints.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-account-identity
+cargo nextest run -p jackin-runtime-launch-account-identity --no-tests warn
 cargo clippy -p jackin-runtime-launch-account-identity --all-targets -- -D warnings
 ```

@@ -37,6 +37,6 @@ outcome matrix.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-process-telemetry
+cargo nextest run -p jackin-runtime-process-telemetry --no-tests warn
 cargo clippy -p jackin-runtime-process-telemetry --all-targets -- -D warnings
 ```

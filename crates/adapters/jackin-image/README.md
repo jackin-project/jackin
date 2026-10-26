@@ -36,6 +36,6 @@ The image-build decision and materialization entry points consumed by `jackin-ru
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-image
+cargo nextest run -p jackin-image --no-tests warn
 cargo clippy -p jackin-image --all-targets -- -D warnings
 ```

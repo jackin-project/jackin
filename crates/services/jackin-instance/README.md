@@ -32,6 +32,6 @@ Typed errors: [`InstanceError`](../jackin-instance-credentials/src/error.rs) (in
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-instance -p jackin-instance-roles -p jackin-instance-agents -p jackin-instance-credentials
+cargo nextest run -p jackin-instance -p jackin-instance-roles -p jackin-instance-agents -p jackin-instance-credentials --no-tests warn
 cargo clippy -p jackin-instance --all-targets -- -D warnings
 ```

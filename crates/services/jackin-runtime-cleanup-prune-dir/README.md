@@ -35,6 +35,6 @@ helper for cleanup.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-cleanup-prune-dir
+cargo nextest run -p jackin-runtime-cleanup-prune-dir --no-tests warn
 cargo clippy -p jackin-runtime-cleanup-prune-dir --all-targets -- -D warnings
 ```

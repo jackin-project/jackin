@@ -31,6 +31,6 @@ Keep-awake, clipboard, and desktop-notify entry points consumed by `jackin-runti
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-host
+cargo nextest run -p jackin-host --no-tests warn
 cargo clippy -p jackin-host --all-targets -- -D warnings
 ```

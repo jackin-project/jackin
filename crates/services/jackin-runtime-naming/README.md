@@ -33,6 +33,6 @@ and Docker label constants.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-naming
+cargo nextest run -p jackin-runtime-naming --no-tests warn
 cargo clippy -p jackin-runtime-naming --all-targets -- -D warnings
 ```

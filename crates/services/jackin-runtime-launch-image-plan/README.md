@@ -29,6 +29,6 @@ decide the image.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-image-plan
+cargo nextest run -p jackin-runtime-launch-image-plan --no-tests warn
 cargo clippy -p jackin-runtime-launch-image-plan --all-targets -- -D warnings
 ```

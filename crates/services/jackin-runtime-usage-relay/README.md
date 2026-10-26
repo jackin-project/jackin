@@ -66,6 +66,6 @@ only and does not prepare `OpRef`-backed environment sources.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-usage-relay
+cargo nextest run -p jackin-runtime-usage-relay --no-tests warn
 cargo clippy -p jackin-runtime-usage-relay --all-targets -- -D warnings
 ```

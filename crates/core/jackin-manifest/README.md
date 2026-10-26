@@ -30,6 +30,6 @@ Validated manifest types and the load/validate/migrate entry points consumed by 
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-manifest
+cargo nextest run -p jackin-manifest --no-tests warn
 cargo clippy -p jackin-manifest --all-targets -- -D warnings
 ```

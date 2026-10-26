@@ -33,6 +33,6 @@ snapshots).
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-antigravity
+cargo nextest run -p jackin-usage-provider-antigravity --no-tests warn
 cargo clippy -p jackin-usage-provider-antigravity --all-targets -- -D warnings
 ```

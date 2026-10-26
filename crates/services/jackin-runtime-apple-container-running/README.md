@@ -11,6 +11,6 @@ Public API: `running::inspect_container`, `running::inspect_container_with`.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-running
+cargo nextest run -p jackin-runtime-apple-container-running --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-running --all-targets -- -D warnings
 ```

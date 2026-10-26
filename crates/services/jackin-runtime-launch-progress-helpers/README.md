@@ -43,6 +43,6 @@ step helpers.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-progress-helpers
+cargo nextest run -p jackin-runtime-launch-progress-helpers --no-tests warn
 cargo clippy -p jackin-runtime-launch-progress-helpers --all-targets -- -D warnings
 ```

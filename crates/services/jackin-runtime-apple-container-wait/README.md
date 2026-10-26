@@ -34,6 +34,6 @@ wait.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-wait
+cargo nextest run -p jackin-runtime-apple-container-wait --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-wait --all-targets -- -D warnings
 ```

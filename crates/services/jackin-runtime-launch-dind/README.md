@@ -62,6 +62,6 @@ for launch.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-dind
+cargo nextest run -p jackin-runtime-launch-dind --no-tests warn
 cargo clippy -p jackin-runtime-launch-dind --all-targets -- -D warnings
 ```

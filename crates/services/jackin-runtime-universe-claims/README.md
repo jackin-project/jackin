@@ -41,6 +41,6 @@ machinery.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-universe
+cargo nextest run -p jackin-runtime-universe --no-tests warn
 cargo clippy -p jackin-runtime-universe-claims --all-targets -- -D warnings
 ```

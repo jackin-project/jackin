@@ -36,6 +36,6 @@ atomic-write guard.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-load-cleanup
+cargo nextest run -p jackin-runtime-launch-load-cleanup --no-tests warn
 cargo clippy -p jackin-runtime-launch-load-cleanup --all-targets -- -D warnings
 ```

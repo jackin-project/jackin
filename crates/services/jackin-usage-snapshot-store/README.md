@@ -37,6 +37,6 @@ cache, never by opening this database.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-snapshot-store
+cargo nextest run -p jackin-usage-snapshot-store --no-tests warn
 cargo clippy -p jackin-usage-snapshot-store --all-targets -- -D warnings
 ```

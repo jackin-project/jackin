@@ -37,6 +37,6 @@ runtime instance.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-backend-selection
+cargo nextest run -p jackin-runtime-backend-selection --no-tests warn
 cargo clippy -p jackin-runtime-backend-selection --all-targets -- -D warnings
 ```

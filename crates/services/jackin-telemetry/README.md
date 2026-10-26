@@ -32,7 +32,7 @@ The operation guard separately completes failed span status with the same type.
 
 ## How to verify
 
-`cargo nextest run -p jackin-telemetry --locked`
+`cargo nextest run -p jackin-telemetry --locked --no-tests warn`
 
 The scheduled performance lane runs the calibration benchmark and four product
 Criterion targets, then `cargo xtask telemetry-bench --capture`. The comparator

@@ -37,6 +37,6 @@ it checks that stdin, stdout and stderr are terminals before any Keychain access
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-claude
+cargo nextest run -p jackin-usage-provider-claude --no-tests warn
 cargo clippy -p jackin-usage-provider-claude --all-targets -- -D warnings
 ```

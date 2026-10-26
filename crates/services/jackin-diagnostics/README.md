@@ -33,6 +33,6 @@ Consumers initialize telemetry, inspect typed provider health, request marker/fl
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-diagnostics --all-features --locked
+cargo nextest run -p jackin-diagnostics --all-features --locked --no-tests warn
 cargo clippy -p jackin-diagnostics --all-targets --all-features --locked -- -D warnings
 ```

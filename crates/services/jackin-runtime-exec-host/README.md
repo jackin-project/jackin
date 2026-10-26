@@ -34,6 +34,6 @@ env vars for role containers.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-exec-host
+cargo nextest run -p jackin-runtime-exec-host --no-tests warn
 cargo clippy -p jackin-runtime-exec-host --all-targets -- -D warnings
 ```

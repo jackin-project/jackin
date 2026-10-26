@@ -65,7 +65,7 @@ Library surface for integration tests and the binary: `daemon`, `client`, `confi
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-capsule
+cargo nextest run -p jackin-capsule --no-tests warn
 cargo clippy -p jackin-capsule --all-targets -- -D warnings
 ```
 

@@ -31,6 +31,6 @@ and capsule supervisor user.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-identity
+cargo nextest run -p jackin-runtime-identity --no-tests warn
 cargo clippy -p jackin-runtime-identity --all-targets -- -D warnings
 ```

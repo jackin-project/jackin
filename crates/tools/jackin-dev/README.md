@@ -25,7 +25,7 @@ The `jackin-dev` binary surface (`pr sync <N>`, `pr path <N>`, etc.) is document
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-dev
+cargo nextest run -p jackin-dev --no-tests warn
 cargo clippy -p jackin-dev --all-targets -- -D warnings
 jackin-dev --version
 ```

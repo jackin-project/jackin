@@ -30,6 +30,6 @@ diagnostics.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-exit-summary
+cargo nextest run -p jackin-runtime-exit-summary --no-tests warn
 cargo clippy -p jackin-runtime-exit-summary --all-targets -- -D warnings
 ```

@@ -33,6 +33,6 @@ resolution and flag emission.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-docker-profile
+cargo nextest run -p jackin-runtime-docker-profile --no-tests warn
 cargo clippy -p jackin-runtime-docker-profile --all-targets -- -D warnings
 ```

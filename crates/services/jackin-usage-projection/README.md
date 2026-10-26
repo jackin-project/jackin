@@ -29,6 +29,6 @@ broker generations.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-projection
+cargo nextest run -p jackin-usage-projection --no-tests warn
 cargo clippy -p jackin-usage-projection --all-targets -- -D warnings
 ```

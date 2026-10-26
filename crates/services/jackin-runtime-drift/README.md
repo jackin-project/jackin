@@ -33,6 +33,6 @@ preserved state.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-drift
+cargo nextest run -p jackin-runtime-drift --no-tests warn
 cargo clippy -p jackin-runtime-drift --all-targets -- -D warnings
 ```

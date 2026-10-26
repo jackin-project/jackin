@@ -30,6 +30,6 @@ Cross-surface jackin❯ product presentation and transitional Ratatui adapters u
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-tui
+cargo nextest run -p jackin-tui --no-tests warn
 cargo clippy -p jackin-tui --all-targets -- -D warnings
 ```

@@ -50,6 +50,6 @@ bag and validation.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-load-options
+cargo nextest run -p jackin-runtime-launch-load-options --no-tests warn
 cargo clippy -p jackin-runtime-launch-load-options --all-targets -- -D warnings
 ```

@@ -37,6 +37,6 @@ Unix-only.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-host-daemon
+cargo nextest run -p jackin-runtime-host-daemon --no-tests warn
 cargo clippy -p jackin-runtime-host-daemon --all-targets -- -D warnings
 ```

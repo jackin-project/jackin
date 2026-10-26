@@ -50,6 +50,6 @@ cleanup.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-cleanup-dind-gc
+cargo nextest run -p jackin-runtime-cleanup-dind-gc --no-tests warn
 cargo clippy -p jackin-runtime-cleanup-dind-gc --all-targets -- -D warnings
 ```

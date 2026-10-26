@@ -31,6 +31,6 @@ module (`init`, `debug_enabled`).
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-capsule-telemetry
+cargo nextest run -p jackin-usage-capsule-telemetry --no-tests warn
 cargo clippy -p jackin-usage-capsule-telemetry --all-targets -- -D warnings
 ```

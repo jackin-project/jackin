@@ -30,6 +30,6 @@ terminal output.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-prune-output
+cargo nextest run -p jackin-runtime-prune-output --no-tests warn
 cargo clippy -p jackin-runtime-prune-output --all-targets -- -D warnings
 ```

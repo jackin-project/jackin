@@ -56,6 +56,6 @@ launch.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-restore
+cargo nextest run -p jackin-runtime-launch-restore --no-tests warn
 cargo clippy -p jackin-runtime-launch-restore --all-targets -- -D warnings
 ```

@@ -35,6 +35,6 @@ role.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-sibling-auth-prewarm
+cargo nextest run -p jackin-runtime-launch-sibling-auth-prewarm --no-tests warn
 cargo clippy -p jackin-runtime-launch-sibling-auth-prewarm --all-targets -- -D warnings
 ```

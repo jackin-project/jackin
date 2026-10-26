@@ -35,6 +35,6 @@ resources exist.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-cleanup-absent-guards
+cargo nextest run -p jackin-runtime-cleanup-absent-guards --no-tests warn
 cargo clippy -p jackin-runtime-cleanup-absent-guards --all-targets -- -D warnings
 ```

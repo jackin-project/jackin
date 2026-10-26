@@ -32,6 +32,6 @@ and cache.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-repo-cache
+cargo nextest run -p jackin-runtime-repo-cache --no-tests warn
 cargo clippy -p jackin-runtime-repo-cache --all-targets -- -D warnings
 ```

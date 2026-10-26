@@ -44,6 +44,6 @@ Typed errors (thiserror): `OperatorEnvError`, `ResolveEnvError`.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-env
+cargo nextest run -p jackin-env --no-tests warn
 cargo clippy -p jackin-env --all-targets -- -D warnings
 ```

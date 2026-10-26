@@ -26,6 +26,6 @@ Role-state orchestration for role instances: `RoleState` preparation dispatch ac
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-instance-roles
+cargo nextest run -p jackin-instance-roles --no-tests warn
 cargo clippy -p jackin-instance-roles --all-targets -- -D warnings
 ```

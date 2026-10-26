@@ -34,6 +34,6 @@ runtime cleanup.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-cleanup-prune-home
+cargo nextest run -p jackin-runtime-cleanup-prune-home --no-tests warn
 cargo clippy -p jackin-runtime-cleanup-prune-home --all-targets -- -D warnings
 ```

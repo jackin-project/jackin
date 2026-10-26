@@ -30,6 +30,6 @@ Provisioners and slot constructors consumed by `jackin-instance-roles` and re-ex
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-instance-agents
+cargo nextest run -p jackin-instance-agents --no-tests warn
 cargo clippy -p jackin-instance-agents --all-targets -- -D warnings
 ```

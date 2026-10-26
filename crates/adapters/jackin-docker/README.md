@@ -29,6 +29,6 @@ Concrete Docker daemon client and subprocess shell runner for jackin❯. The wor
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-docker
+cargo nextest run -p jackin-docker --no-tests warn
 cargo clippy -p jackin-docker --all-targets -- -D warnings
 ```

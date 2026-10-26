@@ -39,6 +39,6 @@ admission checks.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-attach-admission
+cargo nextest run -p jackin-runtime-attach-admission --no-tests warn
 cargo clippy -p jackin-runtime-attach-admission --all-targets -- -D warnings
 ```

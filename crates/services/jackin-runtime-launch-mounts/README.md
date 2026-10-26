@@ -40,6 +40,6 @@ backend.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-mounts
+cargo nextest run -p jackin-runtime-launch-mounts --no-tests warn
 cargo clippy -p jackin-runtime-launch-mounts --all-targets -- -D warnings
 ```

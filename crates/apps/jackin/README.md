@@ -38,6 +38,6 @@ The `jackin` binary (`jackin`, `jackin load`, `jackin console`, …) plus the li
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin
+cargo nextest run -p jackin --no-tests warn
 cargo clippy -p jackin --all-targets -- -D warnings
 ```

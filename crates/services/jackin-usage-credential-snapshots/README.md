@@ -30,6 +30,6 @@ persisted.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-credential-snapshots
+cargo nextest run -p jackin-usage-credential-snapshots --no-tests warn
 cargo clippy -p jackin-usage-credential-snapshots --all-targets -- -D warnings
 ```

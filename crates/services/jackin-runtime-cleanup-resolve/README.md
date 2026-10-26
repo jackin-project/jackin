@@ -31,6 +31,6 @@ resolution.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-cleanup-resolve
+cargo nextest run -p jackin-runtime-cleanup-resolve --no-tests warn
 cargo clippy -p jackin-runtime-cleanup-resolve --all-targets -- -D warnings
 ```

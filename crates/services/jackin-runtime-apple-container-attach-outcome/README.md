@@ -14,6 +14,6 @@ Public API: `attach_outcome::record_attach_outcome`.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-attach-outcome
+cargo nextest run -p jackin-runtime-apple-container-attach-outcome --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-attach-outcome --all-targets -- -D warnings
 ```

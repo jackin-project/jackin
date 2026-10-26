@@ -36,6 +36,6 @@ quota parsing, consumed by `jackin-usage`.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-gemini
+cargo nextest run -p jackin-usage-provider-gemini --no-tests warn
 cargo clippy -p jackin-usage-provider-gemini --all-targets -- -D warnings
 ```

@@ -44,6 +44,6 @@ the operator span.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-universe
+cargo nextest run -p jackin-runtime-universe --no-tests warn
 cargo clippy -p jackin-runtime-universe --all-targets -- -D warnings
 ```

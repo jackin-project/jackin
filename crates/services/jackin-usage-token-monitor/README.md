@@ -35,6 +35,6 @@ reader modules.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-token-monitor
+cargo nextest run -p jackin-usage-token-monitor --no-tests warn
 cargo clippy -p jackin-usage-token-monitor --all-targets -- -D warnings
 ```

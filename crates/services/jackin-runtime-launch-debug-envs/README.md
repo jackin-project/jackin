@@ -34,6 +34,6 @@ env helper.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-debug-envs
+cargo nextest run -p jackin-runtime-launch-debug-envs --no-tests warn
 cargo clippy -p jackin-runtime-launch-debug-envs --all-targets -- -D warnings
 ```

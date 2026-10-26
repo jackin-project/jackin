@@ -35,6 +35,6 @@ for attach spawn.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-attach-running-gate
+cargo nextest run -p jackin-runtime-attach-running-gate --no-tests warn
 cargo clippy -p jackin-runtime-attach-running-gate --all-targets -- -D warnings
 ```

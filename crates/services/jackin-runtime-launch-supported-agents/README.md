@@ -30,6 +30,6 @@ for a launch role
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-supported-agents
+cargo nextest run -p jackin-runtime-launch-supported-agents --no-tests warn
 cargo clippy -p jackin-runtime-launch-supported-agents --all-targets -- -D warnings
 ```

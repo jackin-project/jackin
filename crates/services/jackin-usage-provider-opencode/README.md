@@ -33,6 +33,6 @@ and usage parsing.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-opencode
+cargo nextest run -p jackin-usage-provider-opencode --no-tests warn
 cargo clippy -p jackin-usage-provider-opencode --all-targets -- -D warnings
 ```

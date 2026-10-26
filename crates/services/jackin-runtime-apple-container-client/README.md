@@ -14,6 +14,6 @@ Public API: `AppleContainerClient`, `AppleContainerApi`, `AppleContainerSpec`, `
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-client
+cargo nextest run -p jackin-runtime-apple-container-client --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-client --all-targets -- -D warnings
 ```

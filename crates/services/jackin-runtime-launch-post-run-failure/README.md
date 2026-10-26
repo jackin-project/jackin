@@ -33,6 +33,6 @@ telemetry helper.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-post-run-failure
+cargo nextest run -p jackin-runtime-launch-post-run-failure --no-tests warn
 cargo clippy -p jackin-runtime-launch-post-run-failure --all-targets -- -D warnings
 ```

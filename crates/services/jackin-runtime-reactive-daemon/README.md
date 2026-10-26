@@ -33,6 +33,6 @@ control-socket spike.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-reactive-daemon --features daemon-spike
+cargo nextest run -p jackin-runtime-reactive-daemon --features daemon-spike --no-tests warn
 cargo clippy -p jackin-runtime-reactive-daemon --all-targets --features daemon-spike -- -D warnings
 ```

@@ -31,6 +31,6 @@ Picker state + planning consumed by `jackin-console` (and the side-effect adapte
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-oppicker
+cargo nextest run -p jackin-oppicker --no-tests warn
 cargo clippy -p jackin-oppicker --all-targets -- -D warnings
 ```

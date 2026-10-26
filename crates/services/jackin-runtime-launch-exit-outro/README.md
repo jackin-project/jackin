@@ -37,6 +37,6 @@ universe boundary.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-exit-outro
+cargo nextest run -p jackin-runtime-launch-exit-outro --no-tests warn
 cargo clippy -p jackin-runtime-launch-exit-outro --all-targets -- -D warnings
 ```

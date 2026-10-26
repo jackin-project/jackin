@@ -38,6 +38,6 @@ for cleanup.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-cleanup-eject-resources
+cargo nextest run -p jackin-runtime-cleanup-eject-resources --no-tests warn
 cargo clippy -p jackin-runtime-cleanup-eject-resources --all-targets -- -D warnings
 ```

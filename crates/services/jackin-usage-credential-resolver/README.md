@@ -29,6 +29,6 @@ vendor snapshot dispatch.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-credential-resolver
+cargo nextest run -p jackin-usage-credential-resolver --no-tests warn
 cargo clippy -p jackin-usage-credential-resolver --all-targets -- -D warnings
 ```

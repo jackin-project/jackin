@@ -31,6 +31,6 @@ activation.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-activate-entry
+cargo nextest run -p jackin-runtime-apple-container-activate-entry --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-activate-entry --all-targets -- -D warnings
 ```

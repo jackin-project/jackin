@@ -47,6 +47,6 @@ broker; credentials, catalog, and atomic state never cross the boundary.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime
+cargo nextest run -p jackin-runtime --no-tests warn
 cargo clippy -p jackin-runtime --all-targets -- -D warnings
 ```

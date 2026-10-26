@@ -35,6 +35,6 @@ step.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-attach
+cargo nextest run -p jackin-runtime-apple-container-attach --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-attach --all-targets -- -D warnings
 ```

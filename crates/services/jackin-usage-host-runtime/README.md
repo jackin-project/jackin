@@ -34,6 +34,6 @@ Keychain credentials only; it does not prepare `OpRef` environment sources.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-host-runtime
+cargo nextest run -p jackin-usage-host-runtime --no-tests warn
 cargo clippy -p jackin-usage-host-runtime --all-targets -- -D warnings
 ```

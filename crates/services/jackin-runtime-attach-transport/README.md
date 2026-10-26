@@ -38,6 +38,6 @@ transport selection.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-attach-transport
+cargo nextest run -p jackin-runtime-attach-transport --no-tests warn
 cargo clippy -p jackin-runtime-attach-transport --all-targets -- -D warnings
 ```
