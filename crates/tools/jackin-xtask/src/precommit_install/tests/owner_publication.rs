@@ -366,7 +366,7 @@ fn public_installer_supports_non_utf8_checkout_path() -> Result<()> {
             ("GIT_CONFIG_GLOBAL", OsString::from("/dev/null")),
             ("GIT_TERMINAL_PROMPT", OsString::from("0")),
         ])
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(Duration::from_secs(10))
         .output_limits(64 * 1024, 64 * 1024);
     let invoked = jackin_process::exec_sync(&request)?;
     assert_eq!(invoked.code, Some(37));

@@ -12,7 +12,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use self::signals::InstallSignals;
 use anyhow::{Context, Result, ensure};
 use jackin_process_directory::CheckedSourceRoot;
 use nix::{
@@ -49,74 +48,80 @@ pub(super) fn activate(common_config: &Path, selected_config: &Path, owner: &Pat
     activation::validate_hook_config_source_custody(common_config, selected_config)
         .context("validating Git config and lock custody before preparing candidate")?;
     let (source_config, original) = read_selected_config(&checked_parent, selected_config)?;
-    let mut candidate =
-        tempfile::NamedTempFile::new_in(parent).context("creating private Git config candidate")?;
-    if let Some(bytes) = original.as_deref() {
-        candidate.write_all(bytes)?;
-        candidate.as_file().sync_all()?;
-    }
-    let candidate_path = candidate.path().to_path_buf();
-    update_candidate(&candidate_path, owner)?;
-    validate_candidate(&candidate_path)?;
-    if let Some(config) = source_config.as_ref() {
-        config
-            .recheck()
-            .context("rechecking source Git config after candidate preparation")?;
-    }
-    checked_parent
-        .recheck()
-        .context("rechecking Git config directory after candidate preparation")?;
-    let bytes = read_candidate(&candidate_path)?;
-    let signals = InstallSignals::register()?;
-    signals.check()?;
-
-    let mut lock = ConfigLock::create(
-        lock_path.clone(),
-        open(
-            &lock_path,
-            OFlag::O_RDWR | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-            Mode::from_bits_truncate(0o600),
-        )
-        .context("creating exclusive Git worktree config lock")?,
-    );
-    signals.check()?;
-    checked_parent
-        .recheck()
-        .context("rechecking Git config directory after acquiring lock")?;
-    let (current_config, current_bytes) = read_selected_config(&checked_parent, selected_config)?;
-    ensure_config_unchanged(
-        source_config.as_ref(),
-        original.as_deref(),
-        current_config.as_ref(),
-        current_bytes.as_deref(),
-    )?;
-    checked_parent
-        .recheck()
-        .context("rechecking Git config directory before activation")?;
-    signals.check()?;
-
-    let result = (|| {
-        write_held_lock(lock.file(), &lock_path, &bytes)?;
-        activation::activate_hook_config(common_config, selected_config)
-            .context("activating native worktree hook configuration")?;
-        Ok(())
-    })();
-
-    if let Err(error) = result {
-        if activation::activation_failed_after_rename(&error) {
-            lock.disarm();
-            return Err(error)
-                .context("hook config was renamed, but final durability checks failed");
+    signals::with_install_signals(|signals| {
+        let mut candidate = tempfile::NamedTempFile::new_in(parent)
+            .context("creating private Git config candidate")?;
+        if let Some(bytes) = original.as_deref() {
+            candidate.write_all(bytes)?;
+            candidate.as_file().sync_all()?;
         }
-        return match lock.remove_if_owned() {
-            Ok(()) => Err(error),
-            Err(cleanup) => {
-                Err(error.context(format!("Git config lock cleanup also failed: {cleanup:#}")))
+        let candidate_path = candidate.path().to_path_buf();
+        update_candidate(&candidate_path, owner)?;
+        validate_candidate(&candidate_path)?;
+        if let Some(config) = source_config.as_ref() {
+            config
+                .recheck()
+                .context("rechecking source Git config after candidate preparation")?;
+        }
+        checked_parent
+            .recheck()
+            .context("rechecking Git config directory after candidate preparation")?;
+        let bytes = read_candidate(&candidate_path)?;
+        signals.enter_critical_phase()?;
+
+        let mut lock = ConfigLock::create(
+            lock_path.clone(),
+            open(
+                &lock_path,
+                OFlag::O_RDWR
+                    | OFlag::O_CREAT
+                    | OFlag::O_EXCL
+                    | OFlag::O_NOFOLLOW
+                    | OFlag::O_CLOEXEC,
+                Mode::from_bits_truncate(0o600),
+            )
+            .context("creating exclusive Git worktree config lock")?,
+        );
+        signals.check()?;
+        checked_parent
+            .recheck()
+            .context("rechecking Git config directory after acquiring lock")?;
+        let (current_config, current_bytes) =
+            read_selected_config(&checked_parent, selected_config)?;
+        ensure_config_unchanged(
+            source_config.as_ref(),
+            original.as_deref(),
+            current_config.as_ref(),
+            current_bytes.as_deref(),
+        )?;
+        checked_parent
+            .recheck()
+            .context("rechecking Git config directory before activation")?;
+        signals.check()?;
+
+        let result = (|| {
+            write_held_lock(lock.file(), &lock_path, &bytes)?;
+            activation::activate_hook_config(common_config, selected_config)
+                .context("activating native worktree hook configuration")?;
+            Ok(())
+        })();
+
+        if let Err(error) = result {
+            if activation::activation_failed_after_rename(&error) {
+                lock.disarm();
+                return Err(error)
+                    .context("hook config was renamed, but final durability checks failed");
             }
-        };
-    }
-    lock.disarm();
-    Ok(())
+            return match lock.remove_if_owned() {
+                Ok(()) => Err(error),
+                Err(cleanup) => {
+                    Err(error.context(format!("Git config lock cleanup also failed: {cleanup:#}")))
+                }
+            };
+        }
+        lock.disarm();
+        Ok(())
+    })
 }
 
 struct ConfigLock {
