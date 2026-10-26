@@ -2003,6 +2003,143 @@ def main() -> int:
         expected_report_errors=["duplicate JSON object key: tasks"],
     ))
 
+    a13_owner_check = "A13 preserves separate current-graph and final-post-deletion runs"
+    a15_owner_check = "A15 separates observation, adapter, and integrated activation owners"
+    a16_owner_check = "A16 preserves accepted-revision observation and product-presentation owners"
+
+    def weaken_p05_a13_current_run(pack: Path) -> None:
+        graph = read_json(pack / "task-graph.json")
+        task = next(row for row in graph["tasks"] if row["id"] == "P05")
+        task["steps"] = [step for step in task["steps"] if not step.startswith("Run A13 against the newly created current graph")]
+        task["steps"].append("Run A13 only after legacy deletion against the final graph.")
+        write_json(pack / "task-graph.json", graph)
+        sync_task_packet(pack, "P05")
+    receipts.append(run_fixture(
+        "P05 cannot defer its A13 run to the final graph",
+        weaken_p05_a13_current_run,
+        1, [a13_owner_check],
+    ))
+
+    def remove_t39_a13_final_rerun(pack: Path) -> None:
+        graph = read_json(pack / "task-graph.json")
+        task = next(row for row in graph["tasks"] if row["id"] == "T39")
+        task["steps"] = [step for step in task["steps"]
+                         if not step.startswith(("Rerun A13 and A14", "Record this result separately"))]
+        write_json(pack / "task-graph.json", graph)
+        sync_task_packet(pack, "T39")
+    receipts.append(run_fixture(
+        "T39 cannot omit its final post-deletion A13 rerun",
+        remove_t39_a13_final_rerun,
+        1, [a13_owner_check],
+    ))
+
+    def remove_case_owner(pack: Path, case_id: str, task_id: str) -> None:
+        data_path = pack / "acceptance-cases.json"
+        data = read_json(data_path)
+        case = next(row for row in data["cases"] if row["id"] == case_id)
+        case["tasks"].remove(task_id)
+        case["assignment_results"] = [row for row in case["assignment_results"]
+                                        if row["task_id"] != task_id]
+        write_json(data_path, data)
+        sync_case_block(pack, case)
+
+    receipts.append(run_fixture(
+        "A15 cannot omit the integrated T23 owner",
+        lambda pack: remove_case_owner(pack, "A15", "T23"),
+        1, [a15_owner_check, "Assignment results have exact unique case owners and valid statuses",
+            "Case and task ownership maps agree"],
+    ))
+
+    def weaken_t23_a15_activation(pack: Path) -> None:
+        graph = read_json(pack / "task-graph.json")
+        task = next(row for row in graph["tasks"] if row["id"] == "T23")
+        task["steps"] = [
+            "Exercise activation through the complete recorded operation sequence."
+            if step.startswith("Exercise A15 through integrated StartSession") else step
+            for step in task["steps"]
+        ]
+        write_json(pack / "task-graph.json", graph)
+        sync_task_packet(pack, "T23")
+    receipts.append(run_fixture(
+        "T23 must qualify the full A15 StartSession barrier",
+        weaken_t23_a15_activation,
+        1, [a15_owner_check],
+    ))
+
+    def weaken_layer_contract(pack: Path, task_id: str, case_id: str) -> None:
+        graph = read_json(pack / "task-graph.json")
+        task = next(row for row in graph["tasks"] if row["id"] == task_id)
+        task["acceptance"] = [
+            f"{case_id} is covered by the upstream contract."
+            if text.startswith(f"{case_id} and A") else text
+            for text in task["acceptance"]
+        ]
+        write_json(pack / "task-graph.json", graph)
+        sync_task_packet(pack, task_id)
+    receipts.append(run_fixture(
+        "U00 cannot collapse A15 and A16 into integrated behavior",
+        lambda pack: weaken_layer_contract(pack, "U00", "A15"),
+        1, [a15_owner_check, a16_owner_check],
+    ))
+    receipts.append(run_fixture(
+        "T13 cannot collapse A15 and A16 into product behavior",
+        lambda pack: weaken_layer_contract(pack, "T13", "A15"),
+        1, [a15_owner_check, a16_owner_check],
+    ))
+
+    def weaken_a16_layer_source(pack: Path, task_id: str, original: str) -> None:
+        graph = read_json(pack / "task-graph.json")
+        task = next(row for row in graph["tasks"] if row["id"] == task_id)
+        if original not in task["acceptance"]:
+            raise ValueError(f"Expected A16 layer assertion for {task_id}")
+        task["acceptance"] = [
+            "A16 checks policy data."
+            if text == original else text
+            for text in task["acceptance"]
+        ]
+        write_json(pack / "task-graph.json", graph)
+        sync_task_packet(pack, task_id)
+
+    receipts.append(run_fixture(
+        "U00 must bind A16's replacement source to its accepted revision",
+        lambda pack: weaken_a16_layer_source(
+            pack, "U00",
+            "A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection.",
+        ),
+        1, [a16_owner_check],
+    ))
+    receipts.append(run_fixture(
+        "T13 must bind A16's replacement source to its accepted revision",
+        lambda pack: weaken_a16_layer_source(
+            pack, "T13",
+            "A16 at T13 binds the effective replacement source to the observed accepted revision without claiming an intersection.",
+        ),
+        1, [a16_owner_check],
+    ))
+
+    receipts.append(run_fixture(
+        "A16 cannot omit the T29 product-presentation owner",
+        lambda pack: remove_case_owner(pack, "A16", "T29"),
+        1, [a16_owner_check, "Assignment results have exact unique case owners and valid statuses",
+            "Case and task ownership maps agree"],
+    ))
+
+    def weaken_t29_a16_presentation(pack: Path) -> None:
+        graph = read_json(pack / "task-graph.json")
+        task = next(row for row in graph["tasks"] if row["id"] == "T29")
+        task["steps"] = [
+            "Display the current policy details."
+            if step.startswith("Display A16's accepted policy revision") else step
+            for step in task["steps"]
+        ]
+        write_json(pack / "task-graph.json", graph)
+        sync_task_packet(pack, "T29")
+    receipts.append(run_fixture(
+        "T29 must display A16's accepted replacement source and revision",
+        weaken_t29_a16_presentation,
+        1, [a16_owner_check],
+    ))
+
     payload = {
         "passed": all(receipt["passed"] for receipt in receipts),
         "scope": "Static validator fixtures only. No product or runtime tests are performed.",

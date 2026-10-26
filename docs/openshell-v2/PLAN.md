@@ -524,6 +524,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 9. Make unfinished operations return explicit unsupported errors.
 10. Do not add placeholder success paths.
 11. Register jackin-xtask and test-support in the production workspace and build graph.
+12. Run A13 against the newly created current graph and compile forbidden-import fixtures.
 
 #### Pass conditions
 
@@ -532,6 +533,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Capsule imports no host credential or builder implementation.
 - A clean build fails on any forbidden dependency edge.
 - Workspace and test-support build registration stays in P05; v2 command dispatch stays in P04.
+- A13 records the production graph and forbidden-import result created by P05.
 
 **Acceptance cases:** A13, A14.
 
@@ -592,6 +594,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 8. Reject helper-reported identity as a substitute.
 9. Add old-server and unsupported-capability behavior.
 10. Update the candidate tuple and upstream change record.
+11. For A15 and A16, report authoritative observations separately from integrated activation and product display.
 
 #### Pass conditions
 
@@ -599,6 +602,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A helper echo cannot satisfy image or sandbox identity checks.
 - Provider readiness refers to the installed binding revision.
 - Unsupported observations prevent activation with a specific error.
+- A15 and A16 at U00 qualify LIVE observation results, not StartSession or product presentation.
+- A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection.
 
 **Acceptance cases:** A15, A16, A17.
 
@@ -1418,6 +1423,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 8. Prevent effect retries that lack a qualified replay contract.
 9. Expose capability rejection before launch.
 10. Keep infrastructure reconciliation upstream.
+11. For A15 and A16, qualify authoritative adapter observations separately from integrated activation and product display.
 
 #### Pass conditions
 
@@ -1425,6 +1431,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Lost responses do not cause duplicate commands.
 - A generic NOT_FOUND cannot delete retained application data.
 - An outage cannot create a replacement sandbox.
+- A15 and A16 at T13 qualify LIVE adapter results, not integrated activation or product presentation.
+- A16 at T13 binds the effective replacement source to the observed accepted revision without claiming an intersection.
 
 **Acceptance cases:** A15, A16, A17, A18, A19, A20, A21, A48.
 
@@ -2119,6 +2127,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 12. Run an authenticated coding task through each advertised route with approved disposable credentials.
 13. Handle cancellation and lost responses through the journal.
 14. Publish the complete operation and binding to inspection.
+15. Exercise A15 through integrated StartSession with missing, stale, or mismatched authority observations; reject forged helper claims.
 
 #### Pass conditions
 
@@ -2128,8 +2137,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Two identical launch retries do not create duplicate agent processes.
 - A real role reaches useful agent output and reconnects to the same live session.
 - Every advertised route completes a real coding task through the native launch path.
+- A15 fails closed at StartSession for missing, stale, or mismatched observations and helper-reported identity.
 
-**Acceptance cases:** A74, A77, A78, A79, A80.
+**Acceptance cases:** A74, A77, A78, A79, A80, A15.
 
 #### Removal and replacement
 
@@ -2540,6 +2550,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 8. Show fleet completeness and per-target errors.
 9. Keep branch, pull-request, CI, clipboard-image, and export workflows through trusted adapters.
 10. Regenerate completion and man-page sources from the new command model.
+11. Display A16's accepted policy revision and effective replacement source in product output.
 
 #### Pass conditions
 
@@ -2548,8 +2559,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Agent-reported done cannot authorize deletion or a passing verdict.
 - Ambiguous human selectors produce a selection error.
 - JSON output follows only the v2 schema.
+- A16 displays the accepted replacement source and revision without implying an intersection.
 
-**Acceptance cases:** A96, A97, A98.
+**Acceptance cases:** A96, A97, A98, A16.
 
 #### Removal and replacement
 
@@ -3228,6 +3240,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 11. Compare the final tree against every inventory record.
 12. Run clean-build and installation tests from fresh directories.
 13. Rerun A13 and A14 against the final graph and composition after legacy deletion.
+14. Record this result separately from P05's current-graph A13 run.
 
 #### Pass conditions
 

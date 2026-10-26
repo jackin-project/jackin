@@ -104,6 +104,9 @@ ORDINARY_CHECK_NAMES = (
     "Task completion rules match the fixed evidence contract",
     "Task review rules match the different-subagent and post-merge contract",
     "Task test_cases contain unique string IDs",
+    "A13 preserves separate current-graph and final-post-deletion runs",
+    "A15 separates observation, adapter, and integrated activation owners",
+    "A16 preserves accepted-revision observation and product-presentation owners",
     "Release gate protocol matches fixed semantics",
     "Original specification matches its fixed checksum and both manifests",
     "GOAL.md matches its fixed checksum",
@@ -458,6 +461,91 @@ def case_status_summary(statuses: list[str]) -> str:
     return "NOT_RUN"
 
 
+def owner_case_contract_errors(tasks: list[dict[str, Any]],
+                               cases: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    tasks_by_id = {task.get("id"): task for task in tasks}
+    cases_by_id = {case.get("id"): case for case in cases}
+    failures: dict[str, list[dict[str, Any]]] = {
+        "A13 preserves separate current-graph and final-post-deletion runs": [],
+        "A15 separates observation, adapter, and integrated activation owners": [],
+        "A16 preserves accepted-revision observation and product-presentation owners": [],
+    }
+
+    def task_contains(task_id: str, field: str, phrase: str) -> bool:
+        task = tasks_by_id.get(task_id, {})
+        values = task.get(field, [])
+        return isinstance(values, list) and any(
+            isinstance(value, str) and phrase in value for value in values
+        )
+
+    def case_text_contains(case: dict[str, Any], field: str, *phrases: str) -> bool:
+        value = case.get(field)
+        return isinstance(value, str) and all(phrase in value for phrase in phrases)
+
+    a13 = cases_by_id.get("A13", {})
+    a13_errors = failures["A13 preserves separate current-graph and final-post-deletion runs"]
+    if a13.get("tasks") != ["P05", "T39"]:
+        a13_errors.append({"case_owners": a13.get("tasks"), "expected": ["P05", "T39"]})
+    if not case_text_contains(a13, "setup", "newly created current graph",
+                              "final candidate graph after legacy deletion"):
+        a13_errors.append({"case": "A13", "field": "setup",
+                           "problem": "must distinguish current and final graph runs"})
+    if not task_contains("P05", "test_cases", "A13") or not task_contains(
+        "P05", "steps", "Run A13 against the newly created current graph and compile forbidden-import fixtures."
+    ) or not task_contains("P05", "acceptance",
+                           "A13 records the production graph and forbidden-import result created by P05."):
+        a13_errors.append({"task": "P05", "problem": "current-graph A13 run is missing"})
+    if not task_contains("T39", "test_cases", "A13") or not task_contains(
+        "T39", "steps", "Rerun A13 and A14 against the final graph and composition after legacy deletion."
+    ) or not task_contains("T39", "steps",
+                           "Record this result separately from P05's current-graph A13 run."):
+        a13_errors.append({"task": "T39", "problem": "separate final post-deletion A13 rerun is missing"})
+
+    a15 = cases_by_id.get("A15", {})
+    a15_errors = failures["A15 separates observation, adapter, and integrated activation owners"]
+    if a15.get("tasks") != ["U00", "T13", "T23"]:
+        a15_errors.append({"case_owners": a15.get("tasks"), "expected": ["U00", "T13", "T23"]})
+    if not case_text_contains(a15, "setup", "observation and adapter layers",
+                              "integrated activation through StartSession"):
+        a15_errors.append({"case": "A15", "field": "setup",
+                           "problem": "must distinguish layer and integrated activation"})
+    if not case_text_contains(a15, "expected", "U00 and T13 results do not replace T23's full activation attempt",
+                              "A helper echo cannot replace gateway evidence"):
+        a15_errors.append({"case": "A15", "field": "expected",
+                           "problem": "must retain layer boundary and helper-claim refusal"})
+    for task_id, field, phrase in (
+        ("U00", "acceptance", "A15 and A16 at U00 qualify LIVE observation results, not StartSession or product presentation."),
+        ("T13", "acceptance", "A15 and A16 at T13 qualify LIVE adapter results, not integrated activation or product presentation."),
+        ("T23", "steps", "Exercise A15 through integrated StartSession with missing, stale, or mismatched authority observations; reject forged helper claims."),
+        ("T23", "acceptance", "A15 fails closed at StartSession for missing, stale, or mismatched observations and helper-reported identity."),
+    ):
+        if not task_contains(task_id, "test_cases", "A15") or not task_contains(task_id, field, phrase):
+            a15_errors.append({"task": task_id, "problem": "owner-specific A15 qualification is missing"})
+
+    a16 = cases_by_id.get("A16", {})
+    a16_errors = failures["A16 preserves accepted-revision observation and product-presentation owners"]
+    if a16.get("tasks") != ["U00", "T13", "T29"]:
+        a16_errors.append({"case_owners": a16.get("tasks"), "expected": ["U00", "T13", "T29"]})
+    if not case_text_contains(a16, "setup", "verify accepted revisions and replacement source",
+                              "T29 qualifies product presentation"):
+        a16_errors.append({"case": "A16", "field": "setup",
+                           "problem": "must distinguish observation and presentation owners"})
+    if not case_text_contains(a16, "expected", "accepted revision and source",
+                              "imaginary policy intersection"):
+        a16_errors.append({"case": "A16", "field": "expected",
+                           "problem": "must require accepted replacement source without an intersection"})
+    for task_id, field, phrase in (
+        ("U00", "acceptance", "A15 and A16 at U00 qualify LIVE observation results, not StartSession or product presentation."),
+        ("U00", "acceptance", "A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection."),
+        ("T13", "acceptance", "A15 and A16 at T13 qualify LIVE adapter results, not integrated activation or product presentation."),
+        ("T13", "acceptance", "A16 at T13 binds the effective replacement source to the observed accepted revision without claiming an intersection."),
+        ("T29", "steps", "Display A16's accepted policy revision and effective replacement source in product output."),
+    ):
+        if not task_contains(task_id, "test_cases", "A16") or not task_contains(task_id, field, phrase):
+            a16_errors.append({"task": task_id, "problem": "owner-specific A16 qualification is missing"})
+    return failures
+
+
 def render_task_index(tasks: list[dict[str, Any]]) -> list[str]:
     lines = [
         "| ID | Task | Subagent | Dependencies |",
@@ -690,6 +778,7 @@ def main() -> int:
           not concurrency_errors, concurrency_errors)
     tasks = graph["tasks"]
     cases = cases_file["cases"]
+    owner_contract_errors = owner_case_contract_errors(tasks, cases)
     dependency_list_errors = []
     for task in tasks:
         dependencies = task.get("depends_on")
@@ -846,6 +935,8 @@ def main() -> int:
             })
     check("Task test_cases contain unique string IDs", not task_case_reference_errors,
           task_case_reference_errors)
+    for contract_name, contract_errors in owner_contract_errors.items():
+        check(contract_name, not contract_errors, contract_errors)
     release_protocol = graph.get("release_gate_protocol")
     release_protocol_errors = [] if release_protocol == RELEASE_GATE_PROTOCOL else [
         {"actual": release_protocol, "expected": RELEASE_GATE_PROTOCOL}

@@ -361,14 +361,16 @@
         "Keep the existing qualified toolchain unless compatibility requires a reviewed change.",
         "Make unfinished operations return explicit unsupported errors.",
         "Do not add placeholder success paths.",
-        "Register jackin-xtask and test-support in the production workspace and build graph."
+        "Register jackin-xtask and test-support in the production workspace and build graph.",
+        "Run A13 against the newly created current graph and compile forbidden-import fixtures."
       ],
       "acceptance": [
         "The production graph contains no old runtime backend crate.",
         "Core code imports no upstream protobuf, Docker, or database types.",
         "Capsule imports no host credential or builder implementation.",
         "A clean build fails on any forbidden dependency edge.",
-        "Workspace and test-support build registration stays in P05; v2 command dispatch stays in P04."
+        "Workspace and test-support build registration stays in P05; v2 command dispatch stays in P04.",
+        "A13 records the production graph and forbidden-import result created by P05."
       ],
       "remove_or_replace": [
         "Remove old workspace-member and feature edges.",
@@ -425,13 +427,16 @@
         "Keep provider secret bytes outside observation payloads.",
         "Reject helper-reported identity as a substitute.",
         "Add old-server and unsupported-capability behavior.",
-        "Update the candidate tuple and upstream change record."
+        "Update the candidate tuple and upstream change record.",
+        "For A15 and A16, report authoritative observations separately from integrated activation and product display."
       ],
       "acceptance": [
         "A submitted policy does not count as loaded policy evidence.",
         "A helper echo cannot satisfy image or sandbox identity checks.",
         "Provider readiness refers to the installed binding revision.",
-        "Unsupported observations prevent activation with a specific error."
+        "Unsupported observations prevent activation with a specific error.",
+        "A15 and A16 at U00 qualify LIVE observation results, not StartSession or product presentation.",
+        "A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection."
       ],
       "remove_or_replace": [
         "Do not add a Jackin-side supervisor or attestation service.",
@@ -1205,13 +1210,16 @@
         "Collect authoritative policy, provider, image, and generation observations.",
         "Prevent effect retries that lack a qualified replay contract.",
         "Expose capability rejection before launch.",
-        "Keep infrastructure reconciliation upstream."
+        "Keep infrastructure reconciliation upstream.",
+        "For A15 and A16, qualify authoritative adapter observations separately from integrated activation and product display."
       ],
       "acceptance": [
         "Every effect uses its explicit target, scope, identity, and required generation.",
         "Lost responses do not cause duplicate commands.",
         "A generic NOT_FOUND cannot delete retained application data.",
-        "An outage cannot create a replacement sandbox."
+        "An outage cannot create a replacement sandbox.",
+        "A15 and A16 at T13 qualify LIVE adapter results, not integrated activation or product presentation.",
+        "A16 at T13 binds the effective replacement source to the observed accepted revision without claiming an intersection."
       ],
       "remove_or_replace": [
         "Replace direct Docker run, exec, attach, inspect, stop, and remove consumers.",
@@ -1877,7 +1885,8 @@
         "Attach through a fresh relay without duplicating agent startup.",
         "Run an authenticated coding task through each advertised route with approved disposable credentials.",
         "Handle cancellation and lost responses through the journal.",
-        "Publish the complete operation and binding to inspection."
+        "Publish the complete operation and binding to inspection.",
+        "Exercise A15 through integrated StartSession with missing, stale, or mismatched authority observations; reject forged helper claims."
       ],
       "acceptance": [
         "A missing receipt or stale revision prevents StartSession.",
@@ -1885,7 +1894,8 @@
         "SandboxReady alone does not activate an agent.",
         "Two identical launch retries do not create duplicate agent processes.",
         "A real role reaches useful agent output and reconnects to the same live session.",
-        "Every advertised route completes a real coding task through the native launch path."
+        "Every advertised route completes a real coding task through the native launch path.",
+        "A15 fails closed at StartSession for missing, stale, or mismatched observations and helper-reported identity."
       ],
       "remove_or_replace": [
         "Replace the old launch pipeline, backend selector, and restore shortcuts.",
@@ -1896,7 +1906,8 @@
         "A77",
         "A78",
         "A79",
-        "A80"
+        "A80",
+        "A15"
       ],
       "source_basis": "SPEC L115; L150-L152; L228-L241; L336-L360; L497",
       "status": "NOT_STARTED",
@@ -2285,14 +2296,16 @@
         "Preserve stale rows and last-seen times during target failure.",
         "Show fleet completeness and per-target errors.",
         "Keep branch, pull-request, CI, clipboard-image, and export workflows through trusted adapters.",
-        "Regenerate completion and man-page sources from the new command model."
+        "Regenerate completion and man-page sources from the new command model.",
+        "Display A16's accepted policy revision and effective replacement source in product output."
       ],
       "acceptance": [
         "Two reachable targets remain usable when a third target fails.",
         "Incomplete pagination never becomes a complete empty fleet.",
         "Agent-reported done cannot authorize deletion or a passing verdict.",
         "Ambiguous human selectors produce a selection error.",
-        "JSON output follows only the v2 schema."
+        "JSON output follows only the v2 schema.",
+        "A16 displays the accepted replacement source and revision without implying an intersection."
       ],
       "remove_or_replace": [
         "Replace old Docker-based status, Console discovery, and backend CLI flags.",
@@ -2301,7 +2314,8 @@
       "test_cases": [
         "A96",
         "A97",
-        "A98"
+        "A98",
+        "A16"
       ],
       "source_basis": "SPEC L356-L399; L413-L419",
       "status": "NOT_STARTED",
@@ -2969,7 +2983,8 @@
         "Audit every host subprocess and Docker API call by ownership.",
         "Compare the final tree against every inventory record.",
         "Run clean-build and installation tests from fresh directories.",
-        "Rerun A13 and A14 against the final graph and composition after legacy deletion."
+        "Rerun A13 and A14 against the final graph and composition after legacy deletion.",
+        "Record this result separately from P05's current-graph A13 run."
       ],
       "acceptance": [
         "Every legacy inventory record has a verified final disposition.",

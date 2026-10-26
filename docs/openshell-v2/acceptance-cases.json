@@ -232,9 +232,9 @@
       "id": "A13",
       "title": "Production dependency boundary",
       "level": "SOURCE",
-      "setup": "Use Cargo metadata for the final candidate graph.",
-      "action": "Inspect dependency edges and compile forbidden-import fixtures.",
-      "expected": "Core has no runtime or database types. Capsule has no host credential path. Forbidden fixtures fail.",
+      "setup": "P05 inspects the newly created current graph. T39 repeats the checks on the final candidate graph after legacy deletion.",
+      "action": "P05 inspects dependency edges and compiles forbidden-import fixtures. T39 repeats graph and composition checks after deletion.",
+      "expected": "Core has no runtime or database types. Capsule has no host credential path. Forbidden fixtures fail in both the P05 graph and the final post-deletion graph.",
       "status": "NOT_RUN",
       "tasks": [
         "P05",
@@ -278,13 +278,14 @@
       "id": "A15",
       "title": "Authoritative activation observations",
       "level": "LIVE",
-      "setup": "Create a sandbox and prepare forged helper claims plus real gateway observations.",
-      "action": "Attempt activation with missing, stale, and mismatched image, policy, provider, or generation evidence.",
-      "expected": "Only matching authoritative observations can satisfy the barrier. A helper echo cannot replace them.",
+      "setup": "Create a sandbox with forged helper claims and real gateway observations. U00 and T13 qualify LIVE observation and adapter layers. T23 tests integrated activation through StartSession.",
+      "action": "U00 verifies scoped observations. T13 verifies adapter binding and fail-closed behavior. T23 attempts StartSession with missing, stale, or mismatched image, policy, provider, or generation evidence. It also tests forged helper claims.",
+      "expected": "Only matching authoritative observations satisfy the integrated StartSession barrier. U00 and T13 results do not replace T23's full activation attempt. A helper echo cannot replace gateway evidence.",
       "status": "NOT_RUN",
       "tasks": [
         "U00",
-        "T13"
+        "T13",
+        "T23"
       ],
       "assignment_results": [
         {
@@ -293,6 +294,10 @@
         },
         {
           "task_id": "T13",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T23",
           "status": "NOT_RUN"
         }
       ]
@@ -301,13 +306,14 @@
       "id": "A16",
       "title": "Effective policy source",
       "level": "LIVE",
-      "setup": "Use a sandbox policy and a different gateway global policy.",
-      "action": "Load the global policy and query actual accepted revisions.",
-      "expected": "Jackin displays the effective replacement source. It does not report an imaginary policy intersection.",
+      "setup": "Use a sandbox policy that differs from the gateway global policy. U00 and T13 verify accepted revisions and replacement source. T29 qualifies product presentation.",
+      "action": "Query actual accepted revisions and display the effective policy source. Do not infer an intersection.",
+      "expected": "The gateway global policy is the effective replacement. T29 displays its accepted revision and source; no task reports an imaginary policy intersection.",
       "status": "NOT_RUN",
       "tasks": [
         "U00",
-        "T13"
+        "T13",
+        "T29"
       ],
       "assignment_results": [
         {
@@ -316,6 +322,10 @@
         },
         {
           "task_id": "T13",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T29",
           "status": "NOT_RUN"
         }
       ]

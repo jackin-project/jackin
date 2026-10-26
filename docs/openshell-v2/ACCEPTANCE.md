@@ -292,11 +292,11 @@ Do not claim support above measured and qualified resource bounds.
 
 **Evidence:** SOURCE. **Tasks:** P05, T39. **Initial status:** NOT_RUN. **Initial assignment status:** P05=NOT_RUN; T39=NOT_RUN.
 
-**Setup:** Use Cargo metadata for the final candidate graph.
+**Setup:** P05 inspects the newly created current graph. T39 repeats the checks on the final candidate graph after legacy deletion.
 
-**Action:** Inspect dependency edges and compile forbidden-import fixtures.
+**Action:** P05 inspects dependency edges and compiles forbidden-import fixtures. T39 repeats graph and composition checks after deletion.
 
-**Required result:** Core has no runtime or database types. Capsule has no host credential path. Forbidden fixtures fail.
+**Required result:** Core has no runtime or database types. Capsule has no host credential path. Forbidden fixtures fail in both the P05 graph and the final post-deletion graph.
 
 ### A14 — No production backend selection
 
@@ -310,23 +310,23 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A15 — Authoritative activation observations
 
-**Evidence:** LIVE. **Tasks:** U00, T13. **Initial status:** NOT_RUN. **Initial assignment status:** U00=NOT_RUN; T13=NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U00, T13, T23. **Initial status:** NOT_RUN. **Initial assignment status:** U00=NOT_RUN; T13=NOT_RUN; T23=NOT_RUN.
 
-**Setup:** Create a sandbox and prepare forged helper claims plus real gateway observations.
+**Setup:** Create a sandbox with forged helper claims and real gateway observations. U00 and T13 qualify LIVE observation and adapter layers. T23 tests integrated activation through StartSession.
 
-**Action:** Attempt activation with missing, stale, and mismatched image, policy, provider, or generation evidence.
+**Action:** U00 verifies scoped observations. T13 verifies adapter binding and fail-closed behavior. T23 attempts StartSession with missing, stale, or mismatched image, policy, provider, or generation evidence. It also tests forged helper claims.
 
-**Required result:** Only matching authoritative observations can satisfy the barrier. A helper echo cannot replace them.
+**Required result:** Only matching authoritative observations satisfy the integrated StartSession barrier. U00 and T13 results do not replace T23's full activation attempt. A helper echo cannot replace gateway evidence.
 
 ### A16 — Effective policy source
 
-**Evidence:** LIVE. **Tasks:** U00, T13. **Initial status:** NOT_RUN. **Initial assignment status:** U00=NOT_RUN; T13=NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U00, T13, T29. **Initial status:** NOT_RUN. **Initial assignment status:** U00=NOT_RUN; T13=NOT_RUN; T29=NOT_RUN.
 
-**Setup:** Use a sandbox policy and a different gateway global policy.
+**Setup:** Use a sandbox policy that differs from the gateway global policy. U00 and T13 verify accepted revisions and replacement source. T29 qualifies product presentation.
 
-**Action:** Load the global policy and query actual accepted revisions.
+**Action:** Query actual accepted revisions and display the effective policy source. Do not infer an intersection.
 
-**Required result:** Jackin displays the effective replacement source. It does not report an imaginary policy intersection.
+**Required result:** The gateway global policy is the effective replacement. T29 displays its accepted revision and source; no task reports an imaginary policy intersection.
 
 ### A17 — Provider authority observation
 

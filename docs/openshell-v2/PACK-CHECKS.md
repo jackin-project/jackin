@@ -55,9 +55,9 @@ The runner writes one JSON report to stdout and does not modify the pack. Redire
 | Acceptance cases | 125 |
 | Mapped specification headings | 30 |
 | Topological readiness groups | 20 |
-| Checked procedural sentences | 1575 |
+| Checked procedural sentences | 1599 |
 
-The ordinary validator report contains 69 ordered checks; `--initial` contains 71, including two initial-only checks and the final inventory check.
+The ordinary validator report contains 72 ordered checks; `--initial` contains 74, including two initial-only checks and the final inventory check.
 The C02 digest checks fixed contract text only. It does not show that source code follows this plan.
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
@@ -100,6 +100,9 @@ Keep no more than eight actual subagents active at once.
 | Task progress waits for completed dependencies | PASS |
 | `PASS` tasks have passing results for their own assignments | PASS |
 | Task test references, case coverage, and ownership maps agree | PASS |
+| A13 keeps P05's current graph run separate from T39's final post-deletion rerun | PASS |
+| A15 keeps U00/T13 layer checks and T23 integrated StartSession qualification | PASS |
+| A16 keeps U00/T13 accepted-revision checks and T29 product presentation | PASS |
 | Task required artifacts match the canonical six receipts and report path | PASS |
 | Task-card and test-write paths match each task ID exactly | PASS |
 | Task graph matches indexes and task cards, including report paths | PASS |
@@ -118,8 +121,8 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 152 scenarios passed their exact report and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 134 targeted scenarios cover assignment ownership and progress, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, task review rules, and validator reports.
+All 162 scenarios passed their exact report and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 144 targeted scenarios cover assignment ownership and progress, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, task review rules, validator reports, and owner-specific A13/A15/A16 qualification.
 A22 is owned by U02 and T32. Its mixed-result fixtures complete T32 dependencies before recording results.
 A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks FAIL precedence without bypassing dependencies.
 
@@ -207,6 +210,10 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | Authoritative concurrency is changed, missing, or duplicated | Reject, exit 1 | PASS, exit 1 |
 | Each of the three manifests rejects duplicate top-level and nested JSON keys | Reject input, exit 2 | PASS, exit 2 |
 | Fixture report parsing rejects duplicate top-level and nested JSON keys | Reject malformed report | PASS |
+| P05 cannot defer A13 to the final graph; T39 must rerun after deletion | Reject, exit 1 | PASS, exit 1 |
+| A15 cannot omit T23 or weaken its integrated StartSession barrier | Reject, exit 1 | PASS, exit 1 |
+| U00 and T13 retain A15/A16 LIVE layer checks, accepted revisions, replacement source, and no-intersection claims | Reject, exit 1 | PASS, exit 1 |
+| A16 cannot omit T29 or weaken accepted-revision product presentation | Reject, exit 1 | PASS, exit 1 |
 
 The upstream `PASS` fixture shows U02 cannot close T32's assignment.
 Each raw receipt binds every mutated file actually tested. The traceability-owner receipt hashes both `traceability.json` and `TRACEABILITY.md`; the missing-validator receipt records `validate_pack.py` as `missing`.
