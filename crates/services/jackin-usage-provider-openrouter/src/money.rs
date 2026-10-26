@@ -14,94 +14,46 @@ pub(crate) struct Decimal {
     scale: u8,
 }
 
+struct ParsedMantissa {
+    big_endian: [u8; MAX_DIGITS],
+    len: usize,
+    pending_zeros: usize,
+    fractional_digits: i64,
+    index: usize,
+    saw_digit: bool,
+}
+
 impl Decimal {
     fn parse(raw: &str) -> Option<Self> {
         let bytes = raw.as_bytes();
-        let mut index = 0;
-        let negative = match bytes.first()? {
-            b'-' => {
-                index += 1;
-                true
-            }
-            b'+' => return None,
-            _ => false,
-        };
-        let mut big_endian = [0; MAX_DIGITS];
-        let mut len = 0;
-        let mut pending_zeros = 0usize;
-        let mut fractional_digits = 0i64;
-        let mut after_decimal = false;
-        let mut saw_digit = false;
-        while let Some(byte) = bytes.get(index).copied() {
-            match byte {
-                b'0'..=b'9' => {
-                    saw_digit = true;
-                    if after_decimal {
-                        fractional_digits = fractional_digits.checked_add(1)?;
-                    }
-                    let digit = byte - b'0';
-                    if len == 0 && digit == 0 {
-                        index += 1;
-                        continue;
-                    }
-                    if digit == 0 {
-                        pending_zeros = pending_zeros.checked_add(1)?;
-                    } else {
-                        flush_pending_zeros(&mut big_endian, &mut len, &mut pending_zeros)?;
-                        push_digit(&mut big_endian, &mut len, digit)?;
-                    }
-                }
-                b'.' if !after_decimal => after_decimal = true,
-                b'e' | b'E' => break,
-                _ => return None,
-            }
-            index += 1;
-        }
-        if !saw_digit {
+        let (negative, index) = parse_sign(bytes)?;
+        let mut mantissa = parse_mantissa(bytes, index)?;
+        if !mantissa.saw_digit {
             return None;
         }
-        if len == 0 {
-            return Some(Self {
-                negative: false,
-                digits: [0; MAX_DIGITS],
-                len: 1,
-                scale: 0,
-            });
+        if mantissa.len == 0 {
+            return Some(Self::zero(0));
         }
-        let exponent = if bytes
-            .get(index)
-            .is_some_and(|byte| matches!(byte, b'e' | b'E'))
-        {
-            parse_exponent(bytes, index + 1)?
-        } else {
-            if index != bytes.len() {
-                return None;
-            }
-            0
-        };
-        let pending_zeros = i64::try_from(pending_zeros).ok()?;
-        let mut scale = fractional_digits
-            .checked_sub(exponent)?
-            .checked_sub(pending_zeros)?;
-        if scale < 0 {
-            let append = usize::try_from(scale.checked_neg()?).ok()?;
-            for _ in 0..append {
-                push_digit(&mut big_endian, &mut len, 0)?;
-            }
-            scale = 0;
-        }
-        if usize::try_from(scale).ok()? > MAX_SCALE {
-            return None;
-        }
+        let exponent = parse_exponent_or_zero(bytes, mantissa.index)?;
+        let scale = adjust_mantissa_scale(
+            mantissa.fractional_digits,
+            exponent,
+            mantissa.pending_zeros,
+            &mut mantissa.big_endian,
+            &mut mantissa.len,
+        )?;
         let mut digits = [0; MAX_DIGITS];
-        for (target, source) in digits.iter_mut().zip(big_endian[..len].iter().rev()) {
+        for (target, source) in digits
+            .iter_mut()
+            .zip(mantissa.big_endian[..mantissa.len].iter().rev())
+        {
             *target = *source;
         }
         Some(Self {
             negative,
             digits,
-            len,
-            scale: u8::try_from(scale).ok()?,
+            len: mantissa.len,
+            scale,
         })
     }
 
@@ -239,6 +191,93 @@ impl Decimal {
         }
         self
     }
+}
+
+fn parse_sign(bytes: &[u8]) -> Option<(bool, usize)> {
+    match bytes.first()? {
+        b'-' => Some((true, 1)),
+        b'+' => None,
+        _ => Some((false, 0)),
+    }
+}
+
+fn parse_mantissa(bytes: &[u8], mut index: usize) -> Option<ParsedMantissa> {
+    let mut big_endian = [0; MAX_DIGITS];
+    let mut len = 0;
+    let mut pending_zeros = 0usize;
+    let mut fractional_digits = 0i64;
+    let mut after_decimal = false;
+    let mut saw_digit = false;
+    while let Some(byte) = bytes.get(index).copied() {
+        match byte {
+            b'0'..=b'9' => {
+                saw_digit = true;
+                if after_decimal {
+                    fractional_digits = fractional_digits.checked_add(1)?;
+                }
+                let digit = byte - b'0';
+                if len == 0 && digit == 0 {
+                    index += 1;
+                    continue;
+                }
+                if digit == 0 {
+                    pending_zeros = pending_zeros.checked_add(1)?;
+                } else {
+                    flush_pending_zeros(&mut big_endian, &mut len, &mut pending_zeros)?;
+                    push_digit(&mut big_endian, &mut len, digit)?;
+                }
+            }
+            b'.' if !after_decimal => after_decimal = true,
+            b'e' | b'E' => break,
+            _ => return None,
+        }
+        index += 1;
+    }
+    Some(ParsedMantissa {
+        big_endian,
+        len,
+        pending_zeros,
+        fractional_digits,
+        index,
+        saw_digit,
+    })
+}
+
+fn parse_exponent_or_zero(bytes: &[u8], index: usize) -> Option<i64> {
+    if bytes
+        .get(index)
+        .is_some_and(|byte| matches!(byte, b'e' | b'E'))
+    {
+        parse_exponent(bytes, index + 1)
+    } else if index == bytes.len() {
+        Some(0)
+    } else {
+        None
+    }
+}
+
+fn adjust_mantissa_scale(
+    fractional_digits: i64,
+    exponent: i64,
+    pending_zeros: usize,
+    big_endian: &mut [u8; MAX_DIGITS],
+    len: &mut usize,
+) -> Option<u8> {
+    let pending_zeros = i64::try_from(pending_zeros).ok()?;
+    let mut scale = fractional_digits
+        .checked_sub(exponent)?
+        .checked_sub(pending_zeros)?;
+    if scale < 0 {
+        let append = usize::try_from(scale.checked_neg()?).ok()?;
+        for _ in 0..append {
+            push_digit(big_endian, len, 0)?;
+        }
+        scale = 0;
+    }
+    if usize::try_from(scale).ok()? > MAX_SCALE {
+        return None;
+    }
+    u8::try_from(scale).ok()
 }
 
 pub(crate) fn sum_nonnegative<'a>(

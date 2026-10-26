@@ -38,7 +38,7 @@ key = "clippy::cast_precision_loss@jackin-launch"
 bound = 2
 [[family.entry]]
 key = "clippy::cast_precision_loss@jackin-usage-provider-openrouter"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "clippy::cast_precision_loss@jackin-usage-provider-amp"
 bound = 1
