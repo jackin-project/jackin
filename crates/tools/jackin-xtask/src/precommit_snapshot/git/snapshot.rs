@@ -32,6 +32,9 @@ use std::{
 };
 
 mod admission;
+mod source;
+#[cfg(test)]
+pub(in crate::precommit_snapshot) use source::tree_record_path_for_test;
 
 const STAGED_INDEX_OUTPUT_LIMIT: usize = super::capture::INDEX_INPUT_FILE_LIMIT as usize;
 const STAGED_INDEX_STDERR_LIMIT: usize = 32 * 1024 * 1024;
@@ -141,12 +144,13 @@ impl OwnedSnapshot {
         live: &LiveRepository,
         staged_content_limit: u64,
     ) -> Result<()> {
+        let pinned_tree = source::resolve_tree(self, tree)?;
         match fs::remove_file(&self.index) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error).context("removing private snapshot index"),
         }
-        self.git_os([OsString::from("read-tree"), tree.to_os_string()])?;
+        self.git_os([OsString::from("read-tree"), pinned_tree.oid.clone()])?;
         if let Some(head) = &live.head {
             self.git_os([
                 OsString::from("update-ref"),
@@ -166,7 +170,7 @@ impl OwnedSnapshot {
         }
         self.git(&["config", "core.fileMode", "true"])?;
         self.git(&["config", "core.symlinks", "true"])?;
-        self.check_materialized_tree_size_with_limit(tree, staged_content_limit)?;
+        self.check_materialized_tree_size_with_limit(&pinned_tree.oid, staged_content_limit)?;
         self.git(&["checkout-index", "--all", "--force"])?;
         Ok(())
     }
@@ -177,7 +181,7 @@ impl OwnedSnapshot {
 
     pub(in crate::precommit_snapshot) fn admit_with_inventory_limit(
         &self,
-        _tree: &OsStr,
+        tree: &OsStr,
         inventory_limit: usize,
     ) -> Result<()> {
         let mut entries = self.git_spooled(
@@ -191,7 +195,8 @@ impl OwnedSnapshot {
             "running isolated Git command failed with {}",
             entries.status()
         );
-        admit_staged_index_entries(&self.root, entries.stdout_mut(), &self.controls)
+        admit_staged_index_entries(&self.root, entries.stdout_mut(), &self.controls)?;
+        self.admit_materialized_tree(tree, inventory_limit)
     }
 
     pub(in crate::precommit_snapshot) fn retain(&mut self) -> Option<PathBuf> {
