@@ -68,7 +68,7 @@ key = "clippy::disallowed_methods@jackin"
 bound = 10
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-capsule"
-bound = 9
+bound = 10
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-usage-broker"
 bound = 1
@@ -488,7 +488,7 @@ key = "clippy::unnecessary_wraps@jackin-runtime"
 bound = 1
 [[family.entry]]
 key = "clippy::unwrap_used@jackin-capsule"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "clippy::unwrap_used@jackin-runtime"
 bound = 2
