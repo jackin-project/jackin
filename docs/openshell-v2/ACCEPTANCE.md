@@ -330,11 +330,11 @@ Do not claim support above measured and qualified resource bounds.
 
 **Evidence:** LIVE. **Tasks:** U00, T13, T29. **Initial status:** NOT_RUN. **Initial assignment status:** U00=NOT_RUN; T13=NOT_RUN; T29=NOT_RUN.
 
-**Setup:** Use a sandbox policy that differs from the gateway global policy. U00 and T13 verify accepted revisions and replacement source. T29 qualifies product presentation.
+**Setup:** Use a sandbox policy that differs from the gateway global policy. U00 and T13 verify accepted revisions and replacement source; T29 qualifies product presentation. Establish one connection that loses authority and one that remains authorized.
 
-**Action:** Load the global policy. Query actual accepted revisions and display the effective policy source. Do not infer an intersection.
+**Action:** Load the global policy. Query actual accepted revisions and display the effective policy source afterward. Test established connections after the update.
 
-**Required result:** The gateway global policy is the effective replacement. T29 displays its accepted revision and source; no task reports an imaginary policy intersection.
+**Required result:** The gateway global policy is the effective replacement. The revoked connection becomes unusable and closes without an automatic permissive replacement. A still-authorized unrelated stream is not forced closed. T29 presents the accepted revision and source only; no task reports an imaginary policy intersection or claims presentation enforces policy.
 
 ### A17 — Provider authority observation
 
@@ -570,11 +570,11 @@ Do not claim support above measured and qualified resource bounds.
 
 **Evidence:** UNIT. **Tasks:** T10. **Initial status:** NOT_RUN. **Initial assignment status:** T10=NOT_RUN.
 
-**Setup:** Use fault points before and after each local commit and simulated external effect.
+**Setup:** Use fault points before and after local commits and external effects. Apply P02 gateway constraints and seed collision and deletion-tombstone names.
 
-**Action:** Crash and restart the state coordinator at every point.
+**Action:** Generate one secure name. Validate against the P02 gateway and persist its reservation before create. Crash and restart at each phase. Then test collisions and tombstoned-name reuse.
 
-**Required result:** Request identities and receipts survive. Recovery follows the declared state table without duplicate effects.
+**Required result:** Names use jk- plus 16 lowercase base32 secure-random characters. Invalid or colliding names block before create. Deletion leaves a tombstone; names are never intentionally reused. Recovery retains request identity, reports OutcomeUnknown, and avoids duplicate effects.
 
 ### A41 — Unknown outcome recovery
 
@@ -690,11 +690,11 @@ Do not claim support above measured and qualified resource bounds.
 
 **Evidence:** BUILD. **Tasks:** T15. **Initial status:** NOT_RUN. **Initial assignment status:** T15=NOT_RUN.
 
-**Setup:** Configure builder A and an ambient DOCKER_HOST for builder B.
+**Setup:** Configure explicit builder A without trust and ambient DOCKER_HOST=B. Then authorize A for an isolated source and approved-secret fixture.
 
-**Action:** Build a sentinel role and inspect authorized build records.
+**Action:** Attempt a build before approving A and inspect whether context or secret transfer starts. Approve A, build the sentinel, and inspect argv and delivery records.
 
-**Required result:** Only builder A receives source and approved secrets. Unexpected ambient routing cannot override it.
+**Required result:** An unapproved endpoint refuses before source-context or approved-secret transfer. After approval, only A receives them; ambient DOCKER_HOST=B cannot redirect the build. Keep argv boundaries, secret-log protection, immutable registry identity, and same-engine verification.
 
 ### A53 — Remote immutable image delivery
 
@@ -898,13 +898,13 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A73 — Private authority scope
 
-**Evidence:** LIVE. **Tasks:** T21. **Initial status:** NOT_RUN. **Initial assignment status:** T21=NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T21, T23. **Initial status:** NOT_RUN. **Initial assignment status:** T21=NOT_RUN; T23=NOT_RUN.
 
-**Setup:** Use a private account, personal workspace, and team workspace with another member.
+**Setup:** Use a private account, personal workspace, and team workspace with another member. T21 qualifies scope membership; T23 tests integrated admission.
 
-**Action:** Attempt private-account admission to both scopes.
+**Action:** T21 attempts private-account admission in both scopes. T23 tests authorized launch and denied private scope before domain creation or credential staging.
 
-**Required result:** Only a scope authorized for that account passes. Separate sandboxes alone do not imply account privacy.
+**Required result:** T21 records its LIVE scope result. T23 admits only the authorized scope after checking authority before effects. Denied scope creates no domain and stages no credential. Separate sandboxes alone do not imply account privacy.
 
 ### A74 — Account-provider activation binding
 
@@ -950,21 +950,21 @@ Do not claim support above measured and qualified resource bounds.
 
 **Evidence:** LIVE. **Tasks:** T23. **Initial status:** NOT_RUN. **Initial assignment status:** T23=NOT_RUN.
 
-**Setup:** Prepare mismatched image, generation, account grant, materialization epoch, and missing policy observations.
+**Setup:** Prepare mismatched image, generation, account grant, materialization epoch, and missing policy observations. Restart the helper with a changed boot ID and incompatible protocol.
 
-**Action:** Attempt launch activation for each mismatch.
+**Action:** Attempt StartSession for every mismatch. Retry only after a fresh qualified receipt binds the current boot ID and exact protocol.
 
-**Required result:** Every mismatch blocks StartSession. SandboxReady and helper receipts alone are insufficient.
+**Required result:** Every mismatch blocks StartSession until current observations match. Changed boot IDs and stale protocols block activation after restart. Require a fresh qualified receipt for the current boot and exact protocol. SandboxReady and helper handshakes alone are not activation evidence or attestation.
 
 ### A79 — Launch interruption and replay
 
 **Evidence:** LIVE. **Tasks:** T23. **Initial status:** NOT_RUN. **Initial assignment status:** T23=NOT_RUN.
 
-**Setup:** Inject loss after build, create, publication, activation receipt, and StartSession.
+**Setup:** Inject loss after build, reservation, create, publication, activation receipt, and StartSession. Prepare an existing collision and deleted-name tombstone.
 
-**Action:** Restart host control and recover the original operation.
+**Action:** Restart host control and recover the original operation. Validate its reservation and retry. Verify collision and tombstoned-name reuse refuse before create.
 
-**Required result:** Work resumes only through qualified recovery. No duplicate agent or silent replacement appears.
+**Required result:** Recovery uses the originally persisted name and resumes only through qualified evidence. Collision or tombstone reuse cannot create another domain. No duplicate agent or silent replacement appears. Request identity survives OutcomeUnknown.
 
 ### A80 — Complete native vertical path
 

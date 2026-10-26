@@ -306,9 +306,9 @@
       "id": "A16",
       "title": "Effective policy source",
       "level": "LIVE",
-      "setup": "Use a sandbox policy that differs from the gateway global policy. U00 and T13 verify accepted revisions and replacement source. T29 qualifies product presentation.",
-      "action": "Load the global policy. Query actual accepted revisions and display the effective policy source. Do not infer an intersection.",
-      "expected": "The gateway global policy is the effective replacement. T29 displays its accepted revision and source; no task reports an imaginary policy intersection.",
+      "setup": "Use a sandbox policy that differs from the gateway global policy. U00 and T13 verify accepted revisions and replacement source; T29 qualifies product presentation. Establish one connection that loses authority and one that remains authorized.",
+      "action": "Load the global policy. Query actual accepted revisions and display the effective policy source afterward. Test established connections after the update.",
+      "expected": "The gateway global policy is the effective replacement. The revoked connection becomes unusable and closes without an automatic permissive replacement. A still-authorized unrelated stream is not forced closed. T29 presents the accepted revision and source only; no task reports an imaginary policy intersection or claims presentation enforces policy.",
       "status": "NOT_RUN",
       "tasks": [
         "U00",
@@ -833,9 +833,9 @@
       "id": "A40",
       "title": "Journal crash boundaries",
       "level": "UNIT",
-      "setup": "Use fault points before and after each local commit and simulated external effect.",
-      "action": "Crash and restart the state coordinator at every point.",
-      "expected": "Request identities and receipts survive. Recovery follows the declared state table without duplicate effects.",
+      "setup": "Use fault points before and after local commits and external effects. Apply P02 gateway constraints and seed collision and deletion-tombstone names.",
+      "action": "Generate one secure name. Validate against the P02 gateway and persist its reservation before create. Crash and restart at each phase. Then test collisions and tombstoned-name reuse.",
+      "expected": "Names use jk- plus 16 lowercase base32 secure-random characters. Invalid or colliding names block before create. Deletion leaves a tombstone; names are never intentionally reused. Recovery retains request identity, reports OutcomeUnknown, and avoids duplicate effects.",
       "status": "NOT_RUN",
       "tasks": [
         "T10"
@@ -1049,9 +1049,9 @@
       "id": "A52",
       "title": "Explicit builder routing",
       "level": "BUILD",
-      "setup": "Configure builder A and an ambient DOCKER_HOST for builder B.",
-      "action": "Build a sentinel role and inspect authorized build records.",
-      "expected": "Only builder A receives source and approved secrets. Unexpected ambient routing cannot override it.",
+      "setup": "Configure explicit builder A without trust and ambient DOCKER_HOST=B. Then authorize A for an isolated source and approved-secret fixture.",
+      "action": "Attempt a build before approving A and inspect whether context or secret transfer starts. Approve A, build the sentinel, and inspect argv and delivery records.",
+      "expected": "An unapproved endpoint refuses before source-context or approved-secret transfer. After approval, only A receives them; ambient DOCKER_HOST=B cannot redirect the build. Keep argv boundaries, secret-log protection, immutable registry identity, and same-engine verification.",
       "status": "NOT_RUN",
       "tasks": [
         "T15"
@@ -1427,16 +1427,21 @@
       "id": "A73",
       "title": "Private authority scope",
       "level": "LIVE",
-      "setup": "Use a private account, personal workspace, and team workspace with another member.",
-      "action": "Attempt private-account admission to both scopes.",
-      "expected": "Only a scope authorized for that account passes. Separate sandboxes alone do not imply account privacy.",
+      "setup": "Use a private account, personal workspace, and team workspace with another member. T21 qualifies scope membership; T23 tests integrated admission.",
+      "action": "T21 attempts private-account admission in both scopes. T23 tests authorized launch and denied private scope before domain creation or credential staging.",
+      "expected": "T21 records its LIVE scope result. T23 admits only the authorized scope after checking authority before effects. Denied scope creates no domain and stages no credential. Separate sandboxes alone do not imply account privacy.",
       "status": "NOT_RUN",
       "tasks": [
-        "T21"
+        "T21",
+        "T23"
       ],
       "assignment_results": [
         {
           "task_id": "T21",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T23",
           "status": "NOT_RUN"
         }
       ]
@@ -1517,9 +1522,9 @@
       "id": "A78",
       "title": "Activation barrier negatives",
       "level": "LIVE",
-      "setup": "Prepare mismatched image, generation, account grant, materialization epoch, and missing policy observations.",
-      "action": "Attempt launch activation for each mismatch.",
-      "expected": "Every mismatch blocks StartSession. SandboxReady and helper receipts alone are insufficient.",
+      "setup": "Prepare mismatched image, generation, account grant, materialization epoch, and missing policy observations. Restart the helper with a changed boot ID and incompatible protocol.",
+      "action": "Attempt StartSession for every mismatch. Retry only after a fresh qualified receipt binds the current boot ID and exact protocol.",
+      "expected": "Every mismatch blocks StartSession until current observations match. Changed boot IDs and stale protocols block activation after restart. Require a fresh qualified receipt for the current boot and exact protocol. SandboxReady and helper handshakes alone are not activation evidence or attestation.",
       "status": "NOT_RUN",
       "tasks": [
         "T23"
@@ -1535,9 +1540,9 @@
       "id": "A79",
       "title": "Launch interruption and replay",
       "level": "LIVE",
-      "setup": "Inject loss after build, create, publication, activation receipt, and StartSession.",
-      "action": "Restart host control and recover the original operation.",
-      "expected": "Work resumes only through qualified recovery. No duplicate agent or silent replacement appears.",
+      "setup": "Inject loss after build, reservation, create, publication, activation receipt, and StartSession. Prepare an existing collision and deleted-name tombstone.",
+      "action": "Restart host control and recover the original operation. Validate its reservation and retry. Verify collision and tombstoned-name reuse refuse before create.",
+      "expected": "Recovery uses the originally persisted name and resumes only through qualified evidence. Collision or tombstone reuse cannot create another domain. No duplicate agent or silent replacement appears. Request identity survives OutcomeUnknown.",
       "status": "NOT_RUN",
       "tasks": [
         "T23"

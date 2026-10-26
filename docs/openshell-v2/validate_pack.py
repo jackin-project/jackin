@@ -19,13 +19,13 @@ SOURCE_AUDIT_SHA256 = "0f4b1a1eac7ebb8b75e9bad0997c16f7cd28f363bc86727bc16777474
 TERMS_SHA256 = "9441cc3b4889edb39fa7f520058a9473938cbbf8742e15ce672387e83abef614"
 ACCEPTANCE_POLICY_SHA256 = "7609a5f84a1694b1441219ac62e289191d90f367c33a400853ec64728063d36d"
 C02_CONTRACT_SECTION_SHA256 = "017714a83ab1ee7827dfcf8459ef6ca5e58c11787210083856211d1ba8e9cdf2"
-TASK_AUTHORED_SHA256 = "9be73000b726e4faae72d069468c3b0bd542de05c5df95faabb61ceab370aecc"
-CASE_AUTHORED_SHA256 = "659f3c850744966b95fe36b008146c068679ddb463f1015e7d269b78f79af987"
+TASK_AUTHORED_SHA256 = "9bd49eb6b8c8ae12cee2e6006aa471a6f236b68a6db251cd35e6194920febcbe"
+CASE_AUTHORED_SHA256 = "324c42bf4959e20d371da54f711a81aad12f1db3af378db686eb36ec04976a81"
 GRAPH_DECLARATIONS_SHA256 = "39a190141d0329a1f00b94bab82f19934cf0d1a9860ad742115f249ec69150dc"
 TRACEABILITY_AUTHORED_SHA256 = "3ceae24302d52082dfc455dc7c5c14ce32c8d3f9bc78c842ab3be4dd10f26c43"
 CONTRACTS_SHA256 = "da0f23654f30e8d1a37a12f07c9e5595d51027a5c4eaae3ce8072cb544dd3344"
 SUBAGENTS_SHA256 = "a4a9e5a967a73038b50ecdc4cadb9a51b1c83728f54c6b6fb9a87641566263f8"
-PACK_CHECKS_TEMPLATE_SHA256 = "6d7746981962c4b0a40eab90b4bc028dd91de2231e5ebdc9b3655b68cf8cc79c"
+PACK_CHECKS_TEMPLATE_SHA256 = "5c5f21b9ace10d846c6ea965d06fbe2cb244a0012495543c9641b1b237bdc78b"
 PLAN_PREFIX_SHA256 = "3176361a5191c757d69e2461936f80cbf3668f8cf508bc86734e12d80197a5d0"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
@@ -124,6 +124,10 @@ ORDINARY_CHECK_NAMES = (
     "A15 separates observation, adapter, and integrated activation owners",
     "A16 preserves accepted-revision observation and product-presentation owners",
     "A17 preserves observation layers and integrated activation ownership",
+    "A73 preserves early scope and integrated denied-scope admission owners",
+    "A78 binds activation to a fresh receipt for the current boot and protocol",
+    "A40 and A79 preserve canonical-name reservation, collision, and tombstone behavior",
+    "A52 requires explicit builder trust before source or secret transfer",
     "A86 preserves backend host-action and integrated presentation owners",
     "A82 separates T24 shell qualification from T29 final presentation",
     "A84 separates T25 usage qualification from T29 serialization and presentation",
@@ -681,6 +685,10 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
         "A15 separates observation, adapter, and integrated activation owners": [],
         "A16 preserves accepted-revision observation and product-presentation owners": [],
         "A17 preserves observation layers and integrated activation ownership": [],
+        "A73 preserves early scope and integrated denied-scope admission owners": [],
+        "A78 binds activation to a fresh receipt for the current boot and protocol": [],
+        "A40 and A79 preserve canonical-name reservation, collision, and tombstone behavior": [],
+        "A52 requires explicit builder trust before source or secret transfer": [],
         "A86 preserves backend host-action and integrated presentation owners": [],
         "A82 separates T24 shell qualification from T29 final presentation": [],
         "A84 separates T25 usage qualification from T29 serialization and presentation": [],
@@ -769,12 +777,205 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
     for task_id, field, phrase in (
         ("U00", "acceptance", "A15 and A16 at U00 qualify LIVE observation results, not StartSession or product presentation."),
         ("U00", "acceptance", "A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection."),
+        ("U00", "acceptance", "A16 at U00 observes closure only for established streams whose authority the loaded policy revokes."),
+        ("U00", "acceptance", "A16 at U00 keeps unrelated authorized streams open and does not permit a permissive policy replacement."),
         ("T13", "acceptance", "A15 and A16 at T13 qualify LIVE adapter results, not integrated activation or product presentation."),
         ("T13", "acceptance", "A16 at T13 binds the effective replacement source to the observed accepted revision without claiming an intersection."),
+        ("T13", "steps", "For A16, load the gateway global policy before querying accepted revisions or displaying its source."),
+        ("T13", "steps", "Close an established stream when the loaded policy revokes its authority."),
+        ("T13", "steps", "Keep a still-authorized stream open and never apply a permissive policy automatically."),
+        ("T13", "acceptance", "A16 at T13 loads global policy before revision queries and closes only streams whose authority it revokes."),
+        ("T13", "acceptance", "A16 at T13 keeps still-authorized streams open and never applies a permissive replacement policy automatically."),
         ("T29", "steps", "Display A16's accepted policy revision and effective replacement source in product output."),
+        ("T29", "steps", "Keep A16 product presentation read-only; do not imply T29 loaded policy or enforced stream access."),
+        ("T29", "acceptance", "A16 at T29 presents the accepted revision and source; it does not load policy or authorize streams."),
     ):
         if not task_contains(task_id, "test_cases", "A16") or not task_contains(task_id, field, phrase):
             a16_errors.append({"task": task_id, "problem": "owner-specific A16 qualification is missing"})
+
+    a16_text = " ".join(
+        value for field in ("setup", "action", "expected")
+        if isinstance((value := a16.get(field)), str)
+    ).casefold()
+    broad_policy_closure_claims = (
+        "every policy update closes every unrelated allowed stream",
+        "every update closes every unrelated allowed stream",
+        "all unrelated allowed streams must close",
+    )
+    if not case_text_contains(
+        a16, "setup", "one connection that loses authority", "one that remains authorized",
+    ):
+        a16_errors.append({"case": "A16", "field": "setup",
+                           "problem": "must distinguish revoked and still-authorized connections"})
+    if not case_text_contains(a16, "action", "Test established connections after the update"):
+        a16_errors.append({"case": "A16", "field": "action",
+                           "problem": "must test established connection state after policy loading"})
+    if not case_text_contains(
+        a16, "expected", "revoked connection becomes unusable and closes",
+        "without an automatic permissive replacement",
+        "still-authorized unrelated stream is not forced closed",
+        "T29 presents the accepted revision and source only",
+        "no task reports an imaginary policy intersection",
+    ):
+        a16_errors.append({"case": "A16", "field": "expected",
+                           "problem": "must close only revoked streams and keep T29 presentation-only"})
+    for phrase in broad_policy_closure_claims:
+        if phrase in a16_text:
+            a16_errors.append({"case": "A16", "problem": "must not require closure of unrelated authorized streams",
+                               "claim": phrase})
+
+    a73 = cases_by_id.get("A73", {})
+    a73_errors = failures["A73 preserves early scope and integrated denied-scope admission owners"]
+    a73_owners = ["T21", "T23"]
+    a73_assignment_owners = [
+        row.get("task_id") for row in a73.get("assignment_results", []) if isinstance(row, dict)
+    ] if isinstance(a73.get("assignment_results"), list) else None
+    if a73.get("level") != "LIVE" or a73.get("tasks") != a73_owners:
+        a73_errors.append({"case_level": a73.get("level"), "case_owners": a73.get("tasks"),
+                           "expected_level": "LIVE", "expected_owners": a73_owners})
+    if a73_assignment_owners != a73_owners:
+        a73_errors.append({"assignment_owners": a73_assignment_owners,
+                           "expected": a73_owners})
+    if not case_text_contains(a73, "setup", "T21 qualifies scope membership",
+                              "T23 tests integrated admission"):
+        a73_errors.append({"case": "A73", "field": "setup",
+                           "problem": "must separate early scope qualification from integrated admission"})
+    if not case_text_contains(a73, "action", "T21 attempts private-account admission in both scopes",
+                              "T23 tests authorized launch and denied private scope",
+                              "before domain creation or credential staging"):
+        a73_errors.append({"case": "A73", "field": "action",
+                           "problem": "must test integrated denied-scope refusal before effects"})
+    if not case_text_contains(a73, "expected", "T21 records its LIVE scope result",
+                              "T23 admits only the authorized scope",
+                              "Denied scope creates no domain", "stages no credential"):
+        a73_errors.append({"case": "A73", "field": "expected",
+                           "problem": "must preserve authorized success and denied-scope no-effect result"})
+    for task_id, field, phrase in (
+        ("T21", "steps", "Qualify A73 scope membership before grant attachment and record this result separately from T23 integrated launch."),
+        ("T21", "acceptance", "A73 at T21 qualifies account-scope membership before grant attachment; T23 still owns integrated admission."),
+        ("T23", "steps", "Exercise A73 after T21's scope result."),
+        ("T23", "steps", "Authorize only the valid scope after T21 records its LIVE scope result."),
+        ("T23", "steps", "Reject denied private scope before domain creation or credential staging."),
+        ("T23", "acceptance", "A73 launches only an authorized scope after T21 records its LIVE scope result."),
+        ("T23", "acceptance", "Denied private scope blocks before domain creation or credential staging."),
+    ):
+        if "A73" not in tasks_by_id.get(task_id, {}).get("test_cases", []) or not task_contains(task_id, field, phrase):
+            a73_errors.append({"task": task_id, "problem": "owner-specific A73 procedure is missing",
+                               "required": phrase})
+
+    a78 = cases_by_id.get("A78", {})
+    a78_errors = failures["A78 binds activation to a fresh receipt for the current boot and protocol"]
+    if a78.get("level") != "LIVE" or a78.get("tasks") != ["T23"]:
+        a78_errors.append({"case_level": a78.get("level"), "case_owners": a78.get("tasks"),
+                           "expected_level": "LIVE", "expected_owners": ["T23"]})
+    if not case_text_contains(a78, "setup", "mismatched image", "generation", "account grant",
+                              "materialization epoch", "missing policy observations",
+                              "changed boot ID", "incompatible protocol"):
+        a78_errors.append({"case": "A78", "field": "setup",
+                           "problem": "must retain original mismatches and add restarted boot and protocol changes"})
+    if not case_text_contains(a78, "action", "Attempt StartSession for every mismatch",
+                              "fresh qualified receipt binds the current boot ID and exact protocol"):
+        a78_errors.append({"case": "A78", "field": "action",
+                           "problem": "must require fresh current-boot and exact-protocol receipt before retry"})
+    if not case_text_contains(a78, "expected", "Every mismatch blocks StartSession",
+                              "Changed boot IDs and stale protocols block activation after restart",
+                              "fresh qualified receipt", "not activation evidence or attestation"):
+        a78_errors.append({"case": "A78", "field": "expected",
+                           "problem": "must fail closed until current boot and protocol are qualified"})
+    for field, phrase in (
+        ("steps", "Exercise A78 with image, generation, grant, materialization, policy, boot-ID, and protocol mismatches."),
+        ("steps", "After helper restart, require a fresh receipt for the current boot and exact protocol before StartSession."),
+        ("steps", "Treat a helper handshake as an observation, not an attestation or security boundary."),
+        ("acceptance", "A78 blocks StartSession for stale boot and protocol claims until a fresh qualified receipt arrives."),
+        ("acceptance", "A helper handshake is not an attestation or a security boundary."),
+    ):
+        if "A78" not in tasks_by_id.get("T23", {}).get("test_cases", []) or not task_contains("T23", field, phrase):
+            a78_errors.append({"task": "T23", "problem": "A78 current-boot/protocol qualification is missing",
+                               "required": phrase})
+
+    a40 = cases_by_id.get("A40", {})
+    a79 = cases_by_id.get("A79", {})
+    name_errors = failures["A40 and A79 preserve canonical-name reservation, collision, and tombstone behavior"]
+    if a40.get("level") != "UNIT" or a40.get("tasks") != ["T10"]:
+        name_errors.append({"case": "A40", "level": a40.get("level"),
+                            "owners": a40.get("tasks"), "expected": ["T10"]})
+    if not case_text_contains(a40, "action", "Generate one secure name", "P02 gateway",
+                              "persist its reservation before create", "collisions",
+                              "tombstoned-name reuse"):
+        name_errors.append({"case": "A40", "field": "action",
+                            "problem": "must test one-time name generation, pre-create reservation, collisions, and tombstones"})
+    if not case_text_contains(a40, "expected", "16 lowercase base32 secure-random characters",
+                              "Invalid or colliding names block before create",
+                              "Deletion leaves a tombstone", "never intentionally reused",
+                              "request identity", "OutcomeUnknown", "duplicate effects"):
+        name_errors.append({"case": "A40", "field": "expected",
+                            "problem": "must retain naming, collision, tombstone, and crash-recovery assertions"})
+    if not task_contains("T10", "test_cases", "A40") or not task_contains(
+        "T10", "steps", "Generate each canonical name once as jk- plus 16 lowercase base32 secure-random characters."
+    ) or not task_contains(
+        "T10", "steps", "Validate names against P02 gateway constraints and persist each reservation before create."
+    ):
+        name_errors.append({"task": "T10", "problem": "UNIT generation and reservation procedure is missing"})
+    if ("A40 verifies secure name format, gateway validation, pre-create reservation, collision refusal, and tombstones."
+            not in tasks_by_id.get("T10", {}).get("acceptance", [])
+            or "Deleted canonical names remain tombstoned and are never intentionally reused."
+            not in tasks_by_id.get("T10", {}).get("acceptance", [])):
+        name_errors.append({"task": "T10", "problem": "A40 canonical-name safety acceptance is incomplete"})
+    if a79.get("level") != "LIVE" or a79.get("tasks") != ["T23"]:
+        name_errors.append({"case": "A79", "level": a79.get("level"),
+                            "owners": a79.get("tasks"), "expected": ["T23"]})
+    if not case_text_contains(a79, "setup", "loss after build, reservation, create, publication",
+                              "deleted-name tombstone"):
+        name_errors.append({"case": "A79", "field": "setup",
+                            "problem": "must preserve LIVE recovery points and tombstone fixture"})
+    if not case_text_contains(a79, "action", "recover the original operation",
+                              "collision and tombstoned-name reuse refuse before create"):
+        name_errors.append({"case": "A79", "field": "action",
+                            "problem": "must refuse collision and no-reuse before create"})
+    if not case_text_contains(a79, "expected", "originally persisted name",
+                              "Collision or tombstone reuse cannot create another domain",
+                              "No duplicate agent or silent replacement", "OutcomeUnknown"):
+        name_errors.append({"case": "A79", "field": "expected",
+                            "problem": "must preserve qualified replay and no-duplicate-agent results"})
+    for field, phrase in (
+        ("steps", "Use T10's persisted canonical-name reservation and P02 gateway validation before domain creation."),
+        ("steps", "Refuse collisions and tombstoned-name reuse before create; never mint a replacement name during retry."),
+        ("acceptance", "A79 recovery uses the original persisted name and refuses collision or tombstone reuse before create."),
+        ("acceptance", "Canonical names do not replace server-side identity or authority checks."),
+    ):
+        if "A79" not in tasks_by_id.get("T23", {}).get("test_cases", []) or not task_contains("T23", field, phrase):
+            name_errors.append({"task": "T23", "problem": "LIVE name-recovery qualification is missing",
+                               "required": phrase})
+
+    a52 = cases_by_id.get("A52", {})
+    a52_errors = failures["A52 requires explicit builder trust before source or secret transfer"]
+    if a52.get("level") != "BUILD" or a52.get("tasks") != ["T15"]:
+        a52_errors.append({"case_level": a52.get("level"), "case_owners": a52.get("tasks"),
+                           "expected_level": "BUILD", "expected_owners": ["T15"]})
+    if not case_text_contains(a52, "setup", "builder A without trust", "DOCKER_HOST=B",
+                              "authorize A", "isolated source and approved-secret fixture"):
+        a52_errors.append({"case": "A52", "field": "setup",
+                           "problem": "must separate unapproved configured endpoint from approved build"})
+    if not case_text_contains(a52, "action", "before approving A",
+                              "context or secret transfer starts", "Approve A", "inspect argv"):
+        a52_errors.append({"case": "A52", "field": "action",
+                           "problem": "must test refusal before transfer and a successful approved build"})
+    if not case_text_contains(a52, "expected", "An unapproved endpoint refuses before source-context or approved-secret transfer",
+                              "After approval, only A receives them",
+                              "DOCKER_HOST=B cannot redirect the build", "argv boundaries",
+                              "secret-log protection", "immutable registry identity", "same-engine verification"):
+        a52_errors.append({"case": "A52", "field": "expected",
+                           "problem": "must retain trust, routing, secret, registry, and engine assertions"})
+    for field, phrase in (
+        ("steps", "Require operator-approved trust for the selected builder before transferring source or approved secrets."),
+        ("steps", "Reject a configured but unapproved endpoint before source-context creation or secret transfer."),
+        ("steps", "Ignore ambient DOCKER_HOST when selecting the explicitly trusted builder endpoint."),
+        ("acceptance", "A52 refuses an unapproved explicit endpoint before source-context or approved-secret transfer."),
+        ("acceptance", "After approval, only the selected endpoint receives source and approved secrets; ambient DOCKER_HOST cannot redirect it."),
+    ):
+        if "A52" not in tasks_by_id.get("T15", {}).get("test_cases", []) or not task_contains("T15", field, phrase):
+            a52_errors.append({"task": "T15", "problem": "A52 explicit-builder trust procedure is missing",
+                               "required": phrase})
 
     a17 = cases_by_id.get("A17", {})
     a17_errors = failures["A17 preserves observation layers and integrated activation ownership"]

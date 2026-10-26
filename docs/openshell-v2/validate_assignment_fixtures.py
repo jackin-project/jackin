@@ -449,6 +449,10 @@ FIXTURE_ORDINARY_CHECK_NAMES = (
     'A15 separates observation, adapter, and integrated activation owners',
     'A16 preserves accepted-revision observation and product-presentation owners',
     'A17 preserves observation layers and integrated activation ownership',
+    'A73 preserves early scope and integrated denied-scope admission owners',
+    'A78 binds activation to a fresh receipt for the current boot and protocol',
+    'A40 and A79 preserve canonical-name reservation, collision, and tombstone behavior',
+    'A52 requires explicit builder trust before source or secret transfer',
     'A86 preserves backend host-action and integrated presentation owners',
     'A82 separates T24 shell qualification from T29 final presentation',
     'A84 separates T25 usage qualification from T29 serialization and presentation',
@@ -784,7 +788,7 @@ FIXED_FIXTURE_NAMES = (
     "PACK-CHECKS rejects a wrong initial check inventory count",
     "PACK-CHECKS scenario count must match its independent inventory",
 )
-FIXED_RUNNER_CHECK_COUNT = 22
+FIXED_RUNNER_CHECK_COUNT = 23
 FIXED_RUNNER_CHECK_NAMES = (
     "The fixture inventory rejects a missing scenario entry.",
     "The fixture inventory rejects a duplicate scenario entry.",
@@ -808,6 +812,7 @@ FIXED_RUNNER_CHECK_NAMES = (
     "Shared process liveness classifies running, zombie, dead, absent, and inaccessible processes.",
     "Post-mutation linked count and report inputs are refused before reads or writes.",
     "A82, A84, A96, A99, and A100 retain early qualification and T29 presentation phases.",
+    "Cohort C preserves integrated admission, activation freshness, name safety, policy revocation, and builder trust.",
 )
 
 
@@ -2087,6 +2092,248 @@ def late_presentation_control_probe() -> dict[str, Any]:
         results.append(result)
     return {
         "scenario": "A82, A84, A96, A99, and A100 retain early qualification and T29 presentation phases.",
+        "passed": positive["passed"] and all(
+            item["passed"] and item["owner_contract_check_failed"] for item in results
+        ),
+        "positive_control": positive,
+        "expected_control_count": len(controls),
+        "observed_control_count": len(results),
+        "controls": results,
+    }
+
+
+def cohort_c_control_probe() -> dict[str, Any]:
+    contract_checks = {
+        "A73": "A73 preserves early scope and integrated denied-scope admission owners",
+        "A78": "A78 binds activation to a fresh receipt for the current boot and protocol",
+        "A16": "A16 preserves accepted-revision observation and product-presentation owners",
+        "A40/A79": "A40 and A79 preserve canonical-name reservation, collision, and tombstone behavior",
+        "A52": "A52 requires explicit builder trust before source or secret transfer",
+    }
+
+    def edit_task(pack: Path, task_id: str,
+                  edit: Callable[[dict[str, Any]], None]) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == task_id)
+        edit(task)
+        write_json(graph_path, graph)
+        sync_task_packet(pack, task_id)
+        sync_task_indexes(pack)
+
+    def remove_a73_integrated_phase(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A73"]
+            case["tasks"].remove("T23")
+            case["assignment_results"] = [row for row in case["assignment_results"]
+                                           if row["task_id"] != "T23"]
+            case["action"] = case["action"].replace(
+                "T23 tests authorized launch and denied private scope before domain creation or credential staging.",
+                "T23 observes launch.",
+            )
+            case["expected"] = case["expected"].replace(
+                "T23 admits only the authorized scope after checking authority before effects. "
+                "Denied scope creates no domain and stages no credential.",
+                "T23 observes the launch.",
+            )
+        update_cases(pack, update)
+
+        def edit(task: dict[str, Any]) -> None:
+            task["test_cases"].remove("A73")
+            for phrase in (
+                "Exercise A73 after T21's scope result.",
+                "Authorize only the valid scope after T21 records its LIVE scope result.",
+                "Reject denied private scope before domain creation or credential staging.",
+            ):
+                task["steps"].remove(phrase)
+            task["acceptance"].remove(
+                "A73 launches only an authorized scope after T21 records its LIVE scope result."
+            )
+            task["acceptance"].remove(
+                "Denied private scope blocks before domain creation or credential staging."
+            )
+        edit_task(pack, "T23", edit)
+        sync_case_block(pack, case_map(pack)["A73"])
+
+    def remove_a78_fresh_receipt_binding(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A78"]
+            case["setup"] = case["setup"].replace(
+                "Restart the helper with a changed boot ID and incompatible protocol.",
+                "Restart the helper and record its status.",
+            )
+            case["action"] = "Attempt StartSession for every mismatch."
+            case["expected"] = (
+                "Every mismatch blocks StartSession until current observations match. "
+                "SandboxReady and helper handshakes alone are not activation evidence."
+            )
+        update_cases(pack, update)
+
+        def edit(task: dict[str, Any]) -> None:
+            for phrase in (
+                "Exercise A78 with image, generation, grant, materialization, policy, boot-ID, and protocol mismatches.",
+                "After helper restart, require a fresh receipt for the current boot and exact protocol before StartSession.",
+                "Treat a helper handshake as an observation, not an attestation or security boundary.",
+            ):
+                task["steps"].remove(phrase)
+            task["acceptance"].remove(
+                "A78 blocks StartSession for stale boot and protocol claims until a fresh qualified receipt arrives."
+            )
+            task["acceptance"].remove(
+                "A helper handshake is not an attestation or a security boundary."
+            )
+        edit_task(pack, "T23", edit)
+        sync_case_block(pack, case_map(pack)["A78"])
+
+    def remove_a16_revocation_closure(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A16"]
+            case["setup"] = case["setup"].replace(
+                " Establish one connection that loses authority and one that remains authorized.",
+                "",
+            )
+            case["action"] = case["action"].replace(
+                " Test established connections after the update.",
+                "",
+            )
+            case["expected"] = (
+                "The gateway global policy is the effective replacement. "
+                "T29 presents the accepted revision and source; no task reports an imaginary policy intersection."
+            )
+        update_cases(pack, update)
+
+        def remove_phrases(task: dict[str, Any], field: str, phrases: tuple[str, ...]) -> None:
+            task[field] = [item for item in task[field] if item not in phrases]
+
+        for task_id, step_phrases, acceptance_phrases in (
+            ("U00", (
+                "For A16, observe closure only for established streams whose authority the loaded policy revokes.",
+            ), (
+                "A16 at U00 observes closure only for established streams whose authority the loaded policy revokes.",
+                "A16 at U00 keeps unrelated authorized streams open and does not permit a permissive policy replacement.",
+            )),
+            ("T13", (
+                "For A16, load the gateway global policy before querying accepted revisions or displaying its source.",
+                "Close an established stream when the loaded policy revokes its authority.",
+                "Keep a still-authorized stream open and never apply a permissive policy automatically.",
+            ), (
+                "A16 at T13 loads global policy before revision queries and closes only streams whose authority it revokes.",
+                "A16 at T13 keeps still-authorized streams open and never applies a permissive replacement policy automatically.",
+            )),
+            ("T29", (
+                "Keep A16 product presentation read-only; do not imply T29 loaded policy or enforced stream access.",
+            ), (
+                "A16 at T29 presents the accepted revision and source; it does not load policy or authorize streams.",
+            )),
+        ):
+            def edit(task: dict[str, Any], step_phrases: tuple[str, ...] = step_phrases,
+                     acceptance_phrases: tuple[str, ...] = acceptance_phrases) -> None:
+                remove_phrases(task, "steps", step_phrases)
+                remove_phrases(task, "acceptance", acceptance_phrases)
+            edit_task(pack, task_id, edit)
+        sync_case_block(pack, case_map(pack)["A16"])
+
+    def broaden_a16_closure(pack: Path) -> None:
+        update_cases(pack, lambda cases: cases["A16"].update({
+            "expected": cases["A16"]["expected"]
+            + " Every policy update closes every unrelated allowed stream."
+        }))
+        sync_case_block(pack, case_map(pack)["A16"])
+
+    def remove_a40_name_reservation(pack: Path) -> None:
+        update_cases(pack, lambda cases: cases["A40"].update({
+            "action": "Crash and restart the state coordinator at every point.",
+            "expected": (
+                "Request identities and receipts survive. "
+                "Recovery follows the declared state table without duplicate effects."
+            ),
+        }))
+
+        def edit(task: dict[str, Any]) -> None:
+            task["steps"].remove(
+                "Generate each canonical name once as jk- plus 16 lowercase base32 secure-random characters."
+            )
+            task["steps"].remove(
+                "Validate names against P02 gateway constraints and persist each reservation before create."
+            )
+            task["acceptance"] = [item for item in task["acceptance"] if not item.startswith("A40 verifies ")
+                                  and item != "Deleted canonical names remain tombstoned and are never intentionally reused."]
+        edit_task(pack, "T10", edit)
+        sync_case_block(pack, case_map(pack)["A40"])
+
+    def remove_a79_collision_recovery(pack: Path) -> None:
+        update_cases(pack, lambda cases: cases["A79"].update({
+            "setup": "Inject loss after build, create, publication, activation receipt, and StartSession.",
+            "action": "Restart host control and recover the original operation.",
+            "expected": (
+                "Work resumes only through qualified recovery. "
+                "No duplicate agent or silent replacement appears."
+            ),
+        }))
+
+        def edit(task: dict[str, Any]) -> None:
+            for phrase in (
+                "Use T10's persisted canonical-name reservation and P02 gateway validation before domain creation.",
+                "Refuse collisions and tombstoned-name reuse before create; never mint a replacement name during retry.",
+            ):
+                task["steps"].remove(phrase)
+            task["acceptance"] = [item for item in task["acceptance"] if not item.startswith("A79 recovery ")
+                                  and item != "Canonical names do not replace server-side identity or authority checks."]
+        edit_task(pack, "T23", edit)
+        sync_case_block(pack, case_map(pack)["A79"])
+
+    def remove_a52_builder_trust(pack: Path) -> None:
+        update_cases(pack, lambda cases: cases["A52"].update({
+            "setup": "Configure builder A and an ambient DOCKER_HOST for builder B.",
+            "action": "Build a sentinel role and inspect authorized build records.",
+            "expected": (
+                "Only builder A receives source and approved secrets. "
+                "Unexpected ambient routing cannot override it."
+            ),
+        }))
+
+        def edit(task: dict[str, Any]) -> None:
+            for phrase in (
+                "Require operator-approved trust for the selected builder before transferring source or approved secrets.",
+                "Reject a configured but unapproved endpoint before source-context creation or secret transfer.",
+                "Ignore ambient DOCKER_HOST when selecting the explicitly trusted builder endpoint.",
+            ):
+                task["steps"].remove(phrase)
+            task["acceptance"] = [item for item in task["acceptance"] if not item.startswith("A52 refuses ")
+                                  and not item.startswith("After approval, only the selected endpoint receives ")]
+        edit_task(pack, "T15", edit)
+        sync_case_block(pack, case_map(pack)["A52"])
+
+    positive = run_fixture(
+        "Cohort C complete admission, activation, naming, policy, and builder contracts pass",
+        lambda _pack: None,
+        0,
+        [],
+    )
+    controls: list[tuple[str, str, Callable[[Path], None]]] = [
+        ("A73", "removing T23 integrated denied-scope admission", remove_a73_integrated_phase),
+        ("A78", "removing current-boot and protocol receipt binding", remove_a78_fresh_receipt_binding),
+        ("A16", "removing revoked-connection closure and fail-closed policy handling", remove_a16_revocation_closure),
+        ("A16", "requiring every policy update to close unrelated authorized streams", broaden_a16_closure),
+        ("A40/A79", "removing UNIT pre-create reservation, collision, and tombstone checks", remove_a40_name_reservation),
+        ("A40/A79", "removing LIVE collision and tombstone recovery checks", remove_a79_collision_recovery),
+        ("A52", "removing builder approval before source and secret transfer", remove_a52_builder_trust),
+    ]
+    results = []
+    for case_key, description, mutate in controls:
+        check_name = contract_checks[case_key]
+        receipt = run_fixture(
+            f"Cohort C control rejects {description}",
+            mutate,
+            1,
+            [],
+            expect_report_match=False,
+        )
+        receipt["owner_contract_check"] = check_name
+        receipt["owner_contract_check_failed"] = check_name in (receipt.get("actual_failures") or [])
+        results.append(receipt)
+    return {
+        "scenario": "Cohort C preserves integrated admission, activation freshness, name safety, policy revocation, and builder trust.",
         "passed": positive["passed"] and all(
             item["passed"] and item["owner_contract_check_failed"] for item in results
         ),
@@ -3399,6 +3646,7 @@ def main() -> int:
         "legacy manifest without assignment_results is rejected",
         legacy_manifest,
         1, [
+            "A73 preserves early scope and integrated denied-scope admission owners",
             "A86 preserves backend host-action and integrated presentation owners",
             "A82 separates T24 shell qualification from T29 final presentation",
             "A84 separates T25 usage qualification from T29 serialization and presentation",
@@ -6315,6 +6563,7 @@ print('{}')
         validator_import_probe("keyboardinterrupt"),
         a86_phase_control_probe(),
         late_presentation_control_probe(),
+        cohort_c_control_probe(),
         runner_inventory_control_probe("missing"),
         runner_inventory_control_probe("duplicate"),
         runner_inventory_control_probe("unexpected"),

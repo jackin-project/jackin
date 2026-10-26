@@ -55,7 +55,7 @@ Markdown assignment labels record initial `NOT_RUN` status and stay fixed during
 Each receipt records the actual argument vector, stdout, stderr, exit code, executed validator path and hash, and fixture-source hashes.
 The runner checks certified input paths immediately after each fixture mutation and again after safe count synchronization. An unsafe post-mutation input stops before synchronization or validator execution. For safe post-mutation inputs, each receipt hashes every tested pack input. For refused links, the custody control records link metadata and external target hashes without following the links.
 Each receipt records changed-input hashes before and after mutation, with explicit `present` or `missing` states.
-The fixture runner keeps its validator-check inventory and 262 scenario names independent from the validator and fixture calls under test. The validator reads that literal scenario-name inventory as data without importing or executing the runner. It also compares 22 named runner controls with a separate fixed inventory that rejects missing, duplicate, and unexpected controls.
+The fixture runner keeps its validator-check inventory and 262 scenario names independent from the validator and fixture calls under test. The validator reads that literal scenario-name inventory as data without importing or executing the runner. It also compares 23 named runner controls with a separate fixed inventory that rejects missing, duplicate, and unexpected controls.
 Each fixture, original-board, and probe subprocess runs in its own process group with a finite timeout. On POSIX timeout the runner sends SIGTERM and gives output draining a bounded grace period. It then sends SIGKILL to the owned group whether draining completes early because the direct child exits or reaches the end of the grace period. It preserves partial stdout and stderr and bounds pipe draining and direct-child reaping. It records the direct child's observed exit information, and a timeout remains a failure even after a passing report.
 The runner snapshots pack inputs before importing the validator and immediately after import. It captures validator-import stdout and stderr, and reports import output, exceptions, and `SystemExit` codes as structured failures before running fixtures. It emits one JSON document. A subprocess fixture proves it detects an import-time README mutation on a temporary copy. `KeyboardInterrupt` remains an uncaught cancellation.
 The runner anchors each selected pack root at its canonical path, so an operating-system alias above the root remains usable. An external regular validator executable is allowed to inspect a selected pack that omits its validator file. Both tools reject linked entry points, pack-local entries escaping the root, and linked pack inputs before reads or imports. They record link metadata without following or removing links, and refuse copies that would follow links. The supported self-contained pack copy has matching source and destination hashes.
@@ -71,9 +71,9 @@ The runner does not modify the pack. It validates the original board in ordinary
 | Acceptance cases | 125 |
 | Mapped specification headings | 30 |
 | Topological readiness groups | 20 |
-| Checked procedural sentences | 1691 |
+| Checked procedural sentences | 1750 |
 
-The ordinary validator report contains 95 ordered checks; `--initial` contains 97, including two initial-only checks and the final inventory check.
+The ordinary validator report contains 99 ordered checks; `--initial` contains 101, including two initial-only checks and the final inventory check.
 The C02 digest checks fixed contract text only. It does not show that source code follows this plan.
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
@@ -87,7 +87,7 @@ Keep no more than eight actual subagents active at once.
 | Both execution markers are exact Booleans in ordinary and initial modes | PASS |
 | LIVE `PASS` and `FAIL` assignments require the runtime-execution marker | PASS |
 | Fixture scenario names match the independent 262-name inventory with no missing, duplicate, or unexpected entries | PASS |
-| The 22 runner controls match an independent fixed inventory with no missing, duplicate, or unexpected entries | PASS |
+| The 23 runner controls match an independent fixed inventory with no missing, duplicate, or unexpected entries | PASS |
 | Fixture, original-board, and probe subprocesses use owned process groups and bounded timeout cleanup | PASS |
 | Validator import output, exceptions, and `SystemExit` become structured failures; cancellation remains uncaught | PASS |
 | Canonical root aliases work; external file and in-pack ancestor symlinks fail before reads or copying | PASS |
@@ -141,8 +141,12 @@ Keep no more than eight actual subagents active at once.
 | Task test references, case coverage, and ownership maps agree | PASS |
 | A13 keeps P05's current graph run separate from T39's final post-deletion rerun | PASS |
 | A15 keeps U00/T13 layer checks and T23 integrated StartSession qualification | PASS |
-| A16 keeps U00/T13 accepted-revision checks and T29 product presentation | PASS |
+| A16 closes only revoked streams, preserves unrelated authorized streams, and keeps T29 presentation-only | PASS |
 | A17 keeps U00/T13 provider observations and T23 integrated StartSession/re-admission | PASS |
+| A73 preserves T21 early scope checks and T23 integrated denial before domain or credential effects | PASS |
+| A78 requires a fresh receipt for the current boot and exact protocol after helper restart | PASS |
+| A40 and A79 preserve secure canonical names, pre-create reservation, collision refusal, and tombstones | PASS |
+| A52 requires explicit builder trust before source or secret transfer | PASS |
 | PLAN's authored prefix matches its unique task-index boundary and fixed digest | PASS |
 | Target-matrix requests route through Integration; required and unavailable rows remain | PASS |
 | Task required artifacts match the canonical six receipts and report path | PASS |
@@ -171,9 +175,10 @@ Keep no more than eight actual subagents active at once.
 ## Assignment-result causal fixtures
 
 All 262 scenarios passed their exact report, input-derived count, and exit-code expectations.
-All 22 runner controls passed their independent inventory and behavior checks. The timeout controls verify cleanup of same-group descendants with inherited pipes and redirected output. The shared classifier control verifies running, Linux zombie/dead, ESRCH, and EPERM outcomes. The post-mutation custody control links `PACK-CHECKS.md` and `GOAL.md` to external temporary files and verifies refusal before any target read or write and before validator execution.
-The original 18 scenario intentions remain unchanged; 244 targeted scenarios cover assignment ownership and progress, execution-marker types and LIVE status requirements, readiness-group input shapes, authored task and case fields, source citations, canonical task paths and exact recursive packet sets, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance and PLAN prefixes, strict JSON parsing and exact short-form input details, release-gate protocol structure, post-deletion and post-change LIVE freshness, T40 version/package requalification, finalization evidence requirements, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates and result-cell grammar, independent check-inventory comparison, import-time input mutation detection, the fixed root planning classification, owner-specific A13/A15/A16/A17/A86 qualification, serialized target and compatibility-matrix updates, malformed record refusal, review-assignment completion, exact acceptance-root keys, pinned source-audit and terminology inputs, and truthful report count rows and inventories.
+All 23 runner controls passed their independent inventory and behavior checks. The timeout controls verify cleanup of same-group descendants with inherited pipes and redirected output. The shared classifier control verifies running, Linux zombie/dead, ESRCH, and EPERM outcomes. The post-mutation custody control links `PACK-CHECKS.md` and `GOAL.md` to external temporary files and verifies refusal before any target read or write and before validator execution.
+The original 18 scenario intentions remain unchanged; 244 targeted scenarios cover assignment ownership and progress, execution-marker types and LIVE status requirements, readiness-group input shapes, authored task and case fields, source citations, canonical task paths and exact recursive packet sets, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance and PLAN prefixes, strict JSON parsing and exact short-form input details, release-gate protocol structure, post-deletion and post-change LIVE freshness, T40 version/package requalification, finalization evidence requirements, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates and result-cell grammar, independent check-inventory comparison, import-time input mutation detection, the fixed root planning classification, owner-specific A13/A15/A16/A17/A40/A52/A73/A78/A79/A86 qualification, serialized target and compatibility-matrix updates, malformed record refusal, review-assignment completion, exact acceptance-root keys, pinned source-audit and terminology inputs, and truthful report count rows and inventories.
 The separate A86 runner control applies eight independent mutations for either owner, either phase, hostile input, operator intent, trusted labels or approval state, and T26's premature finished-presentation prerequisite.
+The Cohort C runner control accepts the intact authored contracts and rejects seven synchronized mutations. It covers A73 integrated scope admission, A78 boot and protocol freshness, A16 revoked-stream closure and overbroad closure, A40 and A79 name reservation and tombstones, and A52 builder trust before transfer.
 The separate layered-presentation runner control includes one accepted baseline and eleven synchronized mutations. It keeps the T24 and T25 early results, requires T29 final presentation, presents the C11 admission warning before authorization, preserves T30 grant and TLS/authentication checks, and requires T29 to wait for T30.
 Each fixture copy records source hashes, permitted normalization changes, normalized hashes, intentional mutations, and input and executable hashes before and after validation. Initial-mode copies reset only existing valid progress statuses and true Boolean execution markers; missing or invalid markers remain unchanged and fail validation. The original board is never normalized or repaired.
 The existing missing-P00 fixture retains its packet-preamble failure and exit code 1; exact-path validation adds a second expected failure for the missing canonical path.
@@ -189,7 +194,7 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | A117 has sibling `FAIL` and `BLOCKED` results; summary uses `FAIL` precedence | Accept, exit 0 | PASS, exit 0 |
 | T32 task `PASS` while T32/A22 remains `NOT_RUN` | Reject, exit 1 | PASS, exit 1 |
 | Legacy summary `PASS` while T32/A22 remains `NOT_RUN` | Reject, exit 1 | PASS, exit 1 |
-| Legacy manifest without `assignment_results` | Reject, exit 1 | PASS, exit 1 |
+| Legacy manifest without `assignment_results` also triggers A73 exact-owner refusal | Reject, exit 1 | PASS, exit 1 |
 | Malformed or invalid-status, duplicate, missing, or extra assignment row | Reject, exit 1 | PASS, exit 1 |
 | Assignment status changes under `--initial` | Reject, exit 1 | PASS, exit 1 |
 | Missing or non-Boolean execution markers in ordinary and initial modes | Reject, exit 1 | PASS, exit 1 |
@@ -315,6 +320,7 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | A13 cannot omit Cargo metadata for P05's current graph | Reject, exit 1 | PASS, exit 1 |
 | A13 cannot omit fresh Cargo metadata for T39's final post-deletion graph | Reject, exit 1 | PASS, exit 1 |
 | A16 loads the global policy before querying revisions and displaying its source | Reject, exit 1 | PASS, exit 1 |
+| Cohort C control: intact owner phases pass; seven synchronized phase weakenings fail their named contract checks | Accept intact input; reject each mutation, exit 1 | PASS |
 | Canonical reports reject wrong nonempty counts and nonempty all-zero counts | Reject malformed report | PASS |
 | Missing-validator short form rejects fabricated [README.md](README.md) detail | Reject against expected `validate_pack.py` detail | PASS |
 | Missing-`tasks` input-error short form rejects fabricated `cases` detail | Reject against expected `tasks` detail | PASS |

@@ -598,6 +598,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 9. Add old-server and unsupported-capability behavior.
 10. Update the candidate tuple and upstream change record.
 11. For A15 and A16, report authoritative observations separately from integrated activation and product display.
+12. For A16, observe closure only for established streams whose authority the loaded policy revokes.
 
 #### Pass conditions
 
@@ -609,6 +610,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection.
 - A17 at U00 records LIVE provider attach, revoke, and change observations against installed revisions.
 - A17 at U00 confirms added access is visible and revocation refuses readiness.
+- A16 at U00 observes closure only for established streams whose authority the loaded policy revokes.
+- A16 at U00 keeps unrelated authorized streams open and does not permit a permissive policy replacement.
 
 **Acceptance cases:** A15, A16, A17.
 
@@ -1221,6 +1224,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 8. Add owner epochs for local leases and control-service recovery.
 9. Keep canonical-name tombstones and immutable binding history.
 10. Add v2-only database version checks and backup tests.
+11. Generate each canonical name once as jk- plus 16 lowercase base32 secure-random characters.
+12. Validate names against P02 gateway constraints and persist each reservation before create.
 
 #### Pass conditions
 
@@ -1228,6 +1233,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A crash after an effect does not cause an automatic duplicate command.
 - No database write transaction waits for a network call.
 - A v1 database produces a fresh-setup error, not an import.
+- A40 verifies secure name format, gateway validation, pre-create reservation, collision refusal, and tombstones.
+- Deleted canonical names remain tombstoned and are never intentionally reused.
 
 **Acceptance cases:** A09, A40, A42.
 
@@ -1429,6 +1436,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 9. Expose capability rejection before launch.
 10. Keep infrastructure reconciliation upstream.
 11. For A15 and A16, qualify authoritative adapter observations separately from integrated activation and product display.
+12. For A16, load the gateway global policy before querying accepted revisions or displaying its source.
+13. Close an established stream when the loaded policy revokes its authority.
+14. Keep a still-authorized stream open and never apply a permissive policy automatically.
 
 #### Pass conditions
 
@@ -1440,6 +1450,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A16 at T13 binds the effective replacement source to the observed accepted revision without claiming an intersection.
 - A17 at T13 records LIVE attach, revoke, and binding-change observations against the installed provider revision.
 - A17 at T13 confirms added access is visible and revoked bindings fail closed.
+- A16 at T13 loads global policy before revision queries and closes only streams whose authority it revokes.
+- A16 at T13 keeps still-authorized streams open and never applies a permissive replacement policy automatically.
 
 **Acceptance cases:** A15, A16, A17, A18, A19, A20, A21, A48.
 
@@ -1574,6 +1586,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 8. Record the selected platform manifest and scoped pull authorization.
 9. Verify delivery without a mutable-tag assumption.
 10. Keep build failure separate from gateway and management availability.
+11. Require operator-approved trust for the selected builder before transferring source or approved secrets.
+12. Reject a configured but unapproved endpoint before source-context creation or secret transfer.
+13. Ignore ambient DOCKER_HOST when selecting the explicitly trusted builder endpoint.
 
 #### Pass conditions
 
@@ -1582,6 +1597,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Wrong architecture and missing registry authorization fail before activation.
 - An unavailable separate builder does not disable status or stop operations.
 - Secret bytes stay out of build logs, and secret-dependent output follows its declared cache policy.
+- A52 refuses an unapproved explicit endpoint before source-context or approved-secret transfer.
+- After approval, only the selected endpoint receives source and approved secrets; ambient DOCKER_HOST cannot redirect it.
 
 **Acceptance cases:** A51, A52, A53, A54.
 
@@ -1994,6 +2011,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 8. Re-admit after a relevant account or provider revision changes.
 9. Reject delayed requests from ended grants.
 10. Keep local leases distinct from mandatory upstream authorization.
+11. Qualify A73 scope membership before grant attachment and record this result separately from T23 integrated launch.
 
 #### Pass conditions
 
@@ -2001,6 +2019,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A team workspace cannot silently receive a private account grant.
 - A helper cannot enumerate unrelated accounts or grant itself a provider.
 - A provider placeholder is treated as authority, not as harmless public text.
+- A73 at T21 qualifies account-scope membership before grant attachment; T23 still owns integrated admission.
 
 **Acceptance cases:** A73.
 
@@ -2137,6 +2156,14 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 15. Exercise A15 through integrated StartSession with missing, stale, or mismatched authority observations; reject forged helper claims.
 16. Exercise A17 through integrated StartSession and re-admission after provider attach, revocation, and binding changes.
 17. Verify the installed revision, added access, and refusal after revocation.
+18. Exercise A73 after T21's scope result.
+19. Authorize only the valid scope after T21 records its LIVE scope result.
+20. Reject denied private scope before domain creation or credential staging.
+21. Exercise A78 with image, generation, grant, materialization, policy, boot-ID, and protocol mismatches.
+22. After helper restart, require a fresh receipt for the current boot and exact protocol before StartSession.
+23. Treat a helper handshake as an observation, not an attestation or security boundary.
+24. Use T10's persisted canonical-name reservation and P02 gateway validation before domain creation.
+25. Refuse collisions and tombstoned-name reuse before create; never mint a replacement name during retry.
 
 #### Pass conditions
 
@@ -2149,8 +2176,14 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A15 fails closed at StartSession for missing, stale, or mismatched observations and helper-reported identity.
 - A17 qualifies StartSession and re-admission against installed provider revisions.
 - Stale or revoked provider bindings cannot become ready at StartSession.
+- A73 launches only an authorized scope after T21 records its LIVE scope result.
+- Denied private scope blocks before domain creation or credential staging.
+- A78 blocks StartSession for stale boot and protocol claims until a fresh qualified receipt arrives.
+- A helper handshake is not an attestation or a security boundary.
+- A79 recovery uses the original persisted name and refuses collision or tombstone reuse before create.
+- Canonical names do not replace server-side identity or authority checks.
 
-**Acceptance cases:** A74, A77, A78, A79, A80, A15, A17.
+**Acceptance cases:** A73, A74, A77, A78, A79, A80, A15, A17.
 
 #### Removal and replacement
 
@@ -2575,6 +2608,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 16. Present A100's separate public grant, listener TLS, and application-authentication requirements in the finished CLI and Console.
 17. Keep Capsule control marked private in the A100 final UI.
 18. Present the disabled external-resource-label admission tradeoff before authorizing a trusted-live-local bind.
+19. Keep A16 product presentation read-only; do not imply T29 loaded policy or enforced stream access.
 
 #### Pass conditions
 
@@ -2590,6 +2624,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A99 at T29 presents the qualified private URL and access state after T30's service and cleanup qualification.
 - A100 at T29 displays the separate public grant and TLS/application-authentication requirements; Capsule control is never public.
 - A96 displays the disabled external-resource-label admission tradeoff before any trusted-live-local authorization decision.
+- A16 at T29 presents the accepted revision and source; it does not load policy or authorize streams.
 
 **Acceptance cases:** A96, A97, A98, A16, A86, A82, A84, A99, A100.
 
