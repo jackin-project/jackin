@@ -22,14 +22,14 @@ const NOFOLLOW_STAT_FLAGS: AtFlags = AtFlags::SYMLINK_NOFOLLOW;
 /// effective-user-owned directories with exact sticky mode `01777` are the
 /// only group- or other-writable exception.
 pub fn validate_temporary_parent(path: &Path) -> io::Result<()> {
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()?.join(path)
-    };
-    let canonical = std::fs::canonicalize(absolute)?;
+    let canonical = std::fs::canonicalize(path)?;
+    if !path.is_absolute() || canonical.as_path() != path {
+        return Err(invalid_parent(
+            "temporary parent must be a canonical absolute path",
+        ));
+    }
 
-    let mut components = canonical.components();
+    let mut components = path.components();
     if components.next() != Some(Component::RootDir) {
         return Err(invalid_parent(
             "temporary parent must begin at the filesystem root",
