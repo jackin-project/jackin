@@ -1,0 +1,6656 @@
+#!/usr/bin/env python3
+"""Record causal fixtures for per-task acceptance result validation."""
+from __future__ import annotations
+
+import hashlib
+import contextlib
+import errno
+import io
+import json
+import os
+import re
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+from unittest.mock import patch
+from pathlib import Path
+from typing import Any, Callable
+
+FIXTURE_TIMEOUT_SECONDS = 30
+ORIGINAL_BOARD_TIMEOUT_SECONDS = 30
+PROBE_TIMEOUT_SECONDS = 15
+TIMEOUT_TERMINATION_GRACE_SECONDS = 0.25
+TIMEOUT_FINAL_DRAIN_SECONDS = 0.5
+
+
+class CertifiedInputError(ValueError):
+    """Identify a pack path that cannot be read or copied as a certified input."""
+
+    def __init__(self, violations: list[dict[str, Any]]) -> None:
+        self.violations = violations
+        super().__init__("The certified input path contains a symbolic link or an escaping path.")
+
+
+def path_component_violations(path: Path, root: Path | None = None) -> list[dict[str, Any]]:
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    if root is None:
+        current = Path(absolute.anchor)
+        parts = absolute.parts[1:]
+    else:
+        root_resolved = Path(root).resolve(strict=True)
+        if absolute.is_symlink():
+            return [{"path": str(absolute), "reason": "symbolic link in certified path",
+                     "target": os.readlink(absolute)}]
+        try:
+            resolved = absolute.resolve(strict=False)
+        except OSError as error:
+            return [{"path": str(absolute), "reason": "path component cannot be inspected",
+                     "detail": str(error)}]
+        if not resolved.is_relative_to(root_resolved):
+            return [{"path": str(absolute), "reason": "path resolves outside certified root",
+                     "resolved_path": str(resolved)}]
+        current = root_resolved
+        parts = resolved.relative_to(root_resolved).parts
+    for part in parts:
+        current = current / part
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            break
+        except OSError as error:
+            return [{"path": str(current), "reason": "path component cannot be inspected",
+                     "detail": str(error)}]
+        if stat.S_ISLNK(metadata.st_mode):
+            return [{"path": str(current), "reason": "symbolic link in certified path",
+                     "target": os.readlink(current)}]
+    return []
+
+
+def certified_input_violations(root: Path, entry_path: Path | None = None) -> list[dict[str, Any]]:
+    selected_root = Path(os.path.abspath(os.fspath(root)))
+    try:
+        root_resolved = selected_root.resolve(strict=True)
+        root_path = root_resolved
+        root_metadata = root_path.lstat()
+    except OSError as error:
+        return [{"path": str(selected_root), "reason": "certified root cannot be inspected",
+                 "detail": str(error)}]
+    if not stat.S_ISDIR(root_metadata.st_mode):
+        return [{"path": str(root_path), "reason": "certified root is not a directory"}]
+
+    violations: list[dict[str, Any]] = []
+    if entry_path is not None:
+        entry_path = Path(os.path.abspath(os.fspath(entry_path)))
+        entry_violations = path_component_violations(entry_path, root_path)
+        violations.extend(entry_violations)
+        try:
+            entry_resolved = entry_path.resolve(strict=True)
+        except OSError as error:
+            violations.append({"path": str(entry_path),
+                               "reason": "entry point cannot be inspected",
+                               "detail": str(error)})
+            entry_resolved = root_path
+        if not entry_resolved.is_relative_to(root_resolved):
+            violations.append({"path": str(entry_path),
+                               "reason": "entry point resolves outside certified root"})
+
+    def walk_error(error: OSError) -> None:
+        violations.append({"path": error.filename or str(root_path),
+                           "reason": "certified input directory cannot be inspected",
+                           "detail": str(error)})
+
+    for directory, directories, files in os.walk(root_resolved, topdown=True,
+                                                  followlinks=False, onerror=walk_error):
+        current_directory = Path(directory)
+        for name in list(directories):
+            child = current_directory / name
+            if child.is_symlink():
+                violations.append({"path": child.relative_to(root_resolved).as_posix(),
+                                   "reason": "symbolic link in certified inputs",
+                                   "target": os.readlink(child)})
+                directories.remove(name)
+                continue
+            if name == "__pycache__":
+                directories.remove(name)
+                continue
+            resolved = child.resolve(strict=True)
+            if not resolved.is_relative_to(root_resolved):
+                violations.append({"path": child.relative_to(root_resolved).as_posix(),
+                                   "reason": "certified input resolves outside root",
+                                   "resolved_path": str(resolved)})
+                directories.remove(name)
+        for name in files:
+            child = current_directory / name
+            metadata = child.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                violations.append({"path": child.relative_to(root_resolved).as_posix(),
+                                   "reason": "symbolic link in certified inputs",
+                                   "target": os.readlink(child)})
+                continue
+            if child.suffix == ".pyc":
+                continue
+            if not stat.S_ISREG(metadata.st_mode):
+                violations.append({"path": child.relative_to(root_resolved).as_posix(),
+                                   "reason": "certified input is not a regular file"})
+                continue
+            resolved = child.resolve(strict=True)
+            if not resolved.is_relative_to(root_resolved):
+                violations.append({"path": child.relative_to(root_resolved).as_posix(),
+                                   "reason": "certified input resolves outside root",
+                                   "resolved_path": str(resolved)})
+    return sorted(violations, key=lambda item: (str(item.get("path")), str(item.get("reason"))))
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def snapshot_files(root: Path) -> dict[str, str]:
+    if certified_input_violations(root):
+        return {}
+    root = Path(os.path.abspath(os.fspath(root))).resolve(strict=True)
+    snapshot: dict[str, str] = {}
+    for directory, directories, files in os.walk(root, topdown=True, followlinks=False):
+        current_directory = Path(directory)
+        directories[:] = [name for name in directories
+                          if name != "__pycache__" and not (current_directory / name).is_symlink()]
+        for name in files:
+            path = current_directory / name
+            if path.suffix == ".pyc" or path.is_symlink():
+                continue
+            snapshot[path.relative_to(root).as_posix()] = sha256(path)
+    return dict(sorted(snapshot.items()))
+
+
+def input_state(digest: str | None) -> dict[str, str | None]:
+    if digest is None:
+        return {"state": "missing", "sha256": None}
+    return {"state": "present", "sha256": digest}
+
+
+def snapshot_states(snapshot: dict[str, str]) -> dict[str, dict[str, str | None]]:
+    return {path: input_state(digest) for path, digest in snapshot.items()}
+
+
+def snapshot_changes(before: dict[str, str], after: dict[str, str]) -> dict[str, Any]:
+    return {
+        path: {"before": input_state(before.get(path)), "after": input_state(after.get(path))}
+        for path in sorted(set(before) | set(after))
+        if before.get(path) != after.get(path)
+    }
+
+
+def path_state(path: Path, root: Path | None = None) -> dict[str, str | None]:
+    if path_component_violations(path, root):
+        return {"state": "unsafe", "sha256": None}
+    return input_state(sha256(path) if path.is_file() and not path.is_symlink() else None)
+
+
+def copy_certified_pack(source: Path, destination: Path) -> None:
+    violations = certified_input_violations(source)
+    if violations:
+        raise CertifiedInputError(violations)
+    destination_path_violations = path_component_violations(destination)
+    if destination_path_violations:
+        raise CertifiedInputError(destination_path_violations)
+    shutil.copytree(
+        source,
+        destination,
+        symlinks=True,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+    copied_violations = certified_input_violations(destination)
+    if copied_violations:
+        raise CertifiedInputError(copied_violations)
+
+
+def temporary_directory(prefix: str) -> tempfile.TemporaryDirectory[str]:
+    temporary_base = Path(tempfile.gettempdir()).resolve(strict=True)
+    base_violations = path_component_violations(temporary_base)
+    if base_violations:
+        raise CertifiedInputError(base_violations)
+    return tempfile.TemporaryDirectory(prefix=prefix, dir=temporary_base)
+
+
+def output_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def run_with_timeout(command: list[str], timeout_seconds: float,
+                     cwd: Path | None = None) -> dict[str, Any]:
+    started = time.monotonic()
+    process_options: dict[str, Any] = {}
+    if os.name == "posix":
+        process_options["start_new_session"] = True
+    elif os.name == "nt":
+        process_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        **process_options,
+    )
+
+    def signal_owned_process_group(signal_number: int) -> bool:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal_number)
+                return True
+            except ProcessLookupError:
+                return False
+        if signal_number == signal.SIGTERM and os.name == "nt":
+            try:
+                process.send_signal(signal.CTRL_BREAK_EVENT)
+                return True
+            except (OSError, ValueError):
+                return False
+        try:
+            process.kill()
+            return True
+        except ProcessLookupError:
+            return False
+
+    def timeout_receipt(partial_stdout: str, partial_stderr: str,
+                        stdout: str, stderr: str, termination_signals: list[str],
+                        drain_timed_out: bool) -> dict[str, Any]:
+        return {
+            "argv": command,
+            "exit_code": process.returncode,
+            "stdout": stdout,
+            "stderr": stderr,
+            "timed_out": True,
+            "timeout_seconds": timeout_seconds,
+            "elapsed_seconds": round(time.monotonic() - started, 6),
+            "timeout_partial_stdout": partial_stdout,
+            "timeout_partial_stderr": partial_stderr,
+            "termination_sent": bool(termination_signals),
+            "termination_signals": termination_signals,
+            "process_group_id": process.pid if os.name == "posix" else None,
+            "drain_timed_out": drain_timed_out,
+            "child_reaped": process.returncode is not None,
+        }
+
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+        return {
+            "argv": command,
+            "exit_code": process.returncode,
+            "stdout": output_text(stdout),
+            "stderr": output_text(stderr),
+            "timed_out": False,
+            "timeout_seconds": timeout_seconds,
+            "elapsed_seconds": round(time.monotonic() - started, 6),
+            "timeout_partial_stdout": "",
+            "timeout_partial_stderr": "",
+            "termination_sent": False,
+            "termination_signals": [],
+            "process_group_id": process.pid if os.name == "posix" else None,
+            "drain_timed_out": False,
+            "child_reaped": process.returncode is not None,
+        }
+    except subprocess.TimeoutExpired as error:
+        partial_stdout = output_text(error.output)
+        partial_stderr = output_text(error.stderr)
+        termination_signals: list[str] = []
+        drain_timed_out = False
+        if signal_owned_process_group(signal.SIGTERM):
+            termination_signals.append("SIGTERM" if os.name == "posix" else "CTRL_BREAK_EVENT")
+        try:
+            stdout, stderr = process.communicate(timeout=TIMEOUT_TERMINATION_GRACE_SECONDS)
+            # Closed pipes show that the direct child stopped holding its
+            # streams. A same-group descendant may have redirected its own
+            # streams, so always finish cleanup of the owned group after a
+            # timeout, even when communicate returns during the TERM grace.
+            if signal_owned_process_group(signal.SIGKILL):
+                termination_signals.append("SIGKILL" if os.name == "posix" else "PROCESS_KILL")
+            return timeout_receipt(
+                partial_stdout, partial_stderr,
+                output_text(stdout), output_text(stderr), termination_signals,
+                drain_timed_out,
+            )
+        except subprocess.TimeoutExpired as error_after_term:
+            partial_stdout = output_text(error_after_term.output)
+            partial_stderr = output_text(error_after_term.stderr)
+
+        if signal_owned_process_group(signal.SIGKILL):
+            termination_signals.append("SIGKILL" if os.name == "posix" else "PROCESS_KILL")
+        try:
+            stdout, stderr = process.communicate(timeout=TIMEOUT_FINAL_DRAIN_SECONDS)
+            return timeout_receipt(
+                partial_stdout, partial_stderr,
+                output_text(stdout), output_text(stderr), termination_signals,
+                drain_timed_out,
+            )
+        except subprocess.TimeoutExpired as error_after_kill:
+            partial_stdout = output_text(error_after_kill.output)
+            partial_stderr = output_text(error_after_kill.stderr)
+            drain_timed_out = True
+
+        # A descendant that escaped its owned group may keep a pipe open. Stop
+        # waiting for that pipe, close our read ends, and reap only the direct child.
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+        if process.poll() is None:
+            try:
+                process.kill()
+                termination_signals.append("DIRECT_CHILD_KILL_FALLBACK")
+            except ProcessLookupError:
+                pass
+        try:
+            process.wait(timeout=TIMEOUT_FINAL_DRAIN_SECONDS)
+        except subprocess.TimeoutExpired:
+            pass
+        return timeout_receipt(
+            partial_stdout, partial_stderr,
+            partial_stdout, partial_stderr, termination_signals,
+            drain_timed_out,
+        )
+
+
+ENTRY_FILE = Path(os.path.abspath(__file__))
+ROOT_CANDIDATE = ENTRY_FILE.parent
+try:
+    ROOT = ROOT_CANDIDATE.resolve(strict=True)
+except OSError:
+    ROOT = ROOT_CANDIDATE
+BOOTSTRAP_INPUT_POLICY_VIOLATIONS = certified_input_violations(ROOT, ENTRY_FILE)
+VALIDATOR = ROOT / "validate_pack.py"
+sys.dont_write_bytecode = True
+SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT = (
+    snapshot_files(ROOT) if not BOOTSTRAP_INPUT_POLICY_VIOLATIONS else {}
+)
+VALIDATOR_IMPORT_STDOUT = io.StringIO()
+VALIDATOR_IMPORT_STDERR = io.StringIO()
+VALIDATOR_IMPORT_EXCEPTION: dict[str, Any] | None = None
+if not BOOTSTRAP_INPUT_POLICY_VIOLATIONS:
+    sys.path.insert(0, str(ROOT))
+    try:
+        with contextlib.redirect_stdout(VALIDATOR_IMPORT_STDOUT), contextlib.redirect_stderr(
+            VALIDATOR_IMPORT_STDERR,
+        ):
+            from validate_pack import (  # noqa: E402
+                DuplicateJSONKeyError,
+                render_task_card,
+                render_task_index,
+                render_task_packet,
+                strict_json_loads,
+            )
+    except SystemExit as error:
+        code = error.code
+        try:
+            json.dumps(code)
+        except (TypeError, ValueError):
+            code = repr(code)
+        VALIDATOR_IMPORT_EXCEPTION = {
+            "type": "SystemExit",
+            "code": code,
+            "message": str(error),
+        }
+    except Exception as error:
+        VALIDATOR_IMPORT_EXCEPTION = {"type": type(error).__name__, "message": str(error)}
+else:
+    VALIDATOR_IMPORT_EXCEPTION = {
+        "type": "CertifiedInputError",
+        "message": "The fixture runner refused to import from an unsafe source path.",
+    }
+
+SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT = (
+    snapshot_files(ROOT) if not BOOTSTRAP_INPUT_POLICY_VIOLATIONS else {}
+)
+VALIDATOR_IMPORT_CHANGES = snapshot_changes(
+    SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT,
+    SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT,
+)
+
+# Kept independent from validate_pack.py so fixture review detects a missing check.
+FIXTURE_ORDINARY_CHECK_NAMES = (
+    'Required pack files exist',
+    'Manifest schema versions are supported integers',
+    'Execution markers are Boolean in every mode.',
+    'LIVE PASS and FAIL results require the runtime-execution marker.',
+    'C01 source pin table matches all four fixed references',
+    'C02 production crate graph and boundary section matches fixed bytes',
+    'Machine source pins match fixed references',
+    'Parallel agent limit matches the subagent contract',
+    'Authoritative concurrency declaration matches graph and subagent limit',
+    'Task statuses use documented values',
+    'Acceptance case statuses use documented values',
+    'Acceptance evidence levels use documented values',
+    'Acceptance case IDs map to fixed evidence levels',
+    'Acceptance manifest status uses documented values',
+    'Acceptance manifest status matches the case summary',
+    'Acceptance manifest root has the exact schema keys',
+    'Task IDs are unique',
+    'Case IDs are unique',
+    'Acceptance cases have unique string task owners',
+    'Declared task count matches',
+    'Declared case count matches',
+    'Expected task count',
+    'Expected acceptance case count',
+    'Task file and test write scopes match canonical paths',
+    'Task required artifacts match canonical evidence set and report path',
+    'Task completion rules match the fixed evidence contract',
+    'Task review rules match the different-subagent and post-merge contract',
+    'Task test_cases contain unique string IDs',
+    'A13 preserves separate current-graph and final-post-deletion runs',
+    'A15 separates observation, adapter, and integrated activation owners',
+    'A16 preserves accepted-revision observation and product-presentation owners',
+    'A17 preserves observation layers and integrated activation ownership',
+    'A73 preserves early scope and integrated denied-scope admission owners',
+    'A78 binds activation to a fresh receipt for the current boot and protocol',
+    'A40 and A79 preserve canonical-name reservation, collision, and tombstone behavior',
+    'A52 requires explicit builder trust before source or secret transfer',
+    'A86 preserves backend host-action and integrated presentation owners',
+    'A82 separates T24 shell qualification from T29 final presentation',
+    'A84 separates T25 usage qualification from T29 serialization and presentation',
+    'A96 presents the disabled external-resource-label tradeoff before live-bind authorization',
+    'A99 separates T30 private-forward qualification from T29 final presentation',
+    'A100 preserves T30 exposure security and T29 final presentation',
+    'Release gate protocol matches fixed semantics',
+    'Original specification matches its fixed checksum and both manifests',
+    'GOAL.md matches its fixed checksum',
+    'SOURCE-AUDIT.md matches its fixed checksum',
+    'TERMS.md matches its fixed checksum',
+    'Task SPEC citations use valid syntax',
+    'Task SPEC citation ranges are within SPEC.md',
+    'Dependency lists contain unique string task IDs',
+    'Dependencies reference other known tasks',
+    'Release gate references name T40 and its owned final cases',
+    'P04, T40, A123, and A125 mirror the fixed release gate contract',
+    'T40 finalization writes route through Integration',
+    'A125 verifies conditional patched-tuple approval',
+    'P02 bootstrap records, P04 imports, and T12 reruns A05/A06',
+    'P04 harness command registration and P05 build wiring scopes agree',
+    'Target matrix qualification requests route through Integration',
+    'PACK-CHECKS limits release-gate claims to static structure',
+    'P04 is listed under the Qualification subagent',
+    'Subagent task assignments exactly match graph owners',
+    'Review packet uses candidate input and post-merge completion stages',
+    'Task progress waits for completed dependencies',
+    'Dependency graph has no cycle',
+    'Stored ready groups match dependencies without duplicate task IDs',
+    'Assignment results have exact unique case owners and valid statuses',
+    'Case status matches assignment summary',
+    'NOT_STARTED and READY tasks have NOT_RUN assignments',
+    'BLOCKED tasks with incomplete dependencies have NOT_RUN assignments',
+    'REVIEW tasks have recorded results for every owned assignment',
+    'Task test references exist',
+    'PASS tasks have passing assigned case results',
+    'Every case has a task owner',
+    'Case and task ownership maps agree',
+    'Task graph fields match TASKS index table',
+    'Task graph fields match PLAN task index table',
+    'PLAN authored prefix matches its unique task-section boundary',
+    'PLAN task headings match the task graph',
+    'Task graph fields match PLAN task cards',
+    'Task graph fields and canonical preamble match individual task packets',
+    'Acceptance detailed-case anchor is unique',
+    'Acceptance policy before detailed cases matches fixed checksum',
+    'Acceptance case headings have no missing, duplicate, or extra blocks',
+    'Acceptance case fields match the acceptance-case manifest',
+    'Every specification heading is mapped',
+    'Traceability ranges match exact specification sections',
+    'Task citations are represented in traceability',
+    'Traceability table matches its manifest',
+    'Traceability uses known task owners',
+    'Checked procedural sentences contain at most 20 whitespace-separated words',
+    'Task authored fields match fixed projection',
+    'Case authored fields match fixed projection',
+    'Graph declarations match fixed projection',
+    'Traceability authored sections match fixed projection',
+    'CONTRACTS.md matches its fixed checksum',
+    'SUBAGENTS.md matches its fixed checksum',
+    'PACK-CHECKS matches canonical template with mutable count and result slots',
+    'PACK-CHECKS scenario count matches the independent fixture inventory',
+)
+FIXTURE_INITIAL_ONLY_CHECK_NAMES = (
+    'Initial task, case, and assignment statuses claim no execution',
+    'Pack records no runtime tests or delegated reviews',
+)
+FIXTURE_CHECK_INVENTORY_CHECK = 'Validator check inventory matches its canonical ordered sequence'
+
+
+FIXED_FIXTURE_COUNT = 262
+FIXED_FIXTURE_NAMES = (
+    "isolated subprocess detects idempotent README mutation during validator import",
+    "shared PASS summary requires every owner",
+    "task PASS with its own assignment results",
+    "mixed PASS and NOT_RUN summarizes as NOT_RUN",
+    "mixed PASS and BLOCKED summarizes as BLOCKED",
+    "FAIL takes precedence over BLOCKED",
+    "NOT_STARTED owner cannot have PASS assignment",
+    "NOT_STARTED owner cannot have FAIL assignment",
+    "NOT_STARTED owner cannot have BLOCKED assignment",
+    "READY owner cannot have PASS assignment",
+    "READY owner cannot have FAIL assignment",
+    "READY owner cannot have BLOCKED assignment",
+    "READY owner can retain NOT_RUN assignment",
+    "ordinary validation rejects a missing runtime-execution marker",
+    "ordinary validation rejects a non-Boolean delegation marker",
+    "initial validation rejects non-Boolean execution markers",
+    "readiness groups reject an object with a structured input error",
+    "readiness groups reject a non-list group with a structured input error",
+    "readiness groups reject a non-string task identifier with a structured input error",
+    "serial SOURCE work passes without delegation or runtime claims",
+    "serial REVIEW work records its own passing assignment",
+    "LIVE PASS assignments require a true runtime-execution marker",
+    "LIVE PASS assignments are accepted with a true runtime-execution marker",
+    "LIVE FAIL assignments require a true runtime-execution marker",
+    "LIVE FAIL assignments are accepted with a true runtime-execution marker",
+    "LIVE BLOCKED results do not claim runtime execution",
+    "a BUILD assignment does not claim LIVE runtime execution",
+    "temporary normalization resets only valid true execution markers",
+    "temporary normalization does not recreate a missing execution marker",
+    "temporary normalization does not repair an invalid execution marker",
+    "progressed source with true execution markers passes ordinary validation",
+    "BLOCKED owner can retain its passing assignment while T32 waits",
+    "upstream PASS cannot close downstream assignment",
+    "legacy summary cannot PASS with incomplete assignment",
+    "legacy manifest without assignment_results is rejected",
+    "malformed assignment row is rejected",
+    "undocumented assignment status is rejected",
+    "duplicate task assignment is rejected",
+    "missing task assignment is rejected",
+    "extra task assignment is rejected",
+    "duplicate case owner fails when its Markdown block is synchronized",
+    "copied pack without validator fails under the real external validator",
+    "acceptance prefix mutation violates its fixed checksum",
+    "acceptance prefix deletion violates its fixed checksum",
+    "initial mode rejects assignment progress",
+    "initial mode rejects malformed assignment rows cleanly",
+    "temporary normalization changes only P00 and A01 status fields",
+    "consistent progressed P00 and A01 board passes ordinary validation",
+    "invalid temporary source board with missing A01 assignment is not repaired",
+    "T33 waits for T27 checkpoint completion",
+    "BLOCKED task and assignment remain blocked without failing validation",
+    "FAIL task must wait for completed dependencies",
+    "FAIL task remains valid after completed dependencies with NOT_RUN and PASS cases",
+    "BLOCKED task may wait on an incomplete dependency with NOT_RUN cases",
+    "BLOCKED T32 with incomplete dependencies cannot retain PASS assignments",
+    "BLOCKED T32 with incomplete dependencies cannot retain FAIL assignments",
+    "BLOCKED T32 with incomplete dependencies cannot retain BLOCKED assignments",
+    "BLOCKED T32 with incomplete dependencies keeps NOT_RUN assignments",
+    "BLOCKED task with completed dependencies retains prior case results",
+    "REVIEW task requires its own result when another owner has PASS",
+    "REVIEW task requires every owned assignment to have a result",
+    "REVIEW task accepts its own PASS assignment results",
+    "REVIEW task accepts its own FAIL assignment results",
+    "REVIEW task accepts its own BLOCKED assignment results",
+    "REVIEW task without acceptance cases remains valid",
+    "task without acceptance cases keeps completion rule",
+    "duplicate task case reference is rejected with synchronized task cards",
+    "non-string task case reference is rejected before ownership set logic",
+    "acceptance manifest root status cannot claim PASS for incomplete cases",
+    "acceptance manifest root status rejects undocumented values",
+    "manifest summary gives FAIL precedence over BLOCKED",
+    "task completion rule cannot diverge from the shared evidence contract",
+    "task review rule rejects self-review after synchronized cards",
+    "task review rule requires a post-merge integration rerun",
+    "canonical review receipt cannot be removed with synchronized cards",
+    "report path cannot move from its canonical task receipt directory",
+    "upstream task keeps its task-specific change receipt",
+    "P02 keeps the required early LIVE records with synchronized cards",
+    "P02 cannot omit actual early LIVE execution",
+    "T12 cannot reuse the earlier P02 LIVE results",
+    "P04 must validate and import early records without closing T12",
+    "P04 registration is limited to enum and dispatch through Integration",
+    "P05 retains only workspace and build graph registration",
+    "P05 must register xtask and test support in the workspace graph",
+    "P04 requests the initial target registration from Integration",
+    "T35 through T38 retain ordered qualified-target patch requests",
+    "P04 cannot receive direct write scope for the central target matrix",
+    "T35 cannot write the central target matrix directly",
+    "Required target rows remain and unavailable rows stay BLOCKED",
+    "release preflight cannot weaken the prior-task prerequisite",
+    "release finalization cannot omit A125",
+    "release finalization requires independent T40 review",
+    "release finalization requires merged-source checks",
+    "runtime requalification treats T40 version and package changes as triggers",
+    "unjustified runtime impact requires the full applicable LIVE matrix",
+    "runtime reruns preserve original case owners and let T40 coordinate",
+    "runtime reruns retain early failed blocked and repeat evidence",
+    "fresh LIVE results bind final inputs artifacts target run and review",
+    "missing stale failed or blocked LIVE reruns prevent finalization",
+    "finalization explicitly requires fresh bound LIVE results",
+    "preflight does not require future T40 runtime-change outputs",
+    "T39 task packet records post-deletion runtime impact and LIVE reruns",
+    "T40 card requires fresh affected LIVE results through original operators",
+    "T40 version and package changes cannot bypass fresh LIVE reruns",
+    "A123 refuses stale or missing post-deletion LIVE evidence",
+    "release preflight cannot issue approval",
+    "P04 task card retains the fixed protocol implementation requirement",
+    "T40 card retains fail-closed finalization conditions",
+    "T40 requires actual results for A123 through A125",
+    "A123 keeps prerequisite refusal assertions and finalization contract",
+    "pack report cannot claim runtime finalizer verification",
+    "review packet requires candidate review before merge",
+    "P04 remains owned by the Qualification subagent",
+    "cited task is required in every intersecting section even when mapped elsewhere",
+    "malformed task SPEC citation syntax is rejected",
+    "task SPEC citation beyond the document is rejected",
+    "malformed task manifest returns structured input error with exit two",
+    "task-graph.json rejects a null tasks record before owner evaluation",
+    "acceptance-cases.json rejects a null cases record before owner evaluation",
+    "traceability.json rejects a null sections record before owner evaluation",
+    "ordinary baseline report contains the complete ordered check inventory",
+    "initial baseline report contains ordinary and initial-only check inventories",
+    "manifest owns the exact recursive Markdown task-packet set",
+    "graph root classification rejects a release-approval value",
+    "fixture oracle detects removal of task-count implementation and inventory entry",
+    "canonical report rejects nonempty counts that differ from tested inputs",
+    "canonical report rejects nonempty all-zero counts",
+    "missing validator short form rejects fabricated README detail",
+    "missing tasks short form rejects fabricated cases detail",
+    "empty validator stdout is rejected",
+    "invalid JSON validator stdout is rejected",
+    "non-object validator JSON is rejected",
+    "validator report with missing fields is rejected",
+    "validator report with wrong field types is rejected",
+    "validator report with inconsistent counts is rejected",
+    "contradictory passed and failures fields are rejected",
+    "check list inconsistent with failures is rejected even at exit zero",
+    "malformed check records are rejected",
+    "duplicate check names are rejected",
+    "validator report with mismatched scope is rejected",
+    "report exit code must agree with passed even at exit zero",
+    "structured input-error report with contradictory exit one is rejected",
+    "truncated passing report is rejected",
+    "truncated failing report is rejected even when expected failure appears",
+    "report with a missing middle check is rejected",
+    "report with reordered checks is rejected",
+    "report with an extra check is rejected",
+    "initial report missing an initial-only tail check is rejected",
+    "report initial flag must match the validator invocation",
+    "unexpected extra failure name does not match exact expectation",
+    "Integration role row lists every graph-owned task",
+    "role assignment table matches every graph owner, not only Integration",
+    "T40 cannot bypass Integration for shared finalization writes",
+    "release finalization keeps shared writes with Integration",
+    "release finalization requires conditional approval for supported patched tuples",
+    "unpatched supported tuples do not require patch-approval records",
+    "A125 verifies conditional maintainer approval for each patched tuple",
+    "C01 source table rejects a missing historical reference",
+    "C01 source table rejects a duplicate reference",
+    "C01 source table rejects an extra reference",
+    "C01 source table rejects an altered release version",
+    "C01 source table rejects an altered release comparator commit",
+    "C01 source table rejects an altered historical commit",
+    "C02 digest rejects a deleted production crate row",
+    "C02 digest rejects an altered crate responsibility",
+    "C02 digest rejects a weakened dependency boundary",
+    "C02 digest rejects a duplicate section anchor",
+    "C02 digest rejects a missing section anchor",
+    "C02 digest rejects a missing end boundary",
+    "C02 digest rejects a duplicate end boundary",
+    "individual task packet rejects a missing instruction preamble",
+    "missing task packet input identifies P00",
+    "individual task packet rejects a mismatched packet ID",
+    "individual task packet rejects a weakened file lease instruction",
+    "individual task packet rejects a weakened dependency instruction",
+    "individual task packet rejects weakened change authorization",
+    "individual task packet rejects an extra conflicting instruction",
+    "exact manifest packet set rejects nested archived Markdown",
+    "exact manifest packet set rejects a missing canonical Markdown packet",
+    "task file path rejects relocated locations",
+    "task file path rejects traversing locations",
+    "task file path rejects absolute locations",
+    "task file path rejects colliding locations",
+    "task test-write scope rejects relocated locations",
+    "task test-write scope rejects traversing locations",
+    "task test-write scope rejects absolute locations",
+    "task test-write scope rejects colliding locations",
+    "empty root dependency list remains valid",
+    "dependency list rejects duplicate IDs before DAG operations",
+    "dependency list rejects non-string entries before DAG operations",
+    "dependency list rejects a non-list value before DAG operations",
+    "unknown dependency retains reference and readiness diagnostics",
+    "self dependency retains reference and cycle diagnostics",
+    "dependency cycle retains cycle and readiness diagnostics",
+    "valid evidence-level downgrade does not reclassify A11",
+    "valid evidence-level downgrade does not reclassify A50",
+    "GOAL.md rejects truncation",
+    "GOAL.md is a required input",
+    "GOAL.md rejects a conflicting execution-control clause",
+    "authoritative concurrency declaration rejects a changed limit",
+    "authoritative concurrency declaration cannot be missing",
+    "authoritative concurrency declaration cannot be duplicated",
+    "task graph rejects a duplicate top-level JSON key",
+    "task graph rejects a duplicate nested JSON key",
+    "acceptance rejects a duplicate top-level JSON key",
+    "acceptance rejects a duplicate nested JSON key",
+    "traceability rejects a duplicate top-level JSON key",
+    "traceability rejects a duplicate nested JSON key",
+    "task-graph.json rejects nonstandard JSON constant NaN",
+    "acceptance-cases.json rejects nonstandard JSON constant Infinity",
+    "traceability.json rejects nonstandard JSON constant -Infinity",
+    "fixture report parser rejects duplicate top-level JSON keys",
+    "fixture report parser rejects duplicate nested JSON keys",
+    "fixture report parser rejects nonstandard JSON constant NaN",
+    "fixture report parser rejects nonstandard JSON constant Infinity",
+    "fixture report parser rejects nonstandard JSON constant -Infinity",
+    "P05 cannot defer its A13 run to the final graph",
+    "T39 cannot omit its final post-deletion A13 rerun",
+    "A13 cannot omit P05 current-graph Cargo metadata",
+    "A13 cannot omit T39 final-graph Cargo metadata",
+    "A15 cannot omit the integrated T23 owner",
+    "T23 must qualify the full A15 StartSession barrier",
+    "U00 cannot collapse A15 and A16 into integrated behavior",
+    "T13 cannot collapse A15 and A16 into product behavior",
+    "U00 must bind A16's replacement source to its accepted revision",
+    "T13 must bind A16's replacement source to its accepted revision",
+    "A16 cannot omit the T29 product-presentation owner",
+    "T29 must display A16's accepted replacement source and revision",
+    "A17 cannot omit integrated T23 ownership",
+    "T23 retains integrated StartSession and re-admission for A17",
+    "A16 loads the global policy before querying and displaying it",
+    "Synchronized A22 prose cannot weaken owner-specific assertions",
+    "C06 credential-authority fail-open cannot alter the complete contracts",
+    "T23 cannot omit its T16 dependency after all graph mirrors are recomputed",
+    "T23 cannot add an extra dependency after all graph mirrors are recomputed",
+    "Worker task cannot claim shared root Cargo files",
+    "Extra contradictory task scope cannot override the authored lease",
+    "T23 cannot rebase its citation to SPEC L1 with synchronized traceability",
+    "SUBAGENTS shared-file authority cannot be weakened",
+    "PACK-CHECKS rejects conflicting prose outside its result slots",
+    "PACK-CHECKS mutable count and result slots remain editable",
+    "PACK-CHECKS check results reject release-approval prose",
+    "PACK-CHECKS observations reject release-approval prose",
+    "fixture runner detects input and validator changes during execution",
+    "PLAN prefix policy mutation violates its fixed digest",
+    "PLAN task-index boundary cannot be missing",
+    "PLAN task-index boundary cannot be duplicated",
+    "Synchronized PLAN concurrency-policy weakening violates the fixed prefix",
+    "A86 cannot omit T29 integrated presentation ownership or weaken its assertions",
+    "T40 cannot claim direct writes to shared target and compatibility matrices",
+    "acceptance root rejects an unrecognized release approval key",
+    "acceptance root rejects an innocuous unknown key",
+    "SOURCE-AUDIT rejects contradictory appended instructions",
+    "TERMS rejects contradictory appended instructions",
+    "PACK-CHECKS rejects a wrong detailed task-card count",
+    "PACK-CHECKS rejects a wrong acceptance case count",
+    "PACK-CHECKS rejects a wrong specification heading count",
+    "PACK-CHECKS rejects a wrong readiness group count",
+    "PACK-CHECKS rejects a wrong procedural sentence count",
+    "PACK-CHECKS rejects a wrong ordinary check inventory count",
+    "PACK-CHECKS rejects a wrong initial check inventory count",
+    "PACK-CHECKS scenario count must match its independent inventory",
+)
+FIXED_RUNNER_CHECK_COUNT = 23
+FIXED_RUNNER_CHECK_NAMES = (
+    "The fixture inventory rejects a missing scenario entry.",
+    "The fixture inventory rejects a duplicate scenario entry.",
+    "The fixture inventory rejects an unexpected scenario entry.",
+    "Canonical roots accept OS aliases and reject linked pack inputs before reads or copying.",
+    "The owned process group kills inherited-pipe descendants and rejects timed-out success output.",
+    "The runner captures validator import stdout without leaking output.",
+    "The runner captures validator import stderr without leaking output.",
+    "The runner captures validator import exception without leaking output.",
+    "The runner captures validator import quiet without leaking output.",
+    "The runner captures validator import systemexit-zero without leaking output.",
+    "The runner captures validator import systemexit-nonzero without leaking output.",
+    "The runner captures validator import systemexit-string without leaking output.",
+    "KeyboardInterrupt remains an uncaught cancellation during validator import.",
+    "A86 phase controls reject owner, layer, operator-intent, and trusted-state regressions.",
+    "The runner-control inventory rejects a missing control.",
+    "The runner-control inventory rejects a duplicate control.",
+    "The runner-control inventory rejects an unexpected control.",
+    "The runner-control inventory accepts the complete fixed control list.",
+    "The owned process group kills a no-pipe descendant after the direct child exits.",
+    "Shared process liveness classifies running, zombie, dead, absent, and inaccessible processes.",
+    "Post-mutation linked count and report inputs are refused before reads or writes.",
+    "A82, A84, A96, A99, and A100 retain early qualification and T29 presentation phases.",
+    "Cohort C preserves integrated admission, activation freshness, name safety, policy revocation, and builder trust.",
+)
+
+
+def fixture_inventory_report(observed_names: list[Any]) -> dict[str, Any]:
+    expected_names = list(FIXED_FIXTURE_NAMES)
+    actual_names = [name for name in observed_names if isinstance(name, str)]
+    invalid_observed_names = [
+        {"index": index, "value": name}
+        for index, name in enumerate(observed_names)
+        if not isinstance(name, str)
+    ]
+    expected_duplicates = sorted({
+        name for name in expected_names if expected_names.count(name) > 1
+    })
+    actual_duplicates = sorted({
+        name for name in actual_names if actual_names.count(name) > 1
+    })
+    expected_set = set(expected_names)
+    actual_set = set(actual_names)
+    errors = []
+    if len(expected_names) != FIXED_FIXTURE_COUNT:
+        errors.append("The fixed fixture-name inventory has the wrong number of entries.")
+    if expected_duplicates:
+        errors.append("The fixed fixture-name inventory contains duplicate names.")
+    if len(observed_names) != FIXED_FIXTURE_COUNT:
+        errors.append("The executed fixture count does not match the fixed count.")
+    if invalid_observed_names:
+        errors.append("The executed fixture inventory contains non-string names.")
+    if actual_duplicates:
+        errors.append("The executed fixture inventory contains duplicate names.")
+    missing_names = sorted(expected_set - actual_set)
+    unexpected_names = sorted(actual_set - expected_set)
+    if missing_names:
+        errors.append("The executed fixture inventory is missing fixed scenarios.")
+    if unexpected_names:
+        errors.append("The executed fixture inventory contains unexpected scenarios.")
+    return {
+        "passed": not errors,
+        "expected_count": FIXED_FIXTURE_COUNT,
+        "fixed_inventory_count": len(expected_names),
+        "observed_count": len(observed_names),
+        "expected_duplicate_names": expected_duplicates,
+        "observed_duplicate_names": actual_duplicates,
+        "invalid_observed_names": invalid_observed_names,
+        "missing_names": missing_names,
+        "unexpected_names": unexpected_names,
+        "errors": errors,
+    }
+
+
+
+def fixture_check_inventory(initial: bool = False) -> tuple[str, ...]:
+    initial_checks = FIXTURE_INITIAL_ONLY_CHECK_NAMES if initial else ()
+    return (*FIXTURE_ORDINARY_CHECK_NAMES, *initial_checks, FIXTURE_CHECK_INVENTORY_CHECK)
+
+
+def runner_check_inventory_report(observed_names: list[Any]) -> dict[str, Any]:
+    expected_names = list(FIXED_RUNNER_CHECK_NAMES)
+    actual_names = [name for name in observed_names if isinstance(name, str)]
+    invalid_observed_names = [
+        {"index": index, "value": name}
+        for index, name in enumerate(observed_names)
+        if not isinstance(name, str)
+    ]
+    expected_duplicates = sorted({name for name in expected_names
+                                  if expected_names.count(name) > 1})
+    observed_duplicates = sorted({name for name in actual_names
+                                  if actual_names.count(name) > 1})
+    errors: list[str] = []
+    if len(expected_names) != FIXED_RUNNER_CHECK_COUNT:
+        errors.append("The fixed runner-control inventory has the wrong number of entries.")
+    if expected_duplicates:
+        errors.append("The fixed runner-control inventory contains duplicate names.")
+    if len(observed_names) != FIXED_RUNNER_CHECK_COUNT:
+        errors.append("The executed runner-control count does not match the fixed count.")
+    if invalid_observed_names:
+        errors.append("The executed runner-control inventory contains non-string names.")
+    if observed_duplicates:
+        errors.append("The executed runner-control inventory contains duplicate names.")
+    missing_names = sorted(set(expected_names) - set(actual_names))
+    unexpected_names = sorted(set(actual_names) - set(expected_names))
+    if missing_names:
+        errors.append("The executed runner-control inventory is missing fixed controls.")
+    if unexpected_names:
+        errors.append("The executed runner-control inventory contains unexpected controls.")
+    return {
+        "passed": not errors,
+        "expected_count": FIXED_RUNNER_CHECK_COUNT,
+        "fixed_inventory_count": len(expected_names),
+        "observed_count": len(observed_names),
+        "expected_duplicate_names": expected_duplicates,
+        "observed_duplicate_names": observed_duplicates,
+        "invalid_observed_names": invalid_observed_names,
+        "missing_names": missing_names,
+        "unexpected_names": unexpected_names,
+        "errors": errors,
+    }
+
+
+def runner_inventory_control_probe(mode: str) -> dict[str, Any]:
+    observed_names = list(FIXED_RUNNER_CHECK_NAMES)
+    timeout_name = FIXED_RUNNER_CHECK_NAMES[4]
+    if mode == "missing":
+        observed_names.remove(timeout_name)
+    elif mode == "duplicate":
+        observed_names.append(FIXED_RUNNER_CHECK_NAMES[0])
+    elif mode == "unexpected":
+        observed_names.append("An undeclared runner control was executed.")
+    elif mode != "complete":
+        raise ValueError(f"Unsupported runner-control inventory probe mode: {mode}")
+    report = runner_check_inventory_report(observed_names)
+    expected = mode == "complete" and report["passed"]
+    if mode == "missing":
+        expected = timeout_name in report["missing_names"] and not report["passed"]
+    elif mode == "duplicate":
+        expected = (FIXED_RUNNER_CHECK_NAMES[0] in report["observed_duplicate_names"]
+                    and not report["passed"])
+    elif mode == "unexpected":
+        expected = ("An undeclared runner control was executed." in report["unexpected_names"]
+                    and not report["passed"])
+    return {
+        "scenario": {
+            "missing": "The runner-control inventory rejects a missing control.",
+            "duplicate": "The runner-control inventory rejects a duplicate control.",
+            "unexpected": "The runner-control inventory rejects an unexpected control.",
+            "complete": "The runner-control inventory accepts the complete fixed control list.",
+        }[mode],
+        "passed": expected,
+        "mode": mode,
+        "report": report,
+    }
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    value = strict_json_loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"Expected JSON object: {path}")
+    return value
+
+
+def write_json(path: Path, value: Any) -> None:
+    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def normalize_status_fields(pack: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    changes: list[dict[str, Any]] = []
+    errors: list[str] = []
+    input_policy_violations = certified_input_violations(pack)
+    if input_policy_violations:
+        return changes, [
+            f"certified input paths are unsafe before normalization: {input_policy_violations}"
+        ]
+
+    for relative_path in ("task-graph.json", "acceptance-cases.json"):
+        path = pack / relative_path
+        try:
+            data = read_json(path)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            errors.append(f"{relative_path}: {error}")
+            continue
+        changed = False
+
+        def set_existing_status(record: dict[str, Any], field_path: str, target: str) -> None:
+            nonlocal changed
+            if "status" not in record or record["status"] == target:
+                return
+            changes.append({"path": relative_path, "field": f"{field_path}.status",
+                            "before": record["status"], "after": target})
+            record["status"] = target
+            changed = True
+
+        if relative_path == "task-graph.json":
+            tasks = data.get("tasks")
+            if isinstance(tasks, list):
+                for index, task in enumerate(tasks):
+                    if isinstance(task, dict):
+                        set_existing_status(task, f"tasks[{index}]", "NOT_STARTED")
+            for field in ("subagents_used_for_this_pack", "runtime_tests_executed_for_this_pack"):
+                value = data.get(field)
+                if type(value) is bool and value is True:
+                    changes.append({"path": relative_path, "field": field,
+                                    "before": True, "after": False})
+                    data[field] = False
+                    changed = True
+        else:
+            set_existing_status(data, "root", "NOT_RUN")
+            cases = data.get("cases")
+            if isinstance(cases, list):
+                for case_index, case in enumerate(cases):
+                    if not isinstance(case, dict):
+                        continue
+                    set_existing_status(case, f"cases[{case_index}]", "NOT_RUN")
+                    assignments = case.get("assignment_results")
+                    if isinstance(assignments, list):
+                        for assignment_index, assignment in enumerate(assignments):
+                            if isinstance(assignment, dict):
+                                set_existing_status(
+                                    assignment,
+                                    f"cases[{case_index}].assignment_results[{assignment_index}]",
+                                    "NOT_RUN",
+                                )
+        if changed:
+            write_json(path, data)
+    return changes, errors
+
+
+def derive_expected_counts(pack: Path) -> dict[str, int] | None:
+    try:
+        graph = read_json(pack / "task-graph.json")
+        cases_file = read_json(pack / "acceptance-cases.json")
+        tasks = graph["tasks"]
+        cases = cases_file["cases"]
+        spec_lines = (pack / "SPEC.md").read_text(encoding="utf-8").splitlines()
+        goal_lines = (pack / "GOAL.md").read_text(encoding="utf-8").splitlines()
+        if not isinstance(tasks, list) or not isinstance(cases, list):
+            return None
+        if any(not isinstance(case, dict) for case in cases):
+            return None
+
+        dependency_lists_valid = True
+        for task in tasks:
+            if not isinstance(task, dict):
+                return None
+            dependencies = task.get("depends_on")
+            if (not isinstance(dependencies, list)
+                    or any(not isinstance(dependency, str) for dependency in dependencies)
+                    or len(dependencies) != len(set(dependencies))):
+                dependency_lists_valid = False
+        task_ids = [task["id"] for task in tasks]
+        task_set = set(task_ids)
+        ready_groups = 0
+        if dependency_lists_valid:
+            done: set[str] = set()
+            while len(done) < len(task_set):
+                ready = [task["id"] for task in tasks
+                         if task["id"] not in done and set(task["depends_on"]).issubset(done)]
+                if not ready:
+                    break
+                ready_groups += 1
+                done.update(ready)
+
+        sentence_count = 0
+
+        def count_sentences(value: str) -> int:
+            return sum(bool(sentence.strip())
+                       for sentence in re.split(r"(?<=[.!?])\s+", value))
+
+        for task in tasks:
+            for field in ("steps", "acceptance", "remove_or_replace", "stop_conditions"):
+                for item in task[field]:
+                    sentence_count += count_sentences(item)
+        for case in cases:
+            for field in ("setup", "action", "expected"):
+                sentence_count += count_sentences(case[field])
+        for line in goal_lines:
+            if not line.strip() or line.startswith(("#", "/goal")):
+                continue
+            sentence_count += count_sentences(line)
+
+        specification_sections = sum(
+            bool(re.match(r"^#{1,2} ", line)) for line in spec_lines
+        )
+        return {
+            "tasks": len(tasks),
+            "cases": len(cases),
+            "specification_sections": specification_sections,
+            "task_ready_groups": ready_groups,
+            "checked_sentences": sentence_count,
+        }
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def synchronize_pack_check_counts(pack: Path) -> None:
+    """Keep derived report counts truthful on fixture copies after authored mutations."""
+    counts = derive_expected_counts(pack)
+    if counts is None:
+        return
+    path = pack / "PACK-CHECKS.md"
+    if not path.is_file():
+        return
+    document = path.read_text(encoding="utf-8")
+    fields = {
+        "Detailed task cards": "tasks",
+        "Acceptance cases": "cases",
+        "Mapped specification headings": "specification_sections",
+        "Topological readiness groups": "task_ready_groups",
+        "Checked procedural sentences": "checked_sentences",
+    }
+    for label, field in fields.items():
+        pattern = re.compile(rf"^\| {re.escape(label)} \| \d+ \|$", re.MULTILINE)
+        replacement = f"| {label} | {counts[field]} |"
+        document, replacements = pattern.subn(lambda _: replacement, document)
+        if replacements != 1:
+            return
+    path.write_text(document, encoding="utf-8")
+
+
+def status_summary(statuses: list[str]) -> str:
+    if "FAIL" in statuses:
+        return "FAIL"
+    if "BLOCKED" in statuses:
+        return "BLOCKED"
+    if statuses and all(status == "PASS" for status in statuses):
+        return "PASS"
+    return "NOT_RUN"
+
+
+def task_map(pack: Path) -> dict[str, dict[str, Any]]:
+    return {task["id"]: task for task in read_json(pack / "task-graph.json")["tasks"]}
+
+
+def case_map(pack: Path) -> dict[str, dict[str, Any]]:
+    return {case["id"]: case for case in read_json(pack / "acceptance-cases.json")["cases"]}
+
+
+def update_cases(pack: Path, update: Callable[[dict[str, dict[str, Any]]], None]) -> None:
+    path = pack / "acceptance-cases.json"
+    data = read_json(path)
+    cases = {case["id"]: case for case in data["cases"]}
+    update(cases)
+    data["status"] = status_summary([case["status"] for case in data["cases"]])
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def mark_all_cases_pass(cases: dict[str, dict[str, Any]]) -> None:
+    for case in cases.values():
+        case["status"] = "PASS"
+        for result in case["assignment_results"]:
+            result["status"] = "PASS"
+
+
+def set_assignment(case: dict[str, Any], task_id: str, status: str) -> None:
+    for result in case["assignment_results"]:
+        if result["task_id"] == task_id:
+            result["status"] = status
+            return
+    raise ValueError(f"Missing assignment: {case['id']} / {task_id}")
+
+
+def set_shared_summary(u02: str, t32: str, summary: str) -> Callable[[dict[str, dict[str, Any]]], None]:
+    def update(cases: dict[str, dict[str, Any]]) -> None:
+        case = cases["A22"]
+        set_assignment(case, "U02", u02)
+        set_assignment(case, "T32", t32)
+        case["status"] = summary
+    return update
+
+
+def set_single_summary(task_id: str, status: str) -> Callable[[dict[str, dict[str, Any]]], None]:
+    def update(cases: dict[str, dict[str, Any]]) -> None:
+        case = cases["A01"]
+        set_assignment(case, task_id, status)
+        case["status"] = status
+    return update
+
+
+def set_task_status(pack: Path, task_id: str, status: str) -> None:
+    graph_path = pack / "task-graph.json"
+    graph = read_json(graph_path)
+    task = next(task for task in graph["tasks"] if task["id"] == task_id)
+    task["status"] = status
+    graph_path.write_text(json.dumps(graph, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def set_execution_markers(pack: Path, **values: Any) -> None:
+    graph_path = pack / "task-graph.json"
+    graph = read_json(graph_path)
+    graph.update(values)
+    write_json(graph_path, graph)
+
+
+def set_task_states(pack: Path, statuses: dict[str, str]) -> None:
+    graph_path = pack / "task-graph.json"
+    graph = read_json(graph_path)
+    tasks = {task["id"]: task for task in graph["tasks"]}
+    for task_id, status in statuses.items():
+        tasks[task_id]["status"] = status
+
+    nonpass_roots = {task_id for task_id, status in statuses.items() if status != "PASS"}
+    descendants: set[str] = set()
+    frontier = list(nonpass_roots)
+    while frontier:
+        dependency = frontier.pop()
+        for task in graph["tasks"]:
+            task_id = task["id"]
+            if dependency in task["depends_on"] and task_id not in descendants:
+                descendants.add(task_id)
+                frontier.append(task_id)
+    descendants.difference_update(statuses)
+    for task_id in descendants:
+        tasks[task_id]["status"] = "BLOCKED"
+    write_json(graph_path, graph)
+
+    def update(cases: dict[str, dict[str, Any]]) -> None:
+        for case in cases.values():
+            for result in case["assignment_results"]:
+                if result["task_id"] in descendants:
+                    result["status"] = "NOT_RUN"
+            case["status"] = status_summary([row["status"] for row in case["assignment_results"]])
+    update_cases(pack, update)
+
+
+def sync_task_packet(pack: Path, task_id: str) -> None:
+    graph = read_json(pack / "task-graph.json")
+    task = next(task for task in graph["tasks"] if task["id"] == task_id)
+    rendered_packet = render_task_packet(task).strip()
+    rendered_card = render_task_card(task).strip()
+    marker = f"### {task_id} — {task['title']}"
+
+    card_path = pack / task["task_file"]
+    card_path.write_text(rendered_packet + "\n", encoding="utf-8")
+
+    plan_path = pack / "PLAN.md"
+    plan = plan_path.read_text(encoding="utf-8")
+    matches = list(re.finditer(r"(?m)^" + re.escape(marker) + r"$", plan))
+    if len(matches) != 1:
+        raise ValueError(f"Expected one PLAN block for {task_id}")
+    start = matches[0].start()
+    following = re.search(r"(?m)^### ", plan[matches[0].end():])
+    end = matches[0].end() + following.start() if following else len(plan)
+    plan_path.write_text(plan[:start] + rendered_card + "\n\n" + plan[end:].lstrip("\n"), encoding="utf-8")
+
+
+def sync_task_indexes(pack: Path) -> None:
+    graph = read_json(pack / "task-graph.json")
+    rendered = render_task_index(graph["tasks"])
+    header = "| ID | Task | Subagent | Dependencies |"
+    for relative_path in ("TASKS.md", "PLAN.md"):
+        path = pack / relative_path
+        lines = path.read_text(encoding="utf-8").splitlines()
+        matches = [index for index, line in enumerate(lines) if line == header]
+        if len(matches) != 1:
+            raise ValueError(f"Expected one task index table in {relative_path}")
+        start = matches[0]
+        end = start + 1
+        while end < len(lines) and lines[end].startswith("|"):
+            end += 1
+        lines[start:end] = rendered
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def recompute_ready_groups(pack: Path) -> None:
+    graph_path = pack / "task-graph.json"
+    graph = read_json(graph_path)
+    tasks = graph["tasks"]
+    done: set[str] = set()
+    levels = []
+    while len(done) < len(tasks):
+        ready = [task["id"] for task in tasks
+                 if task["id"] not in done and set(task["depends_on"]).issubset(done)]
+        if not ready:
+            raise ValueError("Cannot derive readiness groups for a cyclic fixture graph")
+        levels.append(ready)
+        done.update(ready)
+    graph["topological_ready_groups"] = levels
+    write_json(graph_path, graph)
+
+
+def all_pass(pack: Path) -> None:
+    graph_path = pack / "task-graph.json"
+    graph = read_json(graph_path)
+    for task in graph["tasks"]:
+        task["status"] = "PASS"
+    graph["runtime_tests_executed_for_this_pack"] = True
+    graph_path.write_text(json.dumps(graph, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    update_cases(pack, mark_all_cases_pass)
+
+
+def inspect_report(stdout: str, exit_code: int, initial: bool = False) -> tuple[dict[str, Any] | None, list[str]]:
+    if not stdout.strip():
+        return None, ["stdout is empty"]
+    try:
+        report = strict_json_loads(stdout)
+    except DuplicateJSONKeyError as error:
+        return None, [str(error)]
+    except json.JSONDecodeError:
+        return None, ["stdout is not valid JSON"]
+    except ValueError as error:
+        return None, [str(error)]
+    if not isinstance(report, dict):
+        return None, ["report must be a JSON object"]
+
+    required = {"passed", "initial", "scope", "not_checked", "counts", "checks", "failures"}
+    missing = sorted(required - set(report))
+    if missing:
+        return report, [f"report is missing required fields: {', '.join(missing)}"]
+    unexpected = sorted(set(report) - required)
+
+    type_errors = []
+    if type(report["passed"]) is not bool:
+        type_errors.append("passed")
+    if type(report["initial"]) is not bool:
+        type_errors.append("initial")
+    if not isinstance(report["scope"], str):
+        type_errors.append("scope")
+    if not isinstance(report["not_checked"], list) or any(
+        not isinstance(item, str) for item in report["not_checked"]
+    ):
+        type_errors.append("not_checked")
+    if not isinstance(report["counts"], dict):
+        type_errors.append("counts")
+    if not isinstance(report["checks"], list):
+        type_errors.append("checks")
+    if not isinstance(report["failures"], list) or any(
+        not isinstance(item, str) for item in report["failures"]
+    ):
+        type_errors.append("failures")
+    if type_errors:
+        return report, [f"report has invalid field types: {', '.join(type_errors)}"]
+
+    errors = []
+    if unexpected:
+        errors.append(f"report has unexpected fields: {', '.join(unexpected)}")
+    if report["initial"] is not initial:
+        errors.append("initial flag does not match invocation")
+    if report["scope"] != "Static planning-pack checks only":
+        errors.append("scope does not match the validator contract")
+    expected_not_checked = [
+        "Product compilation",
+        "Runtime capabilities",
+        "Independent code review",
+        "Full ASD-STE100 dictionary conformity",
+    ]
+    if report["not_checked"] != expected_not_checked:
+        errors.append("not_checked does not match the validator contract")
+
+    expected_count_names = {
+        "tasks", "cases", "specification_sections", "task_ready_groups", "checked_sentences",
+    }
+    counts = report["counts"]
+    check_records = report["checks"]
+    early_required_file_failure = (
+        not report["passed"]
+        and counts == {}
+        and report["failures"] == ["Required pack files exist"]
+        and len(check_records) == 1
+        and isinstance(check_records[0], dict)
+        and check_records[0].get("check") == "Required pack files exist"
+        and check_records[0].get("passed") is False
+        and isinstance(check_records[0].get("detail"), list)
+        and bool(check_records[0]["detail"])
+        and all(isinstance(item, str) and item for item in check_records[0]["detail"])
+    )
+    structured_input_error = (
+        not report["passed"]
+        and counts == {}
+        and report["failures"] == ["Planning pack input is valid"]
+        and len(check_records) == 1
+        and isinstance(check_records[0], dict)
+        and check_records[0].get("check") == "Planning pack input is valid"
+        and check_records[0].get("passed") is False
+        and isinstance(check_records[0].get("detail"), str)
+        and bool(check_records[0]["detail"])
+    )
+    if counts:
+        if set(counts) != expected_count_names or any(
+            type(value) is not int or value < 0 for value in counts.values()
+        ):
+            errors.append("counts have invalid keys or values")
+    else:
+        if not early_required_file_failure and not structured_input_error:
+            errors.append("counts are empty outside the required-file failure report")
+
+    check_names = []
+    malformed_checks = False
+    for check in report["checks"]:
+        if (not isinstance(check, dict)
+                or set(check) != {"check", "passed", "detail"}
+                or not isinstance(check.get("check"), str)
+                or not check.get("check")
+                or type(check.get("passed")) is not bool
+                or "detail" not in check):
+            malformed_checks = True
+            break
+        check_names.append(check["check"])
+    malformed_checks = malformed_checks or not check_names or len(check_names) != len(set(check_names))
+    if malformed_checks:
+        errors.append("checks contain malformed or duplicate records")
+    elif not early_required_file_failure and not structured_input_error:
+        if check_names != list(fixture_check_inventory(initial)):
+            errors.append("checks do not match the canonical ordered inventory")
+
+    failed_checks = [
+        check["check"] for check in report["checks"]
+        if (isinstance(check, dict)
+                and type(check.get("passed")) is bool
+                and not check["passed"]
+                and isinstance(check.get("check"), str))
+    ]
+    if report["failures"] != failed_checks:
+        errors.append("failures do not match failed checks")
+    if report["passed"] is not (not report["failures"]):
+        errors.append("passed does not match failures")
+    if structured_input_error:
+        if exit_code != 2:
+            errors.append("exit code does not match structured input-error report")
+    else:
+        expected_exit = 0 if report["passed"] else 1
+        if exit_code != expected_exit:
+            errors.append("exit code does not match passed")
+    return report, errors
+
+
+def sync_trace_table(pack: Path) -> None:
+    trace_path = pack / "traceability.json"
+    trace = read_json(trace_path)
+    trace_doc_path = pack / "TRACEABILITY.md"
+    document = trace_doc_path.read_text(encoding="utf-8")
+    header = "| Specification section | Lines | Responsible tasks |"
+    heading = "## Source classes"
+    if document.count(header) != 1 or document.count(heading) != 1:
+        raise ValueError("Expected one traceability table and source-classes heading")
+    prefix, suffix = document.split(header, 1)
+    _, remainder = suffix.split(heading, 1)
+    rows = [
+        header,
+        "| --- | --- | --- |",
+        *[
+            f"| {section['heading']} | {section['start_line']}–{section['end_line']} | "
+            f"{', '.join(section['tasks'])} |"
+            for section in trace["sections"]
+        ],
+    ]
+    trace_doc_path.write_text(prefix + "\n".join(rows) + "\n\n" + heading + remainder,
+                             encoding="utf-8")
+
+
+def render_case(case: dict[str, Any]) -> str:
+    tasks = ", ".join(case["tasks"])
+    assignments = "; ".join(f"{task_id}=NOT_RUN" for task_id in case["tasks"])
+    return "\n".join([
+        f"### {case['id']} — {case['title']}",
+        "",
+        f"**Evidence:** {case['level']}. **Tasks:** {tasks}. **Initial status:** NOT_RUN. **Initial assignment status:** {assignments}.",
+        "",
+        f"**Setup:** {case['setup']}",
+        "",
+        f"**Action:** {case['action']}",
+        "",
+        f"**Required result:** {case['expected']}",
+    ])
+
+
+def sync_case_block(pack: Path, case: dict[str, Any]) -> None:
+    path = pack / "ACCEPTANCE.md"
+    document = path.read_text(encoding="utf-8")
+    heading = f"### {case['id']} — {case['title']}"
+    matches = list(re.finditer(r"(?m)^" + re.escape(heading) + r"$", document))
+    if len(matches) != 1:
+        raise ValueError(f"Expected one acceptance block for {case['id']}")
+    start = matches[0].start()
+    following = re.search(r"(?m)^### ", document[matches[0].end():])
+    end = matches[0].end() + following.start() if following else len(document)
+    suffix = document[end:]
+    separator = "\n\n" if suffix else "\n"
+    document = document[:start] + render_case(case).rstrip() + separator + suffix.lstrip("\n")
+    path.write_text(document.rstrip() + "\n", encoding="utf-8")
+
+
+def fake_validator(temp_dir: Path, stdout: str, stderr: str = "", exit_code: int = 0) -> Path:
+    path = temp_dir / "fixture-validator.py"
+    source = (
+        "import sys\n"
+        f"sys.stdout.write({stdout!r})\n"
+        f"sys.stderr.write({stderr!r})\n"
+        f"raise SystemExit({exit_code})\n"
+    )
+    path.write_text(source, encoding="utf-8")
+    return path
+
+
+def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
+                expected_failures: list[str], initial: bool = False,
+                validator_executable: Path | None = None,
+                fake_stdout: str | None = None, fake_stderr: str = "",
+                expect_report_match: bool = True,
+                expected_report_errors: list[str] | None = None,
+                expected_report_details: dict[str, Any] | None = None,
+                expected_execution_errors: list[str] | None = None,
+                pre_normalization_mutation: Callable[[Path], None] | None = None,
+                expected_normalization_diff: list[dict[str, Any]] | None = None,
+                preserve_pack_check_count_mutation: bool = False) -> dict[str, Any]:
+    with temporary_directory(prefix="jackin-assignment-") as temp_dir:
+        temporary_root = Path(temp_dir)
+        pack = temporary_root / "pack"
+        source_policy_violations = certified_input_violations(ROOT, ENTRY_FILE)
+        if source_policy_violations:
+            return {
+                "scenario": name,
+                "passed": False,
+                "copy_performed": False,
+                "source_input_policy_violations": source_policy_violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
+        try:
+            copy_certified_pack(ROOT, pack)
+        except CertifiedInputError as error:
+            return {
+                "scenario": name,
+                "passed": False,
+                "copy_performed": pack.exists(),
+                "source_input_policy_violations": error.violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
+        source_inputs = snapshot_files(pack)
+        if pre_normalization_mutation is not None:
+            pre_normalization_mutation(pack)
+        pre_normalization_policy_violations = certified_input_violations(pack)
+        if pre_normalization_policy_violations:
+            return {
+                "scenario": name,
+                "passed": False,
+                "copy_performed": True,
+                "pre_normalization_input_policy_violations": pre_normalization_policy_violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
+        pre_normalization_inputs = snapshot_files(pack)
+        normalization_diff, normalization_errors = normalize_status_fields(pack)
+        normalized_input_policy_violations = certified_input_violations(pack)
+        if normalized_input_policy_violations:
+            return {
+                "scenario": name,
+                "passed": False,
+                "copy_performed": True,
+                "normalized_input_policy_violations": normalized_input_policy_violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
+        normalized_inputs = snapshot_files(pack)
+        mutate(pack)
+        fixture_input_policy_violations = certified_input_violations(pack)
+        if fixture_input_policy_violations:
+            return {
+                "scenario": name,
+                "copy_performed": True,
+                "fixture_input_policy_violations": fixture_input_policy_violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
+        if not preserve_pack_check_count_mutation:
+            synchronize_pack_check_counts(pack)
+        fixture_input_policy_violations = certified_input_violations(pack)
+        if fixture_input_policy_violations:
+            return {
+                "scenario": name,
+                "passed": False,
+                "copy_performed": True,
+                "fixture_input_policy_violations": fixture_input_policy_violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
+        inputs_after = snapshot_files(pack)
+        expected_counts = derive_expected_counts(pack)
+        validator_copy = pack / "validate_pack.py"
+        if fake_stdout is not None:
+            executable = fake_validator(temporary_root, fake_stdout, fake_stderr, expected_exit)
+        else:
+            executable = validator_executable or validator_copy
+        command = [sys.executable, str(executable), "--root", str(pack), "--json"]
+        if initial:
+            command.append("--initial")
+        execution_inputs_before = snapshot_files(pack)
+        execution_input_policy_before = certified_input_violations(pack)
+        executable_policy_violations = path_component_violations(executable)
+        if execution_input_policy_before or executable_policy_violations:
+            return {
+                "scenario": name,
+                "passed": False,
+                "copy_performed": True,
+                "execution_input_policy_before": execution_input_policy_before,
+                "validator_executable_policy_violations": executable_policy_violations,
+                "validator_executed": False,
+                "exit_code": None,
+            }
+        executable_before = path_state(executable)
+        validator_copy_before = path_state(validator_copy, pack)
+        process = run_with_timeout(command, FIXTURE_TIMEOUT_SECONDS)
+        execution_inputs_after = snapshot_files(pack)
+        execution_input_policy_after = certified_input_violations(pack)
+        executable_after = path_state(executable)
+        validator_copy_after = path_state(validator_copy, pack)
+        if process["timed_out"]:
+            report = None
+            report_errors = [
+                f"validator subprocess timed out after {process['timeout_seconds']} seconds"
+            ]
+        elif fixture_input_policy_violations or execution_input_policy_before or executable_policy_violations:
+            report = None
+            report_errors = ["fixture inputs or validator executable violate the certified-input policy"]
+        else:
+            report, report_errors = inspect_report(
+                process["stdout"], process["exit_code"], initial=initial,
+            )
+        if report is not None and not report_errors and isinstance(report.get("counts"), dict):
+            if report["counts"] and expected_counts is None:
+                report_errors.append("counts cannot be derived from tested fixture inputs")
+            elif report["counts"] and report["counts"] != expected_counts:
+                report_errors.append("counts do not match tested fixture inputs")
+        actual_failures = report.get("failures") if isinstance(report, dict) else None
+        expected_report_passed = expected_exit == 0
+        check_records = report.get("checks") if isinstance(report, dict) else None
+        actual_report_details = (
+            {
+                record.get("check"): record.get("detail")
+                for record in check_records
+                if isinstance(record, dict) and isinstance(record.get("check"), str)
+            }
+            if isinstance(check_records, list) else {}
+        )
+        detail_errors = []
+        if expected_report_details is not None:
+            for check_name, expected_detail in expected_report_details.items():
+                if actual_report_details.get(check_name) != expected_detail:
+                    detail_errors.append({
+                        "check": check_name,
+                        "expected": expected_detail,
+                        "actual": actual_report_details.get(check_name),
+                    })
+        execution_changes = snapshot_changes(execution_inputs_before, execution_inputs_after)
+        execution_errors = [
+            f"pack input changed during validator execution: {path}"
+            for path in execution_changes
+        ]
+        if executable_before != executable_after:
+            execution_errors.append("validator executable changed during execution")
+        if executable_before["state"] == "missing":
+            execution_errors.append("validator executable was missing before execution")
+        if executable_after["state"] == "missing":
+            execution_errors.append("validator executable was missing after execution")
+        expected_execution_errors = expected_execution_errors or []
+        report_match = (
+            not process["timed_out"]
+            and not fixture_input_policy_violations
+            and not execution_input_policy_before
+            and not execution_input_policy_after
+            and not executable_policy_violations
+            and process["exit_code"] == expected_exit
+            and not report_errors
+            and isinstance(report, dict)
+            and report.get("passed") is expected_report_passed
+            and actual_failures == expected_failures
+            and not detail_errors
+        )
+        errors_match = expected_report_errors is None or report_errors == expected_report_errors
+        execution_match = execution_errors == expected_execution_errors
+        normalization_match = (
+            expected_normalization_diff is None
+            or normalization_diff == expected_normalization_diff
+        )
+        passed = (
+            (report_match is expect_report_match)
+            and errors_match
+            and execution_match
+            and normalization_match
+            and not normalization_errors
+        )
+        return {
+            "scenario": name,
+            "argv": command,
+            "exit_code": process["exit_code"],
+            "expected_exit_code": expected_exit,
+            "timed_out": process["timed_out"],
+            "timeout_seconds": process["timeout_seconds"],
+            "timeout_partial_stdout": process["timeout_partial_stdout"],
+            "timeout_partial_stderr": process["timeout_partial_stderr"],
+            "termination_sent": process["termination_sent"],
+            "child_reaped": process["child_reaped"],
+            "validator_executable": str(executable),
+            "validator_executable_before": executable_before,
+            "validator_executable_after": executable_after,
+            "validator_executable_sha256": executable_after["sha256"],
+            "validator_copy_before": validator_copy_before,
+            "validator_copy_after": validator_copy_after,
+            "validator_copy_present": validator_copy.is_file(),
+            "validator_copy_sha256": sha256(validator_copy) if validator_copy.is_file() else None,
+            "report_match": report_match,
+            "expected_report_match": expect_report_match,
+            "report_errors": report_errors,
+            "expected_report_errors": expected_report_errors,
+            "report_details_match": not detail_errors,
+            "report_detail_errors": detail_errors,
+            "expected_report_details": expected_report_details,
+            "actual_report_details": actual_report_details,
+            "expected_counts": expected_counts,
+            "actual_counts": report.get("counts") if isinstance(report, dict) else None,
+            "expected_failures": expected_failures,
+            "actual_failures": actual_failures,
+            "expected_execution_errors": expected_execution_errors,
+            "execution_errors": execution_errors,
+            "execution_integrity_match": execution_match,
+            "source_input_policy_violations": source_policy_violations,
+            "fixture_input_policy_violations": fixture_input_policy_violations,
+            "execution_input_policy_before": execution_input_policy_before,
+            "execution_input_policy_after": execution_input_policy_after,
+            "validator_executable_policy_violations": executable_policy_violations,
+            "passed": passed,
+            "stdout": process["stdout"],
+            "stderr": process["stderr"],
+            "source_input_sha256": snapshot_states(source_inputs),
+            "normalization_diff": normalization_diff,
+            "normalization_errors": normalization_errors,
+            "expected_normalization_diff": expected_normalization_diff,
+            "normalization_match": normalization_match,
+            "pre_normalization_fixture_mutations": snapshot_changes(source_inputs,
+                                                                      pre_normalization_inputs),
+            "normalized_input_sha256": snapshot_states(normalized_inputs),
+            "fixture_mutations": snapshot_changes(normalized_inputs, inputs_after),
+            "pre_execution_input_sha256": snapshot_states(execution_inputs_before),
+            "post_execution_input_sha256": snapshot_states(execution_inputs_after),
+            "execution_input_changes": execution_changes,
+            "tested_inputs": {
+                path: input_state(inputs_after.get(path))
+                for path in sorted(set(source_inputs) | set(inputs_after))
+            },
+            "changed_inputs": snapshot_changes(source_inputs, inputs_after),
+            "fixture_sha256": {
+                "task-graph.json": inputs_after.get("task-graph.json"),
+                "acceptance-cases.json": inputs_after.get("acceptance-cases.json"),
+                "ACCEPTANCE.md": inputs_after.get("ACCEPTANCE.md"),
+            },
+        }
+
+
+def a86_phase_control_probe() -> dict[str, Any]:
+    contract_check = "A86 preserves backend host-action and integrated presentation owners"
+    controls: list[tuple[str, Callable[[Path], None]]] = []
+
+    def remove_owner(owner: str) -> Callable[[Path], None]:
+        def mutate(pack: Path) -> None:
+            def update(cases: dict[str, dict[str, Any]]) -> None:
+                case = cases["A86"]
+                case["tasks"].remove(owner)
+                case["assignment_results"] = [
+                    row for row in case["assignment_results"] if row["task_id"] != owner
+                ]
+                if owner == "T26":
+                    case["action"] = (
+                        "T29 exercises the finished CLI, Console, and desktop presentation "
+                        "with the same hostile requests and no matching operator action."
+                    )
+                else:
+                    case["action"] = (
+                        "T26 qualifies backend host-action and approval refusals without a "
+                        "matching operator action."
+                    )
+            update_cases(pack, update)
+            graph_path = pack / "task-graph.json"
+            graph = read_json(graph_path)
+            task = next(item for item in graph["tasks"] if item["id"] == owner)
+            task["test_cases"].remove("A86")
+            task["steps"] = [item for item in task["steps"] if "A86" not in item]
+            task["acceptance"] = [item for item in task["acceptance"] if "A86" not in item]
+            write_json(graph_path, graph)
+            sync_task_packet(pack, owner)
+            sync_case_block(pack, case_map(pack)["A86"])
+        return mutate
+
+    controls.extend((
+        ("removing the T26 backend owner and assignment", remove_owner("T26")),
+        ("removing the T29 presentation owner and assignment", remove_owner("T29")),
+    ))
+
+    def remove_backend_phase(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A86"]
+            case["action"] = case["action"].replace(
+                "T26 qualifies backend host-action and approval refusals without a matching operator action. ",
+                "T26 is an owner on this case. ",
+            )
+        update_cases(pack, update)
+        sync_case_block(pack, case_map(pack)["A86"])
+    controls.append(("removing the T26 backend qualification phase", remove_backend_phase))
+
+    def remove_integrated_phase(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A86"]
+            case["action"] = case["action"].replace(
+                "T29 exercises the finished CLI, Console, and desktop presentation with the same hostile requests and no matching operator action.",
+                "T29 is an owner on this case.",
+            )
+        update_cases(pack, update)
+        sync_case_block(pack, case_map(pack)["A86"])
+    controls.append(("removing the T29 integrated presentation phase", remove_integrated_phase))
+
+    def remove_hostile_input_layer(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A86"]
+            case["setup"] = case["setup"].replace(
+                "hostile terminal escape sequences", "ordinary terminal output",
+            )
+        update_cases(pack, update)
+        sync_case_block(pack, case_map(pack)["A86"])
+    controls.append(("removing hostile terminal input assertions", remove_hostile_input_layer))
+
+    def remove_operator_intent_guard(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A86"]
+            case["action"] = case["action"].replace(
+                "without a matching operator action", "after a matching operator action",
+            ).replace("no matching operator action", "a matching operator action")
+        update_cases(pack, update)
+        sync_case_block(pack, case_map(pack)["A86"])
+    controls.append(("removing the no-operator-intent assertions", remove_operator_intent_guard))
+
+    def remove_trusted_state_assertion(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A86"]
+            case["expected"] = case["expected"].replace(
+                "Untrusted output cannot forge trusted labels or approval state.",
+                "Trusted state remains visible.",
+            )
+        update_cases(pack, update)
+        sync_case_block(pack, case_map(pack)["A86"])
+    controls.append(("removing trusted-label and approval-state protection", remove_trusted_state_assertion))
+
+    def require_finished_ui_for_t26(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(item for item in graph["tasks"] if item["id"] == "T26")
+        task["steps"].append(
+            "T26 requires finished CLI, Console, and desktop presentation before backend qualification."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T26")
+    controls.append(("requiring finished presentation before T26 backend qualification", require_finished_ui_for_t26))
+
+    results = []
+    for description, mutate in controls:
+        result = run_fixture(
+            f"A86 control rejects {description}", mutate, 1, [], expect_report_match=False,
+        )
+        result["A86_contract_check_failed"] = contract_check in (result.get("actual_failures") or [])
+        results.append(result)
+    return {
+        "scenario": "A86 phase controls reject owner, layer, operator-intent, and trusted-state regressions.",
+        "passed": all(item["passed"] and item["A86_contract_check_failed"] for item in results),
+        "expected_control_count": len(controls),
+        "observed_control_count": len(results),
+        "controls": results,
+    }
+
+
+def late_presentation_control_probe() -> dict[str, Any]:
+    contract_checks = {
+        "A82": "A82 separates T24 shell qualification from T29 final presentation",
+        "A84": "A84 separates T25 usage qualification from T29 serialization and presentation",
+        "A96": "A96 presents the disabled external-resource-label tradeoff before live-bind authorization",
+        "A99": "A99 separates T30 private-forward qualification from T29 final presentation",
+        "A100": "A100 preserves T30 exposure security and T29 final presentation",
+    }
+    controls: list[tuple[str, str, Callable[[Path], None]]] = []
+
+    def remove_case_owner_phase(case_id: str, task_id: str, action_phase: str,
+                                expected_phase: str, task_step: str,
+                                task_acceptance: str) -> Callable[[Path], None]:
+        def mutate(pack: Path) -> None:
+            def update(cases: dict[str, dict[str, Any]]) -> None:
+                case = cases[case_id]
+                case["tasks"].remove(task_id)
+                case["assignment_results"] = [
+                    row for row in case["assignment_results"] if row["task_id"] != task_id
+                ]
+                case["action"] = case["action"].replace(action_phase, "").strip()
+                case["expected"] = case["expected"].replace(expected_phase, "").strip()
+            update_cases(pack, update)
+
+            graph_path = pack / "task-graph.json"
+            graph = read_json(graph_path)
+            task = next(row for row in graph["tasks"] if row["id"] == task_id)
+            task["test_cases"].remove(case_id)
+            task["steps"].remove(task_step)
+            task["acceptance"].remove(task_acceptance)
+            write_json(graph_path, graph)
+            sync_task_packet(pack, task_id)
+            sync_case_block(pack, case_map(pack)[case_id])
+        return mutate
+
+    controls.extend((
+        ("A82", "removing the T24 default-shell service phase", remove_case_owner_phase(
+            "A82", "T24",
+            "T24 opens the credential-free default shell and an explicitly selected in-domain shell.",
+            "T24 qualifies default-domain isolation and selected-domain authority; the default shell stays credential-free and separate.",
+            "Qualify A82's credential-free default shell and explicit in-domain authority before T29 presentation.",
+            "A82 at T24 qualifies default-domain isolation and selected-domain authority before T29's final shell presentation.",
+        )),
+        ("A82", "removing the T29 inherited-authority presentation phase", remove_case_owner_phase(
+            "A82", "T29",
+            "T29 then displays the trusted inherited-authority label on the final shell.",
+            "T29's final shell labels that inherited authority from the selected domain.",
+            "Present A82's trusted inherited-authority label on the final shell after T24 qualifies the domain service.",
+            "A82 at T29 displays the selected shell's trusted inherited authority from its domain, separately from T24 service qualification.",
+        )),
+        ("A84", "removing the T25 backend usage phase", remove_case_owner_phase(
+            "A84", "T25",
+            "T25 resolves the backend usage snapshots.",
+            "T25 keeps account revisions isolated by stable account identity and credential-source revision. T25 distinguishes stale or unavailable usage from zero.",
+            "Qualify A84 backend cache identity, credential-source revision, stale, unavailable, and zero distinctions at T25.",
+            "A84 at T25 qualifies backend account identity and revision isolation before T29 renders usage.",
+        )),
+        ("A84", "removing the T29 serialized-usage presentation phase", remove_case_owner_phase(
+            "A84", "T29",
+            "T29 serializes and renders snapshots for both account identities and credential-source revisions.",
+            "T29 preserves identity and revision through serialization and never renders stale or unavailable usage as zero.",
+            "Present A84's serialized account identity and credential-source revision with stale and unavailable values distinct from zero.",
+            "A84 at T29 preserves account identity and credential-source revision through serialization and never renders stale or unavailable usage as zero.",
+        )),
+    ))
+
+    def remove_a96_tradeoff(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A96"]
+            case["setup"] = case["setup"].replace(
+                ", and a trusted-live-local profile with external-resource-label admission disabled", "",
+            )
+            case["action"] = case["action"].replace(
+                " Present the disabled external-resource-label admission tradeoff before authorizing the trusted-live-local bind.",
+                "",
+            )
+            case["expected"] = case["expected"].replace(
+                " The disabled tradeoff is visible before the operator authorizes the trusted-live-local bind.",
+                "",
+            )
+        update_cases(pack, update)
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T29")
+        task["steps"].remove(
+            "Present the disabled external-resource-label admission tradeoff before authorizing a trusted-live-local bind."
+        )
+        task["acceptance"].remove(
+            "A96 displays the disabled external-resource-label admission tradeoff before any trusted-live-local authorization decision."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T29")
+        sync_case_block(pack, case_map(pack)["A96"])
+
+    controls.append(("A96", "removing the disabled external-label admission warning", remove_a96_tradeoff))
+
+    controls.extend((
+        ("A99", "removing the T29 private-forward presentation owner", remove_case_owner_phase(
+            "A99", "T29",
+            "T30 creates a loopback-bound authenticated forward and attempts external access. T30 verifies intended client access and scoped cleanup. T29 presents the qualified URL and access status in the final CLI and Console.",
+            "T29 shows the URL and private access state without an unauthorized public route.",
+            "Present A99's qualified private-forward URL and scoped ownership and cleanup status in the finished CLI and Console.",
+            "A99 at T29 presents the qualified private URL and access state after T30's service and cleanup qualification.",
+        )),
+        ("A100", "removing the T29 public-exposure presentation owner", remove_case_owner_phase(
+            "A100", "T29",
+            "T29 displays the grant and requirements in the final CLI and Console.",
+            "T29 displays these requirements and confirms Capsule control is never public.",
+            "Present A100's separate public grant, listener TLS, and application-authentication requirements in the finished CLI and Console.",
+            "A100 at T29 displays the separate public grant and TLS/application-authentication requirements; Capsule control is never public.",
+        )),
+    ))
+
+    def remove_t30_dependency(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t29 = next(row for row in graph["tasks"] if row["id"] == "T29")
+        t29["depends_on"].remove("T30")
+        write_json(graph_path, graph)
+        recompute_ready_groups(pack)
+        sync_task_packet(pack, "T29")
+        sync_task_indexes(pack)
+    controls.append(("A99", "removing the T29-to-T30 service dependency", remove_t30_dependency))
+
+    def weaken_t30_grant(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t30 = next(row for row in graph["tasks"] if row["id"] == "T30")
+        t30["steps"] = [
+            "Allow public exposure when requested."
+            if item == "Require a separate capability for public exposure." else item
+            for item in t30["steps"]
+        ]
+        t30["acceptance"] = [
+            "A100 at T30 handles public exposure requests."
+            if item.startswith("A100 at T30 requires a separate public grant") else item
+            for item in t30["acceptance"]
+        ]
+        write_json(graph_path, graph)
+        update_cases(pack, lambda cases: cases["A100"].update({
+            "action": cases["A100"]["action"].replace(
+                "T30 checks the separate public grant, listener TLS, application authentication, and Capsule refusal.",
+                "T30 checks listener TLS, application authentication, and Capsule refusal.",
+            ),
+            "expected": cases["A100"]["expected"].replace(
+                "T30 requires a separate public grant, TLS, and application authentication.",
+                "T30 checks TLS and application authentication.",
+            ),
+        }))
+        sync_task_packet(pack, "T30")
+        sync_case_block(pack, case_map(pack)["A100"])
+    controls.append(("A100", "removing T30's separate public-exposure grant", weaken_t30_grant))
+
+    def weaken_t30_tls_auth(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t30 = next(row for row in graph["tasks"] if row["id"] == "T30")
+        t30["steps"] = [
+            "Record the qualified service URL for T29's final presentation."
+            if item == "Record public listener TLS and application-authentication requirements for T29's final presentation."
+            else item
+            for item in t30["steps"]
+        ]
+        t30["acceptance"] = [
+            "A100 at T30 records service exposure; Capsule control stays private."
+            if item.startswith("A100 at T30 requires a separate public grant") else item
+            for item in t30["acceptance"]
+        ]
+        write_json(graph_path, graph)
+        update_cases(pack, lambda cases: cases["A100"].update({
+            "action": cases["A100"]["action"].replace(
+                "T30 checks the separate public grant, listener TLS, application authentication, and Capsule refusal.",
+                "T30 checks the separate public grant and Capsule refusal.",
+            ),
+            "expected": cases["A100"]["expected"].replace(
+                "T30 requires a separate public grant, TLS, and application authentication.",
+                "T30 requires a separate public grant.",
+            ),
+        }))
+        sync_task_packet(pack, "T30")
+        sync_case_block(pack, case_map(pack)["A100"])
+    controls.append(("A100", "removing T30's TLS and application-authentication qualification", weaken_t30_tls_auth))
+
+    def weaken_t29_tls_grant_presentation(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t29 = next(row for row in graph["tasks"] if row["id"] == "T29")
+        t29["steps"] = [
+            "Present the public service URL in the finished CLI and Console."
+            if item.startswith("Present A100's separate public grant") else item
+            for item in t29["steps"]
+        ]
+        t29["acceptance"] = [
+            "A100 at T29 presents the public service URL."
+            if item.startswith("A100 at T29 displays the separate public grant") else item
+            for item in t29["acceptance"]
+        ]
+        write_json(graph_path, graph)
+        update_cases(pack, lambda cases: cases["A100"].update({
+            "action": cases["A100"]["action"].replace(
+                "T29 displays the grant and requirements in the final CLI and Console.",
+                "T29 displays the service URL in the final CLI and Console.",
+            ),
+            "expected": cases["A100"]["expected"].replace(
+                "T29 displays these requirements and confirms Capsule control is never public.",
+                "T29 displays the public service URL and confirms Capsule control is never public.",
+            ),
+        }))
+        sync_task_packet(pack, "T29")
+        sync_case_block(pack, case_map(pack)["A100"])
+    controls.append(("A100", "removing grant and TLS details from T29's final presentation", weaken_t29_tls_grant_presentation))
+
+    positive = run_fixture(
+        "A82 A84 A96 A99 and A100 accept the complete layered presentation contract",
+        lambda pack: None,
+        0,
+        [],
+    )
+    results = []
+    for case_id, description, mutate in controls:
+        result = run_fixture(
+            f"Layered presentation control rejects {description}",
+            mutate,
+            1,
+            [],
+            expect_report_match=False,
+        )
+        result["owner_contract_check"] = contract_checks[case_id]
+        result["owner_contract_check_failed"] = contract_checks[case_id] in (result.get("actual_failures") or [])
+        results.append(result)
+    return {
+        "scenario": "A82, A84, A96, A99, and A100 retain early qualification and T29 presentation phases.",
+        "passed": positive["passed"] and all(
+            item["passed"] and item["owner_contract_check_failed"] for item in results
+        ),
+        "positive_control": positive,
+        "expected_control_count": len(controls),
+        "observed_control_count": len(results),
+        "controls": results,
+    }
+
+
+def cohort_c_control_probe() -> dict[str, Any]:
+    contract_checks = {
+        "A73": "A73 preserves early scope and integrated denied-scope admission owners",
+        "A78": "A78 binds activation to a fresh receipt for the current boot and protocol",
+        "A16": "A16 preserves accepted-revision observation and product-presentation owners",
+        "A40/A79": "A40 and A79 preserve canonical-name reservation, collision, and tombstone behavior",
+        "A52": "A52 requires explicit builder trust before source or secret transfer",
+    }
+
+    def edit_task(pack: Path, task_id: str,
+                  edit: Callable[[dict[str, Any]], None]) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == task_id)
+        edit(task)
+        write_json(graph_path, graph)
+        sync_task_packet(pack, task_id)
+        sync_task_indexes(pack)
+
+    def remove_a73_integrated_phase(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A73"]
+            case["tasks"].remove("T23")
+            case["assignment_results"] = [row for row in case["assignment_results"]
+                                           if row["task_id"] != "T23"]
+            case["action"] = case["action"].replace(
+                "T23 tests authorized launch and denied private scope before domain creation or credential staging.",
+                "T23 observes launch.",
+            )
+            case["expected"] = case["expected"].replace(
+                "T23 admits only the authorized scope after checking authority before effects. "
+                "Denied scope creates no domain and stages no credential.",
+                "T23 observes the launch.",
+            )
+        update_cases(pack, update)
+
+        def edit(task: dict[str, Any]) -> None:
+            task["test_cases"].remove("A73")
+            for phrase in (
+                "Exercise A73 after T21's scope result.",
+                "Authorize only the valid scope after T21 records its LIVE scope result.",
+                "Reject denied private scope before domain creation or credential staging.",
+            ):
+                task["steps"].remove(phrase)
+            task["acceptance"].remove(
+                "A73 launches only an authorized scope after T21 records its LIVE scope result."
+            )
+            task["acceptance"].remove(
+                "Denied private scope blocks before domain creation or credential staging."
+            )
+        edit_task(pack, "T23", edit)
+        sync_case_block(pack, case_map(pack)["A73"])
+
+    def remove_a78_fresh_receipt_binding(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A78"]
+            case["setup"] = case["setup"].replace(
+                "Restart the helper with a changed boot ID and incompatible protocol.",
+                "Restart the helper and record its status.",
+            )
+            case["action"] = "Attempt StartSession for every mismatch."
+            case["expected"] = (
+                "Every mismatch blocks StartSession until current observations match. "
+                "SandboxReady and helper handshakes alone are not activation evidence."
+            )
+        update_cases(pack, update)
+
+        def edit(task: dict[str, Any]) -> None:
+            for phrase in (
+                "Exercise A78 with image, generation, grant, materialization, policy, boot-ID, and protocol mismatches.",
+                "After helper restart, require a fresh receipt for the current boot and exact protocol before StartSession.",
+                "Treat a helper handshake as an observation, not an attestation or security boundary.",
+            ):
+                task["steps"].remove(phrase)
+            task["acceptance"].remove(
+                "A78 blocks StartSession for stale boot and protocol claims until a fresh qualified receipt arrives."
+            )
+            task["acceptance"].remove(
+                "A helper handshake is not an attestation or a security boundary."
+            )
+        edit_task(pack, "T23", edit)
+        sync_case_block(pack, case_map(pack)["A78"])
+
+    def remove_a16_revocation_closure(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A16"]
+            case["setup"] = case["setup"].replace(
+                " Establish one connection that loses authority and one that remains authorized.",
+                "",
+            )
+            case["action"] = case["action"].replace(
+                " Test established connections after the update.",
+                "",
+            )
+            case["expected"] = (
+                "The gateway global policy is the effective replacement. "
+                "T29 presents the accepted revision and source; no task reports an imaginary policy intersection."
+            )
+        update_cases(pack, update)
+
+        def remove_phrases(task: dict[str, Any], field: str, phrases: tuple[str, ...]) -> None:
+            task[field] = [item for item in task[field] if item not in phrases]
+
+        for task_id, step_phrases, acceptance_phrases in (
+            ("U00", (
+                "For A16, verify existing connections close on a network policy update and revoked authority remains unusable.",
+            ), (
+                "A16 at U00 verifies revoked access remains unusable after existing connections close on policy update.",
+                "A16 at U00 confirms unrelated authorized access may resume through a qualified reconnect under the loaded policy, without permissive replacement.",
+            )),
+            ("T13", (
+                "For A16, load the gateway global policy before querying accepted revisions or displaying its source.",
+                "Verify existing connections close when the gateway global policy changes and revoked access remains unusable.",
+                "Verify unrelated authorized access only after a qualified reconnect under the loaded policy; never apply a permissive replacement.",
+            ), (
+                "A16 at T13 loads global policy before revision queries and verifies existing connections close on update.",
+                "A16 at T13 keeps revoked access unusable and permits unrelated authorized reconnects under the loaded policy without permissive fallback.",
+            )),
+            ("T29", (
+                "Keep A16 product presentation read-only; do not imply T29 loaded policy or enforced stream access.",
+            ), (
+                "A16 at T29 presents the accepted revision and source; it does not load policy or authorize streams.",
+            )),
+        ):
+            def edit(task: dict[str, Any], step_phrases: tuple[str, ...] = step_phrases,
+                     acceptance_phrases: tuple[str, ...] = acceptance_phrases) -> None:
+                remove_phrases(task, "steps", step_phrases)
+                remove_phrases(task, "acceptance", acceptance_phrases)
+            edit_task(pack, task_id, edit)
+        sync_case_block(pack, case_map(pack)["A16"])
+
+    def remove_a40_name_reservation(pack: Path) -> None:
+        update_cases(pack, lambda cases: cases["A40"].update({
+            "action": "Crash and restart the state coordinator at every point.",
+            "expected": (
+                "Request identities and receipts survive. "
+                "Recovery follows the declared state table without duplicate effects."
+            ),
+        }))
+
+        def edit(task: dict[str, Any]) -> None:
+            task["steps"].remove(
+                "Generate each canonical name once as jk- plus 16 lowercase base32 secure-random characters."
+            )
+            task["steps"].remove(
+                "Validate names against P02 gateway constraints and persist each reservation before create."
+            )
+            task["acceptance"] = [item for item in task["acceptance"] if not item.startswith("A40 verifies ")
+                                  and item != "Deleted canonical names remain tombstoned and are never intentionally reused."]
+        edit_task(pack, "T10", edit)
+        sync_case_block(pack, case_map(pack)["A40"])
+
+    def remove_a40_journal_recovery(pack: Path) -> None:
+        update_cases(pack, lambda cases: cases["A40"].update({
+            "expected": (
+                "Names use jk- plus 16 lowercase base32 secure-random characters. "
+                "Invalid or colliding names block before create. Deletion leaves a tombstone; names are never "
+                "intentionally reused. Report OutcomeUnknown only when the authoritative effect outcome is unavailable; "
+                "for known outcomes, follow the declared state table."
+            ),
+        }))
+        sync_case_block(pack, case_map(pack)["A40"])
+
+    def remove_a79_collision_recovery(pack: Path) -> None:
+        update_cases(pack, lambda cases: cases["A79"].update({
+            "setup": "Inject loss after build, create, publication, activation receipt, and StartSession.",
+            "action": "Restart host control and recover the original operation.",
+            "expected": (
+                "Work resumes only through qualified recovery. "
+                "No duplicate agent or silent replacement appears."
+            ),
+        }))
+
+        def edit(task: dict[str, Any]) -> None:
+            for phrase in (
+                "Use T10's persisted canonical-name reservation and P02 gateway validation before domain creation.",
+                "Refuse collisions and tombstoned-name reuse before create; never mint a replacement name during retry.",
+            ):
+                task["steps"].remove(phrase)
+            task["acceptance"] = [item for item in task["acceptance"] if not item.startswith("A79 recovery ")
+                                  and item != "Canonical names do not replace server-side identity or authority checks."]
+        edit_task(pack, "T23", edit)
+        sync_case_block(pack, case_map(pack)["A79"])
+
+    def remove_a52_builder_trust(pack: Path) -> None:
+        update_cases(pack, lambda cases: cases["A52"].update({
+            "setup": "Configure builder A and an ambient DOCKER_HOST for builder B.",
+            "action": "Build a sentinel role and inspect authorized build records.",
+            "expected": (
+                "Only builder A receives source and approved secrets. "
+                "Unexpected ambient routing cannot override it."
+            ),
+        }))
+
+        def edit(task: dict[str, Any]) -> None:
+            for phrase in (
+                "Require operator-approved trust for the selected builder before transferring source or approved secrets.",
+                "Reject a configured but unapproved endpoint before any source or approved-secret transfer begins.",
+                "Ignore ambient DOCKER_HOST when selecting the explicitly trusted builder endpoint.",
+            ):
+                task["steps"].remove(phrase)
+            task["acceptance"] = [item for item in task["acceptance"] if not item.startswith("A52 refuses ")
+                                  and not item.startswith("After approval, only the selected endpoint receives ")]
+        edit_task(pack, "T15", edit)
+        sync_case_block(pack, case_map(pack)["A52"])
+
+    def reintroduce_a52_context_creation_ban(pack: Path) -> None:
+        def edit(task: dict[str, Any]) -> None:
+            task["steps"].append(
+                "Reject a configured but unapproved endpoint before source-context creation or secret transfer."
+            )
+        edit_task(pack, "T15", edit)
+
+    positive = run_fixture(
+        "Cohort C complete admission, activation, naming, policy, and builder contracts pass",
+        lambda _pack: None,
+        0,
+        [],
+    )
+    controls: list[tuple[str, str, Callable[[Path], None], int, bool]] = [
+        ("A73", "removing T23 integrated denied-scope admission", remove_a73_integrated_phase, 1, True),
+        ("A78", "removing current-boot and protocol receipt binding", remove_a78_fresh_receipt_binding, 1, True),
+        ("A16", "removing revoked-connection closure and fail-closed policy handling", remove_a16_revocation_closure, 1, True),
+        ("A16", "accepting unrelated authorized reconnect after policy updates", lambda _pack: None, 0, False),
+        ("A40/A79", "removing UNIT pre-create reservation, collision, and tombstone checks", remove_a40_name_reservation, 1, True),
+        ("A40/A79", "removing A40 request-receipt and declared-state-table recovery", remove_a40_journal_recovery, 1, True),
+        ("A40/A79", "removing LIVE collision and tombstone recovery checks", remove_a79_collision_recovery, 1, True),
+        ("A52", "removing builder approval before source and secret transfer", remove_a52_builder_trust, 1, True),
+        ("A52", "reintroducing a ban on local source-context creation", reintroduce_a52_context_creation_ban, 1, True),
+    ]
+    results = []
+    for case_key, description, mutate, expected_exit, expected_contract_failure in controls:
+        check_name = contract_checks[case_key]
+        receipt = run_fixture(
+            f"Cohort C control checks {description}",
+            mutate,
+            expected_exit,
+            [],
+            expect_report_match=expected_exit == 0,
+        )
+        receipt["owner_contract_check"] = check_name
+        receipt["owner_contract_check_failed"] = check_name in (receipt.get("actual_failures") or [])
+        receipt["expected_owner_contract_check_failure"] = expected_contract_failure
+        results.append(receipt)
+    return {
+        "scenario": "Cohort C preserves integrated admission, activation freshness, name safety, policy revocation, and builder trust.",
+        "passed": positive["passed"] and all(
+            item["passed"]
+            and item["owner_contract_check_failed"] == item["expected_owner_contract_check_failure"]
+            for item in results
+        ),
+        "positive_control": positive,
+        "expected_control_count": len(controls),
+        "observed_control_count": len(results),
+        "controls": results,
+    }
+
+
+def validate_original_board() -> dict[str, Any]:
+    command = [sys.executable, str(VALIDATOR), "--root", str(ROOT), "--json"]
+    input_policy_before = certified_input_violations(ROOT, ENTRY_FILE)
+    executable_policy_before = path_component_violations(VALIDATOR, ROOT)
+    if input_policy_before or executable_policy_before:
+        return {
+            "passed": False,
+            "argv": command,
+            "exit_code": None,
+            "timed_out": False,
+            "timeout_seconds": ORIGINAL_BOARD_TIMEOUT_SECONDS,
+            "timeout_partial_stdout": "",
+            "timeout_partial_stderr": "",
+            "termination_sent": False,
+            "child_reaped": False,
+            "input_policy_violations_before": input_policy_before,
+            "input_policy_violations_after": input_policy_before,
+            "validator_executable_policy_violations": executable_policy_before,
+            "report_errors": ["original-board subprocess was refused before unsafe input access"],
+            "execution_errors": ["original-board inputs violate the certified-input policy"],
+            "stdout": "",
+            "stderr": "",
+        }
+    inputs_before = snapshot_files(ROOT)
+    executable_before = path_state(VALIDATOR, ROOT)
+    process = run_with_timeout(command, ORIGINAL_BOARD_TIMEOUT_SECONDS)
+    input_policy_after = certified_input_violations(ROOT, ENTRY_FILE)
+    inputs_after = snapshot_files(ROOT)
+    executable_after = path_state(VALIDATOR, ROOT)
+    if process["timed_out"]:
+        report = None
+        report_errors = [
+            f"original-board subprocess timed out after {process['timeout_seconds']} seconds"
+        ]
+    elif input_policy_before or input_policy_after or path_component_violations(VALIDATOR, ROOT):
+        report = None
+        report_errors = ["original-board inputs violate the certified-input policy"]
+    else:
+        report, report_errors = inspect_report(
+            process["stdout"], process["exit_code"], initial=False,
+        )
+    expected_counts = derive_expected_counts(ROOT) if report is not None else None
+    if report is not None and not report_errors and isinstance(report.get("counts"), dict):
+        if report["counts"] and expected_counts is None:
+            report_errors.append("counts cannot be derived from original board inputs")
+        elif report["counts"] and report["counts"] != expected_counts:
+            report_errors.append("counts do not match original board inputs")
+    input_changes = snapshot_changes(inputs_before, inputs_after)
+    execution_errors = [
+        f"original board input changed during ordinary validation: {path}"
+        for path in input_changes
+    ]
+    if input_policy_before:
+        execution_errors.append("original board inputs were unsafe before ordinary validation")
+    if input_policy_after:
+        execution_errors.append("original board inputs became unsafe during ordinary validation")
+    if executable_before != executable_after:
+        execution_errors.append("original validator executable changed during ordinary validation")
+    if process["timed_out"]:
+        execution_errors.append(
+            f"original-board subprocess timed out after {process['timeout_seconds']} seconds"
+        )
+    return {
+        "passed": (
+            not process["timed_out"]
+            and not input_policy_before
+            and not input_policy_after
+            and process["exit_code"] == 0
+            and not report_errors
+            and isinstance(report, dict)
+            and report.get("passed") is True
+            and not execution_errors
+        ),
+        "argv": command,
+        "exit_code": process["exit_code"],
+        "timed_out": process["timed_out"],
+        "timeout_seconds": process["timeout_seconds"],
+        "timeout_partial_stdout": process["timeout_partial_stdout"],
+        "timeout_partial_stderr": process["timeout_partial_stderr"],
+        "termination_sent": process["termination_sent"],
+        "child_reaped": process["child_reaped"],
+        "input_policy_violations_before": input_policy_before,
+        "input_policy_violations_after": input_policy_after,
+        "validator_executable_before": executable_before,
+        "validator_executable_after": executable_after,
+        "input_sha256_before": snapshot_states(inputs_before),
+        "input_sha256_after": snapshot_states(inputs_after),
+        "input_changes": input_changes,
+        "expected_counts": expected_counts,
+        "actual_counts": report.get("counts") if isinstance(report, dict) else None,
+        "report_errors": report_errors,
+        "execution_errors": execution_errors,
+        "report": report,
+        "stdout": process["stdout"],
+        "stderr": process["stderr"],
+    }
+
+
+def validator_import_receipt() -> dict[str, Any]:
+    captured_stdout = VALIDATOR_IMPORT_STDOUT.getvalue()
+    captured_stderr = VALIDATOR_IMPORT_STDERR.getvalue()
+    return {
+        "passed": (
+            not BOOTSTRAP_INPUT_POLICY_VIOLATIONS
+            and VALIDATOR_IMPORT_EXCEPTION is None
+            and not captured_stdout
+            and not captured_stderr
+            and not VALIDATOR_IMPORT_CHANGES
+        ),
+        "captured_stdout": captured_stdout,
+        "captured_stderr": captured_stderr,
+        "exception": VALIDATOR_IMPORT_EXCEPTION,
+        "source_path_policy_violations": BOOTSTRAP_INPUT_POLICY_VIOLATIONS,
+        "source_sha256_before_import": snapshot_states(SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT),
+        "source_sha256_after_import": snapshot_states(SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT),
+        "source_changes_during_import": VALIDATOR_IMPORT_CHANGES,
+    }
+
+
+def import_time_readme_mutation_probe() -> dict[str, Any]:
+    with temporary_directory(prefix="jackin-import-mutation-") as temp_dir:
+        pack = Path(temp_dir) / "pack"
+        copy_certified_pack(ROOT, pack)
+        validator = pack / "validate_pack.py"
+        runner = pack / "validate_assignment_fixtures.py"
+        readme = pack / "README.md"
+        initial_inputs = snapshot_files(pack)
+        validator_before = sha256(validator)
+        runner_before = sha256(runner)
+        readme_before = sha256(readme)
+        with validator.open("a", encoding="utf-8") as source:
+            source.write(
+                "\nfrom pathlib import Path as _ImportProbePath\n"
+                "(_ImportProbePath(__file__).resolve().parent / 'README.md').write_text("
+                "'idempotent import-time mutation\\n', encoding='utf-8')\n"
+            )
+        validator_mutated = sha256(validator)
+        command = [
+            sys.executable,
+            "-c",
+            "import importlib.util,json,sys; "
+            "spec=importlib.util.spec_from_file_location('fixture_probe',sys.argv[1]); "
+            "module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); "
+            "print(json.dumps({'before':module.SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT.get('README.md'),"
+            "'after':module.SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT.get('README.md'),"
+            "'changes':module.VALIDATOR_IMPORT_CHANGES}))",
+            str(runner),
+        ]
+        process = run_with_timeout(command, PROBE_TIMEOUT_SECONDS, cwd=pack)
+        try:
+            observed = json.loads(process["stdout"]) if not process["timed_out"] else None
+        except json.JSONDecodeError:
+            observed = None
+        after_inputs = snapshot_files(pack)
+        expected_readme_after = sha256(readme)
+        detected = observed.get("changes", {}).get("README.md") if isinstance(observed, dict) else None
+        passed = (
+            not process["timed_out"]
+            and process["exit_code"] == 0
+            and isinstance(observed, dict)
+            and observed.get("before") == readme_before
+            and observed.get("after") == expected_readme_after
+            and readme_before != expected_readme_after
+            and isinstance(detected, dict)
+            and detected.get("before") == input_state(readme_before)
+            and detected.get("after") == input_state(expected_readme_after)
+        )
+        return {
+            "scenario": "isolated subprocess detects idempotent README mutation during validator import",
+            "passed": passed,
+            "argv": command,
+            "exit_code": process["exit_code"],
+            "timed_out": process["timed_out"],
+            "timeout_seconds": process["timeout_seconds"],
+            "timeout_partial_stdout": process["timeout_partial_stdout"],
+            "timeout_partial_stderr": process["timeout_partial_stderr"],
+            "termination_sent": process["termination_sent"],
+            "child_reaped": process["child_reaped"],
+            "stdout": process["stdout"],
+            "stderr": process["stderr"],
+            "input_path_policy_violations_before": certified_input_violations(pack),
+            "fixture_source_sha256": runner_before,
+            "validator_executable_before_mutation_sha256": validator_before,
+            "validator_executable_after_mutation_sha256": validator_mutated,
+            "tested_inputs_before": snapshot_states(initial_inputs),
+            "tested_inputs_after": snapshot_states(after_inputs),
+            "input_changes": snapshot_changes(initial_inputs, after_inputs),
+            "readme_before_sha256": readme_before,
+            "readme_after_sha256": expected_readme_after,
+            "detected_import_changes": observed.get("changes") if isinstance(observed, dict) else None,
+        }
+
+
+def fixture_inventory_control_probe(mode: str) -> dict[str, Any]:
+    scenario_names = list(FIXED_FIXTURE_NAMES)
+    target_name = FIXED_FIXTURE_NAMES[0]
+    if mode == "missing":
+        scenario_names.remove(target_name)
+    elif mode == "duplicate":
+        scenario_names.append(target_name)
+    elif mode == "unexpected":
+        scenario_names.append("An undeclared fixture scenario was executed.")
+    else:
+        raise ValueError(f"Unsupported fixture inventory probe mode: {mode}")
+
+    report = fixture_inventory_report(scenario_names)
+    expected_failure = {
+        "missing": target_name in report["missing_names"],
+        "duplicate": target_name in report["observed_duplicate_names"],
+        "unexpected": "An undeclared fixture scenario was executed." in report["unexpected_names"],
+    }[mode]
+    return {
+        "scenario": (
+            "The fixture inventory rejects an unexpected scenario entry."
+            if mode == "unexpected"
+            else f"The fixture inventory rejects a {mode} scenario entry."
+        ),
+        "passed": expected_failure and not report["passed"],
+        "mode": mode,
+        "report": report,
+    }
+
+
+def certified_input_security_probe() -> dict[str, Any]:
+    with temporary_directory(prefix="jackin-input-custody-") as temp_dir:
+        temporary_root = Path(temp_dir)
+        source_policy = certified_input_violations(ROOT, ENTRY_FILE)
+        original_hashes = snapshot_files(ROOT)
+        physical_parent = temporary_root / "physical-parent"
+        physical_parent.mkdir()
+        self_contained_pack = physical_parent / "self-contained-pack"
+        copy_certified_pack(ROOT, self_contained_pack)
+        copied_hashes = snapshot_files(self_contained_pack)
+        self_contained_policy = certified_input_violations(self_contained_pack)
+        ancestor_alias = temporary_root / "ancestor-link"
+        os.symlink(physical_parent, ancestor_alias, target_is_directory=True)
+        aliased_pack = ancestor_alias / self_contained_pack.name
+        alias_policy = certified_input_violations(aliased_pack)
+        alias_hashes = snapshot_files(aliased_pack)
+
+        standalone_alias_runs = []
+        for selected_pack in (self_contained_pack, aliased_pack):
+            command = [sys.executable, str(selected_pack / "validate_pack.py"),
+                       "--root", str(selected_pack), "--initial", "--json"]
+            process = run_with_timeout(command, PROBE_TIMEOUT_SECONDS, cwd=selected_pack)
+            try:
+                report = json.loads(process["stdout"]) if not process["timed_out"] else None
+            except json.JSONDecodeError:
+                report = None
+            standalone_alias_runs.append({
+                "argv": command,
+                "exit_code": process["exit_code"],
+                "passed": (
+                    not process["timed_out"] and process["exit_code"] == 0
+                    and isinstance(report, dict) and report.get("passed") is True
+                ),
+            })
+
+        runner_alias_command = [
+            sys.executable, "-c",
+            "import importlib.util,json,sys; "
+            "spec=importlib.util.spec_from_file_location('alias_runner_probe',sys.argv[1]); "
+            "module=importlib.util.module_from_spec(spec); sys.modules[spec.name]=module; "
+            "spec.loader.exec_module(module); "
+            "print(json.dumps({'root':str(module.ROOT),"
+            "'violations':module.BOOTSTRAP_INPUT_POLICY_VIOLATIONS,"
+            "'import_exception':module.VALIDATOR_IMPORT_EXCEPTION}))",
+            str(aliased_pack / "validate_assignment_fixtures.py"),
+        ]
+        runner_alias_process = run_with_timeout(
+            runner_alias_command, PROBE_TIMEOUT_SECONDS, cwd=aliased_pack,
+        )
+        try:
+            runner_alias_report = (
+                json.loads(runner_alias_process["stdout"])
+                if not runner_alias_process["timed_out"] else None
+            )
+        except json.JSONDecodeError:
+            runner_alias_report = None
+
+        external_task = sorted((ROOT / "tasks").glob("*.md"))[0]
+        external_sources = {
+            "GOAL.md": ROOT / "GOAL.md",
+            f"tasks/{external_task.name}": external_task,
+            "validate_pack.py": VALIDATOR,
+            "validate_assignment_fixtures.py": ENTRY_FILE,
+        }
+        link_runs: list[dict[str, Any]] = []
+        external_target_hashes: dict[str, dict[str, str]] = {}
+        for index, (relative_path, source_path) in enumerate(external_sources.items()):
+            pack = temporary_root / f"linked-input-pack-{index}"
+            copy_certified_pack(ROOT, pack)
+            external_target = temporary_root / f"external-target-{index}{source_path.suffix}"
+            external_target.write_bytes(source_path.read_bytes())
+            before_target = sha256(external_target)
+            target_path = pack / relative_path
+            if target_path.is_dir() and not target_path.is_symlink():
+                held_path = temporary_root / f"held-task-directory-{index}"
+                target_path.rename(held_path)
+                os.symlink(external_target, target_path, target_is_directory=True)
+            else:
+                target_path.unlink()
+                os.symlink(external_target, target_path)
+            violations = certified_input_violations(pack)
+            try:
+                copy_certified_pack(pack, temporary_root / f"refused-copy-{index}")
+                copy_refused = False
+                copy_error: list[dict[str, Any]] = []
+            except CertifiedInputError as error:
+                copy_refused = True
+                copy_error = error.violations
+
+            standalone_command = [sys.executable, str(pack / "validate_pack.py"),
+                                  "--root", str(pack), "--json"]
+            standalone_process = run_with_timeout(
+                standalone_command, PROBE_TIMEOUT_SECONDS, cwd=pack,
+            )
+            try:
+                standalone_report = (
+                    json.loads(standalone_process["stdout"])
+                    if not standalone_process["timed_out"] else None
+                )
+            except json.JSONDecodeError:
+                standalone_report = None
+            standalone_refused = (
+                not standalone_process["timed_out"]
+                and standalone_process["exit_code"] == 2
+                and isinstance(standalone_report, dict)
+                and standalone_report.get("passed") is False
+                and standalone_report.get("failures") == ["Planning pack input is valid"]
+                and len(standalone_report.get("checks", [])) == 1
+            )
+
+            runner_path = pack / "validate_assignment_fixtures.py"
+            runner_command = [sys.executable, str(runner_path)]
+            runner_process = run_with_timeout(runner_command, PROBE_TIMEOUT_SECONDS, cwd=pack)
+            try:
+                runner_report = (
+                    json.loads(runner_process["stdout"])
+                    if not runner_process["timed_out"] else None
+                )
+            except json.JSONDecodeError:
+                runner_report = None
+            runner_refused = (
+                not runner_process["timed_out"]
+                and runner_process["exit_code"] == 1
+                and isinstance(runner_report, dict)
+                and runner_report.get("passed") is False
+                and runner_report.get("validator_import", {}).get("passed") is False
+                and runner_report.get("fixture_inventory", {}).get("observed_count") == 0
+                and runner_report.get("original_board", {}).get("validator_not_started") is True
+            )
+            after_target = sha256(external_target)
+            external_target_hashes[relative_path] = {
+                "before": before_target,
+                "after": after_target,
+            }
+            link_runs.append({
+                "path": relative_path,
+                "violations": violations,
+                "copy_refused": copy_refused,
+                "copy_error": copy_error,
+                "standalone_argv": standalone_command,
+                "standalone_exit_code": standalone_process["exit_code"],
+                "standalone_refused_before_input_reads": standalone_refused,
+                "runner_argv": runner_command,
+                "runner_exit_code": runner_process["exit_code"],
+                "runner_refused_before_import_or_copy": runner_refused,
+                "target_hash_before": before_target,
+                "target_hash_after": after_target,
+            })
+
+        ancestor_pack = temporary_root / "inside-ancestor-link-pack"
+        copy_certified_pack(ROOT, ancestor_pack)
+        tasks_path = ancestor_pack / "tasks"
+        held_tasks = temporary_root / "held-inside-pack-tasks"
+        tasks_path.rename(held_tasks)
+        os.symlink(held_tasks, tasks_path, target_is_directory=True)
+        ancestor_violations = certified_input_violations(ancestor_pack)
+        try:
+            copy_certified_pack(ancestor_pack, temporary_root / "refused-ancestor-copy")
+            ancestor_copy_refused = False
+        except CertifiedInputError:
+            ancestor_copy_refused = True
+        ancestor_standalone = run_with_timeout(
+            [sys.executable, str(ancestor_pack / "validate_pack.py"), "--root",
+             str(ancestor_pack), "--json"],
+            PROBE_TIMEOUT_SECONDS, cwd=ancestor_pack,
+        )
+        ancestor_runner = run_with_timeout(
+            [sys.executable, str(ancestor_pack / "validate_assignment_fixtures.py")],
+            PROBE_TIMEOUT_SECONDS, cwd=ancestor_pack,
+        )
+        try:
+            ancestor_standalone_report = json.loads(ancestor_standalone["stdout"])
+        except json.JSONDecodeError:
+            ancestor_standalone_report = None
+        try:
+            ancestor_runner_report = json.loads(ancestor_runner["stdout"])
+        except json.JSONDecodeError:
+            ancestor_runner_report = None
+        ancestor_standalone_refused = (
+            ancestor_standalone["exit_code"] == 2
+            and isinstance(ancestor_standalone_report, dict)
+            and ancestor_standalone_report.get("failures") == ["Planning pack input is valid"]
+        )
+        ancestor_runner_refused = (
+            ancestor_runner["exit_code"] == 1
+            and isinstance(ancestor_runner_report, dict)
+            and ancestor_runner_report.get("fixture_inventory", {}).get("observed_count") == 0
+        )
+
+        alias_runner_ok = (
+            not runner_alias_process["timed_out"]
+            and runner_alias_process["exit_code"] == 0
+            and isinstance(runner_alias_report, dict)
+            and runner_alias_report.get("root") == str(self_contained_pack.resolve())
+            and runner_alias_report.get("violations") == []
+            and runner_alias_report.get("import_exception") is None
+        )
+        passed = (
+            not source_policy
+            and original_hashes == copied_hashes
+            and not self_contained_policy
+            and not alias_policy
+            and alias_hashes == copied_hashes
+            and all(run["passed"] for run in standalone_alias_runs)
+            and alias_runner_ok
+            and len(link_runs) == len(external_sources)
+            and all(run["violations"] and run["copy_refused"]
+                    and run["copy_error"] == run["violations"]
+                    and run["standalone_refused_before_input_reads"]
+                    and run["runner_refused_before_import_or_copy"]
+                    and run["target_hash_before"] == run["target_hash_after"]
+                    for run in link_runs)
+            and bool(ancestor_violations)
+            and ancestor_copy_refused
+            and ancestor_standalone_refused
+            and ancestor_runner_refused
+            and all(values["before"] == values["after"]
+                    for values in external_target_hashes.values())
+        )
+        return {
+            "scenario": "Canonical roots accept OS aliases and reject linked pack inputs before reads or copying.",
+            "passed": passed,
+            "source_input_policy_violations": source_policy,
+            "self_contained_source_sha256": original_hashes,
+            "self_contained_copy_sha256": copied_hashes,
+            "self_contained_copy_policy_violations": self_contained_policy,
+            "selected_root_alias_policy_violations": alias_policy,
+            "selected_root_alias_sha256": alias_hashes,
+            "standalone_alias_runs": standalone_alias_runs,
+            "runner_alias_argv": runner_alias_command,
+            "runner_alias_exit_code": runner_alias_process["exit_code"],
+            "runner_alias_report": runner_alias_report,
+            "external_link_runs": link_runs,
+            "external_target_hashes": external_target_hashes,
+            "ancestor_link_violations": ancestor_violations,
+            "ancestor_copy_refused": ancestor_copy_refused,
+            "ancestor_standalone_exit_code": ancestor_standalone["exit_code"],
+            "ancestor_standalone_refused": ancestor_standalone_refused,
+            "ancestor_runner_exit_code": ancestor_runner["exit_code"],
+            "ancestor_runner_refused": ancestor_runner_refused,
+        }
+
+
+def post_mutation_symlink_custody_probe() -> dict[str, Any]:
+    input_runs: list[dict[str, Any]] = []
+    with temporary_directory(prefix="jackin-post-mutation-custody-") as temp_dir:
+        temporary_root = Path(temp_dir)
+        for relative_path in ("PACK-CHECKS.md", "GOAL.md"):
+            external_target = temporary_root / f"external-{Path(relative_path).name}"
+            sentinel = f"Protected external content for {relative_path}.\n".encode("utf-8")
+            external_target.write_bytes(sentinel)
+            target_before = sha256(external_target)
+            watched: dict[str, Any] = {"armed": False, "entry": None, "accesses": []}
+
+            def link_input(pack: Path, path: str = relative_path,
+                           external: Path = external_target) -> None:
+                entry = pack / path
+                entry.unlink()
+                entry.symlink_to(external)
+                watched["entry"] = Path(os.path.abspath(os.fspath(entry)))
+                watched["armed"] = True
+
+            original_open = Path.open
+
+            def record_link_access(path: Path, *args: Any, **kwargs: Any) -> Any:
+                absolute_path = Path(os.path.abspath(os.fspath(path)))
+                if watched["armed"] and absolute_path in {
+                    watched["entry"],
+                    Path(os.path.abspath(os.fspath(external_target))),
+                }:
+                    mode = kwargs.get("mode", args[0] if args else "r")
+                    watched["accesses"].append({"path": str(path), "mode": mode})
+                return original_open(path, *args, **kwargs)
+
+            with patch.object(Path, "open", record_link_access):
+                receipt = run_fixture(
+                    f"post-mutation linked {relative_path} is refused before count synchronization",
+                    link_input,
+                    1,
+                    [],
+                )
+            watched["armed"] = False
+            target_after = sha256(external_target)
+            violations = receipt.get("fixture_input_policy_violations", [])
+            linked_path_refused = any(
+                violation.get("path") == relative_path
+                and violation.get("reason") == "symbolic link in certified inputs"
+                for violation in violations
+            )
+            no_validator_execution = (
+                receipt.get("validator_executed") is False
+                and receipt.get("exit_code") is None
+            )
+            no_target_access = not watched["accesses"]
+            target_unchanged = target_before == target_after
+            input_runs.append({
+                "path": relative_path,
+                "violations": violations,
+                "validator_executed": receipt.get("validator_executed"),
+                "target_sha256_before": target_before,
+                "target_sha256_after": target_after,
+                "target_accesses": watched["accesses"],
+                "linked_path_refused": linked_path_refused,
+                "no_validator_execution": no_validator_execution,
+                "no_target_access": no_target_access,
+                "target_unchanged": target_unchanged,
+                "passed": (
+                    linked_path_refused and no_validator_execution
+                    and no_target_access and target_unchanged
+                ),
+            })
+    return {
+        "scenario": "Post-mutation linked count and report inputs are refused before reads or writes.",
+        "passed": len(input_runs) == 2 and all(run["passed"] for run in input_runs),
+        "input_runs": input_runs,
+    }
+
+
+def validator_import_probe(mode: str) -> dict[str, Any]:
+    with temporary_directory(prefix="jackin-import-capture-") as temp_dir:
+        temporary_root = Path(temp_dir)
+        pack = temporary_root / "pack"
+        copy_certified_pack(ROOT, pack)
+        validator = pack / "validate_pack.py"
+        runner = pack / "validate_assignment_fixtures.py"
+        validator_before = path_state(validator)
+        runner_before = path_state(runner)
+        inputs_before = snapshot_files(pack)
+        if mode == "stdout":
+            with validator.open("a", encoding="utf-8") as source:
+                source.write("\nprint('Unexpected validator import output.')\n")
+            command = [sys.executable, str(runner)]
+        elif mode == "stderr":
+            with validator.open("a", encoding="utf-8") as source:
+                source.write("\nimport sys\nsys.stderr.write('Unexpected validator import error output.\\n')\n")
+            command = [sys.executable, str(runner)]
+        elif mode == "exception":
+            with validator.open("a", encoding="utf-8") as source:
+                source.write("\nraise RuntimeError('The validator import failed in this fixture.')\n")
+            command = [sys.executable, str(runner)]
+        elif mode in {"systemexit-zero", "systemexit-nonzero", "systemexit-string"}:
+            exit_value = {
+                "systemexit-zero": 0,
+                "systemexit-nonzero": 7,
+                "systemexit-string": "The imported validator requested an exit.",
+            }[mode]
+            with validator.open("a", encoding="utf-8") as source:
+                source.write(f"\nraise SystemExit({exit_value!r})\n")
+            command = [sys.executable, str(runner)]
+        elif mode == "keyboardinterrupt":
+            with validator.open("a", encoding="utf-8") as source:
+                source.write("\nraise KeyboardInterrupt('operator cancellation')\n")
+            command = [sys.executable, str(runner)]
+        elif mode == "quiet":
+            import_probe = (
+                "import importlib.util,json,sys; "
+                "spec=importlib.util.spec_from_file_location('quiet_probe',sys.argv[1]); "
+                "module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); "
+                "print(json.dumps({'captured_stdout':module.VALIDATOR_IMPORT_STDOUT.getvalue(),"
+                "'captured_stderr':module.VALIDATOR_IMPORT_STDERR.getvalue(),"
+                "'exception':module.VALIDATOR_IMPORT_EXCEPTION,"
+                "'source_changes':module.VALIDATOR_IMPORT_CHANGES}))"
+            )
+            command = [sys.executable, "-c", import_probe, str(runner)]
+        else:
+            raise ValueError(f"Unsupported validator import probe mode: {mode}")
+
+        validator_after_mutation = path_state(validator)
+        process = run_with_timeout(command, PROBE_TIMEOUT_SECONDS, cwd=pack)
+        inputs_after = snapshot_files(pack)
+        validator_after = path_state(validator)
+        runner_after = path_state(runner)
+        try:
+            observed = json.loads(process["stdout"]) if not process["timed_out"] else None
+        except json.JSONDecodeError:
+            observed = None
+
+        if mode == "quiet":
+            passed = (
+                not process["timed_out"]
+                and process["exit_code"] == 0
+                and isinstance(observed, dict)
+                and observed == {
+                    "captured_stdout": "",
+                    "captured_stderr": "",
+                    "exception": None,
+                    "source_changes": {},
+                }
+                and not process["stderr"]
+            )
+        elif mode == "keyboardinterrupt":
+            passed = (
+                not process["timed_out"]
+                and process["exit_code"] != 0
+                and isinstance(observed, dict) is False
+                and not process["stdout"]
+                and "KeyboardInterrupt" in process["stderr"]
+            )
+        else:
+            import_receipt = observed.get("validator_import") if isinstance(observed, dict) else None
+            expected_stdout = "Unexpected validator import output.\n" if mode == "stdout" else ""
+            expected_stderr = (
+                "Unexpected validator import error output.\n" if mode == "stderr" else ""
+            )
+            expected_exception = (
+                {"type": "RuntimeError",
+                 "message": "The validator import failed in this fixture."}
+                if mode == "exception" else None
+            )
+            if mode in {"systemexit-zero", "systemexit-nonzero", "systemexit-string"}:
+                exit_value = {
+                    "systemexit-zero": 0,
+                    "systemexit-nonzero": 7,
+                    "systemexit-string": "The imported validator requested an exit.",
+                }[mode]
+                expected_exception = {
+                    "type": "SystemExit",
+                    "code": exit_value,
+                    "message": str(exit_value),
+                }
+            passed = (
+                not process["timed_out"]
+                and process["exit_code"] == 1
+                and isinstance(observed, dict)
+                and observed.get("passed") is False
+                and isinstance(import_receipt, dict)
+                and import_receipt.get("captured_stdout") == expected_stdout
+                and import_receipt.get("captured_stderr") == expected_stderr
+                and import_receipt.get("exception") == expected_exception
+                and not process["stderr"]
+            )
+        return {
+            "scenario": (
+                "KeyboardInterrupt remains an uncaught cancellation during validator import."
+                if mode == "keyboardinterrupt"
+                else f"The runner captures validator import {mode} without leaking output."
+            ),
+            "passed": passed,
+            "argv": command,
+            "exit_code": process["exit_code"],
+            "timed_out": process["timed_out"],
+            "timeout_seconds": process["timeout_seconds"],
+            "timeout_partial_stdout": process["timeout_partial_stdout"],
+            "timeout_partial_stderr": process["timeout_partial_stderr"],
+            "termination_sent": process["termination_sent"],
+            "child_reaped": process["child_reaped"],
+            "stdout": process["stdout"],
+            "stderr": process["stderr"],
+            "observed_json": observed,
+            "validator_sha256_before": validator_before,
+            "validator_sha256_after_mutation": validator_after_mutation,
+            "validator_sha256_after_process": validator_after,
+            "runner_sha256_before": runner_before,
+            "runner_sha256_after": runner_after,
+            "input_sha256_before": snapshot_states(inputs_before),
+            "input_sha256_after": snapshot_states(inputs_after),
+            "input_changes": snapshot_changes(inputs_before, inputs_after),
+        }
+
+
+def process_liveness(pid: int) -> str:
+    """Classify a process without treating permission failures as proof of termination."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError as error:
+        return "absent" if error.errno in {None, errno.ESRCH} else "unknown"
+    except PermissionError:
+        return "unknown"
+    except OSError as error:
+        if error.errno == errno.ESRCH:
+            return "absent"
+        if error.errno == errno.EPERM:
+            return "unknown"
+        return "unknown"
+
+    if sys.platform.startswith("linux"):
+        try:
+            process_stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+            state = process_stat.rsplit(")", 1)[1].strip().split(maxsplit=1)[0]
+        except FileNotFoundError:
+            return "absent"
+        except (IndexError, OSError):
+            return "unknown"
+        if state in {"Z", "X"}:
+            return "terminated"
+    return "running"
+
+
+def process_liveness_classifier_probe() -> dict[str, Any]:
+    expected = {
+        "running": "running",
+        "zombie": "terminated",
+        "dead": "terminated",
+        "esrch": "absent",
+        "eperm": "unknown",
+    }
+    actual: dict[str, str] = {}
+    actual["running"] = process_liveness(os.getpid())
+    with patch("os.kill", return_value=None), patch("sys.platform", "linux"):
+        for label, state in (("zombie", "Z"), ("dead", "X"), ("linux-running", "S")):
+            with patch.object(Path, "read_text", return_value=f"123 (fixture process) {state} 1 0 0"):
+                actual[label] = process_liveness(123)
+        with patch("os.kill", side_effect=ProcessLookupError(errno.ESRCH, "missing")):
+            actual["esrch"] = process_liveness(123)
+        with patch("os.kill", side_effect=PermissionError(errno.EPERM, "inaccessible")):
+            actual["eperm"] = process_liveness(123)
+    errors = [
+        {"state": state, "expected": expected_status, "actual": actual.get(state)}
+        for state, expected_status in expected.items()
+        if actual.get(state) != expected_status
+    ]
+    errors.extend(
+        {"state": "linux-running", "expected": "running", "actual": actual.get("linux-running")}
+        for _ in [0] if actual.get("linux-running") != "running"
+    )
+    return {
+        "scenario": "Shared process liveness classifies running, zombie, dead, absent, and inaccessible processes.",
+        "passed": not errors,
+        "expected": expected,
+        "actual": actual,
+        "errors": errors,
+    }
+
+
+def bounded_timeout_probe() -> dict[str, Any]:
+    with temporary_directory(prefix="jackin-timeout-probe-") as temp_dir:
+        temporary_root = Path(temp_dir)
+        sleeper = temporary_root / "bounded-sleeper.py"
+        sleeper.write_text(
+            "import signal,subprocess,sys,time\n"
+            "import time\n"
+            "print('Partial standard output.', flush=True)\n"
+            "print('Partial standard error.', file=sys.stderr, flush=True)\n"
+            "descendant=subprocess.Popen([sys.executable,'-c',"
+            "\"import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+            "print('Descendant holds output pipes.',flush=True); time.sleep(30)\"])\n"
+            "print('DESCENDANT_PID='+str(descendant.pid), flush=True)\n"
+            "time.sleep(30)\n",
+            encoding="utf-8",
+        )
+        input_before = snapshot_files(temporary_root)
+        executable_before = path_state(sleeper)
+        started = time.monotonic()
+        process = run_with_timeout([sys.executable, str(sleeper)], 0.25, cwd=temporary_root)
+        elapsed = time.monotonic() - started
+        descendant_match = re.search(r"DESCENDANT_PID=(\d+)", process["timeout_partial_stdout"])
+        descendant_pid = int(descendant_match.group(1)) if descendant_match else None
+        descendant_still_live = None
+        descendant_liveness = None
+        if descendant_pid is not None:
+            descendant_liveness = process_liveness(descendant_pid)
+            descendant_still_live = descendant_liveness not in {"absent", "terminated"}
+            for _ in range(20):
+                if not descendant_still_live:
+                    break
+                time.sleep(0.025)
+                descendant_liveness = process_liveness(descendant_pid)
+                descendant_still_live = descendant_liveness not in {"absent", "terminated"}
+
+        input_after = snapshot_files(temporary_root)
+        executable_after = path_state(sleeper)
+        descendant_control_passed = (
+            process["timed_out"]
+            and process["exit_code"] is not None
+            and process["termination_sent"]
+            and process["child_reaped"]
+            and process["termination_signals"] == ["SIGTERM", "SIGKILL"]
+            and descendant_pid is not None
+            and descendant_still_live is False
+            and elapsed <= 1.5
+            and "Partial standard output." in process["timeout_partial_stdout"]
+            and "Partial standard error." in process["timeout_partial_stderr"]
+            and input_before == input_after
+            and executable_before == executable_after
+        )
+
+        canonical_report_process = run_with_timeout(
+            [sys.executable, str(VALIDATOR), "--root", str(ROOT), "--json"],
+            PROBE_TIMEOUT_SECONDS,
+            cwd=ROOT,
+        )
+        try:
+            canonical_report = json.loads(canonical_report_process["stdout"])
+        except json.JSONDecodeError:
+            canonical_report = None
+        successful_report_hang = temporary_root / "successful-report-then-hang.py"
+        successful_report_hang.write_text(
+            "import signal,subprocess,sys,time\n"
+            f"sys.stdout.write({canonical_report_process['stdout']!r})\n"
+            "sys.stdout.flush()\n"
+            "descendant=subprocess.Popen([sys.executable,'-c',"
+            "\"import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+            "time.sleep(30)\"])\n"
+            "print('DESCENDANT_PID='+str(descendant.pid), flush=True)\n"
+            "time.sleep(30)\n",
+            encoding="utf-8",
+        )
+        canonical_timeout = run_with_timeout(
+            [sys.executable, str(successful_report_hang)], 0.25, cwd=temporary_root,
+        )
+        canonical_report_rejected = (
+            isinstance(canonical_report, dict)
+            and canonical_report.get("passed") is True
+            and canonical_report_process["exit_code"] == 0
+            and canonical_timeout["timed_out"]
+            and canonical_timeout["exit_code"] is not None
+            and canonical_timeout["stdout"].startswith(canonical_report_process["stdout"])
+        )
+        passed = descendant_control_passed and canonical_report_rejected
+        return {
+            "scenario": "The owned process group kills inherited-pipe descendants and rejects timed-out success output.",
+            "passed": passed,
+            "argv": [sys.executable, str(sleeper)],
+            "elapsed_seconds": round(elapsed, 6),
+            "timeout_seconds": process["timeout_seconds"],
+            "timed_out": process["timed_out"],
+            "exit_code": process["exit_code"],
+            "timeout_partial_stdout": process["timeout_partial_stdout"],
+            "timeout_partial_stderr": process["timeout_partial_stderr"],
+            "stdout": process["stdout"],
+            "stderr": process["stderr"],
+            "termination_sent": process["termination_sent"],
+            "termination_signals": process["termination_signals"],
+            "child_reaped": process["child_reaped"],
+            "descendant_pid": descendant_pid,
+            "descendant_liveness": descendant_liveness,
+            "descendant_still_live": descendant_still_live,
+            "bounded_descendant_control_passed": descendant_control_passed,
+            "canonical_report_argv": canonical_report_process.get("argv"),
+            "canonical_report_exit_code": canonical_report_process["exit_code"],
+            "canonical_report_passed": (
+                canonical_report.get("passed") if isinstance(canonical_report, dict) else None
+            ),
+            "canonical_success_hang_argv": [sys.executable, str(successful_report_hang)],
+            "canonical_success_hang_exit_code": canonical_timeout["exit_code"],
+            "canonical_success_hang_timed_out": canonical_timeout["timed_out"],
+            "canonical_success_report_rejected": canonical_report_rejected,
+            "input_sha256_before": snapshot_states(input_before),
+            "input_sha256_after": snapshot_states(input_after),
+            "input_changes": snapshot_changes(input_before, input_after),
+            "executable_before": executable_before,
+            "executable_after": executable_after,
+        }
+
+
+def no_pipe_descendant_timeout_probe() -> dict[str, Any]:
+    scenario = (
+        "The owned process group kills a no-pipe descendant after the direct child exits."
+    )
+    with temporary_directory(prefix="jackin-timeout-no-pipe-probe-") as temp_dir:
+        temporary_root = Path(temp_dir)
+        script = temporary_root / "no-pipe-descendant.py"
+        script.write_text(
+            "import os,subprocess,sys,time\n"
+            "descendant=subprocess.Popen([sys.executable,'-c',"
+            "\"import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); time.sleep(30)\"],"
+            "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n"
+            "print('DESCENDANT_PID='+str(descendant.pid), flush=True)\n"
+            "print('OWNED_PGID='+str(os.getpgrp()), flush=True)\n"
+            "time.sleep(30)\n",
+            encoding="utf-8",
+        )
+        input_before = snapshot_files(temporary_root)
+        executable_before = path_state(script)
+        started = time.monotonic()
+        command = [sys.executable, str(script)]
+        process = run_with_timeout(command, 0.15, cwd=temporary_root)
+        elapsed = time.monotonic() - started
+        captured_output = "\n".join((
+            process["timeout_partial_stdout"],
+            process["stdout"],
+        ))
+        pid_match = re.search(r"DESCENDANT_PID=(\d+)", captured_output)
+        pgid_match = re.search(r"OWNED_PGID=(\d+)", captured_output)
+        descendant_pid = int(pid_match.group(1)) if pid_match else None
+        reported_pgid = int(pgid_match.group(1)) if pgid_match else None
+
+        descendant_still_live: bool | None = None
+        descendant_liveness = None
+        if descendant_pid is not None:
+            descendant_liveness = process_liveness(descendant_pid)
+            descendant_still_live = descendant_liveness not in {"absent", "terminated"}
+            for _ in range(40):
+                if not descendant_still_live:
+                    break
+                time.sleep(0.025)
+                descendant_liveness = process_liveness(descendant_pid)
+                descendant_still_live = descendant_liveness not in {"absent", "terminated"}
+
+            # A failed or incomplete assertion must not leave this probe's
+            # owned group running. The group ID is the one created for this
+            # execution; never inspect or signal a different group.
+            if os.name == "posix" and descendant_still_live is not False:
+                try:
+                    os.killpg(process["process_group_id"], signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, TypeError):
+                    pass
+                if descendant_pid is not None:
+                    for _ in range(40):
+                        time.sleep(0.025)
+                        descendant_liveness = process_liveness(descendant_pid)
+                        if descendant_liveness in {"absent", "terminated"}:
+                            descendant_still_live = False
+                            break
+                        descendant_still_live = True
+
+        input_after = snapshot_files(temporary_root)
+        executable_after = path_state(script)
+        expected_direct_exit = -signal.SIGTERM
+        passed = (
+            os.name == "posix"
+            and process["timed_out"]
+            and process["termination_signals"] == ["SIGTERM", "SIGKILL"]
+            and process["exit_code"] == expected_direct_exit
+            and process["child_reaped"]
+            and descendant_pid is not None
+            and reported_pgid == process["process_group_id"]
+            and descendant_still_live is False
+            and elapsed <= 1.5
+            and input_before == input_after
+            and executable_before == executable_after
+        )
+        return {
+            "scenario": scenario,
+            "passed": passed,
+            "argv": process["argv"],
+            "elapsed_seconds": round(elapsed, 6),
+            "timeout_seconds": process["timeout_seconds"],
+            "timed_out": process["timed_out"],
+            "exit_code": process["exit_code"],
+            "expected_direct_child_exit_code": expected_direct_exit,
+            "timeout_partial_stdout": process["timeout_partial_stdout"],
+            "timeout_partial_stderr": process["timeout_partial_stderr"],
+            "stdout": process["stdout"],
+            "stderr": process["stderr"],
+            "termination_signals": process["termination_signals"],
+            "child_reaped": process["child_reaped"],
+            "process_group_id": process["process_group_id"],
+            "reported_owned_pgid": reported_pgid,
+            "descendant_pid": descendant_pid,
+            "descendant_liveness": descendant_liveness,
+            "descendant_still_live": descendant_still_live,
+            "input_sha256_before": snapshot_states(input_before),
+            "input_sha256_after": snapshot_states(input_after),
+            "input_changes": snapshot_changes(input_before, input_after),
+            "executable_before": executable_before,
+            "executable_after": executable_after,
+        }
+
+
+def main() -> int:
+    import_receipt = validator_import_receipt()
+    if not import_receipt["passed"]:
+        policy_errors = BOOTSTRAP_INPUT_POLICY_VIOLATIONS
+        failure_payload = {
+            "passed": False,
+            "scope": "Static validator fixtures only. No product or runtime tests are performed.",
+            "validator_import": import_receipt,
+            "source_input_policy_violations": policy_errors,
+            "fixture_inventory": {
+                "passed": False,
+                "expected_count": FIXED_FIXTURE_COUNT,
+                "observed_count": 0,
+                "errors": ["The runner refused to execute fixtures after validator import failure."],
+            },
+            "runner_control_inventory": runner_check_inventory_report([]),
+            "runner_checks": [],
+            "fixtures": [],
+            "original_board": {
+                "passed": False,
+                "validator_not_started": True,
+                "reason": "The runner refused to continue after an unsafe or noisy validator import.",
+            },
+        }
+        print(json.dumps(failure_payload, indent=2, ensure_ascii=False))
+        return 1
+
+    receipts: list[dict[str, Any]] = []
+    original_source_before = SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT
+    receipts.append(import_time_readme_mutation_probe())
+
+    def completed_t32_shared_summary(u02: str, t32: str, summary: str) -> Callable[[Path], None]:
+        def mutate(pack: Path) -> None:
+            all_pass(pack)
+            set_task_states(pack, {"T32": "BLOCKED"})
+            update_cases(pack, set_shared_summary(u02, t32, summary))
+        return mutate
+
+    def sibling_fail_precedence(pack: Path) -> None:
+        all_pass(pack)
+        set_task_states(pack, {"T35": "FAIL", "T36": "BLOCKED"})
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A117"]
+            for task_id, status in {
+                "T35": "FAIL", "T36": "BLOCKED", "T37": "PASS", "T38": "NOT_RUN",
+            }.items():
+                set_assignment(case, task_id, status)
+            case["status"] = "FAIL"
+        update_cases(pack, update)
+
+    receipts.append(run_fixture(
+        "shared PASS summary requires every owner",
+        all_pass,
+        0, [],
+    ))
+    receipts.append(run_fixture(
+        "task PASS with its own assignment results",
+        all_pass,
+        0, [],
+    ))
+    receipts.append(run_fixture(
+        "mixed PASS and NOT_RUN summarizes as NOT_RUN",
+        completed_t32_shared_summary("PASS", "NOT_RUN", "NOT_RUN"),
+        0, [],
+    ))
+    receipts.append(run_fixture(
+        "mixed PASS and BLOCKED summarizes as BLOCKED",
+        completed_t32_shared_summary("PASS", "BLOCKED", "BLOCKED"),
+        0, [],
+    ))
+    receipts.append(run_fixture(
+        "FAIL takes precedence over BLOCKED",
+        sibling_fail_precedence,
+        0, [],
+    ))
+
+    def unstarted_assignment(status: str) -> Callable[[Path], None]:
+        summaries = {"PASS": "NOT_RUN", "FAIL": "FAIL", "BLOCKED": "BLOCKED"}
+        def mutate(pack: Path) -> None:
+            if status in {"PASS", "FAIL"}:
+                set_execution_markers(pack, runtime_tests_executed_for_this_pack=True)
+            update_cases(pack, set_shared_summary(status, "NOT_RUN", summaries[status]))
+        return mutate
+
+    for status in ("PASS", "FAIL", "BLOCKED"):
+        receipts.append(run_fixture(
+            f"NOT_STARTED owner cannot have {status} assignment",
+            unstarted_assignment(status),
+            1, ["NOT_STARTED and READY tasks have NOT_RUN assignments"],
+        ))
+
+    def ready_assignment(status: str) -> Callable[[Path], None]:
+        def mutate(pack: Path) -> None:
+            set_task_status(pack, "P00", "READY")
+            update_cases(pack, set_single_summary("P00", status))
+        return mutate
+
+    for status in ("PASS", "FAIL", "BLOCKED"):
+        receipts.append(run_fixture(
+            f"READY owner cannot have {status} assignment",
+            ready_assignment(status),
+            1, ["NOT_STARTED and READY tasks have NOT_RUN assignments"],
+        ))
+    receipts.append(run_fixture(
+        "READY owner can retain NOT_RUN assignment",
+        ready_assignment("NOT_RUN"),
+        0, [],
+    ))
+
+    def remove_runtime_execution_marker(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        graph.pop("runtime_tests_executed_for_this_pack")
+        write_json(graph_path, graph)
+
+    receipts.append(run_fixture(
+        "ordinary validation rejects a missing runtime-execution marker",
+        remove_runtime_execution_marker,
+        1, ["Execution markers are Boolean in every mode."],
+    ))
+
+    def use_non_boolean_delegation_marker(pack: Path) -> None:
+        set_execution_markers(pack, subagents_used_for_this_pack=1)
+    receipts.append(run_fixture(
+        "ordinary validation rejects a non-Boolean delegation marker",
+        use_non_boolean_delegation_marker,
+        1, ["Execution markers are Boolean in every mode."],
+    ))
+
+    def use_non_boolean_marker_in_initial_mode(pack: Path) -> None:
+        set_execution_markers(pack, subagents_used_for_this_pack="false")
+    receipts.append(run_fixture(
+        "initial validation rejects non-Boolean execution markers",
+        use_non_boolean_marker_in_initial_mode,
+        1, ["Execution markers are Boolean in every mode.",
+            "Pack records no runtime tests or delegated reviews"], initial=True,
+    ))
+
+    def malformed_ready_groups(pack: Path, groups: Any) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        graph["topological_ready_groups"] = groups
+        write_json(graph_path, graph)
+
+    for label, groups in (
+        ("an object", {"first": ["P00"]}),
+        ("a non-list group", ["P00"]),
+        ("a non-string task identifier", [["P00", 7]]),
+    ):
+        receipts.append(run_fixture(
+            f"readiness groups reject {label} with a structured input error",
+            lambda pack, value=groups: malformed_ready_groups(pack, value),
+            2, ["Planning pack input is valid"],
+            expected_report_details={
+                "Planning pack input is valid":
+                    "task-graph.json 'topological_ready_groups' must be a list of lists of strings",
+            },
+        ))
+
+    def serial_source_progress(pack: Path) -> None:
+        set_task_status(pack, "P00", "PASS")
+        set_execution_markers(
+            pack, subagents_used_for_this_pack=False, runtime_tests_executed_for_this_pack=False,
+        )
+        update_cases(pack, set_single_summary("P00", "PASS"))
+    receipts.append(run_fixture(
+        "serial SOURCE work passes without delegation or runtime claims",
+        serial_source_progress,
+        0, [],
+    ))
+
+    def serial_review_progress(pack: Path) -> None:
+        set_task_status(pack, "P00", "REVIEW")
+        set_execution_markers(
+            pack, subagents_used_for_this_pack=False, runtime_tests_executed_for_this_pack=False,
+        )
+        update_cases(pack, set_single_summary("P00", "PASS"))
+    receipts.append(run_fixture(
+        "serial REVIEW work records its own passing assignment",
+        serial_review_progress,
+        0, [],
+    ))
+
+    def all_live_cases_pass(pack: Path, runtime_marker: bool) -> None:
+        all_pass(pack)
+        set_execution_markers(pack, runtime_tests_executed_for_this_pack=runtime_marker)
+
+    receipts.append(run_fixture(
+        "LIVE PASS assignments require a true runtime-execution marker",
+        lambda pack: all_live_cases_pass(pack, False),
+        1, ["LIVE PASS and FAIL results require the runtime-execution marker."],
+    ))
+    receipts.append(run_fixture(
+        "LIVE PASS assignments are accepted with a true runtime-execution marker",
+        lambda pack: all_live_cases_pass(pack, True),
+        0, [],
+    ))
+
+    def p02_live_failure(pack: Path, runtime_marker: bool) -> None:
+        set_task_states(pack, {"P00": "PASS", "P02": "FAIL"})
+        set_execution_markers(
+            pack, subagents_used_for_this_pack=False,
+            runtime_tests_executed_for_this_pack=runtime_marker,
+        )
+
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            set_assignment(cases["A01"], "P00", "PASS")
+            cases["A01"]["status"] = "PASS"
+            set_assignment(cases["A05"], "P02", "FAIL")
+            cases["A05"]["status"] = "FAIL"
+        update_cases(pack, update)
+
+    receipts.append(run_fixture(
+        "LIVE FAIL assignments require a true runtime-execution marker",
+        lambda pack: p02_live_failure(pack, False),
+        1, ["LIVE PASS and FAIL results require the runtime-execution marker."],
+    ))
+    receipts.append(run_fixture(
+        "LIVE FAIL assignments are accepted with a true runtime-execution marker",
+        lambda pack: p02_live_failure(pack, True),
+        0, [],
+    ))
+
+    def p02_blocked_after_dependency_completion(pack: Path) -> None:
+        set_task_states(pack, {"P00": "PASS", "P02": "BLOCKED"})
+        set_execution_markers(
+            pack, subagents_used_for_this_pack=False, runtime_tests_executed_for_this_pack=False,
+        )
+        update_cases(pack, set_single_summary("P00", "PASS"))
+    receipts.append(run_fixture(
+        "LIVE BLOCKED results do not claim runtime execution",
+        p02_blocked_after_dependency_completion,
+        0, [],
+    ))
+
+    def build_assignment_does_not_claim_live_execution(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            set_assignment(cases["A125"], "T40", "PASS")
+            cases["A125"]["status"] = "PASS"
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "a BUILD assignment does not claim LIVE runtime execution",
+        build_assignment_does_not_claim_live_execution,
+        1, ["NOT_STARTED and READY tasks have NOT_RUN assignments"],
+        expected_report_details={
+            "LIVE PASS and FAIL results require the runtime-execution marker.": [],
+        },
+    ))
+
+    def true_markers_before_initial_normalization(pack: Path) -> None:
+        set_execution_markers(
+            pack, subagents_used_for_this_pack=True, runtime_tests_executed_for_this_pack=True,
+        )
+    receipts.append(run_fixture(
+        "temporary normalization resets only valid true execution markers",
+        lambda _pack: None,
+        0, [], initial=True,
+        pre_normalization_mutation=true_markers_before_initial_normalization,
+        expected_normalization_diff=[
+            {"path": "task-graph.json", "field": "subagents_used_for_this_pack",
+             "before": True, "after": False},
+            {"path": "task-graph.json", "field": "runtime_tests_executed_for_this_pack",
+             "before": True, "after": False},
+        ],
+    ))
+
+    receipts.append(run_fixture(
+        "temporary normalization does not recreate a missing execution marker",
+        lambda _pack: None,
+        1, ["Execution markers are Boolean in every mode."],
+        pre_normalization_mutation=remove_runtime_execution_marker,
+        expected_normalization_diff=[],
+    ))
+
+    def non_boolean_marker_before_normalization(pack: Path) -> None:
+        set_execution_markers(pack, subagents_used_for_this_pack=0)
+    receipts.append(run_fixture(
+        "temporary normalization does not repair an invalid execution marker",
+        lambda _pack: None,
+        1, ["Execution markers are Boolean in every mode."],
+        pre_normalization_mutation=non_boolean_marker_before_normalization,
+        expected_normalization_diff=[],
+    ))
+
+    def valid_progress_markers(pack: Path) -> None:
+        set_task_status(pack, "P00", "PASS")
+        set_execution_markers(
+            pack, subagents_used_for_this_pack=True, runtime_tests_executed_for_this_pack=True,
+        )
+        update_cases(pack, set_single_summary("P00", "PASS"))
+    receipts.append(run_fixture(
+        "progressed source with true execution markers passes ordinary validation",
+        valid_progress_markers,
+        0, [],
+    ))
+
+    def blocked_owner_with_prior_pass(pack: Path) -> None:
+        all_pass(pack)
+        set_task_states(pack, {"U02": "BLOCKED"})
+    receipts.append(run_fixture(
+        "BLOCKED owner can retain its passing assignment while T32 waits",
+        blocked_owner_with_prior_pass,
+        0, [],
+    ))
+
+    def upstream_pass(pack: Path) -> None:
+        all_pass(pack)
+        update_cases(pack, set_shared_summary("PASS", "NOT_RUN", "NOT_RUN"))
+    receipts.append(run_fixture(
+        "upstream PASS cannot close downstream assignment",
+        upstream_pass,
+        1, ["PASS tasks have passing assigned case results"],
+    ))
+
+    receipts.append(run_fixture(
+        "legacy summary cannot PASS with incomplete assignment",
+        completed_t32_shared_summary("PASS", "NOT_RUN", "PASS"),
+        1, ["Case status matches assignment summary"],
+    ))
+
+    def legacy_manifest(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            for case in cases.values():
+                case.pop("assignment_results")
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "legacy manifest without assignment_results is rejected",
+        legacy_manifest,
+        1, [
+            "A73 preserves early scope and integrated denied-scope admission owners",
+            "A86 preserves backend host-action and integrated presentation owners",
+            "A82 separates T24 shell qualification from T29 final presentation",
+            "A84 separates T25 usage qualification from T29 serialization and presentation",
+            "A99 separates T30 private-forward qualification from T29 final presentation",
+            "A100 preserves T30 exposure security and T29 final presentation",
+            "Assignment results have exact unique case owners and valid statuses",
+        ],
+    ))
+
+    def malformed(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            cases["A22"]["assignment_results"][0]["evidence"] = "unexpected"
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "malformed assignment row is rejected", malformed,
+        1, ["Assignment results have exact unique case owners and valid statuses"],
+    ))
+
+    def invalid_assignment_status(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            cases["A22"]["assignment_results"][0]["status"] = "PASSED"
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "undocumented assignment status is rejected", invalid_assignment_status,
+        1, ["Assignment results have exact unique case owners and valid statuses"],
+    ))
+
+    def duplicate(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            rows = cases["A22"]["assignment_results"]
+            rows[1] = dict(rows[0])
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "duplicate task assignment is rejected", duplicate,
+        1, ["Assignment results have exact unique case owners and valid statuses"],
+    ))
+
+    def missing(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            cases["A22"]["assignment_results"].pop()
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "missing task assignment is rejected", missing,
+        1, ["Assignment results have exact unique case owners and valid statuses"],
+    ))
+
+    def extra(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            cases["A22"]["assignment_results"].append({"task_id": "UNKNOWN", "status": "NOT_RUN"})
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "extra task assignment is rejected", extra,
+        1, ["Assignment results have exact unique case owners and valid statuses"],
+    ))
+
+    def duplicate_case_owner(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            cases["A01"]["tasks"].append(cases["A01"]["tasks"][0])
+        update_cases(pack, update)
+        sync_case_block(pack, case_map(pack)["A01"])
+    receipts.append(run_fixture(
+        "duplicate case owner fails when its Markdown block is synchronized",
+        duplicate_case_owner,
+        1, [
+            "Acceptance cases have unique string task owners",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_validator_copy(pack: Path) -> None:
+        (pack / "validate_pack.py").unlink()
+    receipts.append(run_fixture(
+        "copied pack without validator fails under the real external validator",
+        remove_validator_copy,
+        1, ["Required pack files exist"], validator_executable=VALIDATOR,
+        expected_report_details={"Required pack files exist": ["validate_pack.py"]},
+    ))
+
+    def mutate_acceptance_prefix(pack: Path) -> None:
+        path = pack / "ACCEPTANCE.md"
+        document = path.read_bytes()
+        marker = b"## Detailed cases\n"
+        prefix_end = document.index(marker)
+        prefix = document[:prefix_end]
+        old = b"Do not remove a row silently"
+        if old not in prefix:
+            raise ValueError("Expected target-row policy text in acceptance prefix")
+        path.write_bytes(prefix.replace(old, b"Remove a row silently", 1) + document[prefix_end:])
+    receipts.append(run_fixture(
+        "acceptance prefix mutation violates its fixed checksum",
+        mutate_acceptance_prefix,
+        1, ["Acceptance policy before detailed cases matches fixed checksum"],
+    ))
+
+    def delete_acceptance_prefix_line(pack: Path) -> None:
+        path = pack / "ACCEPTANCE.md"
+        document = path.read_bytes()
+        marker = b"## Detailed cases\n"
+        prefix_end = document.index(marker)
+        lines = document[:prefix_end].splitlines(keepends=True)
+        target = b"Use `--case` repeatedly for several selected cases.\n"
+        if target not in lines:
+            raise ValueError("Expected harness policy line in acceptance prefix")
+        lines.remove(target)
+        path.write_bytes(b"".join(lines) + document[prefix_end:])
+    receipts.append(run_fixture(
+        "acceptance prefix deletion violates its fixed checksum",
+        delete_acceptance_prefix_line,
+        1, ["Acceptance policy before detailed cases matches fixed checksum"],
+    ))
+
+    def assignment_progress(pack: Path) -> None:
+        set_execution_markers(pack, runtime_tests_executed_for_this_pack=True)
+        update_cases(pack, set_shared_summary("PASS", "NOT_RUN", "NOT_RUN"))
+    receipts.append(run_fixture(
+        "initial mode rejects assignment progress", assignment_progress,
+        1, ["NOT_STARTED and READY tasks have NOT_RUN assignments",
+            "Initial task, case, and assignment statuses claim no execution",
+            "Pack records no runtime tests or delegated reviews"], initial=True,
+    ))
+
+    def malformed_initial_assignment(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            cases["A22"]["assignment_results"][0] = None
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "initial mode rejects malformed assignment rows cleanly", malformed_initial_assignment,
+        1, ["Assignment results have exact unique case owners and valid statuses",
+            "Initial task, case, and assignment statuses claim no execution"], initial=True,
+    ))
+
+    def seed_progress_before_normalization(pack: Path) -> None:
+        set_task_status(pack, "P00", "PASS")
+        update_cases(pack, set_single_summary("P00", "PASS"))
+    receipts.append(run_fixture(
+        "temporary normalization changes only P00 and A01 status fields",
+        lambda _pack: None,
+        0, [], initial=True,
+        pre_normalization_mutation=seed_progress_before_normalization,
+        expected_normalization_diff=[
+            {"path": "task-graph.json", "field": "tasks[0].status",
+             "before": "PASS", "after": "NOT_STARTED"},
+            {"path": "acceptance-cases.json", "field": "cases[0].status",
+             "before": "PASS", "after": "NOT_RUN"},
+            {"path": "acceptance-cases.json", "field": "cases[0].assignment_results[0].status",
+             "before": "PASS", "after": "NOT_RUN"},
+        ],
+    ))
+
+    def consistent_progressed_p00_a01(pack: Path) -> None:
+        set_task_status(pack, "P00", "PASS")
+        update_cases(pack, set_single_summary("P00", "PASS"))
+    receipts.append(run_fixture(
+        "consistent progressed P00 and A01 board passes ordinary validation",
+        consistent_progressed_p00_a01,
+        0, [],
+    ))
+
+    def missing_a01_assignment_control(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            cases["A01"]["assignment_results"].clear()
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "invalid temporary source board with missing A01 assignment is not repaired",
+        lambda _pack: None,
+        1, ["Assignment results have exact unique case owners and valid statuses"],
+        pre_normalization_mutation=missing_a01_assignment_control,
+    ))
+
+    def t33_without_checkpoint_dependency(pack: Path) -> None:
+        all_pass(pack)
+        set_task_states(pack, {"T27": "BLOCKED", "T33": "RUNNING"})
+        tasks = task_map(pack)
+        assert all(tasks[dependency]["status"] == "PASS"
+                   for dependency in tasks["T33"]["depends_on"] if dependency != "T27")
+    receipts.append(run_fixture(
+        "T33 waits for T27 checkpoint completion",
+        t33_without_checkpoint_dependency,
+        1, ["Task progress waits for completed dependencies"],
+    ))
+
+    def blocked_task(pack: Path) -> None:
+        all_pass(pack)
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        graph["tasks"][[task["id"] for task in graph["tasks"]].index("T40")]["status"] = "BLOCKED"
+        graph_path.write_text(json.dumps(graph, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            for case_id in ("A123", "A124", "A125"):
+                case = cases[case_id]
+                for result in case["assignment_results"]:
+                    result["status"] = "BLOCKED"
+                case["status"] = "BLOCKED"
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "BLOCKED task and assignment remain blocked without failing validation",
+        blocked_task,
+        0, [],
+    ))
+
+    def failed_task_with_unmet_dependencies(pack: Path) -> None:
+        set_task_status(pack, "T40", "FAIL")
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            for case_id in ("A123", "A124", "A125"):
+                case = cases[case_id]
+                for result in case["assignment_results"]:
+                    result["status"] = "PASS"
+                case["status"] = "PASS"
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "FAIL task must wait for completed dependencies",
+        failed_task_with_unmet_dependencies,
+        1, ["Task progress waits for completed dependencies"],
+    ))
+
+    def failed_task_after_dependencies_with_unfinished_cases(pack: Path) -> None:
+        all_pass(pack)
+        set_task_status(pack, "T40", "FAIL")
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            for case_id in ("A123", "A124", "A125"):
+                case = cases[case_id]
+                status = "PASS" if case_id == "A124" else "NOT_RUN"
+                for result in case["assignment_results"]:
+                    result["status"] = status
+                case["status"] = status
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "FAIL task remains valid after completed dependencies with NOT_RUN and PASS cases",
+        failed_task_after_dependencies_with_unfinished_cases,
+        0, [],
+    ))
+
+    def blocked_task_with_unmet_dependencies(pack: Path) -> None:
+        set_task_status(pack, "T40", "BLOCKED")
+    receipts.append(run_fixture(
+        "BLOCKED task may wait on an incomplete dependency with NOT_RUN cases",
+        blocked_task_with_unmet_dependencies,
+        0, [],
+    ))
+
+    def blocked_task_with_incomplete_dependencies_and_result(status: str) -> Callable[[Path], None]:
+        def mutate(pack: Path) -> None:
+            set_task_status(pack, "T32", "BLOCKED")
+            if status in {"PASS", "FAIL"}:
+                set_execution_markers(pack, runtime_tests_executed_for_this_pack=True)
+            def update(cases: dict[str, dict[str, Any]]) -> None:
+                case = cases["A22"]
+                set_assignment(case, "T32", status)
+                case["status"] = status_summary([row["status"] for row in case["assignment_results"]])
+            update_cases(pack, update)
+        return mutate
+
+    for status in ("PASS", "FAIL", "BLOCKED"):
+        receipts.append(run_fixture(
+            f"BLOCKED T32 with incomplete dependencies cannot retain {status} assignments",
+            blocked_task_with_incomplete_dependencies_and_result(status),
+            1, ["BLOCKED tasks with incomplete dependencies have NOT_RUN assignments"],
+        ))
+
+    def blocked_t32_with_incomplete_dependencies_not_run(pack: Path) -> None:
+        set_task_status(pack, "T32", "BLOCKED")
+    receipts.append(run_fixture(
+        "BLOCKED T32 with incomplete dependencies keeps NOT_RUN assignments",
+        blocked_t32_with_incomplete_dependencies_not_run,
+        0, [],
+    ))
+
+    def blocked_task_after_completed_dependencies_retains_results(pack: Path) -> None:
+        all_pass(pack)
+        set_task_status(pack, "T40", "BLOCKED")
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            for case_id, status in (("A123", "PASS"), ("A124", "FAIL"), ("A125", "BLOCKED")):
+                case = cases[case_id]
+                set_assignment(case, "T40", status)
+                case["status"] = status
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "BLOCKED task with completed dependencies retains prior case results",
+        blocked_task_after_completed_dependencies_retains_results,
+        0, [],
+    ))
+
+    review_assignment_check = "REVIEW tasks have recorded results for every owned assignment"
+
+    def review_task_with_results(task_id: str, status: str,
+                                 not_run_case: str | None = None) -> Callable[[Path], None]:
+        def mutate(pack: Path) -> None:
+            all_pass(pack)
+            set_task_states(pack, {task_id: "REVIEW"})
+            owned_cases = task_map(pack)[task_id]["test_cases"]
+
+            def update(cases: dict[str, dict[str, Any]]) -> None:
+                for case_id in owned_cases:
+                    case = cases[case_id]
+                    assigned_status = "NOT_RUN" if case_id == not_run_case else status
+                    set_assignment(case, task_id, assigned_status)
+                    case["status"] = status_summary([row["status"] for row in case["assignment_results"]])
+
+            update_cases(pack, update)
+        return mutate
+
+    receipts.append(run_fixture(
+        "REVIEW task requires its own result when another owner has PASS",
+        review_task_with_results("T32", "PASS", not_run_case="A22"),
+        1, [review_assignment_check],
+    ))
+    receipts.append(run_fixture(
+        "REVIEW task requires every owned assignment to have a result",
+        review_task_with_results("T40", "PASS", not_run_case="A123"),
+        1, [review_assignment_check],
+    ))
+    for status in ("PASS", "FAIL", "BLOCKED"):
+        receipts.append(run_fixture(
+            f"REVIEW task accepts its own {status} assignment results",
+            review_task_with_results("T40", status),
+            0, [],
+        ))
+
+    def no_case_task_in_review(pack: Path) -> None:
+        all_pass(pack)
+        set_task_states(pack, {"U06": "REVIEW"})
+        if task_map(pack)["U06"]["test_cases"]:
+            raise ValueError("Expected U06 to keep its manual no-case review rule")
+    receipts.append(run_fixture(
+        "REVIEW task without acceptance cases remains valid",
+        no_case_task_in_review,
+        0, [],
+    ))
+
+    def no_case_task(pack: Path) -> None:
+        all_pass(pack)
+        if task_map(pack)["U06"]["test_cases"]:
+            raise ValueError("Expected U06 to retain manual completion with no assigned cases")
+    receipts.append(run_fixture(
+        "task without acceptance cases keeps completion rule",
+        no_case_task,
+        0, [],
+    ))
+
+    def duplicate_task_case_reference(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        p04 = next(task for task in graph["tasks"] if task["id"] == "P04")
+        p04["test_cases"].append(p04["test_cases"][0])
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P04")
+    receipts.append(run_fixture(
+        "duplicate task case reference is rejected with synchronized task cards",
+        duplicate_task_case_reference,
+        1, [
+            "Task test_cases contain unique string IDs",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def nonstring_task_case_reference(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        p04 = next(task for task in graph["tasks"] if task["id"] == "P04")
+        p04["test_cases"].append(123)
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P04")
+    receipts.append(run_fixture(
+        "non-string task case reference is rejected before ownership set logic",
+        nonstring_task_case_reference,
+        1, [
+            "Task test_cases contain unique string IDs",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def stale_manifest_summary(pack: Path, status: str) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        data["status"] = status
+        write_json(path, data)
+    receipts.append(run_fixture(
+        "acceptance manifest root status cannot claim PASS for incomplete cases",
+        lambda pack: stale_manifest_summary(pack, "PASS"),
+        1, ["Acceptance manifest status matches the case summary"],
+    ))
+    receipts.append(run_fixture(
+        "acceptance manifest root status rejects undocumented values",
+        lambda pack: stale_manifest_summary(pack, "COMPLETE"),
+        1, ["Acceptance manifest status uses documented values",
+            "Acceptance manifest status matches the case summary"],
+    ))
+
+    def manifest_failure_precedence(pack: Path) -> None:
+        all_pass(pack)
+        set_task_states(pack, {"T35": "FAIL", "T36": "BLOCKED"})
+
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            for case_id, task_id, status in (
+                ("A55", "T35", "FAIL"), ("A112", "T36", "BLOCKED"),
+            ):
+                case = cases[case_id]
+                set_assignment(case, task_id, status)
+                case["status"] = status
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "manifest summary gives FAIL precedence over BLOCKED",
+        manifest_failure_precedence,
+        0, [],
+    ))
+
+    def corrupt_completion_rule(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        next(task for task in graph["tasks"] if task["id"] == "T14")["completion_rule"] = "All checks pass."
+        write_json(graph_path, graph)
+    receipts.append(run_fixture(
+        "task completion rule cannot diverge from the shared evidence contract",
+        corrupt_completion_rule,
+        1, [
+            "Task completion rules match the fixed evidence contract",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def set_review_rule(pack: Path, review_rule: str) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        next(task for task in graph["tasks"] if task["id"] == "T14")["review_rule"] = review_rule
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T14")
+
+    receipts.append(run_fixture(
+        "task review rule rejects self-review after synchronized cards",
+        lambda pack: set_review_rule(
+            pack,
+            "The task owner reviews the result. The integration subagent reruns affected tests after merge.",
+        ),
+        1, [
+            "Task review rules match the different-subagent and post-merge contract",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+    receipts.append(run_fixture(
+        "task review rule requires a post-merge integration rerun",
+        lambda pack: set_review_rule(pack, "A different subagent reviews the result."),
+        1, [
+            "Task review rules match the different-subagent and post-merge contract",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_standard_task_artifact(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == "P00")
+        task["required_artifacts"].remove("evidence/openshell-v2/P00/review.json")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P00")
+    receipts.append(run_fixture(
+        "canonical review receipt cannot be removed with synchronized cards",
+        remove_standard_task_artifact,
+        1, [
+            "Task required artifacts match canonical evidence set and report path",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def relocate_report_path(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == "P00")
+        task["report_path"] = "evidence/elsewhere/P00/implementation.json"
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P00")
+    receipts.append(run_fixture(
+        "report path cannot move from its canonical task receipt directory",
+        relocate_report_path,
+        1, [
+            "Task required artifacts match canonical evidence set and report path",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_upstream_change_artifact(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == "U00")
+        task["required_artifacts"].remove("evidence/openshell-v2/U00/upstream-change.json")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "U00")
+    receipts.append(run_fixture(
+        "upstream task keeps its task-specific change receipt",
+        remove_upstream_change_artifact,
+        1, [
+            "Task required artifacts match canonical evidence set and report path",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_early_live_artifact(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == "P02")
+        task["required_artifacts"].remove("evidence/openshell-v2/P02/early-live-records.json")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P02")
+    receipts.append(run_fixture(
+        "P02 keeps the required early LIVE records with synchronized cards",
+        remove_early_live_artifact,
+        1, [
+            "Task required artifacts match canonical evidence set and report path",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_early_live_task(pack: Path, task_id: str, field: str, exact_text: str) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == task_id)
+        task[field].remove(exact_text)
+        write_json(graph_path, graph)
+        sync_task_packet(pack, task_id)
+    receipts.append(run_fixture(
+        "P02 cannot omit actual early LIVE execution",
+        lambda pack: weaken_early_live_task(
+            pack, "P02", "steps",
+            "Record actual P02 LIVE runs for A05 and A06 before P03 starts.",
+        ),
+        1, [
+            "P02 bootstrap records, P04 imports, and T12 reruns A05/A06",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+    receipts.append(run_fixture(
+        "T12 cannot reuse the earlier P02 LIVE results",
+        lambda pack: weaken_early_live_task(
+            pack, "T12", "steps",
+            "Run separate fresh A05 and A06 LIVE tests with new run IDs after the P04 harness is available.",
+        ),
+        1, [
+            "P02 bootstrap records, P04 imports, and T12 reruns A05/A06",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+    receipts.append(run_fixture(
+        "P04 must validate and import early records without closing T12",
+        lambda pack: weaken_early_live_task(
+            pack, "P04", "steps",
+            "Validate and import the P02 A05 and A06 records without assigning them to T12.",
+        ),
+        1, [
+            "P02 bootstrap records, P04 imports, and T12 reruns A05/A06",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_registration_scope(pack: Path, task_id: str, old: str, new: str) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == task_id)
+        task["write_scope"].remove(old)
+        task["write_scope"].append(new)
+        write_json(graph_path, graph)
+        sync_task_packet(pack, task_id)
+    receipts.append(run_fixture(
+        "P04 registration is limited to enum and dispatch through Integration",
+        lambda pack: weaken_registration_scope(
+            pack, "P04",
+            "crates/tools/jackin-xtask/src/main.rs: v2 command enum and dispatch only, through the Integration subagent",
+            "crates/tools/jackin-xtask/src/main.rs",
+        ),
+        1, [
+            "P04 harness command registration and P05 build wiring scopes agree",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+    receipts.append(run_fixture(
+        "P05 retains only workspace and build graph registration",
+        lambda pack: weaken_registration_scope(
+            pack, "P05",
+            "crates/tools/jackin-xtask and test-support workspace and build graph registration only",
+            "crates/tools/jackin-xtask and test-support registration",
+        ),
+        1, [
+            "P04 harness command registration and P05 build wiring scopes agree",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+    receipts.append(run_fixture(
+        "P05 must register xtask and test support in the workspace graph",
+        lambda pack: weaken_early_live_task(
+            pack, "P05", "steps",
+            "Register jackin-xtask and test-support in the production workspace and build graph.",
+        ),
+        1, [
+            "P04 harness command registration and P05 build wiring scopes agree",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    target_matrix_check = "Target matrix qualification requests route through Integration"
+
+    def remove_p04_initial_matrix_request(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "P04")
+        task["steps"].remove(
+            "Submit the initial required-row registration to Integration as an ordered patch request before qualification."
+        )
+        task["acceptance"].remove(
+            "Integration alone applies the initial target registration before qualification updates."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P04")
+    receipts.append(run_fixture(
+        "P04 requests the initial target registration from Integration",
+        remove_p04_initial_matrix_request,
+        1, [
+            "Target matrix qualification requests route through Integration",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_t37_matrix_request(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T37")
+        task["steps"].remove(
+            "Submit this task's qualified tuple, case applicability, and fixture references to Integration as an ordered targets.toml patch request before completion."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T37")
+    receipts.append(run_fixture(
+        "T35 through T38 retain ordered qualified-target patch requests",
+        remove_t37_matrix_request,
+        1, [
+            "Target matrix qualification requests route through Integration",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def give_p04_direct_matrix_scope(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "P04")
+        task["write_scope"].append("tests/v2/targets.toml")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P04")
+    receipts.append(run_fixture(
+        "P04 cannot receive direct write scope for the central target matrix",
+        give_p04_direct_matrix_scope,
+        1, [
+            "Target matrix qualification requests route through Integration",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def give_t35_direct_matrix_scope(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T35")
+        task["write_scope"].append("tests/v2/targets.toml")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T35")
+    receipts.append(run_fixture(
+        "T35 cannot write the central target matrix directly",
+        give_t35_direct_matrix_scope,
+        1, [
+            "Target matrix qualification requests route through Integration",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_blocked_row_rule(pack: Path) -> None:
+        path = pack / "ACCEPTANCE.md"
+        document = path.read_text(encoding="utf-8")
+        rule = "Preserve unavailable required rows as `BLOCKED`.\n"
+        if document.count(rule) != 1:
+            raise ValueError("Expected one unavailable-required-row rule")
+        path.write_text(document.replace(rule, "Remove unavailable required rows from the matrix.\n", 1),
+                        encoding="utf-8")
+    receipts.append(run_fixture(
+        "Required target rows remain and unavailable rows stay BLOCKED",
+        remove_blocked_row_rule,
+        1, ['Target matrix qualification requests route through Integration',
+ 'Acceptance policy before detailed cases matches fixed checksum'],
+    ))
+
+    def mutate_release_protocol(pack: Path, change: Callable[[dict[str, Any]], None]) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        change(graph["release_gate_protocol"])
+        write_json(graph_path, graph)
+
+    def weaken_prior_tasks(protocol: dict[str, Any]) -> None:
+        protocol["preflight"]["required_tasks"] = "T39 only"
+    receipts.append(run_fixture(
+        "release preflight cannot weaken the prior-task prerequisite",
+        lambda pack: mutate_release_protocol(pack, weaken_prior_tasks),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def omit_final_case(protocol: dict[str, Any]) -> None:
+        protocol["finalization"]["required_t40_cases"].remove("A125")
+    receipts.append(run_fixture(
+        "release finalization cannot omit A125",
+        lambda pack: mutate_release_protocol(pack, omit_final_case),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Release gate references name T40 and its owned final cases",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def omit_final_review(protocol: dict[str, Any]) -> None:
+        protocol["finalization"]["required_evidence"].remove("Independent T40 review")
+    receipts.append(run_fixture(
+        "release finalization requires independent T40 review",
+        lambda pack: mutate_release_protocol(pack, omit_final_review),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def omit_merged_checks(protocol: dict[str, Any]) -> None:
+        protocol["finalization"]["required_evidence"].remove("Merged-source checks")
+    receipts.append(run_fixture(
+        "release finalization requires merged-source checks",
+        lambda pack: mutate_release_protocol(pack, omit_merged_checks),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def weaken_post_t39_boundary(protocol: dict[str, Any]) -> None:
+        protocol["runtime_requalification"]["subsequent_runtime_changes"] = (
+            "Every later runtime-affecting change except T40 version and package changes"
+        )
+    receipts.append(run_fixture(
+        "runtime requalification treats T40 version and package changes as triggers",
+        lambda pack: mutate_release_protocol(pack, weaken_post_t39_boundary),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def remove_unknown_impact_fallback(protocol: dict[str, Any]) -> None:
+        protocol["runtime_requalification"]["unknown_impact_fallback"] = "No rerun is required"
+    receipts.append(run_fixture(
+        "unjustified runtime impact requires the full applicable LIVE matrix",
+        lambda pack: mutate_release_protocol(pack, remove_unknown_impact_fallback),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def reassign_runtime_cases_to_t40(protocol: dict[str, Any]) -> None:
+        protocol["runtime_requalification"]["execution"] = "T40 owns and executes every LIVE case"
+    receipts.append(run_fixture(
+        "runtime reruns preserve original case owners and let T40 coordinate",
+        lambda pack: mutate_release_protocol(pack, reassign_runtime_cases_to_t40),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def permit_overwriting_runtime_history(protocol: dict[str, Any]) -> None:
+        protocol["runtime_requalification"]["evidence_history"] = "Replace prior run records"
+    receipts.append(run_fixture(
+        "runtime reruns retain early failed blocked and repeat evidence",
+        lambda pack: mutate_release_protocol(pack, permit_overwriting_runtime_history),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def remove_runtime_evidence_bindings(protocol: dict[str, Any]) -> None:
+        protocol["runtime_requalification"]["fresh_result_bindings"].remove("Unique run ID")
+    receipts.append(run_fixture(
+        "fresh LIVE results bind final inputs artifacts target run and review",
+        lambda pack: mutate_release_protocol(pack, remove_runtime_evidence_bindings),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def allow_stale_runtime_results(protocol: dict[str, Any]) -> None:
+        protocol["runtime_requalification"]["required_result"] = "Any earlier LIVE result is sufficient"
+        protocol["runtime_requalification"]["refusal_conditions"].remove("Stale")
+    receipts.append(run_fixture(
+        "missing stale failed or blocked LIVE reruns prevent finalization",
+        lambda pack: mutate_release_protocol(pack, allow_stale_runtime_results),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def omit_final_runtime_requalification(protocol: dict[str, Any]) -> None:
+        protocol["finalization"]["required_evidence"].remove(
+            "Fresh bound LIVE PASS results after the latest runtime-affecting change for every affected case"
+        )
+    receipts.append(run_fixture(
+        "finalization explicitly requires fresh bound LIVE results",
+        lambda pack: mutate_release_protocol(pack, omit_final_runtime_requalification),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def require_future_t40_outputs_at_preflight(protocol: dict[str, Any]) -> None:
+        protocol["preflight"]["future_t40_runtime_outputs_are_inputs"] = True
+    receipts.append(run_fixture(
+        "preflight does not require future T40 runtime-change outputs",
+        lambda pack: mutate_release_protocol(pack, require_future_t40_outputs_at_preflight),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def weaken_t39_runtime_procedure(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T39")
+        task["steps"].remove("Record runtime impact and fresh LIVE reruns after final legacy deletions.")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T39")
+    receipts.append(run_fixture(
+        "T39 task packet records post-deletion runtime impact and LIVE reruns",
+        weaken_t39_runtime_procedure,
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_t40_runtime_procedure(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T40")
+        task["steps"].remove("Rerun every affected LIVE case through its original owner or operator.")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T40")
+    receipts.append(run_fixture(
+        "T40 card requires fresh affected LIVE results through original operators",
+        weaken_t40_runtime_procedure,
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def omit_t40_version_requalification(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T40")
+        task["steps"].remove(
+            "Treat T40 version and package changes as triggers; record impact and coordinate fresh LIVE reruns."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T40")
+    receipts.append(run_fixture(
+        "T40 version and package changes cannot bypass fresh LIVE reruns",
+        omit_t40_version_requalification,
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_a123_live_freshness(pack: Path) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == "A123")
+        case["expected"] = "Every refusal prevents approval. Finalization uses all fixed prerequisites."
+        write_json(path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "A123 refuses stale or missing post-deletion LIVE evidence",
+        weaken_a123_live_freshness,
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    def allow_preflight_approval(protocol: dict[str, Any]) -> None:
+        protocol["preflight"]["may_approve_release"] = True
+    receipts.append(run_fixture(
+        "release preflight cannot issue approval",
+        lambda pack: mutate_release_protocol(pack, allow_preflight_approval),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def weaken_p04_protocol(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        p04 = next(task for task in graph["tasks"] if task["id"] == "P04")
+        p04["steps"].remove("Implement the fixed release_gate_protocol in the evidence harness.")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P04")
+    receipts.append(run_fixture(
+        "P04 task card retains the fixed protocol implementation requirement",
+        weaken_p04_protocol,
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_t40_finalization(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t40 = next(task for task in graph["tasks"] if task["id"] == "T40")
+        t40["acceptance"].remove("A failed prerequisite writes neither a completion record nor approval.")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T40")
+    receipts.append(run_fixture(
+        "T40 card retains fail-closed finalization conditions",
+        weaken_t40_finalization,
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def omit_actual_t40_case_results(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t40 = next(task for task in graph["tasks"] if task["id"] == "T40")
+        t40["steps"].remove(
+            "Run A124 and A125 against the actual candidate. Record actual results for all three T40 cases."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T40")
+    receipts.append(run_fixture(
+        "T40 requires actual results for A123 through A125",
+        omit_actual_t40_case_results,
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_a123_refusals(pack: Path) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == "A123")
+        case["action"] = "Run the full evidence validator and release gate."
+        write_json(path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "A123 keeps prerequisite refusal assertions and finalization contract",
+        weaken_a123_refusals,
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_static_gate_scope(pack: Path) -> None:
+        path = pack / "PACK-CHECKS.md"
+        text = path.read_text(encoding="utf-8")
+        sentence = ("These release-gate checks validate static planning structure only. "
+                    "They do not run a release preflight, test a candidate, or issue approval.")
+        if text.count(sentence) != 1:
+            raise ValueError("Expected exactly one static release-gate scope sentence")
+        path.write_text(text.replace(sentence + "\n", "", 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "pack report cannot claim runtime finalizer verification",
+        remove_static_gate_scope,
+        1, [
+            "PACK-CHECKS limits release-gate claims to static structure",
+            "PACK-CHECKS matches canonical template with mutable count and result slots",
+        ],
+    ))
+
+    def restore_merged_diff_cycle(pack: Path) -> None:
+        path = pack / "SUBAGENTS.md"
+        text = path.read_text(encoding="utf-8")
+        current = "Resolve review findings before the integration merge."
+        if text.count(current) != 1:
+            raise ValueError("Expected one pre-merge finding-resolution instruction")
+        path.write_text(text.replace(current, "Resolve review findings after the integration merge.", 1),
+                        encoding="utf-8")
+    receipts.append(run_fixture(
+        "review packet requires candidate review before merge",
+        restore_merged_diff_cycle,
+        1, [
+            "Review packet uses candidate input and post-merge completion stages",
+            "SUBAGENTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def remove_p04_qualification_owner(pack: Path) -> None:
+        path = pack / "SUBAGENTS.md"
+        text = path.read_text(encoding="utf-8")
+        current = "| Qualification subagent | P04, U08, and T35 through T38. |"
+        replacement = "| Qualification subagent | U08 and T35 through T38. |"
+        if text.count(current) != 1:
+            raise ValueError("Expected one Qualification row with P04")
+        path.write_text(text.replace(current, replacement, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "P04 remains owned by the Qualification subagent",
+        remove_p04_qualification_owner,
+        1, [
+            "P04 is listed under the Qualification subagent",
+            "Subagent task assignments exactly match graph owners",
+            "SUBAGENTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def missing_intersecting_trace_owner(pack: Path) -> None:
+        trace_path = pack / "traceability.json"
+        trace = read_json(trace_path)
+        section = next(row for row in trace["sections"] if row["heading"] == "Portable role ABI")
+        section["tasks"].remove("T14")
+        write_json(trace_path, trace)
+        sync_trace_table(pack)
+    receipts.append(run_fixture(
+        "cited task is required in every intersecting section even when mapped elsewhere",
+        missing_intersecting_trace_owner,
+        1, [
+            "Task citations are represented in traceability",
+            "Traceability authored sections match fixed projection",
+        ],
+    ))
+
+    def malformed_source_citation(pack: Path, value: str) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == "T14")
+        previous = task["source_basis"]
+        task["source_basis"] = value
+        write_json(graph_path, graph)
+        for path in (pack / "PLAN.md", pack / task["task_file"]):
+            document = path.read_text(encoding="utf-8")
+            old_line = f"**Source basis:** {previous}."
+            new_line = f"**Source basis:** {value}."
+            if document.count(old_line) != 1:
+                raise ValueError(f"Expected one source-basis line in {path.name}")
+            path.write_text(document.replace(old_line, new_line, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "malformed task SPEC citation syntax is rejected",
+        lambda pack: malformed_source_citation(pack, "SPEC L113-Lbad"),
+        1, [
+            "Task SPEC citations use valid syntax",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+    receipts.append(run_fixture(
+        "task SPEC citation beyond the document is rejected",
+        lambda pack: malformed_source_citation(pack, "SPEC L550"),
+        1, [
+            "Task SPEC citation ranges are within SPEC.md",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def malformed_manifest(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        graph.pop("tasks")
+        write_json(graph_path, graph)
+    receipts.append(run_fixture(
+        "malformed task manifest returns structured input error with exit two",
+        malformed_manifest,
+        2, ["Planning pack input is valid"],
+        expected_report_details={"Planning pack input is valid": "'tasks'"},
+    ))
+
+    def append_nonobject_record(pack: Path, relative_path: str, field: str) -> None:
+        path = pack / relative_path
+        data = read_json(path)
+        records = data[field]
+        if not isinstance(records, list):
+            raise ValueError(f"Expected {field} to be an array")
+        records.insert(0, None)
+        write_json(path, data)
+
+    for relative_path, field in (
+        ("task-graph.json", "tasks"),
+        ("acceptance-cases.json", "cases"),
+        ("traceability.json", "sections"),
+    ):
+        receipts.append(run_fixture(
+            f"{relative_path} rejects a null {field} record before owner evaluation",
+            lambda pack, path=relative_path, key=field: append_nonobject_record(pack, path, key),
+            2, ["Planning pack input is valid"],
+            expected_report_details={
+                "Planning pack input is valid": f"{relative_path} '{field}' record at index 0 must be an object",
+            },
+        ))
+
+    def validator_report(passed: bool, failures: list[str],
+                         checks: list[dict[str, Any]] | None = None,
+                         initial: bool = False) -> str:
+        if checks is None:
+            checks = [
+                {"check": name, "passed": True, "detail": None}
+                for name in fixture_check_inventory(initial)
+            ]
+        return json.dumps({
+            "passed": passed,
+            "initial": initial,
+            "scope": "Static planning-pack checks only",
+            "not_checked": [
+                "Product compilation",
+                "Runtime capabilities",
+                "Independent code review",
+                "Full ASD-STE100 dictionary conformity",
+            ],
+            "counts": derive_expected_counts(ROOT) or {},
+            "checks": checks,
+            "failures": failures,
+        })
+
+    def parser_fixture(name: str, stdout: str, report_errors: list[str], exit_code: int = 0,
+                       expected_exit: int = 0, expected_failures: list[str] | None = None,
+                       initial: bool = False, expect_report_match: bool = False,
+                       expected_report_details: dict[str, Any] | None = None) -> None:
+        receipts.append(run_fixture(
+            name,
+            lambda _pack: None,
+            expected_exit,
+            expected_failures or [],
+            initial=initial,
+            fake_stdout=stdout,
+            expect_report_match=expect_report_match,
+            expected_report_errors=report_errors,
+            expected_report_details=expected_report_details,
+        ))
+
+    def short_form_report(check_name: str, detail: Any) -> str:
+        return json.dumps({
+            "passed": False,
+            "initial": False,
+            "scope": "Static planning-pack checks only",
+            "not_checked": [
+                "Product compilation",
+                "Runtime capabilities",
+                "Independent code review",
+                "Full ASD-STE100 dictionary conformity",
+            ],
+            "counts": {},
+            "checks": [{"check": check_name, "passed": False, "detail": detail}],
+            "failures": [check_name],
+        })
+
+    receipts.append(run_fixture(
+        "ordinary baseline report contains the complete ordered check inventory",
+        lambda _pack: None, 0, [],
+    ))
+    receipts.append(run_fixture(
+        "initial baseline report contains ordinary and initial-only check inventories",
+        lambda _pack: None, 0, [], initial=True,
+    ))
+    receipts.append(run_fixture(
+        "manifest owns the exact recursive Markdown task-packet set",
+        lambda _pack: None, 0, [],
+    ))
+
+    def change_graph_classification(pack: Path) -> None:
+        path = pack / "task-graph.json"
+        graph = read_json(path)
+        graph["status"] = "RELEASE_APPROVED"
+        write_json(path, graph)
+    receipts.append(run_fixture(
+        "graph root classification rejects a release-approval value",
+        change_graph_classification,
+        1, ["Graph declarations match fixed projection"],
+    ))
+
+    def remove_expected_task_count_check(pack: Path) -> None:
+        path = pack / "validate_pack.py"
+        source = path.read_text(encoding="utf-8")
+        replacements = (
+            ('    "Expected task count",\n', ""),
+            ('    check("Expected task count", len(tasks) == 46, len(tasks))\n', ""),
+        )
+        for old, new in replacements:
+            if source.count(old) != 1:
+                raise ValueError(f"Expected one task-count validator entry: {old.strip()}")
+            source = source.replace(old, new, 1)
+        path.write_text(source, encoding="utf-8")
+        checks_path = pack / "PACK-CHECKS.md"
+        document = checks_path.read_text(encoding="utf-8")
+        ordinary_count = len(FIXTURE_ORDINARY_CHECK_NAMES) + 1
+        initial_count = ordinary_count + len(FIXTURE_INITIAL_ONLY_CHECK_NAMES)
+        old_counts = (
+            f"The ordinary validator report contains {ordinary_count} ordered checks; `--initial` "
+            f"contains {initial_count}, including two initial-only checks and the final inventory check."
+        )
+        new_counts = (
+            f"The ordinary validator report contains {ordinary_count - 1} ordered checks; `--initial` "
+            f"contains {initial_count - 1}, including two initial-only checks and the final inventory check."
+        )
+        if document.count(old_counts) != 1:
+            raise ValueError("Expected the copied validator's canonical check-count sentence")
+        checks_path.write_text(document.replace(old_counts, new_counts, 1), encoding="utf-8")
+
+    oracle_receipt = run_fixture(
+        "fixture oracle detects removal of task-count implementation and inventory entry",
+        remove_expected_task_count_check,
+        0, [], expect_report_match=False,
+        expected_report_errors=["checks do not match the canonical ordered inventory"],
+    )
+    oracle_causal_assertion = {
+        "validator_exit_code_is_zero": oracle_receipt.get("exit_code") == 0,
+        "validator_failure_list_is_empty": oracle_receipt.get("actual_failures") == [],
+        "independent_inventory_detects_missing_check": (
+            oracle_receipt.get("report_match") is False
+            and oracle_receipt.get("report_errors")
+            == ["checks do not match the canonical ordered inventory"]
+        ),
+    }
+    oracle_receipt["causal_assertion"] = oracle_causal_assertion
+    oracle_receipt["passed"] = (
+        oracle_receipt.get("passed") and all(oracle_causal_assertion.values())
+    )
+    receipts.append(oracle_receipt)
+
+    wrong_nonempty_counts = json.loads(validator_report(True, []))
+    wrong_nonempty_counts["counts"]["tasks"] += 1
+    parser_fixture(
+        "canonical report rejects nonempty counts that differ from tested inputs",
+        json.dumps(wrong_nonempty_counts), ["counts do not match tested fixture inputs"],
+    )
+    all_zero_counts = json.loads(validator_report(True, []))
+    all_zero_counts["counts"] = {name: 0 for name in all_zero_counts["counts"]}
+    parser_fixture(
+        "canonical report rejects nonempty all-zero counts",
+        json.dumps(all_zero_counts), ["counts do not match tested fixture inputs"],
+    )
+
+    receipts.append(run_fixture(
+        "missing validator short form rejects fabricated README detail",
+        remove_validator_copy,
+        1, ["Required pack files exist"],
+        fake_stdout=short_form_report("Required pack files exist", ["README.md"]),
+        expect_report_match=False,
+        expected_report_errors=[],
+        expected_report_details={"Required pack files exist": ["validate_pack.py"]},
+    ))
+    receipts.append(run_fixture(
+        "missing tasks short form rejects fabricated cases detail",
+        malformed_manifest,
+        2, ["Planning pack input is valid"],
+        fake_stdout=short_form_report("Planning pack input is valid", "'cases'"),
+        expect_report_match=False,
+        expected_report_errors=[],
+        expected_report_details={"Planning pack input is valid": "'tasks'"},
+    ))
+
+    parser_fixture("empty validator stdout is rejected", "", ["stdout is empty"])
+    parser_fixture("invalid JSON validator stdout is rejected", "{not-json", ["stdout is not valid JSON"])
+    parser_fixture("non-object validator JSON is rejected", "[]", ["report must be a JSON object"])
+    parser_fixture(
+        "validator report with missing fields is rejected",
+        json.dumps({"passed": True}),
+        ["report is missing required fields: checks, counts, failures, initial, not_checked, scope"],
+    )
+    wrong_types = {
+        "passed": "true",
+        "initial": "false",
+        "scope": None,
+        "not_checked": "none",
+        "counts": [],
+        "checks": {},
+        "failures": 1,
+    }
+    parser_fixture(
+        "validator report with wrong field types is rejected",
+        json.dumps(wrong_types),
+        ["report has invalid field types: passed, initial, scope, not_checked, counts, checks, failures"],
+    )
+    inconsistent_counts = json.loads(validator_report(True, []))
+    inconsistent_counts["counts"] = {}
+    parser_fixture(
+        "validator report with inconsistent counts is rejected",
+        json.dumps(inconsistent_counts),
+        ["counts are empty outside the required-file failure report"],
+    )
+    contradictory_passed = json.loads(validator_report(True, []))
+    contradictory_passed["checks"][0]["passed"] = False
+    contradictory_passed["failures"] = [contradictory_passed["checks"][0]["check"]]
+    parser_fixture("contradictory passed and failures fields are rejected",
+                   json.dumps(contradictory_passed), ["passed does not match failures"])
+    inconsistent_failure_list = json.loads(validator_report(True, []))
+    inconsistent_failure_list["checks"][0]["passed"] = False
+    parser_fixture(
+        "check list inconsistent with failures is rejected even at exit zero",
+        json.dumps(inconsistent_failure_list),
+        ["failures do not match failed checks"],
+    )
+    malformed_check_report = json.loads(validator_report(True, []))
+    malformed_check_report["checks"][0].pop("detail")
+    parser_fixture(
+        "malformed check records are rejected",
+        json.dumps(malformed_check_report),
+        ["checks contain malformed or duplicate records"],
+    )
+    duplicate_check_report = json.loads(validator_report(True, []))
+    duplicate_check_report["checks"][1]["check"] = duplicate_check_report["checks"][0]["check"]
+    parser_fixture(
+        "duplicate check names are rejected",
+        json.dumps(duplicate_check_report),
+        ["checks contain malformed or duplicate records"],
+    )
+    wrong_scope = json.loads(validator_report(True, []))
+    wrong_scope["scope"] = "Runtime tests passed"
+    parser_fixture(
+        "validator report with mismatched scope is rejected",
+        json.dumps(wrong_scope),
+        ["scope does not match the validator contract"],
+    )
+    exit_mismatch_report = json.loads(validator_report(True, []))
+    exit_mismatch_check = exit_mismatch_report["checks"][0]["check"]
+    exit_mismatch_report["checks"][0]["passed"] = False
+    exit_mismatch_report["passed"] = False
+    exit_mismatch_report["failures"] = [exit_mismatch_check]
+    parser_fixture("report exit code must agree with passed even at exit zero",
+                   json.dumps(exit_mismatch_report), ["exit code does not match passed"])
+    input_error_report = json.dumps({
+        "passed": False,
+        "initial": False,
+        "scope": "Static planning-pack checks only",
+        "not_checked": [
+            "Product compilation",
+            "Runtime capabilities",
+            "Independent code review",
+            "Full ASD-STE100 dictionary conformity",
+        ],
+        "counts": {},
+        "checks": [{"check": "Planning pack input is valid", "passed": False,
+                    "detail": "'tasks'"}],
+        "failures": ["Planning pack input is valid"],
+    })
+    parser_fixture(
+        "structured input-error report with contradictory exit one is rejected",
+        input_error_report,
+        ["exit code does not match structured input-error report"],
+        exit_code=1, expected_exit=1, expected_failures=["Planning pack input is valid"],
+    )
+    truncated_success = json.loads(validator_report(True, []))
+    truncated_success["checks"].pop()
+    parser_fixture(
+        "truncated passing report is rejected",
+        json.dumps(truncated_success), ["checks do not match the canonical ordered inventory"],
+        expect_report_match=False,
+    )
+
+    truncated_failure = json.loads(validator_report(True, []))
+    dependency_check = "Task progress waits for completed dependencies"
+    failure_index = next(i for i, row in enumerate(truncated_failure["checks"])
+                         if row["check"] == dependency_check)
+    truncated_failure["checks"] = truncated_failure["checks"][:failure_index + 1]
+    truncated_failure["checks"][-1]["passed"] = False
+    truncated_failure["passed"] = False
+    truncated_failure["failures"] = [dependency_check]
+    parser_fixture(
+        "truncated failing report is rejected even when expected failure appears",
+        json.dumps(truncated_failure), ["checks do not match the canonical ordered inventory"],
+        exit_code=1, expected_exit=1, expected_failures=[dependency_check],
+    )
+
+    missing_middle = json.loads(validator_report(True, []))
+    missing_middle["checks"].pop(18)
+    parser_fixture(
+        "report with a missing middle check is rejected",
+        json.dumps(missing_middle), ["checks do not match the canonical ordered inventory"],
+        expect_report_match=False,
+    )
+    reordered_checks = json.loads(validator_report(True, []))
+    reordered_checks["checks"][6], reordered_checks["checks"][7] = (
+        reordered_checks["checks"][7], reordered_checks["checks"][6],
+    )
+    parser_fixture(
+        "report with reordered checks is rejected",
+        json.dumps(reordered_checks), ["checks do not match the canonical ordered inventory"],
+        expect_report_match=False,
+    )
+    extra_check = json.loads(validator_report(True, []))
+    extra_check["checks"].append({"check": "Unexpected extra check", "passed": True, "detail": None})
+    parser_fixture(
+        "report with an extra check is rejected",
+        json.dumps(extra_check), ["checks do not match the canonical ordered inventory"],
+        expect_report_match=False,
+    )
+    wrong_initial_tail = json.loads(validator_report(True, [], initial=True))
+    wrong_initial_tail["checks"].pop(-2)
+    parser_fixture(
+        "initial report missing an initial-only tail check is rejected",
+        json.dumps(wrong_initial_tail), ["checks do not match the canonical ordered inventory"],
+        initial=True, expect_report_match=False,
+    )
+    initial_flag_mismatch = json.loads(validator_report(True, [], initial=True))
+    initial_flag_mismatch["initial"] = False
+    parser_fixture(
+        "report initial flag must match the validator invocation",
+        json.dumps(initial_flag_mismatch), ["initial flag does not match invocation"],
+        initial=True, expect_report_match=False,
+    )
+    extra_failure_report = json.loads(validator_report(True, []))
+    first_failure = extra_failure_report["checks"][0]["check"]
+    second_failure = extra_failure_report["checks"][1]["check"]
+    extra_failure_report["checks"][0]["passed"] = False
+    extra_failure_report["checks"][1]["passed"] = False
+    extra_failure_report["passed"] = False
+    extra_failure_report["failures"] = [first_failure, second_failure]
+    parser_fixture(
+        "unexpected extra failure name does not match exact expectation",
+        json.dumps(extra_failure_report), [],
+        exit_code=1, expected_exit=1, expected_failures=[first_failure],
+    )
+
+    def omit_integration_owned_tasks_from_assignment_table(pack: Path) -> None:
+        path = pack / "SUBAGENTS.md"
+        text = path.read_text(encoding="utf-8")
+        current = "| Integration subagent | P00, P05, and T39; root Cargo files, lockfile, shared schemas, CI registration, and merges. |"
+        replacement = "| Integration subagent | P00 and T39; root Cargo files, lockfile, shared schemas, CI registration, and merges. |"
+        if text.count(current) != 1:
+            raise ValueError("Expected one complete Integration task row")
+        path.write_text(text.replace(current, replacement, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "Integration role row lists every graph-owned task",
+        omit_integration_owned_tasks_from_assignment_table,
+        1, [
+            "Subagent task assignments exactly match graph owners",
+            "SUBAGENTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def change_graph_owner_without_assignment_table(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        next(task for task in graph["tasks"] if task["id"] == "P00")["owner"] = "Planning review subagent"
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P00")
+        index_row = "| P00 | Freeze the work area and source evidence | Integration subagent | None |"
+        changed_row = "| P00 | Freeze the work area and source evidence | Planning review subagent | None |"
+        for name in ("PLAN.md", "TASKS.md"):
+            path = pack / name
+            index = path.read_text(encoding="utf-8")
+            if index.count(index_row) != 1:
+                raise ValueError(f"Expected one P00 row in {name}")
+            path.write_text(index.replace(index_row, changed_row, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "role assignment table matches every graph owner, not only Integration",
+        change_graph_owner_without_assignment_table,
+        1, [
+            "Subagent task assignments exactly match graph owners",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def route_t40_writes_directly(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t40 = next(task for task in graph["tasks"] if task["id"] == "T40")
+        t40["write_scope"][2] = "Write T40 status, final acceptance summary, completion, receipt, and approval directly"
+        t40["steps"][-1] = "Write T40 PASS, the final acceptance summary, completion, finalization receipt, and approval together."
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T40")
+    receipts.append(run_fixture(
+        "T40 cannot bypass Integration for shared finalization writes",
+        route_t40_writes_directly,
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "T40 finalization writes route through Integration",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def assign_finalization_writer_to_t40(protocol: dict[str, Any]) -> None:
+        protocol["finalization"]["finalization_writer"] = "Independent review subagent"
+    receipts.append(run_fixture(
+        "release finalization keeps shared writes with Integration",
+        lambda pack: mutate_release_protocol(pack, assign_finalization_writer_to_t40),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def omit_conditional_patch_approval(protocol: dict[str, Any]) -> None:
+        protocol["finalization"].pop("conditional_patch_approval")
+    receipts.append(run_fixture(
+        "release finalization requires conditional approval for supported patched tuples",
+        lambda pack: mutate_release_protocol(pack, omit_conditional_patch_approval),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def require_approval_for_unpatched_tuples(protocol: dict[str, Any]) -> None:
+        protocol["finalization"]["conditional_patch_approval"]["unpatched_tuples_require_record"] = True
+    receipts.append(run_fixture(
+        "unpatched supported tuples do not require patch-approval records",
+        lambda pack: mutate_release_protocol(pack, require_approval_for_unpatched_tuples),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def weaken_a125_patch_approval(pack: Path) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == "A125")
+        case["expected"] = "Artifacts match the approved source. Patched tuples are explicit. No unauthorized publication occurs."
+        write_json(path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "A125 verifies conditional maintainer approval for each patched tuple",
+        weaken_a125_patch_approval,
+        1, [
+            "A125 verifies conditional patched-tuple approval",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_c01_source_row(pack: Path) -> None:
+        path = pack / "CONTRACTS.md"
+        document = path.read_text(encoding="utf-8")
+        row = "| Historical experiment source | `a7689b48e2b6ef2ca5a4367ee27527887cf45ce8` |\n"
+        if document.count(row) != 1:
+            raise ValueError("Expected one historical C01 source row")
+        path.write_text(document.replace(row, "", 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "C01 source table rejects a missing historical reference",
+        remove_c01_source_row,
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def duplicate_c01_source_row(pack: Path) -> None:
+        path = pack / "CONTRACTS.md"
+        document = path.read_text(encoding="utf-8")
+        row = "| Jackin source baseline | `faa2ab6c12e3de45a76ab6b98df0c64dac7aac6e` |"
+        if document.count(row) != 1:
+            raise ValueError("Expected one Jackin source row")
+        path.write_text(document.replace(row, row + "\n" + row, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "C01 source table rejects a duplicate reference",
+        duplicate_c01_source_row,
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def add_c01_source_row(pack: Path) -> None:
+        path = pack / "CONTRACTS.md"
+        document = path.read_text(encoding="utf-8")
+        marker = "| --- | --- |\n"
+        start = document.index("## C01. Source and compatibility pins")
+        end = document.index("## C02. Production crate graph", start)
+        section = document[start:end]
+        if section.count(marker) != 1:
+            raise ValueError("Expected one C01 source table separator")
+        changed = section.replace(
+            marker, marker + "| Unexpected source | `deadbeef` |\n", 1,
+        )
+        path.write_text(document[:start] + changed + document[end:], encoding="utf-8")
+    receipts.append(run_fixture(
+        "C01 source table rejects an extra reference",
+        add_c01_source_row,
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def alter_c01_comparator_version(pack: Path) -> None:
+        path = pack / "CONTRACTS.md"
+        document = path.read_text(encoding="utf-8")
+        old = "| OpenShell release comparator | `v0.1.5`,"
+        if document.count(old) != 1:
+            raise ValueError("Expected one release comparator version")
+        path.write_text(document.replace(old, "| OpenShell release comparator | `v0.1.6`,", 1),
+                        encoding="utf-8")
+    receipts.append(run_fixture(
+        "C01 source table rejects an altered release version",
+        alter_c01_comparator_version,
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def alter_c01_comparator_sha(pack: Path) -> None:
+        path = pack / "CONTRACTS.md"
+        document = path.read_text(encoding="utf-8")
+        old = "bdb956f2cd65a635f1294fccf1d138d263bf650f"
+        if document.count(old) != 1:
+            raise ValueError("Expected one release comparator commit")
+        path.write_text(document.replace(old, "bdb956f2cd65a635f1294fccf1d138d263bf650e", 1),
+                        encoding="utf-8")
+    receipts.append(run_fixture(
+        "C01 source table rejects an altered release comparator commit",
+        alter_c01_comparator_sha,
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def alter_c01_historical_sha(pack: Path) -> None:
+        path = pack / "CONTRACTS.md"
+        document = path.read_text(encoding="utf-8")
+        old = "a7689b48e2b6ef2ca5a4367ee27527887cf45ce8"
+        if document.count(old) != 1:
+            raise ValueError("Expected one historical source commit")
+        path.write_text(document.replace(old, "a7689b48e2b6ef2ca5a4367ee27527887cf45ce9", 1),
+                        encoding="utf-8")
+    receipts.append(run_fixture(
+        "C01 source table rejects an altered historical commit",
+        alter_c01_historical_sha,
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def mutate_c02_bytes(pack: Path, old: bytes, new: bytes, scenario: str) -> None:
+        path = pack / "CONTRACTS.md"
+        document = path.read_bytes()
+        if document.count(old) != 1:
+            raise ValueError(f"Expected one C02 input for {scenario}")
+        path.write_bytes(document.replace(old, new, 1))
+
+    def remove_c02_row(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack,
+            b"| `crates/core/jackin-domain` | Typed records, IDs, errors, receipts, and application ports. |\n",
+            b"",
+            "deleted row",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects a deleted production crate row",
+        remove_c02_row,
+        1, [
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def alter_c02_row(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack,
+            b"| `crates/adapters/jackin-openshell` | The only sandbox execution adapter. |\n",
+            b"| `crates/adapters/jackin-openshell` | One of several sandbox execution adapters. |\n",
+            "altered row",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects an altered crate responsibility",
+        alter_c02_row,
+        1, [
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def weaken_c02_boundary(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack,
+            b"Service crates depend on domain ports, not concrete adapters.\n",
+            b"Service crates can depend on concrete adapters directly.\n",
+            "weakened boundary",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects a weakened dependency boundary",
+        weaken_c02_boundary,
+        1, [
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def duplicate_c02_heading(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack, b"## C02. Production crate graph\n",
+            b"## C02. Production crate graph\n## C02. Production crate graph\n",
+            "duplicate C02 heading",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects a duplicate section anchor",
+        duplicate_c02_heading,
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def remove_c02_heading(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack, b"## C02. Production crate graph\n", b"", "missing C02 heading",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects a missing section anchor",
+        remove_c02_heading,
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def remove_c03_boundary(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack, b"## C03. Configuration and identifiers\n", b"", "missing C03 boundary",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects a missing end boundary",
+        remove_c03_boundary,
+        1, [
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def duplicate_c03_boundary(pack: Path) -> None:
+        mutate_c02_bytes(
+            pack,
+            b"## C03. Configuration and identifiers\n",
+            b"## C03. Configuration and identifiers\n## C03. Configuration and identifiers\n",
+            "duplicate C03 boundary",
+        )
+    receipts.append(run_fixture(
+        "C02 digest rejects a duplicate end boundary",
+        duplicate_c03_boundary,
+        1, [
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def edit_task_packet(pack: Path, update: Callable[[str], str]) -> None:
+        path = pack / "tasks/P00.md"
+        document = path.read_text(encoding="utf-8")
+        path.write_text(update(document), encoding="utf-8")
+
+    def remove_task_packet_preamble(pack: Path) -> None:
+        edit_task_packet(pack, lambda document: document[document.index("### P00 —"):])
+    receipts.append(run_fixture(
+        "individual task packet rejects a missing instruction preamble",
+        remove_task_packet_preamble,
+        1, ["Task graph fields and canonical preamble match individual task packets"],
+    ))
+
+    def remove_p00_task_packet(pack: Path) -> None:
+        (pack / "tasks/P00.md").unlink()
+    receipts.append(run_fixture(
+        "missing task packet input identifies P00",
+        remove_p00_task_packet,
+        1, [
+            "Task file and test write scopes match canonical paths",
+            "Task graph fields and canonical preamble match individual task packets",
+        ],
+        expected_report_details={
+            "Task graph fields and canonical preamble match individual task packets": ["P00"],
+        },
+    ))
+
+    def change_task_packet_id(pack: Path) -> None:
+        def update(document: str) -> str:
+            old = "# Task packet: P00"
+            if document.count(old) != 1:
+                raise ValueError("Expected one packet ID")
+            return document.replace(old, "# Task packet: P01", 1)
+        edit_task_packet(pack, update)
+    receipts.append(run_fixture(
+        "individual task packet rejects a mismatched packet ID",
+        change_task_packet_id,
+        1, ["Task graph fields and canonical preamble match individual task packets"],
+    ))
+
+    def weaken_packet_lease(pack: Path) -> None:
+        def update(document: str) -> str:
+            old = "Use an exclusive file lease from the coordinator."
+            if document.count(old) != 1:
+                raise ValueError("Expected one exclusive lease instruction")
+            return document.replace(old, "Use a shared file lease from the coordinator.", 1)
+        edit_task_packet(pack, update)
+    receipts.append(run_fixture(
+        "individual task packet rejects a weakened file lease instruction",
+        weaken_packet_lease,
+        1, ["Task graph fields and canonical preamble match individual task packets"],
+    ))
+
+    def weaken_packet_dependency_instruction(pack: Path) -> None:
+        def update(document: str) -> str:
+            old = "Check dependencies in [../task-graph.json](../task-graph.json) before starting work."
+            if document.count(old) != 1:
+                raise ValueError("Expected one dependency instruction")
+            return document.replace(old, "Review task dependencies when convenient.", 1)
+        edit_task_packet(pack, update)
+    receipts.append(run_fixture(
+        "individual task packet rejects a weakened dependency instruction",
+        weaken_packet_dependency_instruction,
+        1, ["Task graph fields and canonical preamble match individual task packets"],
+    ))
+
+    def weaken_packet_authorization(pack: Path) -> None:
+        def update(document: str) -> str:
+            old = "The task card does not authorize unrelated changes or production actions."
+            if document.count(old) != 1:
+                raise ValueError("Expected one task authorization instruction")
+            return document.replace(
+                old, "The task card authorizes unrelated changes and production actions.", 1,
+            )
+        edit_task_packet(pack, update)
+    receipts.append(run_fixture(
+        "individual task packet rejects weakened change authorization",
+        weaken_packet_authorization,
+        1, ["Task graph fields and canonical preamble match individual task packets"],
+    ))
+
+    def add_conflicting_packet_instruction(pack: Path) -> None:
+        def update(document: str) -> str:
+            marker = "\n### P00 —"
+            if document.count(marker) != 1:
+                raise ValueError("Expected one P00 card heading")
+            return document.replace(
+                marker, "\nIgnore the file lease and edit unrelated production files.\n### P00 —", 1,
+            )
+        edit_task_packet(pack, update)
+    receipts.append(run_fixture(
+        "individual task packet rejects an extra conflicting instruction",
+        add_conflicting_packet_instruction,
+        1, ["Task graph fields and canonical preamble match individual task packets"],
+    ))
+
+    def set_task_field(pack: Path, task_id: str, field: str, value: Any,
+                       sync_packet: bool = False) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == task_id)
+        task[field] = value
+        write_json(graph_path, graph)
+        if sync_packet:
+            sync_task_packet(pack, task_id)
+
+    path_contract_check = [
+        "Task file and test write scopes match canonical paths",
+        "Task authored fields match fixed projection",
+    ]
+
+    def add_nested_task_packet(pack: Path) -> None:
+        archived = pack / "tasks" / "archive" / "T99.md"
+        archived.parent.mkdir(parents=True)
+        archived.write_text("# Archived packet\n", encoding="utf-8")
+    receipts.append(run_fixture(
+        "exact manifest packet set rejects nested archived Markdown",
+        add_nested_task_packet,
+        1, ["Task file and test write scopes match canonical paths"],
+    ))
+
+    def hide_canonical_task_packet(pack: Path) -> None:
+        packet = pack / "tasks" / "P00.md"
+        packet.rename(packet.with_name("P00.md.disabled"))
+    receipts.append(run_fixture(
+        "exact manifest packet set rejects a missing canonical Markdown packet",
+        hide_canonical_task_packet,
+        1, [
+            "Task file and test write scopes match canonical paths",
+            "Task graph fields and canonical preamble match individual task packets",
+        ],
+    ))
+
+    for scenario, task_file in (
+        ("relocated", "tasks/archive/P00.md"),
+        ("traversing", "tasks/../PLAN.md"),
+        ("absolute", "/tmp/P00.md"),
+        ("colliding", "tasks/P01.md"),
+    ):
+        receipts.append(run_fixture(
+            f"task file path rejects {scenario} locations",
+            lambda pack, value=task_file: set_task_field(pack, "P00", "task_file", value),
+            1, path_contract_check,
+        ))
+
+    for scenario, test_scope in (
+        ("relocated", "tests/v2/archive/P00/"),
+        ("traversing", "tests/v2/tasks/../P01/"),
+        ("absolute", "/tmp/tests/P00/"),
+        ("colliding", "tests/v2/tasks/P01/"),
+    ):
+        receipts.append(run_fixture(
+            f"task test-write scope rejects {scenario} locations",
+            lambda pack, value=test_scope: set_task_field(
+                pack, "P00", "test_write_scope", value, sync_packet=True,
+            ),
+            1, path_contract_check,
+        ))
+
+    def empty_root_dependencies(pack: Path) -> None:
+        set_task_field(pack, "P00", "depends_on", [])
+    receipts.append(run_fixture(
+        "empty root dependency list remains valid",
+        empty_root_dependencies,
+        0, [],
+    ))
+
+    dependency_contract_check = "Dependency lists contain unique string task IDs"
+    dependency_mirror_failures = [
+        "Task graph fields match TASKS index table",
+        "Task graph fields match PLAN task index table",
+        "Task graph fields match PLAN task cards",
+        "Task graph fields and canonical preamble match individual task packets",
+        "Task authored fields match fixed projection",
+    ]
+    for scenario, dependencies in (
+        ("duplicate IDs", ["P00", "P00"]),
+        ("non-string entries", ["P00", {"task": "P00"}]),
+        ("a non-list value", "P00"),
+    ):
+        receipts.append(run_fixture(
+            f"dependency list rejects {scenario} before DAG operations",
+            lambda pack, value=dependencies: set_task_field(pack, "P01", "depends_on", value),
+            1, [dependency_contract_check, *dependency_mirror_failures],
+        ))
+
+    dependency_graph_failures = [
+        "Dependencies reference other known tasks",
+        "Dependency graph has no cycle",
+        "Stored ready groups match dependencies without duplicate task IDs",
+        *dependency_mirror_failures,
+    ]
+    receipts.append(run_fixture(
+        "unknown dependency retains reference and readiness diagnostics",
+        lambda pack: set_task_field(pack, "P01", "depends_on", ["P99"]),
+        1, dependency_graph_failures,
+    ))
+    receipts.append(run_fixture(
+        "self dependency retains reference and cycle diagnostics",
+        lambda pack: set_task_field(pack, "P01", "depends_on", ["P01"]),
+        1, dependency_graph_failures,
+    ))
+
+    def add_dependency_cycle(pack: Path) -> None:
+        set_task_field(pack, "P00", "depends_on", ["P01"])
+        set_task_field(pack, "P01", "depends_on", ["P00"])
+    cycle_failures = [
+        "Dependency graph has no cycle",
+        "Stored ready groups match dependencies without duplicate task IDs",
+        *dependency_mirror_failures,
+    ]
+    receipts.append(run_fixture(
+        "dependency cycle retains cycle and readiness diagnostics",
+        add_dependency_cycle,
+        1, cycle_failures,
+    ))
+
+    def change_case_level(pack: Path, case_id: str, level: str) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == case_id)
+        case["level"] = level
+        write_json(path, data)
+        sync_case_block(pack, case)
+    level_contract_check = "Acceptance case IDs map to fixed evidence levels"
+    receipts.append(run_fixture(
+        "valid evidence-level downgrade does not reclassify A11",
+        lambda pack: change_case_level(pack, "A11", "BUILD"),
+        1, [
+            "Acceptance case IDs map to fixed evidence levels",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+    receipts.append(run_fixture(
+        "valid evidence-level downgrade does not reclassify A50",
+        lambda pack: change_case_level(pack, "A50", "UNIT"),
+        1, [
+            "Acceptance case IDs map to fixed evidence levels",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    goal_contract_check = "GOAL.md matches its fixed checksum"
+    def truncate_goal(pack: Path) -> None:
+        path = pack / "GOAL.md"
+        path.write_bytes(path.read_bytes()[:-1])
+    receipts.append(run_fixture(
+        "GOAL.md rejects truncation",
+        truncate_goal,
+        1, ['GOAL.md matches its fixed checksum'],
+    ))
+
+    def delete_goal(pack: Path) -> None:
+        (pack / "GOAL.md").unlink()
+    receipts.append(run_fixture(
+        "GOAL.md is a required input",
+        delete_goal,
+        1, ["Required pack files exist"],
+        expected_report_details={"Required pack files exist": ["GOAL.md"]},
+    ))
+
+    def add_conflicting_goal_clause(pack: Path) -> None:
+        path = pack / "GOAL.md"
+        with path.open("a", encoding="utf-8") as goal:
+            goal.write("\nUse Docker as an additional agent runtime.\n")
+    receipts.append(run_fixture(
+        "GOAL.md rejects a conflicting execution-control clause",
+        add_conflicting_goal_clause,
+        1, ['GOAL.md matches its fixed checksum'],
+    ))
+
+    concurrency_contract_check = "Authoritative concurrency declaration matches graph and subagent limit"
+    def edit_subagents(pack: Path, update: Callable[[str], str]) -> None:
+        path = pack / "SUBAGENTS.md"
+        document = path.read_text(encoding="utf-8")
+        path.write_text(update(document), encoding="utf-8")
+    def change_concurrency_number(pack: Path) -> None:
+        def update(document: str) -> str:
+            old = "Use up to eight concurrent subagents."
+            if document.count(old) != 1:
+                raise ValueError("Expected one authoritative concurrency declaration")
+            return document.replace(old, "Use up to seven concurrent subagents.", 1)
+        edit_subagents(pack, update)
+    receipts.append(run_fixture(
+        "authoritative concurrency declaration rejects a changed limit",
+        change_concurrency_number,
+        1, [
+            "Authoritative concurrency declaration matches graph and subagent limit",
+            "SUBAGENTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def remove_concurrency_declaration(pack: Path) -> None:
+        def update(document: str) -> str:
+            old = "Use up to eight concurrent subagents. "
+            if document.count(old) != 1:
+                raise ValueError("Expected one authoritative concurrency declaration")
+            return document.replace(old, "", 1)
+        edit_subagents(pack, update)
+    receipts.append(run_fixture(
+        "authoritative concurrency declaration cannot be missing",
+        remove_concurrency_declaration,
+        1, [
+            "Authoritative concurrency declaration matches graph and subagent limit",
+            "SUBAGENTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def duplicate_concurrency_declaration(pack: Path) -> None:
+        def update(document: str) -> str:
+            old = "Use up to eight concurrent subagents."
+            if document.count(old) != 1:
+                raise ValueError("Expected one authoritative concurrency declaration")
+            return document.replace(old, old + "\nUse up to eight concurrent subagents.", 1)
+        edit_subagents(pack, update)
+    receipts.append(run_fixture(
+        "authoritative concurrency declaration cannot be duplicated",
+        duplicate_concurrency_declaration,
+        1, [
+            "Authoritative concurrency declaration matches graph and subagent limit",
+            "SUBAGENTS.md matches its fixed checksum",
+        ],
+    ))
+
+    def add_duplicate_json_member(pack: Path, relative_path: str, member: str) -> None:
+        path = pack / relative_path
+        document = path.read_text(encoding="utf-8")
+        if member not in document:
+            raise ValueError(f"Expected JSON member in {relative_path}")
+        path.write_text(document.replace(member, member + "\n    " + member, 1), encoding="utf-8")
+
+    for relative_path, top_member, nested_member, manifest_name in (
+        ("task-graph.json", '"schema_version": 1,', '"id": "P00",', "task graph"),
+        ("acceptance-cases.json", '"schema_version": 1,', '"id": "A01",', "acceptance"),
+        ("traceability.json", '"schema_version": 1,',
+         '"heading": "Decision and product scope",', "traceability"),
+    ):
+        receipts.append(run_fixture(
+            f"{manifest_name} rejects a duplicate top-level JSON key",
+            lambda pack, path=relative_path, key=top_member:
+                add_duplicate_json_member(pack, path, key),
+            2, ["Planning pack input is valid"],
+        ))
+        receipts.append(run_fixture(
+            f"{manifest_name} rejects a duplicate nested JSON key",
+            lambda pack, path=relative_path, key=nested_member:
+                add_duplicate_json_member(pack, path, key),
+            2, ["Planning pack input is valid"],
+        ))
+
+    def add_nonstandard_json_constant(pack: Path, relative_path: str, constant: str) -> None:
+        path = pack / relative_path
+        document = path.read_text(encoding="utf-8")
+        closing = document.rfind("}")
+        if closing < 0:
+            raise ValueError(f"Expected a root JSON object in {relative_path}")
+        prefix = document[:closing].rstrip()
+        separator = "" if prefix.endswith("{") else ","
+        path.write_text(
+            prefix + separator + f'\n  "fixture_constant": {constant}\n}}\n',
+            encoding="utf-8",
+        )
+
+    for relative_path, constant in (
+        ("task-graph.json", "NaN"),
+        ("acceptance-cases.json", "Infinity"),
+        ("traceability.json", "-Infinity"),
+    ):
+        receipts.append(run_fixture(
+            f"{relative_path} rejects nonstandard JSON constant {constant}",
+            lambda pack, path=relative_path, value=constant:
+                add_nonstandard_json_constant(pack, path, value),
+            2, ["Planning pack input is valid"],
+            expected_report_details={
+                "Planning pack input is valid": f"nonstandard JSON constant: {constant}",
+            },
+        ))
+
+    receipts.append(run_fixture(
+        "fixture report parser rejects duplicate top-level JSON keys",
+        lambda _pack: None,
+        0, [],
+        validator_executable=None,
+        fake_stdout='{"passed": true, "passed": true}',
+        expect_report_match=False,
+        expected_report_errors=["duplicate JSON object key: passed"],
+    ))
+    receipts.append(run_fixture(
+        "fixture report parser rejects duplicate nested JSON keys",
+        lambda _pack: None,
+        0, [],
+        fake_stdout='{"counts": {"tasks": 46, "tasks": 46}}',
+        expect_report_match=False,
+        expected_report_errors=["duplicate JSON object key: tasks"],
+    ))
+
+    def report_with_nonstandard_constant(constant: str) -> str:
+        document = validator_report(True, [])
+        source_counts = derive_expected_counts(ROOT)
+        if source_counts is None:
+            raise ValueError("Expected input-derived counts for the canonical report")
+        old = f'"checked_sentences": {source_counts["checked_sentences"]}'
+        if document.count(old) != 1:
+            raise ValueError("Expected one input-derived checked-sentence count in the canonical report")
+        return document.replace(old, f'"checked_sentences": {constant}', 1)
+
+    for constant in ("NaN", "Infinity", "-Infinity"):
+        parser_fixture(
+            f"fixture report parser rejects nonstandard JSON constant {constant}",
+            report_with_nonstandard_constant(constant),
+            [f"nonstandard JSON constant: {constant}"],
+        )
+
+    a13_owner_check = "A13 preserves separate current-graph and final-post-deletion runs"
+    a15_owner_check = "A15 separates observation, adapter, and integrated activation owners"
+    a16_owner_check = "A16 preserves accepted-revision observation and product-presentation owners"
+    a17_owner_check = "A17 preserves observation layers and integrated activation ownership"
+
+    def weaken_p05_a13_current_run(pack: Path) -> None:
+        graph = read_json(pack / "task-graph.json")
+        task = next(row for row in graph["tasks"] if row["id"] == "P05")
+        task["steps"] = [step for step in task["steps"] if not step.startswith("Run A13 against the newly created current graph")]
+        task["steps"].append("Run A13 only after legacy deletion against the final graph.")
+        write_json(pack / "task-graph.json", graph)
+        sync_task_packet(pack, "P05")
+    receipts.append(run_fixture(
+        "P05 cannot defer its A13 run to the final graph",
+        weaken_p05_a13_current_run,
+        1, [
+            "A13 preserves separate current-graph and final-post-deletion runs",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_t39_a13_final_rerun(pack: Path) -> None:
+        graph = read_json(pack / "task-graph.json")
+        task = next(row for row in graph["tasks"] if row["id"] == "T39")
+        task["steps"] = [step for step in task["steps"]
+                         if not step.startswith(("Rerun A13 and A14", "Record this result separately"))]
+        write_json(pack / "task-graph.json", graph)
+        sync_task_packet(pack, "T39")
+    receipts.append(run_fixture(
+        "T39 cannot omit its final post-deletion A13 rerun",
+        remove_t39_a13_final_rerun,
+        1, [
+            "A13 preserves separate current-graph and final-post-deletion runs",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_p05_a13_cargo_metadata(pack: Path) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == "A13")
+        old = "P05 captures Cargo metadata for the newly created current graph, "
+        if case["action"].count(old) != 1:
+            raise ValueError("Expected one P05 current-graph Cargo metadata instruction")
+        case["action"] = case["action"].replace(old, "P05 inspects the newly created current graph, ", 1)
+        write_json(path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "A13 cannot omit P05 current-graph Cargo metadata",
+        remove_p05_a13_cargo_metadata,
+        1, [
+            "A13 preserves separate current-graph and final-post-deletion runs",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_t39_a13_cargo_metadata(pack: Path) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == "A13")
+        old = "T39 captures fresh Cargo metadata for the final candidate graph and "
+        if case["action"].count(old) != 1:
+            raise ValueError("Expected one T39 final-graph Cargo metadata instruction")
+        case["action"] = case["action"].replace(old, "T39 checks the final candidate graph and ", 1)
+        write_json(path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "A13 cannot omit T39 final-graph Cargo metadata",
+        remove_t39_a13_cargo_metadata,
+        1, [
+            "A13 preserves separate current-graph and final-post-deletion runs",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_case_owner(pack: Path, case_id: str, task_id: str) -> None:
+        data_path = pack / "acceptance-cases.json"
+        data = read_json(data_path)
+        case = next(row for row in data["cases"] if row["id"] == case_id)
+        case["tasks"].remove(task_id)
+        case["assignment_results"] = [row for row in case["assignment_results"]
+                                        if row["task_id"] != task_id]
+        write_json(data_path, data)
+        sync_case_block(pack, case)
+
+    receipts.append(run_fixture(
+        "A15 cannot omit the integrated T23 owner",
+        lambda pack: remove_case_owner(pack, "A15", "T23"),
+        1, [
+            "A15 separates observation, adapter, and integrated activation owners",
+            "Assignment results have exact unique case owners and valid statuses",
+            "Case and task ownership maps agree",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_t23_a15_activation(pack: Path) -> None:
+        graph = read_json(pack / "task-graph.json")
+        task = next(row for row in graph["tasks"] if row["id"] == "T23")
+        task["steps"] = [
+            "Exercise activation through the complete recorded operation sequence."
+            if step.startswith("Exercise A15 through integrated StartSession") else step
+            for step in task["steps"]
+        ]
+        write_json(pack / "task-graph.json", graph)
+        sync_task_packet(pack, "T23")
+    receipts.append(run_fixture(
+        "T23 must qualify the full A15 StartSession barrier",
+        weaken_t23_a15_activation,
+        1, [
+            "A15 separates observation, adapter, and integrated activation owners",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_layer_contract(pack: Path, task_id: str, case_id: str) -> None:
+        graph = read_json(pack / "task-graph.json")
+        task = next(row for row in graph["tasks"] if row["id"] == task_id)
+        task["acceptance"] = [
+            f"{case_id} is covered by the upstream contract."
+            if text.startswith(f"{case_id} and A") else text
+            for text in task["acceptance"]
+        ]
+        write_json(pack / "task-graph.json", graph)
+        sync_task_packet(pack, task_id)
+    receipts.append(run_fixture(
+        "U00 cannot collapse A15 and A16 into integrated behavior",
+        lambda pack: weaken_layer_contract(pack, "U00", "A15"),
+        1, [
+            "A15 separates observation, adapter, and integrated activation owners",
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+    receipts.append(run_fixture(
+        "T13 cannot collapse A15 and A16 into product behavior",
+        lambda pack: weaken_layer_contract(pack, "T13", "A15"),
+        1, [
+            "A15 separates observation, adapter, and integrated activation owners",
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_a16_layer_source(pack: Path, task_id: str, original: str) -> None:
+        graph = read_json(pack / "task-graph.json")
+        task = next(row for row in graph["tasks"] if row["id"] == task_id)
+        if original not in task["acceptance"]:
+            raise ValueError(f"Expected A16 layer assertion for {task_id}")
+        task["acceptance"] = [
+            "A16 checks policy data."
+            if text == original else text
+            for text in task["acceptance"]
+        ]
+        write_json(pack / "task-graph.json", graph)
+        sync_task_packet(pack, task_id)
+
+    receipts.append(run_fixture(
+        "U00 must bind A16's replacement source to its accepted revision",
+        lambda pack: weaken_a16_layer_source(
+            pack, "U00",
+            "A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection.",
+        ),
+        1, [
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+    receipts.append(run_fixture(
+        "T13 must bind A16's replacement source to its accepted revision",
+        lambda pack: weaken_a16_layer_source(
+            pack, "T13",
+            "A16 at T13 binds the effective replacement source to the observed accepted revision without claiming an intersection.",
+        ),
+        1, [
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    receipts.append(run_fixture(
+        "A16 cannot omit the T29 product-presentation owner",
+        lambda pack: remove_case_owner(pack, "A16", "T29"),
+        1, [
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Assignment results have exact unique case owners and valid statuses",
+            "Case and task ownership maps agree",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_t29_a16_presentation(pack: Path) -> None:
+        graph = read_json(pack / "task-graph.json")
+        task = next(row for row in graph["tasks"] if row["id"] == "T29")
+        task["steps"] = [
+            "Display the current policy details."
+            if step.startswith("Display A16's accepted policy revision") else step
+            for step in task["steps"]
+        ]
+        write_json(pack / "task-graph.json", graph)
+        sync_task_packet(pack, "T29")
+    receipts.append(run_fixture(
+        "T29 must display A16's accepted replacement source and revision",
+        weaken_t29_a16_presentation,
+        1, [
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_a17_t23_owner(pack: Path) -> None:
+        remove_case_owner(pack, "A17", "T23")
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T23")
+        task["test_cases"].remove("A17")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T23")
+    receipts.append(run_fixture(
+        "A17 cannot omit integrated T23 ownership",
+        remove_a17_t23_owner,
+        1, [
+            "A17 preserves observation layers and integrated activation ownership",
+            "Task authored fields match fixed projection",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_t23_a17_integrated_activation(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T23")
+        task["steps"].remove(
+            "Exercise A17 through integrated StartSession and re-admission after provider attach, revocation, and binding changes."
+        )
+        task["acceptance"].remove(
+            "A17 qualifies StartSession and re-admission against installed provider revisions."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T23")
+    receipts.append(run_fixture(
+        "T23 retains integrated StartSession and re-admission for A17",
+        weaken_t23_a17_integrated_activation,
+        1, [
+            "A17 preserves observation layers and integrated activation ownership",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def remove_a16_policy_load(pack: Path) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == "A16")
+        old = "Load the global policy. "
+        if case["action"].count(old) != 1:
+            raise ValueError("Expected one A16 global-policy load instruction")
+        case["action"] = case["action"].replace(old, "", 1)
+        write_json(path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "A16 loads the global policy before querying and displaying it",
+        remove_a16_policy_load,
+        1, [
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_a22_assertion(pack: Path) -> None:
+        cases_path = pack / "acceptance-cases.json"
+        data = read_json(cases_path)
+        case = next(row for row in data["cases"] if row["id"] == "A22")
+        case["expected"] = "The task reports its result without a separate result for each owner."
+        write_json(cases_path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "Synchronized A22 prose cannot weaken owner-specific assertions",
+        weaken_a22_assertion,
+        1, ["Case authored fields match fixed projection"],
+    ))
+
+    def weaken_contract_c06(pack: Path) -> None:
+        path = pack / "CONTRACTS.md"
+        document = path.read_text(encoding="utf-8")
+        old = "Missing one account value or mixing\nthe variants blocks activation."
+        if document.count(old) != 1:
+            raise ValueError("Expected one C06 credential-authority requirement")
+        path.write_text(document.replace(old, "Missing one account value can use local configuration.", 1),
+                        encoding="utf-8")
+    receipts.append(run_fixture(
+        "C06 credential-authority fail-open cannot alter the complete contracts",
+        weaken_contract_c06,
+        1, ["CONTRACTS.md matches its fixed checksum"],
+    ))
+
+    def change_t23_dependency(pack: Path, dependency: str, operation: str) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T23")
+        if operation == "remove":
+            task["depends_on"].remove(dependency)
+        elif operation == "add":
+            task["depends_on"].append(dependency)
+        else:
+            raise ValueError(f"Unexpected dependency operation: {operation}")
+        write_json(graph_path, graph)
+        recompute_ready_groups(pack)
+        sync_task_packet(pack, "T23")
+        sync_task_indexes(pack)
+    receipts.append(run_fixture(
+        "T23 cannot omit its T16 dependency after all graph mirrors are recomputed",
+        lambda pack: change_t23_dependency(pack, "T16", "remove"),
+        1, ["Task authored fields match fixed projection"],
+    ))
+    receipts.append(run_fixture(
+        "T23 cannot add an extra dependency after all graph mirrors are recomputed",
+        lambda pack: change_t23_dependency(pack, "P05", "add"),
+        1, ["Task authored fields match fixed projection"],
+    ))
+
+    def add_worker_root_cargo_claim(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T32")
+        task["write_scope"].append("Root Cargo.toml and Cargo.lock")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T32")
+    receipts.append(run_fixture(
+        "Worker task cannot claim shared root Cargo files",
+        add_worker_root_cargo_claim,
+        1, ["Task authored fields match fixed projection"],
+    ))
+
+    def append_contradictory_task_scope(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T14")
+        task["write_scope"].append("All repository files, including files leased to other tasks")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T14")
+    receipts.append(run_fixture(
+        "Extra contradictory task scope cannot override the authored lease",
+        append_contradictory_task_scope,
+        1, ["Task authored fields match fixed projection"],
+    ))
+
+    def rebase_t23_citation_and_trace(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T23")
+        task["source_basis"] = "SPEC L1"
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T23")
+
+        trace_path = pack / "traceability.json"
+        trace = read_json(trace_path)
+        for section in trace["sections"]:
+            section["tasks"] = [task_id for task_id in section["tasks"] if task_id != "T23"]
+        trace["sections"][0]["tasks"].append("T23")
+        write_json(trace_path, trace)
+        sync_trace_table(pack)
+    receipts.append(run_fixture(
+        "T23 cannot rebase its citation to SPEC L1 with synchronized traceability",
+        rebase_t23_citation_and_trace,
+        1, ["Task authored fields match fixed projection",
+            "Traceability authored sections match fixed projection"],
+    ))
+
+    def weaken_subagent_shared_file_authority(pack: Path) -> None:
+        path = pack / "SUBAGENTS.md"
+        document = path.read_text(encoding="utf-8")
+        old = "The integration subagent alone changes these shared files:"
+        if document.count(old) != 1:
+            raise ValueError("Expected one shared-file authority statement")
+        path.write_text(document.replace(old, "Task subagents may change these shared files:", 1),
+                        encoding="utf-8")
+    receipts.append(run_fixture(
+        "SUBAGENTS shared-file authority cannot be weakened",
+        weaken_subagent_shared_file_authority,
+        1, ["SUBAGENTS.md matches its fixed checksum"],
+    ))
+
+    def append_conflicting_pack_report_prose(pack: Path) -> None:
+        path = pack / "PACK-CHECKS.md"
+        with path.open("a", encoding="utf-8") as document:
+            document.write("\nTask owners may approve their own release.\n")
+    receipts.append(run_fixture(
+        "PACK-CHECKS rejects conflicting prose outside its result slots",
+        append_conflicting_pack_report_prose,
+        1, ["PACK-CHECKS matches canonical template with mutable count and result slots"],
+    ))
+
+    def change_pack_check_count_and_result_slots(pack: Path) -> None:
+        path = pack / "PACK-CHECKS.md"
+        document = path.read_text(encoding="utf-8")
+        tested_counts = derive_expected_counts(pack)
+        if tested_counts is None:
+            raise ValueError("Expected input-derived counts for the copied pack")
+        goal_path = pack / "GOAL.md"
+        goal_document = goal_path.read_text(encoding="utf-8")
+        goal_document += "\nA reviewed fixture sentence changes this count.\n"
+        goal_path.write_text(goal_document, encoding="utf-8")
+        goal_digest = hashlib.sha256(goal_path.read_bytes()).hexdigest()
+        validator_path = pack / "validate_pack.py"
+        validator = validator_path.read_text(encoding="utf-8")
+        validator, substitutions = re.subn(
+            r'^GOAL_SHA256 = "[0-9a-f]{64}"$',
+            f'GOAL_SHA256 = "{goal_digest}"',
+            validator,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        if substitutions != 1:
+            raise ValueError("Expected one fixed GOAL checksum declaration in the copied validator")
+        validator_path.write_text(validator, encoding="utf-8")
+        tested_counts = derive_expected_counts(pack)
+        if tested_counts is None:
+            raise ValueError("Expected counts after changing the reviewed GOAL input")
+        sentence_count = tested_counts["checked_sentences"]
+        original_counts = derive_expected_counts(ROOT)
+        if original_counts is None or sentence_count == original_counts["checked_sentences"]:
+            raise ValueError("The reviewed GOAL sentence must change the derived sentence count")
+        replacements = (
+            (f"| Checked procedural sentences | {original_counts['checked_sentences']} |",
+             f"| Checked procedural sentences | {sentence_count} |"),
+            ("Result: Static pack validation and per-task assignment fixtures pass.",
+             "Result: Static pack validation and per-task assignment fixtures fail."),
+            ("| GOAL matches its fixed checksum | PASS |", "| GOAL matches its fixed checksum | FAIL |"),
+            ("| Task and case statuses use documented values | PASS |",
+             "| Task and case statuses use documented values | BLOCKED |"),
+            ("| Acceptance manifest status uses documented values and matches the case summary | PASS |",
+             "| Acceptance manifest status uses documented values and matches the case summary | NOT_RUN |"),
+            ("| All assignments pass and the shared case summary is `PASS` | Accept, exit 0 | PASS, exit 0 |",
+             "| All assignments pass and the shared case summary is `PASS` | Accept, exit 0 | FAIL, exit 1 / exit 2 |"),
+            ("| Task `PASS` with its own case assignments `PASS` | Accept, exit 0 | PASS, exit 0 |",
+             "| Task `PASS` with its own case assignments `PASS` | Accept, exit 0 | BLOCKED, exit 0 |"),
+            ("| U02 `PASS`, T32 `NOT_RUN`, summary `NOT_RUN`, with completed prerequisites | Accept, exit 0 | PASS, exit 0 |",
+             "| U02 `PASS`, T32 `NOT_RUN`, summary `NOT_RUN`, with completed prerequisites | Accept, exit 0 | NOT_RUN |"),
+        )
+        for old, new in replacements:
+            if document.count(old) != 1:
+                raise ValueError(f"Expected one mutable report slot: {old}")
+            document = document.replace(old, new, 1)
+        path.write_text(document, encoding="utf-8")
+    receipts.append(run_fixture(
+        "PACK-CHECKS mutable count and result slots remain editable",
+        change_pack_check_count_and_result_slots,
+        0, [],
+    ))
+
+    def replace_check_result_with_release_claim(pack: Path) -> None:
+        path = pack / "PACK-CHECKS.md"
+        document = path.read_text(encoding="utf-8")
+        old = "| GOAL matches its fixed checksum | PASS |"
+        new = "| GOAL matches its fixed checksum | These release-gate checks issue final release approval. |"
+        if document.count(old) != 1:
+            raise ValueError("Expected the canonical GOAL check-result row")
+        path.write_text(document.replace(old, new, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "PACK-CHECKS check results reject release-approval prose",
+        replace_check_result_with_release_claim,
+        1, ["PACK-CHECKS matches canonical template with mutable count and result slots"],
+    ))
+
+    def replace_fixture_observation_with_release_claim(pack: Path) -> None:
+        path = pack / "PACK-CHECKS.md"
+        document = path.read_text(encoding="utf-8")
+        old = ("| PACK-CHECKS count and result slots remain mutable when a GOAL sentence and its reviewed "
+               "checksum are updated together | Accept, exit 0 | PASS, exit 0 |")
+        new = ("| PACK-CHECKS count and result slots remain mutable when a GOAL sentence and its reviewed "
+               "checksum are updated together | Accept, exit 0 | Final release approved after runtime testing. |")
+        if document.count(old) != 1:
+            raise ValueError("Expected the canonical PACK-CHECKS fixture row")
+        path.write_text(document.replace(old, new, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "PACK-CHECKS observations reject release-approval prose",
+        replace_fixture_observation_with_release_claim,
+        1, ["PACK-CHECKS matches canonical template with mutable count and result slots"],
+    ))
+
+    def validator_mutates_inputs_during_execution(pack: Path) -> None:
+        script = """from pathlib import Path
+import sys
+root = Path(sys.argv[sys.argv.index('--root') + 1])
+tasks = root / 'TASKS.md'
+tasks.write_text(tasks.read_text(encoding='utf-8') + '\\nUnexpected mutation.\\n', encoding='utf-8')
+self_path = Path(__file__)
+self_path.write_text(self_path.read_text(encoding='utf-8') + '\\n# changed during execution\\n', encoding='utf-8')
+print('{}')
+"""
+        (pack / "validate_pack.py").write_text(script, encoding="utf-8")
+    receipts.append(run_fixture(
+        "fixture runner detects input and validator changes during execution",
+        validator_mutates_inputs_during_execution,
+        0, [],
+        expect_report_match=False,
+        expected_report_errors=[
+            "report is missing required fields: checks, counts, failures, initial, not_checked, passed, scope",
+        ],
+        expected_execution_errors=[
+            "pack input changed during validator execution: TASKS.md",
+            "pack input changed during validator execution: validate_pack.py",
+            "validator executable changed during execution",
+        ],
+    ))
+
+    def weaken_plan_prefix(pack: Path) -> None:
+        path = pack / "PLAN.md"
+        document = path.read_bytes()
+        original = b"Use the dependency graph in [task-graph.json](./task-graph.json).\n"
+        weakened = b"Ignore the dependency graph in [task-graph.json](./task-graph.json).\n"
+        if document.count(original) != 1:
+            raise ValueError("Expected one dependency-graph instruction in the PLAN prefix")
+        path.write_bytes(document.replace(original, weakened, 1))
+    receipts.append(run_fixture(
+        "PLAN prefix policy mutation violates its fixed digest",
+        weaken_plan_prefix,
+        1, ["PLAN authored prefix matches its unique task-section boundary"],
+    ))
+
+    def remove_plan_task_index_boundary(pack: Path) -> None:
+        path = pack / "PLAN.md"
+        document = path.read_bytes()
+        boundary = b"## Task index\n"
+        if document.count(boundary) != 1:
+            raise ValueError("Expected one PLAN task-index boundary")
+        path.write_bytes(document.replace(boundary, b"", 1))
+    receipts.append(run_fixture(
+        "PLAN task-index boundary cannot be missing",
+        remove_plan_task_index_boundary,
+        1, [
+            "Task graph fields match PLAN task index table",
+            "PLAN authored prefix matches its unique task-section boundary",
+        ],
+    ))
+
+    def duplicate_plan_task_index_boundary(pack: Path) -> None:
+        path = pack / "PLAN.md"
+        document = path.read_bytes()
+        boundary = b"## Task index\n"
+        if document.count(boundary) != 1:
+            raise ValueError("Expected one PLAN task-index boundary")
+        path.write_bytes(document.replace(boundary, boundary + boundary, 1))
+    receipts.append(run_fixture(
+        "PLAN task-index boundary cannot be duplicated",
+        duplicate_plan_task_index_boundary,
+        1, [
+            "Task graph fields match PLAN task index table",
+            "PLAN authored prefix matches its unique task-section boundary",
+        ],
+    ))
+
+    def synchronize_plan_concurrency_weakening(pack: Path) -> None:
+        path = pack / "PLAN.md"
+        document = path.read_bytes()
+        original = b"Use up to eight real subagents when write scopes permit this.\n"
+        weakened = b"Use any number of concurrent subagents regardless of write scopes.\n"
+        if document.count(original) != 1:
+            raise ValueError("Expected one PLAN concurrency clause")
+        path.write_bytes(document.replace(original, weakened, 1))
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        graph["parallel_agent_limit"] = 99
+        write_json(graph_path, graph)
+    receipts.append(run_fixture(
+        "Synchronized PLAN concurrency-policy weakening violates the fixed prefix",
+        synchronize_plan_concurrency_weakening,
+        1, [
+            "Parallel agent limit matches the subagent contract",
+            "Authoritative concurrency declaration matches graph and subagent limit",
+            "PLAN authored prefix matches its unique task-section boundary",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def remove_a86_integrated_owner(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t29 = next(task for task in graph["tasks"] if task["id"] == "T29")
+        t29["test_cases"].remove("A86")
+        t29["steps"].remove(
+            "Run A86 through the finished CLI, Console, and desktop presentation without a matching operator action."
+        )
+        t29["acceptance"].remove(
+            "A86 at T29 keeps unsolicited requests inert and prevents untrusted output from forging trusted labels or approval state."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T29")
+
+        case_path = pack / "acceptance-cases.json"
+        case_file = read_json(case_path)
+        a86 = next(case for case in case_file["cases"] if case["id"] == "A86")
+        a86["tasks"].remove("T29")
+        a86["assignment_results"] = [
+            row for row in a86["assignment_results"] if row["task_id"] != "T29"
+        ]
+        a86["setup"] = "Emit harmless text in backend and product paths."
+        a86["action"] = "Observe the interface after a matching operator action."
+        a86["expected"] = "The interface may treat helper output as an approved action."
+        write_json(case_path, case_file)
+        sync_case_block(pack, a86)
+    receipts.append(run_fixture(
+        "A86 cannot omit T29 integrated presentation ownership or weaken its assertions",
+        remove_a86_integrated_owner,
+        1, [
+            "A86 preserves backend host-action and integrated presentation owners",
+            "Task authored fields match fixed projection",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    def give_t40_direct_shared_matrix_scope(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t40 = next(task for task in graph["tasks"] if task["id"] == "T40")
+        t40["write_scope"].extend(["tests/v2/targets.toml", "compatibility.lock.toml"])
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T40")
+    receipts.append(run_fixture(
+        "T40 cannot claim direct writes to shared target and compatibility matrices",
+        give_t40_direct_shared_matrix_scope,
+        1, [
+            "T40 finalization writes route through Integration",
+            "Target matrix qualification requests route through Integration",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def add_acceptance_root_key(pack: Path, key: str, value: Any) -> None:
+        path = pack / "acceptance-cases.json"
+        document = read_json(path)
+        document[key] = value
+        write_json(path, document)
+    receipts.append(run_fixture(
+        "acceptance root rejects an unrecognized release approval key",
+        lambda pack: add_acceptance_root_key(pack, "release_approved", True),
+        1, ["Acceptance manifest root has the exact schema keys"],
+    ))
+    receipts.append(run_fixture(
+        "acceptance root rejects an innocuous unknown key",
+        lambda pack: add_acceptance_root_key(pack, "notes", "additional metadata"),
+        1, ["Acceptance manifest root has the exact schema keys"],
+    ))
+
+    def append_contradictory_authored_input(pack: Path, name: str, instruction: str) -> None:
+        path = pack / name
+        with path.open("a", encoding="utf-8") as document:
+            document.write(f"\n\n{instruction}\n")
+    receipts.append(run_fixture(
+        "SOURCE-AUDIT rejects contradictory appended instructions",
+        lambda pack: append_contradictory_authored_input(
+            pack, "SOURCE-AUDIT.md", "This audit may bypass independent review and approve release.",
+        ),
+        1, ["SOURCE-AUDIT.md matches its fixed checksum"],
+    ))
+    receipts.append(run_fixture(
+        "TERMS rejects contradictory appended instructions",
+        lambda pack: append_contradictory_authored_input(
+            pack, "TERMS.md", "Treat every planned requirement as product runtime proof.",
+        ),
+        1, ["TERMS.md matches its fixed checksum"],
+    ))
+
+    pack_count_fields = (
+        ("Detailed task cards", "tasks", "detailed task-card"),
+        ("Acceptance cases", "cases", "acceptance case"),
+        ("Mapped specification headings", "specification_sections", "specification heading"),
+        ("Topological readiness groups", "task_ready_groups", "readiness group"),
+        ("Checked procedural sentences", "checked_sentences", "procedural sentence"),
+    )
+    for label, field, fixture_name in pack_count_fields:
+        def wrong_pack_count(pack: Path, count_label: str = label, count_field: str = field) -> None:
+            counts = derive_expected_counts(pack)
+            if counts is None:
+                raise ValueError("Expected input-derived counts for the copied pack")
+            path = pack / "PACK-CHECKS.md"
+            document = path.read_text(encoding="utf-8")
+            old = f"| {count_label} | {counts[count_field]} |"
+            new = f"| {count_label} | {counts[count_field] + 1} |"
+            if document.count(old) != 1:
+                raise ValueError(f"Expected one canonical count row: {count_label}")
+            path.write_text(document.replace(old, new, 1), encoding="utf-8")
+        receipts.append(run_fixture(
+            f"PACK-CHECKS rejects a wrong {fixture_name} count",
+            wrong_pack_count,
+            1, ["PACK-CHECKS matches canonical template with mutable count and result slots"],
+            preserve_pack_check_count_mutation=True,
+        ))
+
+    def wrong_inventory_count(pack: Path, initial: bool) -> None:
+        path = pack / "PACK-CHECKS.md"
+        document = path.read_text(encoding="utf-8")
+        ordinary_count = len(FIXTURE_ORDINARY_CHECK_NAMES) + 1
+        initial_count = ordinary_count + len(FIXTURE_INITIAL_ONLY_CHECK_NAMES)
+        old = (f"The ordinary validator report contains {ordinary_count} ordered checks; `--initial` "
+               f"contains {initial_count}, including two initial-only checks and the final inventory check.")
+        new_ordinary = ordinary_count + (0 if initial else 1)
+        new_initial = initial_count + (1 if initial else 0)
+        new = (f"The ordinary validator report contains {new_ordinary} ordered checks; `--initial` "
+               f"contains {new_initial}, including two initial-only checks and the final inventory check.")
+        if document.count(old) != 1:
+            raise ValueError("Expected the unique canonical validator check-count sentence")
+        path.write_text(document.replace(old, new, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "PACK-CHECKS rejects a wrong ordinary check inventory count",
+        lambda pack: wrong_inventory_count(pack, False),
+        1, ["PACK-CHECKS matches canonical template with mutable count and result slots"],
+    ))
+    receipts.append(run_fixture(
+        "PACK-CHECKS rejects a wrong initial check inventory count",
+        lambda pack: wrong_inventory_count(pack, True),
+        1, ["PACK-CHECKS matches canonical template with mutable count and result slots"],
+    ))
+
+    def wrong_fixture_scenario_count(pack: Path) -> None:
+        path = pack / "PACK-CHECKS.md"
+        document = path.read_text(encoding="utf-8")
+        old = f"All {FIXED_FIXTURE_COUNT} scenarios passed their exact report, input-derived count, and exit-code expectations."
+        new = f"All {FIXED_FIXTURE_COUNT - 1} scenarios passed their exact report, input-derived count, and exit-code expectations."
+        if document.count(old) != 1:
+            raise ValueError("Expected the unique canonical scenario-count sentence")
+        path.write_text(document.replace(old, new, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "PACK-CHECKS scenario count must match its independent inventory",
+        wrong_fixture_scenario_count,
+        1, [
+            "PACK-CHECKS matches canonical template with mutable count and result slots",
+            "PACK-CHECKS scenario count matches the independent fixture inventory",
+        ],
+    ))
+
+    fixture_inventory = fixture_inventory_report([
+        receipt.get("scenario") for receipt in receipts
+    ])
+    runner_checks = [
+        fixture_inventory_control_probe("missing"),
+        fixture_inventory_control_probe("duplicate"),
+        fixture_inventory_control_probe("unexpected"),
+        certified_input_security_probe(),
+        bounded_timeout_probe(),
+        validator_import_probe("stdout"),
+        validator_import_probe("stderr"),
+        validator_import_probe("exception"),
+        validator_import_probe("quiet"),
+        validator_import_probe("systemexit-zero"),
+        validator_import_probe("systemexit-nonzero"),
+        validator_import_probe("systemexit-string"),
+        validator_import_probe("keyboardinterrupt"),
+        a86_phase_control_probe(),
+        late_presentation_control_probe(),
+        cohort_c_control_probe(),
+        runner_inventory_control_probe("missing"),
+        runner_inventory_control_probe("duplicate"),
+        runner_inventory_control_probe("unexpected"),
+        runner_inventory_control_probe("complete"),
+        no_pipe_descendant_timeout_probe(),
+        process_liveness_classifier_probe(),
+        post_mutation_symlink_custody_probe(),
+    ]
+    runner_control_inventory = runner_check_inventory_report([
+        check.get("scenario") for check in runner_checks
+    ])
+
+    original_board = validate_original_board()
+    source_policy_after_runner = certified_input_violations(ROOT, ENTRY_FILE)
+    original_source_after = snapshot_files(ROOT)
+    runner_source_changes = snapshot_changes(original_source_before, original_source_after)
+    original_board["fixture_runner_source_changes"] = runner_source_changes
+    original_board["source_input_policy_violations_after_runner"] = source_policy_after_runner
+    original_board["validator_import_source_sha256_before"] = snapshot_states(
+        SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT,
+    )
+    original_board["validator_import_source_sha256_after"] = snapshot_states(
+        SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT,
+    )
+    original_board["validator_import_source_changes"] = VALIDATOR_IMPORT_CHANGES
+    if VALIDATOR_IMPORT_CHANGES:
+        original_board["execution_errors"].append(
+            "validator import changed the original pack before fixture snapshots"
+        )
+        original_board["passed"] = False
+    if runner_source_changes:
+        original_board["execution_errors"].append("fixture runner changed the original pack")
+        original_board["passed"] = False
+    if source_policy_after_runner:
+        original_board["execution_errors"].append(
+            "fixture runner left the original pack outside the certified-input policy"
+        )
+        original_board["passed"] = False
+
+    payload = {
+        "passed": (
+            import_receipt["passed"]
+            and fixture_inventory["passed"]
+            and runner_control_inventory["passed"]
+            and original_board["passed"]
+            and all(receipt["passed"] for receipt in receipts)
+            and all(check["passed"] for check in runner_checks)
+        ),
+        "scope": "Static validator fixtures only. No product or runtime tests are performed.",
+        "validator_import": import_receipt,
+        "fixture_inventory": fixture_inventory,
+        "runner_control_inventory": runner_control_inventory,
+        "runner_checks": runner_checks,
+        "original_board": original_board,
+        "source_sha256": {
+            "validate_pack.py": (
+                sha256(VALIDATOR) if not path_component_violations(VALIDATOR, ROOT) else None
+            ),
+            "validate_assignment_fixtures.py": (
+                sha256(ENTRY_FILE) if not path_component_violations(ENTRY_FILE, ROOT) else None
+            ),
+            "pack_files": original_source_after,
+            "before_validator_import": snapshot_states(SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT),
+            "after_validator_import": snapshot_states(SOURCE_SNAPSHOT_AFTER_VALIDATOR_IMPORT),
+            "validator_import_changes": VALIDATOR_IMPORT_CHANGES,
+        },
+        "fixtures": receipts,
+    }
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    return 0 if payload["passed"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
