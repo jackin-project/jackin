@@ -29,7 +29,7 @@ step helpers.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`progress_helpers.rs`](src/progress_helpers.rs) | steps + prompts + labels | [`tests.rs`](src/progress_helpers/tests.rs) (1 case) |
+| [`progress_helpers.rs`](src/progress_helpers.rs) | steps + prompts + labels | — |
 
 ## Public API
 

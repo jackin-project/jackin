@@ -23,7 +23,7 @@ views. Over-cap readings stay raw; re-reads never reset freshness.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`adapter.rs`](src/adapter.rs) | observation surface | [`tests.rs`](src/tests.rs) + [`tests/`](src/tests/) |
+| [`adapter.rs`](src/adapter.rs) | observation surface | — |
 
 ## Public API
 

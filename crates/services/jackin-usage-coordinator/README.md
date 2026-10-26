@@ -38,7 +38,7 @@ valid future schema versions fail closed while preserving their bytes.
 
 | Module | Owns | Tests |
 |---|---|---|
-| [`lib.rs`](src/lib.rs) | re-exports | [`tests.rs`](src/tests.rs) |
+| [`lib.rs`](src/lib.rs) | re-exports | — |
 | `jobs`/`worker`/`finish` | generation lifecycle | `tests/` cases |
 | [`state/`](src/state.rs) | file-backed envelopes | `state/tests/` |
 

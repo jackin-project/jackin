@@ -26,7 +26,7 @@ and project-scoped quota buckets. Consumed by `jackin-usage`
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`adapter.rs`](src/adapter.rs) | eligibility + quota surface | [`tests.rs`](src/tests.rs) |
+| [`adapter.rs`](src/adapter.rs) | eligibility + quota surface | — |
 
 ## Public API
 

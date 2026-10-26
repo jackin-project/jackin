@@ -18,7 +18,7 @@ persisted.
 
 | Module | Owns | Tests |
 |---|---|---|
-| [`lib.rs`](src/lib.rs) | re-exports | [`tests.rs`](src/tests.rs) |
+| [`lib.rs`](src/lib.rs) | re-exports | — |
 | [`dispatch.rs`](src/dispatch.rs) | routing + vendor seam | mock-vendor routing |
 
 ## Public API

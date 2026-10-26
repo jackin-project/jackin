@@ -20,7 +20,7 @@ table.
 
 | Module | Owns | Tests |
 |---|---|---|
-| [`lib.rs`](src/lib.rs) | re-exports | [`tests.rs`](src/tests.rs) |
+| [`lib.rs`](src/lib.rs) | re-exports | — |
 | `monitor`/`session` | polling + totals | `tests/` cases |
 | `amp`…`opencode` | vendor readers | per-module `tests.rs` |
 

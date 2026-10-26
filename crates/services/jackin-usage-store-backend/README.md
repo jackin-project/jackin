@@ -18,7 +18,7 @@ so a backend bump stays one file.
 
 | Module | Owns | Tests |
 |---|---|---|
-| [`lib.rs`](src/lib.rs) | connections + operations | [`tests.rs`](src/tests.rs) |
+| [`lib.rs`](src/lib.rs) | connections + operations | — |
 
 ## Public API
 

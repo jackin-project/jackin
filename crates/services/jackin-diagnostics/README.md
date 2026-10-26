@@ -19,12 +19,12 @@ The closed schema and governed emission APIs live in `jackin-telemetry`; do not 
 
 | Module | Owns | Tests |
 |---|---|---|
-| [`lib.rs`](src/lib.rs) | crate root and re-exports | [`tests.rs`](src/tests.rs) |
+| [`lib.rs`](src/lib.rs) | crate root and re-exports | — |
 | [`observability.rs`](src/observability.rs) · [`observability/`](src/observability) | OTLP configuration, providers, resources, health, retry, flush, shutdown | module tests and `tests/wire_*` |
-| [`run.rs`](src/run.rs) | bounded in-memory invocation progress and timings | [`run/tests.rs`](src/run/tests.rs) |
+| [`run.rs`](src/run.rs) | bounded in-memory invocation progress and timings | — |
 | [`logging.rs`](src/logging.rs) · [`operator_notice.rs`](src/operator_notice.rs) | operator-output routing | module tests |
 | [`secret_scrub.rs`](src/secret_scrub.rs) · [`redact.rs`](src/redact.rs) | defense-in-depth scrubbing | module tests |
-| [`build_log.rs`](src/build_log.rs) | explicit workflow-owned build-log capture | [`build_log/tests.rs`](src/build_log/tests.rs) |
+| [`build_log.rs`](src/build_log.rs) | explicit workflow-owned build-log capture | — |
 
 ## Public API
 

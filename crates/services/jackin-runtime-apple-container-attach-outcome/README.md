@@ -7,7 +7,7 @@ Apple Container post-attach outcomes for launch and reconnect.
 | Source | Tests |
 |---|---|
 | [`lib.rs`](src/lib.rs) | — |
-| [`attach_outcome.rs`](src/attach_outcome.rs) | [`case_01`](src/attach_outcome/tests/case_01.rs), [`case_02`](src/attach_outcome/tests/case_02.rs) |
+| [`attach_outcome.rs`](src/attach_outcome.rs) | — |
 
 Public API: `attach_outcome::record_attach_outcome`.
 

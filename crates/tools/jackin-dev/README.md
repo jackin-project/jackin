@@ -16,7 +16,7 @@ The `jackin-dev` PR-verification and contributor tooling binary — installed lo
 | Module | Owns | Tests |
 |---|---|---|
 | [`main.rs`](src/main.rs) | the `jackin-dev` CLI | — |
-| [`tests.rs`](src/tests.rs) | unit tests | — |
+| `tests.rs` | unit tests | — |
 
 ## Public API
 

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
 use anyhow::{Context as _, ensure};
 use rustix::fs::{
     AtFlags, FlockOperation, Mode, OFlags, RenameFlags, fchmod, flock, fsync, ftruncate, open,

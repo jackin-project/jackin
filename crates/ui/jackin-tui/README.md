@@ -23,9 +23,9 @@ Cross-surface jackin❯ product presentation and transitional Ratatui adapters u
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root | — |
-| [`operator_info.rs`](src/operator_info.rs) · [`operator_info/`](src/operator_info) | Cross-surface Debug-info composition and paint | [`tests.rs`](src/operator_info/tests.rs) |
-| [`runtime.rs`](src/runtime.rs) · [`runtime/`](src/runtime) · [`focus.rs`](src/runtime/focus.rs) | Active Capsule/Launch adapters plus phase-frozen facade contracts | [`tests.rs`](src/runtime/tests.rs) |
-| [`tokens.rs`](src/tokens.rs) · [`tokens/`](src/tokens) | Product-owned brand/domain Ratatui colors | [`tests.rs`](src/tokens/tests.rs) |
+| [`operator_info.rs`](src/operator_info.rs) · [`operator_info/`](src/operator_info) | Cross-surface Debug-info composition and paint | — |
+| [`runtime.rs`](src/runtime.rs) · [`runtime/`](src/runtime) · [`focus.rs`](src/runtime/focus.rs) | Active Capsule/Launch adapters plus phase-frozen facade contracts | — |
+| [`tokens.rs`](src/tokens.rs) · [`tokens/`](src/tokens) | Product-owned brand/domain Ratatui colors | — |
 
 ## How to verify
 

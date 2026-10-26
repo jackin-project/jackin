@@ -44,7 +44,7 @@ boltffi lives in sibling crate `jackin-usage-ffi`.
 | [`host.rs`](src/host.rs) · `host/` | broker and projection consumer facade | — |
 | `coordinator.rs` · `coordinator/` | Broker-owned single-flight generations and host-only atomic account state | `tests.rs` |
 | `token_monitor.rs` · `token_monitor/` | token spend monitoring | `tests.rs` |
-| [`usage.rs`](src/usage.rs) · [`usage/`](src/usage) | usage/pricing accounting | [`tests.rs`](src/usage/tests.rs) |
+| [`usage.rs`](src/usage.rs) · [`usage/`](src/usage) | usage/pricing accounting | — |
 | `telemetry.rs` | telemetry emission | — |
 | `process_telemetry.rs` | child-process telemetry ownership and redaction | — |
 | `logging.rs` | telemetry-level state and Capsule panic handling | — |

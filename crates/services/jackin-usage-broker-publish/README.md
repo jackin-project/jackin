@@ -22,7 +22,7 @@ per-account publisher.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`publisher.rs`](src/publisher.rs) | merge + checkpoint | [`tests/`](src/tests/) |
+| [`publisher.rs`](src/publisher.rs) | merge + checkpoint | — |
 | [`windows.rs`](src/windows.rs) | view accounts | (via `tests`) |
 | [`groups.rs`](src/groups.rs) | metric groups | (via `tests`) |
 | [`freshness.rs`](src/freshness.rs) | freshness/quota | (via `tests`) |

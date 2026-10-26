@@ -21,7 +21,7 @@ attributed to underlying provider accounts or the Portal subscription.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`adapter.rs`](src/adapter.rs) | adapter surface | [`tests.rs`](src/tests.rs) |
+| [`adapter.rs`](src/adapter.rs) | adapter surface | — |
 
 ## Public API
 

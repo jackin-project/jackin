@@ -23,7 +23,7 @@ credential snapshots).
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`adapter.rs`](src/adapter.rs) | adapter surface | [`tests.rs`](src/tests.rs) + [`tests/`](src/tests/) |
+| [`adapter.rs`](src/adapter.rs) | adapter surface | — |
 
 ## Public API
 

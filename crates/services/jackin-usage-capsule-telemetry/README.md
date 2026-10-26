@@ -19,7 +19,7 @@ multiplexer.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`telemetry.rs`](src/telemetry.rs) | lifecycle | [`telemetry/tests.rs`](src/telemetry/tests.rs) |
+| [`telemetry.rs`](src/telemetry.rs) | lifecycle | — |
 | [`logging.rs`](src/logging.rs) | level + hook | (via `telemetry` tests) |
 
 ## Public API
