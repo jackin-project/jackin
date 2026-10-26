@@ -131,8 +131,8 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 191 scenarios passed their exact report, input-derived count, and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 173 targeted scenarios cover assignment ownership and progress, authored task and case fields, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates, owner-specific A13/A15/A16 qualification, A17 integrated activation, and serialized target-matrix updates.
+All 193 scenarios passed their exact report, input-derived count, and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 175 targeted scenarios cover assignment ownership and progress, authored task and case fields, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates and result-cell grammar, owner-specific A13/A15/A16 qualification, A17 integrated activation, and serialized target-matrix updates.
 Each fixture copy records source hashes, status-only normalization changes, normalized hashes, intentional mutations, and input and executable hashes before and after validation. The original board is never normalized or repaired.
 A22 is owned by U02 and T32. Its mixed-result fixtures complete T32 dependencies before recording results.
 A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks FAIL precedence without bypassing dependencies.
@@ -245,6 +245,8 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | SUBAGENTS shared-file authority cannot be weakened | Reject, exit 1 | PASS, exit 1 |
 | PACK-CHECKS rejects conflicting prose outside result slots | Reject, exit 1 | PASS, exit 1 |
 | PACK-CHECKS keeps count and result slots mutable | Accept, exit 0 | PASS, exit 0 |
+| PACK-CHECKS check results accept only documented outcome tokens | Reject release-approval prose, exit 1 | PASS, exit 1 |
+| PACK-CHECKS observations accept only outcome tokens and optional exit codes | Reject release-approval prose, exit 1 | PASS, exit 1 |
 | A13 cannot omit Cargo metadata for P05's current graph | Reject, exit 1 | PASS, exit 1 |
 | A13 cannot omit fresh Cargo metadata for T39's final post-deletion graph | Reject, exit 1 | PASS, exit 1 |
 | A16 loads the global policy before querying revisions and displaying its source | Reject, exit 1 | PASS, exit 1 |

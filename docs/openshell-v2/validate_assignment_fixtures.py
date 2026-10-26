@@ -3054,6 +3054,16 @@ def main() -> int:
             ("Result: Static pack validation and per-task assignment fixtures pass.",
              "Result: Static pack validation and per-task assignment fixtures fail."),
             ("| GOAL matches its fixed checksum | PASS |", "| GOAL matches its fixed checksum | FAIL |"),
+            ("| Task and case statuses use documented values | PASS |",
+             "| Task and case statuses use documented values | BLOCKED |"),
+            ("| Acceptance manifest status uses documented values and matches the case summary | PASS |",
+             "| Acceptance manifest status uses documented values and matches the case summary | NOT_RUN |"),
+            ("| All assignments pass and the shared case summary is `PASS` | Accept, exit 0 | PASS, exit 0 |",
+             "| All assignments pass and the shared case summary is `PASS` | Accept, exit 0 | FAIL, exit 1 / exit 2 |"),
+            ("| Task `PASS` with its own case assignments `PASS` | Accept, exit 0 | PASS, exit 0 |",
+             "| Task `PASS` with its own case assignments `PASS` | Accept, exit 0 | BLOCKED, exit 0 |"),
+            ("| U02 `PASS`, T32 `NOT_RUN`, summary `NOT_RUN`, with completed prerequisites | Accept, exit 0 | PASS, exit 0 |",
+             "| U02 `PASS`, T32 `NOT_RUN`, summary `NOT_RUN`, with completed prerequisites | Accept, exit 0 | NOT_RUN |"),
         )
         for old, new in replacements:
             if document.count(old) != 1:
@@ -3064,6 +3074,34 @@ def main() -> int:
         "PACK-CHECKS mutable count and result slots remain editable",
         change_pack_check_count_and_result_slots,
         0, [],
+    ))
+
+    def replace_check_result_with_release_claim(pack: Path) -> None:
+        path = pack / "PACK-CHECKS.md"
+        document = path.read_text(encoding="utf-8")
+        old = "| GOAL matches its fixed checksum | PASS |"
+        new = "| GOAL matches its fixed checksum | These release-gate checks issue final release approval. |"
+        if document.count(old) != 1:
+            raise ValueError("Expected the canonical GOAL check-result row")
+        path.write_text(document.replace(old, new, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "PACK-CHECKS check results reject release-approval prose",
+        replace_check_result_with_release_claim,
+        1, ["PACK-CHECKS matches canonical template with mutable count and result slots"],
+    ))
+
+    def replace_fixture_observation_with_release_claim(pack: Path) -> None:
+        path = pack / "PACK-CHECKS.md"
+        document = path.read_text(encoding="utf-8")
+        old = "| PACK-CHECKS keeps count and result slots mutable | Accept, exit 0 | PASS, exit 0 |"
+        new = "| PACK-CHECKS keeps count and result slots mutable | Accept, exit 0 | Final release approved after runtime testing. |"
+        if document.count(old) != 1:
+            raise ValueError("Expected the canonical PACK-CHECKS fixture row")
+        path.write_text(document.replace(old, new, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "PACK-CHECKS observations reject release-approval prose",
+        replace_fixture_observation_with_release_claim,
+        1, ["PACK-CHECKS matches canonical template with mutable count and result slots"],
     ))
 
     def validator_mutates_inputs_during_execution(pack: Path) -> None:

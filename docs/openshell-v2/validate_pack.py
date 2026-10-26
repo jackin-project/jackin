@@ -20,7 +20,7 @@ GRAPH_DECLARATIONS_SHA256 = "306e276f1b13e15900188a245c8a210f93d16d4587def937449
 TRACEABILITY_AUTHORED_SHA256 = "33c969b0eec0852fa87dc459663540d8f9136e22f1ba22328a02724c9418c7ee"
 CONTRACTS_SHA256 = "da0f23654f30e8d1a37a12f07c9e5595d51027a5c4eaae3ce8072cb544dd3344"
 SUBAGENTS_SHA256 = "a4a9e5a967a73038b50ecdc4cadb9a51b1c83728f54c6b6fb9a87641566263f8"
-PACK_CHECKS_TEMPLATE_SHA256 = "5a608dce54c5fc349c87023c581f289dfa3edf225a42f891b116a968f53e122e"
+PACK_CHECKS_TEMPLATE_SHA256 = "b4e1206e51ef0ba362cda6cd5ed4ce70f102367f8e7118864f82f799a61faf89"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
@@ -905,6 +905,10 @@ PACK_CHECKS_CASE_STATUS_LINE = re.compile(
 PACK_CHECKS_RESULT_LINE = re.compile(
     r"^Result: Static pack validation and per-task assignment fixtures (pass|fail)\.$"
 )
+PACK_CHECKS_OUTCOMES = {"PASS", "FAIL", "BLOCKED", "NOT_RUN"}
+PACK_CHECKS_OBSERVED_PATTERN = re.compile(
+    r"(?:PASS|FAIL|BLOCKED|NOT_RUN)(?:, exit \d+(?: / exit \d+)?)?"
+)
 
 
 def pack_checks_projection_errors(document: str) -> list[dict[str, Any]]:
@@ -989,8 +993,12 @@ def pack_checks_projection_errors(document: str) -> list[dict[str, Any]]:
                 normalized.append(line)
             else:
                 check_result_rows += 1
-                if not cells[1]:
-                    errors.append({"row": cells[0], "problem": "result slot must be nonempty"})
+                if cells[1] not in PACK_CHECKS_OUTCOMES:
+                    errors.append({
+                        "row": cells[0],
+                        "actual": cells[1],
+                        "problem": "result slot must use a documented outcome token",
+                    })
                 normalized.append(f"| {cells[0]} | <RESULT> |")
             continue
 
@@ -1002,8 +1010,12 @@ def pack_checks_projection_errors(document: str) -> list[dict[str, Any]]:
                 normalized.append(line)
             elif table_mode == "fixtures":
                 observed_result_rows += 1
-                if not cells[2]:
-                    errors.append({"fixture": cells[0], "problem": "observed result slot must be nonempty"})
+                if PACK_CHECKS_OBSERVED_PATTERN.fullmatch(cells[2]) is None:
+                    errors.append({
+                        "fixture": cells[0],
+                        "actual": cells[2],
+                        "problem": "observed result must use a documented outcome and optional exit codes",
+                    })
                 normalized.append(f"| {cells[0]} | {cells[1]} | <OBSERVED> |")
             else:
                 normalized.append(line)
