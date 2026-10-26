@@ -6,8 +6,10 @@ use jackin_core::Agent;
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 
+#[cfg(not(test))]
 use jackin_telemetry::spawn::JoinSetExt as _;
 
+#[cfg(not(test))]
 use super::{SiblingImagePrewarmOutcome, prewarm_sibling_image};
 use super::{agent_binary_prepare_summary, prepare_agent_binaries, sibling_agents};
 
@@ -165,6 +167,20 @@ pub fn spawn_sibling_image_prewarm(
         return;
     }
 
+    #[cfg(test)]
+    {
+        let _ = (paths, selector, role_git, branch_override);
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.stage(
+                "sibling_image_prewarm_skipped",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
+                "sibling runtime image prewarm disabled in unit tests",
+                Some(selected_agent.slug()),
+            );
+        }
+    }
+
+    #[cfg(not(test))]
     {
         let paths = paths.clone();
         let selector = selector.clone();
@@ -240,6 +256,7 @@ pub fn spawn_sibling_image_prewarm(
     }
 }
 
+#[cfg(not(test))]
 pub(crate) async fn prewarm_sibling_images_concurrently(
     paths: JackinPaths,
     selector: RoleSelector,

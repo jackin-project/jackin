@@ -33,6 +33,12 @@ pub(crate) fn start_listener_at(path: &Path) -> Result<ListenerReceiver> {
     start_listener_at_with_limiter(path).map(|(rx, _limiter)| rx)
 }
 
+#[cfg(test)]
+pub(crate) fn start_listener_at_with_limiter(path: &Path) -> Result<ListenerWithLimiter> {
+    start_listener_at_inner(path)
+}
+
+#[cfg(not(test))]
 fn start_listener_at_with_limiter(path: &Path) -> Result<ListenerWithLimiter> {
     start_listener_at_inner(path)
 }
@@ -177,3 +183,6 @@ pub async fn write_control_frame(stream: &mut UnixStream, reply: &ServerMsg) -> 
         Err(_) => anyhow::bail!("control reply write timed out after 2 s"),
     }
 }
+
+#[cfg(test)]
+mod tests;

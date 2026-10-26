@@ -31,6 +31,8 @@ hex = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+tempfile = { workspace = true }
+jackin-isolation = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 

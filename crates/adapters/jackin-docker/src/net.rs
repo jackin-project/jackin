@@ -179,3 +179,6 @@ pub async fn download_parallel(url: &str, dest: &Path, expected_size: Option<u64
     };
     outcome
 }
+
+#[cfg(test)]
+mod tests;

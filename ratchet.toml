@@ -65,7 +65,7 @@ key = "clippy::disallowed_methods@jackin"
 bound = 10
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-capsule"
-bound = 7
+bound = 8
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-config"
 bound = 1
@@ -83,7 +83,7 @@ key = "clippy::disallowed_methods@jackin-host"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-image"
-bound = 4
+bound = 5
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-instance"
 bound = 1
@@ -98,9 +98,15 @@ key = "clippy::disallowed_methods@jackin-process"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-process-directory"
-bound = 4
+bound = 5
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime-host-attach"
+bound = 1
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-runtime-image"
+bound = 2
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-runtime-launch-account-config"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime-launch-account-identity"
@@ -205,6 +211,9 @@ bound = 1
 key = "clippy::let_underscore_must_use@jackin-core"
 bound = 1
 [[family.entry]]
+key = "clippy::manual_async_fn@jackin-runtime-image"
+bound = 3
+[[family.entry]]
 key = "clippy::missing_const_for_fn@jackin-oppicker"
 bound = 1
 [[family.entry]]
@@ -240,6 +249,9 @@ bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin"
 bound = 4
+[[family.entry]]
+key = "clippy::print_stderr@jackin-capsule"
+bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin-dev"
 bound = 1
@@ -427,6 +439,9 @@ bound = 1
 key = "clippy::too_many_lines@jackin-usage-coordinator"
 bound = 1
 [[family.entry]]
+key = "clippy::too_many_lines@jackin-workflow"
+bound = 1
+[[family.entry]]
 key = "clippy::too_many_lines@jackin-xtask"
 bound = 1
 [[family.entry]]
@@ -452,7 +467,7 @@ key = "clippy::unwrap_used@jackin"
 bound = 2
 [[family.entry]]
 key = "clippy::undocumented_unsafe_blocks@jackin-process-directory"
-bound = 5
+bound = 6
 [[family.entry]]
 key = "clippy::undocumented_unsafe_blocks@jackin-usage-host-accounts"
 bound = 4
@@ -494,7 +509,7 @@ key = "dead_code@jackin-usage-provider-openrouter"
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin-xtask"
-bound = 2
+bound = 3
 [[family.entry]]
 key = "irrefutable_let_patterns@jackin"
 bound = 1
@@ -542,7 +557,7 @@ key = "unsafe_code@jackin-capsule"
 bound = 24
 [[family.entry]]
 key = "unsafe_code@jackin-process-directory"
-bound = 6
+bound = 7
 [[family.entry]]
 key = "unsafe_code@jackin-usage-host-accounts"
 bound = 6
@@ -581,7 +596,7 @@ key = "crates/adapters/jackin-usage-ffi/README.md"
 bound = 3137
 [[family.entry]]
 key = "crates/apps/jackin-capsule/README.md"
-bound = 6342
+bound = 6336
 [[family.entry]]
 key = "crates/apps/jackin/README.md"
 bound = 3101

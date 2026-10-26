@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod runs;
+#[cfg(test)]
+mod tests;
 
 use super::{EVIDENCE_LIMIT, RECEIPT_LIMIT, digest, policy, transport::Transport};
 use anyhow::{Result, ensure};

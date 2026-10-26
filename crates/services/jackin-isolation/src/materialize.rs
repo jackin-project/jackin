@@ -780,3 +780,6 @@ pub fn mount_order_for_docker(mat: &MaterializedWorkspace) -> Vec<&MaterializedM
     ordered.sort_by_key(|m| m.dst.trim_end_matches('/').len());
     ordered
 }
+
+#[cfg(test)]
+mod tests;

@@ -183,10 +183,7 @@ pub(crate) fn host_runtime_passthrough_env(
     vars.into_iter()
         .filter_map(|(key, value)| {
             if key.starts_with("JACKIN_DISABLE_")
-                || matches!(
-                    key.as_str(),
-                    "JACKIN_DHAT_ALLOC_LOG" | "JACKIN_CAPSULE_FORCE_PANIC" | "TZ"
-                )
+                || matches!(key.as_str(), "JACKIN_CAPSULE_FORCE_PANIC" | "TZ")
             {
                 Some(format!("{key}={value}"))
             } else {

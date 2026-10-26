@@ -2658,6 +2658,7 @@ dependencies = [
  "jackin-build-meta",
  "jackin-core",
  "jackin-diagnostics",
+ "jackin-otlp-testbed",
  "jackin-process",
  "jackin-process-directory",
  "jackin-protocol",
@@ -2677,6 +2678,7 @@ dependencies = [
  "termrock",
  "tokio",
  "toml",
+ "tracing",
  "url",
  "uuid",
 ]
@@ -2802,6 +2804,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
 ]
@@ -2944,6 +2947,7 @@ name = "jackin-isolation"
 version = "0.6.4"
 dependencies = [
  "anyhow",
+ "directories",
  "hex",
  "jackin-config",
  "jackin-core",
@@ -2953,6 +2957,7 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-telemetry",
+ "jackin-test-support",
  "nix 0.31.3",
  "rustix 1.1.5",
  "serde",
@@ -3537,13 +3542,16 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "futures-util",
+ "jackin-diagnostics",
  "jackin-env",
  "jackin-process",
  "jackin-protocol",
  "jackin-runtime-process-telemetry",
  "jackin-telemetry",
  "serde_json",
+ "tempfile",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3618,7 +3626,9 @@ dependencies = [
  "jackin-runtime-progress",
  "jackin-runtime-repo-cache",
  "jackin-telemetry",
+ "jackin-test-support",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -3639,10 +3649,12 @@ dependencies = [
  "hex",
  "jackin-config",
  "jackin-core",
+ "jackin-env",
  "jackin-instance",
  "nix 0.31.3",
  "serde_json",
  "sha2 0.11.1",
+ "tempfile",
  "toml",
 ]
 
@@ -3945,6 +3957,8 @@ dependencies = [
  "jackin-config",
  "jackin-core",
  "jackin-instance",
+ "tempfile",
+ "toml",
  "toml_edit",
 ]
 
@@ -4609,6 +4623,7 @@ dependencies = [
  "jackin-usage-provider-core",
  "jackin-usage-store-backend",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -4641,12 +4656,14 @@ version = "0.6.4"
 dependencies = [
  "hex",
  "jackin-core",
+ "jackin-isolation",
  "jackin-telemetry",
  "jackin-usage-store-backend",
  "jackin-workflow-spec",
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "tempfile",
  "tokio",
  "uuid",
 ]

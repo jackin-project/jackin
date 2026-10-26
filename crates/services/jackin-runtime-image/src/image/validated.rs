@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+#![cfg(not(test))]
+
 use jackin_core::Agent;
 use jackin_core::CommandRunner;
 use jackin_core::JackinPaths;

@@ -365,3 +365,6 @@ fn read_at(file: &File, buffer: &mut [u8], offset: u64) -> io::Result<usize> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

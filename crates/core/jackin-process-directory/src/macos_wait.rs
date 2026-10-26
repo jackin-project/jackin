@@ -586,3 +586,6 @@ fn decode_child_payload(
         )
     })
 }
+
+#[cfg(test)]
+mod tests;

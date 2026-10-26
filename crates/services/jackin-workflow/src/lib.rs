@@ -7,6 +7,9 @@ pub mod spool;
 mod store;
 mod verify;
 
+#[cfg(test)]
+mod tests;
+
 pub use model::{
     Actor, CommandState, EffectKind, EffectStatus, NextState, Observation, ReducerRefusal,
     RunStatus, RunView, Stage, advance,
@@ -131,6 +134,3 @@ impl std::fmt::Display for WorkflowError {
 }
 
 impl std::error::Error for WorkflowError {}
-
-#[cfg(test)]
-mod tests;

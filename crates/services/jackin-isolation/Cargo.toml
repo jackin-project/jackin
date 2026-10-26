@@ -39,7 +39,9 @@ hex       = { workspace = true }
 tokio = { workspace = true, features = ["rt"] }
 
 [dev-dependencies]
+directories = { workspace = true }
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
+jackin-test-support = { workspace = true }
 tokio = { workspace = true, features = ["macros", "test-util", "process"] }
 tempfile = { workspace = true }
 
