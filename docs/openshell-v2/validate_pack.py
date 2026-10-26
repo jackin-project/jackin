@@ -14,6 +14,13 @@ ORIGINAL_SPEC_SHA256 = "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe7
 GOAL_SHA256 = "d62aaf0477b96b014356b09d23f05bc2d22385a42277639514e6615dfa46f1a0"
 ACCEPTANCE_POLICY_SHA256 = "83ede6731dcde4fb66fdbf9f3d041382db9a8aa398787e694b9ccc5499202d08"
 C02_CONTRACT_SECTION_SHA256 = "017714a83ab1ee7827dfcf8459ef6ca5e58c11787210083856211d1ba8e9cdf2"
+TASK_AUTHORED_SHA256 = "02be9157f75327ab1f4a2fee9dd888363ddb3ee168080f6725224efc2ace2d97"
+CASE_AUTHORED_SHA256 = "132dce6df85cf3cc5c657ae02e2db810088abc5081ab59f8e0eb3afafe8ff863"
+GRAPH_DECLARATIONS_SHA256 = "306e276f1b13e15900188a245c8a210f93d16d4587def937449ae615ad1d526f"
+TRACEABILITY_AUTHORED_SHA256 = "33c969b0eec0852fa87dc459663540d8f9136e22f1ba22328a02724c9418c7ee"
+CONTRACTS_SHA256 = "da0f23654f30e8d1a37a12f07c9e5595d51027a5c4eaae3ce8072cb544dd3344"
+SUBAGENTS_SHA256 = "a4a9e5a967a73038b50ecdc4cadb9a51b1c83728f54c6b6fb9a87641566263f8"
+PACK_CHECKS_TEMPLATE_SHA256 = "5a608dce54c5fc349c87023c581f289dfa3edf225a42f891b116a968f53e122e"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
@@ -152,6 +159,13 @@ ORDINARY_CHECK_NAMES = (
     "Traceability table matches its manifest",
     "Traceability uses known task owners",
     "Checked procedural sentences contain at most 20 whitespace-separated words",
+    "Task authored fields match fixed projection",
+    "Case authored fields match fixed projection",
+    "Graph declarations match fixed projection",
+    "Traceability authored sections match fixed projection",
+    "CONTRACTS.md matches its fixed checksum",
+    "SUBAGENTS.md matches its fixed checksum",
+    "PACK-CHECKS matches canonical template with mutable count and result slots",
 )
 INITIAL_ONLY_CHECK_NAMES = (
     "Initial task, case, and assignment statuses claim no execution",
@@ -837,6 +851,201 @@ def c02_contract_section_errors(document: bytes) -> list[dict[str, Any]]:
     if actual != C02_CONTRACT_SECTION_SHA256:
         return [{"expected_sha256": C02_CONTRACT_SECTION_SHA256, "actual_sha256": actual}]
     return []
+
+
+def canonical_json_sha256(value: Any) -> str:
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def task_authored_projection(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{key: value for key, value in task.items() if key != "status"}
+            for task in tasks]
+
+
+def case_authored_projection(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{key: value for key, value in case.items()
+             if key not in {"status", "assignment_results"}}
+            for case in cases]
+
+
+def graph_declaration_projection(graph: dict[str, Any]) -> dict[str, Any]:
+    mutable_or_derived = {
+        "status", "subagents_used_for_this_pack", "runtime_tests_executed_for_this_pack",
+        "tasks", "topological_ready_groups",
+    }
+    return {key: value for key, value in graph.items() if key not in mutable_or_derived}
+
+
+PACK_CHECKS_COUNT_FIELDS = {
+    "Detailed task cards": "tasks",
+    "Acceptance cases": "cases",
+    "Mapped specification headings": "specification_sections",
+    "Topological readiness groups": "task_ready_groups",
+    "Checked procedural sentences": "checked_sentences",
+}
+PACK_CHECKS_COUNT_LINE = re.compile(
+    r"^The ordinary validator report contains (\d+) ordered checks; `--initial` contains (\d+), "
+    r"including two initial-only checks and the final inventory check\.$"
+)
+PACK_CHECKS_SCENARIO_LINE = re.compile(
+    r"^All (\d+) scenarios (passed|failed) their exact report, input-derived count, "
+    r"and exit-code expectations\.$"
+)
+PACK_CHECKS_TARGETED_LINE = re.compile(
+    r"^The original (\d+) scenario intentions remain unchanged; (\d+) targeted scenarios (.+)$"
+)
+PACK_CHECKS_TASK_STATUS_LINE = re.compile(
+    r"^All (\d+) tasks remain `(NOT_STARTED|READY|RUNNING|REVIEW|PASS|FAIL|BLOCKED)`\.$"
+)
+PACK_CHECKS_CASE_STATUS_LINE = re.compile(
+    r"^All (\d+) cases and their per-task assignment results remain `(NOT_RUN|PASS|FAIL|BLOCKED)`\.$"
+)
+PACK_CHECKS_RESULT_LINE = re.compile(
+    r"^Result: Static pack validation and per-task assignment fixtures (pass|fail)\.$"
+)
+
+
+def pack_checks_projection_errors(document: str) -> list[dict[str, Any]]:
+    lines = document.splitlines()
+    normalized: list[str] = []
+    section = ""
+    table_mode = ""
+    count_values: dict[str, int] = {}
+    ordinary_counts: tuple[int, int] | None = None
+    scenario_summary_count: int | None = None
+    targeted_scenario_count: tuple[int, int] | None = None
+    task_status_count: tuple[int, str] | None = None
+    case_status_count: tuple[int, str] | None = None
+    check_result_rows = 0
+    observed_result_rows = 0
+    errors: list[dict[str, Any]] = []
+
+    def table_cells(line: str) -> list[str] | None:
+        if not line.startswith("|") or not line.endswith("|"):
+            return None
+        return [cell.strip() for cell in line[1:-1].split("|")]
+
+    for line in lines:
+        if line.startswith("## "):
+            section = line[3:]
+            table_mode = ""
+
+        if line.startswith("Result:"):
+            if PACK_CHECKS_RESULT_LINE.fullmatch(line) is None:
+                errors.append({"problem": "result line must use the fixed report template"})
+            normalized.append("Result: Static pack validation and per-task assignment fixtures <RESULT>.")
+            continue
+
+        scenario_match = PACK_CHECKS_SCENARIO_LINE.fullmatch(line)
+        if scenario_match:
+            scenario_summary_count = int(scenario_match.group(1))
+            normalized.append(
+                "All <SCENARIO_COUNT> scenarios <SCENARIO_RESULT> their exact report, "
+                "input-derived count, and exit-code expectations."
+            )
+            continue
+
+        targeted_match = PACK_CHECKS_TARGETED_LINE.fullmatch(line)
+        if targeted_match:
+            targeted_scenario_count = (int(targeted_match.group(1)), int(targeted_match.group(2)))
+            normalized.append(
+                f"The original {targeted_match.group(1)} scenario intentions remain unchanged; "
+                f"<TARGETED_COUNT> targeted scenarios {targeted_match.group(3)}"
+            )
+            continue
+
+        task_status_match = PACK_CHECKS_TASK_STATUS_LINE.fullmatch(line)
+        if task_status_match:
+            task_status_count = (int(task_status_match.group(1)), task_status_match.group(2))
+            normalized.append(f"All {task_status_match.group(1)} tasks remain `<TASK_STATUS>`." )
+            continue
+
+        case_status_match = PACK_CHECKS_CASE_STATUS_LINE.fullmatch(line)
+        if case_status_match:
+            case_status_count = (int(case_status_match.group(1)), case_status_match.group(2))
+            normalized.append(
+                f"All {case_status_match.group(1)} cases and their per-task assignment results remain `<CASE_STATUS>`."
+            )
+            continue
+
+        if section == "Counts" and line.startswith("|"):
+            cells = table_cells(line)
+            if cells and len(cells) == 2 and cells[0] in PACK_CHECKS_COUNT_FIELDS:
+                try:
+                    count = int(cells[1])
+                    if count < 0:
+                        raise ValueError("negative count")
+                    count_values[cells[0]] = count
+                except ValueError:
+                    errors.append({"count": cells[0], "actual": cells[1], "problem": "count must be an integer"})
+                normalized.append(f"| {cells[0]} | <COUNT> |")
+                continue
+
+        cells = table_cells(line)
+        if section == "Check results" and cells and len(cells) == 2:
+            if cells == ["Check", "Result"] or all(set(cell) <= {"-", ":", " "} for cell in cells):
+                normalized.append(line)
+            else:
+                check_result_rows += 1
+                if not cells[1]:
+                    errors.append({"row": cells[0], "problem": "result slot must be nonempty"})
+                normalized.append(f"| {cells[0]} | <RESULT> |")
+            continue
+
+        if section == "Assignment-result causal fixtures" and cells and len(cells) == 3:
+            if cells == ["Temporary-copy fixture", "Expected validator result", "Observed"]:
+                table_mode = "fixtures"
+                normalized.append(line)
+            elif all(set(cell) <= {"-", ":", " "} for cell in cells):
+                normalized.append(line)
+            elif table_mode == "fixtures":
+                observed_result_rows += 1
+                if not cells[2]:
+                    errors.append({"fixture": cells[0], "problem": "observed result slot must be nonempty"})
+                normalized.append(f"| {cells[0]} | {cells[1]} | <OBSERVED> |")
+            else:
+                normalized.append(line)
+            continue
+
+        count_match = PACK_CHECKS_COUNT_LINE.fullmatch(line)
+        if count_match:
+            ordinary_counts = (int(count_match.group(1)), int(count_match.group(2)))
+            normalized.append(
+                "The ordinary validator report contains <ORDINARY_CHECK_COUNT> ordered checks; "
+                "`--initial` contains <INITIAL_CHECK_COUNT>, including two initial-only checks "
+                "and the final inventory check."
+            )
+            continue
+        normalized.append(line)
+
+    expected_labels = set(PACK_CHECKS_COUNT_FIELDS)
+    if set(count_values) != expected_labels:
+        errors.append({"count_rows": sorted(count_values), "expected_count_rows": sorted(expected_labels)})
+    if ordinary_counts is None:
+        errors.append({"problem": "validator check count line must match the report template"})
+    if scenario_summary_count is None or targeted_scenario_count is None:
+        errors.append({"problem": "fixture count and result summary slots must match the report template"})
+    elif (targeted_scenario_count[0] != 18 or targeted_scenario_count[1] < 0
+          or scenario_summary_count != sum(targeted_scenario_count)):
+        errors.append({"fixture_scenario_counts": targeted_scenario_count,
+                       "scenario_summary_count": scenario_summary_count,
+                       "expected_original_intentions": 18,
+                       "expected_total": sum(targeted_scenario_count)})
+    if task_status_count is None or case_status_count is None:
+        errors.append({"problem": "task and case result count slots must match the report template"})
+    if check_result_rows == 0:
+        errors.append({"problem": "validator check results must retain result slots"})
+    if observed_result_rows == 0:
+        errors.append({"problem": "fixture observations must retain their result slots"})
+
+    projected = ("\n".join(normalized) + "\n").encode("utf-8")
+    actual_digest = hashlib.sha256(projected).hexdigest()
+    if actual_digest != PACK_CHECKS_TEMPLATE_SHA256:
+        errors.append({"template_sha256": actual_digest,
+                       "expected_sha256": PACK_CHECKS_TEMPLATE_SHA256})
+    return errors
 
 
 def main() -> int:
@@ -1618,6 +1827,36 @@ def main() -> int:
                 long_sentences.append({"source": "GOAL.md", "words": count, "sentence": sentence})
     check("Checked procedural sentences contain at most 20 whitespace-separated words",
           not long_sentences, {"sentences": sentence_count, "violations": long_sentences})
+
+    task_authored_digest = canonical_json_sha256(task_authored_projection(tasks))
+    check("Task authored fields match fixed projection",
+          task_authored_digest == TASK_AUTHORED_SHA256,
+          {"expected": TASK_AUTHORED_SHA256, "actual": task_authored_digest})
+    case_authored_digest = canonical_json_sha256(case_authored_projection(cases))
+    check("Case authored fields match fixed projection",
+          case_authored_digest == CASE_AUTHORED_SHA256,
+          {"expected": CASE_AUTHORED_SHA256, "actual": case_authored_digest})
+    graph_declaration_digest = canonical_json_sha256(graph_declaration_projection(graph))
+    check("Graph declarations match fixed projection",
+          graph_declaration_digest == GRAPH_DECLARATIONS_SHA256,
+          {"expected": GRAPH_DECLARATIONS_SHA256, "actual": graph_declaration_digest})
+    traceability_digest = canonical_json_sha256(trace)
+    check("Traceability authored sections match fixed projection",
+          traceability_digest == TRACEABILITY_AUTHORED_SHA256,
+          {"expected": TRACEABILITY_AUTHORED_SHA256, "actual": traceability_digest})
+    contracts_digest = hashlib.sha256(contracts_bytes).hexdigest()
+    check("CONTRACTS.md matches its fixed checksum",
+          contracts_digest == CONTRACTS_SHA256,
+          {"expected": CONTRACTS_SHA256, "actual": contracts_digest})
+    subagents_digest = hashlib.sha256((root / "SUBAGENTS.md").read_bytes()).hexdigest()
+    check("SUBAGENTS.md matches its fixed checksum",
+          subagents_digest == SUBAGENTS_SHA256,
+          {"expected": SUBAGENTS_SHA256, "actual": subagents_digest})
+    pack_checks_errors = pack_checks_projection_errors(
+        (root / "PACK-CHECKS.md").read_text(encoding="utf-8"),
+    )
+    check("PACK-CHECKS matches canonical template with mutable count and result slots",
+          not pack_checks_errors, pack_checks_errors)
 
     if args.initial:
         bad_status = [task["id"] for task in tasks if task["status"] != "NOT_STARTED"]

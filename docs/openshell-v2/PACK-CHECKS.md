@@ -12,6 +12,10 @@ The validator does not inspect task artifact contents or review decisions.
 These release-gate checks validate static planning structure only. They do not run a release preflight, test a candidate, or issue approval.
 Tasks without cases still require their task-card artifacts and independent review.
 The original specification remains unchanged.
+Task, case, graph, and traceability authoring fields are pinned independently of progress state.
+Task, case, assignment, and aggregate statuses remain mutable during ordinary execution.
+Complete CONTRACTS and SUBAGENTS files are pinned after their reviewed policy decisions.
+The report template is pinned outside its named result and input-derived count slots.
 
 ## Reproduce
 
@@ -57,7 +61,7 @@ The runner writes one JSON report to stdout and does not modify the pack. It val
 | Topological readiness groups | 20 |
 | Checked procedural sentences | 1632 |
 
-The ordinary validator report contains 74 ordered checks; `--initial` contains 76, including two initial-only checks and the final inventory check.
+The ordinary validator report contains 81 ordered checks; `--initial` contains 83, including two initial-only checks and the final inventory check.
 The C02 digest checks fixed contract text only. It does not show that source code follows this plan.
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
@@ -116,6 +120,10 @@ Keep no more than eight actual subagents active at once.
 | Every cited SPEC section lists its task owner in traceability | PASS |
 | Traceability headings, ranges, owners, and representations match | PASS |
 | Checked procedural sentences stay within the word limit | PASS |
+| Authored task and case fields match fixed projections, excluding progress state | PASS |
+| Graph declarations and complete traceability records match fixed projections | PASS |
+| Complete [CONTRACTS.md](CONTRACTS.md) and [SUBAGENTS.md](SUBAGENTS.md) match their fixed checksums | PASS |
+| PACK-CHECKS template is fixed outside mutable count and result slots | PASS |
 | Validator emits the canonical ordered ordinary and initial-only check inventories | PASS |
 | Initial states claim no task or case execution (`--initial` only) | PASS |
 | Pack records no runtime tests or delegated task reviews (`--initial` only) | PASS |
@@ -123,8 +131,8 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 181 scenarios passed their exact report, input-derived count, and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 163 targeted scenarios cover assignment ownership and progress, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, task review rules, validator reports, owner-specific A13/A15/A16 qualification, A17 integrated activation, and serialized target-matrix updates.
+All 191 scenarios passed their exact report, input-derived count, and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 173 targeted scenarios cover assignment ownership and progress, authored task and case fields, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates, owner-specific A13/A15/A16 qualification, A17 integrated activation, and serialized target-matrix updates.
 Each fixture copy records source hashes, status-only normalization changes, normalized hashes, intentional mutations, and input and executable hashes before and after validation. The original board is never normalized or repaired.
 A22 is owned by U02 and T32. Its mixed-result fixtures complete T32 dependencies before recording results.
 A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks FAIL precedence without bypassing dependencies.
@@ -229,6 +237,14 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | P04 initial and T35–T38 qualified target rows use ordered Integration requests | Reject, exit 1 | PASS, exit 1 |
 | P04 and qualification tasks cannot write the central target matrix directly | Reject, exit 1 | PASS, exit 1 |
 | Required target rows remain and unavailable rows stay `BLOCKED` | Reject, exit 1 | PASS, exit 1 |
+| Synchronized A22 prose cannot weaken its owner-specific assertions | Reject, exit 1 | PASS, exit 1 |
+| C06 credential-authority fail-open cannot alter the complete contracts | Reject, exit 1 | PASS, exit 1 |
+| T23 dependency removal or addition fails after all graph mirrors are recomputed | Reject, exit 1 | PASS, exit 1 |
+| Worker root-Cargo claims and contradictory task scopes fail the authored projection | Reject, exit 1 | PASS, exit 1 |
+| T23 citation rebasing fails with synchronized traceability | Reject, exit 1 | PASS, exit 1 |
+| SUBAGENTS shared-file authority cannot be weakened | Reject, exit 1 | PASS, exit 1 |
+| PACK-CHECKS rejects conflicting prose outside result slots | Reject, exit 1 | PASS, exit 1 |
+| PACK-CHECKS keeps count and result slots mutable | Accept, exit 0 | PASS, exit 0 |
 | A13 cannot omit Cargo metadata for P05's current graph | Reject, exit 1 | PASS, exit 1 |
 | A13 cannot omit fresh Cargo metadata for T39's final post-deletion graph | Reject, exit 1 | PASS, exit 1 |
 | A16 loads the global policy before querying revisions and displaying its source | Reject, exit 1 | PASS, exit 1 |

@@ -20,6 +20,7 @@ from validate_pack import (  # noqa: E402
     DuplicateJSONKeyError,
     canonical_check_inventory,
     render_task_card,
+    render_task_index,
     render_task_packet,
     strict_json_loads,
 )
@@ -302,6 +303,41 @@ def sync_task_packet(pack: Path, task_id: str) -> None:
     following = re.search(r"(?m)^### ", plan[matches[0].end():])
     end = matches[0].end() + following.start() if following else len(plan)
     plan_path.write_text(plan[:start] + rendered_card + "\n\n" + plan[end:].lstrip("\n"), encoding="utf-8")
+
+
+def sync_task_indexes(pack: Path) -> None:
+    graph = read_json(pack / "task-graph.json")
+    rendered = render_task_index(graph["tasks"])
+    header = "| ID | Task | Subagent | Dependencies |"
+    for relative_path in ("TASKS.md", "PLAN.md"):
+        path = pack / relative_path
+        lines = path.read_text(encoding="utf-8").splitlines()
+        matches = [index for index, line in enumerate(lines) if line == header]
+        if len(matches) != 1:
+            raise ValueError(f"Expected one task index table in {relative_path}")
+        start = matches[0]
+        end = start + 1
+        while end < len(lines) and lines[end].startswith("|"):
+            end += 1
+        lines[start:end] = rendered
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def recompute_ready_groups(pack: Path) -> None:
+    graph_path = pack / "task-graph.json"
+    graph = read_json(graph_path)
+    tasks = graph["tasks"]
+    done: set[str] = set()
+    levels = []
+    while len(done) < len(tasks):
+        ready = [task["id"] for task in tasks
+                 if task["id"] not in done and set(task["depends_on"]).issubset(done)]
+        if not ready:
+            raise ValueError("Cannot derive readiness groups for a cyclic fixture graph")
+        levels.append(ready)
+        done.update(ready)
+    graph["topological_ready_groups"] = levels
+    write_json(graph_path, graph)
 
 
 def all_pass(pack: Path) -> None:
@@ -883,7 +919,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "duplicate case owner fails when its Markdown block is synchronized",
         duplicate_case_owner,
-        1, ["Acceptance cases have unique string task owners"],
+        1, [
+            "Acceptance cases have unique string task owners",
+            "Case authored fields match fixed projection",
+        ],
     ))
 
     def remove_validator_copy(pack: Path) -> None:
@@ -1115,7 +1154,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "duplicate task case reference is rejected with synchronized task cards",
         duplicate_task_case_reference,
-        1, ["Task test_cases contain unique string IDs"],
+        1, [
+            "Task test_cases contain unique string IDs",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def nonstring_task_case_reference(pack: Path) -> None:
@@ -1128,7 +1170,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "non-string task case reference is rejected before ownership set logic",
         nonstring_task_case_reference,
-        1, ["Task test_cases contain unique string IDs"],
+        1, [
+            "Task test_cases contain unique string IDs",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def stale_manifest_summary(pack: Path, status: str) -> None:
@@ -1174,7 +1219,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "task completion rule cannot diverge from the shared evidence contract",
         corrupt_completion_rule,
-        1, ["Task completion rules match the fixed evidence contract"],
+        1, [
+            "Task completion rules match the fixed evidence contract",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def set_review_rule(pack: Path, review_rule: str) -> None:
@@ -1190,12 +1238,18 @@ def main() -> int:
             pack,
             "The task owner reviews the result. The integration subagent reruns affected tests after merge.",
         ),
-        1, ["Task review rules match the different-subagent and post-merge contract"],
+        1, [
+            "Task review rules match the different-subagent and post-merge contract",
+            "Task authored fields match fixed projection",
+        ],
     ))
     receipts.append(run_fixture(
         "task review rule requires a post-merge integration rerun",
         lambda pack: set_review_rule(pack, "A different subagent reviews the result."),
-        1, ["Task review rules match the different-subagent and post-merge contract"],
+        1, [
+            "Task review rules match the different-subagent and post-merge contract",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def remove_standard_task_artifact(pack: Path) -> None:
@@ -1208,7 +1262,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "canonical review receipt cannot be removed with synchronized cards",
         remove_standard_task_artifact,
-        1, ["Task required artifacts match canonical evidence set and report path"],
+        1, [
+            "Task required artifacts match canonical evidence set and report path",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def relocate_report_path(pack: Path) -> None:
@@ -1221,7 +1278,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "report path cannot move from its canonical task receipt directory",
         relocate_report_path,
-        1, ["Task required artifacts match canonical evidence set and report path"],
+        1, [
+            "Task required artifacts match canonical evidence set and report path",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def remove_upstream_change_artifact(pack: Path) -> None:
@@ -1234,7 +1294,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "upstream task keeps its task-specific change receipt",
         remove_upstream_change_artifact,
-        1, ["Task required artifacts match canonical evidence set and report path"],
+        1, [
+            "Task required artifacts match canonical evidence set and report path",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def remove_early_live_artifact(pack: Path) -> None:
@@ -1247,7 +1310,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "P02 keeps the required early LIVE records with synchronized cards",
         remove_early_live_artifact,
-        1, ["Task required artifacts match canonical evidence set and report path"],
+        1, [
+            "Task required artifacts match canonical evidence set and report path",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def weaken_early_live_task(pack: Path, task_id: str, field: str, exact_text: str) -> None:
@@ -1263,7 +1329,10 @@ def main() -> int:
             pack, "P02", "steps",
             "Record actual P02 LIVE runs for A05 and A06 before P03 starts.",
         ),
-        1, ["P02 bootstrap records, P04 imports, and T12 reruns A05/A06"],
+        1, [
+            "P02 bootstrap records, P04 imports, and T12 reruns A05/A06",
+            "Task authored fields match fixed projection",
+        ],
     ))
     receipts.append(run_fixture(
         "T12 cannot reuse the earlier P02 LIVE results",
@@ -1271,7 +1340,10 @@ def main() -> int:
             pack, "T12", "steps",
             "Run separate fresh A05 and A06 LIVE tests with new run IDs after the P04 harness is available.",
         ),
-        1, ["P02 bootstrap records, P04 imports, and T12 reruns A05/A06"],
+        1, [
+            "P02 bootstrap records, P04 imports, and T12 reruns A05/A06",
+            "Task authored fields match fixed projection",
+        ],
     ))
     receipts.append(run_fixture(
         "P04 must validate and import early records without closing T12",
@@ -1279,7 +1351,10 @@ def main() -> int:
             pack, "P04", "steps",
             "Validate and import the P02 A05 and A06 records without assigning them to T12.",
         ),
-        1, ["P02 bootstrap records, P04 imports, and T12 reruns A05/A06"],
+        1, [
+            "P02 bootstrap records, P04 imports, and T12 reruns A05/A06",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def weaken_registration_scope(pack: Path, task_id: str, old: str, new: str) -> None:
@@ -1297,7 +1372,10 @@ def main() -> int:
             "crates/tools/jackin-xtask/src/main.rs: v2 command enum and dispatch only, through the Integration subagent",
             "crates/tools/jackin-xtask/src/main.rs",
         ),
-        1, ["P04 harness command registration and P05 build wiring scopes agree"],
+        1, [
+            "P04 harness command registration and P05 build wiring scopes agree",
+            "Task authored fields match fixed projection",
+        ],
     ))
     receipts.append(run_fixture(
         "P05 retains only workspace and build graph registration",
@@ -1306,7 +1384,10 @@ def main() -> int:
             "crates/tools/jackin-xtask and test-support workspace and build graph registration only",
             "crates/tools/jackin-xtask and test-support registration",
         ),
-        1, ["P04 harness command registration and P05 build wiring scopes agree"],
+        1, [
+            "P04 harness command registration and P05 build wiring scopes agree",
+            "Task authored fields match fixed projection",
+        ],
     ))
     receipts.append(run_fixture(
         "P05 must register xtask and test support in the workspace graph",
@@ -1314,7 +1395,10 @@ def main() -> int:
             pack, "P05", "steps",
             "Register jackin-xtask and test-support in the production workspace and build graph.",
         ),
-        1, ["P04 harness command registration and P05 build wiring scopes agree"],
+        1, [
+            "P04 harness command registration and P05 build wiring scopes agree",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     target_matrix_check = "Target matrix qualification requests route through Integration"
@@ -1334,7 +1418,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "P04 requests the initial target registration from Integration",
         remove_p04_initial_matrix_request,
-        1, [target_matrix_check],
+        1, [
+            "Target matrix qualification requests route through Integration",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def remove_t37_matrix_request(pack: Path) -> None:
@@ -1349,7 +1436,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "T35 through T38 retain ordered qualified-target patch requests",
         remove_t37_matrix_request,
-        1, [target_matrix_check],
+        1, [
+            "Target matrix qualification requests route through Integration",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def give_p04_direct_matrix_scope(pack: Path) -> None:
@@ -1362,7 +1452,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "P04 cannot receive direct write scope for the central target matrix",
         give_p04_direct_matrix_scope,
-        1, [target_matrix_check],
+        1, [
+            "Target matrix qualification requests route through Integration",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def give_t35_direct_matrix_scope(pack: Path) -> None:
@@ -1375,7 +1468,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "T35 cannot write the central target matrix directly",
         give_t35_direct_matrix_scope,
-        1, [target_matrix_check],
+        1, [
+            "Target matrix qualification requests route through Integration",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def remove_blocked_row_rule(pack: Path) -> None:
@@ -1389,7 +1485,8 @@ def main() -> int:
     receipts.append(run_fixture(
         "Required target rows remain and unavailable rows stay BLOCKED",
         remove_blocked_row_rule,
-        1, [target_matrix_check, "Acceptance policy before detailed cases matches fixed checksum"],
+        1, ['Target matrix qualification requests route through Integration',
+ 'Acceptance policy before detailed cases matches fixed checksum'],
     ))
 
     def mutate_release_protocol(pack: Path, change: Callable[[dict[str, Any]], None]) -> None:
@@ -1403,7 +1500,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "release preflight cannot weaken the prior-task prerequisite",
         lambda pack: mutate_release_protocol(pack, weaken_prior_tasks),
-        1, ["Release gate protocol matches fixed semantics"],
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
     ))
 
     def omit_final_case(protocol: dict[str, Any]) -> None:
@@ -1411,8 +1511,11 @@ def main() -> int:
     receipts.append(run_fixture(
         "release finalization cannot omit A125",
         lambda pack: mutate_release_protocol(pack, omit_final_case),
-        1, ["Release gate protocol matches fixed semantics",
-            "Release gate references name T40 and its owned final cases"],
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Release gate references name T40 and its owned final cases",
+            "Graph declarations match fixed projection",
+        ],
     ))
 
     def omit_final_review(protocol: dict[str, Any]) -> None:
@@ -1420,7 +1523,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "release finalization requires independent T40 review",
         lambda pack: mutate_release_protocol(pack, omit_final_review),
-        1, ["Release gate protocol matches fixed semantics"],
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
     ))
 
     def omit_merged_checks(protocol: dict[str, Any]) -> None:
@@ -1428,7 +1534,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "release finalization requires merged-source checks",
         lambda pack: mutate_release_protocol(pack, omit_merged_checks),
-        1, ["Release gate protocol matches fixed semantics"],
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
     ))
 
     def allow_preflight_approval(protocol: dict[str, Any]) -> None:
@@ -1436,7 +1545,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "release preflight cannot issue approval",
         lambda pack: mutate_release_protocol(pack, allow_preflight_approval),
-        1, ["Release gate protocol matches fixed semantics"],
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
     ))
 
     def weaken_p04_protocol(pack: Path) -> None:
@@ -1449,7 +1561,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "P04 task card retains the fixed protocol implementation requirement",
         weaken_p04_protocol,
-        1, ["P04, T40, A123, and A125 mirror the fixed release gate contract"],
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def weaken_t40_finalization(pack: Path) -> None:
@@ -1462,7 +1577,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "T40 card retains fail-closed finalization conditions",
         weaken_t40_finalization,
-        1, ["P04, T40, A123, and A125 mirror the fixed release gate contract"],
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def omit_actual_t40_case_results(pack: Path) -> None:
@@ -1477,7 +1595,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "T40 requires actual results for A123 through A125",
         omit_actual_t40_case_results,
-        1, ["P04, T40, A123, and A125 mirror the fixed release gate contract"],
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def weaken_a123_refusals(pack: Path) -> None:
@@ -1490,7 +1611,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "A123 keeps prerequisite refusal assertions and finalization contract",
         weaken_a123_refusals,
-        1, ["P04, T40, A123, and A125 mirror the fixed release gate contract"],
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Case authored fields match fixed projection",
+        ],
     ))
 
     def remove_static_gate_scope(pack: Path) -> None:
@@ -1504,7 +1628,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "pack report cannot claim runtime finalizer verification",
         remove_static_gate_scope,
-        1, ["PACK-CHECKS limits release-gate claims to static structure"],
+        1, [
+            "PACK-CHECKS limits release-gate claims to static structure",
+            "PACK-CHECKS matches canonical template with mutable count and result slots",
+        ],
     ))
 
     def restore_merged_diff_cycle(pack: Path) -> None:
@@ -1518,7 +1645,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "review packet requires candidate review before merge",
         restore_merged_diff_cycle,
-        1, ["Review packet uses candidate input and post-merge completion stages"],
+        1, [
+            "Review packet uses candidate input and post-merge completion stages",
+            "SUBAGENTS.md matches its fixed checksum",
+        ],
     ))
 
     def remove_p04_qualification_owner(pack: Path) -> None:
@@ -1532,8 +1662,11 @@ def main() -> int:
     receipts.append(run_fixture(
         "P04 remains owned by the Qualification subagent",
         remove_p04_qualification_owner,
-        1, ["P04 is listed under the Qualification subagent",
-            "Subagent task assignments exactly match graph owners"],
+        1, [
+            "P04 is listed under the Qualification subagent",
+            "Subagent task assignments exactly match graph owners",
+            "SUBAGENTS.md matches its fixed checksum",
+        ],
     ))
 
     def missing_intersecting_trace_owner(pack: Path) -> None:
@@ -1546,7 +1679,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "cited task is required in every intersecting section even when mapped elsewhere",
         missing_intersecting_trace_owner,
-        1, ["Task citations are represented in traceability"],
+        1, [
+            "Task citations are represented in traceability",
+            "Traceability authored sections match fixed projection",
+        ],
     ))
 
     def malformed_source_citation(pack: Path, value: str) -> None:
@@ -1566,12 +1702,18 @@ def main() -> int:
     receipts.append(run_fixture(
         "malformed task SPEC citation syntax is rejected",
         lambda pack: malformed_source_citation(pack, "SPEC L113-Lbad"),
-        1, ["Task SPEC citations use valid syntax"],
+        1, [
+            "Task SPEC citations use valid syntax",
+            "Task authored fields match fixed projection",
+        ],
     ))
     receipts.append(run_fixture(
         "task SPEC citation beyond the document is rejected",
         lambda pack: malformed_source_citation(pack, "SPEC L550"),
-        1, ["Task SPEC citation ranges are within SPEC.md"],
+        1, [
+            "Task SPEC citation ranges are within SPEC.md",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def malformed_manifest(pack: Path) -> None:
@@ -1855,7 +1997,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "Integration role row lists every graph-owned task",
         omit_integration_owned_tasks_from_assignment_table,
-        1, ["Subagent task assignments exactly match graph owners"],
+        1, [
+            "Subagent task assignments exactly match graph owners",
+            "SUBAGENTS.md matches its fixed checksum",
+        ],
     ))
 
     def change_graph_owner_without_assignment_table(pack: Path) -> None:
@@ -1875,7 +2020,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "role assignment table matches every graph owner, not only Integration",
         change_graph_owner_without_assignment_table,
-        1, ["Subagent task assignments exactly match graph owners"],
+        1, [
+            "Subagent task assignments exactly match graph owners",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def route_t40_writes_directly(pack: Path) -> None:
@@ -1889,8 +2037,11 @@ def main() -> int:
     receipts.append(run_fixture(
         "T40 cannot bypass Integration for shared finalization writes",
         route_t40_writes_directly,
-        1, ["P04, T40, A123, and A125 mirror the fixed release gate contract",
-            "T40 finalization writes route through Integration"],
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "T40 finalization writes route through Integration",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def assign_finalization_writer_to_t40(protocol: dict[str, Any]) -> None:
@@ -1898,7 +2049,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "release finalization keeps shared writes with Integration",
         lambda pack: mutate_release_protocol(pack, assign_finalization_writer_to_t40),
-        1, ["Release gate protocol matches fixed semantics"],
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
     ))
 
     def omit_conditional_patch_approval(protocol: dict[str, Any]) -> None:
@@ -1906,7 +2060,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "release finalization requires conditional approval for supported patched tuples",
         lambda pack: mutate_release_protocol(pack, omit_conditional_patch_approval),
-        1, ["Release gate protocol matches fixed semantics"],
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
     ))
 
     def require_approval_for_unpatched_tuples(protocol: dict[str, Any]) -> None:
@@ -1914,7 +2071,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "unpatched supported tuples do not require patch-approval records",
         lambda pack: mutate_release_protocol(pack, require_approval_for_unpatched_tuples),
-        1, ["Release gate protocol matches fixed semantics"],
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
     ))
 
     def weaken_a125_patch_approval(pack: Path) -> None:
@@ -1927,7 +2087,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "A125 verifies conditional maintainer approval for each patched tuple",
         weaken_a125_patch_approval,
-        1, ["A125 verifies conditional patched-tuple approval"],
+        1, [
+            "A125 verifies conditional patched-tuple approval",
+            "Case authored fields match fixed projection",
+        ],
     ))
 
     def remove_c01_source_row(pack: Path) -> None:
@@ -1940,7 +2103,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "C01 source table rejects a missing historical reference",
         remove_c01_source_row,
-        1, ["C01 source pin table matches all four fixed references"],
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
     ))
 
     def duplicate_c01_source_row(pack: Path) -> None:
@@ -1953,7 +2119,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "C01 source table rejects a duplicate reference",
         duplicate_c01_source_row,
-        1, ["C01 source pin table matches all four fixed references"],
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
     ))
 
     def add_c01_source_row(pack: Path) -> None:
@@ -1972,7 +2141,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "C01 source table rejects an extra reference",
         add_c01_source_row,
-        1, ["C01 source pin table matches all four fixed references"],
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
     ))
 
     def alter_c01_comparator_version(pack: Path) -> None:
@@ -1986,7 +2158,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "C01 source table rejects an altered release version",
         alter_c01_comparator_version,
-        1, ["C01 source pin table matches all four fixed references"],
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
     ))
 
     def alter_c01_comparator_sha(pack: Path) -> None:
@@ -2000,7 +2175,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "C01 source table rejects an altered release comparator commit",
         alter_c01_comparator_sha,
-        1, ["C01 source pin table matches all four fixed references"],
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
     ))
 
     def alter_c01_historical_sha(pack: Path) -> None:
@@ -2014,7 +2192,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "C01 source table rejects an altered historical commit",
         alter_c01_historical_sha,
-        1, ["C01 source pin table matches all four fixed references"],
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
     ))
 
     def mutate_c02_bytes(pack: Path, old: bytes, new: bytes, scenario: str) -> None:
@@ -2034,7 +2215,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "C02 digest rejects a deleted production crate row",
         remove_c02_row,
-        1, ["C02 production crate graph and boundary section matches fixed bytes"],
+        1, [
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
     ))
 
     def alter_c02_row(pack: Path) -> None:
@@ -2047,7 +2231,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "C02 digest rejects an altered crate responsibility",
         alter_c02_row,
-        1, ["C02 production crate graph and boundary section matches fixed bytes"],
+        1, [
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
     ))
 
     def weaken_c02_boundary(pack: Path) -> None:
@@ -2060,7 +2247,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "C02 digest rejects a weakened dependency boundary",
         weaken_c02_boundary,
-        1, ["C02 production crate graph and boundary section matches fixed bytes"],
+        1, [
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
     ))
 
     def duplicate_c02_heading(pack: Path) -> None:
@@ -2072,8 +2262,11 @@ def main() -> int:
     receipts.append(run_fixture(
         "C02 digest rejects a duplicate section anchor",
         duplicate_c02_heading,
-        1, ["C01 source pin table matches all four fixed references",
-            "C02 production crate graph and boundary section matches fixed bytes"],
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
     ))
 
     def remove_c02_heading(pack: Path) -> None:
@@ -2083,8 +2276,11 @@ def main() -> int:
     receipts.append(run_fixture(
         "C02 digest rejects a missing section anchor",
         remove_c02_heading,
-        1, ["C01 source pin table matches all four fixed references",
-            "C02 production crate graph and boundary section matches fixed bytes"],
+        1, [
+            "C01 source pin table matches all four fixed references",
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
     ))
 
     def remove_c03_boundary(pack: Path) -> None:
@@ -2094,7 +2290,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "C02 digest rejects a missing end boundary",
         remove_c03_boundary,
-        1, ["C02 production crate graph and boundary section matches fixed bytes"],
+        1, [
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
     ))
 
     def duplicate_c03_boundary(pack: Path) -> None:
@@ -2107,7 +2306,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "C02 digest rejects a duplicate end boundary",
         duplicate_c03_boundary,
-        1, ["C02 production crate graph and boundary section matches fixed bytes"],
+        1, [
+            "C02 production crate graph and boundary section matches fixed bytes",
+            "CONTRACTS.md matches its fixed checksum",
+        ],
     ))
 
     def edit_task_packet(pack: Path, update: Callable[[str], str]) -> None:
@@ -2213,7 +2415,10 @@ def main() -> int:
         if sync_packet:
             sync_task_packet(pack, task_id)
 
-    path_contract_check = "Task file and test write scopes match canonical paths"
+    path_contract_check = [
+        "Task file and test write scopes match canonical paths",
+        "Task authored fields match fixed projection",
+    ]
     for scenario, task_file in (
         ("relocated", "tasks/archive/P00.md"),
         ("traversing", "tasks/../PLAN.md"),
@@ -2223,7 +2428,7 @@ def main() -> int:
         receipts.append(run_fixture(
             f"task file path rejects {scenario} locations",
             lambda pack, value=task_file: set_task_field(pack, "P00", "task_file", value),
-            1, [path_contract_check],
+            1, path_contract_check,
         ))
 
     for scenario, test_scope in (
@@ -2237,7 +2442,7 @@ def main() -> int:
             lambda pack, value=test_scope: set_task_field(
                 pack, "P00", "test_write_scope", value, sync_packet=True,
             ),
-            1, [path_contract_check],
+            1, path_contract_check,
         ))
 
     def empty_root_dependencies(pack: Path) -> None:
@@ -2254,6 +2459,7 @@ def main() -> int:
         "Task graph fields match PLAN task index table",
         "Task graph fields match PLAN task cards",
         "Task graph fields and canonical preamble match individual task packets",
+        "Task authored fields match fixed projection",
     ]
     for scenario, dependencies in (
         ("duplicate IDs", ["P00", "P00"]),
@@ -2308,12 +2514,18 @@ def main() -> int:
     receipts.append(run_fixture(
         "valid evidence-level downgrade does not reclassify A11",
         lambda pack: change_case_level(pack, "A11", "BUILD"),
-        1, [level_contract_check],
+        1, [
+            "Acceptance case IDs map to fixed evidence levels",
+            "Case authored fields match fixed projection",
+        ],
     ))
     receipts.append(run_fixture(
         "valid evidence-level downgrade does not reclassify A50",
         lambda pack: change_case_level(pack, "A50", "UNIT"),
-        1, [level_contract_check],
+        1, [
+            "Acceptance case IDs map to fixed evidence levels",
+            "Case authored fields match fixed projection",
+        ],
     ))
 
     goal_contract_check = "GOAL.md matches its fixed checksum"
@@ -2323,7 +2535,7 @@ def main() -> int:
     receipts.append(run_fixture(
         "GOAL.md rejects truncation",
         truncate_goal,
-        1, [goal_contract_check],
+        1, ['GOAL.md matches its fixed checksum'],
     ))
 
     def delete_goal(pack: Path) -> None:
@@ -2342,7 +2554,7 @@ def main() -> int:
     receipts.append(run_fixture(
         "GOAL.md rejects a conflicting execution-control clause",
         add_conflicting_goal_clause,
-        1, [goal_contract_check],
+        1, ['GOAL.md matches its fixed checksum'],
     ))
 
     concurrency_contract_check = "Authoritative concurrency declaration matches graph and subagent limit"
@@ -2360,7 +2572,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "authoritative concurrency declaration rejects a changed limit",
         change_concurrency_number,
-        1, [concurrency_contract_check],
+        1, [
+            "Authoritative concurrency declaration matches graph and subagent limit",
+            "SUBAGENTS.md matches its fixed checksum",
+        ],
     ))
 
     def remove_concurrency_declaration(pack: Path) -> None:
@@ -2373,7 +2588,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "authoritative concurrency declaration cannot be missing",
         remove_concurrency_declaration,
-        1, [concurrency_contract_check],
+        1, [
+            "Authoritative concurrency declaration matches graph and subagent limit",
+            "SUBAGENTS.md matches its fixed checksum",
+        ],
     ))
 
     def duplicate_concurrency_declaration(pack: Path) -> None:
@@ -2386,7 +2604,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "authoritative concurrency declaration cannot be duplicated",
         duplicate_concurrency_declaration,
-        1, [concurrency_contract_check],
+        1, [
+            "Authoritative concurrency declaration matches graph and subagent limit",
+            "SUBAGENTS.md matches its fixed checksum",
+        ],
     ))
 
     def add_duplicate_json_member(pack: Path, relative_path: str, member: str) -> None:
@@ -2448,7 +2669,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "P05 cannot defer its A13 run to the final graph",
         weaken_p05_a13_current_run,
-        1, [a13_owner_check],
+        1, [
+            "A13 preserves separate current-graph and final-post-deletion runs",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def remove_t39_a13_final_rerun(pack: Path) -> None:
@@ -2461,7 +2685,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "T39 cannot omit its final post-deletion A13 rerun",
         remove_t39_a13_final_rerun,
-        1, [a13_owner_check],
+        1, [
+            "A13 preserves separate current-graph and final-post-deletion runs",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def remove_p05_a13_cargo_metadata(pack: Path) -> None:
@@ -2477,7 +2704,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "A13 cannot omit P05 current-graph Cargo metadata",
         remove_p05_a13_cargo_metadata,
-        1, [a13_owner_check],
+        1, [
+            "A13 preserves separate current-graph and final-post-deletion runs",
+            "Case authored fields match fixed projection",
+        ],
     ))
 
     def remove_t39_a13_cargo_metadata(pack: Path) -> None:
@@ -2493,7 +2723,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "A13 cannot omit T39 final-graph Cargo metadata",
         remove_t39_a13_cargo_metadata,
-        1, [a13_owner_check],
+        1, [
+            "A13 preserves separate current-graph and final-post-deletion runs",
+            "Case authored fields match fixed projection",
+        ],
     ))
 
     def remove_case_owner(pack: Path, case_id: str, task_id: str) -> None:
@@ -2509,8 +2742,12 @@ def main() -> int:
     receipts.append(run_fixture(
         "A15 cannot omit the integrated T23 owner",
         lambda pack: remove_case_owner(pack, "A15", "T23"),
-        1, [a15_owner_check, "Assignment results have exact unique case owners and valid statuses",
-            "Case and task ownership maps agree"],
+        1, [
+            "A15 separates observation, adapter, and integrated activation owners",
+            "Assignment results have exact unique case owners and valid statuses",
+            "Case and task ownership maps agree",
+            "Case authored fields match fixed projection",
+        ],
     ))
 
     def weaken_t23_a15_activation(pack: Path) -> None:
@@ -2526,7 +2763,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "T23 must qualify the full A15 StartSession barrier",
         weaken_t23_a15_activation,
-        1, [a15_owner_check],
+        1, [
+            "A15 separates observation, adapter, and integrated activation owners",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def weaken_layer_contract(pack: Path, task_id: str, case_id: str) -> None:
@@ -2542,12 +2782,20 @@ def main() -> int:
     receipts.append(run_fixture(
         "U00 cannot collapse A15 and A16 into integrated behavior",
         lambda pack: weaken_layer_contract(pack, "U00", "A15"),
-        1, [a15_owner_check, a16_owner_check],
+        1, [
+            "A15 separates observation, adapter, and integrated activation owners",
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Task authored fields match fixed projection",
+        ],
     ))
     receipts.append(run_fixture(
         "T13 cannot collapse A15 and A16 into product behavior",
         lambda pack: weaken_layer_contract(pack, "T13", "A15"),
-        1, [a15_owner_check, a16_owner_check],
+        1, [
+            "A15 separates observation, adapter, and integrated activation owners",
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def weaken_a16_layer_source(pack: Path, task_id: str, original: str) -> None:
@@ -2569,7 +2817,10 @@ def main() -> int:
             pack, "U00",
             "A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection.",
         ),
-        1, [a16_owner_check],
+        1, [
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Task authored fields match fixed projection",
+        ],
     ))
     receipts.append(run_fixture(
         "T13 must bind A16's replacement source to its accepted revision",
@@ -2577,14 +2828,21 @@ def main() -> int:
             pack, "T13",
             "A16 at T13 binds the effective replacement source to the observed accepted revision without claiming an intersection.",
         ),
-        1, [a16_owner_check],
+        1, [
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     receipts.append(run_fixture(
         "A16 cannot omit the T29 product-presentation owner",
         lambda pack: remove_case_owner(pack, "A16", "T29"),
-        1, [a16_owner_check, "Assignment results have exact unique case owners and valid statuses",
-            "Case and task ownership maps agree"],
+        1, [
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Assignment results have exact unique case owners and valid statuses",
+            "Case and task ownership maps agree",
+            "Case authored fields match fixed projection",
+        ],
     ))
 
     def weaken_t29_a16_presentation(pack: Path) -> None:
@@ -2600,7 +2858,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "T29 must display A16's accepted replacement source and revision",
         weaken_t29_a16_presentation,
-        1, [a16_owner_check],
+        1, [
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def remove_a17_t23_owner(pack: Path) -> None:
@@ -2614,7 +2875,11 @@ def main() -> int:
     receipts.append(run_fixture(
         "A17 cannot omit integrated T23 ownership",
         remove_a17_t23_owner,
-        1, [a17_owner_check],
+        1, [
+            "A17 preserves observation layers and integrated activation ownership",
+            "Task authored fields match fixed projection",
+            "Case authored fields match fixed projection",
+        ],
     ))
 
     def weaken_t23_a17_integrated_activation(pack: Path) -> None:
@@ -2632,7 +2897,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "T23 retains integrated StartSession and re-admission for A17",
         weaken_t23_a17_integrated_activation,
-        1, [a17_owner_check],
+        1, [
+            "A17 preserves observation layers and integrated activation ownership",
+            "Task authored fields match fixed projection",
+        ],
     ))
 
     def remove_a16_policy_load(pack: Path) -> None:
@@ -2648,7 +2916,154 @@ def main() -> int:
     receipts.append(run_fixture(
         "A16 loads the global policy before querying and displaying it",
         remove_a16_policy_load,
-        1, [a16_owner_check],
+        1, [
+            "A16 preserves accepted-revision observation and product-presentation owners",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_a22_assertion(pack: Path) -> None:
+        cases_path = pack / "acceptance-cases.json"
+        data = read_json(cases_path)
+        case = next(row for row in data["cases"] if row["id"] == "A22")
+        case["expected"] = "The task reports its result without a separate result for each owner."
+        write_json(cases_path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "Synchronized A22 prose cannot weaken owner-specific assertions",
+        weaken_a22_assertion,
+        1, ["Case authored fields match fixed projection"],
+    ))
+
+    def weaken_contract_c06(pack: Path) -> None:
+        path = pack / "CONTRACTS.md"
+        document = path.read_text(encoding="utf-8")
+        old = "Missing one account value or mixing\nthe variants blocks activation."
+        if document.count(old) != 1:
+            raise ValueError("Expected one C06 credential-authority requirement")
+        path.write_text(document.replace(old, "Missing one account value can use local configuration.", 1),
+                        encoding="utf-8")
+    receipts.append(run_fixture(
+        "C06 credential-authority fail-open cannot alter the complete contracts",
+        weaken_contract_c06,
+        1, ["CONTRACTS.md matches its fixed checksum"],
+    ))
+
+    def change_t23_dependency(pack: Path, dependency: str, operation: str) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T23")
+        if operation == "remove":
+            task["depends_on"].remove(dependency)
+        elif operation == "add":
+            task["depends_on"].append(dependency)
+        else:
+            raise ValueError(f"Unexpected dependency operation: {operation}")
+        write_json(graph_path, graph)
+        recompute_ready_groups(pack)
+        sync_task_packet(pack, "T23")
+        sync_task_indexes(pack)
+    receipts.append(run_fixture(
+        "T23 cannot omit its T16 dependency after all graph mirrors are recomputed",
+        lambda pack: change_t23_dependency(pack, "T16", "remove"),
+        1, ["Task authored fields match fixed projection"],
+    ))
+    receipts.append(run_fixture(
+        "T23 cannot add an extra dependency after all graph mirrors are recomputed",
+        lambda pack: change_t23_dependency(pack, "P05", "add"),
+        1, ["Task authored fields match fixed projection"],
+    ))
+
+    def add_worker_root_cargo_claim(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T32")
+        task["write_scope"].append("Root Cargo.toml and Cargo.lock")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T32")
+    receipts.append(run_fixture(
+        "Worker task cannot claim shared root Cargo files",
+        add_worker_root_cargo_claim,
+        1, ["Task authored fields match fixed projection"],
+    ))
+
+    def append_contradictory_task_scope(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T14")
+        task["write_scope"].append("All repository files, including files leased to other tasks")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T14")
+    receipts.append(run_fixture(
+        "Extra contradictory task scope cannot override the authored lease",
+        append_contradictory_task_scope,
+        1, ["Task authored fields match fixed projection"],
+    ))
+
+    def rebase_t23_citation_and_trace(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T23")
+        task["source_basis"] = "SPEC L1"
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T23")
+
+        trace_path = pack / "traceability.json"
+        trace = read_json(trace_path)
+        for section in trace["sections"]:
+            section["tasks"] = [task_id for task_id in section["tasks"] if task_id != "T23"]
+        trace["sections"][0]["tasks"].append("T23")
+        write_json(trace_path, trace)
+        sync_trace_table(pack)
+    receipts.append(run_fixture(
+        "T23 cannot rebase its citation to SPEC L1 with synchronized traceability",
+        rebase_t23_citation_and_trace,
+        1, ["Task authored fields match fixed projection",
+            "Traceability authored sections match fixed projection"],
+    ))
+
+    def weaken_subagent_shared_file_authority(pack: Path) -> None:
+        path = pack / "SUBAGENTS.md"
+        document = path.read_text(encoding="utf-8")
+        old = "The integration subagent alone changes these shared files:"
+        if document.count(old) != 1:
+            raise ValueError("Expected one shared-file authority statement")
+        path.write_text(document.replace(old, "Task subagents may change these shared files:", 1),
+                        encoding="utf-8")
+    receipts.append(run_fixture(
+        "SUBAGENTS shared-file authority cannot be weakened",
+        weaken_subagent_shared_file_authority,
+        1, ["SUBAGENTS.md matches its fixed checksum"],
+    ))
+
+    def append_conflicting_pack_report_prose(pack: Path) -> None:
+        path = pack / "PACK-CHECKS.md"
+        with path.open("a", encoding="utf-8") as document:
+            document.write("\nTask owners may approve their own release.\n")
+    receipts.append(run_fixture(
+        "PACK-CHECKS rejects conflicting prose outside its result slots",
+        append_conflicting_pack_report_prose,
+        1, ["PACK-CHECKS matches canonical template with mutable count and result slots"],
+    ))
+
+    def change_pack_check_count_and_result_slots(pack: Path) -> None:
+        path = pack / "PACK-CHECKS.md"
+        document = path.read_text(encoding="utf-8")
+        replacements = (
+            ("| Checked procedural sentences | 1632 |", "| Checked procedural sentences | 0 |"),
+            ("Result: Static pack validation and per-task assignment fixtures pass.",
+             "Result: Static pack validation and per-task assignment fixtures fail."),
+            ("| GOAL matches its fixed checksum | PASS |", "| GOAL matches its fixed checksum | FAIL |"),
+        )
+        for old, new in replacements:
+            if document.count(old) != 1:
+                raise ValueError(f"Expected one mutable report slot: {old}")
+            document = document.replace(old, new, 1)
+        path.write_text(document, encoding="utf-8")
+    receipts.append(run_fixture(
+        "PACK-CHECKS mutable count and result slots remain editable",
+        change_pack_check_count_and_result_slots,
+        0, [],
     ))
 
     def validator_mutates_inputs_during_execution(pack: Path) -> None:
