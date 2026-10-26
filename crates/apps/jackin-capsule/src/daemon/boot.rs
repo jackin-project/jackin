@@ -84,6 +84,16 @@ pub async fn run_daemon(
     .await
 }
 
+#[cfg(test)]
+pub(crate) async fn run_daemon_for_test(
+    initial_agent: String,
+    launch_config: CapsuleConfig,
+    telemetry: &mut crate::telemetry::FlushGuard,
+    socket_path: &Path,
+) -> Result<()> {
+    run_daemon_loop(initial_agent, launch_config, telemetry, socket_path).await
+}
+
 pub(crate) fn spawn_boot_tabs(
     mux: &mut Multiplexer,
     pending: &mut Vec<SpawnRequest>,

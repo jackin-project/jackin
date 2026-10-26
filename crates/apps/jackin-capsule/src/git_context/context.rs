@@ -22,6 +22,14 @@ pub(crate) fn git_current_context(workdir: &Path) -> GitContext {
     git_context_from_subprocess(workdir)
 }
 
+#[cfg(test)]
+pub(crate) fn read_branch_from_git_head(workdir: &Path) -> Option<BranchName> {
+    match read_context_from_git_metadata(workdir)? {
+        GitContext::Branch { name, .. } => Some(name),
+        _ => None,
+    }
+}
+
 pub(crate) fn git_context_from_subprocess(workdir: &Path) -> GitContext {
     let branch = git_capture_at_workdir(workdir, &["branch", "--show-current"])
         .as_deref()

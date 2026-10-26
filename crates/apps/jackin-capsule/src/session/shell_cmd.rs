@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::EXPLICIT_CAPABILITY_ENV_NAMES;
+#[cfg(not(test))]
 use jackin_core::container_paths;
 use std::path::Path;
 
@@ -50,6 +51,12 @@ pub(crate) fn isolated_command(
     instance: Option<&str>,
     program: impl AsRef<std::ffi::OsStr>,
 ) -> CommandBuilder {
+    #[cfg(test)]
+    {
+        let _ = (identity, instance);
+        CommandBuilder::new(program)
+    }
+    #[cfg(not(test))]
     {
         let mut cmd = CommandBuilder::new(container_paths::CAPSULE_BIN);
         cmd.args(isolated_wrapper_args(identity, instance, program));
@@ -71,8 +78,14 @@ pub(crate) fn isolated_wrapper_args(
     ]
 }
 
+#[cfg(not(test))]
 pub(crate) fn shell_executable() -> std::ffi::OsString {
     "/bin/zsh".into()
+}
+
+#[cfg(test)]
+pub(crate) fn shell_executable() -> std::ffi::OsString {
+    "/bin/sh".into()
 }
 
 pub(crate) fn apply_terminal_env(cmd: &mut CommandBuilder) {

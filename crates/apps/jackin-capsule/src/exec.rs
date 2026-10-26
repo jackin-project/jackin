@@ -12,6 +12,8 @@ mod command;
 mod picker;
 
 pub(crate) use command::read_framed;
+#[cfg(test)]
+pub(crate) use command::{cap_output, redact_pem};
 pub use command::{execute_command, resolve_credentials};
 pub use picker::{ExecPickerItem, ExecPickerState};
 
@@ -180,3 +182,6 @@ pub async fn run(args: &[String]) -> Result<()> {
     }
     std::process::exit(capture.exit_code);
 }
+
+#[cfg(test)]
+mod tests;

@@ -215,6 +215,19 @@ impl Multiplexer {
         resized || changed
     }
 
+    #[cfg(test)]
+    pub(super) fn apply_git_branch_context(
+        &mut self,
+        branch_name: Option<&str>,
+        now: Instant,
+    ) -> bool {
+        let context = match branch_name.and_then(BranchName::parse) {
+            Some(name) => GitContext::Branch { name, head: None },
+            None => GitContext::Absent,
+        };
+        self.apply_git_context(context, now)
+    }
+
     pub(super) fn apply_pull_request_context_loaded(
         &mut self,
         request_id: u64,

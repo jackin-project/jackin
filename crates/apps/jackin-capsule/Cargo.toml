@@ -56,6 +56,7 @@ chrono = { workspace = true, features = ["clock"] }
 sha2 = { workspace = true }
 ratatui = { workspace = true }
 termrock = { workspace = true }
+hex = { workspace = true }
 tempfile = { workspace = true }
 uuid = { workspace = true }
 
@@ -81,6 +82,7 @@ jackin-otlp-testbed = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
 tracing = { workspace = true }
+opentelemetry-proto = { workspace = true }
 
 [lints]
 workspace = true

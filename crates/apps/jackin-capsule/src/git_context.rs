@@ -10,12 +10,22 @@ mod workdir;
 pub(crate) use context::git_current_context;
 #[cfg(target_os = "linux")]
 pub(crate) use context::git_metadata_dirs;
+#[cfg(test)]
+pub(crate) use context::read_branch_from_git_head;
+#[cfg(test)]
+pub(crate) use context::read_context_from_git_metadata;
 pub(crate) use packed_refs::read_packed_git_ref_oid;
+#[cfg(test)]
+pub(crate) use packed_refs::{
+    PACKED_REFS_CACHE_MAX_ENTRIES, PACKED_REFS_MAX_BYTES, with_packed_refs_cache,
+};
 pub(crate) use refs::read_git_ref_oid;
 #[cfg(not(target_os = "linux"))]
 pub(crate) use watch::start_git_context_watcher;
 #[cfg(target_os = "linux")]
 pub(crate) use watch::start_git_context_watcher;
+#[cfg(test)]
+pub(crate) use workdir::GIT_CONTEXT_COMMAND_TIMEOUT;
 pub(crate) use workdir::{
     GH_PULL_REQUEST_COMMAND_TIMEOUT, WorkdirContext, git_capture_at_workdir, resolve_default_branch,
 };

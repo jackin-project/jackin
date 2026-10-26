@@ -1,6 +1,42 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::*;
+
+use crate::attach_protocol::initial_spawn_request;
+
+use std::collections::BTreeMap;
+
+use crate::tui::socket_backend::SgrMetadata;
+
+use std::io;
+
+use std::sync::{Arc, Mutex};
+
+use termpane::DamageGrid;
+
+use crate::pr_context::{command_output_or_lookup_error, command_stdout_trimmed};
+
+use crate::protocol::attach::read_server_frame;
+
+use crate::tui::components::dialog::PullRequestStatus;
+
+use portable_pty::{ChildKiller, MasterPty, PtySize};
+
+use tokio::io::AsyncReadExt;
+
+use crate::tui::model::{CursorVisibilityState, cursor_visible_for_state};
+
+use termpane::Cell;
+
+mod support_01;
+pub(crate) use support_01::*;
+mod support_02;
+mod support_02_fixtures;
+mod support_02_virtual_client;
+use support_02::*;
+mod support_03;
+use support_03::*;
 mod case_01;
 mod case_02;
 mod case_03;
@@ -14,52 +50,16 @@ mod case_10;
 mod case_11;
 mod case_12;
 mod case_13;
-
-use std::path::Path;
-
-use super::Multiplexer;
-
-pub(super) fn test_config(workdir: &Path) -> jackin_protocol::CapsuleConfig {
-    jackin_protocol::CapsuleConfig {
-        role: "test".to_owned(),
-        workdir: workdir.display().to_string(),
-        ..jackin_protocol::CapsuleConfig::default()
-    }
-}
-
-pub(super) fn test_mux(workdir: &Path) -> Multiplexer {
-    Multiplexer::new(24, 80, test_config(workdir)).unwrap()
-}
-
-pub(super) fn spawn_sleep_session(mux: &mut Multiplexer) -> u64 {
-    let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut cmd = portable_pty::CommandBuilder::new("/bin/sleep");
-    cmd.arg("300");
-    let terminal = mux.session_terminal(20, 60);
-    let identity = jackin_protocol::SessionIdentity {
-        uid: 65_534,
-        gid: 65_534,
-    };
-    let (session, id) = crate::session::Session::spawn(
-        crate::session::SessionSpawnSpec {
-            label: "sleep".to_owned(),
-            agent: None,
-            account_id: None,
-            identity,
-            provider: None,
-            cache_dir: None,
-        },
-        cmd,
-        terminal,
-        event_tx,
-    )
-    .unwrap();
-    mux.session_supervisor.sessions.insert(id, session);
-    id
-}
-
-pub(super) fn terminate_session(mux: &mut Multiplexer, id: u64) {
-    if let Some(session) = mux.session_supervisor.sessions.remove(id) {
-        session.terminate();
-    }
-}
+mod case_14;
+mod case_15;
+mod case_16;
+mod case_17;
+mod case_18;
+mod case_19;
+mod case_20;
+mod case_21;
+mod case_22;
+mod case_23;
+mod case_24;
+mod case_25;
+mod case_26;

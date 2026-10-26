@@ -13,6 +13,8 @@ mod telemetry;
 mod types;
 mod viewport;
 
+#[cfg(test)]
+pub(crate) use agent_cmd::agent_model_args;
 pub(crate) use agent_cmd::inject_status_env;
 pub use agent_cmd::{AgentSpawnSpec, build_agent_command};
 pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
@@ -25,6 +27,8 @@ pub use types::{
     SessionProvider, SessionSpawnSpec, SessionTerminal, StatusTick, StatusTransition, next_id,
 };
 
+#[cfg(test)]
+pub(crate) use shell_cmd::isolated_wrapper_args;
 pub(crate) use shell_cmd::{
     apply_account_env, apply_terminal_env, is_explicit_capability_env, isolated_command,
     remove_ambient_capability_env,
@@ -98,3 +102,66 @@ fn lock_or_record_poison<T>(mutex: &Mutex<T>) -> Option<MutexGuard<'_, T>> {
         None
     }
 }
+
+#[cfg(test)]
+impl Session {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
+    pub(crate) fn new_for_test(
+        label: String,
+        agent: Option<String>,
+        provider: Option<SessionProvider>,
+        size: (u16, u16),
+        scrollback_len: usize,
+        input_tx: mpsc::UnboundedSender<Vec<u8>>,
+        pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
+        child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
+    ) -> Self {
+        Self {
+            label,
+            agent,
+            account_id: None,
+            usage_capability: None,
+            identity: jackin_protocol::SessionIdentity {
+                uid: 65_534,
+                gid: 65_534,
+            },
+            control_capability: uuid::Uuid::new_v4().to_string(),
+            conversation_id: None,
+            provider,
+            state: AgentState::Unknown,
+            status: SessionStatus::new(),
+            pending_transition: crate::agent_status::policy::PendingTransition::default(),
+            status_transition_times: std::collections::VecDeque::new(),
+            status_flapping: false,
+            gate_states: std::collections::HashMap::new(),
+            authority: None,
+            subagents_active: 0,
+            child_pid: None,
+            cpu_sample: None,
+            saw_agent_foreground: false,
+            osc: crate::agent_status::evidence::OscEvidence::default(),
+            osc_status_decoder: crate::agent_status::OscStatusDecoder::default(),
+            input_tx,
+            input_ownership: InputOwnership::Automatic,
+            pty_master,
+            child_killer,
+            termination_requested: Arc::new(AtomicBool::new(false)),
+            last_output_at: std::time::Instant::now(),
+            last_input_at: std::time::Instant::now(),
+            received_output: true,
+            shadow_grid: Box::new(termpane::DamageGrid::new(size.0, size.1, scrollback_len)),
+            osc_policy: OscPolicy::default(),
+            title: None,
+            icon_name: None,
+            cwd: None,
+            pending_passthrough: Vec::new(),
+            modify_other_keys: None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

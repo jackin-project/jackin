@@ -4,9 +4,13 @@
 use jackin_usage_discovery as discovery;
 use std::collections::{BTreeMap, BTreeSet};
 
-use std::sync::{Arc, Mutex};
+use std::os::unix::fs::symlink;
 
-use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use std::sync::{Arc, Barrier, Mutex};
+
+use std::thread;
 
 use jackin_usage_host_credentials::OpaqueCredentialHandle;
 use jackin_usage_host_presentation::HostSurfaceId;
@@ -21,26 +25,50 @@ use jackin_protocol::control::{
 };
 
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCredentialScope, UsageCredentialSourceIdentity,
-    UsageCredentialSourceProof, usage_credential_material_fingerprint,
+    UsageAccountCapability, UsageCatalogEntry, UsageCredentialScope, UsageCredentialSourceIdentity,
+    UsageCredentialSourceProof, UsageFreshnessPhaseV1, UsageIdentityKindV1,
+    UsageProjectionRefreshStateV1, UsageRefreshPhase, usage_credential_material_fingerprint,
 };
 
-use jackin_usage_coordinator::ProviderProbeOutcome;
+use jackin_protocol::usage_broker::{
+    USAGE_BROKER_PROTOCOL_VERSION, UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse,
+    UsageCoordinationError, UsageCoordinationErrorKind,
+};
+use jackin_usage_coordinator::{
+    ClockSample, MonotonicClock, ProviderProbeOutcome, UsageProviderExecutor,
+};
 use jackin_usage_discovery::{
     UsageDiscoveryScope, ValidatedCredentialBinding, ValidatedCredentialSource,
     ValidatedUsageDiscovery,
 };
-use jackin_usage_host_credentials::ProviderCredentialEnvResolution;
 use jackin_usage_host_credentials::{
     ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome,
     ProviderCredentialSourceMaterial,
 };
+use std::fs;
+use std::io::Write as _;
+use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use crate::*;
 
-use crate::probe_with_scope;
+use crate::{
+    probe_with_scope, provider_probe_outcome, provider_probe_outcome_with_rate_limit,
+    write_with_deadline,
+};
+use jackin_usage_host_credentials::{ForwardedUsageAccount, ProviderCredentialEnvResolution};
 
 mod support;
 use support::*;
+mod case_01;
+mod case_02;
 mod case_03;
-mod statusline;
+mod case_04;
+mod case_05;
+mod case_06;
+mod case_07;
+mod case_08;
+mod case_09;
+mod case_10;
+mod case_11;

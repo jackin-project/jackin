@@ -2653,6 +2653,7 @@ dependencies = [
  "chrono",
  "criterion",
  "crossterm",
+ "hex",
  "jackin-agent-status",
  "jackin-brand",
  "jackin-build-meta",
@@ -2668,6 +2669,7 @@ dependencies = [
  "jackin-usage-provider-core",
  "libc",
  "nix 0.31.3",
+ "opentelemetry-proto",
  "portable-pty",
  "ratatui",
  "serde",
@@ -2973,6 +2975,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4115,12 +4118,17 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "jackin-core",
+ "jackin-diagnostics",
  "jackin-docker",
  "jackin-runtime-coordination",
  "jackin-runtime-discovery",
  "jackin-runtime-universe-claims",
  "jackin-telemetry",
+ "jackin-test-support",
  "nix 0.31.3",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4285,6 +4293,7 @@ dependencies = [
  "nix 0.31.3",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 

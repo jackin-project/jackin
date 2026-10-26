@@ -47,7 +47,6 @@ pub enum PushOutcome {
         remote_ref: String,
         commit: String,
     },
-
     Conflict {
         remote_ref: String,
         expected: String,
@@ -134,7 +133,6 @@ pub async fn push_exact_ref(
         &remote_url,
         &refspec,
     ];
-
     let push_error = match runner.run("git", &push_args, None, &opts).await {
         Ok(()) => {
             return Ok(PushOutcome::Pushed {
@@ -189,3 +187,6 @@ pub async fn push_exact_ref(
         )
     })
 }
+
+#[cfg(test)]
+mod tests;

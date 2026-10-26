@@ -7,7 +7,6 @@ use jackin_core::ContainerFullInspection;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkEnforcementLevel {
     IpPort,
-
     Hostname,
 }
 
@@ -30,12 +29,10 @@ pub enum WorkflowGrantError {
     HardDiskQuotaRequested {
         bytes: u64,
     },
-
     UnsupportedNetworkEnforcement {
         requested: String,
         enforceable: NetworkEnforcementLevel,
     },
-
     HostNamespaceRequested {
         field: &'static str,
     },
@@ -77,14 +74,10 @@ pub struct WorkflowGrant {
     pub memory_reservation_max_bytes: Option<u64>,
     pub pids_max: Option<i64>,
     pub nofile_max: Option<u64>,
-
     pub deny_caps: Vec<String>,
-
     pub deadline_secs: Option<u64>,
     pub network_enforcement: Option<NetworkEnforcementLevel>,
-
     pub disk_quota_bytes: Option<u64>,
-
     pub require_ip_port_enforcement: bool,
 }
 
@@ -265,3 +258,6 @@ pub fn compare_grant_vs_actual(
     }
     out
 }
+
+#[cfg(test)]
+mod tests;

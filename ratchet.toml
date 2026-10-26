@@ -32,7 +32,7 @@ cap = 0
 mode = "enforce"
 [[family.entry]]
 key = "clippy::cast_possible_truncation@jackin-capsule"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "clippy::cast_possible_truncation@jackin-usage-provider-openrouter"
 bound = 2
@@ -50,6 +50,9 @@ key = "clippy::cast_precision_loss@jackin-usage-provider-openrouter"
 bound = 2
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-capsule"
+bound = 2
+[[family.entry]]
+key = "clippy::cast_precision_loss@jackin-capsule"
 bound = 1
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-console"
@@ -65,7 +68,10 @@ key = "clippy::disallowed_methods@jackin"
 bound = 10
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-capsule"
-bound = 8
+bound = 9
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-usage-broker"
+bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-config"
 bound = 1
@@ -353,7 +359,13 @@ key = "clippy::suboptimal_flops@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-capsule"
-bound = 4
+bound = 5
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-runtime-universe"
+bound = 5
+[[family.entry]]
+key = "clippy::manual_async_fn@jackin-runtime-universe"
+bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-console"
 bound = 4
@@ -404,7 +416,7 @@ key = "clippy::too_many_arguments@jackin-usage-provider-minimax"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-capsule"
-bound = 7
+bound = 8
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-console"
 bound = 5

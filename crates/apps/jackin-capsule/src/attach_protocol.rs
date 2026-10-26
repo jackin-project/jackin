@@ -14,4 +14,6 @@ pub(crate) use messages::{
     RPC_ERROR,
 };
 pub(crate) use shutdown::{detach_attached_task, drain_and_exit, drain_and_exit_with_reason};
+#[cfg(test)]
+pub(crate) use spawn::initial_spawn_request;
 pub(crate) use spawn::{initial_spawn_requests, spawn_request_label};

@@ -6,6 +6,11 @@ mod sanitize;
 mod stores;
 mod validate;
 
+#[cfg(test)]
+use nix::unistd::geteuid;
+#[cfg(test)]
+use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+
 pub(crate) use envelope::{
     ACCOUNT_STATE_SCHEMA_VERSION, LEGACY_ACCOUNT_STATE_SCHEMA_VERSION,
     LEGACY_PROJECTION_STATE_SCHEMA_VERSION, MAX_ACCOUNT_STATE_BYTES, MAX_CLOCK_SKEW_SECS,
@@ -23,3 +28,6 @@ pub use stores::{
 pub(crate) use validate::{
     state_filename, validate_capability, validate_envelope, validate_owned_mode,
 };
+
+#[cfg(test)]
+mod tests;
