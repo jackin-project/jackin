@@ -450,7 +450,7 @@ fn public_installer_supports_non_utf8_checkout_path() -> Result<()> {
     );
     super::super::git::verify_installed_hooks(&repository, &owner)?;
     files::publish_owner(&git_dir, b"#!/bin/sh\n[ \"$#\" -eq 1 ] || exit 95\n[ \"$1\" = run-snapshot ] || exit 96\nprintf '%s\\n' \"$1\" > hook-argv\nexit 37\n")?;
-    let request = jackin_process::ExecRequest::new("git", ["hook", "run", "pre-commit"])
+    let request = ExecRequest::new("git", ["hook", "run", "pre-commit"])
         .cwd(&repository)
         .env_clear()
         .envs([
@@ -461,7 +461,7 @@ fn public_installer_supports_non_utf8_checkout_path() -> Result<()> {
         ])
         .timeout(Duration::from_secs(10))
         .output_limits(64 * 1024, 64 * 1024);
-    let invoked = jackin_process::exec_sync(&request)?;
+    let invoked = exec_sync(&request)?;
     assert_eq!(invoked.code, Some(37));
     assert_eq!(fs::read(repository.join("hook-argv"))?, b"run-snapshot\n");
     Ok(())

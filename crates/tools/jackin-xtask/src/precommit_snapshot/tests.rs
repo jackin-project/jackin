@@ -205,7 +205,7 @@ fn test_signals() -> SetupSignals {
     SetupSignals {
         terminal: Arc::new(AtomicBool::new(false)),
         route: SignalRoute {
-            recovery_armed: AtomicBool::new(false),
+            recovery_armed: std::cell::Cell::new(false),
             cancellation: Arc::new(AtomicBool::new(false)),
             hup: Arc::new(AtomicBool::new(false)),
             int: Arc::new(AtomicBool::new(false)),
@@ -228,6 +228,22 @@ fn signal_route_classifies_one_event_before_and_after_recovery_arm() {
     signals.route.record(OwnerSignal::Term);
     assert!(recovery.cancellation().load(Ordering::SeqCst));
     assert_eq!(signals.signal_status(), Some(143));
+}
+
+#[test]
+fn repeated_recovery_arm_does_not_clear_a_new_cancellation() {
+    let signals = test_signals();
+    signals
+        .arm_recovery_with_budget(std::time::Duration::from_secs(30))
+        .expect("recovery phase arms once");
+    signals.route.record(OwnerSignal::Term);
+
+    let Err(error) = signals.arm_recovery_with_budget(std::time::Duration::from_secs(30)) else {
+        panic!("recovery phase cannot arm twice");
+    };
+
+    assert!(format!("{error:#}").contains("armed more than once"));
+    assert!(signals.route.cancellation.load(Ordering::SeqCst));
 }
 
 #[test]

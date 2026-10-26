@@ -20,6 +20,18 @@ const CHILD_CARGO_HOME_MARKER: &str = "JACKIN_CUSTOM_LINTS_COLON_PATH_CARGO_HOME
 
 #[test]
 fn custom_lint_cargo_shim_aliases_colon_paths_and_preserves_provider_order() {
+    run_colon_path_fixture(
+        "0077",
+        "custom_lint_cargo_shim_aliases_colon_paths_and_preserves_provider_order",
+    );
+}
+
+#[test]
+fn custom_lint_pipeline_handles_owner_masking_umask() {
+    run_colon_path_fixture("0777", "custom_lint_pipeline_handles_owner_masking_umask");
+}
+
+fn run_colon_path_fixture(mask: &str, test_name: &str) {
     if std::env::var_os(CHILD_MODE).is_some() {
         run_colon_path_child().expect("colon PATH custom-lint pipeline");
         return;
@@ -36,11 +48,32 @@ fn custom_lint_cargo_shim_aliases_colon_paths_and_preserves_provider_order() {
     let mbx_marker = fixture_root.join("MBX provider");
     let nextest_marker = fixture_root.join("nextest provider");
     let cargo_home_marker = fixture_root.join("Cargo home provider");
+    for marker in [
+        &path_marker,
+        &mbx_marker,
+        &nextest_marker,
+        &cargo_home_marker,
+    ] {
+        use std::os::unix::fs::PermissionsExt;
+        fs::write(marker, b"").expect("prepare observable marker");
+        fs::set_permissions(marker, fs::Permissions::from_mode(0o600))
+            .expect("readable observable marker");
+    }
     fs::create_dir_all(root.join("crates/tools/jackin-lints")).expect("lint crate directory");
     fs::create_dir_all(&tempdir).expect("colon TMPDIR directory");
     fs::create_dir_all(cargo_home.join("bin")).expect("colon Cargo home bin");
     fs::create_dir_all(&nextest_parent).expect("colon nextest tool parent");
     command_tools(&tools);
+    let library = root
+        .join("target/custom-lints/library/debug")
+        .join(library_name(&host()));
+    fs::create_dir_all(library.parent().expect("library parent")).expect("artifact directory");
+    fs::write(&library, b"qualified lint library").expect("qualified artifact");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&library, fs::Permissions::from_mode(0o600))
+            .expect("readable qualified artifact");
+    }
     write_executable(
         &nextest_parent.join("cargo-nextest"),
         b"#!/bin/sh\nprintf 'nextest\\n' > \"$JACKIN_CUSTOM_LINTS_COLON_PATH_NEXTEST_MARKER\"\n",
@@ -61,27 +94,44 @@ fn custom_lint_cargo_shim_aliases_colon_paths_and_preserves_provider_order() {
     );
     write_executable(
         &tools.join("cargo-dylint"),
-        b"#!/bin/sh\nset -eu\npath_rest=${PATH#*:}\nnextest_entry=${path_rest%%:*}\npath_rest=${path_rest#*:}\ncargo_home_entry=${path_rest%%:*}\nprintf '%s\\n' \"$PATH\" > \"$JACKIN_CUSTOM_LINTS_COLON_PATH_PATH_MARKER\"\n/usr/bin/readlink \"$nextest_entry\" >> \"$JACKIN_CUSTOM_LINTS_COLON_PATH_PATH_MARKER\"\n/usr/bin/readlink \"$cargo_home_entry\" >> \"$JACKIN_CUSTOM_LINTS_COLON_PATH_PATH_MARKER\"\ncargo --shim-probe\ncargo-nextest --shim-probe\ncargo-home-probe\n",
+        b"#!/bin/sh\nset -eu\npath_rest=${PATH#*:}\nnextest_entry=${path_rest%%:*}\npath_rest=${path_rest#*:}\ncargo_home_entry=${path_rest%%:*}\nprintf '%s\\n' \"$PATH\" > \"$JACKIN_CUSTOM_LINTS_COLON_PATH_PATH_MARKER\"\n/usr/bin/readlink \"$nextest_entry\" >> \"$JACKIN_CUSTOM_LINTS_COLON_PATH_PATH_MARKER\"\n/usr/bin/readlink \"$cargo_home_entry\" >> \"$JACKIN_CUSTOM_LINTS_COLON_PATH_PATH_MARKER\"\ncargo --shim-probe\ncargo-nextest --shim-probe\ncargo-home-probe\nfor library in \"$DYLINT_LIBRARY_PATH\"/*; do\n  test \"$(/bin/cat \"$library\")\" = 'qualified lint library'\ndone\n",
     );
 
-    let status = Command::new(std::env::current_exe().expect("current test executable"))
-        .args([
-            "custom_lint_cargo_shim_aliases_colon_paths_and_preserves_provider_order",
-            "--nocapture",
-        ])
-        .env(CHILD_MODE, "1")
-        .env(CHILD_ROOT, &root)
-        .env(CHILD_TOOLS, &tools)
-        .env(CHILD_TMPDIR, &tempdir)
-        .env("TMPDIR", &tempdir)
-        .env(CHILD_CARGO_HOME, &cargo_home)
-        .env(CHILD_PATH_MARKER, &path_marker)
-        .env(CHILD_MBX_MARKER, &mbx_marker)
-        .env(CHILD_NEXTEST_MARKER, &nextest_marker)
-        .env(CHILD_CARGO_HOME_MARKER, &cargo_home_marker)
-        .status()
-        .expect("spawn isolated colon PATH test process");
-    assert!(status.success(), "colon PATH child failed: {status}");
+    let executable = std::env::current_exe().expect("current test executable");
+    let request = jackin_process::ExecRequest::new(
+        "/bin/sh",
+        [
+            OsStr::new("-c"),
+            OsStr::new("umask \"$1\"; shift; exec \"$@\""),
+            OsStr::new("custom-lint-umask"),
+            OsStr::new(mask),
+            executable.as_os_str(),
+            OsStr::new(test_name),
+            OsStr::new("--nocapture"),
+        ],
+    )
+    .envs([
+        (CHILD_MODE, OsStr::new("1")),
+        (CHILD_ROOT, root.as_os_str()),
+        (CHILD_TOOLS, tools.as_os_str()),
+        (CHILD_TMPDIR, tempdir.as_os_str()),
+        ("TMPDIR", tempdir.as_os_str()),
+        (CHILD_CARGO_HOME, cargo_home.as_os_str()),
+        (CHILD_PATH_MARKER, path_marker.as_os_str()),
+        (CHILD_MBX_MARKER, mbx_marker.as_os_str()),
+        (CHILD_NEXTEST_MARKER, nextest_marker.as_os_str()),
+        (CHILD_CARGO_HOME_MARKER, cargo_home_marker.as_os_str()),
+    ])
+    .timeout(std::time::Duration::from_secs(30))
+    .output_limits(64 * 1024, 64 * 1024);
+    let output =
+        jackin_process::exec_sync(&request).expect("spawn isolated colon PATH test process");
+    assert!(
+        output.success && !output.timed_out,
+        "colon PATH child failed: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let path_record = fs::read_to_string(&path_marker).expect("captured shim PATH");
     let mut path_lines = path_record.lines();
@@ -168,8 +218,10 @@ fn run_colon_path_child() -> Result<()> {
                     .context("library build target")?,
             );
             let library = target.join("debug").join(library_name(&host));
-            fs::create_dir_all(library.parent().context("library parent")?)?;
-            fs::write(library, b"qualified lint library")?;
+            ensure!(
+                fs::read(library)? == b"qualified lint library",
+                "qualified build artifact must be readable"
+            );
             return Ok(Vec::new());
         }
         if argv.first() == Some(&pinned_dylint) {
@@ -197,9 +249,20 @@ fn run_colon_path_child() -> Result<()> {
             .next()
             .context("private Cargo shim PATH entry")?;
             ensure!(
-                library_dir.starts_with(shim_dir),
+                library_dir.starts_with(&shim_dir),
                 "Dylint library directory must use the validated private parent"
             );
+            {
+                use std::os::unix::fs::PermissionsExt;
+                ensure!(
+                    fs::metadata(&shim_dir)?.permissions().mode() & 0o777 == 0o700,
+                    "Cargo shim directory must have mode 0700"
+                );
+                ensure!(
+                    fs::metadata(library_dir)?.permissions().mode() & 0o777 == 0o700,
+                    "Dylint library directory must have mode 0700"
+                );
+            }
             let libraries = crate::fs_util::read_dir_sorted(library_dir)
                 .context("reading isolated Dylint library directory")?;
             ensure!(

@@ -9,6 +9,8 @@ use jackin_process::{ExecRequest, ExecResult, StdioMode};
 use jackin_process_directory::validate_temporary_parent;
 
 mod paths;
+#[cfg(unix)]
+mod private_paths;
 
 const NIGHTLY: &str = "nightly-2026-10-18";
 const COMPILER_COMMIT: &str = "8006091eb71ae7d9e9bccb66c6122c9d68af4466";
@@ -91,6 +93,8 @@ where
         .prefix("jackin-custom-lints-")
         .tempdir_in(cargo_shim.path())
         .context("creating isolated Dylint library directory")?;
+    #[cfg(unix)]
+    let _library_directory = private_paths::normalize_directory(directory.path())?;
     let directory_path = directory
         .path()
         .canonicalize()
@@ -162,12 +166,13 @@ fn create_cargo_shim(
             .prefix("jackin-custom-lints-mbx-")
             .tempdir_in(&temp_parent)
             .context("creating private MBX Cargo shim directory")?;
+        let shim_directory = private_paths::normalize_directory(directory.path())?;
         let directory_path = directory
             .path()
             .canonicalize()
             .context("resolving private MBX Cargo shim directory")?;
         let alias = directory_path.join("cargo");
-        std::os::unix::fs::symlink(&tools["mbx"], &alias)
+        private_paths::create_symlink(&shim_directory, &tools["mbx"], OsStr::new("cargo"))
             .context("creating private native Cargo-to-MBX shim")?;
         let old_path = env.get(OsStr::new("PATH")).cloned().unwrap_or_default();
         let nextest_parent = tools["cargo-nextest"]
@@ -179,8 +184,18 @@ fn create_cargo_shim(
                 .context("resolved Cargo home is missing")?,
         );
         let cargo_bin = cargo_home.join("bin");
-        let nextest_parent = path_entry_alias(&directory_path, &nextest_parent, "cargo-nextest")?;
-        let cargo_bin = path_entry_alias(&directory_path, &cargo_bin, "cargo-home-bin")?;
+        let nextest_parent = path_entry_alias(
+            &shim_directory,
+            &directory_path,
+            &nextest_parent,
+            "cargo-nextest",
+        )?;
+        let cargo_bin = path_entry_alias(
+            &shim_directory,
+            &directory_path,
+            &cargo_bin,
+            "cargo-home-bin",
+        )?;
         let mut path = vec![directory_path, nextest_parent, cargo_bin];
         path.extend(std::env::split_paths(&old_path));
         env.insert(
@@ -298,10 +313,15 @@ where
 }
 
 #[cfg(unix)]
-fn path_entry_alias(alias_directory: &Path, target: &Path, name: &str) -> Result<PathBuf> {
+fn path_entry_alias(
+    parent: &fs::File,
+    alias_directory: &Path,
+    target: &Path,
+    name: &str,
+) -> Result<PathBuf> {
     if target.as_os_str().as_encoded_bytes().contains(&b':') {
         let alias = alias_directory.join(name);
-        std::os::unix::fs::symlink(target, &alias)
+        private_paths::create_symlink(parent, target, OsStr::new(name))
             .with_context(|| format!("aliasing PATH entry for {name}"))?;
         Ok(alias)
     } else {
