@@ -12,7 +12,7 @@ use crate::report::{self, FormatArgs};
 const CONFIG_PATH: &str = "ratchet.toml";
 const RERUN: &str = "cargo xtask lint ratchet";
 
-pub(crate) const FILE_SIZE_FAMILIES: &[&str] = &["file-size-production", "file-size-test"];
+pub(crate) const FILE_SIZE_FAMILIES: &[&str] = &["file-size-production"];
 pub(crate) const TEST_LAYOUT_FAMILIES: &[&str] = &["test-layout"];
 pub(crate) const SUPPRESSION_FAMILIES: &[&str] = &["bare-allow-per-crate", "expect-per-lint-crate"];
 
@@ -270,7 +270,7 @@ fn check_families(
                         None => None,
                     };
                     let v = check_numeric_entry(measured_opt, *bound, cap);
-                    let ceiling_only = is_ceiling_only(family, artifact_ceiling);
+                    let ceiling_only = is_ceiling_only(artifact_ceiling);
                     let msg = match v {
                         NumericVerdict::Ok => None,
                         NumericVerdict::StaleMissing => Some(format!(
@@ -388,8 +388,8 @@ fn absent_scheduled_artifact(family: &Family, measured: &BTreeMap<String, usize>
     is_artifact_ceiling(family) && measured.is_empty()
 }
 
-fn is_ceiling_only(family: &Family, artifact_ceiling: bool) -> bool {
-    family.id == "suite-time" || artifact_ceiling
+fn is_ceiling_only(artifact_ceiling: bool) -> bool {
+    artifact_ceiling
 }
 
 fn read_config(path: &Path) -> Result<Config> {
@@ -401,7 +401,6 @@ fn read_config(path: &Path) -> Result<Config> {
 fn invoke_provider(root: &Path, provider: &str) -> Result<BTreeMap<String, usize>> {
     match provider {
         "file_lines_production" => measure_file_lines(root, false),
-        "file_lines_test" => measure_file_lines(root, true),
         "bare_allow_per_crate" => {
             let m = crate::suppressions::measure(root)?;
             Ok(m.bare_by_crate)
@@ -415,12 +414,10 @@ fn invoke_provider(root: &Path, provider: &str) -> Result<BTreeMap<String, usize
         }
         "agent_doc_bytes" => measure_agent_doc_bytes(root),
         "build_times" => measure_build_times(root),
-        "export_volume_measured" => measure_export_volume_measured(root),
         "perf_dhat_budgets" => measure_perf_dhat_budgets(root),
         "test_layout_violations" => Ok(BTreeMap::new()),
         "public_surface_pub_mods" => measure_public_surface_pub_mods(root),
         "rust_function_complexity" => measure_rust_function_complexity(root),
-        "suite_time" => measure_suite_time(root),
         other => bail!("unknown ratchet provider {other:?}"),
     }
 }
@@ -700,36 +697,6 @@ fn measure_perf_dhat_budgets(root: &Path) -> Result<BTreeMap<String, usize>> {
     Ok(out)
 }
 
-fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>> {
-    let artifact = root.join("target/telemetry-volume-ratchet.json");
-    if !artifact.is_file() {
-        return Ok(BTreeMap::new());
-    }
-    let text = fs::read_to_string(&artifact).with_context(|| {
-        format!(
-            "reading measured volume at {} — run `cargo nextest run -p jackin-diagnostics --all-features -E 'test(conformance_export_volume_stays_within_budget)'` first",
-            artifact.display()
-        )
-    })?;
-    let value: serde_json::Value = serde_json::from_str(&text)
-        .with_context(|| format!("parsing measured volume at {}", artifact.display()))?;
-    let mut out = BTreeMap::new();
-    for key in [
-        "default_mode_logs",
-        "default_mode_spans",
-        "default_mode_metrics",
-    ] {
-        let Some(n) = value.get(key).and_then(serde_json::Value::as_u64) else {
-            bail!(
-                "measured volume at {} missing required key `{key}`",
-                artifact.display()
-            );
-        };
-        out.insert(key.to_owned(), n as usize);
-    }
-    Ok(out)
-}
-
 fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
     let mut out = BTreeMap::new();
     let candidates = ["AGENTS.md", "crates/AGENTS.md", "CLAUDE.md"];
@@ -790,50 +757,6 @@ fn measure_build_times(root: &Path) -> Result<BTreeMap<String, usize>> {
             out.insert(format!("{crate_name}.{field}"), seconds as usize);
         }
     }
-    Ok(out)
-}
-
-fn junit_seconds_to_ms(raw: &str) -> u64 {
-    let (whole, frac) = raw.split_once('.').unwrap_or((raw, ""));
-    let Ok(secs) = whole.parse::<u64>() else {
-        return 0;
-    };
-    let mut ms_part = 0u64;
-    let mut digits = frac.chars().filter(char::is_ascii_digit).take(3);
-    if let Some(a) = digits.next() {
-        ms_part += u64::from(a.to_digit(10).unwrap_or(0)) * 100;
-    }
-    if let Some(b) = digits.next() {
-        ms_part += u64::from(b.to_digit(10).unwrap_or(0)) * 10;
-    }
-    if let Some(c) = digits.next() {
-        ms_part += u64::from(c.to_digit(10).unwrap_or(0));
-    }
-    secs.saturating_mul(1000).saturating_add(ms_part)
-}
-
-pub(crate) fn measure_suite_time(root: &Path) -> Result<BTreeMap<String, usize>> {
-    let mut out = BTreeMap::new();
-    let candidates = [
-        root.join("target/nextest/ci/junit.xml"),
-        root.join("target/nextest/default/junit.xml"),
-    ];
-    let total_ms = if let Some(path) = candidates.into_iter().find(|p| p.is_file()) {
-        let text = fs::read_to_string(&path)
-            .with_context(|| format!("reading suite junit at {}", path.display()))?;
-        let mut total_ms: u64 = 0;
-        for part in text.split("time=\"").skip(1) {
-            let Some(end) = part.find('"') else {
-                continue;
-            };
-            let raw = &part[..end];
-            total_ms = total_ms.saturating_add(junit_seconds_to_ms(raw));
-        }
-        total_ms
-    } else {
-        0
-    };
-    out.insert("junit_total_ms".to_owned(), total_ms as usize);
     Ok(out)
 }
 

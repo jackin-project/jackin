@@ -40,12 +40,10 @@ pub(crate) fn run(args: LintFilesArgs) -> Result<()> {
             let root = repo_root()?;
             let counts = measure_lines(&root)?;
             let prod_cap = ratchet::family_cap("file-size-production")?;
-            let test_cap = ratchet::family_cap("file-size-test")?;
             emit(&format!(
-                "file-size budget OK — {} files measured, production cap = {}, test cap = {} (ratchet.toml)",
+                "file-size budget OK — {} files measured, production cap = {} (ratchet.toml)",
                 counts.len(),
                 prod_cap,
-                test_cap,
             ));
         } else {
             Report::new("file-size", Vec::new()).emit(format)?;

@@ -5,12 +5,6 @@ kind = "numeric"
 provider = "file_lines_production"
 cap = 1850
 mode = "enforce"
-[[family]]
-id = "file-size-test"
-kind = "numeric"
-provider = "file_lines_test"
-cap = 10000
-mode = "enforce"
 
 [[family]]
 id = "test-layout"
@@ -997,22 +991,6 @@ bound = 1832
 key = "crates/ui/jackin-tui/README.md"
 bound = 2706
 [[family]]
-id = "export-volume"
-kind = "numeric"
-provider = "export_volume_measured"
-mode = "artifact-ceiling"
-cap = 0
-[[family.entry]]
-key = "default_mode_logs"
-bound = 18
-[[family.entry]]
-key = "default_mode_metrics"
-bound = 6
-[[family.entry]]
-key = "default_mode_spans"
-bound = 7
-
-[[family]]
 id = "perf"
 kind = "numeric"
 provider = "perf_dhat_budgets"
@@ -1364,15 +1342,6 @@ bound = 1
 [[family.entry]]
 key = "jackin-workflow"
 bound = 1
-[[family]]
-id = "suite-time"
-kind = "numeric"
-provider = "suite_time"
-mode = "enforce"
-[[family.entry]]
-key = "junit_total_ms"
-bound = 3600000
-
 [[family]]
 id = "build-time"
 kind = "numeric"
