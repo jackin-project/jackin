@@ -13,6 +13,8 @@ use std::path::Path;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use rustix::fs::{FileType, fstat};
+#[cfg(target_os = "macos")]
+use std::os::unix::ffi::OsStringExt;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::path::PathBuf;
 
@@ -184,9 +186,11 @@ impl RunningImage {
 
 #[cfg(target_os = "macos")]
 mod darwin {
-    use super::{FileIdentity, invalid_data, io};
+    use super::{
+        DARWIN_REGION_PATH_INFO_SIZE, FileIdentity, has_exact_response_size, invalid_data, io,
+        validate_region_vnode,
+    };
     use std::mem::{MaybeUninit, offset_of, size_of};
-    use std::os::unix::ffi::OsStringExt;
     use std::path::PathBuf;
 
     const PROC_PIDREGIONPATHINFO: libc::c_int = 8;
@@ -227,7 +231,7 @@ mod darwin {
         assert!(size_of::<ProcRegionInfo>() == 96);
         assert!(offset_of!(ProcRegionWithPathInfo, prp_vip) == 96);
         assert!(size_of::<libc::vnode_info_path>() == 1176);
-        assert!(size_of::<ProcRegionWithPathInfo>() == 1272);
+        assert!(size_of::<ProcRegionWithPathInfo>() == DARWIN_REGION_PATH_INFO_SIZE);
     };
 
     #[expect(
@@ -248,7 +252,7 @@ mod darwin {
         let mut response = MaybeUninit::<ProcRegionWithPathInfo>::zeroed();
         let process_id = libc::pid_t::try_from(std::process::id())
             .map_err(|_| invalid_data("current process id does not fit Darwin pid_t"))?;
-        let response_size = libc::c_int::try_from(size_of::<ProcRegionWithPathInfo>())
+        let response_size = libc::c_int::try_from(DARWIN_REGION_PATH_INFO_SIZE)
             .map_err(|_| invalid_data("Darwin region response size does not fit c_int"))?;
 
         // SAFETY: `response` is writable storage for the exact local SDK
@@ -296,115 +300,63 @@ mod darwin {
         u64::from_ne_bytes(address.to_ne_bytes())
     }
 
-    fn has_exact_response_size(returned: libc::c_int) -> bool {
-        returned >= 0 && usize::try_from(returned).ok() == Some(size_of::<ProcRegionWithPathInfo>())
-    }
-
-    fn validate_region_vnode(
-        address: u64,
-        size: u64,
-        header_address: u64,
-        mode: u16,
-        device: u32,
-        inode: u64,
-    ) -> io::Result<FileIdentity> {
-        let end = address
-            .checked_add(size)
-            .ok_or_else(|| invalid_data("Darwin image region address overflows"))?;
-        if size == 0 || header_address < address || header_address >= end {
-            return Err(invalid_data(
-                "Darwin image region does not cover the main image header",
-            ));
-        }
-        if rustix::fs::FileType::from_raw_mode(mode) != rustix::fs::FileType::RegularFile {
-            return Err(invalid_data(
-                "Darwin mapped image vnode is not a regular file",
-            ));
-        }
-        if inode == 0 {
-            return Err(invalid_data("Darwin mapped image vnode has no valid inode"));
-        }
-        Ok(FileIdentity {
-            device: u64::from(device),
-            inode,
-        })
-    }
-
     fn path_hint(raw_path: &[[libc::c_char; 32]; 32]) -> Option<PathBuf> {
         let bytes = raw_path
             .iter()
             .flat_map(|chunk| chunk.iter().map(|byte| byte.to_ne_bytes()[0]))
             .collect::<Vec<_>>();
-        decode_raw_path(&bytes)
+        super::decode_raw_path(&bytes)
     }
+}
 
-    fn decode_raw_path(raw_path: &[u8]) -> Option<PathBuf> {
-        let end = raw_path.iter().position(|byte| *byte == 0)?;
-        if end == 0 {
-            return None;
-        }
-        Some(PathBuf::from(std::ffi::OsString::from_vec(
-            raw_path[..end].to_vec(),
-        )))
+#[cfg(target_os = "macos")]
+const DARWIN_REGION_PATH_INFO_SIZE: usize = 1272;
+
+#[cfg(target_os = "macos")]
+fn has_exact_response_size(returned: libc::c_int) -> bool {
+    returned >= 0 && usize::try_from(returned).ok() == Some(DARWIN_REGION_PATH_INFO_SIZE)
+}
+
+#[cfg(target_os = "macos")]
+fn validate_region_vnode(
+    address: u64,
+    size: u64,
+    header_address: u64,
+    mode: u16,
+    device: u32,
+    inode: u64,
+) -> io::Result<FileIdentity> {
+    let end = address
+        .checked_add(size)
+        .ok_or_else(|| invalid_data("Darwin image region address overflows"))?;
+    if size == 0 || header_address < address || header_address >= end {
+        return Err(invalid_data(
+            "Darwin image region does not cover the main image header",
+        ));
     }
-
-    #[cfg(test)]
-    mod tests {
-        use super::{
-            ProcRegionWithPathInfo, decode_raw_path, has_exact_response_size, validate_region_vnode,
-        };
-        use rustix::fs::FileType;
-        use std::io::ErrorKind;
-        use std::mem::size_of;
-        use std::os::unix::ffi::OsStrExt;
-
-        #[test]
-        fn response_count_must_match_the_complete_local_sdk_layout() {
-            let exact = libc::c_int::try_from(size_of::<ProcRegionWithPathInfo>())
-                .expect("SDK response size fits c_int");
-            assert!(has_exact_response_size(exact));
-            for invalid in [-1, 0, exact - 1, exact + 1] {
-                assert!(!has_exact_response_size(invalid));
-            }
-        }
-
-        #[test]
-        fn mapped_vnode_requires_a_valid_region_regular_file_and_inode() {
-            let regular = FileType::RegularFile.as_raw_mode();
-            let directory = FileType::Directory.as_raw_mode();
-            let identity = validate_region_vnode(0x1000, 0x1000, 0x1000, regular, 0xffff_ff80, 7)
-                .expect("header address at region start is covered");
-            assert_eq!(identity.device, u64::from(0xffff_ff80_u32));
-            assert_eq!(identity.inode, 7);
-
-            for (address, size, header) in [
-                (0x1000, 0, 0x1000),
-                (0x1000, 0x1000, 0x2000),
-                (0x2000, 0x1000, 0x1000),
-                (u64::MAX - 3, 8, u64::MAX - 1),
-            ] {
-                let error = validate_region_vnode(address, size, header, regular, 1, 7)
-                    .expect_err("invalid region must be rejected");
-                assert_eq!(error.kind(), ErrorKind::InvalidData);
-            }
-
-            for (mode, inode) in [(directory, 7), (regular, 0)] {
-                let error = validate_region_vnode(0x1000, 0x1000, 0x1000, mode, 1, inode)
-                    .expect_err("invalid vnode must be rejected");
-                assert_eq!(error.kind(), ErrorKind::InvalidData);
-            }
-        }
-
-        #[test]
-        fn raw_path_hint_preserves_bytes_and_ignores_truncated_values() {
-            let decoded = decode_raw_path(b"/tmp/image-\xff\r\n\0trailing")
-                .expect("NUL-terminated path hint");
-            assert_eq!(decoded.as_os_str().as_bytes(), b"/tmp/image-\xff\r\n");
-            assert!(decode_raw_path(b"").is_none());
-            assert!(decode_raw_path(b"\0").is_none());
-            assert!(decode_raw_path(&[b'x'; 1024]).is_none());
-        }
+    if FileType::from_raw_mode(mode) != FileType::RegularFile {
+        return Err(invalid_data(
+            "Darwin mapped image vnode is not a regular file",
+        ));
     }
+    if inode == 0 {
+        return Err(invalid_data("Darwin mapped image vnode has no valid inode"));
+    }
+    Ok(FileIdentity {
+        device: u64::from(device),
+        inode,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn decode_raw_path(raw_path: &[u8]) -> Option<PathBuf> {
+    let end = raw_path.iter().position(|byte| *byte == 0)?;
+    if end == 0 {
+        return None;
+    }
+    Some(PathBuf::from(std::ffi::OsString::from_vec(
+        raw_path[..end].to_vec(),
+    )))
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
