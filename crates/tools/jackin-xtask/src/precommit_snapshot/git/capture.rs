@@ -12,11 +12,17 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail, ensure};
+use nix::{
+    fcntl::{OFlag, open},
+    sys::stat::Mode,
+};
 use sha2::{Digest, Sha256};
 
 use super::super::process::{CommandBudget, EnvironmentMode, SetupControls, capture_strict};
 #[cfg(test)]
 use std::time::Duration;
+
+pub(super) const INDEX_INPUT_FILE_LIMIT: u64 = 1024 * 1024 * 1024;
 
 #[derive(Debug)]
 pub(in crate::precommit_snapshot) struct LiveRepository {
@@ -59,6 +65,17 @@ impl IndexInput {
 
     pub(super) fn admitted_digest(&self) -> &[u8; 32] {
         &self.digest
+    }
+
+    pub(super) fn matches_metadata(&self, metadata: &fs::Metadata) -> bool {
+        metadata.file_type().is_file()
+            && self.device == metadata.dev()
+            && self.inode == metadata.ino()
+            && self.mode == metadata.mode()
+            && self.links == metadata.nlink()
+            && self.length == metadata.len()
+            && self.mtime == metadata.mtime()
+            && self.mtime_nsec == metadata.mtime_nsec()
     }
 }
 
@@ -169,6 +186,15 @@ pub(in crate::precommit_snapshot) fn index_inputs(
     shared_index: Option<&Path>,
     controls: &SetupControls,
 ) -> Result<Vec<IndexInput>> {
+    index_inputs_with_limit(index, shared_index, controls, INDEX_INPUT_FILE_LIMIT)
+}
+
+pub(super) fn index_inputs_with_limit(
+    index: &Path,
+    shared_index: Option<&Path>,
+    controls: &SetupControls,
+    file_limit: u64,
+) -> Result<Vec<IndexInput>> {
     let mut paths = Vec::with_capacity(2);
     match fs::symlink_metadata(index) {
         Ok(_) => paths.push(index.to_path_buf()),
@@ -192,8 +218,18 @@ pub(in crate::precommit_snapshot) fn index_inputs(
             "live index input is not a regular file: {}",
             path.display()
         );
-        let mut file = super::super::process::open_readonly(&path)
-            .with_context(|| format!("opening live index input {}", path.display()))?;
+        ensure!(
+            before.len() <= file_limit,
+            "live index input exceeds its byte limit"
+        );
+        let mut file = fs::File::from(
+            open(
+                &path,
+                OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )
+            .with_context(|| format!("opening live index input {}", path.display()))?,
+        );
         let opened = file.metadata().context("reading opened index metadata")?;
         ensure!(
             same_file_identity(&before, &opened),
@@ -201,19 +237,28 @@ pub(in crate::precommit_snapshot) fn index_inputs(
         );
         let mut hasher = Sha256::new();
         let mut buffer = vec![0u8; 64 * 1024].into_boxed_slice();
+        let mut total = 0_u64;
         loop {
             controls.check_start()?;
             let count = file.read(&mut buffer).context("hashing live index input")?;
             if count == 0 {
                 break;
             }
+            total = total
+                .checked_add(u64::try_from(count).context("converting live index read length")?)
+                .context("counting live index bytes")?;
+            ensure!(
+                total <= file_limit,
+                "live index input exceeds its byte limit"
+            );
             hasher.update(&buffer[..count]);
         }
         let after_fd = file.metadata().context("restating opened index input")?;
         let after_path = fs::symlink_metadata(&path)
             .with_context(|| format!("restating live index input {}", path.display()))?;
         ensure!(
-            same_file_identity(&before, &after_fd)
+            total == before.len()
+                && same_file_identity(&before, &after_fd)
                 && same_file_identity(&before, &after_path)
                 && same_file_content_state(&before, &after_fd)
                 && same_file_content_state(&before, &after_path),

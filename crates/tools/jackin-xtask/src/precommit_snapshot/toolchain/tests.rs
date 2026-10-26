@@ -4,8 +4,9 @@
 use super::*;
 #[cfg(not(target_os = "macos"))]
 use std::os::unix::ffi::OsStringExt;
-use std::os::unix::{ffi::OsStrExt, process::ExitStatusExt};
+use std::os::unix::{ffi::OsStrExt, fs::symlink, process::ExitStatusExt};
 use std::process::{Command, ExitStatus, Output};
+use std::sync::{Arc, atomic::AtomicBool};
 
 fn write_executable(path: &Path, contents: &[u8]) {
     fs::write(path, contents).expect("tool file");
@@ -844,7 +845,8 @@ fn inherited_path_aliases_colon_cwd_entries_without_changing_order() {
         .expect("empty and relative PATH entries");
     let anchored = anchor_inherited_path(&hook_cwd, &inherited);
     let aliases = tempfile::tempdir().expect("separator-safe alias directory");
-    populate_inherited_path_aliases(aliases.path(), &anchored)
+    let aliases_fd = open_private_tool_directory(aliases.path()).expect("open alias directory");
+    populate_inherited_path_aliases(&aliases_fd, &anchored)
         .expect("populate inherited delimiter aliases");
 
     let qualified =
@@ -892,8 +894,9 @@ fn colon_paths_use_private_separator_safe_gate_aliases() {
     );
 
     let aliases = create_path_aliases(&requested_tmp, &fallback).expect("separator-safe aliases");
+    let aliases_fd = open_private_tool_directory(aliases.path()).expect("open aliases");
     let rust_tools = BTreeMap::from([("rustc", rustc.clone())]);
-    populate_path_aliases(aliases.path(), &managed, &rust_tools)
+    populate_path_aliases(&aliases_fd, &managed, &rust_tools)
         .expect("populate qualified gate aliases");
     let path = qualified_gate_path(aliases.path()).expect("fixed controlled gate PATH");
     assert!(
@@ -1054,6 +1057,53 @@ fn pinned_rustup_resolution_preserves_only_the_admitted_rustup_home() {
     )
     .expect("resolve tools from the admitted HOME without RUSTUP_HOME");
     assert_eq!(default_resolved, resolved);
+}
+
+#[test]
+fn rust_release_reads_a_bounded_regular_target_and_preserves_staged_symlinks() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let target = temporary.path().join("toolchain.toml");
+    let link = temporary.path().join("rust-toolchain.toml");
+    fs::write(&target, "[toolchain]\nchannel = \"1.99.1\"\n").expect("toolchain pin");
+    symlink(&target, &link).expect("staged toolchain link");
+
+    let pin = rust_release(
+        &link,
+        &SetupControls::for_test(std::time::Duration::from_secs(10)),
+    )
+    .expect("read pin through admitted staged symlink");
+    assert_eq!(pin, "1.99.1");
+}
+
+#[test]
+fn rust_release_rejects_control_files_larger_than_one_megabyte() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let path = temporary.path().join("rust-toolchain.toml");
+    let mut contents = b"[toolchain]\nchannel = \"1.99.1\"\n#".to_vec();
+    contents.resize(1024 * 1024 + 1, b'x');
+    fs::write(&path, contents).expect("oversized staged toolchain file");
+
+    let error = rust_release(
+        &path,
+        &SetupControls::for_test(std::time::Duration::from_secs(10)),
+    )
+    .expect_err("oversized toolchain metadata must fail before parsing");
+    assert!(error.to_string().contains("exceeds its byte limit"));
+}
+
+#[test]
+fn rust_release_checks_cancellation_before_reading() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let path = temporary.path().join("rust-toolchain.toml");
+    fs::write(&path, "[toolchain]\nchannel = \"1.99.1\"\n").expect("toolchain pin");
+    let controls = SetupControls::new(
+        Arc::new(AtomicBool::new(true)),
+        std::time::Duration::from_secs(10),
+    );
+
+    let error =
+        rust_release(&path, &controls).expect_err("cancelled setup must stop metadata read");
+    assert!(error.to_string().contains("cancelled"));
 }
 
 #[test]

@@ -9,6 +9,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail, ensure};
+use jackin_process::{ExecRequest, exec_sync};
 use nix::{
     fcntl::{OFlag, open},
     sys::stat::Mode,
@@ -18,6 +19,122 @@ use super::super::files;
 use super::fixture::private_dir;
 
 const IMAGE_REPLACEMENT_CHILD: &str = "JACKIN_OWNER_IMAGE_REPLACEMENT_CHILD";
+
+#[test]
+fn public_installer_normalizes_only_new_lock_under_owner_masking_umask() -> Result<()> {
+    const CHILD_MODE: &str = "JACKIN_INSTALL_UMASK_CHILD";
+    if std::env::var_os(CHILD_MODE).is_some() {
+        return super::super::install_hooks();
+    }
+
+    let temporary = private_dir()?;
+    let repository = temporary.path().join("restrictive umask repository");
+    super::fixture::init_repository(&repository)?;
+    let executable = std::env::current_exe()?;
+    let test_name =
+        current_test_name("public_installer_normalizes_only_new_lock_under_owner_masking_umask")?;
+    let mut command = Command::new("/bin/sh");
+    command
+        .args([
+            std::ffi::OsStr::new("-c"),
+            std::ffi::OsStr::new("umask \"$1\"; shift; exec \"$@\""),
+            std::ffi::OsStr::new("installer-umask"),
+            std::ffi::OsStr::new("0777"),
+            executable.as_os_str(),
+            std::ffi::OsStr::new("--exact"),
+            std::ffi::OsStr::new(&test_name),
+            std::ffi::OsStr::new("--nocapture"),
+        ])
+        .current_dir(&repository);
+    super::fixture::configure_admission_environment(&mut command, temporary.path(), None)?;
+    command.env(CHILD_MODE, "1");
+    let program = command.get_program().to_os_string();
+    let arguments = command
+        .get_args()
+        .map(std::ffi::OsStr::to_os_string)
+        .collect::<Vec<_>>();
+    let environment = command
+        .get_envs()
+        .filter_map(|(key, value)| value.map(|value| (key.to_os_string(), value.to_os_string())))
+        .collect::<Vec<_>>();
+    let mut lock_identity = None;
+    for mask in ["0777", "0077"] {
+        let arguments = arguments
+            .iter()
+            .enumerate()
+            .map(|(index, argument)| {
+                if index == 3 {
+                    std::ffi::OsString::from(mask)
+                } else {
+                    argument.clone()
+                }
+            })
+            .collect::<Vec<_>>();
+        let request = ExecRequest::new(program.clone(), arguments)
+            .cwd(&repository)
+            .env_clear()
+            .envs(environment.clone())
+            .timeout(Duration::from_secs(30))
+            .output_limits(64 * 1024, 64 * 1024);
+        let output = exec_sync(&request)?;
+        ensure!(
+            output.success && !output.timed_out,
+            "public installer failed under umask {mask}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let (git_dir, _, _) = super::super::git::installation_paths(&repository)?;
+        let lock = fs::symlink_metadata(git_dir.join("jackin-precommit-owner/install.lock"))?;
+        assert_eq!(lock.permissions().mode() & 0o777, 0o600);
+        let identity = (lock.dev(), lock.ino());
+        if let Some(first) = lock_identity {
+            assert_eq!(identity, first);
+        }
+        lock_identity = Some(identity);
+        super::super::git::verify_installed_hooks(
+            &repository,
+            &git_dir.join("jackin-precommit-owner/owner"),
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn existing_installer_lock_with_unsafe_mode_is_rejected_unchanged() -> Result<()> {
+    let temporary = private_dir()?;
+    let owner = files::publish_owner(temporary.path(), b"original owner")?;
+    let lock = owner.with_file_name("install.lock");
+    fs::set_permissions(&lock, fs::Permissions::from_mode(0o644))?;
+    let before = fs::symlink_metadata(&lock)?;
+
+    let error = files::publish_owner(temporary.path(), b"replacement owner")
+        .expect_err("an existing unsafe lock must not be normalized");
+    assert!(format!("{error:#}").contains("private hook owner file has unsafe or changed custody"));
+    let after = fs::symlink_metadata(&lock)?;
+    assert_eq!((after.dev(), after.ino()), (before.dev(), before.ino()));
+    assert_eq!(after.permissions().mode() & 0o777, 0o644);
+    assert_eq!(fs::read(&lock)?, b"");
+    assert_eq!(fs::read(&owner)?, b"original owner");
+    Ok(())
+}
+
+#[test]
+fn existing_installer_root_with_unsafe_mode_is_rejected_unchanged() -> Result<()> {
+    let temporary = private_dir()?;
+    let owner = files::publish_owner(temporary.path(), b"original owner")?;
+    let root = owner.parent().context("installed owner root")?;
+    fs::set_permissions(root, fs::Permissions::from_mode(0o755))?;
+    let before = fs::symlink_metadata(root)?;
+
+    let error = files::publish_owner(temporary.path(), b"replacement owner")
+        .expect_err("an existing unsafe owner root must not be normalized");
+    assert!(format!("{error:#}").contains("validating private worktree hook owner directory"));
+    let after = fs::symlink_metadata(root)?;
+    assert_eq!((after.dev(), after.ino()), (before.dev(), before.ino()));
+    assert_eq!(after.permissions().mode() & 0o777, 0o755);
+    assert_eq!(fs::read(&owner)?, b"original owner");
+    Ok(())
+}
 
 #[test]
 fn identical_owner_install_keeps_the_existing_inode() -> Result<()> {
@@ -356,7 +473,7 @@ fn public_installer_supports_non_utf8_checkout_path() -> Result<()> {
     );
     super::super::git::verify_installed_hooks(&repository, &owner)?;
     files::publish_owner(&git_dir, b"#!/bin/sh\n[ \"$#\" -eq 1 ] || exit 95\n[ \"$1\" = run-snapshot ] || exit 96\nprintf '%s\\n' \"$1\" > hook-argv\nexit 37\n")?;
-    let request = jackin_process::ExecRequest::new("git", ["hook", "run", "pre-commit"])
+    let request = ExecRequest::new("git", ["hook", "run", "pre-commit"])
         .cwd(&repository)
         .env_clear()
         .envs([
@@ -367,7 +484,7 @@ fn public_installer_supports_non_utf8_checkout_path() -> Result<()> {
         ])
         .timeout(Duration::from_secs(10))
         .output_limits(64 * 1024, 64 * 1024);
-    let invoked = jackin_process::exec_sync(&request)?;
+    let invoked = exec_sync(&request)?;
     assert_eq!(invoked.code, Some(37));
     assert_eq!(fs::read(repository.join("hook-argv"))?, b"run-snapshot\n");
     Ok(())

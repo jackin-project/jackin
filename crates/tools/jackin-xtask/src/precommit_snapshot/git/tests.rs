@@ -25,6 +25,8 @@ use super::super::{
 use super::{LiveRepository, OwnedSnapshot, validate_link};
 use crate::precommit_snapshot::toolchain::QualifiedTools;
 
+mod index_limits;
+
 fn git(root: &Path, args: &[&str]) {
     let mut command = Command::new("git");
     command

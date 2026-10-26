@@ -5,7 +5,7 @@ use std::{
     collections::BTreeMap,
     ffi::OsString,
     fs,
-    os::unix::ffi::OsStringExt,
+    os::unix::{ffi::OsStringExt, fs::PermissionsExt},
     path::{Path, PathBuf},
     process::{Command, Output},
     sync::{Arc, atomic::AtomicBool},
@@ -32,15 +32,17 @@ pub(super) fn admit_install_environment(source_root: &Path) -> Result<()> {
 
 fn resolve_provision_tool_paths(source_root: &Path) -> Result<ProvisionToolPaths> {
     let source_root = fs::canonicalize(source_root).context("resolving bootstrap source root")?;
-    let temp_parent = fs::canonicalize(std::env::temp_dir())
-        .context("resolving physical provision tool-qualification directory")?;
+    let temp_parent = super::super::process::canonical_temporary_parent(&std::env::temp_dir())
+        .context("validating physical provision tool-qualification directory")?;
     let isolation = tempfile::Builder::new()
         .prefix("jackin-provision-mise-")
         .tempdir_in(temp_parent)
         .context("creating private tool qualification directory")?;
+    fs::set_permissions(isolation.path(), fs::Permissions::from_mode(0o700))
+        .context("protecting private tool qualification directory")?;
     let inputs = super::HostInputs::capture(&source_root, isolation.path())?;
     let controls = SetupControls::new(Arc::new(AtomicBool::new(false)), Duration::from_mins(10));
-    let pin = super::rust_release(&source_root.join("rust-toolchain.toml"))?;
+    let pin = super::rust_release(&source_root.join("rust-toolchain.toml"), &controls)?;
     let inherited_path = inputs.search_path();
     let home = inputs.home.as_deref().map(Path::new);
     let mise = super::find_executable("mise", inherited_path).context("missing Mise executable")?;

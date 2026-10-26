@@ -33,7 +33,7 @@ use std::{
 
 mod admission;
 
-const STAGED_INDEX_OUTPUT_LIMIT: usize = 1024 * 1024 * 1024;
+const STAGED_INDEX_OUTPUT_LIMIT: usize = super::capture::INDEX_INPUT_FILE_LIMIT as usize;
 const STAGED_INDEX_STDERR_LIMIT: usize = 32 * 1024 * 1024;
 const STAGED_INDEX_HEADER_LIMIT: usize = 256;
 const STAGED_SYMLINK_PATH_LIMIT: usize = 1024 * 1024;
@@ -58,19 +58,20 @@ impl OwnedSnapshot {
         let root = directory.path().join("worktree");
         let scratch_root = directory.path().to_path_buf();
         fs::create_dir(&root).context("creating private snapshot worktree")?;
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o700))
+            .context("protecting private snapshot worktree")?;
         let git_dir = root.join(".git");
-        let mut init_command = Command::new("git");
-        init_command.args([
-            OsStr::new("init"),
-            OsStr::new("--quiet"),
-            OsStr::new("--template="),
-        ]);
-        init_command
-            .arg(format!(
+        let init_args = [
+            OsString::from("init"),
+            OsString::from("--quiet"),
+            OsString::from("--template="),
+            OsString::from(format!(
                 "--object-format={}",
                 live.object_format.to_string_lossy()
-            ))
-            .arg(&root);
+            )),
+            root.as_os_str().to_os_string(),
+        ];
+        let mut init_command = isolated_git_command(OsStr::new("git"), &init_args);
         init_command
             .current_dir(&root)
             .env_clear()
@@ -190,7 +191,7 @@ impl OwnedSnapshot {
             "running isolated Git command failed with {}",
             entries.status()
         );
-        admit_staged_index_entries(&self.root, entries.stdout_mut())
+        admit_staged_index_entries(&self.root, entries.stdout_mut(), &self.controls)
     }
 
     pub(in crate::precommit_snapshot) fn retain(&mut self) -> Option<PathBuf> {
@@ -433,12 +434,14 @@ impl OwnedSnapshot {
     }
 
     fn git_command(&self, args: &[impl AsRef<OsStr>]) -> Command {
-        let mut command = Command::new("git");
         #[cfg(test)]
-        if let Some(program) = self.test_git_program.as_deref() {
-            command = Command::new(program);
-        }
-        command.args(args.iter().map(AsRef::as_ref));
+        let program = self
+            .test_git_program
+            .as_deref()
+            .map_or(OsStr::new("git"), Path::as_os_str);
+        #[cfg(not(test))]
+        let program = OsStr::new("git");
+        let mut command = isolated_git_command(program, args);
         configure_isolated_git(
             &mut command,
             &self.invocation_dir,
@@ -524,8 +527,19 @@ impl OwnedSnapshot {
         }
         encoded.extend_from_slice(b"\"\n");
         encoded.extend_from_slice(alternate_records);
-        fs::write(file, encoded).context("writing Git object alternates")
+        write_private_new(&file, &encoded).context("writing Git object alternates")
     }
+}
+
+fn isolated_git_command(program: &OsStr, args: &[impl AsRef<OsStr>]) -> Command {
+    let mut command = Command::new("/bin/sh");
+    command
+        .arg("-c")
+        .arg("umask 0077; exec \"$@\"")
+        .arg("jackin-isolated-git")
+        .arg(program)
+        .args(args.iter().map(AsRef::as_ref));
+    command
 }
 
 fn copy_and_verify_index(
@@ -534,9 +548,111 @@ fn copy_and_verify_index(
     label: &str,
     controls: &SetupControls,
 ) -> Result<()> {
+    copy_and_verify_index_with_limit(
+        input,
+        destination,
+        label,
+        controls,
+        super::capture::INDEX_INPUT_FILE_LIMIT,
+    )
+}
+
+pub(super) fn copy_and_verify_index_with_limit(
+    input: &super::capture::IndexInput,
+    destination: &Path,
+    label: &str,
+    controls: &SetupControls,
+    file_limit: u64,
+) -> Result<()> {
     controls.check_start()?;
-    fs::copy(input.admitted_path(), destination).with_context(|| format!("copying {label}"))?;
+    ensure!(
+        input.admitted_length() <= file_limit,
+        "{label} exceeds its byte limit"
+    );
+    let source_path = input.admitted_path();
+    let before =
+        fs::symlink_metadata(source_path).with_context(|| format!("inspecting {label}"))?;
+    ensure!(
+        input.matches_metadata(&before),
+        "{label} differs from admitted input"
+    );
+    let mut source = fs::File::from(
+        open(
+            source_path,
+            OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .with_context(|| format!("opening {label}"))?,
+    );
+    let opened = source
+        .metadata()
+        .with_context(|| format!("restating {label}"))?;
+    ensure!(
+        input.matches_metadata(&opened),
+        "{label} changed while opening"
+    );
+    controls.check_start()?;
+    let mut output = super::super::process::create_private_new(destination)
+        .with_context(|| format!("creating private {label}"))?;
+    let copied = copy_index_bytes(
+        &mut source,
+        &mut output,
+        input.admitted_length(),
+        file_limit,
+        controls,
+        label,
+    )?;
+    controls.check_start()?;
+    let after_fd = source
+        .metadata()
+        .with_context(|| format!("restating {label}"))?;
+    let after_path =
+        fs::symlink_metadata(source_path).with_context(|| format!("restating {label}"))?;
+    ensure!(
+        copied == input.admitted_length()
+            && input.matches_metadata(&after_fd)
+            && input.matches_metadata(&after_path),
+        "{label} changed while copying"
+    );
     verify_private_index_copy(input, destination, label, controls)
+}
+
+pub(super) fn copy_index_bytes<R: Read, W: Write>(
+    source: &mut R,
+    destination: &mut W,
+    admitted_length: u64,
+    file_limit: u64,
+    controls: &SetupControls,
+    label: &str,
+) -> Result<u64> {
+    let mut copied = 0_u64;
+    let mut buffer = vec![0_u8; 64 * 1024].into_boxed_slice();
+    loop {
+        controls.check_start()?;
+        let count = source
+            .read(&mut buffer)
+            .with_context(|| format!("reading {label}"))?;
+        if count == 0 {
+            break;
+        }
+        copied = copied
+            .checked_add(u64::try_from(count).context("converting index copy length")?)
+            .context("counting index copy bytes")?;
+        ensure!(
+            copied <= admitted_length && copied <= file_limit,
+            "{label} exceeds its byte limit"
+        );
+        controls.check_start()?;
+        destination
+            .write_all(&buffer[..count])
+            .with_context(|| format!("writing private {label}"))?;
+    }
+    controls.check_start()?;
+    ensure!(
+        copied == admitted_length,
+        "{label} changed length while copying"
+    );
+    Ok(copied)
 }
 
 pub(super) fn copy_git_metadata(
@@ -555,14 +671,8 @@ pub(super) fn copy_git_metadata(
         before.len() <= GIT_METADATA_FILE_LIMIT,
         "{label} exceeds its byte limit"
     );
-    let mut input = fs::File::from(
-        open(
-            source,
-            OFlag::O_RDONLY | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
-            Mode::empty(),
-        )
-        .with_context(|| format!("opening {label}"))?,
-    );
+    let mut input =
+        super::super::process::open_readonly(source).with_context(|| format!("opening {label}"))?;
     let opened = input
         .metadata()
         .with_context(|| format!("restating {label}"))?;
@@ -755,7 +865,11 @@ fn live_alternate_records(live: &LiveRepository) -> Result<Vec<u8>> {
     Ok(records)
 }
 
-fn admit_staged_index_entries(root: &Path, stdout: &mut fs::File) -> Result<()> {
+pub(super) fn admit_staged_index_entries<R: Read>(
+    root: &Path,
+    stdout: R,
+    controls: &SetupControls,
+) -> Result<()> {
     let mut reader = BufReader::with_capacity(64 * 1024, stdout);
     let mut chunk = vec![0; 64 * 1024].into_boxed_slice();
     let mut header = Vec::with_capacity(32);
@@ -765,6 +879,7 @@ fn admit_staged_index_entries(root: &Path, stdout: &mut fs::File) -> Result<()> 
     let mut path_has_bytes = false;
 
     loop {
+        controls.check_start()?;
         let count = reader
             .read(&mut chunk)
             .context("reading staged index spool")?;
@@ -804,6 +919,7 @@ fn admit_staged_index_entries(root: &Path, stdout: &mut fs::File) -> Result<()> 
                 );
                 if path_is_symlink {
                     let link_path = root.join(OsStr::from_bytes(&path));
+                    controls.check_start()?;
                     validate_link(root, &link_path)?;
                 }
                 header.clear();
@@ -824,6 +940,7 @@ fn admit_staged_index_entries(root: &Path, stdout: &mut fs::File) -> Result<()> 
         }
     }
 
+    controls.check_start()?;
     ensure!(
         !after_tab && header.is_empty(),
         "staged index spool ended with an incomplete record"

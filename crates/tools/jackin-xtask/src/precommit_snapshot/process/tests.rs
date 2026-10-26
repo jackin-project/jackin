@@ -4,7 +4,10 @@
 use std::{
     ffi::OsString,
     fs,
-    os::unix::ffi::OsStringExt,
+    os::unix::{
+        ffi::OsStringExt,
+        fs::{MetadataExt, PermissionsExt},
+    },
     path::Path,
     process::Command,
     sync::{Arc, atomic::AtomicBool},
@@ -16,8 +19,51 @@ mod pipe_holder;
 mod temp_parent;
 use super::{
     CaptureFailureKind, CommandBudget, EnvironmentMode, SetupControls, capture_limited,
-    capture_spooled, capture_strict,
+    capture_spooled, capture_strict, create_private_new, create_private_spool,
 };
+
+#[test]
+fn private_files_keep_owner_mode_under_restrictive_umask() {
+    const CHILD_MARKER: &str = "JACKIN_PRIVATE_FILE_UMASK_CHILD";
+    const TEST_NAME: &str =
+        "precommit_snapshot::process::tests::private_files_keep_owner_mode_under_restrictive_umask";
+
+    if std::env::var_os(CHILD_MARKER).is_some() {
+        let directory = tempfile::tempdir().expect("create private-file fixture");
+        fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700))
+            .expect("protect private-file fixture");
+        nix::sys::stat::umask(nix::sys::stat::Mode::from_bits_truncate(0o777));
+        for (path, file) in [
+            (
+                directory.path().join("new"),
+                create_private_new(&directory.path().join("new")).expect("create private new file"),
+            ),
+            (
+                directory.path().join("spool"),
+                create_private_spool(&directory.path().join("spool"))
+                    .expect("create private spool"),
+            ),
+        ] {
+            assert_eq!(
+                file.metadata().expect("inspect created descriptor").mode() & 0o777,
+                0o600,
+                "new private descriptor must retain owner access under umask 0777: {}",
+                path.display()
+            );
+        }
+        return;
+    }
+
+    let status = Command::new(std::env::current_exe().expect("current test executable"))
+        .args(["--exact", TEST_NAME, "--nocapture"])
+        .env(CHILD_MARKER, "1")
+        .status()
+        .expect("run private-file umask child");
+    assert!(
+        status.success(),
+        "private-file umask child failed: {status}"
+    );
+}
 
 #[test]
 fn bounded_capture_preserves_complete_output_at_the_limit() {

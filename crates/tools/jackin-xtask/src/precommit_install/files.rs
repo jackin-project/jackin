@@ -15,7 +15,7 @@ use jackin_process_directory::{
 use nix::{
     errno::Errno,
     fcntl::{AtFlags, OFlag, open, openat, renameat},
-    sys::stat::{Mode, fchmod, fstat, fstatat, mkdirat},
+    sys::stat::{FchmodatFlags, Mode, SFlag, fchmod, fchmodat, fstat, fstatat, mkdirat},
     unistd::{UnlinkatFlags, fsync, unlinkat},
 };
 
@@ -102,8 +102,24 @@ pub(super) fn install_owner(git_dir: &Path, owner: &[u8]) -> Result<OwnerInstall
         .context("rechecking worktree Git directory")?;
     let parent_fd = File::from(parent_fd);
     let created = match mkdirat(&parent_fd, INSTALL_ROOT, Mode::from_bits_truncate(0o700)) {
-        Ok(()) => true,
-        Err(Errno::EEXIST) => false,
+        Ok(()) => {
+            let created = fstatat(&parent_fd, INSTALL_ROOT, AtFlags::AT_SYMLINK_NOFOLLOW)
+                .context("checking newly created worktree hook owner directory")?;
+            ensure!(
+                created.st_mode & SFlag::S_IFMT.bits() == SFlag::S_IFDIR.bits()
+                    && created.st_uid == nix::unistd::geteuid().as_raw(),
+                "new worktree hook owner directory has unsafe custody"
+            );
+            fchmodat(
+                &parent_fd,
+                INSTALL_ROOT,
+                Mode::from_bits_truncate(0o700),
+                FchmodatFlags::NoFollowSymlink,
+            )
+            .context("setting newly created worktree owner directory permissions")?;
+            Some(created)
+        }
+        Err(Errno::EEXIST) => None,
         Err(error) => return Err(error).context("creating worktree hook owner directory"),
     };
     let root_fd = openat(
@@ -114,15 +130,18 @@ pub(super) fn install_owner(git_dir: &Path, owner: &[u8]) -> Result<OwnerInstall
     )
     .context("opening private worktree hook owner directory")?;
     let root = File::from(root_fd);
-    if created {
-        fchmod(&root, Mode::from_bits_truncate(0o700))?;
-    }
     let checked_root = CheckedInstallRoot::from_pinned_directory(root.try_clone()?)
         .context("validating private worktree hook owner directory")?;
     let named_root = fstatat(&parent_fd, INSTALL_ROOT, AtFlags::AT_SYMLINK_NOFOLLOW)
         .context("checking private worktree hook owner directory name")?;
     let opened_root = root.metadata()?;
     let opened_root_stat = fstat(&root)?;
+    if let Some(created) = &created {
+        ensure!(
+            created.st_dev == opened_root_stat.st_dev && created.st_ino == opened_root_stat.st_ino,
+            "new worktree hook owner directory changed before opening"
+        );
+    }
     ensure!(
         named_root.st_dev == opened_root_stat.st_dev
             && named_root.st_ino == opened_root.ino()
@@ -130,7 +149,7 @@ pub(super) fn install_owner(git_dir: &Path, owner: &[u8]) -> Result<OwnerInstall
             && opened_root.permissions().mode() & 0o777 == 0o700,
         "worktree hook owner directory changed while opening"
     );
-    if created {
+    if created.is_some() {
         fsync(&parent_fd).context("syncing worktree Git directory after owner-root creation")?;
         fsync(&root).context("syncing private worktree owner directory")?;
     }
@@ -141,7 +160,12 @@ pub(super) fn install_owner(git_dir: &Path, owner: &[u8]) -> Result<OwnerInstall
         OFlag::O_RDWR | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::from_bits_truncate(0o600),
     ) {
-        Ok(lock) => File::from(lock),
+        Ok(lock) => {
+            let lock = File::from(lock);
+            fchmod(&lock, Mode::from_bits_truncate(0o600))
+                .context("setting newly created worktree installer lock permissions")?;
+            lock
+        }
         Err(Errno::EEXIST) => File::from(
             openat(
                 &root,

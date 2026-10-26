@@ -727,6 +727,51 @@ fn generic_owner_observes_bootstrap_through_final_mise_cargo_and_gate_environmen
 }
 
 #[test]
+fn generic_owner_blocks_inherited_bash_env_startup_before_running_the_gate() {
+    let fixture = InstalledOwnerFixture::new(OwnerFixtureMode::BashEnvGate);
+    let original_index = fs::read(fixture.index()).expect("read original index");
+    let mut owner = fixture.spawn_owner("status", 37, 20_000, 20_000, 20_000);
+    let output = owner.wait_output(std::time::Duration::from_secs(8));
+    assert!(
+        output.status.success(),
+        "generic-owner Bash startup isolation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read(&fixture.gate_marker).expect("gate body marker"),
+        b"gate body ran\n"
+    );
+    assert!(
+        !fixture.bash_env_marker.exists(),
+        "the inherited Bash startup file must not run"
+    );
+    assert_eq!(
+        fs::read(fixture.index()).expect("index after generic owner"),
+        original_index
+    );
+}
+
+#[test]
+fn installed_owner_builds_and_cleans_snapshot_under_umask_0777() {
+    let mut fixture = InstalledOwnerFixture::new(OwnerFixtureMode::Umask0777);
+    let temporary = tempfile::tempdir().expect("create dedicated snapshot parent");
+    fixture.tmpdir_override = Some(temporary.path().to_path_buf());
+    let mut owner = fixture.spawn_owner("status", 0, 20_000, 20_000, 20_000);
+    let output = owner.wait_output(std::time::Duration::from_secs(8));
+    assert!(
+        output.status.success(),
+        "installed owner failed under umask 0777: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        crate::fs_util::read_dir_sorted(temporary.path())
+            .expect("inspect dedicated snapshot parent")
+            .is_empty(),
+        "successful installed-owner run removes its private snapshot"
+    );
+}
+
+#[test]
 fn installed_owner_first_gate_signal_collects_tracked_and_new_file_fixes() {
     let fixture = InstalledOwnerFixture::new(OwnerFixtureMode::BlockedGate);
     let original_index = fs::read(fixture.index()).expect("read original index");
@@ -922,6 +967,8 @@ enum OwnerFixtureMode {
     IsolationGate,
     BootstrapClean,
     BootstrapInjected,
+    BashEnvGate,
+    Umask0777,
 }
 
 struct InstalledOwnerFixture {
@@ -937,6 +984,8 @@ struct InstalledOwnerFixture {
     recovery_ticks: PathBuf,
     cargo_marker: PathBuf,
     gate_marker: PathBuf,
+    bash_env_file: PathBuf,
+    bash_env_marker: PathBuf,
     inherited_bootstrap: bool,
     probe_output: PathBuf,
     path_output: PathBuf,
@@ -995,6 +1044,18 @@ impl InstalledOwnerFixture {
         let canaries = IsolationCanaries::create(&repository, &scratch, mode);
         let cargo_marker = scratch.join("cargo-environment");
         let gate_marker = scratch.join("gate-environment");
+        let bash_env_file = scratch.join("bash-env-startup");
+        let bash_env_marker = scratch.join("bash-env-startup-ran");
+        if matches!(mode, OwnerFixtureMode::BashEnvGate) {
+            fs::write(
+                &bash_env_file,
+                format!(
+                    "printf 'startup ran\\n' > {}\nexit 0\n",
+                    shell_quote(&bash_env_marker)
+                ),
+            )
+            .expect("write hostile Bash startup file");
+        }
         let bin = scratch.join("bin");
         fs::create_dir(&bin).expect("create private fixture tools");
         fs::set_permissions(&bin, fs::Permissions::from_mode(0o700))
@@ -1046,6 +1107,8 @@ impl InstalledOwnerFixture {
             recovery_ticks,
             cargo_marker,
             gate_marker,
+            bash_env_file,
+            bash_env_marker,
             inherited_bootstrap: matches!(
                 mode,
                 OwnerFixtureMode::BootstrapClean | OwnerFixtureMode::BootstrapInjected
@@ -1108,7 +1171,15 @@ impl InstalledOwnerFixture {
         recovery_ms: u64,
         git_program: Option<&Path>,
     ) -> OwnerChild {
-        let mut command = Command::new(&self.owner);
+        let mut command = if matches!(self.mode, OwnerFixtureMode::Umask0777) {
+            let mut command = Command::new("/bin/sh");
+            command
+                .args(["-c", "umask 0777; exec \"$@\"", "jackin-owner"])
+                .arg(&self.owner);
+            command
+        } else {
+            Command::new(&self.owner)
+        };
         command
             .args([
                 "--exact",
@@ -1141,6 +1212,9 @@ impl InstalledOwnerFixture {
         }
         if self.inherited_bootstrap {
             command.env("RUSTC_BOOTSTRAP", "1");
+        }
+        if matches!(self.mode, OwnerFixtureMode::BashEnvGate) {
+            command.env("BASH_ENV", &self.bash_env_file);
         }
         if matches!(self.mode, OwnerFixtureMode::IsolationGate) {
             command
@@ -1459,6 +1533,10 @@ fn write_owner_toolchain(
     let gate_body = if matches!(mode, OwnerFixtureMode::IgnoredSourceGate) {
         "#!/bin/sh\nprintf 'ignored staged-source fixture\\n' > ignored-extra.txt\nexit 0\n"
             .to_owned()
+    } else if matches!(mode, OwnerFixtureMode::BashEnvGate) {
+        format!("#!/bin/bash\nprintf 'gate body ran\\n' > {gate_marker}\nexit 37\n")
+    } else if matches!(mode, OwnerFixtureMode::Umask0777) {
+        "#!/bin/sh\ntest \"$(umask)\" = 0777 || exit 72\ntest -r .git/index || exit 73\ntest -r tracked.txt || exit 74\nexit 0\n".to_owned()
     } else if matches!(mode, OwnerFixtureMode::IsolationGate) {
         format!(
             "#!/bin/sh\nset -eu\nif git f3-poison-file >/dev/null 2>&1; then exit 81; fi\nif git poison >/dev/null 2>&1; then exit 82; fi\nif git f3-global-poison >/dev/null 2>&1; then exit 93; fi\nif git f3-system-poison >/dev/null 2>&1; then exit 94; fi\nif cargo f3-poison >/dev/null 2>&1; then exit 83; fi\nif [ \"${{CARGO+x}}\" = x ]; then \"$CARGO\" --version || exit 84; fi\nif [ -n \"${{RUSTC_WRAPPER:-}}\" ]; then \"$RUSTC_WRAPPER\" \"$RUSTC\" --version || exit 85; else \"$RUSTC\" --version >/dev/null || exit 86; fi\ncargo --version >/dev/null || exit 87\nrust-build-guard -- mise exec --locked -- cargo --version >/dev/null || exit 90\nmkdir -p \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" || exit 88\nprintf 'private target\\n' > \"$CARGO_TARGET_DIR/artifact\"\nprintf 'private build\\n' > \"$CARGO_BUILD_BUILD_DIR/artifact\"\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" \"$RUSTC\" \"$(command -v cargo)\" > {probe_output}\nprintf '%s\\n' \"$PATH\" > {path_output}\nalias_path=${{PATH%%:*}}\nif [ -d \"$alias_path\" ]; then printf 'present\\n' > {alias_state}; else printf 'missing\\n' > {alias_state}; fi\nprintf '%s\\n' \"$GIT_CONFIG_GLOBAL\" \"$GIT_CONFIG_SYSTEM\" \"$GIT_CONFIG_NOSYSTEM\" > {git_config_output}\n: > {}\nprintf x >> {}\ncount=0\nwhile [ ! -e {gate_release} ] && [ \"$count\" -lt 300 ]; do /bin/sleep 0.05; printf x >> {}; count=$((count + 1)); done\n[ -e {gate_release} ] || exit 89\nexit 0\n",

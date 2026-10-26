@@ -23,7 +23,7 @@ use anyhow::{Context, Result, ensure};
 use jackin_process::{ExecRequest, SpoolError, SpoolFailureKind, exec_spooled_sync_cancellable};
 use nix::{
     fcntl::{OFlag, open},
-    sys::stat::Mode,
+    sys::stat::{Mode, fchmod},
 };
 use tempfile::TempDir;
 
@@ -595,8 +595,12 @@ fn read_bounded(mut reader: impl Read, limit: usize) -> io::Result<Vec<u8>> {
 
 /// Open a read handle for synchronous snapshot identity verification.
 pub(super) fn open_readonly(path: &Path) -> io::Result<File> {
-    let descriptor =
-        open(path, OFlag::O_RDONLY | OFlag::O_CLOEXEC, Mode::empty()).map_err(io::Error::from)?;
+    let descriptor = open(
+        path,
+        OFlag::O_RDONLY | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(io::Error::from)?;
     Ok(File::from(descriptor))
 }
 
@@ -608,6 +612,7 @@ pub(super) fn create_private_new(path: &Path) -> io::Result<File> {
         Mode::from_bits_truncate(0o600),
     )
     .map_err(io::Error::from)?;
+    fchmod(&descriptor, Mode::from_bits_truncate(0o600)).map_err(io::Error::from)?;
     Ok(File::from(descriptor))
 }
 
@@ -618,6 +623,7 @@ fn create_private_spool(path: &Path) -> io::Result<File> {
         Mode::from_bits_truncate(0o600),
     )
     .map_err(io::Error::from)?;
+    fchmod(&descriptor, Mode::from_bits_truncate(0o600)).map_err(io::Error::from)?;
     Ok(File::from(descriptor))
 }
 

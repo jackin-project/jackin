@@ -12,16 +12,22 @@ fixture=$(mktemp -d "${TMPDIR:-/tmp}/jackin-pre-push-fixture.XXXXXX")
 fake_bin=$(mktemp -d "${TMPDIR:-/tmp}/jackin-pre-push-bin.XXXXXX")
 trap 'rm -rf "$fixture" "$fake_bin"' EXIT
 
-hk_version=$(mise exec --locked -- hk --version)
+git -C "$repo_root" show HEAD:rust-toolchain.toml > "$fixture/rust-toolchain.toml"
+git -C "$repo_root" show HEAD:mise.toml > "$fixture/mise.toml"
+git -C "$repo_root" show HEAD:mise.lock > "$fixture/mise.lock"
+git -C "$fixture" init -q
+git -C "$fixture" config user.name 'Jackin pre-push fixture'
+git -C "$fixture" config user.email jackin-pre-push-fixture@example.invalid
+git -C "$fixture" config extensions.worktreeConfig true
+git -C "$fixture" add rust-toolchain.toml mise.toml mise.lock
+export MISE_TRUSTED_CONFIG_PATHS=$fixture
+
+hk_version=$(cd "$fixture" && mise exec --locked -- hk --version)
 test "$hk_version" = 'hk 2.8.0'
-hk_bin=$(mise which hk)
+hk_bin=$(cd "$fixture" && mise which hk)
 test -x "$hk_bin"
 
 mkdir -p "$fixture/scripts"
-git -C "$fixture" init -q
-git -C "$fixture" config --local extensions.worktreeConfig true
-git -C "$fixture" config user.name 'Jackin pre-push fixture'
-git -C "$fixture" config user.email jackin-pre-push-fixture@example.invalid
 cp "$repo_root/scripts/pre-push-security" "$fixture/scripts/pre-push-security"
 cat > "$fixture/scripts/pre-push-probe" <<'EOF_PROBE'
 #!/bin/sh

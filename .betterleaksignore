@@ -397,3 +397,11 @@ b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-usage/src/usage/
 3e1bb814a50e2d6f56692802f6c1e1db9b0dbf84:.github/workflows/ci.yml:generic-api-key:5334
 3e1bb814a50e2d6f56692802f6c1e1db9b0dbf84:.github/workflows/ci.yml:generic-api-key:5421
 3e1bb814a50e2d6f56692802f6c1e1db9b0dbf84:.github/workflows/ci.yml:generic-api-key:5450
+
+# Reason: existing credential-stripping and argument-redaction tests use synthetic fixture inputs; they perform no credential validation or live authenticated operation.
+# 4 findings; rule: generic-credential-uri; files: crates/services/jackin-isolation/src/materialize/tests/case_01.rs (2), crates/services/jackin-isolation/src/materialize/tests/case_03.rs (1), crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs (1).
+# Provenance: source commits e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c and d84c40a1677e4e190c11f9994492aab893f8ac4b; same fixture scenarios are documented in the reviewed 2026-10-22 baseline.
+e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/materialize/tests/case_01.rs:generic-credential-uri:75
+e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/materialize/tests/case_01.rs:generic-credential-uri:104
+e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/materialize/tests/case_03.rs:generic-credential-uri:18
+d84c40a1677e4e190c11f9994492aab893f8ac4b:crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs:generic-credential-uri:245

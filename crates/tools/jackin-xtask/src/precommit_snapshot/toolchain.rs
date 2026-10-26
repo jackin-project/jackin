@@ -5,16 +5,24 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     env,
     ffi::{OsStr, OsString},
-    fs,
+    fs::{self, File},
+    io::Read,
     os::unix::{
         ffi::OsStrExt,
-        fs::{PermissionsExt, symlink},
+        fs::{MetadataExt, PermissionsExt},
     },
     path::{Path, PathBuf},
     process::Command,
 };
 
 use anyhow::{Context, Result, bail, ensure};
+#[cfg(target_os = "macos")]
+use nix::sys::stat::{FchmodatFlags, fchmodat};
+use nix::{
+    fcntl::{AtFlags, OFlag, open},
+    sys::stat::{Mode, SFlag, fstatat},
+    unistd::{geteuid, symlinkat},
+};
 
 use super::git::OwnedSnapshot;
 use super::process::{CommandBudget, EnvironmentMode, SetupControls, capture_strict};
@@ -41,6 +49,7 @@ const MANAGED_TOOLS: &[&str] = &[
 ];
 
 const FIXED_SYSTEM_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
+const RUST_TOOLCHAIN_FILE_LIMIT: u64 = 1024 * 1024;
 
 const HOST_INPUT_KEYS: &[&str] = &[
     "PATH",
@@ -343,16 +352,23 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     let hook_cwd =
         fs::canonicalize(env::current_dir().context("reading hook invocation directory")?)
             .context("resolving physical hook invocation directory")?;
+    let temporary_parent = super::process::canonical_temporary_parent(&env::temp_dir())
+        .context("anchoring hook temporary directory")?;
     let inherited_entries = anchor_inherited_path(&hook_cwd, inputs.search_path());
-    let path_aliases = create_path_aliases(&env::temp_dir(), Path::new("/tmp"))?;
-    populate_inherited_path_aliases(path_aliases.path(), &inherited_entries)?;
+    let path_aliases = create_path_aliases(&temporary_parent, Path::new("/tmp"))?;
+    let path_alias_dir_handle = open_private_tool_directory(path_aliases.path())?;
+    populate_inherited_path_aliases(&path_alias_dir_handle, &inherited_entries)?;
     let discovery_path = qualified_path_entries(path_aliases.path(), &inherited_entries)?;
     let home = inputs.home.as_deref().map(Path::new);
     let guard = resolve_guard(&discovery_path, home)?;
-    let pin = rust_release(&snapshot.root.join("rust-toolchain.toml"))?;
+    let pin = rust_release(&snapshot.root.join("rust-toolchain.toml"), controls)?;
     let mise = find_executable("mise", &discovery_path).context("missing Mise executable")?;
     let mise = fs::canonicalize(mise).context("resolving Mise executable")?;
-    let mise_env = inputs.command_environment(&snapshot.root);
+    let mut mise_env = inputs.command_environment(&snapshot.root);
+    mise_env.insert(
+        OsString::from("TMPDIR"),
+        temporary_parent.as_os_str().to_owned(),
+    );
     let rustup = find_executable("rustup", &discovery_path).context("missing rustup executable")?;
     let rustup = fs::canonicalize(rustup).context("resolving rustup executable")?;
     let resolved = resolve_managed_tools(&mise, &mise_env, &snapshot.root, controls)?;
@@ -367,31 +383,43 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     let cargo = effective_cargo(&mise, &mise_env, &snapshot.root, controls)?;
     let managed_dir = snapshot.scratch_root.join("tools");
     fs::create_dir(&managed_dir).context("creating private qualified tool directory")?;
+    fs::set_permissions(&managed_dir, fs::Permissions::from_mode(0o700))
+        .context("protecting private qualified tool directory")?;
+    let managed_dir_handle = open_private_tool_directory(&managed_dir)?;
     // `mise exec` has already resolved this to the configured MBX Cargo
     // wrapper. Put it before rustup's bin directory so `cargo` cannot silently
     // resolve to rustup's Cargo and bypass the admitted wrapper.
-    symlink(&cargo, managed_dir.join("cargo"))
+    create_private_symlink(&managed_dir_handle, &cargo, OsStr::new("cargo"))
         .context("linking the qualified MBX Cargo wrapper")?;
     for name in MANAGED_TOOLS {
-        symlink(&resolved[*name], managed_dir.join(name))
+        create_private_symlink(&managed_dir_handle, &resolved[*name], OsStr::new(name))
             .with_context(|| format!("linking qualified Mise tool {name}"))?;
     }
-    symlink(&guard, managed_dir.join("rust-build-guard"))
+    create_private_symlink(&managed_dir_handle, &guard, OsStr::new("rust-build-guard"))
         .context("linking qualified rust-build-guard")?;
-    symlink(&mise, managed_dir.join("mise")).context("linking qualified Mise executable")?;
+    create_private_symlink(&managed_dir_handle, &mise, OsStr::new("mise"))
+        .context("linking qualified Mise executable")?;
     #[cfg(target_os = "macos")]
-    symlink("/usr/bin/xcrun", managed_dir.join("xcrun"))
-        .context("linking fixed Xcode tool resolver")?;
+    create_private_symlink(
+        &managed_dir_handle,
+        Path::new("/usr/bin/xcrun"),
+        OsStr::new("xcrun"),
+    )
+    .context("linking fixed Xcode tool resolver")?;
 
-    let environment = build_qualified_environment(
+    populate_path_aliases(&path_alias_dir_handle, &managed_dir, &rust_tools)?;
+    let mut environment = build_qualified_environment(
         snapshot,
-        &managed_dir,
         path_aliases.path(),
         &cargo,
         &pin,
         &rust_tools,
         &inputs,
     )?;
+    environment.insert(
+        OsString::from("TMPDIR"),
+        temporary_parent.as_os_str().to_owned(),
+    );
     verify_managed_projection(&mise, &environment, &snapshot.root, controls)?;
     verify_rust_toolchain(
         &pin,
@@ -410,7 +438,6 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
 
 fn build_qualified_environment(
     snapshot: &OwnedSnapshot,
-    managed_dir: &Path,
     path_alias_dir: &Path,
     cargo: &Path,
     pin: &str,
@@ -418,7 +445,6 @@ fn build_qualified_environment(
     inputs: &HostInputs,
 ) -> Result<BTreeMap<OsString, OsString>> {
     let mut environment = inputs.environment_for(&snapshot.root, OsStr::new(FIXED_SYSTEM_PATH));
-    populate_path_aliases(path_alias_dir, managed_dir, rust_tools)?;
     environment.insert(OsString::from("PATH"), qualified_gate_path(path_alias_dir)?);
     let selected_path = environment
         .get(OsStr::new("PATH"))
@@ -573,33 +599,81 @@ fn create_path_aliases(preferred: &Path, fallback: &Path) -> Result<tempfile::Te
 }
 
 fn populate_path_aliases(
-    path_alias_dir: &Path,
+    path_alias_dir: &File,
     managed_dir: &Path,
     rust_tools: &BTreeMap<&str, PathBuf>,
 ) -> Result<()> {
     for entry in
         crate::fs_util::read_dir_sorted(managed_dir).context("reading private qualified tools")?
     {
-        symlink(entry.path(), path_alias_dir.join(entry.file_name()))
+        create_private_symlink(path_alias_dir, &entry.path(), &entry.file_name())
             .context("linking private tool into separator-safe PATH projection")?;
     }
     for (name, path) in rust_tools {
-        symlink(path, path_alias_dir.join(name))
+        create_private_symlink(path_alias_dir, path, OsStr::new(name))
             .with_context(|| format!("linking qualified Rust tool {name}"))?;
     }
     Ok(())
 }
 
 fn populate_inherited_path_aliases(
-    path_alias_dir: &Path,
+    path_alias_dir: &File,
     inherited_path: &[PathBuf],
 ) -> Result<()> {
     for (index, entry) in inherited_path.iter().enumerate() {
         if entry.as_os_str().as_encoded_bytes().contains(&b':') {
-            symlink(entry, inherited_path_alias(path_alias_dir, index))
-                .context("linking inherited PATH directory without delimiter")?;
+            create_private_symlink(
+                path_alias_dir,
+                entry,
+                inherited_path_alias_name(index).as_os_str(),
+            )
+            .context("linking inherited PATH directory without delimiter")?;
         }
     }
+    Ok(())
+}
+
+fn open_private_tool_directory(path: &Path) -> Result<File> {
+    let descriptor = open(
+        path,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .with_context(|| format!("opening private tool directory {}", path.display()))?;
+    Ok(File::from(descriptor))
+}
+
+fn create_private_symlink(parent: &File, target: &Path, name: &OsStr) -> Result<()> {
+    symlinkat(target, parent, name).context("creating new private tool symlink")?;
+    let created = fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
+        .context("checking new private tool symlink")?;
+    ensure!(
+        created.st_mode & SFlag::S_IFMT.bits() == SFlag::S_IFLNK.bits()
+            && created.st_uid == geteuid().as_raw(),
+        "new private tool symlink has unsafe identity"
+    );
+    #[cfg(target_os = "macos")]
+    fchmodat(
+        parent,
+        name,
+        Mode::from_bits_truncate(0o700),
+        FchmodatFlags::NoFollowSymlink,
+    )
+    .context("setting new private tool symlink permissions")?;
+    let named = fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
+        .context("restating new private tool symlink")?;
+    ensure!(
+        named.st_dev == created.st_dev
+            && named.st_ino == created.st_ino
+            && named.st_mode & SFlag::S_IFMT.bits() == SFlag::S_IFLNK.bits()
+            && named.st_uid == created.st_uid,
+        "new private tool symlink changed while setting permissions"
+    );
+    #[cfg(target_os = "macos")]
+    ensure!(
+        named.st_mode & 0o777 == 0o700,
+        "new private tool symlink permissions were not normalized"
+    );
     Ok(())
 }
 
@@ -625,6 +699,10 @@ fn qualified_gate_path(path_alias_dir: &Path) -> Result<OsString> {
 
 fn inherited_path_alias(path_alias_dir: &Path, index: usize) -> PathBuf {
     path_alias_dir.join(format!("inherited-path-{index}"))
+}
+
+fn inherited_path_alias_name(index: usize) -> OsString {
+    OsString::from(format!("inherited-path-{index}"))
 }
 
 fn anchor_inherited_path(hook_cwd: &Path, inherited_path: &OsStr) -> Vec<PathBuf> {
@@ -747,6 +825,12 @@ fn create_private_mise_config_dir(isolation_root: &Path, name: &str) -> Result<P
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             fs::create_dir(&path).with_context(|| {
                 format!("creating private Mise config directory: {}", path.display())
+            })?;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).with_context(|| {
+                format!(
+                    "protecting private Mise config directory: {}",
+                    path.display()
+                )
             })?;
         }
         Err(error) => {
@@ -1149,10 +1233,72 @@ fn verify_managed_projection(
     Ok(())
 }
 
-fn rust_release(path: &Path) -> Result<String> {
-    let contents = fs::read_to_string(path).context("reading staged rust-toolchain.toml")?;
+fn rust_release(path: &Path, controls: &SetupControls) -> Result<String> {
+    controls.check_start()?;
+    let before = fs::metadata(path).context("inspecting staged rust-toolchain.toml")?;
+    ensure!(
+        before.file_type().is_file(),
+        "staged rust-toolchain.toml is not a regular file"
+    );
+    ensure!(
+        before.len() <= RUST_TOOLCHAIN_FILE_LIMIT,
+        "staged rust-toolchain.toml exceeds its byte limit"
+    );
+    let mut file = File::from(
+        open(
+            path,
+            OFlag::O_RDONLY | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .context("opening staged rust-toolchain.toml")?,
+    );
+    let opened = file
+        .metadata()
+        .context("restating staged rust-toolchain.toml")?;
+    ensure!(
+        same_rust_toolchain_state(&before, &opened),
+        "staged rust-toolchain.toml changed while opening"
+    );
+    let capacity =
+        usize::try_from(before.len()).context("converting rust-toolchain.toml file size")?;
+    let mut contents = Vec::with_capacity(capacity);
+    let mut buffer = [0_u8; 8192];
+    loop {
+        controls.check_start()?;
+        let count = file
+            .read(&mut buffer)
+            .context("reading staged rust-toolchain.toml")?;
+        if count == 0 {
+            break;
+        }
+        let current_length =
+            u64::try_from(contents.len()).context("converting rust-toolchain.toml byte count")?;
+        let next = u64::try_from(count)
+            .context("converting rust-toolchain.toml read length")?
+            .checked_add(current_length)
+            .context("counting rust-toolchain.toml bytes")?;
+        ensure!(
+            next <= RUST_TOOLCHAIN_FILE_LIMIT,
+            "staged rust-toolchain.toml exceeds its byte limit"
+        );
+        contents.extend_from_slice(&buffer[..count]);
+    }
+    controls.check_start()?;
+    let after_fd = file
+        .metadata()
+        .context("restating staged rust-toolchain.toml")?;
+    let after_path = fs::metadata(path).context("restating staged rust-toolchain.toml")?;
+    ensure!(
+        u64::try_from(contents.len()).context("converting rust-toolchain.toml byte count")?
+            == before.len()
+            && same_rust_toolchain_state(&before, &after_fd)
+            && same_rust_toolchain_state(&before, &after_path),
+        "staged rust-toolchain.toml changed while reading"
+    );
+    let contents = String::from_utf8(contents).context("decoding staged rust-toolchain.toml")?;
     let value: toml::Value =
         toml::from_str(&contents).context("parsing staged rust-toolchain.toml")?;
+    controls.check_start()?;
     let channel = value
         .get("toolchain")
         .and_then(|toolchain| toolchain.get("channel"))
@@ -1166,6 +1312,17 @@ fn rust_release(path: &Path) -> Result<String> {
         "hook requires an exact numeric Rust release pin"
     );
     Ok(channel.to_owned())
+}
+
+fn same_rust_toolchain_state(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+    left.file_type().is_file()
+        && right.file_type().is_file()
+        && left.dev() == right.dev()
+        && left.ino() == right.ino()
+        && left.mode() == right.mode()
+        && left.len() == right.len()
+        && left.mtime() == right.mtime()
+        && left.mtime_nsec() == right.mtime_nsec()
 }
 
 fn find_executable(name: &str, path: &OsStr) -> Result<PathBuf> {
