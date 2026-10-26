@@ -13,7 +13,7 @@ pub use local_store::{
 
 mod fixtures;
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub use fixtures::connect_without_rowid_fixture;
 
 pub async fn operation<T, E>(

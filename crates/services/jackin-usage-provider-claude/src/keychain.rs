@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 use zeroize::Zeroize as _;
 use zeroize::Zeroizing;
 
@@ -19,7 +19,7 @@ pub struct ClaudeUnattendedKeychainGuard {
     active: bool,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 static KEYCHAIN_INTERACTION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(target_os = "macos")]
@@ -27,13 +27,13 @@ type NativeUnattendedKeychainGuardState = UnattendedKeychainGuardState<
     security_framework::os::macos::keychain::KeychainUserInteractionLock,
 >;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 struct UnattendedKeychainGuardState<Guard> {
     active_scopes: usize,
     interaction_lock: Option<Guard>,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 impl<Guard> UnattendedKeychainGuardState<Guard> {
     fn new() -> Self {
         Self {
@@ -51,7 +51,7 @@ fn unattended_keychain_guard_state() -> &'static std::sync::Mutex<NativeUnattend
     STATE.get_or_init(|| std::sync::Mutex::new(NativeUnattendedKeychainGuardState::new()))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 fn acquire_unattended_keychain_scope<Guard>(
     state: &mut UnattendedKeychainGuardState<Guard>,
     user_interaction_allowed: impl FnOnce() -> Result<bool, ()>,
@@ -73,7 +73,7 @@ fn acquire_unattended_keychain_scope<Guard>(
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 fn release_unattended_keychain_scope<Guard>(state: &mut UnattendedKeychainGuardState<Guard>) {
     state.active_scopes = state.active_scopes.saturating_sub(1);
     if state.active_scopes == 0 {
@@ -133,7 +133,7 @@ pub enum ClaudeKeychainRead {
     AccessUnavailable,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 pub fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
     match code {
         -128 | -25293 => ClaudeKeychainRead::Denied,
@@ -239,7 +239,7 @@ pub fn read_claude_keychain_item(_service: &str) -> ClaudeKeychainRead {
     ClaudeKeychainRead::Missing
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 fn with_keychain_interaction_permission<T, Guard>(
     allow_ui: bool,
     user_interaction_allowed: impl FnOnce() -> Result<bool, ()>,
@@ -262,7 +262,7 @@ fn with_keychain_interaction_permission<T, Guard>(
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 fn read_claude_keychain_item_with<Guard>(
     allow_ui: bool,
     user_interaction_allowed: impl FnOnce() -> Result<bool, ()>,
@@ -302,7 +302,7 @@ pub(crate) fn all_stdio_are_terminal() -> bool {
     stdin_is_terminal && stdout_is_terminal && stderr_is_terminal
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 fn trim_keychain_payload_and_zeroize(json: &mut String) -> ClaudeKeychainRead {
     let payload = json.trim().to_owned();
     json.zeroize();

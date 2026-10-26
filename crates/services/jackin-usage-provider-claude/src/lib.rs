@@ -16,9 +16,9 @@ pub use credentials::{
     claude_oauth_from_value, claude_organization_type_from_value, load_claude_account_email,
     parse_claude_keychain_profile,
 };
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub use credentials::{load_claude_oauth_credentials, load_claude_organization_type};
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 pub use keychain::classify_claude_keychain_status;
 pub use keychain::{
     ClaudeKeychainPolicyError, ClaudeKeychainRead, ClaudeUnattendedKeychainGuard,

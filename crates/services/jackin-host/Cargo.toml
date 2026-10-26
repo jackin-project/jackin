@@ -34,3 +34,5 @@ workspace = true
 
 [dev-dependencies]
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }

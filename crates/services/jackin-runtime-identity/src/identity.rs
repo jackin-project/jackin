@@ -21,7 +21,7 @@ pub struct GitIdentity {
     pub user_email: String,
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 impl GitIdentity {
     pub fn for_tests(user_name: &str, user_email: &str) -> Self {
         Self {

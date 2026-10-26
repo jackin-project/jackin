@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::HashSet;
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 use std::future::Future;
 use std::path::PathBuf;
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 use std::sync::Mutex;
 
 use anyhow::Result;
@@ -146,7 +146,7 @@ impl AppleContainerClient {
         help_advertises_launch_generation_label(&output.stdout, &output.stderr)
     }
 
-    #[cfg(feature = "test-support")]
+    #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
     pub async fn list_containers_with_command_runner(
         &self,
@@ -156,7 +156,7 @@ impl AppleContainerClient {
         self.list_containers_with_runner(runner, name_prefix).await
     }
 
-    #[cfg(feature = "test-support")]
+    #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
     pub async fn inspect_container_with_command_runner(
         &self,
@@ -221,7 +221,7 @@ impl AppleContainerApi for AppleContainerClient {
 }
 
 #[doc(hidden)]
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub trait AppleContainerCommandRunner: Send + Sync {
     async fn exec(
         &self,
@@ -604,7 +604,7 @@ impl<'de> Deserialize<'de> for AppleContainerStatus {
     }
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Default)]
 pub struct FakeAppleContainerClient {
     pub containers: Mutex<Vec<AppleContainerInfo>>,
@@ -613,7 +613,7 @@ pub struct FakeAppleContainerClient {
     pub launch_generation_label_supported: Mutex<bool>,
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 impl FakeAppleContainerClient {
     pub fn new() -> Self {
         Self::default()
@@ -706,7 +706,7 @@ impl FakeAppleContainerClient {
     }
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 impl AppleContainerApi for FakeAppleContainerClient {
     fn run_container(
         &self,

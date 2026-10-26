@@ -2888,6 +2888,8 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-telemetry",
+ "tempfile",
+ "tokio",
  "url",
 ]
 

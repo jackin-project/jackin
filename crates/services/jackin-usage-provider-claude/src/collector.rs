@@ -8,7 +8,7 @@ use jackin_usage_provider_core::{ProviderFailureMetadata, ProviderHttpError, Pro
 
 use crate::keychain::{ClaudeKeychainRead, read_claude_keychain_item_uncached};
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 use super::lease::{MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES, replace_if_exact};
 use super::{
     ClaudeCredentialLease, ClaudeOAuthUsageResponse, ClaudeResolved,
@@ -325,7 +325,7 @@ where
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 fn payload_from_keychain_read(read: ClaudeKeychainRead) -> Option<Zeroizing<String>> {
     match read {
         ClaudeKeychainRead::Payload { json } => Some(json),

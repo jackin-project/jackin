@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#![cfg(feature = "test-support")]
+#![cfg(any(test, feature = "test-support"))]
 
 use crate::{Connection, DbOperation, operation};
 
