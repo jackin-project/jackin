@@ -602,3 +602,6 @@ fn unavailable() -> MonitorIssue {
         retry_at_epoch: None,
     }
 }
+
+#[cfg(test)]
+mod tests;

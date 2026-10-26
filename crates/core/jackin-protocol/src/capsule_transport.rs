@@ -263,3 +263,6 @@ where
         .context("flushing Capsule transport ACK")?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

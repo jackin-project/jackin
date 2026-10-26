@@ -334,3 +334,6 @@ fn payload_from_keychain_read(read: ClaudeKeychainRead) -> Option<Zeroizing<Stri
         | ClaudeKeychainRead::AccessUnavailable => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

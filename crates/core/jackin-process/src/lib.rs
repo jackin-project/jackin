@@ -696,3 +696,6 @@ pub fn capture_stdout_sync(request: &ExecRequest) -> Result<Vec<u8>> {
     }
     Ok(result.stdout)
 }
+
+#[cfg(test)]
+mod tests;

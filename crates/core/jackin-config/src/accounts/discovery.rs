@@ -577,3 +577,6 @@ fn keychain_service_exists(service: &str) -> bool {
 fn keychain_service_exists(_service: &str) -> bool {
     false
 }
+
+#[cfg(test)]
+mod tests;

@@ -2,6 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+pub(super) fn ignoring_resolvers() -> PrepareResolvers<'static> {
+    PrepareResolvers {
+        auth_modes: &|_| AuthForwardMode::Ignore,
+        sync_source_dirs: &|_| None,
+    }
+}
 
 pub(super) fn simple_manifest(temp: &tempfile::TempDir) -> RoleManifest {
     std::fs::write(
@@ -20,4 +26,14 @@ plugins = []
     )
     .unwrap();
     load_role_manifest(temp.path()).unwrap()
+}
+
+pub(super) fn amp_binding_with_cache(key: &str, cache: PathBuf) -> InstanceAuthBinding {
+    let mut binding = InstanceAuthBinding::new(key, Agent::Amp, AuthForwardMode::Ignore, None);
+    binding.xdg_roots = Some(jackin_config::XdgRoots {
+        data: cache.join("data"),
+        config: cache.join("config"),
+        cache,
+    });
+    binding
 }

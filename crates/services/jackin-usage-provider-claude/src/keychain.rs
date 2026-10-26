@@ -314,3 +314,6 @@ fn trim_keychain_payload_and_zeroize(json: &mut String) -> ClaudeKeychainRead {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

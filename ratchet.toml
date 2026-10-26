@@ -97,6 +97,9 @@ bound = 1
 key = "clippy::disallowed_methods@jackin-instance-credentials"
 bound = 3
 [[family.entry]]
+key = "clippy::disallowed_methods@jackin-instance-roles"
+bound = 1
+[[family.entry]]
 key = "clippy::disallowed_methods@jackin-omp-store"
 bound = 4
 [[family.entry]]
@@ -475,6 +478,9 @@ bound = 10
 key = "clippy::unused_async_trait_impl@jackin-image"
 bound = 1
 [[family.entry]]
+key = "clippy::unused_async_trait_impl@jackin-isolation"
+bound = 1
+[[family.entry]]
 key = "clippy::unwrap_used@jackin"
 bound = 2
 [[family.entry]]
@@ -494,6 +500,9 @@ key = "clippy::unwrap_used@jackin-runtime"
 bound = 2
 [[family.entry]]
 key = "clippy::unwrap_used@jackin-test-support"
+bound = 1
+[[family.entry]]
+key = "clippy::unwrap_used@jackin-workflow-spec"
 bound = 1
 [[family.entry]]
 key = "clippy::useless_let_if_seq@jackin"
