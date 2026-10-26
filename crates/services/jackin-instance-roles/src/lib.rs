@@ -8,4 +8,6 @@ pub use role_state::{PrepareResolvers, RoleState};
 mod tests;
 
 #[cfg(test)]
+pub(crate) use jackin_instance_agents::{InstanceAuthBinding, capture_selected_account_sources};
+#[cfg(test)]
 pub(crate) use jackin_instance_credentials::AuthProvisionOutcome;

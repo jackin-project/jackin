@@ -36,3 +36,6 @@ pub(crate) fn ensure_no_preservation_hold(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

@@ -225,3 +225,6 @@ pub(crate) const fn supports_selective_reaping() -> bool {
         all(target_os = "linux", not(target_env = "uclibc"))
     ))
 }
+
+#[cfg(test)]
+mod tests;

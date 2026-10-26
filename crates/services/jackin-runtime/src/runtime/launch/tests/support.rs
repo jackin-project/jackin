@@ -122,9 +122,85 @@ pub(super) fn compat_dind_load_options() -> crate::runtime::launch::LoadOptions 
     }
 }
 
-pub(super) fn launched_role_container_name(
+pub(super) fn arg_after(command: &str, flag: &str) -> String {
+    let mut args = command.split_whitespace();
+    while let Some(arg) = args.next() {
+        if arg == flag {
+            return args.next().unwrap_or_default().to_owned();
+        }
+    }
+    String::new()
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct ObservedHostEnvFile {
+    pub(super) path: std::path::PathBuf,
+    pub(super) contents: String,
+    #[cfg(unix)]
+    pub(super) mode: u32,
+}
+
+pub(super) fn observe_host_env_file(
+    runner: &mut jackin_test_support::FakeRunner,
+    paths: &jackin_core::JackinPaths,
+) -> std::sync::Arc<std::sync::Mutex<Option<ObservedHostEnvFile>>> {
+    let observed = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let output = std::sync::Arc::clone(&observed);
+    let directory = paths.jackin_home.join("runtime-env");
+    runner.side_effects.push((
+        "docker run -d --name".to_owned(),
+        Box::new(move || {
+            let files = std::fs::read_dir(&directory)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .filter(|path| path.extension().is_some_and(|extension| extension == "env"))
+                .collect::<Vec<_>>();
+            assert_eq!(files.len(), 1, "one host env file must exist at launch");
+            let path = files[0].clone();
+            let contents = std::fs::read_to_string(&path).unwrap();
+            #[cfg(unix)]
+            let mode = {
+                use std::os::unix::fs::PermissionsExt as _;
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777
+            };
+            *output.lock().unwrap() = Some(ObservedHostEnvFile {
+                path,
+                contents,
+                #[cfg(unix)]
+                mode,
+            });
+        }),
+    ));
+    observed
+}
+
+pub(super) fn assert_host_env_file_outside_mounts(command: &str, env_file: &std::path::Path) {
+    let mut arguments = command.split_whitespace();
+    while let Some(argument) = arguments.next() {
+        if argument != "-v" {
+            continue;
+        }
+        let mount = arguments.next().expect("mount flag must have a value");
+        let host_source = mount.split(':').next().expect("mount must have a source");
+        assert!(
+            !env_file.starts_with(host_source),
+            "host env file must be outside every mounted source"
+        );
+    }
+}
+
+pub(super) fn launched_role_container_name(runner: &jackin_test_support::FakeRunner) -> String {
+    let command = runner
+        .recorded
+        .iter()
+        .find(|call| call.contains("docker run -d --name ") && call.contains("jackin.kind=role"))
+        .expect("expected role docker run command");
+    arg_after(command, "--name")
+}
+
+pub(super) fn launched_dind_container(
     docker: &jackin_test_support::FakeDockerClient,
-) -> String {
+) -> (String, jackin_core::ContainerSpec) {
     docker
         .created_containers
         .borrow()
@@ -132,8 +208,26 @@ pub(super) fn launched_role_container_name(
         .find(|(_, spec)| {
             spec.labels
                 .get("jackin.kind")
-                .is_some_and(|kind| kind == "role")
+                .is_some_and(|value| value == "dind")
         })
-        .map(|(name, _)| name.clone())
-        .expect("expected role container creation")
+        .cloned()
+        .expect("expected DinD container")
+}
+
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(super) fn auto_trust(
+    _: &jackin_core::RoleSelector,
+    _: &jackin_config::RoleSource,
+) -> anyhow::Result<()> {
+    Ok(())
+}
+
+pub(super) fn deny_trust(
+    _: &jackin_core::RoleSelector,
+    _: &jackin_config::RoleSource,
+) -> anyhow::Result<()> {
+    anyhow::bail!("role source not trusted — aborting")
 }

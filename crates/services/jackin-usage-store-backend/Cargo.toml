@@ -30,6 +30,8 @@ tokio = { workspace = true, features = ["rt", "sync"] }
 turso = { workspace = true }
 
 [dev-dependencies]
+anyhow = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
 
 [lints]

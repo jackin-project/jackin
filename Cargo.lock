@@ -2798,6 +2798,7 @@ dependencies = [
  "jackin-build-meta",
  "jackin-core",
  "jackin-diagnostics",
+ "jackin-otlp-testbed",
  "jackin-process",
  "jackin-process-directory",
  "jackin-telemetry",
@@ -2807,6 +2808,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2938,9 +2940,12 @@ dependencies = [
  "jackin-instance-agents",
  "jackin-instance-credentials",
  "jackin-manifest",
+ "jackin-omp-store",
  "jackin-telemetry",
  "nix 0.31.3",
+ "rusqlite",
  "rustix 1.1.5",
+ "serde_json",
  "tempfile",
 ]
 
@@ -3122,6 +3127,7 @@ dependencies = [
  "jackin-runtime-cleanup-dind-gc",
  "jackin-runtime-cleanup-eject-resources",
  "jackin-runtime-cleanup-prune-cache",
+ "jackin-runtime-cleanup-prune-dir",
  "jackin-runtime-cleanup-prune-home",
  "jackin-runtime-cleanup-prune-images",
  "jackin-runtime-cleanup-prune-roles",
@@ -3182,6 +3188,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "toml",
  "tracing",
 ]
 
@@ -3581,6 +3588,7 @@ dependencies = [
  "jackin-telemetry",
  "nix 0.31.3",
  "sha2 0.11.1",
+ "tempfile",
  "tokio",
 ]
 
@@ -3839,6 +3847,7 @@ dependencies = [
  "jackin-isolation",
  "jackin-protocol",
  "jackin-runtime-apple-container-client",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 
@@ -4636,10 +4645,12 @@ dependencies = [
 name = "jackin-usage-store-backend"
 version = "0.6.4"
 dependencies = [
+ "anyhow",
  "hex",
  "jackin-telemetry",
  "nix 0.31.3",
  "sha2 0.11.1",
+ "tempfile",
  "tokio",
  "turso",
 ]

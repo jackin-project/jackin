@@ -371,7 +371,7 @@ key = "clippy::too_many_arguments@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime"
-bound = 7
+bound = 8
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime-docker-profile"
 bound = 1
@@ -472,6 +472,9 @@ bound = 6
 key = "clippy::undocumented_unsafe_blocks@jackin-usage-host-accounts"
 bound = 4
 [[family.entry]]
+key = "clippy::unnecessary_wraps@jackin-runtime"
+bound = 1
+[[family.entry]]
 key = "clippy::unwrap_used@jackin-capsule"
 bound = 1
 [[family.entry]]
@@ -570,6 +573,9 @@ bound = 7
 [[family.entry]]
 key = "unused_imports@jackin-usage"
 bound = 12
+[[family.entry]]
+key = "unused_qualifications@jackin-runtime"
+bound = 1
 [[family]]
 id = "agent-doc-bytes"
 kind = "numeric"

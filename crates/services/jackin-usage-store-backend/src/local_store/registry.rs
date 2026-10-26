@@ -233,6 +233,34 @@ impl Drop for ManagedOpenPermit {
     }
 }
 
+#[cfg(test)]
+struct ManagedPreparePause {
+    ready: std::sync::mpsc::Sender<()>,
+    release: std::sync::mpsc::Receiver<()>,
+}
+
+#[cfg(test)]
+static MANAGED_PREPARE_PAUSES: OnceLock<
+    StdMutex<HashMap<std::path::PathBuf, ManagedPreparePause>>,
+> = OnceLock::new();
+
+#[cfg(test)]
+pub(super) fn block_managed_prepare_for_test(path: &Path) {
+    let Ok(resolved) = resolve_source_path(path) else {
+        return;
+    };
+    let pause = MANAGED_PREPARE_PAUSES
+        .get()
+        .and_then(|pauses| pauses.lock().ok())
+        .and_then(|mut pauses| pauses.remove(&resolved.path));
+    if let Some(pause) = pause {
+        let _send_result = pause.ready.send(());
+        let _wait_result = pause
+            .release
+            .recv_timeout(std::time::Duration::from_secs(10));
+    }
+}
+
 pub(super) async fn reserve_managed_open(
     path: &ResolvedPath,
 ) -> Result<ManagedOpenPermit, StoreError> {

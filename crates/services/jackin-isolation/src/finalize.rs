@@ -464,3 +464,6 @@ fn mark_preserved(
     upsert_record(container_state_dir, updated.clone())?;
     Ok(updated)
 }
+
+#[cfg(test)]
+mod tests;

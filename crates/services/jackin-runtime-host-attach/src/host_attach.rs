@@ -1231,3 +1231,6 @@ impl Drop for RawModeGuard {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

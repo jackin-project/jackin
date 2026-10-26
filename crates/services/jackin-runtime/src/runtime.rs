@@ -23,6 +23,8 @@ pub mod session_control;
 pub mod snapshot;
 pub mod universe;
 
+pub mod stubs;
+
 pub use self::attach::docker_unavailable_msg;
 pub use self::attach::{
     AgentSession, AgentSessionInventory, ContainerState, describe_agent_session_count,

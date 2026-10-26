@@ -1023,3 +1023,6 @@ impl DockerApi for BollardDockerClient {
         .await
     }
 }
+
+#[cfg(test)]
+mod tests;

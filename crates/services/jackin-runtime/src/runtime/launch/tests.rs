@@ -1,12 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+#![expect(
+    unused_qualifications,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+
 mod support;
+use support::*;
+mod case_08;
+mod case_22;
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
+use super::super::universe;
 use super::DindSidecarPrewarm;
 use super::LoadOptions;
 use super::failure::render_exit;
@@ -16,6 +25,8 @@ use super::launch_slot::{
 };
 use super::load_role;
 use super::write_prewarmed_dind_state;
+use super::*;
+use crate::isolation::MountIsolation;
 use crate::runtime::naming::image_name;
 use crate::runtime::universe::{StartKind, mark_start};
 use jackin_config::AppConfig;
@@ -27,6 +38,7 @@ use jackin_core::RoleSelector;
 use jackin_image::image_recipe::image_recipe_label_map_for_test;
 use jackin_manifest::repo::{CachedRepo, validate_role_repo};
 use jackin_test_support::{FakeDockerClient, FakeRunner, seed_valid_role_repo};
+use tempfile::tempdir;
 
 #[test]
 fn verify_github_token_present_errors_when_token_missing() {
@@ -543,7 +555,7 @@ async fn load_agent_rolls_back_runtime_on_attached_run_failure() -> anyhow::Resu
         error.to_string().contains("docker exec") && error.to_string().contains(" -it "),
         "unexpected error: {error:#}"
     );
-    let container_name = support::launched_role_container_name(&docker);
+    let container_name = support::launched_role_container_name(&runner);
     let dind = format!("{container_name}-dind");
     assert!(
         docker

@@ -384,6 +384,8 @@ fn prepare_managed_open(
         source_identities,
         identity_lease,
     )?;
+    #[cfg(test)]
+    registry::block_managed_prepare_for_test(&prepare_path.path);
 
     Ok((permit, Some(evidence), opened_path.identity))
 }
@@ -408,3 +410,6 @@ fn create_empty_source(path: &Path) -> Result<(), StoreError> {
     drop(file);
     manifest::sync_directory(path.parent().ok_or(StoreError::UnsupportedSourcePath)?)
 }
+
+#[cfg(test)]
+mod tests;

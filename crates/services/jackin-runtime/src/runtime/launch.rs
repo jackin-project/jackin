@@ -51,6 +51,10 @@ use jackin_core::RoleSelector;
 
 pub use launch_pipeline::{load_role, resolve_supported_agents_for_console};
 
+#[cfg(test)]
+#[cfg(test)]
+pub(crate) use launch_pipeline::load_role_with;
+
 pub use jackin_runtime_launch_load_options::load_options::LoadOptions;
 
 pub(super) fn validate_agent_supported(

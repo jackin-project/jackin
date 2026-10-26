@@ -54,6 +54,8 @@ pub(crate) use catalog::BrokerCatalogRefresh;
 pub(crate) use dispatch::{dispatch, read_frame};
 pub(crate) use errors::publication_identity_metadata;
 pub(crate) use executor::DiscoveryProviderExecutor;
+#[cfg(test)]
+pub(crate) use executor::probe_with_scope;
 
 pub(crate) use forwarding::{
     forwarding_requirement, refresh_authority_equivalent, unscoped_refresh_binding,

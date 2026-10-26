@@ -748,3 +748,6 @@ pub fn build_workspace_mounts(
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests;

@@ -52,6 +52,7 @@ jackin-runtime-cleanup-absent-guards = { workspace = true }
 jackin-runtime-cleanup-dind-gc = { workspace = true }
 jackin-runtime-cleanup-eject-resources = { workspace = true }
 jackin-runtime-cleanup-prune-cache = { workspace = true }
+jackin-runtime-cleanup-prune-dir = { workspace = true }
 jackin-runtime-cleanup-prune-home = { workspace = true }
 jackin-runtime-cleanup-prune-images = { workspace = true }
 jackin-runtime-cleanup-prune-roles = { workspace = true }
@@ -111,6 +112,7 @@ tokio = { workspace = true, features = ["rt", "process", "io-util", "io-std", "n
 anyhow = { workspace = true }
 serde_json = { workspace = true }
 owo-colors = { workspace = true, features = ["supports-colors"] }
+toml = { workspace = true }
 tracing.workspace = true
 
 [dev-dependencies]

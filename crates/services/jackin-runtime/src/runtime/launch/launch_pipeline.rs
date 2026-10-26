@@ -1608,6 +1608,43 @@ async fn load_role_with_admission(
     }
 }
 
+#[cfg(test)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "testable launch entry retains its established callback seam"
+)]
+pub(crate) async fn load_role_with(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    selector: &RoleSelector,
+    workspace: &jackin_config::ResolvedWorkspace,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    opts: &super::LoadOptions,
+    confirm_trust_for_test: impl FnOnce(&RoleSelector, &jackin_config::RoleSource) -> anyhow::Result<()>,
+    confirm_branch_for_test: impl FnOnce(
+        &RoleSelector,
+        &jackin_config::RoleSource,
+        &str,
+    ) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    load_role_with_admission(
+        paths,
+        config,
+        selector,
+        workspace,
+        docker,
+        runner,
+        LaunchAdmissionRequest {
+            opts,
+            confirm_trust_for_test,
+            confirm_branch_for_test,
+            related_expectation: None,
+        },
+    )
+    .await
+}
+
 fn current_role_reuse_is_compatible(opts: &super::LoadOptions) -> bool {
     !opts.rebuild
         && !opts.force

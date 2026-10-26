@@ -28,5 +28,8 @@ jackin-runtime-apple-container-client = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [lints]
 workspace = true
