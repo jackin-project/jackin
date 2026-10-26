@@ -39,7 +39,8 @@ pub use spend::{
     ClaudeSpend, claude_spend_bucket, fetch_claude_oauth_usage, normalize_claude_spend,
     push_claude_dollar_windows,
 };
-
+#[cfg(test)]
+pub(crate) use wave::claude_resolved_view_with_fetch;
 pub use wave::{
     ClaudeWavePolicy, claude_error_is_scope_restriction, claude_provider_error_label,
     claude_view_from_wave, claude_wave_policy,

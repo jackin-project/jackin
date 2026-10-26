@@ -4534,6 +4534,7 @@ dependencies = [
  "security-framework",
  "serde",
  "serde_json",
+ "tempfile",
  "zeroize",
 ]
 

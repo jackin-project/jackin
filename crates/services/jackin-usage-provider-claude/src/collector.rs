@@ -222,16 +222,16 @@ where
             provider_http_status: Some(401),
         });
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", test))]
     let Some(json) = payload_from_keychain_read(keychain_read) else {
         return first_401_if_consent_current(first, consent_is_current);
     };
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", test)))]
     {
         drop((keychain_read, original_payload, commit_if_current));
         first_401_if_consent_current(first, consent_is_current)
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", test))]
     {
         let mut commit_if_current = commit_if_current;
         if json.len() > MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES {

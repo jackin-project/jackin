@@ -85,7 +85,7 @@ impl ClaudeCredentialCache {
         true
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", test))]
     fn replace_if_exact(&self, service: &str, generation: u64, payload: Zeroizing<String>) -> bool {
         let mut credential = self
             .credential
