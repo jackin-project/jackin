@@ -4,8 +4,9 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use jackin_process::{ExecRequest, ExecResult, StdioMode};
+use jackin_process_directory::validate_temporary_parent;
 
 mod paths;
 
@@ -42,7 +43,7 @@ where
     let search_path = tool_search_path(&inherited, root, &mut execute)?;
     let (mut base_env, target, tools) =
         build_environment_with(root, inherited, &search_path, passwd_home)?;
-    let _cargo_shim = create_cargo_shim(&mut base_env, &tools)?;
+    let cargo_shim = create_cargo_shim(&mut base_env, &tools)?;
     let mut nightly = vec![OsString::from("rustup"), OsString::from("run")];
     nightly.push(OsString::from(NIGHTLY));
 
@@ -88,7 +89,7 @@ where
     let library = library_path(&target, &host)?;
     let directory = tempfile::Builder::new()
         .prefix("jackin-custom-lints-")
-        .tempdir()
+        .tempdir_in(cargo_shim.path())
         .context("creating isolated Dylint library directory")?;
     let directory_path = directory
         .path()
@@ -138,9 +139,28 @@ fn create_cargo_shim(
 ) -> Result<tempfile::TempDir> {
     #[cfg(unix)]
     {
+        let requested_temp = PathBuf::from(
+            env.get(OsStr::new("TMPDIR"))
+                .context("anchored custom lint temporary directory is missing")?,
+        );
+        let temp_parent = if requested_temp
+            .as_os_str()
+            .as_encoded_bytes()
+            .contains(&b':')
+        {
+            fs::canonicalize("/tmp").context("resolving separator-safe temporary fallback")?
+        } else {
+            requested_temp
+        };
+        validate_temporary_parent(&temp_parent)
+            .context("validating private MBX Cargo shim parent")?;
+        ensure!(
+            !temp_parent.as_os_str().as_encoded_bytes().contains(&b':'),
+            "private MBX Cargo shim parent contains the PATH delimiter"
+        );
         let directory = tempfile::Builder::new()
             .prefix("jackin-custom-lints-mbx-")
-            .tempdir()
+            .tempdir_in(&temp_parent)
             .context("creating private MBX Cargo shim directory")?;
         let directory_path = directory
             .path()
@@ -154,12 +174,15 @@ fn create_cargo_shim(
             .parent()
             .context("pinned cargo-nextest has no parent directory")?
             .to_path_buf();
-        let mut path = vec![directory_path, nextest_parent];
-        let mut previous_path = std::env::split_paths(&old_path);
-        if let Some(cargo_bin) = previous_path.next() {
-            path.push(cargo_bin);
-        }
-        path.extend(previous_path);
+        let cargo_home = PathBuf::from(
+            env.get(OsStr::new("CARGO_HOME"))
+                .context("resolved Cargo home is missing")?,
+        );
+        let cargo_bin = cargo_home.join("bin");
+        let nextest_parent = path_entry_alias(&directory_path, &nextest_parent, "cargo-nextest")?;
+        let cargo_bin = path_entry_alias(&directory_path, &cargo_bin, "cargo-home-bin")?;
+        let mut path = vec![directory_path, nextest_parent, cargo_bin];
+        path.extend(std::env::split_paths(&old_path));
         env.insert(
             OsString::from("PATH"),
             std::env::join_paths(path).context("prepending MBX Cargo shim to PATH")?,
@@ -198,10 +221,6 @@ fn build_environment_with<H>(
 where
     H: FnOnce() -> Result<Option<OsString>>,
 {
-    let child_path = inherited
-        .get(OsStr::new("PATH"))
-        .cloned()
-        .unwrap_or_default();
     let mut tools = BTreeMap::new();
     for name in TOOL_NAMES {
         let selected = find_executable(OsStr::new(name), search_path)
@@ -214,21 +233,32 @@ where
         Some(value) => PathBuf::from(value),
         None => root.join("target/custom-lints"),
     };
+    let invocation_cwd = fs::canonicalize(
+        std::env::current_dir().context("reading custom lint invocation directory")?,
+    )
+    .context("resolving custom lint invocation directory")?;
     let current_dir = if cargo_home.is_absolute() && target.is_absolute() {
-        None
+        Path::new("/")
     } else {
-        Some(std::env::current_dir().context("reading current directory")?)
+        &invocation_cwd
     };
-    let current_dir = current_dir.as_deref().unwrap_or_else(|| Path::new("/"));
     let cargo_home = paths::resolve(&cargo_home, current_dir)?;
     let target = paths::resolve(&target, current_dir)?;
-    let cargo_bin = cargo_home.join("bin");
+    let requested_temp = inherited
+        .get(OsStr::new("TMPDIR"))
+        .map_or_else(std::env::temp_dir, PathBuf::from);
+    let temporary_path = if requested_temp.is_absolute() {
+        requested_temp
+    } else {
+        invocation_cwd.join(requested_temp)
+    };
+    let temporary_parent =
+        fs::canonicalize(&temporary_path).context("anchoring custom lint temporary directory")?;
+    validate_temporary_parent(&temporary_parent)
+        .context("validating custom lint temporary directory")?;
     let mut env = inherited;
-    env.insert(
-        OsString::from("PATH"),
-        std::env::join_paths(std::iter::once(cargo_bin).chain(std::env::split_paths(&child_path)))
-            .context("prepending Cargo home to PATH")?,
-    );
+    env.insert(OsString::from("CARGO_HOME"), cargo_home.into_os_string());
+    env.insert(OsString::from("TMPDIR"), temporary_parent.into_os_string());
     for key in env
         .keys()
         .filter(|key| key.to_string_lossy().starts_with("DYLINT_"))
@@ -265,6 +295,18 @@ where
     encoded_flags.push(linker);
     env.insert(OsString::from("CARGO_ENCODED_RUSTFLAGS"), encoded_flags);
     Ok((env, target, tools))
+}
+
+#[cfg(unix)]
+fn path_entry_alias(alias_directory: &Path, target: &Path, name: &str) -> Result<PathBuf> {
+    if target.as_os_str().as_encoded_bytes().contains(&b':') {
+        let alias = alias_directory.join(name);
+        std::os::unix::fs::symlink(target, &alias)
+            .with_context(|| format!("aliasing PATH entry for {name}"))?;
+        Ok(alias)
+    } else {
+        Ok(target.to_path_buf())
+    }
 }
 
 fn tool_search_path<F>(inherited: &Environment, root: &Path, execute: &mut F) -> Result<OsString>

@@ -16,7 +16,7 @@ use anyhow::{Context, Result, ensure};
 use jackin_process_directory::CheckedSourceRoot;
 use nix::{
     fcntl::{AtFlags, OFlag, open, openat},
-    sys::stat::{Mode, fstat, fstatat},
+    sys::stat::{Mode, fchmod, fstat, fstatat},
     unistd::{UnlinkatFlags, fsync, unlinkat},
 };
 
@@ -51,6 +51,8 @@ pub(super) fn activate(common_config: &Path, selected_config: &Path, owner: &Pat
     signals::with_install_signals(|signals| {
         let mut candidate = tempfile::NamedTempFile::new_in(parent)
             .context("creating private Git config candidate")?;
+        fchmod(candidate.as_file(), Mode::from_bits_truncate(0o600))
+            .context("setting newly created Git config candidate permissions")?;
         if let Some(bytes) = original.as_deref() {
             candidate.write_all(bytes)?;
             candidate.as_file().sync_all()?;
@@ -82,6 +84,8 @@ pub(super) fn activate(common_config: &Path, selected_config: &Path, owner: &Pat
             )
             .context("creating exclusive Git worktree config lock")?,
         );
+        fchmod(lock.file(), Mode::from_bits_truncate(0o600))
+            .context("setting newly created Git worktree config lock permissions")?;
         signals.check()?;
         checked_parent
             .recheck()

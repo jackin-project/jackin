@@ -89,6 +89,67 @@ fn installed_owner_runs_qualified_tools_when_tmpdir_and_rust_path_contain_colons
 }
 
 #[test]
+fn installed_owner_anchors_relative_tmpdir_before_snapshot_and_children() {
+    let mut fixture = InstalledOwnerFixture::new(OwnerFixtureMode::IsolationGate);
+    let relative_tmp = PathBuf::from("relative:temporary-root");
+    let requested_tmp = fixture.repository.join(&relative_tmp);
+    fs::create_dir(&requested_tmp).expect("relative colon-containing TMPDIR");
+    fixture.tmpdir_override = Some(relative_tmp);
+
+    let bin = fixture.repository.join(".git/f3-test/bin");
+    let cargo = bin.join("cargo");
+    let original_directory = bin.join("original-cargo");
+    fs::create_dir(&original_directory).expect("retain fixture MBX Cargo directory");
+    let original_cargo = original_directory.join("cargo");
+    fs::rename(&cargo, &original_cargo).expect("retain fixture MBX Cargo provider");
+    let observed_tmp = fixture.repository.join(".git/f3-test/observed-tmpdir");
+    write_executable(
+        &cargo,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$TMPDIR\" > {}\nexec {} \"$@\"\n",
+            shell_quote(&observed_tmp),
+            shell_quote(&original_cargo)
+        )
+        .as_bytes(),
+    );
+
+    let mut owner = fixture.spawn_owner("status", 0, 20_000, 20_000, 20_000);
+    let release_gate = GateReleaseOnDrop(fixture.gate_release.clone());
+    wait_for_owner_readiness(&mut owner, &fixture.gate_ready, &fixture.ticks);
+    release_gate.release();
+    let output = owner.wait_output(std::time::Duration::from_secs(8));
+    assert!(
+        output.status.success(),
+        "relative-TMPDIR owner failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let expected_tmp = fs::canonicalize(requested_tmp).expect("physical requested TMPDIR");
+    assert_eq!(
+        fs::read_to_string(&observed_tmp)
+            .expect("Mise and gate TMPDIR marker")
+            .trim_end(),
+        expected_tmp.to_str().expect("UTF-8 physical TMPDIR")
+    );
+    let report = fs::read_to_string(&fixture.probe_output).expect("qualified tool report");
+    let target = PathBuf::from(report.lines().next().expect("private target path"));
+    assert!(
+        target.starts_with(&expected_tmp),
+        "private build scratch follows the original relative TMPDIR: {target:?}"
+    );
+    let path = fs::read_to_string(&fixture.path_output).expect("qualified PATH record");
+    let alias = env::split_paths(OsStr::new(path.trim_end_matches('\n')))
+        .next()
+        .expect("first qualified PATH entry");
+    let fallback = fs::canonicalize("/tmp").expect("physical separator-safe fallback");
+    assert_eq!(alias.parent(), Some(fallback.as_path()));
+    assert!(
+        !alias.exists(),
+        "private PATH alias is cleaned after the gate"
+    );
+}
+
+#[test]
 fn installed_owner_anchors_empty_and_relative_path_entries_before_snapshot_chdir() {
     for component in [PathBuf::new(), PathBuf::from("relative-tools")] {
         let parent = tempfile::tempdir_in("/tmp").expect("owner fixture parent");

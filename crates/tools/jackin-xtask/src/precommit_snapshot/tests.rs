@@ -758,6 +758,26 @@ fn generic_owner_observes_bootstrap_through_final_mise_cargo_and_gate_environmen
 }
 
 #[test]
+fn installed_owner_builds_and_cleans_snapshot_under_umask_0777() {
+    let mut fixture = InstalledOwnerFixture::new(OwnerFixtureMode::Umask0777);
+    let temporary = tempfile::tempdir().expect("create dedicated snapshot parent");
+    fixture.tmpdir_override = Some(temporary.path().to_path_buf());
+    let mut owner = fixture.spawn_owner("status", 0, 20_000, 20_000, 20_000);
+    let output = owner.wait_output(std::time::Duration::from_secs(8));
+    assert!(
+        output.status.success(),
+        "installed owner failed under umask 0777: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        crate::fs_util::read_dir_sorted(temporary.path())
+            .expect("inspect dedicated snapshot parent")
+            .is_empty(),
+        "successful installed-owner run removes its private snapshot"
+    );
+}
+
+#[test]
 fn generic_owner_blocks_inherited_bash_env_startup_before_running_the_gate() {
     let fixture = InstalledOwnerFixture::new(OwnerFixtureMode::BashEnvGate);
     let original_index = fs::read(fixture.index()).expect("read original index");
@@ -979,6 +999,7 @@ enum OwnerFixtureMode {
     BootstrapClean,
     BootstrapInjected,
     BashEnvGate,
+    Umask0777,
 }
 
 struct XdgFixtureRoots {
@@ -1214,7 +1235,15 @@ impl InstalledOwnerFixture {
         git_program: Option<&Path>,
     ) -> OwnerChild {
         let home = env::var_os("HOME").expect("HOME is set");
-        let mut command = Command::new(&self.owner);
+        let mut command = if matches!(self.mode, OwnerFixtureMode::Umask0777) {
+            let mut command = Command::new("/bin/sh");
+            command
+                .args(["-c", "umask 0777; exec \"$@\"", "jackin-owner"])
+                .arg(&self.owner);
+            command
+        } else {
+            Command::new(&self.owner)
+        };
         command
             .args([
                 "--exact",
@@ -1580,6 +1609,8 @@ fn write_owner_toolchain(
             .to_owned()
     } else if matches!(mode, OwnerFixtureMode::BashEnvGate) {
         format!("#!/bin/bash\nprintf 'gate body ran\\n' > {gate_marker}\nexit 0\n")
+    } else if matches!(mode, OwnerFixtureMode::Umask0777) {
+        "#!/bin/sh\ntest \"$(umask)\" = 0777 || exit 72\ntest -r .git/index || exit 73\ntest -r tracked.txt || exit 74\nexit 0\n".to_owned()
     } else if matches!(mode, OwnerFixtureMode::IsolationGate) {
         format!(
             "#!/bin/sh\nset -eu\n[ \"${{CARGO_BUILD_RUSTFLAGS+x}}\" != x ] || exit 90\ngit --version >/dev/null || exit 80\nif git f3-poison-file >/dev/null 2>&1; then exit 81; fi\nif git poison >/dev/null 2>&1; then exit 82; fi\nif git global-poison >/dev/null 2>&1; then exit 83; fi\nif git system-poison >/dev/null 2>&1; then exit 84; fi\nif cargo f3-poison >/dev/null 2>&1; then exit 85; fi\nif [ \"${{CARGO+x}}\" = x ]; then \"$CARGO\" --version || exit 86; fi\nif [ -n \"${{RUSTC_WRAPPER:-}}\" ]; then \"$RUSTC_WRAPPER\" \"$RUSTC\" --version || exit 87; else \"$RUSTC\" --version >/dev/null || exit 88; fi\ncargo --version >/dev/null || exit 89\nprintf '%s\\n' \"$PATH\" > \"${{JACKIN_F3_OWNER_DRIVER_PATH_OUTPUT}}\"\nprintf '%s\\n' \"$GIT_CONFIG_GLOBAL\" \"$GIT_CONFIG_SYSTEM\" \"$GIT_CONFIG_NOSYSTEM\" > \"${{JACKIN_F3_OWNER_DRIVER_GIT_CONFIG_OUTPUT}}\"\nmkdir -p \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" || exit 90\nprintf 'private target\\n' > \"$CARGO_TARGET_DIR/artifact\"\nprintf 'private build\\n' > \"$CARGO_BUILD_BUILD_DIR/artifact\"\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" \"$RUSTC\" \"$(command -v cargo)\" > \"${{JACKIN_F3_OWNER_DRIVER_PROBE_OUTPUT}}\"\n: > {}\nprintf x >> {}\ncount=0\nwhile [ ! -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] && [ \"$count\" -lt 300 ]; do /bin/sleep 0.05; printf x >> {}; count=$((count + 1)); done\n[ -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] || exit 91\nexit 0\n",

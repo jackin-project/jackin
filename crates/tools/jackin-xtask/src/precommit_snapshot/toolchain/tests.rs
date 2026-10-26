@@ -5,8 +5,9 @@ use super::*;
 use std::collections::BTreeSet;
 #[cfg(not(target_os = "macos"))]
 use std::os::unix::ffi::OsStringExt;
-use std::os::unix::{ffi::OsStrExt, process::ExitStatusExt};
+use std::os::unix::{ffi::OsStrExt, fs::symlink, process::ExitStatusExt};
 use std::process::{ExitStatus, Output};
+use std::sync::{Arc, atomic::AtomicBool};
 
 fn write_executable(path: &Path, contents: &[u8]) {
     fs::write(path, contents).expect("tool file");
@@ -232,7 +233,8 @@ fn inherited_path_aliases_colon_cwd_entries_without_changing_order() {
         .expect("empty and relative PATH entries");
     let anchored = anchor_inherited_path(&hook_cwd, &inherited);
     let aliases = tempfile::tempdir().expect("separator-safe alias directory");
-    populate_inherited_path_aliases(aliases.path(), &anchored)
+    let aliases_fd = open_private_tool_directory(aliases.path()).expect("open alias directory");
+    populate_inherited_path_aliases(&aliases_fd, &anchored)
         .expect("populate inherited delimiter aliases");
 
     let qualified =
@@ -314,6 +316,53 @@ fn pinned_rustup_resolution_preserves_only_the_admitted_rustup_home() {
 }
 
 #[test]
+fn rust_release_reads_a_bounded_regular_target_and_preserves_staged_symlinks() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let target = temporary.path().join("toolchain.toml");
+    let link = temporary.path().join("rust-toolchain.toml");
+    fs::write(&target, "[toolchain]\nchannel = \"1.99.1\"\n").expect("toolchain pin");
+    symlink(&target, &link).expect("staged toolchain link");
+
+    let pin = rust_release(
+        &link,
+        &SetupControls::for_test(std::time::Duration::from_secs(10)),
+    )
+    .expect("read pin through admitted staged symlink");
+    assert_eq!(pin, "1.99.1");
+}
+
+#[test]
+fn rust_release_rejects_control_files_larger_than_one_megabyte() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let path = temporary.path().join("rust-toolchain.toml");
+    let mut contents = b"[toolchain]\nchannel = \"1.99.1\"\n#".to_vec();
+    contents.resize(1024 * 1024 + 1, b'x');
+    fs::write(&path, contents).expect("oversized staged toolchain file");
+
+    let error = rust_release(
+        &path,
+        &SetupControls::for_test(std::time::Duration::from_secs(10)),
+    )
+    .expect_err("oversized toolchain metadata must fail before parsing");
+    assert!(error.to_string().contains("exceeds its byte limit"));
+}
+
+#[test]
+fn rust_release_checks_cancellation_before_reading() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let path = temporary.path().join("rust-toolchain.toml");
+    fs::write(&path, "[toolchain]\nchannel = \"1.99.1\"\n").expect("toolchain pin");
+    let controls = SetupControls::new(
+        Arc::new(AtomicBool::new(true)),
+        std::time::Duration::from_secs(10),
+    );
+
+    let error =
+        rust_release(&path, &controls).expect_err("cancelled setup must stop metadata read");
+    assert!(error.to_string().contains("cancelled"));
+}
+
+#[test]
 fn pinned_swiftlint_precedes_an_ambient_global_tool() {
     let temporary = tempfile::tempdir().expect("temporary directory");
     let managed = temporary.path().join("managed");
@@ -333,7 +382,9 @@ fn pinned_swiftlint_precedes_an_ambient_global_tool() {
     let inherited = env::join_paths([&ambient]).expect("ambient PATH");
     let inherited = env::split_paths(&inherited).collect::<Vec<_>>();
     let path_aliases = tempfile::tempdir().expect("separator-safe PATH directory");
-    populate_path_aliases(path_aliases.path(), &managed, &BTreeMap::new())
+    let path_aliases_fd =
+        open_private_tool_directory(path_aliases.path()).expect("open PATH aliases");
+    populate_path_aliases(&path_aliases_fd, &managed, &BTreeMap::new())
         .expect("populate separator-safe PATH directory");
     let path = qualified_path_entries(path_aliases.path(), &inherited).expect("qualified PATH");
     let selected = find_executable("swiftlint", &path).expect("qualified SwiftLint");
@@ -366,7 +417,9 @@ fn local_guard_in_home_is_admitted_and_qualified_without_inherited_path_entry() 
     );
     symlink(&resolved, managed.join("rust-build-guard")).expect("managed guard link");
     let path_aliases = tempfile::tempdir().expect("separator-safe PATH directory");
-    populate_path_aliases(path_aliases.path(), &managed, &BTreeMap::new())
+    let path_aliases_fd =
+        open_private_tool_directory(path_aliases.path()).expect("open PATH aliases");
+    populate_path_aliases(&path_aliases_fd, &managed, &BTreeMap::new())
         .expect("populate separator-safe PATH directory");
     let inherited_entries = env::split_paths(&inherited).collect::<Vec<_>>();
     let qualified =
@@ -396,12 +449,14 @@ fn colon_paths_use_private_separator_safe_aliases_and_run_qualified_tools() {
     write_executable(&rustc, b"#!/bin/sh\nprintf 'pinned-rustc\\n' > \"$RUSTC_PROVIDER_MARKER\"\nprintf 'rustc 1.99.1 (fixture)\\n'\n");
 
     let aliases = create_path_aliases(&requested_tmp, &fallback).expect("separator-safe aliases");
+    let aliases_fd =
+        open_private_tool_directory(aliases.path()).expect("open separator-safe aliases");
     let rust_tools = BTreeMap::from([("rustc", rustc.clone())]);
     let inherited = env::var_os("PATH").unwrap_or_default();
     let inherited = env::split_paths(&inherited).collect::<Vec<_>>();
-    populate_inherited_path_aliases(aliases.path(), &inherited)
+    populate_inherited_path_aliases(&aliases_fd, &inherited)
         .expect("populate inherited PATH aliases");
-    populate_path_aliases(aliases.path(), &managed, &rust_tools)
+    populate_path_aliases(&aliases_fd, &managed, &rust_tools)
         .expect("populate qualified tool aliases");
     let path = qualified_path_entries(aliases.path(), &inherited).expect("qualified PATH");
     assert!(

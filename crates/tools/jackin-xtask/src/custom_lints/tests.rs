@@ -15,6 +15,8 @@ use super::{
 mod case_01;
 #[cfg(unix)]
 mod case_02;
+#[cfg(unix)]
+mod case_03;
 
 fn cargo_home<F>(inherited: &Environment, cwd: &Path, passwd_home: F) -> anyhow::Result<PathBuf>
 where
@@ -251,14 +253,17 @@ fn assert_missing_path_search_contract(root: &Path, temporary: &Path) {
             fs::canonicalize(tools.join(name)).expect("tool")
         );
     }
-    let child_path = std::env::split_paths(child_env.get(OsStr::new("PATH")).expect("child PATH"))
-        .collect::<Vec<_>>();
+    assert!(
+        !child_env.contains_key(OsStr::new("PATH")),
+        "the Cargo shim owns PATH projection"
+    );
     assert_eq!(
-        child_path,
-        [
-            fs::canonicalize(cargo_home.join("bin")).expect("Cargo bin"),
-            PathBuf::new()
-        ]
+        child_env.get(OsStr::new("CARGO_HOME")),
+        Some(
+            &fs::canonicalize(&cargo_home)
+                .expect("canonical Cargo home")
+                .into_os_string()
+        )
     );
 
     #[cfg(unix)]
@@ -499,8 +504,11 @@ fn environment_cleans_inherited_compiler_and_dylint_state_and_preserves_spaced_p
     }
     let path =
         std::env::split_paths(env.get(OsStr::new("PATH")).expect("PATH")).collect::<Vec<_>>();
-    assert_eq!(path[0], resolved_cargo_home.join("bin"));
-    assert_eq!(path[1], tools);
+    assert_eq!(path, [tools]);
+    assert_eq!(
+        env.get(OsStr::new("CARGO_HOME")),
+        Some(&resolved_cargo_home.into_os_string())
+    );
     let encoded = env
         .get(OsStr::new("CARGO_ENCODED_RUSTFLAGS"))
         .expect("encoded flags");
