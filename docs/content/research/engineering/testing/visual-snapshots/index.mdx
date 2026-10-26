@@ -107,7 +107,7 @@ Multi-source, adversarially-verified external research (primary sources: crates.
 ## Current state (absorbed from prior items)
 
 - **Historical component SVG lookbook** — the former `jackin-tui-lookbook`, `buffer_to_svg`, `--check`, and `docs/public/tui-lookbook` gallery are absent from the current tree. This records the earlier implementation, not shipped capability. Restoring styled SVG artifacts and a gate requires new implementation and proof.
-- **Text-only console snapshots** — `insta` snapshots (including list, settings, editor-general, and editor-mounts) in `crates/ui/jackin-console/src/tui/view/tests.rs` with committed `.snap` files, generated with `INSTA_UPDATE=new`. These capture glyphs only.
+- **Text-only console snapshots** — the former `insta` snapshots (list, settings, editor-general, editor-mounts) in `crates/ui/jackin-console/src/tui/view/tests.rs` with committed `.snap` files are absent from the current tree. This records the earlier implementation, not shipped capability.
 - **Capsule render tests** — `insta` and buffer assertions exist for capsule chrome and the branch-context bar.
 - **Live screen model** — `DamageGrid::dump()` produces a `GridSnapshot` whose cells can feed a future styled renderer; the snapshot API does not itself serialize a complete styled screen.
 

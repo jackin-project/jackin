@@ -163,3 +163,6 @@ pub(crate) use telemetry::{record_agent_status_tick, record_skipped_provider_pro
 
 mod control;
 pub use control::*;
+
+#[cfg(test)]
+mod tests;

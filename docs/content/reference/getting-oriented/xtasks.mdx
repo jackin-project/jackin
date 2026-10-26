@@ -48,7 +48,7 @@ Source the generated env file before smoke testing the PR. `jackin-dev` runs as 
 
 `mise exec -- mbx +1.99.1 xtask pty-fixture <capture> <out.bin>` (source: <RepoFile path="crates/tools/jackin-xtask/src/pty_fixture.rs">crates/tools/jackin-xtask/src/pty_fixture.rs</RepoFile>) copies an explicitly captured raw PTY byte stream into a replayable terminal fixture. Set `JACKIN_PTY_FIXTURE_CAPTURE=<path>` only for the deliberate capture run, then place the resulting fixture under the capsule test fixtures. Telemetry never carries terminal bytes.
 
-The extractor accepts only a raw file created through the explicit `JACKIN_PTY_FIXTURE_CAPTURE` test gate. Fixtures land under `crates/apps/jackin-capsule/tests/fixtures/pty/README.md` by convention. Production telemetry never supplies PTY fixture bytes.
+The extractor accepts only a raw file created through the explicit `JACKIN_PTY_FIXTURE_CAPTURE` test gate. No PTY fixtures are currently checked in; place new ones under the capsule test fixtures when the workflow is used. Production telemetry never supplies PTY fixture bytes.
 
 Reach for it when an operator-reported rendering bug needs the agent's exact byte stream as a regression test: one command replaces hand-extracting hex from logs.
 

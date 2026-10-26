@@ -19,8 +19,11 @@ use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
 mod account_admission;
 mod environment_admission;
+
 mod launch_core;
 pub(super) mod launch_phases;
+#[cfg(test)]
+mod tests;
 
 pub(super) struct DeferredGitPull {
     handle: tokio::task::JoinHandle<Vec<super::git_pull::GitPullResult>>,

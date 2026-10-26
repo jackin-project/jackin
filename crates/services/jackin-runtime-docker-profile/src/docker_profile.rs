@@ -51,3 +51,6 @@ pub(crate) use flags::{TMPFS_PATHS_HARDENED_EXTRA, TMPFS_PATHS_MINIMAL};
 pub(crate) use grants::normalize_cap;
 
 pub(crate) use sizes::{GB, format_bytes, parse_size_field};
+
+#[cfg(test)]
+mod tests;

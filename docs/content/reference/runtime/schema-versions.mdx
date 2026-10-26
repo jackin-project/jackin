@@ -30,7 +30,7 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 
 ## Timeline
 
-Each entry is one upgrade path the current binary applies. `crates/apps/jackin/tests/migration_fixtures.rs` walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+Each entry is one upgrade path the current binary applies. Newest first; append, never edit.
 
 ### Config `v1alpha13` and workspace `v1alpha11` — 2026-10-05
 
@@ -369,7 +369,7 @@ Role provider-model tables (`[claude.providers]`, `[codex.providers]`, and `[ope
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Role manifest (`jackin.role.toml`) | `v1alpha5` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | `|
+| Role manifest (`jackin.role.toml`) | `v1alpha5` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | |
 
 **Summary**: introduces the optional role `[docker]` security block — `[docker].min_profile` (optional string), `[docker].dind` (optional string), `[docker].allowed_hosts` (optional array of strings), and `[docker].capabilities_add` (optional array of strings). All additive with serde defaults, so existing manifests round-trip cleanly and the migration is a no-op restamp. A manifest stamped older than `v1alpha6` that uses a `[docker]` table is rejected with a `jackin role migrate` hint, the same way the OpenCode (`v1alpha3`) and Kimi (`v1alpha4`) fields are gated.
 
@@ -814,6 +814,6 @@ Migration entry points:
 
 | File kind | Code entry point |
 |---|---|
-| Config | <RepoFile path="crates/core/jackin-config/src/migrations.rs">crates/core/jackin-config/src/migrations.rs` |
+| Config | <RepoFile path="crates/core/jackin-config/src/migrations.rs">crates/core/jackin-config/src/migrations.rs</RepoFile> |
 | Workspace | <RepoFile path="crates/core/jackin-config/src/migrations.rs">crates/core/jackin-config/src/migrations.rs</RepoFile> |
 | Role manifest | <RepoFile path="crates/core/jackin-manifest/src/migrations.rs">crates/core/jackin-manifest/src/migrations.rs</RepoFile> |

@@ -64,5 +64,10 @@ let package = Package(
             dependencies: ["JackinDesktopUI", "JackinUsageBridge"],
             path: "Tools/ProviderMarksHarness"
         ),
+        .testTarget(
+            name: "JackinUsageBridgeTests",
+            dependencies: ["JackinDesktopUI", "JackinUsageBindings", "JackinUsageBridge"],
+            path: "Tests/JackinUsageBridgeTests"
+        ),
     ]
 )
