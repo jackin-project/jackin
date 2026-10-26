@@ -479,6 +479,49 @@ fn missing_local_guard_fails_closed() {
 }
 
 #[test]
+fn colon_path_alias_fallback_rejects_unsafe_parent_before_creating_child() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let requested_tmp = temporary.path().join("requested:tmp");
+    let fallback = temporary.path().join("fallback");
+    fs::create_dir(&requested_tmp).expect("colon-containing preferred temporary directory");
+    fs::create_dir(&fallback).expect("fallback directory");
+    fs::set_permissions(&fallback, fs::Permissions::from_mode(0o777))
+        .expect("make fallback parent writable by others");
+
+    let result = create_path_aliases(&requested_tmp, &fallback);
+    let children = crate::fs_util::read_dir_sorted(&fallback)
+        .expect("read fallback after validation")
+        .len();
+    fs::set_permissions(&fallback, fs::Permissions::from_mode(0o700))
+        .expect("restore private fallback mode");
+
+    assert!(result.is_err(), "unsafe fallback parent must be rejected");
+    assert_eq!(
+        children, 0,
+        "no alias child may be created under an unsafe parent"
+    );
+}
+
+#[test]
+fn colon_path_alias_fallback_accepts_root_sticky_tmp_and_cleans_up() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let requested_tmp = temporary.path().join("requested:tmp");
+    let fallback = fs::canonicalize("/tmp").expect("canonical standard temporary directory");
+    fs::create_dir(&requested_tmp).expect("colon-containing preferred temporary directory");
+
+    let aliases =
+        create_path_aliases(&requested_tmp, &fallback).expect("root-owned sticky fallback parent");
+    let alias_path = aliases.path().to_path_buf();
+    assert_eq!(alias_path.parent(), Some(fallback.as_path()));
+
+    drop(aliases);
+    assert!(
+        !alias_path.exists(),
+        "temporary aliases must be removed on drop"
+    );
+}
+
+#[test]
 fn inherited_path_guard_precedes_the_home_fallback() {
     let temporary = tempfile::tempdir().expect("temporary directory");
     let home = temporary.path().join("home");

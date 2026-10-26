@@ -8,13 +8,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::process::{SetupControls, create_private_new};
+use super::process::SetupControls;
 use anyhow::{Context, Result, bail, ensure};
-use jackin_process_directory::{CheckedInstallRoot, InstallFileKind};
-use nix::unistd::geteuid;
+use jackin_process_directory::{CheckedInstallRoot, CheckedSourceRoot, InstallFileKind};
+use nix::unistd::{UnlinkatFlags, geteuid, unlinkat};
 use nix::{
-    fcntl::{OFlag, open},
-    sys::stat::Mode,
+    errno::Errno,
+    fcntl::{AtFlags, OFlag, open, openat},
+    sys::stat::{FileStat, Mode, SFlag, fstat, fstatat, mkdirat},
 };
 use std::fs::File;
 use uuid::Uuid;
@@ -64,10 +65,12 @@ fn persist_invocation(
     controls: &SetupControls,
 ) -> Result<PathBuf> {
     controls.check_start()?;
-    let (directory, directory_identity) = create_unique_directory(root)?;
-    let mut cleanup = FailedInvocationCleanup::new(directory.clone(), directory_identity);
-    let invocation_descriptor =
-        open_private_directory(&directory).context("checking invocation evidence ACL")?;
+    recheck_directory_path(root, root_descriptor)?;
+    let checked_root = CheckedSourceRoot::from_absolute_directory(root)
+        .context("retaining private evidence root custody")?;
+    recheck_directory_path(root, root_descriptor)?;
+    let (name, invocation_descriptor, mut cleanup) = create_unique_directory(root_descriptor)?;
+    let directory = root.join(&name);
     controls.check_start()?;
     invocation_descriptor
         .sync_all()
@@ -78,8 +81,15 @@ fn persist_invocation(
         .context("syncing invocation directory entry")?;
     controls.check_start()?;
     let patch_path = directory.join("fixes.patch");
-    let mut file =
-        create_private_new(&patch_path).context("creating private staged-source evidence")?;
+    let mut file = File::from(
+        openat(
+            &invocation_descriptor,
+            "fixes.patch",
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::from_bits_truncate(0o600),
+        )
+        .context("creating private staged-source evidence")?,
+    );
     let metadata = file
         .metadata()
         .context("checking private staged-source evidence")?;
@@ -102,13 +112,13 @@ fn persist_invocation(
         metadata.permissions().mode() & 0o777 == 0o600,
         "private staged-source evidence permissions are not 0600"
     );
-    let checked_root = CheckedInstallRoot::from_pinned_directory(
+    let checked_invocation = CheckedInstallRoot::from_pinned_directory(
         invocation_descriptor
             .try_clone()
             .context("duplicating private invocation directory")?,
     )
     .context("pinning private invocation directory")?;
-    let checked_file = checked_root
+    let checked_file = checked_invocation
         .open_file(Path::new("fixes.patch"), InstallFileKind::Receipt)
         .context("reopening private staged-source evidence")?;
     CheckedInstallRoot::validate_confidential_file(checked_file.file())
@@ -121,8 +131,21 @@ fn persist_invocation(
         .sync_all()
         .context("syncing private staged-source evidence directory")?;
     controls.check_start()?;
+    let visible_file = checked_root
+        .open_file(&name.join("fixes.patch"))
+        .context("rechecking reported staged-source evidence path")?;
+    let visible_metadata = visible_file.file().metadata()?;
+    ensure!(
+        (visible_metadata.dev(), visible_metadata.ino()) == (metadata.dev(), metadata.ino()),
+        "reported staged-source evidence no longer names its created file"
+    );
+    visible_file
+        .recheck()
+        .context("rechecking reported staged-source evidence custody")?;
+    recheck_directory_path(root, root_descriptor)?;
+    recheck_directory_path(&directory, &invocation_descriptor)?;
     cleanup.disarm();
-    Ok(directory.join("fixes.patch"))
+    Ok(patch_path)
 }
 
 pub(super) fn write_controlled(
@@ -138,17 +161,21 @@ pub(super) fn write_controlled(
 }
 
 struct FailedInvocationCleanup {
-    directory: PathBuf,
-    directory_identity: (u64, u64),
+    root: File,
+    name: PathBuf,
+    directory_identity: Option<FileStat>,
+    invocation: Option<File>,
     patch_identity: Option<(u64, u64)>,
     armed: bool,
 }
 
 impl FailedInvocationCleanup {
-    fn new(directory: PathBuf, identity: (u64, u64)) -> Self {
+    fn new(root: File, name: PathBuf) -> Self {
         Self {
-            directory,
-            directory_identity: identity,
+            root,
+            name,
+            directory_identity: None,
+            invocation: None,
             patch_identity: None,
             armed: true,
         }
@@ -169,27 +196,33 @@ impl Drop for FailedInvocationCleanup {
             return;
         }
 
-        if let (Some(expected), Ok(metadata)) = (
-            self.patch_identity,
-            fs::symlink_metadata(self.directory.join("fixes.patch")),
-        ) && metadata.is_file()
-            && !metadata.file_type().is_symlink()
+        if let (Some(expected), Some(invocation)) = (self.patch_identity, &self.invocation)
+            && let Ok(descriptor) = openat(
+                invocation,
+                "fixes.patch",
+                OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK,
+                Mode::empty(),
+            )
+            && let Ok(metadata) = File::from(descriptor).metadata()
+            && metadata.is_file()
             && (metadata.dev(), metadata.ino()) == expected
             && metadata.uid() == geteuid().as_raw()
             && metadata.permissions().mode() & 0o777 == 0o600
         {
-            drop(fs::remove_file(self.directory.join("fixes.patch")));
+            let _best_effort_patch_cleanup =
+                unlinkat(invocation, "fixes.patch", UnlinkatFlags::NoRemoveDir);
         }
 
-        if let Ok(metadata) = fs::symlink_metadata(&self.directory)
-            && metadata.is_dir()
-            && !metadata.file_type().is_symlink()
-            && (metadata.dev(), metadata.ino()) == self.directory_identity
-            && metadata.uid() == geteuid().as_raw()
-            && metadata.permissions().mode() & 0o777 == 0o700
+        if let Some(expected) = &self.directory_identity
+            && let Ok(named) = fstatat(&self.root, &self.name, AtFlags::AT_SYMLINK_NOFOLLOW)
+            && named.st_dev == expected.st_dev
+            && named.st_ino == expected.st_ino
+            && SFlag::from_bits_truncate(named.st_mode).contains(SFlag::S_IFDIR)
+            && named.st_uid == geteuid().as_raw()
+            && named.st_mode & 0o777 == 0o700
         {
-            // remove_dir succeeds only if this invocation left it empty.
-            drop(fs::remove_dir(&self.directory));
+            let _best_effort_directory_cleanup =
+                unlinkat(&self.root, &self.name, UnlinkatFlags::RemoveDir);
         }
     }
 }
@@ -202,7 +235,12 @@ fn open_private_directory(path: &Path) -> Result<File> {
     )
     .with_context(|| format!("opening private directory {}", path.display()))?;
     let file = File::from(descriptor);
-    CheckedInstallRoot::validate_confidential_directory(&file)
+    recheck_directory_path(path, &file)?;
+    Ok(file)
+}
+
+fn recheck_directory_path(path: &Path, file: &File) -> Result<()> {
+    CheckedInstallRoot::validate_confidential_directory(file)
         .with_context(|| format!("validating private directory {}", path.display()))?;
     let path_metadata = fs::symlink_metadata(path)
         .with_context(|| format!("rechecking private directory path {}", path.display()))?;
@@ -216,7 +254,7 @@ fn open_private_directory(path: &Path) -> Result<File> {
             && path_metadata.ino() == descriptor_metadata.ino(),
         "private directory path no longer names its validated descriptor"
     );
-    Ok(file)
+    Ok(())
 }
 
 fn sync_directory(path: &Path) -> Result<()> {
@@ -271,18 +309,47 @@ fn verify_private_directory(path: &Path, metadata: &Metadata, role: &str) -> Res
     Ok(())
 }
 
-fn create_unique_directory(root: &Path) -> Result<(PathBuf, (u64, u64))> {
+fn create_unique_directory(root: &File) -> Result<(PathBuf, File, FailedInvocationCleanup)> {
     for _ in 0..8 {
-        let name = format!("pre-commit-{}", Uuid::new_v4());
-        let path = root.join(name);
-        match DirBuilder::new().recursive(false).mode(0o700).create(&path) {
+        let name = PathBuf::from(format!("pre-commit-{}", Uuid::new_v4()));
+        let cleanup_root = root
+            .try_clone()
+            .context("retaining evidence cleanup root")?;
+        match mkdirat(root, &name, Mode::from_bits_truncate(0o700)) {
             Ok(()) => {
-                let metadata =
-                    fs::symlink_metadata(&path).context("checking evidence directory")?;
-                verify_private_directory(&path, &metadata, "hook evidence invocation directory")?;
-                return Ok((path, (metadata.dev(), metadata.ino())));
+                let mut cleanup = FailedInvocationCleanup::new(cleanup_root, name.clone());
+                cleanup.directory_identity = Some(
+                    fstatat(root, &name, AtFlags::AT_SYMLINK_NOFOLLOW)
+                        .context("checking created invocation evidence name")?,
+                );
+                let invocation = File::from(
+                    openat(
+                        root,
+                        &name,
+                        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                        Mode::empty(),
+                    )
+                    .context("opening created invocation evidence directory")?,
+                );
+                let opened = fstat(&invocation)?;
+                let expected = cleanup
+                    .directory_identity
+                    .as_ref()
+                    .context("created invocation evidence identity is missing")?;
+                ensure!(
+                    opened.st_dev == expected.st_dev && opened.st_ino == expected.st_ino,
+                    "invocation evidence name changed while opening its descriptor"
+                );
+                CheckedInstallRoot::validate_confidential_directory(&invocation)
+                    .context("checking invocation evidence ACL")?;
+                cleanup.invocation = Some(
+                    invocation
+                        .try_clone()
+                        .context("retaining invocation evidence cleanup descriptor")?,
+                );
+                return Ok((name, invocation, cleanup));
             }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(Errno::EEXIST) => {}
             Err(error) => return Err(error).context("creating unique private evidence directory"),
         }
     }

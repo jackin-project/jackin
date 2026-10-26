@@ -37,6 +37,7 @@ const STAGED_INDEX_OUTPUT_LIMIT: usize = 1024 * 1024 * 1024;
 const STAGED_INDEX_STDERR_LIMIT: usize = 32 * 1024 * 1024;
 const STAGED_INDEX_HEADER_LIMIT: usize = 256;
 const STAGED_SYMLINK_PATH_LIMIT: usize = 1024 * 1024;
+const GIT_METADATA_FILE_LIMIT: u64 = super::super::process::METADATA_OUTPUT_LIMIT as u64;
 
 impl OwnedSnapshot {
     pub(in crate::precommit_snapshot) fn create(live: &LiveRepository) -> Result<Self> {
@@ -103,7 +104,12 @@ impl OwnedSnapshot {
         };
         snapshot.write_alternates(&live.objects, &alternate_records)?;
         if let Some(path) = &live.shallow {
-            fs::copy(path, snapshot.git_dir.join("shallow")).context("copying shallow boundary")?;
+            copy_git_metadata(
+                path,
+                &snapshot.git_dir.join("shallow"),
+                "shallow boundary",
+                &snapshot.controls,
+            )?;
         }
         snapshot.git(&["config", "core.sparseCheckout", "false"])?;
         snapshot.git(&["config", "core.sparseCheckoutCone", "false"])?;
@@ -150,10 +156,12 @@ impl OwnedSnapshot {
         self.git(&["symbolic-ref", "HEAD", "refs/heads/jackin-pre-commit"])?;
         for filename in ["MERGE_HEAD", "MERGE_MSG", "MERGE_MODE"] {
             let source = live.worktree_git_dir.join(filename);
-            if source.is_file() {
-                fs::copy(source, self.git_dir.join(filename))
-                    .with_context(|| format!("copying {filename}"))?;
-            }
+            copy_optional_git_metadata(
+                &source,
+                &self.git_dir.join(filename),
+                filename,
+                &self.controls,
+            )?;
         }
         self.git(&["config", "core.fileMode", "true"])?;
         self.git(&["config", "core.symlinks", "true"])?;
@@ -529,6 +537,107 @@ fn copy_and_verify_index(
     controls.check_start()?;
     fs::copy(input.admitted_path(), destination).with_context(|| format!("copying {label}"))?;
     verify_private_index_copy(input, destination, label, controls)
+}
+
+pub(super) fn copy_git_metadata(
+    source: &Path,
+    destination: &Path,
+    label: &str,
+    controls: &SetupControls,
+) -> Result<()> {
+    controls.check_start()?;
+    let before = fs::metadata(source).with_context(|| format!("inspecting {label}"))?;
+    ensure!(
+        before.file_type().is_file(),
+        "{label} is not a regular file"
+    );
+    ensure!(
+        before.len() <= GIT_METADATA_FILE_LIMIT,
+        "{label} exceeds its byte limit"
+    );
+    let mut input = fs::File::from(
+        open(
+            source,
+            OFlag::O_RDONLY | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .with_context(|| format!("opening {label}"))?,
+    );
+    let opened = input
+        .metadata()
+        .with_context(|| format!("restating {label}"))?;
+    ensure!(
+        same_git_metadata_state(&before, &opened),
+        "{label} changed while opening"
+    );
+    controls.check_start()?;
+    let mut output = super::super::process::create_private_new(destination)
+        .with_context(|| format!("creating private {label}"))?;
+    let mut copied = 0_u64;
+    let mut buffer = vec![0_u8; 64 * 1024];
+    loop {
+        controls.check_start()?;
+        let read_count = input
+            .read(&mut buffer)
+            .with_context(|| format!("reading {label}"))?;
+        if read_count == 0 {
+            break;
+        }
+        let read_count_u64 =
+            u64::try_from(read_count).context("converting Git metadata read length")?;
+        let next = copied
+            .checked_add(read_count_u64)
+            .context("counting Git metadata bytes")?;
+        ensure!(
+            next <= GIT_METADATA_FILE_LIMIT,
+            "{label} exceeds its byte limit"
+        );
+        controls.check_start()?;
+        output
+            .write_all(&buffer[..read_count])
+            .with_context(|| format!("writing private {label}"))?;
+        copied = next;
+    }
+    controls.check_start()?;
+    let after_fd = input
+        .metadata()
+        .with_context(|| format!("restating {label}"))?;
+    let after_path = fs::metadata(source).with_context(|| format!("restating {label}"))?;
+    ensure!(
+        copied == before.len()
+            && same_git_metadata_state(&before, &after_fd)
+            && same_git_metadata_state(&before, &after_path),
+        "{label} changed while copying"
+    );
+    Ok(())
+}
+
+fn copy_optional_git_metadata(
+    source: &Path,
+    destination: &Path,
+    label: &str,
+    controls: &SetupControls,
+) -> Result<()> {
+    controls.check_start()?;
+    match fs::metadata(source) {
+        Ok(metadata) if metadata.file_type().is_file() => {
+            copy_git_metadata(source, destination, label, controls)
+        }
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).with_context(|| format!("inspecting optional {label}")),
+    }
+}
+
+fn same_git_metadata_state(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+    left.file_type().is_file()
+        && right.file_type().is_file()
+        && left.dev() == right.dev()
+        && left.ino() == right.ino()
+        && left.mode() == right.mode()
+        && left.len() == right.len()
+        && left.mtime() == right.mtime()
+        && left.mtime_nsec() == right.mtime_nsec()
 }
 
 pub(in crate::precommit_snapshot) fn verify_private_index_copy(

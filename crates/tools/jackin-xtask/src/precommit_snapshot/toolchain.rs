@@ -328,9 +328,11 @@ fn create_path_aliases(preferred: &Path, fallback: &Path) -> Result<tempfile::Te
     let preferred = fs::canonicalize(preferred).context("resolving preferred PATH alias root")?;
     let parent = if preferred.as_os_str().as_encoded_bytes().contains(&b':') {
         // `/tmp` is the fixed separator-free fallback when TMPDIR cannot be encoded in PATH.
-        fs::canonicalize(fallback).context("resolving separator-safe PATH alias fallback")?
+        super::process::canonical_temporary_parent(fallback)
+            .context("validating separator-safe PATH alias fallback")?
     } else {
-        preferred
+        super::process::canonical_temporary_parent(&preferred)
+            .context("validating preferred PATH alias root")?
     };
     ensure!(
         !parent.as_os_str().as_encoded_bytes().contains(&b':'),

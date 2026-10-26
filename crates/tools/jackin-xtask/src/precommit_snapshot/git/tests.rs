@@ -361,6 +361,7 @@ fn setup_signal_after_snapshot_allocation_drops_private_snapshot() {
 
 mod alternates;
 mod index;
+mod metadata;
 mod paths;
 mod quota;
 mod recovery;
