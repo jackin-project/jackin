@@ -127,6 +127,9 @@ Run engine-specific cases only on the engine-enabled rows, plus default-off nega
 Run worker-specific cases on every driver that advertises strict verification.
 Run storage, identity, transport, and lifecycle cases on every target that claims those mechanisms.
 Integration alone writes `tests/v2/targets.toml`.
+Integration alone writes `compatibility.lock.toml`.
+T40 submits required target or compatibility changes to Integration as ordered patch requests before approval.
+The independent reviewer does not alter the machine applicability or compatibility evidence being approved.
 P04 submits the initial required-row registration to Integration as an ordered patch request before qualification.
 Each of T35 through T38 sends an ordered request with its qualified tuple, case applicability, and fixture references before completion.
 Keep every required row.
@@ -1025,13 +1028,13 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A86 — Host affordance injection
 
-**Evidence:** LIVE. **Tasks:** T26. **Initial status:** NOT_RUN. **Initial assignment status:** T26=NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T26, T29. **Initial status:** NOT_RUN. **Initial assignment status:** T26=NOT_RUN; T29=NOT_RUN.
 
-**Setup:** Emit hostile terminal escape sequences and unsolicited helper clipboard, URL, and export requests.
+**Setup:** Emit hostile terminal escape sequences and unsolicited helper clipboard, URL, and export requests through backend and integrated product paths.
 
-**Action:** Observe the desktop without a matching operator action.
+**Action:** Observe CLI, Console, and desktop paths without a matching operator action.
 
-**Required result:** No host action occurs. Untrusted output cannot forge trusted labels or approval state.
+**Required result:** No host action occurs. T29 ignores unsolicited requests. Untrusted output cannot forge trusted labels or approval state.
 
 ### A87 — Bound approval semantics
 

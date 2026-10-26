@@ -12,15 +12,16 @@ from typing import Any
 
 ORIGINAL_SPEC_SHA256 = "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe767523a3e"
 GOAL_SHA256 = "d62aaf0477b96b014356b09d23f05bc2d22385a42277639514e6615dfa46f1a0"
-ACCEPTANCE_POLICY_SHA256 = "83ede6731dcde4fb66fdbf9f3d041382db9a8aa398787e694b9ccc5499202d08"
+ACCEPTANCE_POLICY_SHA256 = "7609a5f84a1694b1441219ac62e289191d90f367c33a400853ec64728063d36d"
 C02_CONTRACT_SECTION_SHA256 = "017714a83ab1ee7827dfcf8459ef6ca5e58c11787210083856211d1ba8e9cdf2"
-TASK_AUTHORED_SHA256 = "ad8bb091b8ab83e293facc4f8e22e19b08f81a474f29b1a17e8d5cc4e21b9046"
-CASE_AUTHORED_SHA256 = "b183b3c105accb790127d0bf59d2ba6a7ab6ec981a293317e50aa1fded8c2fe2"
+TASK_AUTHORED_SHA256 = "1e4d3b26155f4b2bd1571e98034d42dcfc26b75e47c881ce3afe96a118492310"
+CASE_AUTHORED_SHA256 = "5543bda0fb35381fd0be193b4866c12285e7827e13ca590a74944169fadba0ad"
 GRAPH_DECLARATIONS_SHA256 = "39a190141d0329a1f00b94bab82f19934cf0d1a9860ad742115f249ec69150dc"
 TRACEABILITY_AUTHORED_SHA256 = "33c969b0eec0852fa87dc459663540d8f9136e22f1ba22328a02724c9418c7ee"
 CONTRACTS_SHA256 = "da0f23654f30e8d1a37a12f07c9e5595d51027a5c4eaae3ce8072cb544dd3344"
 SUBAGENTS_SHA256 = "a4a9e5a967a73038b50ecdc4cadb9a51b1c83728f54c6b6fb9a87641566263f8"
-PACK_CHECKS_TEMPLATE_SHA256 = "362093d428f8c0dd394ace519fce42283382b2313c57f1048cae18f147c83778"
+PACK_CHECKS_TEMPLATE_SHA256 = "47ee08827c2369eeb4553dda97a12123c9ebb3720db1b27b68064bb1bc4faf67"
+PLAN_PREFIX_SHA256 = "3176361a5191c757d69e2461936f80cbf3668f8cf508bc86734e12d80197a5d0"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
@@ -117,6 +118,7 @@ ORDINARY_CHECK_NAMES = (
     "A15 separates observation, adapter, and integrated activation owners",
     "A16 preserves accepted-revision observation and product-presentation owners",
     "A17 preserves observation layers and integrated activation ownership",
+    "A86 preserves backend host-action and integrated presentation owners",
     "Release gate protocol matches fixed semantics",
     "Original specification matches its fixed checksum and both manifests",
     "GOAL.md matches its fixed checksum",
@@ -149,6 +151,7 @@ ORDINARY_CHECK_NAMES = (
     "Case and task ownership maps agree",
     "Task graph fields match TASKS index table",
     "Task graph fields match PLAN task index table",
+    "PLAN authored prefix matches its unique task-section boundary",
     "PLAN task headings match the task graph",
     "Task graph fields match PLAN task cards",
     "Task graph fields and canonical preamble match individual task packets",
@@ -301,8 +304,11 @@ QUALIFICATION_TARGET_MATRIX_ACCEPTANCE = (
 )
 TARGET_MATRIX_POLICY_RULES = [
     "Integration alone writes `tests/v2/targets.toml`.",
+    "Integration alone writes `compatibility.lock.toml`.",
     "P04 submits the initial required-row registration to Integration as an ordered patch request before qualification.",
     "Each of T35 through T38 sends an ordered request with its qualified tuple, case applicability, and fixture references before completion.",
+    "T40 submits required target or compatibility changes to Integration as ordered patch requests before approval.",
+    "The independent reviewer does not alter the machine applicability or compatibility evidence being approved.",
     "Keep every required row.",
     "Preserve unavailable required rows as `BLOCKED`.",
     "Do not write the shared matrix directly or apply concurrent changes.",
@@ -313,6 +319,8 @@ T40_RELEASE_GATE_STEPS = [
     "Run the release_gate_protocol preflight while T40 is RUNNING or REVIEW.",
     "Check prior task statuses and assignment results.",
     "Check reviewed artifacts, merged evidence, and required target results.",
+    "Submit required target or compatibility changes to Integration as ordered patch requests before approval.",
+    "Do not write tests/v2/targets.toml or compatibility.lock.toml directly.",
     "Exercise A123 refusals for missing, failed, blocked, and unreviewed prerequisites.",
     "Confirm every refusal prevents approval. Treat synthetic refusal fixtures as contract tests only.",
     "Run A124 and A125 against the actual candidate. Record actual results for all three T40 cases.",
@@ -330,6 +338,8 @@ T40_RELEASE_GATE_STEPS = [
 T40_RELEASE_GATE_ACCEPTANCE = [
     "Preflight requires every task except T40 and each prior task assignment to pass.",
     "Prior task artifacts, independent reviews, merged evidence, and required target results must pass.",
+    "T40 routes target and compatibility changes through ordered Integration patch requests and does not write either shared file.",
+    "The independent reviewer cannot alter the machine applicability or compatibility evidence being approved.",
     "T40 is RUNNING or REVIEW during preflight.",
     "Preflight excludes A123, A124, and A125, returns PREFLIGHT_ONLY, and never approves release.",
     "Finalization requires every task except T40 and every case assignment to pass, including A123, A124, and A125.",
@@ -372,7 +382,8 @@ A125_GATE_EXPECTED = (
     "patch digest. Unpatched tuples need no approval record. No unauthorized publication or production change occurs."
 )
 T40_RELEASE_GATE_WRITE_SCOPES = [
-    "Release-candidate documentation and final compatibility matrix",
+    "Release-candidate documentation and final compatibility claims",
+    "Submit ordered Integration patch requests for tests/v2/targets.toml and compatibility.lock.toml; do not write those shared files directly",
     "Version and packaging changes through the integration subagent",
     "Submit T40 task status, final acceptance summary, completion, finalization receipt, and approval "
     "as an atomic Integration subagent patch request",
@@ -592,6 +603,7 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
         "A15 separates observation, adapter, and integrated activation owners": [],
         "A16 preserves accepted-revision observation and product-presentation owners": [],
         "A17 preserves observation layers and integrated activation ownership": [],
+        "A86 preserves backend host-action and integrated presentation owners": [],
     }
 
     def task_contains(task_id: str, field: str, phrase: str) -> bool:
@@ -728,6 +740,50 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
         if not task_contains("T23", "steps", step):
             a17_errors.append({"task": "T23", "problem": "integrated A17 procedure is missing",
                                "required_step": step})
+
+    a86 = cases_by_id.get("A86", {})
+    a86_errors = failures["A86 preserves backend host-action and integrated presentation owners"]
+    if a86.get("level") != "LIVE" or a86.get("tasks") != ["T26", "T29"]:
+        a86_errors.append({"case_level": a86.get("level"), "case_owners": a86.get("tasks"),
+                           "expected_level": "LIVE", "expected_owners": ["T26", "T29"]})
+    assignment_owners = [
+        row.get("task_id") for row in a86.get("assignment_results", []) if isinstance(row, dict)
+    ] if isinstance(a86.get("assignment_results"), list) else None
+    if assignment_owners != ["T26", "T29"]:
+        a86_errors.append({"assignment_owners": assignment_owners,
+                           "expected": ["T26", "T29"]})
+    if not case_text_contains(
+        a86, "setup",
+        "hostile terminal escape sequences",
+        "unsolicited helper clipboard, URL, and export requests",
+        "backend and integrated product paths",
+    ):
+        a86_errors.append({"case": "A86", "field": "setup",
+                           "problem": "must preserve hostile input across backend and product paths"})
+    if not case_text_contains(
+        a86, "action", "CLI, Console, and desktop paths",
+        "without a matching operator action",
+    ):
+        a86_errors.append({"case": "A86", "field": "action",
+                           "problem": "must exercise integrated product presentation without operator intent"})
+    if not case_text_contains(
+        a86, "expected", "No host action occurs", "T29 ignores unsolicited requests",
+        "forge trusted labels or approval state",
+    ):
+        a86_errors.append({"case": "A86", "field": "expected",
+                           "problem": "must preserve backend refusal and trusted presentation state"})
+    for task_id, field, required_text in (
+        ("T26", "test_cases", "A86"),
+        ("T26", "steps", "Qualify A86 host-action and approval refusals for unsolicited helper clipboard, URL, and export effects."),
+        ("T26", "acceptance", "A86 retains backend host-action and approval checks; untrusted output cannot trigger effects or forge approval state."),
+        ("T29", "test_cases", "A86"),
+        ("T29", "steps", "Exercise A86 across CLI, Console, and desktop presentation without a matching operator action."),
+        ("T29", "acceptance", "A86 keeps unsolicited helper requests inert and prevents untrusted output from forging trusted labels or approval state."),
+    ):
+        if not task_contains(task_id, field, required_text):
+            a86_errors.append({"task": task_id, "field": field,
+                               "problem": "owner-specific A86 qualification is missing",
+                               "required": required_text})
     return failures
 
 
@@ -775,6 +831,42 @@ def target_matrix_contract_errors(tasks: list[dict[str, Any]], acceptance_docume
         if direct_scope:
             errors.append({"task": task_id, "problem": "unauthorized direct target-matrix write scope",
                            "write_scope": direct_scope})
+
+    t40 = tasks_by_id.get("T40", {})
+    required_t40_scope = (
+        "Submit ordered Integration patch requests for tests/v2/targets.toml and compatibility.lock.toml; "
+        "do not write those shared files directly"
+    )
+    required_t40_step = (
+        "Submit required target or compatibility changes to Integration as ordered patch requests before approval."
+    )
+    required_t40_no_direct_step = (
+        "Do not write tests/v2/targets.toml or compatibility.lock.toml directly."
+    )
+    required_t40_acceptance = (
+        "T40 routes target and compatibility changes through ordered Integration patch requests and does not write either shared file."
+    )
+    required_reviewer_acceptance = (
+        "The independent reviewer cannot alter the machine applicability or compatibility evidence being approved."
+    )
+    for field, required in (
+        ("write_scope", required_t40_scope),
+        ("steps", required_t40_step),
+        ("steps", required_t40_no_direct_step),
+        ("acceptance", required_t40_acceptance),
+        ("acceptance", required_reviewer_acceptance),
+    ):
+        if required not in t40.get(field, []):
+            errors.append({"task": "T40", "field": field, "missing": required})
+    t40_direct_scope = [
+        value for value in t40.get("write_scope", [])
+        if isinstance(value, str)
+        and ("tests/v2/targets.toml" in value or "compatibility.lock.toml" in value)
+        and value != required_t40_scope
+    ]
+    if t40_direct_scope:
+        errors.append({"task": "T40", "problem": "independent reviewer directly writes shared matrix evidence",
+                       "write_scope": t40_direct_scope})
     return errors
 
 
@@ -1802,11 +1894,23 @@ def main() -> int:
           {"expected_rows": len(expected_index),
            "actual_rows": len(task_index) if task_index is not None else None})
 
-    plan = (root / "PLAN.md").read_text(encoding="utf-8")
+    plan_path = root / "PLAN.md"
+    plan = plan_path.read_text(encoding="utf-8")
     plan_index = task_index_table(plan, "## Task index", "## Detailed task cards")
     check("Task graph fields match PLAN task index table", plan_index == expected_index,
           {"expected_rows": len(expected_index),
            "actual_rows": len(plan_index) if plan_index is not None else None})
+    plan_bytes = plan_path.read_bytes()
+    plan_task_boundaries = list(re.finditer(rb"(?m)^## Task index\r?$", plan_bytes))
+    plan_prefix_digest = (
+        hashlib.sha256(plan_bytes[:plan_task_boundaries[0].start()]).hexdigest()
+        if len(plan_task_boundaries) == 1 else None
+    )
+    check("PLAN authored prefix matches its unique task-section boundary",
+          len(plan_task_boundaries) == 1 and plan_prefix_digest == PLAN_PREFIX_SHA256,
+          {"boundary_count": len(plan_task_boundaries),
+           "expected_sha256": PLAN_PREFIX_SHA256,
+           "actual_sha256": plan_prefix_digest})
     task_section_start = plan.find("## Detailed task cards")
     task_section = plan[task_section_start:] if task_section_start != -1 else ""
     plan_headings = list(re.finditer(r"(?m)^### (.+)$", task_section))

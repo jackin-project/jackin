@@ -1661,16 +1661,21 @@
       "id": "A86",
       "title": "Host affordance injection",
       "level": "LIVE",
-      "setup": "Emit hostile terminal escape sequences and unsolicited helper clipboard, URL, and export requests.",
-      "action": "Observe the desktop without a matching operator action.",
-      "expected": "No host action occurs. Untrusted output cannot forge trusted labels or approval state.",
+      "setup": "Emit hostile terminal escape sequences and unsolicited helper clipboard, URL, and export requests through backend and integrated product paths.",
+      "action": "Observe CLI, Console, and desktop paths without a matching operator action.",
+      "expected": "No host action occurs. T29 ignores unsolicited requests. Untrusted output cannot forge trusted labels or approval state.",
       "status": "NOT_RUN",
       "tasks": [
-        "T26"
+        "T26",
+        "T29"
       ],
       "assignment_results": [
         {
           "task_id": "T26",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T29",
           "status": "NOT_RUN"
         }
       ]

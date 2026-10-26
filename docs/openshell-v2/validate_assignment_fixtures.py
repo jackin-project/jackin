@@ -320,6 +320,7 @@ FIXTURE_ORDINARY_CHECK_NAMES = (
     'A15 separates observation, adapter, and integrated activation owners',
     'A16 preserves accepted-revision observation and product-presentation owners',
     'A17 preserves observation layers and integrated activation ownership',
+    'A86 preserves backend host-action and integrated presentation owners',
     'Release gate protocol matches fixed semantics',
     'Original specification matches its fixed checksum and both manifests',
     'GOAL.md matches its fixed checksum',
@@ -352,6 +353,7 @@ FIXTURE_ORDINARY_CHECK_NAMES = (
     'Case and task ownership maps agree',
     'Task graph fields match TASKS index table',
     'Task graph fields match PLAN task index table',
+    'PLAN authored prefix matches its unique task-section boundary',
     'PLAN task headings match the task graph',
     'Task graph fields match PLAN task cards',
     'Task graph fields and canonical preamble match individual task packets',
@@ -380,7 +382,7 @@ FIXTURE_INITIAL_ONLY_CHECK_NAMES = (
 FIXTURE_CHECK_INVENTORY_CHECK = 'Validator check inventory matches its canonical ordered sequence'
 
 
-FIXED_FIXTURE_COUNT = 244
+FIXED_FIXTURE_COUNT = 250
 FIXED_FIXTURE_NAMES = (
     "isolated subprocess detects idempotent README mutation during validator import",
     "shared PASS summary requires every owner",
@@ -626,6 +628,12 @@ FIXED_FIXTURE_NAMES = (
     "PACK-CHECKS check results reject release-approval prose",
     "PACK-CHECKS observations reject release-approval prose",
     "fixture runner detects input and validator changes during execution",
+    "PLAN prefix policy mutation violates its fixed digest",
+    "PLAN task-index boundary cannot be missing",
+    "PLAN task-index boundary cannot be duplicated",
+    "Synchronized PLAN concurrency-policy weakening violates the fixed prefix",
+    "A86 cannot omit T29 integrated presentation ownership or weaken its assertions",
+    "T40 cannot claim direct writes to shared target and compatibility matrices",
 )
 
 
@@ -2233,7 +2241,10 @@ def main() -> int:
     receipts.append(run_fixture(
         "legacy manifest without assignment_results is rejected",
         legacy_manifest,
-        1, ["Assignment results have exact unique case owners and valid statuses"],
+        1, [
+            "A86 preserves backend host-action and integrated presentation owners",
+            "Assignment results have exact unique case owners and valid statuses",
+        ],
     ))
 
     def malformed(pack: Path) -> None:
@@ -4348,9 +4359,12 @@ def main() -> int:
 
     def report_with_nonstandard_constant(constant: str) -> str:
         document = validator_report(True, [])
-        old = '"checked_sentences": 1653'
+        source_counts = derive_expected_counts(ROOT)
+        if source_counts is None:
+            raise ValueError("Expected input-derived counts for the canonical report")
+        old = f'"checked_sentences": {source_counts["checked_sentences"]}'
         if document.count(old) != 1:
-            raise ValueError("Expected one checked-sentence count in the canonical report")
+            raise ValueError("Expected one input-derived checked-sentence count in the canonical report")
         return document.replace(old, f'"checked_sentences": {constant}', 1)
 
     for constant in ("NaN", "Infinity", "-Infinity"):
@@ -4755,8 +4769,13 @@ def main() -> int:
     def change_pack_check_count_and_result_slots(pack: Path) -> None:
         path = pack / "PACK-CHECKS.md"
         document = path.read_text(encoding="utf-8")
+        tested_counts = derive_expected_counts(pack)
+        if tested_counts is None:
+            raise ValueError("Expected input-derived counts for the copied pack")
+        sentence_count = tested_counts["checked_sentences"]
         replacements = (
-            ("| Checked procedural sentences | 1653 |", "| Checked procedural sentences | 0 |"),
+            (f"| Checked procedural sentences | {sentence_count} |",
+             "| Checked procedural sentences | 0 |"),
             ("Result: Static pack validation and per-task assignment fixtures pass.",
              "Result: Static pack validation and per-task assignment fixtures fail."),
             ("| GOAL matches its fixed checksum | PASS |", "| GOAL matches its fixed checksum | FAIL |"),
@@ -4833,6 +4852,128 @@ print('{}')
             "pack input changed during validator execution: TASKS.md",
             "pack input changed during validator execution: validate_pack.py",
             "validator executable changed during execution",
+        ],
+    ))
+
+    def weaken_plan_prefix(pack: Path) -> None:
+        path = pack / "PLAN.md"
+        document = path.read_bytes()
+        original = b"Use the dependency graph in [task-graph.json](./task-graph.json).\n"
+        weakened = b"Ignore the dependency graph in [task-graph.json](./task-graph.json).\n"
+        if document.count(original) != 1:
+            raise ValueError("Expected one dependency-graph instruction in the PLAN prefix")
+        path.write_bytes(document.replace(original, weakened, 1))
+    receipts.append(run_fixture(
+        "PLAN prefix policy mutation violates its fixed digest",
+        weaken_plan_prefix,
+        1, ["PLAN authored prefix matches its unique task-section boundary"],
+    ))
+
+    def remove_plan_task_index_boundary(pack: Path) -> None:
+        path = pack / "PLAN.md"
+        document = path.read_bytes()
+        boundary = b"## Task index\n"
+        if document.count(boundary) != 1:
+            raise ValueError("Expected one PLAN task-index boundary")
+        path.write_bytes(document.replace(boundary, b"", 1))
+    receipts.append(run_fixture(
+        "PLAN task-index boundary cannot be missing",
+        remove_plan_task_index_boundary,
+        1, [
+            "Task graph fields match PLAN task index table",
+            "PLAN authored prefix matches its unique task-section boundary",
+        ],
+    ))
+
+    def duplicate_plan_task_index_boundary(pack: Path) -> None:
+        path = pack / "PLAN.md"
+        document = path.read_bytes()
+        boundary = b"## Task index\n"
+        if document.count(boundary) != 1:
+            raise ValueError("Expected one PLAN task-index boundary")
+        path.write_bytes(document.replace(boundary, boundary + boundary, 1))
+    receipts.append(run_fixture(
+        "PLAN task-index boundary cannot be duplicated",
+        duplicate_plan_task_index_boundary,
+        1, [
+            "Task graph fields match PLAN task index table",
+            "PLAN authored prefix matches its unique task-section boundary",
+        ],
+    ))
+
+    def synchronize_plan_concurrency_weakening(pack: Path) -> None:
+        path = pack / "PLAN.md"
+        document = path.read_bytes()
+        original = b"Use up to eight real subagents when write scopes permit this.\n"
+        weakened = b"Use any number of concurrent subagents regardless of write scopes.\n"
+        if document.count(original) != 1:
+            raise ValueError("Expected one PLAN concurrency clause")
+        path.write_bytes(document.replace(original, weakened, 1))
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        graph["parallel_agent_limit"] = 99
+        write_json(graph_path, graph)
+    receipts.append(run_fixture(
+        "Synchronized PLAN concurrency-policy weakening violates the fixed prefix",
+        synchronize_plan_concurrency_weakening,
+        1, [
+            "Parallel agent limit matches the subagent contract",
+            "Authoritative concurrency declaration matches graph and subagent limit",
+            "PLAN authored prefix matches its unique task-section boundary",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def remove_a86_integrated_owner(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t29 = next(task for task in graph["tasks"] if task["id"] == "T29")
+        t29["test_cases"].remove("A86")
+        t29["steps"].remove(
+            "Exercise A86 across CLI, Console, and desktop presentation without a matching operator action."
+        )
+        t29["acceptance"].remove(
+            "A86 keeps unsolicited helper requests inert and prevents untrusted output from forging trusted labels or approval state."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T29")
+
+        case_path = pack / "acceptance-cases.json"
+        case_file = read_json(case_path)
+        a86 = next(case for case in case_file["cases"] if case["id"] == "A86")
+        a86["tasks"].remove("T29")
+        a86["assignment_results"] = [
+            row for row in a86["assignment_results"] if row["task_id"] != "T29"
+        ]
+        a86["setup"] = "Emit harmless text in backend and product paths."
+        a86["action"] = "Observe the interface after a matching operator action."
+        a86["expected"] = "The interface may treat helper output as an approved action."
+        write_json(case_path, case_file)
+        sync_case_block(pack, a86)
+    receipts.append(run_fixture(
+        "A86 cannot omit T29 integrated presentation ownership or weaken its assertions",
+        remove_a86_integrated_owner,
+        1, [
+            "A86 preserves backend host-action and integrated presentation owners",
+            "Task authored fields match fixed projection",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
+    def give_t40_direct_shared_matrix_scope(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t40 = next(task for task in graph["tasks"] if task["id"] == "T40")
+        t40["write_scope"].extend(["tests/v2/targets.toml", "compatibility.lock.toml"])
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T40")
+    receipts.append(run_fixture(
+        "T40 cannot claim direct writes to shared target and compatibility matrices",
+        give_t40_direct_shared_matrix_scope,
+        1, [
+            "T40 finalization writes route through Integration",
+            "Target matrix qualification requests route through Integration",
+            "Task authored fields match fixed projection",
         ],
     ))
 

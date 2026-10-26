@@ -2105,14 +2105,16 @@
         "Give that consumer only its admitted capability or secret.",
         "Keep project hooks and writable configuration from selecting the consumer executable.",
         "Record denial, cancellation, timeout, revocation, and uncertain completion.",
-        "Keep secret-consuming output separate from ordinary terminal replay."
+        "Keep secret-consuming output separate from ordinary terminal replay.",
+        "Qualify A86 host-action and approval refusals for unsolicited helper clipboard, URL, and export effects."
       ],
       "acceptance": [
         "Unsolicited OSC or helper messages cannot open URLs or change the clipboard.",
         "A wrong-domain or changed-input approval fails.",
         "A replayed approval cannot repeat its effect.",
         "Stopping host control blocks the action without killing the remote session or granting approval.",
-        "No secret enters the coding-agent PTY or arbitrary host shell."
+        "No secret enters the coding-agent PTY or arbitrary host shell.",
+        "A86 retains backend host-action and approval checks; untrusted output cannot trigger effects or forge approval state."
       ],
       "remove_or_replace": [
         "Delete Linux peer-PID and privileged Capsule authority assumptions.",
@@ -2309,7 +2311,8 @@
         "Show fleet completeness and per-target errors.",
         "Keep branch, pull-request, CI, clipboard-image, and export workflows through trusted adapters.",
         "Regenerate completion and man-page sources from the new command model.",
-        "Display A16's accepted policy revision and effective replacement source in product output."
+        "Display A16's accepted policy revision and effective replacement source in product output.",
+        "Exercise A86 across CLI, Console, and desktop presentation without a matching operator action."
       ],
       "acceptance": [
         "Two reachable targets remain usable when a third target fails.",
@@ -2317,7 +2320,8 @@
         "Agent-reported done cannot authorize deletion or a passing verdict.",
         "Ambiguous human selectors produce a selection error.",
         "JSON output follows only the v2 schema.",
-        "A16 displays the accepted replacement source and revision without implying an intersection."
+        "A16 displays the accepted replacement source and revision without implying an intersection.",
+        "A86 keeps unsolicited helper requests inert and prevents untrusted output from forging trusted labels or approval state."
       ],
       "remove_or_replace": [
         "Replace old Docker-based status, Console discovery, and backend CLI flags.",
@@ -2327,7 +2331,8 @@
         "A96",
         "A97",
         "A98",
-        "A16"
+        "A16",
+        "A86"
       ],
       "source_basis": "SPEC L356-L399; L413-L419",
       "status": "NOT_STARTED",
@@ -3067,7 +3072,8 @@
         "T39"
       ],
       "write_scope": [
-        "Release-candidate documentation and final compatibility matrix",
+        "Release-candidate documentation and final compatibility claims",
+        "Submit ordered Integration patch requests for tests/v2/targets.toml and compatibility.lock.toml; do not write those shared files directly",
         "Version and packaging changes through the integration subagent",
         "Submit T40 task status, final acceptance summary, completion, finalization receipt, and approval as an atomic Integration subagent patch request"
       ],
@@ -3093,6 +3099,8 @@
         "Produce the final removal inventory, test summary, blocker list, and source references.",
         "Do not publish a release or alter production infrastructure without explicit authorization.",
         "Check prior task statuses and assignment results.",
+        "Submit required target or compatibility changes to Integration as ordered patch requests before approval.",
+        "Do not write tests/v2/targets.toml or compatibility.lock.toml directly.",
         "Check reviewed artifacts, merged evidence, and required target results.",
         "Exercise A123 refusals for missing, failed, blocked, and unreviewed prerequisites.",
         "Confirm every refusal prevents approval. Treat synthetic refusal fixtures as contract tests only.",
@@ -3110,6 +3118,8 @@
         "No backward-compatibility path or legacy execution artifact ships.",
         "Preflight requires every task except T40 and each prior task assignment to pass.",
         "Prior task artifacts, independent reviews, merged evidence, and required target results must pass.",
+        "T40 routes target and compatibility changes through ordered Integration patch requests and does not write either shared file.",
+        "The independent reviewer cannot alter the machine applicability or compatibility evidence being approved.",
         "T40 is RUNNING or REVIEW during preflight.",
         "Preflight excludes A123, A124, and A125, returns PREFLIGHT_ONLY, and never approves release.",
         "Finalization requires every task except T40 and every case assignment to pass, including A123, A124, and A125.",

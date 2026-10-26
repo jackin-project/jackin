@@ -2352,6 +2352,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 11. Keep project hooks and writable configuration from selecting the consumer executable.
 12. Record denial, cancellation, timeout, revocation, and uncertain completion.
 13. Keep secret-consuming output separate from ordinary terminal replay.
+14. Qualify A86 host-action and approval refusals for unsolicited helper clipboard, URL, and export effects.
 
 #### Pass conditions
 
@@ -2360,6 +2361,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A replayed approval cannot repeat its effect.
 - Stopping host control blocks the action without killing the remote session or granting approval.
 - No secret enters the coding-agent PTY or arbitrary host shell.
+- A86 retains backend host-action and approval checks; untrusted output cannot trigger effects or forge approval state.
 
 **Acceptance cases:** A45, A86, A87, A88.
 
@@ -2562,6 +2564,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 9. Keep branch, pull-request, CI, clipboard-image, and export workflows through trusted adapters.
 10. Regenerate completion and man-page sources from the new command model.
 11. Display A16's accepted policy revision and effective replacement source in product output.
+12. Exercise A86 across CLI, Console, and desktop presentation without a matching operator action.
 
 #### Pass conditions
 
@@ -2571,8 +2574,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Ambiguous human selectors produce a selection error.
 - JSON output follows only the v2 schema.
 - A16 displays the accepted replacement source and revision without implying an intersection.
+- A86 keeps unsolicited helper requests inert and prevents untrusted output from forging trusted labels or approval state.
 
-**Acceptance cases:** A96, A97, A98, A16.
+**Acceptance cases:** A96, A97, A98, A16, A86.
 
 #### Removal and replacement
 
@@ -3319,7 +3323,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 #### Write scope
 
-- Release-candidate documentation and final compatibility matrix
+- Release-candidate documentation and final compatibility claims
+- Submit ordered Integration patch requests for tests/v2/targets.toml and compatibility.lock.toml; do not write those shared files directly
 - Version and packaging changes through the integration subagent
 - Submit T40 task status, final acceptance summary, completion, finalization receipt, and approval as an atomic Integration subagent patch request
 
@@ -3351,15 +3356,17 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 15. Produce the final removal inventory, test summary, blocker list, and source references.
 16. Do not publish a release or alter production infrastructure without explicit authorization.
 17. Check prior task statuses and assignment results.
-18. Check reviewed artifacts, merged evidence, and required target results.
-19. Exercise A123 refusals for missing, failed, blocked, and unreviewed prerequisites.
-20. Confirm every refusal prevents approval. Treat synthetic refusal fixtures as contract tests only.
-21. Run A124 and A125 against the actual candidate. Record actual results for all three T40 cases.
-22. Obtain an independent T40 review and rerun checks against the merged source.
-23. Finalize only after all prior tasks and every case assignment pass, including A123, A124, and A125.
-24. Require affected LIVE cases to pass after the latest runtime-affecting change before finalization.
-25. Bind completion and approval to the reviewed source commit, package digests, and evidence hashes.
-26. Request Integration to atomically write T40 PASS, the final summary, completion, finalization receipt, and approval after all gates pass.
+18. Submit required target or compatibility changes to Integration as ordered patch requests before approval.
+19. Do not write tests/v2/targets.toml or compatibility.lock.toml directly.
+20. Check reviewed artifacts, merged evidence, and required target results.
+21. Exercise A123 refusals for missing, failed, blocked, and unreviewed prerequisites.
+22. Confirm every refusal prevents approval. Treat synthetic refusal fixtures as contract tests only.
+23. Run A124 and A125 against the actual candidate. Record actual results for all three T40 cases.
+24. Obtain an independent T40 review and rerun checks against the merged source.
+25. Finalize only after all prior tasks and every case assignment pass, including A123, A124, and A125.
+26. Require affected LIVE cases to pass after the latest runtime-affecting change before finalization.
+27. Bind completion and approval to the reviewed source commit, package digests, and evidence hashes.
+28. Request Integration to atomically write T40 PASS, the final summary, completion, finalization receipt, and approval after all gates pass.
 
 #### Pass conditions
 
@@ -3369,6 +3376,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - No backward-compatibility path or legacy execution artifact ships.
 - Preflight requires every task except T40 and each prior task assignment to pass.
 - Prior task artifacts, independent reviews, merged evidence, and required target results must pass.
+- T40 routes target and compatibility changes through ordered Integration patch requests and does not write either shared file.
+- The independent reviewer cannot alter the machine applicability or compatibility evidence being approved.
 - T40 is RUNNING or REVIEW during preflight.
 - Preflight excludes A123, A124, and A125, returns PREFLIGHT_ONLY, and never approves release.
 - Finalization requires every task except T40 and every case assignment to pass, including A123, A124, and A125.
