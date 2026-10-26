@@ -24,7 +24,7 @@ builders.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`exec_args.rs`](src/exec_args.rs) | arg builders | hub `attach` suite |
+| [`exec_args.rs`](src/exec_args.rs) | arg builders | — |
 
 ## Public API
 

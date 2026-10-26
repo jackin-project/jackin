@@ -17,8 +17,7 @@ via Docker label queries.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`discovery.rs`](src/discovery.rs) | label queries | `discovery/tests.rs` |
-| [`discovery/`](src/discovery/) | test suites | `discovery/tests.rs` |
+| [`discovery.rs`](src/discovery.rs) | label queries | — |
 
 ## Public API
 

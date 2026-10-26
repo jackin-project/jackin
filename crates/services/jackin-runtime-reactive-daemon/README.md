@@ -21,8 +21,7 @@ control-socket spike.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | gated re-export | — |
-| [`reactive_daemon.rs`](src/reactive_daemon.rs) | socket + adapter | `reactive_daemon/tests.rs` |
-| [`reactive_daemon/`](src/reactive_daemon/) | test suites | `reactive_daemon/tests.rs` |
+| [`reactive_daemon.rs`](src/reactive_daemon.rs) | socket + adapter | — |
 
 ## Public API
 

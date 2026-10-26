@@ -25,7 +25,7 @@ inventory inspection.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`sessions.rs`](src/sessions.rs) | inventory + messages | hub `attach` suite |
+| [`sessions.rs`](src/sessions.rs) | inventory + messages | — |
 
 ## Public API
 

@@ -18,7 +18,7 @@ helper.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`stop.rs`](src/stop.rs) | Container stop helper | hub `backend` eject path (no dedicated suite) |
+| [`stop.rs`](src/stop.rs) | Container stop helper | — |
 
 ## Public API
 

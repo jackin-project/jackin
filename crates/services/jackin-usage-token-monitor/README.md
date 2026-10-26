@@ -22,7 +22,7 @@ table.
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
 | `monitor`/`session` | polling + totals | — |
-| `amp`…`opencode` | vendor readers | per-module `tests.rs` |
+| `amp`…`opencode` | vendor readers | — |
 
 ## Public API
 

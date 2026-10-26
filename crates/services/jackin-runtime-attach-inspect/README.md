@@ -25,7 +25,7 @@ inspection.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`inspect.rs`](src/inspect.rs) | inspection | hub `attach` suite |
+| [`inspect.rs`](src/inspect.rs) | inspection | — |
 
 ## Public API
 

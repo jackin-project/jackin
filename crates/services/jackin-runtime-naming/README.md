@@ -20,8 +20,7 @@ and Docker label constants.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`naming.rs`](src/naming.rs) | labels + helpers | `naming/tests.rs` |
-| [`naming/`](src/naming/) | test suites | `naming/tests.rs` |
+| [`naming.rs`](src/naming.rs) | labels + helpers | — |
 
 ## Public API
 

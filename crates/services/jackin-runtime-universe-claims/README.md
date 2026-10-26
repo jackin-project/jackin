@@ -27,8 +27,8 @@ machinery.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`claims.rs`](src/claims.rs) | claim types | `universe` suites |
-| [`boundary.rs`](src/boundary.rs) | file machinery | `universe` suites |
+| [`claims.rs`](src/claims.rs) | claim types | — |
+| [`boundary.rs`](src/boundary.rs) | file machinery | — |
 
 ## Public API
 

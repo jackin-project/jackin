@@ -34,7 +34,7 @@ resolution.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`failure.rs`](src/failure.rs) | failure rendering + role-source resolve | hub `launch` suite (`case_01`, `case_08`) |
+| [`failure.rs`](src/failure.rs) | failure rendering + role-source resolve | — |
 
 ## Public API
 

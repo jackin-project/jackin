@@ -22,7 +22,7 @@ activation.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`activate_entry.rs`](src/activate_entry.rs) | started-entry activation | hub `apple_container` launch path (no dedicated suite) |
+| [`activate_entry.rs`](src/activate_entry.rs) | started-entry activation | — |
 
 ## Public API
 

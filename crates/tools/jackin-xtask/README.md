@@ -19,7 +19,7 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 | [`main.rs`](src/main.rs) | MBX `xtask` dispatcher | — |
 | [`lib.rs`](src/lib.rs) · [`workflow_yaml.rs`](src/workflow_yaml.rs) | One bounded workflow parser shared by the binary and integration checks | — |
 | [`ci.rs`](src/ci.rs) | CI orchestration | — |
-| [`ci_audit.rs`](src/ci_audit.rs) · [`ci_cargo_audit.rs`](src/ci_cargo_audit.rs) · [`ci_target.rs`](src/ci_target.rs) | workflow audit, advisory-cache selection, and target transport | sibling `tests.rs` files |
+| [`ci_audit.rs`](src/ci_audit.rs) · [`ci_cargo_audit.rs`](src/ci_cargo_audit.rs) · [`ci_target.rs`](src/ci_target.rs) | workflow audit, advisory-cache selection, and target transport | — |
 | [`ci_doc_examples.rs`](src/ci_doc_examples.rs) | nextest-only documentation-example gate | — |
 | [`lint.rs`](src/lint.rs) | file-size lint gate (adapter; budgets also in `ratchet.toml`) | — |
 | [`ratchet.rs`](src/ratchet.rs) | unified shrink-only ratchet engine (`lint ratchet`) | — |

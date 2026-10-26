@@ -41,7 +41,7 @@ for launch.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`launch_dind.rs`](src/launch_dind.rs) | sidecar launch + prewarm state | hub `launch::launch_dind` suite (`launch_dind/tests.rs`) + hub `launch` suite |
+| [`launch_dind.rs`](src/launch_dind.rs) | sidecar launch + prewarm state | — |
 
 ## Public API
 

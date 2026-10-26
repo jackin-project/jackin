@@ -20,7 +20,7 @@ multiplexer.
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
 | [`telemetry.rs`](src/telemetry.rs) | lifecycle | — |
-| [`logging.rs`](src/logging.rs) | level + hook | (via `telemetry` tests) |
+| [`logging.rs`](src/logging.rs) | level + hook | — |
 
 ## Public API
 

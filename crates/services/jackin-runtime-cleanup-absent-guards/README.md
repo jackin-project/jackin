@@ -26,7 +26,7 @@ resources exist.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`absent_guards.rs`](src/absent_guards.rs) | guards | hub `cleanup` suite |
+| [`absent_guards.rs`](src/absent_guards.rs) | guards | — |
 
 ## Public API
 

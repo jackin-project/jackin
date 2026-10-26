@@ -17,18 +17,18 @@ Operator-environment resolution and 1Password (`op`) CLI integration. Turns decl
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
-| [`env_resolver.rs`](src/env_resolver.rs) · [`env_resolver/`](src/env_resolver) | env resolution | — |
+| [`env_resolver.rs`](src/env_resolver.rs) | env resolution | — |
 | [`env_layer.rs`](src/env_layer.rs) *(internal)* | env layer | — |
-| [`resolve.rs`](src/resolve.rs) · [`resolve/`](src/resolve) | resolution entry | — |
-| [`op_cli.rs`](src/op_cli.rs) · [`op_cli/`](src/op_cli) | `op` CLI bridge | — |
+| [`resolve.rs`](src/resolve.rs) | resolution entry | — |
+| [`op_cli.rs`](src/op_cli.rs) | `op` CLI bridge | — |
 | [`op_runner.rs`](src/op_runner.rs) | `op` runner | — |
 | [`op_struct.rs`](src/op_struct.rs) | `op` struct types | — |
-| `token_setup.rs` · `token_setup/` | `op` token setup | `tests.rs` |
+| `token_setup.rs` · `token_setup/` | `op` token setup | — |
 | [`picker.rs`](src/picker.rs) | secret picker model (pure half in `jackin-oppicker`) | — |
-| `host_claude.rs` *(internal)* · `host_claude/` | host-side Claude env wiring | `tests.rs` |
+| `host_claude.rs` *(internal)* · `host_claude/` | host-side Claude env wiring | — |
 | `output.rs` | output helpers | — |
 | [`parse_helpers.rs`](src/parse_helpers.rs) | parse helpers | — |
-| [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry) | bounded subprocess telemetry ownership | — |
+| [`process_telemetry.rs`](src/process_telemetry.rs) | bounded subprocess telemetry ownership | — |
 | `test_support.rs` | test fixtures | — |
 
 ## Public API

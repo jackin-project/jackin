@@ -24,7 +24,7 @@ env helper.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`run_envs.rs`](src/run_envs.rs) | run env entries | hub `launch_runtime` run path (no dedicated suite) |
+| [`run_envs.rs`](src/run_envs.rs) | run env entries | — |
 
 ## Public API
 

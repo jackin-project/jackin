@@ -26,7 +26,7 @@ builder.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`supervisor_env.rs`](src/supervisor_env.rs) | supervisor env pairs | hub `apple_container` launch path (no dedicated suite) |
+| [`supervisor_env.rs`](src/supervisor_env.rs) | supervisor env pairs | — |
 
 ## Public API
 

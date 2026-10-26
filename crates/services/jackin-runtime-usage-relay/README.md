@@ -34,7 +34,7 @@ capabilities.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`usage_relay.rs`](src/usage_relay.rs) | tunnels + capabilities | `usage_relay/tests.rs` |
+| [`usage_relay.rs`](src/usage_relay.rs) | tunnels + capabilities | — |
 
 ## Public API
 

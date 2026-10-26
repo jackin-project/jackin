@@ -24,7 +24,7 @@ telemetry helper.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`post_run_failure.rs`](src/post_run_failure.rs) | post-run failure emit | hub `launch_runtime` post-run path (no dedicated suite) |
+| [`post_run_failure.rs`](src/post_run_failure.rs) | post-run failure emit | — |
 
 ## Public API
 

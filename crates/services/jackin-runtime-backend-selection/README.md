@@ -26,7 +26,7 @@ runtime instance.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`backend_selection.rs`](src/backend_selection.rs) | selection | hub `backend` suite (`backend/tests.rs`) |
+| [`backend_selection.rs`](src/backend_selection.rs) | selection | — |
 
 ## Public API
 

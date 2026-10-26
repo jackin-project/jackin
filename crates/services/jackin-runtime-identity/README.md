@@ -18,8 +18,7 @@ and capsule supervisor user.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`identity.rs`](src/identity.rs) | capture + const | `identity/tests.rs` |
-| [`identity/`](src/identity/) | test suites | `identity/tests.rs` |
+| [`identity.rs`](src/identity.rs) | capture + const | — |
 
 ## Public API
 

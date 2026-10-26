@@ -21,7 +21,7 @@ probe.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`probe_version.rs`](src/probe_version.rs) | version probe | hub `apple_container` launch path (no dedicated suite) |
+| [`probe_version.rs`](src/probe_version.rs) | version probe | — |
 
 ## Public API
 

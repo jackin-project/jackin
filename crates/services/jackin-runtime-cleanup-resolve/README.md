@@ -20,7 +20,7 @@ resolution.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`resolve.rs`](src/resolve.rs) | resolution | hub `cleanup` suite |
+| [`resolve.rs`](src/resolve.rs) | resolution | — |
 
 ## Public API
 

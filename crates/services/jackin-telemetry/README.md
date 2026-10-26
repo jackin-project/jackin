@@ -19,7 +19,7 @@ T0; no workspace dependencies. Ecosystem dependencies are limited to OpenTelemet
 | [`lib.rs`](src/lib.rs) | Crate root and re-exports | — |
 | [`schema.rs`](src/schema.rs) · [`schema/`](src/schema) | Generated attributes, events, spans, and bounded values | — |
 | [`event.rs`](src/event.rs) · [`error.rs`](src/error.rs) · [`operation.rs`](src/operation.rs) · [`metric.rs`](src/metric.rs) | Bounded governed signal facade | — |
-| [`spawn.rs`](src/spawn.rs) · [`propagation.rs`](src/propagation.rs) | Async ownership and W3C propagation | module tests |
+| [`spawn.rs`](src/spawn.rs) · [`propagation.rs`](src/propagation.rs) | Async ownership and W3C propagation | — |
 | [`benches/`](benches) | Disabled-path benchmark and reviewed 5% cross-workload baseline | `cargo xtask telemetry-bench` |
 
 ## Public API

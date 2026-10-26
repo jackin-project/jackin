@@ -25,7 +25,7 @@ env helper.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`debug_envs.rs`](src/debug_envs.rs) | debug env entries | hub `launch_runtime` run path + hub launch suite (no dedicated suite) |
+| [`debug_envs.rs`](src/debug_envs.rs) | debug env entries | — |
 
 ## Public API
 

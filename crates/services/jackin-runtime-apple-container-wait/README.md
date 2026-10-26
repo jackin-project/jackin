@@ -25,7 +25,7 @@ wait.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`wait.rs`](src/wait.rs) | readiness wait | hub `apple_container` paths (no dedicated suite) |
+| [`wait.rs`](src/wait.rs) | readiness wait | — |
 
 ## Public API
 

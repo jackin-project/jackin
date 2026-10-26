@@ -20,7 +20,7 @@ configs.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`selection.rs`](src/selection.rs) | selection | hub `launch::programmatic` suite (`case_01`, `case_02`) |
+| [`selection.rs`](src/selection.rs) | selection | — |
 
 ## Public API
 

@@ -19,7 +19,7 @@ printer.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`session_contract.rs`](src/session_contract.rs) | Session contract printer | hub `apple_container` launch path (no dedicated suite) |
+| [`session_contract.rs`](src/session_contract.rs) | Session contract printer | — |
 
 ## Public API
 

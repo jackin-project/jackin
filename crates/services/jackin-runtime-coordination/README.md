@@ -21,7 +21,6 @@ coordination.
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
 | [`coordination.rs`](src/coordination.rs) | roots + locks | — |
-| [`coordination/`](src/coordination/) | test suites | — |
 
 ## Public API
 

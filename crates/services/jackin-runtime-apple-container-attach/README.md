@@ -26,7 +26,7 @@ step.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`attach.rs`](src/attach.rs) | attach step | hub `apple_container` paths (no dedicated suite) |
+| [`attach.rs`](src/attach.rs) | attach step | — |
 
 ## Public API
 

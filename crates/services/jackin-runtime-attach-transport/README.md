@@ -24,7 +24,7 @@ transport selection.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`transport.rs`](src/transport.rs) | plan + exec | hub `attach` suite |
+| [`transport.rs`](src/transport.rs) | plan + exec | — |
 
 ## Public API
 

@@ -19,7 +19,7 @@ DNS health check.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`check_dns.rs`](src/check_dns.rs) | DNS health check | hub `apple_container` launch path (no dedicated suite) |
+| [`check_dns.rs`](src/check_dns.rs) | DNS health check | — |
 
 ## Public API
 

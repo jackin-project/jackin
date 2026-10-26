@@ -27,7 +27,7 @@ admission checks.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`admission.rs`](src/admission.rs) | admission | hub `attach` suite |
+| [`admission.rs`](src/admission.rs) | admission | — |
 
 ## Public API
 

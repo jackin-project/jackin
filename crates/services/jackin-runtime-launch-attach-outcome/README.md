@@ -22,7 +22,7 @@ persistence.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`attach_outcome.rs`](src/attach_outcome.rs) | status + outcome | hub `launch` suite (`case_26`) |
+| [`attach_outcome.rs`](src/attach_outcome.rs) | status + outcome | — |
 
 ## Public API
 

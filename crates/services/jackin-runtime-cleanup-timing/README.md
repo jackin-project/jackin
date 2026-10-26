@@ -27,7 +27,7 @@ reporting.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`timing.rs`](src/timing.rs) | timing guard + failure reporting | hub `cleanup` suite |
+| [`timing.rs`](src/timing.rs) | timing guard + failure reporting | — |
 
 ## Public API
 

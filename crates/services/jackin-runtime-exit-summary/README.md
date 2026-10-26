@@ -20,8 +20,7 @@ diagnostics.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`exit_summary.rs`](src/exit_summary.rs) | headline + rows | `exit_summary/tests.rs` |
-| [`exit_summary/`](src/exit_summary/) | test suites | `exit_summary/tests.rs` |
+| [`exit_summary.rs`](src/exit_summary.rs) | headline + rows | — |
 
 ## Public API
 

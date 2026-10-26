@@ -17,8 +17,7 @@ terminal output.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`prune_output.rs`](src/prune_output.rs) | rows + status | `prune_output/tests.rs` |
-| [`prune_output/`](src/prune_output/) | test suites | `prune_output/tests.rs` |
+| [`prune_output.rs`](src/prune_output.rs) | rows + status | — |
 
 ## Public API
 
