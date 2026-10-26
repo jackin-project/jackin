@@ -70,3 +70,25 @@ fn checked_frame_size(
     }
     Ok(total)
 }
+
+#[cfg(test)]
+pub(super) fn checked_frame_size_for_test(
+    lengths: &[usize],
+) -> Result<usize, CatalogAuthorityError> {
+    checked_frame_size(lengths.len(), lengths.iter().copied())
+}
+
+#[cfg(test)]
+pub(super) const fn max_fields_for_test() -> usize {
+    MAX_FIELDS
+}
+
+#[cfg(test)]
+pub(super) const fn max_frame_bytes_for_test() -> usize {
+    MAX_FRAME_BYTES
+}
+
+#[cfg(test)]
+pub(super) const fn fixed_frame_bytes_for_test() -> usize {
+    FIXED_FRAME_BYTES
+}

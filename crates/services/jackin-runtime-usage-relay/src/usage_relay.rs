@@ -119,6 +119,46 @@ impl Drop for RetainedUsageRelayLease {
     }
 }
 
+#[derive(Default)]
+struct LeaseTunnelTestControls {
+    #[cfg(test)]
+    faults: BTreeSet<LeaseTunnelTestFault>,
+    #[cfg(test)]
+    cleanup_gate: Option<LeaseTunnelTestGate>,
+    #[cfg(test)]
+    wait_pending_gate: Option<LeaseTunnelTestGate>,
+    #[cfg(test)]
+    after_wait_error_gate: Option<LeaseTunnelTestGate>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum LeaseTunnelTestFault {
+    MissingStdout,
+    ForceWaitTimeout,
+    FailStartKillOnce,
+    FailFirstWait,
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct LeaseTunnelTestGate {
+    reached: Option<oneshot::Sender<()>>,
+    proceed: Option<oneshot::Receiver<()>>,
+}
+
+#[cfg(test)]
+impl LeaseTunnelTestGate {
+    async fn pause(mut self) {
+        if let Some(reached) = self.reached.take() {
+            let _sent = reached.send(());
+        }
+        if let Some(proceed) = self.proceed.take() {
+            let _proceed_result = proceed.await;
+        }
+    }
+}
+
 impl<T> AbortTaskOnDrop<T> {
     fn is_finished(&self) -> bool {
         self.0.is_finished()
@@ -612,20 +652,68 @@ fn start_tunnel_process_with_lease(
     credential_scope: UsageCredentialScope,
     locked_lease: File,
 ) -> Result<LeasedUsageRelayGuard> {
+    start_tunnel_process_with_lease_and_controls(
+        request,
+        broker,
+        capabilities,
+        credential_scope,
+        locked_lease,
+        LeaseTunnelTestControls::default(),
+    )
+}
+
+#[cfg(test)]
+fn start_tunnel_process_with_lease_for_test(
+    request: jackin_process::ExecRequest,
+    broker: UsageBrokerClient,
+    capabilities: Vec<UsageAccountCapability>,
+    credential_scope: UsageCredentialScope,
+    locked_lease: File,
+    controls: LeaseTunnelTestControls,
+) -> Result<LeasedUsageRelayGuard> {
+    start_tunnel_process_with_lease_and_controls(
+        request,
+        broker,
+        capabilities,
+        credential_scope,
+        locked_lease,
+        controls,
+    )
+}
+
+fn start_tunnel_process_with_lease_and_controls(
+    request: jackin_process::ExecRequest,
+    broker: UsageBrokerClient,
+    capabilities: Vec<UsageAccountCapability>,
+    credential_scope: UsageCredentialScope,
+    locked_lease: File,
+    controls: LeaseTunnelTestControls,
+) -> Result<LeasedUsageRelayGuard> {
     let (operation, mut child) =
         jackin_runtime_process_telemetry::process_telemetry::spawn_async(&request)
             .context("starting scoped usage stdio tunnel")?;
     let lease = RetainedUsageRelayLease::new(locked_lease);
 
+    #[cfg(test)]
+    let reader = if controls
+        .faults
+        .contains(&LeaseTunnelTestFault::MissingStdout)
+    {
+        drop(child.stdout.take());
+        None
+    } else {
+        child.stdout.take()
+    };
+    #[cfg(not(test))]
     let reader = child.stdout.take();
     let Some(reader) = reader else {
         let error = anyhow::anyhow!("usage relay stdout was unavailable");
-        spawn_lease_cleanup_after_pipe_error(child, lease, operation, error.to_string());
+        spawn_lease_cleanup_after_pipe_error(child, lease, operation, error.to_string(), controls);
         return Err(error);
     };
     let Some(writer) = child.stdin.take() else {
         let error = anyhow::anyhow!("usage relay stdin was unavailable");
-        spawn_lease_cleanup_after_pipe_error(child, lease, operation, error.to_string());
+        spawn_lease_cleanup_after_pipe_error(child, lease, operation, error.to_string(), controls);
         return Err(error);
     };
 
@@ -643,6 +731,7 @@ fn start_tunnel_process_with_lease(
             operation,
             relay_result,
             Some(completion),
+            controls,
             false,
         )
         .await;
@@ -659,16 +748,24 @@ fn spawn_lease_cleanup_after_pipe_error(
     lease: RetainedUsageRelayLease,
     operation: jackin_runtime_process_telemetry::process_telemetry::ChildOperation,
     error: String,
+    controls: LeaseTunnelTestControls,
 ) {
+    #[cfg(test)]
+    let mut controls = controls;
     drop(jackin_telemetry::spawn::spawn_stream(
         "usage_relay.tunnel_pipe_cleanup",
         async move {
+            #[cfg(test)]
+            if let Some(gate) = controls.cleanup_gate.take() {
+                gate.pause().await;
+            }
             reap_leased_child(
                 child,
                 lease,
                 operation,
                 Err(anyhow::anyhow!(error)),
                 None,
+                controls,
                 true,
             )
             .await;
@@ -682,37 +779,71 @@ async fn reap_leased_child(
     operation: jackin_runtime_process_telemetry::process_telemetry::ChildOperation,
     relay_result: Result<()>,
     mut completion: Option<oneshot::Sender<Result<()>>>,
+    mut controls: LeaseTunnelTestControls,
     kill_before_wait: bool,
 ) {
     if kill_before_wait {
-        request_child_kill_and_record(&mut child);
+        request_child_kill_and_record(&mut child, &mut controls);
     } else {
-        let wait_result =
-            tokio::time::timeout(TUNNEL_SHUTDOWN_TIMEOUT, wait_for_child(&mut child)).await;
-        match wait_result {
-            Ok(Ok(status)) => {
-                complete_reaped_child(status, operation, lease, relay_result, completion);
-                return;
-            }
-            Ok(Err(error)) => {
-                notify_unconfirmed_cleanup(&mut completion, &error);
-                request_child_kill_and_record(&mut child);
-            }
-            Err(_) => {
-                request_child_kill_and_record(&mut child);
+        #[cfg(test)]
+        let force_timeout = controls
+            .faults
+            .contains(&LeaseTunnelTestFault::ForceWaitTimeout);
+        #[cfg(not(test))]
+        let force_timeout = false;
+
+        if force_timeout {
+            request_child_kill_and_record(&mut child, &mut controls);
+        } else {
+            #[cfg(test)]
+            let wait_result = if controls.wait_pending_gate.is_some() {
+                Ok(wait_for_child(&mut child, &mut controls).await)
+            } else {
+                tokio::time::timeout(
+                    TUNNEL_SHUTDOWN_TIMEOUT,
+                    wait_for_child(&mut child, &mut controls),
+                )
+                .await
+            };
+            #[cfg(not(test))]
+            let wait_result = tokio::time::timeout(
+                TUNNEL_SHUTDOWN_TIMEOUT,
+                wait_for_child(&mut child, &mut controls),
+            )
+            .await;
+            match wait_result {
+                Ok(Ok(status)) => {
+                    complete_reaped_child(status, operation, lease, relay_result, completion);
+                    return;
+                }
+                Ok(Err(error)) => {
+                    notify_unconfirmed_cleanup(&mut completion, &error);
+                    #[cfg(test)]
+                    if let Some(gate) = controls.after_wait_error_gate.take() {
+                        gate.pause().await;
+                    }
+                    request_child_kill_and_record(&mut child, &mut controls);
+                }
+                Err(_) => {
+                    request_child_kill_and_record(&mut child, &mut controls);
+                }
             }
         }
     }
 
     let mut retry_delay = LEASE_WAIT_RETRY_BASE;
     loop {
-        match wait_for_child(&mut child).await {
+        match wait_for_child(&mut child, &mut controls).await {
             Ok(status) => {
                 complete_reaped_child(status, operation, lease, relay_result, completion);
                 return;
             }
             Err(error) => {
                 notify_unconfirmed_cleanup(&mut completion, &error);
+                #[cfg(test)]
+                if let Some(gate) = controls.after_wait_error_gate.take() {
+                    gate.pause().await;
+                }
                 tokio::time::sleep(retry_delay).await;
                 retry_delay = retry_delay.saturating_mul(2).min(LEASE_WAIT_RETRY_MAX);
             }
@@ -751,16 +882,61 @@ fn notify_unconfirmed_cleanup(
     }
 }
 
-async fn wait_for_child(child: &mut tokio::process::Child) -> io::Result<std::process::ExitStatus> {
-    child.wait().await
+async fn wait_for_child(
+    child: &mut tokio::process::Child,
+    controls: &mut LeaseTunnelTestControls,
+) -> io::Result<std::process::ExitStatus> {
+    #[cfg(test)]
+    if controls.faults.remove(&LeaseTunnelTestFault::FailFirstWait) {
+        return Err(io::Error::other("injected child wait failure"));
+    }
+    #[cfg(test)]
+    {
+        let mut wait = Box::pin(child.wait());
+        if let Some(gate) = controls.wait_pending_gate.take() {
+            let first_poll = std::future::poll_fn(|context| {
+                std::task::Poll::Ready(match wait.as_mut().poll(context) {
+                    std::task::Poll::Ready(result) => Some(result),
+                    std::task::Poll::Pending => None,
+                })
+            })
+            .await;
+            if let Some(result) = first_poll {
+                return result;
+            }
+            gate.pause().await;
+            return wait.await;
+        }
+        wait.await
+    }
+    #[cfg(not(test))]
+    {
+        let _ = controls;
+        child.wait().await
+    }
 }
 
-fn request_child_kill(child: &mut tokio::process::Child) -> io::Result<()> {
+fn request_child_kill(
+    child: &mut tokio::process::Child,
+    controls: &mut LeaseTunnelTestControls,
+) -> io::Result<()> {
+    #[cfg(test)]
+    if controls
+        .faults
+        .remove(&LeaseTunnelTestFault::FailStartKillOnce)
+    {
+        return Err(io::Error::other("injected child start_kill failure"));
+    }
+    #[cfg(not(test))]
+    let _ = controls;
     child.start_kill()
 }
 
-fn request_child_kill_and_record(child: &mut tokio::process::Child) {
-    if request_child_kill(child).is_err() {
+fn request_child_kill_and_record(
+    child: &mut tokio::process::Child,
+    controls: &mut LeaseTunnelTestControls,
+) {
+    if request_child_kill(child, controls).is_err() {
         let _recorded =
             jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
     }
@@ -1030,3 +1206,6 @@ fn error_response(kind: UsageCoordinationErrorKind) -> UsageBrokerResponse {
         },
     }
 }
+
+#[cfg(test)]
+mod tests;
