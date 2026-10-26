@@ -450,6 +450,11 @@ FIXTURE_ORDINARY_CHECK_NAMES = (
     'A16 preserves accepted-revision observation and product-presentation owners',
     'A17 preserves observation layers and integrated activation ownership',
     'A86 preserves backend host-action and integrated presentation owners',
+    'A82 separates T24 shell qualification from T29 final presentation',
+    'A84 separates T25 usage qualification from T29 serialization and presentation',
+    'A96 presents the disabled external-resource-label tradeoff before live-bind authorization',
+    'A99 separates T30 private-forward qualification from T29 final presentation',
+    'A100 preserves T30 exposure security and T29 final presentation',
     'Release gate protocol matches fixed semantics',
     'Original specification matches its fixed checksum and both manifests',
     'GOAL.md matches its fixed checksum',
@@ -779,7 +784,7 @@ FIXED_FIXTURE_NAMES = (
     "PACK-CHECKS rejects a wrong initial check inventory count",
     "PACK-CHECKS scenario count must match its independent inventory",
 )
-FIXED_RUNNER_CHECK_COUNT = 21
+FIXED_RUNNER_CHECK_COUNT = 22
 FIXED_RUNNER_CHECK_NAMES = (
     "The fixture inventory rejects a missing scenario entry.",
     "The fixture inventory rejects a duplicate scenario entry.",
@@ -802,6 +807,7 @@ FIXED_RUNNER_CHECK_NAMES = (
     "The owned process group kills a no-pipe descendant after the direct child exits.",
     "Shared process liveness classifies running, zombie, dead, absent, and inaccessible processes.",
     "Post-mutation linked count and report inputs are refused before reads or writes.",
+    "A82, A84, A96, A99, and A100 retain early qualification and T29 presentation phases.",
 )
 
 
@@ -1843,6 +1849,248 @@ def a86_phase_control_probe() -> dict[str, Any]:
     return {
         "scenario": "A86 phase controls reject owner, layer, operator-intent, and trusted-state regressions.",
         "passed": all(item["passed"] and item["A86_contract_check_failed"] for item in results),
+        "expected_control_count": len(controls),
+        "observed_control_count": len(results),
+        "controls": results,
+    }
+
+
+def late_presentation_control_probe() -> dict[str, Any]:
+    contract_checks = {
+        "A82": "A82 separates T24 shell qualification from T29 final presentation",
+        "A84": "A84 separates T25 usage qualification from T29 serialization and presentation",
+        "A96": "A96 presents the disabled external-resource-label tradeoff before live-bind authorization",
+        "A99": "A99 separates T30 private-forward qualification from T29 final presentation",
+        "A100": "A100 preserves T30 exposure security and T29 final presentation",
+    }
+    controls: list[tuple[str, str, Callable[[Path], None]]] = []
+
+    def remove_case_owner_phase(case_id: str, task_id: str, action_phase: str,
+                                expected_phase: str, task_step: str,
+                                task_acceptance: str) -> Callable[[Path], None]:
+        def mutate(pack: Path) -> None:
+            def update(cases: dict[str, dict[str, Any]]) -> None:
+                case = cases[case_id]
+                case["tasks"].remove(task_id)
+                case["assignment_results"] = [
+                    row for row in case["assignment_results"] if row["task_id"] != task_id
+                ]
+                case["action"] = case["action"].replace(action_phase, "").strip()
+                case["expected"] = case["expected"].replace(expected_phase, "").strip()
+            update_cases(pack, update)
+
+            graph_path = pack / "task-graph.json"
+            graph = read_json(graph_path)
+            task = next(row for row in graph["tasks"] if row["id"] == task_id)
+            task["test_cases"].remove(case_id)
+            task["steps"].remove(task_step)
+            task["acceptance"].remove(task_acceptance)
+            write_json(graph_path, graph)
+            sync_task_packet(pack, task_id)
+            sync_case_block(pack, case_map(pack)[case_id])
+        return mutate
+
+    controls.extend((
+        ("A82", "removing the T24 default-shell service phase", remove_case_owner_phase(
+            "A82", "T24",
+            "T24 opens the credential-free default shell and an explicitly selected in-domain shell.",
+            "T24 qualifies default-domain isolation and selected-domain authority; the default shell stays credential-free and separate.",
+            "Qualify A82's credential-free default shell and explicit in-domain authority before T29 presentation.",
+            "A82 at T24 qualifies default-domain isolation and selected-domain authority before T29's final shell presentation.",
+        )),
+        ("A82", "removing the T29 inherited-authority presentation phase", remove_case_owner_phase(
+            "A82", "T29",
+            "T29 then displays the trusted inherited-authority label on the final shell.",
+            "T29's final shell labels that inherited authority from the selected domain.",
+            "Present A82's trusted inherited-authority label on the final shell after T24 qualifies the domain service.",
+            "A82 at T29 displays the selected shell's trusted inherited authority from its domain, separately from T24 service qualification.",
+        )),
+        ("A84", "removing the T25 backend usage phase", remove_case_owner_phase(
+            "A84", "T25",
+            "T25 resolves the backend usage snapshots.",
+            "T25 keeps account revisions isolated by stable account identity and credential-source revision. T25 distinguishes stale or unavailable usage from zero.",
+            "Qualify A84 backend cache identity, credential-source revision, stale, unavailable, and zero distinctions at T25.",
+            "A84 at T25 qualifies backend account identity and revision isolation before T29 renders usage.",
+        )),
+        ("A84", "removing the T29 serialized-usage presentation phase", remove_case_owner_phase(
+            "A84", "T29",
+            "T29 serializes and renders snapshots for both account identities and credential-source revisions.",
+            "T29 preserves identity and revision through serialization and never renders stale or unavailable usage as zero.",
+            "Present A84's serialized account identity and credential-source revision with stale and unavailable values distinct from zero.",
+            "A84 at T29 preserves account identity and credential-source revision through serialization and never renders stale or unavailable usage as zero.",
+        )),
+    ))
+
+    def remove_a96_tradeoff(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A96"]
+            case["setup"] = case["setup"].replace(
+                ", and a trusted-live-local profile with external-resource-label admission disabled", "",
+            )
+            case["action"] = case["action"].replace(
+                " Present the disabled external-resource-label admission tradeoff before authorizing the trusted-live-local bind.",
+                "",
+            )
+            case["expected"] = case["expected"].replace(
+                " The disabled tradeoff is visible before the operator authorizes the trusted-live-local bind.",
+                "",
+            )
+        update_cases(pack, update)
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T29")
+        task["steps"].remove(
+            "Present the disabled external-resource-label admission tradeoff before authorizing a trusted-live-local bind."
+        )
+        task["acceptance"].remove(
+            "A96 displays the disabled external-resource-label admission tradeoff before any trusted-live-local authorization decision."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T29")
+        sync_case_block(pack, case_map(pack)["A96"])
+
+    controls.append(("A96", "removing the disabled external-label admission warning", remove_a96_tradeoff))
+
+    controls.extend((
+        ("A99", "removing the T29 private-forward presentation owner", remove_case_owner_phase(
+            "A99", "T29",
+            "T30 creates a loopback-bound authenticated forward and attempts external access. T30 verifies intended client access and scoped cleanup. T29 presents the qualified URL and access status in the final CLI and Console.",
+            "T29 shows the URL and private access state without an unauthorized public route.",
+            "Present A99's qualified private-forward URL and scoped ownership and cleanup status in the finished CLI and Console.",
+            "A99 at T29 presents the qualified private URL and access state after T30's service and cleanup qualification.",
+        )),
+        ("A100", "removing the T29 public-exposure presentation owner", remove_case_owner_phase(
+            "A100", "T29",
+            "T29 displays the grant and requirements in the final CLI and Console.",
+            "T29 displays these requirements and confirms Capsule control is never public.",
+            "Present A100's separate public grant, listener TLS, and application-authentication requirements in the finished CLI and Console.",
+            "A100 at T29 displays the separate public grant and TLS/application-authentication requirements; Capsule control is never public.",
+        )),
+    ))
+
+    def remove_t30_dependency(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t29 = next(row for row in graph["tasks"] if row["id"] == "T29")
+        t29["depends_on"].remove("T30")
+        write_json(graph_path, graph)
+        recompute_ready_groups(pack)
+        sync_task_packet(pack, "T29")
+        sync_task_indexes(pack)
+    controls.append(("A99", "removing the T29-to-T30 service dependency", remove_t30_dependency))
+
+    def weaken_t30_grant(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t30 = next(row for row in graph["tasks"] if row["id"] == "T30")
+        t30["steps"] = [
+            "Allow public exposure when requested."
+            if item == "Require a separate capability for public exposure." else item
+            for item in t30["steps"]
+        ]
+        t30["acceptance"] = [
+            "A100 at T30 handles public exposure requests."
+            if item.startswith("A100 at T30 requires a separate public grant") else item
+            for item in t30["acceptance"]
+        ]
+        write_json(graph_path, graph)
+        update_cases(pack, lambda cases: cases["A100"].update({
+            "action": cases["A100"]["action"].replace(
+                "T30 checks the separate public grant, listener TLS, application authentication, and Capsule refusal.",
+                "T30 checks listener TLS, application authentication, and Capsule refusal.",
+            ),
+            "expected": cases["A100"]["expected"].replace(
+                "T30 requires a separate public grant, TLS, and application authentication.",
+                "T30 checks TLS and application authentication.",
+            ),
+        }))
+        sync_task_packet(pack, "T30")
+        sync_case_block(pack, case_map(pack)["A100"])
+    controls.append(("A100", "removing T30's separate public-exposure grant", weaken_t30_grant))
+
+    def weaken_t30_tls_auth(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t30 = next(row for row in graph["tasks"] if row["id"] == "T30")
+        t30["steps"] = [
+            "Record the qualified service URL for T29's final presentation."
+            if item == "Record public listener TLS and application-authentication requirements for T29's final presentation."
+            else item
+            for item in t30["steps"]
+        ]
+        t30["acceptance"] = [
+            "A100 at T30 records service exposure; Capsule control stays private."
+            if item.startswith("A100 at T30 requires a separate public grant") else item
+            for item in t30["acceptance"]
+        ]
+        write_json(graph_path, graph)
+        update_cases(pack, lambda cases: cases["A100"].update({
+            "action": cases["A100"]["action"].replace(
+                "T30 checks the separate public grant, listener TLS, application authentication, and Capsule refusal.",
+                "T30 checks the separate public grant and Capsule refusal.",
+            ),
+            "expected": cases["A100"]["expected"].replace(
+                "T30 requires a separate public grant, TLS, and application authentication.",
+                "T30 requires a separate public grant.",
+            ),
+        }))
+        sync_task_packet(pack, "T30")
+        sync_case_block(pack, case_map(pack)["A100"])
+    controls.append(("A100", "removing T30's TLS and application-authentication qualification", weaken_t30_tls_auth))
+
+    def weaken_t29_tls_grant_presentation(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t29 = next(row for row in graph["tasks"] if row["id"] == "T29")
+        t29["steps"] = [
+            "Present the public service URL in the finished CLI and Console."
+            if item.startswith("Present A100's separate public grant") else item
+            for item in t29["steps"]
+        ]
+        t29["acceptance"] = [
+            "A100 at T29 presents the public service URL."
+            if item.startswith("A100 at T29 displays the separate public grant") else item
+            for item in t29["acceptance"]
+        ]
+        write_json(graph_path, graph)
+        update_cases(pack, lambda cases: cases["A100"].update({
+            "action": cases["A100"]["action"].replace(
+                "T29 displays the grant and requirements in the final CLI and Console.",
+                "T29 displays the service URL in the final CLI and Console.",
+            ),
+            "expected": cases["A100"]["expected"].replace(
+                "T29 displays these requirements and confirms Capsule control is never public.",
+                "T29 displays the public service URL and confirms Capsule control is never public.",
+            ),
+        }))
+        sync_task_packet(pack, "T29")
+        sync_case_block(pack, case_map(pack)["A100"])
+    controls.append(("A100", "removing grant and TLS details from T29's final presentation", weaken_t29_tls_grant_presentation))
+
+    positive = run_fixture(
+        "A82 A84 A96 A99 and A100 accept the complete layered presentation contract",
+        lambda pack: None,
+        0,
+        [],
+    )
+    results = []
+    for case_id, description, mutate in controls:
+        result = run_fixture(
+            f"Layered presentation control rejects {description}",
+            mutate,
+            1,
+            [],
+            expect_report_match=False,
+        )
+        result["owner_contract_check"] = contract_checks[case_id]
+        result["owner_contract_check_failed"] = contract_checks[case_id] in (result.get("actual_failures") or [])
+        results.append(result)
+    return {
+        "scenario": "A82, A84, A96, A99, and A100 retain early qualification and T29 presentation phases.",
+        "passed": positive["passed"] and all(
+            item["passed"] and item["owner_contract_check_failed"] for item in results
+        ),
+        "positive_control": positive,
         "expected_control_count": len(controls),
         "observed_control_count": len(results),
         "controls": results,
@@ -3152,6 +3400,10 @@ def main() -> int:
         legacy_manifest,
         1, [
             "A86 preserves backend host-action and integrated presentation owners",
+            "A82 separates T24 shell qualification from T29 final presentation",
+            "A84 separates T25 usage qualification from T29 serialization and presentation",
+            "A99 separates T30 private-forward qualification from T29 final presentation",
+            "A100 preserves T30 exposure security and T29 final presentation",
             "Assignment results have exact unique case owners and valid statuses",
         ],
     ))
@@ -4345,15 +4597,15 @@ def main() -> int:
         path.write_text(source, encoding="utf-8")
         checks_path = pack / "PACK-CHECKS.md"
         document = checks_path.read_text(encoding="utf-8")
-        old_counts = (
-            "The ordinary validator report contains 90 ordered checks; `--initial` "
-            "contains 92, including two initial-only checks and the final inventory check."
-        )
-        ordinary_count = len(FIXTURE_ORDINARY_CHECK_NAMES)
+        ordinary_count = len(FIXTURE_ORDINARY_CHECK_NAMES) + 1
         initial_count = ordinary_count + len(FIXTURE_INITIAL_ONLY_CHECK_NAMES)
-        new_counts = (
+        old_counts = (
             f"The ordinary validator report contains {ordinary_count} ordered checks; `--initial` "
             f"contains {initial_count}, including two initial-only checks and the final inventory check."
+        )
+        new_counts = (
+            f"The ordinary validator report contains {ordinary_count - 1} ordered checks; `--initial` "
+            f"contains {initial_count - 1}, including two initial-only checks and the final inventory check."
         )
         if document.count(old_counts) != 1:
             raise ValueError("Expected the copied validator's canonical check-count sentence")
@@ -6062,6 +6314,7 @@ print('{}')
         validator_import_probe("systemexit-string"),
         validator_import_probe("keyboardinterrupt"),
         a86_phase_control_probe(),
+        late_presentation_control_probe(),
         runner_inventory_control_probe("missing"),
         runner_inventory_control_probe("duplicate"),
         runner_inventory_control_probe("unexpected"),

@@ -26,7 +26,7 @@ Do not treat section coverage as an exhaustive callsite audit.
 | Policy ownership | 242–249 | U00, T13, T21 |
 | Target profiles and Kubernetes deployment | 250–265 | P02, T35, T36, T37, T12, T20 |
 | Kubernetes ownership and deployment | 266–279 | T37, P02 |
-| Developer services | 280–285 | T30, T37 |
+| Developer services | 280–285 | T29, T30, T37 |
 | Optional Docker capability | 286–325 | U04, U05, U06, U07, U08, T33, T36 |
 | Independent verification workers | 326–335 | U02, T32, T34, T39 |
 | Application operations and failure handling | 336–355 | P04, T10, T11, T13, T19, T26, T38, P03, U00, U01, T23, T28, T34 |

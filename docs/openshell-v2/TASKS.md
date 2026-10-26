@@ -36,7 +36,7 @@
 | T26 | Implement host actions and approved tool domains | Product subagent | T24, T21, T13 |
 | T27 | Implement checkpoints and conflict-safe export | Project subagent | T20, T22, T24 |
 | T28 | Implement handoff eject exile and purge | Project subagent | T27, T13, T24 |
-| T29 | Rebuild CLI Console and fleet observations | Product subagent | T24, T25, T26, T28 |
+| T29 | Rebuild CLI Console and fleet observations | Product subagent | T24, T25, T26, T28, T30 |
 | T30 | Implement private developer service forwards | Product subagent | T13, T23 |
 | T31 | Implement caches prewarm diagnostics and resource views | Operations subagent | T15, T28, T29, T33 |
 | T32 | Replace the independent verification worker | Verifier subagent | U02, T13, T20, T10 |

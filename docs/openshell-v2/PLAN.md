@@ -121,7 +121,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 | T26 | Implement host actions and approved tool domains | Product subagent | T24, T21, T13 |
 | T27 | Implement checkpoints and conflict-safe export | Project subagent | T20, T22, T24 |
 | T28 | Implement handoff eject exile and purge | Project subagent | T27, T13, T24 |
-| T29 | Rebuild CLI Console and fleet observations | Product subagent | T24, T25, T26, T28 |
+| T29 | Rebuild CLI Console and fleet observations | Product subagent | T24, T25, T26, T28, T30 |
 | T30 | Implement private developer service forwards | Product subagent | T13, T23 |
 | T31 | Implement caches prewarm diagnostics and resource views | Operations subagent | T15, T28, T29, T33 |
 | T32 | Replace the independent verification worker | Verifier subagent | U02, T13, T20, T10 |
@@ -2212,6 +2212,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 10. Implement session start, stop, interrupt, detach, and agent switching.
 11. Keep session exit separate from domain and instance exit.
 12. Show new-process resume explicitly after retained-state recovery.
+13. Qualify A82's credential-free default shell and explicit in-domain authority before T29 presentation.
 
 #### Pass conditions
 
@@ -2221,6 +2222,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - An in-domain shell displays and inherits the selected domain authority.
 - Interrupt affects only the selected session.
 - A dead Capsule does not appear as a reconnectable old PTY.
+- A82 at T24 qualifies default-domain isolation and selected-domain authority before T29's final shell presentation.
 
 **Acceptance cases:** A08, A72, A75, A81, A82, A83.
 
@@ -2281,6 +2283,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 7. Invalidate delayed requests after a run or grant ends.
 8. Show account identity through trusted labels rather than agent text.
 9. Retain useful provider-specific behavior without old runtime coupling.
+10. Qualify A84 backend cache identity, credential-source revision, stale, unavailable, and zero distinctions at T25.
 
 #### Pass conditions
 
@@ -2288,6 +2291,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Two account revisions cannot share a usage cache entry.
 - A provider failure cannot appear as zero usage.
 - Capsule never receives the global account catalog.
+- A84 at T25 qualifies backend account identity and revision isolation before T29 renders usage.
 
 **Acceptance cases:** A84, A85.
 
@@ -2532,9 +2536,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Owner:** Product subagent.
 
-**Dependencies:** T24, T25, T26, T28.
+**Dependencies:** T24, T25, T26, T28, T30.
 
-**Source basis:** SPEC L356-L399; L413-L419.
+**Source basis:** SPEC L280-L284; L356-L399; L413-L419.
 
 #### Write scope
 
@@ -2565,6 +2569,12 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 10. Regenerate completion and man-page sources from the new command model.
 11. Display A16's accepted policy revision and effective replacement source in product output.
 12. Run A86 through the finished CLI, Console, and desktop presentation without a matching operator action.
+13. Present A82's trusted inherited-authority label on the final shell after T24 qualifies the domain service.
+14. Present A84's serialized account identity and credential-source revision with stale and unavailable values distinct from zero.
+15. Present A99's qualified private-forward URL and scoped ownership and cleanup status in the finished CLI and Console.
+16. Present A100's separate public grant, listener TLS, and application-authentication requirements in the finished CLI and Console.
+17. Keep Capsule control marked private in the A100 final UI.
+18. Present the disabled external-resource-label admission tradeoff before authorizing a trusted-live-local bind.
 
 #### Pass conditions
 
@@ -2575,8 +2585,13 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - JSON output follows only the v2 schema.
 - A16 displays the accepted replacement source and revision without implying an intersection.
 - A86 at T29 keeps unsolicited requests inert and prevents untrusted output from forging trusted labels or approval state.
+- A82 at T29 displays the selected shell's trusted inherited authority from its domain, separately from T24 service qualification.
+- A84 at T29 preserves account identity and credential-source revision through serialization and never renders stale or unavailable usage as zero.
+- A99 at T29 presents the qualified private URL and access state after T30's service and cleanup qualification.
+- A100 at T29 displays the separate public grant and TLS/application-authentication requirements; Capsule control is never public.
+- A96 displays the disabled external-resource-label admission tradeoff before any trusted-live-local authorization decision.
 
-**Acceptance cases:** A96, A97, A98, A16, A86.
+**Acceptance cases:** A96, A97, A98, A16, A86, A82, A84, A99, A100.
 
 #### Removal and replacement
 
@@ -2629,9 +2644,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 1. Create authenticated private forwards through OpenShell.
 2. Bind local listener endpoints to loopback by default.
 3. Track forward lifetime, target binding, owner, and request identity.
-4. Show the convenient URL through trusted host UI.
+4. Deliver the qualified private-forward URL, ownership, and cleanup state to T29 for final presentation.
 5. Require a separate capability for public exposure.
-6. Show public listener TLS and application-authentication requirements explicitly.
+6. Record public listener TLS and application-authentication requirements for T29's final presentation.
 7. Reject every attempt to expose Capsule control publicly.
 8. Clean up only confirmed owned forwards.
 9. Handle disconnect and policy-update interruption without broader access.
@@ -2642,6 +2657,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - An unauthorized user cannot use the control-plane forward.
 - Public exposure never implies OIDC or CLI authentication protection.
 - Capsule control remains private.
+- A99 at T30 qualifies private access, ownership, and scoped cleanup before T29 presents the service.
+- A100 at T30 requires a separate public grant, listener TLS, and application authentication; Capsule control stays private.
 
 **Acceptance cases:** A99, A100.
 

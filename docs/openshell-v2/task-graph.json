@@ -1969,7 +1969,8 @@
         "Provide an explicit in-domain shell with a trusted authority warning.",
         "Implement session start, stop, interrupt, detach, and agent switching.",
         "Keep session exit separate from domain and instance exit.",
-        "Show new-process resume explicitly after retained-state recovery."
+        "Show new-process resume explicitly after retained-state recovery.",
+        "Qualify A82's credential-free default shell and explicit in-domain authority before T29 presentation."
       ],
       "acceptance": [
         "Two accounts and the generic shell use distinct required domains.",
@@ -1977,7 +1978,8 @@
         "A changed account revision requires re-admission before activation.",
         "An in-domain shell displays and inherits the selected domain authority.",
         "Interrupt affects only the selected session.",
-        "A dead Capsule does not appear as a reconnectable old PTY."
+        "A dead Capsule does not appear as a reconnectable old PTY.",
+        "A82 at T24 qualifies default-domain isolation and selected-domain authority before T29's final shell presentation."
       ],
       "remove_or_replace": [
         "Delete one-container instance assumptions and environment-only account separation.",
@@ -2038,13 +2040,15 @@
         "Deny unrelated account enumeration.",
         "Invalidate delayed requests after a run or grant ends.",
         "Show account identity through trusted labels rather than agent text.",
-        "Retain useful provider-specific behavior without old runtime coupling."
+        "Retain useful provider-specific behavior without old runtime coupling.",
+        "Qualify A84 backend cache identity, credential-source revision, stale, unavailable, and zero distinctions at T25."
       ],
       "acceptance": [
         "A stale request cannot refresh or expose an ended grant.",
         "Two account revisions cannot share a usage cache entry.",
         "A provider failure cannot appear as zero usage.",
-        "Capsule never receives the global account catalog."
+        "Capsule never receives the global account catalog.",
+        "A84 at T25 qualifies backend account identity and revision isolation before T29 renders usage."
       ],
       "remove_or_replace": [
         "Replace old per-container usage tunnels and broker wire coupling.",
@@ -2289,7 +2293,8 @@
         "T24",
         "T25",
         "T26",
-        "T28"
+        "T28",
+        "T30"
       ],
       "write_scope": [
         "crates/apps/jackin/src/cli/",
@@ -2312,7 +2317,13 @@
         "Keep branch, pull-request, CI, clipboard-image, and export workflows through trusted adapters.",
         "Regenerate completion and man-page sources from the new command model.",
         "Display A16's accepted policy revision and effective replacement source in product output.",
-        "Run A86 through the finished CLI, Console, and desktop presentation without a matching operator action."
+        "Run A86 through the finished CLI, Console, and desktop presentation without a matching operator action.",
+        "Present A82's trusted inherited-authority label on the final shell after T24 qualifies the domain service.",
+        "Present A84's serialized account identity and credential-source revision with stale and unavailable values distinct from zero.",
+        "Present A99's qualified private-forward URL and scoped ownership and cleanup status in the finished CLI and Console.",
+        "Present A100's separate public grant, listener TLS, and application-authentication requirements in the finished CLI and Console.",
+        "Keep Capsule control marked private in the A100 final UI.",
+        "Present the disabled external-resource-label admission tradeoff before authorizing a trusted-live-local bind."
       ],
       "acceptance": [
         "Two reachable targets remain usable when a third target fails.",
@@ -2321,7 +2332,12 @@
         "Ambiguous human selectors produce a selection error.",
         "JSON output follows only the v2 schema.",
         "A16 displays the accepted replacement source and revision without implying an intersection.",
-        "A86 at T29 keeps unsolicited requests inert and prevents untrusted output from forging trusted labels or approval state."
+        "A86 at T29 keeps unsolicited requests inert and prevents untrusted output from forging trusted labels or approval state.",
+        "A82 at T29 displays the selected shell's trusted inherited authority from its domain, separately from T24 service qualification.",
+        "A84 at T29 preserves account identity and credential-source revision through serialization and never renders stale or unavailable usage as zero.",
+        "A99 at T29 presents the qualified private URL and access state after T30's service and cleanup qualification.",
+        "A100 at T29 displays the separate public grant and TLS/application-authentication requirements; Capsule control is never public.",
+        "A96 displays the disabled external-resource-label admission tradeoff before any trusted-live-local authorization decision."
       ],
       "remove_or_replace": [
         "Replace old Docker-based status, Console discovery, and backend CLI flags.",
@@ -2332,9 +2348,13 @@
         "A97",
         "A98",
         "A16",
-        "A86"
+        "A86",
+        "A82",
+        "A84",
+        "A99",
+        "A100"
       ],
-      "source_basis": "SPEC L356-L399; L413-L419",
+      "source_basis": "SPEC L280-L284; L356-L399; L413-L419",
       "status": "NOT_STARTED",
       "stop_conditions": [
         "Block a UI effect that bypasses the application API.",
@@ -2375,9 +2395,9 @@
         "Create authenticated private forwards through OpenShell.",
         "Bind local listener endpoints to loopback by default.",
         "Track forward lifetime, target binding, owner, and request identity.",
-        "Show the convenient URL through trusted host UI.",
+        "Deliver the qualified private-forward URL, ownership, and cleanup state to T29 for final presentation.",
         "Require a separate capability for public exposure.",
-        "Show public listener TLS and application-authentication requirements explicitly.",
+        "Record public listener TLS and application-authentication requirements for T29's final presentation.",
         "Reject every attempt to expose Capsule control publicly.",
         "Clean up only confirmed owned forwards.",
         "Handle disconnect and policy-update interruption without broader access."
@@ -2386,7 +2406,9 @@
         "A private server is unreachable through an unintended public listener.",
         "An unauthorized user cannot use the control-plane forward.",
         "Public exposure never implies OIDC or CLI authentication protection.",
-        "Capsule control remains private."
+        "Capsule control remains private.",
+        "A99 at T30 qualifies private access, ownership, and scoped cleanup before T29 presents the service.",
+        "A100 at T30 requires a separate public grant, listener TLS, and application authentication; Capsule control stays private."
       ],
       "remove_or_replace": [
         "Remove direct Docker port inspection and publication paths.",

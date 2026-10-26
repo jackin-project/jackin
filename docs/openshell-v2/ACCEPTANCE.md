@@ -988,13 +988,13 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A82 — Default and in-domain shells
 
-**Evidence:** LIVE. **Tasks:** T24. **Initial status:** NOT_RUN. **Initial assignment status:** T24=NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T24, T29. **Initial status:** NOT_RUN. **Initial assignment status:** T24=NOT_RUN; T29=NOT_RUN.
 
-**Setup:** Use an account domain and its logical instance.
+**Setup:** Use an account domain and its logical instance. Keep T24 service behavior separate from T29's final shell presentation.
 
-**Action:** Open the default shell, then an explicitly selected in-domain shell.
+**Action:** T24 opens the credential-free default shell and an explicitly selected in-domain shell. T29 then displays the trusted inherited-authority label on the final shell.
 
-**Required result:** The default shell is credential-free and separate. The in-domain shell has a trusted inherited-authority label.
+**Required result:** T24 qualifies default-domain isolation and selected-domain authority; the default shell stays credential-free and separate. T29's final shell labels that inherited authority from the selected domain.
 
 ### A83 — Session and instance lifecycle
 
@@ -1008,13 +1008,13 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A84 — Usage cache identity
 
-**Evidence:** UNIT. **Tasks:** T25. **Initial status:** NOT_RUN. **Initial assignment status:** T25=NOT_RUN.
+**Evidence:** UNIT. **Tasks:** T25, T29. **Initial status:** NOT_RUN. **Initial assignment status:** T25=NOT_RUN; T29=NOT_RUN.
 
-**Setup:** Use two accounts, two credential revisions, and stale or failed provider responses.
+**Setup:** Use two accounts, two credential revisions, and stale or failed provider responses. Preserve a backend phase and a final presentation phase.
 
-**Action:** Resolve and display usage snapshots.
+**Action:** T25 resolves the backend usage snapshots. T29 serializes and renders snapshots for both account identities and credential-source revisions.
 
-**Required result:** Entries remain isolated by stable identity and revision. Stale or unavailable usage does not become zero.
+**Required result:** T25 keeps account revisions isolated by stable account identity and credential-source revision. T25 distinguishes stale or unavailable usage from zero. T29 preserves identity and revision through serialization and never renders stale or unavailable usage as zero.
 
 ### A85 — Ended-run usage denial
 
@@ -1130,11 +1130,11 @@ Do not claim support above measured and qualified resource bounds.
 
 **Evidence:** UNIT. **Tasks:** T29. **Initial status:** NOT_RUN. **Initial assignment status:** T29=NOT_RUN.
 
-**Setup:** Use all frozen command forms, ambiguous selectors, and old backend flags.
+**Setup:** Use all frozen command forms, ambiguous selectors, old backend flags, and a trusted-live-local profile with external-resource-label admission disabled.
 
-**Action:** Parse commands and compare JSON output with v2 golden schemas.
+**Action:** Parse commands and compare JSON output with v2 golden schemas. Present the disabled external-resource-label admission tradeoff before authorizing the trusted-live-local bind.
 
-**Required result:** Valid commands preserve semantics. Ambiguous and obsolete forms fail clearly. No v1 output compatibility path appears.
+**Required result:** Valid commands preserve semantics. Ambiguous and obsolete forms fail clearly. No v1 output compatibility path appears. The disabled tradeoff is visible before the operator authorizes the trusted-live-local bind.
 
 ### A97 — Partial fleet visibility
 
@@ -1158,23 +1158,23 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A99 — Private developer forward
 
-**Evidence:** LIVE. **Tasks:** T30. **Initial status:** NOT_RUN. **Initial assignment status:** T30=NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T30, T29. **Initial status:** NOT_RUN. **Initial assignment status:** T30=NOT_RUN; T29=NOT_RUN.
 
-**Setup:** Run a private sandbox service and an authorized local client.
+**Setup:** Run a private sandbox service and an authorized local client. Observe T30 service results before T29's final presentation.
 
-**Action:** Create a loopback-bound authenticated forward and attempt external access.
+**Action:** T30 creates a loopback-bound authenticated forward and attempts external access. T30 verifies intended client access and scoped cleanup. T29 presents the qualified URL and access status in the final CLI and Console.
 
-**Required result:** The intended client works. Unapproved public access fails. Forward ownership and cleanup stay scoped.
+**Required result:** T30 confirms the intended local client works, unapproved public access fails, and ownership and cleanup stay scoped. T29 shows the URL and private access state without an unauthorized public route.
 
 ### A100 — Public exposure separation
 
-**Evidence:** LIVE. **Tasks:** T30. **Initial status:** NOT_RUN. **Initial assignment status:** T30=NOT_RUN.
+**Evidence:** LIVE. **Tasks:** T30, T29. **Initial status:** NOT_RUN. **Initial assignment status:** T30=NOT_RUN; T29=NOT_RUN.
 
-**Setup:** Request a public service and a Capsule control endpoint.
+**Setup:** Request a public service and a Capsule control endpoint. Preserve T30's forwarding and exposure checks before T29's final presentation.
 
-**Action:** Inspect grants, listener TLS, application authentication, and exposure refusal.
+**Action:** T30 checks the separate public grant, listener TLS, application authentication, and Capsule refusal. T29 displays the grant and requirements in the final CLI and Console.
 
-**Required result:** Public exposure needs its own grant and authentication contract. Capsule control is never public.
+**Required result:** T30 requires a separate public grant, TLS, and application authentication. T29 displays these requirements and confirms Capsule control is never public.
 
 ### A101 — Artifact liveness under outage
 

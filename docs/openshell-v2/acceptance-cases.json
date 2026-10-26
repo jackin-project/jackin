@@ -1589,16 +1589,21 @@
       "id": "A82",
       "title": "Default and in-domain shells",
       "level": "LIVE",
-      "setup": "Use an account domain and its logical instance.",
-      "action": "Open the default shell, then an explicitly selected in-domain shell.",
-      "expected": "The default shell is credential-free and separate. The in-domain shell has a trusted inherited-authority label.",
+      "setup": "Use an account domain and its logical instance. Keep T24 service behavior separate from T29's final shell presentation.",
+      "action": "T24 opens the credential-free default shell and an explicitly selected in-domain shell. T29 then displays the trusted inherited-authority label on the final shell.",
+      "expected": "T24 qualifies default-domain isolation and selected-domain authority; the default shell stays credential-free and separate. T29's final shell labels that inherited authority from the selected domain.",
       "status": "NOT_RUN",
       "tasks": [
-        "T24"
+        "T24",
+        "T29"
       ],
       "assignment_results": [
         {
           "task_id": "T24",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T29",
           "status": "NOT_RUN"
         }
       ]
@@ -1625,16 +1630,21 @@
       "id": "A84",
       "title": "Usage cache identity",
       "level": "UNIT",
-      "setup": "Use two accounts, two credential revisions, and stale or failed provider responses.",
-      "action": "Resolve and display usage snapshots.",
-      "expected": "Entries remain isolated by stable identity and revision. Stale or unavailable usage does not become zero.",
+      "setup": "Use two accounts, two credential revisions, and stale or failed provider responses. Preserve a backend phase and a final presentation phase.",
+      "action": "T25 resolves the backend usage snapshots. T29 serializes and renders snapshots for both account identities and credential-source revisions.",
+      "expected": "T25 keeps account revisions isolated by stable account identity and credential-source revision. T25 distinguishes stale or unavailable usage from zero. T29 preserves identity and revision through serialization and never renders stale or unavailable usage as zero.",
       "status": "NOT_RUN",
       "tasks": [
-        "T25"
+        "T25",
+        "T29"
       ],
       "assignment_results": [
         {
           "task_id": "T25",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T29",
           "status": "NOT_RUN"
         }
       ]
@@ -1846,9 +1856,9 @@
       "id": "A96",
       "title": "CLI and JSON contract",
       "level": "UNIT",
-      "setup": "Use all frozen command forms, ambiguous selectors, and old backend flags.",
-      "action": "Parse commands and compare JSON output with v2 golden schemas.",
-      "expected": "Valid commands preserve semantics. Ambiguous and obsolete forms fail clearly. No v1 output compatibility path appears.",
+      "setup": "Use all frozen command forms, ambiguous selectors, old backend flags, and a trusted-live-local profile with external-resource-label admission disabled.",
+      "action": "Parse commands and compare JSON output with v2 golden schemas. Present the disabled external-resource-label admission tradeoff before authorizing the trusted-live-local bind.",
+      "expected": "Valid commands preserve semantics. Ambiguous and obsolete forms fail clearly. No v1 output compatibility path appears. The disabled tradeoff is visible before the operator authorizes the trusted-live-local bind.",
       "status": "NOT_RUN",
       "tasks": [
         "T29"
@@ -1900,16 +1910,21 @@
       "id": "A99",
       "title": "Private developer forward",
       "level": "LIVE",
-      "setup": "Run a private sandbox service and an authorized local client.",
-      "action": "Create a loopback-bound authenticated forward and attempt external access.",
-      "expected": "The intended client works. Unapproved public access fails. Forward ownership and cleanup stay scoped.",
+      "setup": "Run a private sandbox service and an authorized local client. Observe T30 service results before T29's final presentation.",
+      "action": "T30 creates a loopback-bound authenticated forward and attempts external access. T30 verifies intended client access and scoped cleanup. T29 presents the qualified URL and access status in the final CLI and Console.",
+      "expected": "T30 confirms the intended local client works, unapproved public access fails, and ownership and cleanup stay scoped. T29 shows the URL and private access state without an unauthorized public route.",
       "status": "NOT_RUN",
       "tasks": [
-        "T30"
+        "T30",
+        "T29"
       ],
       "assignment_results": [
         {
           "task_id": "T30",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T29",
           "status": "NOT_RUN"
         }
       ]
@@ -1918,16 +1933,21 @@
       "id": "A100",
       "title": "Public exposure separation",
       "level": "LIVE",
-      "setup": "Request a public service and a Capsule control endpoint.",
-      "action": "Inspect grants, listener TLS, application authentication, and exposure refusal.",
-      "expected": "Public exposure needs its own grant and authentication contract. Capsule control is never public.",
+      "setup": "Request a public service and a Capsule control endpoint. Preserve T30's forwarding and exposure checks before T29's final presentation.",
+      "action": "T30 checks the separate public grant, listener TLS, application authentication, and Capsule refusal. T29 displays the grant and requirements in the final CLI and Console.",
+      "expected": "T30 requires a separate public grant, TLS, and application authentication. T29 displays these requirements and confirms Capsule control is never public.",
       "status": "NOT_RUN",
       "tasks": [
-        "T30"
+        "T30",
+        "T29"
       ],
       "assignment_results": [
         {
           "task_id": "T30",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T29",
           "status": "NOT_RUN"
         }
       ]

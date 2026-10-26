@@ -19,13 +19,13 @@ SOURCE_AUDIT_SHA256 = "0f4b1a1eac7ebb8b75e9bad0997c16f7cd28f363bc86727bc16777474
 TERMS_SHA256 = "9441cc3b4889edb39fa7f520058a9473938cbbf8742e15ce672387e83abef614"
 ACCEPTANCE_POLICY_SHA256 = "7609a5f84a1694b1441219ac62e289191d90f367c33a400853ec64728063d36d"
 C02_CONTRACT_SECTION_SHA256 = "017714a83ab1ee7827dfcf8459ef6ca5e58c11787210083856211d1ba8e9cdf2"
-TASK_AUTHORED_SHA256 = "045530b267fe5b237eb579c014cbbb635735c873a88ea3e0f9a9d987d1eb5936"
-CASE_AUTHORED_SHA256 = "ab392ba615434134344f864470d0de9cd4e8787eb31496aa6687555140f0f580"
+TASK_AUTHORED_SHA256 = "9be73000b726e4faae72d069468c3b0bd542de05c5df95faabb61ceab370aecc"
+CASE_AUTHORED_SHA256 = "659f3c850744966b95fe36b008146c068679ddb463f1015e7d269b78f79af987"
 GRAPH_DECLARATIONS_SHA256 = "39a190141d0329a1f00b94bab82f19934cf0d1a9860ad742115f249ec69150dc"
-TRACEABILITY_AUTHORED_SHA256 = "33c969b0eec0852fa87dc459663540d8f9136e22f1ba22328a02724c9418c7ee"
+TRACEABILITY_AUTHORED_SHA256 = "3ceae24302d52082dfc455dc7c5c14ce32c8d3f9bc78c842ab3be4dd10f26c43"
 CONTRACTS_SHA256 = "da0f23654f30e8d1a37a12f07c9e5595d51027a5c4eaae3ce8072cb544dd3344"
 SUBAGENTS_SHA256 = "a4a9e5a967a73038b50ecdc4cadb9a51b1c83728f54c6b6fb9a87641566263f8"
-PACK_CHECKS_TEMPLATE_SHA256 = "9b84bfc579911483a3f0753b4bad068c0c784af2a74bbdbc0919724582755eaa"
+PACK_CHECKS_TEMPLATE_SHA256 = "6d7746981962c4b0a40eab90b4bc028dd91de2231e5ebdc9b3655b68cf8cc79c"
 PLAN_PREFIX_SHA256 = "3176361a5191c757d69e2461936f80cbf3668f8cf508bc86734e12d80197a5d0"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
@@ -125,6 +125,11 @@ ORDINARY_CHECK_NAMES = (
     "A16 preserves accepted-revision observation and product-presentation owners",
     "A17 preserves observation layers and integrated activation ownership",
     "A86 preserves backend host-action and integrated presentation owners",
+    "A82 separates T24 shell qualification from T29 final presentation",
+    "A84 separates T25 usage qualification from T29 serialization and presentation",
+    "A96 presents the disabled external-resource-label tradeoff before live-bind authorization",
+    "A99 separates T30 private-forward qualification from T29 final presentation",
+    "A100 preserves T30 exposure security and T29 final presentation",
     "Release gate protocol matches fixed semantics",
     "Original specification matches its fixed checksum and both manifests",
     "GOAL.md matches its fixed checksum",
@@ -677,6 +682,11 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
         "A16 preserves accepted-revision observation and product-presentation owners": [],
         "A17 preserves observation layers and integrated activation ownership": [],
         "A86 preserves backend host-action and integrated presentation owners": [],
+        "A82 separates T24 shell qualification from T29 final presentation": [],
+        "A84 separates T25 usage qualification from T29 serialization and presentation": [],
+        "A96 presents the disabled external-resource-label tradeoff before live-bind authorization": [],
+        "A99 separates T30 private-forward qualification from T29 final presentation": [],
+        "A100 preserves T30 exposure security and T29 final presentation": [],
     }
 
     def task_contains(task_id: str, field: str, phrase: str) -> bool:
@@ -866,6 +876,178 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
     finished_presentation = "finished CLI, Console, and desktop presentation"
     if any(finished_presentation in str(item) for item in (*t26_steps, *t26_acceptance)):
         a86_errors.append({"task": "T26", "problem": "backend qualification cannot require finished presentation evidence"})
+
+    a82 = cases_by_id.get("A82", {})
+    a82_errors = failures["A82 separates T24 shell qualification from T29 final presentation"]
+    a82_owners = ["T24", "T29"]
+    a82_assignments = [
+        row.get("task_id") for row in a82.get("assignment_results", [])
+        if isinstance(row, dict)
+    ] if isinstance(a82.get("assignment_results"), list) else None
+    if a82.get("level") != "LIVE" or a82.get("tasks") != a82_owners:
+        a82_errors.append({"level": a82.get("level"), "owners": a82.get("tasks"),
+                           "expected_level": "LIVE", "expected_owners": a82_owners})
+    if a82_assignments != a82_owners:
+        a82_errors.append({"assignment_owners": a82_assignments,
+                           "expected": a82_owners})
+    if not case_text_contains(
+        a82, "action",
+        "T24 opens the credential-free default shell",
+        "T29 then displays the trusted inherited-authority label",
+    ) or not case_text_contains(
+        a82, "expected",
+        "T24 qualifies default-domain isolation and selected-domain authority",
+        "T29's final shell labels that inherited authority from the selected domain",
+    ):
+        a82_errors.append({"case": "A82", "problem": "early service and final presentation phases are not explicit"})
+    t24 = tasks_by_id.get("T24", {})
+    t29 = tasks_by_id.get("T29", {})
+    if ("A82" not in t24.get("test_cases", [])
+            or "Qualify A82's credential-free default shell and explicit in-domain authority before T29 presentation."
+            not in t24.get("steps", [])
+            or "A82 at T24 qualifies default-domain isolation and selected-domain authority before T29's final shell presentation."
+            not in t24.get("acceptance", [])):
+        a82_errors.append({"task": "T24", "problem": "early A82 shell qualification is missing"})
+    if ("A82" not in t29.get("test_cases", [])
+            or "Present A82's trusted inherited-authority label on the final shell after T24 qualifies the domain service."
+            not in t29.get("steps", [])
+            or "A82 at T29 displays the selected shell's trusted inherited authority from its domain, separately from T24 service qualification."
+            not in t29.get("acceptance", [])
+            or "T29" in t24.get("depends_on", [])
+            or "T24" not in t29.get("depends_on", [])):
+        a82_errors.append({"task": "T29", "problem": "late A82 presentation is missing or blocks the early owner"})
+
+    a84 = cases_by_id.get("A84", {})
+    a84_errors = failures["A84 separates T25 usage qualification from T29 serialization and presentation"]
+    a84_owners = ["T25", "T29"]
+    a84_assignments = [
+        row.get("task_id") for row in a84.get("assignment_results", [])
+        if isinstance(row, dict)
+    ] if isinstance(a84.get("assignment_results"), list) else None
+    if a84.get("level") != "UNIT" or a84.get("tasks") != a84_owners:
+        a84_errors.append({"level": a84.get("level"), "owners": a84.get("tasks"),
+                           "expected_level": "UNIT", "expected_owners": a84_owners})
+    if a84_assignments != a84_owners:
+        a84_errors.append({"assignment_owners": a84_assignments,
+                           "expected": a84_owners})
+    if not case_text_contains(
+        a84, "action", "T25 resolves the backend usage snapshots",
+        "T29 serializes and renders snapshots for both account identities and credential-source revisions",
+    ) or not case_text_contains(
+        a84, "expected", "T25 keeps account revisions isolated",
+        "T25 distinguishes stale or unavailable usage from zero",
+        "T29 preserves identity and revision through serialization",
+        "never renders stale or unavailable usage as zero",
+    ):
+        a84_errors.append({"case": "A84", "problem": "backend and presentation phases are incomplete"})
+    t25 = tasks_by_id.get("T25", {})
+    if ("A84" not in t25.get("test_cases", [])
+            or "Qualify A84 backend cache identity, credential-source revision, stale, unavailable, and zero distinctions at T25."
+            not in t25.get("steps", [])
+            or "A84 at T25 qualifies backend account identity and revision isolation before T29 renders usage."
+            not in t25.get("acceptance", [])):
+        a84_errors.append({"task": "T25", "problem": "early A84 backend qualification is missing"})
+    if ("A84" not in t29.get("test_cases", [])
+            or "Present A84's serialized account identity and credential-source revision with stale and unavailable values distinct from zero."
+            not in t29.get("steps", [])
+            or "A84 at T29 preserves account identity and credential-source revision through serialization and never renders stale or unavailable usage as zero."
+            not in t29.get("acceptance", [])
+            or "T29" in t25.get("depends_on", [])
+            or "T25" not in t29.get("depends_on", [])):
+        a84_errors.append({"task": "T29", "problem": "late A84 presentation is missing or blocks the early owner"})
+
+    a96 = cases_by_id.get("A96", {})
+    a96_errors = failures["A96 presents the disabled external-resource-label tradeoff before live-bind authorization"]
+    if (a96.get("level") != "UNIT" or a96.get("tasks") != ["T29"]
+            or not case_text_contains(
+                a96, "setup", "trusted-live-local profile", "external-resource-label admission disabled"
+            )):
+        a96_errors.append({"case": "A96", "problem": "UNIT presentation setup lost the disabled admission tradeoff"})
+    a96_action = a96.get("action", "")
+    tradeoff = a96_action.find("disabled external-resource-label admission tradeoff") if isinstance(a96_action, str) else -1
+    authorization = a96_action.find("authorizing the trusted-live-local bind") if isinstance(a96_action, str) else -1
+    if (tradeoff < 0 or authorization < 0 or tradeoff >= authorization
+            or not case_text_contains(a96, "expected", "disabled tradeoff is visible before the operator authorizes the trusted-live-local bind")):
+        a96_errors.append({"case": "A96", "problem": "tradeoff warning must precede the bind authorization decision"})
+    if ("Present the disabled external-resource-label admission tradeoff before authorizing a trusted-live-local bind."
+            not in t29.get("steps", [])
+            or "A96 displays the disabled external-resource-label admission tradeoff before any trusted-live-local authorization decision."
+            not in t29.get("acceptance", [])):
+        a96_errors.append({"task": "T29", "problem": "the A96 warning is missing from product presentation"})
+
+    a99 = cases_by_id.get("A99", {})
+    a100 = cases_by_id.get("A100", {})
+    service_errors = failures["A99 separates T30 private-forward qualification from T29 final presentation"]
+    exposure_errors = failures["A100 preserves T30 exposure security and T29 final presentation"]
+    for case_id, case, expected in (
+        ("A99", a99, "A99 at T30 qualifies private access, ownership, and scoped cleanup before T29 presents the service."),
+        ("A100", a100, "A100 at T30 requires a separate public grant, listener TLS, and application authentication; Capsule control stays private."),
+    ):
+        case_errors = service_errors if case_id == "A99" else exposure_errors
+        owners = ["T30", "T29"]
+        assignment_owners = [
+            row.get("task_id") for row in case.get("assignment_results", [])
+            if isinstance(row, dict)
+        ] if isinstance(case.get("assignment_results"), list) else None
+        if case.get("level") != "LIVE" or case.get("tasks") != owners:
+            case_errors.append({"case": case_id, "level": case.get("level"),
+                                "owners": case.get("tasks"), "expected_owners": owners})
+        if assignment_owners != owners:
+            case_errors.append({"case": case_id, "assignment_owners": assignment_owners,
+                                "expected": owners})
+        if "T29" not in case.get("action", "") or "T30" not in case.get("action", ""):
+            case_errors.append({"case": case_id, "problem": "service and final presentation phases are not explicit"})
+        if case_id == "A99" and not case_text_contains(
+            case, "action",
+            "T30 creates a loopback-bound authenticated forward and attempts external access",
+            "T30 verifies intended client access and scoped cleanup",
+            "T29 presents the qualified URL and access status in the final CLI and Console",
+        ):
+            case_errors.append({"case": case_id, "problem": "private-forward action lost access or cleanup checks"})
+        if case_id == "A100" and not case_text_contains(
+            case, "action",
+            "T30 checks the separate public grant, listener TLS, application authentication, and Capsule refusal",
+            "T29 displays the grant and requirements in the final CLI and Console",
+        ):
+            case_errors.append({"case": case_id, "problem": "public exposure action lost a service or presentation check"})
+        if not task_contains("T30", "test_cases", case_id) or expected not in tasks_by_id.get("T30", {}).get("acceptance", []):
+            case_errors.append({"task": "T30", "case": case_id,
+                                "problem": "early service qualification is missing"})
+        if not task_contains("T29", "test_cases", case_id):
+            case_errors.append({"task": "T29", "case": case_id,
+                                "problem": "final presentation ownership is missing"})
+    if "T29" in tasks_by_id.get("T30", {}).get("depends_on", []):
+        service_errors.append({"task": "T30", "problem": "early service owner cannot depend on final UI"})
+    if "T30" not in t29.get("depends_on", []):
+        service_errors.append({"task": "T29", "problem": "final presentation must depend on T30 service qualification"})
+    for phrase in (
+        "Deliver the qualified private-forward URL, ownership, and cleanup state to T29 for final presentation.",
+        "Create authenticated private forwards through OpenShell.",
+        "Bind local listener endpoints to loopback by default.",
+        "Track forward lifetime, target binding, owner, and request identity.",
+    ):
+        if phrase not in tasks_by_id.get("T30", {}).get("steps", []):
+            service_errors.append({"task": "T30", "problem": "private-forward service responsibilities were weakened", "required": phrase})
+    if ("Present A99's qualified private-forward URL and scoped ownership and cleanup status in the finished CLI and Console."
+            not in t29.get("steps", [])
+            or "A99 at T29 presents the qualified private URL and access state after T30's service and cleanup qualification."
+            not in t29.get("acceptance", [])):
+        service_errors.append({"task": "T29", "problem": "A99 final private-forward presentation is incomplete"})
+    if ("Present A100's separate public grant, listener TLS, and application-authentication requirements in the finished CLI and Console."
+            not in t29.get("steps", [])
+            or "Keep Capsule control marked private in the A100 final UI." not in t29.get("steps", [])
+            or "A100 at T29 displays the separate public grant and TLS/application-authentication requirements; Capsule control is never public."
+            not in t29.get("acceptance", [])):
+        exposure_errors.append({"task": "T29", "problem": "A100 final security presentation is incomplete"})
+    for phrase in (
+        "Require a separate capability for public exposure.",
+        "Record public listener TLS and application-authentication requirements for T29's final presentation.",
+        "Reject every attempt to expose Capsule control publicly.",
+        "Clean up only confirmed owned forwards.",
+    ):
+        if phrase not in tasks_by_id.get("T30", {}).get("steps", []):
+            exposure_errors.append({"task": "T30", "problem": "public-exposure, TLS, or cleanup contract was weakened", "required": phrase})
+
     return failures
 
 

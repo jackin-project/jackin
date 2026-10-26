@@ -55,7 +55,7 @@ Markdown assignment labels record initial `NOT_RUN` status and stay fixed during
 Each receipt records the actual argument vector, stdout, stderr, exit code, executed validator path and hash, and fixture-source hashes.
 The runner checks certified input paths immediately after each fixture mutation and again after safe count synchronization. An unsafe post-mutation input stops before synchronization or validator execution. For safe post-mutation inputs, each receipt hashes every tested pack input. For refused links, the custody control records link metadata and external target hashes without following the links.
 Each receipt records changed-input hashes before and after mutation, with explicit `present` or `missing` states.
-The fixture runner keeps its validator-check inventory and 262 scenario names independent from the validator and fixture calls under test. The validator reads that literal scenario-name inventory as data without importing or executing the runner. It also compares 21 named runner controls with a separate fixed inventory that rejects missing, duplicate, and unexpected controls.
+The fixture runner keeps its validator-check inventory and 262 scenario names independent from the validator and fixture calls under test. The validator reads that literal scenario-name inventory as data without importing or executing the runner. It also compares 22 named runner controls with a separate fixed inventory that rejects missing, duplicate, and unexpected controls.
 Each fixture, original-board, and probe subprocess runs in its own process group with a finite timeout. On POSIX timeout the runner sends SIGTERM and gives output draining a bounded grace period. It then sends SIGKILL to the owned group whether draining completes early because the direct child exits or reaches the end of the grace period. It preserves partial stdout and stderr and bounds pipe draining and direct-child reaping. It records the direct child's observed exit information, and a timeout remains a failure even after a passing report.
 The runner snapshots pack inputs before importing the validator and immediately after import. It captures validator-import stdout and stderr, and reports import output, exceptions, and `SystemExit` codes as structured failures before running fixtures. It emits one JSON document. A subprocess fixture proves it detects an import-time README mutation on a temporary copy. `KeyboardInterrupt` remains an uncaught cancellation.
 The runner anchors each selected pack root at its canonical path, so an operating-system alias above the root remains usable. An external regular validator executable is allowed to inspect a selected pack that omits its validator file. Both tools reject linked entry points, pack-local entries escaping the root, and linked pack inputs before reads or imports. They record link metadata without following or removing links, and refuse copies that would follow links. The supported self-contained pack copy has matching source and destination hashes.
@@ -71,9 +71,9 @@ The runner does not modify the pack. It validates the original board in ordinary
 | Acceptance cases | 125 |
 | Mapped specification headings | 30 |
 | Topological readiness groups | 20 |
-| Checked procedural sentences | 1663 |
+| Checked procedural sentences | 1691 |
 
-The ordinary validator report contains 90 ordered checks; `--initial` contains 92, including two initial-only checks and the final inventory check.
+The ordinary validator report contains 95 ordered checks; `--initial` contains 97, including two initial-only checks and the final inventory check.
 The C02 digest checks fixed contract text only. It does not show that source code follows this plan.
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
@@ -87,7 +87,7 @@ Keep no more than eight actual subagents active at once.
 | Both execution markers are exact Booleans in ordinary and initial modes | PASS |
 | LIVE `PASS` and `FAIL` assignments require the runtime-execution marker | PASS |
 | Fixture scenario names match the independent 262-name inventory with no missing, duplicate, or unexpected entries | PASS |
-| The 21 runner controls match an independent fixed inventory with no missing, duplicate, or unexpected entries | PASS |
+| The 22 runner controls match an independent fixed inventory with no missing, duplicate, or unexpected entries | PASS |
 | Fixture, original-board, and probe subprocesses use owned process groups and bounded timeout cleanup | PASS |
 | Validator import output, exceptions, and `SystemExit` become structured failures; cancellation remains uncaught | PASS |
 | Canonical root aliases work; external file and in-pack ancestor symlinks fail before reads or copying | PASS |
@@ -110,6 +110,11 @@ Keep no more than eight actual subagents active at once.
 | Acceptance manifest root has exactly `schema_version`, `status`, and `cases` | PASS |
 | A86 separates T26 backend refusal checks from T29 finished CLI, Console, and desktop presentation | PASS |
 | A86 mutation controls reject either owner or phase removal, weakened threats, and a finished-UI prerequisite for T26 | PASS |
+| A82 separates T24 shell qualification from T29 final presentation | PASS |
+| A84 separates T25 usage qualification from T29 serialization and presentation | PASS |
+| A96 presents the disabled external-resource-label tradeoff before live-bind authorization | PASS |
+| A99 separates T30 private-forward qualification from T29 final presentation | PASS |
+| A100 preserves T30 exposure security and T29 final presentation | PASS |
 | Task case references are unique string IDs; completion rules match the fixed contract | PASS |
 | Each task uses the different-subagent review and post-merge integration rerun rule | PASS |
 | Release protocol includes conditional patched-tuple approval, runtime requalification, T40 review authority, and Integration finalization writes | PASS |
@@ -157,6 +162,7 @@ Keep no more than eight actual subagents active at once.
 | PACK-CHECKS template is fixed outside mutable count and result slots | PASS |
 | PACK-CHECKS input-derived counts and check inventories match the validated pack | PASS |
 | PACK-CHECKS scenario count matches the runner's independent fixed inventory | PASS |
+| A82/A84/A96/A99/A100 layered-presentation control rejects owner, phase, warning, grant, TLS, and dependency regressions | PASS |
 | Validator emits the canonical ordered ordinary and initial-only check inventories | PASS |
 | Initial states claim no task or case execution (`--initial` only) | PASS |
 | Pack records no runtime tests or delegated task reviews (`--initial` only) | PASS |
@@ -165,9 +171,10 @@ Keep no more than eight actual subagents active at once.
 ## Assignment-result causal fixtures
 
 All 262 scenarios passed their exact report, input-derived count, and exit-code expectations.
-All 21 runner controls passed their independent inventory and behavior checks. The timeout controls verify cleanup of same-group descendants with inherited pipes and redirected output. The shared classifier control verifies running, Linux zombie/dead, ESRCH, and EPERM outcomes. The post-mutation custody control links `PACK-CHECKS.md` and `GOAL.md` to external temporary files and verifies refusal before any target read or write and before validator execution.
+All 22 runner controls passed their independent inventory and behavior checks. The timeout controls verify cleanup of same-group descendants with inherited pipes and redirected output. The shared classifier control verifies running, Linux zombie/dead, ESRCH, and EPERM outcomes. The post-mutation custody control links `PACK-CHECKS.md` and `GOAL.md` to external temporary files and verifies refusal before any target read or write and before validator execution.
 The original 18 scenario intentions remain unchanged; 244 targeted scenarios cover assignment ownership and progress, execution-marker types and LIVE status requirements, readiness-group input shapes, authored task and case fields, source citations, canonical task paths and exact recursive packet sets, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance and PLAN prefixes, strict JSON parsing and exact short-form input details, release-gate protocol structure, post-deletion and post-change LIVE freshness, T40 version/package requalification, finalization evidence requirements, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates and result-cell grammar, independent check-inventory comparison, import-time input mutation detection, the fixed root planning classification, owner-specific A13/A15/A16/A17/A86 qualification, serialized target and compatibility-matrix updates, malformed record refusal, review-assignment completion, exact acceptance-root keys, pinned source-audit and terminology inputs, and truthful report count rows and inventories.
 The separate A86 runner control applies eight independent mutations for either owner, either phase, hostile input, operator intent, trusted labels or approval state, and T26's premature finished-presentation prerequisite.
+The separate layered-presentation runner control includes one accepted baseline and eleven synchronized mutations. It keeps the T24 and T25 early results, requires T29 final presentation, presents the C11 admission warning before authorization, preserves T30 grant and TLS/authentication checks, and requires T29 to wait for T30.
 Each fixture copy records source hashes, permitted normalization changes, normalized hashes, intentional mutations, and input and executable hashes before and after validation. Initial-mode copies reset only existing valid progress statuses and true Boolean execution markers; missing or invalid markers remain unchanged and fail validation. The original board is never normalized or repaired.
 The existing missing-P00 fixture retains its packet-preamble failure and exit code 1; exact-path validation adds a second expected failure for the missing canonical path.
 A22 is owned by U02 and T32. Its mixed-result fixtures complete T32 dependencies before recording results.
