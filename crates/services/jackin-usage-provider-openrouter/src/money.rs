@@ -292,13 +292,14 @@ pub(crate) fn sum_nonnegative<'a>(
     let mut accumulator = DecimalAccumulator::default();
     let mut found = false;
     for value in values {
-        if value.as_number().is_none() {
+        let Some(number) = value.as_number() else {
+            continue;
+        };
+        let raw = number.to_string();
+        if is_negative_nonzero_number(&raw) {
             continue;
         }
-        let decimal = Decimal::from_value(value)?;
-        if decimal.is_negative() {
-            continue;
-        }
+        let decimal = Decimal::parse(&raw)?;
         accumulator.add(&decimal)?;
         found = true;
     }
@@ -311,13 +312,14 @@ pub(crate) fn sum_nonnegative_raw<'a>(
     let mut accumulator = DecimalAccumulator::default();
     let mut found = false;
     for value in values {
-        if !is_json_number(value.get()) {
+        let raw = value.get();
+        if !is_json_number(raw) {
             continue;
         }
-        let decimal = Decimal::from_raw(value)?;
-        if decimal.is_negative() {
+        if is_negative_nonzero_number(raw) {
             continue;
         }
+        let decimal = Decimal::parse(raw)?;
         accumulator.add(&decimal)?;
         found = true;
     }
@@ -328,6 +330,21 @@ fn is_json_number(raw: &str) -> bool {
     raw.as_bytes()
         .first()
         .is_some_and(|byte| matches!(byte, b'-' | b'0'..=b'9'))
+}
+
+fn is_negative_nonzero_number(raw: &str) -> bool {
+    let Some(mantissa) = raw.strip_prefix('-') else {
+        return false;
+    };
+    for byte in mantissa.bytes() {
+        if matches!(byte, b'e' | b'E') {
+            break;
+        }
+        if byte.is_ascii_digit() && byte != b'0' {
+            return true;
+        }
+    }
+    false
 }
 
 pub(crate) fn format_money(money: &Money) -> String {

@@ -173,3 +173,14 @@ fn raw_sum_carries_fraction_before_narrowing_and_rejects_overflow() {
     let too_large = [raw("9223372036854775807"), raw("1")];
     assert_eq!(sum_nonnegative_raw(too_large.iter().map(Box::as_ref)), None);
 }
+
+#[test]
+fn negative_numeric_classification_preserves_signed_zero() {
+    assert!(is_negative_nonzero_number("-1e-256"));
+    assert!(is_negative_nonzero_number("-1e400"));
+    assert!(is_negative_nonzero_number("-0.01"));
+    assert!(!is_negative_nonzero_number("-0"));
+    assert!(!is_negative_nonzero_number("-0.0e-400"));
+    assert!(!is_negative_nonzero_number("-0e400"));
+    assert!(!is_negative_nonzero_number("1"));
+}

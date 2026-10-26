@@ -1025,3 +1025,105 @@ fn openrouter_transport_text_and_url_401_are_not_auth_failures() {
         UsageSnapshotStatus::NeedsLogin
     );
 }
+
+#[cfg(feature = "value-arbitrary-precision")]
+#[test]
+fn openrouter_value_byok_skips_unrepresentable_negative_numeric_components() {
+    for json in [
+        r#"{"data":{"byok_spend_a":1,"byok_cost_b":-1e-256}}"#,
+        r#"{"data":{"byok_cost_b":-1e-256,"byok_spend_a":1}}"#,
+        r#"{"data":{"byok_spend_a":-1e-256,"byok_cost_b":1}}"#,
+        r#"{"data":{"byok_spend_a":1,"byok_cost_b":-1e30}}"#,
+        r#"{"data":{"byok_spend_a":1,"byok_cost_b":-1e400}}"#,
+    ] {
+        let input = serde_json::from_str(json).expect("BYOK JSON");
+        let quota = parse_openrouter_key_usage(input, 1_780_000_000).expect("BYOK key");
+        let byok = quota
+            .buckets
+            .iter()
+            .find(|bucket| bucket.label == "BYOK spend")
+            .expect("representable positive fallback remains visible");
+        assert_eq!(
+            byok.used_money,
+            Some(jackin_protocol::control::Money::new(100, "USD", 2))
+        );
+        assert_eq!(byok.used_label.as_deref(), Some("$1"));
+    }
+
+    let all_negative =
+        serde_json::from_str(r#"{"data":{"byok_spend_a":-1e-256,"byok_cost_b":-1e30}}"#)
+            .expect("all-negative BYOK JSON");
+    let quota = parse_openrouter_key_usage(all_negative, 1_780_000_000).expect("BYOK key");
+    assert!(
+        quota
+            .buckets
+            .iter()
+            .all(|bucket| bucket.label != "BYOK spend")
+    );
+
+    for token in ["-0", "-0.0e-400", "-0e400"] {
+        let json = format!(r#"{{"data":{{"byok_spend_a":{token}}}}}"#);
+        let input = serde_json::from_str(&json).expect("negative-zero BYOK JSON");
+        let quota = parse_openrouter_key_usage(input, 1_780_000_000).expect("BYOK key");
+        let byok = quota
+            .buckets
+            .iter()
+            .find(|bucket| bucket.label == "BYOK spend")
+            .expect("negative numeric zero remains a reported contribution");
+        assert_eq!(
+            byok.used_money,
+            Some(jackin_protocol::control::Money::new(0, "USD", 2))
+        );
+        assert_eq!(byok.used_label.as_deref(), Some("$0"));
+    }
+}
+
+#[test]
+fn openrouter_raw_byok_skips_unrepresentable_negative_numeric_components() {
+    for json in [
+        r#"{"data":{"byok_spend_a":1,"byok_cost_b":-1e-256}}"#,
+        r#"{"data":{"byok_cost_b":-1e-256,"byok_spend_a":1}}"#,
+        r#"{"data":{"byok_spend_a":-1e-256,"byok_cost_b":1}}"#,
+        r#"{"data":{"byok_spend_a":1,"byok_cost_b":-1e30}}"#,
+        r#"{"data":{"byok_spend_a":1,"byok_cost_b":-1e400}}"#,
+    ] {
+        let quota = parse_openrouter_key_usage_raw(json, 1_780_000_000).expect("BYOK key");
+        let byok = quota
+            .buckets
+            .iter()
+            .find(|bucket| bucket.label == "BYOK spend")
+            .expect("representable positive fallback remains visible");
+        assert_eq!(
+            byok.used_money,
+            Some(jackin_protocol::control::Money::new(100, "USD", 2))
+        );
+        assert_eq!(byok.used_label.as_deref(), Some("$1"));
+    }
+
+    let all_negative = parse_openrouter_key_usage_raw(
+        r#"{"data":{"byok_spend_a":-1e-256,"byok_cost_b":-1e30}}"#,
+        1_780_000_000,
+    )
+    .expect("all-negative BYOK key");
+    assert!(
+        all_negative
+            .buckets
+            .iter()
+            .all(|bucket| bucket.label != "BYOK spend")
+    );
+
+    for token in ["-0", "-0.0e-400", "-0e400"] {
+        let json = format!(r#"{{"data":{{"byok_spend_a":{token}}}}}"#);
+        let quota = parse_openrouter_key_usage_raw(&json, 1_780_000_000).expect("BYOK key");
+        let byok = quota
+            .buckets
+            .iter()
+            .find(|bucket| bucket.label == "BYOK spend")
+            .expect("negative numeric zero remains a reported contribution");
+        assert_eq!(
+            byok.used_money,
+            Some(jackin_protocol::control::Money::new(0, "USD", 2))
+        );
+        assert_eq!(byok.used_label.as_deref(), Some("$0"));
+    }
+}
