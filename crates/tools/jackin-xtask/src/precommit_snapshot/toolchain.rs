@@ -667,10 +667,8 @@ fn create_private_mise_config_dir(isolation_root: &Path, name: &str) -> Result<P
 fn validate_cargo_configuration(reviewed_root: &Path, cargo_home: &Path) -> Result<()> {
     let mut staged_visited = BTreeSet::new();
     let mut external_visited = BTreeSet::new();
-    inspect_cargo_config_directory(
+    inspect_staged_cargo_configuration_tree(
         reviewed_root,
-        reviewed_root,
-        true,
         &mut staged_visited,
         &mut external_visited,
     )?;
@@ -693,6 +691,54 @@ fn validate_cargo_configuration(reviewed_root: &Path, cargo_home: &Path) -> Resu
             inspect_staged_cargo_config(&path, reviewed_root, &mut staged_visited)?;
         } else {
             inspect_external_cargo_config(&path, &mut external_visited)?;
+        }
+    }
+    Ok(())
+}
+
+fn inspect_staged_cargo_configuration_tree(
+    reviewed_root: &Path,
+    staged_visited: &mut BTreeSet<PathBuf>,
+    external_visited: &mut BTreeSet<PathBuf>,
+) -> Result<()> {
+    let mut pending = vec![reviewed_root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        inspect_cargo_config_directory(
+            &directory,
+            reviewed_root,
+            true,
+            staged_visited,
+            external_visited,
+        )?;
+
+        for entry in crate::fs_util::read_dir_sorted(&directory).with_context(|| {
+            format!(
+                "reading staged workspace directory: {}",
+                directory.display()
+            )
+        })? {
+            let name = entry.file_name();
+            // Cargo runs from repository workspaces, never Git metadata or build output.
+            if name == OsStr::new(".git") || name == OsStr::new("target") {
+                continue;
+            }
+            let file_type = entry
+                .file_type()
+                .with_context(|| format!("inspecting staged path: {}", entry.path().display()))?;
+            if !file_type.is_dir() {
+                continue;
+            }
+
+            let path = entry.path();
+            let physical = fs::canonicalize(&path).with_context(|| {
+                format!("resolving staged workspace directory: {}", path.display())
+            })?;
+            ensure!(
+                physical.starts_with(reviewed_root),
+                "staged workspace directory escapes the reviewed snapshot: {}",
+                path.display()
+            );
+            pending.push(physical);
         }
     }
     Ok(())
@@ -812,7 +858,7 @@ fn inspect_staged_cargo_config(
         .with_context(|| format!("resolving staged Cargo config path: {}", path.display()))?;
     ensure!(
         physical.starts_with(reviewed_root),
-        "staged Cargo config symlink escapes the reviewed snapshot: {}",
+        "staged Cargo config path escapes the reviewed snapshot: {}",
         path.display()
     );
     ensure!(

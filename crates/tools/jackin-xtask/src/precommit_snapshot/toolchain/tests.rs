@@ -484,8 +484,22 @@ fn cargo_config_admission_allows_missing_or_empty_external_files_and_preserves_c
     fs::create_dir(&staged_config_dir).expect("reviewed Cargo config dir");
     fs::write(staged_config_dir.join("config.toml"), "[build]\njobs = 1\n")
         .expect("reviewed staged Cargo config");
+    let nested_workspace = root.join("fuzz/jackin-env");
+    fs::create_dir_all(nested_workspace.join(".cargo")).expect("nested reviewed Cargo config dir");
+    fs::write(nested_workspace.join("Cargo.toml"), "[workspace]\n")
+        .expect("nested workspace manifest");
+    fs::write(
+        nested_workspace.join(".cargo/config.toml"),
+        "include = ['local.toml']\n",
+    )
+    .expect("nested reviewed Cargo config with contained include");
+    fs::write(
+        nested_workspace.join(".cargo/local.toml"),
+        "[build]\njobs = 1\n",
+    )
+    .expect("contained nested Cargo include");
     HostInputs::from_environment(&inherited, parent, None, &root, &isolation)
-        .expect("reviewed staged Cargo config is admitted");
+        .expect("reviewed root and nested Cargo configs with contained includes are admitted");
 
     let home_fallback = BTreeMap::from([
         (OsString::from("PATH"), OsString::from("/host/bin")),
@@ -585,11 +599,11 @@ fn nonempty_external_cargo_configs_fail_without_exposing_contents() {
 }
 
 #[test]
-fn hostile_external_cargo_config_fails_before_mise_or_rustup_child_probes() {
+fn hostile_external_and_nested_cargo_configs_fail_before_mise_or_rustup_child_probes() {
     const CHILD_MARKER: &str = "JACKIN_EXTERNAL_CARGO_CONFIG_PROBE_CHILD";
     const FIXTURE_ROOT: &str = "JACKIN_EXTERNAL_CARGO_CONFIG_PROBE_ROOT";
     const PROBE_MARKER: &str = "JACKIN_EXTERNAL_CARGO_CONFIG_PROBE_MARKER";
-    const TEST_NAME: &str = "precommit_snapshot::toolchain::tests::hostile_external_cargo_config_fails_before_mise_or_rustup_child_probes";
+    const TEST_NAME: &str = "precommit_snapshot::toolchain::tests::hostile_external_and_nested_cargo_configs_fail_before_mise_or_rustup_child_probes";
 
     if env::var_os(CHILD_MARKER).is_some() {
         let root = PathBuf::from(env::var_os(FIXTURE_ROOT).expect("fixture root"));
@@ -624,6 +638,43 @@ fn hostile_external_cargo_config_fails_before_mise_or_rustup_child_probes() {
             assert!(!message.contains("private-sentinel"));
             assert!(!marker.exists(), "Mise or rustup child probe ran");
         }
+
+        fs::write(&config, "# empty after the global-config cases\n")
+            .expect("clear external Cargo config before nested-workspace case");
+        let nested_workspace = root.join("fuzz/jackin-env");
+        fs::create_dir_all(nested_workspace.join(".cargo"))
+            .expect("nested workspace Cargo config directory");
+        fs::write(nested_workspace.join("Cargo.toml"), "[workspace]\n")
+            .expect("nested workspace manifest");
+        fs::write(
+            root.parent().expect("fixture parent").join("host.toml"),
+            "[env]\nJACKIN_NESTED_CONFIG_SENTINEL = 'must not load'\n",
+        )
+        .expect("external nested Cargo include");
+        let nested_config = nested_workspace.join(".cargo/config");
+        fs::write(&nested_config, "include = ['../../../../host.toml']\n")
+            .expect("nested Cargo config with escaping include");
+        let Err(error) = admit_install_environment(&root) else {
+            panic!("nested external Cargo config include must be rejected");
+        };
+        let message = format!("{error:#}");
+        assert!(message.contains("staged Cargo config path escapes the reviewed snapshot"));
+        assert!(message.contains("host.toml"));
+        assert!(!message.contains("must not load"));
+        assert!(!marker.exists(), "nested Cargo config ran a child probe");
+
+        let Err(error) = verify_provision_tool_paths(
+            &root,
+            Path::new("/unused/cargo"),
+            Path::new("/unused/rustc"),
+        ) else {
+            panic!("nested external Cargo include must fail admission");
+        };
+        let message = format!("{error:#}");
+        assert!(message.contains("staged Cargo config path escapes the reviewed snapshot"));
+        assert!(message.contains("host.toml"));
+        assert!(!message.contains("must not load"));
+        assert!(!marker.exists(), "Mise or rustup child probe ran");
         return;
     }
 
