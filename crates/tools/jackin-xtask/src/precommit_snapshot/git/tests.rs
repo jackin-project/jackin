@@ -113,7 +113,8 @@ fn rejects_overflowed_staged_inventory_without_changing_live_state() {
         fs::read(root.join("staged.txt")).expect("live worktree remains"),
         worktree_before
     );
-    OwnedSnapshot::verify_live_index(&live).expect("live index custody remains valid");
+    OwnedSnapshot::verify_live_index(&live, &live.controls)
+        .expect("live index custody remains valid");
 }
 
 #[test]
@@ -154,7 +155,7 @@ fn rejects_live_index_changes_during_capture_and_after_gate() {
         .materialize(&tree, &live)
         .expect("materialize tree");
     fs::write(&live.index, b"changed after capture").expect("change live index");
-    assert!(OwnedSnapshot::verify_live_index(&live).is_err());
+    assert!(OwnedSnapshot::verify_live_index(&live, &live.controls).is_err());
 }
 
 #[test]
@@ -180,8 +181,6 @@ fn runs_gate_with_the_process_supervisor_and_original_hook_arguments() {
         .expect("materialize tree");
     let tools = QualifiedTools {
         gate: Path::new("/usr/bin/true").to_path_buf(),
-        cargo: Path::new("/usr/bin/true").to_path_buf(),
-        rustc: Path::new("/usr/bin/true").to_path_buf(),
         environment: BTreeMap::<OsString, OsString>::new(),
     };
     let controls = snapshot.controls.clone();
@@ -212,8 +211,6 @@ fn failed_gate_keeps_bounded_diagnostics_in_private_spools() {
         .expect("make fake gate executable");
     let tools = QualifiedTools {
         gate: fake_gate,
-        cargo: Path::new("/usr/bin/true").to_path_buf(),
-        rustc: Path::new("/usr/bin/true").to_path_buf(),
         environment: BTreeMap::<OsString, OsString>::new(),
     };
     let controls = snapshot.controls.clone();
@@ -258,22 +255,14 @@ fn setup_signal_after_snapshot_allocation_drops_private_snapshot() {
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while (signals.signal_status().is_none()
-            || !signals
-                .route
-                .setup_gate_cancellation
-                .load(Ordering::Relaxed))
+            || !signals.route.cancellation.load(Ordering::Relaxed))
             && std::time::Instant::now() < deadline
         {
             thread::park_timeout(std::time::Duration::from_millis(10));
         }
         assert_eq!(signals.signal_status(), Some(143));
         assert!(signals.route.term.load(Ordering::Relaxed));
-        assert!(
-            signals
-                .route
-                .setup_gate_cancellation
-                .load(Ordering::Relaxed)
-        );
+        assert!(signals.route.cancellation.load(Ordering::Relaxed));
         drop(snapshot);
         assert_eq!(
             fs::read(&live.index).expect("live index remains"),

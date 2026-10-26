@@ -2,12 +2,9 @@ use std::{
     env,
     ffi::OsStr,
     fs, io,
-    os::unix::{
-        ffi::OsStrExt,
-        fs::{MetadataExt, PermissionsExt, symlink},
-    },
+    os::unix::fs::{MetadataExt, PermissionsExt, symlink},
     path::{Path, PathBuf},
-    process::{Child, Command, ExitCode, Stdio},
+    process::{Child, Command, Stdio},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -16,46 +13,21 @@ use std::{
 
 use super::{
     OwnerBudgets, OwnerSignal, SetupSignals, SignalRoute, completion_exit_code,
-    retain_snapshot_failure, retain_unsuccessful_completion, run_installed_from_hook_with_budgets,
+    retain_snapshot_failure, retain_unsuccessful_completion, run_with_budgets,
     write_private_fixes_spool,
 };
 use crate::precommit_snapshot::{evidence, git, process, toolchain::QualifiedTools};
-use sha2::Digest;
 
 const OWNER_DRIVER_CHILD: &str = "JACKIN_F3_OWNER_DRIVER_CHILD";
-const OWNER_DRIVER_GENERATION: &str = "JACKIN_F3_OWNER_DRIVER_GENERATION";
 const OWNER_DRIVER_EXPECTATION: &str = "JACKIN_F3_OWNER_DRIVER_EXPECTATION";
 const OWNER_DRIVER_STATUS: &str = "JACKIN_F3_OWNER_DRIVER_STATUS";
 const OWNER_DRIVER_SETUP_MS: &str = "JACKIN_F3_OWNER_DRIVER_SETUP_MS";
 const OWNER_DRIVER_GATE_MS: &str = "JACKIN_F3_OWNER_DRIVER_GATE_MS";
 const OWNER_DRIVER_RECOVERY_MS: &str = "JACKIN_F3_OWNER_DRIVER_RECOVERY_MS";
 const OWNER_DRIVER_GIT_PROGRAM: &str = "JACKIN_F3_OWNER_DRIVER_GIT_PROGRAM";
-const OWNER_DRIVER_REPOSITORY: &str = "JACKIN_F3_OWNER_DRIVER_REPOSITORY";
-const OWNER_DRIVER_EXPECTED_TREE: &str = "JACKIN_F3_OWNER_DRIVER_EXPECTED_TREE";
-const OWNER_DRIVER_PROBE_EXE: &str = "JACKIN_F3_OWNER_DRIVER_PROBE_EXE";
 const OWNER_DRIVER_PROBE_OUTPUT: &str = "JACKIN_F3_OWNER_DRIVER_PROBE_OUTPUT";
-const OWNER_DRIVER_ARTIFACT_REPORT: &str = "JACKIN_F3_OWNER_DRIVER_ARTIFACT_REPORT";
-const OWNER_DRIVER_EXPECTED_RUSTC: &str = "JACKIN_F3_OWNER_DRIVER_EXPECTED_RUSTC";
-const OWNER_DRIVER_EXPECTED_RUSTDOC: &str = "JACKIN_F3_OWNER_DRIVER_EXPECTED_RUSTDOC";
-const OWNER_DRIVER_EXPECTED_CLIPPY: &str = "JACKIN_F3_OWNER_DRIVER_EXPECTED_CLIPPY";
-const OWNER_DRIVER_EXPECTED_RUSTFMT: &str = "JACKIN_F3_OWNER_DRIVER_EXPECTED_RUSTFMT";
-const LIVE_CANARY_PATHS: &[&str] = &[
-    "tracked.txt",
-    "untracked-canary.txt",
-    "ignored-canary.txt",
-    ".gitignore",
-    ".git/config",
-    ".git/index",
-    ".git/refs/stash",
-    ".git/logs/refs/stash",
-    ".git/packed-refs",
-    "target",
-    ".git/f3-test/live-artifacts",
-    ".git/f3-test/live-artifacts/existing-canary.bin",
-    ".git/f3-test/live-artifacts/f3-owner-artifact",
-    ".git/f3-test/live-artifacts/build",
-    ".git/f3-test/live-artifacts/build/f3-owner-build-artifact",
-];
+const OWNER_DRIVER_GATE_RELEASE: &str = "JACKIN_F3_OWNER_DRIVER_GATE_RELEASE";
+const OWNER_DRIVER_GATE_READY: &str = "JACKIN_F3_OWNER_DRIVER_GATE_READY";
 
 fn fixture() -> (tempfile::TempDir, git::LiveRepository, git::OwnedSnapshot) {
     let home =
@@ -94,9 +66,97 @@ fn git_command(root: &Path, arguments: &[&str]) {
         .env_remove("GIT_INDEX_FILE")
         .env_remove("GIT_OBJECT_DIRECTORY")
         .env_remove("GIT_ALTERNATE_OBJECT_DIRECTORIES")
+        .env_remove("GIT_CONFIG")
+        .env_remove("GIT_CONFIG_PARAMETERS")
+        .env_remove("GIT_CONFIG_COUNT")
         .status()
         .expect("running fixture Git command");
     assert!(status.success(), "git {arguments:?} failed: {status}");
+}
+
+fn git_output(root: &Path, arguments: &[&str]) -> Vec<u8> {
+    let mut command = Command::new("git");
+    command
+        .args(arguments)
+        .current_dir(root)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_COMMON_DIR")
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_OBJECT_DIRECTORY")
+        .env_remove("GIT_ALTERNATE_OBJECT_DIRECTORIES")
+        .env_remove("GIT_CONFIG")
+        .env_remove("GIT_CONFIG_PARAMETERS")
+        .env_remove("GIT_CONFIG_COUNT");
+    process::capture_strict(
+        &mut command,
+        &process::SetupControls::for_test(std::time::Duration::from_secs(10)),
+        process::EnvironmentMode::Inherit,
+        1024,
+        1024,
+        process::CommandBudget::Probe,
+    )
+    .expect("capture fixture Git output")
+    .stdout
+}
+
+fn capture_live_canary_state(repository: &Path) -> Vec<u8> {
+    let paths = [
+        "tracked.txt",
+        "untracked-canary.txt",
+        "ignored-canary.txt",
+        ".gitignore",
+        ".git/config",
+        ".git/index",
+        ".git/refs/stash",
+        ".git/logs/refs/stash",
+        ".git/packed-refs",
+        "target",
+        ".git/f3-test/live-artifacts",
+        ".git/f3-test/live-artifacts/sentinel.bin",
+    ];
+    let mut state = String::new();
+    for relative in paths {
+        let path = repository.join(relative);
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) => {
+                let bytes = if metadata.file_type().is_symlink() {
+                    fs::read_link(&path)
+                        .expect("read live canary symlink target")
+                        .as_os_str()
+                        .as_encoded_bytes()
+                        .to_vec()
+                } else if metadata.is_file() {
+                    fs::read(&path).expect("read live canary file")
+                } else {
+                    Vec::new()
+                };
+                use std::fmt::Write as _;
+                writeln!(
+                    state,
+                    "{relative}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                    metadata.dev(),
+                    metadata.ino(),
+                    metadata.mode(),
+                    metadata.len(),
+                    metadata.mtime(),
+                    metadata.mtime_nsec(),
+                    metadata.ctime(),
+                    metadata.ctime_nsec(),
+                    hex::encode(bytes),
+                )
+                .expect("append live canary state");
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                use std::fmt::Write as _;
+                writeln!(state, "{relative}\tmissing").expect("append missing canary state");
+            }
+            Err(error) => panic!("reading live canary {relative}: {error}"),
+        }
+    }
+    state.into_bytes()
 }
 
 fn seed_diagnostics(snapshot: &git::OwnedSnapshot) -> PathBuf {
@@ -131,9 +191,8 @@ fn assert_retained_diagnostics(root: &Path, fixes: &[u8]) {
 fn test_signals() -> SetupSignals {
     SetupSignals {
         route: SignalRoute {
-            recovery_armed: Arc::new(AtomicBool::new(false)),
-            setup_gate_cancellation: Arc::new(AtomicBool::new(false)),
-            recovery_cancellation: Arc::new(AtomicBool::new(false)),
+            recovery_armed: AtomicBool::new(false),
+            cancellation: Arc::new(AtomicBool::new(false)),
             hup: Arc::new(AtomicBool::new(false)),
             int: Arc::new(AtomicBool::new(false)),
             term: Arc::new(AtomicBool::new(false)),
@@ -146,15 +205,13 @@ fn signal_route_classifies_one_event_before_and_after_recovery_arm() {
     let signals = test_signals();
 
     signals.route.record(OwnerSignal::Hup);
-    assert!(signals.route.setup_gate_cancellation.load(Ordering::SeqCst));
-    assert!(!signals.route.recovery_cancellation.load(Ordering::SeqCst));
+    assert!(signals.route.cancellation.load(Ordering::SeqCst));
 
     let recovery = signals
         .arm_recovery_with_budget(std::time::Duration::from_secs(30))
         .expect("recovery phase arms once");
     assert!(!recovery.cancellation().load(Ordering::SeqCst));
     signals.route.record(OwnerSignal::Term);
-    assert!(signals.route.setup_gate_cancellation.load(Ordering::SeqCst));
     assert!(recovery.cancellation().load(Ordering::SeqCst));
     assert_eq!(signals.signal_status(), Some(143));
 }
@@ -211,7 +268,7 @@ fn live_index_error_retains_original_diagnostics_after_owner_drop() {
     seed_diagnostics(&snapshot);
     fs::write(&live.index, b"changed index").expect("changing fixture index");
 
-    let error = git::OwnedSnapshot::verify_live_index(&live).unwrap_err();
+    let error = git::OwnedSnapshot::verify_live_index(&live, &live.controls).unwrap_err();
     let error = retain_snapshot_failure(&mut snapshot, error);
     let detail = format!("{error:#}");
     assert!(detail.contains("live Git index or split-index backing file changed"));
@@ -268,8 +325,6 @@ fn gate_spawn_error_without_recovery_retains_snapshot_after_owner_drop() {
     let spool = write_private_fixes_spool(&snapshot, fixes).expect("spooling fixes");
     let tools = QualifiedTools {
         gate: repository.path().join("missing-gate"),
-        cargo: PathBuf::new(),
-        rustc: PathBuf::new(),
         environment: std::collections::BTreeMap::new(),
     };
 
@@ -319,13 +374,10 @@ fn installed_owner_driver_child() {
         return;
     }
 
-    let generation =
-        PathBuf::from(env::var_os(OWNER_DRIVER_GENERATION).expect("installed generation path"));
     let setup = owner_budget(OWNER_DRIVER_SETUP_MS);
     let gate = owner_budget(OWNER_DRIVER_GATE_MS);
     let recovery = owner_budget(OWNER_DRIVER_RECOVERY_MS);
-    let result = run_installed_from_hook_with_budgets(
-        &generation,
+    let result = run_with_budgets(
         &[],
         OwnerBudgets {
             setup,
@@ -342,7 +394,7 @@ fn installed_owner_driver_child() {
                 .expect("expected status")
                 .parse::<u8>()
                 .expect("numeric status");
-            assert_eq!(status, ExitCode::from(expected));
+            assert_eq!(status, expected);
         }
         "setup-deadline" | "recovery-deadline" => {
             let Err(error) = result else {
@@ -363,60 +415,19 @@ fn installed_owner_driver_child() {
             );
             eprintln!("installed owner {expectation} result: {detail}");
         }
+        "qualification-error" => {
+            let Err(error) = result else {
+                panic!("injected Mise environment unexpectedly qualified");
+            };
+            let detail = format!("{error:#}");
+            assert!(
+                detail.contains("reintroduces RUSTC_BOOTSTRAP"),
+                "unexpected qualification failure: {detail}"
+            );
+            eprintln!("installed owner {expectation} result: {detail}");
+        }
         other => panic!("unknown installed owner test expectation: {other}"),
     }
-}
-
-#[test]
-fn installed_owner_live_state_probe_child() {
-    let Some(output) = env::var_os(OWNER_DRIVER_PROBE_OUTPUT) else {
-        return;
-    };
-    let repository = PathBuf::from(
-        env::var_os(OWNER_DRIVER_REPOSITORY).expect("live repository path for state probe"),
-    );
-    fs::write(output, capture_live_canary_state(&repository))
-        .expect("write live repository state observed during gate");
-}
-
-fn capture_live_canary_state(repository: &Path) -> Vec<u8> {
-    let mut state = String::new();
-    for relative in LIVE_CANARY_PATHS {
-        let path = repository.join(relative);
-        match fs::symlink_metadata(&path) {
-            Ok(metadata) => {
-                let bytes = if metadata.file_type().is_symlink() {
-                    fs::read_link(&path)
-                        .expect("read target symlink literal")
-                        .as_os_str()
-                        .as_bytes()
-                        .to_vec()
-                } else if metadata.is_file() {
-                    fs::read(&path).expect("read live canary file bytes")
-                } else {
-                    Vec::new()
-                };
-                state.push_str(&format!(
-                    "{relative}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
-                    metadata.dev(),
-                    metadata.ino(),
-                    metadata.mode(),
-                    metadata.len(),
-                    metadata.mtime(),
-                    metadata.mtime_nsec(),
-                    metadata.ctime(),
-                    metadata.ctime_nsec(),
-                ));
-                state.push_str(&hex::encode(bytes));
-                state.push('\n');
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                state.push_str(&format!("{relative}\tmissing\n\n"));
-            }
-            Err(error) => panic!("reading live canary metadata for {relative}: {error}"),
-        }
-    }
-    state.into_bytes()
 }
 
 #[test]
@@ -430,11 +441,7 @@ fn installed_owner_signal_during_qualification_drains_owned_group() {
         let original_index = fs::read(fixture.index()).expect("read original index");
         let original_file =
             fs::read(fixture.repository.join("tracked.txt")).expect("read original worktree file");
-        let mut owner = fixture.spawn_owner(
-            "status",
-            expected_status,
-            OwnerFixtureBudgets::uniform(20_000),
-        );
+        let mut owner = fixture.spawn_owner("status", expected_status, 20_000, 20_000, 20_000);
         wait_for_owner_readiness(&mut owner, &fixture.ready, &fixture.ticks);
         send_owner_signal(&mut owner, signal);
         let output = owner.wait_output(std::time::Duration::from_secs(8));
@@ -469,15 +476,7 @@ fn installed_owner_signal_during_qualification_drains_owned_group() {
 #[test]
 fn installed_owner_setup_deadline_drains_and_retains_without_signal() {
     let fixture = InstalledOwnerFixture::new(OwnerFixtureMode::BlockedQualification);
-    let mut owner = fixture.spawn_owner(
-        "setup-deadline",
-        0,
-        OwnerFixtureBudgets {
-            setup_ms: 3_000,
-            gate_ms: 20_000,
-            recovery_ms: 20_000,
-        },
-    );
+    let mut owner = fixture.spawn_owner("setup-deadline", 0, 3_000, 20_000, 20_000);
     wait_for_owner_readiness(&mut owner, &fixture.ready, &fixture.ticks);
     let output = owner.wait_output(std::time::Duration::from_secs(8));
     assert!(
@@ -501,12 +500,167 @@ fn installed_owner_setup_deadline_drains_and_retains_without_signal() {
 }
 
 #[test]
+fn generic_owner_rejects_successful_gate_that_changes_ignored_staged_source() {
+    let fixture = InstalledOwnerFixture::new(OwnerFixtureMode::IgnoredSourceGate);
+    let original_index = fs::read(fixture.index()).expect("read original index");
+    let original_file =
+        fs::read(fixture.repository.join("tracked.txt")).expect("read original worktree file");
+    let mut owner = fixture.spawn_owner("status", 1, 20_000, 20_000, 20_000);
+    let output = owner.wait_output(std::time::Duration::from_secs(8));
+    assert!(
+        output.status.success(),
+        "generic-owner fixture failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error: hook changed staged source; review private patch:"),
+        "successful hook edits to ignored staged-source data must be rejected: {stderr}"
+    );
+    let patch = fs::read(find_evidence_patch(&fixture.repository.join(".git")))
+        .expect("retained ignored-source patch");
+    let patch = String::from_utf8_lossy(&patch);
+    assert!(patch.contains("diff --git a/ignored-extra.txt b/ignored-extra.txt"));
+    assert!(patch.contains("ignored staged-source fixture"));
+    assert_eq!(patch.matches("diff --git ").count(), 1, "{patch}");
+    assert_eq!(
+        fs::read(fixture.index()).expect("index after generic owner"),
+        original_index
+    );
+    assert_eq!(
+        fs::read(fixture.repository.join("tracked.txt")).expect("worktree after generic owner"),
+        original_file
+    );
+    assert!(
+        !fixture.repository.join("ignored-extra.txt").exists(),
+        "gate output must stay in the private snapshot"
+    );
+}
+
+#[test]
+fn generic_owner_keeps_live_canaries_while_gate_uses_private_tools_and_artifacts() {
+    let fixture = InstalledOwnerFixture::new(OwnerFixtureMode::IsolationGate);
+    let before = capture_live_canary_state(&fixture.repository);
+    let mut owner = fixture.spawn_owner("status", 0, 20_000, 20_000, 20_000);
+    let release_gate = GateReleaseOnDrop(fixture.gate_release.clone());
+    wait_for_owner_readiness(&mut owner, &fixture.gate_ready, &fixture.ticks);
+    assert_eq!(
+        capture_live_canary_state(&fixture.repository),
+        before,
+        "live Git/worktree canaries remain unchanged while the gate is blocked"
+    );
+    release_gate.release();
+    let output = owner.wait_output(std::time::Duration::from_secs(8));
+    assert!(
+        output.status.success(),
+        "generic-owner isolation gate failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        capture_live_canary_state(&fixture.repository),
+        before,
+        "live Git/worktree canaries remain unchanged after the gate"
+    );
+    assert_eq!(
+        fs::read(fixture.live_artifacts.join("sentinel.bin"))
+            .expect("external artifact sentinel remains"),
+        b"preserve external artifact sentinel\n"
+    );
+    assert!(!fixture.repository.join("ignored-extra.txt").exists());
+    for marker in [
+        &fixture.poison_marker,
+        &fixture.git_alias_file_marker,
+        &fixture.git_alias_count_marker,
+        &fixture.cargo_alias_marker,
+    ] {
+        assert!(!marker.exists(), "poison marker ran: {}", marker.display());
+    }
+    let report = fs::read_to_string(&fixture.probe_output).expect("gate tool report");
+    let mut lines = report.lines();
+    let target = PathBuf::from(lines.next().expect("private target directory"));
+    let build = PathBuf::from(lines.next().expect("private build directory"));
+    assert_eq!(
+        PathBuf::from(lines.next().expect("selected compiler")),
+        fixture.expected_rustc
+    );
+    assert!(
+        PathBuf::from(lines.next().expect("selected Cargo"))
+            .starts_with(target.parent().unwrap_or(&target)),
+        "Cargo resolves from private qualified tooling: {report}"
+    );
+    assert!(
+        lines.next().is_none(),
+        "unexpected gate report fields: {report}"
+    );
+    assert!(!target.starts_with(&fixture.repository), "{report}");
+    assert!(!build.starts_with(&fixture.repository), "{report}");
+    assert!(
+        !target.exists(),
+        "successful gate scratch is removed: {report}"
+    );
+    assert!(
+        !build.exists(),
+        "successful gate scratch is removed: {report}"
+    );
+}
+
+struct GateReleaseOnDrop(PathBuf);
+
+impl GateReleaseOnDrop {
+    fn release(&self) {
+        fs::write(&self.0, b"release\n").expect("release blocked gate");
+    }
+}
+
+impl Drop for GateReleaseOnDrop {
+    fn drop(&mut self) {
+        drop(fs::write(&self.0, b"release\n"));
+    }
+}
+
+#[test]
+fn generic_owner_observes_bootstrap_through_final_mise_cargo_and_gate_environment() {
+    let clean = InstalledOwnerFixture::new(OwnerFixtureMode::BootstrapClean);
+    let mut owner = clean.spawn_owner("status", 0, 20_000, 20_000, 20_000);
+    let output = owner.wait_output(std::time::Duration::from_secs(8));
+    assert!(
+        output.status.success(),
+        "clean generic owner failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(clean.cargo_marker).expect("Cargo environment marker"),
+        "absent\n"
+    );
+    assert_eq!(
+        fs::read_to_string(clean.gate_marker).expect("gate environment marker"),
+        "absent\n"
+    );
+
+    let injected = InstalledOwnerFixture::new(OwnerFixtureMode::BootstrapInjected);
+    let mut owner = injected.spawn_owner("qualification-error", 0, 20_000, 20_000, 20_000);
+    let output = owner.wait_output(std::time::Duration::from_secs(8));
+    assert!(
+        output.status.success(),
+        "bootstrap-injection driver failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("reintroduces RUSTC_BOOTSTRAP"),
+        "injected Mise variable must be rejected during qualification: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!injected.cargo_marker.exists());
+    assert!(!injected.gate_marker.exists());
+}
+
+#[test]
 fn installed_owner_first_gate_signal_collects_tracked_and_new_file_fixes() {
     let fixture = InstalledOwnerFixture::new(OwnerFixtureMode::BlockedGate);
     let original_index = fs::read(fixture.index()).expect("read original index");
     let original_file =
         fs::read(fixture.repository.join("tracked.txt")).expect("read original worktree file");
-    let mut owner = fixture.spawn_owner("status", 130, OwnerFixtureBudgets::uniform(20_000));
+    let mut owner = fixture.spawn_owner("status", 130, 20_000, 20_000, 20_000);
     wait_for_owner_readiness(&mut owner, &fixture.ready, &fixture.ticks);
     send_owner_signal(&mut owner, nix::sys::signal::Signal::SIGINT);
     let output = owner.wait_output(std::time::Duration::from_secs(8));
@@ -557,125 +711,6 @@ fn installed_owner_first_gate_signal_collects_tracked_and_new_file_fixes() {
 }
 
 #[test]
-fn installed_owner_rejects_ignored_source_from_successful_gate_with_complete_patch() {
-    let fixture = InstalledOwnerFixture::new(OwnerFixtureMode::IgnoredSourceGate);
-    let before = capture_live_canary_state(&fixture.repository);
-    let mut owner = fixture.spawn_owner("status", 1, OwnerFixtureBudgets::uniform(20_000));
-    let output = owner.wait_output(std::time::Duration::from_secs(8));
-    assert!(
-        output.status.success(),
-        "installed-owner ignored-source assertion failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("error: hook changed staged source; review private patch:"),
-        "a successful gate that creates ignored staged-source evidence must be rejected: {stderr}"
-    );
-    let evidence = find_evidence_patch(&fixture.repository.join(".git"));
-    let patch = fs::read(&evidence).expect("complete ignored-source evidence patch");
-    let patch = String::from_utf8_lossy(&patch);
-    assert!(patch.contains("diff --git a/ignored-extra.rs b/ignored-extra.rs"));
-    assert!(patch.contains("source ignored by staged ignore rule"));
-    assert_eq!(patch.matches("diff --git ").count(), 1, "{patch}");
-    assert!(
-        fs::read(&fixture.probe_output).expect("state observed during gate") == before,
-        "the live repository canaries must remain unchanged while the gate runs"
-    );
-    assert_eq!(
-        capture_live_canary_state(&fixture.repository),
-        before,
-        "the live repository canaries must remain unchanged after the owner returns"
-    );
-    assert!(
-        !fixture.guard_marker.exists(),
-        "the admitted guard is qualified for the hook contract but must not be invoked by this fake gate"
-    );
-    assert_private_artifacts_were_isolated(&fixture);
-    let evidence_dir = evidence.parent().expect("evidence parent").to_path_buf();
-    fs::remove_dir_all(evidence_dir).expect("remove verified hook evidence fixture");
-}
-
-#[test]
-fn installed_owner_scrubs_injected_git_tools_aliases_and_live_artifact_paths() {
-    let fixture = InstalledOwnerFixture::new(OwnerFixtureMode::IsolationGate);
-    let before = capture_live_canary_state(&fixture.repository);
-    let injection = fixture.poisoned_environment();
-    let mut owner = fixture.spawn_owner_with_environment(
-        "status",
-        0,
-        OwnerFixtureBudgets::uniform(20_000),
-        None,
-        &injection,
-    );
-    let output = owner.wait_output(std::time::Duration::from_secs(8));
-    assert!(
-        output.status.success(),
-        "installed-owner isolation assertion failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(
-        fs::read(&fixture.probe_output).expect("state observed during gate"),
-        before,
-        "config, index, stash, live files, and the target symlink must stay unchanged during the gate"
-    );
-    assert_eq!(
-        capture_live_canary_state(&fixture.repository),
-        before,
-        "config, index, stash, live files, and the target symlink must stay unchanged after the owner returns"
-    );
-    assert!(
-        !fixture.guard_marker.exists(),
-        "the admitted guard is qualified for the hook contract but must not be invoked by this fake gate"
-    );
-    assert!(
-        !fixture.poison_marker.exists(),
-        "no injected compiler or Cargo wrapper may run"
-    );
-    assert!(
-        !fixture.file_alias_marker.exists() && !fixture.count_alias_marker.exists(),
-        "neither injected Git alias may run inside the gate"
-    );
-    assert_private_artifacts_were_isolated(&fixture);
-}
-
-fn assert_private_artifacts_were_isolated(fixture: &InstalledOwnerFixture) {
-    let report = fs::read_to_string(&fixture.artifact_report)
-        .expect("gate records successfully created private build artifacts");
-    let lines = report.lines().collect::<Vec<_>>();
-    assert_eq!(lines.len(), 5, "artifact report: {report:?}");
-    let private_root = PathBuf::from(lines[0]);
-    let target_artifacts = PathBuf::from(lines[1]);
-    let build_artifacts = PathBuf::from(lines[2]);
-    let cargo = PathBuf::from(lines[3]);
-    assert_eq!(lines[4], "verified", "artifact report: {report:?}");
-    assert!(!private_root.starts_with(&fixture.repository));
-    assert!(target_artifacts.starts_with(&private_root), "{report}");
-    assert!(build_artifacts.starts_with(&private_root), "{report}");
-    assert!(cargo.starts_with(&private_root), "{report}");
-    assert!(
-        !target_artifacts.starts_with(&fixture.live_artifacts),
-        "{report}"
-    );
-    assert!(
-        !build_artifacts.starts_with(&fixture.live_artifacts),
-        "{report}"
-    );
-    assert!(
-        !target_artifacts.starts_with(&fixture.repository),
-        "{report}"
-    );
-    assert!(
-        !build_artifacts.starts_with(&fixture.repository),
-        "{report}"
-    );
-    assert!(
-        !private_root.exists(),
-        "successful installed-owner completion must remove its private build directory"
-    );
-}
-
-#[test]
 fn installed_owner_second_recovery_signal_cancels_new_file_capture() {
     let fixture = InstalledOwnerFixture::new(OwnerFixtureMode::BlockedGate);
     let original_index = fs::read(fixture.index()).expect("read original index");
@@ -685,7 +720,9 @@ fn installed_owner_second_recovery_signal_cancels_new_file_capture() {
     let mut owner = fixture.spawn_owner_with_git_program(
         "status",
         143,
-        OwnerFixtureBudgets::uniform(20_000),
+        20_000,
+        20_000,
+        20_000,
         Some(&git_wrapper),
     );
     wait_for_owner_readiness(&mut owner, &fixture.ready, &fixture.ticks);
@@ -743,11 +780,9 @@ fn installed_owner_recovery_deadline_is_not_masked_by_first_signal() {
     let mut owner = fixture.spawn_owner_with_git_program(
         "recovery-deadline",
         0,
-        OwnerFixtureBudgets {
-            setup_ms: 20_000,
-            gate_ms: 20_000,
-            recovery_ms: 1_500,
-        },
+        20_000,
+        20_000,
+        1_500,
         Some(&git_wrapper),
     );
     wait_for_owner_readiness(&mut owner, &fixture.ready, &fixture.ticks);
@@ -813,216 +848,72 @@ enum OwnerFixtureMode {
     BlockedGate,
     IgnoredSourceGate,
     IsolationGate,
-}
-
-fn create_owner_fixture_repository(repository: &Path, has_live_canaries: bool) {
-    git_command(repository, &["init", "--quiet"]);
-    git_command(repository, &["config", "user.name", "Installed Owner Test"]);
-    git_command(
-        repository,
-        &["config", "user.email", "installed-owner@example.invalid"],
-    );
-    fs::write(
-        repository.join("rust-toolchain.toml"),
-        "[toolchain]\nchannel = \"1.99.1\"\nprofile = \"minimal\"\ncomponents = [\"clippy\", \"rustfmt\"]\n",
-    )
-    .expect("write staged toolchain pin");
-    fs::write(repository.join("tracked.txt"), b"base worktree bytes\n")
-        .expect("write tracked fixture");
-    git_command(repository, &["add", "rust-toolchain.toml", "tracked.txt"]);
-    git_command(repository, &["commit", "--quiet", "-m", "fixture"]);
-    fs::write(repository.join("tracked.txt"), b"staged worktree bytes\n")
-        .expect("stage a live worktree difference");
-    git_command(repository, &["add", "tracked.txt"]);
-
-    if has_live_canaries {
-        fs::write(
-            repository.join(".gitignore"),
-            b"ignored-canary.txt\ntarget\nignored-extra.rs\n",
-        )
-        .expect("write staged ignore rules");
-        git_command(repository, &["add", ".gitignore"]);
-        fs::write(
-            repository.join("untracked-canary.txt"),
-            b"live untracked canary\n",
-        )
-        .expect("write live untracked canary");
-        fs::write(
-            repository.join("ignored-canary.txt"),
-            b"live ignored canary\n",
-        )
-        .expect("write live ignored canary");
-    }
-}
-
-#[derive(Clone, Copy)]
-struct OwnerFixtureBudgets {
-    setup_ms: u64,
-    gate_ms: u64,
-    recovery_ms: u64,
-}
-
-impl OwnerFixtureBudgets {
-    fn uniform(milliseconds: u64) -> Self {
-        Self {
-            setup_ms: milliseconds,
-            gate_ms: milliseconds,
-            recovery_ms: milliseconds,
-        }
-    }
+    BootstrapClean,
+    BootstrapInjected,
 }
 
 struct InstalledOwnerFixture {
     _temporary: tempfile::TempDir,
     repository: PathBuf,
-    generation: PathBuf,
     owner: PathBuf,
     path: std::ffi::OsString,
     ready: PathBuf,
     ticks: PathBuf,
     recovery_ready: PathBuf,
     recovery_ticks: PathBuf,
+    cargo_marker: PathBuf,
+    gate_marker: PathBuf,
+    inherited_bootstrap: bool,
     probe_output: PathBuf,
-    artifact_report: PathBuf,
-    guard_marker: PathBuf,
-    expected_tree: String,
+    gate_ready: PathBuf,
+    gate_release: PathBuf,
+    poison_marker: PathBuf,
+    git_alias_file_marker: PathBuf,
+    git_alias_count_marker: PathBuf,
+    cargo_alias_marker: PathBuf,
+    poison_bin: PathBuf,
+    git_alias_config: PathBuf,
     expected_rustc: PathBuf,
     live_artifacts: PathBuf,
-    poison_marker: PathBuf,
-    poison: PathBuf,
-    file_alias_config: PathBuf,
-    file_alias_marker: PathBuf,
-    count_alias_marker: PathBuf,
+    mode: OwnerFixtureMode,
 }
 
 impl InstalledOwnerFixture {
     fn new(mode: OwnerFixtureMode) -> Self {
-        let home = fs::canonicalize(env::var_os("HOME").expect("HOME is set"))
-            .expect("canonicalizing HOME");
-        let temporary = tempfile::Builder::new()
-            .prefix("jackin-installed-owner-f3-")
-            .tempdir_in(home)
-            .expect("creating installed-owner repository");
-        let repository = temporary
-            .path()
-            .canonicalize()
-            .expect("canonical repository");
-        let has_live_canaries = matches!(
-            mode,
-            OwnerFixtureMode::IgnoredSourceGate | OwnerFixtureMode::IsolationGate
-        );
-        create_owner_fixture_repository(&repository, has_live_canaries);
-
+        let (temporary, repository) = initialize_fixture_repository(mode);
         let scratch = repository.join(".git/f3-test");
         fs::create_dir(&scratch).expect("create private test support directory");
         fs::set_permissions(&scratch, fs::Permissions::from_mode(0o700))
             .expect("protect test support directory");
-        let live_artifacts = scratch.join("live-artifacts");
-        fs::create_dir(&live_artifacts).expect("create live artifact canary directory");
-        fs::set_permissions(&live_artifacts, fs::Permissions::from_mode(0o700))
-            .expect("protect live artifact canary directory");
-        fs::write(
-            live_artifacts.join("existing-canary.bin"),
-            b"preserve the live artifact directory\n",
-        )
-        .expect("write live artifact canary");
-        if has_live_canaries {
-            symlink(".git/f3-test/live-artifacts", repository.join("target"))
-                .expect("create ignored live target symlink");
-            git_command(&repository, &["check-ignore", "--quiet", "target"]);
-            git_command(
-                &repository,
-                &["check-ignore", "--quiet", "ignored-canary.txt"],
-            );
-        }
         let ready = scratch.join("ready");
         let ticks = scratch.join("ticks");
         let recovery_ready = scratch.join("recovery-ready");
         let recovery_ticks = scratch.join("recovery-ticks");
-        let probe_output = scratch.join("gate-live-state");
-        let artifact_report = scratch.join("private-artifact-report");
-        let guard_marker = scratch.join("rust-build-guard-invoked");
-        let poison_marker = scratch.join("poison-wrapper-ran");
-        let file_alias_marker = scratch.join("file-alias-ran");
-        let count_alias_marker = scratch.join("count-alias-ran");
-        let poison = write_poison_tools(&scratch, &poison_marker);
-        let file_alias_config = scratch.join("poison-git-config");
-        fs::write(
-            &file_alias_config,
-            format!(
-                "[alias]\nf3-poison-file = \"!touch {}\"\n",
-                shell_quote(&file_alias_marker)
-            ),
-        )
-        .expect("write injected Git config alias");
+        let probe_output = scratch.join("gate-probe");
+        let gate_ready = scratch.join("gate-ready");
+        let gate_release = scratch.join("gate-release");
+        let canaries = IsolationCanaries::create(&repository, &scratch, mode);
+        let cargo_marker = scratch.join("cargo-environment");
+        let gate_marker = scratch.join("gate-environment");
         let bin = scratch.join("bin");
         fs::create_dir(&bin).expect("create private fixture tools");
         fs::set_permissions(&bin, fs::Permissions::from_mode(0o700))
             .expect("protect fixture tools");
         let expected_rustc = bin.join("rustc");
-        write_owner_toolchain(&bin, &ready, &ticks, &guard_marker, mode);
+        write_owner_toolchain(&bin, &ready, &ticks, &gate_ready, mode);
 
-        if has_live_canaries {
-            let stash = git_output(&repository, &["stash", "create"]);
-            assert!(!stash.is_empty(), "fixture changes produce a stash commit");
-            git_command(
-                &repository,
-                &["stash", "store", "-m", "state canary", &stash],
-            );
-        }
-
-        let head_tree = git_output(&repository, &["rev-parse", "HEAD^{tree}"]);
-        let expected_tree = git_output(&repository, &["write-tree"]);
-        let common = repository.join(".git");
-        let owner_root = common.join("jackin-precommit-owner");
-        let generations = owner_root.join("generations");
-        let generation_id = "a".repeat(64);
-        let generation = generations.join(&generation_id);
-        fs::create_dir_all(&generations).expect("create owner generations");
-        fs::set_permissions(&owner_root, fs::Permissions::from_mode(0o700))
-            .expect("protect owner root");
-        fs::set_permissions(&generations, fs::Permissions::from_mode(0o700))
-            .expect("protect generations");
-        fs::create_dir(&generation).expect("create selected generation");
-        let owner = generation.join("owner");
+        let owner = scratch.join("owner");
         fs::copy(
             env::current_exe().expect("resolve owner test executable"),
             &owner,
         )
-        .expect("copy actual owner test harness into selected generation");
+        .expect("copy actual owner test harness into fixture");
         fs::set_permissions(&owner, fs::Permissions::from_mode(0o500))
-            .expect("seal selected owner executable");
-
-        let owner_hash = digest(&fs::read(&owner).expect("read copied owner"));
-        let cargo_path = bin.join("cargo");
-        let rustc_path = bin.join("rustc");
-        let manifest = format!(
-            "jackin-native-precommit-install/1\ngeneration={generation_id}\nowner-sha256={owner_hash}\nsource-tree={head_tree}\nbuild-commit={}\nsource-sha256={}\ncargo-sha256={}\nrustc-sha256={}\ntarget-sha256={}\nbuild-sha256={}\n",
-            "b".repeat(40),
-            "c".repeat(64),
-            digest(&fs::read(&cargo_path).expect("read fixture cargo")),
-            digest(&fs::read(&rustc_path).expect("read fixture rustc")),
-            "d".repeat(64),
-            "e".repeat(64),
-        );
-        fs::write(generation.join("install.manifest"), manifest)
-            .expect("write selected-owner manifest");
-        fs::set_permissions(
-            generation.join("install.manifest"),
-            fs::Permissions::from_mode(0o400),
-        )
-        .expect("seal selected-owner manifest");
-        fs::set_permissions(&generation, fs::Permissions::from_mode(0o500))
-            .expect("seal immutable selected generation");
-        let pending = owner_root.join("pending");
-        fs::create_dir(&pending).expect("create pending tree directory");
-        fs::set_permissions(&pending, fs::Permissions::from_mode(0o700))
-            .expect("protect pending tree directory");
+            .expect("protect generic owner executable");
 
         Self {
             _temporary: temporary,
             repository,
-            generation,
             owner,
             path: env::join_paths(
                 std::iter::once(bin)
@@ -1033,17 +924,24 @@ impl InstalledOwnerFixture {
             ticks,
             recovery_ready,
             recovery_ticks,
+            cargo_marker,
+            gate_marker,
+            inherited_bootstrap: matches!(
+                mode,
+                OwnerFixtureMode::BootstrapClean | OwnerFixtureMode::BootstrapInjected
+            ),
             probe_output,
-            artifact_report,
-            guard_marker,
-            expected_tree,
+            gate_ready,
+            gate_release,
+            poison_marker: canaries.poison_marker,
+            git_alias_file_marker: canaries.git_alias_file_marker,
+            git_alias_count_marker: canaries.git_alias_count_marker,
+            cargo_alias_marker: canaries.cargo_alias_marker,
+            poison_bin: canaries.poison_bin,
+            git_alias_config: canaries.git_alias_config,
             expected_rustc,
-            live_artifacts,
-            poison_marker,
-            poison,
-            file_alias_config,
-            file_alias_marker,
-            count_alias_marker,
+            live_artifacts: canaries.live_artifacts,
+            mode,
         }
     }
 
@@ -1055,28 +953,28 @@ impl InstalledOwnerFixture {
         &self,
         expectation: &str,
         expected_status: u8,
-        budgets: OwnerFixtureBudgets,
+        setup_ms: u64,
+        gate_ms: u64,
+        recovery_ms: u64,
     ) -> OwnerChild {
-        self.spawn_owner_with_git_program(expectation, expected_status, budgets, None)
+        self.spawn_owner_with_git_program(
+            expectation,
+            expected_status,
+            setup_ms,
+            gate_ms,
+            recovery_ms,
+            None,
+        )
     }
 
     fn spawn_owner_with_git_program(
         &self,
         expectation: &str,
         expected_status: u8,
-        budgets: OwnerFixtureBudgets,
+        setup_ms: u64,
+        gate_ms: u64,
+        recovery_ms: u64,
         git_program: Option<&Path>,
-    ) -> OwnerChild {
-        self.spawn_owner_with_environment(expectation, expected_status, budgets, git_program, &[])
-    }
-
-    fn spawn_owner_with_environment(
-        &self,
-        expectation: &str,
-        expected_status: u8,
-        budgets: OwnerFixtureBudgets,
-        git_program: Option<&Path>,
-        injected_environment: &[(std::ffi::OsString, std::ffi::OsString)],
     ) -> OwnerChild {
         let home = env::var_os("HOME").expect("HOME is set");
         let mut command = Command::new(&self.owner);
@@ -1091,30 +989,11 @@ impl InstalledOwnerFixture {
             .env("HOME", home)
             .env("PATH", &self.path)
             .env(OWNER_DRIVER_CHILD, "1")
-            .env(OWNER_DRIVER_GENERATION, &self.generation)
             .env(OWNER_DRIVER_EXPECTATION, expectation)
             .env(OWNER_DRIVER_STATUS, expected_status.to_string())
-            .env(OWNER_DRIVER_SETUP_MS, budgets.setup_ms.to_string())
-            .env(OWNER_DRIVER_GATE_MS, budgets.gate_ms.to_string())
-            .env(OWNER_DRIVER_RECOVERY_MS, budgets.recovery_ms.to_string())
-            .env(OWNER_DRIVER_REPOSITORY, &self.repository)
-            .env(OWNER_DRIVER_EXPECTED_TREE, &self.expected_tree)
-            .env(OWNER_DRIVER_PROBE_EXE, &self.owner)
-            .env(OWNER_DRIVER_PROBE_OUTPUT, &self.probe_output)
-            .env(OWNER_DRIVER_ARTIFACT_REPORT, &self.artifact_report)
-            .env(OWNER_DRIVER_EXPECTED_RUSTC, &self.expected_rustc)
-            .env(
-                OWNER_DRIVER_EXPECTED_RUSTDOC,
-                self.expected_rustc.with_file_name("rustdoc"),
-            )
-            .env(
-                OWNER_DRIVER_EXPECTED_CLIPPY,
-                self.expected_rustc.with_file_name("clippy-driver"),
-            )
-            .env(
-                OWNER_DRIVER_EXPECTED_RUSTFMT,
-                self.expected_rustc.with_file_name("rustfmt"),
-            )
+            .env(OWNER_DRIVER_SETUP_MS, setup_ms.to_string())
+            .env(OWNER_DRIVER_GATE_MS, gate_ms.to_string())
+            .env(OWNER_DRIVER_RECOVERY_MS, recovery_ms.to_string())
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
             .env_remove("GIT_COMMON_DIR")
@@ -1126,8 +1005,27 @@ impl InstalledOwnerFixture {
         } else {
             command.env_remove(OWNER_DRIVER_GIT_PROGRAM);
         }
-        for (key, value) in injected_environment {
-            command.env(key, value);
+        if self.inherited_bootstrap {
+            command.env("RUSTC_BOOTSTRAP", "1");
+        }
+        if matches!(self.mode, OwnerFixtureMode::IsolationGate) {
+            command
+                .env(OWNER_DRIVER_PROBE_OUTPUT, &self.probe_output)
+                .env(OWNER_DRIVER_GATE_READY, &self.gate_ready)
+                .env(OWNER_DRIVER_GATE_RELEASE, &self.gate_release)
+                .env("GIT_CONFIG", &self.git_alias_config)
+                .env("GIT_CONFIG_COUNT", "1")
+                .env("GIT_CONFIG_KEY_0", "alias.poison")
+                .env(
+                    "GIT_CONFIG_VALUE_0",
+                    format!("!touch {}", shell_quote(&self.git_alias_count_marker)),
+                )
+                .env("CARGO_ALIAS_F3_POISON", "!touch marker")
+                .env("CARGO", self.poison_bin.join("cargo"))
+                .env("RUSTC", self.poison_bin.join("rustc"))
+                .env("RUSTC_WRAPPER", self.poison_bin.join("rustc-wrapper"))
+                .env("CARGO_TARGET_DIR", self.repository.join("target"))
+                .env("CARGO_BUILD_BUILD_DIR", self.repository.join("target"));
         }
         let child = command
             .stdout(Stdio::piped())
@@ -1135,48 +1033,6 @@ impl InstalledOwnerFixture {
             .spawn()
             .expect("spawn selected immutable installed owner");
         OwnerChild { child: Some(child) }
-    }
-
-    fn poisoned_environment(&self) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
-        let poisoned = |name: &str| self.poison.join(name).into_os_string();
-        vec![
-            (
-                "GIT_CONFIG".into(),
-                self.file_alias_config.as_os_str().to_owned(),
-            ),
-            ("GIT_CONFIG_COUNT".into(), "1".into()),
-            ("GIT_CONFIG_KEY_0".into(), "alias.f3-poison-count".into()),
-            (
-                "GIT_CONFIG_VALUE_0".into(),
-                format!("!touch {}", shell_quote(&self.count_alias_marker)).into(),
-            ),
-            ("CARGO".into(), poisoned("cargo")),
-            ("RUSTC".into(), poisoned("rustc")),
-            ("RUSTDOC".into(), poisoned("rustdoc")),
-            ("CLIPPY_DRIVER".into(), poisoned("clippy-driver")),
-            ("RUSTFMT".into(), poisoned("rustfmt")),
-            ("RUSTC_WRAPPER".into(), poisoned("rustc-wrapper")),
-            ("RUSTC_WORKSPACE_WRAPPER".into(), poisoned("rustc-wrapper")),
-            ("CARGO_BUILD_RUSTC".into(), poisoned("rustc")),
-            ("CARGO_BUILD_RUSTDOC".into(), poisoned("rustdoc")),
-            (
-                "CARGO_BUILD_RUSTC_WRAPPER".into(),
-                poisoned("rustc-wrapper"),
-            ),
-            (
-                "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER".into(),
-                poisoned("rustc-wrapper"),
-            ),
-            ("CARGO_ALIAS_F3_POISON".into(), "poisoned alias".into()),
-            (
-                "CARGO_TARGET_DIR".into(),
-                self.repository.join("target").into_os_string(),
-            ),
-            (
-                "CARGO_BUILD_BUILD_DIR".into(),
-                self.repository.join("target/build").into_os_string(),
-            ),
-        ]
     }
 
     fn recovery_git_wrapper(&self) -> PathBuf {
@@ -1195,12 +1051,141 @@ impl InstalledOwnerFixture {
     }
 }
 
-impl Drop for InstalledOwnerFixture {
-    fn drop(&mut self) {
-        drop(fs::set_permissions(
-            &self.generation,
-            fs::Permissions::from_mode(0o700),
-        ));
+fn initialize_fixture_repository(mode: OwnerFixtureMode) -> (tempfile::TempDir, PathBuf) {
+    let home =
+        fs::canonicalize(env::var_os("HOME").expect("HOME is set")).expect("canonicalizing HOME");
+    let temporary = tempfile::Builder::new()
+        .prefix("jackin-installed-owner-f3-")
+        .tempdir_in(home)
+        .expect("creating installed-owner repository");
+    let repository = temporary
+        .path()
+        .canonicalize()
+        .expect("canonical repository");
+    let has_canaries = matches!(
+        mode,
+        OwnerFixtureMode::IgnoredSourceGate | OwnerFixtureMode::IsolationGate
+    );
+    git_command(&repository, &["init", "--quiet"]);
+    git_command(
+        &repository,
+        &["config", "user.name", "Installed Owner Test"],
+    );
+    git_command(
+        &repository,
+        &["config", "user.email", "installed-owner@example.invalid"],
+    );
+    fs::write(
+        repository.join("rust-toolchain.toml"),
+        "[toolchain]\nchannel = \"1.99.1\"\nprofile = \"minimal\"\ncomponents = [\"clippy\", \"rustfmt\"]\n",
+    )
+    .expect("write staged toolchain pin");
+    fs::write(repository.join("tracked.txt"), b"base worktree bytes\n")
+        .expect("write tracked fixture");
+    if has_canaries {
+        let ignore_rules: &[u8] = if matches!(mode, OwnerFixtureMode::IsolationGate) {
+            b"ignored-extra.txt\nignored-canary.txt\ntarget\n"
+        } else {
+            b"ignored-extra.txt\n"
+        };
+        fs::write(repository.join(".gitignore"), ignore_rules).expect("write fixture ignore rule");
+        git_command(
+            &repository,
+            &["add", "rust-toolchain.toml", "tracked.txt", ".gitignore"],
+        );
+    } else {
+        git_command(&repository, &["add", "rust-toolchain.toml", "tracked.txt"]);
+    }
+    git_command(&repository, &["commit", "--quiet", "-m", "fixture"]);
+    fs::write(repository.join("tracked.txt"), b"staged worktree bytes\n")
+        .expect("stage a live worktree difference");
+    git_command(&repository, &["add", "tracked.txt"]);
+    (temporary, repository)
+}
+
+struct IsolationCanaries {
+    poison_marker: PathBuf,
+    git_alias_file_marker: PathBuf,
+    git_alias_count_marker: PathBuf,
+    cargo_alias_marker: PathBuf,
+    poison_bin: PathBuf,
+    git_alias_config: PathBuf,
+    live_artifacts: PathBuf,
+}
+
+impl IsolationCanaries {
+    fn create(repository: &Path, scratch: &Path, mode: OwnerFixtureMode) -> Self {
+        let poison_marker = scratch.join("poison-ran");
+        let git_alias_file_marker = scratch.join("git-alias-file-ran");
+        let git_alias_count_marker = scratch.join("git-alias-count-ran");
+        let cargo_alias_marker = scratch.join("cargo-alias-ran");
+        let poison_bin = scratch.join("poison-bin");
+        let git_alias_config = scratch.join("git-alias-config");
+        let live_artifacts = scratch.join("live-artifacts");
+        fs::create_dir(&live_artifacts).expect("create external artifact canary");
+        fs::set_permissions(&live_artifacts, fs::Permissions::from_mode(0o700))
+            .expect("protect external artifact canary");
+        fs::write(
+            live_artifacts.join("sentinel.bin"),
+            b"preserve external artifact sentinel\n",
+        )
+        .expect("write external artifact sentinel");
+        if matches!(mode, OwnerFixtureMode::IsolationGate) {
+            fs::write(repository.join("tracked.txt"), b"live unstaged canary\n")
+                .expect("write unstaged tracked canary");
+            fs::write(
+                repository.join("untracked-canary.txt"),
+                b"live untracked canary\n",
+            )
+            .expect("write untracked canary");
+            fs::write(
+                repository.join("ignored-canary.txt"),
+                b"live ignored canary\n",
+            )
+            .expect("write ignored canary");
+            symlink(".git/f3-test/live-artifacts", repository.join("target"))
+                .expect("create ignored target symlink canary");
+            git_command(repository, &["check-ignore", "--quiet", "target"]);
+            git_command(
+                repository,
+                &["check-ignore", "--quiet", "ignored-canary.txt"],
+            );
+            let stash = String::from_utf8(git_output(repository, &["stash", "create"]))
+                .expect("decode fixture stash object");
+            let stash = stash.trim();
+            assert!(
+                !stash.is_empty(),
+                "fixture contains stashed tracked changes"
+            );
+            git_command(repository, &["stash", "store", "-m", "state canary", stash]);
+        }
+        fs::create_dir(&poison_bin).expect("create injected executable directory");
+        fs::set_permissions(&poison_bin, fs::Permissions::from_mode(0o700))
+            .expect("protect injected executable directory");
+        let poison_body = format!(
+            "#!/bin/sh\nprintf 'poison executed\\n' >> {}\nexit 99\n",
+            shell_quote(&poison_marker)
+        );
+        for name in ["cargo", "rustc", "rustc-wrapper"] {
+            write_executable(&poison_bin.join(name), poison_body.as_bytes());
+        }
+        fs::write(
+            &git_alias_config,
+            format!(
+                "[alias]\nf3-poison-file = \"!touch {}\"\n",
+                shell_quote(&git_alias_file_marker)
+            ),
+        )
+        .expect("write injected file-based Git alias");
+        Self {
+            poison_marker,
+            git_alias_file_marker,
+            git_alias_count_marker,
+            cargo_alias_marker,
+            poison_bin,
+            git_alias_config,
+            live_artifacts,
+        }
     }
 }
 
@@ -1217,10 +1202,6 @@ impl OwnerChild {
         self.child.as_mut().expect("owner child remains").try_wait()
     }
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the synchronous owner harness uses a bounded child-status polling loop"
-    )]
     fn wait_output(&mut self, timeout: std::time::Duration) -> std::process::Output {
         let deadline = std::time::Instant::now() + timeout;
         loop {
@@ -1236,7 +1217,7 @@ impl OwnerChild {
                 std::time::Instant::now() < deadline,
                 "installed owner did not finish within {timeout:?}"
             );
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            std::thread::park_timeout(std::time::Duration::from_millis(10));
         }
     }
 }
@@ -1254,7 +1235,7 @@ fn write_owner_toolchain(
     bin: &Path,
     ready: &Path,
     ticks: &Path,
-    guard_marker: &Path,
+    gate_ready: &Path,
     mode: OwnerFixtureMode,
 ) {
     let ready = shell_quote(ready);
@@ -1264,39 +1245,45 @@ fn write_owner_toolchain(
         &holder,
         b"#!/bin/sh\ntrap '' HUP INT TERM\nprintf x >> \"$2\"\n: > \"$1\"\ncount=0\nwhile [ \"$count\" -lt 400 ]; do\n  /bin/sleep 0.05 || :\n  printf x >> \"$2\"\n  count=$((count + 1))\ndone\n",
     );
-    let rust_tools = String::from(
-        "#!/bin/sh\nname=${0##*/}\ncase \"$name\" in\n  cargo) printf 'cargo 1.99.1 (fixture)\\n' ;;\n  rustc) printf 'rustc 1.99.1 (fixture)\\nbinary: rustc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  rustdoc) printf 'rustdoc 1.99.1 (fixture)\\nbinary: rustdoc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  clippy-driver) printf 'clippy 0.1.99 (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  rustfmt) printf 'rustfmt 1.99.1-stable (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  *) exit 91 ;;\nesac\n",
+    let cargo_marker = shell_quote(
+        &bin.parent()
+            .expect("fixture bin parent")
+            .join("cargo-environment"),
     );
-    for name in ["rustc", "rustdoc", "clippy-driver", "rustfmt"] {
+    let cargo_alias_marker = shell_quote(
+        &bin.parent()
+            .expect("fixture bin parent")
+            .join("cargo-alias-ran"),
+    );
+    let rust_tools = format!(
+        "#!/bin/sh\nname=${{0##*/}}\ncase \"$name\" in\n  cargo) if [ \"$1\" = f3-poison ]; then if [ \"${{CARGO_ALIAS_F3_POISON+x}}\" = x ]; then printf 'alias ran\\n' > {cargo_alias_marker}; exit 0; else exit 1; fi; fi; if [ \"${{RUSTC_BOOTSTRAP+x}}\" = x ]; then printf 'present\\n' > {cargo_marker}; else printf 'absent\\n' > {cargo_marker}; fi; printf 'cargo 1.99.1 (fixture)\\n' ;;\n  rustc) printf 'rustc 1.99.1 (fixture)\\nbinary: rustc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  rustdoc) printf 'rustdoc 1.99.1 (fixture)\\nbinary: rustdoc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  clippy-driver) printf 'clippy 0.1.99 (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  rustfmt) printf 'rustfmt 1.99.1-stable (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  *) exit 91 ;;\nesac\n"
+    );
+    for name in ["cargo", "rustc", "rustdoc", "clippy-driver", "rustfmt"] {
         write_executable(&bin.join(name), rust_tools.as_bytes());
     }
 
-    let build_mode = matches!(
-        mode,
-        OwnerFixtureMode::IgnoredSourceGate | OwnerFixtureMode::IsolationGate
+    let gate_marker = shell_quote(
+        &bin.parent()
+            .expect("fixture bin parent")
+            .join("gate-environment"),
     );
-    let mut cargo_body = rust_tools.clone();
-    if build_mode {
-        cargo_body = String::from(
-            "#!/bin/sh\nname=${0##*/}\nif [ \"$name\" = cargo ] && [ \"${1-}\" = build ]; then\ntarget=\"${CARGO_TARGET_DIR:?missing effective Cargo target directory}\"\nbuild=\"${CARGO_BUILD_BUILD_DIR:?missing effective Cargo build directory}\"\nmkdir -p \"$target\" \"$build\"\nprintf 'private target artifact\\n' > \"$target/f3-owner-artifact\"\nprintf 'private build artifact\\n' > \"$build/f3-owner-build-artifact\"\nscratch=\"$(cd .. && pwd -P)\"\ntarget=\"$(cd \"$target\" && pwd -P)\"\nbuild=\"$(cd \"$build\" && pwd -P)\"\ncargo_command=\"$(command -v cargo)\"\ncargo_dir=\"$(cd \"$(dirname \"$cargo_command\")\" && pwd -P)\"\ncargo=\"$cargo_dir/$(basename \"$cargo_command\")\"\ntest -f \"$target/f3-owner-artifact\"\ntest -f \"$build/f3-owner-build-artifact\"\nprintf '%s\\n%s\\n%s\\n%s\\nverified\\n' \"$scratch\" \"$target\" \"$build\" \"$cargo\" > \"$JACKIN_F3_OWNER_DRIVER_ARTIFACT_REPORT\"\nexit 0\nfi\ncase \"$name\" in\n  cargo) printf 'cargo 1.99.1 (fixture)\\n' ;;\n  *) exit 91 ;;\nesac\n",
-        );
-    }
-    write_executable(&bin.join("cargo"), cargo_body.as_bytes());
-
-    let gate_body = if build_mode {
-        let mut gate = String::from(
-            "#!/bin/sh\nset -eu\ntest \"$(git write-tree)\" = \"$JACKIN_F3_OWNER_DRIVER_EXPECTED_TREE\" || exit 93\ntest \"$(git show :tracked.txt)\" = 'staged worktree bytes' || exit 94\ntest \"$(pwd)\" != \"$JACKIN_F3_OWNER_DRIVER_REPOSITORY\" || exit 95\ntest \"$RUSTC\" = \"$JACKIN_F3_OWNER_DRIVER_EXPECTED_RUSTC\" || exit 96\ntest \"$RUSTDOC\" = \"$JACKIN_F3_OWNER_DRIVER_EXPECTED_RUSTDOC\" || exit 97\ntest \"$CLIPPY_DRIVER\" = \"$JACKIN_F3_OWNER_DRIVER_EXPECTED_CLIPPY\" || exit 98\ntest \"$RUSTFMT\" = \"$JACKIN_F3_OWNER_DRIVER_EXPECTED_RUSTFMT\" || exit 99\ntest \"$CARGO_BUILD_RUSTC\" = \"$JACKIN_F3_OWNER_DRIVER_EXPECTED_RUSTC\" || exit 100\ntest \"$CARGO_BUILD_RUSTDOC\" = \"$JACKIN_F3_OWNER_DRIVER_EXPECTED_RUSTDOC\" || exit 101\ntest -x \"$(command -v cargo)\" || exit 102\ntest -z \"${CARGO-}\" || exit 103\ntest -z \"${CARGO_ALIAS_F3_POISON-}\" || exit 104\ntest -z \"${RUSTC_WRAPPER-}\" || exit 105\ntest -z \"${RUSTC_WORKSPACE_WRAPPER-}\" || exit 106\ntest -z \"${CARGO_BUILD_RUSTC_WRAPPER-}\" || exit 107\ntest -z \"${CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER-}\" || exit 108\nif git f3-poison-file >/dev/null 2>&1; then exit 109; fi\nif git f3-poison-count >/dev/null 2>&1; then exit 110; fi\n",
-        );
-        if matches!(mode, OwnerFixtureMode::IgnoredSourceGate) {
-            gate.push_str(
-                "printf 'source ignored by staged ignore rule\\n' > ignored-extra.rs\ngit check-ignore -q ignored-extra.rs || exit 111\n",
-            );
-        }
-        gate.push_str(
-            "cargo build --f3-owner-isolation-probe\n\"$JACKIN_F3_OWNER_DRIVER_PROBE_EXE\" --exact precommit_snapshot::tests::installed_owner_live_state_probe_child --nocapture --test-threads=1 >/dev/null 2>&1\n",
-        );
-        gate.push_str("exit 0\n");
-        gate
+    let gate_body = if matches!(mode, OwnerFixtureMode::IgnoredSourceGate) {
+        "#!/bin/sh\nprintf 'ignored staged-source fixture\\n' > ignored-extra.txt\nexit 0\n"
+            .to_owned()
+    } else if matches!(mode, OwnerFixtureMode::IsolationGate) {
+        format!(
+            "#!/bin/sh\nset -eu\nif git f3-poison-file >/dev/null 2>&1; then exit 81; fi\nif git poison >/dev/null 2>&1; then exit 82; fi\nif cargo f3-poison >/dev/null 2>&1; then exit 83; fi\nif [ \"${{CARGO+x}}\" = x ]; then \"$CARGO\" --version || exit 84; fi\nif [ -n \"${{RUSTC_WRAPPER:-}}\" ]; then \"$RUSTC_WRAPPER\" \"$RUSTC\" --version || exit 85; else \"$RUSTC\" --version >/dev/null || exit 86; fi\ncargo --version >/dev/null || exit 87\nmkdir -p \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" || exit 88\nprintf 'private target\\n' > \"$CARGO_TARGET_DIR/artifact\"\nprintf 'private build\\n' > \"$CARGO_BUILD_BUILD_DIR/artifact\"\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" \"$RUSTC\" \"$(command -v cargo)\" > \"${{JACKIN_F3_OWNER_DRIVER_PROBE_OUTPUT}}\"\n: > {}\nprintf x >> {}\ncount=0\nwhile [ ! -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] && [ \"$count\" -lt 300 ]; do /bin/sleep 0.05; printf x >> {}; count=$((count + 1)); done\n[ -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] || exit 89\nexit 0\n",
+            shell_quote(gate_ready),
+            ticks,
+            ticks,
+        )
+    } else if matches!(
+        mode,
+        OwnerFixtureMode::BootstrapClean | OwnerFixtureMode::BootstrapInjected
+    ) {
+        format!(
+            "#!/bin/sh\nif [ \"${{RUSTC_BOOTSTRAP+x}}\" = x ]; then printf 'present\\n' > {gate_marker}; else printf 'absent\\n' > {gate_marker}; fi\nexit 0\n"
+        )
     } else {
         format!(
             "#!/bin/sh\nprintf 'fixed worktree bytes\\n' > tracked.txt\nprintf 'new staged-tree file\\n' > new-file.txt\n{} {} {} &\nwait $!\nexit 97\n",
@@ -1317,9 +1304,15 @@ fn write_owner_toolchain(
             shell_quote(&bin.join("cargo"))
         )
     } else {
+        let injection = if matches!(mode, OwnerFixtureMode::BootstrapInjected) {
+            "RUSTC_BOOTSTRAP=1; export RUSTC_BOOTSTRAP;"
+        } else {
+            ""
+        };
         format!(
-            "#!/bin/sh\ncase \"$1\" in\n  which)\n    if [ \"$2\" = hk ]; then printf '%s\\n' {}; else printf '%s\\n' /usr/bin/true; fi ;;\n  exec)\n    case \"$*\" in\n      *'cargo --version'*) printf 'cargo 1.99.1 (fixture)\\n' ;;\n      *'command -v cargo'*) printf '%s\\n' {} ;;\n      *) exit 92 ;;\n    esac ;;\n  *) exit 90 ;;\nesac\n",
+            "#!/bin/sh\ncase \"$1\" in\n  which)\n    if [ \"$2\" = hk ]; then printf '%s\\n' {}; else printf '%s\\n' /usr/bin/true; fi ;;\n  exec)\n    {}\n    case \"$*\" in\n      *'cargo --version'*) \"$4\" \"$5\" ;;\n      *'command -v cargo'*) printf '%s\\n' {} ;;\n      *'RUSTC_BOOTSTRAP'*) \"$4\" \"$5\" \"$6\" ;;\n      *) exit 92 ;;\n    esac ;;\n  *) exit 90 ;;\nesac\n",
             shell_quote(&bin.join("hk")),
+            injection,
             shell_quote(&bin.join("cargo"))
         )
     };
@@ -1329,37 +1322,15 @@ fn write_owner_toolchain(
         shell_quote(bin)
     );
     write_executable(&bin.join("rustup"), rustup_body.as_bytes());
-    write_executable(
-        &bin.join("rust-build-guard"),
-        format!("#!/bin/sh\n: > {}\nexit 97\n", shell_quote(guard_marker)).as_bytes(),
-    );
+    let guard = PathBuf::from(env::var_os("HOME").expect("HOME is set"))
+        .join(".local/bin/rust-build-guard");
+    symlink(guard, bin.join("rust-build-guard")).expect("link trusted build guard");
 }
 
 fn write_executable(path: &Path, bytes: &[u8]) {
     fs::write(path, bytes).expect("write installed-owner fixture executable");
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))
         .expect("make installed-owner fixture executable");
-}
-
-fn write_poison_tools(scratch: &Path, marker: &Path) -> PathBuf {
-    let poison = scratch.join("poison");
-    fs::create_dir(&poison).expect("create poison tool directory");
-    let body = format!(
-        "#!/bin/sh\nprintf '%s\\n' \"$0 $*\" >> {}\nexit 87\n",
-        shell_quote(marker)
-    );
-    for name in [
-        "cargo",
-        "rustc",
-        "rustdoc",
-        "clippy-driver",
-        "rustfmt",
-        "rustc-wrapper",
-        "rustdoc-wrapper",
-    ] {
-        write_executable(&poison.join(name), body.as_bytes());
-    }
-    poison
 }
 
 fn shell_quote(path: &Path) -> String {
@@ -1378,43 +1349,6 @@ fn real_git_executable() -> PathBuf {
         .expect("resolve absolute real Git executable for wrapper delegation")
 }
 
-fn digest(bytes: &[u8]) -> String {
-    hex::encode(sha2::Sha256::digest(bytes))
-}
-
-#[expect(
-    clippy::disallowed_methods,
-    reason = "fixture setup runs a short synchronous Git command outside async runtime code"
-)]
-fn git_output(root: &Path, arguments: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(arguments)
-        .current_dir(root)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_COMMON_DIR")
-        .env_remove("GIT_INDEX_FILE")
-        .env_remove("GIT_OBJECT_DIRECTORY")
-        .env_remove("GIT_ALTERNATE_OBJECT_DIRECTORIES")
-        .output()
-        .expect("run fixture Git command");
-    assert!(
-        output.status.success(),
-        "git {arguments:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout)
-        .expect("fixture Git output is UTF-8")
-        .trim()
-        .to_owned()
-}
-
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the synchronous owner harness polls readiness with a hard deadline"
-)]
 fn wait_for_owner_readiness(owner: &mut OwnerChild, ready: &Path, ticks: &Path) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
     while std::time::Instant::now() < deadline {
@@ -1429,7 +1363,7 @@ fn wait_for_owner_readiness(owner: &mut OwnerChild, ready: &Path, ticks: &Path) 
         if ready.exists() && fs::metadata(ticks).is_ok_and(|metadata| metadata.len() > 0) {
             return;
         }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::thread::park_timeout(std::time::Duration::from_millis(10));
     }
     panic!("installed-owner child never published readiness and a live tick");
 }
@@ -1458,23 +1392,26 @@ fn retained_snapshot(output: &str) -> PathBuf {
     PathBuf::from(path.trim_end_matches([';', ',', '.', ':', ')']))
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the fixture checks for post-return child activity over a short bounded interval"
-)]
 fn assert_ticks_stopped(ticks: &Path) {
     let after_return = fs::read(ticks).expect("read strict-child ticks after owner return");
-    std::thread::sleep(std::time::Duration::from_millis(250));
-    assert_eq!(
-        fs::read(ticks).expect("re-read strict-child ticks"),
-        after_return,
-        "strict supervisor must drain the process group before owner return"
-    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
+    loop {
+        assert_eq!(
+            fs::read(ticks).expect("re-read strict-child ticks"),
+            after_return,
+            "strict supervisor must drain the process group before owner return"
+        );
+        let now = std::time::Instant::now();
+        if now >= deadline {
+            return;
+        }
+        std::thread::park_timeout(deadline.saturating_duration_since(now));
+    }
 }
 
 fn find_evidence_patch(common_git_dir: &Path) -> PathBuf {
     let root = common_git_dir.join("jackin-hook-evidence");
-    for invocation in crate::fs_util::read_dir_sorted(&root).expect("read retained evidence root") {
+    for invocation in crate::tests::read_dir_sorted(&root).expect("read retained evidence root") {
         let patch = invocation.path().join("fixes.patch");
         if patch.is_file() {
             return patch;

@@ -110,7 +110,8 @@ fn assert_snapshot_preserves_live_state(
         fs::read(root.join("staged.txt")).expect("live worktree remains"),
         worktree_before
     );
-    OwnedSnapshot::verify_live_index(live).expect("live index custody remains valid");
+    OwnedSnapshot::verify_live_index(live, &live.controls)
+        .expect("live index custody remains valid");
 }
 
 #[test]
@@ -151,7 +152,7 @@ fn expands_split_sparse_index_in_private_tree() {
     let snapshot = OwnedSnapshot::create(&live).expect("private snapshot");
     fs::remove_file(&stale_shared_index).expect("expire inactive shared-index generation");
     fs::remove_dir(&stale_non_regular).expect("remove unrelated non-regular entry");
-    OwnedSnapshot::verify_live_index(&live)
+    OwnedSnapshot::verify_live_index(&live, &live.controls)
         .expect("inactive shared-index maintenance leaves the active index unchanged");
     let tree = snapshot.capture_staged_tree().expect("capture sparse tree");
     snapshot
@@ -172,7 +173,7 @@ fn expands_split_sparse_index_in_private_tree() {
 
     fs::write(shared_index, b"changed split index backing file")
         .expect("mutate split index backing file");
-    assert!(OwnedSnapshot::verify_live_index(&live).is_err());
+    assert!(OwnedSnapshot::verify_live_index(&live, &live.controls).is_err());
 }
 
 #[test]

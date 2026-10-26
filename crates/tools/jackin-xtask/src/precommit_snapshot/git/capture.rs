@@ -31,7 +31,6 @@ pub(in crate::precommit_snapshot) struct LiveRepository {
     pub(in crate::precommit_snapshot) alternates: Option<OsString>,
     pub(in crate::precommit_snapshot) object_format: OsString,
     pub(in crate::precommit_snapshot) head: Option<OsString>,
-    pub(in crate::precommit_snapshot) head_tree: Option<String>,
     pub(in crate::precommit_snapshot) index_inputs: Vec<IndexInput>,
     pub(in crate::precommit_snapshot) controls: SetupControls,
 }
@@ -125,12 +124,7 @@ impl LiveRepository {
             controls,
         )?
         .map(OsString::from);
-        let head_tree = optional_live_at(
-            &root,
-            &["rev-parse", "--verify", "--quiet", "HEAD^{tree}"],
-            controls,
-        )?;
-        let index_inputs = index_inputs(&index, shared_index.as_deref())?;
+        let index_inputs = index_inputs(&index, shared_index.as_deref(), controls)?;
         let alternates = env::var_os("GIT_ALTERNATE_OBJECT_DIRECTORIES");
         ensure!(objects.is_dir(), "Git object directory is missing");
         ensure!(common_git_dir.is_dir(), "Git common directory is missing");
@@ -150,7 +144,6 @@ impl LiveRepository {
             alternates,
             object_format,
             head,
-            head_tree,
             index_inputs,
             controls: controls.clone(),
         })
@@ -160,6 +153,7 @@ impl LiveRepository {
 pub(in crate::precommit_snapshot) fn index_inputs(
     index: &Path,
     shared_index: Option<&Path>,
+    controls: &SetupControls,
 ) -> Result<Vec<IndexInput>> {
     let mut paths = Vec::with_capacity(2);
     match fs::symlink_metadata(index) {
@@ -176,6 +170,7 @@ pub(in crate::precommit_snapshot) fn index_inputs(
     paths.sort();
     let mut inputs = Vec::with_capacity(paths.len());
     for path in paths {
+        controls.check_start()?;
         let before = fs::symlink_metadata(&path)
             .with_context(|| format!("inspecting live index input {}", path.display()))?;
         ensure!(
@@ -193,6 +188,7 @@ pub(in crate::precommit_snapshot) fn index_inputs(
         let mut hasher = Sha256::new();
         let mut buffer = vec![0u8; 64 * 1024].into_boxed_slice();
         loop {
+            controls.check_start()?;
             let count = file.read(&mut buffer).context("hashing live index input")?;
             if count == 0 {
                 break;

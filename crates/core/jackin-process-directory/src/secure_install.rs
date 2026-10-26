@@ -656,6 +656,26 @@ fn ensure_native_acl(descriptor: impl AsFd, is_directory: bool) -> io::Result<()
     }
 }
 
+fn ensure_confidential_acl(descriptor: impl AsFd, is_directory: bool) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        linux_acl::ensure_no_extended_acl(descriptor, is_directory)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = is_directory;
+        darwin_acl::ensure_no_acl_entries(descriptor)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = (descriptor, is_directory);
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "native installation ACL inspection is not implemented on this Unix platform",
+        ))
+    }
+}
+
 fn invalid_input(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }

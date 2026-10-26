@@ -34,6 +34,10 @@ impl fmt::Display for ActivationAfterRenameError {
 
 impl std::error::Error for ActivationAfterRenameError {}
 
+pub(super) fn activation_failed_after_rename(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<ActivationAfterRenameError>().is_some()
+}
+
 struct ConfigActivationEntry<'a> {
     parent: &'a File,
     lock_name: &'a std::ffi::OsStr,

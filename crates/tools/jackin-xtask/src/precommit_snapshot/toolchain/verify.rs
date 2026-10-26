@@ -4,14 +4,104 @@
 use std::{
     collections::BTreeMap,
     ffi::OsString,
+    fs,
     os::unix::ffi::OsStringExt,
     path::{Path, PathBuf},
     process::{Command, Output},
+    sync::{Arc, atomic::AtomicBool},
+    time::Duration,
 };
 
 use anyhow::{Context, Result, bail, ensure};
 
 use super::super::process::{CommandBudget, EnvironmentMode, SetupControls, capture_strict};
+
+struct ProvisionToolPaths {
+    cargo: PathBuf,
+    rustc: PathBuf,
+}
+
+/// Admit the current installer environment before it publishes the running owner.
+/// The installer interface does not provide authenticated build-path evidence;
+/// this checks the configured MBX and Rust toolchain against the staged pin.
+pub(super) fn admit_install_environment(source_root: &Path) -> Result<()> {
+    let ProvisionToolPaths { cargo, rustc } = resolve_provision_tool_paths(source_root)?;
+    drop((cargo, rustc));
+    Ok(())
+}
+
+/// Check tool paths recorded by a provisioner against the staged toolchain.
+/// Keep this admission boundary available to authenticated provisioners.
+#[cfg(test)]
+pub(super) fn verify_provision_tool_paths(
+    source_root: &Path,
+    cargo_path: &Path,
+    rustc_path: &Path,
+) -> Result<()> {
+    let expected = resolve_provision_tool_paths(source_root)?;
+    let cargo_path = fs::canonicalize(cargo_path).context("resolving bootstrap Cargo path")?;
+    let rustc_path = fs::canonicalize(rustc_path).context("resolving bootstrap rustc path")?;
+    ensure!(
+        cargo_path.is_file(),
+        "bootstrap Cargo is not a regular file"
+    );
+    ensure!(
+        rustc_path.is_file(),
+        "bootstrap rustc is not a regular file"
+    );
+    ensure!(
+        cargo_path == expected.cargo,
+        "bootstrap Cargo differs from the configured MBX wrapper"
+    );
+    ensure!(
+        rustc_path == expected.rustc,
+        "bootstrap rustc differs from the pinned Rust toolchain"
+    );
+    Ok(())
+}
+
+fn resolve_provision_tool_paths(source_root: &Path) -> Result<ProvisionToolPaths> {
+    let source_root = fs::canonicalize(source_root).context("resolving bootstrap source root")?;
+    let temp_parent = fs::canonicalize(std::env::temp_dir())
+        .context("resolving physical provision tool-qualification directory")?;
+    let isolation = tempfile::Builder::new()
+        .prefix("jackin-provision-mise-")
+        .tempdir_in(temp_parent)
+        .context("creating private tool qualification directory")?;
+    let inputs = super::HostInputs::capture(&source_root, isolation.path())?;
+    let controls = SetupControls::new(Arc::new(AtomicBool::new(false)), Duration::from_mins(10));
+    let pin = super::rust_release(&source_root.join("rust-toolchain.toml"))?;
+    let inherited_path = inputs.search_path();
+    let home = inputs.home.as_deref().map(Path::new);
+    let mise = super::find_executable("mise", inherited_path).context("missing Mise executable")?;
+    let mise = fs::canonicalize(mise).context("resolving Mise executable")?;
+    let rustup =
+        super::find_executable("rustup", inherited_path).context("missing rustup executable")?;
+    let rustup = fs::canonicalize(rustup).context("resolving rustup executable")?;
+    let mise_environment = inputs.command_environment(&source_root);
+    let cargo = super::effective_cargo(&mise, &mise_environment, &source_root, &controls)?;
+    let rust_tools = super::resolve_rust_tools_with_controls(
+        &rustup,
+        &pin,
+        std::ffi::OsStr::new(super::FIXED_SYSTEM_PATH),
+        inputs.rustup_home.as_deref(),
+        home.map(Path::as_os_str),
+        &controls,
+    )
+    .context("resolving pinned Rust tools")?;
+    verify_rust_toolchain(
+        &pin,
+        &rust_tools,
+        &mise,
+        &mise_environment,
+        &source_root,
+        &controls,
+    )?;
+    Ok(ProvisionToolPaths {
+        cargo,
+        rustc: rust_tools["rustc"].clone(),
+    })
+}
 
 pub(super) fn verify_rust_toolchain(
     pin: &str,
@@ -119,25 +209,24 @@ pub(super) fn command_output(output: Output, operation: &str) -> Result<String> 
     String::from_utf8(stdout).with_context(|| format!("decoding {operation} output"))
 }
 
-pub(super) fn command_path_output(output: Output, operation: &str) -> Result<PathBuf> {
-    let stdout = command_stdout(output, operation)?;
-    let path = stdout
-        .strip_suffix(b"\n")
-        .with_context(|| format!("{operation} output is missing its path record terminator"))?;
-    ensure!(
-        !path.is_empty(),
-        "{operation} returned an empty path record"
-    );
-    ensure!(
-        !path.contains(&0),
-        "{operation} returned an invalid path record"
-    );
-    Ok(PathBuf::from(OsString::from_vec(path.to_vec())))
-}
-
 fn command_stdout(output: Output, operation: &str) -> Result<Vec<u8>> {
     if !output.status.success() {
         bail!("{operation} failed with {}", output.status);
     }
     Ok(output.stdout)
+}
+
+pub(super) fn command_path(output: Output, operation: &str) -> Result<PathBuf> {
+    let mut bytes = command_stdout(output, operation)?;
+    ensure!(
+        bytes.last() == Some(&b'\n'),
+        "{operation} output is missing its record terminator"
+    );
+    bytes.pop();
+    ensure!(
+        !bytes.is_empty(),
+        "{operation} returned an empty path record"
+    );
+    ensure!(!bytes.contains(&0), "{operation} output contains NUL");
+    Ok(PathBuf::from(OsString::from_vec(bytes)))
 }

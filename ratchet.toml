@@ -128,7 +128,7 @@ key = "clippy::disallowed_methods@jackin-usage-provider-codex"
 bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-xtask"
-bound = 16
+bound = 12
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-capsule"
 bound = 8
@@ -641,15 +641,6 @@ key = "clippy::expect_used@jackin-diagnostics"
 bound = 3
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime-launch-account-config"
-bound = 1
-[[family.entry]]
-key = "clippy::too_many_arguments@jackin-xtask"
-bound = 1
-[[family.entry]]
-key = "clippy::zombie_processes@jackin-xtask"
-bound = 1
-[[family.entry]]
-key = "unsafe_code@jackin-xtask"
 bound = 1
 [[family]]
 id = "agent-doc-bytes"

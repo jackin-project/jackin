@@ -25,32 +25,6 @@ fn physical_path(path: &Path, cwd: &Path) -> PathBuf {
 }
 
 #[test]
-fn path_record_parser_preserves_raw_unix_path_bytes_and_one_trailing_newline() {
-    let path = b" leading \tpath\r\nwith internal line \xff\n";
-    let mut record = path.to_vec();
-    record.push(b'\n');
-
-    let resolved = command_path_output(command_result(0, &record), "resolving fixture path")
-        .expect("parse path record");
-
-    assert_eq!(resolved.as_os_str().as_bytes(), path);
-}
-
-#[test]
-fn path_record_parser_rejects_missing_empty_and_nul_records_and_nonzero_status() {
-    for record in [&b"/repo"[..], b"\n", b"/repo\0path\n"] {
-        command_path_output(command_result(0, record), "fixture path")
-            .expect_err("malformed path record must fail");
-    }
-
-    let error = command_path_output(command_result(7, b"/repo\n"), "fixture path")
-        .expect_err("nonzero command status must fail before path decoding");
-    assert!(error.to_string().contains("failed with exit status: 7"));
-    verify::command_output(command_result(0, b"/repo/\xff\n"), "fixture text")
-        .expect_err("text output must reject non-UTF-8 bytes");
-}
-
-#[test]
 fn rustup_path_resolution_handles_actual_raw_unix_paths() {
     let temporary = tempfile::tempdir().expect("temporary directory");
     #[cfg(target_os = "macos")]
@@ -135,6 +109,10 @@ fn host_input_constructor_admits_named_context_and_private_mise_config() {
             temporary.path().join("xdg state").into_os_string(),
         ),
         (
+            OsString::from("MISE_CACHE_DIR"),
+            OsString::from("/tmp/attacker-cache"),
+        ),
+        (
             OsString::from("MBX_CACHE_DIR"),
             temporary.path().join("mbx cache").into_os_string(),
         ),
@@ -199,6 +177,24 @@ fn host_input_constructor_admits_named_context_and_private_mise_config() {
     }
 }
 
+#[test]
+fn managed_mise_projection_rejects_rustc_bootstrap_injected_by_mise() {
+    let temporary = tempfile::tempdir().expect("temporary root");
+    let root = temporary.path().join("reviewed");
+    fs::create_dir(&root).expect("reviewed root");
+    let fake_mise = temporary.path().join("fake-mise");
+    write_executable(
+        &fake_mise,
+        b"#!/bin/sh\nset -eu\n[ \"$1\" = exec ]\n[ \"$2\" = --locked ]\n[ \"$3\" = -- ]\nshift 3\nexport RUSTC_BOOTSTRAP=1\nexec \"$@\"\n",
+    );
+    let environment = BTreeMap::new();
+    let controls = SetupControls::for_test(std::time::Duration::from_secs(10));
+
+    let error = verify_managed_projection(&fake_mise, &environment, &root, &controls)
+        .expect_err("Mise must not reintroduce RUSTC_BOOTSTRAP");
+    assert!(format!("{error:#}").contains("reintroduces RUSTC_BOOTSTRAP"));
+}
+
 fn assert_admitted_host_environment(
     environment: &BTreeMap<OsString, OsString>,
     expected_path: &OsString,
@@ -207,17 +203,40 @@ fn assert_admitted_host_environment(
     temporary: &Path,
     isolation: &Path,
 ) {
+    let mise_keys = environment
+        .keys()
+        .filter(|key| key.to_string_lossy().starts_with("MISE_"))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        mise_keys,
+        BTreeSet::from([
+            OsString::from("MISE_AUTO_INSTALL"),
+            OsString::from("MISE_CACHE_DIR"),
+            OsString::from("MISE_CONFIG_DIR"),
+            OsString::from("MISE_DATA_DIR"),
+            OsString::from("MISE_EXEC_AUTO_INSTALL"),
+            OsString::from("MISE_INSTALLS_DIR"),
+            OsString::from("MISE_STATE_DIR"),
+            OsString::from("MISE_SYSTEM_CONFIG_DIR"),
+            OsString::from("MISE_TRUSTED_CONFIG_PATHS"),
+        ])
+    );
     assert_eq!(
         environment.get(OsStr::new("MISE_DATA_DIR")),
         Some(&physical_path(custom_data, temporary).into_os_string())
     );
     assert_eq!(
-        environment.get(OsStr::new("MISE_CACHE_DIR")),
+        environment.get(OsStr::new("MISE_INSTALLS_DIR")),
         Some(
-            &physical_path(&temporary.join("xdg cache"), temporary)
-                .join("mise")
+            &physical_path(custom_data, temporary)
+                .join("installs")
                 .into_os_string()
         )
+    );
+    assert_eq!(
+        environment.get(OsStr::new("MISE_CACHE_DIR")),
+        Some(&physical_path(Path::new("/tmp/attacker-cache"), temporary).into_os_string())
     );
     assert_eq!(
         environment.get(OsStr::new("MISE_STATE_DIR")),
@@ -585,6 +604,14 @@ fn hostile_external_cargo_config_fails_before_mise_or_rustup_child_probes() {
             "unknown_host_setting = 'private-sentinel'\n",
         ] {
             fs::write(&config, contents).expect("hostile Cargo config");
+            let Err(error) = admit_install_environment(&root) else {
+                panic!("installer admission must fail on external Cargo config");
+            };
+            let message = format!("{error:#}");
+            assert!(message.contains(&config.display().to_string()));
+            assert!(!message.contains("private-sentinel"));
+            assert!(!marker.exists(), "installer admission ran a child probe");
+
             let Err(error) = verify_provision_tool_paths(
                 &root,
                 Path::new("/unused/cargo"),
@@ -639,6 +666,37 @@ fn hostile_external_cargo_config_fails_before_mise_or_rustup_child_probes() {
         .expect("run isolated hostile-config child test");
     assert!(status.success(), "hostile-config child failed: {status}");
     assert!(!marker.exists(), "Mise or rustup child probe ran");
+}
+
+#[test]
+fn path_output_removes_only_one_terminal_protocol_lf() {
+    let output = command_result(0, b"/tmp/path \xff with spaces\nembedded\n\n");
+    let path = command_path(output, "reading path").expect("raw path record");
+    assert_eq!(
+        path.as_os_str().as_bytes(),
+        b"/tmp/path \xff with spaces\nembedded\n"
+    );
+}
+
+#[test]
+fn path_output_rejects_missing_terminator_and_nul() {
+    for (bytes, reason) in [
+        (
+            b"/tmp/path".to_vec(),
+            "path record is missing its LF terminator",
+        ),
+        (b"/tmp\0/path\n".to_vec(), "path record contains NUL"),
+        (b"\n".to_vec(), "empty path record"),
+    ] {
+        let output = command_result(0, &bytes);
+        command_path(output, "reading path").expect_err(reason);
+    }
+
+    let error = command_path(command_result(7, b"/repo\n"), "reading path")
+        .expect_err("nonzero command must fail before path decoding");
+    assert!(error.to_string().contains("failed with exit status: 7"));
+    verify::command_output(command_result(0, b"/repo/\xff\n"), "fixture text")
+        .expect_err("text output must reject non-UTF-8 bytes");
 }
 
 #[test]

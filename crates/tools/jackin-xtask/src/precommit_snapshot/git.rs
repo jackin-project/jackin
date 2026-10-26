@@ -48,58 +48,6 @@ pub(super) struct GateCompletion {
     pub(super) cleanup: SpoolCleanupObservation,
 }
 
-fn isolated_git(
-    invocation_dir: &Path,
-    root: &Path,
-    git_dir: &Path,
-    index: &Path,
-    objects: &Path,
-    extra_alternates: Option<&OsStr>,
-    args: &[impl AsRef<OsStr>],
-) -> Command {
-    let mut command = Command::new("git");
-    command.args(args.iter().map(AsRef::as_ref));
-    configure_isolated_git(
-        &mut command,
-        invocation_dir,
-        root,
-        git_dir,
-        index,
-        objects,
-        extra_alternates,
-    );
-    command
-}
-
-#[cfg(test)]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "private test seam mirrors the isolated Git command boundary"
-)]
-fn isolated_git_with_program(
-    program: &Path,
-    invocation_dir: &Path,
-    root: &Path,
-    git_dir: &Path,
-    index: &Path,
-    objects: &Path,
-    extra_alternates: Option<&OsStr>,
-    args: &[impl AsRef<OsStr>],
-) -> Command {
-    let mut command = Command::new(program);
-    command.args(args.iter().map(AsRef::as_ref));
-    configure_isolated_git(
-        &mut command,
-        invocation_dir,
-        root,
-        git_dir,
-        index,
-        objects,
-        extra_alternates,
-    );
-    command
-}
-
 fn configure_isolated_git(
     command: &mut Command,
     invocation_dir: &Path,

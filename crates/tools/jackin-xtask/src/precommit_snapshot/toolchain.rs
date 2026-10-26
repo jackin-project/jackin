@@ -18,16 +18,13 @@ use anyhow::{Context, Result, bail, ensure};
 
 use super::git::OwnedSnapshot;
 use super::process::{CommandBudget, EnvironmentMode, SetupControls, capture_strict};
-mod provision;
 mod verify;
-use verify::{command_path_output, verify_rust_toolchain};
+#[cfg(test)]
+use verify::verify_provision_tool_paths;
+use verify::{command_path, verify_rust_toolchain};
 
-pub(super) fn verify_provision_tool_paths(
-    source_root: &Path,
-    cargo_path: &Path,
-    rustc_path: &Path,
-) -> Result<()> {
-    provision::verify_tool_paths(source_root, cargo_path, rustc_path)
+pub(super) fn admit_install_environment(source_root: &Path) -> Result<()> {
+    verify::admit_install_environment(source_root)
 }
 
 const MANAGED_TOOLS: &[&str] = &[
@@ -87,8 +84,6 @@ const HOST_INPUT_KEYS: &[&str] = &[
 
 pub(super) struct QualifiedTools {
     pub(super) gate: PathBuf,
-    pub(super) cargo: PathBuf,
-    pub(super) rustc: PathBuf,
     pub(super) environment: BTreeMap<OsString, OsString>,
 }
 
@@ -365,15 +360,6 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         controls,
     )?;
     let cargo = effective_cargo(&mise, &mise_env, &snapshot.root, controls)?;
-    verify_rust_toolchain(
-        &pin,
-        &rust_tools,
-        &mise,
-        &mise_env,
-        &snapshot.root,
-        controls,
-    )?;
-
     let managed_dir = snapshot.scratch_root.join("tools");
     fs::create_dir(&managed_dir).context("creating private qualified tool directory")?;
     // `mise exec` has already resolved this to the configured MBX Cargo
@@ -394,10 +380,17 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
 
     let environment =
         build_qualified_environment(snapshot, &managed_dir, &cargo, &pin, &rust_tools, &inputs)?;
+    verify_managed_projection(&mise, &environment, &snapshot.root, controls)?;
+    verify_rust_toolchain(
+        &pin,
+        &rust_tools,
+        &mise,
+        &environment,
+        &snapshot.root,
+        controls,
+    )?;
     Ok(QualifiedTools {
         gate: resolved["hk"].clone(),
-        cargo,
-        rustc: rust_tools["rustc"].clone(),
         environment,
     })
 }
@@ -498,7 +491,7 @@ fn resolve_managed_tools(
             CommandBudget::Probe,
         )
         .with_context(|| format!("resolving staged Mise tool {name}"))?;
-        let path = command_path_output(output, &format!("resolving staged Mise tool {name}"))?;
+        let path = command_path(output, &format!("resolving staged Mise tool {name}"))?;
         let path = fs::canonicalize(&path)
             .with_context(|| format!("resolving staged Mise tool path for {name}"))?;
         ensure!(
@@ -576,7 +569,7 @@ fn resolve_rust_tools_with_controls(
             CommandBudget::Probe,
         )
         .with_context(|| format!("resolving pinned rustup tool {name}"))?;
-        let path = command_path_output(output, &format!("resolving pinned rustup tool {name}"))?;
+        let path = command_path(output, &format!("resolving pinned rustup tool {name}"))?;
         let path = fs::canonicalize(path)
             .with_context(|| format!("resolving pinned rustup tool path for {name}"))?;
         ensure!(
@@ -616,7 +609,7 @@ fn effective_cargo(
         CommandBudget::Probe,
     )
     .context("resolving the configured MBX Cargo wrapper")?;
-    let path = command_path_output(output, "resolving the configured MBX Cargo wrapper")?;
+    let path = command_path(output, "resolving the configured MBX Cargo wrapper")?;
     let path = fs::canonicalize(path).context("resolving effective MBX Cargo path")?;
     ensure!(
         path.is_file(),
@@ -659,13 +652,12 @@ fn create_private_mise_config_dir(isolation_root: &Path, name: &str) -> Result<P
         path.display()
     );
     ensure!(
-        fs::read_dir(&physical)
+        crate::fs_util::read_dir_sorted(&physical)
             .with_context(|| format!(
                 "reading private Mise config directory: {}",
                 physical.display()
             ))?
-            .next()
-            .is_none(),
+            .is_empty(),
         "private Mise config directory is not empty: {}",
         physical.display()
     );
@@ -956,6 +948,41 @@ fn selected_storage_root(
     }
     let home = home.with_context(|| format!("{mise_key} needs an admitted home directory"))?;
     Ok(home.join(default_suffix))
+}
+
+fn verify_managed_projection(
+    mise: &Path,
+    environment: &BTreeMap<OsString, OsString>,
+    root: &Path,
+    controls: &SetupControls,
+) -> Result<()> {
+    let mut command = Command::new(mise);
+    command
+        .args([
+            "exec",
+            "--locked",
+            "--",
+            "/bin/sh",
+            "-c",
+            "test \"${RUSTC_BOOTSTRAP+x}\" != x",
+        ])
+        .current_dir(root)
+        .env_clear()
+        .envs(environment);
+    let output = capture_strict(
+        &mut command,
+        controls,
+        EnvironmentMode::Clear,
+        super::process::METADATA_OUTPUT_LIMIT,
+        1024 * 1024,
+        CommandBudget::Probe,
+    )
+    .context("checking staged Mise environment projection")?;
+    ensure!(
+        output.status.success(),
+        "staged Mise environment reintroduces RUSTC_BOOTSTRAP"
+    );
+    Ok(())
 }
 
 fn rust_release(path: &Path) -> Result<String> {
