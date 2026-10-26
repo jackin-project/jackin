@@ -698,3 +698,6 @@ fn publish_state_at(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

@@ -8,5 +8,6 @@ use super::*;
 mod capture;
 mod request;
 mod support;
+mod supported;
 
 use support::*;

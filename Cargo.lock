@@ -2981,6 +2981,7 @@ name = "jackin-process-directory"
 version = "0.6.4"
 dependencies = [
  "libc",
+ "nix 0.31.3",
  "rustix 1.1.5",
  "tempfile",
 ]

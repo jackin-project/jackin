@@ -20,6 +20,7 @@ rustix = { workspace = true, features = ["process"] }
 libc = { workspace = true }
 
 [dev-dependencies]
+nix = { workspace = true, features = ["process", "signal"] }
 tempfile = { workspace = true }
 
 [lints]

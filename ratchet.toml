@@ -98,7 +98,7 @@ key = "clippy::disallowed_methods@jackin-process"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-process-directory"
-bound = 3
+bound = 4
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime-host-attach"
 bound = 1

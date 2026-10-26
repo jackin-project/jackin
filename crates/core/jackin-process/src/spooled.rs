@@ -73,6 +73,14 @@ impl SpoolRecovery {
             .filter(|child| child.retained())
             .count()
     }
+
+    #[cfg(all(test, unix))]
+    pub(super) fn terminate_children_for_test(&mut self) -> std::io::Result<()> {
+        for child in &mut self.children {
+            child.terminate_and_reap_for_test()?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
