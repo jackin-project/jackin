@@ -165,10 +165,21 @@ Breaking: `feat!:` or `feat(scope)!:` + `BREAKING CHANGE:` footer. PR title = sq
 
 ```sh
 git commit -s -m "feat(scope): description"
-git commit --amend -s --no-edit   # forgot -s → force-push after (operator approval required)
 ```
 
-DCO fail on PR: fix first, before anything else.
+For a published commit without a sign-off, the original contributor can append an individual DCO remediation commit. Use the original commit's full 40-character SHA:
+
+```sh
+GIT_AUTHOR_NAME="ORIGINAL AUTHOR" \
+GIT_AUTHOR_EMAIL="author@email" \
+GIT_COMMITTER_NAME="ORIGINAL AUTHOR" \
+GIT_COMMITTER_EMAIL="author@email" \
+git commit -s --allow-empty \
+  -m "DCO remediation for ORIGINAL AUTHOR <author@email>" \
+  -m "I, ORIGINAL AUTHOR <author@email>, hereby add my Signed-off-by to this commit: <full 40-character commit SHA>"
+```
+
+This remediation is only for your own contribution. Use the exact original author name and email from the target commit in the declaration, remediation commit author and committer, and `Signed-off-by` trailer. Set all four identity variables explicitly so inherited Git identity settings cannot change them. The certification commit may be empty, without unrelated file changes. This adds an append-only certification and preserves the published PR history. Third-party remediation is disabled, and DCO sign-off remains required for organization members.
 
 ## Merge-Readiness Check
 
