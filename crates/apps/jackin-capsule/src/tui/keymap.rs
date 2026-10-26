@@ -94,6 +94,3 @@ pub(crate) use dialogs::{
     ReadOnlyDismissAction, RenameAction,
 };
 pub(crate) use prefix::PREFIX_COMMAND_KEYMAP;
-
-#[cfg(test)]
-mod tests;

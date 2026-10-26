@@ -133,11 +133,6 @@ pub fn load_claude_account_email(path: &Path) -> Option<String> {
     claude_email_from_value(&read_json_file(path)?)
 }
 
-#[cfg(any(test, feature = "test-support"))]
-pub fn load_claude_organization_type(path: &Path) -> Option<String> {
-    claude_organization_type_from_value(&read_json_file(path)?)
-}
-
 pub fn claude_oauth_from_value(value: &serde_json::Value) -> Option<ClaudeOAuthCredentials> {
     let oauth = value.get("claudeAiOauth")?;
     let access_token = oauth
@@ -184,9 +179,4 @@ fn optional_string_alias<'a>(
             _ => None,
         },
     }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-pub fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> {
-    claude_oauth_from_value(&read_json_file(path)?)
 }

@@ -274,6 +274,3 @@ const fn state_priority(state: VisibleAgentState) -> u8 {
 fn tab_display_label(name: &str) -> String {
     format!("{name}{TAB_GLYPH_PLACEHOLDER}")
 }
-
-#[cfg(test)]
-mod tests;

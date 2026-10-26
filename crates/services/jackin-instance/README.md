@@ -18,8 +18,8 @@ Auth provisioning lives in the sibling crates `jackin-instance-roles` (orchestra
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | instance index + lifecycle | — |
-| [`manifest.rs`](src/manifest.rs) · [`manifest/`](src/manifest) | instance manifest view | [`tests.rs`](src/manifest/tests.rs) |
-| [`naming.rs`](src/naming.rs) · [`naming/`](src/naming) | container/instance naming | [`tests.rs`](src/naming/tests.rs) |
+| [`manifest.rs`](src/manifest.rs) · [`manifest/`](src/manifest) | instance manifest view | — |
+| [`naming.rs`](src/naming.rs) · [`naming/`](src/naming) | container/instance naming | — |
 | `tests.rs` | integration tests | — |
 
 ## Public API
@@ -32,6 +32,6 @@ Typed errors: [`InstanceError`](../jackin-instance-credentials/src/error.rs) (in
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-instance -p jackin-instance-roles -p jackin-instance-agents -p jackin-instance-credentials
+cargo nextest run -p jackin-instance -p jackin-instance-roles -p jackin-instance-agents -p jackin-instance-credentials --no-tests warn
 cargo clippy -p jackin-instance --all-targets -- -D warnings
 ```

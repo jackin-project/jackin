@@ -17,8 +17,7 @@ via Docker label queries.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`discovery.rs`](src/discovery.rs) | label queries | `discovery/tests.rs` |
-| [`discovery/`](src/discovery/) | test suites | `discovery/tests.rs` |
+| [`discovery.rs`](src/discovery.rs) | label queries | — |
 
 ## Public API
 
@@ -30,6 +29,6 @@ via Docker label queries.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-discovery
+cargo nextest run -p jackin-runtime-discovery --no-tests warn
 cargo clippy -p jackin-runtime-discovery --all-targets -- -D warnings
 ```

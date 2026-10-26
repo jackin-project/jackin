@@ -1,16 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Fixed run/stage reducer for one host workflow (C5 state model).
-//!
-//! Run status and stage are tracked separately. A new valid run starts
-//! at `active / prepare / 0`. Only the host service applies these
-//! transitions; workers submit [`Observation`]s and can never mark a
-//! run accepted.
-
 use serde::{Deserialize, Serialize};
 
-/// Run lifecycle status, kept separate from [`Stage`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RunStatus {
@@ -54,7 +46,6 @@ impl RunStatus {
     }
 }
 
-/// Fixed pipeline stage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Stage {
@@ -93,7 +84,6 @@ impl Stage {
     }
 }
 
-/// Prompt delivery states for one session command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CommandState {
@@ -129,7 +119,6 @@ impl CommandState {
     }
 }
 
-/// Closed set of external effects (launch/capture/backup intents).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EffectKind {
@@ -159,7 +148,6 @@ impl EffectKind {
     }
 }
 
-/// Effect lifecycle status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EffectStatus {
@@ -195,39 +183,32 @@ impl EffectStatus {
     }
 }
 
-/// Who submits an observation. Workers can report findings; only the
-/// host can apply transitions that move a run toward acceptance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Actor {
     Host,
     Worker,
 }
 
-/// Worker/host observation fed into the reducer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Observation {
-    /// An implementer turn started; the pipeline moves prepare into
-    /// implement. Recorded sessions must already pin the worker.
     TurnStarted,
-    /// An agent turn finished; the pipeline moves to capture.
+
     TurnEnded,
-    /// The checkpoint is captured and the pinned test worker starts;
-    /// the pipeline moves capture into test.
+
     TestStarted,
     TestPassed,
     TestFailed,
     ReviewPassed,
     ReviewFailed,
-    /// Infrastructure failure: never counts as a code finding.
+
     InfraFailed,
     SessionLost,
     UncertainDelivery,
     CaptureStalled,
-    /// Current-source check at decide: the only path to accepted.
+
     VerifiedCurrent,
 }
 
-/// Snapshot of run position used by the reducer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunView {
     pub status: RunStatus,
@@ -236,8 +217,6 @@ pub struct RunView {
     pub candidate_generation: u64,
 }
 
-/// Reducer output: the next position plus whether the run needs a
-/// fresh external effect.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NextState {
     pub status: RunStatus,
@@ -246,15 +225,11 @@ pub struct NextState {
     pub event_kind: &'static str,
 }
 
-/// Why the reducer refused an observation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReducerRefusal {
     pub reason: &'static str,
 }
 
-/// Apply one observation to a run position. Terminal runs refuse
-/// everything; only `VerifiedCurrent` at `decide` from the host can
-/// set `accepted`.
 pub fn advance(
     view: &RunView,
     max_repair_turns: u32,

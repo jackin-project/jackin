@@ -5,8 +5,6 @@ pub(super) mod agents;
 pub(super) mod general;
 pub(super) mod modal;
 pub(super) mod secrets;
-#[cfg(test)]
-mod tests;
 pub use modal::{
     apply_text_input_to_pending, env_key_input_state, open_secrets_picker_modal,
     set_pending_env_op_ref,

@@ -55,8 +55,6 @@ pub(crate) async fn run_daemon_loop(
     .await
 }
 
-// Fields follow the reverse order of the original local bindings: Rust drops
-// struct fields in declaration order, retaining the loop resources' teardown order.
 struct DaemonLoop {
     last_frame_at: Option<tokio::time::Instant>,
     esc_deadline: Option<tokio::time::Instant>,

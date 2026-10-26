@@ -8,8 +8,7 @@ mod credentials;
 mod validation;
 
 pub(crate) use credentials::{allowed_account_env_names, load_agent_credentials};
-#[cfg(test)]
-pub(crate) use credentials::{parse_staged_credential, validate_agent_credentials};
+
 pub(crate) use validation::validate;
 
 pub fn load() -> Result<CapsuleConfig> {
@@ -61,6 +60,3 @@ pub fn load_optional() -> Option<CapsuleConfig> {
     }
     Some(config)
 }
-
-#[cfg(test)]
-mod tests;

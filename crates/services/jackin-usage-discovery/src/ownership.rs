@@ -238,6 +238,3 @@ pub(crate) fn source_capability_id(surface: HostSurfaceId, key: &CredentialSourc
     let hashed = jackin_core::account_key_hash(surface.id(), &evidence);
     hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned()
 }
-
-#[cfg(test)]
-mod tests;

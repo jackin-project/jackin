@@ -24,9 +24,5 @@ jackin-usage-provider-core = { workspace = true }
 jackin-protocol = { workspace = true }
 boltffi = "=0.31.1"
 
-[dev-dependencies]
-serde_json = { workspace = true }
-tempfile = { workspace = true }
-
 [lints]
 workspace = true

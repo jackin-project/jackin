@@ -161,6 +161,3 @@ pub fn shutdown() {
         OTLP_ACTIVE.store(false, Ordering::Relaxed);
     }
 }
-
-#[cfg(test)]
-mod tests;

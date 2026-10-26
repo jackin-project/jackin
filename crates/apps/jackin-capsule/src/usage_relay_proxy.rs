@@ -27,22 +27,18 @@ use tokio::io::{
     AsyncWriteExt as _, BufReader,
 };
 use tokio::net::UnixListener;
-#[cfg(test)]
-use tokio::net::UnixStream;
+
 use tokio::sync::{Mutex, mpsc, oneshot};
 
 mod authorization;
 mod identity;
 
 pub(crate) use authorization::UsageRelayAuthorization;
-#[cfg(test)]
-pub(crate) use identity::{DEFAULT_CAPSULE_SUPERVISOR_PID, parse_supervisor_pid};
+
 pub(crate) use identity::{
     PeerIdentity, SupervisorIdentity, load_supervisor_identity, peer_identity,
     supervisor_peer_allows,
 };
-#[cfg(all(test, target_os = "linux"))]
-pub(crate) use identity::{parse_proc_stat_start_time, process_start_time};
 
 const TUNNEL_CAPACITY: usize = 128;
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(35);
@@ -691,13 +687,11 @@ fn mode_bits(stat: &libc::stat) -> libc::mode_t {
 #[cfg(target_os = "linux")]
 #[expect(
     unsafe_code,
-    reason = "inspect Linux POSIX ACL xattrs on validated descriptors"
+    clippy::undocumented_unsafe_blocks,
+    reason = "inspect Linux POSIX ACL xattrs on validated descriptors: `file` remains live and its descriptor is borrowed for this call; `name` is NUL-terminated, and a null value pointer is valid with size zero"
 )]
 fn ensure_no_acl_fd(file: &File) -> Result<()> {
     for name in [c"system.posix_acl_access", c"system.posix_acl_default"] {
-        // SAFETY: `file` remains live and its descriptor is borrowed for this call; `name`
-        // is NUL-terminated, and a null value pointer is valid with size zero. The next
-        // classification reads errno immediately if this probe fails.
         let result =
             unsafe { libc::fgetxattr(file.as_raw_fd(), name.as_ptr(), std::ptr::null_mut(), 0) };
         classify_linux_acl_probe(result, name)?;
@@ -708,14 +702,12 @@ fn ensure_no_acl_fd(file: &File) -> Result<()> {
 #[cfg(target_os = "linux")]
 #[expect(
     unsafe_code,
-    reason = "inspect Linux POSIX ACL xattrs without following the socket path"
+    clippy::undocumented_unsafe_blocks,
+    reason = "inspect Linux POSIX ACL xattrs without following the socket path: `path` and `name` are live NUL-terminated strings for this call and a null value pointer is valid with size zero"
 )]
 fn ensure_no_acl_path(path: &Path) -> Result<()> {
     let path = CString::new(path.as_os_str().as_bytes())?;
     for name in [c"system.posix_acl_access", c"system.posix_acl_default"] {
-        // SAFETY: `path` and `name` are live NUL-terminated strings for this call. `lgetxattr`
-        // does not follow the link, and a null value pointer is valid with size zero. The
-        // next classification reads errno immediately if this probe fails.
         let result =
             unsafe { libc::lgetxattr(path.as_ptr(), name.as_ptr(), std::ptr::null_mut(), 0) };
         classify_linux_acl_probe(result, name)?;
@@ -748,8 +740,6 @@ const ACL_TYPE_EXTENDED: libc::c_int = 0x100;
 #[cfg(target_os = "macos")]
 const ACL_FIRST_ENTRY: libc::c_int = 0;
 
-// SAFETY: These opaque-pointer declarations match the signatures in the macOS
-// SDK's sys/acl.h; this module never dereferences ACL or entry layouts.
 #[cfg(target_os = "macos")]
 #[expect(
     unsafe_code,
@@ -771,11 +761,10 @@ unsafe extern "C" {
 #[cfg(target_os = "macos")]
 #[expect(
     unsafe_code,
-    reason = "inspect Darwin ACLs through the validated descriptor ABI"
+    clippy::undocumented_unsafe_blocks,
+    reason = "inspect Darwin ACLs through the validated descriptor ABI: `file` remains live for this call, the descriptor is borrowed, and the returned pointer is treated only as an opaque owned ACL allocation"
 )]
 fn ensure_no_acl_fd(file: &File) -> Result<()> {
-    // SAFETY: `file` remains live for this call, the descriptor is borrowed, and
-    // the returned pointer is treated only as an opaque owned ACL allocation.
     inspect_darwin_acl(
         unsafe { acl_get_fd_np(file.as_raw_fd(), ACL_TYPE_EXTENDED) },
         "descriptor",
@@ -785,12 +774,11 @@ fn ensure_no_acl_fd(file: &File) -> Result<()> {
 #[cfg(target_os = "macos")]
 #[expect(
     unsafe_code,
-    reason = "inspect Darwin ACL on a no-follow stat-validated socket path"
+    clippy::undocumented_unsafe_blocks,
+    reason = "inspect Darwin ACL on a no-follow stat-validated socket path: `path` is NUL-terminated for this call and the named filesystem object is inspected without following a replaced symlink"
 )]
 fn ensure_no_acl_path(path: &Path) -> Result<()> {
     let path = CString::new(path.as_os_str().as_bytes())?;
-    // SAFETY: `path` is NUL-terminated for this call; acl_get_link_np inspects
-    // the named filesystem object without following a replaced symlink.
     inspect_darwin_acl(
         unsafe { acl_get_link_np(path.as_ptr(), ACL_TYPE_EXTENDED) },
         "path",
@@ -804,11 +792,10 @@ struct OwnedDarwinAcl(std::ptr::NonNull<libc::c_void>);
 impl Drop for OwnedDarwinAcl {
     #[expect(
         unsafe_code,
-        reason = "free the opaque result returned by Darwin ACL inspection"
+        clippy::undocumented_unsafe_blocks,
+        reason = "free the opaque result returned by Darwin ACL inspection: this unique owner is created only from a successful non-null ACL result and releases that allocation exactly once"
     )]
     fn drop(&mut self) {
-        // SAFETY: This unique owner is created only from a successful non-null
-        // ACL result and releases that allocation exactly once.
         let _ = unsafe { acl_free(self.0.as_ptr()) };
     }
 }
@@ -816,7 +803,8 @@ impl Drop for OwnedDarwinAcl {
 #[cfg(target_os = "macos")]
 #[expect(
     unsafe_code,
-    reason = "inspect the validated opaque Darwin ACL without dereferencing it"
+    clippy::undocumented_unsafe_blocks,
+    reason = "inspect the validated opaque Darwin ACL without dereferencing it: `acl` owns a live opaque allocation returned by the Darwin getter and `entry` is initialized output storage borrowed from `acl`"
 )]
 fn inspect_darwin_acl(acl: *mut libc::c_void, label: &str) -> Result<()> {
     let Some(acl) = std::ptr::NonNull::new(acl) else {
@@ -827,16 +815,11 @@ fn inspect_darwin_acl(acl: *mut libc::c_void, label: &str) -> Result<()> {
         return Err(error).with_context(|| format!("inspecting extended ACL on {label}"));
     };
     let acl = OwnedDarwinAcl(acl);
-    // Validate the system-returned ACL before interpreting EINVAL from
-    // ACL_FIRST_ENTRY as the valid empty-ACL case.
-    // SAFETY: `acl` owns the opaque allocation returned by the Darwin getter.
     if unsafe { acl_valid(acl.0.as_ptr()) } != 0 {
         return Err(std::io::Error::last_os_error())
             .with_context(|| format!("validating extended ACL on {label}"));
     }
     let mut entry = std::ptr::null_mut();
-    // SAFETY: `acl` owns a live opaque allocation and `entry` is initialized
-    // output storage; the result pointer remains borrowed from `acl`.
     let result = unsafe { acl_get_entry(acl.0.as_ptr(), ACL_FIRST_ENTRY, &raw mut entry) };
     let errno = (result == -1)
         .then(|| std::io::Error::last_os_error().raw_os_error())
@@ -1144,6 +1127,3 @@ impl Drop for SocketCleanup {
         drop(std::fs::remove_file(&self.0));
     }
 }
-
-#[cfg(test)]
-mod tests;

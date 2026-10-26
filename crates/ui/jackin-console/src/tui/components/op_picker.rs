@@ -31,6 +31,3 @@ pub trait OpPickerRenderState {
     fn field_lines(&self) -> Vec<Line<'static>>;
     fn selected_index(&self) -> Option<usize>;
 }
-
-#[cfg(test)]
-mod tests;

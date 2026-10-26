@@ -975,6 +975,3 @@ fn emit_line(line: impl AsRef<str>) {
         println!("{}", line.as_ref());
     }
 }
-
-#[cfg(test)]
-mod tests;

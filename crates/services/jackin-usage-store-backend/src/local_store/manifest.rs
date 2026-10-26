@@ -1,6 +1,4 @@
 use std::collections::BTreeMap;
-#[cfg(test)]
-use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
@@ -8,8 +6,6 @@ use std::ops::{Deref, DerefMut};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-#[cfg(test)]
-use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
@@ -18,32 +14,6 @@ use super::path::FileIdentity;
 use crate::local_store::StoreError;
 
 static GENERATION: AtomicU64 = AtomicU64::new(1);
-
-#[cfg(test)]
-static IMMUTABLE_PUBLISH_FAILURES: OnceLock<Mutex<HashSet<(PathBuf, String)>>> = OnceLock::new();
-
-#[cfg(test)]
-pub(super) fn fail_next_immutable_publish(parent: &Path, final_name: &str) {
-    let failures = IMMUTABLE_PUBLISH_FAILURES.get_or_init(|| Mutex::new(HashSet::default()));
-    if let Ok(mut failures) = failures.lock() {
-        let parent = fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
-        failures.insert((parent, final_name.to_owned()));
-    }
-}
-
-#[cfg(test)]
-fn consume_immutable_publish_failure(directory: &Path, final_name: &str) -> bool {
-    let Some(parent) = directory.parent() else {
-        return false;
-    };
-    let Some(failures) = IMMUTABLE_PUBLISH_FAILURES.get() else {
-        return false;
-    };
-    let parent = fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
-    failures
-        .lock()
-        .is_ok_and(|mut failures| failures.remove(&(parent, final_name.to_owned())))
-}
 
 pub(super) async fn run_blocking<T, F>(action: &'static str, work: F) -> Result<T, StoreError>
 where
@@ -149,13 +119,6 @@ pub(super) fn write_immutable(
     final_name: &str,
     contents: &[u8],
 ) -> Result<PathBuf, StoreError> {
-    #[cfg(test)]
-    if consume_immutable_publish_failure(directory, final_name) {
-        return Err(StoreError::io(
-            "injected immutable manifest publication",
-            std::io::Error::other("injected test failure"),
-        ));
-    }
     let final_path = directory.join(final_name);
     match fs::symlink_metadata(&final_path) {
         Ok(_) => return Err(StoreError::BackupCollision),
@@ -294,9 +257,6 @@ pub(super) fn open_readonly_nofollow_expected(
     if expected_identity.is_some() && expected_identity != before_identity {
         return Err(StoreError::InvalidManifest);
     }
-    // Path and inode checks handle stable aliases. A private 0700 owner-controlled
-    // directory excludes other UIDs; it cannot prevent a hostile same-UID
-    // replacement between this stat and O_NOFOLLOW open.
     let lease = super::registry::reserve_artifact_identity(before_identity)?;
     let mut options = OpenOptions::new();
     options.read(true);
@@ -318,9 +278,6 @@ pub(super) fn open_readonly_nofollow_expected(
     let current_path = fs::symlink_metadata(path)
         .map_err(|source| StoreError::io("recheck backup artifact path", source))?;
     let opened_identity = FileIdentity::from_metadata(&opened_metadata);
-    // Record the actual inode as soon as the descriptor exists, even if a
-    // subsequent path/identity validation rejects it. This makes custody
-    // regressions observable in tests instead of logging only successful reads.
     super::forensics::record_artifact_open(path, opened_identity);
     if !opened_metadata.is_file()
         || FileIdentity::is_multiply_linked(&opened_metadata)

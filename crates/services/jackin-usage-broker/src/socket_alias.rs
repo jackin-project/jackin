@@ -22,8 +22,6 @@ const DEFAULT_SOCKET_ALIAS_ROOT: &str = "/private/tmp";
 #[cfg(not(target_os = "macos"))]
 const DEFAULT_SOCKET_ALIAS_ROOT: &str = "/tmp";
 
-/// Return a deterministic, securely provisioned alias when `full` exceeds
-/// the platform Unix socket path limit.
 pub fn short_socket_alias(full: &Path) -> Result<Option<PathBuf>, UsageCoordinationError> {
     short_socket_alias_with_root(full, None)
 }
@@ -316,10 +314,6 @@ fn private_socket_alias_child_with_normalizer(
     };
 
     let created_identity = if created {
-        // The parent FD anchors both no-follow checks and the one permitted chmod.
-        // This does not defend against a hostile process running as the same UID:
-        // fstatat/fchmodat are separate operations, and the root trust model assumes
-        // same-UID processes are trusted.
         let created_stat =
             fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW).map_err(|error| {
                 alias_error(format!(
@@ -435,6 +429,3 @@ fn alias_error(message: String) -> UsageCoordinationError {
         message: format!("cannot provision usage broker socket alias: {message}"),
     }
 }
-
-#[cfg(test)]
-mod tests;

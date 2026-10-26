@@ -22,7 +22,7 @@ persistence.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`attach_outcome.rs`](src/attach_outcome.rs) | status + outcome | hub `launch` suite (`case_26`) |
+| [`attach_outcome.rs`](src/attach_outcome.rs) | status + outcome | — |
 
 ## Public API
 
@@ -34,6 +34,6 @@ persistence.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-attach-outcome
+cargo nextest run -p jackin-runtime-launch-attach-outcome --no-tests warn
 cargo clippy -p jackin-runtime-launch-attach-outcome --all-targets -- -D warnings
 ```

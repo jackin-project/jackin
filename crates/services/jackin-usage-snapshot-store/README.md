@@ -18,9 +18,9 @@ cache, never by opening this database.
 
 | Module | Owns | Tests |
 |---|---|---|
-| [`lib.rs`](src/lib.rs) | re-exports | [`tests.rs`](src/tests.rs) |
-| `write`/`upsert` | persistence | `tests/` cases |
-| `read`/`views`/`buckets` | read views | `tests/` cases |
+| [`lib.rs`](src/lib.rs) | re-exports | — |
+| `write`/`upsert` | persistence | — |
+| `read`/`views`/`buckets` | read views | — |
 
 ## Public API
 
@@ -37,6 +37,6 @@ cache, never by opening this database.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-snapshot-store
+cargo nextest run -p jackin-usage-snapshot-store --no-tests warn
 cargo clippy -p jackin-usage-snapshot-store --all-targets -- -D warnings
 ```

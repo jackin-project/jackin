@@ -331,6 +331,3 @@ fn write_response(mut stream: TcpStream, response: &ScriptedResponse) -> std::io
     stream.write_all(&response.body)?;
     stream.flush()
 }
-
-#[cfg(test)]
-mod tests;

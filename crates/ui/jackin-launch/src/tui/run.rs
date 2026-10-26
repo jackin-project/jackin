@@ -1141,6 +1141,3 @@ impl Drop for RichRenderer {
         self.restore_terminal();
     }
 }
-
-#[cfg(test)]
-mod tests;

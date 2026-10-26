@@ -27,61 +27,61 @@ Roadmap-named ownership boundaries used to group invariants:
 
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
-| INV-D1 | A second attach client displaces the previous client — only one interactive attach stream is live | Module docs + `Multiplexer::client.attach` replace path; `Hello` frame displaces previous client (`daemon.rs` header) | `jackin_capsule::daemon::tests::reattach_updates_capabilities_without_resetting_model_palette` |
-| INV-D2 | Reattach updates client capabilities without wiping the model color palette | `session_terminal_carries_the_attached_client_palette` / reattach capability merge | `jackin_capsule::daemon::tests::reattach_updates_capabilities_without_resetting_model_palette` `jackin_capsule::daemon::tests::session_terminal_carries_the_attached_client_palette` |
-| INV-D3 | First-attach wipe policy erases the screen only on first attach and resize, not on every reattach | `wipe_policy_erases_only_on_first_attach_and_resize` | `jackin_capsule::daemon::tests::wipe_policy_erases_only_on_first_attach_and_resize` |
-| INV-D4 | Drain-and-exit delivers a shutdown frame to the attach client before closing the socket | `drain_and_exit_delivers_shutdown_before_closing_attach_socket` | `jackin_capsule::daemon::tests::drain_and_exit_delivers_shutdown_before_closing_attach_socket` |
+| INV-D1 | A second attach client displaces the previous client — only one interactive attach stream is live | Module docs + `Multiplexer::client.attach` replace path; `Hello` frame displaces previous client (`daemon.rs` header) | N/A |
+| INV-D2 | Reattach updates client capabilities without wiping the model color palette | `session_terminal_carries_the_attached_client_palette` / reattach capability merge | N/A |
+| INV-D3 | First-attach wipe policy erases the screen only on first attach and resize, not on every reattach | `wipe_policy_erases_only_on_first_attach_and_resize` | N/A |
+| INV-D4 | Drain-and-exit delivers a shutdown frame to the attach client before closing the socket | `drain_and_exit_delivers_shutdown_before_closing_attach_socket` | N/A |
 
 ### Session supervisor
 
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
-| INV-D5 | Spawn rejects agents outside the allowlist before opening a PTY | `spawn_request_rejects_agent_outside_allowlist_before_pty_spawn` | `jackin_capsule::daemon::tests::spawn_request_rejects_agent_outside_allowlist_before_pty_spawn` |
-| INV-D6 | Spawn-failure dialog stays open until the operator dismisses it | `spawn_failure_popup_stays_open_until_dismissed` / `open_spawn_failure_dialog` | `jackin_capsule::daemon::tests::spawn_failure_popup_stays_open_until_dismissed` |
-| INV-D7 | Zoom state is independent per tab; killing a zoomed pane clears only that tab's zoom | zoom helpers in multiplexer session lifecycle | `jackin_capsule::daemon::tests::zoom_state_is_independent_per_tab` `jackin_capsule::daemon::tests::killing_zoomed_pane_clears_only_owning_tab_zoom` |
-| INV-D8 | Removing an exited session retires its codename and updates tab labels without dropping other tabs | `remove_exited_session` / `mark_agent_session_exited` | `jackin_capsule::daemon::tests::remove_exited_session_retires_codename_inv_d8` |
+| INV-D5 | Spawn rejects agents outside the allowlist before opening a PTY | `spawn_request_rejects_agent_outside_allowlist_before_pty_spawn` | N/A |
+| INV-D6 | Spawn-failure dialog stays open until the operator dismisses it | `spawn_failure_popup_stays_open_until_dismissed` / `open_spawn_failure_dialog` | N/A |
+| INV-D7 | Zoom state is independent per tab; killing a zoomed pane clears only that tab's zoom | zoom helpers in multiplexer session lifecycle | N/A |
+| INV-D8 | Removing an exited session retires its codename and updates tab labels without dropping other tabs | `remove_exited_session` / `mark_agent_session_exited` | N/A |
 
 ### Input routing
 
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
-| INV-D9 | Modified clicks in mouse-enabled panes forward to the PTY; URL hover does not forward | `mouse_input` dispatch paths | `jackin_capsule::daemon::tests::modified_click_in_mouse_enabled_pane_forwards_to_pty` `jackin_capsule::daemon::tests::modified_url_hover_renders_visible_target_without_forwarding_to_pty` |
-| INV-D10 | Status-tick select arm stays above PTY output so status refresh cannot starve on busy PTY streams | select-loop arm order in `run_daemon` | `jackin_capsule::daemon::tests::status_tick_select_arm_stays_above_pty_output` `jackin_capsule::daemon::tests::ready_status_tick_wins_over_ready_pty_output` |
-| INV-D11 | PTY OSC 8 hyperlinks emit from frame metadata; unsafe/untrusted hyperlinks do not | compositor hyperlink emission | `jackin_capsule::daemon::tests::pty_osc8_hyperlink_emits_from_frame_metadata` `jackin_capsule::daemon::tests::unsafe_pty_osc8_hyperlink_is_not_emitted_from_frame_metadata` |
+| INV-D9 | Modified clicks in mouse-enabled panes forward to the PTY; URL hover does not forward | `mouse_input` dispatch paths | N/A |
+| INV-D10 | Status-tick select arm stays above PTY output so status refresh cannot starve on busy PTY streams | select-loop arm order in `run_daemon` | N/A |
+| INV-D11 | PTY OSC 8 hyperlinks emit from frame metadata; unsafe/untrusted hyperlinks do not | compositor hyperlink emission | N/A |
 
 ### Status model / publication
 
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
-| INV-D12 | Control reply for runtime events applies to the named session and ACKs; unknown session still ACKs | `control` subsystem | `jackin_capsule::daemon::tests::control_reply_report_runtime_event_applies_to_session_and_acks` `jackin_capsule::daemon::tests::control_reply_runtime_event_and_capture_for_unknown_session_still_ack` |
-| INV-D13 | Outer terminal title uses workspace + PR title, falls back to branch, and sanitizes control bytes | title composition helpers | `jackin_capsule::daemon::tests::outer_terminal_title_uses_workspace_and_pr_title` `jackin_capsule::daemon::tests::outer_terminal_title_falls_back_to_branch_without_pr` `jackin_capsule::daemon::tests::outer_terminal_title_sanitizes_control_bytes` |
+| INV-D12 | Control reply for runtime events applies to the named session and ACKs; unknown session still ACKs | `control` subsystem | N/A |
+| INV-D13 | Outer terminal title uses workspace + PR title, falls back to branch, and sanitizes control bytes | title composition helpers | N/A |
 
 ### Clipboard transfers
 
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
-| INV-D14 | Clipboard image errors use stable compact reason codes (not free-form strings) | clipboard error mapping | `jackin_protocol::attach::tests::clipboard_image_error_from_message_classifies_known_shapes` |
-| INV-D15 | Clipboard transfer idle expiry is driven by an injected `Clock` (not wall-clock `Instant::now`) | capsule clipboard expiry path + `jackin_core::clock` | `jackin_capsule::clipboard::tests::abort_idle_older_than_drops_transfer_past_timeout` `jackin_capsule::clipboard::tests::abort_idle_only_drops_idle_of_two_transfers` `jackin_capsule::clipboard::tests::abort_idle_boundary_idle_exactly_timeout_is_aborted` |
+| INV-D14 | Clipboard image errors use stable compact reason codes (not free-form strings) | clipboard error mapping | N/A |
+| INV-D15 | Clipboard transfer idle expiry is driven by an injected `Clock` (not wall-clock `Instant::now`) | capsule clipboard expiry path + `jackin_core::clock` | N/A |
 
 ### Git / PR watch
 
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
-| INV-D16 | Pending PR lookup can be armed and surfaces in outer title once resolved | PR watch helpers / `arm_pending_pr_lookup` test fixture | `jackin_capsule::daemon::tests::outer_terminal_title_uses_workspace_and_pr_title` |
+| INV-D16 | Pending PR lookup can be armed and surfaces in outer title once resolved | PR watch helpers / `arm_pending_pr_lookup` test fixture | N/A |
 
 ### Usage totals
 
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
-| INV-D17 | Opening the usage dialog queues a focused-provider refresh without replacing an already-open dialog body on refresh | usage dialog actions | `jackin_capsule::daemon::tests::apply_action_open_usage_queues_focused_provider_refresh` `jackin_capsule::daemon::tests::apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog` |
-| INV-D18 | Control usage account list prefers the in-memory cache when warm | control usage list path | `jackin_capsule::daemon::tests::control_usage_account_list_uses_in_memory_cache` |
+| INV-D17 | Opening the usage dialog queues a focused-provider refresh without replacing an already-open dialog body on refresh | usage dialog actions | N/A |
+| INV-D18 | Control usage account list prefers the in-memory cache when warm | control usage list path | N/A |
 
 ### Control-protocol routing + cleanup
 
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
-| INV-D19 | Last-session exit handler classifies whether the daemon should exit | `handle_last_session_exit` + `ControlRouting::dialog_open` + `ports::PersistencePort` | `jackin_capsule::daemon::tests::last_session_exit_defers_when_dialog_already_open_inv_d19` `jackin_capsule::daemon::ports::tests::persistence_port_reads_live_dialog_stack` |
-| INV-D20 | File exports resolve an operator-selected path through the bounded Capsule export flow before emitting transfer frames | `resolve_export_source` in `daemon/file_export.rs` | `jackin_capsule::daemon::tests::modified_click_visible_file_path_sends_file_export_frames` |
+| INV-D19 | Last-session exit handler classifies whether the daemon should exit | `handle_last_session_exit` + `ControlRouting::dialog_open` + `ports::PersistencePort` | N/A |
+| INV-D20 | File exports resolve an operator-selected path through the bounded Capsule export flow before emitting transfer frames | `resolve_export_source` in `daemon/file_export.rs` | N/A |
 
 ## Test seams
 

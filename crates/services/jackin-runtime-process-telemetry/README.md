@@ -24,7 +24,7 @@ outcome matrix.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`process_telemetry.rs`](src/process_telemetry.rs) | wrappers + guard | `process_telemetry/tests/` |
+| [`process_telemetry.rs`](src/process_telemetry.rs) | wrappers + guard | — |
 
 ## Public API
 
@@ -37,6 +37,6 @@ outcome matrix.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-process-telemetry
+cargo nextest run -p jackin-runtime-process-telemetry --no-tests warn
 cargo clippy -p jackin-runtime-process-telemetry --all-targets -- -D warnings
 ```

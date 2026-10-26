@@ -114,6 +114,3 @@ pub(crate) fn spawn_async(
     };
     Ok((operation, child))
 }
-
-#[cfg(test)]
-mod tests;

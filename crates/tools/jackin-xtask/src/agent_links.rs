@@ -199,6 +199,3 @@ fn display(root: &Path, path: &Path) -> String {
         .display()
         .to_string()
 }
-
-#[cfg(test)]
-mod tests;

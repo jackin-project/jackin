@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
 pub const FOCUSED_FULL_SNAPSHOT_MAX_BLOCKS: usize = 3;
 
 pub const FOCUSED_FULL_SNAPSHOT_MAX_BYTES: usize = 1024;

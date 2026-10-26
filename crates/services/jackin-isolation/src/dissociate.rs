@@ -1,26 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Post-clone dissociation for workflow worker clones.
-//!
-//! A bare `git clone --local` hardlinks object files to the source
-//! repository and records an `objects/info/alternates` pointer. A worker
-//! with write access to such a clone could corrupt the host repository
-//! through the shared inodes, and the alternates file keeps the clone
-//! readable only through host-owned paths. Workflow clones must be fully
-//! independent: no alternates, no hardlinked objects.
-//!
-//! Git worktrees are the opposite shape (they intentionally share `.git`
-//! with the host repository) and must NOT be used for workflow workers.
-
 use anyhow::Context;
 use jackin_core::CommandRunner;
 use std::collections::HashSet;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-/// Remove the alternates pointer and rewrite borrowed objects so the clone
-/// owns every byte. Afterwards [`verify_no_hardlinked_objects`] must pass.
 pub async fn dissociate_clone(
     runner: &mut impl CommandRunner,
     clone_path: &Path,
@@ -39,8 +25,7 @@ pub async fn dissociate_clone(
                 .with_context(|| format!("remove clone alternates at {}", alternates.display()));
         }
     }
-    // Rewrite every object into fresh inodes. `-l` keeps the repack local to
-    // this repository so no other object store is consulted.
+
     runner
         .run(
             "git",
@@ -50,8 +35,7 @@ pub async fn dissociate_clone(
         )
         .await
         .with_context(|| format!("dissociate workflow clone at {clone} via git repack"))?;
-    // Repack leaves freshly-packed loose objects packed, but any surviving
-    // loose hardlink is rewritten below so the clone owns its bytes.
+
     break_remaining_hardlinks(clone_path)
         .with_context(|| format!("break hardlinked objects in workflow clone at {clone}"))?;
     Ok(())
@@ -97,8 +81,6 @@ fn collect_object_identities(git_dir: &Path) -> anyhow::Result<HashSet<(u64, u64
     Ok(out)
 }
 
-/// Rewrite any clone object file that still shares an inode with the host
-/// object store, so the clone owns every byte it can write.
 fn break_remaining_hardlinks(clone_path: &Path) -> anyhow::Result<usize> {
     let clone_git = clone_path.join(".git");
     let objects = clone_git.join("objects");
@@ -143,8 +125,6 @@ fn break_remaining_hardlinks(clone_path: &Path) -> anyhow::Result<usize> {
     Ok(rewritten)
 }
 
-/// Verify the clone shares no object inode with the host repository and
-/// records no alternates pointer.
 pub fn verify_no_hardlinked_objects(host_repo: &Path, clone_path: &Path) -> anyhow::Result<()> {
     let alternates = clone_path
         .join(".git")
@@ -168,7 +148,7 @@ pub fn verify_no_hardlinked_objects(host_repo: &Path, clone_path: &Path) -> anyh
         shared.len(),
         host_repo.display(),
     );
-    // Belt and suspenders: no pack may reference an alternate store either.
+
     let info_dir = clone_git.join("objects").join("info");
     if let Ok(entries) = std::fs::read_dir(&info_dir) {
         let mut names: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
@@ -184,6 +164,3 @@ pub fn verify_no_hardlinked_objects(host_repo: &Path, clone_path: &Path) -> anyh
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

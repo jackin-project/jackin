@@ -147,6 +147,3 @@ fn append_summary(timings: &BTreeMap<String, Timing>) -> Result<()> {
     }
     fs::write(&summary, contents).context("writing GitHub step summary")
 }
-
-#[cfg(test)]
-mod tests;

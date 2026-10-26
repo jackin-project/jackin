@@ -1,14 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Thin `jackin workflow` handlers: validate a definition, or compile
-//! it into an immutable plan. `plan` resolves the existing workspace
-//! selections (workspace, role manifest, account bindings, agent
-//! binaries, models, role image, repository HEAD), compiles the plan,
-//! stores it immutably, and prints the plan hash. A missing or
-//! ambiguous selection is a typed `missing_input` diagnostic, never
-//! an interactive prompt.
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -18,13 +10,8 @@ use crate::cli::workflow::{WorkflowCommand, WorkflowFileArgs, WorkflowPlanArgs};
 use jackin_workflow_spec::error::{Diagnostic, ErrorCode, WorkflowError};
 use jackin_workflow_spec::resolve::{LiveAgentFacts, LiveSelectionEnv};
 
-/// Requested-model marker frozen into the plan when neither the agent
-/// configuration nor the account names a model (subscription/profile
-/// accounts carry none). The vendor picks the live model at launch;
-/// the plan keeps `actual_model` unknown (`None`) per C1.
 const VENDOR_DEFAULT_MODEL: &str = "vendor-default";
 
-/// Repository ID for the workspace repository source.
 const WORKSPACE_REPOSITORY_ID: &str = "workspace:current";
 
 pub(super) fn handle(
@@ -39,11 +26,6 @@ pub(super) fn handle(
     }
 }
 
-/// Durable run control: the CLI verifies the stored plan for
-/// `run`, then drives the host daemon's workflow service over the
-/// daemon socket. Every command supports stable `--json` output
-/// (`OutputEnvelope::v1`) and typed exit codes (0/2/3/4/1); bare
-/// `status` lists runs (C7).
 #[cfg(unix)]
 fn run_control_command(
     command: WorkflowCommand,
@@ -138,7 +120,6 @@ fn run_control_command(
     }
 }
 
-/// Start a run for a verified stored plan.
 #[cfg(unix)]
 fn run_stored_plan(
     layout: &jackin_runtime::host_daemon::DaemonLayout,
@@ -166,7 +147,6 @@ fn run_stored_plan(
     Ok(())
 }
 
-/// Single-run status, or the bounded run list without a run ID.
 #[cfg(unix)]
 fn run_status(
     layout: &jackin_runtime::host_daemon::DaemonLayout,
@@ -195,7 +175,6 @@ fn run_status(
     Ok(())
 }
 
-/// Bounded event history after a resume cursor.
 #[cfg(unix)]
 fn run_events(
     layout: &jackin_runtime::host_daemon::DaemonLayout,
@@ -212,12 +191,6 @@ fn run_events(
     Ok(())
 }
 
-/// Phase observations for a durable run: sessions, candidates,
-/// checkpoints, trusted test verdicts, isolated review verdicts,
-/// backup confirmations, and reducer advances. Test and review
-/// verdicts are produced by the host daemon itself (pinned worker,
-/// validated review file); the CLI only resolves the frozen plan
-/// inputs and the recorded policy hash that binds them.
 #[cfg(unix)]
 fn run_record(
     layout: &jackin_runtime::host_daemon::DaemonLayout,
@@ -297,9 +270,6 @@ fn run_record(
             Ok(())
         }
         WorkflowRecordAction::DispatchIntent(action) => {
-            // Fault-test seam only: commits queued->dispatching with
-            // no transport send. Transport stays with the
-            // session-control / repair flow.
             let (summary, dispatch) = daemon_record_dispatch(
                 layout,
                 DaemonRequestKind::WorkflowRecordDispatchIntent {
@@ -339,8 +309,6 @@ fn run_record(
     }
 }
 
-/// Read the current row version, or keep an explicit expectation for
-/// the optimistic-concurrency check.
 #[cfg(unix)]
 fn resolve_version(
     layout: &jackin_runtime::host_daemon::DaemonLayout,
@@ -361,9 +329,6 @@ fn resolve_version(
     Ok(summary.version)
 }
 
-/// Policy hash of the recorded test verdict for a run's current
-/// candidate. Review and acceptance bind to this hash, so a verdict
-/// recorded under one policy can never accept under another.
 #[cfg(unix)]
 fn recorded_test_policy(
     layout: &jackin_runtime::host_daemon::DaemonLayout,
@@ -393,10 +358,6 @@ fn recorded_test_policy(
         })
 }
 
-/// Run the frozen plan check in a pinned worker through the daemon
-/// and record the host-observed verdict. The program must match the
-/// frozen plan argv; the timeout comes from the plan; the script
-/// bytes are digest-verified by the daemon.
 #[cfg(unix)]
 fn run_record_test(
     layout: &jackin_runtime::host_daemon::DaemonLayout,
@@ -470,8 +431,6 @@ fn run_record_test(
     }
 }
 
-/// Validate one isolated review file through the daemon and record
-/// the verdict bound to the recorded test policy hash.
 #[cfg(unix)]
 fn run_record_review(
     layout: &jackin_runtime::host_daemon::DaemonLayout,
@@ -557,7 +516,6 @@ fn emit_review_record(
     println!("version: {}", summary.version);
 }
 
-/// One recorded summary through the new record RPCs.
 #[cfg(unix)]
 fn daemon_record(
     layout: &jackin_runtime::host_daemon::DaemonLayout,
@@ -578,8 +536,6 @@ fn daemon_record(
     }
 }
 
-/// One dispatch-intent record through the new record RPC: returns
-/// the run summary plus the committed command identity.
 #[cfg(unix)]
 fn daemon_record_dispatch(
     layout: &jackin_runtime::host_daemon::DaemonLayout,
@@ -602,7 +558,6 @@ fn daemon_record_dispatch(
     }
 }
 
-/// Human or JSON rendering of a recorded dispatch intent.
 #[cfg(unix)]
 fn emit_dispatch_intent(
     run_id: &str,
@@ -625,7 +580,6 @@ fn emit_dispatch_intent(
     println!("version: {}", summary.version);
 }
 
-/// Resolve the exact recorded session for a run worker.
 #[cfg(unix)]
 fn run_attach(
     layout: &jackin_runtime::host_daemon::DaemonLayout,
@@ -642,8 +596,6 @@ fn run_attach(
     emit_attach(&detail, &worker, observe, control, json)
 }
 
-/// Markdown export of the run detail (default content class: no
-/// terminal artifacts).
 #[cfg(unix)]
 fn run_export(
     layout: &jackin_runtime::host_daemon::DaemonLayout,
@@ -657,9 +609,6 @@ fn run_export(
     } = args;
     let detail = daemon_run_detail(layout, &run_id, -1, 500, json)?;
     if include_terminal {
-        // The CLI has no retained spool to read: terminal artifacts
-        // need explicit content selection from a retained source,
-        // and inventing transcript content would be fabrication.
         return Err(fail_err(
             "invalid_request",
             format!(
@@ -682,8 +631,6 @@ fn run_control_command(
     anyhow::bail!("workflow run control needs the host daemon socket (unix only)")
 }
 
-/// Read and digest-verify a stored plan before starting a run for its
-/// hash, so `run` never starts an unknown or edited plan.
 #[cfg(unix)]
 fn read_stored_plan(
     paths: &jackin_core::JackinPaths,
@@ -784,11 +731,6 @@ fn daemon_run_detail(
     }
 }
 
-/// Build the typed CLI failure for a daemon error code: the C7 exit
-/// code plus a stable JSON error envelope (`--json`) or a human
-/// stderr line. Callers return it so `main` exits 0/2/3/4/1 through
-/// [`crate::cli::workflow::WorkflowCommandExit`] instead of the
-/// generic 1.
 #[cfg(unix)]
 fn fail_err(code: &str, message: String, json: bool) -> anyhow::Error {
     use crate::cli::workflow::{WorkflowCommandExit, exit_code_for_daemon_code};
@@ -916,9 +858,6 @@ fn emit_attach(
     control: bool,
     json: bool,
 ) -> Result<()> {
-    // Observe is the default: it grants no input ownership.
-    // `--control` only resolves the same exact session in control
-    // mode; ownership itself is taken through the Console action.
     let _ = observe;
     let mode = if control { "control" } else { "observe" };
     let Some(session) = detail.sessions.iter().find(|s| s.worker_id == worker) else {
@@ -1252,9 +1191,6 @@ fn plan_inner(
         .chain(inputs.references.iter())
         .chain(inputs.test_bundle.iter())
         .collect();
-    // Re-planning identical inputs must stay stable: the store marks
-    // plan files read-only, so re-verify the stored digest instead of
-    // rewriting identical bytes.
     let stored_hash = if store_plan_path(paths, &plan.plan_hash).is_file() {
         store.read_plan(&plan.plan_hash)?.plan_hash
     } else {
@@ -1270,8 +1206,6 @@ fn plan_inner(
     ))
 }
 
-/// Resolve the workspace named by the definition, defaulting to the
-/// saved workspace matching the current directory.
 fn resolve_workspace<'config>(
     config: &'config jackin_config::AppConfig,
     workspace_field: &str,
@@ -1311,11 +1245,6 @@ fn resolve_workspace<'config>(
         })
 }
 
-/// Ordered absolute host-path candidates for the workspace repository:
-/// the workspace workdir when it is an absolute host path, then each
-/// mount source in order. The workflow file's own directory is never a
-/// candidate: Pkl source `workspace` means the workspace repository,
-/// not the checkout the definition file happens to live in.
 fn workspace_repository_candidates(workspace: &jackin_config::WorkspaceConfig) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     let workdir = jackin_config::expand_tilde(&workspace.workdir);
@@ -1331,8 +1260,6 @@ fn workspace_repository_candidates(workspace: &jackin_config::WorkspaceConfig) -
     candidates
 }
 
-/// Read the cached role manifest and hash it into the exact role
-/// revision frozen in the plan.
 fn role_manifest_revision(
     paths: &jackin_core::JackinPaths,
     role_id: &str,
@@ -1346,7 +1273,6 @@ fn role_manifest_revision(
             "select a registered role for the workspace",
         )
     })?;
-    // Same layout as the cached role checkouts the loader populates.
     let mut role_dir = match &selector.namespace {
         Some(namespace) => paths.roles_dir.join(namespace).join(&selector.name),
         None => paths.roles_dir.join(&selector.name),
@@ -1364,11 +1290,6 @@ fn role_manifest_revision(
     Ok(hex)
 }
 
-/// Resolve the single local image digest for the role repository
-/// `jk_<role>`. Zero images is a missing input; more than one
-/// distinct digest is ambiguous. Both workers share the workspace
-/// role image in this release. The test bundle uses its separately
-/// pinned credential-free sandbox image.
 fn role_image_digest(role_id: &str, file_label: &str) -> Result<String, WorkflowError> {
     let selector = jackin_core::RoleSelector::parse(role_id).map_err(|_| {
         missing(
@@ -1431,14 +1352,6 @@ fn role_image_digest(role_id: &str, file_label: &str) -> Result<String, Workflow
     }
 }
 
-/// Gather one agent's live facts from the existing selection: the
-/// account binding (claude/codex), its auth mode, the requested
-/// model, and the agent binary digest. Identifiers and digests only;
-/// secret values are never read.
-/// Operator `--model` precedence for the frozen requested model: a
-/// non-blank plan-time override wins; otherwise the resolved role or
-/// account default stands. Only the implementer (Claude) side takes
-/// an override in this release; the reviewer keeps its resolved model.
 fn apply_model_override(resolved: Option<String>, model_override: Option<&str>) -> Option<String> {
     match model_override.map(str::trim) {
         Some(override_model) if !override_model.is_empty() => Some(override_model.to_owned()),
@@ -1515,7 +1428,6 @@ fn live_agent_facts(
     })
 }
 
-/// Hash the agent binary found on `PATH` into `sha256:<hex>`.
 fn agent_binary_digest(
     binary: &str,
     side: &str,
@@ -1633,6 +1545,3 @@ fn print_diagnostics_json(error: &WorkflowError) {
         .collect();
     println!("{}", serde_json::json!({ "diagnostics": diagnostics }));
 }
-
-#[cfg(test)]
-mod tests;

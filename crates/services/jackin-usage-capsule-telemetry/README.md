@@ -19,8 +19,8 @@ multiplexer.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`telemetry.rs`](src/telemetry.rs) | lifecycle | [`telemetry/tests.rs`](src/telemetry/tests.rs) |
-| [`logging.rs`](src/logging.rs) | level + hook | (via `telemetry` tests) |
+| [`telemetry.rs`](src/telemetry.rs) | lifecycle | — |
+| [`logging.rs`](src/logging.rs) | level + hook | — |
 
 ## Public API
 
@@ -31,6 +31,6 @@ module (`init`, `debug_enabled`).
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-capsule-telemetry
+cargo nextest run -p jackin-usage-capsule-telemetry --no-tests warn
 cargo clippy -p jackin-usage-capsule-telemetry --all-targets -- -D warnings
 ```

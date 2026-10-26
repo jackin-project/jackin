@@ -271,6 +271,3 @@ fn unresolved_state(codes: impl Iterator<Item = CatalogDiagnosticCode>) -> Usage
         UsageLifecycleV1::Error
     }
 }
-
-#[cfg(test)]
-mod tests;

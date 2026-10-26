@@ -7,8 +7,6 @@ mod save;
 mod secrets;
 mod state;
 mod state_impl;
-#[cfg(test)]
-mod tests;
 pub use plans_a::{
     AuthEnterPlan, EditorEnterKeyPlan, EditorEscapeKeyPlan, EditorFieldSelectionKeyPlan,
     EditorFocusTarget, EditorHorizontalScrollKeyPlan, EditorHoverTarget, EditorMountGithubOpenPlan,

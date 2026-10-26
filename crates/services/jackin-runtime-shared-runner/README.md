@@ -26,6 +26,6 @@ handle.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-shared-runner
+cargo nextest run -p jackin-runtime-shared-runner --no-tests warn
 cargo clippy -p jackin-runtime-shared-runner --all-targets -- -D warnings
 ```

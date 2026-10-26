@@ -347,9 +347,6 @@ pub async fn remove_with(
     client.remove_container(container_name).await
 }
 
-#[cfg(test)]
-mod tests;
-
 fn with_admitted_final_apple_spec<T>(
     paths: &JackinPaths,
     state: &crate::instance::RoleState,

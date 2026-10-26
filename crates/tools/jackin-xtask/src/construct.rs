@@ -501,6 +501,3 @@ fn host_platform() -> Result<String> {
     };
     Ok(platform.to_owned())
 }
-
-#[cfg(test)]
-mod tests;

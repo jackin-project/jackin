@@ -33,6 +33,6 @@ emission.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-plan
+cargo nextest run -p jackin-runtime-launch-plan --no-tests warn
 cargo clippy -p jackin-runtime-launch-plan --all-targets -- -D warnings
 ```

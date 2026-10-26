@@ -37,6 +37,6 @@ types consumed by `jackin-usage`.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-codex
+cargo nextest run -p jackin-usage-provider-codex --no-tests warn
 cargo clippy -p jackin-usage-provider-codex --all-targets -- -D warnings
 ```

@@ -23,8 +23,6 @@ pub mod session_control;
 pub mod snapshot;
 pub mod universe;
 
-pub mod stubs;
-
 pub use self::attach::docker_unavailable_msg;
 pub use self::attach::{
     AgentSession, AgentSessionInventory, ContainerState, describe_agent_session_count,
@@ -40,7 +38,7 @@ pub use self::discovery::{
     list_managed_role_names, list_running_agent_display_names, list_running_agent_names,
 };
 pub use self::docker_profile::{DockerSecurityProfile, ProfileSource, resolve_profile};
-#[cfg(not(test))]
+
 pub use self::image::{ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images};
 pub use self::launch::{
     CLAUDE_EFFORT_ENV, CLAUDE_MODEL_ENV, CODEX_LANE_EFFORT_ENV, CODEX_LANE_MODEL_ENV, DIND_IMAGE,

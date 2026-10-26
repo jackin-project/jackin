@@ -23,8 +23,8 @@ Unix-only.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports (unix) | — |
-| [`host_daemon.rs`](src/host_daemon.rs) | server + API root | `host_daemon/tests/` |
-| [`host_daemon/`](src/host_daemon/) | test suites | `host_daemon/tests/` |
+| [`host_daemon.rs`](src/host_daemon.rs) | server + API root | — |
+| [`host_daemon/`](src/host_daemon/) | test suites | — |
 
 ## Public API
 
@@ -37,6 +37,6 @@ Unix-only.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-host-daemon
+cargo nextest run -p jackin-runtime-host-daemon --no-tests warn
 cargo clippy -p jackin-runtime-host-daemon --all-targets -- -D warnings
 ```

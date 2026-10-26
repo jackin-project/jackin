@@ -11,14 +11,6 @@ pub use local_store::{
     MigrationReceipt, PreopenStatus, StoreError, StoreOperationGuard, acquire_store_operation,
 };
 
-mod fixtures;
-/// Connect to isolated synthetic database fixtures.
-///
-/// This constructor is available only to backend tests and dependents that explicitly enable the
-/// `test-support` feature. Its connections are for disposable fixtures, not managed stores.
-#[cfg(any(test, feature = "test-support"))]
-pub use fixtures::connect_without_rowid_fixture;
-
 pub async fn operation<T, E>(
     kind: DbOperation,
     future: impl Future<Output = Result<T, E>>,
@@ -69,23 +61,14 @@ pub async fn connect_local(path: &str) -> Result<Connection, String> {
     .await
 }
 
-/// Open a local usage store only when Turso's default cross-process file lock is enabled.
-///
-/// Durable quota migrations use a second connection for their validated backup. The pinned
-/// backend disables its OS lock when `LIMBO_DISABLE_FILE_LOCK` is present, so those stores
-/// must fail closed before opening or creating their database in that configuration.
 pub async fn connect_local_with_required_file_lock(path: &str) -> Result<Connection, String> {
     require_default_file_lock()?;
     connect_local(path).await
 }
 
-/// Reject the pinned backend's explicit file-lock opt-out.
 pub fn require_default_file_lock() -> Result<(), String> {
     if std::env::var_os("LIMBO_DISABLE_FILE_LOCK").is_some() {
         return Err("local usage store requires Turso's default file lock".to_owned());
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

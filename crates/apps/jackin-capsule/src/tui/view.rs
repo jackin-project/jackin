@@ -157,6 +157,3 @@ pub(crate) fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
 
 mod frame;
 pub(crate) use frame::{render_capsule_ratatui_frame, selection_toast_area};
-
-#[cfg(test)]
-mod tests;

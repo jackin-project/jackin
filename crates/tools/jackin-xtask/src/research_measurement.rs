@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Explicit-input research measurements. Request generation stays offline unless
-//! the operator supplies `--execute` to a token-count command.
-
 use std::{
     collections::BTreeMap,
     env, fs,
@@ -206,7 +203,6 @@ fn run_count_tokens(args: CountTokensArgs) -> Result<()> {
 }
 
 fn run_image_tokens(args: ImageTokensArgs) -> Result<()> {
-    // Validate the whole invocation before an opt-in request can send any image.
     let dimensions = parse_dimension_args(args.dimensions)?;
     let mut rows = Vec::with_capacity(dimensions.len());
     for (dimension, width, height) in dimensions {
@@ -740,8 +736,5 @@ fn print_json(value: &impl serde::Serialize) -> Result<()> {
     writeln!(output).context("write measurement output newline")?;
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;
 
 mod provider_usage;

@@ -90,12 +90,6 @@ pub(super) fn resolve_source_path(path: &Path) -> Result<ResolvedPath, StoreErro
     })
 }
 
-/// Best-effort identity resolution for the compatibility `connect_local` API.
-///
-/// Legacy callers keep their existing open behavior, including paths that the
-/// managed migration path would reject. When the path can be resolved, track
-/// the canonical target so a later managed open cannot mistake it for an
-/// unopened source.
 pub(super) fn resolve_legacy_path(path: &Path) -> Result<ResolvedPath, StoreError> {
     let absolute = if path.is_absolute() {
         path.to_path_buf()

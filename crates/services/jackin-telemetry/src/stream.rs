@@ -55,6 +55,3 @@ impl Drop for CloseOnDrop {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

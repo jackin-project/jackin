@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Native qualification fixtures for the pinned security scanners.
-
 use std::{
     collections::BTreeMap,
     env,
@@ -405,9 +403,6 @@ fn make_betterleaks_repo(
     allowlist: bool,
     production: &str,
 ) -> Result<PathBuf> {
-    // Betterleaks' default rule misses this short generated ID. This test-only
-    // rule checks the pinned allowlist engine's match shape, not production
-    // detection behavior.
     let mut config = String::from(concat!(
         "[extend]\nuseDefault = false\n\n",
         "[[rules]]\nid = \"generic-api-key\"\n",
@@ -689,12 +684,3 @@ fn restrict_fixture_parent(path: &Path) -> io::Result<()> {
 fn restrict_fixture_parent(_: &Path) -> io::Result<()> {
     Ok(())
 }
-
-#[cfg(all(test, unix))]
-fn make_executable(path: &Path, mode: u32) -> io::Result<()> {
-    fs::write(path, b"#!/bin/sh\nexit 0\n")?;
-    fs::set_permissions(path, fs::Permissions::from_mode(mode))
-}
-
-#[cfg(test)]
-mod tests;

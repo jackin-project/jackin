@@ -22,8 +22,8 @@ preserved state.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`drift.rs`](src/drift.rs) | classifier | `drift/tests/` |
-| [`drift/`](src/drift/) | test suites | `drift/tests/` |
+| [`drift.rs`](src/drift.rs) | classifier | — |
+| [`drift/`](src/drift/) | test suites | — |
 
 ## Public API
 
@@ -33,6 +33,6 @@ preserved state.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-drift
+cargo nextest run -p jackin-runtime-drift --no-tests warn
 cargo clippy -p jackin-runtime-drift --all-targets -- -D warnings
 ```

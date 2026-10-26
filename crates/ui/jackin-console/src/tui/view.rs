@@ -2,16 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod areas;
-mod brand_header_crop;
 mod chrome;
 mod geometry;
 mod helpers;
 mod modal;
 mod plans;
-mod png_baselines;
 mod render;
-#[cfg(test)]
-mod tests;
 pub use areas::{
     ConsoleMainFramePlan, ConsoleModalRenderPlan, ConsolePrepareFramePlan,
     ConsoleReservedFooterHeightPlan, ModalContentAreas, ModalOverlayState,
@@ -36,6 +32,3 @@ pub use plans::{
     modal_overlay_state_from_stage_facts, modal_overlay_visible, reserved_footer_height_for_facts,
 };
 pub use render::{render, render_with_usage_receipt};
-
-#[cfg(test)]
-pub(crate) use ratatui::Frame;

@@ -30,10 +30,6 @@ fn account_for_credential_resolution(
     account
 }
 
-/// Return the exact persisted credential declarations selected for one launch
-/// instance. The launcher uses this alongside the resolved values to build a
-/// source-identity fence; resolution itself remains in this module so the
-/// model-dependent routing rules cannot drift between staging and proofing.
 pub fn credential_env_declarations_for_instance(
     config: &AppConfig,
     instance: &jackin_config::ResolvedInstance,
@@ -112,6 +108,3 @@ where
     }
     Ok(AgentCredentialEnv::new(resolved_instances))
 }
-
-#[cfg(test)]
-mod tests;

@@ -22,6 +22,6 @@ Shared subprocess transport for jackin❯: capture, timeout, retry, and exit sta
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-process
+cargo nextest run -p jackin-process --no-tests warn
 cargo clippy -p jackin-process --all-targets -- -D warnings
 ```

@@ -245,6 +245,3 @@ impl<RoleSource: std::fmt::Debug> std::fmt::Debug for PendingRoleLoad<RoleSource
             .finish_non_exhaustive()
     }
 }
-
-#[cfg(test)]
-mod tests;

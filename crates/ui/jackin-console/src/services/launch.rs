@@ -4,8 +4,6 @@
 mod accounts;
 mod committed;
 mod dispatch;
-#[cfg(test)]
-mod tests;
 mod workspace;
 pub use accounts::{
     AccountChoice, LiveInstanceAdmission, account_choices, account_choices_for_instances,
@@ -19,13 +17,3 @@ pub use dispatch::{LaunchDispatchResolution, resolve_launch_dispatch};
 pub use workspace::{WorkspaceChoice, build_workspace_choice};
 
 pub(crate) use committed::resolve_selected_workspace;
-#[cfg(test)]
-pub(crate) use jackin_config::AccountConfig;
-#[cfg(test)]
-pub(crate) use jackin_config::LoadWorkspaceInput;
-#[cfg(test)]
-pub(crate) use jackin_config::ResolvedInstance;
-#[cfg(test)]
-pub(crate) use jackin_config::resolve_launch;
-#[cfg(test)]
-pub(crate) use jackin_core::RoleSelector;

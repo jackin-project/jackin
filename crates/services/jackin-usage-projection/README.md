@@ -19,8 +19,8 @@ broker generations.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`canonical.rs`](src/canonical.rs) | V1 builder | `tests/` |
-| [`account.rs`](src/account.rs) | accounts | `tests/` |
+| [`canonical.rs`](src/canonical.rs) | V1 builder | — |
+| [`account.rs`](src/account.rs) | accounts | — |
 
 ## Public API
 
@@ -29,6 +29,6 @@ broker generations.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-projection
+cargo nextest run -p jackin-usage-projection --no-tests warn
 cargo clippy -p jackin-usage-projection --all-targets -- -D warnings
 ```

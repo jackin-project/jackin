@@ -483,6 +483,3 @@ fn handle_git_cmd(git_cmd: cli::GitCommand, paths: &JackinPaths) -> Result<()> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

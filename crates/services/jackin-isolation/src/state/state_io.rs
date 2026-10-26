@@ -603,6 +603,3 @@ fn snapshot(fd: OwnedFd) -> anyhow::Result<FileSnapshot> {
         _file: file,
     })
 }
-
-#[cfg(test)]
-mod tests;

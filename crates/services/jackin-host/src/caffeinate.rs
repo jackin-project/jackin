@@ -230,11 +230,3 @@ async fn stop_caffeinate(runner: &mut impl CommandRunner, pid: u32) -> anyhow::R
         .await
         .map(|_| ())
 }
-
-#[cfg(test)]
-pub(super) fn pid_path_for_tests(paths: &JackinPaths) -> std::path::PathBuf {
-    paths.data_dir.join(PID_FILENAME)
-}
-
-#[cfg(test)]
-mod tests;

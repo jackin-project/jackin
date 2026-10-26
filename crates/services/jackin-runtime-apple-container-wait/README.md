@@ -25,7 +25,7 @@ wait.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`wait.rs`](src/wait.rs) | readiness wait | hub `apple_container` paths (no dedicated suite) |
+| [`wait.rs`](src/wait.rs) | readiness wait | — |
 
 ## Public API
 
@@ -34,6 +34,6 @@ wait.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-wait
+cargo nextest run -p jackin-runtime-apple-container-wait --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-wait --all-targets -- -D warnings
 ```

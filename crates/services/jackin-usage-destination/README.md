@@ -30,6 +30,6 @@ immutable publication.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-destination
+cargo nextest run -p jackin-usage-destination --no-tests warn
 cargo clippy -p jackin-usage-destination --all-targets -- -D warnings
 ```

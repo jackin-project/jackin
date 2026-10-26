@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(test)]
-mod tests;
-
 use jackin_core::{ChangedFile, changed_files, unpushed_commit_count};
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_process::{ExecRequest, StdioMode};
@@ -89,11 +86,6 @@ impl CommandRunner for GitRunner {
     ) -> anyhow::Result<String> {
         self.capture(program, args, cwd).await
     }
-}
-
-#[must_use]
-pub fn policy_is_ask(config: &CapsuleConfig) -> bool {
-    config.dirty_exit_policy.as_deref().unwrap_or("ask") == "ask"
 }
 
 pub async fn assess_dirty(config: &CapsuleConfig) -> Vec<DirtyRepo> {

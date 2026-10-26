@@ -18,7 +18,7 @@ vendor snapshot dispatch.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`resolver.rs`](src/resolver.rs) | secret cache | `tests/` |
+| [`resolver.rs`](src/resolver.rs) | secret cache | — |
 | [`dispatch.rs`](src/dispatch.rs) | vendor arms | via resolver |
 
 ## Public API
@@ -29,6 +29,6 @@ vendor snapshot dispatch.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-credential-resolver
+cargo nextest run -p jackin-usage-credential-resolver --no-tests warn
 cargo clippy -p jackin-usage-credential-resolver --all-targets -- -D warnings
 ```

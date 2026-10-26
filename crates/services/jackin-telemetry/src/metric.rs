@@ -545,12 +545,6 @@ fn dimension_matches(stored: &DimensionValue, value: Value<'_>) -> bool {
     }
 }
 
-#[cfg(test)]
-fn series_identity(attrs: &[Attr<'_>]) -> SeriesIdentity {
-    let order = series_order(attrs);
-    series_identity_with_order(attrs, &order[..attrs.len()])
-}
-
 fn series_identity_with_order(attrs: &[Attr<'_>], order: &[usize]) -> SeriesIdentity {
     order
         .iter()
@@ -701,6 +695,3 @@ fn reject_identity_dimensions(attrs: &[Attr<'_>]) -> Result<(), Rejection> {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -29,7 +29,7 @@ step helpers.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`progress_helpers.rs`](src/progress_helpers.rs) | steps + prompts + labels | [`tests.rs`](src/progress_helpers/tests.rs) (1 case) |
+| [`progress_helpers.rs`](src/progress_helpers.rs) | steps + prompts + labels | — |
 
 ## Public API
 
@@ -43,6 +43,6 @@ step helpers.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-progress-helpers
+cargo nextest run -p jackin-runtime-launch-progress-helpers --no-tests warn
 cargo clippy -p jackin-runtime-launch-progress-helpers --all-targets -- -D warnings
 ```

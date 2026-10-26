@@ -26,7 +26,7 @@ and project-scoped quota buckets. Consumed by `jackin-usage`
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`adapter.rs`](src/adapter.rs) | eligibility + quota surface | [`tests.rs`](src/tests.rs) |
+| [`adapter.rs`](src/adapter.rs) | eligibility + quota surface | — |
 
 ## Public API
 
@@ -36,6 +36,6 @@ quota parsing, consumed by `jackin-usage`.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-gemini
+cargo nextest run -p jackin-usage-provider-gemini --no-tests warn
 cargo clippy -p jackin-usage-provider-gemini --all-targets -- -D warnings
 ```

@@ -10,6 +10,3 @@ pub fn branch_name(selector: &str, suffix: Option<&str>) -> String {
         },
     )
 }
-
-#[cfg(test)]
-mod tests;

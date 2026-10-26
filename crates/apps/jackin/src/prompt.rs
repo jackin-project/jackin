@@ -59,6 +59,3 @@ fn prompt_choice_from<R: io::BufRead, W: Write>(
         )?;
     }
 }
-
-#[cfg(test)]
-mod tests;

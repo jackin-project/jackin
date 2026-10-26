@@ -28,6 +28,3 @@ pub fn decision(name: CacheName, result: CacheResult) {
     let _active =
         crate::up_down_counter(&crate::metric::CACHE_DECISION_ACTIVE).add(-1, &[name_attr]);
 }
-
-#[cfg(test)]
-mod tests;

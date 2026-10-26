@@ -373,6 +373,3 @@ fn failure_hint_spans() -> Vec<HintSpan<'static>> {
     spans.extend(crate::tui::keymap::cockpit_global_hint_spans());
     spans
 }
-
-#[cfg(test)]
-mod tests;

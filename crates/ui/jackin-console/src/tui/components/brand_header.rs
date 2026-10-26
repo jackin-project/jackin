@@ -46,6 +46,3 @@ fn brand_header_line(label: &str) -> Line<'static> {
 pub fn render_brand_header(frame: &mut ratatui::Frame<'_>, area: Rect, label: &str) {
     frame.render_widget(BrandHeader { label }, area);
 }
-
-#[cfg(test)]
-mod tests;

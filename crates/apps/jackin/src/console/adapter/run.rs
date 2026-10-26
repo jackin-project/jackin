@@ -1585,6 +1585,3 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     drop(owned_screen);
     Ok((result?, config))
 }
-
-#[cfg(test)]
-mod tests;

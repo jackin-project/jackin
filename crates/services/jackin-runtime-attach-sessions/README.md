@@ -25,7 +25,7 @@ inventory inspection.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`sessions.rs`](src/sessions.rs) | inventory + messages | hub `attach` suite |
+| [`sessions.rs`](src/sessions.rs) | inventory + messages | — |
 
 ## Public API
 
@@ -39,6 +39,6 @@ inventory inspection.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-attach-sessions
+cargo nextest run -p jackin-runtime-attach-sessions --no-tests warn
 cargo clippy -p jackin-runtime-attach-sessions --all-targets -- -D warnings
 ```

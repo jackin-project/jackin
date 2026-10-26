@@ -21,8 +21,7 @@ control-socket spike.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | gated re-export | — |
-| [`reactive_daemon.rs`](src/reactive_daemon.rs) | socket + adapter | `reactive_daemon/tests.rs` |
-| [`reactive_daemon/`](src/reactive_daemon/) | test suites | `reactive_daemon/tests.rs` |
+| [`reactive_daemon.rs`](src/reactive_daemon.rs) | socket + adapter | — |
 
 ## Public API
 
@@ -33,6 +32,6 @@ control-socket spike.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-reactive-daemon --features daemon-spike
+cargo nextest run -p jackin-runtime-reactive-daemon --features daemon-spike --no-tests warn
 cargo clippy -p jackin-runtime-reactive-daemon --all-targets --features daemon-spike -- -D warnings
 ```

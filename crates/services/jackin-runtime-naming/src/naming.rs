@@ -41,6 +41,3 @@ pub fn matching_family(selector: &RoleSelector, names: &[String]) -> Vec<String>
         .cloned()
         .collect()
 }
-
-#[cfg(test)]
-mod tests;

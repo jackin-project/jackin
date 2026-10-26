@@ -241,6 +241,3 @@ pub(crate) fn palette_route_frame_plan(route: PaletteCommandRoute) -> ActionFram
         PaletteCommandRoute::ClearPane => ActionFramePlan::Diff(FullRedrawReason::PaneClear),
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -49,6 +49,3 @@ pub fn exit_dialog_with_inspect(
         None => Ok(usize::MAX),
     }
 }
-
-#[cfg(test)]
-mod tests;

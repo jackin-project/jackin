@@ -32,7 +32,6 @@ nix        = { workspace = true, features = ["dir", "fs", "user"] }
 tempfile   = { workspace = true }
 
 [features]
-test-support = []
 
 [lints]
 workspace = true

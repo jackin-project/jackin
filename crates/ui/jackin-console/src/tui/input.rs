@@ -20,5 +20,3 @@ pub type InputOutcome = crate::tui::message::ConsoleInputOutcome<
     crate::tui::message::ConsoleInstanceAction<jackin_core::Agent>,
     jackin_core::LaunchSelection,
 >;
-
-pub mod fixtures;

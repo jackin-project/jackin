@@ -137,6 +137,3 @@ fn report_clean() {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

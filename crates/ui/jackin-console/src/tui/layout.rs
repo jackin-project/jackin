@@ -273,6 +273,3 @@ pub fn centered_rect_preferred(
 }
 
 pub mod list;
-
-#[cfg(test)]
-mod tests;

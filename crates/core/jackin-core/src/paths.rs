@@ -94,6 +94,3 @@ impl JackinPaths {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests;

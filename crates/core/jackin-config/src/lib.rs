@@ -53,8 +53,6 @@ pub use jackin_omp_store::{
     OmpSnapshot,
 };
 
-pub mod fixtures;
-
 pub use app_config::AppConfig;
 pub use app_config::DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS;
 pub use app_config::mounts::{GlobalMountRow, WorkspaceGlobalMountRows};

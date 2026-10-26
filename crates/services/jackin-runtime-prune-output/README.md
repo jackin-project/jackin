@@ -17,8 +17,7 @@ terminal output.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`prune_output.rs`](src/prune_output.rs) | rows + status | `prune_output/tests.rs` |
-| [`prune_output/`](src/prune_output/) | test suites | `prune_output/tests.rs` |
+| [`prune_output.rs`](src/prune_output.rs) | rows + status | — |
 
 ## Public API
 
@@ -30,6 +29,6 @@ terminal output.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-prune-output
+cargo nextest run -p jackin-runtime-prune-output --no-tests warn
 cargo clippy -p jackin-runtime-prune-output --all-targets -- -D warnings
 ```

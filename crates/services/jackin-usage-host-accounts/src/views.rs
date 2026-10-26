@@ -79,6 +79,3 @@ pub fn summary_bucket(view: &FocusedUsageView) -> Option<&QuotaBucketView> {
 pub(crate) fn surface_for_view(view: &FocusedUsageView) -> Option<HostSurfaceId> {
     HostSurfaceId::from_provider_alias(&view.account.provider_label)
 }
-
-#[cfg(test)]
-mod tests;

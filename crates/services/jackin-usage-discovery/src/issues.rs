@@ -74,9 +74,6 @@ impl std::fmt::Debug for UsageDiscoveryDiagnostic {
     }
 }
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageSourceCandidateDescriptor {
     pub surface_id: String,

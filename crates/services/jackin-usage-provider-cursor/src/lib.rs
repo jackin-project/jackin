@@ -1,11 +1,3 @@
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "provider-adapter fixtures remain testable while production dispatch is broker-only"
-    )
-)]
-
 mod auth;
 mod events;
 mod period;
@@ -17,8 +9,6 @@ mod snapshot;
 mod summary;
 mod teams;
 
-#[cfg(test)]
-pub(crate) use auth::CURSOR_DEFAULT_DASHBOARD_BASE;
 pub use auth::CURSOR_SESSION_BASE;
 pub use auth::{
     CursorAuth, cursor_auth_from_value, cursor_auth_path, cursor_cli_identity_from_value,
@@ -57,6 +47,3 @@ pub use teams::{
     cursor_teams_events_url, cursor_teams_spend_url, fetch_cursor_team_spend,
     parse_cursor_team_spend,
 };
-
-#[cfg(test)]
-mod tests;

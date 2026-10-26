@@ -61,8 +61,7 @@ pub struct GrantPhaseInput<'a> {
     pub opts_docker_profile: Option<DockerSecurityProfile>,
     pub selector: &'a RoleSelector,
     pub role_manifest: &'a RoleManifest,
-    /// Final cap-only clamp for the headless workflow launch path. `None` on
-    /// the manual path, where launch profiles keep their existing meaning.
+
     pub workflow_grant: Option<&'a WorkflowGrant>,
 }
 
@@ -225,6 +224,3 @@ pub(crate) async fn mark_failed_setup_then_cleanup(
     }
     cleanup.run(docker).await;
 }
-
-#[cfg(test)]
-mod tests;

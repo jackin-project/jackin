@@ -39,6 +39,6 @@ consumed by `jackin-usage`.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-cursor
+cargo nextest run -p jackin-usage-provider-cursor --no-tests warn
 cargo clippy -p jackin-usage-provider-cursor --all-targets -- -D warnings
 ```

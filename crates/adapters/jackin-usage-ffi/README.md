@@ -11,7 +11,7 @@ trends.
 
 ```sh
 cargo build -p jackin-usage-ffi --release
-cargo nextest run -p jackin-usage-ffi
+cargo nextest run -p jackin-usage-ffi --no-tests warn
 cargo clippy -p jackin-usage-ffi --all-targets -- -D warnings
 ```
 

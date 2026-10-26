@@ -9,16 +9,10 @@ pub enum WorkflowsMessage {
     SelectPrevious,
     OpenDetail,
     CloseDetail,
-    /// Start observing a worker session (no confirmation: observe
-    /// grants no input ownership).
     Observe(String),
-    /// Request a confirmed action (resume/cancel/takeover).
     RequestAction(WorkflowAction),
     ConfirmAction,
     DismissConfirm,
-    /// Stop observing / return control to the scheduler.
-    StopObserving {
-        return_control: bool,
-    },
+    StopObserving { return_control: bool },
     RequestExport(String),
 }

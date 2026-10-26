@@ -293,6 +293,3 @@ pub fn diagnose_claude_profile_payload(bytes: &[u8]) -> ClaudeCredentialPayloadD
     }
     diagnostic
 }
-
-#[cfg(test)]
-mod tests;

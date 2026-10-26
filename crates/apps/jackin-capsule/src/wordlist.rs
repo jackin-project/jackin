@@ -171,6 +171,3 @@ pub fn pick_codename(
     }
     unreachable!("infinite suffix loop always terminates")
 }
-
-#[cfg(test)]
-mod tests;

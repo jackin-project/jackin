@@ -6,24 +6,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::model::{SettingsEnvConfig, SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope};
 use jackin_core::EnvValue;
 
-#[cfg(test)]
-use super::effect::SettingsEffect;
-#[cfg(test)]
-use super::message::SettingsMessage;
-#[cfg(test)]
-use super::model::{
-    ACCOUNT_KINDS, GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsAuthState,
-    SettingsEnvTextTarget, SettingsHoverTarget, SettingsTab, SettingsTrustRow,
-};
-#[cfg(test)]
-use crate::tui::components::scope_picker::ScopeChoice;
-#[cfg(test)]
-use crossterm::event::KeyCode;
-#[cfg(test)]
-use jackin_core::RoleSelector;
-#[cfg(test)]
-use jackin_oppicker::ModalOutcome;
-
 mod auth;
 mod confirm;
 mod env_helpers;
@@ -34,9 +16,6 @@ mod mount_commits;
 mod mount_plans;
 mod selection;
 mod tabs;
-pub use env_helpers::*;
-#[cfg(test)]
-mod tests;
 pub use auth::{
     SettingsAuthRowKind, reduce_account_scan_message, scanned_source_in_draft,
     settings_auth_row_kind, settings_auth_scan_row_selected, settings_auth_selected_index,
@@ -45,6 +24,7 @@ pub use confirm::{
     SettingsConfirmCommitPlan, SettingsConfirmPlan, settings_confirm_commit_plan,
     settings_confirm_plan,
 };
+pub use env_helpers::*;
 pub use env_plans::{
     SettingsEnvRolePickerCommitPlan, SettingsEnvScopePickerCommitPlan,
     SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,

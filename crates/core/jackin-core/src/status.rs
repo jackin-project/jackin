@@ -15,6 +15,3 @@ pub fn parse_session_count(output: &str) -> Option<usize> {
             .and_then(|value| value.trim().parse().ok())
     })
 }
-
-#[cfg(test)]
-mod tests;

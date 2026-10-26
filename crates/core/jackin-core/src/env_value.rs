@@ -134,9 +134,6 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Extended {

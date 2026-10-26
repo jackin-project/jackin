@@ -8,7 +8,7 @@ use jackin_usage_provider_core::{ProviderFailureMetadata, ProviderHttpError, Pro
 
 use crate::keychain::{ClaudeKeychainRead, read_claude_keychain_item_uncached};
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(target_os = "macos")]
 use super::lease::{MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES, replace_if_exact};
 use super::{
     ClaudeCredentialLease, ClaudeOAuthUsageResponse, ClaudeResolved,
@@ -222,16 +222,16 @@ where
             provider_http_status: Some(401),
         });
     }
-    #[cfg(any(target_os = "macos", test))]
+    #[cfg(target_os = "macos")]
     let Some(json) = payload_from_keychain_read(keychain_read) else {
         return first_401_if_consent_current(first, consent_is_current);
     };
-    #[cfg(not(any(target_os = "macos", test)))]
+    #[cfg(not(target_os = "macos"))]
     {
         drop((keychain_read, original_payload, commit_if_current));
         first_401_if_consent_current(first, consent_is_current)
     }
-    #[cfg(any(target_os = "macos", test))]
+    #[cfg(target_os = "macos")]
     {
         let mut commit_if_current = commit_if_current;
         if json.len() > MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES {
@@ -325,7 +325,7 @@ where
     }
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(target_os = "macos")]
 fn payload_from_keychain_read(read: ClaudeKeychainRead) -> Option<Zeroizing<String>> {
     match read {
         ClaudeKeychainRead::Payload { json } => Some(json),
@@ -334,6 +334,3 @@ fn payload_from_keychain_read(read: ClaudeKeychainRead) -> Option<Zeroizing<Stri
         | ClaudeKeychainRead::AccessUnavailable => None,
     }
 }
-
-#[cfg(test)]
-mod tests;

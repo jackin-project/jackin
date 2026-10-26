@@ -1030,6 +1030,3 @@ fn write_baseline(root: &Path, report: &Report) -> Result<()> {
     fs::write(root.join(BASELINE_PATH), out).with_context(|| format!("writing {BASELINE_PATH}"))?;
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

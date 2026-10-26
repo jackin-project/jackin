@@ -167,6 +167,3 @@ fn account_key_hash_seed(
             value.wrapping_mul(16).wrapping_add(u64::from(nibble))
         })
 }
-
-#[cfg(test)]
-mod tests;

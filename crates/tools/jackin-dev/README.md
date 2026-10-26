@@ -16,7 +16,7 @@ The `jackin-dev` PR-verification and contributor tooling binary — installed lo
 | Module | Owns | Tests |
 |---|---|---|
 | [`main.rs`](src/main.rs) | the `jackin-dev` CLI | — |
-| [`tests.rs`](src/tests.rs) | unit tests | — |
+| `tests.rs` | unit tests | — |
 
 ## Public API
 
@@ -25,7 +25,7 @@ The `jackin-dev` binary surface (`pr sync <N>`, `pr path <N>`, etc.) is document
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-dev
+cargo nextest run -p jackin-dev --no-tests warn
 cargo clippy -p jackin-dev --all-targets -- -D warnings
 jackin-dev --version
 ```

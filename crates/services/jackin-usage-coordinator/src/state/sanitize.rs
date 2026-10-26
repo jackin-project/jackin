@@ -32,8 +32,7 @@ pub(crate) fn sanitize_usage_view(mut view: FocusedUsageView) -> FocusedUsageVie
             money.currency = sanitize_text(&money.currency);
         }
     }
-    // Provider tab selectors are not authenticated by the trusted top-level
-    // selector. The host reconstructs tabs from its trusted cache boundary.
+
     view.tabs.clear();
     view
 }

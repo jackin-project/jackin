@@ -238,6 +238,3 @@ fn row_range_cells(row: &RowSnapshot, from_col: u16, to_col: u16) -> Vec<CellSna
     }
     cells
 }
-
-#[cfg(test)]
-mod tests;

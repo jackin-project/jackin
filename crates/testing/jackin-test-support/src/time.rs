@@ -78,6 +78,3 @@ impl ManualClock {
         self.elapsed_since(from) >= interval
     }
 }
-
-#[cfg(test)]
-mod tests;

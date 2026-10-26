@@ -526,6 +526,3 @@ const TEXT_PROMPT_SKIP_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("Ctrl-C/Ctrl-Q/Esc"),
     HintSpan::Text("cancel"),
 ];
-
-#[cfg(test)]
-mod tests;

@@ -26,7 +26,7 @@ resources exist.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`absent_guards.rs`](src/absent_guards.rs) | guards | hub `cleanup` suite |
+| [`absent_guards.rs`](src/absent_guards.rs) | guards | — |
 
 ## Public API
 
@@ -35,6 +35,6 @@ resources exist.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-cleanup-absent-guards
+cargo nextest run -p jackin-runtime-cleanup-absent-guards --no-tests warn
 cargo clippy -p jackin-runtime-cleanup-absent-guards --all-targets -- -D warnings
 ```

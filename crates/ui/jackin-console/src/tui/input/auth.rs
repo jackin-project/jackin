@@ -135,12 +135,7 @@ pub enum AuthFormKeyOutcome {
     OpenSourceFolderBrowser,
 }
 
-impl AuthFormKeyOutcome {
-    #[cfg(test)]
-    pub const fn is_dirty(self) -> bool {
-        !matches!(self, Self::Continue)
-    }
-}
+impl AuthFormKeyOutcome {}
 
 pub fn handle_auth_form_key(
     editor: &mut EditorState<'_>,

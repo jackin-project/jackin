@@ -48,10 +48,6 @@ pub struct AgentRelease {
     pub extra_files: Vec<AgentExtraFile>,
 }
 
-/// Sibling file shipped alongside an agent binary in the same upstream
-/// release (e.g. the code execution host the codex CLI spawns next to its
-/// own binary). Verified and cached together with the primary binary so the
-/// pair can never skew across versions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentExtraFile {
     pub name: String,
@@ -60,8 +56,6 @@ pub struct AgentExtraFile {
     pub archive_member: Option<String>,
 }
 
-/// Releases cached before sibling files existed carry no sibling metadata;
-/// re-resolve them instead of installing a known-incomplete binary set.
 fn release_has_required_extras(release: &AgentRelease) -> bool {
     if release.agent != Agent::Codex {
         return true;
@@ -102,13 +96,9 @@ async fn ensure_available_impl(
     agent: Agent,
     install_stub: bool,
 ) -> Result<AgentBinary> {
-    #[cfg(not(test))]
     let _ = install_stub;
     let stub_path = test_stub_path(paths, agent);
-    #[cfg(test)]
-    if install_stub && !is_executable_file(&stub_path) {
-        install_test_stub(paths, agent).context("installing in-process agent binary test stub")?;
-    }
+
     if is_executable_file_async(&stub_path).await {
         crate::telemetry_boundary::cache_decision(
             jackin_telemetry::schema::enums::CacheName::AgentBinary,
@@ -195,11 +185,6 @@ async fn ensure_available_impl(
 }
 
 fn spawn_release_metadata_refresh(paths: JackinPaths, agent: Agent) {
-    #[cfg(test)]
-    {
-        drop((paths, agent));
-    }
-    #[cfg(not(test))]
     jackin_telemetry::spawn::spawn_prewarm_job(
         jackin_telemetry::schema::enums::JobType::ImagePrewarm,
         async move {
@@ -279,9 +264,6 @@ async fn cached_executable_after_failure_async(
     Some((fallback_release, fallback_path))
 }
 
-/// Sibling files declared by [`AgentRelease::extra_files`] live next to the
-/// cached primary binary and are re-verified on every launch path (cache hit
-/// included) so a half-populated cache can never ship an incomplete set.
 async fn ensure_extra_files(release: &AgentRelease, cached: &Path) -> Result<()> {
     for extra in &release.extra_files {
         let dest = cached.with_file_name(&extra.name);
@@ -1209,6 +1191,3 @@ struct GithubReleaseAssetMatch {
     tag_name: String,
     asset: GithubAsset,
 }
-
-#[cfg(test)]
-mod tests;

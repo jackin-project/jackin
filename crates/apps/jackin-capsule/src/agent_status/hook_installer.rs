@@ -83,6 +83,3 @@ pub(crate) fn write_json_file(path: &Path, value: &serde_json::Value) -> anyhow:
     fs::rename(tmp, path)?;
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

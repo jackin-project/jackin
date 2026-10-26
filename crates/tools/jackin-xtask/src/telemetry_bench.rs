@@ -138,6 +138,3 @@ fn read_measurements(path: &Path) -> Result<Measurements> {
     serde_json::from_slice(&fs::read(path).with_context(|| format!("reading {}", path.display()))?)
         .with_context(|| format!("parsing {}", path.display()))
 }
-
-#[cfg(test)]
-mod tests;

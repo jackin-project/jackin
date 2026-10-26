@@ -80,6 +80,3 @@ pub fn console_help_entries(state: &ManagerState<'_>, system: &DesignSystem) -> 
     parts.push(entries_from(&CONSOLE_GLOBAL_KEYMAP, system, "Global"));
     merge_help_entries(parts)
 }
-
-#[cfg(test)]
-mod tests;

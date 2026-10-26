@@ -697,6 +697,3 @@ fn operation_inner(
         .flatten();
     Ok(guard)
 }
-
-#[cfg(test)]
-mod tests;

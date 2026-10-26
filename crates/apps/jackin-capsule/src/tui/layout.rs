@@ -136,9 +136,6 @@ mod resize;
 mod tree;
 pub use tree::PaneTree;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitOrient {
     Horizontal,

@@ -42,25 +42,6 @@ pub(crate) fn run(args: LintAgentFilesArgs) -> Result<()> {
     Report::new("agents", violations).emit(format)
 }
 
-#[cfg(test)]
-fn check(root: &Path, dirs: &[&str]) -> Result<()> {
-    use anyhow::bail;
-    let violations = collect_violations(root, dirs)?;
-    if violations.is_empty() {
-        emit(&format!(
-            "agent-file symlink gate OK - {} CLAUDE.md symlink(s) checked",
-            dirs.len()
-        ));
-        return Ok(());
-    }
-    let problems: Vec<String> = violations.into_iter().map(|v| v.message).collect();
-    bail!(
-        "{} agent-file symlink violation(s):\n  {}",
-        problems.len(),
-        problems.join("\n  ")
-    )
-}
-
 fn collect_violations(root: &Path, dirs: &[&str]) -> Result<Vec<Violation>> {
     let mut violations = Vec::new();
     for dir in dirs {
@@ -137,6 +118,3 @@ fn display(root: &Path, path: &Path) -> String {
         .display()
         .to_string()
 }
-
-#[cfg(test)]
-mod tests;

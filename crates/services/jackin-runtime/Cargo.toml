@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
+
 [package]
 name = "jackin-runtime"
 version.workspace = true
@@ -23,10 +24,8 @@ jackin-config = { workspace = true }
 jackin-env = { workspace = true }
 jackin-manifest = { workspace = true }
 jackin-docker = { workspace = true }
-jackin-image = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-host = { workspace = true }
-jackin-process = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-telemetry = { workspace = true }
 jackin-isolation = { workspace = true }
@@ -54,7 +53,6 @@ jackin-runtime-cleanup-absent-guards = { workspace = true }
 jackin-runtime-cleanup-dind-gc = { workspace = true }
 jackin-runtime-cleanup-eject-resources = { workspace = true }
 jackin-runtime-cleanup-prune-cache = { workspace = true }
-jackin-runtime-cleanup-prune-dir = { workspace = true }
 jackin-runtime-cleanup-prune-home = { workspace = true }
 jackin-runtime-cleanup-prune-images = { workspace = true }
 jackin-runtime-cleanup-prune-roles = { workspace = true }
@@ -114,28 +112,13 @@ tokio = { workspace = true, features = ["rt", "process", "io-util", "io-std", "n
 anyhow = { workspace = true }
 serde_json = { workspace = true }
 owo-colors = { workspace = true, features = ["supports-colors"] }
-sha2 = { workspace = true }
-fs4 = { workspace = true }
-toml = { workspace = true }
-toml_edit = { workspace = true }
-tempfile = { workspace = true }
 tracing.workspace = true
 
 [dev-dependencies]
-jackin-usage = { workspace = true }
-jackin-diagnostics = { workspace = true, features = ["test-support"] }
-jackin-runtime-apple-container-client = { workspace = true, features = ["test-support"] }
-jackin-runtime-identity = { workspace = true, features = ["test-support"] }
-jackin-runtime-image = { workspace = true, features = ["test-support"] }
-jackin-runtime-universe = { workspace = true, features = ["test-support"] }
-jackin-otlp-testbed = { workspace = true }
 jackin-test-support = { workspace = true }
 jackin-image = { workspace = true }
-jackin-manifest = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
-serde = { workspace = true, features = ["derive"] }
-tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
-uuid = { workspace = true }
+tempfile = { workspace = true }
 
 [build-dependencies]
 jackin-build-meta = { workspace = true }

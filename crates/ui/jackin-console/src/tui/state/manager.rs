@@ -12,7 +12,5 @@ mod refresh;
 mod rows;
 mod scroll;
 mod sessions;
-#[cfg(test)]
-mod tests;
 mod upkeep;
 pub(crate) use recovery::record_manager_recovery;

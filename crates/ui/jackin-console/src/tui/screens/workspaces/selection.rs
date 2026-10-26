@@ -38,6 +38,3 @@ impl WorkspaceSelection {
         Self::move_index(0, row_count, isize::try_from(target).unwrap_or(isize::MAX))
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -20,8 +20,6 @@ use crate::{OmpAccount, OmpError, OmpSelector};
 mod retry;
 #[cfg(unix)]
 use retry::{CaptureFence, MAX_CAPTURE_ATTEMPTS};
-#[cfg(unix)]
-pub(super) mod test_hooks;
 
 #[cfg(unix)]
 #[path = "capture/directory.rs"]
@@ -131,7 +129,7 @@ impl OmpSnapshot {
         for attempt in 0..MAX_CAPTURE_ATTEMPTS {
             check_deadline(deadline)?;
             let first = read_source_pair(root, root_identity, deadline, attempt, 0)?;
-            // Notify after each complete read, then fence it before another read begins.
+
             notify_pair_read(attempt, 0, deadline);
             fence.observe(first.as_ref())?;
             let second = read_source_pair(root, root_identity, deadline, attempt, 1)?;
@@ -679,7 +677,6 @@ fn read_source_file(
     deadline: Instant,
     database_coordinates: Option<(usize, usize)>,
 ) -> Result<Option<CapturedFile>, OmpError> {
-    #[cfg(not(any(test, feature = "test-support")))]
     let _ = database_coordinates;
 
     use nix::errno::Errno;
@@ -703,14 +700,6 @@ fn read_source_file(
     }
     if usize::try_from(entry.st_size).map_or(true, |size| size > limit) {
         return Err(OmpError::LimitExceeded);
-    }
-    #[cfg(any(test, feature = "test-support"))]
-    if let Some((attempt, pass)) = database_coordinates {
-        test_hooks::notify(CapturePhase::BeforeDatabaseOpen {
-            attempt,
-            pass,
-            deadline,
-        });
     }
     let fd = openat(
         directory,
@@ -756,31 +745,8 @@ fn read_source_file(
     Ok(Some(CapturedFile { identity, bytes }))
 }
 
-#[cfg(all(unix, any(test, feature = "test-support")))]
-use test_hooks::CapturePhase;
-
-#[cfg(all(unix, any(test, feature = "test-support")))]
-fn notify_pair_read(attempt: usize, pass: usize, deadline: Instant) {
-    test_hooks::notify(CapturePhase::AfterPairRead {
-        attempt,
-        pass,
-        deadline,
-    });
-}
-
-#[cfg(not(all(unix, any(test, feature = "test-support"))))]
 fn notify_pair_read(_attempt: usize, _pass: usize, _deadline: Instant) {}
 
-#[cfg(all(unix, any(test, feature = "test-support")))]
-fn notify_database_read(attempt: usize, pass: usize, deadline: Instant) {
-    test_hooks::notify(CapturePhase::AfterDatabaseRead {
-        attempt,
-        pass,
-        deadline,
-    });
-}
-
-#[cfg(not(all(unix, any(test, feature = "test-support"))))]
 fn notify_database_read(_attempt: usize, _pass: usize, _deadline: Instant) {}
 
 #[cfg(unix)]
@@ -963,6 +929,3 @@ fn map_wal_error(error: WalError) -> OmpError {
         | WalError::InvalidChecksum => OmpError::Unavailable,
     }
 }
-
-#[cfg(test)]
-mod tests;

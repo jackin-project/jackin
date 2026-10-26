@@ -92,8 +92,7 @@ pub(crate) fn finish_success(
     };
     let finished_at_epoch = finished_at.ceil_epoch();
     let mut view = sanitize_usage_view(view);
-    // The completion fence above makes the job capability authoritative; provider
-    // supplied view metadata cannot choose or replace the account selector.
+
     view.account.account_capability = Some(job.capability.clone());
     entry.envelope.phase = UsageRefreshPhase::Completed;
     entry.envelope.terminal_result = Some(view.clone());

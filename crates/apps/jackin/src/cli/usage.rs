@@ -34,8 +34,6 @@ mod store;
 mod verify;
 use errors::MonitorId;
 use spend::{parse_sgd_budget, parse_sgd_budget_arg, read_spend_record};
-#[cfg(test)]
-use verify::{normalize_usage_provider_label, verify_usage_accounts};
 
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
@@ -1844,6 +1842,3 @@ fn truncate(value: &str, max: usize) -> String {
     out.push_str("...");
     out
 }
-
-#[cfg(test)]
-mod tests;

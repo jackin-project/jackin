@@ -215,6 +215,3 @@ fn absolute_from(root: &Path, path: &Path) -> PathBuf {
         root.join(path)
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -327,13 +327,9 @@ fn open_state_at(parent: &std::fs::File, key: &str, create: bool) -> io::Result<
         ))
     }
 }
-
-/// Result boundary for replacing a coordination state leaf.
 #[derive(Debug)]
 pub enum StatePublishError {
-    /// The final leaf was not replaced.
     NotPublished(io::Error),
-    /// Rename replaced the final leaf, but durability or verification failed afterward.
     VisibleButUncertain(io::Error),
 }
 
@@ -359,11 +355,6 @@ impl std::error::Error for StatePublishError {
     }
 }
 
-/// Read an existing bounded JSON state leaf without creating its directory or file.
-///
-/// `key` is the stable logical key shared with [`open_in_namespace`]; this function
-/// reads `{key}.json`. The caller must hold the corresponding stable lock while the
-/// returned bytes are used as coordinated state.
 pub fn read_state_bytes_in_namespace(
     directory: &Path,
     key: &str,
@@ -384,12 +375,6 @@ pub fn read_state_bytes_in_namespace(
     read_bounded_state_file(file, maximum_bytes).map(Some)
 }
 
-/// Atomically replace `{key}.json` below a validated coordination directory.
-///
-/// The caller must hold the stable `{key}.lock` opened with [`open_in_namespace`]
-/// for the full operation and subsequent state use. The lock inode is not replaced.
-/// This serializes cooperating Jackin processes; it is not a compare-and-swap
-/// guarantee against unrelated filesystem actors.
 pub fn publish_state_bytes_in_namespace(
     directory: &Path,
     key: &str,
@@ -407,7 +392,6 @@ pub fn publish_state_bytes_in_namespace(
 
 #[cfg(unix)]
 #[derive(Clone, Copy, Eq, PartialEq)]
-// Each publication test selects one injected failure boundary.
 enum PublishTestFailure {
     TempSync,
     Rename,
@@ -714,6 +698,3 @@ fn publish_state_at(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

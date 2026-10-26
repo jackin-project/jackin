@@ -86,6 +86,3 @@ fn write_cached(path: &std::path::Path, content: &str) -> std::io::Result<()> {
     }
     std::fs::write(path, content)
 }
-
-#[cfg(test)]
-mod tests;

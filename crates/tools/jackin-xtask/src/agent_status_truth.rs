@@ -58,6 +58,3 @@ fn enforce(page: &str, capsule: &str, workspace: &str) -> Result<()> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

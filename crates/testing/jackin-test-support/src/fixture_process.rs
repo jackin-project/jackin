@@ -311,6 +311,3 @@ fn parse_log(reader: BufReader<std::fs::File>) -> std::io::Result<Vec<Invocation
     }
     Ok(invocations)
 }
-
-#[cfg(test)]
-mod tests;

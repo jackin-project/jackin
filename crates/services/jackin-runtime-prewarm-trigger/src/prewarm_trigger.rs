@@ -5,11 +5,11 @@ use jackin_config::AppConfig;
 use jackin_core::Agent;
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
-#[cfg(not(test))]
+
 use jackin_docker::docker_client::BollardDockerClient;
-#[cfg(not(test))]
+
 use jackin_runtime_image::image::prewarm_role_images;
-#[cfg(not(test))]
+
 use jackin_runtime_launch_dind::launch_dind::{
     prewarm_dind_sidecar_container_with_paths, prewarmed_dind_state_is_live,
     try_lock_prewarmed_dind, write_prewarmed_dind_state,
@@ -76,20 +76,6 @@ pub fn spawn_background_image_prewarm(
         return;
     }
 
-    #[cfg(test)]
-    {
-        let _ = (paths, debug);
-        if let Some(run) = jackin_diagnostics::active_run() {
-            run.stage(
-                "background_image_prewarm_skipped",
-                jackin_diagnostics::DiagnosticStage::DerivedImage,
-                "background image prewarm disabled in unit tests",
-                Some(&targets.len().to_string()),
-            );
-        }
-    }
-
-    #[cfg(not(test))]
     {
         let paths = paths.clone();
         jackin_telemetry::spawn::spawn_prewarm_job_attempts(
@@ -118,7 +104,6 @@ pub fn spawn_background_image_prewarm(
     }
 }
 
-#[cfg(not(test))]
 fn classify_image_prewarm_attempt<T, E>(
     result: &Result<T, E>,
 ) -> jackin_telemetry::spawn::DetachedCompletion {
@@ -132,20 +117,6 @@ fn classify_image_prewarm_attempt<T, E>(
 }
 
 pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
-    #[cfg(test)]
-    {
-        let _ = (paths, debug);
-        if let Some(run) = jackin_diagnostics::active_run() {
-            run.stage(
-                "background_sidecar_prewarm_skipped",
-                jackin_diagnostics::DiagnosticStage::Sidecar,
-                "background sidecar prewarm disabled in unit tests",
-                None,
-            );
-        }
-    }
-
-    #[cfg(not(test))]
     {
         let paths = paths.clone();
         jackin_telemetry::spawn::spawn_prewarm_job(
@@ -176,7 +147,6 @@ pub fn classify_sidecar_prewarm_attempt(
     }
 }
 
-#[cfg(not(test))]
 async fn background_sidecar_prewarm_once(
     paths: &JackinPaths,
     _debug: bool,

@@ -1272,10 +1272,6 @@ fn active_workflow_id(repository: &str, workflow: &str) -> Result<u64> {
     ids.into_iter().next().context("active workflow ID is absent")
 }
 
-#[cfg(test)]
-fn same_api_timestamp(left: Option<&str>, right: Option<&str>) -> bool {
-    left.map(api_timestamp) == right.map(api_timestamp)
-}
 
 fn validate_api_run_contract(
     run: &ApiRun,

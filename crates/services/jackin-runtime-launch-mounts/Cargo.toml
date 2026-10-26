@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
+
 [package]
 name = "jackin-runtime-launch-mounts"
 version.workspace = true
@@ -27,9 +28,6 @@ jackin-protocol = { workspace = true }
 jackin-runtime-apple-container-client = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

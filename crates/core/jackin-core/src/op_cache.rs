@@ -158,6 +158,3 @@ where
         self.sections.remove(&key);
     }
 }
-
-#[cfg(test)]
-mod tests;

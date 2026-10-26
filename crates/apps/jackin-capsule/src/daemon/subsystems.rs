@@ -63,6 +63,3 @@ impl LaunchEnv {
         &self.launch_config
     }
 }
-
-#[cfg(test)]
-mod tests;

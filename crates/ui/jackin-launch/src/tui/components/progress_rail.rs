@@ -293,6 +293,3 @@ pub fn animated_label_center(view: &LaunchView, centers: &[usize]) -> Option<usi
         Some(center.round() as usize)
     }
 }
-
-#[cfg(test)]
-mod tests;

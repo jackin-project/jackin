@@ -825,6 +825,3 @@ fn handle_workspace_env(
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -51,7 +51,6 @@ jackin-exec <command> instead of running the command directly. jackin' will
 securely inject the required credentials. Available secure bindings:
 EXEC_PROMPT
 )"
-    # Append the binding names on a new line
     JACKIN_EXEC_SYSTEM_PROMPT="${JACKIN_EXEC_SYSTEM_PROMPT}
 ${JACKIN_EXEC_BINDINGS}"
 fi
@@ -73,8 +72,6 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     fi
     ;;
   amp)
-    # CLI flag chosen over `amp.dangerouslyAllowAll: true` so jackin
-    # doesn't write to the operator's XDG_CONFIG.
     LAUNCH=(amp --dangerously-allow-all)
     ;;
   kimi)
@@ -91,11 +88,6 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     fi
     ;;
   grok)
-    # --always-approve auto-approves edits/tools (like --dangerously-*-*
-    # for Claude/Amp/Kimi/etc.).
-    # Role manifest model (if any) is passed via -m/--model in the
-    # appended "$@" (from agent_model_args).
-    # Other flags (plan mode etc.) can come via hooks or extra args.
     LAUNCH=(grok --always-approve)
     if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
@@ -107,7 +99,6 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     ;;
 esac
 
-# ── role runtime hooks ─────────────────────────────────────────────
 if [ -x /jackin/runtime/hooks/setup-once.sh ]; then
     setup_once_marker="${JACKIN_SESSION_STATE_DIR:-/jackin/state}/hooks/setup-once.done"
     if [ ! -e "$setup_once_marker" ]; then
@@ -117,9 +108,6 @@ if [ -x /jackin/runtime/hooks/setup-once.sh ]; then
         fi
         run_hook setup-once /jackin/runtime/hooks/setup-once.sh \
             "marker not written, will retry next launch"
-        # Wrap touch so the post-success failure surfaces as an attributed
-        # log; otherwise `set -e` aborts silently and the next launch
-        # silently re-runs setup-once with no operator-visible reason.
         if ! touch "$setup_once_marker"; then
             echo "[entrypoint] setup-once succeeded but marker write failed; will retry next launch" >&2
             exit 1
@@ -129,16 +117,9 @@ fi
 
 if [ -x /jackin/runtime/hooks/source.sh ]; then
     echo "[entrypoint] sourcing runtime hook..."
-    # Hooks must use `return`, not `exit` (sourced `exit` kills the
-    # entrypoint). Save PWD and clear any ERR trap the hook installs
-    # so neither leaks into the exec'd agent.
     source_pwd="$PWD"
-    # Active xtrace would dump expanded `export SECRET=...` lines from the
-    # sourced shell into operator logs; suspend it around source.
     case $- in *x*) source_xtrace=1; set +x ;; esac
-    # Capture rc before the test — `$?` after `if ! .` is 0.
     rc=0
-    # shellcheck source=/dev/null
     . /jackin/runtime/hooks/source.sh || rc=$?
     if [ "$rc" -ne 0 ]; then
         echo "[entrypoint] source hook returned non-zero (exit $rc); aborting before agent launch" >&2

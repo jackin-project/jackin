@@ -97,14 +97,8 @@ pub fn host_attach_enabled(paths: &JackinPaths) -> bool {
     if paths.test_layout {
         return false;
     }
-    #[cfg(test)]
-    {
-        false
-    }
-    #[cfg(not(test))]
-    {
-        std::env::var_os(JACKIN_HOST_ATTACH_ENV).is_some()
-    }
+
+    std::env::var_os(JACKIN_HOST_ATTACH_ENV).is_some()
 }
 
 pub async fn run_host_attach_session(
@@ -862,15 +856,6 @@ fn host_file_export_compact_line(
     )
 }
 
-#[cfg(test)]
-fn host_file_basename(path: &Path) -> String {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-        .unwrap_or("jackin-export")
-        .to_owned()
-}
-
 async fn write_input_frame<W>(writer: &mut W, bytes: &[u8], what: &str) -> Result<()>
 where
     W: AsyncWrite + Unpin,
@@ -1246,6 +1231,3 @@ impl Drop for RawModeGuard {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

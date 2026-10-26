@@ -25,7 +25,7 @@ inspection.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`inspect.rs`](src/inspect.rs) | inspection | hub `attach` suite |
+| [`inspect.rs`](src/inspect.rs) | inspection | — |
 
 ## Public API
 
@@ -36,6 +36,6 @@ inspection.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-attach-inspect
+cargo nextest run -p jackin-runtime-attach-inspect --no-tests warn
 cargo clippy -p jackin-runtime-attach-inspect --all-targets -- -D warnings
 ```

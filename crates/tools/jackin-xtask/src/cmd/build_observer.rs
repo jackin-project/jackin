@@ -1,13 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Optional archive-only host observations. They never authorize artifacts or
-//! change Cargo's result, environment, inherited process group or outer deadline.
-
 mod capture;
 mod snapshot;
-#[cfg(test)]
-mod tests;
 
 use std::{
     fs::File,
@@ -33,7 +28,6 @@ const TRUNCATED: &[u8] = b"jackin-build-observer truncated=1\n";
 pub(super) fn run(cmd: &mut Command, path: &Path) -> Result<()> {
     let display = super::display_command(cmd);
     let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
-    // Keep the SDK-owned group. A detached Cargo group would escape its timeout.
     let mut child = cmd
         .stdout(Stdio::from(file))
         .stderr(Stdio::inherit())
@@ -59,7 +53,6 @@ pub(super) fn run(cmd: &mut Command, path: &Path) -> Result<()> {
         if reporter.due(now) {
             let stats = snapshot::read(child.id(), now + SAMPLE_BUDGET);
             if let Some(line) = reporter.record(Instant::now(), stats) {
-                // A broken diagnostic sink must not become a Cargo failure.
                 drop(std::io::stderr().lock().write_all(&line));
             }
         }

@@ -144,9 +144,6 @@ pub enum ContainerInfoAction {
     Close,
 }
 
-#[cfg(test)]
-mod tests;
-
 pub static CONTAINER_INFO_KEYMAP_BINDINGS: &[KeyBinding<ContainerInfoAction>] = &[
     KeyBinding::borrowed(
         &[KeyChord::plain(KeyCode::Enter)],

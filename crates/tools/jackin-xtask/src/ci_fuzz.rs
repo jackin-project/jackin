@@ -10,9 +10,6 @@ use clap::Args;
 
 use crate::cmd;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Args, Debug)]
 pub(crate) struct CiFuzzArgs {
     #[arg(long)]

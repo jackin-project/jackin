@@ -218,16 +218,6 @@ pub fn related_restore_load_options(
     })
 }
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "un-gated test seam: unwrap inherited from hub cfg(test) code, reachable only from hub tests"
-)]
-pub fn restore_candidate_label(paths: &JackinPaths, manifest: &InstanceManifest) -> String {
-    let state_dir = paths.data_dir.join(&manifest.container_base);
-    let records = jackin_runtime_isolation::isolation::state::read_records(&state_dir).unwrap();
-    restore_candidate_label_from_records(manifest, &records)
-}
-
 fn restore_candidate_label_from_records(
     manifest: &InstanceManifest,
     records: &[jackin_core::IsolationRecord],

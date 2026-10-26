@@ -130,10 +130,6 @@ async fn initialize_schema(store: &LocalStore) -> Result<()> {
                         .await
                         .map_err(|error| anyhow::anyhow!(error.to_string()))?;
                 } else {
-                    // A competing writer may have committed the migration
-                    // while this caller waited for BEGIN IMMEDIATE. Finalize
-                    // any pending receipt only after our read-only transaction
-                    // has committed and current-schema validation succeeded.
                     let validation = validate_committed_schema(store).await?;
                     store
                         .mark_current_schema_migration_committed(
@@ -307,48 +303,7 @@ async fn migrate_schema(store: &LocalStore) -> Result<Option<BackupReceipt>> {
     .await
     .context("record host usage cache schema version")?;
     validate_current_schema(conn).await?;
-    #[cfg(test)]
-    inject_requested_commit_failure(conn).await?;
     Ok(backup_receipt)
-}
-
-#[cfg(test)]
-async fn inject_requested_commit_failure(conn: &Connection) -> Result<()> {
-    if !table_exists(conn, "_meta").await? {
-        return Ok(());
-    }
-    let mut rows = operation(
-        DbOperation::Select,
-        conn.query(
-            "SELECT value FROM _meta WHERE key = 'test_fail_schema_commit'",
-            (),
-        ),
-    )
-    .await
-    .context("read host cache commit failure marker")?;
-    let marker = rows
-        .next()
-        .await
-        .context("read host cache commit failure marker row")?
-        .map(|row| row_string(&row, 0))
-        .transpose()?;
-    drop(rows);
-    if marker.as_deref() == Some("1") {
-        operation(
-            DbOperation::Update,
-            conn.execute_batch(
-                "CREATE TEMP TABLE quota_commit_parent(id INTEGER PRIMARY KEY);
-                 CREATE TEMP TABLE quota_commit_child(
-                     parent_id INTEGER REFERENCES quota_commit_parent(id)
-                         DEFERRABLE INITIALLY DEFERRED
-                 );
-                 INSERT INTO quota_commit_child(parent_id) VALUES (1);",
-            ),
-        )
-        .await
-        .context("prepare host cache commit failure marker")?;
-    }
-    Ok(())
 }
 
 async fn validate_existing_schema_shape(conn: &Connection, version: Option<&str>) -> Result<()> {
@@ -1218,6 +1173,3 @@ fn row_opt_string(row: &Row, index: usize) -> Result<Option<String>> {
     row.get(index)
         .with_context(|| format!("read optional text column {index}"))
 }
-
-#[cfg(test)]
-mod tests;

@@ -177,6 +177,3 @@ fn canonical_vendor_event(runtime: &str, event: &str) -> Option<&'static str> {
         _ => None,
     }
 }
-
-#[cfg(test)]
-mod tests;

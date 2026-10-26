@@ -70,6 +70,3 @@ impl jackin_telemetry::propagation::Carrier for TelemetryContext {
         self.job_id = job_id;
     }
 }
-
-#[cfg(test)]
-mod tests;

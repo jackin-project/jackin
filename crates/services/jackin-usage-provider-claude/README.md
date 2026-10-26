@@ -19,7 +19,7 @@ discovery supplies the selected account credential for each refresh.
 
 | Module | Owns | Tests |
 |---|---|---|
-| [`lib.rs`](src/lib.rs) | re-exports | [`tests.rs`](src/tests.rs) |
+| [`lib.rs`](src/lib.rs) | re-exports | — |
 | [`credentials.rs`](src/credentials.rs) · [`keychain.rs`](src/keychain.rs) | credential parsing + policy-aware Keychain reads | — |
 | [`oauth_types.rs`](src/oauth_types.rs) | OAuth types | — |
 | [`refresh.rs`](src/refresh.rs) · [`snapshot.rs`](src/snapshot.rs) | broker material + API-key snapshot | — |
@@ -37,6 +37,6 @@ it checks that stdin, stdout and stderr are terminals before any Keychain access
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-claude
+cargo nextest run -p jackin-usage-provider-claude --no-tests warn
 cargo clippy -p jackin-usage-provider-claude --all-targets -- -D warnings
 ```

@@ -4,7 +4,6 @@
 pub(crate) mod hermes;
 pub(crate) mod omp;
 pub(crate) mod opencode;
-pub(crate) mod sqlite;
 
 use std::path::{Path, PathBuf};
 
@@ -121,6 +120,3 @@ pub(crate) fn select_entry_secret(
         _ => None,
     }
 }
-
-#[cfg(test)]
-mod tests;

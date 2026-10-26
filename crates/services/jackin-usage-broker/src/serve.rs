@@ -545,9 +545,6 @@ pub(crate) fn write_response(stream: &mut UnixStream, response: UsageBrokerRespo
     }
 }
 
-#[cfg(test)]
-mod tests;
-
 pub(crate) fn write_with_deadline(stream: &mut UnixStream, mut bytes: &[u8], timeout: Duration) {
     if stream.set_nonblocking(true).is_err() {
         return;

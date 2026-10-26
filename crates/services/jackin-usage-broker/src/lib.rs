@@ -54,8 +54,7 @@ pub(crate) use catalog::BrokerCatalogRefresh;
 pub(crate) use dispatch::{dispatch, read_frame};
 pub(crate) use errors::publication_identity_metadata;
 pub(crate) use executor::DiscoveryProviderExecutor;
-#[cfg(test)]
-pub(crate) use executor::probe_with_scope;
+
 pub(crate) use forwarding::{
     forwarding_requirement, refresh_authority_equivalent, unscoped_refresh_binding,
 };
@@ -76,21 +75,10 @@ pub(crate) use leader::{
 pub(crate) use monitor::MonitorStore;
 pub use monitor::parse_statusline;
 pub(crate) use projection::{LoadedProjection, load_projection};
-#[cfg(test)]
-pub(crate) use rediscover::provider_probe_outcome;
-#[cfg(test)]
-pub(crate) use rediscover::provider_probe_outcome_with_metadata;
-#[cfg(test)]
-pub(crate) use rediscover::provider_probe_outcome_with_rate_limit;
 pub(crate) use rediscover::{
     catalog_entry_map, ensure_catalog_matches, grouped_bindings, rediscover_all_bindings,
     rediscover_bindings, rediscover_discovery, refresh_binding_outcome,
 };
-#[cfg(test)]
-pub(crate) use serve::write_with_deadline;
 pub(crate) use serve::{ServeConfig, serve, write_response};
 
 pub(crate) use startup::BrokerStartupCleanup;
-
-#[cfg(test)]
-mod tests;

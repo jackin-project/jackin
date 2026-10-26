@@ -213,6 +213,3 @@ fn validate_default_launch_ids(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

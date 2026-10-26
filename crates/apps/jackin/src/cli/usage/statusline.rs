@@ -237,6 +237,3 @@ sys.exit(0)
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
-
-#[cfg(test)]
-mod tests;

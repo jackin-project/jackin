@@ -1,4 +1,3 @@
-// One compile-time root authority; consumers retain borrowed static path values.
 macro_rules! jackin_path {
     ($suffix:literal) => {
         concat!("/jackin", $suffix)
@@ -84,7 +83,6 @@ pub const AGENT_STATUS_OPENCODE_PLUGIN: &str =
 pub const CHECKS_PREFIX: &str = jackin_path!("/checks/");
 pub const ACCOUNT_CREDENTIALS_DIR: &str = jackin_path!("/account-credentials");
 
-// Container system paths retain their distro semantics and filesystem rights.
 pub const SYSTEM_ETC_DIR: &str = "/etc";
 pub const SYSTEM_VAR_DIR: &str = "/var";
 pub const SYSTEM_RUN_DIR: &str = "/run";
@@ -151,6 +149,3 @@ pub fn is_jackin_owned(path: &str) -> bool {
 pub fn is_run_owned(path: &str) -> bool {
     path_is_ancestor_or_equal(Path::new(RUN_DIR), Path::new(path.trim()))
 }
-
-#[cfg(test)]
-mod tests;

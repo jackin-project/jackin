@@ -26,7 +26,7 @@ step.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`attach.rs`](src/attach.rs) | attach step | hub `apple_container` paths (no dedicated suite) |
+| [`attach.rs`](src/attach.rs) | attach step | — |
 
 ## Public API
 
@@ -35,6 +35,6 @@ step.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-attach
+cargo nextest run -p jackin-runtime-apple-container-attach --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-attach --all-targets -- -D warnings
 ```

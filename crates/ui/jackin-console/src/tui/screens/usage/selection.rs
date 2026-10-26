@@ -127,10 +127,6 @@ impl UsageScreenState {
         self.selected == 0
     }
 
-    /// Select a semantic usage row if its stable ID is still visible.
-    ///
-    /// This updates local selection state only. A prepared row target is not a
-    /// frame revision or owner authorization for live input dispatch.
     pub fn select_rendered_target(&mut self, target: &UsageRowTarget) -> bool {
         let order = self.visible_order();
         if order.is_empty() {
@@ -156,10 +152,6 @@ impl UsageScreenState {
         }
     }
 
-    /// Apply a usage-local wheel action to this screen's selection or scroll.
-    ///
-    /// This updates local state only and does not validate a painted frame or
-    /// authorize input dispatch.
     pub fn apply_wheel_action(&mut self, action: UsageWheelAction) {
         match action {
             UsageWheelAction::MoveSelection(delta) => {

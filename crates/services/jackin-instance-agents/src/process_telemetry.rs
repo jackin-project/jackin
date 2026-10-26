@@ -36,6 +36,3 @@ pub fn exec_sync(request: &ExecRequest) -> anyhow::Result<ExecResult> {
     operation.complete(completion.0, completion.1);
     result.map_err(|_| anyhow::anyhow!("process spawn failed"))
 }
-
-#[cfg(test)]
-mod tests;

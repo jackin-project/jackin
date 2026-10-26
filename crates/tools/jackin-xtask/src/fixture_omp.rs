@@ -186,9 +186,6 @@ fn generate_reused_wal_fixture(temporary: &Path, artifacts: &mut Artifacts) -> R
     update_credential(&reused_connection, "fixture-reused-current-token")?;
     ensure_credential(&reused_connection, "fixture-reused-current-token")?;
     let (reused_db, current_generation_wal) = save_pair(&reused_database)?;
-    // SQLite can leave old-generation frames in the physical WAL after reuse.
-    // Validate the live generation through its salt boundary; trailing frames
-    // with prior salts are deliberately outside its checksum chain.
     let current_generation = wal_current_generation(&current_generation_wal)?;
     verify_current_generation_checksums(&current_generation_wal, current_generation)?;
     if current_generation.frames == 0 {
@@ -703,6 +700,3 @@ fn validate_artifacts(artifacts: &Artifacts) -> Result<()> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

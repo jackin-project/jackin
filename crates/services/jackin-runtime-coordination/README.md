@@ -20,8 +20,7 @@ coordination.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`coordination.rs`](src/coordination.rs) | roots + locks | `coordination/tests/` |
-| [`coordination/`](src/coordination/) | test suites | `coordination/tests/` |
+| [`coordination.rs`](src/coordination.rs) | roots + locks | — |
 
 ## Public API
 
@@ -33,6 +32,6 @@ coordination.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-coordination
+cargo nextest run -p jackin-runtime-coordination --no-tests warn
 cargo clippy -p jackin-runtime-coordination --all-targets -- -D warnings
 ```

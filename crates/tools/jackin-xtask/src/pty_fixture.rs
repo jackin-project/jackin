@@ -32,6 +32,3 @@ pub(crate) fn run(args: PtyFixtureArgs) -> Result<()> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

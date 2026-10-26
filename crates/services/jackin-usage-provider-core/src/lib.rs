@@ -8,7 +8,6 @@ mod format;
 mod http;
 mod io;
 mod labels;
-mod omp;
 mod outcome;
 mod process_telemetry;
 mod quota;
@@ -16,9 +15,6 @@ mod refresh;
 mod surface;
 mod transport;
 mod view;
-
-#[cfg(test)]
-mod tests;
 
 use jackin_core::account_key_hash;
 use std::collections::HashMap;

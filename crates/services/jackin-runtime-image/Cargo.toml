@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
+
 [package]
 name = "jackin-runtime-image"
 version.workspace = true
@@ -19,7 +20,6 @@ name = "jackin_runtime_image"
 path = "src/lib.rs"
 
 [features]
-test-support = []
 
 [dependencies]
 jackin-core = { workspace = true }
@@ -38,10 +38,6 @@ anyhow = { workspace = true }
 futures-util = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
-
-[dev-dependencies]
-jackin-test-support = { workspace = true }
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

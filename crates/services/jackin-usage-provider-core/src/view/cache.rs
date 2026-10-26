@@ -57,8 +57,7 @@ impl UsageCache {
         if state.error.is_some() {
             refresh_failed_view_presentation(&mut view);
         }
-        // The exact target/state match and surface check above authenticate this
-        // selector for the adopted view; discard any provider-supplied tab set.
+
         view.account.account_capability = Some(target.capability.clone());
         view.tabs.clear();
         self.snapshots.insert(

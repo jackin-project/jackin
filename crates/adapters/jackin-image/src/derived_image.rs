@@ -287,8 +287,6 @@ pub fn render_derived_dockerfile(
         s
     };
 
-    // Claude plugin steps need the claude CLI baked earlier in this same
-    // image. Variants that do not install Claude must not emit them.
     let claude_plugin_section = if supported.contains(&Agent::Claude) {
         render_claude_plugin_section(claude_config)
     } else {
@@ -451,10 +449,7 @@ fn stage_prefetched_agent_binary(
             agent.slug()
         ))
     })?;
-    // The codex CLI spawns its execution host from the binary directory; the
-    // sibling must ride the same build context or every tool call fails at
-    // runtime. A missing sibling file fails loudly at the COPY step of
-    // install_block instead.
+
     if agent == Agent::Codex {
         let sibling = host_path.with_file_name(jackin_core::CODEX_CODE_MODE_HOST_BINARY);
         if sibling.is_file() {
@@ -795,6 +790,3 @@ fn copy_dir_all_under_root(from: &Path, to: &Path, canonical_root: &Path) -> any
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

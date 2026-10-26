@@ -32,6 +32,6 @@ by `jackin-usage`.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-kimi
+cargo nextest run -p jackin-usage-provider-kimi --no-tests warn
 cargo clippy -p jackin-usage-provider-kimi --all-targets -- -D warnings
 ```

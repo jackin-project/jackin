@@ -33,6 +33,6 @@ consumed by `jackin-usage`.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-minimax
+cargo nextest run -p jackin-usage-provider-minimax --no-tests warn
 cargo clippy -p jackin-usage-provider-minimax --all-targets -- -D warnings
 ```

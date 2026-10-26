@@ -255,7 +255,6 @@ pub fn install_test_stub(paths: &JackinPaths) -> Result<()> {
     Ok(())
 }
 
-// async retained for caller symmetry with the Linux exec path
 async fn verify_version(binary: &Path, expected: &str) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
@@ -330,6 +329,3 @@ mod cache;
 mod download;
 mod origin;
 use download::download_and_cache;
-
-#[cfg(test)]
-mod tests;

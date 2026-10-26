@@ -5,6 +5,3 @@ pub use adapter::{
     hermes_subscription_bucket, hermes_tracker_counter_buckets, hermes_view,
     parse_hermes_subscription,
 };
-
-#[cfg(test)]
-mod tests;

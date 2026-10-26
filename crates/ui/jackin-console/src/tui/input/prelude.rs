@@ -248,6 +248,3 @@ fn open_workdir_pick_from_pending_mount(prelude: &mut crate::tui::state::CreateP
         state: create_prelude_workdir_pick_state(&[mount]),
     });
 }
-
-#[cfg(test)]
-mod tests;

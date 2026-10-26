@@ -31,12 +31,10 @@ pub struct UsageRouteState {
 }
 
 impl UsageRouteState {
-    /// Revoke any input authority from the most recently painted Usage frame.
     pub fn clear_painted_pointer(&mut self) {
         self.painted_pointer = None;
     }
 
-    /// Publish a Usage receipt only when it still matches the live route state.
     pub fn publish_painted_pointer(
         &mut self,
         area: ratatui::layout::Rect,

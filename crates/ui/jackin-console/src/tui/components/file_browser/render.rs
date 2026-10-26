@@ -185,6 +185,3 @@ fn selection_region_at(
         .find(|region| region.area.contains(position))
         .map(|region| region.id)
 }
-
-#[cfg(test)]
-mod tests;

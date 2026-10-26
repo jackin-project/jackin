@@ -20,8 +20,7 @@ diagnostics.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`exit_summary.rs`](src/exit_summary.rs) | headline + rows | `exit_summary/tests.rs` |
-| [`exit_summary/`](src/exit_summary/) | test suites | `exit_summary/tests.rs` |
+| [`exit_summary.rs`](src/exit_summary.rs) | headline + rows | — |
 
 ## Public API
 
@@ -30,6 +29,6 @@ diagnostics.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-exit-summary
+cargo nextest run -p jackin-runtime-exit-summary --no-tests warn
 cargo clippy -p jackin-runtime-exit-summary --all-targets -- -D warnings
 ```

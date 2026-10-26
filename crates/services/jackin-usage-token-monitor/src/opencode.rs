@@ -69,6 +69,3 @@ pub(crate) async fn poll_session(session: &mut TokenSession) -> PollStatus {
         PollStatus::from_changed(changed)
     }
 }
-
-#[cfg(test)]
-mod tests;

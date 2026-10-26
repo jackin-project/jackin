@@ -64,10 +64,6 @@ pub struct StatusTick {
 pub(crate) const STATUS_FLAP_WINDOW: std::time::Duration = std::time::Duration::from_secs(30);
 pub(crate) const STATUS_FLAP_THRESHOLD: usize = 3;
 
-/// Who may currently feed input bytes into a session's PTY.
-///
-/// Step 1 tracks only the exclusive operator flag; lease generations and
-/// operator identity stay engine work. The default keeps automatic input open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InputOwnership {
     #[default]
@@ -112,14 +108,6 @@ pub enum GitContext {
 }
 
 impl GitContext {
-    #[must_use]
-    pub fn branch_name(&self) -> Option<&BranchName> {
-        match self {
-            Self::Branch { name, .. } => Some(name),
-            _ => None,
-        }
-    }
-
     #[must_use]
     pub fn head(&self) -> Option<&Oid> {
         match self {

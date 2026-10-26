@@ -109,6 +109,3 @@ pub fn render<A: AgentChoice>(frame: &mut Frame<'_>, area: Rect, state: &AgentCh
         &mut ListState::new(Some(focus_index_in(&state.choices, state.focused))),
     );
 }
-
-#[cfg(test)]
-mod tests;

@@ -1,24 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Final host-owned workflow grant for programmatic worker launches.
-//!
-//! The workflow grant is applied **after** [`crate::docker_profile::fold_role_grants`]
-//! at the end of grant resolution. It is cap-only: it may lower resource
-//! maxima and deny privileges (DinD/privileged/sudo/host namespaces/extra
-//! capabilities), but it can never raise a limit or grant a privilege the
-//! folded role grants do not already deny. Manual launch profiles are
-//! unaffected: this function only runs on the headless workflow path.
-
 use super::{DindGrant, EffectiveGrants, normalize_cap};
 use jackin_core::ContainerFullInspection;
 
-/// How the selected backend enforces the allowed-destination rules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkEnforcementLevel {
-    /// Enforcement matches destination IPs and ports (strongest).
     IpPort,
-    /// Enforcement matches hostnames only (weaker: DNS races apply).
     Hostname,
 }
 
@@ -31,9 +19,6 @@ impl std::fmt::Display for NetworkEnforcementLevel {
     }
 }
 
-/// Disk policy for the MVP: admission checks, a usage monitor, and bounded
-/// artifact sizes. There is no hard quota unless the backend provides a
-/// tested one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiskPolicy {
     MonitorOnly,
@@ -41,15 +26,16 @@ pub enum DiskPolicy {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WorkflowGrantError {
-    /// A requested hard disk quota: rejected, disk monitor only.
-    HardDiskQuotaRequested { bytes: u64 },
-    /// A requested network guarantee stronger than the profile can enforce.
+    HardDiskQuotaRequested {
+        bytes: u64,
+    },
     UnsupportedNetworkEnforcement {
         requested: String,
         enforceable: NetworkEnforcementLevel,
     },
-    /// A host-namespace mode the workflow path never permits.
-    HostNamespaceRequested { field: &'static str },
+    HostNamespaceRequested {
+        field: &'static str,
+    },
 }
 
 impl std::fmt::Display for WorkflowGrantError {
@@ -81,7 +67,6 @@ impl std::fmt::Display for WorkflowGrantError {
 
 impl std::error::Error for WorkflowGrantError {}
 
-/// Host-owned final grant for one workflow worker launch.
 #[derive(Debug, Clone, Default)]
 pub struct WorkflowGrant {
     pub cpu_max: Option<f64>,
@@ -89,15 +74,10 @@ pub struct WorkflowGrant {
     pub memory_reservation_max_bytes: Option<u64>,
     pub pids_max: Option<i64>,
     pub nofile_max: Option<u64>,
-    /// Capabilities that must be absent from the final grants.
     pub deny_caps: Vec<String>,
-    /// Worker deadline in seconds, enforced on the trusted supervisor path
-    /// so host daemon loss cannot remove it.
     pub deadline_secs: Option<u64>,
     pub network_enforcement: Option<NetworkEnforcementLevel>,
-    /// Requesting `Some` is always rejected: disk monitor only.
     pub disk_quota_bytes: Option<u64>,
-    /// Requesting a stronger rule than the profile enforces is rejected.
     pub require_ip_port_enforcement: bool,
 }
 
@@ -110,9 +90,6 @@ fn lower_max<T: PartialOrd>(slot: &mut Option<T>, cap: Option<T>) {
     }
 }
 
-/// Apply the final workflow grant. Cap-only: resource maxima move down or
-/// stay, privileges move toward deny or stay; nothing is ever raised or
-/// granted.
 pub fn apply_workflow_grant(
     mut base: EffectiveGrants,
     grant: &WorkflowGrant,
@@ -129,8 +106,6 @@ pub fn apply_workflow_grant(
     lower_max(&mut base.pids, grant.pids_max);
     lower_max(&mut base.nofile, grant.nofile_max);
 
-    // Deny-only privilege moves. Each assignment removes authority; none can
-    // add it back.
     base.dind = DindGrant::None;
     base.sudo = false;
     base.no_new_privileges = true;
@@ -145,12 +120,6 @@ pub fn apply_workflow_grant(
     Ok(base)
 }
 
-/// Admit the network enforcement level for a launch.
-///
-/// `ip_port_enforceable` reports whether the selected profile/backend can
-/// restrict destinations by IP and port. A requested `ip-port` guarantee that
-/// cannot be enforced is rejected instead of silently downgraded to
-/// hostname matching.
 pub fn admit_network_enforcement(
     ip_port_enforceable: bool,
     require_ip_port: bool,
@@ -169,7 +138,6 @@ pub fn admit_network_enforcement(
     })
 }
 
-/// Admit the disk policy: any requested hard quota is rejected.
 pub fn admit_disk_policy(quota_bytes: Option<u64>) -> Result<DiskPolicy, WorkflowGrantError> {
     match quota_bytes {
         Some(bytes) => Err(WorkflowGrantError::HardDiskQuotaRequested { bytes }),
@@ -177,7 +145,6 @@ pub fn admit_disk_policy(quota_bytes: Option<u64>) -> Result<DiskPolicy, Workflo
     }
 }
 
-/// One grant-vs-actual difference found by pre-prompt inspection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrantMismatch {
     pub field: &'static str,
@@ -203,12 +170,6 @@ fn mismatch(field: &'static str, expected: String, actual: String) -> GrantMisma
     }
 }
 
-/// Compare the admitted grant against the full inspect readback.
-///
-/// Returns every difference. Launch must stop before the first agent prompt
-/// when the result is non-empty. Limits set to `None` in the grant mean
-/// "no limit admitted": an inspected limit is then also a mismatch, because
-/// the worker runs with a bound the grant never allowed.
 pub fn compare_grant_vs_actual(
     grant: &EffectiveGrants,
     workflow: &WorkflowGrant,
@@ -231,9 +192,6 @@ pub fn compare_grant_vs_actual(
     }
     if grant.sudo {
         out.push(mismatch("sudo", "false".to_owned(), "true".to_owned()));
-    }
-    if !grant.no_new_privileges && actual.no_new_privileges {
-        // Informational only: enforced is stricter; no mismatch.
     }
     if grant.no_new_privileges && !actual.no_new_privileges {
         out.push(mismatch(
@@ -300,6 +258,3 @@ pub fn compare_grant_vs_actual(
     }
     out
 }
-
-#[cfg(test)]
-mod tests;

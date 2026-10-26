@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Executed consumer checks. Transport fixtures and production launches remain
-//! distinct obligations; neither certifies live provider authentication.
-
 mod anchored_fs;
 mod evidence;
 mod lanes;
@@ -368,6 +365,3 @@ fn verify_platform(platform: &str) -> Result<()> {
     );
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

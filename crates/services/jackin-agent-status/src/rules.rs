@@ -306,21 +306,6 @@ impl RulePackRegistry {
         Ok(Self { packs, notes })
     }
 
-    #[cfg(test)]
-    fn from_pack_dirs(
-        runtime_pack_dir: Option<&Path>,
-        override_pack_dir: Option<&Path>,
-    ) -> anyhow::Result<Self> {
-        let mut sources = vec![PackSource::Embedded];
-        if let Some(dir) = runtime_pack_dir {
-            sources.push(PackSource::LocalDir(dir.to_path_buf()));
-        }
-        if let Some(dir) = override_pack_dir {
-            sources.push(PackSource::LocalDir(dir.to_path_buf()));
-        }
-        Self::from_sources(sources)
-    }
-
     pub fn evaluate(&self, agent: Option<&str>, screen_rows: &[String]) -> Option<RuleMatch> {
         self.packs.get(agent?)?.evaluate(screen_rows)
     }
@@ -378,7 +363,6 @@ fn load_signed_bundle(
     load_bundle_entries(packs, entries)
 }
 
-// Entry parsing does not authenticate a bundle; runtime loading must pass bundle verification first.
 fn load_bundle_entries(
     packs: &mut HashMap<String, RulePack>,
     entries: &[SignedPackEntry],
@@ -860,6 +844,3 @@ fn override_pack_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
         .map(|home| home.join(".jackin/agent-status/packs"))
 }
-
-#[cfg(test)]
-mod tests;

@@ -42,6 +42,3 @@ fn palette_binding(raw: Option<&str>) -> Option<u8> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

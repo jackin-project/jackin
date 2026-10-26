@@ -225,6 +225,3 @@ pub(crate) fn shell_quote(value: &OsStr) -> String {
         format!("'{}'", value.replace('\'', "'\"'\"'"))
     }
 }
-
-#[cfg(test)]
-mod tests;

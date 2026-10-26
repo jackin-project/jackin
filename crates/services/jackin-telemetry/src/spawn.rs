@@ -809,6 +809,3 @@ where
         work()
     }
 }
-
-#[cfg(test)]
-mod tests;

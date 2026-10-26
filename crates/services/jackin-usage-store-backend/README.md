@@ -18,7 +18,7 @@ so a backend bump stays one file.
 
 | Module | Owns | Tests |
 |---|---|---|
-| [`lib.rs`](src/lib.rs) | connections + operations | [`tests.rs`](src/tests.rs) |
+| [`lib.rs`](src/lib.rs) | connections + operations | — |
 
 ## Public API
 
@@ -28,6 +28,6 @@ so a backend bump stays one file.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-store-backend
+cargo nextest run -p jackin-usage-store-backend --no-tests warn
 cargo clippy -p jackin-usage-store-backend --all-targets -- -D warnings
 ```

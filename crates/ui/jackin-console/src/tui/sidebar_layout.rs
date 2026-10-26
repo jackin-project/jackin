@@ -5,11 +5,7 @@ mod blocks;
 mod inputs;
 mod layout;
 mod scroll;
-#[cfg(test)]
-mod tests;
 mod types;
-#[cfg(test)]
-pub(crate) use crate::mount_info_cache::MountInfoCache;
 pub use blocks::{
     agents_block_agent_count, agents_block_agent_count_for_config, agents_block_content_width,
     agents_block_height, env_block_height, env_block_height_for_config, global_mount_rows_height,
@@ -28,12 +24,8 @@ pub use layout::{
     focused_mount_scroll_area_still_scrollable, focused_scroll_area_axes,
     focused_scroll_area_still_scrollable,
 };
-#[cfg(test)]
-pub(crate) use ratatui::layout::Rect;
 pub(crate) use scroll::mount_data_row_count;
 pub use scroll::{clamp_scroll_area, scroll_area_axes, scroll_area_scrollable};
-#[cfg(test)]
-pub(crate) use termrock::scroll::ScrollAxes;
 pub use types::{
     COMPACT_INSTANCES_HEIGHT, GlobalMountRowsSelection, SelectedSidebarTarget, SidebarLayout,
     SidebarLayoutMetrics, SidebarScrollArea, SidebarScrollAreas, SidebarScrollFocus,

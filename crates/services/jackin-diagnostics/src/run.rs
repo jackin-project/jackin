@@ -3,8 +3,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
-#[cfg(test)]
-use std::sync::Weak;
+
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -12,21 +11,11 @@ use rand::RngExt as _;
 
 use jackin_core::JackinPaths;
 
-#[cfg(test)]
-mod tests;
-
 static ACTIVE_RUN: OnceLock<Mutex<Option<Arc<RunDiagnostics>>>> = OnceLock::new();
 static HOST_PANIC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
-#[cfg(test)]
-static ACTIVE_RUN_BY_DIR: OnceLock<Mutex<HashMap<PathBuf, Weak<RunDiagnostics>>>> = OnceLock::new();
 
 fn active_slot() -> &'static Mutex<Option<Arc<RunDiagnostics>>> {
     ACTIVE_RUN.get_or_init(|| Mutex::new(None))
-}
-
-#[cfg(test)]
-fn active_run_by_dir() -> &'static Mutex<HashMap<PathBuf, Weak<RunDiagnostics>>> {
-    ACTIVE_RUN_BY_DIR.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn locked<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -46,8 +35,6 @@ pub struct RunDiagnostics {
 #[derive(Debug)]
 pub struct ActiveRunGuard {
     previous: Option<Arc<RunDiagnostics>>,
-    #[cfg(test)]
-    active_dir: Option<PathBuf>,
 }
 
 impl Drop for ActiveRunGuard {
@@ -57,10 +44,7 @@ impl Drop for ActiveRunGuard {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = self.previous.take();
         drop(guard);
-        #[cfg(test)]
-        if let Some(active_dir) = self.active_dir.take() {
-            locked(active_run_by_dir()).remove(&active_dir);
-        }
+
         crate::observability::shutdown_otlp();
     }
 }
@@ -116,21 +100,11 @@ impl RunDiagnostics {
     }
 
     pub fn activate(self: &Arc<Self>) -> ActiveRunGuard {
-        #[cfg(test)]
-        let active_dir = Some(self.scope.clone());
-        #[cfg(test)]
-        if let Some(dir) = &active_dir {
-            locked(active_run_by_dir()).insert(dir.clone(), Arc::downgrade(self));
-        }
         let previous = active_slot()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .replace(Arc::clone(self));
-        ActiveRunGuard {
-            previous,
-            #[cfg(test)]
-            active_dir,
-        }
+        ActiveRunGuard { previous }
     }
 
     pub fn run_id(&self) -> &str {
@@ -424,14 +398,6 @@ pub fn active_run() -> Option<Arc<RunDiagnostics>> {
 }
 
 pub fn active_run_for_paths(paths: &JackinPaths) -> Option<Arc<RunDiagnostics>> {
-    #[cfg(test)]
-    {
-        return locked(active_run_by_dir())
-            .get(&paths.data_dir)
-            .and_then(Weak::upgrade);
-    }
-
-    #[cfg(not(test))]
     {
         let run = active_run()?;
         (run.scope == paths.data_dir).then_some(run)

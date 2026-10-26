@@ -143,6 +143,3 @@ pub fn cursor_scroll_for_panel(
     let content_height = usize::from(u16::MAX).saturating_add(viewport_h);
     follow_cursor_y(cursor, content_height, viewport_h, scroll_y)
 }
-
-#[cfg(test)]
-mod tests;

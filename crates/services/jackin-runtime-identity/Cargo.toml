@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
+
 [package]
 name = "jackin-runtime-identity"
 version.workspace = true
@@ -20,7 +21,6 @@ path = "src/lib.rs"
 
 [features]
 default = []
-test-support = []
 
 [dependencies]
 jackin-core = { workspace = true }

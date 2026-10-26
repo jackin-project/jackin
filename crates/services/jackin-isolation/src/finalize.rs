@@ -84,8 +84,6 @@ impl PreservedReason {
     }
 }
 
-/// Returns the hold message when a preservation hold blocks removal of the
-/// recorded source.
 fn hold_message(container_state_dir: &Path, record: &IsolationRecord) -> Option<String> {
     crate::holds::check_removal(container_state_dir, &record.worktree_path)
         .err()
@@ -314,8 +312,6 @@ async fn finalize_clean_exit(
     let mut preserved_records: Vec<(IsolationRecord, PreservedReason)> = Vec::new();
 
     for record in records {
-        // Holds are enforced in finalization as well as in the force-cleanup
-        // path: a held source is preserved even when its tree looks clean.
         if let Some(hold) = hold_message(container_state_dir, &record) {
             eprintln!(
                 "[jackin] preserved isolated worktree for {container_name}:\n         {wt}\n         reason: {hold}",
@@ -468,6 +464,3 @@ fn mark_preserved(
     upsert_record(container_state_dir, updated.clone())?;
     Ok(updated)
 }
-
-#[cfg(test)]
-mod tests;

@@ -85,6 +85,3 @@ pub fn worktree_inspect(worktree_path: &str) -> jackin_core::WorktreeInspect {
         files,
     }
 }
-
-#[cfg(test)]
-mod tests;

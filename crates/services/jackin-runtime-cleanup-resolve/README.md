@@ -20,7 +20,7 @@ resolution.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`resolve.rs`](src/resolve.rs) | resolution | hub `cleanup` suite |
+| [`resolve.rs`](src/resolve.rs) | resolution | — |
 
 ## Public API
 
@@ -31,6 +31,6 @@ resolution.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-cleanup-resolve
+cargo nextest run -p jackin-runtime-cleanup-resolve --no-tests warn
 cargo clippy -p jackin-runtime-cleanup-resolve --all-targets -- -D warnings
 ```

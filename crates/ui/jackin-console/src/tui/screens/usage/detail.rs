@@ -116,16 +116,6 @@ pub(super) fn render_detail_with_geometry(
     Some(render_detail_panel(frame, area, title, screen, lines))
 }
 
-#[cfg(test)]
-pub(crate) fn render_detail(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    state: &ManagerState<'_>,
-    now_epoch: i64,
-) {
-    let _ = render_detail_with_geometry(frame, area, state, now_epoch);
-}
-
 fn render_detail_panel(
     frame: &mut Frame<'_>,
     area: Rect,

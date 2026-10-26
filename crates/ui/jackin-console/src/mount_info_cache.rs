@@ -5,8 +5,6 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-#[cfg(test)]
-use crate::mount_info::inspect;
 use crate::mount_info::{GitOrigin, MountKind};
 
 pub trait MountSource {
@@ -19,21 +17,8 @@ pub struct MountInfoCache {
 }
 
 impl MountInfoCache {
-    #[cfg(test)]
-    pub fn refresh_src(&self, src: &str) {
-        let kind = inspect(src);
-        self.entries.borrow_mut().insert(src.to_owned(), kind);
-    }
-
     pub fn store_entries(&self, entries: impl IntoIterator<Item = (String, MountKind)>) {
         self.entries.borrow_mut().extend(entries);
-    }
-
-    #[cfg(test)]
-    pub fn refresh_mounts(&self, mounts: &[impl MountSource]) {
-        for mount in mounts {
-            self.refresh_src(mount.mount_src());
-        }
     }
 
     pub fn inspect_cached(&self, src: &str) -> Option<MountKind> {

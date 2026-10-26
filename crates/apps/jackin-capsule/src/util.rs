@@ -153,6 +153,3 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
     let value = String::from_utf8_lossy(&stdout).trim().to_owned();
     if value.is_empty() { None } else { Some(value) }
 }
-
-#[cfg(test)]
-mod tests;

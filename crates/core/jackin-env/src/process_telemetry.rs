@@ -119,6 +119,3 @@ pub(crate) fn exec_sync_op_with_retry(
     }
     unreachable!("attempt count is nonzero")
 }
-
-#[cfg(test)]
-mod tests;

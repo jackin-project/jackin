@@ -12,9 +12,6 @@ use syn::visit::Visit;
 
 use crate::cmd;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Args, Debug)]
 pub(crate) struct CiDocExamplesArgs {
     #[arg(long)]

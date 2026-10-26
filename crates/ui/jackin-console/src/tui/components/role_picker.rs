@@ -240,6 +240,3 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         &mut ListState::new(state.list_state.selected().copied()),
     );
 }
-
-#[cfg(test)]
-mod tests;

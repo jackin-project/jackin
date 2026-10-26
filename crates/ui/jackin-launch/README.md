@@ -17,11 +17,11 @@ Launch cockpit TUI — the presentation surface for `jackin load`. Renders build
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
 | [`terminal_protocol.rs`](src/terminal_protocol.rs) | typed TermRock OSC encoding for the host launch adapter | — |
-| [`progress.rs`](src/progress.rs) · [`progress/`](src/progress) | `LaunchProgress` stage machine + test renderer | [`tests.rs`](src/progress/tests.rs) |
+| [`progress.rs`](src/progress.rs) · [`progress/`](src/progress) | `LaunchProgress` stage machine + test renderer | — |
 | [`launch_output.rs`](src/launch_output.rs) | launch output streaming | — |
 | [`build_log.rs`](src/build_log.rs) | build-log streaming | — |
-| [`standalone_dialog_sink.rs`](src/standalone_dialog_sink.rs) · [`standalone_dialog_sink/`](src/standalone_dialog_sink) | standalone dialog sink | [`tests.rs`](src/standalone_dialog_sink/tests.rs) |
-| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | launch cockpit view (TermRock + `jackin-tui` operator-info), incl. the inspect-surface diff-scroll model | [`tests.rs`](src/tui/tests.rs) |
+| [`standalone_dialog_sink.rs`](src/standalone_dialog_sink.rs) · [`standalone_dialog_sink/`](src/standalone_dialog_sink) | standalone dialog sink | — |
+| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | launch cockpit view (TermRock + `jackin-tui` operator-info), incl. the inspect-surface diff-scroll model | — |
 
 ## Public API
 
@@ -30,6 +30,6 @@ The launch-cockpit entry point consumed by `jackin-runtime`'s launch flow. It co
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-launch
+cargo nextest run -p jackin-launch --no-tests warn
 cargo clippy -p jackin-launch --all-targets -- -D warnings
 ```

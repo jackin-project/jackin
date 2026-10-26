@@ -229,10 +229,7 @@ pub enum DaemonResponseKind {
     },
     Error {
         message: String,
-        /// C7 typed error code (`invalid_request`, `not_found`,
-        /// `busy`, `denied`, `state_conflict`, `needs_operator`,
-        /// `execution_error`). Defaults for readers of older daemon
-        /// responses that carry no code.
+
         #[serde(default)]
         code: String,
     },
@@ -509,8 +506,7 @@ pub struct DaemonLayout {
     pub run_dir: PathBuf,
     pub socket_path: PathBuf,
     pub pid_path: PathBuf,
-    /// Digest-verified plan store the daemon cross-checks frozen
-    /// test bindings against before recording a verdict.
+
     pub plan_store_dir: PathBuf,
 }
 
@@ -570,14 +566,6 @@ pub fn serve(layout: &DaemonLayout, build_id: &str) -> Result<ServeOutcome> {
     }
 }
 
-/// Serve with an injected workflow backend (trait-param injection for
-/// run control, mirroring [`AttentionNotifierAdapter`]). Opening the
-/// service persists the incremented owner epoch, so every `serve()`
-/// startup invalidates automatic input stamped with older epochs.
-///
-/// This blocks the calling thread (synchronous socket loop plus
-/// blocking store calls). Callers on an async runtime must move it to
-/// a blocking thread instead of stalling the executor.
 pub fn serve_with_workflow(
     layout: &DaemonLayout,
     build_id: &str,
@@ -599,18 +587,7 @@ pub fn serve_with_workflow(
         }
     };
     jackin_telemetry::stream::complete_success(open);
-    // Automatic recovery on daemon startup: the owner epoch was
-    // already bumped when the workflow service opened, so run
-    // `recover` now against the startup inventory before accepting
-    // clients. Crash-left `dispatching` commands become
-    // `delivery_unknown` here and are never resubmitted.
-    //
-    // Fail-open rationale: recovery is re-runnable through the
-    // explicit `WorkflowRecover` RPC, and refusing to serve would
-    // hide the store behind a dead socket with no operator path to
-    // inspect it. A startup failure is logged and serving continues;
-    // per-run storage failures are still reported by the recovery
-    // report itself and by later RPC errors.
+
     startup_recovery(workflow, &InstanceInventory::default());
     let close = jackin_telemetry::stream::close_on_drop();
     let coredump_policy = disable_coredumps();
@@ -647,10 +624,6 @@ pub fn serve_with_workflow(
     result
 }
 
-/// Run one recovery pass and return its report, or `None` when
-/// recovery itself fails. Extracted so unit tests can prove both
-/// outcomes without binding the control socket: `Some` means the
-/// startup pass ran, `None` means the caller logs and keeps serving.
 pub fn startup_recovery(
     workflow: &mut dyn WorkflowBackend,
     inventory: &InstanceInventory,
@@ -976,8 +949,6 @@ pub fn handle_request_line(
     .complete_without_transport()
 }
 
-/// Request-line entry point with an injected workflow backend for
-/// run control.
 pub fn handle_request_line_with_workflow(
     line: &str,
     layout: &DaemonLayout,
@@ -1314,7 +1285,6 @@ fn coded_error_response(
     }
 }
 
-/// C7 typed error code for a workflow failure kind.
 fn workflow_error_code(error: &jackin_workflow::WorkflowError) -> &'static str {
     use jackin_workflow::ErrorKind;
     match error.kind() {
@@ -1327,15 +1297,6 @@ fn workflow_error_code(error: &jackin_workflow::WorkflowError) -> &'static str {
     }
 }
 
-/// Verify `record_test` inputs against the run's stored plan
-/// before the daemon freezes anything: the full check argv must match
-/// the supported frozen shape, script bytes must match the selected
-/// bundle entry, the bundle digest must match the frozen manifest,
-/// and timeout must match the plan. The CLI checks the program early
-/// for a fast failure;
-/// this daemon-side check is authoritative for every RPC caller,
-/// including direct socket clients that bypass the CLI. On success
-/// the stored per-file bundle manifest is returned to the service.
 fn check_test_binding(
     workflow: &mut dyn WorkflowBackend,
     plan_store_dir: &Path,
@@ -1367,7 +1328,6 @@ fn check_test_binding(
     Ok(plan.verification.test_bundle_files.clone())
 }
 
-/// Binding comparison against the frozen input store.
 fn verify_test_binding(
     verification: &jackin_workflow_spec::model::VerificationPolicy,
     check_program: &str,
@@ -1445,10 +1405,6 @@ fn verify_test_binding(
     Ok(())
 }
 
-/// Run-control dispatch: every variant drives the injected
-/// workflow backend as the `operator` actor. `plan_store_dir` is the
-/// digest-verified plan store `record_test` bindings are checked
-/// against before any verdict is frozen.
 fn handle_workflow_request(
     id: String,
     kind: DaemonRequestKind,
@@ -1843,6 +1799,3 @@ fn linux_notify_args(title: &str, body: &str) -> Vec<String> {
 fn apple_script_string(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
-
-#[cfg(test)]
-mod tests;

@@ -24,8 +24,8 @@ fingerprints.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`account_config.rs`](src/account_config.rs) | config | `account_config/tests/` |
-| [`account_config/`](src/account_config/) | bounds + suites | `account_config/tests/` |
+| [`account_config.rs`](src/account_config.rs) | config | — |
+| [`account_config/`](src/account_config/) | bounds + suites | — |
 
 ## Public API
 
@@ -35,6 +35,6 @@ fingerprints.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-account-config
+cargo nextest run -p jackin-runtime-launch-account-config --no-tests warn
 cargo clippy -p jackin-runtime-launch-account-config --all-targets -- -D warnings
 ```

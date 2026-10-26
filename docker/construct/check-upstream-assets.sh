@@ -5,7 +5,6 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=versions.env
 . "${script_dir}/versions.env"
-# The construct must support the same minimum as the root project.
 MISE_VERSION="$(python3 - "${script_dir}/../../mise.toml" <<'PYTHON'
 import pathlib, re, sys, tomllib
 config = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())

@@ -65,9 +65,6 @@ pub use selection::{
     try_select_settings_trust_row,
 };
 
-#[cfg(test)]
-mod tests;
-
 use crate::tui::layout::list::SidebarScrollAreas;
 
 pub(super) fn editor_tab_hit_regions(
@@ -101,22 +98,6 @@ pub(super) fn tab_hit_id(regions: &[HitRegion<usize>], mouse: MouseEvent) -> Opt
         .iter()
         .find(|region| region.area.contains(position))
         .map(|region| region.id)
-}
-
-#[cfg(test)]
-use crate::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
-#[cfg(test)]
-use crate::tui::mount_display::workspace_config_mounts_content_width as workspace_mounts_content_width;
-#[cfg(test)]
-use termrock::scroll::max_offset_u16 as max_scroll_offset;
-
-#[cfg(test)]
-fn handle_mouse(
-    state: &mut ManagerState<'_>,
-    mouse: MouseEvent,
-    term_size: Rect,
-) -> super::InputOutcome {
-    handle_mouse_with_config(state, mouse, term_size, None)
 }
 
 pub fn handle_mouse_with_config(

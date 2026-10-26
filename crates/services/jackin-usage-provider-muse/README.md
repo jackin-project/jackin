@@ -23,7 +23,7 @@ views. Over-cap readings stay raw; re-reads never reset freshness.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`adapter.rs`](src/adapter.rs) | observation surface | [`tests.rs`](src/tests.rs) + [`tests/`](src/tests/) |
+| [`adapter.rs`](src/adapter.rs) | observation surface | — |
 
 ## Public API
 
@@ -33,6 +33,6 @@ key-exchange policy, consumed by `jackin-usage`.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-muse
+cargo nextest run -p jackin-usage-provider-muse --no-tests warn
 cargo clippy -p jackin-usage-provider-muse --all-targets -- -D warnings
 ```

@@ -21,11 +21,6 @@ pub type SettingsModalOutcome = crate::tui::message::ConsoleSettingsModalOutcome
 
 pub type SettingsAuthOutcome = crate::tui::message::ConsoleSettingsAuthOutcome<jackin_core::OpRef>;
 
-#[cfg(test)]
-pub fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
-    handle_settings_key_with_effects(state, key);
-}
-
 pub fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
         return;

@@ -42,6 +42,6 @@ wire error constructors.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-broker-wire
+cargo nextest run -p jackin-usage-broker-wire --no-tests warn
 cargo clippy -p jackin-usage-broker-wire --all-targets -- -D warnings
 ```

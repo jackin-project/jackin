@@ -32,6 +32,6 @@ Typed errors: [`InstanceError`](src/error.rs) (index/auth join/manifest agent) a
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-instance-credentials
+cargo nextest run -p jackin-instance-credentials --no-tests warn
 cargo clippy -p jackin-instance-credentials --all-targets -- -D warnings
 ```

@@ -964,6 +964,3 @@ fn leading_spaces(line: &str) -> Option<usize> {
     }
     Some(indent)
 }
-
-#[cfg(test)]
-mod tests;

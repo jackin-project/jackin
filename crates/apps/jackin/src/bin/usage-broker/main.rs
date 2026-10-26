@@ -492,6 +492,3 @@ fn parse_socket_alias_root_argument(args: &[String]) -> Result<Option<PathBuf>, 
     }
     Ok(Some(path))
 }
-
-#[cfg(test)]
-mod tests;

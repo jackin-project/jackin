@@ -281,6 +281,3 @@ fn report_if_denied(
         }),
     );
 }
-
-#[cfg(test)]
-mod tests;

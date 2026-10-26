@@ -19,14 +19,14 @@ The jackin❯ CLI — the operator-facing binary that loads roles into isolated 
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | library re-exports | — |
 | [`main.rs`](src/main.rs) | binary entry | — |
-| [`cli.rs`](src/cli.rs) · [`cli/`](src/cli) | CLI parsing, including diagnostics validation (no local logs command) | [`tests.rs`](src/cli/tests.rs) |
-| [`app.rs`](src/app.rs) · [`app/`](src/app) | app wiring | [`tests.rs`](src/app/tests.rs) |
+| [`cli.rs`](src/cli.rs) · [`cli/`](src/cli) | CLI parsing, including diagnostics validation (no local logs command) | — |
+| [`app.rs`](src/app.rs) · [`app/`](src/app) | app wiring | — |
 | [`console.rs`](src/console.rs) · [`console/`](src/console) | console entry and dependency-crossing host adapters | — |
-| [`prompt.rs`](src/prompt.rs) · [`prompt/`](src/prompt) | prompt flow | [`tests.rs`](src/prompt/tests.rs) |
-| [`preflight.rs`](src/preflight.rs) · [`preflight/`](src/preflight) | preflight checks | [`tests.rs`](src/preflight/tests.rs) |
-| [`workspace.rs`](src/workspace.rs) · [`workspace/`](src/workspace) | workspace commands | [`tests.rs`](src/workspace/tests.rs) |
-| [`role_authoring.rs`](src/role_authoring.rs) · [`role_authoring/`](src/role_authoring) | role-authoring commands | [`tests.rs`](src/role_authoring/tests.rs) |
-| [`role_claude_plugins.rs`](src/role_claude_plugins.rs) · [`role_claude_plugins/`](src/role_claude_plugins) | role Claude-plugins commands | [`tests.rs`](src/role_claude_plugins/tests.rs) |
+| [`prompt.rs`](src/prompt.rs) · [`prompt/`](src/prompt) | prompt flow | — |
+| [`preflight.rs`](src/preflight.rs) · [`preflight/`](src/preflight) | preflight checks | — |
+| [`workspace.rs`](src/workspace.rs) · [`workspace/`](src/workspace) | workspace commands | — |
+| [`role_authoring.rs`](src/role_authoring.rs) · [`role_authoring/`](src/role_authoring) | role-authoring commands | — |
+| [`role_claude_plugins.rs`](src/role_claude_plugins.rs) · [`role_claude_plugins/`](src/role_claude_plugins) | role Claude-plugins commands | — |
 | [`warp.rs`](src/warp.rs) | Warp integration | — |
 | [`error.rs`](src/error.rs) | top-level error type | — |
 | [`bin/`](src/bin) | extra binaries | — |
@@ -38,6 +38,6 @@ The `jackin` binary (`jackin`, `jackin load`, `jackin console`, …) plus the li
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin
+cargo nextest run -p jackin --no-tests warn
 cargo clippy -p jackin --all-targets -- -D warnings
 ```

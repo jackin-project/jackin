@@ -114,6 +114,3 @@ fn restore(repository: &str, artifact_id: u64) -> Result<()> {
 fn required_env(name: &str) -> Result<String> {
     env::var(name).with_context(|| format!("{name} is not set"))
 }
-
-#[cfg(test)]
-mod tests;

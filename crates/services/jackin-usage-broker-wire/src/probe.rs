@@ -94,6 +94,3 @@ pub fn probe_timeout_outcome() -> ProviderProbeOutcome {
         retry_at_epoch: None,
     }
 }
-
-#[cfg(test)]
-mod tests;

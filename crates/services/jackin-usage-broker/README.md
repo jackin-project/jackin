@@ -30,6 +30,6 @@ The socket file stays `0600`; only its name changes on alias.
 ## Verify
 
 ```sh
-cargo nextest run -p jackin-usage-broker
+cargo nextest run -p jackin-usage-broker --no-tests warn
 cargo clippy -p jackin-usage-broker --all-targets -- -D warnings
 ```

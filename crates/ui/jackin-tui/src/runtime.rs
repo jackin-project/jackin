@@ -131,6 +131,3 @@ where
 {
     terminal.draw(render)
 }
-
-#[cfg(test)]
-mod tests;

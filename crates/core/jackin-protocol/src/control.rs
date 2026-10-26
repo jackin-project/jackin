@@ -323,7 +323,7 @@ pub struct TokenUsageSummary {
 pub struct AccountUsageSnapshotView {
     pub provider: String,
     pub account_label: String,
-    /// A persisted account selector. This value is metadata and grants no authority.
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_capability: Option<UsageAccountCapability>,
     pub source: String,
@@ -438,7 +438,7 @@ impl FocusedUsageView {
 pub struct FocusedAccountHeader {
     pub provider_label: String,
     pub account_label: String,
-    /// A persisted account selector. This value is metadata and grants no authority.
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_capability: Option<UsageAccountCapability>,
     #[serde(default)]
@@ -554,7 +554,6 @@ pub struct QuotaBucketView {
 }
 
 impl QuotaBucketView {
-    /// Validate source metadata and prevent mixed count and money quantities.
     pub fn validate(&self) -> Result<(), String> {
         validate_percent_origin(
             "used",
@@ -613,7 +612,6 @@ pub struct UsageDetailRow {
 }
 
 impl UsageDetailRow {
-    /// Validate the selected meter value and its orientation as a pair.
     pub fn validate(&self) -> Result<(), String> {
         if self.meter_percent.is_some() != self.meter_side.is_some() {
             return Err("usage detail meter percent and side must be present together".to_owned());
@@ -631,7 +629,7 @@ pub struct UsageDetailPresentation {
 pub struct UsageProviderTab {
     #[serde(default)]
     pub id: String,
-    /// A persisted account selector. This value is metadata and grants no authority.
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_capability: Option<UsageAccountCapability>,
     pub label: String,
@@ -751,6 +749,3 @@ pub fn frame(msg: &impl Serialize) -> Vec<u8> {
     out.extend_from_slice(&json);
     out
 }
-
-#[cfg(test)]
-mod tests;

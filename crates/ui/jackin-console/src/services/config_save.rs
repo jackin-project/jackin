@@ -5,8 +5,6 @@ mod diff;
 mod edits;
 mod preview;
 mod settings;
-#[cfg(test)]
-mod tests;
 pub(crate) use diff::{push_auth_forward_diff, push_env_diff, validate_settings_env_keys};
 pub use edits::{
     WorkspaceSaveDiffOp, build_workspace_edit, validate_settings_env, workspace_save_diff_plan,

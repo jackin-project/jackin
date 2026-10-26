@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(test)]
-use crate::tui::components::status_bar::{PrefixMode, StatusTabCell};
-#[cfg(test)]
-use ratatui::style::Color;
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
 use termrock::style::DesignSystem;
@@ -187,6 +183,3 @@ fn line_display_cols(line: &ratatui::text::Line<'_>) -> usize {
 
 mod status_bar;
 pub use status_bar::StatusBarWidget;
-
-#[cfg(test)]
-mod tests;

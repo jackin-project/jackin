@@ -92,8 +92,7 @@ pub(crate) fn validate_envelope(
             bucket.validate().map_err(|_| StateStoreError::Corrupt)?;
         }
     }
-    // A legacy None is recoverable only because this envelope's selector was
-    // validated above. Conflicting Some selectors are rejected before stamping.
+
     Ok(sanitize_envelope(envelope, expected))
 }
 

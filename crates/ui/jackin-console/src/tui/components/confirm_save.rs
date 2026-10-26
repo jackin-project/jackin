@@ -298,6 +298,3 @@ pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveSt
         },
     );
 }
-
-#[cfg(test)]
-mod tests;

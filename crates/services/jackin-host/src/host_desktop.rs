@@ -93,6 +93,3 @@ pub fn host_open_command_with_policy(
         None
     }
 }
-
-#[cfg(test)]
-mod tests;

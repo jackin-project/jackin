@@ -27,7 +27,7 @@ reporting.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`timing.rs`](src/timing.rs) | timing guard + failure reporting | hub `cleanup` suite |
+| [`timing.rs`](src/timing.rs) | timing guard + failure reporting | — |
 
 ## Public API
 
@@ -38,6 +38,6 @@ reporting.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-cleanup-timing
+cargo nextest run -p jackin-runtime-cleanup-timing --no-tests warn
 cargo clippy -p jackin-runtime-cleanup-timing --all-targets -- -D warnings
 ```

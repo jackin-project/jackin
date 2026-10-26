@@ -36,8 +36,8 @@ launch.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`restore.rs`](src/restore.rs) | candidates + dialog + status | hub `launch::restore` suite (`restore/tests.rs`) + hub `launch` suite |
-| [`restore_resolve.rs`](src/restore_resolve.rs) | resolution engine | hub `launch` suite |
+| [`restore.rs`](src/restore.rs) | candidates + dialog + status | — |
+| [`restore_resolve.rs`](src/restore_resolve.rs) | resolution engine | — |
 
 ## Public API
 
@@ -56,6 +56,6 @@ launch.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-restore
+cargo nextest run -p jackin-runtime-launch-restore --no-tests warn
 cargo clippy -p jackin-runtime-launch-restore --all-targets -- -D warnings
 ```

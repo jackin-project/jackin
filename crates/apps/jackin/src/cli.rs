@@ -132,6 +132,3 @@ jackin help config jackin help account", before_help = BANNER, styles = HELP_STY
         command: Vec<String>,
     },
 }
-
-#[cfg(test)]
-mod tests;

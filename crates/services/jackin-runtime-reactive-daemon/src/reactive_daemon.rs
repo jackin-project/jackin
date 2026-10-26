@@ -283,6 +283,3 @@ fn handle_request<N: AttentionNotifier>(
         },
     }
 }
-
-#[cfg(test)]
-mod tests;

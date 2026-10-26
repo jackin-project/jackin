@@ -25,10 +25,7 @@ use super::{
 };
 use std::path::Path;
 use std::sync::MutexGuard;
-#[cfg(test)]
-use std::sync::atomic::AtomicUsize;
-#[cfg(test)]
-use std::sync::atomic::Ordering;
+
 use std::time::{Duration, Instant};
 
 impl MonitorStore {
@@ -47,8 +44,7 @@ impl MonitorStore {
                 directory,
                 state: Mutex::new(state),
                 collector_admission: Mutex::new(()),
-                #[cfg(test)]
-                collector_admission_waiters: AtomicUsize::new(0),
+
                 experimental_collector_source: Mutex::new(None),
                 changed: Condvar::new(),
             }),
@@ -224,36 +220,10 @@ impl MonitorStore {
     }
 
     fn lock_collector_admission(&self) -> MutexGuard<'_, ()> {
-        #[cfg(test)]
-        match self.inner.collector_admission.try_lock() {
-            Ok(guard) => return guard,
-            Err(std::sync::TryLockError::WouldBlock) => {
-                self.inner
-                    .collector_admission_waiters
-                    .fetch_add(1, Ordering::SeqCst);
-                let guard = self
-                    .inner
-                    .collector_admission
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                self.inner
-                    .collector_admission_waiters
-                    .fetch_sub(1, Ordering::SeqCst);
-                return guard;
-            }
-            Err(std::sync::TryLockError::Poisoned(_)) => {}
-        }
         self.inner
             .collector_admission
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn collector_admission_waiters(&self) -> usize {
-        self.inner
-            .collector_admission_waiters
-            .load(Ordering::SeqCst)
     }
 
     pub(crate) fn set_experimental_collector_source(&self, source: Option<String>) {
@@ -263,11 +233,6 @@ impl MonitorStore {
             .experimental_collector_source
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = source;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn experimental_collector_source_for_test(&self) -> Option<String> {
-        self.experimental_collector_source()
     }
 
     fn experimental_collector_source(&self) -> Option<String> {

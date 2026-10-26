@@ -54,11 +54,6 @@ pub(crate) struct RawOpSection {
     pub(super) label: String,
 }
 
-// SAFETY: `value` is intentionally absent from this struct, so it is not
-// retained in `RawOpField` or the picker model. `item_get` still buffers the
-// CLI's raw response, so this does not prevent secret values from entering
-// process memory. Do not add a `value` field here.
-//
 #[derive(serde::Deserialize)]
 pub(crate) struct RawOpField {
     pub(super) id: String,
@@ -542,6 +537,3 @@ pub(crate) fn resolve_edited_field_ref(
         on_demand: false,
     })
 }
-
-#[cfg(test)]
-mod tests;

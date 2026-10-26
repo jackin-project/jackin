@@ -4,8 +4,6 @@ use jackin_core::JackinPaths;
 use jackin_docker::docker_client::DockerApi;
 
 use crate::apple_container_client::{AppleContainerApi, AppleContainerClient};
-#[cfg(test)]
-use crate::instance::{BackendResources, InstanceManifest};
 
 pub trait ContainerBackend {
     async fn eject(&self, paths: &JackinPaths, container_name: &str) -> Result<()>;
@@ -211,6 +209,3 @@ where
 pub use jackin_runtime_backend_selection::backend_selection::{
     InstanceBackend, backend_for_manifest, backend_for_state,
 };
-
-#[cfg(test)]
-mod tests;

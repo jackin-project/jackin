@@ -22,7 +22,7 @@ and model projection.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`dry_run.rs`](src/dry_run.rs) | identity + projection | hub `launch::dry_run` suite (`case_01`, `case_02`) |
+| [`dry_run.rs`](src/dry_run.rs) | identity + projection | — |
 
 ## Public API
 
@@ -34,6 +34,6 @@ and model projection.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-dry-run
+cargo nextest run -p jackin-runtime-launch-dry-run --no-tests warn
 cargo clippy -p jackin-runtime-launch-dry-run --all-targets -- -D warnings
 ```

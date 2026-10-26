@@ -1,19 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-# gitleaks and betterleaks configuration (betterleaks reads .gitleaks.toml when no .betterleaks.toml exists): the default rules, plus one narrow allowlist. The rules are NOT weakened.
 [extend]
 useDefault = true
 
-# Reason: velnor-actions generates .github/velnor/task-execution-manifest-v1.json. Its `matrix_key` values are
-# `m-` plus 16 hex digits, a deterministic job-matrix identifier, not a credential. They change on every regeneration,
-# so line-based fingerprints in .gitleaksignore cannot follow them. Scoped to that rule, that file and that exact shape.
 [[allowlists]]
 description = "velnor generated matrix_key identifiers"
 condition = "AND"
 targetRules = ["generic-api-key"]
 regexTarget = "match"
-# Gitleaks 8.30.1 matches `matrix_key":"…"`; Betterleaks 1.9.0 matches `key":"…"`.
-# Whole-match anchors prevent an unrelated `api_key":"…"` match from inheriting the `key` suffix.
 regexes = ['''^matrix_key":"m-[0-9a-f]{16}"$''', '''^key":"m-[0-9a-f]{16}"$''']
 paths = ['''^\.github/velnor/task-execution-manifest-v1\.json$''']

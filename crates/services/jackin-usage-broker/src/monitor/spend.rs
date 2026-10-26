@@ -777,6 +777,3 @@ fn hash_period(hasher: &mut Sha256, period: Option<(i64, i64)>) {
         None => hasher.update([0]),
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -35,10 +35,6 @@ hex        = { workspace = true }
 fs4        = { workspace = true }
 
 [features]
-test-support = []
-
-[dev-dependencies]
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

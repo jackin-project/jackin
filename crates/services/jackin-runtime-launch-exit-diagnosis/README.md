@@ -46,6 +46,6 @@ for premature exits.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-exit-diagnosis
+cargo nextest run -p jackin-runtime-launch-exit-diagnosis --no-tests warn
 cargo clippy -p jackin-runtime-launch-exit-diagnosis --all-targets -- -D warnings
 ```

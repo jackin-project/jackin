@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Inventory comes from actual Cargo compiler-artifact records, including fresh
-//! cached units. Metadata supplies identities only, never workspace-wide features
-//! or a guessed package dependency closure.
-
 use super::{
     BuildEvidence,
     archive::{Member, hash_reader},
@@ -56,10 +52,6 @@ struct Profile {
 pub(super) type Checksums = BTreeMap<(String, String, String), String>;
 
 pub(super) fn metadata() -> Result<Metadata> {
-    // A fresh qualified Cargo home need not contain every workspace source.
-    // Full metadata can need other members' dependency manifests: retrieve
-    // their locked sources here. Compiler records still own SBOM coverage;
-    // this identity lookup never broadens the compiled component inventory.
     let bytes =
         cmd::output(cmd::command("cargo").args(["metadata", "--format-version", "1", "--locked"]))?;
     serde_json::from_slice(&bytes).context("parsing Cargo package identities")
@@ -131,7 +123,6 @@ pub(super) fn components(
                         && !artifact.filenames.is_empty(),
                     "compiler artifact is not a release build input"
                 );
-                // Both fresh and newly compiled records describe actual build units.
                 let _fresh = artifact.fresh;
                 let role = artifact_role(&artifact, evidence)?;
                 if artifact.target.kind.iter().any(|kind| kind == "bin") {
@@ -244,8 +235,6 @@ fn artifact_role(artifact: &Artifact, evidence: &BuildEvidence<'_>) -> Result<&'
     Ok(role)
 }
 
-// Cargo 1.99.1's BuildStarted/RunId grammar, emitted by --timings:
-// https://github.com/rust-lang/cargo/blob/5f94df4789f005f9a352888e8355ffc645b7ed0e/src/util/logger.rs
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct BuildStarted {

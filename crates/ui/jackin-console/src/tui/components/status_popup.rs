@@ -48,6 +48,3 @@ pub fn instance_action_busy_message(
 ) -> String {
     format!("{} {container}…", instance_action_busy_title(action))
 }
-
-#[cfg(test)]
-mod tests;

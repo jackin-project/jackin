@@ -6,9 +6,6 @@ use super::{FullRedrawReason, Multiplexer, SessionInfo};
 mod spawn_support;
 mod usage_views;
 
-#[cfg(test)]
-pub(crate) use usage_views::refresh_usage_targets_with_client;
-
 impl Multiplexer {
     pub(super) fn invalidate(&mut self, reason: FullRedrawReason) {
         self.render.frame_generation = self.render.frame_generation.wrapping_add(1);

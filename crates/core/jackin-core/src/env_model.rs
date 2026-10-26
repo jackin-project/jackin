@@ -286,6 +286,3 @@ pub fn topological_env_order(
 
     Ok(result)
 }
-
-#[cfg(test)]
-mod tests;

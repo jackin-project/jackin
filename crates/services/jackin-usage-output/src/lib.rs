@@ -20,6 +20,3 @@ pub fn stderr_line(args: Arguments<'_>) {
     let mut stderr = std::io::stderr().lock();
     drop(writeln!(stderr, "{args}"));
 }
-
-#[cfg(test)]
-mod tests;

@@ -28,8 +28,6 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
-proptest = { workspace = true }
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

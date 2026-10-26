@@ -7,15 +7,14 @@ use jackin_protocol::control::{
     StatusSlot, UsageSnapshotStatus,
 };
 use jackin_usage_provider_core::{
-    bucket, epoch_seconds_from_maybe_ms, format_currency, humanize_plan_label, json_number,
-    parse_iso_epoch, quota_pace_label, timed_bucket, with_status_slot, with_used_percent,
+    bucket, epoch_seconds_from_maybe_ms, format_currency, json_number, parse_iso_epoch,
+    quota_pace_label, timed_bucket, with_status_slot, with_used_percent,
 };
 
 #[derive(Debug, Clone)]
 pub struct CursorUsageSummary {
     pub(crate) cycle_start: Option<i64>,
     pub(crate) cycle_end: Option<i64>,
-    pub(crate) membership: Option<String>,
     pub(crate) total_percent: Option<f64>,
     pub(crate) auto_percent: Option<f64>,
     pub(crate) api_percent: Option<f64>,
@@ -66,13 +65,6 @@ pub fn parse_cursor_usage_summary(value: &serde_json::Value) -> Option<CursorUsa
     Some(CursorUsageSummary {
         cycle_start: epoch("billingCycleStart").or_else(|| epoch("billing_cycle_start")),
         cycle_end: epoch("billingCycleEnd").or_else(|| epoch("billing_cycle_end")),
-        membership: value
-            .get("membershipType")
-            .or_else(|| value.get("membership_type"))
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|membership| !membership.is_empty())
-            .map(humanize_plan_label),
         total_percent: percent(plan, &["totalPercentUsed", "total_percent_used"]),
         auto_percent: percent(plan, &["autoPercentUsed", "auto_percent_used"]),
         api_percent: percent(plan, &["apiPercentUsed", "api_percent_used"]),

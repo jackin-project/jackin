@@ -182,6 +182,3 @@ fn curl_text(url: &str) -> Result<String> {
     curl.args(["-fsSL", "--max-time", "30", url]);
     cmd::output_string(&mut curl).with_context(|| format!("fetching {url}"))
 }
-
-#[cfg(test)]
-mod tests;

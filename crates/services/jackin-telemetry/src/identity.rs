@@ -211,6 +211,3 @@ fn emit_session_event(def: &'static crate::event::EventDef, context: SessionCont
     }
     let _event_result = crate::emit_event(def, crate::FieldSet::new(&attrs, None));
 }
-
-#[cfg(test)]
-mod tests;

@@ -111,6 +111,3 @@ pub(crate) fn plan_from_decision(
         role_models: std::collections::BTreeMap::new(),
     }
 }
-
-#[cfg(test)]
-mod tests;

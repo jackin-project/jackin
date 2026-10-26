@@ -34,6 +34,6 @@ are dependency-free apart from the agent slug mapping.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-host-presentation
+cargo nextest run -p jackin-usage-host-presentation --no-tests warn
 cargo clippy -p jackin-usage-host-presentation --all-targets -- -D warnings
 ```

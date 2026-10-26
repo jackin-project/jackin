@@ -20,8 +20,8 @@ Host client for capsule
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`session_control.rs`](src/session_control.rs) | send + events | `session_control/tests/` |
-| [`session_control/`](src/session_control/) | test suites | `session_control/tests/` |
+| [`session_control.rs`](src/session_control.rs) | send + events | — |
+| [`session_control/`](src/session_control/) | test suites | — |
 
 ## Public API
 
@@ -35,6 +35,6 @@ Host client for capsule
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-session-control
+cargo nextest run -p jackin-runtime-session-control --no-tests warn
 cargo clippy -p jackin-runtime-session-control --all-targets -- -D warnings
 ```

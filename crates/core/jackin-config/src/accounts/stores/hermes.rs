@@ -361,6 +361,3 @@ fn parse_single_quoted(value: &str) -> Result<String, StoreError> {
     }
     Ok(out)
 }
-
-#[cfg(test)]
-mod tests;

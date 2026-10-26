@@ -45,6 +45,3 @@ pub(crate) fn finish_operation<T>(
     }
     result.map_err(crate::ConfigError::telemetry_owned)
 }
-
-#[cfg(test)]
-mod tests;

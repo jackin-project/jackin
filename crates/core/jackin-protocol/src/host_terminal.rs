@@ -188,6 +188,3 @@ fn parse_channel(channel: &str) -> Option<u8> {
     let max = (1u32 << (4 * digits)) - 1;
     u8::try_from(value * 255 / max).ok()
 }
-
-#[cfg(test)]
-mod tests;

@@ -24,9 +24,6 @@ fn derive_version() -> String {
         return version;
     }
 
-    // Git owns administrative-path discovery: linked worktrees have a private
-    // HEAD and shared refs, and packed-refs is legitimately absent in fresh clones.
-    // Cargo treats a missing watched input as dirty on every subsequent build.
     if let Ok(directory) = std::env::current_dir() {
         for path in git_watch_paths(&directory) {
             println!("cargo:rerun-if-changed={}", path.display());
@@ -60,10 +57,6 @@ fn local_version_override(
     Some(cargo_version.to_owned())
 }
 
-#[cfg(test)]
-mod tests;
-
-/// Watch only existing Git inputs, independently of the caller crate's depth.
 fn git_watch_paths(directory: &Path) -> Vec<PathBuf> {
     let request = ExecRequest::new(
         "git",

@@ -12,18 +12,6 @@ use ratatui::{
 
 use crate::tui::state::ManagerState;
 
-#[cfg(test)]
-pub(crate) fn render_account_list(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    state: &ManagerState<'_>,
-    now_epoch: i64,
-) {
-    drop(render_account_list_with_geometry(
-        frame, area, state, now_epoch,
-    ));
-}
-
 pub(crate) fn render_account_list_with_geometry(
     frame: &mut Frame<'_>,
     area: Rect,

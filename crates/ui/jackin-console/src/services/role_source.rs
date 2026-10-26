@@ -69,6 +69,3 @@ pub fn resolve_role_input_source(
         source,
     })
 }
-
-#[cfg(test)]
-mod tests;

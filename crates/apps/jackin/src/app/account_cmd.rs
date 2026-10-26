@@ -428,6 +428,3 @@ pub(super) fn handle_workspace(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

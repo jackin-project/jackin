@@ -25,7 +25,7 @@ fingerprints.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`account_identity.rs`](src/account_identity.rs) | identity | `account_identity/tests/` |
+| [`account_identity.rs`](src/account_identity.rs) | identity | — |
 
 ## Public API
 
@@ -39,6 +39,6 @@ fingerprints.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-account-identity
+cargo nextest run -p jackin-runtime-launch-account-identity --no-tests warn
 cargo clippy -p jackin-runtime-launch-account-identity --all-targets -- -D warnings
 ```

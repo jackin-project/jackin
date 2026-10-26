@@ -130,8 +130,6 @@ fn render_stage_modal(
                 }
             }
         }
-        // The Workflows stage draws its confirmation dialog inline in
-        // its own surface; no modal overlay applies.
         ConsoleModalRenderPlan::Workflows => {}
         ConsoleModalRenderPlan::Editor => {
             if let crate::tui::state::ManagerStage::Editor(editor) = &state.stage

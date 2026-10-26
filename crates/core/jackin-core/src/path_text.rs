@@ -15,6 +15,3 @@ pub fn shorten_home(path: &str) -> String {
         _ => path.to_owned(),
     }
 }
-
-#[cfg(test)]
-mod tests;

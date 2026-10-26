@@ -17,10 +17,10 @@ Concrete Docker daemon client and subprocess shell runner for jackin❯. The wor
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
-| [`docker_client.rs`](src/docker_client.rs) · [`docker_client/`](src/docker_client) | Docker daemon client | [`tests.rs`](src/docker_client/tests.rs) |
-| [`shell_runner.rs`](src/shell_runner.rs) · [`shell_runner/`](src/shell_runner) | captured shell-command runner | [`tests.rs`](src/shell_runner/tests.rs) |
-| [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry) | bounded subprocess telemetry ownership | [`tests.rs`](src/process_telemetry/tests.rs) |
-| [`net.rs`](src/net.rs) · [`net/`](src/net) | Docker networking helpers | [`tests.rs`](src/net/tests.rs) |
+| [`docker_client.rs`](src/docker_client.rs) · [`docker_client/`](src/docker_client) | Docker daemon client | — |
+| [`shell_runner.rs`](src/shell_runner.rs) · [`shell_runner/`](src/shell_runner) | captured shell-command runner | — |
+| [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry) | bounded subprocess telemetry ownership | — |
+| [`net.rs`](src/net.rs) · [`net/`](src/net) | Docker networking helpers | — |
 
 ## Public API
 
@@ -29,6 +29,6 @@ Concrete Docker daemon client and subprocess shell runner for jackin❯. The wor
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-docker
+cargo nextest run -p jackin-docker --no-tests warn
 cargo clippy -p jackin-docker --all-targets -- -D warnings
 ```

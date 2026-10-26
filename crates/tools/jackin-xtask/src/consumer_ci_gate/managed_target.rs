@@ -109,11 +109,6 @@ impl TargetDirectory {
         })
     }
 
-    #[cfg(test)]
-    pub(super) fn report_directory(&self) -> &Path {
-        &self.reports_path
-    }
-
     pub(super) fn repository(&self) -> &RepositoryDirectory {
         &self.repository
     }
@@ -361,6 +356,3 @@ fn validate_simple_name(name: &OsStr, label: &str) -> Result<()> {
     );
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

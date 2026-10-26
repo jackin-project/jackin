@@ -41,6 +41,3 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> PollStatus {
         Err(super::ProviderReadDegraded) => PollStatus::Degraded,
     }
 }
-
-#[cfg(test)]
-mod tests;

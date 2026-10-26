@@ -101,14 +101,6 @@ pub fn lock_source_dir(path: &Path) -> anyhow::Result<Option<LockedSource>> {
     lock_source_dir_with_timeout(path, SOURCE_LOCK_TIMEOUT)
 }
 
-#[cfg(any(test, feature = "test-support"))]
-pub fn lock_source_dir_for_test(
-    path: &Path,
-    timeout: Duration,
-) -> anyhow::Result<Option<LockedSource>> {
-    lock_source_dir_with_timeout(path, timeout)
-}
-
 pub fn new_stage(parent: &File, key: &str) -> anyhow::Result<(CString, File)> {
     for _ in 0..128 {
         let sequence = AUTH_DIRECTORY_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed);

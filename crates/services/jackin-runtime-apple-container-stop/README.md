@@ -18,7 +18,7 @@ helper.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`stop.rs`](src/stop.rs) | Container stop helper | hub `backend` eject path (no dedicated suite) |
+| [`stop.rs`](src/stop.rs) | Container stop helper | — |
 
 ## Public API
 
@@ -27,6 +27,6 @@ helper.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-stop
+cargo nextest run -p jackin-runtime-apple-container-stop --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-stop --all-targets -- -D warnings
 ```

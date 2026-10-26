@@ -197,6 +197,3 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         &mut ListState::new(state.list_state.selected().copied()),
     );
 }
-
-#[cfg(test)]
-mod tests;

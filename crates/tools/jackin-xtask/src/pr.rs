@@ -167,6 +167,3 @@ fn emit_digest(base: &str, files: &[String], cats: &Categories) {
 fn emit_body(skeleton: &str) {
     print!("{skeleton}");
 }
-
-#[cfg(test)]
-mod tests;

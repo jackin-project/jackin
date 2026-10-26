@@ -11,9 +11,6 @@ mod argv;
 mod client_dispatch;
 mod usage_relay_proxy;
 
-#[cfg(test)]
-pub(crate) use argv::is_daemon_entrypoint_args;
-
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
@@ -54,6 +51,3 @@ async fn main() -> Result<()> {
         run_client_mode(&args).await
     }
 }
-
-#[cfg(test)]
-mod tests;

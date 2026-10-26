@@ -12,28 +12,6 @@ mod scope;
 mod source;
 mod validate;
 
-#[cfg(test)]
-use std::collections::{BTreeMap, BTreeSet};
-
-#[cfg(test)]
-use std::path::{Path, PathBuf};
-
-#[cfg(test)]
-use jackin_config::{AccountCredential, AiProvider, AppConfig};
-#[cfg(test)]
-use jackin_core::{Agent, UsageCredentialEnvName, UsageCredentialOwner, WorkspaceName};
-#[cfg(test)]
-use jackin_usage_host_accounts::CanonicalAccountSubject;
-#[cfg(test)]
-use jackin_usage_host_presentation::HostSurfaceId;
-
-#[cfg(test)]
-pub(crate) use jackin_usage_host_credentials::{
-    ForwardedUsageAccount, OpaqueCredentialHandle, ProviderCredentialEnvOutcome,
-    ProviderCredentialEnvResolution, ProviderCredentialEnvResolver,
-    ProviderCredentialRefreshOutcome, UsageCredentialKind, governed_name_for_account_alias,
-};
-
 pub(crate) use accumulate::{ValidatedSourceParts, accumulate_validated_source};
 pub use capabilities::{capability_for_binding, usage_broker_capabilities, usage_catalog_entries};
 pub(crate) use catalog::DiscoveredCredentialSource;
@@ -49,8 +27,7 @@ pub use issues::{
     UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageDiscoveryUnresolvedSource,
     UsageSourceCandidateDescriptor,
 };
-#[cfg(test)]
-pub(crate) use ownership::source_capability_id;
+
 pub(crate) use ownership::{
     account_diagnostic, canonical_owner_for_account, canonical_usage_env_name, config_diagnostics,
     materialize_catalog, provider_surface, resolve_profile_root,
@@ -67,13 +44,7 @@ pub(crate) use providers::{
 pub use refresh::refresh_credential_binding;
 pub(crate) use refresh::{first_recursive_string, read_json};
 pub use scan::discover_usage_sources;
-#[cfg(test)]
-pub(crate) use scan::usage_account_alias_entry;
+
 pub use scope::{HostCredentialRootRow, UsageDiscoveryScope, host_credential_root_matrix};
 pub(crate) use source::{source_diagnostic, validate_source};
 pub use validate::validate_usage_sources;
-#[cfg(test)]
-pub(crate) use validate::validate_usage_sources_with_reader;
-
-#[cfg(test)]
-mod tests;

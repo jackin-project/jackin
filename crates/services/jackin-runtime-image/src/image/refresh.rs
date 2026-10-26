@@ -9,7 +9,6 @@ use jackin_core::RoleSelector;
 use jackin_image::version_check;
 
 use super::ImageInvalidationReason;
-#[cfg(not(test))]
 use super::prewarm_agent_image;
 
 pub fn spawn_selected_image_refresh(
@@ -21,20 +20,6 @@ pub fn spawn_selected_image_refresh(
     reason: ImageInvalidationReason,
     debug: bool,
 ) {
-    #[cfg(test)]
-    {
-        let _ = (paths, selector, role_git, branch_override, debug);
-        if let Some(run) = jackin_diagnostics::active_run() {
-            run.stage(
-                "selected_image_refresh_skipped",
-                jackin_diagnostics::DiagnosticStage::DerivedImage,
-                "selected image refresh disabled in unit tests",
-                Some(&format!("{}:{}", selected_agent.slug(), reason.as_str())),
-            );
-        }
-    }
-
-    #[cfg(not(test))]
     {
         let paths = paths.clone();
         let selector = selector.clone();

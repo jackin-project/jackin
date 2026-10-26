@@ -8,11 +8,6 @@ use super::{
 };
 use ratatui::layout::Rect;
 
-/// Opaque evidence that a Usage list was rendered for one area and state.
-///
-/// Only the Usage renderer can construct this receipt. It carries the actual
-/// list geometry consumed by the frame and a structural state snapshot; it is
-/// not a provider snapshot or a persisted Usage value.
 #[derive(Clone)]
 pub struct UsagePaintReceipt {
     area: Rect,

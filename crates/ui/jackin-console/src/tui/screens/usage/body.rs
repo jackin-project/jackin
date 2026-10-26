@@ -370,7 +370,6 @@ pub(crate) fn meter_line(
         UsageMeterSide::Remaining => percent.get(),
     };
     let fill_cells = width as f64 * fill_points / 100.0;
-    // Quantize continuous meter geometry to whole terminal cells only here.
     let filled = (0..width)
         .take_while(|cell| fill_cells >= (*cell + 1) as f64)
         .count();
