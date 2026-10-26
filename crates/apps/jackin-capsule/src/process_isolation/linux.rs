@@ -11,6 +11,8 @@ mod enforce;
 mod paths;
 mod rules;
 
+#[cfg(test)]
+pub(super) use abi::support;
 pub(super) use abi::{
     ACCESS_EXECUTE, ACCESS_READ_FILE, ACCESS_RESOLVE_UNIX, ACCESS_TRUNCATE, ACCESS_WRITE_FILE,
     CAP_DAC_OVERRIDE, CAP_VERSION_3, CapUserData, CapUserHeader, FULL, FULL_WITH_UNIX,
@@ -19,13 +21,19 @@ pub(super) use abi::{
     PathBeneathAttr, READ_FILE_ONLY, READ_ONLY, READ_ONLY_WITH_UNIX, Rule, RulesetAttr, TRAVERSE,
     access_for_abi,
 };
+#[cfg(test)]
+pub(super) use enforce::retained_capability_mask;
 pub(super) use enforce::{drop_privileges, install_landlock};
+#[cfg(test)]
+pub(super) use paths::add_execute_only_ancestors;
 pub(super) use paths::{
     normalize_existing_path, optional_exact_rule, pane_homes_parent, prepare_pane_homes_parent,
     prepare_session_root, required_exact_rule, session_root_path, validate_cwd_boundary,
     validate_workspace_mount_boundary, validate_worktree_git_target,
 };
 pub(super) use rules::rules_for;
+#[cfg(test)]
+pub(super) use rules::rules_for_test;
 
 #[expect(
     clippy::undocumented_unsafe_blocks,

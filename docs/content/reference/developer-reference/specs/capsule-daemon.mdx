@@ -46,7 +46,7 @@ Roadmap-named ownership boundaries used to group invariants:
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
 | INV-D9 | Modified clicks in mouse-enabled panes forward to the PTY; URL hover does not forward | `mouse_input` dispatch paths | `jackin_capsule::daemon::tests::modified_click_in_mouse_enabled_pane_forwards_to_pty` `jackin_capsule::daemon::tests::modified_url_hover_renders_visible_target_without_forwarding_to_pty` |
-| INV-D10 | Status-tick select arm stays above PTY output so status refresh cannot starve on busy PTY streams | select-loop arm order in `run_daemon` | `jackin_capsule::daemon::tests::status_tick_select_arm_stays_above_pty_output` `jackin_capsule::daemon::tests::ready_status_tick_wins_over_ready_pty_output` |
+| INV-D10 | Status-tick select arm stays above PTY output so status refresh cannot starve on busy PTY streams | select-loop arm order in `run_daemon` | `jackin_capsule::daemon::tests::ready_status_tick_wins_over_ready_pty_output` |
 | INV-D11 | PTY OSC 8 hyperlinks emit from frame metadata; unsafe/untrusted hyperlinks do not | compositor hyperlink emission | `jackin_capsule::daemon::tests::pty_osc8_hyperlink_emits_from_frame_metadata` `jackin_capsule::daemon::tests::unsafe_pty_osc8_hyperlink_is_not_emitted_from_frame_metadata` |
 
 ### Status model / publication
