@@ -598,7 +598,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 9. Add old-server and unsupported-capability behavior.
 10. Update the candidate tuple and upstream change record.
 11. For A15 and A16, report authoritative observations separately from integrated activation and product display.
-12. For A16, observe closure only for established streams whose authority the loaded policy revokes.
+12. For A16, verify existing connections close on a network policy update and revoked authority remains unusable.
 
 #### Pass conditions
 
@@ -610,8 +610,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection.
 - A17 at U00 records LIVE provider attach, revoke, and change observations against installed revisions.
 - A17 at U00 confirms added access is visible and revocation refuses readiness.
-- A16 at U00 observes closure only for established streams whose authority the loaded policy revokes.
-- A16 at U00 keeps unrelated authorized streams open and does not permit a permissive policy replacement.
+- A16 at U00 verifies revoked access remains unusable after existing connections close on policy update.
+- A16 at U00 confirms unrelated authorized access may resume through a qualified reconnect under the loaded policy, without permissive replacement.
 
 **Acceptance cases:** A15, A16, A17.
 
@@ -1437,8 +1437,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 10. Keep infrastructure reconciliation upstream.
 11. For A15 and A16, qualify authoritative adapter observations separately from integrated activation and product display.
 12. For A16, load the gateway global policy before querying accepted revisions or displaying its source.
-13. Close an established stream when the loaded policy revokes its authority.
-14. Keep a still-authorized stream open and never apply a permissive policy automatically.
+13. Verify existing connections close when the gateway global policy changes and revoked access remains unusable.
+14. Verify unrelated authorized access only after a qualified reconnect under the loaded policy; never apply a permissive replacement.
 
 #### Pass conditions
 
@@ -1450,8 +1450,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A16 at T13 binds the effective replacement source to the observed accepted revision without claiming an intersection.
 - A17 at T13 records LIVE attach, revoke, and binding-change observations against the installed provider revision.
 - A17 at T13 confirms added access is visible and revoked bindings fail closed.
-- A16 at T13 loads global policy before revision queries and closes only streams whose authority it revokes.
-- A16 at T13 keeps still-authorized streams open and never applies a permissive replacement policy automatically.
+- A16 at T13 loads global policy before revision queries and verifies existing connections close on update.
+- A16 at T13 keeps revoked access unusable and permits unrelated authorized reconnects under the loaded policy without permissive fallback.
 
 **Acceptance cases:** A15, A16, A17, A18, A19, A20, A21, A48.
 
@@ -1587,7 +1587,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 9. Verify delivery without a mutable-tag assumption.
 10. Keep build failure separate from gateway and management availability.
 11. Require operator-approved trust for the selected builder before transferring source or approved secrets.
-12. Reject a configured but unapproved endpoint before source-context creation or secret transfer.
+12. Reject a configured but unapproved endpoint before any source or approved-secret transfer begins.
 13. Ignore ambient DOCKER_HOST when selecting the explicitly trusted builder endpoint.
 
 #### Pass conditions
@@ -1597,7 +1597,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Wrong architecture and missing registry authorization fail before activation.
 - An unavailable separate builder does not disable status or stop operations.
 - Secret bytes stay out of build logs, and secret-dependent output follows its declared cache policy.
-- A52 refuses an unapproved explicit endpoint before source-context or approved-secret transfer.
+- A52 refuses an unapproved explicit endpoint before sending source or approved secrets to the builder.
 - After approval, only the selected endpoint receives source and approved secrets; ambient DOCKER_HOST cannot redirect it.
 
 **Acceptance cases:** A51, A52, A53, A54.

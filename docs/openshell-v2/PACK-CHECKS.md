@@ -71,7 +71,7 @@ The runner does not modify the pack. It validates the original board in ordinary
 | Acceptance cases | 125 |
 | Mapped specification headings | 30 |
 | Topological readiness groups | 20 |
-| Checked procedural sentences | 1750 |
+| Checked procedural sentences | 1751 |
 
 The ordinary validator report contains 99 ordered checks; `--initial` contains 101, including two initial-only checks and the final inventory check.
 The C02 digest checks fixed contract text only. It does not show that source code follows this plan.
@@ -141,12 +141,12 @@ Keep no more than eight actual subagents active at once.
 | Task test references, case coverage, and ownership maps agree | PASS |
 | A13 keeps P05's current graph run separate from T39's final post-deletion rerun | PASS |
 | A15 keeps U00/T13 layer checks and T23 integrated StartSession qualification | PASS |
-| A16 closes only revoked streams, preserves unrelated authorized streams, and keeps T29 presentation-only | PASS |
+| A16 closes revoked access on network updates, allows authorized reconnect without policy weakening, and keeps T29 presentation-only | PASS |
 | A17 keeps U00/T13 provider observations and T23 integrated StartSession/re-admission | PASS |
 | A73 preserves T21 early scope checks and T23 integrated denial before domain or credential effects | PASS |
 | A78 requires a fresh receipt for the current boot and exact protocol after helper restart | PASS |
-| A40 and A79 preserve secure canonical names, pre-create reservation, collision refusal, and tombstones | PASS |
-| A52 requires explicit builder trust before source or secret transfer | PASS |
+| A40 restores request/receipt survival and state-table crash recovery alongside secure names; A79 retains LIVE name recovery | PASS |
+| A52 requires explicit builder trust before source or secret transfer to the selected endpoint | PASS |
 | PLAN's authored prefix matches its unique task-index boundary and fixed digest | PASS |
 | Target-matrix requests route through Integration; required and unavailable rows remain | PASS |
 | Task required artifacts match the canonical six receipts and report path | PASS |
@@ -178,7 +178,7 @@ All 262 scenarios passed their exact report, input-derived count, and exit-code 
 All 23 runner controls passed their independent inventory and behavior checks. The timeout controls verify cleanup of same-group descendants with inherited pipes and redirected output. The shared classifier control verifies running, Linux zombie/dead, ESRCH, and EPERM outcomes. The post-mutation custody control links `PACK-CHECKS.md` and `GOAL.md` to external temporary files and verifies refusal before any target read or write and before validator execution.
 The original 18 scenario intentions remain unchanged; 244 targeted scenarios cover assignment ownership and progress, execution-marker types and LIVE status requirements, readiness-group input shapes, authored task and case fields, source citations, canonical task paths and exact recursive packet sets, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance and PLAN prefixes, strict JSON parsing and exact short-form input details, release-gate protocol structure, post-deletion and post-change LIVE freshness, T40 version/package requalification, finalization evidence requirements, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates and result-cell grammar, independent check-inventory comparison, import-time input mutation detection, the fixed root planning classification, owner-specific A13/A15/A16/A17/A40/A52/A73/A78/A79/A86 qualification, serialized target and compatibility-matrix updates, malformed record refusal, review-assignment completion, exact acceptance-root keys, pinned source-audit and terminology inputs, and truthful report count rows and inventories.
 The separate A86 runner control applies eight independent mutations for either owner, either phase, hostile input, operator intent, trusted labels or approval state, and T26's premature finished-presentation prerequisite.
-The Cohort C runner control accepts the intact authored contracts and rejects seven synchronized mutations. It covers A73 integrated scope admission, A78 boot and protocol freshness, A16 revoked-stream closure and overbroad closure, A40 and A79 name reservation and tombstones, and A52 builder trust before transfer.
+The Cohort C runner control accepts the intact authored contracts, rejects eight synchronized mutations, and accepts an A16 reconnect case after a network update closes existing connections. It covers A73 integrated scope admission, A78 boot and protocol freshness, A16 revoked-access closure and qualified reconnect, A40 journal recovery and name reservation, A79 LIVE name recovery, and A52 transfer trust without banning local context preparation.
 The separate layered-presentation runner control includes one accepted baseline and eleven synchronized mutations. It keeps the T24 and T25 early results, requires T29 final presentation, presents the C11 admission warning before authorization, preserves T30 grant and TLS/authentication checks, and requires T29 to wait for T30.
 Each fixture copy records source hashes, permitted normalization changes, normalized hashes, intentional mutations, and input and executable hashes before and after validation. Initial-mode copies reset only existing valid progress statuses and true Boolean execution markers; missing or invalid markers remain unchanged and fail validation. The original board is never normalized or repaired.
 The existing missing-P00 fixture retains its packet-preamble failure and exit code 1; exact-path validation adds a second expected failure for the missing canonical path.
@@ -320,7 +320,7 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | A13 cannot omit Cargo metadata for P05's current graph | Reject, exit 1 | PASS, exit 1 |
 | A13 cannot omit fresh Cargo metadata for T39's final post-deletion graph | Reject, exit 1 | PASS, exit 1 |
 | A16 loads the global policy before querying revisions and displaying its source | Reject, exit 1 | PASS, exit 1 |
-| Cohort C control: intact owner phases pass; seven synchronized phase weakenings fail their named contract checks | Accept intact input; reject each mutation, exit 1 | PASS |
+| Cohort C control: intact phases and A16 qualified reconnect pass; eight synchronized weakenings fail their named contract checks | Baseline and reconnect exit 0; each negative exits 1 | PASS |
 | Canonical reports reject wrong nonempty counts and nonempty all-zero counts | Reject malformed report | PASS |
 | Missing-validator short form rejects fabricated [README.md](README.md) detail | Reject against expected `validate_pack.py` detail | PASS |
 | Missing-`tasks` input-error short form rejects fabricated `cases` detail | Reject against expected `tasks` detail | PASS |

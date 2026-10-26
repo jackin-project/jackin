@@ -332,9 +332,9 @@ Do not claim support above measured and qualified resource bounds.
 
 **Setup:** Use a sandbox policy that differs from the gateway global policy. U00 and T13 verify accepted revisions and replacement source; T29 qualifies product presentation. Establish one connection that loses authority and one that remains authorized.
 
-**Action:** Load the global policy. Query actual accepted revisions and display the effective policy source afterward. Test established connections after the update.
+**Action:** Load the global policy. Query actual accepted revisions and display the effective policy source afterward. Test established connections after the update. Reconnect unrelated authorized flow under effective policy if its connection closes.
 
-**Required result:** The gateway global policy is the effective replacement. The revoked connection becomes unusable and closes without an automatic permissive replacement. A still-authorized unrelated stream is not forced closed. T29 presents the accepted revision and source only; no task reports an imaginary policy intersection or claims presentation enforces policy.
+**Required result:** The gateway global policy is the effective replacement. Network updates close existing connections. The revoked connection becomes unusable and closes; no automatic permissive replacement restores it. The unrelated flow remains authorized after the update and may resume through a qualified reconnect under the effective policy. T29 presents the accepted revision and source only; no task reports an imaginary policy intersection or claims presentation enforces policy.
 
 ### A17 — Provider authority observation
 
@@ -570,11 +570,11 @@ Do not claim support above measured and qualified resource bounds.
 
 **Evidence:** UNIT. **Tasks:** T10. **Initial status:** NOT_RUN. **Initial assignment status:** T10=NOT_RUN.
 
-**Setup:** Use fault points before and after local commits and external effects. Apply P02 gateway constraints and seed collision and deletion-tombstone names.
+**Setup:** Use fault points before and after each local commit and simulated external effect, including each simulated Docker effect. Apply P02 gateway constraints and seed collision and deletion-tombstone names.
 
-**Action:** Generate one secure name. Validate against the P02 gateway and persist its reservation before create. Crash and restart at each phase. Then test collisions and tombstoned-name reuse.
+**Action:** Crash and restart coordinator at every point; validate one secure P02 name, persist reservation before create, and test collision/tombstone retries.
 
-**Required result:** Names use jk- plus 16 lowercase base32 secure-random characters. Invalid or colliding names block before create. Deletion leaves a tombstone; names are never intentionally reused. Recovery retains request identity, reports OutcomeUnknown, and avoids duplicate effects.
+**Required result:** Request identities and receipts survive. Recovery follows the declared state table without duplicate effects. Report OutcomeUnknown only when the authoritative effect outcome is unavailable; for known outcomes, follow the declared state table. Names use jk- plus 16 lowercase base32 secure-random characters. Invalid or colliding names block before create. Deletion leaves a tombstone; names are never intentionally reused.
 
 ### A41 — Unknown outcome recovery
 
@@ -692,9 +692,9 @@ Do not claim support above measured and qualified resource bounds.
 
 **Setup:** Configure explicit builder A without trust and ambient DOCKER_HOST=B. Then authorize A for an isolated source and approved-secret fixture.
 
-**Action:** Attempt a build before approving A and inspect whether context or secret transfer starts. Approve A, build the sentinel, and inspect argv and delivery records.
+**Action:** Attempt a build before approving A and inspect whether any source or secret transfer starts. Approve A, build the sentinel, and inspect argv and delivery records.
 
-**Required result:** An unapproved endpoint refuses before source-context or approved-secret transfer. After approval, only A receives them; ambient DOCKER_HOST=B cannot redirect the build. Keep argv boundaries, secret-log protection, immutable registry identity, and same-engine verification.
+**Required result:** An unapproved endpoint refuses before source or approved-secret transfer begins. After approval, only A receives them; ambient DOCKER_HOST=B cannot redirect the build. Keep argv boundaries, secret-log protection, immutable registry identity, and same-engine verification.
 
 ### A53 — Remote immutable image delivery
 

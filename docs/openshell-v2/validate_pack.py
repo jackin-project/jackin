@@ -19,13 +19,13 @@ SOURCE_AUDIT_SHA256 = "0f4b1a1eac7ebb8b75e9bad0997c16f7cd28f363bc86727bc16777474
 TERMS_SHA256 = "9441cc3b4889edb39fa7f520058a9473938cbbf8742e15ce672387e83abef614"
 ACCEPTANCE_POLICY_SHA256 = "7609a5f84a1694b1441219ac62e289191d90f367c33a400853ec64728063d36d"
 C02_CONTRACT_SECTION_SHA256 = "017714a83ab1ee7827dfcf8459ef6ca5e58c11787210083856211d1ba8e9cdf2"
-TASK_AUTHORED_SHA256 = "9bd49eb6b8c8ae12cee2e6006aa471a6f236b68a6db251cd35e6194920febcbe"
-CASE_AUTHORED_SHA256 = "324c42bf4959e20d371da54f711a81aad12f1db3af378db686eb36ec04976a81"
+TASK_AUTHORED_SHA256 = "e2d9de34388a0665ea7f70dee5b6588159866a96846b33afc0c90ae0db86a225"
+CASE_AUTHORED_SHA256 = "03ec4f8614a19ef6cb06479ebac8c24ba1d507920c94160e9f34b99dcd5414b7"
 GRAPH_DECLARATIONS_SHA256 = "39a190141d0329a1f00b94bab82f19934cf0d1a9860ad742115f249ec69150dc"
 TRACEABILITY_AUTHORED_SHA256 = "3ceae24302d52082dfc455dc7c5c14ce32c8d3f9bc78c842ab3be4dd10f26c43"
 CONTRACTS_SHA256 = "da0f23654f30e8d1a37a12f07c9e5595d51027a5c4eaae3ce8072cb544dd3344"
 SUBAGENTS_SHA256 = "a4a9e5a967a73038b50ecdc4cadb9a51b1c83728f54c6b6fb9a87641566263f8"
-PACK_CHECKS_TEMPLATE_SHA256 = "5c5f21b9ace10d846c6ea965d06fbe2cb244a0012495543c9641b1b237bdc78b"
+PACK_CHECKS_TEMPLATE_SHA256 = "776f069669c5fb35794497887aa065a909841c015cd8805413a97a6c55f9b1fe"
 PLAN_PREFIX_SHA256 = "3176361a5191c757d69e2461936f80cbf3668f8cf508bc86734e12d80197a5d0"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
@@ -776,16 +776,17 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
                            "problem": "must load the global policy before querying revisions and displaying its source"})
     for task_id, field, phrase in (
         ("U00", "acceptance", "A15 and A16 at U00 qualify LIVE observation results, not StartSession or product presentation."),
+        ("U00", "steps", "For A16, verify existing connections close on a network policy update and revoked authority remains unusable."),
         ("U00", "acceptance", "A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection."),
-        ("U00", "acceptance", "A16 at U00 observes closure only for established streams whose authority the loaded policy revokes."),
-        ("U00", "acceptance", "A16 at U00 keeps unrelated authorized streams open and does not permit a permissive policy replacement."),
+        ("U00", "acceptance", "A16 at U00 verifies revoked access remains unusable after existing connections close on policy update."),
+        ("U00", "acceptance", "A16 at U00 confirms unrelated authorized access may resume through a qualified reconnect under the loaded policy, without permissive replacement."),
         ("T13", "acceptance", "A15 and A16 at T13 qualify LIVE adapter results, not integrated activation or product presentation."),
         ("T13", "acceptance", "A16 at T13 binds the effective replacement source to the observed accepted revision without claiming an intersection."),
         ("T13", "steps", "For A16, load the gateway global policy before querying accepted revisions or displaying its source."),
-        ("T13", "steps", "Close an established stream when the loaded policy revokes its authority."),
-        ("T13", "steps", "Keep a still-authorized stream open and never apply a permissive policy automatically."),
-        ("T13", "acceptance", "A16 at T13 loads global policy before revision queries and closes only streams whose authority it revokes."),
-        ("T13", "acceptance", "A16 at T13 keeps still-authorized streams open and never applies a permissive replacement policy automatically."),
+        ("T13", "steps", "Verify existing connections close when the gateway global policy changes and revoked access remains unusable."),
+        ("T13", "steps", "Verify unrelated authorized access only after a qualified reconnect under the loaded policy; never apply a permissive replacement."),
+        ("T13", "acceptance", "A16 at T13 loads global policy before revision queries and verifies existing connections close on update."),
+        ("T13", "acceptance", "A16 at T13 keeps revoked access unusable and permits unrelated authorized reconnects under the loaded policy without permissive fallback."),
         ("T29", "steps", "Display A16's accepted policy revision and effective replacement source in product output."),
         ("T29", "steps", "Keep A16 product presentation read-only; do not imply T29 loaded policy or enforced stream access."),
         ("T29", "acceptance", "A16 at T29 presents the accepted revision and source; it does not load policy or authorize streams."),
@@ -793,15 +794,6 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
         if not task_contains(task_id, "test_cases", "A16") or not task_contains(task_id, field, phrase):
             a16_errors.append({"task": task_id, "problem": "owner-specific A16 qualification is missing"})
 
-    a16_text = " ".join(
-        value for field in ("setup", "action", "expected")
-        if isinstance((value := a16.get(field)), str)
-    ).casefold()
-    broad_policy_closure_claims = (
-        "every policy update closes every unrelated allowed stream",
-        "every update closes every unrelated allowed stream",
-        "all unrelated allowed streams must close",
-    )
     if not case_text_contains(
         a16, "setup", "one connection that loses authority", "one that remains authorized",
     ):
@@ -812,17 +804,15 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
                            "problem": "must test established connection state after policy loading"})
     if not case_text_contains(
         a16, "expected", "revoked connection becomes unusable and closes",
-        "without an automatic permissive replacement",
-        "still-authorized unrelated stream is not forced closed",
+        "Network updates close existing connections",
+        "no automatic permissive replacement restores it",
+        "unrelated flow remains authorized after the update",
+        "qualified reconnect under the effective policy",
         "T29 presents the accepted revision and source only",
         "no task reports an imaginary policy intersection",
     ):
         a16_errors.append({"case": "A16", "field": "expected",
-                           "problem": "must close only revoked streams and keep T29 presentation-only"})
-    for phrase in broad_policy_closure_claims:
-        if phrase in a16_text:
-            a16_errors.append({"case": "A16", "problem": "must not require closure of unrelated authorized streams",
-                               "claim": phrase})
+                           "problem": "must retain revoked-access closure, qualified reconnect, and T29 presentation-only"})
 
     a73 = cases_by_id.get("A73", {})
     a73_errors = failures["A73 preserves early scope and integrated denied-scope admission owners"]
@@ -899,15 +889,25 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
     if a40.get("level") != "UNIT" or a40.get("tasks") != ["T10"]:
         name_errors.append({"case": "A40", "level": a40.get("level"),
                             "owners": a40.get("tasks"), "expected": ["T10"]})
-    if not case_text_contains(a40, "action", "Generate one secure name", "P02 gateway",
-                              "persist its reservation before create", "collisions",
-                              "tombstoned-name reuse"):
+    if not case_text_contains(
+        a40, "setup", "before and after each local commit and simulated external effect",
+        "including each simulated Docker effect", "P02 gateway constraints",
+        "collision and deletion-tombstone names",
+    ):
+        name_errors.append({"case": "A40", "field": "setup",
+                            "problem": "must retain every local commit and simulated Docker effect fault point"})
+    if not case_text_contains(a40, "action", "Crash and restart coordinator at every point",
+                              "validate one secure P02 name", "persist reservation before create",
+                              "collision/tombstone retries"):
         name_errors.append({"case": "A40", "field": "action",
-                            "problem": "must test one-time name generation, pre-create reservation, collisions, and tombstones"})
+                            "problem": "must crash and restart at every journal fault point"})
     if not case_text_contains(a40, "expected", "16 lowercase base32 secure-random characters",
                               "Invalid or colliding names block before create",
                               "Deletion leaves a tombstone", "never intentionally reused",
-                              "request identity", "OutcomeUnknown", "duplicate effects"):
+                              "Request identities and receipts survive",
+                              "Recovery follows the declared state table without duplicate effects",
+                              "Report OutcomeUnknown only when the authoritative effect outcome is unavailable",
+                              "for known outcomes, follow the declared state table"):
         name_errors.append({"case": "A40", "field": "expected",
                             "problem": "must retain naming, collision, tombstone, and crash-recovery assertions"})
     if not task_contains("T10", "test_cases", "A40") or not task_contains(
@@ -957,10 +957,10 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
         a52_errors.append({"case": "A52", "field": "setup",
                            "problem": "must separate unapproved configured endpoint from approved build"})
     if not case_text_contains(a52, "action", "before approving A",
-                              "context or secret transfer starts", "Approve A", "inspect argv"):
+                              "any source or secret transfer starts", "Approve A", "inspect argv"):
         a52_errors.append({"case": "A52", "field": "action",
                            "problem": "must test refusal before transfer and a successful approved build"})
-    if not case_text_contains(a52, "expected", "An unapproved endpoint refuses before source-context or approved-secret transfer",
+    if not case_text_contains(a52, "expected", "An unapproved endpoint refuses before source or approved-secret transfer begins",
                               "After approval, only A receives them",
                               "DOCKER_HOST=B cannot redirect the build", "argv boundaries",
                               "secret-log protection", "immutable registry identity", "same-engine verification"):
@@ -968,14 +968,24 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
                            "problem": "must retain trust, routing, secret, registry, and engine assertions"})
     for field, phrase in (
         ("steps", "Require operator-approved trust for the selected builder before transferring source or approved secrets."),
-        ("steps", "Reject a configured but unapproved endpoint before source-context creation or secret transfer."),
+        ("steps", "Reject a configured but unapproved endpoint before any source or approved-secret transfer begins."),
         ("steps", "Ignore ambient DOCKER_HOST when selecting the explicitly trusted builder endpoint."),
-        ("acceptance", "A52 refuses an unapproved explicit endpoint before source-context or approved-secret transfer."),
+        ("acceptance", "A52 refuses an unapproved explicit endpoint before sending source or approved secrets to the builder."),
         ("acceptance", "After approval, only the selected endpoint receives source and approved secrets; ambient DOCKER_HOST cannot redirect it."),
     ):
         if "A52" not in tasks_by_id.get("T15", {}).get("test_cases", []) or not task_contains("T15", field, phrase):
             a52_errors.append({"task": "T15", "problem": "A52 explicit-builder trust procedure is missing",
                                "required": phrase})
+    a52_task = tasks_by_id.get("T15", {})
+    a52_scope_text = " ".join(
+        value for value in (
+            *(a52_task.get("steps", []) if isinstance(a52_task.get("steps"), list) else []),
+            *(a52_task.get("acceptance", []) if isinstance(a52_task.get("acceptance"), list) else []),
+            *(a52.get(field, "") for field in ("setup", "action", "expected")),
+        ) if isinstance(value, str)
+    ).casefold()
+    if "before source-context creation" in a52_scope_text or "before context creation" in a52_scope_text:
+        a52_errors.append({"case": "A52", "problem": "builder trust gates transfer, not local context creation"})
 
     a17 = cases_by_id.get("A17", {})
     a17_errors = failures["A17 preserves observation layers and integrated activation ownership"]

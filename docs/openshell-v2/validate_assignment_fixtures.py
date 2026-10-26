@@ -2207,18 +2207,18 @@ def cohort_c_control_probe() -> dict[str, Any]:
 
         for task_id, step_phrases, acceptance_phrases in (
             ("U00", (
-                "For A16, observe closure only for established streams whose authority the loaded policy revokes.",
+                "For A16, verify existing connections close on a network policy update and revoked authority remains unusable.",
             ), (
-                "A16 at U00 observes closure only for established streams whose authority the loaded policy revokes.",
-                "A16 at U00 keeps unrelated authorized streams open and does not permit a permissive policy replacement.",
+                "A16 at U00 verifies revoked access remains unusable after existing connections close on policy update.",
+                "A16 at U00 confirms unrelated authorized access may resume through a qualified reconnect under the loaded policy, without permissive replacement.",
             )),
             ("T13", (
                 "For A16, load the gateway global policy before querying accepted revisions or displaying its source.",
-                "Close an established stream when the loaded policy revokes its authority.",
-                "Keep a still-authorized stream open and never apply a permissive policy automatically.",
+                "Verify existing connections close when the gateway global policy changes and revoked access remains unusable.",
+                "Verify unrelated authorized access only after a qualified reconnect under the loaded policy; never apply a permissive replacement.",
             ), (
-                "A16 at T13 loads global policy before revision queries and closes only streams whose authority it revokes.",
-                "A16 at T13 keeps still-authorized streams open and never applies a permissive replacement policy automatically.",
+                "A16 at T13 loads global policy before revision queries and verifies existing connections close on update.",
+                "A16 at T13 keeps revoked access unusable and permits unrelated authorized reconnects under the loaded policy without permissive fallback.",
             )),
             ("T29", (
                 "Keep A16 product presentation read-only; do not imply T29 loaded policy or enforced stream access.",
@@ -2231,13 +2231,6 @@ def cohort_c_control_probe() -> dict[str, Any]:
                 remove_phrases(task, "steps", step_phrases)
                 remove_phrases(task, "acceptance", acceptance_phrases)
             edit_task(pack, task_id, edit)
-        sync_case_block(pack, case_map(pack)["A16"])
-
-    def broaden_a16_closure(pack: Path) -> None:
-        update_cases(pack, lambda cases: cases["A16"].update({
-            "expected": cases["A16"]["expected"]
-            + " Every policy update closes every unrelated allowed stream."
-        }))
         sync_case_block(pack, case_map(pack)["A16"])
 
     def remove_a40_name_reservation(pack: Path) -> None:
@@ -2259,6 +2252,17 @@ def cohort_c_control_probe() -> dict[str, Any]:
             task["acceptance"] = [item for item in task["acceptance"] if not item.startswith("A40 verifies ")
                                   and item != "Deleted canonical names remain tombstoned and are never intentionally reused."]
         edit_task(pack, "T10", edit)
+        sync_case_block(pack, case_map(pack)["A40"])
+
+    def remove_a40_journal_recovery(pack: Path) -> None:
+        update_cases(pack, lambda cases: cases["A40"].update({
+            "expected": (
+                "Names use jk- plus 16 lowercase base32 secure-random characters. "
+                "Invalid or colliding names block before create. Deletion leaves a tombstone; names are never "
+                "intentionally reused. Report OutcomeUnknown only when the authoritative effect outcome is unavailable; "
+                "for known outcomes, follow the declared state table."
+            ),
+        }))
         sync_case_block(pack, case_map(pack)["A40"])
 
     def remove_a79_collision_recovery(pack: Path) -> None:
@@ -2295,7 +2299,7 @@ def cohort_c_control_probe() -> dict[str, Any]:
         def edit(task: dict[str, Any]) -> None:
             for phrase in (
                 "Require operator-approved trust for the selected builder before transferring source or approved secrets.",
-                "Reject a configured but unapproved endpoint before source-context creation or secret transfer.",
+                "Reject a configured but unapproved endpoint before any source or approved-secret transfer begins.",
                 "Ignore ambient DOCKER_HOST when selecting the explicitly trusted builder endpoint.",
             ):
                 task["steps"].remove(phrase)
@@ -2304,38 +2308,50 @@ def cohort_c_control_probe() -> dict[str, Any]:
         edit_task(pack, "T15", edit)
         sync_case_block(pack, case_map(pack)["A52"])
 
+    def reintroduce_a52_context_creation_ban(pack: Path) -> None:
+        def edit(task: dict[str, Any]) -> None:
+            task["steps"].append(
+                "Reject a configured but unapproved endpoint before source-context creation or secret transfer."
+            )
+        edit_task(pack, "T15", edit)
+
     positive = run_fixture(
         "Cohort C complete admission, activation, naming, policy, and builder contracts pass",
         lambda _pack: None,
         0,
         [],
     )
-    controls: list[tuple[str, str, Callable[[Path], None]]] = [
-        ("A73", "removing T23 integrated denied-scope admission", remove_a73_integrated_phase),
-        ("A78", "removing current-boot and protocol receipt binding", remove_a78_fresh_receipt_binding),
-        ("A16", "removing revoked-connection closure and fail-closed policy handling", remove_a16_revocation_closure),
-        ("A16", "requiring every policy update to close unrelated authorized streams", broaden_a16_closure),
-        ("A40/A79", "removing UNIT pre-create reservation, collision, and tombstone checks", remove_a40_name_reservation),
-        ("A40/A79", "removing LIVE collision and tombstone recovery checks", remove_a79_collision_recovery),
-        ("A52", "removing builder approval before source and secret transfer", remove_a52_builder_trust),
+    controls: list[tuple[str, str, Callable[[Path], None], int, bool]] = [
+        ("A73", "removing T23 integrated denied-scope admission", remove_a73_integrated_phase, 1, True),
+        ("A78", "removing current-boot and protocol receipt binding", remove_a78_fresh_receipt_binding, 1, True),
+        ("A16", "removing revoked-connection closure and fail-closed policy handling", remove_a16_revocation_closure, 1, True),
+        ("A16", "accepting unrelated authorized reconnect after policy updates", lambda _pack: None, 0, False),
+        ("A40/A79", "removing UNIT pre-create reservation, collision, and tombstone checks", remove_a40_name_reservation, 1, True),
+        ("A40/A79", "removing A40 request-receipt and declared-state-table recovery", remove_a40_journal_recovery, 1, True),
+        ("A40/A79", "removing LIVE collision and tombstone recovery checks", remove_a79_collision_recovery, 1, True),
+        ("A52", "removing builder approval before source and secret transfer", remove_a52_builder_trust, 1, True),
+        ("A52", "reintroducing a ban on local source-context creation", reintroduce_a52_context_creation_ban, 1, True),
     ]
     results = []
-    for case_key, description, mutate in controls:
+    for case_key, description, mutate, expected_exit, expected_contract_failure in controls:
         check_name = contract_checks[case_key]
         receipt = run_fixture(
-            f"Cohort C control rejects {description}",
+            f"Cohort C control checks {description}",
             mutate,
-            1,
+            expected_exit,
             [],
-            expect_report_match=False,
+            expect_report_match=expected_exit == 0,
         )
         receipt["owner_contract_check"] = check_name
         receipt["owner_contract_check_failed"] = check_name in (receipt.get("actual_failures") or [])
+        receipt["expected_owner_contract_check_failure"] = expected_contract_failure
         results.append(receipt)
     return {
         "scenario": "Cohort C preserves integrated admission, activation freshness, name safety, policy revocation, and builder trust.",
         "passed": positive["passed"] and all(
-            item["passed"] and item["owner_contract_check_failed"] for item in results
+            item["passed"]
+            and item["owner_contract_check_failed"] == item["expected_owner_contract_check_failure"]
+            for item in results
         ),
         "positive_control": positive,
         "expected_control_count": len(controls),
