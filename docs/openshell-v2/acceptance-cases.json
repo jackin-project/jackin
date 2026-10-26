@@ -334,13 +334,14 @@
       "id": "A17",
       "title": "Provider authority observation",
       "level": "LIVE",
-      "setup": "Use a provider binding that adds approved endpoint access.",
-      "action": "Attach, revoke, and change the binding while querying installed status.",
-      "expected": "Activation uses the installed revision. Added access is visible. Revocation cannot remain falsely ready.",
+      "setup": "Use a provider binding that adds approved endpoint access. U00 and T13 qualify LIVE attach, revoke, and change observations against installed revisions. T23 qualifies integrated StartSession and re-admission.",
+      "action": "U00 and T13 observe binding attach, revoke, and change operations and query installed status. Verify added access and refusal after revocation. T23 attempts StartSession and re-admission against each observed revision.",
+      "expected": "U00 and T13 layer observations remain separate from T23's integrated activation and re-admission. Activation uses the installed revision. Added access is visible. A revoked binding cannot pass readiness.",
       "status": "NOT_RUN",
       "tasks": [
         "U00",
-        "T13"
+        "T13",
+        "T23"
       ],
       "assignment_results": [
         {
@@ -349,6 +350,10 @@
         },
         {
           "task_id": "T13",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T23",
           "status": "NOT_RUN"
         }
       ]

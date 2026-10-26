@@ -12,7 +12,7 @@ from typing import Any
 
 ORIGINAL_SPEC_SHA256 = "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe767523a3e"
 GOAL_SHA256 = "d62aaf0477b96b014356b09d23f05bc2d22385a42277639514e6615dfa46f1a0"
-ACCEPTANCE_POLICY_SHA256 = "503b2bd2ed5560a311a3641409c0f59a7806f6847575b509641b85cbab3ed59a"
+ACCEPTANCE_POLICY_SHA256 = "83ede6731dcde4fb66fdbf9f3d041382db9a8aa398787e694b9ccc5499202d08"
 C02_CONTRACT_SECTION_SHA256 = "017714a83ab1ee7827dfcf8459ef6ca5e58c11787210083856211d1ba8e9cdf2"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
@@ -107,6 +107,7 @@ ORDINARY_CHECK_NAMES = (
     "A13 preserves separate current-graph and final-post-deletion runs",
     "A15 separates observation, adapter, and integrated activation owners",
     "A16 preserves accepted-revision observation and product-presentation owners",
+    "A17 preserves observation layers and integrated activation ownership",
     "Release gate protocol matches fixed semantics",
     "Original specification matches its fixed checksum and both manifests",
     "GOAL.md matches its fixed checksum",
@@ -120,6 +121,7 @@ ORDINARY_CHECK_NAMES = (
     "A125 verifies conditional patched-tuple approval",
     "P02 bootstrap records, P04 imports, and T12 reruns A05/A06",
     "P04 harness command registration and P05 build wiring scopes agree",
+    "Target matrix qualification requests route through Integration",
     "PACK-CHECKS limits release-gate claims to static structure",
     "P04 is listed under the Qualification subagent",
     "Subagent task assignments exactly match graph owners",
@@ -230,6 +232,36 @@ P04_RELEASE_GATE_ACCEPTANCE = (
     "Preflight cannot approve release. Finalization requires every fixed protocol prerequisite."
 )
 QUALIFICATION_SUBAGENT_ROW = "| Qualification subagent | P04, U08, and T35 through T38. |"
+P04_TARGET_MATRIX_SCOPE = (
+    "tests/v2/ except tests/v2/targets.toml; Integration applies shared matrix writes"
+)
+P04_TARGET_MATRIX_STEP = (
+    "Submit the initial required-row registration to Integration as an ordered patch request before qualification."
+)
+P04_TARGET_MATRIX_NO_DIRECT_STEP = "Do not write tests/v2/targets.toml directly."
+P04_TARGET_MATRIX_ACCEPTANCE = (
+    "Integration alone applies the initial target registration before qualification updates."
+)
+QUALIFICATION_TARGET_MATRIX_SCOPE = (
+    "No direct writes to tests/v2/targets.toml; submit an ordered Integration patch request."
+)
+QUALIFICATION_TARGET_MATRIX_STEP = (
+    "Submit this task's qualified tuple, case applicability, and fixture references to Integration "
+    "as an ordered targets.toml patch request before completion."
+)
+QUALIFICATION_TARGET_MATRIX_NO_DIRECT_STEP = "Do not write the central matrix directly."
+QUALIFICATION_TARGET_MATRIX_ACCEPTANCE = (
+    "Integration alone applies this task's ordered target-matrix request. Keep every required row; "
+    "unavailable required rows remain BLOCKED."
+)
+TARGET_MATRIX_POLICY_RULES = [
+    "Integration alone writes `tests/v2/targets.toml`.",
+    "P04 submits the initial required-row registration to Integration as an ordered patch request before qualification.",
+    "Each of T35 through T38 sends an ordered request with its qualified tuple, case applicability, and fixture references before completion.",
+    "Keep every required row.",
+    "Preserve unavailable required rows as `BLOCKED`.",
+    "Do not write the shared matrix directly or apply concurrent changes.",
+]
 TASK_ID_PATTERN = re.compile(r"\b[PUT]\d{2}\b")
 TASK_ID_RANGE_PATTERN = re.compile(r"\b([PUT])(\d{2}) through \1(\d{2})\b")
 T40_RELEASE_GATE_STEPS = [
@@ -469,6 +501,7 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
         "A13 preserves separate current-graph and final-post-deletion runs": [],
         "A15 separates observation, adapter, and integrated activation owners": [],
         "A16 preserves accepted-revision observation and product-presentation owners": [],
+        "A17 preserves observation layers and integrated activation ownership": [],
     }
 
     def task_contains(task_id: str, field: str, phrase: str) -> bool:
@@ -557,7 +590,102 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
     ):
         if not task_contains(task_id, "test_cases", "A16") or not task_contains(task_id, field, phrase):
             a16_errors.append({"task": task_id, "problem": "owner-specific A16 qualification is missing"})
+
+    a17 = cases_by_id.get("A17", {})
+    a17_errors = failures["A17 preserves observation layers and integrated activation ownership"]
+    if a17.get("level") != "LIVE" or a17.get("tasks") != ["U00", "T13", "T23"]:
+        a17_errors.append({"case_level": a17.get("level"), "case_owners": a17.get("tasks"),
+                           "expected_level": "LIVE", "expected_owners": ["U00", "T13", "T23"]})
+    if not case_text_contains(
+        a17, "setup",
+        "U00 and T13 qualify LIVE attach, revoke, and change observations against installed revisions",
+        "T23 qualifies integrated StartSession and re-admission",
+    ):
+        a17_errors.append({"case": "A17", "field": "setup",
+                           "problem": "must separate LIVE observation owners from integrated activation"})
+    if not case_text_contains(
+        a17, "action",
+        "U00 and T13 observe binding attach, revoke, and change operations and query installed status",
+        "Verify added access and refusal after revocation",
+        "T23 attempts StartSession and re-admission against each observed revision",
+    ):
+        a17_errors.append({"case": "A17", "field": "action",
+                           "problem": "must retain layer observations and integrated StartSession/re-admission"})
+    if not case_text_contains(
+        a17, "expected", "layer observations remain separate from T23's integrated activation",
+        "Activation uses the installed revision", "Added access is visible",
+        "revoked binding cannot pass readiness",
+    ):
+        a17_errors.append({"case": "A17", "field": "expected",
+                           "problem": "must retain installed revision, added access, and revocation refusal"})
+    for task_id, required_acceptance in (
+        ("U00", "A17 at U00 records LIVE provider attach, revoke, and change observations against installed revisions."),
+        ("U00", "A17 at U00 confirms added access is visible and revocation refuses readiness."),
+        ("T13", "A17 at T13 records LIVE attach, revoke, and binding-change observations against the installed provider revision."),
+        ("T13", "A17 at T13 confirms added access is visible and revoked bindings fail closed."),
+        ("T23", "A17 qualifies StartSession and re-admission against installed provider revisions."),
+        ("T23", "Stale or revoked provider bindings cannot become ready at StartSession."),
+    ):
+        if not task_contains(task_id, "test_cases", "A17") or not task_contains(
+            task_id, "acceptance", required_acceptance
+        ):
+            a17_errors.append({"task": task_id, "problem": "A17 owner-specific result is missing",
+                               "required_acceptance": required_acceptance})
+    for step in (
+        "Exercise A17 through integrated StartSession and re-admission after provider attach, revocation, and binding changes.",
+        "Verify the installed revision, added access, and refusal after revocation.",
+    ):
+        if not task_contains("T23", "steps", step):
+            a17_errors.append({"task": "T23", "problem": "integrated A17 procedure is missing",
+                               "required_step": step})
     return failures
+
+
+def target_matrix_contract_errors(tasks: list[dict[str, Any]], acceptance_document: str) -> list[dict[str, Any]]:
+    tasks_by_id = {task.get("id"): task for task in tasks}
+    errors: list[dict[str, Any]] = []
+    prefix = acceptance_document.split("## Detailed cases", 1)[0]
+    missing_policy = [sentence for sentence in TARGET_MATRIX_POLICY_RULES if sentence not in prefix]
+    if missing_policy:
+        errors.append({"acceptance_policy_missing": missing_policy})
+
+    p04 = tasks_by_id.get("P04", {})
+    if P04_TARGET_MATRIX_SCOPE not in p04.get("write_scope", []):
+        errors.append({"task": "P04", "problem": "shared target matrix must remain Integration-owned"})
+    for field, required in (("steps", P04_TARGET_MATRIX_STEP),
+                            ("steps", P04_TARGET_MATRIX_NO_DIRECT_STEP),
+                            ("acceptance", P04_TARGET_MATRIX_ACCEPTANCE)):
+        if required not in p04.get(field, []):
+            errors.append({"task": "P04", "field": field, "missing": required})
+
+    qualification_ids = ("T35", "T36", "T37", "T38")
+    for task_id in qualification_ids:
+        task = tasks_by_id.get(task_id, {})
+        for field, required in (("write_scope", QUALIFICATION_TARGET_MATRIX_SCOPE),
+                                ("steps", QUALIFICATION_TARGET_MATRIX_STEP),
+                                ("steps", QUALIFICATION_TARGET_MATRIX_NO_DIRECT_STEP),
+                                ("acceptance", QUALIFICATION_TARGET_MATRIX_ACCEPTANCE)):
+            if required not in task.get(field, []):
+                errors.append({"task": task_id, "field": field, "missing": required})
+        direct_scope = [value for value in task.get("write_scope", [])
+                        if isinstance(value, str)
+                        and "tests/v2/targets.toml" in value
+                        and value != QUALIFICATION_TARGET_MATRIX_SCOPE]
+        if direct_scope:
+            errors.append({"task": task_id, "problem": "qualification task directly writes shared target matrix",
+                           "write_scope": direct_scope})
+
+    for task in tasks:
+        task_id = task.get("id")
+        if task_id in qualification_ids:
+            continue
+        scope = task.get("write_scope", [])
+        direct_scope = [value for value in scope if isinstance(value, str)
+                        and value.strip().rstrip("/") == "tests/v2/targets.toml"]
+        if direct_scope:
+            errors.append({"task": task_id, "problem": "unauthorized direct target-matrix write scope",
+                           "write_scope": direct_scope})
+    return errors
 
 
 def render_task_index(tasks: list[dict[str, Any]]) -> list[str]:
@@ -793,6 +921,8 @@ def main() -> int:
     tasks = graph["tasks"]
     cases = cases_file["cases"]
     owner_contract_errors = owner_case_contract_errors(tasks, cases)
+    acceptance_document = (root / "ACCEPTANCE.md").read_text(encoding="utf-8")
+    target_matrix_errors = target_matrix_contract_errors(tasks, acceptance_document)
     dependency_list_errors = []
     for task in tasks:
         dependencies = task.get("depends_on")
@@ -1121,6 +1251,8 @@ def main() -> int:
         command_registration_errors.append("P05 must register workspace/build graph after P04")
     check("P04 harness command registration and P05 build wiring scopes agree",
           not command_registration_errors, command_registration_errors)
+    check("Target matrix qualification requests route through Integration",
+          not target_matrix_errors, target_matrix_errors)
 
     pack_checks = (root / "PACK-CHECKS.md").read_text(encoding="utf-8")
     check("PACK-CHECKS limits release-gate claims to static structure",

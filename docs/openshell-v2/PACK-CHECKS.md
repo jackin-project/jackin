@@ -55,9 +55,9 @@ The runner writes one JSON report to stdout and does not modify the pack. It val
 | Acceptance cases | 125 |
 | Mapped specification headings | 30 |
 | Topological readiness groups | 20 |
-| Checked procedural sentences | 1600 |
+| Checked procedural sentences | 1632 |
 
-The ordinary validator report contains 72 ordered checks; `--initial` contains 74, including two initial-only checks and the final inventory check.
+The ordinary validator report contains 74 ordered checks; `--initial` contains 76, including two initial-only checks and the final inventory check.
 The C02 digest checks fixed contract text only. It does not show that source code follows this plan.
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
@@ -103,6 +103,8 @@ Keep no more than eight actual subagents active at once.
 | A13 keeps P05's current graph run separate from T39's final post-deletion rerun | PASS |
 | A15 keeps U00/T13 layer checks and T23 integrated StartSession qualification | PASS |
 | A16 keeps U00/T13 accepted-revision checks and T29 product presentation | PASS |
+| A17 keeps U00/T13 provider observations and T23 integrated StartSession/re-admission | PASS |
+| Target-matrix requests route through Integration; required and unavailable rows remain | PASS |
 | Task required artifacts match the canonical six receipts and report path | PASS |
 | Task-card and test-write paths match each task ID exactly | PASS |
 | Task graph matches indexes and task cards, including report paths | PASS |
@@ -121,8 +123,8 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 174 scenarios passed their exact report, input-derived count, and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 156 targeted scenarios cover assignment ownership and progress, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, task review rules, validator reports, and owner-specific A13/A15/A16 qualification.
+All 181 scenarios passed their exact report, input-derived count, and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 163 targeted scenarios cover assignment ownership and progress, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, task review rules, validator reports, owner-specific A13/A15/A16 qualification, A17 integrated activation, and serialized target-matrix updates.
 Each fixture copy records source hashes, status-only normalization changes, normalized hashes, intentional mutations, and input and executable hashes before and after validation. The original board is never normalized or repaired.
 A22 is owned by U02 and T32. Its mixed-result fixtures complete T32 dependencies before recording results.
 A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks FAIL precedence without bypassing dependencies.
@@ -223,6 +225,10 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | A15 cannot omit T23 or weaken its integrated StartSession barrier | Reject, exit 1 | PASS, exit 1 |
 | U00 and T13 retain A15/A16 LIVE layer checks, accepted revisions, replacement source, and no-intersection claims | Reject, exit 1 | PASS, exit 1 |
 | A16 cannot omit T29 or weaken accepted-revision product presentation | Reject, exit 1 | PASS, exit 1 |
+| A17 cannot omit T23 integrated activation or re-admission ownership | Reject, exit 1 | PASS, exit 1 |
+| P04 initial and T35–T38 qualified target rows use ordered Integration requests | Reject, exit 1 | PASS, exit 1 |
+| P04 and qualification tasks cannot write the central target matrix directly | Reject, exit 1 | PASS, exit 1 |
+| Required target rows remain and unavailable rows stay `BLOCKED` | Reject, exit 1 | PASS, exit 1 |
 | A13 cannot omit Cargo metadata for P05's current graph | Reject, exit 1 | PASS, exit 1 |
 | A13 cannot omit fresh Cargo metadata for T39's final post-deletion graph | Reject, exit 1 | PASS, exit 1 |
 | A16 loads the global policy before querying revisions and displaying its source | Reject, exit 1 | PASS, exit 1 |
@@ -245,5 +251,5 @@ Do not use this result as a full ASD-STE100 conformance claim.
 
 All 46 tasks remain `NOT_STARTED`.
 All 125 cases and their per-task assignment results remain `NOT_RUN`.
-The initial status text in `ACCEPTANCE.md` remains fixed during execution. Its additive policy prefix digest is `503b2bd2ed5560a311a3641409c0f59a7806f6847575b509641b85cbab3ed59a`.
+The initial status text in `ACCEPTANCE.md` remains fixed during execution. Its additive policy prefix digest is `83ede6731dcde4fb66fdbf9f3d041382db9a8aa398787e694b9ccc5499202d08`.
 Implementation completion still requires the task, review, and runtime evidence in the pack.

@@ -126,7 +126,12 @@ Run A117 on every advertised developer target mechanism and each required host-f
 Run engine-specific cases only on the engine-enabled rows, plus default-off negatives on ordinary rows.
 Run worker-specific cases on every driver that advertises strict verification.
 Run storage, identity, transport, and lifecycle cases on every target that claims those mechanisms.
-The coordinator records this complete mapping in `tests/v2/targets.toml` during P04 and qualification updates.
+Integration alone writes `tests/v2/targets.toml`.
+P04 submits the initial required-row registration to Integration as an ordered patch request before qualification.
+Each of T35 through T38 sends an ordered request with its qualified tuple, case applicability, and fixture references before completion.
+Keep every required row.
+Preserve unavailable required rows as `BLOCKED`.
+Do not write the shared matrix directly or apply concurrent changes.
 An unassigned required case makes the full gate fail.
 
 ## Runtime evidence record
@@ -330,13 +335,13 @@ Do not claim support above measured and qualified resource bounds.
 
 ### A17 — Provider authority observation
 
-**Evidence:** LIVE. **Tasks:** U00, T13. **Initial status:** NOT_RUN. **Initial assignment status:** U00=NOT_RUN; T13=NOT_RUN.
+**Evidence:** LIVE. **Tasks:** U00, T13, T23. **Initial status:** NOT_RUN. **Initial assignment status:** U00=NOT_RUN; T13=NOT_RUN; T23=NOT_RUN.
 
-**Setup:** Use a provider binding that adds approved endpoint access.
+**Setup:** Use a provider binding that adds approved endpoint access. U00 and T13 qualify LIVE attach, revoke, and change observations against installed revisions. T23 qualifies integrated StartSession and re-admission.
 
-**Action:** Attach, revoke, and change the binding while querying installed status.
+**Action:** U00 and T13 observe binding attach, revoke, and change operations and query installed status. Verify added access and refusal after revocation. T23 attempts StartSession and re-admission against each observed revision.
 
-**Required result:** Activation uses the installed revision. Added access is visible. Revocation cannot remain falsely ready.
+**Required result:** U00 and T13 layer observations remain separate from T23's integrated activation and re-admission. Activation uses the installed revision. Added access is visible. A revoked binding cannot pass readiness.
 
 ### A18 — Same-name replacement fencing
 

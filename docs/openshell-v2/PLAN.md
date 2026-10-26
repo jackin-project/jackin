@@ -424,7 +424,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 #### Write scope
 
 - crates/tools/jackin-xtask/src/v2/
-- tests/v2/
+- tests/v2/ except tests/v2/targets.toml; Integration applies shared matrix writes
 - docs/openshell-v2/evidence/test-manifest.json
 - crates/tools/jackin-xtask/src/main.rs: v2 command enum and dispatch only, through the Integration subagent
 
@@ -452,6 +452,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 11. Implement the fixed release_gate_protocol in the evidence harness.
 12. Request Integration to register the four v2 commands in the existing xtask enum and dispatch before P04 qualification.
 13. Validate and import the P02 A05 and A06 records without assigning them to T12.
+14. Submit the initial required-row registration to Integration as an ordered patch request before qualification.
+15. Do not write tests/v2/targets.toml directly.
 
 #### Pass conditions
 
@@ -462,6 +464,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Preflight cannot approve release. Finalization requires every fixed protocol prerequisite.
 - All four harness commands resolve through the registered xtask command enum.
 - Imported P02 results satisfy only P02 assignments; T12 runs both cases again.
+- Integration alone applies the initial target registration before qualification updates.
 
 **Acceptance cases:** A10, A11, A12.
 
@@ -604,6 +607,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Unsupported observations prevent activation with a specific error.
 - A15 and A16 at U00 qualify LIVE observation results, not StartSession or product presentation.
 - A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection.
+- A17 at U00 records LIVE provider attach, revoke, and change observations against installed revisions.
+- A17 at U00 confirms added access is visible and revocation refuses readiness.
 
 **Acceptance cases:** A15, A16, A17.
 
@@ -1433,6 +1438,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - An outage cannot create a replacement sandbox.
 - A15 and A16 at T13 qualify LIVE adapter results, not integrated activation or product presentation.
 - A16 at T13 binds the effective replacement source to the observed accepted revision without claiming an intersection.
+- A17 at T13 records LIVE attach, revoke, and binding-change observations against the installed provider revision.
+- A17 at T13 confirms added access is visible and revoked bindings fail closed.
 
 **Acceptance cases:** A15, A16, A17, A18, A19, A20, A21, A48.
 
@@ -2128,6 +2135,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 13. Handle cancellation and lost responses through the journal.
 14. Publish the complete operation and binding to inspection.
 15. Exercise A15 through integrated StartSession with missing, stale, or mismatched authority observations; reject forged helper claims.
+16. Exercise A17 through integrated StartSession and re-admission after provider attach, revocation, and binding changes.
+17. Verify the installed revision, added access, and refusal after revocation.
 
 #### Pass conditions
 
@@ -2138,8 +2147,10 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A real role reaches useful agent output and reconnects to the same live session.
 - Every advertised route completes a real coding task through the native launch path.
 - A15 fails closed at StartSession for missing, stale, or mismatched observations and helper-reported identity.
+- A17 qualifies StartSession and re-admission against installed provider revisions.
+- Stale or revoked provider bindings cannot become ready at StartSession.
 
-**Acceptance cases:** A74, A77, A78, A79, A80, A15.
+**Acceptance cases:** A74, A77, A78, A79, A80, A15, A17.
 
 #### Removal and replacement
 
@@ -2938,6 +2949,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 - tests/v2/targets/container/
 - Container compatibility evidence and deployment instructions
+- No direct writes to tests/v2/targets.toml; submit an ordered Integration patch request.
 
 #### Required inputs
 
@@ -2961,6 +2973,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 9. Test a separate builder outage while the gateway remains available.
 10. Record exact artifacts, host versions, architecture, and effective enforcement.
 11. Keep every missing target or account fixture blocked.
+12. Submit this task's qualified tuple, case applicability, and fixture references to Integration as an ordered targets.toml patch request before completion.
+13. Do not write the central matrix directly.
 
 #### Pass conditions
 
@@ -2968,6 +2982,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Host paths refer to the actual runtime host.
 - Live editing remains live and snapshot transfer remains explicit.
 - Unrelated resources survive failure and cleanup tests.
+- Integration alone applies this task's ordered target-matrix request. Keep every required row; unavailable required rows remain BLOCKED.
 
 **Acceptance cases:** A55, A110, A111, A117.
 
@@ -3006,6 +3021,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 - tests/v2/targets/vm/
 - VM compatibility evidence and operator profiles
+- No direct writes to tests/v2/targets.toml; submit an ordered Integration patch request.
 
 #### Required inputs
 
@@ -3028,6 +3044,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 8. Restore dirty work and conversation state from independent checkpoints.
 9. Run engine-enabled and engine-disabled domain journeys.
 10. Measure guest resources and host overhead separately.
+11. Submit this task's qualified tuple, case applicability, and fixture references to Integration as an ordered targets.toml patch request before completion.
+12. Do not write the central matrix directly.
 
 #### Pass conditions
 
@@ -3035,6 +3053,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A guest cannot access unrelated host directories through project projection.
 - Overlay deletion cannot erase the accepted external checkpoint.
 - Engine access does not place the trusted agent runtime inside daemon authority.
+- Integration alone applies this task's ordered target-matrix request. Keep every required row; unavailable required rows remain BLOCKED.
 
 **Acceptance cases:** A112, A113, A117.
 
@@ -3073,6 +3092,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 - tests/v2/targets/kubernetes/
 - Operator deployment documentation and compatibility evidence
+- No direct writes to tests/v2/targets.toml; submit an ordered Integration patch request.
 
 #### Required inputs
 
@@ -3097,6 +3117,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 10. Verify provider-private data stays outside shared PVCs.
 11. Test gateway interruption, transport loss, and backup/restore expectations.
 12. Reject managed-engine requests until this driver has its own qualified integration.
+13. Submit this task's qualified tuple, case applicability, and fixture references to Integration as an ordered targets.toml patch request before completion.
+14. Do not write the central matrix directly.
 
 #### Pass conditions
 
@@ -3105,6 +3127,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Sandbox deletion follows documented storage ownership.
 - Agents receive no Pod-creation token or physical host Docker socket.
 - Jackin creates no Pods or custom operator resources.
+- Integration alone applies this task's ordered target-matrix request. Keep every required row; unavailable required rows remain BLOCKED.
 
 **Acceptance cases:** A114, A115, A116, A117.
 
@@ -3144,6 +3167,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - tests/v2/faults/
 - tests/v2/security/
 - Cross-target performance and review evidence
+- No direct writes to tests/v2/targets.toml; submit an ordered Integration patch request.
 
 #### Required inputs
 
@@ -3168,6 +3192,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 10. Record cache state, sample count, median, range, and host details.
 11. Report percentiles only when the declared sample requirement is met.
 12. Review every failure without deleting inconvenient evidence.
+13. Submit this task's qualified tuple, case applicability, and fixture references to Integration as an ordered targets.toml patch request before completion.
+14. Do not write the central matrix directly.
 
 #### Pass conditions
 
@@ -3177,6 +3203,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - All stale-authority and same-name replacement cases fail safely.
 - Every mandatory target journey has independent fresh evidence.
 - Measurements distinguish requested limits, enforced scopes, and observed usage.
+- Integration alone applies this task's ordered target-matrix request. Keep every required row; unavailable required rows remain BLOCKED.
 
 **Acceptance cases:** A41, A117, A118, A119.
 

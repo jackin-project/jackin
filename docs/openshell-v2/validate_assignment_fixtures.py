@@ -1317,6 +1317,81 @@ def main() -> int:
         1, ["P04 harness command registration and P05 build wiring scopes agree"],
     ))
 
+    target_matrix_check = "Target matrix qualification requests route through Integration"
+
+    def remove_p04_initial_matrix_request(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "P04")
+        task["steps"].remove(
+            "Submit the initial required-row registration to Integration as an ordered patch request before qualification."
+        )
+        task["acceptance"].remove(
+            "Integration alone applies the initial target registration before qualification updates."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P04")
+    receipts.append(run_fixture(
+        "P04 requests the initial target registration from Integration",
+        remove_p04_initial_matrix_request,
+        1, [target_matrix_check],
+    ))
+
+    def remove_t37_matrix_request(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T37")
+        task["steps"].remove(
+            "Submit this task's qualified tuple, case applicability, and fixture references to Integration as an ordered targets.toml patch request before completion."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T37")
+    receipts.append(run_fixture(
+        "T35 through T38 retain ordered qualified-target patch requests",
+        remove_t37_matrix_request,
+        1, [target_matrix_check],
+    ))
+
+    def give_p04_direct_matrix_scope(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "P04")
+        task["write_scope"].append("tests/v2/targets.toml")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P04")
+    receipts.append(run_fixture(
+        "P04 cannot receive direct write scope for the central target matrix",
+        give_p04_direct_matrix_scope,
+        1, [target_matrix_check],
+    ))
+
+    def give_t35_direct_matrix_scope(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T35")
+        task["write_scope"].append("tests/v2/targets.toml")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T35")
+    receipts.append(run_fixture(
+        "T35 cannot write the central target matrix directly",
+        give_t35_direct_matrix_scope,
+        1, [target_matrix_check],
+    ))
+
+    def remove_blocked_row_rule(pack: Path) -> None:
+        path = pack / "ACCEPTANCE.md"
+        document = path.read_text(encoding="utf-8")
+        rule = "Preserve unavailable required rows as `BLOCKED`.\n"
+        if document.count(rule) != 1:
+            raise ValueError("Expected one unavailable-required-row rule")
+        path.write_text(document.replace(rule, "Remove unavailable required rows from the matrix.\n", 1),
+                        encoding="utf-8")
+    receipts.append(run_fixture(
+        "Required target rows remain and unavailable rows stay BLOCKED",
+        remove_blocked_row_rule,
+        1, [target_matrix_check, "Acceptance policy before detailed cases matches fixed checksum"],
+    ))
+
     def mutate_release_protocol(pack: Path, change: Callable[[dict[str, Any]], None]) -> None:
         graph_path = pack / "task-graph.json"
         graph = read_json(graph_path)
@@ -2361,6 +2436,7 @@ def main() -> int:
     a13_owner_check = "A13 preserves separate current-graph and final-post-deletion runs"
     a15_owner_check = "A15 separates observation, adapter, and integrated activation owners"
     a16_owner_check = "A16 preserves accepted-revision observation and product-presentation owners"
+    a17_owner_check = "A17 preserves observation layers and integrated activation ownership"
 
     def weaken_p05_a13_current_run(pack: Path) -> None:
         graph = read_json(pack / "task-graph.json")
@@ -2525,6 +2601,38 @@ def main() -> int:
         "T29 must display A16's accepted replacement source and revision",
         weaken_t29_a16_presentation,
         1, [a16_owner_check],
+    ))
+
+    def remove_a17_t23_owner(pack: Path) -> None:
+        remove_case_owner(pack, "A17", "T23")
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T23")
+        task["test_cases"].remove("A17")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T23")
+    receipts.append(run_fixture(
+        "A17 cannot omit integrated T23 ownership",
+        remove_a17_t23_owner,
+        1, [a17_owner_check],
+    ))
+
+    def weaken_t23_a17_integrated_activation(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T23")
+        task["steps"].remove(
+            "Exercise A17 through integrated StartSession and re-admission after provider attach, revocation, and binding changes."
+        )
+        task["acceptance"].remove(
+            "A17 qualifies StartSession and re-admission against installed provider revisions."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T23")
+    receipts.append(run_fixture(
+        "T23 retains integrated StartSession and re-admission for A17",
+        weaken_t23_a17_integrated_activation,
+        1, [a17_owner_check],
     ))
 
     def remove_a16_policy_load(pack: Path) -> None:

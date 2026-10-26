@@ -272,7 +272,7 @@
       ],
       "write_scope": [
         "crates/tools/jackin-xtask/src/v2/",
-        "tests/v2/",
+        "tests/v2/ except tests/v2/targets.toml; Integration applies shared matrix writes",
         "docs/openshell-v2/evidence/test-manifest.json",
         "crates/tools/jackin-xtask/src/main.rs: v2 command enum and dispatch only, through the Integration subagent"
       ],
@@ -293,7 +293,9 @@
         "Make the harness usable before full product integration.",
         "Implement the fixed release_gate_protocol in the evidence harness.",
         "Request Integration to register the four v2 commands in the existing xtask enum and dispatch before P04 qualification.",
-        "Validate and import the P02 A05 and A06 records without assigning them to T12."
+        "Validate and import the P02 A05 and A06 records without assigning them to T12.",
+        "Submit the initial required-row registration to Integration as an ordered patch request before qualification.",
+        "Do not write tests/v2/targets.toml directly."
       ],
       "acceptance": [
         "An omitted case makes the full gate fail.",
@@ -302,7 +304,8 @@
         "The harness preserves failing evidence and unrelated resources.",
         "Preflight cannot approve release. Finalization requires every fixed protocol prerequisite.",
         "All four harness commands resolve through the registered xtask command enum.",
-        "Imported P02 results satisfy only P02 assignments; T12 runs both cases again."
+        "Imported P02 results satisfy only P02 assignments; T12 runs both cases again.",
+        "Integration alone applies the initial target registration before qualification updates."
       ],
       "remove_or_replace": [
         "Replace old CI assumptions that equate a command exit with complete qualification.",
@@ -436,7 +439,9 @@
         "Provider readiness refers to the installed binding revision.",
         "Unsupported observations prevent activation with a specific error.",
         "A15 and A16 at U00 qualify LIVE observation results, not StartSession or product presentation.",
-        "A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection."
+        "A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection.",
+        "A17 at U00 records LIVE provider attach, revoke, and change observations against installed revisions.",
+        "A17 at U00 confirms added access is visible and revocation refuses readiness."
       ],
       "remove_or_replace": [
         "Do not add a Jackin-side supervisor or attestation service.",
@@ -1219,7 +1224,9 @@
         "A generic NOT_FOUND cannot delete retained application data.",
         "An outage cannot create a replacement sandbox.",
         "A15 and A16 at T13 qualify LIVE adapter results, not integrated activation or product presentation.",
-        "A16 at T13 binds the effective replacement source to the observed accepted revision without claiming an intersection."
+        "A16 at T13 binds the effective replacement source to the observed accepted revision without claiming an intersection.",
+        "A17 at T13 records LIVE attach, revoke, and binding-change observations against the installed provider revision.",
+        "A17 at T13 confirms added access is visible and revoked bindings fail closed."
       ],
       "remove_or_replace": [
         "Replace direct Docker run, exec, attach, inspect, stop, and remove consumers.",
@@ -1886,7 +1893,9 @@
         "Run an authenticated coding task through each advertised route with approved disposable credentials.",
         "Handle cancellation and lost responses through the journal.",
         "Publish the complete operation and binding to inspection.",
-        "Exercise A15 through integrated StartSession with missing, stale, or mismatched authority observations; reject forged helper claims."
+        "Exercise A15 through integrated StartSession with missing, stale, or mismatched authority observations; reject forged helper claims.",
+        "Exercise A17 through integrated StartSession and re-admission after provider attach, revocation, and binding changes.",
+        "Verify the installed revision, added access, and refusal after revocation."
       ],
       "acceptance": [
         "A missing receipt or stale revision prevents StartSession.",
@@ -1895,7 +1904,9 @@
         "Two identical launch retries do not create duplicate agent processes.",
         "A real role reaches useful agent output and reconnects to the same live session.",
         "Every advertised route completes a real coding task through the native launch path.",
-        "A15 fails closed at StartSession for missing, stale, or mismatched observations and helper-reported identity."
+        "A15 fails closed at StartSession for missing, stale, or mismatched observations and helper-reported identity.",
+        "A17 qualifies StartSession and re-admission against installed provider revisions.",
+        "Stale or revoked provider bindings cannot become ready at StartSession."
       ],
       "remove_or_replace": [
         "Replace the old launch pipeline, backend selector, and restore shortcuts.",
@@ -1907,7 +1918,8 @@
         "A78",
         "A79",
         "A80",
-        "A15"
+        "A15",
+        "A17"
       ],
       "source_basis": "SPEC L115; L150-L152; L228-L241; L336-L360; L497",
       "status": "NOT_STARTED",
@@ -2685,7 +2697,8 @@
       ],
       "write_scope": [
         "tests/v2/targets/container/",
-        "Container compatibility evidence and deployment instructions"
+        "Container compatibility evidence and deployment instructions",
+        "No direct writes to tests/v2/targets.toml; submit an ordered Integration patch request."
       ],
       "inputs": [
         "Required container rows in ACCEPTANCE.md.",
@@ -2702,13 +2715,16 @@
         "Run the combined two-account, shell, real-agent, reconnect, action, recovery, and cleanup journey.",
         "Test a separate builder outage while the gateway remains available.",
         "Record exact artifacts, host versions, architecture, and effective enforcement.",
-        "Keep every missing target or account fixture blocked."
+        "Keep every missing target or account fixture blocked.",
+        "Submit this task's qualified tuple, case applicability, and fixture references to Integration as an ordered targets.toml patch request before completion.",
+        "Do not write the central matrix directly."
       ],
       "acceptance": [
         "One local compiler example does not qualify another platform or remote target.",
         "Host paths refer to the actual runtime host.",
         "Live editing remains live and snapshot transfer remains explicit.",
-        "Unrelated resources survive failure and cleanup tests."
+        "Unrelated resources survive failure and cleanup tests.",
+        "Integration alone applies this task's ordered target-matrix request. Keep every required row; unavailable required rows remain BLOCKED."
       ],
       "remove_or_replace": [
         "Remove platform claims supported only by old Docker or Apple behavior.",
@@ -2754,7 +2770,8 @@
       ],
       "write_scope": [
         "tests/v2/targets/vm/",
-        "VM compatibility evidence and operator profiles"
+        "VM compatibility evidence and operator profiles",
+        "No direct writes to tests/v2/targets.toml; submit an ordered Integration patch request."
       ],
       "inputs": [
         "Fixed small and large VM profile definitions.",
@@ -2770,13 +2787,16 @@
         "Test orderly and interrupted shutdown with flush failures visible.",
         "Restore dirty work and conversation state from independent checkpoints.",
         "Run engine-enabled and engine-disabled domain journeys.",
-        "Measure guest resources and host overhead separately."
+        "Measure guest resources and host overhead separately.",
+        "Submit this task's qualified tuple, case applicability, and fixture references to Integration as an ordered targets.toml patch request before completion.",
+        "Do not write the central matrix directly."
       ],
       "acceptance": [
         "A requested VM boundary never becomes a container silently.",
         "A guest cannot access unrelated host directories through project projection.",
         "Overlay deletion cannot erase the accepted external checkpoint.",
-        "Engine access does not place the trusted agent runtime inside daemon authority."
+        "Engine access does not place the trusted agent runtime inside daemon authority.",
+        "Integration alone applies this task's ordered target-matrix request. Keep every required row; unavailable required rows remain BLOCKED."
       ],
       "remove_or_replace": [
         "Delete old Apple Container backend assets and VM compatibility assumptions.",
@@ -2820,7 +2840,8 @@
       ],
       "write_scope": [
         "tests/v2/targets/kubernetes/",
-        "Operator deployment documentation and compatibility evidence"
+        "Operator deployment documentation and compatibility evidence",
+        "No direct writes to tests/v2/targets.toml; submit an ordered Integration patch request."
       ],
       "inputs": [
         "Official OpenShell Helm and Agent Sandbox resources.",
@@ -2838,14 +2859,17 @@
         "Test image-pull authorization, quotas, Pod replacement, stop/start, and Sandbox deletion.",
         "Verify provider-private data stays outside shared PVCs.",
         "Test gateway interruption, transport loss, and backup/restore expectations.",
-        "Reject managed-engine requests until this driver has its own qualified integration."
+        "Reject managed-engine requests until this driver has its own qualified integration.",
+        "Submit this task's qualified tuple, case applicability, and fixture references to Integration as an ordered targets.toml patch request before completion.",
+        "Do not write the central matrix directly."
       ],
       "acceptance": [
         "Policy-object existence alone cannot pass the network test.",
         "Pod replacement preserves qualified retained files but not old PTYs.",
         "Sandbox deletion follows documented storage ownership.",
         "Agents receive no Pod-creation token or physical host Docker socket.",
-        "Jackin creates no Pods or custom operator resources."
+        "Jackin creates no Pods or custom operator resources.",
+        "Integration alone applies this task's ordered target-matrix request. Keep every required row; unavailable required rows remain BLOCKED."
       ],
       "remove_or_replace": [
         "Remove any proposed Jackin Kubernetes controller or direct Pod lifecycle code.",
@@ -2891,7 +2915,8 @@
       "write_scope": [
         "tests/v2/faults/",
         "tests/v2/security/",
-        "Cross-target performance and review evidence"
+        "Cross-target performance and review evidence",
+        "No direct writes to tests/v2/targets.toml; submit an ordered Integration patch request."
       ],
       "inputs": [
         "Every accepted task and target tuple.",
@@ -2909,7 +2934,9 @@
         "Measure one-instance and two-instance resource totals and launch phases.",
         "Record cache state, sample count, median, range, and host details.",
         "Report percentiles only when the declared sample requirement is met.",
-        "Review every failure without deleting inconvenient evidence."
+        "Review every failure without deleting inconvenient evidence.",
+        "Submit this task's qualified tuple, case applicability, and fixture references to Integration as an ordered targets.toml patch request before completion.",
+        "Do not write the central matrix directly."
       ],
       "acceptance": [
         "No injected failure causes unrelated-resource deletion or silent data loss.",
@@ -2917,7 +2944,8 @@
         "Runtime and publication uncertainty never appears as guessed success.",
         "All stale-authority and same-name replacement cases fail safely.",
         "Every mandatory target journey has independent fresh evidence.",
-        "Measurements distinguish requested limits, enforced scopes, and observed usage."
+        "Measurements distinguish requested limits, enforced scopes, and observed usage.",
+        "Integration alone applies this task's ordered target-matrix request. Keep every required row; unavailable required rows remain BLOCKED."
       ],
       "remove_or_replace": [
         "Remove test exceptions that bypass real credential, worker, or companion paths.",
