@@ -4,14 +4,76 @@
 use std::{
     collections::BTreeMap,
     ffi::OsString,
-    os::unix::ffi::OsStringExt,
+    fs,
+    os::unix::{ffi::OsStringExt, fs::PermissionsExt},
     path::{Path, PathBuf},
     process::{Command, Output},
+    sync::{Arc, atomic::AtomicBool},
+    time::Duration,
 };
 
 use anyhow::{Context, Result, bail, ensure};
 
 use super::super::process::{CommandBudget, EnvironmentMode, SetupControls, capture_strict};
+
+struct ProvisionToolPaths {
+    cargo: PathBuf,
+    rustc: PathBuf,
+}
+
+/// Admit the current installer environment before it publishes the running owner.
+/// The installer interface does not provide authenticated build-path evidence;
+/// this checks the configured MBX and Rust toolchain against the staged pin.
+pub(super) fn admit_install_environment(source_root: &Path) -> Result<()> {
+    let ProvisionToolPaths { cargo, rustc } = resolve_provision_tool_paths(source_root)?;
+    drop((cargo, rustc));
+    Ok(())
+}
+
+fn resolve_provision_tool_paths(source_root: &Path) -> Result<ProvisionToolPaths> {
+    let source_root = fs::canonicalize(source_root).context("resolving bootstrap source root")?;
+    let temp_parent = super::super::process::canonical_temporary_parent(&std::env::temp_dir())
+        .context("validating physical provision tool-qualification directory")?;
+    let isolation = tempfile::Builder::new()
+        .prefix("jackin-provision-mise-")
+        .tempdir_in(temp_parent)
+        .context("creating private tool qualification directory")?;
+    fs::set_permissions(isolation.path(), fs::Permissions::from_mode(0o700))
+        .context("protecting private tool qualification directory")?;
+    let controls = SetupControls::new(Arc::new(AtomicBool::new(false)), Duration::from_mins(10));
+    let inputs = super::HostInputs::capture(&source_root, isolation.path(), &controls)?;
+    let pin = super::rust_release(&source_root.join("rust-toolchain.toml"), &controls)?;
+    let inherited_path = inputs.search_path();
+    let home = inputs.home.as_deref().map(Path::new);
+    let mise = super::find_executable("mise", inherited_path).context("missing Mise executable")?;
+    let mise = fs::canonicalize(mise).context("resolving Mise executable")?;
+    let rustup =
+        super::find_executable("rustup", inherited_path).context("missing rustup executable")?;
+    let rustup = fs::canonicalize(rustup).context("resolving rustup executable")?;
+    let mise_environment = inputs.command_environment(&source_root);
+    let cargo = super::effective_cargo(&mise, &mise_environment, &source_root, &controls)?;
+    let rust_tools = super::resolve_rust_tools_with_controls(
+        &rustup,
+        &pin,
+        std::ffi::OsStr::new(super::FIXED_SYSTEM_PATH),
+        inputs.rustup_home.as_deref(),
+        home.map(Path::as_os_str),
+        &controls,
+    )
+    .context("resolving pinned Rust tools")?;
+    verify_rust_toolchain(
+        &pin,
+        &rust_tools,
+        &mise,
+        &mise_environment,
+        &source_root,
+        &controls,
+    )?;
+    Ok(ProvisionToolPaths {
+        cargo,
+        rustc: rust_tools["rustc"].clone(),
+    })
+}
 
 pub(super) fn verify_rust_toolchain(
     pin: &str,

@@ -40,9 +40,14 @@ fn config_install_signal_during_candidate_preparation_leaves_config_untouched() 
     let shim = prepare_git_shim(temporary.path())?;
     let _release_on_drop = ReleaseOnDrop(shim.release.clone());
     let mut child = ChildGuard::new(
-        test_child("signal", &repository, Some(&shim.directory))?
-            .spawn()
-            .context("starting public installer signal fixture")?,
+        test_child(
+            "signal",
+            &repository,
+            temporary.path(),
+            Some(&shim.directory),
+        )?
+        .spawn()
+        .context("starting public installer signal fixture")?,
     );
 
     wait_for_path(&shim.ready, Duration::from_secs(20))?;
@@ -65,7 +70,7 @@ fn config_install_signal_during_candidate_preparation_leaves_config_untouched() 
         "candidate preparation changed the live worktree config before cancellation"
     );
 
-    let mut retry_command = test_child("install", &repository, None)?;
+    let mut retry_command = test_child("install", &repository, temporary.path(), None)?;
     let retry = ChildGuard::new(
         retry_command
             .spawn()
@@ -111,7 +116,7 @@ fn run_competing_writer_case(root: &Path, initially_present: bool) -> Result<()>
     let shim = prepare_git_shim(&root.join(format!("{name} writer")))?;
     let _release_on_drop = ReleaseOnDrop(shim.release.clone());
     let mut child = ChildGuard::new(
-        test_child("conflict", &repository, Some(&shim.directory))?
+        test_child("conflict", &repository, root, Some(&shim.directory))?
             .spawn()
             .context("starting public installer competing-writer fixture")?,
     );
@@ -160,7 +165,12 @@ fn run_child_mode(mode: &str) -> Result<()> {
     }
 }
 
-fn test_child(mode: &str, repository: &Path, shim: Option<&Path>) -> Result<Command> {
+fn test_child(
+    mode: &str,
+    repository: &Path,
+    fixture_root: &Path,
+    shim: Option<&Path>,
+) -> Result<Command> {
     let name = current_test_name(if mode == "conflict" {
         "config_install_rejects_competing_writer_during_candidate_preparation"
     } else {
@@ -171,15 +181,9 @@ fn test_child(mode: &str, repository: &Path, shim: Option<&Path>) -> Result<Comm
         .arg("--exact")
         .arg(name)
         .arg("--nocapture")
-        .current_dir(repository)
-        .env(CHILD_MODE, mode);
-    if let Some(shim) = shim {
-        let mut search_path = vec![shim.to_path_buf()];
-        search_path.extend(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        ));
-        command.env("PATH", std::env::join_paths(search_path)?);
-    }
+        .current_dir(repository);
+    super::fixture::configure_admission_environment(&mut command, fixture_root, shim)?;
+    command.env(CHILD_MODE, mode);
     Ok(command)
 }
 

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
 use jackin_process::{ExecRequest, ExecResult, StdioMode};
+#[cfg(unix)]
 use jackin_process_directory::validate_temporary_parent;
 
 mod paths;
@@ -269,6 +270,7 @@ where
     };
     let temporary_parent =
         fs::canonicalize(&temporary_path).context("anchoring custom lint temporary directory")?;
+    #[cfg(unix)]
     validate_temporary_parent(&temporary_parent)
         .context("validating custom lint temporary directory")?;
     let mut env = inherited;

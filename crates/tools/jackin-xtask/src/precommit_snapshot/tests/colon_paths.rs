@@ -13,16 +13,19 @@ fn installed_owner_runs_qualified_tools_when_tmpdir_and_rust_path_contain_colons
 
     let rustc = rust_bin.join("rustc");
     let rustup = fixture.repository.join(".git/f3-test/bin/rustup");
-    let tool_body = concat!(
-        "#!/bin/sh\n",
-        "name=${0##*/}\n",
-        "case \"$name\" in\n",
-        "  rustc) if [ -n \"${JACKIN_F3_OWNER_DRIVER_RUSTC_PROVIDER:-}\" ]; then printf 'fixture-pinned-rustc\\n' > \"$JACKIN_F3_OWNER_DRIVER_RUSTC_PROVIDER\"; fi; printf 'rustc 1.99.1 (fixture)\\nbinary: rustc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n",
-        "  rustdoc) printf 'rustdoc 1.99.1 (fixture)\\nbinary: rustdoc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n",
-        "  clippy-driver) printf 'clippy 0.1.99 (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n",
-        "  rustfmt) printf 'rustfmt 1.99.1-stable (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n",
-        "  *) exit 91 ;;\n",
-        "esac\n",
+    let tool_body = format!(
+        concat!(
+            "#!/bin/sh\n",
+            "name=${{0##*/}}\n",
+            "case \"$name\" in\n",
+            "  rustc) printf 'fixture-pinned-rustc\\n' > {}; printf 'rustc 1.99.1 (fixture)\\nbinary: rustc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n",
+            "  rustdoc) printf 'rustdoc 1.99.1 (fixture)\\nbinary: rustdoc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n",
+            "  clippy-driver) printf 'clippy 0.1.99 (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n",
+            "  rustfmt) printf 'rustfmt 1.99.1-stable (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n",
+            "  *) exit 91 ;;\n",
+            "esac\n",
+        ),
+        shell_quote(&fixture.rustc_provider)
     );
     for name in ["rustc", "rustdoc", "clippy-driver", "rustfmt"] {
         write_executable(&rust_bin.join(name), tool_body.as_bytes());
@@ -46,24 +49,16 @@ fn installed_owner_runs_qualified_tools_when_tmpdir_and_rust_path_contain_colons
         before,
         "live repository stays unchanged while the private gate runs"
     );
-    release_gate.release();
-    let output = owner.wait_output(std::time::Duration::from_secs(8));
-    assert!(
-        output.status.success(),
-        "colon-path owner failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    assert_eq!(
-        fs::read(&fixture.cargo_provider).expect("qualified Cargo provider marker"),
-        b"fixture-mbx-cargo\n"
-    );
-    assert_eq!(
-        fs::read(&fixture.rustc_provider).expect("qualified rustc provider marker"),
-        b"fixture-pinned-rustc\n"
-    );
     let report = fs::read_to_string(&fixture.probe_output).expect("qualified tool report");
-    let target = PathBuf::from(report.lines().next().expect("private target path"));
+    let mut lines = report.lines();
+    let target = PathBuf::from(lines.next().expect("private target path"));
+    let _build = lines.next().expect("private build path");
+    assert_eq!(
+        PathBuf::from(lines.next().expect("selected Rust compiler")),
+        fixture.expected_rustc
+    );
+    let selected_cargo = PathBuf::from(lines.next().expect("selected Cargo"));
+    assert!(lines.next().is_none(), "unexpected tool report: {report}");
     assert!(
         target
             .parent()
@@ -77,13 +72,37 @@ fn installed_owner_runs_qualified_tools_when_tmpdir_and_rust_path_contain_colons
         "private build scratch preserves colon-containing TMPDIR: {target:?}"
     );
     let path = fs::read_to_string(&fixture.path_output).expect("qualified PATH record");
-    let alias = env::split_paths(OsStr::new(path.trim_end_matches('\n')))
-        .next()
-        .expect("first qualified PATH entry");
-    assert!(alias.is_absolute());
-    assert!(!alias.as_os_str().as_encoded_bytes().contains(&b':'));
+    let entries = env::split_paths(OsStr::new(path.trim_end_matches('\n'))).collect::<Vec<_>>();
+    let aliases = entries.first().expect("private qualified alias entry");
+    assert!(aliases.is_absolute());
+    assert!(!aliases.as_os_str().as_encoded_bytes().contains(&b':'));
     assert!(
-        !alias.exists(),
+        aliases.is_dir(),
+        "alias directory remains alive while gate runs"
+    );
+    assert_eq!(selected_cargo, aliases.join("cargo"));
+    assert_eq!(
+        fs::canonicalize(&selected_cargo).expect("physical selected Cargo"),
+        fixture.expected_cargo
+    );
+
+    release_gate.release();
+    let output = owner.wait_output(std::time::Duration::from_secs(8));
+    assert!(
+        output.status.success(),
+        "colon-path owner failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read(&fixture.cargo_provider).unwrap(),
+        b"fixture-mbx-cargo\n"
+    );
+    assert_eq!(
+        fs::read(&fixture.rustc_provider).unwrap(),
+        b"fixture-pinned-rustc\n"
+    );
+    assert!(
+        !aliases.exists(),
         "qualified PATH aliases are removed after gate"
     );
 }
@@ -158,7 +177,7 @@ fn installed_owner_anchors_empty_and_relative_path_entries_before_snapshot_chdir
             "fixture PATH alias parent is delimiter-free"
         );
         let colon_cwd_parent = parent.path().join("hook:cwd");
-        fs::create_dir(&colon_cwd_parent).expect("colon-containing hook directory");
+        fs::create_dir(&colon_cwd_parent).expect("create colon-containing hook directory");
         let mut fixture =
             InstalledOwnerFixture::new_in(OwnerFixtureMode::IsolationGate, &colon_cwd_parent);
         let bin = env::split_paths(&fixture.path)
@@ -187,23 +206,30 @@ fn installed_owner_anchors_empty_and_relative_path_entries_before_snapshot_chdir
         wait_for_owner_readiness(&mut owner, &fixture.gate_ready, &fixture.ticks);
         let path = fs::read_to_string(&fixture.path_output).expect("qualified PATH record");
         let entries = env::split_paths(OsStr::new(path.trim_end_matches('\n'))).collect::<Vec<_>>();
-        assert_eq!(entries.len(), 3, "qualified PATH entries: {entries:?}");
+        assert_eq!(entries.len(), 5, "gate PATH entries: {entries:?}");
         assert!(
-            entries
-                .iter()
-                .all(|entry| !entry.as_os_str().as_encoded_bytes().contains(&b':')),
-            "qualified PATH projection uses delimiter-free entries: {entries:?}"
+            entries[0].is_dir(),
+            "private aliases are alive through the gate"
         );
-        assert_eq!(entries[1], provider_bin);
         assert_eq!(
-            fs::read_link(&entries[2]).expect("anchored relative PATH alias"),
-            if component.as_os_str().is_empty() {
-                fixture.repository.clone()
-            } else {
-                fixture.repository.join(&component)
-            }
+            &entries[1..],
+            ["/usr/bin", "/bin", "/usr/sbin", "/sbin"].map(PathBuf::from)
+        );
+        let anchored_relative = if component.as_os_str().is_empty() {
+            fixture.repository.clone()
+        } else {
+            fixture.repository.join(&component)
+        };
+        assert!(
+            !entries.contains(&provider_bin) && !entries.contains(&anchored_relative),
+            "inherited discovery paths do not reach the gate: {entries:?}"
         );
         let alias = entries[0].clone();
+        let report = fs::read_to_string(&fixture.probe_output).expect("qualified tool report");
+        assert!(
+            PathBuf::from(report.lines().nth(3).expect("selected Cargo")).starts_with(&alias),
+            "Mise/Cargo discovery succeeded from inherited relative PATH before gate: {report}"
+        );
         release_gate.release();
         let output = owner.wait_output(std::time::Duration::from_secs(8));
         assert!(

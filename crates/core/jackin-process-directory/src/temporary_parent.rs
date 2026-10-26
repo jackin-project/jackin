@@ -18,9 +18,9 @@ const NOFOLLOW_STAT_FLAGS: AtFlags = AtFlags::SYMLINK_NOFOLLOW;
 ///
 /// Root and the effective user are trusted to preserve directory metadata and
 /// ACLs until callers create their children. Callers must retain their existing
-/// post-creation checks. This function does not retain descriptors. Root-owned
-/// directories with exact sticky mode `01777` are the only group- or
-/// other-writable exception.
+/// post-creation checks. This function does not retain descriptors. Root- or
+/// effective-user-owned directories with exact sticky mode `01777` are the
+/// only group- or other-writable exception.
 pub fn validate_temporary_parent(path: &Path) -> io::Result<()> {
     let canonical = std::fs::canonicalize(path)?;
     if !path.is_absolute() || canonical.as_path() != path {
@@ -102,7 +102,7 @@ fn validate_temporary_parent_facts(
             "temporary parent path component has foreign ownership",
         ));
     }
-    if mode & 0o022 != 0 && !(owner == 0 && mode == 0o1777) {
+    if mode & 0o022 != 0 && !(mode == 0o1777 && (owner == 0 || owner == effective_uid)) {
         return Err(permission_denied(
             "temporary parent path component is writable by group or other",
         ));

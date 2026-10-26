@@ -8,6 +8,11 @@ mod git;
 mod process;
 mod toolchain;
 
+/// Admit the pinned MBX and Rust tools before a hook owner is installed.
+pub(crate) fn admit_install_toolchain_environment(source_root: &std::path::Path) -> Result<()> {
+    toolchain::admit_install_environment(source_root)
+}
+
 #[derive(Clone, Copy)]
 enum OwnerSignal {
     Hup,
@@ -226,7 +231,14 @@ fn run_with_signals(
             return Ok(code);
         }
         let gate_controls = signals.setup_gate_controls(budgets.gate);
+        let path_alias_lifetime = tools.path_aliases.as_ref();
         let mut completion = snapshot.run_gate(&tools, arguments, &gate_controls)?;
+        if let Some(path_aliases) = path_alias_lifetime {
+            ensure!(
+                path_aliases.path().is_dir(),
+                "qualified PATH aliases disappeared before gate completion"
+            );
+        }
         if !completion.cleanup.group_drained || completion.cleanup.recovery.is_some() {
             drop(completion.cleanup.recovery);
             anyhow::bail!("native hook process cleanup is uncertain");

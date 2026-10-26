@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(unix)]
+#[path = "custom_lints/paths.rs"]
+mod cargo_paths;
 #[path = "shared/fs_util.rs"]
 mod fs_util;
 #[cfg(unix)]
@@ -14,11 +17,15 @@ mod tests;
 use anyhow::{Context, Result, bail, ensure};
 #[cfg(unix)]
 use std::{
+    collections::BTreeMap,
     env,
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     io::{self, Write},
     process::ExitCode,
 };
+
+#[cfg(unix)]
+type Environment = BTreeMap<OsString, OsString>;
 
 #[cfg(unix)]
 fn main() -> ExitCode {

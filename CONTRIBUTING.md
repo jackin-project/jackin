@@ -40,11 +40,12 @@ private snapshot and temporary Cargo target directory. The native owner
 handles process cleanup, source custody, and symlink checks. Compiler
 artifacts cannot collide with builds in the live checkout.
 
-The hook uses the developer's shared Cargo home, Mise configuration, storage
-roots, and inherited PATH after the qualified Rust and MBX tools. These remain
-developer-controlled inputs. Inherited compiler override variables and Bash startup
-injection are removed from the gate environment. The owner does not provide a
-host sandbox or authenticate how an already-built executable was compiled.
+The hook uses the developer’s shared Cargo cache and credentials and admitted
+Rustup and Mise storage roots. Gate tools are qualified against the staged
+configuration, and auxiliary commands use the controlled gate PATH. Ambient
+Cargo configuration and global or system Mise configuration are not accepted
+as arbitrary gate inputs. The owner does not provide a host sandbox or
+authenticate how an already-built executable was compiled.
 
 Git's [`extensions.worktreeConfig`](https://git-scm.com/docs/git-config#Documentation/git-config.txt-extensionsworktreeConfig)
 must already be enabled for the repository;
@@ -84,8 +85,8 @@ The isolated repository preserves the original HEAD and merge index, so hk
 and affected-package selection see the original staged diff. Unmerged index
 entries or staged symlinks escaping the snapshot fail before tools run.
 Before checkout, the launcher limits staged blob content to 1 GiB, counting each
-path separately. Temporary parents must preserve rename custody; standard
-root-owned sticky temporary directories are supported. Colon-containing scratch
+path separately. Temporary parents must preserve rename custody; root- or
+effective-user-owned sticky temporary directories are supported. Colon-containing scratch
 paths retain their location, with private PATH aliases under `/tmp` when needed.
 
 If a step still changes source, the commit fails. The launcher saves a private

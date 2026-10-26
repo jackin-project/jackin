@@ -40,10 +40,10 @@ pub use secure_source::{CheckedSourceFile, CheckedSourceRoot};
 
 /// Validate a physical temporary-directory parent against foreign rename authority.
 ///
-/// Root-owned sticky directories with exact mode `01777` are accepted. Other
-/// path components must be owned by root or the effective user and must not
-/// be writable by group or other. Native ACL inspection applies to each
-/// directory descriptor.
+/// Root- or effective-user-owned sticky directories with exact mode `01777`
+/// are accepted. Other path components must be owned by root or the effective
+/// user and must not be writable by group or other. Native ACL inspection
+/// applies to each directory descriptor.
 #[cfg(unix)]
 pub use temporary_parent::validate_temporary_parent;
 

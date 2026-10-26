@@ -143,7 +143,7 @@ fn run_alternate_only_gate(root: &Path) {
             (OsString::from(GATE_OUTPUT), output.as_os_str().to_owned()),
             (OsString::from(GATE_EXPECTED), expected.into_os_string()),
         ]),
-        _path_aliases: None,
+        path_aliases: None,
     };
     let controls = snapshot.controls.clone();
     let completion = snapshot

@@ -19,8 +19,9 @@ pub(crate) fn activation_failed_after_rename(error: &anyhow::Error) -> bool {
 }
 
 pub(crate) fn install_hooks() -> Result<()> {
-    let running_image = RunningImage::capture().context("capturing running hook owner image")?;
     let repository = git::repository_root()?;
+    crate::precommit_snapshot::admit_install_toolchain_environment(&repository)?;
+    let running_image = RunningImage::capture().context("capturing running hook owner image")?;
     let source_path = env::current_exe().context("resolving running hook owner")?;
     let owner = files::read_current_owner(&source_path, &running_image, OWNER_LIMIT)?;
     install_for_repository(&repository, &owner)?;

@@ -4,7 +4,7 @@
 use super::super::*;
 use std::{
     env, fs,
-    os::unix::fs::PermissionsExt,
+    os::unix::fs::{PermissionsExt, symlink},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -23,6 +23,31 @@ fn accepts_private_parent_and_root_sticky_tmp() {
 
     let sticky_tmp = fs::canonicalize("/tmp").expect("canonical standard temporary directory");
     canonical_temporary_parent(&sticky_tmp).expect("validate root-owned sticky temporary parent");
+}
+
+#[test]
+fn canonicalizes_relative_and_symlink_temporary_parents() {
+    let cwd = env::current_dir().expect("current directory");
+    let fixture = tempfile::tempdir_in(&cwd).expect("fixture beneath current directory");
+    let physical = fixture.path().join("physical-parent");
+    fs::create_dir(&physical).expect("create physical parent");
+    fs::set_permissions(&physical, fs::Permissions::from_mode(0o700))
+        .expect("protect physical parent");
+
+    let relative = physical
+        .strip_prefix(&cwd)
+        .expect("fixture uses current directory as its base");
+    assert_eq!(
+        canonical_temporary_parent(relative).expect("resolve relative parent"),
+        fs::canonicalize(&physical).expect("canonical physical parent")
+    );
+
+    let alias = fixture.path().join("parent-alias");
+    symlink(&physical, &alias).expect("create parent alias");
+    assert_eq!(
+        canonical_temporary_parent(&alias).expect("resolve symlink parent"),
+        fs::canonicalize(&physical).expect("canonical physical parent")
+    );
 }
 
 #[test]

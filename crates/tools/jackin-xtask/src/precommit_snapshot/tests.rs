@@ -1,4 +1,7 @@
+mod cargo_admission;
+mod colon_paths;
 mod hk_bypass;
+mod terminal_signals;
 
 use std::{
     env,
@@ -20,9 +23,6 @@ use super::{
 };
 use crate::precommit_snapshot::{evidence, git, process, toolchain::QualifiedTools};
 
-mod colon_paths;
-mod terminal_signals;
-
 const OWNER_DRIVER_CHILD: &str = "JACKIN_F3_OWNER_DRIVER_CHILD";
 const OWNER_DRIVER_EXPECTATION: &str = "JACKIN_F3_OWNER_DRIVER_EXPECTATION";
 const OWNER_DRIVER_STATUS: &str = "JACKIN_F3_OWNER_DRIVER_STATUS";
@@ -30,16 +30,6 @@ const OWNER_DRIVER_SETUP_MS: &str = "JACKIN_F3_OWNER_DRIVER_SETUP_MS";
 const OWNER_DRIVER_GATE_MS: &str = "JACKIN_F3_OWNER_DRIVER_GATE_MS";
 const OWNER_DRIVER_RECOVERY_MS: &str = "JACKIN_F3_OWNER_DRIVER_RECOVERY_MS";
 const OWNER_DRIVER_GIT_PROGRAM: &str = "JACKIN_F3_OWNER_DRIVER_GIT_PROGRAM";
-const OWNER_DRIVER_PROBE_OUTPUT: &str = "JACKIN_F3_OWNER_DRIVER_PROBE_OUTPUT";
-const OWNER_DRIVER_GATE_RELEASE: &str = "JACKIN_F3_OWNER_DRIVER_GATE_RELEASE";
-const OWNER_DRIVER_GATE_READY: &str = "JACKIN_F3_OWNER_DRIVER_GATE_READY";
-const OWNER_DRIVER_PATH_OUTPUT: &str = "JACKIN_F3_OWNER_DRIVER_PATH_OUTPUT";
-const OWNER_DRIVER_CARGO_PROVIDER: &str = "JACKIN_F3_OWNER_DRIVER_CARGO_PROVIDER";
-const OWNER_DRIVER_RUSTC_PROVIDER: &str = "JACKIN_F3_OWNER_DRIVER_RUSTC_PROVIDER";
-const OWNER_DRIVER_GIT_CONFIG_OUTPUT: &str = "JACKIN_F3_OWNER_DRIVER_GIT_CONFIG_OUTPUT";
-const OWNER_DRIVER_TERMINAL_READY: &str = "JACKIN_F3_OWNER_DRIVER_TERMINAL_READY";
-const OWNER_DRIVER_TERMINAL_RELEASE: &str = "JACKIN_F3_OWNER_DRIVER_TERMINAL_RELEASE";
-const OWNER_DRIVER_TERMINAL_TMPDIR: &str = "JACKIN_F3_OWNER_DRIVER_TERMINAL_TMPDIR";
 
 fn fixture() -> (tempfile::TempDir, git::LiveRepository, git::OwnedSnapshot) {
     let home =
@@ -203,7 +193,6 @@ fn assert_retained_diagnostics(root: &Path, fixes: &[u8]) {
 
 fn test_signals() -> SetupSignals {
     SetupSignals {
-        terminal: Arc::new(AtomicBool::new(false)),
         route: SignalRoute {
             recovery_armed: std::cell::Cell::new(false),
             cancellation: Arc::new(AtomicBool::new(false)),
@@ -211,6 +200,7 @@ fn test_signals() -> SetupSignals {
             int: Arc::new(AtomicBool::new(false)),
             term: Arc::new(AtomicBool::new(false)),
         },
+        terminal: Arc::new(AtomicBool::new(false)),
     }
 }
 
@@ -337,7 +327,7 @@ fn evidence_persist_error_retains_fixes_before_owner_drop() {
     let collision = live.common_git_dir.join("jackin-hook-evidence");
     fs::write(collision, b"not a directory").expect("creating evidence-path collision");
 
-    let error = evidence::persist(&live.common_git_dir, fixes, &snapshot.controls).unwrap_err();
+    let error = evidence::persist(&live.common_git_dir, fixes, &live.controls).unwrap_err();
     let error = retain_snapshot_failure(&mut snapshot, error);
     let detail = format!("{error:#}");
     assert!(detail.contains("hook evidence root is not a physical directory"));
@@ -358,7 +348,7 @@ fn gate_spawn_error_without_recovery_retains_snapshot_after_owner_drop() {
     let tools = QualifiedTools {
         gate: repository.path().join("missing-gate"),
         environment: std::collections::BTreeMap::new(),
-        _path_aliases: None,
+        path_aliases: None,
     };
 
     let controls = snapshot.controls.clone();
@@ -434,23 +424,19 @@ fn installed_owner_driver_child() {
                 result.expect("completed cleanup before terminal handoff"),
                 0
             );
-            let temporary = PathBuf::from(
-                env::var_os(OWNER_DRIVER_TERMINAL_TMPDIR).expect("dedicated child TMPDIR"),
-            );
+            let support = env::current_dir()
+                .expect("read terminal fixture working directory")
+                .join(".git/f3-test");
+            let temporary = support.join("terminal-tmp");
             assert!(
                 crate::fs_util::read_dir_sorted(&temporary)
-                    .expect("read completed child TMPDIR")
+                    .expect("read cleaned child TMPDIR")
                     .is_empty(),
-                "snapshot cleanup completes before terminal handoff"
+                "snapshot cleanup completes before terminal signal handoff"
             );
-            fs::write(
-                env::var_os(OWNER_DRIVER_TERMINAL_READY).expect("terminal-ready marker"),
-                b"cleanup complete\n",
-            )
-            .expect("publish terminal handoff readiness");
-            let release = PathBuf::from(
-                env::var_os(OWNER_DRIVER_TERMINAL_RELEASE).expect("terminal release marker"),
-            );
+            fs::write(support.join("terminal-ready"), b"cleanup complete\n")
+                .expect("publish terminal handoff readiness");
+            let release = support.join("terminal-release");
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
             while !release.exists() {
                 assert!(
@@ -487,6 +473,17 @@ fn installed_owner_driver_child() {
             assert!(
                 detail.contains("reintroduces RUSTC_BOOTSTRAP"),
                 "unexpected qualification failure: {detail}"
+            );
+            eprintln!("installed owner {expectation} result: {detail}");
+        }
+        "cargo-config-bound-error" => {
+            let Err(error) = result else {
+                panic!("oversized staged Cargo config unexpectedly qualified");
+            };
+            let detail = format!("{error:#}");
+            assert!(
+                detail.contains("staged Cargo config exceeds its byte limit"),
+                "unexpected Cargo config admission failure: {detail}"
             );
             eprintln!("installed owner {expectation} result: {detail}");
         }
@@ -608,7 +605,7 @@ fn generic_owner_keeps_live_canaries_while_gate_uses_private_tools_and_artifacts
     let mut owner = fixture.spawn_owner("status", 0, 20_000, 20_000, 20_000);
     let release_gate = GateReleaseOnDrop(fixture.gate_release.clone());
     wait_for_owner_readiness(&mut owner, &fixture.gate_ready, &fixture.ticks);
-    let report = fs::read_to_string(&fixture.probe_output).expect("gate tool report while blocked");
+    let report = fs::read_to_string(&fixture.probe_output).expect("gate tool report");
     let mut lines = report.lines();
     let target = PathBuf::from(lines.next().expect("private target directory"));
     let build = PathBuf::from(lines.next().expect("private build directory"));
@@ -617,45 +614,49 @@ fn generic_owner_keeps_live_canaries_while_gate_uses_private_tools_and_artifacts
         fixture.expected_rustc
     );
     let selected_cargo = PathBuf::from(lines.next().expect("selected Cargo"));
+    let path = fs::read_to_string(&fixture.path_output).expect("qualified gate PATH");
+    let entries = env::split_paths(OsStr::new(path.trim_end_matches('\n'))).collect::<Vec<_>>();
+    let aliases = entries.first().expect("qualified alias PATH entry");
+    assert_eq!(
+        fs::read_to_string(fixture.repository.join(".git/f3-test/gate-alias-state"))
+            .expect("gate alias directory state"),
+        "present\n",
+        "gate process sees the qualified PATH alias directory"
+    );
+    assert!(
+        aliases.is_dir(),
+        "private aliases stay live during the gate: {} (PATH={path:?})",
+        aliases.display()
+    );
+    assert_eq!(
+        &entries[1..],
+        ["/usr/bin", "/bin", "/usr/sbin", "/sbin"].map(PathBuf::from),
+        "only the fixed system directories follow the qualified aliases"
+    );
+    assert_eq!(selected_cargo, aliases.join("cargo"));
+    assert_eq!(
+        fs::canonicalize(&selected_cargo).expect("physical selected Cargo"),
+        fixture.expected_cargo
+    );
+    assert_eq!(
+        fs::canonicalize(aliases.join("rustc")).expect("physical selected rustc"),
+        fixture.expected_rustc
+    );
     assert!(
         lines.next().is_none(),
         "unexpected gate report fields: {report}"
     );
-    let path = fs::read_to_string(&fixture.path_output).expect("qualified PATH while blocked");
-    let alias = env::split_paths(OsStr::new(path.trim_end_matches('\n')))
-        .next()
-        .expect("first qualified PATH entry");
-    assert!(
-        alias.is_dir(),
-        "private PATH aliases stay alive during the gate"
-    );
     assert_eq!(
-        selected_cargo,
-        alias.join("cargo"),
-        "cargo uses admitted alias"
-    );
-    assert_eq!(
-        fs::canonicalize(&selected_cargo).expect("physical selected Cargo"),
-        fs::canonicalize(fixture.repository.join(".git/f3-test/bin/cargo"))
-            .expect("physical fixture MBX Cargo")
-    );
-    assert_eq!(
-        fs::read_to_string(&fixture.git_config_output).expect("qualified Git config environment"),
-        "/dev/null\n/dev/null\n1\n"
-    );
-    assert!(!fixture.git_global_alias_marker.exists());
-    assert!(!fixture.git_system_alias_marker.exists());
-    assert_eq!(
-        fs::canonicalize(alias.join("rustc")).expect("physical PATH-selected rustc"),
-        fixture.expected_rustc
-    );
-    assert_eq!(
-        fs::read(&fixture.cargo_provider).expect("Cargo provider marker"),
+        fs::read(&fixture.cargo_provider).expect("MBX Cargo provider marker while blocked"),
         b"fixture-mbx-cargo\n"
     );
     assert_eq!(
-        fs::read(&fixture.rustc_provider).expect("rustc provider marker"),
+        fs::read(&fixture.rustc_provider).expect("pinned rustc provider marker while blocked"),
         b"fixture-pinned-rustc\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&fixture.git_config_output).expect("qualified Git config controls"),
+        "/dev/null\n/dev/null\n1\n"
     );
     assert_eq!(
         capture_live_canary_state(&fixture.repository),
@@ -684,6 +685,8 @@ fn generic_owner_keeps_live_canaries_while_gate_uses_private_tools_and_artifacts
         &fixture.poison_marker,
         &fixture.git_alias_file_marker,
         &fixture.git_alias_count_marker,
+        &fixture.git_global_alias_marker,
+        &fixture.git_system_alias_marker,
         &fixture.cargo_alias_marker,
     ] {
         assert!(!marker.exists(), "poison marker ran: {}", marker.display());
@@ -698,10 +701,7 @@ fn generic_owner_keeps_live_canaries_while_gate_uses_private_tools_and_artifacts
         !build.exists(),
         "successful gate scratch is removed: {report}"
     );
-    assert!(
-        !alias.exists(),
-        "private PATH aliases are removed after the gate"
-    );
+    assert!(!aliases.exists(), "private aliases are removed after gate");
 }
 
 struct GateReleaseOnDrop(PathBuf);
@@ -733,27 +733,8 @@ fn generic_owner_observes_bootstrap_through_final_mise_cargo_and_gate_environmen
         "absent\n"
     );
     assert_eq!(
-        fs::read_to_string(clean.gate_marker).expect("selected XDG provider gate marker"),
-        "XDG-selected gate; bootstrap absent\n"
-    );
-    let xdg = clean.xdg.as_ref().expect("isolated XDG roots");
-    assert_eq!(
-        fs::read_to_string(xdg.cache_home.join("mise/qualification"))
-            .expect("qualification cache marker"),
-        "qualification cache\n"
-    );
-    assert_eq!(
-        fs::read_to_string(xdg.cache_home.join("mise/exec")).expect("exec cache marker"),
-        "exec cache\n"
-    );
-    assert_eq!(
-        fs::read_to_string(xdg.state_home.join("mise/qualification"))
-            .expect("qualification state marker"),
-        "qualification state\n"
-    );
-    assert_eq!(
-        fs::read_to_string(xdg.state_home.join("mise/exec")).expect("exec state marker"),
-        "exec state\n"
+        fs::read_to_string(clean.gate_marker).expect("gate environment marker"),
+        "absent\n"
     );
 
     let injected = InstalledOwnerFixture::new(OwnerFixtureMode::BootstrapInjected);
@@ -774,30 +755,10 @@ fn generic_owner_observes_bootstrap_through_final_mise_cargo_and_gate_environmen
 }
 
 #[test]
-fn installed_owner_builds_and_cleans_snapshot_under_umask_0777() {
-    let mut fixture = InstalledOwnerFixture::new(OwnerFixtureMode::Umask0777);
-    let temporary = tempfile::tempdir().expect("create dedicated snapshot parent");
-    fixture.tmpdir_override = Some(temporary.path().to_path_buf());
-    let mut owner = fixture.spawn_owner("status", 0, 20_000, 20_000, 20_000);
-    let output = owner.wait_output(std::time::Duration::from_secs(8));
-    assert!(
-        output.status.success(),
-        "installed owner failed under umask 0777: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        crate::fs_util::read_dir_sorted(temporary.path())
-            .expect("inspect dedicated snapshot parent")
-            .is_empty(),
-        "successful installed-owner run removes its private snapshot"
-    );
-}
-
-#[test]
 fn generic_owner_blocks_inherited_bash_env_startup_before_running_the_gate() {
     let fixture = InstalledOwnerFixture::new(OwnerFixtureMode::BashEnvGate);
     let original_index = fs::read(fixture.index()).expect("read original index");
-    let mut owner = fixture.spawn_owner("status", 0, 20_000, 20_000, 20_000);
+    let mut owner = fixture.spawn_owner("status", 37, 20_000, 20_000, 20_000);
     let output = owner.wait_output(std::time::Duration::from_secs(8));
     assert!(
         output.status.success(),
@@ -815,6 +776,26 @@ fn generic_owner_blocks_inherited_bash_env_startup_before_running_the_gate() {
     assert_eq!(
         fs::read(fixture.index()).expect("index after generic owner"),
         original_index
+    );
+}
+
+#[test]
+fn installed_owner_builds_and_cleans_snapshot_under_umask_0777() {
+    let mut fixture = InstalledOwnerFixture::new(OwnerFixtureMode::Umask0777);
+    let temporary = tempfile::tempdir().expect("create dedicated snapshot parent");
+    fixture.tmpdir_override = Some(temporary.path().to_path_buf());
+    let mut owner = fixture.spawn_owner("status", 0, 20_000, 20_000, 20_000);
+    let output = owner.wait_output(std::time::Duration::from_secs(8));
+    assert!(
+        output.status.success(),
+        "installed owner failed under umask 0777: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        crate::fs_util::read_dir_sorted(temporary.path())
+            .expect("inspect dedicated snapshot parent")
+            .is_empty(),
+        "successful installed-owner run removes its private snapshot"
     );
 }
 
@@ -1018,54 +999,12 @@ enum OwnerFixtureMode {
     Umask0777,
 }
 
-struct XdgFixtureRoots {
-    config_home: PathBuf,
-    data_home: PathBuf,
-    cache_home: PathBuf,
-    state_home: PathBuf,
-    selected_gate: PathBuf,
-}
-
-impl XdgFixtureRoots {
-    fn create(scratch: &Path, gate_marker: &Path) -> Self {
-        let config_home = scratch.join("xdg-config");
-        let data_home = scratch.join("xdg-data");
-        let cache_home = scratch.join("xdg-cache");
-        let state_home = scratch.join("xdg-state");
-        fs::create_dir_all(config_home.join("mise")).expect("create XDG Mise config root");
-        fs::create_dir_all(data_home.join("mise/installs/hk/fixture/bin"))
-            .expect("create XDG Mise provider installation");
-        fs::create_dir_all(&cache_home).expect("create XDG cache root");
-        fs::create_dir_all(&state_home).expect("create XDG state root");
-        fs::write(
-            config_home.join("mise/config.toml"),
-            b"[tools]\nhk = \"fixture\"\n",
-        )
-        .expect("write XDG-selected Mise config");
-        let selected_gate = data_home.join("mise/installs/hk/fixture/bin/hk");
-        write_executable(
-            &selected_gate,
-            format!(
-                "#!/bin/sh\nif [ \"${{RUSTC_BOOTSTRAP+x}}\" = x ]; then printf 'XDG-selected gate; bootstrap present\\n' > {}; else printf 'XDG-selected gate; bootstrap absent\\n' > {}; fi\nexit 0\n",
-                shell_quote(gate_marker),
-                shell_quote(gate_marker)
-            )
-            .as_bytes(),
-        );
-        Self {
-            config_home,
-            data_home,
-            cache_home,
-            state_home,
-            selected_gate,
-        }
-    }
-}
-
 struct InstalledOwnerFixture {
     _temporary: tempfile::TempDir,
+    _provider_temporary: Option<tempfile::TempDir>,
     repository: PathBuf,
     owner: PathBuf,
+    home: PathBuf,
     path: std::ffi::OsString,
     ready: PathBuf,
     ticks: PathBuf,
@@ -1077,65 +1016,62 @@ struct InstalledOwnerFixture {
     bash_env_marker: PathBuf,
     inherited_bootstrap: bool,
     probe_output: PathBuf,
+    path_output: PathBuf,
+    git_config_output: PathBuf,
+    cargo_provider: PathBuf,
+    rustc_provider: PathBuf,
+    expected_rustc: PathBuf,
+    expected_cargo: PathBuf,
     gate_ready: PathBuf,
     gate_release: PathBuf,
+    terminal_ready: PathBuf,
+    terminal_release: PathBuf,
+    tmpdir_override: Option<PathBuf>,
     poison_marker: PathBuf,
     git_alias_file_marker: PathBuf,
     git_alias_count_marker: PathBuf,
     cargo_alias_marker: PathBuf,
     poison_bin: PathBuf,
     git_alias_config: PathBuf,
-    expected_rustc: PathBuf,
-    live_artifacts: PathBuf,
-    xdg: Option<XdgFixtureRoots>,
-    mode: OwnerFixtureMode,
-    tmpdir_override: Option<PathBuf>,
-    path_output: PathBuf,
-    cargo_provider: PathBuf,
-    rustc_provider: PathBuf,
-    git_config_output: PathBuf,
-    git_global_config: PathBuf,
-    git_system_config: PathBuf,
     git_global_alias_marker: PathBuf,
     git_system_alias_marker: PathBuf,
-    terminal_ready: PathBuf,
-    terminal_release: PathBuf,
+    git_global_config: PathBuf,
+    git_system_config: PathBuf,
+    live_artifacts: PathBuf,
+    mode: OwnerFixtureMode,
 }
 
 impl InstalledOwnerFixture {
     fn new(mode: OwnerFixtureMode) -> Self {
-        let (temporary, repository) = initialize_fixture_repository(mode);
-        Self::from_repository(mode, temporary, repository, None)
+        Self::new_in(mode, Path::new("/tmp"))
     }
 
     fn new_in(mode: OwnerFixtureMode, parent: &Path) -> Self {
         let (temporary, repository) = initialize_fixture_repository_in(mode, parent);
-        let path_alias_parent = parent.parent().expect("fixture parent has a parent");
-        Self::from_repository(mode, temporary, repository, Some(path_alias_parent))
-    }
-
-    fn from_repository(
-        mode: OwnerFixtureMode,
-        temporary: tempfile::TempDir,
-        repository: PathBuf,
-        path_alias_parent: Option<&Path>,
-    ) -> Self {
         let scratch = repository.join(".git/f3-test");
         fs::create_dir(&scratch).expect("create private test support directory");
         fs::set_permissions(&scratch, fs::Permissions::from_mode(0o700))
             .expect("protect test support directory");
+        let home = scratch.join("home");
+        fs::create_dir(&home).expect("create private installed-owner HOME");
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o700))
+            .expect("protect private installed-owner HOME");
         let ready = scratch.join("ready");
         let ticks = scratch.join("ticks");
         let recovery_ready = scratch.join("recovery-ready");
         let recovery_ticks = scratch.join("recovery-ticks");
         let probe_output = scratch.join("gate-probe");
+        let path_output = scratch.join("gate-path");
+        let git_config_output = scratch.join("gate-git-config");
+        let cargo_provider = scratch.join("cargo-provider");
+        let rustc_provider = scratch.join("rustc-provider");
         let gate_ready = scratch.join("gate-ready");
         let gate_release = scratch.join("gate-release");
+        let terminal_ready = scratch.join("terminal-ready");
+        let terminal_release = scratch.join("terminal-release");
         let canaries = IsolationCanaries::create(&repository, &scratch, mode);
         let cargo_marker = scratch.join("cargo-environment");
         let gate_marker = scratch.join("gate-environment");
-        let xdg = matches!(mode, OwnerFixtureMode::BootstrapClean)
-            .then(|| XdgFixtureRoots::create(&scratch, &gate_marker));
         let bash_env_file = scratch.join("bash-env-startup");
         let bash_env_marker = scratch.join("bash-env-startup-ran");
         if matches!(mode, OwnerFixtureMode::BashEnvGate) {
@@ -1153,14 +1089,7 @@ impl InstalledOwnerFixture {
         fs::set_permissions(&bin, fs::Permissions::from_mode(0o700))
             .expect("protect fixture tools");
         let expected_rustc = bin.join("rustc");
-        write_owner_toolchain(&bin, &ready, &ticks, &gate_ready, mode, xdg.as_ref());
-        let path_bin = if let Some(parent) = path_alias_parent {
-            let alias = parent.join("fixture-tools");
-            symlink(&bin, &alias).expect("create delimiter-free fixture tool path");
-            alias
-        } else {
-            bin
-        };
+        write_owner_toolchain(&bin, &ready, &ticks, &gate_ready, mode);
 
         let owner = scratch.join("owner");
         fs::copy(
@@ -1171,12 +1100,32 @@ impl InstalledOwnerFixture {
         fs::set_permissions(&owner, fs::Permissions::from_mode(0o500))
             .expect("protect generic owner executable");
 
+        let provider_temporary = if bin.as_os_str().as_encoded_bytes().contains(&b':') {
+            let parent = env::temp_dir()
+                .canonicalize()
+                .expect("resolve delimiter-free provider parent");
+            let temporary = tempfile::Builder::new()
+                .prefix("jackin-owner-provider-")
+                .tempdir_in(parent)
+                .expect("create delimiter-free provider parent");
+            symlink(&bin, temporary.path().join("bin"))
+                .expect("create delimiter-free PATH alias for colon-containing tools");
+            Some(temporary)
+        } else {
+            None
+        };
+        let provider_bin = provider_temporary
+            .as_ref()
+            .map_or_else(|| bin.clone(), |temporary| temporary.path().join("bin"));
+
         Self {
             _temporary: temporary,
+            _provider_temporary: provider_temporary,
             repository,
             owner,
+            home,
             path: env::join_paths(
-                std::iter::once(path_bin)
+                std::iter::once(provider_bin)
                     .chain(env::split_paths(&env::var_os("PATH").unwrap_or_default())),
             )
             .expect("join installed-owner test PATH"),
@@ -1193,29 +1142,29 @@ impl InstalledOwnerFixture {
                 OwnerFixtureMode::BootstrapClean | OwnerFixtureMode::BootstrapInjected
             ),
             probe_output,
+            path_output,
+            git_config_output,
+            cargo_provider,
+            rustc_provider,
+            expected_rustc: fs::canonicalize(&expected_rustc).expect("canonical fixture rustc"),
+            expected_cargo: fs::canonicalize(bin.join("cargo")).expect("canonical fixture Cargo"),
             gate_ready,
             gate_release,
+            terminal_ready,
+            terminal_release,
+            tmpdir_override: None,
             poison_marker: canaries.poison_marker,
             git_alias_file_marker: canaries.git_alias_file_marker,
             git_alias_count_marker: canaries.git_alias_count_marker,
             cargo_alias_marker: canaries.cargo_alias_marker,
             poison_bin: canaries.poison_bin,
             git_alias_config: canaries.git_alias_config,
-            expected_rustc,
-            live_artifacts: canaries.live_artifacts,
-            xdg,
-            mode,
-            tmpdir_override: None,
-            path_output: scratch.join("qualified-path"),
-            cargo_provider: scratch.join("cargo-provider"),
-            rustc_provider: scratch.join("rustc-provider"),
-            git_config_output: scratch.join("git-config-environment"),
-            git_global_config: canaries.git_global_config,
-            git_system_config: canaries.git_system_config,
             git_global_alias_marker: canaries.git_global_alias_marker,
             git_system_alias_marker: canaries.git_system_alias_marker,
-            terminal_ready: scratch.join("terminal-ready"),
-            terminal_release: scratch.join("terminal-release"),
+            git_global_config: canaries.git_global_config,
+            git_system_config: canaries.git_system_config,
+            live_artifacts: canaries.live_artifacts,
+            mode,
         }
     }
 
@@ -1250,7 +1199,6 @@ impl InstalledOwnerFixture {
         recovery_ms: u64,
         git_program: Option<&Path>,
     ) -> OwnerChild {
-        let home = env::var_os("HOME").expect("HOME is set");
         let mut command = if matches!(self.mode, OwnerFixtureMode::Umask0777) {
             let mut command = Command::new("/bin/sh");
             command
@@ -1268,7 +1216,7 @@ impl InstalledOwnerFixture {
             ])
             .current_dir(&self.repository)
             .env_clear()
-            .env("HOME", home)
+            .env("HOME", &self.home)
             .env("PATH", &self.path)
             .env(OWNER_DRIVER_CHILD, "1")
             .env(OWNER_DRIVER_EXPECTATION, expectation)
@@ -1282,6 +1230,9 @@ impl InstalledOwnerFixture {
             .env_remove("GIT_INDEX_FILE")
             .env_remove("GIT_OBJECT_DIRECTORY")
             .env_remove("GIT_ALTERNATE_OBJECT_DIRECTORIES");
+        if let Some(tmpdir) = &self.tmpdir_override {
+            command.env("TMPDIR", tmpdir);
+        }
         if let Some(program) = git_program {
             command.env(OWNER_DRIVER_GIT_PROGRAM, program);
         } else {
@@ -1290,22 +1241,14 @@ impl InstalledOwnerFixture {
         if self.inherited_bootstrap {
             command.env("RUSTC_BOOTSTRAP", "1");
         }
-        if let Some(xdg) = &self.xdg {
-            command
-                .env("XDG_CONFIG_HOME", &xdg.config_home)
-                .env("XDG_DATA_HOME", &xdg.data_home)
-                .env("XDG_CACHE_HOME", &xdg.cache_home)
-                .env("XDG_STATE_HOME", &xdg.state_home);
-        }
         if matches!(self.mode, OwnerFixtureMode::BashEnvGate) {
             command.env("BASH_ENV", &self.bash_env_file);
         }
         if matches!(self.mode, OwnerFixtureMode::IsolationGate) {
             command
-                .env(OWNER_DRIVER_PROBE_OUTPUT, &self.probe_output)
-                .env(OWNER_DRIVER_GATE_READY, &self.gate_ready)
-                .env(OWNER_DRIVER_GATE_RELEASE, &self.gate_release)
                 .env("GIT_CONFIG", &self.git_alias_config)
+                .env("GIT_CONFIG_GLOBAL", &self.git_global_config)
+                .env("GIT_CONFIG_SYSTEM", &self.git_system_config)
                 .env("GIT_CONFIG_COUNT", "1")
                 .env("GIT_CONFIG_KEY_0", "alias.poison")
                 .env(
@@ -1314,33 +1257,10 @@ impl InstalledOwnerFixture {
                 )
                 .env("CARGO_ALIAS_F3_POISON", "!touch marker")
                 .env("CARGO", self.poison_bin.join("cargo"))
-                .env("CARGO_BUILD_RUSTFLAGS", "--cfg inherited_compiler_override")
                 .env("RUSTC", self.poison_bin.join("rustc"))
                 .env("RUSTC_WRAPPER", self.poison_bin.join("rustc-wrapper"))
                 .env("CARGO_TARGET_DIR", self.repository.join("target"))
                 .env("CARGO_BUILD_BUILD_DIR", self.repository.join("target"));
-            command
-                .env(OWNER_DRIVER_PATH_OUTPUT, &self.path_output)
-                .env(OWNER_DRIVER_CARGO_PROVIDER, &self.cargo_provider)
-                .env(OWNER_DRIVER_RUSTC_PROVIDER, &self.rustc_provider)
-                .env(OWNER_DRIVER_GIT_CONFIG_OUTPUT, &self.git_config_output)
-                .env("GIT_CONFIG_GLOBAL", &self.git_global_config)
-                .env("GIT_CONFIG_SYSTEM", &self.git_system_config)
-                .env("GIT_CONFIG_NOSYSTEM", "0");
-        }
-        if let Some(tmpdir) = &self.tmpdir_override {
-            command.env("TMPDIR", tmpdir);
-        }
-        if expectation == "terminal-signal" {
-            command
-                .env(OWNER_DRIVER_TERMINAL_READY, &self.terminal_ready)
-                .env(OWNER_DRIVER_TERMINAL_RELEASE, &self.terminal_release)
-                .env(
-                    OWNER_DRIVER_TERMINAL_TMPDIR,
-                    self.tmpdir_override
-                        .as_ref()
-                        .expect("terminal fixture has private TMPDIR"),
-                );
         }
         let child = command
             .stdout(Stdio::piped())
@@ -1364,12 +1284,6 @@ impl InstalledOwnerFixture {
         write_executable(&wrapper, body.as_bytes());
         wrapper
     }
-}
-
-fn initialize_fixture_repository(mode: OwnerFixtureMode) -> (tempfile::TempDir, PathBuf) {
-    let home =
-        fs::canonicalize(env::var_os("HOME").expect("HOME is set")).expect("canonicalizing HOME");
-    initialize_fixture_repository_in(mode, &home)
 }
 
 fn initialize_fixture_repository_in(
@@ -1432,10 +1346,10 @@ struct IsolationCanaries {
     cargo_alias_marker: PathBuf,
     poison_bin: PathBuf,
     git_alias_config: PathBuf,
-    git_global_config: PathBuf,
-    git_system_config: PathBuf,
     git_global_alias_marker: PathBuf,
     git_system_alias_marker: PathBuf,
+    git_global_config: PathBuf,
+    git_system_config: PathBuf,
     live_artifacts: PathBuf,
 }
 
@@ -1447,10 +1361,10 @@ impl IsolationCanaries {
         let cargo_alias_marker = scratch.join("cargo-alias-ran");
         let poison_bin = scratch.join("poison-bin");
         let git_alias_config = scratch.join("git-alias-config");
-        let git_global_config = scratch.join("git-global-config");
-        let git_system_config = scratch.join("git-system-config");
         let git_global_alias_marker = scratch.join("git-global-alias-ran");
         let git_system_alias_marker = scratch.join("git-system-alias-ran");
+        let git_global_config = scratch.join("git-global-config");
+        let git_system_config = scratch.join("git-system-config");
         let live_artifacts = scratch.join("live-artifacts");
         fs::create_dir(&live_artifacts).expect("create external artifact canary");
         fs::set_permissions(&live_artifacts, fs::Permissions::from_mode(0o700))
@@ -1507,24 +1421,22 @@ impl IsolationCanaries {
             ),
         )
         .expect("write injected file-based Git alias");
-        if matches!(mode, OwnerFixtureMode::IsolationGate) {
-            fs::write(
-                &git_global_config,
-                format!(
-                    "[alias]\nglobal-poison = \"!touch {}\"\n",
-                    shell_quote(&git_global_alias_marker)
-                ),
-            )
-            .expect("write inherited global Git alias");
-            fs::write(
-                &git_system_config,
-                format!(
-                    "[alias]\nsystem-poison = \"!touch {}\"\n",
-                    shell_quote(&git_system_alias_marker)
-                ),
-            )
-            .expect("write inherited system Git alias");
-        }
+        fs::write(
+            &git_global_config,
+            format!(
+                "[alias]\nf3-global-poison = \"!touch {}\"\n",
+                shell_quote(&git_global_alias_marker)
+            ),
+        )
+        .expect("write injected global Git alias");
+        fs::write(
+            &git_system_config,
+            format!(
+                "[alias]\nf3-system-poison = \"!touch {}\"\n",
+                shell_quote(&git_system_alias_marker)
+            ),
+        )
+        .expect("write injected system Git alias");
         Self {
             poison_marker,
             git_alias_file_marker,
@@ -1532,10 +1444,10 @@ impl IsolationCanaries {
             cargo_alias_marker,
             poison_bin,
             git_alias_config,
-            git_global_config,
-            git_system_config,
             git_global_alias_marker,
             git_system_alias_marker,
+            git_global_config,
+            git_system_config,
             live_artifacts,
         }
     }
@@ -1589,7 +1501,6 @@ fn write_owner_toolchain(
     ticks: &Path,
     gate_ready: &Path,
     mode: OwnerFixtureMode,
-    xdg: Option<&XdgFixtureRoots>,
 ) {
     let ready = shell_quote(ready);
     let ticks = shell_quote(ticks);
@@ -1608,8 +1519,18 @@ fn write_owner_toolchain(
             .expect("fixture bin parent")
             .join("cargo-alias-ran"),
     );
+    let cargo_provider = shell_quote(
+        &bin.parent()
+            .expect("fixture bin parent")
+            .join("cargo-provider"),
+    );
+    let rustc_provider = shell_quote(
+        &bin.parent()
+            .expect("fixture bin parent")
+            .join("rustc-provider"),
+    );
     let rust_tools = format!(
-        "#!/bin/sh\nname=${{0##*/}}\ncase \"$name\" in\n  cargo) if [ \"$1\" = f3-poison ]; then if [ \"${{CARGO_ALIAS_F3_POISON+x}}\" = x ]; then printf 'alias ran\\n' > {cargo_alias_marker}; exit 0; else exit 1; fi; fi; if [ \"${{RUSTC_BOOTSTRAP+x}}\" = x ]; then printf 'present\\n' > {cargo_marker}; else printf 'absent\\n' > {cargo_marker}; fi; if [ -n \"${{JACKIN_F3_OWNER_DRIVER_CARGO_PROVIDER:-}}\" ]; then printf 'fixture-mbx-cargo\\n' > \"$JACKIN_F3_OWNER_DRIVER_CARGO_PROVIDER\"; fi; printf 'cargo 1.99.1 (fixture)\\n' ;;\n  rustc) if [ -n \"${{JACKIN_F3_OWNER_DRIVER_RUSTC_PROVIDER:-}}\" ]; then printf 'fixture-pinned-rustc\\n' > \"$JACKIN_F3_OWNER_DRIVER_RUSTC_PROVIDER\"; fi; printf 'rustc 1.99.1 (fixture)\\nbinary: rustc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  rustdoc) printf 'rustdoc 1.99.1 (fixture)\\nbinary: rustdoc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  clippy-driver) printf 'clippy 0.1.99 (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  rustfmt) printf 'rustfmt 1.99.1-stable (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  *) exit 91 ;;\nesac\n"
+        "#!/bin/sh\nname=${{0##*/}}\ncase \"$name\" in\n  cargo) if [ \"$1\" = f3-poison ]; then if [ \"${{CARGO_ALIAS_F3_POISON+x}}\" = x ]; then printf 'alias ran\\n' > {cargo_alias_marker}; exit 0; else exit 1; fi; fi; printf 'fixture-mbx-cargo\\n' > {cargo_provider}; if [ \"${{RUSTC_BOOTSTRAP+x}}\" = x ]; then printf 'present\\n' > {cargo_marker}; else printf 'absent\\n' > {cargo_marker}; fi; printf 'cargo 1.99.1 (fixture)\\n' ;;\n  rustc) printf 'fixture-pinned-rustc\\n' > {rustc_provider}; printf 'rustc 1.99.1 (fixture)\\nbinary: rustc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  rustdoc) printf 'rustdoc 1.99.1 (fixture)\\nbinary: rustdoc\\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\\nrelease: 1.99.1\\n' ;;\n  clippy-driver) printf 'clippy 0.1.99 (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  rustfmt) printf 'rustfmt 1.99.1-stable (0123456789abcdef0123456789abcdef01234567 fixture)\\n' ;;\n  *) exit 91 ;;\nesac\n"
     );
     for name in ["cargo", "rustc", "rustdoc", "clippy-driver", "rustfmt"] {
         write_executable(&bin.join(name), rust_tools.as_bytes());
@@ -1620,16 +1541,33 @@ fn write_owner_toolchain(
             .expect("fixture bin parent")
             .join("gate-environment"),
     );
+    let probe_output = shell_quote(&bin.parent().expect("fixture bin parent").join("gate-probe"));
+    let path_output = shell_quote(&bin.parent().expect("fixture bin parent").join("gate-path"));
+    let alias_state = shell_quote(
+        &bin.parent()
+            .expect("fixture bin parent")
+            .join("gate-alias-state"),
+    );
+    let git_config_output = shell_quote(
+        &bin.parent()
+            .expect("fixture bin parent")
+            .join("gate-git-config"),
+    );
+    let gate_release = shell_quote(
+        &bin.parent()
+            .expect("fixture bin parent")
+            .join("gate-release"),
+    );
     let gate_body = if matches!(mode, OwnerFixtureMode::IgnoredSourceGate) {
         "#!/bin/sh\nprintf 'ignored staged-source fixture\\n' > ignored-extra.txt\nexit 0\n"
             .to_owned()
     } else if matches!(mode, OwnerFixtureMode::BashEnvGate) {
-        format!("#!/bin/bash\nprintf 'gate body ran\\n' > {gate_marker}\nexit 0\n")
+        format!("#!/bin/bash\nprintf 'gate body ran\\n' > {gate_marker}\nexit 37\n")
     } else if matches!(mode, OwnerFixtureMode::Umask0777) {
         "#!/bin/sh\ntest \"$(umask)\" = 0777 || exit 72\ntest -r .git/index || exit 73\ntest -r tracked.txt || exit 74\nexit 0\n".to_owned()
     } else if matches!(mode, OwnerFixtureMode::IsolationGate) {
         format!(
-            "#!/bin/sh\nset -eu\n[ \"${{CARGO_BUILD_RUSTFLAGS+x}}\" != x ] || exit 90\ngit --version >/dev/null || exit 80\nif git f3-poison-file >/dev/null 2>&1; then exit 81; fi\nif git poison >/dev/null 2>&1; then exit 82; fi\nif git global-poison >/dev/null 2>&1; then exit 83; fi\nif git system-poison >/dev/null 2>&1; then exit 84; fi\nif cargo f3-poison >/dev/null 2>&1; then exit 85; fi\nif [ \"${{CARGO+x}}\" = x ]; then \"$CARGO\" --version || exit 86; fi\nif [ -n \"${{RUSTC_WRAPPER:-}}\" ]; then \"$RUSTC_WRAPPER\" \"$RUSTC\" --version || exit 87; else \"$RUSTC\" --version >/dev/null || exit 88; fi\ncargo --version >/dev/null || exit 89\nprintf '%s\\n' \"$PATH\" > \"${{JACKIN_F3_OWNER_DRIVER_PATH_OUTPUT}}\"\nprintf '%s\\n' \"$GIT_CONFIG_GLOBAL\" \"$GIT_CONFIG_SYSTEM\" \"$GIT_CONFIG_NOSYSTEM\" > \"${{JACKIN_F3_OWNER_DRIVER_GIT_CONFIG_OUTPUT}}\"\nmkdir -p \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" || exit 90\nprintf 'private target\\n' > \"$CARGO_TARGET_DIR/artifact\"\nprintf 'private build\\n' > \"$CARGO_BUILD_BUILD_DIR/artifact\"\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" \"$RUSTC\" \"$(command -v cargo)\" > \"${{JACKIN_F3_OWNER_DRIVER_PROBE_OUTPUT}}\"\n: > {}\nprintf x >> {}\ncount=0\nwhile [ ! -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] && [ \"$count\" -lt 300 ]; do /bin/sleep 0.05; printf x >> {}; count=$((count + 1)); done\n[ -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] || exit 91\nexit 0\n",
+            "#!/bin/sh\nset -eu\nif git f3-poison-file >/dev/null 2>&1; then exit 81; fi\nif git poison >/dev/null 2>&1; then exit 82; fi\nif git f3-global-poison >/dev/null 2>&1; then exit 93; fi\nif git f3-system-poison >/dev/null 2>&1; then exit 94; fi\nif cargo f3-poison >/dev/null 2>&1; then exit 83; fi\nif [ \"${{CARGO+x}}\" = x ]; then \"$CARGO\" --version || exit 84; fi\nif [ -n \"${{RUSTC_WRAPPER:-}}\" ]; then \"$RUSTC_WRAPPER\" \"$RUSTC\" --version || exit 85; else \"$RUSTC\" --version >/dev/null || exit 86; fi\ncargo --version >/dev/null || exit 87\nrust-build-guard -- mise exec --locked -- cargo --version >/dev/null || exit 90\nmkdir -p \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" || exit 88\nprintf 'private target\\n' > \"$CARGO_TARGET_DIR/artifact\"\nprintf 'private build\\n' > \"$CARGO_BUILD_BUILD_DIR/artifact\"\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" \"$RUSTC\" \"$(command -v cargo)\" > {probe_output}\nprintf '%s\\n' \"$PATH\" > {path_output}\nalias_path=${{PATH%%:*}}\nif [ -d \"$alias_path\" ]; then printf 'present\\n' > {alias_state}; else printf 'missing\\n' > {alias_state}; fi\nprintf '%s\\n' \"$GIT_CONFIG_GLOBAL\" \"$GIT_CONFIG_SYSTEM\" \"$GIT_CONFIG_NOSYSTEM\" > {git_config_output}\n: > {}\nprintf x >> {}\ncount=0\nwhile [ ! -e {gate_release} ] && [ \"$count\" -lt 300 ]; do /bin/sleep 0.05; printf x >> {}; count=$((count + 1)); done\n[ -e {gate_release} ] || exit 89\nexit 0\n",
             shell_quote(gate_ready),
             ticks,
             ticks,
@@ -1666,33 +1604,9 @@ fn write_owner_toolchain(
         } else {
             ""
         };
-        let (hk_resolution, qualification_storage, exec_storage) = if let Some(xdg) = xdg {
-            (
-                format!(
-                    "if [ \"$2\" = hk ]; then if [ \"${{XDG_CONFIG_HOME:-}}\" = {} ] && [ \"${{XDG_DATA_HOME:-}}\" = {} ] && grep -F 'hk = \"fixture\"' \"$XDG_CONFIG_HOME/mise/config.toml\" >/dev/null && [ -x \"$XDG_DATA_HOME/mise/installs/hk/fixture/bin/hk\" ]; then printf '%s\\n' {}; else printf '%s\\n' {}; fi; else printf '%s\\n' /usr/bin/true; fi",
-                    shell_quote(&xdg.config_home),
-                    shell_quote(&xdg.data_home),
-                    shell_quote(&xdg.selected_gate),
-                    shell_quote(&bin.join("hk")),
-                ),
-                "if [ -n \"${XDG_CACHE_HOME:-}\" ] && [ -n \"${XDG_STATE_HOME:-}\" ]; then mkdir -p \"$XDG_CACHE_HOME/mise\" \"$XDG_STATE_HOME/mise\"; printf 'qualification cache\\n' > \"$XDG_CACHE_HOME/mise/qualification\"; printf 'qualification state\\n' > \"$XDG_STATE_HOME/mise/qualification\"; fi".to_owned(),
-                "if [ -n \"${XDG_CACHE_HOME:-}\" ] && [ -n \"${XDG_STATE_HOME:-}\" ]; then mkdir -p \"$XDG_CACHE_HOME/mise\" \"$XDG_STATE_HOME/mise\"; printf 'exec cache\\n' > \"$XDG_CACHE_HOME/mise/exec\"; printf 'exec state\\n' > \"$XDG_STATE_HOME/mise/exec\"; fi".to_owned(),
-            )
-        } else {
-            (
-                format!(
-                    "if [ \"$2\" = hk ]; then printf '%s\\n' {}; else printf '%s\\n' /usr/bin/true; fi",
-                    shell_quote(&bin.join("hk"))
-                ),
-                String::new(),
-                String::new(),
-            )
-        };
         format!(
-            "#!/bin/sh\ncase \"$1\" in\n  which)\n    {}\n    {} ;;\n  exec)\n    {}\n    {}\n    case \"$*\" in\n      *'cargo --version'*) \"$4\" \"$5\" ;;\n      *'command -v cargo'*) printf '%s\\n' {} ;;\n      *'RUSTC_BOOTSTRAP'*) \"$4\" \"$5\" \"$6\" ;;\n      *) exit 92 ;;\n    esac ;;\n  *) exit 90 ;;\nesac\n",
-            qualification_storage,
-            hk_resolution,
-            exec_storage,
+            "#!/bin/sh\ncase \"$1\" in\n  which)\n    if [ \"$2\" = hk ]; then printf '%s\\n' {}; else printf '%s\\n' /usr/bin/true; fi ;;\n  exec)\n    {}\n    case \"$*\" in\n      *'cargo --version'*) \"$4\" \"$5\" ;;\n      *'command -v cargo'*) printf '%s\\n' {} ;;\n      *'RUSTC_BOOTSTRAP'*) \"$4\" \"$5\" \"$6\" ;;\n      *) exit 92 ;;\n    esac ;;\n  *) exit 90 ;;\nesac\n",
+            shell_quote(&bin.join("hk")),
             injection,
             shell_quote(&bin.join("cargo"))
         )
@@ -1705,7 +1619,7 @@ fn write_owner_toolchain(
     write_executable(&bin.join("rustup"), rustup_body.as_bytes());
     write_executable(
         &bin.join("rust-build-guard"),
-        b"#!/bin/sh\n[ \"$#\" -ge 2 ] && [ \"$1\" = -- ] || exit 64\nshift\nexec \"$@\"\n",
+        b"#!/bin/sh\n[ \"$#\" -eq 7 ] && [ \"$1\" = \"--\" ] || exit 90\nshift\ncase \"$1\" in mise|*/mise) ;; *) exit 91 ;; esac\n[ \"$2\" = \"exec\" ] && [ \"$3\" = \"--locked\" ] && [ \"$4\" = \"--\" ] && [ \"$5\" = \"cargo\" ] && [ \"$6\" = \"--version\" ] || exit 92\nexec \"$@\"\n",
     );
 }
 

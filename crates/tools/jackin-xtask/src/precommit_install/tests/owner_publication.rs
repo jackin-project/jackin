@@ -33,25 +33,49 @@ fn public_installer_normalizes_only_new_lock_under_owner_masking_umask() -> Resu
     let executable = std::env::current_exe()?;
     let test_name =
         current_test_name("public_installer_normalizes_only_new_lock_under_owner_masking_umask")?;
+    let mut command = Command::new("/bin/sh");
+    command
+        .args([
+            std::ffi::OsStr::new("-c"),
+            std::ffi::OsStr::new("umask \"$1\"; shift; exec \"$@\""),
+            std::ffi::OsStr::new("installer-umask"),
+            std::ffi::OsStr::new("0777"),
+            executable.as_os_str(),
+            std::ffi::OsStr::new("--exact"),
+            std::ffi::OsStr::new(&test_name),
+            std::ffi::OsStr::new("--nocapture"),
+        ])
+        .current_dir(&repository);
+    super::fixture::configure_admission_environment(&mut command, temporary.path(), None)?;
+    command.env(CHILD_MODE, "1");
+    let program = command.get_program().to_os_string();
+    let arguments = command
+        .get_args()
+        .map(std::ffi::OsStr::to_os_string)
+        .collect::<Vec<_>>();
+    let environment = command
+        .get_envs()
+        .filter_map(|(key, value)| value.map(|value| (key.to_os_string(), value.to_os_string())))
+        .collect::<Vec<_>>();
     let mut lock_identity = None;
     for mask in ["0777", "0077"] {
-        let request = ExecRequest::new(
-            "/bin/sh",
-            [
-                std::ffi::OsStr::new("-c"),
-                std::ffi::OsStr::new("umask \"$1\"; shift; exec \"$@\""),
-                std::ffi::OsStr::new("installer-umask"),
-                std::ffi::OsStr::new(mask),
-                executable.as_os_str(),
-                std::ffi::OsStr::new("--exact"),
-                std::ffi::OsStr::new(&test_name),
-                std::ffi::OsStr::new("--nocapture"),
-            ],
-        )
-        .cwd(&repository)
-        .envs([(CHILD_MODE, "1")])
-        .timeout(Duration::from_secs(30))
-        .output_limits(64 * 1024, 64 * 1024);
+        let arguments = arguments
+            .iter()
+            .enumerate()
+            .map(|(index, argument)| {
+                if index == 3 {
+                    std::ffi::OsString::from(mask)
+                } else {
+                    argument.clone()
+                }
+            })
+            .collect::<Vec<_>>();
+        let request = ExecRequest::new(program.clone(), arguments)
+            .cwd(&repository)
+            .env_clear()
+            .envs(environment.clone())
+            .timeout(Duration::from_secs(30))
+            .output_limits(64 * 1024, 64 * 1024);
         let output = exec_sync(&request)?;
         ensure!(
             output.success && !output.timed_out,
@@ -205,20 +229,22 @@ fn public_installer_rejects_replaced_running_image_before_publication() -> Resul
     fs::copy(std::env::current_exe()?, &executable)?;
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))?;
     let shim = prepare_waiting_git_shim(temporary.path())?;
-    let mut search_path = vec![shim.directory.clone()];
-    search_path.extend(std::env::split_paths(
-        &std::env::var_os("PATH").unwrap_or_default(),
-    ));
     let test_name =
         current_test_name("public_installer_rejects_replaced_running_image_before_publication")?;
+    let mut command = Command::new(&executable);
+    command
+        .arg("--exact")
+        .arg(test_name)
+        .arg("--nocapture")
+        .current_dir(&repository);
+    super::fixture::configure_admission_environment(
+        &mut command,
+        temporary.path(),
+        Some(&shim.directory),
+    )?;
     let mut child = ChildGuard::new(
-        Command::new(&executable)
-            .arg("--exact")
-            .arg(test_name)
-            .arg("--nocapture")
-            .current_dir(&repository)
+        command
             .env(IMAGE_REPLACEMENT_CHILD, "1")
-            .env("PATH", std::env::join_paths(search_path)?)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -405,18 +431,15 @@ fn public_installer_supports_non_utf8_checkout_path() -> Result<()> {
     let repository = temporary.path().join(checkout_name);
     init_repository(&repository)?;
     let test_name = current_test_name("public_installer_supports_non_utf8_checkout_path")?;
-    let output = Command::new(std::env::current_exe()?)
+    let mut command = Command::new(std::env::current_exe()?);
+    command
         .arg("--exact")
         .arg(test_name)
         .arg("--nocapture")
-        .current_dir(&repository)
-        .env_clear()
-        .env("HOME", std::env::var_os("HOME").unwrap_or_default())
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .current_dir(&repository);
+    super::fixture::configure_admission_environment(&mut command, temporary.path(), None)?;
+    let output = command
         .env("GIT_ATTR_NOSYSTEM", "1")
-        .env("GIT_TERMINAL_PROMPT", "0")
         .env(CHILD_MODE, "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
