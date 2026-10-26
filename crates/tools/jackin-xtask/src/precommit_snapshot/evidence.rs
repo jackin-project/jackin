@@ -20,6 +20,24 @@ use nix::{
 use std::fs::File;
 use uuid::Uuid;
 
+#[cfg(test)]
+std::thread_local! {
+    static COMMON_DIRECTORY_SYNC_TEST: std::cell::RefCell<Option<CommonDirectorySyncTest>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+struct CommonDirectorySyncTest {
+    common_directory: PathBuf,
+    displaced_original: PathBuf,
+    displaced_replacement: PathBuf,
+    original_identity: Option<(u64, u64)>,
+    original_mode: Option<u32>,
+    replacement_identity: Option<(u64, u64)>,
+    selected_sync_identity: Option<(u64, u64)>,
+}
+
 pub(super) fn persist(
     common_git_dir: &Path,
     patch: &[u8],
@@ -50,7 +68,18 @@ pub(super) fn persist(
         .sync_all()
         .context("syncing private hook evidence root")?;
     controls.check_start()?;
-    sync_directory(&physical).context("syncing Git common directory entry")?;
+    #[cfg(test)]
+    replace_common_directory_before_sync(&physical, &physical_descriptor)?;
+    #[cfg(test)]
+    record_selected_common_directory_sync(&physical_descriptor)?;
+    let sync_result = physical_descriptor
+        .sync_all()
+        .context("syncing Git common directory entry");
+    #[cfg(test)]
+    let restore_result = restore_common_directory_after_sync(&physical);
+    sync_result?;
+    #[cfg(test)]
+    restore_result?;
     controls.check_start()?;
 
     persist_invocation(&root, &root_descriptor, patch, controls)
@@ -345,16 +374,109 @@ fn recheck_directory_path(path: &Path, file: &File) -> Result<()> {
     Ok(())
 }
 
-fn sync_directory(path: &Path) -> Result<()> {
-    let descriptor = open(
-        path,
-        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-        Mode::empty(),
-    )
-    .with_context(|| format!("opening directory {} for sync", path.display()))?;
-    File::from(descriptor)
-        .sync_all()
-        .with_context(|| format!("syncing directory {}", path.display()))
+#[cfg(test)]
+fn install_common_directory_sync_test(test: CommonDirectorySyncTest) -> Result<()> {
+    COMMON_DIRECTORY_SYNC_TEST.with(|state| {
+        let mut state = state.borrow_mut();
+        ensure!(
+            state.is_none(),
+            "common directory sync test is already active"
+        );
+        *state = Some(test);
+        Ok(())
+    })
+}
+
+#[cfg(test)]
+fn take_common_directory_sync_test() -> Result<CommonDirectorySyncTest> {
+    COMMON_DIRECTORY_SYNC_TEST.with(|state| {
+        state
+            .borrow_mut()
+            .take()
+            .context("common directory sync test state is missing")
+    })
+}
+
+#[cfg(test)]
+fn replace_common_directory_before_sync(path: &Path, descriptor: &File) -> Result<()> {
+    COMMON_DIRECTORY_SYNC_TEST.with(|state| {
+        let mut state = state.borrow_mut();
+        let Some(test) = state.as_mut() else {
+            return Ok(());
+        };
+        ensure!(
+            path == test.common_directory,
+            "common directory sync test observed an unexpected path"
+        );
+        let original = descriptor
+            .metadata()
+            .context("reading original common directory identity")?;
+        test.original_identity = Some((original.dev(), original.ino()));
+        test.original_mode = Some(original.permissions().mode() & 0o7777);
+        fs::rename(path, &test.displaced_original)
+            .context("moving original common directory aside")?;
+        fs::create_dir(path).context("creating replacement common directory")?;
+        let original_mode = test
+            .original_mode
+            .context("original common directory mode was not recorded")?;
+        fs::set_permissions(path, fs::Permissions::from_mode(original_mode))
+            .context("matching replacement common directory mode")?;
+        fs::write(
+            path.join("replacement-canary"),
+            b"preserve replacement common directory canary\n",
+        )
+        .context("writing replacement common directory canary")?;
+        let replacement =
+            fs::symlink_metadata(path).context("reading replacement common directory identity")?;
+        test.replacement_identity = Some((replacement.dev(), replacement.ino()));
+        Ok(())
+    })
+}
+
+#[cfg(test)]
+fn record_selected_common_directory_sync(descriptor: &File) -> Result<()> {
+    COMMON_DIRECTORY_SYNC_TEST.with(|state| {
+        let mut state = state.borrow_mut();
+        let Some(test) = state.as_mut() else {
+            return Ok(());
+        };
+        let selected = descriptor
+            .metadata()
+            .context("reading selected common directory sync identity")?;
+        test.selected_sync_identity = Some((selected.dev(), selected.ino()));
+        Ok(())
+    })
+}
+
+#[cfg(test)]
+fn restore_common_directory_after_sync(path: &Path) -> Result<()> {
+    COMMON_DIRECTORY_SYNC_TEST.with(|state| {
+        let mut state = state.borrow_mut();
+        let Some(test) = state.as_mut() else {
+            return Ok(());
+        };
+        if let Some(expected_replacement) = test.replacement_identity {
+            let current = fs::symlink_metadata(path)
+                .context("checking replacement before restoring common directory")?;
+            ensure!(
+                (current.dev(), current.ino()) == expected_replacement,
+                "common directory replacement changed before restoration"
+            );
+            fs::rename(path, &test.displaced_replacement)
+                .context("preserving replacement common directory")?;
+        }
+        if let Some(expected_original) = test.original_identity {
+            let displaced = fs::symlink_metadata(&test.displaced_original)
+                .context("checking displaced original common directory")?;
+            ensure!(
+                (displaced.dev(), displaced.ino()) == expected_original,
+                "displaced original common directory changed before restoration"
+            );
+            fs::rename(&test.displaced_original, path)
+                .context("restoring original common directory")?;
+        }
+        Ok(())
+    })
 }
 
 fn validate_ancestors(path: &Path) -> Result<()> {

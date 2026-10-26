@@ -105,6 +105,68 @@ fn persist_returns_synced_private_patch_under_physical_common_directory() -> any
 }
 
 #[test]
+fn common_directory_sync_uses_the_retained_parent_descriptor() -> anyhow::Result<()> {
+    let temporary = tempfile::tempdir()?;
+    let common_git_dir = temporary.path().join("common.git");
+    fs::create_dir(&common_git_dir)?;
+    fs::set_permissions(&common_git_dir, fs::Permissions::from_mode(0o700))?;
+    let common_git_dir = fs::canonicalize(common_git_dir)?;
+    let displaced_original = temporary.path().join("original-common-directory");
+    let displaced_replacement = temporary.path().join("replacement-common-directory");
+    let patch = b"original common directory patch bytes\n";
+    super::install_common_directory_sync_test(super::CommonDirectorySyncTest {
+        common_directory: common_git_dir.clone(),
+        displaced_original: displaced_original.clone(),
+        displaced_replacement: displaced_replacement.clone(),
+        original_identity: None,
+        original_mode: None,
+        replacement_identity: None,
+        selected_sync_identity: None,
+    })?;
+
+    let persisted = persist(
+        &common_git_dir,
+        patch,
+        &super::SetupControls::for_test(std::time::Duration::from_secs(30)),
+    );
+    let test = super::take_common_directory_sync_test()?;
+    let persisted = persisted?;
+    let original_identity = test
+        .original_identity
+        .ok_or_else(|| anyhow::anyhow!("original common directory identity was not recorded"))?;
+    let replacement_identity = test
+        .replacement_identity
+        .ok_or_else(|| anyhow::anyhow!("replacement common directory identity was not recorded"))?;
+    let selected_sync_identity = test
+        .selected_sync_identity
+        .ok_or_else(|| anyhow::anyhow!("selected sync descriptor identity was not recorded"))?;
+
+    assert_eq!(selected_sync_identity, original_identity);
+    assert_ne!(selected_sync_identity, replacement_identity);
+    assert_eq!(
+        (
+            fs::metadata(&common_git_dir)?.dev(),
+            fs::metadata(&common_git_dir)?.ino()
+        ),
+        original_identity,
+        "original common directory is restored before later custody checks"
+    );
+    assert_eq!(fs::read(&persisted)?, patch);
+    assert_eq!(
+        fs::read(displaced_replacement.join("replacement-canary"))?,
+        b"preserve replacement common directory canary\n"
+    );
+    assert_eq!(
+        (
+            fs::metadata(&displaced_replacement)?.dev(),
+            fs::metadata(&displaced_replacement)?.ino()
+        ),
+        replacement_identity
+    );
+    Ok(())
+}
+
+#[test]
 fn persist_preserves_evidence_beneath_a_sticky_writable_ancestor() -> anyhow::Result<()> {
     let temporary = tempfile::tempdir()?;
     let ancestor = fs::canonicalize(temporary.path())?;

@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use flate2::{Compression, write::ZlibEncoder};
 use std::{
     ffi::OsStr,
+    io::Write,
     os::unix::ffi::{OsStrExt, OsStringExt},
     sync::atomic::Ordering,
 };
@@ -155,6 +157,134 @@ fn staged_blob(root: &Path, path: &str) -> Vec<u8> {
     private_git(root, &["show", &object_spec])
 }
 
+fn write_loose_blob(path: &Path, content: &[u8]) {
+    let mut object = format!("blob {}\0", content.len()).into_bytes();
+    object.extend_from_slice(content);
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder
+        .write_all(&object)
+        .expect("compress replacement blob");
+    fs::write(path, encoder.finish().expect("finish replacement blob"))
+        .expect("write replacement loose object");
+}
+
+fn rejects_corrupt_private_blob(object_format: Option<&str>) {
+    const STAGED_CONTENT: &[u8] = b"original\0payload";
+    const REPLACEMENT_CONTENT: &[u8] = b"tampered\0payload";
+    assert_eq!(STAGED_CONTENT.len(), REPLACEMENT_CONTENT.len());
+
+    let fixture = materialized_fixture(object_format, |root| {
+        fs::write(root.join("payload.bin"), STAGED_CONTENT).expect("binary staged blob");
+        fs::write(root.join("empty.bin"), b"").expect("empty staged blob");
+    });
+    fixture
+        .snapshot
+        .admit(&fixture.tree)
+        .expect("admit the unchanged real-Git fixture");
+
+    let expected_oid = String::from_utf8(private_git(
+        fixture.live.path(),
+        &["rev-parse", ":payload.bin"],
+    ))
+    .expect("staged blob object ID is ASCII");
+    let expected_oid = expected_oid.trim_end_matches('\n');
+    assert_eq!(
+        expected_oid.len(),
+        if object_format.is_some() { 64 } else { 40 }
+    );
+    assert_eq!(
+        String::from_utf8(private_git(
+            fixture.live.path(),
+            &["hash-object", "payload.bin"],
+        ))
+        .expect("real Git blob hash is ASCII")
+        .trim_end_matches('\n'),
+        expected_oid,
+        "the expected object ID is the real Git hash of the staged bytes"
+    );
+    let empty_oid = String::from_utf8(private_git(
+        fixture.live.path(),
+        &["rev-parse", ":empty.bin"],
+    ))
+    .expect("empty blob object ID is ASCII");
+    assert_eq!(
+        String::from_utf8(private_git(
+            fixture.live.path(),
+            &["hash-object", "empty.bin"],
+        ))
+        .expect("real Git empty blob hash is ASCII")
+        .trim_end_matches('\n'),
+        empty_oid.trim_end_matches('\n'),
+        "the zero-length blob ID uses Git's exact object header"
+    );
+
+    let loose_object = fixture
+        .snapshot
+        .objects
+        .join(&expected_oid[..2])
+        .join(&expected_oid[2..]);
+    let original_loose_object = match fs::read(&loose_object) {
+        Ok(object) => Some(object),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => panic!("read private loose object before mutation: {error}"),
+    };
+    fs::create_dir_all(loose_object.parent().expect("loose object shard"))
+        .expect("create private loose object shard");
+
+    fs::write(
+        fixture.snapshot.root.join("payload.bin"),
+        REPLACEMENT_CONTENT,
+    )
+    .expect("align materialized checkout with replacement blob");
+    write_loose_blob(&loose_object, REPLACEMENT_CONTENT);
+    assert_eq!(
+        private_git(&fixture.snapshot.root, &["cat-file", "blob", expected_oid],),
+        REPLACEMENT_CONTENT,
+        "real Git must read the replacement bytes from the private loose object"
+    );
+    assert_ne!(
+        String::from_utf8(private_git(
+            &fixture.snapshot.root,
+            &["hash-object", "payload.bin"],
+        ))
+        .expect("replacement Git blob hash is ASCII")
+        .trim_end_matches('\n'),
+        expected_oid,
+        "the replacement bytes must not authenticate to the staged object ID"
+    );
+    assert_eq!(
+        fixture
+            .snapshot
+            .capture_staged_tree()
+            .expect("staged tree remains fixed"),
+        fixture.tree,
+        "the private index and recorded source tree remain unchanged"
+    );
+
+    let error = fixture
+        .snapshot
+        .admit(&fixture.tree)
+        .expect_err("bytes under a staged object ID must authenticate to that ID");
+    assert!(
+        format!("{error:#}").contains("staged Git blob object ID"),
+        "the corrupted loose object must fail at OID authentication: {error:#}"
+    );
+    assert_live_unchanged(&fixture);
+
+    fs::write(fixture.snapshot.root.join("payload.bin"), STAGED_CONTENT)
+        .expect("restore materialized staged bytes");
+    if let Some(original) = original_loose_object {
+        fs::write(&loose_object, original).expect("restore original private loose object");
+    } else {
+        fs::remove_file(&loose_object).expect("remove injected private loose object");
+    }
+    fixture
+        .snapshot
+        .admit(&fixture.tree)
+        .expect("admit the restored real-Git fixture");
+    assert_live_unchanged(&fixture);
+}
+
 #[test]
 fn admits_sha1_and_sha256_trees_with_raw_paths_modes_and_internal_links() {
     for object_format in [None, Some("sha256")] {
@@ -196,6 +326,16 @@ fn admits_sha1_and_sha256_trees_with_raw_paths_modes_and_internal_links() {
         );
         assert_live_unchanged(&fixture);
     }
+}
+
+#[test]
+fn authenticates_sha1_loose_blob_contents_against_the_staged_object_id() {
+    rejects_corrupt_private_blob(None);
+}
+
+#[test]
+fn authenticates_sha256_loose_blob_contents_against_the_staged_object_id() {
+    rejects_corrupt_private_blob(Some("sha256"));
 }
 
 #[test]
