@@ -34,6 +34,7 @@ python3 docs/openshell-v2/validate_assignment_fixtures.py > /tmp/openshell-assig
 The first command requires all task statuses to remain `NOT_STARTED` and all case and assignment statuses to remain `NOT_RUN`.
 Omit `--initial` after execution starts.
 The ordinary validator accepts documented progress states.
+Both execution markers must be JSON Booleans in ordinary and initial validation. A LIVE assignment recorded as `PASS` or `FAIL` requires `runtime_tests_executed_for_this_pack` to be `true`; `BLOCKED`, `NOT_RUN`, SOURCE evidence, and BUILD evidence do not assert runtime execution. Serial work remains valid when `subagents_used_for_this_pack` is `false`.
 It requires one `assignment_results` row for every task owner on every case.
 Rows contain exactly `task_id` and `status`; duplicate, missing, and extra owners fail validation.
 Each `PASS` task needs `PASS` for its own case assignments.
@@ -67,7 +68,7 @@ The runner writes one JSON report to stdout and does not modify the pack. It val
 | Topological readiness groups | 20 |
 | Checked procedural sentences | 1653 |
 
-The ordinary validator report contains 82 ordered checks; `--initial` contains 84, including two initial-only checks and the final inventory check.
+The ordinary validator report contains 84 ordered checks; `--initial` contains 86, including two initial-only checks and the final inventory check.
 The C02 digest checks fixed contract text only. It does not show that source code follows this plan.
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
@@ -78,6 +79,8 @@ Keep no more than eight actual subagents active at once.
 | --- | --- |
 | Required pack files, including fixture tool | PASS |
 | Manifest schema versions are supported integers | PASS |
+| Both execution markers are exact Booleans in ordinary and initial modes | PASS |
+| LIVE `PASS` and `FAIL` assignments require the runtime-execution marker | PASS |
 | C01 source table matches all four exact fixed references | PASS |
 | C02 crate graph and dependency-boundary section matches its fixed bytes | PASS |
 | Machine source pins match the three fixed graph references | PASS |
@@ -142,9 +145,9 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 226 scenarios passed their exact report, input-derived count, and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 208 targeted scenarios cover assignment ownership and progress, authored task and case fields, source citations, canonical task paths and exact recursive packet sets, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, post-deletion and post-change LIVE freshness, T40 version/package requalification, finalization evidence requirements, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates and result-cell grammar, independent check-inventory comparison, import-time input mutation detection, the fixed root planning classification, owner-specific A13/A15/A16 qualification, A17 integrated activation, serialized target-matrix updates, malformed record refusal, and review-assignment completion.
-Each fixture copy records source hashes, status-only normalization changes, normalized hashes, intentional mutations, and input and executable hashes before and after validation. The original board is never normalized or repaired.
+All 244 scenarios passed their exact report, input-derived count, and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 226 targeted scenarios cover assignment ownership and progress, execution-marker types and LIVE status requirements, readiness-group input shapes, authored task and case fields, source citations, canonical task paths and exact recursive packet sets, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, post-deletion and post-change LIVE freshness, T40 version/package requalification, finalization evidence requirements, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates and result-cell grammar, independent check-inventory comparison, import-time input mutation detection, the fixed root planning classification, owner-specific A13/A15/A16 qualification, A17 integrated activation, serialized target-matrix updates, malformed record refusal, and review-assignment completion.
+Each fixture copy records source hashes, permitted normalization changes, normalized hashes, intentional mutations, and input and executable hashes before and after validation. Initial-mode copies reset only existing valid progress statuses and true Boolean execution markers; missing or invalid markers remain unchanged and fail validation. The original board is never normalized or repaired.
 The existing missing-P00 fixture retains its packet-preamble failure and exit code 1; exact-path validation adds a second expected failure for the missing canonical path.
 A22 is owned by U02 and T32. Its mixed-result fixtures complete T32 dependencies before recording results.
 A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks FAIL precedence without bypassing dependencies.
@@ -161,6 +164,9 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | Legacy manifest without `assignment_results` | Reject, exit 1 | PASS, exit 1 |
 | Malformed or invalid-status, duplicate, missing, or extra assignment row | Reject, exit 1 | PASS, exit 1 |
 | Assignment status changes under `--initial` | Reject, exit 1 | PASS, exit 1 |
+| Missing or non-Boolean execution markers in ordinary and initial modes | Reject, exit 1 | PASS, exit 1 |
+| LIVE `PASS` or `FAIL` without a true runtime marker; matching `BLOCKED`, SOURCE, and BUILD controls | Reject or accept according to evidence state | PASS, exit 0 |
+| Non-list readiness groups, non-list groups, and non-string task IDs | Structured input error, exit 2 | PASS, exit 2 |
 | Malformed assignment row under `--initial` | Reject cleanly, exit 1 | PASS, exit 1 |
 | T33 runs before T27 checkpoint task passes | Reject, exit 1 | PASS, exit 1 |
 | `BLOCKED` task and its blocked assignments | Accept as blocked, exit 0 | PASS, exit 0 |

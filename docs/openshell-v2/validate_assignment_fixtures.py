@@ -71,6 +71,8 @@ VALIDATOR_IMPORT_CHANGES = snapshot_changes(
 FIXTURE_ORDINARY_CHECK_NAMES = (
     'Required pack files exist',
     'Manifest schema versions are supported integers',
+    'Execution markers are Boolean in every mode.',
+    'LIVE PASS and FAIL results require the runtime-execution marker.',
     'C01 source pin table matches all four fixed references',
     'C02 production crate graph and boundary section matches fixed bytes',
     'Machine source pins match fixed references',
@@ -202,6 +204,13 @@ def normalize_status_fields(pack: Path) -> tuple[list[dict[str, Any]], list[str]
                 for index, task in enumerate(tasks):
                     if isinstance(task, dict):
                         set_existing_status(task, f"tasks[{index}]", "NOT_STARTED")
+            for field in ("subagents_used_for_this_pack", "runtime_tests_executed_for_this_pack"):
+                value = data.get(field)
+                if type(value) is bool and value is True:
+                    changes.append({"path": relative_path, "field": field,
+                                    "before": True, "after": False})
+                    data[field] = False
+                    changed = True
         else:
             set_existing_status(data, "root", "NOT_RUN")
             cases = data.get("cases")
@@ -358,6 +367,13 @@ def set_task_status(pack: Path, task_id: str, status: str) -> None:
     graph_path.write_text(json.dumps(graph, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def set_execution_markers(pack: Path, **values: Any) -> None:
+    graph_path = pack / "task-graph.json"
+    graph = read_json(graph_path)
+    graph.update(values)
+    write_json(graph_path, graph)
+
+
 def set_task_states(pack: Path, statuses: dict[str, str]) -> None:
     graph_path = pack / "task-graph.json"
     graph = read_json(graph_path)
@@ -450,6 +466,7 @@ def all_pass(pack: Path) -> None:
     graph = read_json(graph_path)
     for task in graph["tasks"]:
         task["status"] = "PASS"
+    graph["runtime_tests_executed_for_this_pack"] = True
     graph_path.write_text(json.dumps(graph, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     update_cases(pack, mark_all_cases_pass)
@@ -975,9 +992,11 @@ def main() -> int:
 
     def unstarted_assignment(status: str) -> Callable[[Path], None]:
         summaries = {"PASS": "NOT_RUN", "FAIL": "FAIL", "BLOCKED": "BLOCKED"}
-        return lambda pack: update_cases(
-            pack, set_shared_summary(status, "NOT_RUN", summaries[status]),
-        )
+        def mutate(pack: Path) -> None:
+            if status in {"PASS", "FAIL"}:
+                set_execution_markers(pack, runtime_tests_executed_for_this_pack=True)
+            update_cases(pack, set_shared_summary(status, "NOT_RUN", summaries[status]))
+        return mutate
 
     for status in ("PASS", "FAIL", "BLOCKED"):
         receipts.append(run_fixture(
@@ -1001,6 +1020,193 @@ def main() -> int:
     receipts.append(run_fixture(
         "READY owner can retain NOT_RUN assignment",
         ready_assignment("NOT_RUN"),
+        0, [],
+    ))
+
+    def remove_runtime_execution_marker(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        graph.pop("runtime_tests_executed_for_this_pack")
+        write_json(graph_path, graph)
+
+    receipts.append(run_fixture(
+        "ordinary validation rejects a missing runtime-execution marker",
+        remove_runtime_execution_marker,
+        1, ["Execution markers are Boolean in every mode."],
+    ))
+
+    def use_non_boolean_delegation_marker(pack: Path) -> None:
+        set_execution_markers(pack, subagents_used_for_this_pack=1)
+    receipts.append(run_fixture(
+        "ordinary validation rejects a non-Boolean delegation marker",
+        use_non_boolean_delegation_marker,
+        1, ["Execution markers are Boolean in every mode."],
+    ))
+
+    def use_non_boolean_marker_in_initial_mode(pack: Path) -> None:
+        set_execution_markers(pack, subagents_used_for_this_pack="false")
+    receipts.append(run_fixture(
+        "initial validation rejects non-Boolean execution markers",
+        use_non_boolean_marker_in_initial_mode,
+        1, ["Execution markers are Boolean in every mode.",
+            "Pack records no runtime tests or delegated reviews"], initial=True,
+    ))
+
+    def malformed_ready_groups(pack: Path, groups: Any) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        graph["topological_ready_groups"] = groups
+        write_json(graph_path, graph)
+
+    for label, groups in (
+        ("an object", {"first": ["P00"]}),
+        ("a non-list group", ["P00"]),
+        ("a non-string task identifier", [["P00", 7]]),
+    ):
+        receipts.append(run_fixture(
+            f"readiness groups reject {label} with a structured input error",
+            lambda pack, value=groups: malformed_ready_groups(pack, value),
+            2, ["Planning pack input is valid"],
+            expected_report_details={
+                "Planning pack input is valid":
+                    "task-graph.json 'topological_ready_groups' must be a list of lists of strings",
+            },
+        ))
+
+    def serial_source_progress(pack: Path) -> None:
+        set_task_status(pack, "P00", "PASS")
+        set_execution_markers(
+            pack, subagents_used_for_this_pack=False, runtime_tests_executed_for_this_pack=False,
+        )
+        update_cases(pack, set_single_summary("P00", "PASS"))
+    receipts.append(run_fixture(
+        "serial SOURCE work passes without delegation or runtime claims",
+        serial_source_progress,
+        0, [],
+    ))
+
+    def serial_review_progress(pack: Path) -> None:
+        set_task_status(pack, "P00", "REVIEW")
+        set_execution_markers(
+            pack, subagents_used_for_this_pack=False, runtime_tests_executed_for_this_pack=False,
+        )
+        update_cases(pack, set_single_summary("P00", "PASS"))
+    receipts.append(run_fixture(
+        "serial REVIEW work records its own passing assignment",
+        serial_review_progress,
+        0, [],
+    ))
+
+    def all_live_cases_pass(pack: Path, runtime_marker: bool) -> None:
+        all_pass(pack)
+        set_execution_markers(pack, runtime_tests_executed_for_this_pack=runtime_marker)
+
+    receipts.append(run_fixture(
+        "LIVE PASS assignments require a true runtime-execution marker",
+        lambda pack: all_live_cases_pass(pack, False),
+        1, ["LIVE PASS and FAIL results require the runtime-execution marker."],
+    ))
+    receipts.append(run_fixture(
+        "LIVE PASS assignments are accepted with a true runtime-execution marker",
+        lambda pack: all_live_cases_pass(pack, True),
+        0, [],
+    ))
+
+    def p02_live_failure(pack: Path, runtime_marker: bool) -> None:
+        set_task_states(pack, {"P00": "PASS", "P02": "FAIL"})
+        set_execution_markers(
+            pack, subagents_used_for_this_pack=False,
+            runtime_tests_executed_for_this_pack=runtime_marker,
+        )
+
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            set_assignment(cases["A01"], "P00", "PASS")
+            cases["A01"]["status"] = "PASS"
+            set_assignment(cases["A05"], "P02", "FAIL")
+            cases["A05"]["status"] = "FAIL"
+        update_cases(pack, update)
+
+    receipts.append(run_fixture(
+        "LIVE FAIL assignments require a true runtime-execution marker",
+        lambda pack: p02_live_failure(pack, False),
+        1, ["LIVE PASS and FAIL results require the runtime-execution marker."],
+    ))
+    receipts.append(run_fixture(
+        "LIVE FAIL assignments are accepted with a true runtime-execution marker",
+        lambda pack: p02_live_failure(pack, True),
+        0, [],
+    ))
+
+    def p02_blocked_after_dependency_completion(pack: Path) -> None:
+        set_task_states(pack, {"P00": "PASS", "P02": "BLOCKED"})
+        set_execution_markers(
+            pack, subagents_used_for_this_pack=False, runtime_tests_executed_for_this_pack=False,
+        )
+        update_cases(pack, set_single_summary("P00", "PASS"))
+    receipts.append(run_fixture(
+        "LIVE BLOCKED results do not claim runtime execution",
+        p02_blocked_after_dependency_completion,
+        0, [],
+    ))
+
+    def build_assignment_does_not_claim_live_execution(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            set_assignment(cases["A125"], "T40", "PASS")
+            cases["A125"]["status"] = "PASS"
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "a BUILD assignment does not claim LIVE runtime execution",
+        build_assignment_does_not_claim_live_execution,
+        1, ["NOT_STARTED and READY tasks have NOT_RUN assignments"],
+        expected_report_details={
+            "LIVE PASS and FAIL results require the runtime-execution marker.": [],
+        },
+    ))
+
+    def true_markers_before_initial_normalization(pack: Path) -> None:
+        set_execution_markers(
+            pack, subagents_used_for_this_pack=True, runtime_tests_executed_for_this_pack=True,
+        )
+    receipts.append(run_fixture(
+        "temporary normalization resets only valid true execution markers",
+        lambda _pack: None,
+        0, [], initial=True,
+        pre_normalization_mutation=true_markers_before_initial_normalization,
+        expected_normalization_diff=[
+            {"path": "task-graph.json", "field": "subagents_used_for_this_pack",
+             "before": True, "after": False},
+            {"path": "task-graph.json", "field": "runtime_tests_executed_for_this_pack",
+             "before": True, "after": False},
+        ],
+    ))
+
+    receipts.append(run_fixture(
+        "temporary normalization does not recreate a missing execution marker",
+        lambda _pack: None,
+        1, ["Execution markers are Boolean in every mode."],
+        pre_normalization_mutation=remove_runtime_execution_marker,
+        expected_normalization_diff=[],
+    ))
+
+    def non_boolean_marker_before_normalization(pack: Path) -> None:
+        set_execution_markers(pack, subagents_used_for_this_pack=0)
+    receipts.append(run_fixture(
+        "temporary normalization does not repair an invalid execution marker",
+        lambda _pack: None,
+        1, ["Execution markers are Boolean in every mode."],
+        pre_normalization_mutation=non_boolean_marker_before_normalization,
+        expected_normalization_diff=[],
+    ))
+
+    def valid_progress_markers(pack: Path) -> None:
+        set_task_status(pack, "P00", "PASS")
+        set_execution_markers(
+            pack, subagents_used_for_this_pack=True, runtime_tests_executed_for_this_pack=True,
+        )
+        update_cases(pack, set_single_summary("P00", "PASS"))
+    receipts.append(run_fixture(
+        "progressed source with true execution markers passes ordinary validation",
+        valid_progress_markers,
         0, [],
     ))
 
@@ -1142,11 +1348,13 @@ def main() -> int:
     ))
 
     def assignment_progress(pack: Path) -> None:
+        set_execution_markers(pack, runtime_tests_executed_for_this_pack=True)
         update_cases(pack, set_shared_summary("PASS", "NOT_RUN", "NOT_RUN"))
     receipts.append(run_fixture(
         "initial mode rejects assignment progress", assignment_progress,
         1, ["NOT_STARTED and READY tasks have NOT_RUN assignments",
-            "Initial task, case, and assignment statuses claim no execution"], initial=True,
+            "Initial task, case, and assignment statuses claim no execution",
+            "Pack records no runtime tests or delegated reviews"], initial=True,
     ))
 
     def malformed_initial_assignment(pack: Path) -> None:
@@ -1271,6 +1479,8 @@ def main() -> int:
     def blocked_task_with_incomplete_dependencies_and_result(status: str) -> Callable[[Path], None]:
         def mutate(pack: Path) -> None:
             set_task_status(pack, "T32", "BLOCKED")
+            if status in {"PASS", "FAIL"}:
+                set_execution_markers(pack, runtime_tests_executed_for_this_pack=True)
             def update(cases: dict[str, dict[str, Any]]) -> None:
                 case = cases["A22"]
                 set_assignment(case, "T32", status)

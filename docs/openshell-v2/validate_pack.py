@@ -20,7 +20,7 @@ GRAPH_DECLARATIONS_SHA256 = "39a190141d0329a1f00b94bab82f19934cf0d1a9860ad742115
 TRACEABILITY_AUTHORED_SHA256 = "33c969b0eec0852fa87dc459663540d8f9136e22f1ba22328a02724c9418c7ee"
 CONTRACTS_SHA256 = "da0f23654f30e8d1a37a12f07c9e5595d51027a5c4eaae3ce8072cb544dd3344"
 SUBAGENTS_SHA256 = "a4a9e5a967a73038b50ecdc4cadb9a51b1c83728f54c6b6fb9a87641566263f8"
-PACK_CHECKS_TEMPLATE_SHA256 = "53ba029f6f24890cef2663eb0c0f7e22b6ffd114dd2485588e5d0e26350dc6e2"
+PACK_CHECKS_TEMPLATE_SHA256 = "d611d8aa423b15832de4df37d189e635c4ccbf0a520d143931ef8e37739d874e"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
@@ -88,6 +88,8 @@ CHECK_INVENTORY_CHECK = "Validator check inventory matches its canonical ordered
 ORDINARY_CHECK_NAMES = (
     "Required pack files exist",
     "Manifest schema versions are supported integers",
+    "Execution markers are Boolean in every mode.",
+    "LIVE PASS and FAIL results require the runtime-execution marker.",
     "C01 source pin table matches all four fixed references",
     "C02 production crate graph and boundary section matches fixed bytes",
     "Machine source pins match fixed references",
@@ -1181,6 +1183,34 @@ def main() -> int:
           not unsupported_versions,
           {"supported": SUPPORTED_SCHEMA_VERSION, "actual": manifest_versions,
            "unsupported": unsupported_versions})
+    execution_markers = {
+        field: graph.get(field)
+        for field in ("subagents_used_for_this_pack", "runtime_tests_executed_for_this_pack")
+    }
+    malformed_execution_markers = {
+        field: value for field, value in execution_markers.items() if type(value) is not bool
+    }
+    check("Execution markers are Boolean in every mode.",
+          not malformed_execution_markers,
+          {"expected_fields": sorted(execution_markers),
+           "non_boolean_values": malformed_execution_markers})
+    live_results_missing_runtime_marker = []
+    if execution_markers.get("runtime_tests_executed_for_this_pack") is not True:
+        for case in cases:
+            rows = case.get("assignment_results")
+            if case.get("level") != "LIVE" or not isinstance(rows, list):
+                continue
+            for assignment in rows:
+                if (isinstance(assignment, dict)
+                        and assignment.get("status") in {"PASS", "FAIL"}):
+                    live_results_missing_runtime_marker.append({
+                        "case_id": case.get("id"),
+                        "task_id": assignment.get("task_id"),
+                        "status": assignment.get("status"),
+                    })
+    check("LIVE PASS and FAIL results require the runtime-execution marker.",
+          not live_results_missing_runtime_marker,
+          live_results_missing_runtime_marker)
     contracts_bytes = (root / "CONTRACTS.md").read_bytes()
     contracts_document = contracts_bytes.decode("utf-8")
     c01_source_table_errors = source_pin_table_errors(contracts_document)
@@ -1616,6 +1646,11 @@ def main() -> int:
           not dependency_lists_valid or done == task_set,
           {"ready_groups": len(levels), "dependency_lists_valid": dependency_lists_valid})
     stored_groups = graph["topological_ready_groups"]
+    if (not isinstance(stored_groups, list)
+            or any(not isinstance(group, list)
+                   or any(not isinstance(task_id, str) for task_id in group)
+                   for group in stored_groups)):
+        raise ValueError("task-graph.json 'topological_ready_groups' must be a list of lists of strings")
     stored_group_ids = [task_id for group in stored_groups for task_id in group]
     stored_group_counts: dict[str, int] = {}
     for task_id in stored_group_ids:
@@ -2004,8 +2039,8 @@ def main() -> int:
               not bad_status and not bad_assignments,
               {"task_or_case_statuses": bad_status, "assignment_statuses": bad_assignments})
         check("Pack records no runtime tests or delegated reviews",
-              graph["subagents_used_for_this_pack"] is False
-              and graph["runtime_tests_executed_for_this_pack"] is False)
+              graph.get("subagents_used_for_this_pack") is False
+              and graph.get("runtime_tests_executed_for_this_pack") is False)
 
     actual_check_names = [item["check"] for item in checks]
     expected_check_names = canonical_check_inventory(args.initial)[:-1]
