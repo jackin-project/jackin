@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 ORIGINAL_SPEC_SHA256 = "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe767523a3e"
-ACCEPTANCE_POLICY_SHA256 = "2b39daffda63e2b791c0d442cc1175dea030c92e76facd202b584b93c7ddd8ee"
+ACCEPTANCE_POLICY_SHA256 = "503b2bd2ed5560a311a3641409c0f59a7806f6847575b509641b85cbab3ed59a"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
@@ -52,20 +52,40 @@ RELEASE_GATE_PROTOCOL = {
             "A123 missing, failed, blocked, and unreviewed prerequisite refusal assertions",
             "Actual A124 operational documentation result",
             "Actual A125 provenance and authorization result",
+            "Conditional maintainer-approval records for supported patched tuples, verified by A125",
             "All required target records and task artifacts",
             "Independent T40 review",
             "Merged-source checks",
         ],
+        "conditional_patch_approval": {
+            "condition": "A supported compatibility tuple contains one or more patches",
+            "record_path": "evidence/openshell-v2/T40/maintainer-approvals.json",
+            "one_record_per_supported_patched_tuple": True,
+            "required_fields": [
+                "tuple_id",
+                "patch_digest",
+                "maintainer_identity",
+                "approval_decision",
+                "approval_reference",
+            ],
+            "required_approval_decision": "APPROVED",
+            "verified_by_case": "A125",
+            "unpatched_tuples_require_record": False,
+        },
         "synthetic_gate_fixtures_are_candidate_evidence": False,
         "excluded_inputs": ["Persisted T40 task status PASS", "The future finalization receipt"],
         "success_outputs": [
             "Persist T40 task status PASS",
+            "Persist the final acceptance summary",
             "The finalization receipt",
             "The completion record",
             "The approval record",
         ],
         "approval_binds": ["Reviewed source commit", "Package digests", "Evidence hashes"],
+        "approval_authority": "Independent review subagent",
+        "finalization_writer": "Integration subagent",
         "completion_and_approval_together": True,
+        "all_success_outputs_written_atomically": True,
         "failed_prerequisite_outputs": [],
     },
 }
@@ -74,6 +94,8 @@ P04_RELEASE_GATE_ACCEPTANCE = (
     "Preflight cannot approve release. Finalization requires every fixed protocol prerequisite."
 )
 QUALIFICATION_SUBAGENT_ROW = "| Qualification subagent | P04, U08, and T35 through T38. |"
+TASK_ID_PATTERN = re.compile(r"\b[PUT]\d{2}\b")
+TASK_ID_RANGE_PATTERN = re.compile(r"\b([PUT])(\d{2}) through \1(\d{2})\b")
 T40_RELEASE_GATE_STEPS = [
     "Run the release_gate_protocol preflight while T40 is RUNNING or REVIEW.",
     "Check prior task statuses and assignment results.",
@@ -84,7 +106,7 @@ T40_RELEASE_GATE_STEPS = [
     "Obtain an independent T40 review and rerun checks against the merged source.",
     "Finalize only after all prior tasks and every case assignment pass, including A123, A124, and A125.",
     "Bind completion and approval to the reviewed source commit, package digests, and evidence hashes.",
-    "Write T40 PASS, completion, finalization receipt, and approval together only after every prerequisite passes.",
+    "Request Integration to atomically write T40 PASS, the final summary, completion, finalization receipt, and approval after all gates pass.",
 ]
 T40_RELEASE_GATE_ACCEPTANCE = [
     "Preflight requires every task except T40 and each prior task assignment to pass.",
@@ -94,7 +116,7 @@ T40_RELEASE_GATE_ACCEPTANCE = [
     "Finalization requires every task except T40 and every case assignment to pass, including A123, A124, and A125.",
     "Finalization also requires all targets and artifacts, an independent T40 review, and merged-source checks.",
     "Finalization excludes only persisted T40=PASS and its own future receipt from the input set.",
-    "It writes T40 PASS, a finalization receipt, completion, and approval together.",
+    "T40 requests Integration to write T40 PASS, final summary, completion, finalization receipt, and approval atomically. T40 writes none directly.",
     "Approval binds the reviewed source commit, package digests, and evidence hashes.",
     "Synthetic gate fixtures test refusals only and never count as candidate evidence.",
     "A failed prerequisite writes neither a completion record nor approval.",
@@ -110,6 +132,24 @@ A123_GATE_ACTION = (
 A123_GATE_EXPECTED = (
     "Every refusal prevents approval. Finalization requires all three actual T40 case results "
     "and every fixed prerequisite."
+)
+A125_GATE_ACTION = (
+    "Build the release candidate and inspect its provenance, conditional maintainer-approval records "
+    "for supported patched tuples, and publication actions."
+)
+A125_GATE_EXPECTED = (
+    "Artifacts match the approved source. For each supported patched tuple, "
+    "evidence/openshell-v2/T40/maintainer-approvals.json records maintainer approval bound to tuple ID and "
+    "patch digest. Unpatched tuples need no approval record. No unauthorized publication or production change occurs."
+)
+T40_RELEASE_GATE_WRITE_SCOPES = [
+    "Release-candidate documentation and final compatibility matrix",
+    "Version and packaging changes through the integration subagent",
+    "Submit T40 task status, final acceptance summary, completion, finalization receipt, and approval "
+    "as an atomic Integration subagent patch request",
+]
+T40_RELEASE_GATE_ACCEPTANCE.append(
+    "Supported patched tuples require maintainer approval bound to tuple ID and patch digest. Unpatched tuples need no approval record."
 )
 REVIEW_PACKET_REQUIREMENTS = [
     "Give the review subagent the original task card, the input commit SHA, and the candidate task diff.",
@@ -261,6 +301,72 @@ def render_task_index(tasks: list[dict[str, Any]]) -> list[str]:
             f"| {task['id']} | {task['title']} | {task['owner']} | {dependencies} |"
         )
     return lines
+
+
+def subagent_task_assignment_errors(document: str, tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    heading = "## Subagent assignments"
+    following_heading = "## Initial parallel source review"
+    headings = list(re.finditer(r"(?m)^" + re.escape(heading) + r"\s*$", document))
+    if len(headings) != 1:
+        return [{"problem": "expected one subagent-assignment heading", "count": len(headings)}]
+    start = headings[0].end()
+    following = list(re.finditer(r"(?m)^" + re.escape(following_heading) + r"\s*$", document))
+    following = [match for match in following if match.start() > start]
+    if len(following) != 1:
+        return [{"problem": "expected one following source-review heading", "count": len(following)}]
+
+    rows: dict[str, list[str]] = {}
+    errors: list[dict[str, Any]] = []
+    table_lines = [line.strip() for line in document[start:following[0].start()].splitlines()
+                   if line.lstrip().startswith("|")]
+    if len(table_lines) < 3 or table_lines[0] != "| Subagent | Task ownership |":
+        errors.append({"problem": "subagent-assignment table header is missing or malformed"})
+    for line in table_lines[2:]:
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 2 or not cells[0]:
+            errors.append({"problem": "malformed subagent-assignment row", "row": line})
+            continue
+        owner, responsibilities = cells
+        if owner in rows:
+            errors.append({"owner": owner, "problem": "duplicate subagent row"})
+            continue
+
+        expanded = responsibilities
+
+        def expand_range(match: re.Match[str]) -> str:
+            prefix, first, last = match.group(1), int(match.group(2)), int(match.group(3))
+            if last < first:
+                errors.append({"owner": owner, "problem": "descending task range", "range": match.group(0)})
+                return match.group(0)
+            return " ".join(f"{prefix}{number:02d}" for number in range(first, last + 1))
+
+        expanded = TASK_ID_RANGE_PATTERN.sub(expand_range, expanded)
+        assigned = TASK_ID_PATTERN.findall(expanded)
+        if len(assigned) != len(set(assigned)):
+            errors.append({"owner": owner, "problem": "duplicate task ID in assignment row", "tasks": assigned})
+        rows[owner] = assigned
+
+    expected: dict[str, list[str]] = {}
+    for task in tasks:
+        owner = task.get("owner")
+        task_id = task.get("id")
+        if not isinstance(owner, str) or not isinstance(task_id, str):
+            errors.append({"problem": "graph owner and task ID must be strings", "task": task})
+            continue
+        expected.setdefault(owner, []).append(task_id)
+    for values in expected.values():
+        values.sort()
+    for owner in sorted(set(rows) | set(expected)):
+        actual = sorted(rows.get(owner, []))
+        graph_owned = expected.get(owner, [])
+        if actual != graph_owned:
+            errors.append({"owner": owner, "table_tasks": actual, "graph_tasks": graph_owned})
+    graph_ids = {task.get("id") for task in tasks}
+    for owner, assigned in rows.items():
+        unknown = sorted(set(assigned) - graph_ids)
+        if unknown:
+            errors.append({"owner": owner, "problem": "unknown task IDs", "tasks": unknown})
+    return errors
 
 
 def task_index_table(document: str, heading: str, next_heading: str | None) -> list[str] | None:
@@ -538,8 +644,27 @@ def main() -> int:
     if (cases_by_id.get("A123", {}).get("action") != A123_GATE_ACTION
             or cases_by_id.get("A123", {}).get("expected") != A123_GATE_EXPECTED):
         release_gate_task_mirror_errors.append("A123 must specify refusal assertions and finalization contract")
-    check("P04, T40, and A123 mirror the fixed release gate contract",
+    check("P04, T40, A123, and A125 mirror the fixed release gate contract",
           not release_gate_task_mirror_errors, release_gate_task_mirror_errors)
+    t40_write_scope_errors = []
+    if t40.get("write_scope") != T40_RELEASE_GATE_WRITE_SCOPES:
+        t40_write_scope_errors.append({
+            "actual": t40.get("write_scope"), "expected": T40_RELEASE_GATE_WRITE_SCOPES,
+        })
+    check("T40 finalization writes route through Integration",
+          not t40_write_scope_errors, t40_write_scope_errors)
+    a125 = cases_by_id.get("A125", {})
+    a125_errors = []
+    if a125.get("tasks") != ["T40"]:
+        a125_errors.append({"owners": a125.get("tasks"), "expected": ["T40"]})
+    if (a125.get("action") != A125_GATE_ACTION
+            or a125.get("expected") != A125_GATE_EXPECTED):
+        a125_errors.append({
+            "action": a125.get("action"), "expected": a125.get("expected"),
+            "required_action": A125_GATE_ACTION, "required_result": A125_GATE_EXPECTED,
+        })
+    check("A125 verifies conditional patched-tuple approval",
+          not a125_errors, a125_errors)
 
     early_live_errors = []
     p02 = tasks_by_id.get("P02", {})
@@ -585,6 +710,9 @@ def main() -> int:
     qualification_owner_count = subagents.count(QUALIFICATION_SUBAGENT_ROW)
     check("P04 is listed under the Qualification subagent",
           qualification_owner_count == 1, qualification_owner_count)
+    subagent_task_errors = subagent_task_assignment_errors(subagents, tasks)
+    check("Subagent task assignments exactly match graph owners",
+          not subagent_task_errors, subagent_task_errors)
     review_packet_errors = [line for line in REVIEW_PACKET_REQUIREMENTS if line not in subagents]
     check("Review packet uses candidate input and post-merge completion stages",
           not review_packet_errors, review_packet_errors)

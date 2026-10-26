@@ -24,7 +24,7 @@ Record serial execution when the runner has no subagent tool.
 | Subagent | Task ownership |
 | --- | --- |
 | Planning review subagent | Contract conflicts, P03, upstream contract reviews, and release scope. |
-| Integration subagent | Root Cargo files, lockfile, shared schemas, CI registration, and merges. |
+| Integration subagent | P00, P05, and T39; root Cargo files, lockfile, shared schemas, CI registration, and merges. |
 | Source audit subagent | P01 and the final removal audit. |
 | Upstream API subagent | P02, U00, U01, and OpenShell transport contracts. |
 | Upstream worker subagent | U02 and U03. |

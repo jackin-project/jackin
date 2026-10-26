@@ -3273,8 +3273,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 #### Write scope
 
-- Release-candidate documentation, final compatibility matrix, and acceptance summary
+- Release-candidate documentation and final compatibility matrix
 - Version and packaging changes through the integration subagent
+- Submit T40 task status, final acceptance summary, completion, finalization receipt, and approval as an atomic Integration subagent patch request
 
 #### Required inputs
 
@@ -3306,7 +3307,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 17. Obtain an independent T40 review and rerun checks against the merged source.
 18. Finalize only after all prior tasks and every case assignment pass, including A123, A124, and A125.
 19. Bind completion and approval to the reviewed source commit, package digests, and evidence hashes.
-20. Write T40 PASS, completion, finalization receipt, and approval together only after every prerequisite passes.
+20. Request Integration to atomically write T40 PASS, the final summary, completion, finalization receipt, and approval after all gates pass.
 
 #### Pass conditions
 
@@ -3321,10 +3322,11 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Finalization requires every task except T40 and every case assignment to pass, including A123, A124, and A125.
 - Finalization also requires all targets and artifacts, an independent T40 review, and merged-source checks.
 - Finalization excludes only persisted T40=PASS and its own future receipt from the input set.
-- It writes T40 PASS, a finalization receipt, completion, and approval together.
+- T40 requests Integration to write T40 PASS, final summary, completion, finalization receipt, and approval atomically. T40 writes none directly.
 - Approval binds the reviewed source commit, package digests, and evidence hashes.
 - Synthetic gate fixtures test refusals only and never count as candidate evidence.
 - A failed prerequisite writes neither a completion record nor approval.
+- Supported patched tuples require maintainer approval bound to tuple ID and patch digest. Unpatched tuples need no approval record.
 
 **Acceptance cases:** A123, A124, A125.
 

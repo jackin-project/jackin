@@ -55,7 +55,7 @@ The runner writes one JSON report to stdout and does not modify the pack. Redire
 | Acceptance cases | 125 |
 | Mapped specification headings | 30 |
 | Topological readiness groups | 20 |
-| Checked procedural sentences | 1571 |
+| Checked procedural sentences | 1575 |
 
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
@@ -75,7 +75,10 @@ Keep no more than eight actual subagents active at once.
 | Acceptance evidence levels use documented values | PASS |
 | Acceptance manifest status uses documented values and matches the case summary | PASS |
 | Task case references are unique string IDs; completion rules match the fixed contract | PASS |
-| Release-gate protocol semantics, final-case ownership, and P04/T40/A123 mirrors match | PASS |
+| Release protocol includes conditional patched-tuple approval, T40 review authority, and Integration finalization writes | PASS |
+| A123 and A125 match the fixed refusal and patched-tuple authorization contracts | PASS |
+| T40 finalization write scope routes shared records through Integration | PASS |
+| Subagent role-task assignments exactly match graph owners | PASS |
 | Review packets bind candidate diffs before merge and require merged checks before completion | PASS |
 | P02 early LIVE records, P04 imports, and separate T12 reruns match the fixed contract | PASS |
 | P04 command-dispatch patch and P05 build-registration scopes match | PASS |
@@ -101,8 +104,8 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 76 scenarios passed their exact report and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 58 targeted scenarios cover assignment ownership, source citations, canonical task artifacts, early LIVE ownership, command registration, fixed acceptance policy, malformed manifests, release-gate protocol structure, and validator reports.
+All 83 scenarios passed their exact report and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 65 targeted scenarios cover assignment ownership, source citations, canonical task artifacts, early LIVE ownership, command registration, fixed acceptance policy, malformed manifests, release-gate protocol structure, Integration write ownership, patched-tuple authorization, and validator reports.
 The downstream case below is A22, owned by U02 and T32.
 
 | Temporary-copy fixture | Expected validator result | Observed |
@@ -153,12 +156,19 @@ The downstream case below is A22, owned by U02 and T32.
 | P04 command-dispatch scope widened beyond the Integration patch | Reject, exit 1 | PASS, exit 1 |
 | P05 command-dispatch ownership deferred from P04 | Reject, exit 1 | PASS, exit 1 |
 | P05 workspace and build graph registration step removed | Reject, exit 1 | PASS, exit 1 |
+| Integration assignment row omits a graph-owned task | Reject, exit 1 | PASS, exit 1 |
+| Graph owner changes while task cards and indexes agree | Reject, exit 1 | PASS, exit 1 |
+| T40 claims direct writes for shared finalization records | Reject, exit 1 | PASS, exit 1 |
+| Protocol assigns finalization writes to T40 | Reject, exit 1 | PASS, exit 1 |
+| Conditional patched-tuple approval is removed from the protocol | Reject, exit 1 | PASS, exit 1 |
+| Unpatched tuples are made to require approval records | Reject, exit 1 | PASS, exit 1 |
+| A125 omits its patched-tuple approval check | Reject, exit 1 | PASS, exit 1 |
 
 The upstream `PASS` fixture shows U02 cannot close T32's assignment.
 Each raw receipt binds every mutated file actually tested. The traceability-owner receipt hashes both `traceability.json` and `TRACEABILITY.md`; the missing-validator receipt records `validate_pack.py` as `missing`.
 Receipts also hash task cards, `PLAN.md`, `SUBAGENTS.md`, `PACK-CHECKS.md`, and every other copied pack input. They preserve the actual validator executable and fixture source hashes.
 The runner does not write receipts inside the repository.
-Release-gate fixtures mutate only temporary copies of the protocol and its mirrors. They test static refusal and consistency rules, not a release candidate or runtime finalizer.
+Release-gate fixtures mutate only temporary copies of the protocol, its mirrors, and the task-assignment table. They test static refusal and consistency rules, not a release candidate or runtime finalizer.
 
 ## Language and evidence limits
 
@@ -169,5 +179,5 @@ Do not use this result as a full ASD-STE100 conformance claim.
 
 All 46 tasks remain `NOT_STARTED`.
 All 125 cases and their per-task assignment results remain `NOT_RUN`.
-The initial status text in `ACCEPTANCE.md` remains fixed during execution. Its additive policy prefix digest is `2b39daffda63e2b791c0d442cc1175dea030c92e76facd202b584b93c7ddd8ee`.
+The initial status text in `ACCEPTANCE.md` remains fixed during execution. Its additive policy prefix digest is `503b2bd2ed5560a311a3641409c0f59a7806f6847575b509641b85cbab3ed59a`.
 Implementation completion still requires the task, review, and runtime evidence in the pack.

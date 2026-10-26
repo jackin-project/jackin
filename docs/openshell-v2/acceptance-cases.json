@@ -2364,8 +2364,8 @@
       "title": "Release provenance and authorization",
       "level": "BUILD",
       "setup": "Use the final source commit, approved tuples, patch records, and package digests.",
-      "action": "Build the release candidate and inspect its provenance and publication actions.",
-      "expected": "Artifacts match the approved source. Patched tuples are explicit. No unauthorized publication or production change occurs.",
+      "action": "Build the release candidate and inspect its provenance, conditional maintainer-approval records for supported patched tuples, and publication actions.",
+      "expected": "Artifacts match the approved source. For each supported patched tuple, evidence/openshell-v2/T40/maintainer-approvals.json records maintainer approval bound to tuple ID and patch digest. Unpatched tuples need no approval record. No unauthorized publication or production change occurs.",
       "status": "NOT_RUN",
       "tasks": [
         "T40"

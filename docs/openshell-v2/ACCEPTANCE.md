@@ -67,9 +67,19 @@ P04 validates the record fields, retained hashes, and independent review before 
 T12 later runs both cases again through `v2-test`, with separate fresh run IDs. P02 evidence never satisfies T12 or counts as its independent repeat.
 
 P04 harness command registration occurs before P04 qualification.
-The Integration subagent adds only the v2 command enum, dispatch, and required command registration to `crates/tools/jackin-xtask/src/main.rs` through a P04 patch request.
+The Integration subagent adds only the v2 command enum, dispatch, and required command registration to [`crates/tools/jackin-xtask/src/main.rs`](../../crates/tools/jackin-xtask/src/main.rs) through a P04 patch request.
 P04 owns harness implementation and tests. P05 retains workspace and build graph registration for `jackin-xtask` and test support.
 P05 does not own or defer v2 command dispatch.
+
+## Final release authorization
+
+The independent T40 reviewer decides whether the candidate passes the release gate.
+For every supported compatibility tuple that contains a patch, retain one record per tuple at `evidence/openshell-v2/T40/maintainer-approvals.json`.
+Each record names the tuple ID, patch digest, maintainer identity, explicit `APPROVED` decision, and approval reference.
+A125 verifies the records for supported patched tuples.
+Unpatched supported tuples do not require patch-approval records.
+After every finalization prerequisite passes, T40 submits T40 PASS, the final acceptance summary, completion, finalization receipt, and approval to Integration for one atomic write.
+The independent T40 reviewer does not write those shared records directly.
 
 ## Required target rows
 
@@ -1404,6 +1414,6 @@ Do not claim support above measured and qualified resource bounds.
 
 **Setup:** Use the final source commit, approved tuples, patch records, and package digests.
 
-**Action:** Build the release candidate and inspect its provenance and publication actions.
+**Action:** Build the release candidate and inspect its provenance, conditional maintainer-approval records for supported patched tuples, and publication actions.
 
-**Required result:** Artifacts match the approved source. Patched tuples are explicit. No unauthorized publication or production change occurs.
+**Required result:** Artifacts match the approved source. For each supported patched tuple, evidence/openshell-v2/T40/maintainer-approvals.json records maintainer approval bound to tuple ID and patch digest. Unpatched tuples need no approval record. No unauthorized publication or production change occurs.

@@ -3018,8 +3018,9 @@
         "T39"
       ],
       "write_scope": [
-        "Release-candidate documentation, final compatibility matrix, and acceptance summary",
-        "Version and packaging changes through the integration subagent"
+        "Release-candidate documentation and final compatibility matrix",
+        "Version and packaging changes through the integration subagent",
+        "Submit T40 task status, final acceptance summary, completion, finalization receipt, and approval as an atomic Integration subagent patch request"
       ],
       "inputs": [
         "All task reports, independent reviews, and raw test evidence.",
@@ -3045,7 +3046,7 @@
         "Obtain an independent T40 review and rerun checks against the merged source.",
         "Finalize only after all prior tasks and every case assignment pass, including A123, A124, and A125.",
         "Bind completion and approval to the reviewed source commit, package digests, and evidence hashes.",
-        "Write T40 PASS, completion, finalization receipt, and approval together only after every prerequisite passes."
+        "Request Integration to atomically write T40 PASS, the final summary, completion, finalization receipt, and approval after all gates pass."
       ],
       "acceptance": [
         "A blocked engine, verifier, mutation, account, or target gate prevents full release approval.",
@@ -3059,10 +3060,11 @@
         "Finalization requires every task except T40 and every case assignment to pass, including A123, A124, and A125.",
         "Finalization also requires all targets and artifacts, an independent T40 review, and merged-source checks.",
         "Finalization excludes only persisted T40=PASS and its own future receipt from the input set.",
-        "It writes T40 PASS, a finalization receipt, completion, and approval together.",
+        "T40 requests Integration to write T40 PASS, final summary, completion, finalization receipt, and approval atomically. T40 writes none directly.",
         "Approval binds the reviewed source commit, package digests, and evidence hashes.",
         "Synthetic gate fixtures test refusals only and never count as candidate evidence.",
-        "A failed prerequisite writes neither a completion record nor approval."
+        "A failed prerequisite writes neither a completion record nor approval.",
+        "Supported patched tuples require maintainer approval bound to tuple ID and patch digest. Unpatched tuples need no approval record."
       ],
       "remove_or_replace": [
         "Remove temporary implementation scaffolding and obsolete v1 documentation from active guidance.",
@@ -3215,6 +3217,7 @@
         "A123 missing, failed, blocked, and unreviewed prerequisite refusal assertions",
         "Actual A124 operational documentation result",
         "Actual A125 provenance and authorization result",
+        "Conditional maintainer-approval records for supported patched tuples, verified by A125",
         "All required target records and task artifacts",
         "Independent T40 review",
         "Merged-source checks"
@@ -3226,6 +3229,7 @@
       ],
       "success_outputs": [
         "Persist T40 task status PASS",
+        "Persist the final acceptance summary",
         "The finalization receipt",
         "The completion record",
         "The approval record"
@@ -3236,7 +3240,25 @@
         "Evidence hashes"
       ],
       "completion_and_approval_together": true,
-      "failed_prerequisite_outputs": []
+      "failed_prerequisite_outputs": [],
+      "conditional_patch_approval": {
+        "condition": "A supported compatibility tuple contains one or more patches",
+        "record_path": "evidence/openshell-v2/T40/maintainer-approvals.json",
+        "one_record_per_supported_patched_tuple": true,
+        "required_fields": [
+          "tuple_id",
+          "patch_digest",
+          "maintainer_identity",
+          "approval_decision",
+          "approval_reference"
+        ],
+        "required_approval_decision": "APPROVED",
+        "verified_by_case": "A125",
+        "unpatched_tuples_require_record": false
+      },
+      "approval_authority": "Independent review subagent",
+      "finalization_writer": "Integration subagent",
+      "all_success_outputs_written_atomically": true
     }
   }
 }

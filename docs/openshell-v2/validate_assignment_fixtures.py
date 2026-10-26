@@ -937,7 +937,7 @@ def main() -> int:
     receipts.append(run_fixture(
         "P04 task card retains the fixed protocol implementation requirement",
         weaken_p04_protocol,
-        1, ["P04, T40, and A123 mirror the fixed release gate contract"],
+        1, ["P04, T40, A123, and A125 mirror the fixed release gate contract"],
     ))
 
     def weaken_t40_finalization(pack: Path) -> None:
@@ -950,7 +950,7 @@ def main() -> int:
     receipts.append(run_fixture(
         "T40 card retains fail-closed finalization conditions",
         weaken_t40_finalization,
-        1, ["P04, T40, and A123 mirror the fixed release gate contract"],
+        1, ["P04, T40, A123, and A125 mirror the fixed release gate contract"],
     ))
 
     def omit_actual_t40_case_results(pack: Path) -> None:
@@ -965,7 +965,7 @@ def main() -> int:
     receipts.append(run_fixture(
         "T40 requires actual results for A123 through A125",
         omit_actual_t40_case_results,
-        1, ["P04, T40, and A123 mirror the fixed release gate contract"],
+        1, ["P04, T40, A123, and A125 mirror the fixed release gate contract"],
     ))
 
     def weaken_a123_refusals(pack: Path) -> None:
@@ -978,7 +978,7 @@ def main() -> int:
     receipts.append(run_fixture(
         "A123 keeps prerequisite refusal assertions and finalization contract",
         weaken_a123_refusals,
-        1, ["P04, T40, and A123 mirror the fixed release gate contract"],
+        1, ["P04, T40, A123, and A125 mirror the fixed release gate contract"],
     ))
 
     def remove_static_gate_scope(pack: Path) -> None:
@@ -1020,7 +1020,8 @@ def main() -> int:
     receipts.append(run_fixture(
         "P04 remains owned by the Qualification subagent",
         remove_p04_qualification_owner,
-        1, ["P04 is listed under the Qualification subagent"],
+        1, ["P04 is listed under the Qualification subagent",
+            "Subagent task assignments exactly match graph owners"],
     ))
 
     def missing_intersecting_trace_owner(pack: Path) -> None:
@@ -1087,7 +1088,7 @@ def main() -> int:
                 "cases": 125,
                 "specification_sections": 30,
                 "task_ready_groups": 20,
-                "checked_sentences": 1561,
+                "checked_sentences": 1575,
             },
             "checks": checks,
             "failures": failures,
@@ -1200,6 +1201,92 @@ def main() -> int:
         ]),
         [], exit_code=1, expected_exit=1, expected_failures=["expected failure"],
     )
+
+    def omit_integration_owned_tasks_from_assignment_table(pack: Path) -> None:
+        path = pack / "SUBAGENTS.md"
+        text = path.read_text(encoding="utf-8")
+        current = "| Integration subagent | P00, P05, and T39; root Cargo files, lockfile, shared schemas, CI registration, and merges. |"
+        replacement = "| Integration subagent | P00 and T39; root Cargo files, lockfile, shared schemas, CI registration, and merges. |"
+        if text.count(current) != 1:
+            raise ValueError("Expected one complete Integration task row")
+        path.write_text(text.replace(current, replacement, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "Integration role row lists every graph-owned task",
+        omit_integration_owned_tasks_from_assignment_table,
+        1, ["Subagent task assignments exactly match graph owners"],
+    ))
+
+    def change_graph_owner_without_assignment_table(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        next(task for task in graph["tasks"] if task["id"] == "P00")["owner"] = "Planning review subagent"
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P00")
+        index_row = "| P00 | Freeze the work area and source evidence | Integration subagent | None |"
+        changed_row = "| P00 | Freeze the work area and source evidence | Planning review subagent | None |"
+        for name in ("PLAN.md", "TASKS.md"):
+            path = pack / name
+            index = path.read_text(encoding="utf-8")
+            if index.count(index_row) != 1:
+                raise ValueError(f"Expected one P00 row in {name}")
+            path.write_text(index.replace(index_row, changed_row, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "role assignment table matches every graph owner, not only Integration",
+        change_graph_owner_without_assignment_table,
+        1, ["Subagent task assignments exactly match graph owners"],
+    ))
+
+    def route_t40_writes_directly(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t40 = next(task for task in graph["tasks"] if task["id"] == "T40")
+        t40["write_scope"][2] = "Write T40 status, final acceptance summary, completion, receipt, and approval directly"
+        t40["steps"][-1] = "Write T40 PASS, the final acceptance summary, completion, finalization receipt, and approval together."
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T40")
+    receipts.append(run_fixture(
+        "T40 cannot bypass Integration for shared finalization writes",
+        route_t40_writes_directly,
+        1, ["P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "T40 finalization writes route through Integration"],
+    ))
+
+    def assign_finalization_writer_to_t40(protocol: dict[str, Any]) -> None:
+        protocol["finalization"]["finalization_writer"] = "Independent review subagent"
+    receipts.append(run_fixture(
+        "release finalization keeps shared writes with Integration",
+        lambda pack: mutate_release_protocol(pack, assign_finalization_writer_to_t40),
+        1, ["Release gate protocol matches fixed semantics"],
+    ))
+
+    def omit_conditional_patch_approval(protocol: dict[str, Any]) -> None:
+        protocol["finalization"].pop("conditional_patch_approval")
+    receipts.append(run_fixture(
+        "release finalization requires conditional approval for supported patched tuples",
+        lambda pack: mutate_release_protocol(pack, omit_conditional_patch_approval),
+        1, ["Release gate protocol matches fixed semantics"],
+    ))
+
+    def require_approval_for_unpatched_tuples(protocol: dict[str, Any]) -> None:
+        protocol["finalization"]["conditional_patch_approval"]["unpatched_tuples_require_record"] = True
+    receipts.append(run_fixture(
+        "unpatched supported tuples do not require patch-approval records",
+        lambda pack: mutate_release_protocol(pack, require_approval_for_unpatched_tuples),
+        1, ["Release gate protocol matches fixed semantics"],
+    ))
+
+    def weaken_a125_patch_approval(pack: Path) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == "A125")
+        case["expected"] = "Artifacts match the approved source. Patched tuples are explicit. No unauthorized publication occurs."
+        write_json(path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "A125 verifies conditional maintainer approval for each patched tuple",
+        weaken_a125_patch_approval,
+        1, ["A125 verifies conditional patched-tuple approval"],
+    ))
 
     payload = {
         "passed": all(receipt["passed"] for receipt in receipts),
