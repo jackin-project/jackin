@@ -2,6 +2,8 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=versions.env
 . "${script_dir}/versions.env"
 MISE_VERSION="$(python3 - "${script_dir}/../../mise.toml" <<'PYTHON'
 import pathlib, re, sys, tomllib

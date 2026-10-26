@@ -26,6 +26,7 @@ crossterm = { workspace = true }
 jackin-core = { workspace = true }
 jackin-telemetry = { workspace = true }
 hyper-util = { workspace = true }
+serde_json = { workspace = true }
 rand = { workspace = true }
 anyhow = { workspace = true }
 regex = { workspace = true }
@@ -58,7 +59,11 @@ url = { workspace = true }
 rustc_version = "0.4"
 
 [dev-dependencies]
+jackin-otlp-testbed = { workspace = true }
+opentelemetry-proto = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing", "trace", "logs", "metrics"] }
+rcgen = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 

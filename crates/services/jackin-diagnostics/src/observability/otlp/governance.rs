@@ -434,3 +434,6 @@ const fn otel_log_severity(
         jackin_telemetry::event::Severity::Error => opentelemetry::logs::Severity::Error,
     }
 }
+
+#[cfg(test)]
+mod tests;

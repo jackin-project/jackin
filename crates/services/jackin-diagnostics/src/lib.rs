@@ -53,4 +53,7 @@ pub use terminal::{
 };
 
 #[cfg(test)]
+pub(crate) static DIAGNOSTICS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
 mod tests;

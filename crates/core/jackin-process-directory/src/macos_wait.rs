@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(
-    clippy::undocumented_unsafe_blocks,
-    reason = "no comments in code; unsafe removal is deferred work"
-)]
-
 use std::io::{self, Write as _};
 use std::mem::MaybeUninit;
 
@@ -53,6 +48,10 @@ extern "C" fn caught_sigchld_diagnostic_handler(
 ) {
 }
 
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+)]
 #[expect(
     unsafe_code,
     reason = "audited fixed-SIGCHLD query and diagnostic set initialize exact pinned libc storage and read output only after success"
@@ -521,6 +520,10 @@ pub fn peek_specific_exited_child(pid: u32) -> io::Result<bool> {
     }
 }
 
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+)]
 #[expect(
     unsafe_code,
     reason = "audited macOS waitid leaf initializes libc storage before the call and reads only validated integer payload fields"

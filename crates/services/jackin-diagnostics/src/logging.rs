@@ -248,3 +248,6 @@ fn buffer_pending_notice(line: &str) {
 pub fn format_debug_line(category: &str, message: &str) -> String {
     crate::redact::redact_text(&format!("[jackin debug {category}] {message}")).into_owned()
 }
+
+#[cfg(test)]
+mod tests;

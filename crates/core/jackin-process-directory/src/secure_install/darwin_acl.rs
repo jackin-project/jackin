@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(
-    clippy::undocumented_unsafe_blocks,
-    reason = "no comments in code; unsafe removal is deferred work"
-)]
-
 use rustix::fd::{AsFd, AsRawFd};
 use rustix::io::Errno;
 use std::ffi::{c_int, c_void};
@@ -85,6 +80,10 @@ impl Drop for OwnedAcl {
 }
 
 #[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+)]
+#[expect(
     unsafe_code,
     reason = "release the single owned opaque Darwin ACL allocation"
 )]
@@ -92,6 +91,10 @@ fn release_acl(acl: NonNull<c_void>) {
     let _released = unsafe { acl_free(acl.as_ptr()) };
 }
 
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+)]
 #[expect(
     unsafe_code,
     reason = "inspect Darwin ACLs through the audited opaque descriptor ABI"

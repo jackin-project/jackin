@@ -18,6 +18,16 @@ use tower::Service;
 
 const MAX_PENDING_ATTEMPTS: usize = 256;
 
+#[cfg(test)]
+pub(super) fn uses_tls(endpoint: &str) -> bool {
+    endpoint.starts_with("https://")
+}
+
+#[cfg(test)]
+pub(super) fn validate_transport(endpoint: &str, tls: &TlsConfig) -> anyhow::Result<()> {
+    PhysicalConnector::new(&ChannelKey::new(endpoint, Duration::from_secs(1), tls)).map(drop)
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub(super) struct ChannelKey {
     endpoint: String,
@@ -65,6 +75,11 @@ impl PhysicalChannels {
             .get(key)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("OTLP physical channel was not constructed"))
+    }
+
+    #[cfg(test)]
+    pub(super) fn len(&self) -> usize {
+        self.channels.len()
     }
 }
 
@@ -114,6 +129,14 @@ impl PhysicalConnector {
                 publish_observation(observation);
             }
         }
+    }
+
+    #[cfg(test)]
+    fn pending_len(&self) -> usize {
+        self.observations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
     }
 }
 
@@ -317,3 +340,6 @@ impl AsyncWrite for PhysicalIo {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

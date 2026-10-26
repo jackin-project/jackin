@@ -1,8 +1,3 @@
-#![allow(
-    clippy::undocumented_unsafe_blocks,
-    reason = "no comments in code; unsafe removal is deferred work"
-)]
-
 use super::super::CatalogAuthorityError;
 use rustix::io::Errno;
 
@@ -26,6 +21,10 @@ unsafe extern "C" {
 struct OwnedAcl(NonNull<c_void>);
 
 impl OwnedAcl {
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+    )]
     #[expect(unsafe_code, reason = "audited Darwin ACL allocation ownership")]
     fn get_from_descriptor(
         descriptor: BorrowedFd<'_>,
@@ -46,6 +45,10 @@ impl OwnedAcl {
 }
 
 impl Drop for OwnedAcl {
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+    )]
     #[expect(unsafe_code, reason = "audited Darwin ACL allocation release")]
     fn drop(&mut self) {
         let _ = unsafe { acl_free(self.0.as_ptr()) };
@@ -62,6 +65,10 @@ pub(super) fn ensure_private_descriptor(
     first_entry_is_absent(&acl)
 }
 
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+)]
 #[expect(unsafe_code, reason = "audited Darwin ACL validity check")]
 fn validate_acl(acl: &OwnedAcl) -> Result<(), CatalogAuthorityError> {
     let result = unsafe { acl_valid(acl.as_ptr()) };
@@ -73,6 +80,10 @@ fn validate_acl(acl: &OwnedAcl) -> Result<(), CatalogAuthorityError> {
     classify_validity_result(result, errno)
 }
 
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+)]
 #[expect(unsafe_code, reason = "audited Darwin first ACL entry query")]
 fn first_entry_is_absent(acl: &OwnedAcl) -> Result<(), CatalogAuthorityError> {
     let mut entry = std::ptr::null_mut();

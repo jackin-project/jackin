@@ -439,6 +439,12 @@ bound = 2
 key = "clippy::undocumented_unsafe_blocks@jackin-capsule"
 bound = 10
 [[family.entry]]
+key = "clippy::undocumented_unsafe_blocks@jackin-process-directory"
+bound = 5
+[[family.entry]]
+key = "clippy::undocumented_unsafe_blocks@jackin-usage-host-accounts"
+bound = 4
+[[family.entry]]
 key = "clippy::unwrap_used@jackin-capsule"
 bound = 1
 [[family.entry]]
