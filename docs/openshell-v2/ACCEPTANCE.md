@@ -1399,9 +1399,9 @@ Do not claim support above measured and qualified resource bounds.
 
 **Setup:** Use every task report, target row, acceptance result, and independent review.
 
-**Action:** Run missing, failed, blocked, and unreviewed prerequisite refusal assertions. Inspect the separate finalization contract.
+**Action:** Run missing, failed, blocked, unreviewed, and stale LIVE-evidence refusal assertions. Inspect the separate finalization contract.
 
-**Required result:** Every refusal prevents approval. Finalization requires all three actual T40 case results and every fixed prerequisite.
+**Required result:** Every refusal prevents approval. Finalization requires all three actual T40 results and every fixed prerequisite. It also requires fresh, bound PASS results for affected LIVE cases after the latest runtime change.
 
 ### A124 — Accurate operational documentation
 

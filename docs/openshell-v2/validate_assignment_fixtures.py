@@ -1761,6 +1761,165 @@ def main() -> int:
         ],
     ))
 
+    def weaken_post_t39_boundary(protocol: dict[str, Any]) -> None:
+        protocol["runtime_requalification"]["subsequent_runtime_changes"] = (
+            "Every later runtime-affecting change except T40 version and package changes"
+        )
+    receipts.append(run_fixture(
+        "runtime requalification treats T40 version and package changes as triggers",
+        lambda pack: mutate_release_protocol(pack, weaken_post_t39_boundary),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def remove_unknown_impact_fallback(protocol: dict[str, Any]) -> None:
+        protocol["runtime_requalification"]["unknown_impact_fallback"] = "No rerun is required"
+    receipts.append(run_fixture(
+        "unjustified runtime impact requires the full applicable LIVE matrix",
+        lambda pack: mutate_release_protocol(pack, remove_unknown_impact_fallback),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def reassign_runtime_cases_to_t40(protocol: dict[str, Any]) -> None:
+        protocol["runtime_requalification"]["execution"] = "T40 owns and executes every LIVE case"
+    receipts.append(run_fixture(
+        "runtime reruns preserve original case owners and let T40 coordinate",
+        lambda pack: mutate_release_protocol(pack, reassign_runtime_cases_to_t40),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def permit_overwriting_runtime_history(protocol: dict[str, Any]) -> None:
+        protocol["runtime_requalification"]["evidence_history"] = "Replace prior run records"
+    receipts.append(run_fixture(
+        "runtime reruns retain early failed blocked and repeat evidence",
+        lambda pack: mutate_release_protocol(pack, permit_overwriting_runtime_history),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def remove_runtime_evidence_bindings(protocol: dict[str, Any]) -> None:
+        protocol["runtime_requalification"]["fresh_result_bindings"].remove("Unique run ID")
+    receipts.append(run_fixture(
+        "fresh LIVE results bind final inputs artifacts target run and review",
+        lambda pack: mutate_release_protocol(pack, remove_runtime_evidence_bindings),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def allow_stale_runtime_results(protocol: dict[str, Any]) -> None:
+        protocol["runtime_requalification"]["required_result"] = "Any earlier LIVE result is sufficient"
+        protocol["runtime_requalification"]["refusal_conditions"].remove("Stale")
+    receipts.append(run_fixture(
+        "missing stale failed or blocked LIVE reruns prevent finalization",
+        lambda pack: mutate_release_protocol(pack, allow_stale_runtime_results),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def omit_final_runtime_requalification(protocol: dict[str, Any]) -> None:
+        protocol["finalization"]["required_evidence"].remove(
+            "Fresh bound LIVE PASS results after the latest runtime-affecting change for every affected case"
+        )
+    receipts.append(run_fixture(
+        "finalization explicitly requires fresh bound LIVE results",
+        lambda pack: mutate_release_protocol(pack, omit_final_runtime_requalification),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def require_future_t40_outputs_at_preflight(protocol: dict[str, Any]) -> None:
+        protocol["preflight"]["future_t40_runtime_outputs_are_inputs"] = True
+    receipts.append(run_fixture(
+        "preflight does not require future T40 runtime-change outputs",
+        lambda pack: mutate_release_protocol(pack, require_future_t40_outputs_at_preflight),
+        1, [
+            "Release gate protocol matches fixed semantics",
+            "Graph declarations match fixed projection",
+        ],
+    ))
+
+    def weaken_t39_runtime_procedure(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T39")
+        task["steps"].remove("Record runtime impact and fresh LIVE reruns after final legacy deletions.")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T39")
+    receipts.append(run_fixture(
+        "T39 task packet records post-deletion runtime impact and LIVE reruns",
+        weaken_t39_runtime_procedure,
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_t40_runtime_procedure(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T40")
+        task["steps"].remove("Rerun every affected LIVE case through its original owner or operator.")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T40")
+    receipts.append(run_fixture(
+        "T40 card requires fresh affected LIVE results through original operators",
+        weaken_t40_runtime_procedure,
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def omit_t40_version_requalification(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == "T40")
+        task["steps"].remove(
+            "Treat T40 version and package changes as triggers; record impact and coordinate fresh LIVE reruns."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T40")
+    receipts.append(run_fixture(
+        "T40 version and package changes cannot bypass fresh LIVE reruns",
+        omit_t40_version_requalification,
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Task authored fields match fixed projection",
+        ],
+    ))
+
+    def weaken_a123_live_freshness(pack: Path) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == "A123")
+        case["expected"] = "Every refusal prevents approval. Finalization uses all fixed prerequisites."
+        write_json(path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "A123 refuses stale or missing post-deletion LIVE evidence",
+        weaken_a123_live_freshness,
+        1, [
+            "P04, T40, A123, and A125 mirror the fixed release gate contract",
+            "Case authored fields match fixed projection",
+        ],
+    ))
+
     def allow_preflight_approval(protocol: dict[str, Any]) -> None:
         protocol["preflight"]["may_approve_release"] = True
     receipts.append(run_fixture(
@@ -2988,7 +3147,7 @@ def main() -> int:
 
     def report_with_nonstandard_constant(constant: str) -> str:
         document = validator_report(True, [])
-        old = '"checked_sentences": 1632'
+        old = '"checked_sentences": 1653'
         if document.count(old) != 1:
             raise ValueError("Expected one checked-sentence count in the canonical report")
         return document.replace(old, f'"checked_sentences": {constant}', 1)
@@ -3396,7 +3555,7 @@ def main() -> int:
         path = pack / "PACK-CHECKS.md"
         document = path.read_text(encoding="utf-8")
         replacements = (
-            ("| Checked procedural sentences | 1632 |", "| Checked procedural sentences | 0 |"),
+            ("| Checked procedural sentences | 1653 |", "| Checked procedural sentences | 0 |"),
             ("Result: Static pack validation and per-task assignment fixtures pass.",
              "Result: Static pack validation and per-task assignment fixtures fail."),
             ("| GOAL matches its fixed checksum | PASS |", "| GOAL matches its fixed checksum | FAIL |"),

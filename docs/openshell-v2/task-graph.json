@@ -3012,7 +3012,10 @@
         "Compare the final tree against every inventory record.",
         "Run clean-build and installation tests from fresh directories.",
         "Rerun A13 and A14 against the final graph and composition after legacy deletion.",
-        "Record this result separately from P05's current-graph A13 run."
+        "Record this result separately from P05's current-graph A13 run.",
+        "Record runtime impact and fresh LIVE reruns after final legacy deletions.",
+        "Coordinate each affected case rerun with its original owner and preserve prior records.",
+        "Run the full applicable LIVE matrix when runtime impact cannot be justified."
       ],
       "acceptance": [
         "Every legacy inventory record has a verified final disposition.",
@@ -3020,7 +3023,10 @@
         "No old backend remains behind a feature flag or generic command helper.",
         "Every retained Docker call belongs to approved image infrastructure.",
         "Fresh installation requires no old executable, state, or configuration.",
-        "The final crate graph and application composition pass the production-boundary checks."
+        "The final crate graph and application composition pass the production-boundary checks.",
+        "T39 records impact and fresh LIVE reruns for affected cases after final deletions.",
+        "Unjustified runtime impact requires the full applicable LIVE matrix.",
+        "Append reruns separately and retain early, failed, BLOCKED, and independent-repeat evidence."
       ],
       "remove_or_replace": [
         "Delete the old implementation, not only its workspace references.",
@@ -3079,6 +3085,11 @@
         "Document checkpoint restore, account scope, engine default-off behavior, and unknown-outcome recovery.",
         "Set the approved release candidate version to 2.0.0.",
         "Build and inspect packages from a clean checkout.",
+        "Treat T40 version and package changes as triggers; record impact and coordinate fresh LIVE reruns.",
+        "Rerun every affected LIVE case through its original owner or operator.",
+        "Run the full applicable LIVE matrix when runtime impact cannot be justified.",
+        "Append run records; retain early, failed, BLOCKED, and independent-repeat evidence.",
+        "Bind fresh passes to final source, inputs, artifacts, target, run ID, and independent review.",
         "Produce the final removal inventory, test summary, blocker list, and source references.",
         "Do not publish a release or alter production infrastructure without explicit authorization.",
         "Check prior task statuses and assignment results.",
@@ -3088,6 +3099,7 @@
         "Run A124 and A125 against the actual candidate. Record actual results for all three T40 cases.",
         "Obtain an independent T40 review and rerun checks against the merged source.",
         "Finalize only after all prior tasks and every case assignment pass, including A123, A124, and A125.",
+        "Require affected LIVE cases to pass after the latest runtime-affecting change before finalization.",
         "Bind completion and approval to the reviewed source commit, package digests, and evidence hashes.",
         "Request Integration to atomically write T40 PASS, the final summary, completion, finalization receipt, and approval after all gates pass."
       ],
@@ -3107,7 +3119,15 @@
         "Approval binds the reviewed source commit, package digests, and evidence hashes.",
         "Synthetic gate fixtures test refusals only and never count as candidate evidence.",
         "A failed prerequisite writes neither a completion record nor approval.",
-        "Supported patched tuples require maintainer approval bound to tuple ID and patch digest. Unpatched tuples need no approval record."
+        "Supported patched tuples require maintainer approval bound to tuple ID and patch digest. Unpatched tuples need no approval record.",
+        "T39 records fresh LIVE reruns for affected cases after final deletions.",
+        "Unjustified runtime impact requires the full applicable LIVE matrix.",
+        "Original case owners or operators execute reruns; T40 coordinates without changing ownership.",
+        "Retain early, failed, BLOCKED, and independent-repeat evidence when appending fresh runs.",
+        "Fresh results bind final source, inputs, package artifacts, target, run ID, and independent review.",
+        "Missing, stale, failed, or blocked required LIVE results prevent finalization.",
+        "Preflight uses completed prior evidence only and does not require future T40 outputs.",
+        "T40 version and package changes trigger fresh LIVE requalification."
       ],
       "remove_or_replace": [
         "Remove temporary implementation scaffolding and obsolete v1 documentation from active guidance.",
@@ -3246,7 +3266,37 @@
         "A125"
       ],
       "result": "PREFLIGHT_ONLY",
-      "may_approve_release": false
+      "may_approve_release": false,
+      "future_t40_runtime_outputs_are_inputs": false
+    },
+    "runtime_requalification": {
+      "starts_after": "T39 final legacy deletions",
+      "subsequent_runtime_changes": "Every later runtime-affecting change; T40 version and package changes always trigger fresh evaluation",
+      "impact_records": {
+        "T39": "Record impact and reruns after final deletions",
+        "T40": "Record impact after each later runtime-affecting change"
+      },
+      "required_scope": "Fresh actual LIVE results for every affected acceptance case",
+      "unknown_impact_fallback": "Run the full applicable LIVE acceptance matrix",
+      "execution": "Original registered case owners or operators execute; T40 coordinates without changing ownership",
+      "evidence_history": "Append run records; retain early, failed, BLOCKED, and independent-repeat evidence",
+      "fresh_result_bindings": [
+        "Final candidate source commit",
+        "Final input hashes",
+        "Final package and artifact digests",
+        "Target ID",
+        "Unique run ID",
+        "Independent review reference"
+      ],
+      "required_result": "PASS for every affected LIVE case after the latest runtime-affecting change",
+      "refusal_conditions": [
+        "Missing",
+        "Stale",
+        "FAIL",
+        "BLOCKED"
+      ],
+      "preflight_rule": "Use completed prior evidence only; T40 has no future-output prerequisite",
+      "finalization_rule": "Recheck fresh LIVE evidence after the latest runtime-affecting change"
     },
     "finalization": {
       "required_prior_task_status": "PASS",
@@ -3261,6 +3311,7 @@
         "Actual A124 operational documentation result",
         "Actual A125 provenance and authorization result",
         "Conditional maintainer-approval records for supported patched tuples, verified by A125",
+        "Fresh bound LIVE PASS results after the latest runtime-affecting change for every affected case",
         "All required target records and task artifacts",
         "Independent T40 review",
         "Merged-source checks"

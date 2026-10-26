@@ -3268,6 +3268,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 12. Run clean-build and installation tests from fresh directories.
 13. Rerun A13 and A14 against the final graph and composition after legacy deletion.
 14. Record this result separately from P05's current-graph A13 run.
+15. Record runtime impact and fresh LIVE reruns after final legacy deletions.
+16. Coordinate each affected case rerun with its original owner and preserve prior records.
+17. Run the full applicable LIVE matrix when runtime impact cannot be justified.
 
 #### Pass conditions
 
@@ -3277,6 +3280,9 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Every retained Docker call belongs to approved image infrastructure.
 - Fresh installation requires no old executable, state, or configuration.
 - The final crate graph and application composition pass the production-boundary checks.
+- T39 records impact and fresh LIVE reruns for affected cases after final deletions.
+- Unjustified runtime impact requires the full applicable LIVE matrix.
+- Append reruns separately and retain early, failed, BLOCKED, and independent-repeat evidence.
 
 **Acceptance cases:** A120, A121, A122, A13, A14.
 
@@ -3337,17 +3343,23 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 7. Document checkpoint restore, account scope, engine default-off behavior, and unknown-outcome recovery.
 8. Set the approved release candidate version to 2.0.0.
 9. Build and inspect packages from a clean checkout.
-10. Produce the final removal inventory, test summary, blocker list, and source references.
-11. Do not publish a release or alter production infrastructure without explicit authorization.
-12. Check prior task statuses and assignment results.
-13. Check reviewed artifacts, merged evidence, and required target results.
-14. Exercise A123 refusals for missing, failed, blocked, and unreviewed prerequisites.
-15. Confirm every refusal prevents approval. Treat synthetic refusal fixtures as contract tests only.
-16. Run A124 and A125 against the actual candidate. Record actual results for all three T40 cases.
-17. Obtain an independent T40 review and rerun checks against the merged source.
-18. Finalize only after all prior tasks and every case assignment pass, including A123, A124, and A125.
-19. Bind completion and approval to the reviewed source commit, package digests, and evidence hashes.
-20. Request Integration to atomically write T40 PASS, the final summary, completion, finalization receipt, and approval after all gates pass.
+10. Treat T40 version and package changes as triggers; record impact and coordinate fresh LIVE reruns.
+11. Rerun every affected LIVE case through its original owner or operator.
+12. Run the full applicable LIVE matrix when runtime impact cannot be justified.
+13. Append run records; retain early, failed, BLOCKED, and independent-repeat evidence.
+14. Bind fresh passes to final source, inputs, artifacts, target, run ID, and independent review.
+15. Produce the final removal inventory, test summary, blocker list, and source references.
+16. Do not publish a release or alter production infrastructure without explicit authorization.
+17. Check prior task statuses and assignment results.
+18. Check reviewed artifacts, merged evidence, and required target results.
+19. Exercise A123 refusals for missing, failed, blocked, and unreviewed prerequisites.
+20. Confirm every refusal prevents approval. Treat synthetic refusal fixtures as contract tests only.
+21. Run A124 and A125 against the actual candidate. Record actual results for all three T40 cases.
+22. Obtain an independent T40 review and rerun checks against the merged source.
+23. Finalize only after all prior tasks and every case assignment pass, including A123, A124, and A125.
+24. Require affected LIVE cases to pass after the latest runtime-affecting change before finalization.
+25. Bind completion and approval to the reviewed source commit, package digests, and evidence hashes.
+26. Request Integration to atomically write T40 PASS, the final summary, completion, finalization receipt, and approval after all gates pass.
 
 #### Pass conditions
 
@@ -3367,6 +3379,14 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Synthetic gate fixtures test refusals only and never count as candidate evidence.
 - A failed prerequisite writes neither a completion record nor approval.
 - Supported patched tuples require maintainer approval bound to tuple ID and patch digest. Unpatched tuples need no approval record.
+- T39 records fresh LIVE reruns for affected cases after final deletions.
+- Unjustified runtime impact requires the full applicable LIVE matrix.
+- Original case owners or operators execute reruns; T40 coordinates without changing ownership.
+- Retain early, failed, BLOCKED, and independent-repeat evidence when appending fresh runs.
+- Fresh results bind final source, inputs, package artifacts, target, run ID, and independent review.
+- Missing, stale, failed, or blocked required LIVE results prevent finalization.
+- Preflight uses completed prior evidence only and does not require future T40 outputs.
+- T40 version and package changes trigger fresh LIVE requalification.
 
 **Acceptance cases:** A123, A124, A125.
 

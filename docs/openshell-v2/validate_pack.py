@@ -14,13 +14,13 @@ ORIGINAL_SPEC_SHA256 = "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe7
 GOAL_SHA256 = "d62aaf0477b96b014356b09d23f05bc2d22385a42277639514e6615dfa46f1a0"
 ACCEPTANCE_POLICY_SHA256 = "83ede6731dcde4fb66fdbf9f3d041382db9a8aa398787e694b9ccc5499202d08"
 C02_CONTRACT_SECTION_SHA256 = "017714a83ab1ee7827dfcf8459ef6ca5e58c11787210083856211d1ba8e9cdf2"
-TASK_AUTHORED_SHA256 = "02be9157f75327ab1f4a2fee9dd888363ddb3ee168080f6725224efc2ace2d97"
-CASE_AUTHORED_SHA256 = "132dce6df85cf3cc5c657ae02e2db810088abc5081ab59f8e0eb3afafe8ff863"
-GRAPH_DECLARATIONS_SHA256 = "74b34256350ce13e0c08e6859c0fa4c1880e48aeec7e974759e059baef14f01f"
+TASK_AUTHORED_SHA256 = "ad8bb091b8ab83e293facc4f8e22e19b08f81a474f29b1a17e8d5cc4e21b9046"
+CASE_AUTHORED_SHA256 = "b183b3c105accb790127d0bf59d2ba6a7ab6ec981a293317e50aa1fded8c2fe2"
+GRAPH_DECLARATIONS_SHA256 = "39a190141d0329a1f00b94bab82f19934cf0d1a9860ad742115f249ec69150dc"
 TRACEABILITY_AUTHORED_SHA256 = "33c969b0eec0852fa87dc459663540d8f9136e22f1ba22328a02724c9418c7ee"
 CONTRACTS_SHA256 = "da0f23654f30e8d1a37a12f07c9e5595d51027a5c4eaae3ce8072cb544dd3344"
 SUBAGENTS_SHA256 = "a4a9e5a967a73038b50ecdc4cadb9a51b1c83728f54c6b6fb9a87641566263f8"
-PACK_CHECKS_TEMPLATE_SHA256 = "5feb5ad7439145f785a46b5fb2f6fd24c79ebb68c2d5edc049b8159f3fbdeedf"
+PACK_CHECKS_TEMPLATE_SHA256 = "53ba029f6f24890cef2663eb0c0f7e22b6ffd114dd2485588e5d0e26350dc6e2"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
@@ -196,6 +196,33 @@ RELEASE_GATE_PROTOCOL = {
         "excluded_final_cases": ["A123", "A124", "A125"],
         "result": "PREFLIGHT_ONLY",
         "may_approve_release": False,
+        "future_t40_runtime_outputs_are_inputs": False,
+    },
+    "runtime_requalification": {
+        "starts_after": "T39 final legacy deletions",
+        "subsequent_runtime_changes": (
+            "Every later runtime-affecting change; T40 version and package changes always trigger fresh evaluation"
+        ),
+        "impact_records": {
+            "T39": "Record impact and reruns after final deletions",
+            "T40": "Record impact after each later runtime-affecting change",
+        },
+        "required_scope": "Fresh actual LIVE results for every affected acceptance case",
+        "unknown_impact_fallback": "Run the full applicable LIVE acceptance matrix",
+        "execution": "Original registered case owners or operators execute; T40 coordinates without changing ownership",
+        "evidence_history": "Append run records; retain early, failed, BLOCKED, and independent-repeat evidence",
+        "fresh_result_bindings": [
+            "Final candidate source commit",
+            "Final input hashes",
+            "Final package and artifact digests",
+            "Target ID",
+            "Unique run ID",
+            "Independent review reference",
+        ],
+        "required_result": "PASS for every affected LIVE case after the latest runtime-affecting change",
+        "refusal_conditions": ["Missing", "Stale", "FAIL", "BLOCKED"],
+        "preflight_rule": "Use completed prior evidence only; T40 has no future-output prerequisite",
+        "finalization_rule": "Recheck fresh LIVE evidence after the latest runtime-affecting change",
     },
     "finalization": {
         "required_prior_task_status": "PASS",
@@ -206,6 +233,7 @@ RELEASE_GATE_PROTOCOL = {
             "Actual A124 operational documentation result",
             "Actual A125 provenance and authorization result",
             "Conditional maintainer-approval records for supported patched tuples, verified by A125",
+            "Fresh bound LIVE PASS results after the latest runtime-affecting change for every affected case",
             "All required target records and task artifacts",
             "Independent T40 review",
             "Merged-source checks",
@@ -286,8 +314,14 @@ T40_RELEASE_GATE_STEPS = [
     "Exercise A123 refusals for missing, failed, blocked, and unreviewed prerequisites.",
     "Confirm every refusal prevents approval. Treat synthetic refusal fixtures as contract tests only.",
     "Run A124 and A125 against the actual candidate. Record actual results for all three T40 cases.",
+    "Treat T40 version and package changes as triggers; record impact and coordinate fresh LIVE reruns.",
+    "Rerun every affected LIVE case through its original owner or operator.",
+    "Run the full applicable LIVE matrix when runtime impact cannot be justified.",
+    "Append run records; retain early, failed, BLOCKED, and independent-repeat evidence.",
+    "Bind fresh passes to final source, inputs, artifacts, target, run ID, and independent review.",
     "Obtain an independent T40 review and rerun checks against the merged source.",
     "Finalize only after all prior tasks and every case assignment pass, including A123, A124, and A125.",
+    "Require affected LIVE cases to pass after the latest runtime-affecting change before finalization.",
     "Bind completion and approval to the reviewed source commit, package digests, and evidence hashes.",
     "Request Integration to atomically write T40 PASS, the final summary, completion, finalization receipt, and approval after all gates pass.",
 ]
@@ -304,17 +338,27 @@ T40_RELEASE_GATE_ACCEPTANCE = [
     "Synthetic gate fixtures test refusals only and never count as candidate evidence.",
     "A failed prerequisite writes neither a completion record nor approval.",
 ]
+T39_RUNTIME_REQUALIFICATION_STEPS = [
+    "Record runtime impact and fresh LIVE reruns after final legacy deletions.",
+    "Coordinate each affected case rerun with its original owner and preserve prior records.",
+    "Run the full applicable LIVE matrix when runtime impact cannot be justified.",
+]
+T39_RUNTIME_REQUALIFICATION_ACCEPTANCE = [
+    "T39 records impact and fresh LIVE reruns for affected cases after final deletions.",
+    "Unjustified runtime impact requires the full applicable LIVE matrix.",
+    "Append reruns separately and retain early, failed, BLOCKED, and independent-repeat evidence.",
+]
 RELEASE_GATE_SCOPE_SENTENCE = (
     "These release-gate checks validate static planning structure only. "
     "They do not run a release preflight, test a candidate, or issue approval."
 )
 A123_GATE_ACTION = (
-    "Run missing, failed, blocked, and unreviewed prerequisite refusal assertions. "
+    "Run missing, failed, blocked, unreviewed, and stale LIVE-evidence refusal assertions. "
     "Inspect the separate finalization contract."
 )
 A123_GATE_EXPECTED = (
-    "Every refusal prevents approval. Finalization requires all three actual T40 case results "
-    "and every fixed prerequisite."
+    "Every refusal prevents approval. Finalization requires all three actual T40 results and every fixed prerequisite. "
+    "It also requires fresh, bound PASS results for affected LIVE cases after the latest runtime change."
 )
 A125_GATE_ACTION = (
     "Build the release candidate and inspect its provenance, conditional maintainer-approval records "
@@ -334,6 +378,16 @@ T40_RELEASE_GATE_WRITE_SCOPES = [
 T40_RELEASE_GATE_ACCEPTANCE.append(
     "Supported patched tuples require maintainer approval bound to tuple ID and patch digest. Unpatched tuples need no approval record."
 )
+T40_RELEASE_GATE_ACCEPTANCE.extend([
+    "T39 records fresh LIVE reruns for affected cases after final deletions.",
+    "Unjustified runtime impact requires the full applicable LIVE matrix.",
+    "Original case owners or operators execute reruns; T40 coordinates without changing ownership.",
+    "Retain early, failed, BLOCKED, and independent-repeat evidence when appending fresh runs.",
+    "Fresh results bind final source, inputs, package artifacts, target, run ID, and independent review.",
+    "Missing, stale, failed, or blocked required LIVE results prevent finalization.",
+    "Preflight uses completed prior evidence only and does not require future T40 outputs.",
+    "T40 version and package changes trigger fresh LIVE requalification.",
+])
 REVIEW_PACKET_REQUIREMENTS = [
     "Give the review subagent the original task card, the input commit SHA, and the candidate task diff.",
     "Bind the candidate task diff to both the input commit SHA and candidate commit SHA.",
@@ -1436,12 +1490,19 @@ def main() -> int:
           not release_protocol_reference_errors, release_protocol_reference_errors)
 
     p04 = tasks_by_id.get("P04", {})
+    t39 = tasks_by_id.get("T39", {})
     t40 = tasks_by_id.get("T40", {})
     release_gate_task_mirror_errors = []
     if P04_RELEASE_GATE_STEP not in p04.get("steps", []):
         release_gate_task_mirror_errors.append("P04 must implement the fixed protocol")
     if P04_RELEASE_GATE_ACCEPTANCE not in p04.get("acceptance", []):
         release_gate_task_mirror_errors.append("P04 acceptance must keep preflight separate from approval")
+    missing_t39_steps = [step for step in T39_RUNTIME_REQUALIFICATION_STEPS if step not in t39.get("steps", [])]
+    if missing_t39_steps:
+        release_gate_task_mirror_errors.append({"missing_T39_steps": missing_t39_steps})
+    t39_acceptance = t39.get("acceptance", [])
+    if t39_acceptance[-len(T39_RUNTIME_REQUALIFICATION_ACCEPTANCE):] != T39_RUNTIME_REQUALIFICATION_ACCEPTANCE:
+        release_gate_task_mirror_errors.append("T39 acceptance must require post-deletion LIVE requalification")
     t40_steps = t40.get("steps", [])
     missing_t40_steps = [step for step in T40_RELEASE_GATE_STEPS if step not in t40_steps]
     if missing_t40_steps:

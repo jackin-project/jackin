@@ -10,6 +10,9 @@ It does not validate Jackin code, an OpenShell deployment, or the proposed upstr
 No product runtime test or task implementation has been performed.
 The validator does not inspect task artifact contents or review decisions.
 These release-gate checks validate static planning structure only. They do not run a release preflight, test a candidate, or issue approval.
+T39 records impact and fresh LIVE reruns after final legacy deletions. Later runtime-affecting changes, including T40 version and package changes, require fresh results for affected cases; unjustified impact requires the full applicable LIVE matrix.
+Original case owners or operators execute reruns while T40 coordinates. Append records, retain early, failed, blocked, and independent-repeat evidence, and bind fresh results to final source, inputs, artifacts, target, run ID, and independent review.
+Preflight uses completed prior evidence only. Finalization refuses missing, stale, failed, or blocked required LIVE results after the latest runtime-affecting change.
 Tasks without cases still require their task-card artifacts and independent review.
 The original specification remains unchanged.
 Task, case, graph, and traceability authoring fields are pinned independently of progress state.
@@ -62,7 +65,7 @@ The runner writes one JSON report to stdout and does not modify the pack. It val
 | Acceptance cases | 125 |
 | Mapped specification headings | 30 |
 | Topological readiness groups | 20 |
-| Checked procedural sentences | 1632 |
+| Checked procedural sentences | 1653 |
 
 The ordinary validator report contains 82 ordered checks; `--initial` contains 84, including two initial-only checks and the final inventory check.
 The C02 digest checks fixed contract text only. It does not show that source code follows this plan.
@@ -91,8 +94,12 @@ Keep no more than eight actual subagents active at once.
 | Acceptance manifest status uses documented values and matches the case summary | PASS |
 | Task case references are unique string IDs; completion rules match the fixed contract | PASS |
 | Each task uses the different-subagent review and post-merge integration rerun rule | PASS |
-| Release protocol includes conditional patched-tuple approval, T40 review authority, and Integration finalization writes | PASS |
-| A123 and A125 match the fixed refusal and patched-tuple authorization contracts | PASS |
+| Release protocol includes conditional patched-tuple approval, runtime requalification, T40 review authority, and Integration finalization writes | PASS |
+| Preflight has no future T40-output prerequisite; finalization requires fresh post-change LIVE results | PASS |
+| Finalization lists fresh bound LIVE PASS evidence as a required input | PASS |
+| T40 version and package changes trigger fresh LIVE requalification | PASS |
+| A123 and A125 match the fixed freshness-refusal and patched-tuple authorization contracts | PASS |
+| T39 records final-deletion impact and fresh LIVE reruns; T40 coordinates later changes without changing case owners | PASS |
 | T40 finalization write scope routes shared records through Integration | PASS |
 | Subagent role-task assignments exactly match graph owners | PASS |
 | Review packets bind candidate diffs before merge and require merged checks before completion | PASS |
@@ -135,8 +142,8 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 214 scenarios passed their exact report, input-derived count, and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 196 targeted scenarios cover assignment ownership and progress, authored task and case fields, source citations, canonical task paths and exact recursive packet sets, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates and result-cell grammar, independent check-inventory comparison, import-time input mutation detection, the fixed root planning classification, owner-specific A13/A15/A16 qualification, A17 integrated activation, serialized target-matrix updates, malformed record refusal, and review-assignment completion.
+All 226 scenarios passed their exact report, input-derived count, and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 208 targeted scenarios cover assignment ownership and progress, authored task and case fields, source citations, canonical task paths and exact recursive packet sets, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, post-deletion and post-change LIVE freshness, T40 version/package requalification, finalization evidence requirements, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates and result-cell grammar, independent check-inventory comparison, import-time input mutation detection, the fixed root planning classification, owner-specific A13/A15/A16 qualification, A17 integrated activation, serialized target-matrix updates, malformed record refusal, and review-assignment completion.
 Each fixture copy records source hashes, status-only normalization changes, normalized hashes, intentional mutations, and input and executable hashes before and after validation. The original board is never normalized or repaired.
 The existing missing-P00 fixture retains its packet-preamble failure and exit code 1; exact-path validation adds a second expected failure for the missing canonical path.
 A22 is owned by U02 and T32. Its mixed-result fixtures complete T32 dependencies before recording results.
@@ -164,6 +171,10 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | Root summary mixes `FAIL` and `BLOCKED` | Accept with `FAIL` precedence, exit 0 | PASS, exit 0 |
 | A task completion rule differs from the fixed contract | Reject, exit 1 | PASS, exit 1 |
 | Release protocol weakens prior-task/final-case/review/merged-check requirements | Reject, exit 1 | PASS, exit 1 |
+| Runtime protocol weakens post-T39 scope, full-matrix fallback, original owners, evidence retention/bindings, freshness refusals, or future-output-free preflight | Reject, exit 1 | PASS, exit 1 |
+| T39/T40 task mirrors or A123 omit post-deletion LIVE freshness | Reject, exit 1 | PASS, exit 1 |
+| T40 removes the mandatory version/package requalification trigger | Reject, exit 1 | PASS, exit 1 |
+| Finalization can omit fresh bound LIVE PASS evidence | Reject, exit 1 | PASS, exit 1 |
 | Release preflight can approve, or a P04/T40/A123 procedure or acceptance mirror is weakened | Reject, exit 1 | PASS, exit 1 |
 | P04 qualification ownership or review-before-merge requirements are missing | Reject, exit 1 | PASS, exit 1 |
 | Pack report omits the static-only release-gate scope statement | Reject, exit 1 | PASS, exit 1 |
