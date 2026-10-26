@@ -13,20 +13,31 @@ use crate::precommit_snapshot::{
 };
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use jackin_process::{ExecRequest, SpoolRecovery, StdioMode, exec_spooled_sync_cancellable};
+use nix::{
+    fcntl::{OFlag, open},
+    sys::stat::Mode,
+};
+use sha2::{Digest, Sha256};
 use std::{
     env,
     ffi::{OsStr, OsString},
     fs,
     io::{BufReader, Read, Write},
-    os::unix::{ffi::OsStrExt, fs::PermissionsExt},
+    os::unix::{
+        ffi::OsStrExt,
+        fs::{MetadataExt, PermissionsExt},
+    },
     path::{Path, PathBuf},
     process::Command,
 };
+
+mod admission;
 
 const STAGED_INDEX_OUTPUT_LIMIT: usize = 1024 * 1024 * 1024;
 const STAGED_INDEX_STDERR_LIMIT: usize = 32 * 1024 * 1024;
 const STAGED_INDEX_HEADER_LIMIT: usize = 256;
 const STAGED_SYMLINK_PATH_LIMIT: usize = 1024 * 1024;
+const GIT_METADATA_FILE_LIMIT: u64 = super::super::process::METADATA_OUTPUT_LIMIT as u64;
 
 impl OwnedSnapshot {
     pub(in crate::precommit_snapshot) fn create(live: &LiveRepository) -> Result<Self> {
@@ -35,14 +46,8 @@ impl OwnedSnapshot {
             live.common_git_dir.is_dir(),
             "Git common directory disappeared"
         );
-        let temp_parent = env::temp_dir();
-        let temp_parent = if temp_parent.is_absolute() {
-            temp_parent
-        } else {
-            env::current_dir()?.join(temp_parent)
-        };
-        let temp_parent =
-            fs::canonicalize(temp_parent).context("resolving physical temporary directory")?;
+        let alternate_records = live_alternate_records(live)?;
+        let temp_parent = super::super::process::canonical_temporary_parent(&env::temp_dir())?;
         let directory = tempfile::Builder::new()
             .prefix("jackin-pre-commit-")
             .tempdir_in(temp_parent)
@@ -97,9 +102,14 @@ impl OwnedSnapshot {
             #[cfg(test)]
             test_git_program: None,
         };
-        snapshot.write_alternates(&live.objects)?;
+        snapshot.write_alternates(&live.objects, &alternate_records)?;
         if let Some(path) = &live.shallow {
-            fs::copy(path, snapshot.git_dir.join("shallow")).context("copying shallow boundary")?;
+            copy_git_metadata(
+                path,
+                &snapshot.git_dir.join("shallow"),
+                "shallow boundary",
+                &snapshot.controls,
+            )?;
         }
         snapshot.git(&["config", "core.sparseCheckout", "false"])?;
         snapshot.git(&["config", "core.sparseCheckoutCone", "false"])?;
@@ -121,6 +131,15 @@ impl OwnedSnapshot {
         tree: &OsStr,
         live: &LiveRepository,
     ) -> Result<()> {
+        self.materialize_with_staged_content_limit(tree, live, admission::STAGED_TREE_CONTENT_LIMIT)
+    }
+
+    pub(super) fn materialize_with_staged_content_limit(
+        &self,
+        tree: &OsStr,
+        live: &LiveRepository,
+        staged_content_limit: u64,
+    ) -> Result<()> {
         match fs::remove_file(&self.index) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -137,13 +156,16 @@ impl OwnedSnapshot {
         self.git(&["symbolic-ref", "HEAD", "refs/heads/jackin-pre-commit"])?;
         for filename in ["MERGE_HEAD", "MERGE_MSG", "MERGE_MODE"] {
             let source = live.worktree_git_dir.join(filename);
-            if source.is_file() {
-                fs::copy(source, self.git_dir.join(filename))
-                    .with_context(|| format!("copying {filename}"))?;
-            }
+            copy_optional_git_metadata(
+                &source,
+                &self.git_dir.join(filename),
+                filename,
+                &self.controls,
+            )?;
         }
         self.git(&["config", "core.fileMode", "true"])?;
         self.git(&["config", "core.symlinks", "true"])?;
+        self.check_materialized_tree_size_with_limit(tree, staged_content_limit)?;
         self.git(&["checkout-index", "--all", "--force"])?;
         Ok(())
     }
@@ -435,17 +457,35 @@ impl OwnedSnapshot {
                 == live.index_inputs,
             "live Git index changed after snapshot admission began"
         );
-        if live.index.is_file() {
-            fs::copy(&live.index, &self.index).context("copying active Git index")?;
-            if let Some(shared_index) = &live.shared_index {
-                let name = shared_index
-                    .file_name()
-                    .context("active shared index has no filename")?;
-                fs::copy(shared_index, self.git_dir.join(name))
-                    .context("copying active split-index backing file")?;
-            }
+        if let Some(active_index) = live
+            .index_inputs
+            .iter()
+            .find(|input| input.admitted_path() == live.index)
+        {
+            copy_and_verify_index(
+                active_index,
+                &self.index,
+                "active Git index",
+                &live.controls,
+            )?;
         } else {
             self.git(&["read-tree", "--empty"])?;
+        }
+        if let Some(shared_index) = live.shared_index.as_deref()
+            && let Some(shared_input) = live
+                .index_inputs
+                .iter()
+                .find(|input| input.admitted_path() == shared_index)
+        {
+            let name = shared_index
+                .file_name()
+                .context("active shared index has no filename")?;
+            copy_and_verify_index(
+                shared_input,
+                &self.git_dir.join(name),
+                "active split-index backing file",
+                &live.controls,
+            )?;
         }
         ensure!(
             index_inputs(&live.index, live.shared_index.as_deref(), &live.controls)?
@@ -466,9 +506,10 @@ impl OwnedSnapshot {
         Ok(())
     }
 
-    fn write_alternates(&self, objects: &Path) -> Result<()> {
+    fn write_alternates(&self, objects: &Path, alternate_records: &[u8]) -> Result<()> {
         let file = self.objects.join("info/alternates");
-        let mut encoded = Vec::with_capacity(objects.as_os_str().as_bytes().len() + 4);
+        let mut encoded =
+            Vec::with_capacity(objects.as_os_str().as_bytes().len() + alternate_records.len() + 4);
         encoded.push(b'"');
         for byte in objects.as_os_str().as_bytes() {
             match byte {
@@ -482,8 +523,236 @@ impl OwnedSnapshot {
             }
         }
         encoded.extend_from_slice(b"\"\n");
-        fs::write(file, encoded).context("writing Git-quoted object alternate")
+        encoded.extend_from_slice(alternate_records);
+        fs::write(file, encoded).context("writing Git object alternates")
     }
+}
+
+fn copy_and_verify_index(
+    input: &super::capture::IndexInput,
+    destination: &Path,
+    label: &str,
+    controls: &SetupControls,
+) -> Result<()> {
+    controls.check_start()?;
+    fs::copy(input.admitted_path(), destination).with_context(|| format!("copying {label}"))?;
+    verify_private_index_copy(input, destination, label, controls)
+}
+
+pub(super) fn copy_git_metadata(
+    source: &Path,
+    destination: &Path,
+    label: &str,
+    controls: &SetupControls,
+) -> Result<()> {
+    controls.check_start()?;
+    let before = fs::metadata(source).with_context(|| format!("inspecting {label}"))?;
+    ensure!(
+        before.file_type().is_file(),
+        "{label} is not a regular file"
+    );
+    ensure!(
+        before.len() <= GIT_METADATA_FILE_LIMIT,
+        "{label} exceeds its byte limit"
+    );
+    let mut input = fs::File::from(
+        open(
+            source,
+            OFlag::O_RDONLY | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .with_context(|| format!("opening {label}"))?,
+    );
+    let opened = input
+        .metadata()
+        .with_context(|| format!("restating {label}"))?;
+    ensure!(
+        same_git_metadata_state(&before, &opened),
+        "{label} changed while opening"
+    );
+    controls.check_start()?;
+    let mut output = super::super::process::create_private_new(destination)
+        .with_context(|| format!("creating private {label}"))?;
+    let mut copied = 0_u64;
+    let mut buffer = vec![0_u8; 64 * 1024];
+    loop {
+        controls.check_start()?;
+        let read_count = input
+            .read(&mut buffer)
+            .with_context(|| format!("reading {label}"))?;
+        if read_count == 0 {
+            break;
+        }
+        let read_count_u64 =
+            u64::try_from(read_count).context("converting Git metadata read length")?;
+        let next = copied
+            .checked_add(read_count_u64)
+            .context("counting Git metadata bytes")?;
+        ensure!(
+            next <= GIT_METADATA_FILE_LIMIT,
+            "{label} exceeds its byte limit"
+        );
+        controls.check_start()?;
+        output
+            .write_all(&buffer[..read_count])
+            .with_context(|| format!("writing private {label}"))?;
+        copied = next;
+    }
+    controls.check_start()?;
+    let after_fd = input
+        .metadata()
+        .with_context(|| format!("restating {label}"))?;
+    let after_path = fs::metadata(source).with_context(|| format!("restating {label}"))?;
+    ensure!(
+        copied == before.len()
+            && same_git_metadata_state(&before, &after_fd)
+            && same_git_metadata_state(&before, &after_path),
+        "{label} changed while copying"
+    );
+    Ok(())
+}
+
+fn copy_optional_git_metadata(
+    source: &Path,
+    destination: &Path,
+    label: &str,
+    controls: &SetupControls,
+) -> Result<()> {
+    controls.check_start()?;
+    match fs::metadata(source) {
+        Ok(metadata) if metadata.file_type().is_file() => {
+            copy_git_metadata(source, destination, label, controls)
+        }
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).with_context(|| format!("inspecting optional {label}")),
+    }
+}
+
+fn same_git_metadata_state(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+    left.file_type().is_file()
+        && right.file_type().is_file()
+        && left.dev() == right.dev()
+        && left.ino() == right.ino()
+        && left.mode() == right.mode()
+        && left.len() == right.len()
+        && left.mtime() == right.mtime()
+        && left.mtime_nsec() == right.mtime_nsec()
+}
+
+pub(in crate::precommit_snapshot) fn verify_private_index_copy(
+    input: &super::capture::IndexInput,
+    destination: &Path,
+    label: &str,
+    controls: &SetupControls,
+) -> Result<()> {
+    controls.check_start()?;
+    let metadata =
+        fs::symlink_metadata(destination).with_context(|| format!("inspecting private {label}"))?;
+    ensure!(
+        metadata.file_type().is_file() && metadata.len() == input.admitted_length(),
+        "private {label} differs in type or length from admitted input"
+    );
+    controls.check_start()?;
+    let mut file = fs::File::from(
+        open(
+            destination,
+            OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .with_context(|| format!("opening private {label}"))?,
+    );
+    let opened = file
+        .metadata()
+        .with_context(|| format!("restating private {label}"))?;
+    ensure!(
+        opened.file_type().is_file()
+            && opened.len() == input.admitted_length()
+            && opened.dev() == metadata.dev()
+            && opened.ino() == metadata.ino(),
+        "private {label} changed while opening"
+    );
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0_u8; 64 * 1024].into_boxed_slice();
+    let mut total = 0_u64;
+    loop {
+        controls.check_start()?;
+        let count = file
+            .read(&mut buffer)
+            .with_context(|| format!("hashing private {label}"))?;
+        if count == 0 {
+            break;
+        }
+        let count_u64 = u64::try_from(count).context("converting private Git index read length")?;
+        total = total
+            .checked_add(count_u64)
+            .context("counting private Git index bytes")?;
+        ensure!(
+            total <= input.admitted_length(),
+            "private {label} grew while it was hashed"
+        );
+        hasher.update(&buffer[..count]);
+    }
+    controls.check_start()?;
+    let digest: [u8; 32] = hasher.finalize().into();
+    ensure!(
+        total == input.admitted_length() && digest == *input.admitted_digest(),
+        "private {label} digest differs from admitted input"
+    );
+    Ok(())
+}
+
+fn live_alternate_records(live: &LiveRepository) -> Result<Vec<u8>> {
+    let alternates_file = live.objects.join("info/alternates");
+    let has_alternates_file = match fs::symlink_metadata(&alternates_file) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error).context("inspecting live object alternates file"),
+    };
+    let has_environment_alternates = live
+        .alternates
+        .as_ref()
+        .is_some_and(|alternates| !alternates.is_empty());
+    if !has_alternates_file && !has_environment_alternates {
+        return Ok(Vec::new());
+    }
+
+    let mut command = Command::new("git");
+    command
+        .args(["count-objects", "-v"])
+        .current_dir(&live.invocation_dir);
+    let output = capture_strict(
+        &mut command,
+        &live.controls,
+        EnvironmentMode::Inherit,
+        super::super::process::METADATA_OUTPUT_LIMIT,
+        1024 * 1024,
+        CommandBudget::PhaseRemainder,
+    )
+    .context("enumerating Git object alternates")?;
+    let stdout = checked(output, "enumerating Git object alternates")?;
+    ensure!(
+        stdout.last() == Some(&b'\n'),
+        "Git alternate listing is missing its final record terminator"
+    );
+
+    let mut records = Vec::new();
+    for line in stdout.split(|byte| *byte == b'\n') {
+        let Some(path_record) = line.strip_prefix(b"alternate: ") else {
+            continue;
+        };
+        ensure!(
+            !path_record.is_empty(),
+            "Git returned an empty alternate path"
+        );
+        ensure!(
+            !path_record.contains(&0) && !path_record.contains(&b'\n'),
+            "Git returned a malformed alternate path record"
+        );
+        records.extend_from_slice(path_record);
+        records.push(b'\n');
+    }
+    Ok(records)
 }
 
 fn admit_staged_index_entries(root: &Path, stdout: &mut fs::File) -> Result<()> {

@@ -30,36 +30,6 @@ pub(super) fn admit_install_environment(source_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Check tool paths recorded by a provisioner against the staged toolchain.
-/// Keep this admission boundary available to authenticated provisioners.
-#[cfg(test)]
-pub(super) fn verify_provision_tool_paths(
-    source_root: &Path,
-    cargo_path: &Path,
-    rustc_path: &Path,
-) -> Result<()> {
-    let expected = resolve_provision_tool_paths(source_root)?;
-    let cargo_path = fs::canonicalize(cargo_path).context("resolving bootstrap Cargo path")?;
-    let rustc_path = fs::canonicalize(rustc_path).context("resolving bootstrap rustc path")?;
-    ensure!(
-        cargo_path.is_file(),
-        "bootstrap Cargo is not a regular file"
-    );
-    ensure!(
-        rustc_path.is_file(),
-        "bootstrap rustc is not a regular file"
-    );
-    ensure!(
-        cargo_path == expected.cargo,
-        "bootstrap Cargo differs from the configured MBX wrapper"
-    );
-    ensure!(
-        rustc_path == expected.rustc,
-        "bootstrap rustc differs from the pinned Rust toolchain"
-    );
-    Ok(())
-}
-
 fn resolve_provision_tool_paths(source_root: &Path) -> Result<ProvisionToolPaths> {
     let source_root = fs::canonicalize(source_root).context("resolving bootstrap source root")?;
     let temp_parent = fs::canonicalize(std::env::temp_dir())

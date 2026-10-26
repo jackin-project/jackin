@@ -48,6 +48,20 @@ pub(in crate::precommit_snapshot) struct IndexInput {
     digest: [u8; 32],
 }
 
+impl IndexInput {
+    pub(super) fn admitted_path(&self) -> &Path {
+        &self.path
+    }
+
+    pub(super) fn admitted_length(&self) -> u64 {
+        self.length
+    }
+
+    pub(super) fn admitted_digest(&self) -> &[u8; 32] {
+        &self.digest
+    }
+}
+
 impl LiveRepository {
     pub(in crate::precommit_snapshot) fn capture(controls: &SetupControls) -> Result<Self> {
         Self::capture_at_with_controls(

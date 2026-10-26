@@ -625,18 +625,6 @@ fn hostile_external_and_nested_cargo_configs_fail_before_mise_or_rustup_child_pr
             assert!(message.contains(&config.display().to_string()));
             assert!(!message.contains("private-sentinel"));
             assert!(!marker.exists(), "installer admission ran a child probe");
-
-            let Err(error) = verify_provision_tool_paths(
-                &root,
-                Path::new("/unused/cargo"),
-                Path::new("/unused/rustc"),
-            ) else {
-                panic!("external Cargo config must fail admission");
-            };
-            let message = format!("{error:#}");
-            assert!(message.contains(&config.display().to_string()));
-            assert!(!message.contains("private-sentinel"));
-            assert!(!marker.exists(), "Mise or rustup child probe ran");
         }
 
         fs::write(&config, "# empty after the global-config cases\n")
@@ -730,14 +718,6 @@ fn assert_nested_config_rejected_before_child_probes(
     };
     assert_nested_config_error(&error, host_config);
     assert!(!marker.exists(), "nested Cargo config ran a child probe");
-
-    let Err(error) =
-        verify_provision_tool_paths(root, Path::new("/unused/cargo"), Path::new("/unused/rustc"))
-    else {
-        panic!("nested external Cargo include must fail admission");
-    };
-    assert_nested_config_error(&error, host_config);
-    assert!(!marker.exists(), "Mise or rustup child probe ran");
 }
 
 fn assert_nested_config_error(error: &anyhow::Error, host_config: &str) {
@@ -794,6 +774,228 @@ fn cargo_path_selects_the_qualified_mbx_wrapper_before_rustup_cargo() {
     assert_eq!(
         fs::canonicalize(selected).unwrap(),
         fs::canonicalize(mbx_cargo).unwrap()
+    );
+}
+
+#[test]
+fn inherited_path_anchors_empty_and_relative_entries_and_preserves_order() {
+    let temporary = tempfile::tempdir().expect("hook directory");
+    let hook_cwd = fs::canonicalize(temporary.path()).expect("physical hook directory");
+    let absolute = PathBuf::from("/absolute/inherited/bin");
+    let inherited = env::join_paths([
+        PathBuf::new(),
+        PathBuf::from("relative/bin"),
+        absolute.clone(),
+        PathBuf::new(),
+    ])
+    .expect("inherited PATH with empty components");
+
+    assert_eq!(
+        anchor_inherited_path(&hook_cwd, &inherited),
+        vec![
+            hook_cwd.clone(),
+            hook_cwd.join("relative/bin"),
+            absolute,
+            hook_cwd,
+        ]
+    );
+}
+
+#[test]
+fn empty_and_relative_path_entries_are_discovery_only() {
+    let temporary = tempfile::tempdir().expect("fixture root");
+    let hook_cwd = temporary.path().join("hook cwd");
+    let relative_bin = hook_cwd.join("relative tools");
+    fs::create_dir_all(&relative_bin).expect("create relative discovery directory");
+    let executable = relative_bin.join("f3-discovery-only-tool");
+    write_executable(&executable, b"#!/bin/sh\nexit 0\n");
+
+    let inherited = env::join_paths([PathBuf::new(), PathBuf::from("relative tools")])
+        .expect("empty and relative inherited PATH");
+    let physical_cwd = fs::canonicalize(&hook_cwd).expect("physical hook cwd");
+    let anchored = anchor_inherited_path(&physical_cwd, &inherited);
+    let aliases = tempfile::tempdir().expect("private discovery alias directory");
+    let discovery =
+        qualified_path_entries(aliases.path(), &anchored).expect("anchored discovery PATH");
+    assert_eq!(
+        fs::canonicalize(find_executable("f3-discovery-only-tool", &discovery).unwrap())
+            .expect("physical discovered tool"),
+        fs::canonicalize(&executable).expect("physical fixture tool")
+    );
+
+    let gate = qualified_gate_path(aliases.path()).expect("fixed gate PATH");
+    assert!(
+        find_executable("f3-discovery-only-tool", &gate).is_err(),
+        "gate PATH must exclude the anchored inherited directories"
+    );
+    assert!(
+        !env::split_paths(&gate).any(|entry| entry == physical_cwd || entry == relative_bin),
+        "gate PATH contains no inherited empty or relative component"
+    );
+}
+
+#[test]
+fn inherited_path_aliases_colon_cwd_entries_without_changing_order() {
+    let temporary = tempfile::tempdir().expect("hook parent");
+    let hook_cwd = temporary.path().join("hook:cwd");
+    fs::create_dir(&hook_cwd).expect("colon-containing hook directory");
+    let hook_cwd = fs::canonicalize(hook_cwd).expect("physical colon hook directory");
+    let inherited = env::join_paths([PathBuf::new(), PathBuf::from("relative/bin")])
+        .expect("empty and relative PATH entries");
+    let anchored = anchor_inherited_path(&hook_cwd, &inherited);
+    let aliases = tempfile::tempdir().expect("separator-safe alias directory");
+    populate_inherited_path_aliases(aliases.path(), &anchored)
+        .expect("populate inherited delimiter aliases");
+
+    let qualified =
+        qualified_path_entries(aliases.path(), &anchored).expect("discovery delimiter-safe PATH");
+    let entries = env::split_paths(&qualified).collect::<Vec<_>>();
+    assert_eq!(
+        entries,
+        vec![
+            aliases.path().to_path_buf(),
+            inherited_path_alias(aliases.path(), 0),
+            inherited_path_alias(aliases.path(), 1),
+        ]
+    );
+    assert_eq!(
+        fs::read_link(&entries[1]).expect("empty PATH alias target"),
+        hook_cwd
+    );
+    assert_eq!(
+        fs::read_link(&entries[2]).expect("relative PATH alias target"),
+        hook_cwd.join("relative/bin")
+    );
+}
+
+#[test]
+fn colon_paths_use_private_separator_safe_gate_aliases() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let requested_tmp = temporary.path().join("requested:tmp");
+    let fallback = temporary.path().join("safe");
+    let managed = requested_tmp.join("managed tools");
+    let rust_bin = requested_tmp.join("rust toolchain/bin");
+    fs::create_dir_all(&managed).expect("managed tool directory");
+    fs::create_dir_all(&rust_bin).expect("colon-containing Rust bin directory");
+    fs::create_dir_all(&fallback).expect("separator-free fallback root");
+    let cargo_marker = temporary.path().join("cargo-provider");
+    let rustc_marker = temporary.path().join("rustc-provider");
+    let cargo = managed.join("cargo");
+    let rustc = rust_bin.join("rustc");
+    write_executable(
+        &cargo,
+        b"#!/bin/sh\nprintf 'mbx-cargo\\n' > \"$CARGO_PROVIDER_MARKER\"\nprintf 'cargo 1.99.1 (fixture)\\n'\n",
+    );
+    write_executable(
+        &rustc,
+        b"#!/bin/sh\nprintf 'pinned-rustc\\n' > \"$RUSTC_PROVIDER_MARKER\"\nprintf 'rustc 1.99.1 (fixture)\\n'\n",
+    );
+
+    let aliases = create_path_aliases(&requested_tmp, &fallback).expect("separator-safe aliases");
+    let rust_tools = BTreeMap::from([("rustc", rustc.clone())]);
+    populate_path_aliases(aliases.path(), &managed, &rust_tools)
+        .expect("populate qualified gate aliases");
+    let path = qualified_gate_path(aliases.path()).expect("fixed controlled gate PATH");
+    assert!(
+        !aliases
+            .path()
+            .as_os_str()
+            .as_encoded_bytes()
+            .contains(&b':')
+    );
+    assert_eq!(
+        env::split_paths(&path).next().expect("first PATH entry"),
+        aliases.path()
+    );
+
+    let cargo_output = super::super::process::capture(
+        Command::new("cargo")
+            .arg("--version")
+            .env("PATH", &path)
+            .env("CARGO_PROVIDER_MARKER", &cargo_marker),
+    )
+    .expect("run aliased MBX Cargo provider");
+    assert!(cargo_output.status.success());
+    assert_eq!(
+        fs::read(&cargo_marker).expect("Cargo provider marker"),
+        b"mbx-cargo\n"
+    );
+    assert!(
+        String::from_utf8(cargo_output.stdout)
+            .expect("Cargo provider output")
+            .starts_with("cargo 1.99.1")
+    );
+
+    let rustc_output = super::super::process::capture(
+        Command::new("rustc")
+            .arg("--version")
+            .env("PATH", &path)
+            .env("RUSTC_PROVIDER_MARKER", &rustc_marker),
+    )
+    .expect("run aliased pinned rustc provider");
+    assert!(rustc_output.status.success());
+    assert_eq!(
+        fs::read(&rustc_marker).expect("rustc provider marker"),
+        b"pinned-rustc\n"
+    );
+    assert!(
+        String::from_utf8(rustc_output.stdout)
+            .expect("rustc provider output")
+            .starts_with("rustc 1.99.1")
+    );
+
+    let alias_path = aliases.path().to_path_buf();
+    drop(aliases);
+    assert!(
+        !alias_path.exists(),
+        "private PATH aliases are removed on drop"
+    );
+    assert!(
+        requested_tmp.is_dir(),
+        "requested scratch root remains available"
+    );
+}
+
+#[test]
+fn colon_path_alias_fallback_rejects_unsafe_parent_before_child_creation() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let requested_tmp = temporary.path().join("requested:tmp");
+    let fallback = temporary.path().join("fallback");
+    fs::create_dir(&requested_tmp).expect("colon-containing preferred temporary directory");
+    fs::create_dir(&fallback).expect("fallback directory");
+    fs::set_permissions(&fallback, fs::Permissions::from_mode(0o777))
+        .expect("make fallback parent writable by others");
+
+    let result = create_path_aliases(&requested_tmp, &fallback);
+    let children = crate::fs_util::read_dir_sorted(&fallback)
+        .expect("read fallback after validation")
+        .len();
+    fs::set_permissions(&fallback, fs::Permissions::from_mode(0o700))
+        .expect("restore private fallback mode");
+
+    assert!(result.is_err(), "unsafe fallback parent must be rejected");
+    assert_eq!(
+        children, 0,
+        "no alias child may be created under an unsafe parent"
+    );
+}
+
+#[test]
+fn colon_path_alias_fallback_accepts_root_sticky_tmp_and_cleans_up() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let requested_tmp = temporary.path().join("requested:tmp");
+    let fallback = fs::canonicalize("/tmp").expect("canonical standard temporary directory");
+    fs::create_dir(&requested_tmp).expect("colon-containing preferred temporary directory");
+
+    let aliases =
+        create_path_aliases(&requested_tmp, &fallback).expect("root-owned sticky fallback parent");
+    let alias_path = aliases.path().to_path_buf();
+    assert_eq!(alias_path.parent(), Some(fallback.as_path()));
+
+    drop(aliases);
+    assert!(
+        !alias_path.exists(),
+        "temporary aliases are removed on drop"
     );
 }
 

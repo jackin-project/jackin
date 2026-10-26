@@ -1,20 +1,13 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Non-activating receipt inspection and native hook ownership.
-
 #[cfg(unix)]
+#[path = "custom_lints/paths.rs"]
+mod cargo_paths;
 #[path = "shared/fs_util.rs"]
 mod fs_util;
 #[cfg(unix)]
 mod precommit_install;
-#[cfg(unix)]
-type Environment = BTreeMap<OsString, OsString>;
-#[cfg(unix)]
-#[path = "custom_lints/paths.rs"]
-mod cargo_paths;
-#[cfg(unix)]
-mod precommit_owner_security;
 #[cfg(unix)]
 pub(crate) mod precommit_snapshot;
 #[cfg(test)]
@@ -28,12 +21,11 @@ use std::{
     env,
     ffi::{OsStr, OsString},
     io::{self, Write},
-    path::PathBuf,
     process::ExitCode,
 };
 
 #[cfg(unix)]
-const PROTOCOL: &str = "jackin-precommit-owner/3";
+type Environment = BTreeMap<OsString, OsString>;
 
 #[cfg(unix)]
 fn main() -> ExitCode {
@@ -53,28 +45,6 @@ fn main() -> ExitCode {
 fn run() -> Result<ExitCode> {
     let mut args = env::args_os().skip(1);
     let command = args.next().ok_or_else(|| anyhow::anyhow!("{}", usage()))?;
-
-    if command == OsStr::new("--protocol") {
-        ensure!(args.next().is_none(), "--protocol takes no arguments");
-        writeln!(io::stdout().lock(), "{PROTOCOL}").context("writing protocol identifier")?;
-        return Ok(ExitCode::SUCCESS);
-    }
-
-    if command == OsStr::new("inspect-install") {
-        let root_path = required_path(&mut args, "physical install root")?;
-        ensure!(
-            args.next().is_none(),
-            "inspect-install accepts exactly one physical root"
-        );
-        let source_digest = precommit_owner_security::inspect_install(&root_path)?;
-        writeln!(
-            io::stdout().lock(),
-            "format3 receipt and checked artifact descriptors are internally consistent; recorded source digest={source_digest}; selected install root and fixed artifact names checked through retained descriptors; {}",
-            precommit_owner_security::INSTALL_INSPECTION_LIMITATIONS
-        )
-        .context("writing checked installation inspection result")?;
-        return Ok(ExitCode::SUCCESS);
-    }
 
     if command == OsStr::new("install-hooks") {
         ensure!(args.next().is_none(), "install-hooks takes no arguments");
@@ -99,44 +69,12 @@ fn run() -> Result<ExitCode> {
         return Ok(ExitCode::from(status));
     }
 
-    if command != OsStr::new("inspect-receipt") {
-        bail!("{}", usage());
-    }
-
-    let receipt_path = required_path(&mut args, "receipt path")?;
-    let owner_path = required_path(&mut args, "owner artifact path")?;
-    let entry_path = required_path(&mut args, "entry artifact path")?;
-    let helper_path = required_path(&mut args, "helper artifact path")?;
-    ensure!(
-        args.next().is_none(),
-        "inspect-receipt accepts exactly four paths"
-    );
-
-    let receipt = precommit_owner_security::inspect_receipt(
-        &receipt_path,
-        &owner_path,
-        &entry_path,
-        &helper_path,
-    )?;
-    writeln!(
-        io::stdout().lock(),
-        "format3 receipt fields are internally consistent; owner, entry, and helper descriptor contents match; recorded source digest={} (source closure not checked); executable trust, ownership, ACL, and ancestor policy not checked",
-        receipt.source_hex()
-    )
-    .context("writing receipt inspection result")?;
-    Ok(ExitCode::SUCCESS)
-}
-
-#[cfg(unix)]
-fn required_path(args: &mut impl Iterator<Item = OsString>, name: &str) -> Result<PathBuf> {
-    args.next()
-        .map(PathBuf::from)
-        .ok_or_else(|| anyhow::anyhow!("missing {name}"))
+    bail!("{}", usage())
 }
 
 #[cfg(unix)]
 fn usage() -> &'static str {
-    "usage: jackin-precommit-owner --protocol | inspect-receipt <receipt> <owner> <entry> <helper> | inspect-install <physical-root> | install-hooks | run-snapshot [hook arguments...]"
+    "usage: jackin-precommit-owner install-hooks | run-snapshot [hook arguments...]"
 }
 
 #[cfg(not(unix))]

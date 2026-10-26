@@ -9,11 +9,13 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use jackin_process_directory::{CheckedInstallRoot, CheckedSourceRoot, InstallFileKind};
+use jackin_process_directory::{
+    CheckedInstallRoot, CheckedSourceRoot, InstallFileKind, RunningImage,
+};
 use nix::{
     errno::Errno,
     fcntl::{AtFlags, OFlag, open, openat, renameat},
-    sys::stat::{Mode, fchmod, fstatat, mkdirat},
+    sys::stat::{Mode, fchmod, fstat, fstatat, mkdirat},
     unistd::{UnlinkatFlags, fsync, unlinkat},
 };
 
@@ -32,7 +34,11 @@ impl OwnerInstallation {
     }
 }
 
-pub(super) fn read_current_owner(path: &Path, limit: u64) -> Result<Vec<u8>> {
+pub(super) fn read_current_owner(
+    path: &Path,
+    running_image: &RunningImage,
+    limit: u64,
+) -> Result<Vec<u8>> {
     let before = fs::symlink_metadata(path).context("checking running owner executable")?;
     ensure!(
         before.is_file()
@@ -53,6 +59,9 @@ pub(super) fn read_current_owner(path: &Path, limit: u64) -> Result<Vec<u8>> {
         opened.dev() == before.dev() && opened.ino() == before.ino() && opened.nlink() == 1,
         "running owner executable changed while opening"
     );
+    running_image
+        .verify_file_identity(&file)
+        .context("verifying running owner executable image")?;
     let mut bytes = Vec::new();
     Read::by_ref(&mut file)
         .take(limit + 1)
@@ -113,8 +122,9 @@ pub(super) fn install_owner(git_dir: &Path, owner: &[u8]) -> Result<OwnerInstall
     let named_root = fstatat(&parent_fd, INSTALL_ROOT, AtFlags::AT_SYMLINK_NOFOLLOW)
         .context("checking private worktree hook owner directory name")?;
     let opened_root = root.metadata()?;
+    let opened_root_stat = fstat(&root)?;
     ensure!(
-        super::device_matches(named_root.st_dev, opened_root.dev())
+        named_root.st_dev == opened_root_stat.st_dev
             && named_root.st_ino == opened_root.ino()
             && named_root.st_uid == opened_root.uid()
             && opened_root.permissions().mode() & 0o777 == 0o700,
@@ -251,6 +261,7 @@ fn ensure_file_identity(
     length: u64,
 ) -> Result<()> {
     let opened = file.metadata()?;
+    let opened_stat = fstat(file)?;
     let named = fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
         .with_context(|| format!("checking private hook owner entry {name}"))?;
     ensure!(
@@ -259,7 +270,7 @@ fn ensure_file_identity(
             && opened.nlink() == 1
             && opened.permissions().mode() & 0o777 == mode
             && opened.len() == length
-            && super::device_matches(named.st_dev, opened.dev())
+            && named.st_dev == opened_stat.st_dev
             && named.st_ino == opened.ino()
             && named.st_uid == opened.uid(),
         "private hook owner file has unsafe or changed custody"
@@ -280,9 +291,10 @@ fn remove_if_same(parent: &File, name: &str) -> Result<()> {
         Err(error) => return Err(error).context("opening temporary owner for cleanup"),
     };
     let opened = file.metadata()?;
+    let opened_stat = fstat(&file)?;
     let named = fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
         .with_context(|| format!("checking temporary owner entry {name} before cleanup"))?;
-    if super::device_matches(named.st_dev, opened.dev()) && named.st_ino == opened.ino() {
+    if named.st_dev == opened_stat.st_dev && named.st_ino == opened.ino() {
         unlinkat(parent, name, UnlinkatFlags::NoRemoveDir)?;
         fsync(parent)?;
     }

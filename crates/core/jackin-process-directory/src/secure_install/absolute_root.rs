@@ -131,7 +131,7 @@ pub(super) fn validate_linux_absolute_directory(file: &File, role: NodeRole) -> 
 }
 
 #[cfg(target_os = "linux")]
-fn should_check_default_acl(
+pub(super) fn should_check_default_acl(
     role: NodeRole,
     owner_uid: super::RawUid,
     effective_uid: super::RawUid,

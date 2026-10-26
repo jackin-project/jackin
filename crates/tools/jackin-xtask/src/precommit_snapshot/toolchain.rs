@@ -19,8 +19,6 @@ use anyhow::{Context, Result, bail, ensure};
 use super::git::OwnedSnapshot;
 use super::process::{CommandBudget, EnvironmentMode, SetupControls, capture_strict};
 mod verify;
-#[cfg(test)]
-use verify::verify_provision_tool_paths;
 use verify::{command_path, verify_rust_toolchain};
 
 pub(super) fn admit_install_environment(source_root: &Path) -> Result<()> {
@@ -85,6 +83,7 @@ const HOST_INPUT_KEYS: &[&str] = &[
 pub(super) struct QualifiedTools {
     pub(super) gate: PathBuf,
     pub(super) environment: BTreeMap<OsString, OsString>,
+    pub(super) path_aliases: Option<tempfile::TempDir>,
 }
 
 struct HostInputs {
@@ -341,14 +340,20 @@ fn add_mise_storage_environment(
 pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     let controls = &snapshot.controls;
     let inputs = HostInputs::capture(&snapshot.root, &snapshot.scratch_root)?;
-    let inherited_path = inputs.search_path();
+    let hook_cwd =
+        fs::canonicalize(env::current_dir().context("reading hook invocation directory")?)
+            .context("resolving physical hook invocation directory")?;
+    let inherited_entries = anchor_inherited_path(&hook_cwd, inputs.search_path());
+    let path_aliases = create_path_aliases(&env::temp_dir(), Path::new("/tmp"))?;
+    populate_inherited_path_aliases(path_aliases.path(), &inherited_entries)?;
+    let discovery_path = qualified_path_entries(path_aliases.path(), &inherited_entries)?;
     let home = inputs.home.as_deref().map(Path::new);
-    let guard = resolve_guard(inherited_path, home)?;
+    let guard = resolve_guard(&discovery_path, home)?;
     let pin = rust_release(&snapshot.root.join("rust-toolchain.toml"))?;
-    let mise = find_executable("mise", inherited_path).context("missing Mise executable")?;
+    let mise = find_executable("mise", &discovery_path).context("missing Mise executable")?;
     let mise = fs::canonicalize(mise).context("resolving Mise executable")?;
     let mise_env = inputs.command_environment(&snapshot.root);
-    let rustup = find_executable("rustup", inherited_path).context("missing rustup executable")?;
+    let rustup = find_executable("rustup", &discovery_path).context("missing rustup executable")?;
     let rustup = fs::canonicalize(rustup).context("resolving rustup executable")?;
     let resolved = resolve_managed_tools(&mise, &mise_env, &snapshot.root, controls)?;
     let rust_tools = resolve_rust_tools_with_controls(
@@ -378,8 +383,15 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     symlink("/usr/bin/xcrun", managed_dir.join("xcrun"))
         .context("linking fixed Xcode tool resolver")?;
 
-    let environment =
-        build_qualified_environment(snapshot, &managed_dir, &cargo, &pin, &rust_tools, &inputs)?;
+    let environment = build_qualified_environment(
+        snapshot,
+        &managed_dir,
+        path_aliases.path(),
+        &cargo,
+        &pin,
+        &rust_tools,
+        &inputs,
+    )?;
     verify_managed_projection(&mise, &environment, &snapshot.root, controls)?;
     verify_rust_toolchain(
         &pin,
@@ -392,26 +404,22 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     Ok(QualifiedTools {
         gate: resolved["hk"].clone(),
         environment,
+        path_aliases: Some(path_aliases),
     })
 }
 
 fn build_qualified_environment(
     snapshot: &OwnedSnapshot,
     managed_dir: &Path,
+    path_alias_dir: &Path,
     cargo: &Path,
     pin: &str,
     rust_tools: &BTreeMap<&'static str, PathBuf>,
     inputs: &HostInputs,
 ) -> Result<BTreeMap<OsString, OsString>> {
     let mut environment = inputs.environment_for(&snapshot.root, OsStr::new(FIXED_SYSTEM_PATH));
-    let rust_bin = rust_tools["rustc"]
-        .parent()
-        .context("rustc path has no bin directory")?
-        .to_path_buf();
-    environment.insert(
-        OsString::from("PATH"),
-        qualified_path(managed_dir, &rust_bin)?,
-    );
+    populate_path_aliases(path_alias_dir, managed_dir, rust_tools)?;
+    environment.insert(OsString::from("PATH"), qualified_gate_path(path_alias_dir)?);
     let selected_path = environment
         .get(OsStr::new("PATH"))
         .context("qualified PATH is missing")?;
@@ -420,6 +428,15 @@ fn build_qualified_environment(
         fs::canonicalize(selected_cargo).context("verifying PATH-selected Cargo")? == cargo,
         "qualified PATH does not resolve to the admitted MBX Cargo wrapper"
     );
+    environment.insert(
+        OsString::from("GIT_CONFIG_GLOBAL"),
+        OsString::from("/dev/null"),
+    );
+    environment.insert(
+        OsString::from("GIT_CONFIG_SYSTEM"),
+        OsString::from("/dev/null"),
+    );
+    environment.insert(OsString::from("GIT_CONFIG_NOSYSTEM"), OsString::from("1"));
     environment.insert(OsString::from("RUSTUP_TOOLCHAIN"), OsString::from(pin));
     environment.insert(
         OsString::from("CARGO_HOME"),
@@ -516,11 +533,112 @@ where
     Ok(resolved)
 }
 
+#[cfg(test)]
 fn qualified_path(managed_dir: &Path, rust_bin: &Path) -> Result<OsString> {
     let path_entries = std::iter::once(managed_dir.to_path_buf())
         .chain(std::iter::once(rust_bin.to_path_buf()))
         .chain(env::split_paths(OsStr::new(FIXED_SYSTEM_PATH)));
     env::join_paths(path_entries).context("building qualified tool path")
+}
+
+fn create_path_aliases(preferred: &Path, fallback: &Path) -> Result<tempfile::TempDir> {
+    let preferred = fs::canonicalize(preferred).context("resolving preferred PATH alias root")?;
+    let parent = if preferred.as_os_str().as_encoded_bytes().contains(&b':') {
+        super::process::canonical_temporary_parent(fallback)
+            .context("validating separator-safe PATH alias fallback")?
+    } else {
+        super::process::canonical_temporary_parent(&preferred)
+            .context("validating preferred PATH alias root")?
+    };
+    ensure!(
+        !parent.as_os_str().as_encoded_bytes().contains(&b':'),
+        "separator-safe PATH alias root contains the PATH delimiter"
+    );
+    let directory = tempfile::Builder::new()
+        .prefix("jackin-path-")
+        .tempdir_in(parent)
+        .context("creating private separator-safe PATH aliases")?;
+    fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700))?;
+    super::process::validate_confidential_directory(directory.path())
+        .context("validating private separator-safe PATH aliases")?;
+    ensure!(
+        !directory
+            .path()
+            .as_os_str()
+            .as_encoded_bytes()
+            .contains(&b':'),
+        "private PATH alias path contains the PATH delimiter"
+    );
+    Ok(directory)
+}
+
+fn populate_path_aliases(
+    path_alias_dir: &Path,
+    managed_dir: &Path,
+    rust_tools: &BTreeMap<&str, PathBuf>,
+) -> Result<()> {
+    for entry in
+        crate::fs_util::read_dir_sorted(managed_dir).context("reading private qualified tools")?
+    {
+        symlink(entry.path(), path_alias_dir.join(entry.file_name()))
+            .context("linking private tool into separator-safe PATH projection")?;
+    }
+    for (name, path) in rust_tools {
+        symlink(path, path_alias_dir.join(name))
+            .with_context(|| format!("linking qualified Rust tool {name}"))?;
+    }
+    Ok(())
+}
+
+fn populate_inherited_path_aliases(
+    path_alias_dir: &Path,
+    inherited_path: &[PathBuf],
+) -> Result<()> {
+    for (index, entry) in inherited_path.iter().enumerate() {
+        if entry.as_os_str().as_encoded_bytes().contains(&b':') {
+            symlink(entry, inherited_path_alias(path_alias_dir, index))
+                .context("linking inherited PATH directory without delimiter")?;
+        }
+    }
+    Ok(())
+}
+
+fn qualified_path_entries(path_alias_dir: &Path, entries: &[PathBuf]) -> Result<OsString> {
+    let entries = entries.iter().enumerate().map(|(index, entry)| {
+        if entry.as_os_str().as_encoded_bytes().contains(&b':') {
+            inherited_path_alias(path_alias_dir, index)
+        } else {
+            entry.clone()
+        }
+    });
+    env::join_paths(std::iter::once(path_alias_dir.to_path_buf()).chain(entries))
+        .context("building separator-safe discovery PATH")
+}
+
+fn qualified_gate_path(path_alias_dir: &Path) -> Result<OsString> {
+    env::join_paths(
+        std::iter::once(path_alias_dir.to_path_buf())
+            .chain(env::split_paths(OsStr::new(FIXED_SYSTEM_PATH))),
+    )
+    .context("building controlled gate PATH")
+}
+
+fn inherited_path_alias(path_alias_dir: &Path, index: usize) -> PathBuf {
+    path_alias_dir.join(format!("inherited-path-{index}"))
+}
+
+fn anchor_inherited_path(hook_cwd: &Path, inherited_path: &OsStr) -> Vec<PathBuf> {
+    env::split_paths(inherited_path)
+        .map(|entry| {
+            if entry.as_os_str().is_empty() {
+                hook_cwd.to_path_buf()
+            } else if entry.is_absolute() {
+                entry
+            } else {
+                hook_cwd.join(entry)
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

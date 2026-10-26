@@ -42,6 +42,7 @@ impl SignalRoute {
 
 struct SetupSignals {
     route: SignalRoute,
+    terminal: Arc<AtomicBool>,
 }
 
 #[derive(Clone)]
@@ -80,6 +81,7 @@ fn register_signal_flags(
 impl SetupSignals {
     fn register() -> Result<Self> {
         let signals = Self {
+            terminal: Arc::new(AtomicBool::new(false)),
             route: SignalRoute {
                 recovery_armed: AtomicBool::new(false),
                 cancellation: Arc::new(AtomicBool::new(false)),
@@ -99,6 +101,8 @@ impl SetupSignals {
                 OwnerSignal::Term => &signals.route.term,
             };
             register_signal_flags(signal, &signals.route.cancellation, status)?;
+            signal_hook::flag::register_conditional_default(signal, Arc::clone(&signals.terminal))
+                .context("registering completed native hook signal termination")?;
         }
         Ok(signals)
     }
@@ -123,11 +127,11 @@ impl SetupSignals {
     }
 
     fn signal_status(&self) -> Option<u8> {
-        if self.route.term.load(Ordering::Relaxed) {
+        if self.route.term.load(Ordering::SeqCst) {
             Some(143)
-        } else if self.route.int.load(Ordering::Relaxed) {
+        } else if self.route.int.load(Ordering::SeqCst) {
             Some(130)
-        } else if self.route.hup.load(Ordering::Relaxed) {
+        } else if self.route.hup.load(Ordering::SeqCst) {
             Some(129)
         } else {
             None
@@ -148,16 +152,21 @@ use std::{
 use anyhow::{Context, Result, ensure};
 
 pub(crate) fn run_from_hook() -> Result<i32> {
+    if std::env::var_os("HK").as_deref() == Some(std::ffi::OsStr::new("0")) {
+        return Ok(0);
+    }
     let arguments = std::env::args_os().skip(2).collect::<Vec<_>>();
     run_with_budgets(&arguments, OwnerBudgets::production()).map(i32::from)
 }
 
 fn run_with_budgets(arguments: &[OsString], budgets: OwnerBudgets) -> Result<u8> {
     let signals = SetupSignals::register()?;
-    if let Some(code) = signals.signal_status() {
-        return Ok(code);
-    }
-    match run_with_signals(arguments, &signals, budgets) {
+    let result = if let Some(code) = signals.signal_status() {
+        Ok(code)
+    } else {
+        run_with_signals(arguments, &signals, budgets)
+    };
+    let result = match result {
         Err(error) if process::is_clean_cancellation(&error) => {
             let _write_result = writeln!(
                 std::io::stderr().lock(),
@@ -171,6 +180,11 @@ fn run_with_budgets(arguments: &[OsString], budgets: OwnerBudgets) -> Result<u8>
             }
         }
         result => result,
+    };
+    signals.terminal.store(true, Ordering::SeqCst);
+    match result {
+        Ok(code) => Ok(signals.signal_status().unwrap_or(code)),
+        Err(error) => Err(error),
     }
 }
 
@@ -218,7 +232,14 @@ fn run_with_signals(
             return Ok(code);
         }
         let gate_controls = signals.setup_gate_controls(budgets.gate);
+        let path_alias_lifetime = tools.path_aliases.as_ref();
         let mut completion = snapshot.run_gate(&tools, arguments, &gate_controls)?;
+        if let Some(path_aliases) = path_alias_lifetime {
+            ensure!(
+                path_aliases.path().is_dir(),
+                "qualified PATH aliases disappeared before gate completion"
+            );
+        }
         if !completion.cleanup.group_drained || completion.cleanup.recovery.is_some() {
             drop(completion.cleanup.recovery);
             anyhow::bail!("native hook process cleanup is uncertain");
@@ -257,8 +278,12 @@ fn run_with_signals(
         let evidence = if fixes.is_empty() {
             None
         } else {
-            write_private_fixes_spool(&snapshot, &fixes)?;
-            Some(evidence::persist(&live.common_git_dir, &fixes)?)
+            write_private_fixes_spool(&snapshot, &fixes, &recovery_controls)?;
+            Some(evidence::persist(
+                &live.common_git_dir,
+                &fixes,
+                &recovery_controls,
+            )?)
         };
         drop(completion.cleanup.recovery.take());
         let staged_fixes = evidence.is_some();
@@ -321,13 +346,17 @@ fn retain_unsuccessful_completion(
 fn write_private_fixes_spool(
     snapshot: &git::OwnedSnapshot,
     fixes: &[u8],
+    controls: &process::SetupControls,
 ) -> Result<std::path::PathBuf> {
+    controls.check_start()?;
     anyhow::ensure!(!fixes.is_empty(), "refusing to spool empty hook fixes");
     let path = snapshot.scratch_root.join("fixes.patch");
     let mut file = process::create_private_new(&path).context("creating private fixes spool")?;
-    file.write_all(fixes)
+    evidence::write_controlled(&mut file, fixes, controls)
         .context("writing private fixes spool")?;
+    controls.check_start()?;
     file.sync_all().context("syncing private fixes spool")?;
+    controls.check_start()?;
     Ok(path)
 }
 

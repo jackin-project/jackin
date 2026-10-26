@@ -331,7 +331,9 @@ fn strict_capture_rejects_surviving_pipe_holder_after_zero_exit() {
         .trim();
     let diagnostics = Path::new(diagnostics);
     assert!(
-        diagnostics.starts_with(std::env::temp_dir()),
+        diagnostics.starts_with(
+            fs::canonicalize(std::env::temp_dir()).expect("physical temporary parent")
+        ),
         "{diagnostics:?}"
     );
     assert!(
@@ -377,7 +379,9 @@ fn strict_capture_does_not_treat_incomplete_pipes_as_clean_cancellation() {
         .trim();
     let diagnostics = Path::new(diagnostics);
     assert!(
-        diagnostics.starts_with(std::env::temp_dir()),
+        diagnostics.starts_with(
+            fs::canonicalize(std::env::temp_dir()).expect("physical temporary parent")
+        ),
         "{diagnostics:?}"
     );
     assert!(

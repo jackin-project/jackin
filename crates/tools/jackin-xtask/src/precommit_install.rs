@@ -10,23 +10,9 @@ mod git;
 use std::env;
 
 use anyhow::{Context, Result};
+use jackin_process_directory::RunningImage;
 
 const OWNER_LIMIT: u64 = 256 * 1024 * 1024;
-
-#[cfg(target_os = "linux")]
-fn device_matches(named: nix::sys::stat::dev_t, opened: u64) -> bool {
-    named == opened
-}
-
-#[cfg(target_os = "macos")]
-fn device_matches(named: nix::sys::stat::dev_t, opened: u64) -> bool {
-    named.cast_unsigned() == (opened as u32)
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn device_matches(named: nix::sys::stat::dev_t, opened: u64) -> bool {
-    u64::try_from(named).ok() == Some(opened)
-}
 
 pub(crate) fn activation_failed_after_rename(error: &anyhow::Error) -> bool {
     config::activation_failed_after_rename(error)
@@ -35,8 +21,9 @@ pub(crate) fn activation_failed_after_rename(error: &anyhow::Error) -> bool {
 pub(crate) fn install_hooks() -> Result<()> {
     let repository = git::repository_root()?;
     crate::precommit_snapshot::admit_install_toolchain_environment(&repository)?;
+    let running_image = RunningImage::capture().context("capturing running hook owner image")?;
     let source_path = env::current_exe().context("resolving running hook owner")?;
-    let owner = files::read_current_owner(&source_path, OWNER_LIMIT)?;
+    let owner = files::read_current_owner(&source_path, &running_image, OWNER_LIMIT)?;
     install_for_repository(&repository, &owner)?;
     Ok(())
 }

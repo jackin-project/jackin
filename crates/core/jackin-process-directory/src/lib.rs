@@ -14,6 +14,9 @@ mod secure_install;
 mod secure_source;
 
 #[cfg(unix)]
+mod temporary_parent;
+
+#[cfg(unix)]
 mod running_image;
 
 #[cfg(unix)]
@@ -34,6 +37,15 @@ pub use secure_install::{CheckedInstallFile, CheckedInstallRoot, InstallFileKind
 /// or attest a build or running image.
 #[cfg(unix)]
 pub use secure_source::{CheckedSourceFile, CheckedSourceRoot};
+
+/// Validate a physical temporary-directory parent against foreign rename authority.
+///
+/// Root- or effective-user-owned sticky directories with exact mode `01777`
+/// are accepted. Other path components must be owned by root or the effective
+/// user and must not be writable by group or other. Native ACL inspection
+/// applies to each directory descriptor.
+#[cfg(unix)]
+pub use temporary_parent::validate_temporary_parent;
 
 /// Filesystem-object identity for the image mapped as the current process.
 ///

@@ -27,6 +27,9 @@ use nix::{
 };
 use tempfile::TempDir;
 
+mod temporary_parent;
+pub(super) use temporary_parent::canonical_temporary_parent;
+
 const PROBE_LIMIT: Duration = Duration::from_secs(120);
 pub(super) const METADATA_OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 
@@ -422,9 +425,10 @@ pub(super) fn capture_spooled(
 }
 
 fn private_capture_dir() -> Result<TempDir> {
+    let parent = canonical_temporary_parent(&std::env::temp_dir())?;
     let scratch = tempfile::Builder::new()
         .prefix("jackin-native-capture-")
-        .tempdir()
+        .tempdir_in(parent)
         .context("creating private process capture directory")?;
     fs::set_permissions(scratch.path(), fs::Permissions::from_mode(0o700))
         .context("protecting private process capture directory")?;

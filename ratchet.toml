@@ -629,7 +629,7 @@ key = "clippy::disallowed_methods@jackin-process"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-process-directory"
-bound = 3
+bound = 2
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-usage-broker"
 bound = 2

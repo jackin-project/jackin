@@ -32,7 +32,7 @@ pub struct RunningImage {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     path_hint: Option<PathBuf>,
     #[cfg(target_os = "linux")]
-    _executable: File,
+    executable: File,
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     _private: (),
 }
@@ -99,7 +99,7 @@ impl RunningImage {
         Ok(Self {
             identity,
             path_hint,
-            _executable: executable,
+            executable,
         })
     }
 
@@ -109,6 +109,11 @@ impl RunningImage {
     /// The candidate must refer to a regular file with the same device and
     /// inode. No pathname lookup or content check is performed.
     pub fn verify_file_identity(&self, candidate: &File) -> io::Result<()> {
+        if FileIdentity::from_file(&self.executable)? != self.identity {
+            return Err(permission_denied(
+                "retained descriptor no longer identifies the running image",
+            ));
+        }
         let candidate_identity = FileIdentity::from_file(candidate)?;
         if candidate_identity != self.identity {
             return Err(permission_denied(
