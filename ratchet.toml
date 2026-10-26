@@ -629,7 +629,7 @@ key = "crates/services/jackin-runtime-apple-container-check-dns/README.md"
 bound = 692
 [[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-client/README.md"
-bound = 1090
+bound = 958
 [[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-probe-version/README.md"
 bound = 765
