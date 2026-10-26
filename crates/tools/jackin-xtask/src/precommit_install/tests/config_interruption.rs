@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    fs,
+    fs::{self, File},
     os::unix::ffi::OsStrExt,
+    os::unix::fs::MetadataExt,
     os::unix::process::ExitStatusExt,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -13,7 +14,9 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 use nix::{
+    fcntl::{OFlag, open},
     sys::signal::{Signal, kill},
+    sys::stat::Mode,
     unistd::Pid,
 };
 
@@ -50,7 +53,7 @@ fn config_install_signal_during_candidate_preparation_leaves_config_untouched() 
         .context("starting public installer signal fixture")?,
     );
 
-    wait_for_path(&shim.ready, Duration::from_secs(20))?;
+    wait_for_path(&shim.ready, &mut child, Duration::from_secs(20))?;
     kill(Pid::from_raw(child.id() as i32), Signal::SIGTERM)
         .context("sending SIGTERM to public installer fixture")?;
     fs::write(&shim.release, b"release")?;
@@ -93,8 +96,8 @@ fn config_install_rejects_competing_writer_during_candidate_preparation() -> Res
     }
 
     let temporary = private_dir()?;
-    run_competing_writer_case(temporary.path(), true)?;
-    run_competing_writer_case(temporary.path(), false)?;
+    run_config_candidate_case(temporary.path(), true, true)?;
+    run_config_candidate_case(temporary.path(), false, true)?;
     Ok(())
 }
 
@@ -134,7 +137,7 @@ fn config_install_rejects_owner_replacement_during_candidate_preparation() -> Re
             )?
             .spawn()?,
         );
-        wait_for_path(&shim.ready, Duration::from_secs(20))?;
+        wait_for_path(&shim.ready, &mut child, Duration::from_secs(20))?;
         let config_at_replacement = fs::read(&selected_config)?;
         assert_eq!(config_at_replacement == original_config, !committed);
         let owner_root = git_dir.join("jackin-precommit-owner");
@@ -174,13 +177,34 @@ fn config_install_rejects_owner_replacement_during_candidate_preparation() -> Re
     Ok(())
 }
 
-fn run_competing_writer_case(root: &Path, initially_present: bool) -> Result<()> {
-    let name = if initially_present {
+#[test]
+fn config_install_succeeds_without_competing_writer_after_candidate_preparation() -> Result<()> {
+    if let Some(mode) = std::env::var_os(CHILD_MODE) {
+        return run_child_mode(mode.to_string_lossy().as_ref());
+    }
+
+    let temporary = private_dir()?;
+    run_config_candidate_case(temporary.path(), true, false)?;
+    run_config_candidate_case(temporary.path(), false, false)?;
+    Ok(())
+}
+
+fn run_config_candidate_case(
+    root: &Path,
+    initially_present: bool,
+    competing_writer: bool,
+) -> Result<()> {
+    let config_state = if initially_present {
         "present"
     } else {
         "absent"
     };
-    let repository = root.join(format!("{name} writer repository"));
+    let writer_state = if competing_writer {
+        "competing writer"
+    } else {
+        "unchanged writer"
+    };
+    let repository = root.join(format!("{config_state} {writer_state} repository"));
     init_repository(&repository)?;
     if initially_present {
         run_git(
@@ -189,39 +213,183 @@ fn run_competing_writer_case(root: &Path, initially_present: bool) -> Result<()>
         )?;
     }
     let (_, _, selected_config) = git::installation_paths(&repository)?;
-    let shim = prepare_git_shim(&root.join(format!("{name} writer")))?;
+    let original = capture_initial_config(&selected_config, initially_present)?;
+    let shim = prepare_git_shim(&root.join(format!("{config_state} {writer_state}")))?;
     let _release_on_drop = ReleaseOnDrop(shim.release.clone());
+    let mode = match (competing_writer, initially_present) {
+        (true, true) => "conflict-present",
+        (true, false) => "conflict-absent",
+        (false, true) => "install-present",
+        (false, false) => "install-absent",
+    };
     let mut child = ChildGuard::new(
-        test_child("conflict", &repository, root, Some(&shim.directory))?
+        test_child(mode, &repository, root, Some(&shim.directory))?
             .spawn()
-            .context("starting public installer competing-writer fixture")?,
+            .context("starting blocked public installer config fixture")?,
     );
 
-    wait_for_path(&shim.ready, Duration::from_secs(20))?;
-    run_git(
+    wait_for_path(&shim.ready, &mut child, Duration::from_secs(20))?;
+    assert_config_before_release(
         &repository,
-        &["config", "--worktree", "fixture.sentinel", "competitor"],
+        &selected_config,
+        &original,
+        initially_present,
+        competing_writer,
     )?;
     fs::write(&shim.release, b"release")?;
     let status = child.wait(Duration::from_secs(20))?;
-    ensure!(
-        status.success(),
-        "competing-writer installer fixture failed: {status}"
-    );
-    ensure!(
-        run_git(
-            &repository,
-            &["config", "--worktree", "--get", "fixture.sentinel"]
-        )?
-        .stdout
-            == b"competitor\n",
-        "installer did not preserve the competing worktree config update"
-    );
+    assert_config_case_result(
+        &repository,
+        &selected_config,
+        status,
+        initially_present,
+        competing_writer,
+    )?;
     ensure!(
         !selected_config
             .with_file_name("config.worktree.lock")
             .exists(),
         "competing-writer rejection left a live config lock"
+    );
+    Ok(())
+}
+
+struct InitialConfig {
+    descriptor: Option<File>,
+    bytes: Option<Vec<u8>>,
+}
+
+fn capture_initial_config(path: &Path, present: bool) -> Result<InitialConfig> {
+    if !present {
+        ensure!(
+            fs::symlink_metadata(path)
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound),
+            "initially absent Git worktree config already exists"
+        );
+        return Ok(InitialConfig {
+            descriptor: None,
+            bytes: None,
+        });
+    }
+
+    let metadata = fs::symlink_metadata(path)?;
+    ensure!(
+        metadata.is_file() && !metadata.file_type().is_symlink() && metadata.nlink() == 1,
+        "initial Git worktree config is not a single-link regular file"
+    );
+    let descriptor = File::from(
+        open(
+            path,
+            OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK,
+            Mode::empty(),
+        )
+        .context("opening initial Git worktree config without following links")?,
+    );
+    let opened = descriptor.metadata()?;
+    ensure!(
+        opened.dev() == metadata.dev() && opened.ino() == metadata.ino() && opened.nlink() == 1,
+        "retained Git worktree config differs from its initial name"
+    );
+    Ok(InitialConfig {
+        descriptor: Some(descriptor),
+        bytes: Some(fs::read(path)?),
+    })
+}
+
+fn assert_config_before_release(
+    repository: &Path,
+    path: &Path,
+    original: &InitialConfig,
+    initially_present: bool,
+    competing_writer: bool,
+) -> Result<()> {
+    if competing_writer {
+        run_git(
+            repository,
+            &["config", "--worktree", "fixture.sentinel", "competitor"],
+        )?;
+        ensure!(
+            run_git(
+                repository,
+                &["config", "--worktree", "--get", "fixture.sentinel"]
+            )?
+            .stdout
+                == b"competitor\n",
+            "controlled Git writer did not publish the competing config"
+        );
+        let replacement = fs::symlink_metadata(path)?;
+        ensure!(
+            replacement.is_file()
+                && !replacement.file_type().is_symlink()
+                && replacement.nlink() == 1,
+            "competing Git config is not a single-link regular file"
+        );
+        if let Some(descriptor) = original.descriptor.as_ref() {
+            let retained = descriptor.metadata()?;
+            ensure!(
+                retained.nlink() == 0,
+                "controlled config replacement did not unlink the retained original"
+            );
+            ensure!(
+                replacement.dev() != retained.dev() || replacement.ino() != retained.ino(),
+                "competing config still names the retained original object"
+            );
+        }
+    } else if let Some(descriptor) = original.descriptor.as_ref() {
+        let retained = descriptor.metadata()?;
+        let named = fs::symlink_metadata(path)?;
+        ensure!(
+            fs::read(path)? == original.bytes.as_deref().unwrap_or_default()
+                && named.dev() == retained.dev()
+                && named.ino() == retained.ino()
+                && retained.nlink() == 1,
+            "Git worktree config changed before the unchanged candidate was released"
+        );
+    } else {
+        ensure!(
+            !initially_present
+                && fs::symlink_metadata(path)
+                    .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound),
+            "initially absent Git worktree config appeared before candidate release"
+        );
+    }
+    Ok(())
+}
+
+fn assert_config_case_result(
+    repository: &Path,
+    path: &Path,
+    status: std::process::ExitStatus,
+    initially_present: bool,
+    competing_writer: bool,
+) -> Result<()> {
+    ensure!(
+        status.success(),
+        "installer config fixture failed: {status}"
+    );
+    let expected_value = if competing_writer {
+        "competitor"
+    } else {
+        "original"
+    };
+    if competing_writer || initially_present {
+        ensure!(
+            run_git(
+                repository,
+                &["config", "--worktree", "--get", "fixture.sentinel"]
+            )?
+            .stdout
+                == format!("{expected_value}\n").as_bytes(),
+            "installer changed the expected worktree config value"
+        );
+    }
+    if !competing_writer {
+        let (git_dir, _, _) = git::installation_paths(repository)?;
+        git::verify_installed_hooks(repository, &git_dir.join("jackin-precommit-owner/owner"))?;
+    }
+    ensure!(
+        !path.with_file_name("config.worktree.lock").exists(),
+        "installer config fixture left a live config lock"
     );
     Ok(())
 }
@@ -232,10 +400,26 @@ fn run_child_mode(mode: &str) -> Result<()> {
             install_hooks()?;
             bail!("installer unexpectedly returned before the signal")
         }
-        "conflict" => {
-            install_hooks().expect_err("installer must reject a competing config writer");
+        "conflict-present" | "conflict-absent" => {
+            let error =
+                install_hooks().expect_err("installer must reject a competing config writer");
+            let chain = format!("{error:#}");
+            eprintln!("competing-writer installer error chain: {chain}");
+            let unlinked_original = mode == "conflict-present"
+                && chain.contains(
+                    "rechecking source Git config after candidate preparation: installation file must have exactly one hard link",
+                );
+            ensure!(
+                chain.contains("Git worktree config changed while hook configuration was prepared")
+                    || chain.contains(
+                        "Git worktree config presence changed while hook configuration was prepared"
+                    )
+                    || unlinked_original,
+                "competing-writer installer failed for an unexpected reason: {chain}"
+            );
             Ok(())
         }
+        "install-present" | "install-absent" => install_hooks(),
         "install" => install_hooks(),
         "owner-race" | "owner-committed" => {
             let error = install_hooks().expect_err("installer accepted a replaced owner");
@@ -261,8 +445,10 @@ fn test_child(
 ) -> Result<Command> {
     let name = current_test_name(if matches!(mode, "owner-race" | "owner-committed") {
         "config_install_rejects_owner_replacement_during_candidate_preparation"
-    } else if mode == "conflict" {
+    } else if mode.starts_with("conflict-") {
         "config_install_rejects_competing_writer_during_candidate_preparation"
+    } else if mode.starts_with("install-") {
+        "config_install_succeeds_without_competing_writer_after_candidate_preparation"
     } else {
         "config_install_signal_during_candidate_preparation_leaves_config_untouched"
     })?;
@@ -363,9 +549,18 @@ fn current_test_name(suffix: &str) -> Result<String> {
     Ok(matches[0].to_owned())
 }
 
-fn wait_for_path(path: &Path, timeout: Duration) -> Result<()> {
+fn wait_for_path(path: &Path, child: &mut ChildGuard, timeout: Duration) -> Result<()> {
     let deadline = Instant::now() + timeout;
     while !path.exists() {
+        if let Some(status) = child
+            .0
+            .as_mut()
+            .context("child guard is inactive while waiting for the Git shim")?
+            .try_wait()?
+        {
+            child.0 = None;
+            bail!("installer subprocess exited before reaching its Git shim: {status}");
+        }
         ensure!(
             Instant::now() < deadline,
             "candidate preparation did not reach its Git shim"

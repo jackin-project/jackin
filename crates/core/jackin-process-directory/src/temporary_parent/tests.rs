@@ -18,6 +18,7 @@ use std::{
 const FIXTURE_DIRECTORY_FLAGS: OFlags = OFlags::RDONLY
     .union(OFlags::DIRECTORY)
     .union(OFlags::NOFOLLOW)
+    .union(OFlags::NONBLOCK)
     .union(OFlags::CLOEXEC);
 
 #[test]

@@ -5,16 +5,67 @@ use std::{
 };
 
 use anyhow::{Result, ensure};
+use jackin_process_directory::CheckedSourceRoot;
 
 pub(super) fn private_dir() -> Result<tempfile::TempDir> {
-    let parent = std::env::temp_dir().canonicalize()?;
-    Ok(tempfile::Builder::new()
+    let parent = private_fixture_parent()?;
+    let directory = tempfile::Builder::new()
         .prefix("jackin-owner-install-")
-        .tempdir_in(parent)?)
+        .tempdir_in(parent)?;
+    std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700))?;
+    Ok(directory)
+}
+
+fn private_fixture_parent() -> Result<PathBuf> {
+    let temporary_parent = std::env::temp_dir().canonicalize()?;
+    match CheckedSourceRoot::from_absolute_directory(&temporary_parent) {
+        Ok(_) => Ok(temporary_parent),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            let home = std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .ok_or_else(|| anyhow::anyhow!("HOME is unset for private installer fixtures"))?
+                .canonicalize()?;
+            CheckedSourceRoot::from_absolute_directory(&home).map_err(|home_error| {
+                anyhow::anyhow!(
+                    "neither temporary nor HOME parent is safe for installer fixtures: temporary parent: {error}; HOME parent: {home_error}"
+                )
+            })?;
+            Ok(home)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+#[test]
+fn private_fixture_parent_uses_home_when_shared_temp_is_not_a_source_root() -> Result<()> {
+    let temporary_parent = std::env::temp_dir().canonicalize()?;
+    let selected = private_fixture_parent()?;
+    match CheckedSourceRoot::from_absolute_directory(&temporary_parent) {
+        Ok(_) => ensure!(
+            selected == temporary_parent,
+            "safe temporary parent was not selected"
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            let home = std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .ok_or_else(|| anyhow::anyhow!("HOME is unset for private installer fixtures"))?
+                .canonicalize()?;
+            ensure!(
+                selected == home,
+                "unsafe temporary parent did not fall back to checked HOME"
+            );
+        }
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
 }
 
 pub(super) fn git(repository: &Path, args: &[&str]) -> Result<Output> {
-    let output = Command::new("git")
+    let output = Command::new("/bin/sh")
+        .arg("-c")
+        .arg("umask 077; exec \"$@\"")
+        .arg("jackin-git-fixture")
+        .arg("git")
         .arg("-C")
         .arg(repository.as_os_str())
         .args(args)
@@ -37,7 +88,9 @@ pub(super) fn git(repository: &Path, args: &[&str]) -> Result<Output> {
 
 pub(super) fn init_repository(root: &Path) -> Result<()> {
     std::fs::create_dir_all(root)?;
+    std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700))?;
     git(root, &["init", "-q"])?;
+    std::fs::set_permissions(root.join(".git"), std::fs::Permissions::from_mode(0o700))?;
     git(root, &["config", "user.name", "Installer Fixture"])?;
     git(
         root,

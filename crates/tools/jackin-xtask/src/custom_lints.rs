@@ -21,6 +21,11 @@ const TOOL_NAMES: &[&str] = &["dylint-link", "cargo-nextest", "cargo-dylint", "m
 
 type Environment = BTreeMap<OsString, OsString>;
 
+#[cfg(unix)]
+type CargoShimDirectory = private_paths::PrivateDirectory;
+#[cfg(not(unix))]
+type CargoShimDirectory = tempfile::TempDir;
+
 pub(crate) fn run(root: &Path) -> Result<()> {
     run_with(root, std::env::vars_os().collect(), execute)
 }
@@ -90,12 +95,14 @@ where
     execute(&nextest, &lint, &base_env, false)?;
 
     let library = library_path(&target, &host)?;
-    let directory = tempfile::Builder::new()
+    let temp_directory = tempfile::Builder::new()
         .prefix("jackin-custom-lints-")
         .tempdir_in(cargo_shim.path())
         .context("creating isolated Dylint library directory")?;
     #[cfg(unix)]
-    let _library_directory = private_paths::normalize_directory(directory.path())?;
+    let directory = private_paths::normalize_directory(cargo_shim.descriptor(), temp_directory)?;
+    #[cfg(not(unix))]
+    let directory = temp_directory;
     let directory_path = directory
         .path()
         .canonicalize()
@@ -141,7 +148,7 @@ where
 fn create_cargo_shim(
     env: &mut Environment,
     tools: &BTreeMap<&'static str, PathBuf>,
-) -> Result<tempfile::TempDir> {
+) -> Result<CargoShimDirectory> {
     #[cfg(unix)]
     {
         let requested_temp = PathBuf::from(
@@ -163,18 +170,24 @@ fn create_cargo_shim(
             !temp_parent.as_os_str().as_encoded_bytes().contains(&b':'),
             "private MBX Cargo shim parent contains the PATH delimiter"
         );
-        let directory = tempfile::Builder::new()
+        let temp_parent_directory = private_paths::open_directory(&temp_parent)?;
+        let temp_directory = tempfile::Builder::new()
             .prefix("jackin-custom-lints-mbx-")
             .tempdir_in(&temp_parent)
             .context("creating private MBX Cargo shim directory")?;
-        let shim_directory = private_paths::normalize_directory(directory.path())?;
-        let directory_path = directory
+        let shim_directory =
+            private_paths::normalize_directory(&temp_parent_directory, temp_directory)?;
+        let directory_path = shim_directory
             .path()
             .canonicalize()
             .context("resolving private MBX Cargo shim directory")?;
         let alias = directory_path.join("cargo");
-        private_paths::create_symlink(&shim_directory, &tools["mbx"], OsStr::new("cargo"))
-            .context("creating private native Cargo-to-MBX shim")?;
+        private_paths::create_symlink(
+            shim_directory.descriptor(),
+            &tools["mbx"],
+            OsStr::new("cargo"),
+        )
+        .context("creating private native Cargo-to-MBX shim")?;
         let old_path = env.get(OsStr::new("PATH")).cloned().unwrap_or_default();
         let nextest_parent = tools["cargo-nextest"]
             .parent()
@@ -186,13 +199,13 @@ fn create_cargo_shim(
         );
         let cargo_bin = cargo_home.join("bin");
         let nextest_parent = path_entry_alias(
-            &shim_directory,
+            shim_directory.descriptor(),
             &directory_path,
             &nextest_parent,
             "cargo-nextest",
         )?;
         let cargo_bin = path_entry_alias(
-            &shim_directory,
+            shim_directory.descriptor(),
             &directory_path,
             &cargo_bin,
             "cargo-home-bin",
@@ -208,7 +221,7 @@ fn create_cargo_shim(
             alias.into_os_string(),
         );
         env.insert(OsString::from("MBX_CARGO_SHIM_MODE"), OsString::from("1"));
-        Ok(directory)
+        Ok(shim_directory)
     }
     #[cfg(not(unix))]
     {
