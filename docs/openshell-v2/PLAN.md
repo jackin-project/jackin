@@ -2352,7 +2352,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 11. Keep project hooks and writable configuration from selecting the consumer executable.
 12. Record denial, cancellation, timeout, revocation, and uncertain completion.
 13. Keep secret-consuming output separate from ordinary terminal replay.
-14. Qualify A86 host-action and approval refusals for unsolicited helper clipboard, URL, and export effects.
+14. Qualify A86 backend host-action and approval refusals for unsolicited helper clipboard, URL, and export effects without operator intent.
 
 #### Pass conditions
 
@@ -2361,7 +2361,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A replayed approval cannot repeat its effect.
 - Stopping host control blocks the action without killing the remote session or granting approval.
 - No secret enters the coding-agent PTY or arbitrary host shell.
-- A86 retains backend host-action and approval checks; untrusted output cannot trigger effects or forge approval state.
+- A86 at T26 qualifies backend refusals; no host effect occurs without operator intent or forged approval state.
 
 **Acceptance cases:** A45, A86, A87, A88.
 
@@ -2564,7 +2564,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 9. Keep branch, pull-request, CI, clipboard-image, and export workflows through trusted adapters.
 10. Regenerate completion and man-page sources from the new command model.
 11. Display A16's accepted policy revision and effective replacement source in product output.
-12. Exercise A86 across CLI, Console, and desktop presentation without a matching operator action.
+12. Run A86 through the finished CLI, Console, and desktop presentation without a matching operator action.
 
 #### Pass conditions
 
@@ -2574,7 +2574,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Ambiguous human selectors produce a selection error.
 - JSON output follows only the v2 schema.
 - A16 displays the accepted replacement source and revision without implying an intersection.
-- A86 keeps unsolicited helper requests inert and prevents untrusted output from forging trusted labels or approval state.
+- A86 at T29 keeps unsolicited requests inert and prevents untrusted output from forging trusted labels or approval state.
 
 **Acceptance cases:** A96, A97, A98, A16, A86.
 

@@ -1662,8 +1662,8 @@
       "title": "Host affordance injection",
       "level": "LIVE",
       "setup": "Emit hostile terminal escape sequences and unsolicited helper clipboard, URL, and export requests through backend and integrated product paths.",
-      "action": "Observe CLI, Console, and desktop paths without a matching operator action.",
-      "expected": "No host action occurs. T29 ignores unsolicited requests. Untrusted output cannot forge trusted labels or approval state.",
+      "action": "T26 qualifies backend host-action and approval refusals without a matching operator action. T29 exercises the finished CLI, Console, and desktop presentation with the same hostile requests and no matching operator action.",
+      "expected": "No host action occurs. T26 records backend refusal; T29 keeps unsolicited requests inert. Untrusted output cannot forge trusted labels or approval state.",
       "status": "NOT_RUN",
       "tasks": [
         "T26",

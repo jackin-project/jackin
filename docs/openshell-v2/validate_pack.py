@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
+import stat
 import sys
 from pathlib import Path
 from typing import Any
@@ -14,13 +16,13 @@ ORIGINAL_SPEC_SHA256 = "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe7
 GOAL_SHA256 = "d62aaf0477b96b014356b09d23f05bc2d22385a42277639514e6615dfa46f1a0"
 ACCEPTANCE_POLICY_SHA256 = "7609a5f84a1694b1441219ac62e289191d90f367c33a400853ec64728063d36d"
 C02_CONTRACT_SECTION_SHA256 = "017714a83ab1ee7827dfcf8459ef6ca5e58c11787210083856211d1ba8e9cdf2"
-TASK_AUTHORED_SHA256 = "1e4d3b26155f4b2bd1571e98034d42dcfc26b75e47c881ce3afe96a118492310"
-CASE_AUTHORED_SHA256 = "5543bda0fb35381fd0be193b4866c12285e7827e13ca590a74944169fadba0ad"
+TASK_AUTHORED_SHA256 = "045530b267fe5b237eb579c014cbbb635735c873a88ea3e0f9a9d987d1eb5936"
+CASE_AUTHORED_SHA256 = "ab392ba615434134344f864470d0de9cd4e8787eb31496aa6687555140f0f580"
 GRAPH_DECLARATIONS_SHA256 = "39a190141d0329a1f00b94bab82f19934cf0d1a9860ad742115f249ec69150dc"
 TRACEABILITY_AUTHORED_SHA256 = "33c969b0eec0852fa87dc459663540d8f9136e22f1ba22328a02724c9418c7ee"
 CONTRACTS_SHA256 = "da0f23654f30e8d1a37a12f07c9e5595d51027a5c4eaae3ce8072cb544dd3344"
 SUBAGENTS_SHA256 = "a4a9e5a967a73038b50ecdc4cadb9a51b1c83728f54c6b6fb9a87641566263f8"
-PACK_CHECKS_TEMPLATE_SHA256 = "47ee08827c2369eeb4553dda97a12123c9ebb3720db1b27b68064bb1bc4faf67"
+PACK_CHECKS_TEMPLATE_SHA256 = "3155e57bae7ca98583cdfc5808c45699ea3f9ef58735202253848678eb4f33f4"
 PLAN_PREFIX_SHA256 = "3176361a5191c757d69e2461936f80cbf3668f8cf508bc86734e12d80197a5d0"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
@@ -182,6 +184,70 @@ INITIAL_ONLY_CHECK_NAMES = (
 def canonical_check_inventory(initial: bool = False) -> tuple[str, ...]:
     initial_checks = INITIAL_ONLY_CHECK_NAMES if initial else ()
     return (*ORDINARY_CHECK_NAMES, *initial_checks, CHECK_INVENTORY_CHECK)
+
+
+def certified_input_violations(root: Path, entry_path: Path) -> list[dict[str, str]]:
+    """Reject linked or escaping pack entries, allowing a regular external validator tool."""
+    selected_root = Path(os.path.abspath(os.fspath(root)))
+    if not selected_root.is_dir():
+        return []
+
+    violations: list[dict[str, str]] = []
+    entry = Path(os.path.abspath(os.fspath(entry_path)))
+    try:
+        entry_metadata = entry.lstat()
+        if stat.S_ISLNK(entry_metadata.st_mode):
+            violations.append({"path": str(entry), "reason": "entry point is a symbolic link"})
+        elif not stat.S_ISREG(entry_metadata.st_mode):
+            violations.append({"path": str(entry), "reason": "entry point is not a regular file"})
+        entry_resolved = entry.resolve(strict=False)
+        entry_is_pack_local = entry == selected_root or selected_root in entry.parents
+        if entry_is_pack_local and not entry_resolved.is_relative_to(selected_root):
+            violations.append({"path": str(entry),
+                               "reason": "entry point resolves outside the selected pack root"})
+    except OSError as error:
+        violations.append({"path": str(entry), "reason": f"entry point cannot be inspected: {error}"})
+
+    def walk_error(error: OSError) -> None:
+        violations.append({"path": error.filename or str(selected_root),
+                           "reason": f"pack input cannot be inspected: {error}"})
+
+    for directory, directories, files in os.walk(
+        selected_root, topdown=True, followlinks=False, onerror=walk_error,
+    ):
+        current = Path(directory)
+        for name in list(directories):
+            child = current / name
+            try:
+                metadata = child.lstat()
+            except OSError as error:
+                violations.append({"path": str(child),
+                                   "reason": f"pack directory cannot be inspected: {error}"})
+                directories.remove(name)
+                continue
+            if stat.S_ISLNK(metadata.st_mode):
+                violations.append({"path": child.relative_to(selected_root).as_posix(),
+                                   "reason": "symbolic link in certified pack inputs"})
+                directories.remove(name)
+                continue
+            if name == "__pycache__":
+                directories.remove(name)
+                continue
+        for name in files:
+            child = current / name
+            try:
+                metadata = child.lstat()
+            except OSError as error:
+                violations.append({"path": str(child),
+                                   "reason": f"pack file cannot be inspected: {error}"})
+                continue
+            if stat.S_ISLNK(metadata.st_mode):
+                violations.append({"path": child.relative_to(selected_root).as_posix(),
+                                   "reason": "symbolic link in certified pack inputs"})
+            elif not stat.S_ISREG(metadata.st_mode) and child.suffix != ".pyc":
+                violations.append({"path": child.relative_to(selected_root).as_posix(),
+                                   "reason": "certified pack input is not a regular file"})
+    return sorted(violations, key=lambda item: (item.get("path", ""), item.get("reason", "")))
 
 
 SOURCE_BASIS_PATTERN = re.compile(r"SPEC L\d+(?:-L\d+)?(?:; L\d+(?:-L\d+)?)*")
@@ -761,29 +827,38 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
         a86_errors.append({"case": "A86", "field": "setup",
                            "problem": "must preserve hostile input across backend and product paths"})
     if not case_text_contains(
-        a86, "action", "CLI, Console, and desktop paths",
+        a86, "action",
+        "T26 qualifies backend host-action and approval refusals",
         "without a matching operator action",
+        "T29 exercises the finished CLI, Console, and desktop presentation",
+        "with the same hostile requests and no matching operator action",
     ):
         a86_errors.append({"case": "A86", "field": "action",
-                           "problem": "must exercise integrated product presentation without operator intent"})
+                           "problem": "must distinguish backend qualification from finished product presentation"})
     if not case_text_contains(
-        a86, "expected", "No host action occurs", "T29 ignores unsolicited requests",
-        "forge trusted labels or approval state",
+        a86, "expected", "No host action occurs", "T26 records backend refusal",
+        "T29 keeps unsolicited requests inert", "forge trusted labels or approval state",
     ):
         a86_errors.append({"case": "A86", "field": "expected",
-                           "problem": "must preserve backend refusal and trusted presentation state"})
+                           "problem": "must preserve both phase results and trusted presentation state"})
     for task_id, field, required_text in (
         ("T26", "test_cases", "A86"),
-        ("T26", "steps", "Qualify A86 host-action and approval refusals for unsolicited helper clipboard, URL, and export effects."),
-        ("T26", "acceptance", "A86 retains backend host-action and approval checks; untrusted output cannot trigger effects or forge approval state."),
+        ("T26", "steps", "Qualify A86 backend host-action and approval refusals for unsolicited helper clipboard, URL, and export effects without operator intent."),
+        ("T26", "acceptance", "A86 at T26 qualifies backend refusals; no host effect occurs without operator intent or forged approval state."),
         ("T29", "test_cases", "A86"),
-        ("T29", "steps", "Exercise A86 across CLI, Console, and desktop presentation without a matching operator action."),
-        ("T29", "acceptance", "A86 keeps unsolicited helper requests inert and prevents untrusted output from forging trusted labels or approval state."),
+        ("T29", "steps", "Run A86 through the finished CLI, Console, and desktop presentation without a matching operator action."),
+        ("T29", "acceptance", "A86 at T29 keeps unsolicited requests inert and prevents untrusted output from forging trusted labels or approval state."),
     ):
         if not task_contains(task_id, field, required_text):
             a86_errors.append({"task": task_id, "field": field,
                                "problem": "owner-specific A86 qualification is missing",
                                "required": required_text})
+    t26 = tasks_by_id.get("T26", {})
+    t26_steps = t26.get("steps", [])
+    t26_acceptance = t26.get("acceptance", [])
+    finished_presentation = "finished CLI, Console, and desktop presentation"
+    if any(finished_presentation in str(item) for item in (*t26_steps, *t26_acceptance)):
+        a86_errors.append({"task": "T26", "problem": "backend qualification cannot require finished presentation evidence"})
     return failures
 
 
@@ -1235,6 +1310,10 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Print a machine-readable report.")
     args = parser.parse_args()
     root = args.root.resolve()
+    input_violations = certified_input_violations(root, Path(os.path.abspath(__file__)))
+    if input_violations:
+        raise ValueError("Certified pack inputs violate path custody: "
+                         + json.dumps(input_violations, sort_keys=True))
     failures: list[str] = []
     checks: list[dict[str, Any]] = []
 

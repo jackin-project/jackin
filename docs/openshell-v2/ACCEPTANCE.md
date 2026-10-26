@@ -1032,9 +1032,9 @@ Do not claim support above measured and qualified resource bounds.
 
 **Setup:** Emit hostile terminal escape sequences and unsolicited helper clipboard, URL, and export requests through backend and integrated product paths.
 
-**Action:** Observe CLI, Console, and desktop paths without a matching operator action.
+**Action:** T26 qualifies backend host-action and approval refusals without a matching operator action. T29 exercises the finished CLI, Console, and desktop presentation with the same hostile requests and no matching operator action.
 
-**Required result:** No host action occurs. T29 ignores unsolicited requests. Untrusted output cannot forge trusted labels or approval state.
+**Required result:** No host action occurs. T26 records backend refusal; T29 keeps unsolicited requests inert. Untrusted output cannot forge trusted labels or approval state.
 
 ### A87 — Bound approval semantics
 

@@ -9,16 +9,20 @@ import json
 import os
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Callable
 
 FIXTURE_TIMEOUT_SECONDS = 30
 ORIGINAL_BOARD_TIMEOUT_SECONDS = 30
 PROBE_TIMEOUT_SECONDS = 15
+TIMEOUT_TERMINATION_GRACE_SECONDS = 0.25
+TIMEOUT_FINAL_DRAIN_SECONDS = 0.5
 
 
 class CertifiedInputError(ValueError):
@@ -29,10 +33,27 @@ class CertifiedInputError(ValueError):
         super().__init__("The certified input path contains a symbolic link or an escaping path.")
 
 
-def path_component_violations(path: Path) -> list[dict[str, Any]]:
+def path_component_violations(path: Path, root: Path | None = None) -> list[dict[str, Any]]:
     absolute = Path(os.path.abspath(os.fspath(path)))
-    current = Path(absolute.anchor)
-    for part in absolute.parts[1:]:
+    if root is None:
+        current = Path(absolute.anchor)
+        parts = absolute.parts[1:]
+    else:
+        root_resolved = Path(root).resolve(strict=True)
+        if absolute.is_symlink():
+            return [{"path": str(absolute), "reason": "symbolic link in certified path",
+                     "target": os.readlink(absolute)}]
+        try:
+            resolved = absolute.resolve(strict=False)
+        except OSError as error:
+            return [{"path": str(absolute), "reason": "path component cannot be inspected",
+                     "detail": str(error)}]
+        if not resolved.is_relative_to(root_resolved):
+            return [{"path": str(absolute), "reason": "path resolves outside certified root",
+                     "resolved_path": str(resolved)}]
+        current = root_resolved
+        parts = resolved.relative_to(root_resolved).parts
+    for part in parts:
         current = current / part
         try:
             metadata = current.lstat()
@@ -48,27 +69,29 @@ def path_component_violations(path: Path) -> list[dict[str, Any]]:
 
 
 def certified_input_violations(root: Path, entry_path: Path | None = None) -> list[dict[str, Any]]:
-    root_path = Path(os.path.abspath(os.fspath(root)))
-    violations = path_component_violations(root_path)
-    if entry_path is not None:
-        entry_violations = path_component_violations(entry_path)
-        for violation in entry_violations:
-            if violation not in violations:
-                violations.append(violation)
-    if violations:
-        return violations
-
+    selected_root = Path(os.path.abspath(os.fspath(root)))
     try:
+        root_resolved = selected_root.resolve(strict=True)
+        root_path = root_resolved
         root_metadata = root_path.lstat()
     except OSError as error:
-        return [{"path": str(root_path), "reason": "certified root cannot be inspected",
+        return [{"path": str(selected_root), "reason": "certified root cannot be inspected",
                  "detail": str(error)}]
     if not stat.S_ISDIR(root_metadata.st_mode):
         return [{"path": str(root_path), "reason": "certified root is not a directory"}]
 
-    root_resolved = root_path.resolve(strict=True)
+    violations: list[dict[str, Any]] = []
     if entry_path is not None:
-        entry_resolved = Path(os.path.abspath(os.fspath(entry_path))).resolve(strict=True)
+        entry_path = Path(os.path.abspath(os.fspath(entry_path)))
+        entry_violations = path_component_violations(entry_path, root_path)
+        violations.extend(entry_violations)
+        try:
+            entry_resolved = entry_path.resolve(strict=True)
+        except OSError as error:
+            violations.append({"path": str(entry_path),
+                               "reason": "entry point cannot be inspected",
+                               "detail": str(error)})
+            entry_resolved = root_path
         if not entry_resolved.is_relative_to(root_resolved):
             violations.append({"path": str(entry_path),
                                "reason": "entry point resolves outside certified root"})
@@ -159,8 +182,8 @@ def snapshot_changes(before: dict[str, str], after: dict[str, str]) -> dict[str,
     }
 
 
-def path_state(path: Path) -> dict[str, str | None]:
-    if path_component_violations(path):
+def path_state(path: Path, root: Path | None = None) -> dict[str, str | None]:
+    if path_component_violations(path, root):
         return {"state": "unsafe", "sha256": None}
     return input_state(sha256(path) if path.is_file() and not path.is_symlink() else None)
 
@@ -201,6 +224,12 @@ def output_text(value: str | bytes | None) -> str:
 
 def run_with_timeout(command: list[str], timeout_seconds: float,
                      cwd: Path | None = None) -> dict[str, Any]:
+    started = time.monotonic()
+    process_options: dict[str, Any] = {}
+    if os.name == "posix":
+        process_options["start_new_session"] = True
+    elif os.name == "nt":
+        process_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     process = subprocess.Popen(
         command,
         cwd=cwd,
@@ -209,47 +238,127 @@ def run_with_timeout(command: list[str], timeout_seconds: float,
         text=True,
         encoding="utf-8",
         errors="replace",
+        **process_options,
     )
+
+    def signal_owned_process_group(signal_number: int) -> bool:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal_number)
+                return True
+            except ProcessLookupError:
+                return False
+        if signal_number == signal.SIGTERM and os.name == "nt":
+            try:
+                process.send_signal(signal.CTRL_BREAK_EVENT)
+                return True
+            except (OSError, ValueError):
+                return False
+        try:
+            process.kill()
+            return True
+        except ProcessLookupError:
+            return False
+
+    def timeout_receipt(partial_stdout: str, partial_stderr: str,
+                        stdout: str, stderr: str, termination_signals: list[str],
+                        drain_timed_out: bool) -> dict[str, Any]:
+        return {
+            "argv": command,
+            "exit_code": process.returncode,
+            "stdout": stdout,
+            "stderr": stderr,
+            "timed_out": True,
+            "timeout_seconds": timeout_seconds,
+            "elapsed_seconds": round(time.monotonic() - started, 6),
+            "timeout_partial_stdout": partial_stdout,
+            "timeout_partial_stderr": partial_stderr,
+            "termination_sent": bool(termination_signals),
+            "termination_signals": termination_signals,
+            "process_group_id": process.pid if os.name == "posix" else None,
+            "drain_timed_out": drain_timed_out,
+            "child_reaped": process.returncode is not None,
+        }
+
     try:
         stdout, stderr = process.communicate(timeout=timeout_seconds)
         return {
+            "argv": command,
             "exit_code": process.returncode,
             "stdout": output_text(stdout),
             "stderr": output_text(stderr),
             "timed_out": False,
             "timeout_seconds": timeout_seconds,
+            "elapsed_seconds": round(time.monotonic() - started, 6),
             "timeout_partial_stdout": "",
             "timeout_partial_stderr": "",
             "termination_sent": False,
+            "termination_signals": [],
+            "process_group_id": process.pid if os.name == "posix" else None,
+            "drain_timed_out": False,
             "child_reaped": process.returncode is not None,
         }
     except subprocess.TimeoutExpired as error:
         partial_stdout = output_text(error.output)
         partial_stderr = output_text(error.stderr)
-        termination_sent = False
+        termination_signals: list[str] = []
+        drain_timed_out = False
+        if signal_owned_process_group(signal.SIGTERM):
+            termination_signals.append("SIGTERM" if os.name == "posix" else "CTRL_BREAK_EVENT")
         try:
-            process.kill()
-            termination_sent = True
-        except ProcessLookupError:
+            stdout, stderr = process.communicate(timeout=TIMEOUT_TERMINATION_GRACE_SECONDS)
+            return timeout_receipt(
+                partial_stdout, partial_stderr,
+                output_text(stdout), output_text(stderr), termination_signals,
+                drain_timed_out,
+            )
+        except subprocess.TimeoutExpired as error_after_term:
+            partial_stdout = output_text(error_after_term.output)
+            partial_stderr = output_text(error_after_term.stderr)
+
+        if signal_owned_process_group(signal.SIGKILL):
+            termination_signals.append("SIGKILL" if os.name == "posix" else "PROCESS_KILL")
+        try:
+            stdout, stderr = process.communicate(timeout=TIMEOUT_FINAL_DRAIN_SECONDS)
+            return timeout_receipt(
+                partial_stdout, partial_stderr,
+                output_text(stdout), output_text(stderr), termination_signals,
+                drain_timed_out,
+            )
+        except subprocess.TimeoutExpired as error_after_kill:
+            partial_stdout = output_text(error_after_kill.output)
+            partial_stderr = output_text(error_after_kill.stderr)
+            drain_timed_out = True
+
+        # A descendant that escaped its owned group may keep a pipe open. Stop
+        # waiting for that pipe, close our read ends, and reap only the direct child.
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+        if process.poll() is None:
+            try:
+                process.kill()
+                termination_signals.append("DIRECT_CHILD_KILL_FALLBACK")
+            except ProcessLookupError:
+                pass
+        try:
+            process.wait(timeout=TIMEOUT_FINAL_DRAIN_SECONDS)
+        except subprocess.TimeoutExpired:
             pass
-        stdout, stderr = process.communicate()
-        return {
-            "exit_code": process.returncode,
-            "stdout": output_text(stdout),
-            "stderr": output_text(stderr),
-            "timed_out": True,
-            "timeout_seconds": timeout_seconds,
-            "timeout_partial_stdout": partial_stdout,
-            "timeout_partial_stderr": partial_stderr,
-            "termination_sent": termination_sent,
-            "child_reaped": process.returncode is not None,
-        }
+        return timeout_receipt(
+            partial_stdout, partial_stderr,
+            partial_stdout, partial_stderr, termination_signals,
+            drain_timed_out,
+        )
 
 
 ENTRY_FILE = Path(os.path.abspath(__file__))
 ROOT_CANDIDATE = ENTRY_FILE.parent
-BOOTSTRAP_INPUT_POLICY_VIOLATIONS = certified_input_violations(ROOT_CANDIDATE, ENTRY_FILE)
-ROOT = ROOT_CANDIDATE.resolve(strict=True) if not BOOTSTRAP_INPUT_POLICY_VIOLATIONS else ROOT_CANDIDATE
+try:
+    ROOT = ROOT_CANDIDATE.resolve(strict=True)
+except OSError:
+    ROOT = ROOT_CANDIDATE
+BOOTSTRAP_INPUT_POLICY_VIOLATIONS = certified_input_violations(ROOT, ENTRY_FILE)
 VALIDATOR = ROOT / "validate_pack.py"
 sys.dont_write_bytecode = True
 SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT = (
@@ -257,7 +366,7 @@ SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT = (
 )
 VALIDATOR_IMPORT_STDOUT = io.StringIO()
 VALIDATOR_IMPORT_STDERR = io.StringIO()
-VALIDATOR_IMPORT_EXCEPTION: dict[str, str] | None = None
+VALIDATOR_IMPORT_EXCEPTION: dict[str, Any] | None = None
 if not BOOTSTRAP_INPUT_POLICY_VIOLATIONS:
     sys.path.insert(0, str(ROOT))
     try:
@@ -271,6 +380,17 @@ if not BOOTSTRAP_INPUT_POLICY_VIOLATIONS:
                 render_task_packet,
                 strict_json_loads,
             )
+    except SystemExit as error:
+        code = error.code
+        try:
+            json.dumps(code)
+        except (TypeError, ValueError):
+            code = repr(code)
+        VALIDATOR_IMPORT_EXCEPTION = {
+            "type": "SystemExit",
+            "code": code,
+            "message": str(error),
+        }
     except Exception as error:
         VALIDATOR_IMPORT_EXCEPTION = {"type": type(error).__name__, "message": str(error)}
 else:
@@ -635,6 +755,27 @@ FIXED_FIXTURE_NAMES = (
     "A86 cannot omit T29 integrated presentation ownership or weaken its assertions",
     "T40 cannot claim direct writes to shared target and compatibility matrices",
 )
+FIXED_RUNNER_CHECK_COUNT = 18
+FIXED_RUNNER_CHECK_NAMES = (
+    "The fixture inventory rejects a missing scenario entry.",
+    "The fixture inventory rejects a duplicate scenario entry.",
+    "The fixture inventory rejects an unexpected scenario entry.",
+    "Canonical roots accept OS aliases and reject linked pack inputs before reads or copying.",
+    "The owned process group kills inherited-pipe descendants and rejects timed-out success output.",
+    "The runner captures validator import stdout without leaking output.",
+    "The runner captures validator import stderr without leaking output.",
+    "The runner captures validator import exception without leaking output.",
+    "The runner captures validator import quiet without leaking output.",
+    "The runner captures validator import systemexit-zero without leaking output.",
+    "The runner captures validator import systemexit-nonzero without leaking output.",
+    "The runner captures validator import systemexit-string without leaking output.",
+    "KeyboardInterrupt remains an uncaught cancellation during validator import.",
+    "A86 phase controls reject owner, layer, operator-intent, and trusted-state regressions.",
+    "The runner-control inventory rejects a missing control.",
+    "The runner-control inventory rejects a duplicate control.",
+    "The runner-control inventory rejects an unexpected control.",
+    "The runner-control inventory accepts the complete fixed control list.",
+)
 
 
 def fixture_inventory_report(observed_names: list[Any]) -> dict[str, Any]:
@@ -688,6 +829,83 @@ def fixture_inventory_report(observed_names: list[Any]) -> dict[str, Any]:
 def fixture_check_inventory(initial: bool = False) -> tuple[str, ...]:
     initial_checks = FIXTURE_INITIAL_ONLY_CHECK_NAMES if initial else ()
     return (*FIXTURE_ORDINARY_CHECK_NAMES, *initial_checks, FIXTURE_CHECK_INVENTORY_CHECK)
+
+
+def runner_check_inventory_report(observed_names: list[Any]) -> dict[str, Any]:
+    expected_names = list(FIXED_RUNNER_CHECK_NAMES)
+    actual_names = [name for name in observed_names if isinstance(name, str)]
+    invalid_observed_names = [
+        {"index": index, "value": name}
+        for index, name in enumerate(observed_names)
+        if not isinstance(name, str)
+    ]
+    expected_duplicates = sorted({name for name in expected_names
+                                  if expected_names.count(name) > 1})
+    observed_duplicates = sorted({name for name in actual_names
+                                  if actual_names.count(name) > 1})
+    errors: list[str] = []
+    if len(expected_names) != FIXED_RUNNER_CHECK_COUNT:
+        errors.append("The fixed runner-control inventory has the wrong number of entries.")
+    if expected_duplicates:
+        errors.append("The fixed runner-control inventory contains duplicate names.")
+    if len(observed_names) != FIXED_RUNNER_CHECK_COUNT:
+        errors.append("The executed runner-control count does not match the fixed count.")
+    if invalid_observed_names:
+        errors.append("The executed runner-control inventory contains non-string names.")
+    if observed_duplicates:
+        errors.append("The executed runner-control inventory contains duplicate names.")
+    missing_names = sorted(set(expected_names) - set(actual_names))
+    unexpected_names = sorted(set(actual_names) - set(expected_names))
+    if missing_names:
+        errors.append("The executed runner-control inventory is missing fixed controls.")
+    if unexpected_names:
+        errors.append("The executed runner-control inventory contains unexpected controls.")
+    return {
+        "passed": not errors,
+        "expected_count": FIXED_RUNNER_CHECK_COUNT,
+        "fixed_inventory_count": len(expected_names),
+        "observed_count": len(observed_names),
+        "expected_duplicate_names": expected_duplicates,
+        "observed_duplicate_names": observed_duplicates,
+        "invalid_observed_names": invalid_observed_names,
+        "missing_names": missing_names,
+        "unexpected_names": unexpected_names,
+        "errors": errors,
+    }
+
+
+def runner_inventory_control_probe(mode: str) -> dict[str, Any]:
+    observed_names = list(FIXED_RUNNER_CHECK_NAMES)
+    timeout_name = FIXED_RUNNER_CHECK_NAMES[4]
+    if mode == "missing":
+        observed_names.remove(timeout_name)
+    elif mode == "duplicate":
+        observed_names.append(FIXED_RUNNER_CHECK_NAMES[0])
+    elif mode == "unexpected":
+        observed_names.append("An undeclared runner control was executed.")
+    elif mode != "complete":
+        raise ValueError(f"Unsupported runner-control inventory probe mode: {mode}")
+    report = runner_check_inventory_report(observed_names)
+    expected = mode == "complete" and report["passed"]
+    if mode == "missing":
+        expected = timeout_name in report["missing_names"] and not report["passed"]
+    elif mode == "duplicate":
+        expected = (FIXED_RUNNER_CHECK_NAMES[0] in report["observed_duplicate_names"]
+                    and not report["passed"])
+    elif mode == "unexpected":
+        expected = ("An undeclared runner control was executed." in report["unexpected_names"]
+                    and not report["passed"])
+    return {
+        "scenario": {
+            "missing": "The runner-control inventory rejects a missing control.",
+            "duplicate": "The runner-control inventory rejects a duplicate control.",
+            "unexpected": "The runner-control inventory rejects an unexpected control.",
+            "complete": "The runner-control inventory accepts the complete fixed control list.",
+        }[mode],
+        "passed": expected,
+        "mode": mode,
+        "report": report,
+    }
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -1300,12 +1518,12 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
                 "exit_code": None,
             }
         executable_before = path_state(executable)
-        validator_copy_before = path_state(validator_copy)
+        validator_copy_before = path_state(validator_copy, pack)
         process = run_with_timeout(command, FIXTURE_TIMEOUT_SECONDS)
         execution_inputs_after = snapshot_files(pack)
         execution_input_policy_after = certified_input_violations(pack)
         executable_after = path_state(executable)
-        validator_copy_after = path_state(validator_copy)
+        validator_copy_after = path_state(validator_copy, pack)
         if process["timed_out"]:
             report = None
             report_errors = [
@@ -1448,10 +1666,129 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
         }
 
 
+def a86_phase_control_probe() -> dict[str, Any]:
+    contract_check = "A86 preserves backend host-action and integrated presentation owners"
+    controls: list[tuple[str, Callable[[Path], None]]] = []
+
+    def remove_owner(owner: str) -> Callable[[Path], None]:
+        def mutate(pack: Path) -> None:
+            def update(cases: dict[str, dict[str, Any]]) -> None:
+                case = cases["A86"]
+                case["tasks"].remove(owner)
+                case["assignment_results"] = [
+                    row for row in case["assignment_results"] if row["task_id"] != owner
+                ]
+                if owner == "T26":
+                    case["action"] = (
+                        "T29 exercises the finished CLI, Console, and desktop presentation "
+                        "with the same hostile requests and no matching operator action."
+                    )
+                else:
+                    case["action"] = (
+                        "T26 qualifies backend host-action and approval refusals without a "
+                        "matching operator action."
+                    )
+            update_cases(pack, update)
+            graph_path = pack / "task-graph.json"
+            graph = read_json(graph_path)
+            task = next(item for item in graph["tasks"] if item["id"] == owner)
+            task["test_cases"].remove("A86")
+            task["steps"] = [item for item in task["steps"] if "A86" not in item]
+            task["acceptance"] = [item for item in task["acceptance"] if "A86" not in item]
+            write_json(graph_path, graph)
+            sync_task_packet(pack, owner)
+            sync_case_block(pack, case_map(pack)["A86"])
+        return mutate
+
+    controls.extend((
+        ("removing the T26 backend owner and assignment", remove_owner("T26")),
+        ("removing the T29 presentation owner and assignment", remove_owner("T29")),
+    ))
+
+    def remove_backend_phase(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A86"]
+            case["action"] = case["action"].replace(
+                "T26 qualifies backend host-action and approval refusals without a matching operator action. ",
+                "T26 is an owner on this case. ",
+            )
+        update_cases(pack, update)
+        sync_case_block(pack, case_map(pack)["A86"])
+    controls.append(("removing the T26 backend qualification phase", remove_backend_phase))
+
+    def remove_integrated_phase(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A86"]
+            case["action"] = case["action"].replace(
+                "T29 exercises the finished CLI, Console, and desktop presentation with the same hostile requests and no matching operator action.",
+                "T29 is an owner on this case.",
+            )
+        update_cases(pack, update)
+        sync_case_block(pack, case_map(pack)["A86"])
+    controls.append(("removing the T29 integrated presentation phase", remove_integrated_phase))
+
+    def remove_hostile_input_layer(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A86"]
+            case["setup"] = case["setup"].replace(
+                "hostile terminal escape sequences", "ordinary terminal output",
+            )
+        update_cases(pack, update)
+        sync_case_block(pack, case_map(pack)["A86"])
+    controls.append(("removing hostile terminal input assertions", remove_hostile_input_layer))
+
+    def remove_operator_intent_guard(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A86"]
+            case["action"] = case["action"].replace(
+                "without a matching operator action", "after a matching operator action",
+            ).replace("no matching operator action", "a matching operator action")
+        update_cases(pack, update)
+        sync_case_block(pack, case_map(pack)["A86"])
+    controls.append(("removing the no-operator-intent assertions", remove_operator_intent_guard))
+
+    def remove_trusted_state_assertion(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            case = cases["A86"]
+            case["expected"] = case["expected"].replace(
+                "Untrusted output cannot forge trusted labels or approval state.",
+                "Trusted state remains visible.",
+            )
+        update_cases(pack, update)
+        sync_case_block(pack, case_map(pack)["A86"])
+    controls.append(("removing trusted-label and approval-state protection", remove_trusted_state_assertion))
+
+    def require_finished_ui_for_t26(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(item for item in graph["tasks"] if item["id"] == "T26")
+        task["steps"].append(
+            "T26 requires finished CLI, Console, and desktop presentation before backend qualification."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T26")
+    controls.append(("requiring finished presentation before T26 backend qualification", require_finished_ui_for_t26))
+
+    results = []
+    for description, mutate in controls:
+        result = run_fixture(
+            f"A86 control rejects {description}", mutate, 1, [], expect_report_match=False,
+        )
+        result["A86_contract_check_failed"] = contract_check in (result.get("actual_failures") or [])
+        results.append(result)
+    return {
+        "scenario": "A86 phase controls reject owner, layer, operator-intent, and trusted-state regressions.",
+        "passed": all(item["passed"] and item["A86_contract_check_failed"] for item in results),
+        "expected_control_count": len(controls),
+        "observed_control_count": len(results),
+        "controls": results,
+    }
+
+
 def validate_original_board() -> dict[str, Any]:
     command = [sys.executable, str(VALIDATOR), "--root", str(ROOT), "--json"]
     input_policy_before = certified_input_violations(ROOT, ENTRY_FILE)
-    executable_policy_before = path_component_violations(VALIDATOR)
+    executable_policy_before = path_component_violations(VALIDATOR, ROOT)
     if input_policy_before or executable_policy_before:
         return {
             "passed": False,
@@ -1472,17 +1809,17 @@ def validate_original_board() -> dict[str, Any]:
             "stderr": "",
         }
     inputs_before = snapshot_files(ROOT)
-    executable_before = path_state(VALIDATOR)
+    executable_before = path_state(VALIDATOR, ROOT)
     process = run_with_timeout(command, ORIGINAL_BOARD_TIMEOUT_SECONDS)
     input_policy_after = certified_input_violations(ROOT, ENTRY_FILE)
     inputs_after = snapshot_files(ROOT)
-    executable_after = path_state(VALIDATOR)
+    executable_after = path_state(VALIDATOR, ROOT)
     if process["timed_out"]:
         report = None
         report_errors = [
             f"original-board subprocess timed out after {process['timeout_seconds']} seconds"
         ]
-    elif input_policy_before or input_policy_after or path_component_violations(VALIDATOR):
+    elif input_policy_before or input_policy_after or path_component_violations(VALIDATOR, ROOT):
         report = None
         report_errors = ["original-board inputs violate the certified-input policy"]
     else:
@@ -1676,87 +2013,241 @@ def certified_input_security_probe() -> dict[str, Any]:
         temporary_root = Path(temp_dir)
         source_policy = certified_input_violations(ROOT, ENTRY_FILE)
         original_hashes = snapshot_files(ROOT)
-        self_contained_pack = temporary_root / "self-contained-pack"
+        physical_parent = temporary_root / "physical-parent"
+        physical_parent.mkdir()
+        self_contained_pack = physical_parent / "self-contained-pack"
         copy_certified_pack(ROOT, self_contained_pack)
         copied_hashes = snapshot_files(self_contained_pack)
         self_contained_policy = certified_input_violations(self_contained_pack)
-
-        external_target = temporary_root / "external-target.txt"
-        external_target.write_text("This controlled fixture target must remain unchanged.\n",
-                                   encoding="utf-8")
-        external_target_sha256_before = sha256(external_target)
-        external_link = self_contained_pack / "external-target-link.md"
-        os.symlink(external_target, external_link)
-        external_link_violations = certified_input_violations(self_contained_pack)
-        external_copy = temporary_root / "copy-that-must-not-exist"
-        try:
-            copy_certified_pack(self_contained_pack, external_copy)
-            external_copy_refused = False
-            external_copy_error: list[dict[str, Any]] = []
-        except CertifiedInputError as error:
-            external_copy_refused = True
-            external_copy_error = error.violations
-        external_target_sha256_after = sha256(external_target)
-
-        physical_parent = temporary_root / "physical-parent"
-        physical_parent.mkdir()
-        ancestor_pack = physical_parent / "pack"
-        copy_certified_pack(ROOT, ancestor_pack)
         ancestor_alias = temporary_root / "ancestor-link"
         os.symlink(physical_parent, ancestor_alias, target_is_directory=True)
-        aliased_pack = ancestor_alias / "pack"
-        ancestor_violations = certified_input_violations(aliased_pack)
-        ancestor_copy = temporary_root / "ancestor-copy-that-must-not-exist"
-        try:
-            copy_certified_pack(aliased_pack, ancestor_copy)
-            ancestor_copy_refused = False
-            ancestor_copy_error: list[dict[str, Any]] = []
-        except CertifiedInputError as error:
-            ancestor_copy_refused = True
-            ancestor_copy_error = error.violations
+        aliased_pack = ancestor_alias / self_contained_pack.name
+        alias_policy = certified_input_violations(aliased_pack)
+        alias_hashes = snapshot_files(aliased_pack)
 
-        external_link_detected = any(
-            item.get("path") == "external-target-link.md"
-            and item.get("reason") == "symbolic link in certified inputs"
-            and item.get("target") == str(external_target)
-            for item in external_link_violations
+        standalone_alias_runs = []
+        for selected_pack in (self_contained_pack, aliased_pack):
+            command = [sys.executable, str(selected_pack / "validate_pack.py"),
+                       "--root", str(selected_pack), "--initial", "--json"]
+            process = run_with_timeout(command, PROBE_TIMEOUT_SECONDS, cwd=selected_pack)
+            try:
+                report = json.loads(process["stdout"]) if not process["timed_out"] else None
+            except json.JSONDecodeError:
+                report = None
+            standalone_alias_runs.append({
+                "argv": command,
+                "exit_code": process["exit_code"],
+                "passed": (
+                    not process["timed_out"] and process["exit_code"] == 0
+                    and isinstance(report, dict) and report.get("passed") is True
+                ),
+            })
+
+        runner_alias_command = [
+            sys.executable, "-c",
+            "import importlib.util,json,sys; "
+            "spec=importlib.util.spec_from_file_location('alias_runner_probe',sys.argv[1]); "
+            "module=importlib.util.module_from_spec(spec); sys.modules[spec.name]=module; "
+            "spec.loader.exec_module(module); "
+            "print(json.dumps({'root':str(module.ROOT),"
+            "'violations':module.BOOTSTRAP_INPUT_POLICY_VIOLATIONS,"
+            "'import_exception':module.VALIDATOR_IMPORT_EXCEPTION}))",
+            str(aliased_pack / "validate_assignment_fixtures.py"),
+        ]
+        runner_alias_process = run_with_timeout(
+            runner_alias_command, PROBE_TIMEOUT_SECONDS, cwd=aliased_pack,
         )
-        ancestor_link_detected = any(
-            item.get("reason") == "symbolic link in certified path"
-            and item.get("path") == str(ancestor_alias)
-            for item in ancestor_violations
+        try:
+            runner_alias_report = (
+                json.loads(runner_alias_process["stdout"])
+                if not runner_alias_process["timed_out"] else None
+            )
+        except json.JSONDecodeError:
+            runner_alias_report = None
+
+        external_task = sorted((ROOT / "tasks").glob("*.md"))[0]
+        external_sources = {
+            "GOAL.md": ROOT / "GOAL.md",
+            f"tasks/{external_task.name}": external_task,
+            "validate_pack.py": VALIDATOR,
+            "validate_assignment_fixtures.py": ENTRY_FILE,
+        }
+        link_runs: list[dict[str, Any]] = []
+        external_target_hashes: dict[str, dict[str, str]] = {}
+        for index, (relative_path, source_path) in enumerate(external_sources.items()):
+            pack = temporary_root / f"linked-input-pack-{index}"
+            copy_certified_pack(ROOT, pack)
+            external_target = temporary_root / f"external-target-{index}{source_path.suffix}"
+            external_target.write_bytes(source_path.read_bytes())
+            before_target = sha256(external_target)
+            target_path = pack / relative_path
+            if target_path.is_dir() and not target_path.is_symlink():
+                held_path = temporary_root / f"held-task-directory-{index}"
+                target_path.rename(held_path)
+                os.symlink(external_target, target_path, target_is_directory=True)
+            else:
+                target_path.unlink()
+                os.symlink(external_target, target_path)
+            violations = certified_input_violations(pack)
+            try:
+                copy_certified_pack(pack, temporary_root / f"refused-copy-{index}")
+                copy_refused = False
+                copy_error: list[dict[str, Any]] = []
+            except CertifiedInputError as error:
+                copy_refused = True
+                copy_error = error.violations
+
+            standalone_command = [sys.executable, str(pack / "validate_pack.py"),
+                                  "--root", str(pack), "--json"]
+            standalone_process = run_with_timeout(
+                standalone_command, PROBE_TIMEOUT_SECONDS, cwd=pack,
+            )
+            try:
+                standalone_report = (
+                    json.loads(standalone_process["stdout"])
+                    if not standalone_process["timed_out"] else None
+                )
+            except json.JSONDecodeError:
+                standalone_report = None
+            standalone_refused = (
+                not standalone_process["timed_out"]
+                and standalone_process["exit_code"] == 2
+                and isinstance(standalone_report, dict)
+                and standalone_report.get("passed") is False
+                and standalone_report.get("failures") == ["Planning pack input is valid"]
+                and len(standalone_report.get("checks", [])) == 1
+            )
+
+            runner_path = pack / "validate_assignment_fixtures.py"
+            runner_command = [sys.executable, str(runner_path)]
+            runner_process = run_with_timeout(runner_command, PROBE_TIMEOUT_SECONDS, cwd=pack)
+            try:
+                runner_report = (
+                    json.loads(runner_process["stdout"])
+                    if not runner_process["timed_out"] else None
+                )
+            except json.JSONDecodeError:
+                runner_report = None
+            runner_refused = (
+                not runner_process["timed_out"]
+                and runner_process["exit_code"] == 1
+                and isinstance(runner_report, dict)
+                and runner_report.get("passed") is False
+                and runner_report.get("validator_import", {}).get("passed") is False
+                and runner_report.get("fixture_inventory", {}).get("observed_count") == 0
+                and runner_report.get("original_board", {}).get("validator_not_started") is True
+            )
+            after_target = sha256(external_target)
+            external_target_hashes[relative_path] = {
+                "before": before_target,
+                "after": after_target,
+            }
+            link_runs.append({
+                "path": relative_path,
+                "violations": violations,
+                "copy_refused": copy_refused,
+                "copy_error": copy_error,
+                "standalone_argv": standalone_command,
+                "standalone_exit_code": standalone_process["exit_code"],
+                "standalone_refused_before_input_reads": standalone_refused,
+                "runner_argv": runner_command,
+                "runner_exit_code": runner_process["exit_code"],
+                "runner_refused_before_import_or_copy": runner_refused,
+                "target_hash_before": before_target,
+                "target_hash_after": after_target,
+            })
+
+        ancestor_pack = temporary_root / "inside-ancestor-link-pack"
+        copy_certified_pack(ROOT, ancestor_pack)
+        tasks_path = ancestor_pack / "tasks"
+        held_tasks = temporary_root / "held-inside-pack-tasks"
+        tasks_path.rename(held_tasks)
+        os.symlink(held_tasks, tasks_path, target_is_directory=True)
+        ancestor_violations = certified_input_violations(ancestor_pack)
+        try:
+            copy_certified_pack(ancestor_pack, temporary_root / "refused-ancestor-copy")
+            ancestor_copy_refused = False
+        except CertifiedInputError:
+            ancestor_copy_refused = True
+        ancestor_standalone = run_with_timeout(
+            [sys.executable, str(ancestor_pack / "validate_pack.py"), "--root",
+             str(ancestor_pack), "--json"],
+            PROBE_TIMEOUT_SECONDS, cwd=ancestor_pack,
+        )
+        ancestor_runner = run_with_timeout(
+            [sys.executable, str(ancestor_pack / "validate_assignment_fixtures.py")],
+            PROBE_TIMEOUT_SECONDS, cwd=ancestor_pack,
+        )
+        try:
+            ancestor_standalone_report = json.loads(ancestor_standalone["stdout"])
+        except json.JSONDecodeError:
+            ancestor_standalone_report = None
+        try:
+            ancestor_runner_report = json.loads(ancestor_runner["stdout"])
+        except json.JSONDecodeError:
+            ancestor_runner_report = None
+        ancestor_standalone_refused = (
+            ancestor_standalone["exit_code"] == 2
+            and isinstance(ancestor_standalone_report, dict)
+            and ancestor_standalone_report.get("failures") == ["Planning pack input is valid"]
+        )
+        ancestor_runner_refused = (
+            ancestor_runner["exit_code"] == 1
+            and isinstance(ancestor_runner_report, dict)
+            and ancestor_runner_report.get("fixture_inventory", {}).get("observed_count") == 0
+        )
+
+        alias_runner_ok = (
+            not runner_alias_process["timed_out"]
+            and runner_alias_process["exit_code"] == 0
+            and isinstance(runner_alias_report, dict)
+            and runner_alias_report.get("root") == str(self_contained_pack.resolve())
+            and runner_alias_report.get("violations") == []
+            and runner_alias_report.get("import_exception") is None
         )
         passed = (
             not source_policy
             and original_hashes == copied_hashes
             and not self_contained_policy
-            and external_link_detected
-            and external_copy_refused
-            and not external_copy.exists()
-            and external_copy_error == external_link_violations
-            and external_target_sha256_before == external_target_sha256_after
-            and ancestor_link_detected
+            and not alias_policy
+            and alias_hashes == copied_hashes
+            and all(run["passed"] for run in standalone_alias_runs)
+            and alias_runner_ok
+            and len(link_runs) == len(external_sources)
+            and all(run["violations"] and run["copy_refused"]
+                    and run["copy_error"] == run["violations"]
+                    and run["standalone_refused_before_input_reads"]
+                    and run["runner_refused_before_import_or_copy"]
+                    and run["target_hash_before"] == run["target_hash_after"]
+                    for run in link_runs)
+            and bool(ancestor_violations)
             and ancestor_copy_refused
-            and not ancestor_copy.exists()
-            and ancestor_copy_error == ancestor_violations
+            and ancestor_standalone_refused
+            and ancestor_runner_refused
+            and all(values["before"] == values["after"]
+                    for values in external_target_hashes.values())
         )
         return {
-            "scenario": "The fixture runner refuses external and ancestor symlinks before copying.",
+            "scenario": "Canonical roots accept OS aliases and reject linked pack inputs before reads or copying.",
             "passed": passed,
             "source_input_policy_violations": source_policy,
             "self_contained_source_sha256": original_hashes,
             "self_contained_copy_sha256": copied_hashes,
             "self_contained_copy_policy_violations": self_contained_policy,
-            "external_link_violations": external_link_violations,
-            "external_copy_refused": external_copy_refused,
-            "external_copy_error": external_copy_error,
-            "external_copy_created": external_copy.exists(),
-            "external_target_sha256_before": external_target_sha256_before,
-            "external_target_sha256_after": external_target_sha256_after,
+            "selected_root_alias_policy_violations": alias_policy,
+            "selected_root_alias_sha256": alias_hashes,
+            "standalone_alias_runs": standalone_alias_runs,
+            "runner_alias_argv": runner_alias_command,
+            "runner_alias_exit_code": runner_alias_process["exit_code"],
+            "runner_alias_report": runner_alias_report,
+            "external_link_runs": link_runs,
+            "external_target_hashes": external_target_hashes,
             "ancestor_link_violations": ancestor_violations,
             "ancestor_copy_refused": ancestor_copy_refused,
-            "ancestor_copy_error": ancestor_copy_error,
-            "ancestor_copy_created": ancestor_copy.exists(),
+            "ancestor_standalone_exit_code": ancestor_standalone["exit_code"],
+            "ancestor_standalone_refused": ancestor_standalone_refused,
+            "ancestor_runner_exit_code": ancestor_runner["exit_code"],
+            "ancestor_runner_refused": ancestor_runner_refused,
         }
 
 
@@ -1781,6 +2272,19 @@ def validator_import_probe(mode: str) -> dict[str, Any]:
         elif mode == "exception":
             with validator.open("a", encoding="utf-8") as source:
                 source.write("\nraise RuntimeError('The validator import failed in this fixture.')\n")
+            command = [sys.executable, str(runner)]
+        elif mode in {"systemexit-zero", "systemexit-nonzero", "systemexit-string"}:
+            exit_value = {
+                "systemexit-zero": 0,
+                "systemexit-nonzero": 7,
+                "systemexit-string": "The imported validator requested an exit.",
+            }[mode]
+            with validator.open("a", encoding="utf-8") as source:
+                source.write(f"\nraise SystemExit({exit_value!r})\n")
+            command = [sys.executable, str(runner)]
+        elif mode == "keyboardinterrupt":
+            with validator.open("a", encoding="utf-8") as source:
+                source.write("\nraise KeyboardInterrupt('operator cancellation')\n")
             command = [sys.executable, str(runner)]
         elif mode == "quiet":
             import_probe = (
@@ -1819,6 +2323,14 @@ def validator_import_probe(mode: str) -> dict[str, Any]:
                 }
                 and not process["stderr"]
             )
+        elif mode == "keyboardinterrupt":
+            passed = (
+                not process["timed_out"]
+                and process["exit_code"] != 0
+                and isinstance(observed, dict) is False
+                and not process["stdout"]
+                and "KeyboardInterrupt" in process["stderr"]
+            )
         else:
             import_receipt = observed.get("validator_import") if isinstance(observed, dict) else None
             expected_stdout = "Unexpected validator import output.\n" if mode == "stdout" else ""
@@ -1830,6 +2342,17 @@ def validator_import_probe(mode: str) -> dict[str, Any]:
                  "message": "The validator import failed in this fixture."}
                 if mode == "exception" else None
             )
+            if mode in {"systemexit-zero", "systemexit-nonzero", "systemexit-string"}:
+                exit_value = {
+                    "systemexit-zero": 0,
+                    "systemexit-nonzero": 7,
+                    "systemexit-string": "The imported validator requested an exit.",
+                }[mode]
+                expected_exception = {
+                    "type": "SystemExit",
+                    "code": exit_value,
+                    "message": str(exit_value),
+                }
             passed = (
                 not process["timed_out"]
                 and process["exit_code"] == 1
@@ -1842,7 +2365,11 @@ def validator_import_probe(mode: str) -> dict[str, Any]:
                 and not process["stderr"]
             )
         return {
-            "scenario": f"The runner captures validator import {mode} without leaking output.",
+            "scenario": (
+                "KeyboardInterrupt remains an uncaught cancellation during validator import."
+                if mode == "keyboardinterrupt"
+                else f"The runner captures validator import {mode} without leaking output."
+            ),
             "passed": passed,
             "argv": command,
             "exit_code": process["exit_code"],
@@ -1871,32 +2398,90 @@ def bounded_timeout_probe() -> dict[str, Any]:
         temporary_root = Path(temp_dir)
         sleeper = temporary_root / "bounded-sleeper.py"
         sleeper.write_text(
-            "import sys\n"
+            "import signal,subprocess,sys,time\n"
             "import time\n"
             "print('Partial standard output.', flush=True)\n"
             "print('Partial standard error.', file=sys.stderr, flush=True)\n"
+            "descendant=subprocess.Popen([sys.executable,'-c',"
+            "\"import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+            "print('Descendant holds output pipes.',flush=True); time.sleep(30)\"])\n"
+            "print('DESCENDANT_PID='+str(descendant.pid), flush=True)\n"
             "time.sleep(30)\n",
             encoding="utf-8",
         )
         input_before = snapshot_files(temporary_root)
         executable_before = path_state(sleeper)
+        started = time.monotonic()
         process = run_with_timeout([sys.executable, str(sleeper)], 0.25, cwd=temporary_root)
+        elapsed = time.monotonic() - started
+        descendant_match = re.search(r"DESCENDANT_PID=(\d+)", process["timeout_partial_stdout"])
+        descendant_pid = int(descendant_match.group(1)) if descendant_match else None
+        descendant_still_live = None
+        if descendant_pid is not None:
+            descendant_still_live = True
+            for _ in range(20):
+                try:
+                    os.kill(descendant_pid, 0)
+                except ProcessLookupError:
+                    descendant_still_live = False
+                    break
+                time.sleep(0.025)
+
         input_after = snapshot_files(temporary_root)
         executable_after = path_state(sleeper)
-        passed = (
+        descendant_control_passed = (
             process["timed_out"]
             and process["exit_code"] is not None
             and process["termination_sent"]
             and process["child_reaped"]
+            and process["termination_signals"] == ["SIGTERM", "SIGKILL"]
+            and descendant_pid is not None
+            and descendant_still_live is False
+            and elapsed <= 1.5
             and "Partial standard output." in process["timeout_partial_stdout"]
             and "Partial standard error." in process["timeout_partial_stderr"]
             and input_before == input_after
             and executable_before == executable_after
         )
+
+        canonical_report_process = run_with_timeout(
+            [sys.executable, str(VALIDATOR), "--root", str(ROOT), "--json"],
+            PROBE_TIMEOUT_SECONDS,
+            cwd=ROOT,
+        )
+        try:
+            canonical_report = json.loads(canonical_report_process["stdout"])
+        except json.JSONDecodeError:
+            canonical_report = None
+        successful_report_hang = temporary_root / "successful-report-then-hang.py"
+        successful_report_hang.write_text(
+            "import signal,subprocess,sys,time\n"
+            f"sys.stdout.write({canonical_report_process['stdout']!r})\n"
+            "sys.stdout.flush()\n"
+            "descendant=subprocess.Popen([sys.executable,'-c',"
+            "\"import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+            "time.sleep(30)\"])\n"
+            "print('DESCENDANT_PID='+str(descendant.pid), flush=True)\n"
+            "time.sleep(30)\n",
+            encoding="utf-8",
+        )
+        canonical_timeout = run_with_timeout(
+            [sys.executable, str(successful_report_hang)], 0.25, cwd=temporary_root,
+        )
+        canonical_report_rejected = (
+            isinstance(canonical_report, dict)
+            and canonical_report.get("passed") is True
+            and canonical_report_process["exit_code"] == 0
+            and canonical_timeout["timed_out"]
+            and canonical_timeout["exit_code"] is not None
+            and canonical_timeout["stdout"].startswith(canonical_report_process["stdout"])
+        )
+        passed = descendant_control_passed and canonical_report_rejected
         return {
-            "scenario": "The bounded sleeper retains partial output and reaps its timed-out child.",
+            "scenario": "The owned process group kills inherited-pipe descendants and rejects timed-out success output.",
             "passed": passed,
             "argv": [sys.executable, str(sleeper)],
+            "elapsed_seconds": round(elapsed, 6),
             "timeout_seconds": process["timeout_seconds"],
             "timed_out": process["timed_out"],
             "exit_code": process["exit_code"],
@@ -1905,7 +2490,20 @@ def bounded_timeout_probe() -> dict[str, Any]:
             "stdout": process["stdout"],
             "stderr": process["stderr"],
             "termination_sent": process["termination_sent"],
+            "termination_signals": process["termination_signals"],
             "child_reaped": process["child_reaped"],
+            "descendant_pid": descendant_pid,
+            "descendant_still_live": descendant_still_live,
+            "bounded_descendant_control_passed": descendant_control_passed,
+            "canonical_report_argv": canonical_report_process.get("argv"),
+            "canonical_report_exit_code": canonical_report_process["exit_code"],
+            "canonical_report_passed": (
+                canonical_report.get("passed") if isinstance(canonical_report, dict) else None
+            ),
+            "canonical_success_hang_argv": [sys.executable, str(successful_report_hang)],
+            "canonical_success_hang_exit_code": canonical_timeout["exit_code"],
+            "canonical_success_hang_timed_out": canonical_timeout["timed_out"],
+            "canonical_success_report_rejected": canonical_report_rejected,
             "input_sha256_before": snapshot_states(input_before),
             "input_sha256_after": snapshot_states(input_after),
             "input_changes": snapshot_changes(input_before, input_after),
@@ -1929,6 +2527,7 @@ def main() -> int:
                 "observed_count": 0,
                 "errors": ["The runner refused to execute fixtures after validator import failure."],
             },
+            "runner_control_inventory": runner_check_inventory_report([]),
             "runner_checks": [],
             "fixtures": [],
             "original_board": {
@@ -4930,10 +5529,10 @@ print('{}')
         t29 = next(task for task in graph["tasks"] if task["id"] == "T29")
         t29["test_cases"].remove("A86")
         t29["steps"].remove(
-            "Exercise A86 across CLI, Console, and desktop presentation without a matching operator action."
+            "Run A86 through the finished CLI, Console, and desktop presentation without a matching operator action."
         )
         t29["acceptance"].remove(
-            "A86 keeps unsolicited helper requests inert and prevents untrusted output from forging trusted labels or approval state."
+            "A86 at T29 keeps unsolicited requests inert and prevents untrusted output from forging trusted labels or approval state."
         )
         write_json(graph_path, graph)
         sync_task_packet(pack, "T29")
@@ -4990,7 +5589,19 @@ print('{}')
         validator_import_probe("stderr"),
         validator_import_probe("exception"),
         validator_import_probe("quiet"),
+        validator_import_probe("systemexit-zero"),
+        validator_import_probe("systemexit-nonzero"),
+        validator_import_probe("systemexit-string"),
+        validator_import_probe("keyboardinterrupt"),
+        a86_phase_control_probe(),
+        runner_inventory_control_probe("missing"),
+        runner_inventory_control_probe("duplicate"),
+        runner_inventory_control_probe("unexpected"),
+        runner_inventory_control_probe("complete"),
     ]
+    runner_control_inventory = runner_check_inventory_report([
+        check.get("scenario") for check in runner_checks
+    ])
 
     original_board = validate_original_board()
     source_policy_after_runner = certified_input_violations(ROOT, ENTRY_FILE)
@@ -5023,6 +5634,7 @@ print('{}')
         "passed": (
             import_receipt["passed"]
             and fixture_inventory["passed"]
+            and runner_control_inventory["passed"]
             and original_board["passed"]
             and all(receipt["passed"] for receipt in receipts)
             and all(check["passed"] for check in runner_checks)
@@ -5030,14 +5642,15 @@ print('{}')
         "scope": "Static validator fixtures only. No product or runtime tests are performed.",
         "validator_import": import_receipt,
         "fixture_inventory": fixture_inventory,
+        "runner_control_inventory": runner_control_inventory,
         "runner_checks": runner_checks,
         "original_board": original_board,
         "source_sha256": {
             "validate_pack.py": (
-                sha256(VALIDATOR) if not path_component_violations(VALIDATOR) else None
+                sha256(VALIDATOR) if not path_component_violations(VALIDATOR, ROOT) else None
             ),
             "validate_assignment_fixtures.py": (
-                sha256(ENTRY_FILE) if not path_component_violations(ENTRY_FILE) else None
+                sha256(ENTRY_FILE) if not path_component_violations(ENTRY_FILE, ROOT) else None
             ),
             "pack_files": original_source_after,
             "before_validator_import": snapshot_states(SOURCE_SNAPSHOT_BEFORE_VALIDATOR_IMPORT),

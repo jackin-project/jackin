@@ -2106,7 +2106,7 @@
         "Keep project hooks and writable configuration from selecting the consumer executable.",
         "Record denial, cancellation, timeout, revocation, and uncertain completion.",
         "Keep secret-consuming output separate from ordinary terminal replay.",
-        "Qualify A86 host-action and approval refusals for unsolicited helper clipboard, URL, and export effects."
+        "Qualify A86 backend host-action and approval refusals for unsolicited helper clipboard, URL, and export effects without operator intent."
       ],
       "acceptance": [
         "Unsolicited OSC or helper messages cannot open URLs or change the clipboard.",
@@ -2114,7 +2114,7 @@
         "A replayed approval cannot repeat its effect.",
         "Stopping host control blocks the action without killing the remote session or granting approval.",
         "No secret enters the coding-agent PTY or arbitrary host shell.",
-        "A86 retains backend host-action and approval checks; untrusted output cannot trigger effects or forge approval state."
+        "A86 at T26 qualifies backend refusals; no host effect occurs without operator intent or forged approval state."
       ],
       "remove_or_replace": [
         "Delete Linux peer-PID and privileged Capsule authority assumptions.",
@@ -2312,7 +2312,7 @@
         "Keep branch, pull-request, CI, clipboard-image, and export workflows through trusted adapters.",
         "Regenerate completion and man-page sources from the new command model.",
         "Display A16's accepted policy revision and effective replacement source in product output.",
-        "Exercise A86 across CLI, Console, and desktop presentation without a matching operator action."
+        "Run A86 through the finished CLI, Console, and desktop presentation without a matching operator action."
       ],
       "acceptance": [
         "Two reachable targets remain usable when a third target fails.",
@@ -2321,7 +2321,7 @@
         "Ambiguous human selectors produce a selection error.",
         "JSON output follows only the v2 schema.",
         "A16 displays the accepted replacement source and revision without implying an intersection.",
-        "A86 keeps unsolicited helper requests inert and prevents untrusted output from forging trusted labels or approval state."
+        "A86 at T29 keeps unsolicited requests inert and prevents untrusted output from forging trusted labels or approval state."
       ],
       "remove_or_replace": [
         "Replace old Docker-based status, Console discovery, and backend CLI flags.",
