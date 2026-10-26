@@ -1,6 +1,14 @@
 use super::super::process::create_private_new;
 use super::{FailedInvocationCleanup, persist};
-use std::{fs, os::unix::fs::PermissionsExt};
+use std::{
+    fs,
+    os::unix::fs::{MetadataExt, PermissionsExt},
+    process::Command,
+};
+
+const EVIDENCE_UMASK_CHILD: &str = "JACKIN_EVIDENCE_UMASK_CHILD";
+const EVIDENCE_UMASK_TEST: &str =
+    "precommit_snapshot::evidence::tests::persist_normalizes_only_new_evidence_under_umask_0777";
 
 #[test]
 fn concurrent_first_use_preserves_every_private_patch() -> anyhow::Result<()> {
@@ -124,6 +132,82 @@ fn persist_preserves_evidence_beneath_a_sticky_writable_ancestor() -> anyhow::Re
 }
 
 #[test]
+fn persist_normalizes_only_new_evidence_under_umask_0777() -> anyhow::Result<()> {
+    if std::env::var_os(EVIDENCE_UMASK_CHILD).is_some() {
+        let fresh = std::path::PathBuf::from(
+            std::env::var_os("JACKIN_EVIDENCE_FRESH_GIT_DIR")
+                .ok_or_else(|| anyhow::anyhow!("fresh Git directory is missing"))?,
+        );
+        let unsafe_existing = std::path::PathBuf::from(
+            std::env::var_os("JACKIN_EVIDENCE_UNSAFE_GIT_DIR")
+                .ok_or_else(|| anyhow::anyhow!("unsafe Git directory is missing"))?,
+        );
+        nix::sys::stat::umask(nix::sys::stat::Mode::from_bits_truncate(0o777));
+        let controls = || super::SetupControls::for_test(std::time::Duration::from_secs(30));
+        let first = persist(&fresh, b"first private patch\n", &controls())?;
+        let root = first
+            .parent()
+            .and_then(std::path::Path::parent)
+            .ok_or_else(|| anyhow::anyhow!("evidence root path is missing"))?;
+        let root_before = fs::symlink_metadata(root)?;
+        assert_eq!(root_before.permissions().mode() & 0o777, 0o700);
+        assert_eq!(fs::metadata(&first)?.permissions().mode() & 0o777, 0o600);
+        assert_eq!(fs::read(&first)?, b"first private patch\n");
+        let second = persist(&fresh, b"second private patch\n", &controls())?;
+        let root_after = fs::symlink_metadata(root)?;
+        assert_eq!(
+            (root_before.dev(), root_before.ino()),
+            (root_after.dev(), root_after.ino())
+        );
+        assert_eq!(fs::metadata(&second)?.permissions().mode() & 0o777, 0o600);
+        let invocation = second
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("invocation path is missing"))?;
+        assert_eq!(
+            fs::metadata(invocation)?.permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(fs::read(second)?, b"second private patch\n");
+
+        let unsafe_root = unsafe_existing.join("jackin-hook-evidence");
+        let before = fs::symlink_metadata(&unsafe_root)?;
+        let error = persist(&unsafe_existing, b"must be rejected\n", &controls())
+            .expect_err("unsafe existing evidence root must not be repaired");
+        let after = fs::symlink_metadata(&unsafe_root)?;
+        assert!(
+            format!("{error:#}").contains("installation entry has an unexpected mode"),
+            "unexpected unsafe-root rejection: {error:#}"
+        );
+        assert_eq!(
+            (before.dev(), before.ino(), before.mode()),
+            (after.dev(), after.ino(), after.mode())
+        );
+        return Ok(());
+    }
+
+    let temporary = tempfile::tempdir()?;
+    let base = fs::canonicalize(temporary.path())?;
+    let fresh = base.join("fresh.git");
+    let unsafe_existing = base.join("unsafe.git");
+    fs::create_dir(&fresh)?;
+    fs::create_dir(&unsafe_existing)?;
+    let unsafe_root = unsafe_existing.join("jackin-hook-evidence");
+    fs::create_dir(&unsafe_root)?;
+    fs::set_permissions(&unsafe_root, fs::Permissions::from_mode(0o755))?;
+
+    let status = Command::new(std::env::current_exe()?)
+        .args(["--exact", EVIDENCE_UMASK_TEST, "--nocapture"])
+        .env(EVIDENCE_UMASK_CHILD, "1")
+        .env("JACKIN_EVIDENCE_FRESH_GIT_DIR", &fresh)
+        .env("JACKIN_EVIDENCE_UNSAFE_GIT_DIR", &unsafe_existing)
+        .status()?;
+    anyhow::ensure!(status.success(), "evidence umask child failed: {status}");
+    let after = fs::symlink_metadata(&unsafe_root)?;
+    assert_eq!(after.permissions().mode() & 0o777, 0o755);
+    Ok(())
+}
+
+#[test]
 fn failed_invocation_cleanup_preserves_prior_evidence() -> anyhow::Result<()> {
     let temporary = tempfile::tempdir()?;
     let root = temporary.path().join("evidence");
@@ -150,7 +234,14 @@ fn failed_invocation_cleanup_preserves_prior_evidence() -> anyhow::Result<()> {
         super::AtFlags::AT_SYMLINK_NOFOLLOW,
     )?);
     cleanup.invocation = Some(super::open_private_directory(&invocation)?);
-    cleanup.record_patch(&fs::metadata(&patch)?);
+    let patch_file = fs::File::from(super::open(
+        &patch,
+        super::OFlag::O_RDONLY | super::OFlag::O_NOFOLLOW | super::OFlag::O_CLOEXEC,
+        super::Mode::empty(),
+    )?);
+    cleanup.record_patch(super::fstat(&patch_file)?);
+    super::fchmod(&patch_file, super::Mode::from_bits_truncate(0o000))?;
+    assert_eq!(patch_file.metadata()?.permissions().mode() & 0o777, 0);
     drop(cleanup);
 
     assert!(!invocation.exists());

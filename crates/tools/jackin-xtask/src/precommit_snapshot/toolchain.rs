@@ -6,11 +6,7 @@ use std::{
     env,
     ffi::{OsStr, OsString},
     fs::{self, File},
-    io::Read,
-    os::unix::{
-        ffi::OsStrExt,
-        fs::{MetadataExt, PermissionsExt},
-    },
+    os::unix::{ffi::OsStrExt, fs::PermissionsExt},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -26,7 +22,10 @@ use nix::{
 
 use super::git::OwnedSnapshot;
 use super::process::{CommandBudget, EnvironmentMode, SetupControls, capture_strict};
+mod fs_util;
+mod rust_release;
 mod verify;
+use rust_release::{read_bounded_regular_file, rust_release};
 use verify::{command_path, verify_rust_toolchain};
 
 pub(super) fn admit_install_environment(source_root: &Path) -> Result<()> {
@@ -49,7 +48,11 @@ const MANAGED_TOOLS: &[&str] = &[
 ];
 
 const FIXED_SYSTEM_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
-const RUST_TOOLCHAIN_FILE_LIMIT: u64 = 1024 * 1024;
+const MAX_REVIEWED_TREE_ENTRIES: usize = 1_000_000;
+const MAX_CARGO_CONFIG_FILE_BYTES: u64 = 1024 * 1024;
+const MAX_CARGO_CONFIG_TOTAL_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_CARGO_CONFIG_FILES: usize = 1024;
+const MAX_CARGO_CONFIG_INCLUDE_DEPTH: usize = 64;
 
 const HOST_INPUT_KEYS: &[&str] = &[
     "PATH",
@@ -106,7 +109,12 @@ struct HostInputs {
 }
 
 impl HostInputs {
-    fn capture(reviewed_root: &Path, isolation_root: &Path) -> Result<Self> {
+    fn capture(
+        reviewed_root: &Path,
+        isolation_root: &Path,
+        controls: &SetupControls,
+    ) -> Result<Self> {
+        controls.check_start()?;
         let mut inherited = BTreeMap::new();
         for key in HOST_INPUT_KEYS {
             if let Some(value) = env::var_os(key) {
@@ -120,16 +128,25 @@ impl HostInputs {
         } else {
             crate::cargo_paths::passwd_home_for_real_uid()?
         };
-        Self::from_environment(&inherited, &cwd, passwd_home, reviewed_root, isolation_root)
+        Self::from_environment_with_controls(
+            &inherited,
+            &cwd,
+            passwd_home,
+            reviewed_root,
+            isolation_root,
+            controls,
+        )
     }
 
-    fn from_environment(
+    fn from_environment_with_controls(
         inherited: &BTreeMap<OsString, OsString>,
         cwd: &Path,
         passwd_home: Option<OsString>,
         reviewed_root: &Path,
         isolation_root: &Path,
+        controls: &SetupControls,
     ) -> Result<Self> {
+        controls.check_start()?;
         let reviewed_root = fs::canonicalize(reviewed_root)
             .context("resolving reviewed Cargo configuration root")?;
         let isolation_root =
@@ -145,7 +162,7 @@ impl HostInputs {
             cargo_home.is_absolute(),
             "effective Cargo home must be absolute"
         );
-        validate_cargo_configuration(&reviewed_root, &cargo_home)?;
+        validate_cargo_configuration(&reviewed_root, &cargo_home, controls)?;
 
         let home = inherited.get(OsStr::new("HOME")).cloned();
         let effective_home = match home.as_deref() {
@@ -253,6 +270,25 @@ impl HostInputs {
         })
     }
 
+    #[cfg(test)]
+    fn from_environment(
+        inherited: &BTreeMap<OsString, OsString>,
+        cwd: &Path,
+        passwd_home: Option<OsString>,
+        reviewed_root: &Path,
+        isolation_root: &Path,
+    ) -> Result<Self> {
+        let controls = SetupControls::for_test(std::time::Duration::from_secs(30));
+        Self::from_environment_with_controls(
+            inherited,
+            cwd,
+            passwd_home,
+            reviewed_root,
+            isolation_root,
+            &controls,
+        )
+    }
+
     fn search_path(&self) -> &OsStr {
         &self.search_path
     }
@@ -348,7 +384,7 @@ fn add_mise_storage_environment(
 
 pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     let controls = &snapshot.controls;
-    let inputs = HostInputs::capture(&snapshot.root, &snapshot.scratch_root)?;
+    let inputs = HostInputs::capture(&snapshot.root, &snapshot.scratch_root, controls)?;
     let hook_cwd =
         fs::canonicalize(env::current_dir().context("reading hook invocation directory")?)
             .context("resolving physical hook invocation directory")?;
@@ -866,234 +902,298 @@ fn create_private_mise_config_dir(isolation_root: &Path, name: &str) -> Result<P
     Ok(physical)
 }
 
-fn validate_cargo_configuration(reviewed_root: &Path, cargo_home: &Path) -> Result<()> {
-    let mut staged_visited = BTreeSet::new();
-    let mut external_visited = BTreeSet::new();
-    inspect_staged_cargo_configuration_tree(
-        reviewed_root,
-        &mut staged_visited,
-        &mut external_visited,
-    )?;
+fn validate_cargo_configuration(
+    reviewed_root: &Path,
+    cargo_home: &Path,
+    controls: &SetupControls,
+) -> Result<()> {
+    let mut admission = CargoConfigAdmission::new(reviewed_root, controls);
+    admission.inspect_staged_tree(reviewed_root)?;
 
     let mut ancestor = reviewed_root.parent();
     while let Some(path) = ancestor {
-        inspect_cargo_config_directory(
-            path,
-            reviewed_root,
-            false,
-            &mut staged_visited,
-            &mut external_visited,
-        )?;
+        admission.inspect_cargo_config_directory(path, false)?;
         ancestor = path.parent();
     }
 
     for name in ["config", "config.toml"] {
         let path = cargo_home.join(name);
         if cargo_home.starts_with(reviewed_root) {
-            inspect_staged_cargo_config(&path, reviewed_root, &mut staged_visited)?;
+            admission.inspect_staged_config(&path, 0)?;
         } else {
-            inspect_external_cargo_config(&path, &mut external_visited)?;
+            admission.inspect_external_config(&path)?;
         }
     }
+    admission.controls.check_start()?;
     Ok(())
 }
 
-fn inspect_staged_cargo_configuration_tree(
-    reviewed_root: &Path,
-    staged_visited: &mut BTreeSet<PathBuf>,
-    external_visited: &mut BTreeSet<PathBuf>,
-) -> Result<()> {
-    let mut pending = vec![reviewed_root.to_path_buf()];
-    while let Some(directory) = pending.pop() {
-        inspect_cargo_config_directory(
-            &directory,
+struct CargoConfigAdmission<'a> {
+    reviewed_root: &'a Path,
+    controls: &'a SetupControls,
+    staged_visited: BTreeSet<PathBuf>,
+    external_visited: BTreeSet<PathBuf>,
+    counted_configs: BTreeSet<PathBuf>,
+    config_bytes: u64,
+    workspace_entries: usize,
+}
+
+impl<'a> CargoConfigAdmission<'a> {
+    fn new(reviewed_root: &'a Path, controls: &'a SetupControls) -> Self {
+        Self {
             reviewed_root,
-            true,
-            staged_visited,
-            external_visited,
-        )?;
-
-        for entry in crate::fs_util::read_dir_sorted(&directory).with_context(|| {
-            format!(
-                "reading staged workspace directory: {}",
-                directory.display()
-            )
-        })? {
-            let name = entry.file_name();
-            // Cargo never runs from Git metadata.
-            if name == OsStr::new(".git") {
-                continue;
-            }
-            let file_type = entry
-                .file_type()
-                .with_context(|| format!("inspecting staged path: {}", entry.path().display()))?;
-            if !file_type.is_dir() {
-                continue;
-            }
-
-            let path = entry.path();
-            let physical = fs::canonicalize(&path).with_context(|| {
-                format!("resolving staged workspace directory: {}", path.display())
-            })?;
-            ensure!(
-                physical.starts_with(reviewed_root),
-                "staged workspace directory escapes the reviewed snapshot: {}",
-                path.display()
-            );
-            pending.push(physical);
+            controls,
+            staged_visited: BTreeSet::new(),
+            external_visited: BTreeSet::new(),
+            counted_configs: BTreeSet::new(),
+            config_bytes: 0,
+            workspace_entries: 0,
         }
     }
-    Ok(())
-}
 
-fn inspect_cargo_config_directory(
-    directory: &Path,
-    reviewed_root: &Path,
-    staged: bool,
-    staged_visited: &mut BTreeSet<PathBuf>,
-    external_visited: &mut BTreeSet<PathBuf>,
-) -> Result<()> {
-    let cargo_dir = directory.join(".cargo");
-    let metadata = match fs::symlink_metadata(&cargo_dir) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(error).with_context(|| {
-                format!("inspecting Cargo config directory: {}", cargo_dir.display())
-            });
+    fn inspect_staged_tree(&mut self, reviewed_root: &Path) -> Result<()> {
+        let mut pending = vec![reviewed_root.to_path_buf()];
+        while let Some(directory) = pending.pop() {
+            self.controls.check_start()?;
+            self.inspect_cargo_config_directory(&directory, true)?;
+
+            let Self {
+                controls,
+                workspace_entries,
+                ..
+            } = self;
+            let entries = fs_util::read_dir_sorted_controlled(
+                &directory,
+                workspace_entries,
+                MAX_REVIEWED_TREE_ENTRIES,
+                || controls.check_start(),
+            )
+            .with_context(|| {
+                format!(
+                    "reading staged workspace directory: {}",
+                    directory.display()
+                )
+            })?;
+            for entry in entries {
+                self.controls.check_start()?;
+                let name = entry.file_name();
+                if name == OsStr::new(".git") {
+                    continue;
+                }
+                let file_type = entry.file_type().with_context(|| {
+                    format!("inspecting staged path: {}", entry.path().display())
+                })?;
+                if !file_type.is_dir() {
+                    continue;
+                }
+
+                let path = entry.path();
+                self.controls.check_start()?;
+                let physical = fs::canonicalize(&path).with_context(|| {
+                    format!("resolving staged workspace directory: {}", path.display())
+                })?;
+                ensure!(
+                    physical.starts_with(reviewed_root),
+                    "staged workspace directory escapes the reviewed snapshot: {}",
+                    path.display()
+                );
+                pending.push(physical);
+            }
         }
-    };
-    let physical = fs::canonicalize(&cargo_dir)
-        .with_context(|| format!("resolving Cargo config directory: {}", cargo_dir.display()))?;
-    ensure!(
-        metadata.is_dir() || metadata.file_type().is_symlink(),
-        "Cargo config path is not a directory: {}",
-        cargo_dir.display()
-    );
-    ensure!(
-        physical.is_dir(),
-        "Cargo config path is not a directory: {}",
-        cargo_dir.display()
-    );
-    if staged {
+        Ok(())
+    }
+
+    fn inspect_cargo_config_directory(&mut self, directory: &Path, staged: bool) -> Result<()> {
+        self.controls.check_start()?;
+        let cargo_dir = directory.join(".cargo");
+        let metadata = match fs::symlink_metadata(&cargo_dir) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("inspecting Cargo config directory: {}", cargo_dir.display())
+                });
+            }
+        };
+        self.controls.check_start()?;
+        let physical = fs::canonicalize(&cargo_dir).with_context(|| {
+            format!("resolving Cargo config directory: {}", cargo_dir.display())
+        })?;
         ensure!(
-            physical.starts_with(reviewed_root),
-            "staged Cargo config directory escapes the reviewed snapshot: {}",
+            metadata.is_dir() || metadata.file_type().is_symlink(),
+            "Cargo config path is not a directory: {}",
             cargo_dir.display()
         );
-    }
-
-    for name in ["config", "config.toml"] {
-        let config = physical.join(name);
+        ensure!(
+            physical.is_dir(),
+            "Cargo config path is not a directory: {}",
+            cargo_dir.display()
+        );
         if staged {
-            inspect_staged_cargo_config(&config, reviewed_root, staged_visited)?;
-        } else {
-            inspect_external_cargo_config(&config, external_visited)?;
+            ensure!(
+                physical.starts_with(self.reviewed_root),
+                "staged Cargo config directory escapes the reviewed snapshot: {}",
+                cargo_dir.display()
+            );
         }
-    }
-    Ok(())
-}
 
-fn inspect_external_cargo_config(path: &Path, visited: &mut BTreeSet<PathBuf>) -> Result<()> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(error).with_context(|| {
-                format!("inspecting external Cargo config path: {}", path.display())
-            });
+        for name in ["config", "config.toml"] {
+            self.controls.check_start()?;
+            let config = physical.join(name);
+            if staged {
+                self.inspect_staged_config(&config, 0)?;
+            } else {
+                self.inspect_external_config(&config)?;
+            }
         }
-    };
-    ensure!(
-        !metadata.is_dir(),
-        "external Cargo config path is not a file: {}",
-        path.display()
-    );
-    let physical = fs::canonicalize(path)
-        .with_context(|| format!("resolving external Cargo config path: {}", path.display()))?;
-    ensure!(
-        fs::metadata(&physical)
-            .with_context(|| format!("inspecting external Cargo config path: {}", path.display()))?
-            .is_file(),
-        "external Cargo config path is not a regular file: {}",
-        path.display()
-    );
-    if !visited.insert(physical.clone()) {
-        return Ok(());
+        Ok(())
     }
-    let contents = fs::read_to_string(&physical)
-        .with_context(|| format!("reading external Cargo config path: {}", path.display()))?;
-    let value = toml::from_str::<toml::Value>(&contents).map_err(|_| {
-        anyhow::anyhow!(
-            "external Cargo config is not valid TOML: {}",
-            path.display()
-        )
-    })?;
-    ensure!(
-        value.as_table().is_some_and(toml::map::Map::is_empty),
-        "external Cargo config is nonempty and not admitted: {}",
-        path.display()
-    );
-    Ok(())
-}
 
-fn inspect_staged_cargo_config(
-    path: &Path,
-    reviewed_root: &Path,
-    visited: &mut BTreeSet<PathBuf>,
-) -> Result<()> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(error).with_context(|| {
-                format!("inspecting staged Cargo config path: {}", path.display())
-            });
+    fn inspect_external_config(&mut self, path: &Path) -> Result<()> {
+        self.controls.check_start()?;
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("inspecting external Cargo config path: {}", path.display())
+                });
+            }
+        };
+        ensure!(
+            !metadata.is_dir(),
+            "external Cargo config path is not a file: {}",
+            path.display()
+        );
+        self.controls.check_start()?;
+        let physical = fs::canonicalize(path)
+            .with_context(|| format!("resolving external Cargo config path: {}", path.display()))?;
+        self.controls.check_start()?;
+        ensure!(
+            fs::metadata(&physical)
+                .with_context(|| {
+                    format!("inspecting external Cargo config path: {}", path.display())
+                })?
+                .is_file(),
+            "external Cargo config path is not a regular file: {}",
+            path.display()
+        );
+        if !self.external_visited.insert(physical.clone()) {
+            return Ok(());
         }
-    };
-    ensure!(
-        !metadata.is_dir(),
-        "staged Cargo config path is not a file: {}",
-        path.display()
-    );
-    let physical = fs::canonicalize(path)
-        .with_context(|| format!("resolving staged Cargo config path: {}", path.display()))?;
-    ensure!(
-        physical.starts_with(reviewed_root),
-        "staged Cargo config path escapes the reviewed snapshot: {}",
-        path.display()
-    );
-    ensure!(
-        fs::metadata(&physical)
-            .with_context(|| format!("inspecting staged Cargo config path: {}", path.display()))?
-            .is_file(),
-        "staged Cargo config path is not a regular file: {}",
-        path.display()
-    );
-    if !visited.insert(physical.clone()) {
-        return Ok(());
+        let contents = self.read_config(&physical, "external")?;
+        self.controls.check_start()?;
+        let value = toml::from_str::<toml::Value>(&contents).map_err(|_| {
+            anyhow::anyhow!(
+                "external Cargo config is not valid TOML: {}",
+                path.display()
+            )
+        })?;
+        self.controls.check_start()?;
+        ensure!(
+            value.as_table().is_some_and(toml::map::Map::is_empty),
+            "external Cargo config is nonempty and not admitted: {}",
+            path.display()
+        );
+        Ok(())
     }
-    let contents = fs::read_to_string(&physical)
-        .with_context(|| format!("reading staged Cargo config path: {}", path.display()))?;
-    let value = toml::from_str::<toml::Value>(&contents).map_err(|_| {
-        anyhow::anyhow!("staged Cargo config is not valid TOML: {}", path.display())
-    })?;
-    let table = value.as_table().with_context(|| {
-        format!(
-            "staged Cargo config is not a TOML table: {}",
+
+    fn inspect_staged_config(&mut self, path: &Path, depth: usize) -> Result<()> {
+        self.controls.check_start()?;
+        ensure!(
+            depth <= MAX_CARGO_CONFIG_INCLUDE_DEPTH,
+            "staged Cargo config include depth exceeds its limit: {}",
             path.display()
-        )
-    })?;
-    let Some(includes) = table.get("include") else {
-        return Ok(());
-    };
-    let includes = includes.as_array().with_context(|| {
-        format!(
-            "staged Cargo config include list is invalid: {}",
+        );
+        let Some(physical) = self.staged_config_path(path)? else {
+            return Ok(());
+        };
+        if !self.staged_visited.insert(physical.clone()) {
+            return Ok(());
+        }
+        let contents = self.read_config(&physical, "staged")?;
+        self.controls.check_start()?;
+        let value = toml::from_str::<toml::Value>(&contents).map_err(|_| {
+            anyhow::anyhow!("staged Cargo config is not valid TOML: {}", path.display())
+        })?;
+        self.controls.check_start()?;
+        let table = value.as_table().with_context(|| {
+            format!(
+                "staged Cargo config is not a TOML table: {}",
+                path.display()
+            )
+        })?;
+        let Some(includes) = table.get("include") else {
+            return Ok(());
+        };
+        let includes = includes.as_array().with_context(|| {
+            format!(
+                "staged Cargo config include list is invalid: {}",
+                path.display()
+            )
+        })?;
+        self.inspect_staged_includes(path, depth, includes)
+    }
+
+    fn staged_config_path(&self, path: &Path) -> Result<Option<PathBuf>> {
+        self.controls.check_start()?;
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("inspecting staged Cargo config path: {}", path.display())
+                });
+            }
+        };
+        ensure!(
+            !metadata.is_dir(),
+            "staged Cargo config path is not a file: {}",
             path.display()
-        )
-    })?;
-    for include in includes {
+        );
+        self.controls.check_start()?;
+        let physical = fs::canonicalize(path)
+            .with_context(|| format!("resolving staged Cargo config path: {}", path.display()))?;
+        ensure!(
+            physical.starts_with(self.reviewed_root),
+            "staged Cargo config path escapes the reviewed snapshot: {}",
+            path.display()
+        );
+        self.controls.check_start()?;
+        ensure!(
+            fs::metadata(&physical)
+                .with_context(|| {
+                    format!("inspecting staged Cargo config path: {}", path.display())
+                })?
+                .is_file(),
+            "staged Cargo config path is not a regular file: {}",
+            path.display()
+        );
+        Ok(Some(physical))
+    }
+
+    fn inspect_staged_includes(
+        &mut self,
+        path: &Path,
+        depth: usize,
+        includes: &[toml::Value],
+    ) -> Result<()> {
+        for include in includes {
+            let Some((candidate, child_depth)) = self.staged_include(path, include, depth)? else {
+                continue;
+            };
+            self.inspect_staged_config(&candidate, child_depth)?;
+        }
+        Ok(())
+    }
+
+    fn staged_include(
+        &self,
+        path: &Path,
+        include: &toml::Value,
+        depth: usize,
+    ) -> Result<Option<(PathBuf, usize)>> {
+        self.controls.check_start()?;
         let (include_path, optional) = if let Some(value) = include.as_str() {
             (PathBuf::from(value), false)
         } else {
@@ -1138,17 +1238,106 @@ fn inspect_staged_cargo_config(
                 .context("staged Cargo config path has no parent")?
                 .join(include_path)
         };
-        if optional && !candidate.exists() && !candidate.is_symlink() {
-            continue;
+        self.controls.check_start()?;
+        let candidate_exists = match fs::symlink_metadata(&candidate) {
+            Ok(_) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "inspecting staged Cargo config include: {}",
+                        candidate.display()
+                    )
+                });
+            }
+        };
+        if optional && !candidate_exists {
+            return Ok(None);
         }
         ensure!(
-            optional || candidate.exists() || candidate.is_symlink(),
+            candidate_exists,
             "staged Cargo config include is missing: {}",
             path.display()
         );
-        inspect_staged_cargo_config(&candidate, reviewed_root, visited)?;
+        let child_depth = depth
+            .checked_add(1)
+            .context("counting staged Cargo config include depth")?;
+        ensure!(
+            child_depth <= MAX_CARGO_CONFIG_INCLUDE_DEPTH,
+            "staged Cargo config include depth exceeds its limit: {}",
+            candidate.display()
+        );
+        Ok(Some((candidate, child_depth)))
     }
-    Ok(())
+
+    fn read_config(&mut self, path: &Path, scope: &str) -> Result<String> {
+        self.controls.check_start()?;
+        let metadata = fs::metadata(path)
+            .with_context(|| format!("inspecting {scope} Cargo config path: {}", path.display()))?;
+        ensure!(
+            metadata.is_file(),
+            "{scope} Cargo config path is not a regular file: {}",
+            path.display()
+        );
+        ensure!(
+            metadata.len() <= MAX_CARGO_CONFIG_FILE_BYTES,
+            "{scope} Cargo config exceeds its byte limit: {}",
+            path.display()
+        );
+        if self.counted_configs.insert(path.to_path_buf()) {
+            self.controls.check_start()?;
+            let next_count = self.counted_configs.len();
+            ensure!(
+                next_count <= MAX_CARGO_CONFIG_FILES,
+                "Cargo config file count exceeds its limit"
+            );
+        }
+        let remaining = MAX_CARGO_CONFIG_TOTAL_BYTES
+            .checked_sub(self.config_bytes)
+            .context("checking aggregate Cargo config byte limit")?;
+        ensure!(
+            metadata.len() <= remaining,
+            "Cargo config aggregate exceeds its byte limit: {}",
+            path.display()
+        );
+        let (limit, oversized_message) = if remaining < MAX_CARGO_CONFIG_FILE_BYTES {
+            (
+                remaining,
+                format!(
+                    "Cargo config aggregate exceeds its byte limit: {}",
+                    path.display()
+                ),
+            )
+        } else {
+            (
+                MAX_CARGO_CONFIG_FILE_BYTES,
+                format!(
+                    "{scope} Cargo config exceeds its byte limit: {}",
+                    path.display()
+                ),
+            )
+        };
+        let description = format!("{scope} Cargo config path: {}", path.display());
+        let contents =
+            read_bounded_regular_file(path, self.controls, limit, &description, &oversized_message)
+                .with_context(|| {
+                    format!("reading {scope} Cargo config path: {}", path.display())
+                })?;
+        let next_bytes = self
+            .config_bytes
+            .checked_add(
+                u64::try_from(contents.len()).context("converting Cargo config byte count")?,
+            )
+            .context("counting aggregate Cargo config bytes")?;
+        ensure!(
+            next_bytes <= MAX_CARGO_CONFIG_TOTAL_BYTES,
+            "Cargo config aggregate exceeds its byte limit: {}",
+            path.display()
+        );
+        self.config_bytes = next_bytes;
+        String::from_utf8(contents)
+            .with_context(|| format!("reading {scope} Cargo config path: {}", path.display()))
+    }
 }
 
 fn normalize_host_path(value: &OsStr, home: Option<&OsStr>, cwd: &Path) -> Result<PathBuf> {
@@ -1231,98 +1420,6 @@ fn verify_managed_projection(
         "staged Mise environment reintroduces RUSTC_BOOTSTRAP"
     );
     Ok(())
-}
-
-fn rust_release(path: &Path, controls: &SetupControls) -> Result<String> {
-    controls.check_start()?;
-    let before = fs::metadata(path).context("inspecting staged rust-toolchain.toml")?;
-    ensure!(
-        before.file_type().is_file(),
-        "staged rust-toolchain.toml is not a regular file"
-    );
-    ensure!(
-        before.len() <= RUST_TOOLCHAIN_FILE_LIMIT,
-        "staged rust-toolchain.toml exceeds its byte limit"
-    );
-    let mut file = File::from(
-        open(
-            path,
-            OFlag::O_RDONLY | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
-            Mode::empty(),
-        )
-        .context("opening staged rust-toolchain.toml")?,
-    );
-    let opened = file
-        .metadata()
-        .context("restating staged rust-toolchain.toml")?;
-    ensure!(
-        same_rust_toolchain_state(&before, &opened),
-        "staged rust-toolchain.toml changed while opening"
-    );
-    let capacity =
-        usize::try_from(before.len()).context("converting rust-toolchain.toml file size")?;
-    let mut contents = Vec::with_capacity(capacity);
-    let mut buffer = [0_u8; 8192];
-    loop {
-        controls.check_start()?;
-        let count = file
-            .read(&mut buffer)
-            .context("reading staged rust-toolchain.toml")?;
-        if count == 0 {
-            break;
-        }
-        let current_length =
-            u64::try_from(contents.len()).context("converting rust-toolchain.toml byte count")?;
-        let next = u64::try_from(count)
-            .context("converting rust-toolchain.toml read length")?
-            .checked_add(current_length)
-            .context("counting rust-toolchain.toml bytes")?;
-        ensure!(
-            next <= RUST_TOOLCHAIN_FILE_LIMIT,
-            "staged rust-toolchain.toml exceeds its byte limit"
-        );
-        contents.extend_from_slice(&buffer[..count]);
-    }
-    controls.check_start()?;
-    let after_fd = file
-        .metadata()
-        .context("restating staged rust-toolchain.toml")?;
-    let after_path = fs::metadata(path).context("restating staged rust-toolchain.toml")?;
-    ensure!(
-        u64::try_from(contents.len()).context("converting rust-toolchain.toml byte count")?
-            == before.len()
-            && same_rust_toolchain_state(&before, &after_fd)
-            && same_rust_toolchain_state(&before, &after_path),
-        "staged rust-toolchain.toml changed while reading"
-    );
-    let contents = String::from_utf8(contents).context("decoding staged rust-toolchain.toml")?;
-    let value: toml::Value =
-        toml::from_str(&contents).context("parsing staged rust-toolchain.toml")?;
-    controls.check_start()?;
-    let channel = value
-        .get("toolchain")
-        .and_then(|toolchain| toolchain.get("channel"))
-        .and_then(toml::Value::as_str)
-        .context("staged rust-toolchain.toml has no toolchain.channel")?;
-    ensure!(
-        channel.split('.').count() == 3
-            && channel
-                .split('.')
-                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())),
-        "hook requires an exact numeric Rust release pin"
-    );
-    Ok(channel.to_owned())
-}
-
-fn same_rust_toolchain_state(left: &fs::Metadata, right: &fs::Metadata) -> bool {
-    left.file_type().is_file()
-        && right.file_type().is_file()
-        && left.dev() == right.dev()
-        && left.ino() == right.ino()
-        && left.mode() == right.mode()
-        && left.len() == right.len()
-        && left.mtime() == right.mtime()
-        && left.mtime_nsec() == right.mtime_nsec()
 }
 
 fn find_executable(name: &str, path: &OsStr) -> Result<PathBuf> {

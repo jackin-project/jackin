@@ -10,6 +10,8 @@ use jackin_process::{ExecRequest, ExecResult, StdioMode};
 use jackin_process_directory::validate_temporary_parent;
 
 mod paths;
+#[cfg(unix)]
+mod private_paths;
 
 const NIGHTLY: &str = "nightly-2026-10-18";
 const COMPILER_COMMIT: &str = "8006091eb71ae7d9e9bccb66c6122c9d68af4466";
@@ -18,6 +20,11 @@ const COMPONENTS: &[&str] = &["clippy", "llvm-tools", "rustc-dev", "rustfmt"];
 const TOOL_NAMES: &[&str] = &["dylint-link", "cargo-nextest", "cargo-dylint", "mbx"];
 
 type Environment = BTreeMap<OsString, OsString>;
+
+#[cfg(unix)]
+type CargoShimDirectory = private_paths::PrivateDirectory;
+#[cfg(not(unix))]
+type CargoShimDirectory = tempfile::TempDir;
 
 pub(crate) fn run(root: &Path) -> Result<()> {
     run_with(root, std::env::vars_os().collect(), execute)
@@ -88,10 +95,14 @@ where
     execute(&nextest, &lint, &base_env, false)?;
 
     let library = library_path(&target, &host)?;
-    let directory = tempfile::Builder::new()
+    let temp_directory = tempfile::Builder::new()
         .prefix("jackin-custom-lints-")
         .tempdir_in(cargo_shim.path())
         .context("creating isolated Dylint library directory")?;
+    #[cfg(unix)]
+    let directory = private_paths::normalize_directory(cargo_shim.descriptor(), temp_directory)?;
+    #[cfg(not(unix))]
+    let directory = temp_directory;
     let directory_path = directory
         .path()
         .canonicalize()
@@ -137,7 +148,7 @@ where
 fn create_cargo_shim(
     env: &mut Environment,
     tools: &BTreeMap<&'static str, PathBuf>,
-) -> Result<tempfile::TempDir> {
+) -> Result<CargoShimDirectory> {
     #[cfg(unix)]
     {
         let requested_temp = PathBuf::from(
@@ -159,17 +170,24 @@ fn create_cargo_shim(
             !temp_parent.as_os_str().as_encoded_bytes().contains(&b':'),
             "private MBX Cargo shim parent contains the PATH delimiter"
         );
-        let directory = tempfile::Builder::new()
+        let temp_parent_directory = private_paths::open_directory(&temp_parent)?;
+        let temp_directory = tempfile::Builder::new()
             .prefix("jackin-custom-lints-mbx-")
             .tempdir_in(&temp_parent)
             .context("creating private MBX Cargo shim directory")?;
-        let directory_path = directory
+        let shim_directory =
+            private_paths::normalize_directory(&temp_parent_directory, temp_directory)?;
+        let directory_path = shim_directory
             .path()
             .canonicalize()
             .context("resolving private MBX Cargo shim directory")?;
         let alias = directory_path.join("cargo");
-        std::os::unix::fs::symlink(&tools["mbx"], &alias)
-            .context("creating private native Cargo-to-MBX shim")?;
+        private_paths::create_symlink(
+            shim_directory.descriptor(),
+            &tools["mbx"],
+            OsStr::new("cargo"),
+        )
+        .context("creating private native Cargo-to-MBX shim")?;
         let old_path = env.get(OsStr::new("PATH")).cloned().unwrap_or_default();
         let nextest_parent = tools["cargo-nextest"]
             .parent()
@@ -180,8 +198,18 @@ fn create_cargo_shim(
                 .context("resolved Cargo home is missing")?,
         );
         let cargo_bin = cargo_home.join("bin");
-        let nextest_parent = path_entry_alias(&directory_path, &nextest_parent, "cargo-nextest")?;
-        let cargo_bin = path_entry_alias(&directory_path, &cargo_bin, "cargo-home-bin")?;
+        let nextest_parent = path_entry_alias(
+            shim_directory.descriptor(),
+            &directory_path,
+            &nextest_parent,
+            "cargo-nextest",
+        )?;
+        let cargo_bin = path_entry_alias(
+            shim_directory.descriptor(),
+            &directory_path,
+            &cargo_bin,
+            "cargo-home-bin",
+        )?;
         let mut path = vec![directory_path, nextest_parent, cargo_bin];
         path.extend(std::env::split_paths(&old_path));
         env.insert(
@@ -193,7 +221,7 @@ fn create_cargo_shim(
             alias.into_os_string(),
         );
         env.insert(OsString::from("MBX_CARGO_SHIM_MODE"), OsString::from("1"));
-        Ok(directory)
+        Ok(shim_directory)
     }
     #[cfg(not(unix))]
     {
@@ -300,10 +328,15 @@ where
 }
 
 #[cfg(unix)]
-fn path_entry_alias(alias_directory: &Path, target: &Path, name: &str) -> Result<PathBuf> {
+fn path_entry_alias(
+    parent: &fs::File,
+    alias_directory: &Path,
+    target: &Path,
+    name: &str,
+) -> Result<PathBuf> {
     if target.as_os_str().as_encoded_bytes().contains(&b':') {
         let alias = alias_directory.join(name);
-        std::os::unix::fs::symlink(target, &alias)
+        private_paths::create_symlink(parent, target, OsStr::new(name))
             .with_context(|| format!("aliasing PATH entry for {name}"))?;
         Ok(alias)
     } else {

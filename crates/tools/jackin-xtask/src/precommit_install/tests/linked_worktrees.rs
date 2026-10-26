@@ -107,7 +107,8 @@ fn failed_config_preflight_preserves_existing_worktree_config() -> Result<()> {
 
     let error = config::activate(&common_config, &selected_config, &owner)
         .expect_err("invalid common config identity must stop activation");
-    assert!(format!("{error:#}").contains("unexpected leaf"));
+    let error_chain = format!("{error:#}");
+    assert!(error_chain.contains("unexpected leaf"), "{error_chain}");
     assert_eq!(fs::read(&selected_config)?, selected_before);
     assert!(
         !selected_config

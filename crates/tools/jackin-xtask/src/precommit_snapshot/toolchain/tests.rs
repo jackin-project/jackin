@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
+mod cargo_admission;
 use super::*;
 #[cfg(not(target_os = "macos"))]
 use std::os::unix::ffi::OsStringExt;

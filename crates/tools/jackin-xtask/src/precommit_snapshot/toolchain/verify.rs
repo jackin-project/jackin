@@ -40,8 +40,8 @@ fn resolve_provision_tool_paths(source_root: &Path) -> Result<ProvisionToolPaths
         .context("creating private tool qualification directory")?;
     fs::set_permissions(isolation.path(), fs::Permissions::from_mode(0o700))
         .context("protecting private tool qualification directory")?;
-    let inputs = super::HostInputs::capture(&source_root, isolation.path())?;
     let controls = SetupControls::new(Arc::new(AtomicBool::new(false)), Duration::from_mins(10));
+    let inputs = super::HostInputs::capture(&source_root, isolation.path(), &controls)?;
     let pin = super::rust_release(&source_root.join("rust-toolchain.toml"), &controls)?;
     let inherited_path = inputs.search_path();
     let home = inputs.home.as_deref().map(Path::new);

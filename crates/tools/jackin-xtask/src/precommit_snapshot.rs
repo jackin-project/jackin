@@ -21,7 +21,7 @@ enum OwnerSignal {
 }
 
 struct SignalRoute {
-    recovery_armed: AtomicBool,
+    recovery_armed: Cell<bool>,
     cancellation: Arc<AtomicBool>,
     hup: Arc<AtomicBool>,
     int: Arc<AtomicBool>,
@@ -83,7 +83,7 @@ impl SetupSignals {
         let signals = Self {
             terminal: Arc::new(AtomicBool::new(false)),
             route: SignalRoute {
-                recovery_armed: AtomicBool::new(false),
+                recovery_armed: Cell::new(false),
                 cancellation: Arc::new(AtomicBool::new(false)),
                 hup: Arc::new(AtomicBool::new(false)),
                 int: Arc::new(AtomicBool::new(false)),
@@ -113,13 +113,11 @@ impl SetupSignals {
 
     fn arm_recovery_with_budget(&self, budget: Duration) -> Result<process::SetupControls> {
         ensure!(
-            self.route
-                .recovery_armed
-                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-                .is_ok(),
+            !self.route.recovery_armed.get(),
             "native hook recovery phase was armed more than once"
         );
         self.route.cancellation.swap(false, Ordering::SeqCst);
+        self.route.recovery_armed.set(true);
         Ok(process::SetupControls::new(
             Arc::clone(&self.route.cancellation),
             budget,
@@ -140,6 +138,7 @@ impl SetupSignals {
 }
 
 use std::{
+    cell::Cell,
     ffi::OsString,
     io::Write,
     sync::{

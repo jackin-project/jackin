@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    fs::{self, DirBuilder, Metadata},
+    fs,
     io::Write,
-    os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt},
+    os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
 };
 
@@ -15,7 +15,7 @@ use nix::unistd::{UnlinkatFlags, geteuid, unlinkat};
 use nix::{
     errno::Errno,
     fcntl::{AtFlags, OFlag, open, openat},
-    sys::stat::{FileStat, Mode, SFlag, fstat, fstatat, mkdirat},
+    sys::stat::{FchmodatFlags, FileStat, Mode, SFlag, fchmod, fchmodat, fstat, fstatat, mkdirat},
 };
 use std::fs::File;
 use uuid::Uuid;
@@ -38,15 +38,13 @@ pub(super) fn persist(
     validate_ancestors(&physical)?;
 
     let root = physical.join("jackin-hook-evidence");
-    match DirBuilder::new().mode(0o700).create(&root) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(error) => return Err(error).context("creating private hook evidence root"),
-    }
-    let metadata = fs::symlink_metadata(&root).context("checking private hook evidence root")?;
-    verify_private_directory(&root, &metadata, "hook evidence root")?;
-
-    let root_descriptor = open_private_directory(&root).context("checking private evidence ACL")?;
+    let physical_descriptor = open_directory_descriptor(&physical)?;
+    let root_descriptor = open_or_create_private_directory(
+        &physical_descriptor,
+        std::ffi::OsStr::new("jackin-hook-evidence"),
+        &root,
+        "hook evidence root",
+    )?;
     controls.check_start()?;
     root_descriptor
         .sync_all()
@@ -94,10 +92,13 @@ fn persist_invocation(
         )
         .context("creating private staged-source evidence")?,
     );
+    cleanup
+        .record_patch(fstat(&file).context("recording private staged-source evidence identity")?);
+    fchmod(&file, Mode::from_bits_truncate(0o600))
+        .context("setting private staged-source evidence permissions")?;
     let metadata = file
         .metadata()
-        .context("checking private staged-source evidence")?;
-    cleanup.record_patch(&metadata);
+        .context("rechecking private staged-source evidence")?;
     write_controlled(&mut file, patch, controls)
         .context("writing private staged-source evidence")?;
     controls.check_start()?;
@@ -169,7 +170,7 @@ struct FailedInvocationCleanup {
     name: PathBuf,
     directory_identity: Option<FileStat>,
     invocation: Option<File>,
-    patch_identity: Option<(u64, u64)>,
+    patch_identity: Option<FileStat>,
     armed: bool,
 }
 
@@ -185,8 +186,8 @@ impl FailedInvocationCleanup {
         }
     }
 
-    fn record_patch(&mut self, metadata: &Metadata) {
-        self.patch_identity = Some((metadata.dev(), metadata.ino()));
+    fn record_patch(&mut self, identity: FileStat) {
+        self.patch_identity = Some(identity);
     }
 
     fn disarm(&mut self) {
@@ -200,18 +201,12 @@ impl Drop for FailedInvocationCleanup {
             return;
         }
 
-        if let (Some(expected), Some(invocation)) = (self.patch_identity, &self.invocation)
-            && let Ok(descriptor) = openat(
-                invocation,
-                "fixes.patch",
-                OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK,
-                Mode::empty(),
-            )
-            && let Ok(metadata) = File::from(descriptor).metadata()
-            && metadata.is_file()
-            && (metadata.dev(), metadata.ino()) == expected
-            && metadata.uid() == geteuid().as_raw()
-            && metadata.permissions().mode() & 0o777 == 0o600
+        if let (Some(expected), Some(invocation)) = (&self.patch_identity, &self.invocation)
+            && let Ok(named) = fstatat(invocation, "fixes.patch", AtFlags::AT_SYMLINK_NOFOLLOW)
+            && named.st_mode & SFlag::S_IFMT.bits() == SFlag::S_IFREG.bits()
+            && (named.st_dev, named.st_ino) == (expected.st_dev, expected.st_ino)
+            && named.st_uid == geteuid().as_raw()
+            && named.st_nlink == 1
         {
             let _best_effort_patch_cleanup =
                 unlinkat(invocation, "fixes.patch", UnlinkatFlags::NoRemoveDir);
@@ -221,9 +216,8 @@ impl Drop for FailedInvocationCleanup {
             && let Ok(named) = fstatat(&self.root, &self.name, AtFlags::AT_SYMLINK_NOFOLLOW)
             && named.st_dev == expected.st_dev
             && named.st_ino == expected.st_ino
-            && SFlag::from_bits_truncate(named.st_mode).contains(SFlag::S_IFDIR)
+            && named.st_mode & SFlag::S_IFMT.bits() == SFlag::S_IFDIR.bits()
             && named.st_uid == geteuid().as_raw()
-            && named.st_mode & 0o777 == 0o700
         {
             let _best_effort_directory_cleanup =
                 unlinkat(&self.root, &self.name, UnlinkatFlags::RemoveDir);
@@ -231,6 +225,7 @@ impl Drop for FailedInvocationCleanup {
     }
 }
 
+#[cfg(test)]
 fn open_private_directory(path: &Path) -> Result<File> {
     let descriptor = open(
         path,
@@ -239,6 +234,95 @@ fn open_private_directory(path: &Path) -> Result<File> {
     )
     .with_context(|| format!("opening private directory {}", path.display()))?;
     let file = File::from(descriptor);
+    recheck_directory_path(path, &file)?;
+    Ok(file)
+}
+
+fn open_directory_descriptor(path: &Path) -> Result<File> {
+    let descriptor = open(
+        path,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .with_context(|| format!("opening physical directory {}", path.display()))?;
+    let file = File::from(descriptor);
+    let path_metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("checking physical directory {}", path.display()))?;
+    let descriptor_metadata = file
+        .metadata()
+        .with_context(|| format!("checking physical directory descriptor {}", path.display()))?;
+    ensure!(
+        path_metadata.is_dir()
+            && !path_metadata.file_type().is_symlink()
+            && path_metadata.dev() == descriptor_metadata.dev()
+            && path_metadata.ino() == descriptor_metadata.ino(),
+        "physical directory path no longer names its opened descriptor"
+    );
+    Ok(file)
+}
+
+fn open_or_create_private_directory(
+    parent: &File,
+    name: &std::ffi::OsStr,
+    path: &Path,
+    role: &str,
+) -> Result<File> {
+    let created = match mkdirat(parent, name, Mode::from_bits_truncate(0o700)) {
+        Ok(()) => {
+            let created = fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
+                .with_context(|| format!("checking newly created {role}"))?;
+            ensure!(
+                created.st_mode & SFlag::S_IFMT.bits() == SFlag::S_IFDIR.bits()
+                    && created.st_uid == geteuid().as_raw(),
+                "new {role} has unsafe identity"
+            );
+            fchmodat(
+                parent,
+                name,
+                Mode::from_bits_truncate(0o700),
+                FchmodatFlags::NoFollowSymlink,
+            )
+            .with_context(|| format!("setting newly created {role} permissions"))?;
+            let normalized = fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
+                .with_context(|| format!("rechecking newly created {role}"))?;
+            ensure!(
+                normalized.st_dev == created.st_dev
+                    && normalized.st_ino == created.st_ino
+                    && normalized.st_mode & SFlag::S_IFMT.bits() == SFlag::S_IFDIR.bits()
+                    && normalized.st_uid == geteuid().as_raw()
+                    && normalized.st_mode & 0o777 == 0o700,
+                "new {role} changed while setting permissions"
+            );
+            Some(created)
+        }
+        Err(Errno::EEXIST) => {
+            let existing = fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
+                .with_context(|| format!("checking existing {role}"))?;
+            ensure!(
+                existing.st_mode & SFlag::S_IFMT.bits() == SFlag::S_IFDIR.bits(),
+                "{role} is not a physical directory"
+            );
+            None
+        }
+        Err(error) => return Err(error).with_context(|| format!("creating {role}")),
+    };
+    let descriptor = openat(
+        parent,
+        name,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .with_context(|| format!("opening {role}"))?;
+    let file = File::from(descriptor);
+    let opened = fstat(&file).with_context(|| format!("checking {role} descriptor"))?;
+    if let Some(created) = created {
+        ensure!(
+            opened.st_dev == created.st_dev && opened.st_ino == created.st_ino,
+            "new {role} changed before opening"
+        );
+    }
+    CheckedInstallRoot::validate_confidential_directory(&file)
+        .with_context(|| format!("validating {role} ACL"))?;
     recheck_directory_path(path, &file)?;
     Ok(file)
 }
@@ -296,23 +380,6 @@ fn validate_ancestors(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn verify_private_directory(path: &Path, metadata: &Metadata, role: &str) -> Result<()> {
-    ensure!(
-        metadata.is_dir() && !metadata.file_type().is_symlink(),
-        "{role} is not a physical directory"
-    );
-    ensure!(
-        metadata.uid() == geteuid().as_raw(),
-        "{role} has unexpected owner"
-    );
-    ensure!(
-        metadata.permissions().mode() & 0o777 == 0o700,
-        "{role} permissions are not 0700"
-    );
-    ensure!(path.is_absolute(), "{role} path is not absolute");
-    Ok(())
-}
-
 fn create_unique_directory(root: &File) -> Result<(PathBuf, File, FailedInvocationCleanup)> {
     for _ in 0..8 {
         let name = PathBuf::from(format!("pre-commit-{}", Uuid::new_v4()));
@@ -325,6 +392,32 @@ fn create_unique_directory(root: &File) -> Result<(PathBuf, File, FailedInvocati
                 cleanup.directory_identity = Some(
                     fstatat(root, &name, AtFlags::AT_SYMLINK_NOFOLLOW)
                         .context("checking created invocation evidence name")?,
+                );
+                let created = cleanup
+                    .directory_identity
+                    .as_ref()
+                    .context("created invocation evidence identity is missing")?;
+                ensure!(
+                    created.st_mode & SFlag::S_IFMT.bits() == SFlag::S_IFDIR.bits()
+                        && created.st_uid == geteuid().as_raw(),
+                    "new invocation evidence directory has unsafe identity"
+                );
+                fchmodat(
+                    root,
+                    &name,
+                    Mode::from_bits_truncate(0o700),
+                    FchmodatFlags::NoFollowSymlink,
+                )
+                .context("setting new invocation evidence permissions")?;
+                let normalized = fstatat(root, &name, AtFlags::AT_SYMLINK_NOFOLLOW)
+                    .context("rechecking new invocation evidence permissions")?;
+                ensure!(
+                    normalized.st_dev == created.st_dev
+                        && normalized.st_ino == created.st_ino
+                        && normalized.st_mode & SFlag::S_IFMT.bits() == SFlag::S_IFDIR.bits()
+                        && normalized.st_uid == geteuid().as_raw()
+                        && normalized.st_mode & 0o777 == 0o700,
+                    "new invocation evidence directory changed while setting permissions"
                 );
                 let invocation = File::from(
                     openat(
