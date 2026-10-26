@@ -27,6 +27,7 @@ ignore = []
 [stacks.rust]
 compile_driver = "mbx"
 test_runner = "cargo_nextest"
+allow_empty_test_suite = true
 
 [[stacks.rust.configurations]]
 name = "default"
