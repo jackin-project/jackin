@@ -19,6 +19,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::fs::File;
 use std::io;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -70,6 +71,12 @@ impl fmt::Debug for CheckedSourceFile {
         formatter
             .debug_struct("CheckedSourceFile")
             .finish_non_exhaustive()
+    }
+}
+
+impl AsFd for CheckedSourceRoot {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.inner.directory.as_fd()
     }
 }
 

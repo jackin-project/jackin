@@ -12,7 +12,7 @@
 use super::super::*;
 use std::collections::VecDeque;
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, Seek, SeekFrom, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::MetadataExt as _;
 use std::pin::Pin;
@@ -383,6 +383,135 @@ fn absent_and_empty_stdin_keep_their_distinct_routing_contracts() {
     let result = exec_spooled_sync_cancellable(&request, stdout, stderr, &AtomicBool::new(false))
         .expect("explicit empty stdin closes immediately");
     assert!(result.success);
+}
+
+#[test]
+fn file_backed_stdin_drains_large_child_stdout_and_stderr_concurrently() {
+    let spool_files = output_pair();
+    let (stdout, stderr) = spool_files.files();
+    let payload = vec![b'x'; 2 * 1024 * 1024 + 37];
+    let mut input = tempfile::tempfile().expect("create regular stdin fixture");
+    input
+        .write_all(&payload)
+        .expect("write regular stdin fixture");
+    input
+        .seek(SeekFrom::Start(0))
+        .expect("rewind regular stdin fixture");
+
+    let request = ExecRequest::new("/bin/sh", ["-c", "cat | tee /dev/stderr"])
+        .timeout(Duration::from_secs(10))
+        .output_limits(payload.len(), payload.len());
+    let result = exec_spooled_sync_cancellable_with_stdin_file(
+        &request,
+        input,
+        payload.len(),
+        stdout,
+        stderr,
+        &AtomicBool::new(false),
+    )
+    .expect("file-backed stdin drains both output pipes");
+    assert!(result.success, "{result:?}");
+    assert_eq!(result.stdout_bytes, payload.len() as u64);
+    assert_eq!(result.stderr_bytes, payload.len() as u64);
+    let mut stdout = result.stdout;
+    let mut stderr = result.stderr;
+    assert_eq!(read_file(&mut stdout).expect("read stdout"), payload);
+    assert_eq!(read_file(&mut stderr).expect("read stderr"), payload);
+}
+
+#[test]
+fn file_backed_stdin_rejects_nonregular_files() {
+    let input = File::from(
+        nix::fcntl::open(
+            "/dev/null",
+            nix::fcntl::OFlag::O_RDONLY | nix::fcntl::OFlag::O_CLOEXEC,
+            nix::sys::stat::Mode::empty(),
+        )
+        .expect("open non-regular stdin fixture"),
+    );
+    let request = ExecRequest::new("/bin/sh", ["-c", ":"]).output_limits(0, 0);
+    let error = file_stdin_error(input, &request, 8);
+    assert_eq!(error.kind, SpoolFailureKind::Request);
+    assert_eq!(error.message, "file-backed stdin must be a regular file");
+}
+
+#[test]
+fn file_backed_stdin_rejects_input_above_its_byte_limit() {
+    let mut input = tempfile::tempfile().expect("create oversized-input fixture");
+    input
+        .write_all(b"input")
+        .expect("write oversized-input fixture");
+    input
+        .seek(SeekFrom::Start(0))
+        .expect("rewind oversized-input fixture");
+    let request = ExecRequest::new("/bin/sh", ["-c", ":"]).output_limits(0, 0);
+    let error = file_stdin_error(input, &request, 4);
+    assert_eq!(error.kind, SpoolFailureKind::Request);
+    assert_eq!(error.message, "file-backed stdin exceeds its byte limit");
+}
+
+#[test]
+fn file_backed_stdin_rejects_nonzero_input_position() {
+    let mut input = tempfile::tempfile().expect("create positioned-input fixture");
+    input
+        .write_all(b"input")
+        .expect("write positioned-input fixture");
+    input
+        .seek(SeekFrom::Start(1))
+        .expect("position positioned-input fixture");
+    let request = ExecRequest::new("/bin/sh", ["-c", ":"]).output_limits(0, 0);
+    let error = file_stdin_error(input, &request, 8);
+    assert_eq!(error.kind, SpoolFailureKind::Request);
+    assert_eq!(
+        error.message,
+        "file-backed stdin descriptor must start at byte zero"
+    );
+}
+
+#[test]
+fn file_backed_stdin_rejects_conflicting_request_stdin_and_routing() {
+    let input = tempfile::tempfile().expect("create conflicting-input fixture");
+    let mut request = ExecRequest::new("/bin/sh", ["-c", ":"]).output_limits(0, 0);
+    request.stdin = Some(Vec::new());
+    let error = file_stdin_error(input, &request, 8);
+    assert_eq!(error.kind, SpoolFailureKind::Request);
+    assert_eq!(
+        error.message,
+        "file-backed stdin conflicts with request stdin bytes"
+    );
+
+    let input = tempfile::tempfile().expect("create routed-input fixture");
+    let request = ExecRequest::new("/bin/sh", ["-c", ":"])
+        .stdin_mode(crate::StdioMode::Inherit)
+        .output_limits(0, 0);
+    let error = file_stdin_error(input, &request, 8);
+    assert_eq!(error.kind, SpoolFailureKind::Request);
+    assert_eq!(error.message, "file-backed stdin requires Null routing");
+}
+
+#[test]
+fn file_backed_stdin_rejects_aliasing_output_inode() {
+    let spool_files = output_pair();
+    let input = spool_files.stdout_file();
+    let stdout = spool_files.stdout_file();
+    let stderr = spool_files.stderr_file();
+    let request = ExecRequest::new("/bin/sh", ["-c", ":"]).output_limits(0, 0);
+    let error = typed_error(
+        exec_spooled_sync_cancellable_with_stdin_file(
+            &request,
+            input,
+            8,
+            stdout,
+            stderr,
+            &AtomicBool::new(false),
+        )
+        .expect_err("stdin and output spools cannot share an inode"),
+    );
+    assert_eq!(error.kind, SpoolFailureKind::Request);
+    assert_eq!(
+        error.message,
+        "file-backed stdin must be distinct from output spools"
+    );
 }
 
 #[test]

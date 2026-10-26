@@ -13,7 +13,7 @@ use std::{
     cmp::Ordering,
     ffi::{OsStr, OsString},
     fs::{self, File},
-    io::{BufRead, BufReader, Cursor, Read, Seek, SeekFrom, Write},
+    io::{BufRead, BufReader, BufWriter, Cursor, Read, Seek, SeekFrom, Write},
     os::unix::{
         ffi::{OsStrExt, OsStringExt},
         fs::MetadataExt,
@@ -25,6 +25,7 @@ const TREE_RECORD_LIMIT: usize = 1024 * 1024 + 128;
 const SOURCE_PATH_LIMIT: usize = 1024 * 1024;
 const SOURCE_ENTRY_OVERHEAD: usize = 256;
 const SOURCE_READ_CHUNK: usize = 64 * 1024;
+const BATCH_HEADER_LIMIT: usize = 64 + 6 + 20 + 1;
 const SOURCE_CONTENT_LIMIT: u64 = super::admission::STAGED_TREE_CONTENT_LIMIT;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -138,7 +139,18 @@ struct ExpectedRecords<'a, 'b> {
     total_size: u64,
 }
 
-impl ExpectedRecords<'_, '_> {
+impl<'a, 'b> ExpectedRecords<'a, 'b> {
+    fn new(snapshot: &'b OwnedSnapshot, inventory: &'a mut File, format: ObjectFormat) -> Self {
+        Self {
+            snapshot,
+            reader: BufReader::with_capacity(SOURCE_READ_CHUNK, inventory),
+            format,
+            pending: None,
+            previous_path: None,
+            total_size: 0,
+        }
+    }
+
     fn peek_path(&mut self) -> Result<Option<Vec<u8>>> {
         if self.pending.is_none() {
             self.pending = self.read_next()?;
@@ -231,6 +243,102 @@ struct ChildEntry {
 enum ObservationSink<'a> {
     Save(&'a mut File),
     Compare(&'a mut File),
+}
+
+struct BatchBlobs<'a> {
+    reader: BufReader<&'a mut File>,
+    actual_chunk: Box<[u8]>,
+    expected_chunk: Box<[u8]>,
+}
+
+impl<'a> BatchBlobs<'a> {
+    fn new(output: &'a mut File) -> Self {
+        Self {
+            reader: BufReader::with_capacity(SOURCE_READ_CHUNK, output),
+            actual_chunk: vec![0_u8; SOURCE_READ_CHUNK].into_boxed_slice(),
+            expected_chunk: vec![0_u8; SOURCE_READ_CHUNK].into_boxed_slice(),
+        }
+    }
+
+    fn compare(
+        &mut self,
+        snapshot: &OwnedSnapshot,
+        expected: &ExpectedEntry,
+        actual: &mut impl Read,
+    ) -> Result<[u8; 32]> {
+        snapshot.controls.check_start()?;
+        let size = expected.size.to_string();
+        let mut header = Vec::with_capacity(BATCH_HEADER_LIMIT);
+        header.extend_from_slice(&expected.oid);
+        header.extend_from_slice(b" blob ");
+        header.extend_from_slice(size.as_bytes());
+        header.push(b'\n');
+        ensure!(
+            header.len() <= BATCH_HEADER_LIMIT,
+            "Git batch response header exceeds its byte limit"
+        );
+        let mut observed_header = vec![0_u8; header.len()];
+        self.reader
+            .read_exact(&mut observed_header)
+            .context("reading Git batch response header")?;
+        ensure!(
+            observed_header == header,
+            "Git batch response identity or length differs from the staged tree"
+        );
+
+        let mut hasher = Sha256::new();
+        let mut remaining = expected.size;
+        while remaining > 0 {
+            snapshot.controls.check_start()?;
+            let wanted = usize::try_from(remaining.min(self.actual_chunk.len() as u64))
+                .context("sizing staged source comparison chunk")?;
+            let count = actual
+                .read(&mut self.actual_chunk[..wanted])
+                .context("reading staged source file")?;
+            ensure!(
+                count > 0,
+                "materialized source is shorter than the staged Git blob"
+            );
+            self.reader
+                .read_exact(&mut self.expected_chunk[..count])
+                .context("reading expected staged Git blob from batch")?;
+            ensure!(
+                self.actual_chunk[..count] == self.expected_chunk[..count],
+                "materialized source bytes differ from the staged Git blob"
+            );
+            hasher.update(&self.actual_chunk[..count]);
+            remaining -= count as u64;
+        }
+        let mut extra = [0_u8; 1];
+        ensure!(
+            actual
+                .read(&mut extra)
+                .context("checking materialized source length")?
+                == 0,
+            "materialized source is longer than the staged Git blob"
+        );
+        self.reader
+            .read_exact(&mut extra)
+            .context("reading Git batch response terminator")?;
+        ensure!(
+            extra == *b"\n",
+            "Git batch response is missing its terminator"
+        );
+        Ok(hasher.finalize().into())
+    }
+
+    fn ensure_finished(&mut self, snapshot: &OwnedSnapshot) -> Result<()> {
+        snapshot.controls.check_start()?;
+        let mut trailing = [0_u8; 1];
+        ensure!(
+            self.reader
+                .read(&mut trailing)
+                .context("checking Git batch response completion")?
+                == 0,
+            "Git batch output contains trailing records"
+        );
+        Ok(())
+    }
 }
 
 impl OwnedSnapshot {
@@ -359,14 +467,31 @@ fn measure_pass(
         "running isolated Git tree inventory failed with {}",
         entries.status()
     );
-    let expected = ExpectedRecords {
+    let (requests, request_limit, response_limit) = prepare_batch_requests(
         snapshot,
-        reader: BufReader::with_capacity(64 * 1024, entries.stdout_mut()),
-        format: pinned.format,
-        pending: None,
-        previous_path: None,
-        total_size: 0,
-    };
+        entries.stdout_mut(),
+        pinned.format,
+        inventory_limit,
+    )?;
+    let mut blobs = snapshot.git_spooled_with_stdin_file(
+        &[OsStr::new("cat-file"), OsStr::new("--batch")],
+        requests,
+        request_limit,
+        response_limit,
+        STAGED_INDEX_STDERR_LIMIT,
+        CommandBudget::PhaseRemainder,
+    )?;
+    ensure!(
+        blobs.status().success(),
+        "reading isolated Git blob batch failed with {}",
+        blobs.status()
+    );
+    entries
+        .stdout_mut()
+        .seek(SeekFrom::Start(0))
+        .context("rewinding staged source inventory")?;
+    let expected = ExpectedRecords::new(snapshot, entries.stdout_mut(), pinned.format);
+    let batch = BatchBlobs::new(blobs.stdout_mut());
     let root_state = FileState::at(&snapshot.root)?;
     ensure!(
         root_state.kind == EntryKind::Directory,
@@ -375,6 +500,7 @@ fn measure_pass(
     let mut measurement = SourceMeasurement {
         snapshot,
         expected,
+        batch,
         sink,
         measured_inventory: 0,
         inventory_limit,
@@ -384,18 +510,89 @@ fn measure_pass(
         measurement.expected.next()?.is_none(),
         "staged source tree contains paths absent from the materialized root"
     );
+    measurement.batch.ensure_finished(snapshot)?;
     Ok(measurement.expected.total_size)
 }
 
-struct SourceMeasurement<'snapshot, 'spool, 'sink> {
+fn prepare_batch_requests(
+    snapshot: &OwnedSnapshot,
+    inventory: &mut File,
+    format: ObjectFormat,
+    inventory_limit: usize,
+) -> Result<(File, usize, usize)> {
+    inventory
+        .seek(SeekFrom::Start(0))
+        .context("rewinding staged source inventory before request preparation")?;
+    let mut expected = ExpectedRecords::new(snapshot, inventory, format);
+    let requests = tempfile::tempfile_in(&snapshot.scratch_root)
+        .context("creating private Git batch request spool")?;
+    let mut requests = BufWriter::with_capacity(SOURCE_READ_CHUNK, requests);
+    let mut request_bytes = 0_usize;
+    let mut response_bytes = 0_usize;
+    while let Some(entry) = expected.next()? {
+        snapshot.controls.check_start()?;
+        request_bytes = request_bytes
+            .checked_add(entry.oid.len())
+            .and_then(|length| length.checked_add(1))
+            .context("sizing Git batch request spool")?;
+        ensure!(
+            request_bytes <= inventory_limit,
+            "Git batch request spool exceeds its byte limit"
+        );
+        requests
+            .write_all(&entry.oid)
+            .and_then(|()| requests.write_all(b"\n"))
+            .context("writing private Git batch request spool")?;
+
+        let header_bytes = entry
+            .oid
+            .len()
+            .checked_add(6)
+            .and_then(|length| length.checked_add(entry.size.to_string().len()))
+            .and_then(|length| length.checked_add(1))
+            .context("sizing Git batch response header")?;
+        ensure!(
+            header_bytes <= BATCH_HEADER_LIMIT,
+            "Git batch response header exceeds its byte limit"
+        );
+        response_bytes = response_bytes
+            .checked_add(header_bytes)
+            .and_then(|length| length.checked_add(usize::try_from(entry.size).ok()?))
+            .and_then(|length| length.checked_add(1))
+            .context("sizing Git batch response spool")?;
+    }
+    let response_limit = usize::try_from(SOURCE_CONTENT_LIMIT)
+        .context("staged source content limit exceeds address space")?
+        .checked_add(inventory_limit)
+        .context("sizing maximum Git batch response")?;
+    ensure!(
+        response_bytes <= response_limit,
+        "Git batch response exceeds its byte limit"
+    );
+    requests
+        .flush()
+        .context("flushing private Git batch request spool")?;
+    let mut requests = requests
+        .into_inner()
+        .map_err(std::io::IntoInnerError::into_error)
+        .context("finishing private Git batch request spool")?;
+    requests
+        .seek(SeekFrom::Start(0))
+        .context("rewinding private Git batch request spool")?;
+    snapshot.controls.check_start()?;
+    Ok((requests, request_bytes, response_bytes))
+}
+
+struct SourceMeasurement<'snapshot, 'inventory, 'batch, 'sink> {
     snapshot: &'snapshot OwnedSnapshot,
-    expected: ExpectedRecords<'spool, 'snapshot>,
+    expected: ExpectedRecords<'inventory, 'snapshot>,
+    batch: BatchBlobs<'batch>,
     sink: ObservationSink<'sink>,
     measured_inventory: usize,
     inventory_limit: usize,
 }
 
-impl SourceMeasurement<'_, '_, '_> {
+impl SourceMeasurement<'_, '_, '_, '_> {
     fn walk_directory(
         &mut self,
         directory: &Path,
@@ -485,8 +682,13 @@ impl SourceMeasurement<'_, '_, '_> {
                         entry.mode == child.state.logical_mode(),
                         "materialized source file mode differs from the staged tree"
                     );
-                    let (state, digest) =
-                        compare_regular_file(self.snapshot, &child.path, &child.state, &entry)?;
+                    let (state, digest) = compare_regular_file(
+                        self.snapshot,
+                        &mut self.batch,
+                        &child.path,
+                        &child.state,
+                        &entry,
+                    )?;
                     observe(&mut self.sink, &path_bytes, &state, Some(&digest))?;
                 }
                 EntryKind::Symlink => {
@@ -502,8 +704,13 @@ impl SourceMeasurement<'_, '_, '_> {
                         entry.mode == b"120000",
                         "materialized source symlink mode differs from the staged tree"
                     );
-                    let (state, digest) =
-                        compare_symlink(self.snapshot, &child.path, &child.state, &entry)?;
+                    let (state, digest) = compare_symlink(
+                        self.snapshot,
+                        &mut self.batch,
+                        &child.path,
+                        &child.state,
+                        &entry,
+                    )?;
                     observe(&mut self.sink, &path_bytes, &state, Some(&digest))?;
                 }
             }
@@ -519,6 +726,7 @@ impl SourceMeasurement<'_, '_, '_> {
 
 fn compare_regular_file(
     snapshot: &OwnedSnapshot,
+    blobs: &mut BatchBlobs<'_>,
     path: &Path,
     enumerated: &FileState,
     expected: &ExpectedEntry,
@@ -544,7 +752,7 @@ fn compare_regular_file(
         expected.size == opened.length,
         "staged source file length differs from the tree blob"
     );
-    let digest = compare_blob(snapshot, expected, &mut file)?;
+    let digest = blobs.compare(snapshot, expected, &mut file)?;
     snapshot.controls.check_start()?;
     let after_descriptor = FileState::from_metadata(
         &file
@@ -561,6 +769,7 @@ fn compare_regular_file(
 
 fn compare_symlink(
     snapshot: &OwnedSnapshot,
+    blobs: &mut BatchBlobs<'_>,
     path: &Path,
     enumerated: &FileState,
     expected: &ExpectedEntry,
@@ -583,7 +792,7 @@ fn compare_symlink(
         expected.size == target_bytes.len() as u64 && expected.mode == b"120000",
         "staged source symlink target differs from the tree blob"
     );
-    let digest = compare_blob(snapshot, expected, &mut Cursor::new(target_bytes))?;
+    let digest = blobs.compare(snapshot, expected, &mut Cursor::new(target_bytes))?;
     snapshot.controls.check_start()?;
     super::super::validate_link(&snapshot.root, path)?;
     let after = FileState::at(path)?;
@@ -592,66 +801,6 @@ fn compare_symlink(
         "staged source symlink changed while reading"
     );
     Ok((before, digest))
-}
-
-fn compare_blob(
-    snapshot: &OwnedSnapshot,
-    expected: &ExpectedEntry,
-    actual: &mut impl Read,
-) -> Result<[u8; 32]> {
-    snapshot.controls.check_start()?;
-    let object_id = OsStr::from_bytes(&expected.oid);
-    let arguments = [OsStr::new("cat-file"), OsStr::new("blob"), object_id];
-    let limit =
-        usize::try_from(expected.size).context("staged source blob exceeds address space")?;
-    let mut blob = snapshot.git_spooled(
-        &arguments,
-        limit,
-        STAGED_INDEX_STDERR_LIMIT,
-        CommandBudget::PhaseRemainder,
-    )?;
-    ensure!(
-        blob.status().success(),
-        "reading isolated Git blob failed with {}",
-        blob.status()
-    );
-    let mut hasher = Sha256::new();
-    let mut actual_chunk = vec![0_u8; SOURCE_READ_CHUNK].into_boxed_slice();
-    let mut expected_chunk = vec![0_u8; SOURCE_READ_CHUNK].into_boxed_slice();
-    let mut total = 0_u64;
-    loop {
-        snapshot.controls.check_start()?;
-        let count = actual
-            .read(&mut actual_chunk)
-            .context("reading staged source file")?;
-        if count == 0 {
-            break;
-        }
-        blob.stdout_mut()
-            .read_exact(&mut expected_chunk[..count])
-            .context("reading expected staged Git blob")?;
-        ensure!(
-            actual_chunk[..count] == expected_chunk[..count],
-            "materialized source bytes differ from the staged Git blob"
-        );
-        hasher.update(&actual_chunk[..count]);
-        total = total
-            .checked_add(count as u64)
-            .context("counting measured source bytes")?;
-    }
-    let mut extra = [0_u8; 1];
-    ensure!(
-        blob.stdout_mut()
-            .read(&mut extra)
-            .context("checking expected Git blob length")?
-            == 0,
-        "materialized source is shorter than the staged Git blob"
-    );
-    ensure!(
-        total == expected.size,
-        "materialized source length differs from the staged Git blob"
-    );
-    Ok(hasher.finalize().into())
 }
 
 fn compare_child_names(left: &ChildEntry, right: &ChildEntry) -> Ordering {

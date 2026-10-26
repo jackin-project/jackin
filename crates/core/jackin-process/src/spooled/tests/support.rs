@@ -88,3 +88,23 @@ pub(super) fn typed_error(error: anyhow::Error) -> SpoolError {
         .downcast::<SpoolError>()
         .expect("strict spool returns its typed error")
 }
+
+pub(super) fn file_stdin_error(
+    input: File,
+    request: &ExecRequest,
+    input_limit: usize,
+) -> SpoolError {
+    let spools = output_pair();
+    let (stdout, stderr) = spools.files();
+    typed_error(
+        crate::exec_spooled_sync_cancellable_with_stdin_file(
+            request,
+            input,
+            input_limit,
+            stdout,
+            stderr,
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+        .expect_err("invalid file-backed stdin is rejected before spawn"),
+    )
+}

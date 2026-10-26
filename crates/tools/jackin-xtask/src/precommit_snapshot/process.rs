@@ -20,7 +20,10 @@ use std::{
 use std::{process::Stdio, thread};
 
 use anyhow::{Context, Result, ensure};
-use jackin_process::{ExecRequest, SpoolError, SpoolFailureKind, exec_spooled_sync_cancellable};
+use jackin_process::{
+    ExecRequest, SpoolError, SpoolExecResult, SpoolFailureKind, exec_spooled_sync_cancellable,
+    exec_spooled_sync_cancellable_with_stdin_file,
+};
 use nix::{
     fcntl::{OFlag, open},
     sys::stat::{Mode, fchmod},
@@ -270,6 +273,46 @@ pub(super) fn capture_spooled(
     stderr_limit: usize,
     budget: CommandBudget,
 ) -> Result<SpoolOutput> {
+    capture_spooled_inner(
+        command,
+        None,
+        controls,
+        environment,
+        stdout_limit,
+        stderr_limit,
+        budget,
+    )
+}
+
+pub(super) fn capture_spooled_with_stdin_file(
+    command: &mut Command,
+    input: (File, usize),
+    controls: &SetupControls,
+    environment: EnvironmentMode,
+    stdout_limit: usize,
+    stderr_limit: usize,
+    budget: CommandBudget,
+) -> Result<SpoolOutput> {
+    capture_spooled_inner(
+        command,
+        Some(input),
+        controls,
+        environment,
+        stdout_limit,
+        stderr_limit,
+        budget,
+    )
+}
+
+fn capture_spooled_inner(
+    command: &mut Command,
+    stdin_file: Option<(File, usize)>,
+    controls: &SetupControls,
+    environment: EnvironmentMode,
+    stdout_limit: usize,
+    stderr_limit: usize,
+    budget: CommandBudget,
+) -> Result<SpoolOutput> {
     let timeout = controls.child_timeout(budget)?;
     let scratch = private_capture_dir()?;
     let scratch_root = scratch.path().to_path_buf();
@@ -289,51 +332,18 @@ pub(super) fn capture_spooled(
     })?;
     let request = request_from_command(command, environment, stdout_limit, stderr_limit, timeout);
 
-    let result =
-        match exec_spooled_sync_cancellable(&request, stdout, stderr, controls.cancellation()) {
-            Ok(result) => result,
-            Err(error) => {
-                let detail = format!("{error:#}");
-                let (mut stdout, mut stderr, recovery, spool_kind) =
-                    match error.downcast::<SpoolError>() {
-                        Ok(spool) => {
-                            let kind = spool.kind;
-                            let (stdout, stderr, recovery) = spool.into_parts();
-                            (stdout, stderr, recovery, Some(kind))
-                        }
-                        Err(error) => {
-                            let root = scratch.keep();
-                            return Err(error.context(format!(
-                            "process capture failed; private diagnostic directory retained at {}",
-                            root.display()
-                        )));
-                        }
-                    };
-                let stdout_sync = stdout.as_mut().map(|file| file.sync_all()).transpose();
-                let stderr_sync = stderr.as_mut().map(|file| file.sync_all()).transpose();
-                let kind = if recovery.is_some() || spool_kind == Some(SpoolFailureKind::Cleanup) {
-                    CaptureFailureKind::UncertainCleanup
-                } else {
-                    CaptureFailureKind::Capture
-                };
-                let retained = scratch.keep();
-                drop(stdout);
-                drop(stderr);
-                drop(recovery);
-                let detail = format!(
-                    "{detail}{}{}",
-                    stdout_sync
-                        .err()
-                        .map(|error| format!("; stdout spool sync failed: {error}"))
-                        .unwrap_or_default(),
-                    stderr_sync
-                        .err()
-                        .map(|error| format!("; stderr spool sync failed: {error}"))
-                        .unwrap_or_default(),
-                );
-                return Err(CaptureFailure::new(kind, detail, Some(retained)).into());
-            }
-        };
+    let execution = match stdin_file {
+        Some((input, input_limit)) => exec_spooled_sync_cancellable_with_stdin_file(
+            &request,
+            input,
+            input_limit,
+            stdout,
+            stderr,
+            controls.cancellation(),
+        ),
+        None => exec_spooled_sync_cancellable(&request, stdout, stderr, controls.cancellation()),
+    };
+    let (result, scratch) = match_execution(execution, scratch)?;
 
     let mut stdout = result.stdout;
     let mut stderr = result.stderr;
@@ -422,6 +432,56 @@ pub(super) fn capture_spooled(
         scratch_root,
         scratch: Some(scratch),
     })
+}
+
+fn match_execution(
+    execution: Result<SpoolExecResult>,
+    scratch: TempDir,
+) -> Result<(SpoolExecResult, TempDir)> {
+    match execution {
+        Ok(result) => Ok((result, scratch)),
+        Err(error) => {
+            let detail = format!("{error:#}");
+            let (mut stdout, mut stderr, recovery, spool_kind) =
+                match error.downcast::<SpoolError>() {
+                    Ok(spool) => {
+                        let kind = spool.kind;
+                        let (stdout, stderr, recovery) = spool.into_parts();
+                        (stdout, stderr, recovery, Some(kind))
+                    }
+                    Err(error) => {
+                        let root = scratch.keep();
+                        return Err(error.context(format!(
+                            "process capture failed; private diagnostic directory retained at {}",
+                            root.display()
+                        )));
+                    }
+                };
+            let stdout_sync = stdout.as_mut().map(|file| file.sync_all()).transpose();
+            let stderr_sync = stderr.as_mut().map(|file| file.sync_all()).transpose();
+            let kind = if recovery.is_some() || spool_kind == Some(SpoolFailureKind::Cleanup) {
+                CaptureFailureKind::UncertainCleanup
+            } else {
+                CaptureFailureKind::Capture
+            };
+            let retained = scratch.keep();
+            drop(stdout);
+            drop(stderr);
+            drop(recovery);
+            let detail = format!(
+                "{detail}{}{}",
+                stdout_sync
+                    .err()
+                    .map(|error| format!("; stdout spool sync failed: {error}"))
+                    .unwrap_or_default(),
+                stderr_sync
+                    .err()
+                    .map(|error| format!("; stderr spool sync failed: {error}"))
+                    .unwrap_or_default(),
+            );
+            Err(CaptureFailure::new(kind, detail, Some(retained)).into())
+        }
+    }
 }
 
 fn private_capture_dir() -> Result<TempDir> {

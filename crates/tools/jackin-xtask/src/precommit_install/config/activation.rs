@@ -34,6 +34,12 @@ impl fmt::Display for ActivationAfterRenameError {
 
 impl std::error::Error for ActivationAfterRenameError {}
 
+impl From<&anyhow::Error> for ActivationAfterRenameError {
+    fn from(error: &anyhow::Error) -> Self {
+        Self(format!("{error:#}"))
+    }
+}
+
 pub(super) fn activation_failed_after_rename(error: &anyhow::Error) -> bool {
     error.downcast_ref::<ActivationAfterRenameError>().is_some()
 }
@@ -73,7 +79,11 @@ pub(super) fn validate_hook_config_source_custody(
     Ok(())
 }
 
-pub(super) fn activate_hook_config(common_path: &Path, selected_path: &Path) -> Result<()> {
+pub(super) fn activate_hook_config(
+    common_path: &Path,
+    selected_path: &Path,
+    owner: &super::super::files::OwnerInstallation,
+) -> Result<()> {
     validate_hook_config_custody(common_path, selected_path)?;
     let config = selected_path
         .file_name()
@@ -127,6 +137,7 @@ pub(super) fn activate_hook_config(common_path: &Path, selected_path: &Path) -> 
             if let Some((checked_config, _)) = &checked_config {
                 checked_config.recheck()?;
             }
+            owner.recheck()?;
             Ok(())
         },
         |file| {
@@ -142,6 +153,7 @@ pub(super) fn activate_hook_config(common_path: &Path, selected_path: &Path) -> 
             Ok(())
         },
     )?;
+    owner.recheck().map_err(super::after_rename_error)?;
     Ok(())
 }
 

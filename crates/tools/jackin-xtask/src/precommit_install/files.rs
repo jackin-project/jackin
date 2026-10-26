@@ -4,13 +4,16 @@
 use std::{
     fs::{self, File},
     io::{Read, Write},
-    os::unix::fs::{MetadataExt, PermissionsExt},
+    os::{
+        fd::AsFd,
+        unix::fs::{MetadataExt, PermissionsExt},
+    },
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, ensure};
 use jackin_process_directory::{
-    CheckedInstallRoot, CheckedSourceRoot, InstallFileKind, RunningImage,
+    CheckedInstallFile, CheckedInstallRoot, CheckedSourceRoot, InstallFileKind, RunningImage,
 };
 use nix::{
     errno::Errno,
@@ -24,13 +27,33 @@ const OWNER_FILE: &str = "owner";
 const INSTALL_LOCK: &str = "install.lock";
 
 pub(super) struct OwnerInstallation {
-    _lock: File,
+    lock: File,
     owner_path: PathBuf,
+    parent: CheckedSourceRoot,
+    root: File,
+    owner: CheckedInstallFile,
 }
 
 impl OwnerInstallation {
     pub(super) fn owner_path(&self) -> &Path {
         &self.owner_path
+    }
+
+    pub(super) fn recheck(&self) -> Result<()> {
+        self.parent
+            .recheck()
+            .context("rechecking installed owner Git directory")?;
+        let named = fstatat(&self.parent, INSTALL_ROOT, AtFlags::AT_SYMLINK_NOFOLLOW)
+            .context("rechecking installed owner directory name")?;
+        let held = fstat(&self.root)?;
+        ensure!(
+            named.st_dev == held.st_dev && named.st_ino == held.st_ino,
+            "installed owner directory changed before hook activation"
+        );
+        ensure_file_identity(&self.root, INSTALL_LOCK, &self.lock, 0o600, 0)?;
+        self.owner
+            .recheck()
+            .context("rechecking installed hook owner")
     }
 }
 
@@ -92,15 +115,10 @@ pub(super) fn publish_owner(git_dir: &Path, owner: &[u8]) -> Result<PathBuf> {
 pub(super) fn install_owner(git_dir: &Path, owner: &[u8]) -> Result<OwnerInstallation> {
     let parent = CheckedSourceRoot::from_absolute_directory(git_dir)
         .context("validating worktree Git directory")?;
-    let parent_fd = open(
-        git_dir,
-        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-        Mode::empty(),
-    )?;
+    let parent_fd = File::from(parent.as_fd().try_clone_to_owned()?);
     parent
         .recheck()
         .context("rechecking worktree Git directory")?;
-    let parent_fd = File::from(parent_fd);
     let created = match mkdirat(&parent_fd, INSTALL_ROOT, Mode::from_bits_truncate(0o700)) {
         Ok(()) => {
             let created = fstatat(&parent_fd, INSTALL_ROOT, AtFlags::AT_SYMLINK_NOFOLLOW)
@@ -186,36 +204,52 @@ pub(super) fn install_owner(git_dir: &Path, owner: &[u8]) -> Result<OwnerInstall
     lock.lock()
         .context("locking worktree hook owner installation")?;
 
-    if existing_owner_matches(&checked_root, owner)
+    if let Some(installed_owner) = matching_existing_owner(&checked_root, owner)
         .context("checking stable owner while holding installer lock")?
     {
-        return Ok(OwnerInstallation {
-            _lock: lock,
+        let installation = OwnerInstallation {
+            lock,
             owner_path: git_dir.join(INSTALL_ROOT).join(OWNER_FILE),
-        });
+            parent,
+            root,
+            owner: installed_owner,
+        };
+        installation.recheck()?;
+        return Ok(installation);
     }
 
     let temporary = format!(".owner.{}", uuid::Uuid::new_v4());
     let result = publish_owner_entry(&root, &checked_root, &temporary, owner)
         .context("publishing stable owner while holding installer lock");
-    if let Err(error) = result {
-        return match remove_if_same(&root, &temporary) {
-            Ok(()) => Err(error),
-            Err(cleanup) => {
-                Err(error.context(format!("temporary owner cleanup also failed: {cleanup:#}")))
-            }
-        };
-    }
-    Ok(OwnerInstallation {
-        _lock: lock,
+    let installed_owner = match result {
+        Ok(installed_owner) => installed_owner,
+        Err(error) => {
+            return match remove_if_same(&root, &temporary) {
+                Ok(()) => Err(error),
+                Err(cleanup) => {
+                    Err(error.context(format!("temporary owner cleanup also failed: {cleanup:#}")))
+                }
+            };
+        }
+    };
+    let installation = OwnerInstallation {
+        lock,
         owner_path: git_dir.join(INSTALL_ROOT).join(OWNER_FILE),
-    })
+        parent,
+        root,
+        owner: installed_owner,
+    };
+    installation.recheck()?;
+    Ok(installation)
 }
 
-fn existing_owner_matches(root: &CheckedInstallRoot, expected: &[u8]) -> Result<bool> {
+fn matching_existing_owner(
+    root: &CheckedInstallRoot,
+    expected: &[u8],
+) -> Result<Option<CheckedInstallFile>> {
     let existing = match root.open_file(Path::new(OWNER_FILE), InstallFileKind::SealedCopy) {
         Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error).context("checking existing stable hook owner"),
     };
     let metadata = existing.file().metadata()?;
@@ -235,7 +269,7 @@ fn existing_owner_matches(root: &CheckedInstallRoot, expected: &[u8]) -> Result<
     existing
         .recheck()
         .context("rechecking existing stable hook owner")?;
-    Ok(actual == expected)
+    Ok((actual == expected).then_some(existing))
 }
 
 fn publish_owner_entry(
@@ -243,7 +277,7 @@ fn publish_owner_entry(
     checked_root: &CheckedInstallRoot,
     temporary: &str,
     owner: &[u8],
-) -> Result<()> {
+) -> Result<CheckedInstallFile> {
     let descriptor = openat(
         root,
         temporary,
@@ -273,7 +307,7 @@ fn publish_owner_entry(
             .recheck()
             .context("rechecking published stable hook owner")?;
         fsync(root).context("syncing worktree hook owner directory")?;
-        Ok(())
+        Ok(installed)
     })()
 }
 

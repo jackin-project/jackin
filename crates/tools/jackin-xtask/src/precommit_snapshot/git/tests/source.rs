@@ -76,6 +76,22 @@ fn private_git(root: &Path, arguments: &[&str]) -> Vec<u8> {
     output.stdout
 }
 
+fn git_executable() -> PathBuf {
+    std::env::split_paths(&std::env::var_os("PATH").expect("test PATH"))
+        .map(|directory| directory.join("git"))
+        .find(|path| path.is_file())
+        .and_then(|path| fs::canonicalize(path).ok())
+        .expect("resolve real Git executable")
+}
+
+fn shell_quote(path: &Path) -> String {
+    shell_quote_text(&path.to_string_lossy())
+}
+
+fn shell_quote_text(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
 fn capture_live_entries(root: &Path) -> Vec<(Vec<u8>, u8, u32, Vec<u8>)> {
     fn visit(root: &Path, directory: &Path, entries: &mut Vec<(Vec<u8>, u8, u32, Vec<u8>)>) {
         let children = crate::fs_util::read_dir_sorted(directory).expect("enumerate live fixture");
@@ -134,6 +150,11 @@ fn assert_live_unchanged(fixture: &MaterializedFixture) {
     );
 }
 
+fn staged_blob(root: &Path, path: &str) -> Vec<u8> {
+    let object_spec = format!(":{path}");
+    private_git(root, &["show", &object_spec])
+}
+
 #[test]
 fn admits_sha1_and_sha256_trees_with_raw_paths_modes_and_internal_links() {
     for object_format in [None, Some("sha256")] {
@@ -172,6 +193,185 @@ fn admits_sha1_and_sha256_trees_with_raw_paths_modes_and_internal_links() {
             fs::read_link(fixture.snapshot.root.join("internal-link"))
                 .expect("staged symlink target"),
             PathBuf::from("plain.txt")
+        );
+        assert_live_unchanged(&fixture);
+    }
+}
+
+#[test]
+fn reads_all_staged_blobs_with_one_git_batch_process_per_measurement_pass() {
+    let mut fixture = materialized_fixture(None, |root| {
+        fs::write(root.join("first.txt"), b"first payload\n").expect("first blob");
+        fs::write(root.join("second.txt"), b"second payload\n").expect("second blob");
+        symlink("first.txt", root.join("link")).expect("symlink blob");
+    });
+    let wrapper = fixture.snapshot.scratch_root.join("counting-git");
+    let log = fixture.snapshot.scratch_root.join("cat-file.log");
+    let script = format!(
+        "#!/bin/sh\nif [ \"$1\" = cat-file ]; then printf '%s\\n' \"$*\" >> {}; fi\nexec {} \"$@\"\n",
+        shell_quote(&log),
+        shell_quote(&git_executable())
+    );
+    fs::write(&wrapper, script).expect("write transparent Git wrapper");
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o700))
+        .expect("make transparent Git wrapper executable");
+    fixture
+        .snapshot
+        .set_test_git_program(&wrapper)
+        .expect("use transparent Git wrapper");
+
+    fixture
+        .snapshot
+        .admit(&fixture.tree)
+        .expect("admit all content from bounded cat-file batch runs");
+    let calls = fs::read_to_string(log).expect("read Git batch call count");
+    assert_eq!(
+        calls.lines().collect::<Vec<_>>(),
+        ["cat-file --batch", "cat-file --batch"],
+        "two measurement passes each use one batch process, regardless of blob count"
+    );
+    assert_live_unchanged(&fixture);
+}
+
+#[test]
+fn materializes_raw_staged_blobs_despite_git_checkout_attributes() {
+    let fixture = materialized_fixture(None, |root| {
+        git(root, &["config", "core.autocrlf", "false"]);
+        fs::create_dir(root.join("nested")).expect("nested attribute directory");
+        fs::write(
+            root.join(".gitattributes"),
+            b"text.txt text eol=crlf\nidentity.txt ident\nencoded.txt working-tree-encoding=UTF-16LE\nfiltered.txt filter=sentinel\n",
+        )
+        .expect("root checkout attributes");
+        fs::write(
+            root.join("nested/.gitattributes"),
+            b"payload.txt text eol=crlf ident\n",
+        )
+        .expect("nested checkout attributes");
+        fs::write(root.join("text.txt"), b"text line\r\n").expect("CRLF text source");
+        fs::write(root.join("identity.txt"), b"$Id$\n").expect("ident source");
+        let encoded = "encoded text\n"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        fs::write(root.join("encoded.txt"), encoded).expect("UTF-16LE source");
+        fs::write(root.join("filtered.txt"), b"filter source\n").expect("filter source");
+        fs::write(root.join("nested/payload.txt"), b"nested text\r\n$Id$\r\n")
+            .expect("nested text source");
+    });
+
+    let marker = fixture.snapshot.scratch_root.join("filter-ran");
+    let filter = fixture.snapshot.scratch_root.join("sentinel-filter");
+    fs::write(
+        &filter,
+        format!(
+            "#!/bin/sh\ntouch {}\nprintf 'filtered\\n'\n",
+            shell_quote(&marker)
+        ),
+    )
+    .expect("write sentinel smudge filter");
+    fs::set_permissions(&filter, fs::Permissions::from_mode(0o700))
+        .expect("make sentinel filter executable");
+    let filter_command = shell_quote(&filter);
+    private_git(
+        &fixture.snapshot.root,
+        &["config", "filter.sentinel.smudge", &filter_command],
+    );
+    private_git(
+        &fixture.snapshot.root,
+        &["config", "filter.sentinel.required", "true"],
+    );
+
+    let live = LiveRepository::capture_at(fixture.live.path()).expect("recapture live repository");
+    fixture
+        .snapshot
+        .materialize(&fixture.tree, &live)
+        .expect("rematerialize with a configured sentinel filter");
+    for path in [
+        "text.txt",
+        "identity.txt",
+        "encoded.txt",
+        "filtered.txt",
+        "nested/payload.txt",
+    ] {
+        assert_eq!(
+            fs::read(fixture.snapshot.root.join(path)).expect("read materialized blob"),
+            staged_blob(fixture.live.path(), path),
+            "private snapshot must contain the raw staged blob for {path}"
+        );
+    }
+    fixture
+        .snapshot
+        .admit(&fixture.tree)
+        .expect("raw staged bytes satisfy source admission");
+    assert!(!marker.exists(), "the checkout filter must not run");
+    assert_live_unchanged(&fixture);
+}
+
+#[test]
+fn rejects_malformed_git_batch_framing_from_the_selected_git_process() {
+    let mut fixture = materialized_fixture(None, |_| {});
+    let wrapper = fixture.snapshot.scratch_root.join("mutating-git");
+    let real_git = shell_quote(&git_executable());
+    let baseline = format!("#!/bin/sh\nexec {real_git} \"$@\"\n");
+    fs::write(&wrapper, baseline).expect("write transparent Git wrapper");
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o700))
+        .expect("make transparent Git wrapper executable");
+    fixture
+        .snapshot
+        .set_test_git_program(&wrapper)
+        .expect("select the real-Git wrapper");
+    fixture
+        .snapshot
+        .admit(&fixture.tree)
+        .expect("unmodified Git batch output is accepted");
+
+    let oid = String::from_utf8(private_git(
+        fixture.live.path(),
+        &["rev-parse", ":baseline.txt"],
+    ))
+    .expect("baseline blob ID is ASCII");
+    let oid = oid.trim_end_matches('\n');
+    for (mutation, diagnostic) in [
+        ("wrong-oid", "identity or length"),
+        ("wrong-type", "identity or length"),
+        ("wrong-size", "identity or length"),
+        ("missing-object", "identity or length"),
+        ("truncated-body", "expected staged Git blob"),
+        ("wrong-terminator", "missing its terminator"),
+        ("missing-terminator", "response terminator"),
+        ("trailing-record", "stdout output exceeded"),
+    ] {
+        let response = match mutation {
+            "wrong-oid" => format!("{} blob 9\nbaseline\n\n", "0".repeat(oid.len())),
+            "wrong-type" => format!("{oid} tree 9\nbaseline\n\n"),
+            "wrong-size" => format!("{oid} blob 8\nbaseline\n\n"),
+            "missing-object" => format!("{oid} missing\n"),
+            "truncated-body" => format!("{oid} blob 9\nbase"),
+            "wrong-terminator" => format!("{oid} blob 9\nbaseline\nX"),
+            "missing-terminator" => format!("{oid} blob 9\nbaseline\n"),
+            "trailing-record" => String::new(),
+            _ => unreachable!(),
+        };
+        let cat_file = if mutation == "trailing-record" {
+            format!("{real_git} \"$@\" || exit\nprintf 'trailing\\n'\nexit 0")
+        } else {
+            format!(
+                "cat >/dev/null\nprintf '%s' {}\nexit 0",
+                shell_quote_text(&response)
+            )
+        };
+        let script = format!(
+            "#!/bin/sh\nif [ \"$1\" = cat-file ] && [ \"$2\" = --batch ]; then\n{cat_file}\nfi\nexec {real_git} \"$@\"\n"
+        );
+        fs::write(&wrapper, script).expect("write selected-Git batch mutation wrapper");
+        let error = fixture
+            .snapshot
+            .admit(&fixture.tree)
+            .expect_err("malformed cat-file batch framing must fail closed");
+        assert!(
+            format!("{error:#}").contains(diagnostic),
+            "the {mutation} batch response should fail at {diagnostic}: {error:#}"
         );
         assert_live_unchanged(&fixture);
     }

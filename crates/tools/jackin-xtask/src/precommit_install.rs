@@ -34,8 +34,10 @@ fn install_for_repository(repository: &std::path::Path, owner: &[u8]) -> Result<
     git::require_named_hook_support(repository)?;
     git::require_events_enabled(repository)?;
     let installation = files::install_owner(&git_dir, owner)?;
-    config::activate(&common_config, &selected_config, installation.owner_path())?;
-    git::verify_installed_hooks(repository, installation.owner_path())?;
+    config::activate(&common_config, &selected_config, &installation)?;
+    git::verify_installed_hooks(repository, installation.owner_path())
+        .and_then(|()| installation.recheck())
+        .map_err(config::after_rename_error)?;
     Ok(())
 }
 

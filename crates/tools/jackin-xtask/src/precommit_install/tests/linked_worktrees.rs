@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::fs;
 
 use anyhow::{Context, Result, ensure};
 
@@ -66,8 +66,9 @@ fn linked_worktrees_receive_independent_owners_and_hook_config() -> Result<()> {
         "concurrent installer left a Git config lock"
     );
     let primary_owner = primary_git.join("jackin-precommit-owner/owner");
-    let linked_owner = files::publish_owner(&linked_git, b"linked owner")?;
-    config::activate(&common_config, &linked_config, &linked_owner)?;
+    let linked_installation = files::install_owner(&linked_git, b"linked owner")?;
+    let linked_owner = linked_installation.owner_path().to_path_buf();
+    config::activate(&common_config, &linked_config, &linked_installation)?;
 
     assert_eq!(fs::read(&common_config)?, common_before);
     assert_ne!(primary_owner, linked_owner);
@@ -100,10 +101,10 @@ fn failed_config_preflight_preserves_existing_worktree_config() -> Result<()> {
             "preserve me",
         ],
     )?;
-    let (_, _, selected_config) = git::installation_paths(&repository)?;
+    let (git_dir, _, selected_config) = git::installation_paths(&repository)?;
     let common_config = repository.join(".git/not-config");
     let selected_before = fs::read(&selected_config)?;
-    let owner = PathBuf::from("/private/jackin-precommit-owner/owner");
+    let owner = files::install_owner(&git_dir, b"preflight owner")?;
 
     let error = config::activate(&common_config, &selected_config, &owner)
         .expect_err("invalid common config identity must stop activation");
