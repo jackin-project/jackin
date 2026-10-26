@@ -66,6 +66,10 @@ rcgen = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
+[[test]]
+name = "wire_failure_retryable"
+required-features = ["test-support"]
+
 
 
 

@@ -1,0 +1,31 @@
+version = "v1alpha11"
+workdir = "/workspace/project"
+accounts = ["personal"]
+default_launch = []
+
+[account_bindings]
+claude = "personal"
+
+[env]
+SECTIONED_TOKEN = { op = "op://vault-id/item-id/section-id/field-id", breadcrumb = { version = 1, value = "Private/Build/Authentication/Deploy Token" } }
+LITERAL_PERCENT = { op = "op://vault-id/item-id/field-id", breadcrumb = { version = 1, value = "Private/Team%252FBlue/token" } }
+WORKSPACE_TOKEN = { op = "op://workspace-vault/workspace-item/auth-section/token-field?attribute=otp", account = "workspace-fixture@example.invalid", on_demand = true , breadcrumb = { version = 1, value = "Shared%252FBlue/Deployment[Fixture%252FWest]/Authentication%252FSection/Token?attribute=otp" } }
+
+[github]
+auth_forward = "token"
+
+[github.env]
+GH_TOKEN = { op = "op://github-vault-id/item-id/field-id", breadcrumb = { version = 1, value = "GitHub/Automation/Token" } }
+
+[roles."org/release"]
+account_bindings = { claude = "personal" }
+default_launch = []
+
+[roles."org/release".env]
+ROLE_TOKEN = { op = "op://role-vault-id/item-id/section-id/field-id", breadcrumb = { version = 1, value = "Release/Deployment/Production/Token" } }
+
+[roles."org/release".github]
+auth_forward = "token"
+
+[roles."org/release".github.env]
+GH_TOKEN = { op = "op://role-github-vault-id/item-id/field-id", breadcrumb = { version = 1, value = "Release/GitHub/Token" } }
