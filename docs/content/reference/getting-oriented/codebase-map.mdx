@@ -95,9 +95,6 @@ Tier 2  jackin-config      AppConfig · WorkspaceConfig · ConfigEditor · migra
 
 Tier 3  jackin-manifest    manifest validation + migrations + repo_contract + repo → core, config, diagnostics
         jackin-env         operator_env + env_resolver + host_claude + token_setup → core, config, diagnostics
-        jackin-otlp-testbed test-only OTLP/gRPC receiver for conformance suites
-                           (never linked into product binaries) → telemetry
-
 Tier 4  jackin-image       derived_image + agent_binary + capsule_binary +
                            binary_artifact + version_check  → core, config, manifest, docker, diagnostics
                            (agent_binary and capsule_binary repair cached executable bits before redownloading)

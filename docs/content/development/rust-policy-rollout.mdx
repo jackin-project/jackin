@@ -70,7 +70,7 @@ renovate, alint entrypoint), `layout-crates-dir`, `layout-github-dir`,
 |---|---|---|
 | `GAP-TEST-001` | 147 | Test impl in production files. Worst files: `capsule/src/process_isolation.rs` (26), `usage/src/host/broker/publish.rs` (13), `runtime/.../coordination.rs` (13), `core/src/profile_material.rs` (11). Canonical fix: `#[cfg(test)] mod tests;` + sibling `tests.rs`. |
 | `GAP-TEST-003` | 33 | Orphan `src/` files (runtime 8, diagnostics 7, jackin 6, capsule 5, console 4, isolation 2, usage 1). Declare the module or delete. |
-| `GAP-INHERIT-001` | 28 | Literal `version` in 28 members; 4 already inherit (otlp-testbed, pr-trailers, telemetry, xtask). `jackin-dev` pins `0.1.52` vs workspace `0.6.4`: needs a version-alignment decision before centralizing. |
+| `GAP-INHERIT-001` | 28 | Literal `version` in 28 members; 3 already inherit (pr-trailers, telemetry, xtask). `jackin-dev` pins `0.1.52` vs workspace `0.6.4`: needs a version-alignment decision before centralizing. |
 | `GAP-SIZE-001` | 15 | Crates over 6000 code lines: console 80139, runtime 58226, capsule 50606, usage 47706, jackin 36112, xtask 35841, config 23232, telemetry 12634, instance 12563, diagnostics 11368, isolation 10535, launch 8423, image 6764, core 6720, protocol 6326. |
 | `GAP-SIZE-002` | 7 | Crates over 60 files: console 243, capsule 151, jackin 140, xtask 117, runtime 113, usage 84, core 77. |
 | `GAP-TEST-002` | 5 | `#[path]` suites (isolation 1, runtime 2) and child modules inside `tests.rs` (runtime 1, usage-ffi 1). |
@@ -269,8 +269,7 @@ passes.
 - `tools` (dev/repo tooling): `jackin-xtask`, `jackin-dev` (local
   PR-verification tool, same family as `pr-trailers`),
   `jackin-pr-trailers`, `jackin-lints` (excluded dylint workspace).
-- `testing` (test support): `jackin-test-support`,
-  `jackin-otlp-testbed`.
+- `testing` (test support): `jackin-test-support`.
 
 ### Fuzz placement (auxiliary-workspace contract)
 
@@ -1898,7 +1897,7 @@ passes.
   are core/protocol/telemetry (T0/T1)
   plus the T1 store backend, so T2 is
   the lowest legal tier; diagnostics,
-  otlp-testbed, tokio, and tracing
+  tokio, and tracing
   stay test-only dev-dependencies.
   Path edits are mechanical: one
   `store_backend` use re-points at
@@ -2660,8 +2659,8 @@ bound 720.
   gets a 1-line path-string fixup
   (same class as the S35 allowlist
   rewrite). `jackin-diagnostics`
-  (`test-support`), `jackin-otlp-testbed`,
-  and `tokio` become core dev-deps
+  (`test-support`) and `tokio` become
+  core dev-deps
   (cycle-free: neither names core;
   lockfile +3 edges).
 - Verify: `cargo check --locked --workspace
@@ -3091,7 +3090,7 @@ bound 720.
   telemetry, anyhow, serde
   (`derive`), serde_json; dev-deps
   add diagnostics (`test-support`),
-  otlp-testbed, tempfile, tracing,
+  tempfile, tracing,
   tokio (`rt`, `rt-multi-thread`,
   `time`), plus unix-gated nix
   (`socket`) for the linger test
@@ -6607,7 +6606,7 @@ bound 720.
   (lockfile +1
   package, +10 edges;
   launch +
-  otlp-testbed + tokio
+  tokio
   land in
   dev-dependencies
   for the moved

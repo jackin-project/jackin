@@ -67,11 +67,11 @@ Generative-AI signals use standard semantic conventions only where content captu
 
 ## Verification
 
-The dev-only `jackin-otlp-testbed` receives real OTLP/gRPC requests and supports deterministic failure responses. Current wire tests cover direct host/daemon/Capsule delivery, exact Resource consistency, correlation rules, payload-wide privacy detectors, shutdown, serialized daemon and Capsule protocols, the production launch controller, registry-wide event delivery, and live-volume soak behavior. Universal error-ownership enforcement, production UI causality, production prewarm-path proof, calibrated active-path performance evidence, and fresh integrated CI gates remain unfinished.
+Current wire tests cover direct host/daemon/Capsule delivery, exact Resource consistency, correlation rules, payload-wide privacy detectors, shutdown, serialized daemon and Capsule protocols, the production launch controller, registry-wide event delivery, and live-volume soak behavior. Universal error-ownership enforcement, production UI causality, production prewarm-path proof, calibrated active-path performance evidence, and fresh integrated CI gates remain unfinished.
 
 Run focused contract checks with:
 
 ```sh
 cargo xtask telemetry-registry
-cargo nextest run -p jackin-diagnostics -p jackin-otlp-testbed --all-features --locked -E 'test(/conformance/)'
+cargo nextest run -p jackin-diagnostics --all-features --locked -E 'test(/conformance/)'
 ```

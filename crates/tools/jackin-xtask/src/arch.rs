@@ -147,7 +147,6 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-instance-agents", 3),
     ("jackin-instance-roles", 4),
     ("jackin-instance", 5),
-    ("jackin-otlp-testbed", 3),
     ("jackin-launch", 3),
     ("jackin-test-support", 3),
     ("jackin-usage", 7),
