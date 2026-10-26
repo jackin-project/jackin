@@ -4,8 +4,8 @@
 use super::*;
 use anyhow::{Context, Result, bail, ensure};
 use nix::{
-    sys::signal::{Signal, kill},
-    unistd::{Pid, fsync, getpid},
+    sys::signal::{Signal, kill, raise},
+    unistd::{Pid, fsync},
 };
 use std::{
     fs,
@@ -146,6 +146,26 @@ fn config_signal_finalization_preserves_commit_and_default_action() -> Result<()
     fs::write(committed_root.join("config"), b"old config\n")?;
     let old_config = fs::symlink_metadata(committed_root.join("config"))?;
     let lock_inode_marker = temporary.path().join("activated lock inode");
+
+    let preparation_root = temporary.path().join("candidate preparation");
+    fs::create_dir(&preparation_root)?;
+    fs::write(preparation_root.join("config"), b"old config\n")?;
+    let mut preparation_child = SignalChildGuard::new(
+        signal_child("prepare", &preparation_root, &lock_inode_marker, None, None)?
+            .spawn()
+            .context("starting candidate preparation signal child")?,
+    );
+    let status = preparation_child.wait(Duration::from_secs(15))?;
+    ensure!(
+        status.signal() == Some(Signal::SIGTERM as i32),
+        "candidate preparation did not restore default SIGTERM after cleanup: {status}"
+    );
+    ensure!(
+        fs::read(preparation_root.join("config"))? == b"old config\n",
+        "SIGTERM during candidate preparation changed the config"
+    );
+    ensure_config_directory_is_clean(&preparation_root)?;
+
     let mut commit_child = SignalChildGuard::new(
         signal_child("commit", &committed_root, &lock_inode_marker, None, None)?
             .spawn()
@@ -211,8 +231,12 @@ fn run_signal_finalization_child(mode: &str) -> Result<()> {
         std::env::var_os(SIGNAL_FINALIZATION_MARKER).context("missing config inode marker")?,
     );
     match mode {
+        "prepare" => {
+            run_config_activation(&root, &lock_inode_marker, SignalPoint::Preparation)?;
+            bail!("candidate preparation returned after SIGTERM")
+        }
         "commit" => {
-            let error = run_config_activation(&root, &lock_inode_marker, true)
+            let error = run_config_activation(&root, &lock_inode_marker, SignalPoint::AfterRename)
                 .expect_err("a captured post-rename SIGTERM must be reported after cleanup");
             ensure!(
                 format!("{error:#}")
@@ -223,7 +247,7 @@ fn run_signal_finalization_child(mode: &str) -> Result<()> {
             Ok(())
         }
         "late" => {
-            run_config_activation(&root, &lock_inode_marker, false)?;
+            run_config_activation(&root, &lock_inode_marker, SignalPoint::None)?;
             let ready = PathBuf::from(
                 std::env::var_os(SIGNAL_FINALIZATION_READY).context("missing child ready path")?,
             );
@@ -241,7 +265,7 @@ fn run_signal_finalization_child(mode: &str) -> Result<()> {
 fn run_config_activation(
     root: &Path,
     lock_inode_marker: &Path,
-    signal_after_rename: bool,
+    signal_point: SignalPoint,
 ) -> Result<()> {
     let config_name = std::ffi::OsStr::new("config");
     super::super::signals::with_install_signals(|signals| {
@@ -249,6 +273,10 @@ fn run_config_activation(
         let destination = open_config_file(&parent, config_name)?;
         let mut candidate = tempfile::NamedTempFile::new_in(root)?;
         candidate.write_all(b"new config\n")?;
+        if matches!(signal_point, SignalPoint::Preparation) {
+            raise(Signal::SIGTERM)?;
+            signals.check()?;
+        }
         candidate.as_file().sync_all()?;
         let bytes = fs::read(candidate.path())?;
         let lock_path = root.join("config.lock");
@@ -288,8 +316,8 @@ fn run_config_activation(
                 Ok(())
             },
             |parent| {
-                if signal_after_rename {
-                    kill(getpid(), Signal::SIGTERM)?;
+                if matches!(signal_point, SignalPoint::AfterRename) {
+                    raise(Signal::SIGTERM)?;
                 }
                 fsync(parent)?;
                 Ok(())
@@ -311,6 +339,13 @@ fn run_config_activation(
         lock.disarm();
         Ok(())
     })
+}
+
+#[derive(Clone, Copy)]
+enum SignalPoint {
+    Preparation,
+    AfterRename,
+    None,
 }
 
 fn signal_child(

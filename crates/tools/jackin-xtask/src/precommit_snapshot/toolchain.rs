@@ -41,7 +41,14 @@ pub(super) struct QualifiedTools {
 
 pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     let controls = &snapshot.controls;
-    let inherited_path = env::var_os("PATH").unwrap_or_default();
+    let hook_cwd =
+        fs::canonicalize(env::current_dir().context("reading hook invocation directory")?)
+            .context("resolving physical hook invocation directory")?;
+    let inherited_entries =
+        anchor_inherited_path(&hook_cwd, &env::var_os("PATH").unwrap_or_default());
+    let path_aliases = create_path_aliases(&env::temp_dir(), Path::new("/tmp"))?;
+    populate_inherited_path_aliases(path_aliases.path(), &inherited_entries)?;
+    let inherited_path = qualified_path_entries(path_aliases.path(), &inherited_entries)?;
     let home = env::var_os("HOME").map(PathBuf::from);
     let guard = resolve_guard(&inherited_path, home.as_deref())?;
     let pin = rust_release(&snapshot.root.join("rust-toolchain.toml"))?;
@@ -88,7 +95,6 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     symlink("/usr/bin/xcrun", managed_dir.join("xcrun"))
         .context("linking fixed Xcode tool resolver")?;
 
-    let path_aliases = create_path_aliases(&env::temp_dir(), Path::new("/tmp"))?;
     let environment = build_qualified_environment(
         snapshot,
         &managed_dir,
@@ -96,7 +102,7 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         &cargo,
         &pin,
         &rust_tools,
-        &inherited_path,
+        &inherited_entries,
     )?;
     verify_managed_projection(&mise, &environment, &snapshot.root, controls)?;
     verify_rust_toolchain(
@@ -121,7 +127,7 @@ fn build_qualified_environment(
     cargo: &Path,
     pin: &str,
     rust_tools: &BTreeMap<&'static str, PathBuf>,
-    inherited_path: &OsStr,
+    inherited_path: &[PathBuf],
 ) -> Result<BTreeMap<OsString, OsString>> {
     let mut environment = env::vars_os().collect::<BTreeMap<_, _>>();
     environment.retain(|key, _| {
@@ -176,10 +182,19 @@ fn build_qualified_environment(
     ] {
         environment.remove(OsStr::new(key));
     }
+    environment.insert(
+        OsString::from("GIT_CONFIG_GLOBAL"),
+        OsString::from("/dev/null"),
+    );
+    environment.insert(
+        OsString::from("GIT_CONFIG_SYSTEM"),
+        OsString::from("/dev/null"),
+    );
+    environment.insert(OsString::from("GIT_CONFIG_NOSYSTEM"), OsString::from("1"));
     populate_path_aliases(path_alias_dir, managed_dir, rust_tools)?;
     environment.insert(
         OsString::from("PATH"),
-        qualified_path(path_alias_dir, inherited_path)?,
+        qualified_path_entries(path_alias_dir, inherited_path)?,
     );
     let selected_path = environment
         .get(OsStr::new("PATH"))
@@ -357,10 +372,46 @@ fn populate_path_aliases(
     Ok(())
 }
 
-fn qualified_path(path_alias_dir: &Path, inherited_path: &OsStr) -> Result<OsString> {
-    let path_entries =
-        std::iter::once(path_alias_dir.to_path_buf()).chain(env::split_paths(inherited_path));
+fn populate_inherited_path_aliases(
+    path_alias_dir: &Path,
+    inherited_path: &[PathBuf],
+) -> Result<()> {
+    for (index, entry) in inherited_path.iter().enumerate() {
+        if entry.as_os_str().as_encoded_bytes().contains(&b':') {
+            symlink(entry, inherited_path_alias(path_alias_dir, index))
+                .context("linking inherited PATH directory without delimiter")?;
+        }
+    }
+    Ok(())
+}
+
+fn qualified_path_entries(path_alias_dir: &Path, inherited_path: &[PathBuf]) -> Result<OsString> {
+    let inherited_entries = inherited_path.iter().enumerate().map(|(index, entry)| {
+        if entry.as_os_str().as_encoded_bytes().contains(&b':') {
+            inherited_path_alias(path_alias_dir, index)
+        } else {
+            entry.clone()
+        }
+    });
+    let path_entries = std::iter::once(path_alias_dir.to_path_buf()).chain(inherited_entries);
     env::join_paths(path_entries).context("building qualified tool path")
+}
+
+fn inherited_path_alias(path_alias_dir: &Path, index: usize) -> PathBuf {
+    path_alias_dir.join(format!("inherited-path-{index}"))
+}
+
+fn anchor_inherited_path(hook_cwd: &Path, inherited_path: &OsStr) -> Vec<PathBuf> {
+    let path_entries = env::split_paths(inherited_path).map(|entry| {
+        if entry.as_os_str().is_empty() {
+            hook_cwd.to_path_buf()
+        } else if entry.is_absolute() {
+            entry
+        } else {
+            hook_cwd.join(entry)
+        }
+    });
+    path_entries.collect()
 }
 
 #[cfg(test)]

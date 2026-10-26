@@ -198,6 +198,65 @@ fn cargo_path_selects_the_qualified_mbx_wrapper_before_rustup_cargo() {
 }
 
 #[test]
+fn inherited_path_anchors_empty_and_relative_entries_and_preserves_order() {
+    let temporary = tempfile::tempdir().expect("hook directory");
+    let hook_cwd = fs::canonicalize(temporary.path()).expect("physical hook directory");
+    let absolute = PathBuf::from("/absolute/inherited/bin");
+    let inherited = env::join_paths([
+        PathBuf::new(),
+        PathBuf::from("relative/bin"),
+        absolute.clone(),
+        PathBuf::new(),
+    ])
+    .expect("inherited PATH with empty components");
+
+    let anchored = anchor_inherited_path(&hook_cwd, &inherited);
+    assert_eq!(
+        anchored,
+        vec![
+            hook_cwd.clone(),
+            hook_cwd.join("relative/bin"),
+            absolute,
+            hook_cwd,
+        ]
+    );
+}
+
+#[test]
+fn inherited_path_aliases_colon_cwd_entries_without_changing_order() {
+    let temporary = tempfile::tempdir().expect("hook parent");
+    let hook_cwd = temporary.path().join("hook:cwd");
+    fs::create_dir(&hook_cwd).expect("colon-containing hook directory");
+    let hook_cwd = fs::canonicalize(hook_cwd).expect("physical colon hook directory");
+    let inherited = env::join_paths([PathBuf::new(), PathBuf::from("relative/bin")])
+        .expect("empty and relative PATH entries");
+    let anchored = anchor_inherited_path(&hook_cwd, &inherited);
+    let aliases = tempfile::tempdir().expect("separator-safe alias directory");
+    populate_inherited_path_aliases(aliases.path(), &anchored)
+        .expect("populate inherited delimiter aliases");
+
+    let qualified =
+        qualified_path_entries(aliases.path(), &anchored).expect("qualified delimiter-safe PATH");
+    let entries = env::split_paths(&qualified).collect::<Vec<_>>();
+    assert_eq!(
+        entries,
+        vec![
+            aliases.path().to_path_buf(),
+            inherited_path_alias(aliases.path(), 0),
+            inherited_path_alias(aliases.path(), 1),
+        ]
+    );
+    assert_eq!(
+        fs::read_link(&entries[1]).expect("empty PATH alias target"),
+        hook_cwd
+    );
+    assert_eq!(
+        fs::read_link(&entries[2]).expect("relative PATH alias target"),
+        hook_cwd.join("relative/bin")
+    );
+}
+
+#[test]
 fn pinned_rustup_resolution_preserves_only_the_admitted_rustup_home() {
     let temporary = tempfile::tempdir().expect("temporary directory");
     let rustup_home = temporary.path().join("custom rustup home");
@@ -272,10 +331,11 @@ fn pinned_swiftlint_precedes_an_ambient_global_tool() {
         resolve_tool_paths(&["swiftlint"], |_| Ok(pinned.clone())).expect("mock Mise resolution");
     symlink(&resolved["swiftlint"], managed.join("swiftlint")).expect("managed SwiftLint link");
     let inherited = env::join_paths([&ambient]).expect("ambient PATH");
+    let inherited = env::split_paths(&inherited).collect::<Vec<_>>();
     let path_aliases = tempfile::tempdir().expect("separator-safe PATH directory");
     populate_path_aliases(path_aliases.path(), &managed, &BTreeMap::new())
         .expect("populate separator-safe PATH directory");
-    let path = qualified_path(path_aliases.path(), &inherited).expect("qualified PATH");
+    let path = qualified_path_entries(path_aliases.path(), &inherited).expect("qualified PATH");
     let selected = find_executable("swiftlint", &path).expect("qualified SwiftLint");
 
     assert_eq!(
@@ -308,7 +368,9 @@ fn local_guard_in_home_is_admitted_and_qualified_without_inherited_path_entry() 
     let path_aliases = tempfile::tempdir().expect("separator-safe PATH directory");
     populate_path_aliases(path_aliases.path(), &managed, &BTreeMap::new())
         .expect("populate separator-safe PATH directory");
-    let qualified = qualified_path(path_aliases.path(), &inherited).expect("qualified PATH");
+    let inherited_entries = env::split_paths(&inherited).collect::<Vec<_>>();
+    let qualified =
+        qualified_path_entries(path_aliases.path(), &inherited_entries).expect("qualified PATH");
     let selected = find_executable("rust-build-guard", &qualified).expect("qualified guard");
     assert_eq!(
         fs::canonicalize(selected).expect("selected physical guard"),
@@ -335,10 +397,13 @@ fn colon_paths_use_private_separator_safe_aliases_and_run_qualified_tools() {
 
     let aliases = create_path_aliases(&requested_tmp, &fallback).expect("separator-safe aliases");
     let rust_tools = BTreeMap::from([("rustc", rustc.clone())]);
-    populate_path_aliases(aliases.path(), &managed, &rust_tools)
-        .expect("populate qualified PATH aliases");
     let inherited = env::var_os("PATH").unwrap_or_default();
-    let path = qualified_path(aliases.path(), &inherited).expect("qualified PATH");
+    let inherited = env::split_paths(&inherited).collect::<Vec<_>>();
+    populate_inherited_path_aliases(aliases.path(), &inherited)
+        .expect("populate inherited PATH aliases");
+    populate_path_aliases(aliases.path(), &managed, &rust_tools)
+        .expect("populate qualified tool aliases");
+    let path = qualified_path_entries(aliases.path(), &inherited).expect("qualified PATH");
     assert!(
         !aliases
             .path()

@@ -1,4 +1,5 @@
 use super::*;
+use std::os::unix::fs::symlink;
 
 #[test]
 fn installed_owner_runs_qualified_tools_when_tmpdir_and_rust_path_contain_colons() {
@@ -85,4 +86,71 @@ fn installed_owner_runs_qualified_tools_when_tmpdir_and_rust_path_contain_colons
         !alias.exists(),
         "qualified PATH aliases are removed after gate"
     );
+}
+
+#[test]
+fn installed_owner_anchors_empty_and_relative_path_entries_before_snapshot_chdir() {
+    for component in [PathBuf::new(), PathBuf::from("relative-tools")] {
+        let parent = tempfile::tempdir_in("/tmp").expect("owner fixture parent");
+        assert!(
+            !parent.path().as_os_str().as_encoded_bytes().contains(&b':'),
+            "fixture PATH alias parent is delimiter-free"
+        );
+        let colon_cwd_parent = parent.path().join("hook:cwd");
+        fs::create_dir(&colon_cwd_parent).expect("colon-containing hook directory");
+        let mut fixture =
+            InstalledOwnerFixture::new_in(OwnerFixtureMode::IsolationGate, &colon_cwd_parent);
+        let bin = env::split_paths(&fixture.path)
+            .next()
+            .expect("fixture tool directory");
+        let fixture_bin = fixture.repository.join(".git/f3-test/bin");
+        symlink("/bin/mkdir", fixture_bin.join("mkdir"))
+            .expect("provide fixed system mkdir utility");
+        symlink("/usr/bin/touch", fixture_bin.join("touch"))
+            .expect("provide fixed system touch utility");
+        let provider_bin = parent.path().join("provider-bin");
+        symlink(&bin, &provider_bin).expect("create delimiter-free provider path");
+        let git_directory = if component.as_os_str().is_empty() {
+            fixture.repository.clone()
+        } else {
+            fixture.repository.join(&component)
+        };
+        fs::create_dir_all(&git_directory).expect("create relative PATH directory");
+        symlink(real_git_executable(), git_directory.join("git"))
+            .expect("install Git only in selected relative PATH directory");
+        fixture.path = env::join_paths([provider_bin.as_path(), component.as_path()])
+            .expect("relative fixture PATH");
+
+        let mut owner = fixture.spawn_owner("status", 0, 20_000, 20_000, 20_000);
+        let release_gate = GateReleaseOnDrop(fixture.gate_release.clone());
+        wait_for_owner_readiness(&mut owner, &fixture.gate_ready, &fixture.ticks);
+        let path = fs::read_to_string(&fixture.path_output).expect("qualified PATH record");
+        let entries = env::split_paths(OsStr::new(path.trim_end_matches('\n'))).collect::<Vec<_>>();
+        assert_eq!(entries.len(), 3, "qualified PATH entries: {entries:?}");
+        assert!(
+            entries
+                .iter()
+                .all(|entry| !entry.as_os_str().as_encoded_bytes().contains(&b':')),
+            "qualified PATH projection uses delimiter-free entries: {entries:?}"
+        );
+        assert_eq!(entries[1], provider_bin);
+        assert_eq!(
+            fs::read_link(&entries[2]).expect("anchored relative PATH alias"),
+            if component.as_os_str().is_empty() {
+                fixture.repository.clone()
+            } else {
+                fixture.repository.join(&component)
+            }
+        );
+        let alias = entries[0].clone();
+        release_gate.release();
+        let output = owner.wait_output(std::time::Duration::from_secs(8));
+        assert!(
+            output.status.success(),
+            "anchored PATH owner failed for {:?}: {}",
+            component,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!alias.exists(), "PATH aliases are removed after gate");
+    }
 }
