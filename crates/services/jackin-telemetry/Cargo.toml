@@ -19,7 +19,6 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 criterion.workspace = true
-dhat.workspace = true
 
 [[bench]]
 name = "disabled_fast_path"

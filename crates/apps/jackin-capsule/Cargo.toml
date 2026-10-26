@@ -20,7 +20,6 @@ features = []
 
 [features]
 default = []
-dhat-heap = ["dep:dhat"]
 codex-app-server-authority = ["jackin-agent-status/codex-app-server-authority"]
 
 [lib]
@@ -57,7 +56,6 @@ chrono = { workspace = true, features = ["clock"] }
 sha2 = { workspace = true }
 ratatui = { workspace = true }
 termrock = { workspace = true }
-dhat = { workspace = true, optional = true }
 tempfile = { workspace = true }
 uuid = { workspace = true }
 

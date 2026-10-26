@@ -33,7 +33,6 @@ Not responsible for: protocol encoding (`jackin-protocol`), host-side launch orc
 | [`attach_protocol.rs`](src/attach_protocol.rs) | attach lifecycle helpers | — |
 | [`protocol.rs`](src/protocol.rs) · [`protocol/`](src/protocol) | capsule wire framing helpers | — |
 | [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | composition, chrome/input, ANSI rules, and daemon-facing compositor/input/layout adapters over TermRock and shared operator-info UI | nested; daemon-adapter integration lives in [`daemon/tests.rs`](src/daemon/tests.rs) |
-| [`tests/render_allocation.rs`](tests/render_allocation.rs) | Warmed full-snapshot and borrowed-view render allocation budgets | Two `dhat-heap`-gated tests |
 | [`clipboard.rs`](src/clipboard.rs) · [`clipboard/`](src/clipboard) | clipboard image staging + idle expiry | [`tests.rs`](src/clipboard/tests.rs) |
 | [`runtime_setup.rs`](src/runtime_setup.rs) · [`runtime_setup/`](src/runtime_setup) | in-container git/auth/MCP setup | [`tests.rs`](src/runtime_setup/tests.rs) |
 | [`usage_relay_proxy.rs`](src/usage_relay_proxy.rs) · [`usage_relay_proxy/`](src/usage_relay_proxy) | container-local scoped usage socket and host stdio tunnel | [`tests.rs`](src/usage_relay_proxy/tests.rs) |
@@ -54,7 +53,7 @@ Not responsible for: protocol encoding (`jackin-protocol`), host-side launch orc
 | [`services.rs`](src/services.rs) · [`services/`](src/services) | side-effect adapters | — |
 | [`util.rs`](src/util.rs) · [`util/`](src/util) | shared bounded helpers | [`tests.rs`](src/util/tests.rs) |
 | [`wordlist.rs`](src/wordlist.rs) · [`wordlist/`](src/wordlist) | tab codenames | [`tests.rs`](src/wordlist/tests.rs) |
-| [`alloc_telemetry.rs`](src/alloc_telemetry.rs) | Opt-in live DHAT heap guard; requires `dhat-heap` and `JACKIN_DHAT_ALLOC_LOG`. Testing mode writes no profile artifact on exit. | — |
+| `alloc_telemetry.rs` (removed) | heap profiler guard removed with the `dhat-heap` feature; no profiler surface remains | — |
 | [`debug_panic.rs`](src/debug_panic.rs) · [`debug_panic/`](src/debug_panic) | force-panic debug hook | [`tests.rs`](src/debug_panic/tests.rs) |
 
 ## Public API

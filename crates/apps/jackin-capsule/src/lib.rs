@@ -1,5 +1,4 @@
 pub mod agent_status;
-mod alloc_telemetry;
 pub mod attach_context;
 pub mod attach_protocol;
 pub mod client;

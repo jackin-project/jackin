@@ -40,7 +40,6 @@ pub(crate) async fn run_daemon_loop(
     let (rows, cols) = normalize_size(rows, cols);
 
     crate::logging::init();
-    let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();
 
     DaemonLoop::initialize(
