@@ -8,6 +8,7 @@ use nix::{
     fcntl::{OFlag, open},
     sys::stat::Mode,
 };
+use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use std::{
     cmp::Ordering,
@@ -245,18 +246,60 @@ enum ObservationSink<'a> {
     Compare(&'a mut File),
 }
 
+enum GitBlobHasher {
+    Sha1(Sha1),
+    Sha256(Sha256),
+}
+
+impl GitBlobHasher {
+    fn new(format: ObjectFormat, size: &str) -> Self {
+        let mut header = Vec::with_capacity(6 + size.len());
+        header.extend_from_slice(b"blob ");
+        header.extend_from_slice(size.as_bytes());
+        header.push(0);
+        match format {
+            ObjectFormat::Sha1 => {
+                let mut hasher = Sha1::new();
+                hasher.update(&header);
+                Self::Sha1(hasher)
+            }
+            ObjectFormat::Sha256 => {
+                let mut hasher = Sha256::new();
+                hasher.update(&header);
+                Self::Sha256(hasher)
+            }
+        }
+    }
+
+    fn update(&mut self, bytes: &[u8]) {
+        match self {
+            Self::Sha1(hasher) => hasher.update(bytes),
+            Self::Sha256(hasher) => hasher.update(bytes),
+        }
+    }
+
+    fn finalize_oid(self) -> Vec<u8> {
+        match self {
+            Self::Sha1(hasher) => hex::encode(hasher.finalize()).into_bytes(),
+            Self::Sha256(hasher) => hex::encode(hasher.finalize()).into_bytes(),
+        }
+    }
+}
+
 struct BatchBlobs<'a> {
     reader: BufReader<&'a mut File>,
     actual_chunk: Box<[u8]>,
     expected_chunk: Box<[u8]>,
+    format: ObjectFormat,
 }
 
 impl<'a> BatchBlobs<'a> {
-    fn new(output: &'a mut File) -> Self {
+    fn new(output: &'a mut File, format: ObjectFormat) -> Self {
         Self {
             reader: BufReader::with_capacity(SOURCE_READ_CHUNK, output),
             actual_chunk: vec![0_u8; SOURCE_READ_CHUNK].into_boxed_slice(),
             expected_chunk: vec![0_u8; SOURCE_READ_CHUNK].into_boxed_slice(),
+            format,
         }
     }
 
@@ -286,7 +329,8 @@ impl<'a> BatchBlobs<'a> {
             "Git batch response identity or length differs from the staged tree"
         );
 
-        let mut hasher = Sha256::new();
+        let mut content_hasher = Sha256::new();
+        let mut object_hasher = GitBlobHasher::new(self.format, &size);
         let mut remaining = expected.size;
         while remaining > 0 {
             snapshot.controls.check_start()?;
@@ -306,7 +350,8 @@ impl<'a> BatchBlobs<'a> {
                 self.actual_chunk[..count] == self.expected_chunk[..count],
                 "materialized source bytes differ from the staged Git blob"
             );
-            hasher.update(&self.actual_chunk[..count]);
+            content_hasher.update(&self.actual_chunk[..count]);
+            object_hasher.update(&self.actual_chunk[..count]);
             remaining -= count as u64;
         }
         let mut extra = [0_u8; 1];
@@ -324,7 +369,11 @@ impl<'a> BatchBlobs<'a> {
             extra == *b"\n",
             "Git batch response is missing its terminator"
         );
-        Ok(hasher.finalize().into())
+        ensure!(
+            object_hasher.finalize_oid() == expected.oid,
+            "staged Git blob object ID does not match its streamed content"
+        );
+        Ok(content_hasher.finalize().into())
     }
 
     fn ensure_finished(&mut self, snapshot: &OwnedSnapshot) -> Result<()> {
@@ -491,7 +540,7 @@ fn measure_pass(
         .seek(SeekFrom::Start(0))
         .context("rewinding staged source inventory")?;
     let expected = ExpectedRecords::new(snapshot, entries.stdout_mut(), pinned.format);
-    let batch = BatchBlobs::new(blobs.stdout_mut());
+    let batch = BatchBlobs::new(blobs.stdout_mut(), pinned.format);
     let root_state = FileState::at(&snapshot.root)?;
     ensure!(
         root_state.kind == EntryKind::Directory,

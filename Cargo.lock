@@ -5014,6 +5014,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "sha1",
  "sha2 0.11.1",
  "signal-hook",
  "syn 3.0.9",
