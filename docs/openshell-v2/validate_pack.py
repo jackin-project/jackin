@@ -11,11 +11,39 @@ from pathlib import Path
 from typing import Any
 
 ORIGINAL_SPEC_SHA256 = "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe767523a3e"
+GOAL_SHA256 = "d62aaf0477b96b014356b09d23f05bc2d22385a42277639514e6615dfa46f1a0"
 ACCEPTANCE_POLICY_SHA256 = "503b2bd2ed5560a311a3641409c0f59a7806f6847575b509641b85cbab3ed59a"
 C02_CONTRACT_SECTION_SHA256 = "017714a83ab1ee7827dfcf8459ef6ca5e58c11787210083856211d1ba8e9cdf2"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
+EXPECTED_CASE_LEVEL_IDS = {
+    "SOURCE": "A01 A02 A03 A04 A13 A14 A120 A121 A123 A124",
+    "UNIT": "A07 A08 A09 A10 A12 A40 A42 A47 A49 A59 A60 A61 A62 A63 A64 A70 A84 A96",
+    "BUILD": "A50 A51 A52 A53 A54 A122 A125",
+    "LIVE": (
+        "A05 A06 A11 A15 A16 A17 A18 A19 A20 A21 A22 A23 A24 A25 A26 A27 A28 A29 A30 A31 "
+        "A32 A33 A34 A35 A36 A37 A38 A39 A41 A43 A44 A45 A46 A48 A55 A56 A57 A58 A65 A66 "
+        "A67 A68 A69 A71 A72 A73 A74 A75 A76 A77 A78 A79 A80 A81 A82 A83 A85 A86 A87 A88 "
+        "A89 A90 A91 A92 A93 A94 A95 A97 A98 A99 A100 A101 A102 A103 A104 A105 A106 A107 "
+        "A108 A109 A110 A111 A112 A113 A114 A115 A116 A117 A118 A119"
+    ),
+}
+EXPECTED_CASE_LEVELS = {
+    case_id: level
+    for level, ids in EXPECTED_CASE_LEVEL_IDS.items()
+    for case_id in ids.split()
+}
+EXPECTED_CASE_LEVEL_COUNTS = {"SOURCE": 10, "UNIT": 18, "BUILD": 7, "LIVE": 90}
+REVIEW_CAPACITY_SENTENCE = "Keep capacity for an independent review subagent."
+CONCURRENCY_DECLARATION = re.compile(
+    r"\bUse up to (\d+|zero|one|two|three|four|five|six|seven|eight) concurrent subagents\."
+)
+CONCURRENCY_WORD_VALUES = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4,
+    "five": 5, "six": 6, "seven": 7, "eight": 8,
+}
+CANONICAL_TASK_ID = re.compile(r"[PUT]\d{2}")
 TASK_REVIEW_RULE = (
     "A different subagent reviews the result. "
     "The integration subagent reruns affected tests after merge."
@@ -57,9 +85,11 @@ ORDINARY_CHECK_NAMES = (
     "C02 production crate graph and boundary section matches fixed bytes",
     "Machine source pins match fixed references",
     "Parallel agent limit matches the subagent contract",
+    "Authoritative concurrency declaration matches graph and subagent limit",
     "Task statuses use documented values",
     "Acceptance case statuses use documented values",
     "Acceptance evidence levels use documented values",
+    "Acceptance case IDs map to fixed evidence levels",
     "Acceptance manifest status uses documented values",
     "Acceptance manifest status matches the case summary",
     "Task IDs are unique",
@@ -69,14 +99,17 @@ ORDINARY_CHECK_NAMES = (
     "Declared case count matches",
     "Expected task count",
     "Expected acceptance case count",
+    "Task file and test write scopes match canonical paths",
     "Task required artifacts match canonical evidence set and report path",
     "Task completion rules match the fixed evidence contract",
     "Task review rules match the different-subagent and post-merge contract",
     "Task test_cases contain unique string IDs",
     "Release gate protocol matches fixed semantics",
     "Original specification matches its fixed checksum and both manifests",
+    "GOAL.md matches its fixed checksum",
     "Task SPEC citations use valid syntax",
     "Task SPEC citation ranges are within SPEC.md",
+    "Dependency lists contain unique string task IDs",
     "Dependencies reference other known tasks",
     "Release gate references name T40 and its owned final cases",
     "P04, T40, A123, and A125 mirror the fixed release gate contract",
@@ -295,11 +328,36 @@ P05_BUILD_REGISTRATION_STEP = (
 )
 
 
+class DuplicateJSONKeyError(ValueError):
+    pass
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise DuplicateJSONKeyError(f"duplicate JSON object key: {key}")
+        value[key] = item
+    return value
+
+
+def strict_json_loads(document: str) -> Any:
+    return json.loads(document, object_pairs_hook=_unique_json_object)
+
+
 def read_json(path: Path) -> dict[str, Any]:
-    value = json.loads(path.read_text(encoding="utf-8"))
+    value = strict_json_loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError(f"Expected a JSON object: {path}")
     return value
+
+
+def dependency_text(task: dict[str, Any]) -> str:
+    dependencies = task.get("depends_on")
+    if (not isinstance(dependencies, list)
+            or any(not isinstance(dependency, str) for dependency in dependencies)):
+        return "[invalid dependency list]"
+    return ", ".join(dependencies) or "None"
 
 
 def sentences(value: str) -> list[str]:
@@ -307,7 +365,7 @@ def sentences(value: str) -> list[str]:
 
 
 def render_task_card(task: dict[str, Any]) -> str:
-    dependencies = ", ".join(task["depends_on"]) or "None"
+    dependencies = dependency_text(task)
     case_references = task.get("test_cases")
     cases = ", ".join(case_id for case_id in case_references
                        if isinstance(case_id, str)) if isinstance(case_references, list) else "None"
@@ -406,7 +464,7 @@ def render_task_index(tasks: list[dict[str, Any]]) -> list[str]:
         "| --- | --- | --- | --- |",
     ]
     for task in tasks:
-        dependencies = ", ".join(task["depends_on"]) or "None"
+        dependencies = dependency_text(task)
         lines.append(
             f"| {task['id']} | {task['title']} | {task['owner']} | {dependencies} |"
         )
@@ -610,8 +668,43 @@ def main() -> int:
     check("Parallel agent limit matches the subagent contract",
           graph.get("parallel_agent_limit") == PARALLEL_AGENT_LIMIT,
           {"expected": PARALLEL_AGENT_LIMIT, "actual": graph.get("parallel_agent_limit")})
+    subagents = (root / "SUBAGENTS.md").read_text(encoding="utf-8")
+    concurrency_declarations = list(CONCURRENCY_DECLARATION.finditer(subagents))
+    concurrency_errors = []
+    if len(concurrency_declarations) != 1:
+        concurrency_errors.append({"declarations": len(concurrency_declarations), "expected": 1})
+    else:
+        declared_token = concurrency_declarations[0].group(1)
+        declared_limit = (int(declared_token) if declared_token.isdigit()
+                          else CONCURRENCY_WORD_VALUES[declared_token])
+        if declared_limit != PARALLEL_AGENT_LIMIT:
+            concurrency_errors.append({"declaration": declared_limit,
+                                       "expected": PARALLEL_AGENT_LIMIT})
+        if graph.get("parallel_agent_limit") != declared_limit:
+            concurrency_errors.append({"graph": graph.get("parallel_agent_limit"),
+                                       "declaration": declared_limit})
+    if subagents.count(REVIEW_CAPACITY_SENTENCE) != 1:
+        concurrency_errors.append({"review_capacity_sentence_count":
+                                   subagents.count(REVIEW_CAPACITY_SENTENCE), "expected": 1})
+    check("Authoritative concurrency declaration matches graph and subagent limit",
+          not concurrency_errors, concurrency_errors)
     tasks = graph["tasks"]
     cases = cases_file["cases"]
+    dependency_list_errors = []
+    for task in tasks:
+        dependencies = task.get("depends_on")
+        if not isinstance(dependencies, list):
+            dependency_list_errors.append({"task": task.get("id"),
+                                           "problem": "depends_on must be a list of strings"})
+        elif any(not isinstance(dependency, str) for dependency in dependencies):
+            dependency_list_errors.append({"task": task.get("id"),
+                                           "problem": "depends_on entries must be strings",
+                                           "depends_on": dependencies})
+        elif len(dependencies) != len(set(dependencies)):
+            dependency_list_errors.append({"task": task.get("id"),
+                                           "problem": "duplicate dependency ID",
+                                           "depends_on": dependencies})
+    dependency_lists_valid = not dependency_list_errors
     task_ids = [task["id"] for task in tasks]
     case_ids = [case["id"] for case in cases]
     task_set, case_set = set(task_ids), set(case_ids)
@@ -626,6 +719,42 @@ def main() -> int:
     check("Task statuses use documented values", not bad_task_statuses, bad_task_statuses)
     check("Acceptance case statuses use documented values", not bad_case_statuses, bad_case_statuses)
     check("Acceptance evidence levels use documented values", not bad_case_levels, bad_case_levels)
+    actual_case_levels: dict[str, str] = {}
+    duplicate_level_ids = []
+    invalid_level_ids = []
+    for case in cases:
+        case_id = case.get("id")
+        if not isinstance(case_id, str):
+            invalid_level_ids.append(case_id)
+        elif case_id in actual_case_levels:
+            duplicate_level_ids.append(case_id)
+        else:
+            actual_case_levels[case_id] = case.get("level")
+    level_map_errors = {
+        "missing": sorted(set(EXPECTED_CASE_LEVELS) - set(actual_case_levels)),
+        "extra": sorted(set(actual_case_levels) - set(EXPECTED_CASE_LEVELS)),
+        "wrong_levels": [
+            {"case": case_id, "expected": level, "actual": actual_case_levels.get(case_id)}
+            for case_id, level in EXPECTED_CASE_LEVELS.items()
+            if actual_case_levels.get(case_id) != level
+        ],
+        "duplicate_ids": duplicate_level_ids,
+        "invalid_ids": invalid_level_ids,
+        "expected_counts": EXPECTED_CASE_LEVEL_COUNTS,
+        "actual_counts": {
+            level: sum(case.get("level") == level for case in cases)
+            for level in ACCEPTANCE_EVIDENCE_LEVELS
+        },
+    }
+    level_map_valid = (
+        not level_map_errors["missing"]
+        and not level_map_errors["extra"]
+        and not level_map_errors["wrong_levels"]
+        and not level_map_errors["duplicate_ids"]
+        and not level_map_errors["invalid_ids"]
+        and level_map_errors["actual_counts"] == EXPECTED_CASE_LEVEL_COUNTS
+    )
+    check("Acceptance case IDs map to fixed evidence levels", level_map_valid, level_map_errors)
     manifest_status = cases_file.get("status")
     check("Acceptance manifest status uses documented values",
           isinstance(manifest_status, str) and manifest_status in case_statuses,
@@ -648,6 +777,26 @@ def main() -> int:
     check("Declared case count matches", graph["acceptance_case_count"] == len(cases), len(cases))
     check("Expected task count", len(tasks) == 46, len(tasks))
     check("Expected acceptance case count", len(cases) == 125, len(cases))
+    task_path_errors = []
+    canonical_task_cards: dict[str, Path] = {}
+    for task in tasks:
+        task_id = task.get("id")
+        if not isinstance(task_id, str) or CANONICAL_TASK_ID.fullmatch(task_id) is None:
+            task_path_errors.append({"task": task_id, "problem": "invalid task ID for a task path"})
+            continue
+        expected_task_file = f"tasks/{task_id}.md"
+        expected_test_scope = f"tests/v2/tasks/{task_id}/"
+        canonical_task_cards[task_id] = root / "tasks" / f"{task_id}.md"
+        if task.get("task_file") != expected_task_file:
+            task_path_errors.append({"task": task_id, "field": "task_file",
+                                     "expected": expected_task_file,
+                                     "actual": task.get("task_file")})
+        if task.get("test_write_scope") != expected_test_scope:
+            task_path_errors.append({"task": task_id, "field": "test_write_scope",
+                                     "expected": expected_test_scope,
+                                     "actual": task.get("test_write_scope")})
+    check("Task file and test write scopes match canonical paths",
+          not task_path_errors, task_path_errors)
     artifact_errors = []
     for task in tasks:
         task_id = task.get("id")
@@ -711,6 +860,9 @@ def main() -> int:
           and graph["spec_sha256"] == ORIGINAL_SPEC_SHA256
           and trace["spec_sha256"] == ORIGINAL_SPEC_SHA256,
           {"actual": actual_digest, "graph": graph["spec_sha256"], "traceability": trace["spec_sha256"]})
+    actual_goal_digest = hashlib.sha256((root / "GOAL.md").read_bytes()).hexdigest()
+    check("GOAL.md matches its fixed checksum", actual_goal_digest == GOAL_SHA256,
+          {"expected": GOAL_SHA256, "actual": actual_goal_digest})
 
     source_citation_syntax_errors = []
     source_citation_range_errors = []
@@ -741,8 +893,13 @@ def main() -> int:
     check("Task SPEC citation ranges are within SPEC.md", not source_citation_range_errors,
           source_citation_range_errors)
 
-    bad_dependencies = [(task["id"], dep) for task in tasks for dep in task["depends_on"]
-                        if dep not in task_set or dep == task["id"]]
+    check("Dependency lists contain unique string task IDs",
+          not dependency_list_errors, dependency_list_errors)
+    bad_dependencies = (
+        [(task["id"], dep) for task in tasks for dep in task["depends_on"]
+         if dep not in task_set or dep == task["id"]]
+        if dependency_lists_valid else []
+    )
     check("Dependencies reference other known tasks", not bad_dependencies, bad_dependencies)
     tasks_by_id = {task["id"]: task for task in tasks}
     cases_by_id = {case["id"]: case for case in cases}
@@ -875,26 +1032,31 @@ def main() -> int:
     check("Review packet uses candidate input and post-merge completion stages",
           not review_packet_errors, review_packet_errors)
 
-    incomplete_dependencies = [
-        {"task": task["id"], "status": task["status"],
-         "dependencies_not_passed": sorted(
-             dep for dep in task["depends_on"]
-             if tasks_by_id.get(dep, {}).get("status") != "PASS")}
-        for task in tasks if task["status"] in PROGRESS_TASK_STATUSES
-        and any(tasks_by_id.get(dep, {}).get("status") != "PASS" for dep in task["depends_on"])
-    ]
+    incomplete_dependencies = []
+    if dependency_lists_valid:
+        incomplete_dependencies = [
+            {"task": task["id"], "status": task["status"],
+             "dependencies_not_passed": sorted(
+                 dep for dep in task["depends_on"]
+                 if tasks_by_id.get(dep, {}).get("status") != "PASS")}
+            for task in tasks if task["status"] in PROGRESS_TASK_STATUSES
+            and any(tasks_by_id.get(dep, {}).get("status") != "PASS" for dep in task["depends_on"])
+        ]
     check("Task progress waits for completed dependencies",
           not incomplete_dependencies, incomplete_dependencies)
     done: set[str] = set()
     levels: list[list[str]] = []
-    while len(done) < len(task_set):
-        ready = [task["id"] for task in tasks if task["id"] not in done
-                 and set(task["depends_on"]).issubset(done)]
-        if not ready:
-            break
-        levels.append(ready)
-        done.update(ready)
-    check("Dependency graph has no cycle", done == task_set, {"ready_groups": len(levels)})
+    if dependency_lists_valid:
+        while len(done) < len(task_set):
+            ready = [task["id"] for task in tasks if task["id"] not in done
+                     and set(task["depends_on"]).issubset(done)]
+            if not ready:
+                break
+            levels.append(ready)
+            done.update(ready)
+    check("Dependency graph has no cycle",
+          not dependency_lists_valid or done == task_set,
+          {"ready_groups": len(levels), "dependency_lists_valid": dependency_lists_valid})
     stored_groups = graph["topological_ready_groups"]
     stored_group_ids = [task_id for group in stored_groups for task_id in group]
     stored_group_counts: dict[str, int] = {}
@@ -904,10 +1066,12 @@ def main() -> int:
     expected_group_lists = [sorted(group) for group in levels]
     stored_group_lists = [sorted(group) for group in stored_groups]
     check("Stored ready groups match dependencies without duplicate task IDs",
-          not stored_group_duplicates and stored_group_lists == expected_group_lists,
+          not dependency_lists_valid
+          or not stored_group_duplicates and stored_group_lists == expected_group_lists,
           {"duplicate_task_ids": stored_group_duplicates,
            "expected_group_count": len(expected_group_lists),
-           "stored_group_count": len(stored_group_lists)})
+           "stored_group_count": len(stored_group_lists),
+           "dependency_lists_valid": dependency_lists_valid})
 
     assignment_errors: list[dict[str, Any]] = []
     assignment_summary_errors: list[dict[str, Any]] = []
@@ -985,7 +1149,7 @@ def main() -> int:
     check("NOT_STARTED and READY tasks have NOT_RUN assignments",
           not not_started_assignment_errors, not_started_assignment_errors)
     blocked_incomplete_assignment_errors = []
-    for task in tasks:
+    for task in (tasks if dependency_lists_valid else []):
         if task.get("status") != "BLOCKED":
             continue
         incomplete_dependencies = [
@@ -1062,9 +1226,13 @@ def main() -> int:
             if task_section[start:end].strip() != expected:
                 plan_task_errors.append(task["id"])
 
-        card = root / task["task_file"]
+        task_id = task.get("id")
+        card = canonical_task_cards.get(task_id) if isinstance(task_id, str) else None
+        if card is None:
+            card_errors.append(task_id)
+            continue
         if not card.is_file():
-            card_errors.append(task["id"])
+            card_errors.append(task_id)
             continue
         card_text = card.read_text(encoding="utf-8")
         if card_text.strip() != render_task_packet(task).strip():

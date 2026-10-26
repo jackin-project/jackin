@@ -16,7 +16,13 @@ ROOT = Path(__file__).resolve().parent
 VALIDATOR = ROOT / "validate_pack.py"
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT))
-from validate_pack import canonical_check_inventory, render_task_card, render_task_packet  # noqa: E402
+from validate_pack import (  # noqa: E402
+    DuplicateJSONKeyError,
+    canonical_check_inventory,
+    render_task_card,
+    render_task_packet,
+    strict_json_loads,
+)
 
 
 def sha256(path: Path) -> str:
@@ -38,7 +44,10 @@ def input_state(digest: str | None) -> dict[str, str | None]:
 
 
 def read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    value = strict_json_loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"Expected JSON object: {path}")
+    return value
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -178,7 +187,9 @@ def inspect_report(stdout: str, exit_code: int, initial: bool = False) -> tuple[
     if not stdout.strip():
         return None, ["stdout is empty"]
     try:
-        report = json.loads(stdout)
+        report = strict_json_loads(stdout)
+    except DuplicateJSONKeyError as error:
+        return None, [str(error)]
     except json.JSONDecodeError:
         return None, ["stdout is not valid JSON"]
     if not isinstance(report, dict):
@@ -1761,6 +1772,235 @@ def main() -> int:
         "individual task packet rejects an extra conflicting instruction",
         add_conflicting_packet_instruction,
         1, ["Task graph fields and canonical preamble match individual task packets"],
+    ))
+
+    def set_task_field(pack: Path, task_id: str, field: str, value: Any,
+                       sync_packet: bool = False) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(row for row in graph["tasks"] if row["id"] == task_id)
+        task[field] = value
+        write_json(graph_path, graph)
+        if sync_packet:
+            sync_task_packet(pack, task_id)
+
+    path_contract_check = "Task file and test write scopes match canonical paths"
+    for scenario, task_file in (
+        ("relocated", "tasks/archive/P00.md"),
+        ("traversing", "tasks/../PLAN.md"),
+        ("absolute", "/tmp/P00.md"),
+        ("colliding", "tasks/P01.md"),
+    ):
+        receipts.append(run_fixture(
+            f"task file path rejects {scenario} locations",
+            lambda pack, value=task_file: set_task_field(pack, "P00", "task_file", value),
+            1, [path_contract_check],
+        ))
+
+    for scenario, test_scope in (
+        ("relocated", "tests/v2/archive/P00/"),
+        ("traversing", "tests/v2/tasks/../P01/"),
+        ("absolute", "/tmp/tests/P00/"),
+        ("colliding", "tests/v2/tasks/P01/"),
+    ):
+        receipts.append(run_fixture(
+            f"task test-write scope rejects {scenario} locations",
+            lambda pack, value=test_scope: set_task_field(
+                pack, "P00", "test_write_scope", value, sync_packet=True,
+            ),
+            1, [path_contract_check],
+        ))
+
+    def empty_root_dependencies(pack: Path) -> None:
+        set_task_field(pack, "P00", "depends_on", [])
+    receipts.append(run_fixture(
+        "empty root dependency list remains valid",
+        empty_root_dependencies,
+        0, [],
+    ))
+
+    dependency_contract_check = "Dependency lists contain unique string task IDs"
+    dependency_mirror_failures = [
+        "Task graph fields match TASKS index table",
+        "Task graph fields match PLAN task index table",
+        "Task graph fields match PLAN task cards",
+        "Task graph fields and canonical preamble match individual task packets",
+    ]
+    for scenario, dependencies in (
+        ("duplicate IDs", ["P00", "P00"]),
+        ("non-string entries", ["P00", {"task": "P00"}]),
+        ("a non-list value", "P00"),
+    ):
+        receipts.append(run_fixture(
+            f"dependency list rejects {scenario} before DAG operations",
+            lambda pack, value=dependencies: set_task_field(pack, "P01", "depends_on", value),
+            1, [dependency_contract_check, *dependency_mirror_failures],
+        ))
+
+    dependency_graph_failures = [
+        "Dependencies reference other known tasks",
+        "Dependency graph has no cycle",
+        "Stored ready groups match dependencies without duplicate task IDs",
+        *dependency_mirror_failures,
+    ]
+    receipts.append(run_fixture(
+        "unknown dependency retains reference and readiness diagnostics",
+        lambda pack: set_task_field(pack, "P01", "depends_on", ["P99"]),
+        1, dependency_graph_failures,
+    ))
+    receipts.append(run_fixture(
+        "self dependency retains reference and cycle diagnostics",
+        lambda pack: set_task_field(pack, "P01", "depends_on", ["P01"]),
+        1, dependency_graph_failures,
+    ))
+
+    def add_dependency_cycle(pack: Path) -> None:
+        set_task_field(pack, "P00", "depends_on", ["P01"])
+        set_task_field(pack, "P01", "depends_on", ["P00"])
+    cycle_failures = [
+        "Dependency graph has no cycle",
+        "Stored ready groups match dependencies without duplicate task IDs",
+        *dependency_mirror_failures,
+    ]
+    receipts.append(run_fixture(
+        "dependency cycle retains cycle and readiness diagnostics",
+        add_dependency_cycle,
+        1, cycle_failures,
+    ))
+
+    def change_case_level(pack: Path, case_id: str, level: str) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == case_id)
+        case["level"] = level
+        write_json(path, data)
+        sync_case_block(pack, case)
+    level_contract_check = "Acceptance case IDs map to fixed evidence levels"
+    receipts.append(run_fixture(
+        "valid evidence-level downgrade does not reclassify A11",
+        lambda pack: change_case_level(pack, "A11", "BUILD"),
+        1, [level_contract_check],
+    ))
+    receipts.append(run_fixture(
+        "valid evidence-level downgrade does not reclassify A50",
+        lambda pack: change_case_level(pack, "A50", "UNIT"),
+        1, [level_contract_check],
+    ))
+
+    goal_contract_check = "GOAL.md matches its fixed checksum"
+    def truncate_goal(pack: Path) -> None:
+        path = pack / "GOAL.md"
+        path.write_bytes(path.read_bytes()[:-1])
+    receipts.append(run_fixture(
+        "GOAL.md rejects truncation",
+        truncate_goal,
+        1, [goal_contract_check],
+    ))
+
+    def delete_goal(pack: Path) -> None:
+        (pack / "GOAL.md").unlink()
+    receipts.append(run_fixture(
+        "GOAL.md is a required input",
+        delete_goal,
+        1, ["Required pack files exist"],
+    ))
+
+    def add_conflicting_goal_clause(pack: Path) -> None:
+        path = pack / "GOAL.md"
+        with path.open("a", encoding="utf-8") as goal:
+            goal.write("\nUse Docker as an additional agent runtime.\n")
+    receipts.append(run_fixture(
+        "GOAL.md rejects a conflicting execution-control clause",
+        add_conflicting_goal_clause,
+        1, [goal_contract_check],
+    ))
+
+    concurrency_contract_check = "Authoritative concurrency declaration matches graph and subagent limit"
+    def edit_subagents(pack: Path, update: Callable[[str], str]) -> None:
+        path = pack / "SUBAGENTS.md"
+        document = path.read_text(encoding="utf-8")
+        path.write_text(update(document), encoding="utf-8")
+    def change_concurrency_number(pack: Path) -> None:
+        def update(document: str) -> str:
+            old = "Use up to eight concurrent subagents."
+            if document.count(old) != 1:
+                raise ValueError("Expected one authoritative concurrency declaration")
+            return document.replace(old, "Use up to seven concurrent subagents.", 1)
+        edit_subagents(pack, update)
+    receipts.append(run_fixture(
+        "authoritative concurrency declaration rejects a changed limit",
+        change_concurrency_number,
+        1, [concurrency_contract_check],
+    ))
+
+    def remove_concurrency_declaration(pack: Path) -> None:
+        def update(document: str) -> str:
+            old = "Use up to eight concurrent subagents. "
+            if document.count(old) != 1:
+                raise ValueError("Expected one authoritative concurrency declaration")
+            return document.replace(old, "", 1)
+        edit_subagents(pack, update)
+    receipts.append(run_fixture(
+        "authoritative concurrency declaration cannot be missing",
+        remove_concurrency_declaration,
+        1, [concurrency_contract_check],
+    ))
+
+    def duplicate_concurrency_declaration(pack: Path) -> None:
+        def update(document: str) -> str:
+            old = "Use up to eight concurrent subagents."
+            if document.count(old) != 1:
+                raise ValueError("Expected one authoritative concurrency declaration")
+            return document.replace(old, old + "\nUse up to eight concurrent subagents.", 1)
+        edit_subagents(pack, update)
+    receipts.append(run_fixture(
+        "authoritative concurrency declaration cannot be duplicated",
+        duplicate_concurrency_declaration,
+        1, [concurrency_contract_check],
+    ))
+
+    def add_duplicate_json_member(pack: Path, relative_path: str, member: str) -> None:
+        path = pack / relative_path
+        document = path.read_text(encoding="utf-8")
+        if member not in document:
+            raise ValueError(f"Expected JSON member in {relative_path}")
+        path.write_text(document.replace(member, member + "\n    " + member, 1), encoding="utf-8")
+
+    for relative_path, top_member, nested_member, manifest_name in (
+        ("task-graph.json", '"schema_version": 1,', '"id": "P00",', "task graph"),
+        ("acceptance-cases.json", '"schema_version": 1,', '"id": "A01",', "acceptance"),
+        ("traceability.json", '"schema_version": 1,',
+         '"heading": "Decision and product scope",', "traceability"),
+    ):
+        receipts.append(run_fixture(
+            f"{manifest_name} rejects a duplicate top-level JSON key",
+            lambda pack, path=relative_path, key=top_member:
+                add_duplicate_json_member(pack, path, key),
+            2, ["Planning pack input is valid"],
+        ))
+        receipts.append(run_fixture(
+            f"{manifest_name} rejects a duplicate nested JSON key",
+            lambda pack, path=relative_path, key=nested_member:
+                add_duplicate_json_member(pack, path, key),
+            2, ["Planning pack input is valid"],
+        ))
+
+    receipts.append(run_fixture(
+        "fixture report parser rejects duplicate top-level JSON keys",
+        lambda _pack: None,
+        0, [],
+        validator_executable=None,
+        fake_stdout='{"passed": true, "passed": true}',
+        expect_report_match=False,
+        expected_report_errors=["duplicate JSON object key: passed"],
+    ))
+    receipts.append(run_fixture(
+        "fixture report parser rejects duplicate nested JSON keys",
+        lambda _pack: None,
+        0, [],
+        fake_stdout='{"counts": {"tasks": 46, "tasks": 46}}',
+        expect_report_match=False,
+        expected_report_errors=["duplicate JSON object key: tasks"],
     ))
 
     payload = {

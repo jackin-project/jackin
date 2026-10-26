@@ -57,7 +57,7 @@ The runner writes one JSON report to stdout and does not modify the pack. Redire
 | Topological readiness groups | 20 |
 | Checked procedural sentences | 1575 |
 
-The ordinary validator report contains 64 ordered checks; `--initial` contains 66, including two initial-only checks and the final inventory check.
+The ordinary validator report contains 69 ordered checks; `--initial` contains 71, including two initial-only checks and the final inventory check.
 The C02 digest checks fixed contract text only. It does not show that source code follows this plan.
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
@@ -71,12 +71,16 @@ Keep no more than eight actual subagents active at once.
 | C01 source table matches all four exact fixed references | PASS |
 | C02 crate graph and dependency-boundary section matches its fixed bytes | PASS |
 | Machine source pins match the three fixed graph references | PASS |
+| One authoritative concurrency declaration matches the graph and fixed limit | PASS |
 | Task IDs and case IDs are unique | PASS |
 | Declared and expected task and case counts match | PASS |
 | Original specification matches its fixed checksum and both manifests | PASS |
+| GOAL matches its fixed checksum | PASS |
 | Dependencies reference known tasks | PASS |
+| Dependency lists contain unique string task IDs before DAG checks | PASS |
 | Task and case statuses use documented values | PASS |
 | Acceptance evidence levels use documented values | PASS |
+| All 125 case IDs retain their fixed evidence levels | PASS |
 | Acceptance manifest status uses documented values and matches the case summary | PASS |
 | Task case references are unique string IDs; completion rules match the fixed contract | PASS |
 | Each task uses the different-subagent review and post-merge integration rerun rule | PASS |
@@ -97,6 +101,7 @@ Keep no more than eight actual subagents active at once.
 | `PASS` tasks have passing results for their own assignments | PASS |
 | Task test references, case coverage, and ownership maps agree | PASS |
 | Task required artifacts match the canonical six receipts and report path | PASS |
+| Task-card and test-write paths match each task ID exactly | PASS |
 | Task graph matches indexes and task cards, including report paths | PASS |
 | Individual task packets match their ID and complete canonical instruction preamble | PASS |
 | Acceptance detailed-case anchor is unique | PASS |
@@ -113,8 +118,8 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 121 scenarios passed their exact report and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 103 targeted scenarios cover assignment ownership and progress, source citations, canonical task artifacts and packets, early LIVE ownership, command registration, fixed acceptance policy, malformed manifests, release-gate protocol structure, Integration write ownership, patched-tuple authorization, C01 pins, C02 integrity, task review rules, and validator reports.
+All 152 scenarios passed their exact report and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 134 targeted scenarios cover assignment ownership and progress, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, task review rules, and validator reports.
 A22 is owned by U02 and T32. Its mixed-result fixtures complete T32 dependencies before recording results.
 A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks FAIL precedence without bypassing dependencies.
 
@@ -195,6 +200,13 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | C02 or C03 boundary heading is duplicated or missing | Reject, exit 1 | PASS, exit 1 |
 | Synchronized task packet changes the review rule to allow self-review | Reject, exit 1 | PASS, exit 1 |
 | Synchronized task packet removes the post-merge integration rerun | Reject, exit 1 | PASS, exit 1 |
+| Task-card and test-write paths are relocated, traversing, absolute, or colliding | Reject, exit 1 | PASS, exit 1 |
+| Empty roots remain valid; malformed lists fail before DAG checks; unknown, self, and cycle diagnostics remain | Accept root; reject invalid dependency, exit 1 | PASS |
+| A documented evidence level is changed for a case ID | Reject, exit 1 | PASS, exit 1 |
+| GOAL is truncated, removed, or given a conflicting execution-control clause | Reject, exit 1 | PASS |
+| Authoritative concurrency is changed, missing, or duplicated | Reject, exit 1 | PASS, exit 1 |
+| Each of the three manifests rejects duplicate top-level and nested JSON keys | Reject input, exit 2 | PASS, exit 2 |
+| Fixture report parsing rejects duplicate top-level and nested JSON keys | Reject malformed report | PASS |
 
 The upstream `PASS` fixture shows U02 cannot close T32's assignment.
 Each raw receipt binds every mutated file actually tested. The traceability-owner receipt hashes both `traceability.json` and `TRACEABILITY.md`; the missing-validator receipt records `validate_pack.py` as `missing`.
