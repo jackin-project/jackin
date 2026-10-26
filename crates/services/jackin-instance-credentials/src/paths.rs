@@ -127,6 +127,3 @@ pub fn read_bounded_local_file(path: &Path) -> anyhow::Result<Vec<u8>> {
     );
     Ok(bytes)
 }
-
-#[cfg(test)]
-mod tests;

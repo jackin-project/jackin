@@ -647,6 +647,3 @@ pub fn extract_host_env_entries(args: &mut Vec<&str>) -> std::io::Result<Vec<(St
     *args = inline;
     Ok(host_only)
 }
-
-#[cfg(test)]
-mod tests;

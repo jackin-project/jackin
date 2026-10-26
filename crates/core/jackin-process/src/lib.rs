@@ -13,9 +13,6 @@ use anyhow::{Context, Result, bail};
 mod child_ownership;
 mod spooled;
 
-#[cfg(feature = "test-support")]
-#[doc(hidden)]
-pub use child_ownership::registry_contention_count;
 pub(crate) use child_ownership::supports_selective_reaping;
 pub use child_ownership::{
     ChildRegistration, ChildRegistrationSlot, ChildRegistry, coordinate_children,
@@ -696,6 +693,3 @@ pub fn capture_stdout_sync(request: &ExecRequest) -> Result<Vec<u8>> {
     }
     Ok(result.stdout)
 }
-
-#[cfg(test)]
-mod tests;

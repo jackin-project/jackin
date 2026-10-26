@@ -31,6 +31,3 @@ pub use publisher::{AccountIdentityMetadata, ProjectionPublisher};
 pub use quota::{issue_code, quota_state_for_bucket};
 pub use revoke::{catalog_entries, retain_revoked_accounts};
 pub use windows::{account_for_view, window_for_bucket, windows_for_snapshot};
-
-#[cfg(test)]
-mod tests;

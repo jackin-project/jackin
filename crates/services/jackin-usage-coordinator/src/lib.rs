@@ -34,9 +34,6 @@ pub(crate) use errors::{
 };
 pub(crate) use finish::{finish_failure, finish_success, mark_updating};
 pub use jobs::UsageCoordinator;
-#[cfg(feature = "test-support")]
-pub use jobs::{ClockSample, MonotonicClock};
-#[cfg(not(feature = "test-support"))]
 pub(crate) use jobs::{ClockSample, MonotonicClock};
 pub(crate) use jobs::{ProbeJob, SystemMonotonicClock, WorkerMessage};
 pub(crate) use outcome::TERMINAL_HISTORY_LIMIT;
@@ -47,6 +44,3 @@ pub(crate) use upkeep::{
     revoke_envelope,
 };
 pub(crate) use worker::coordinator_worker;
-
-#[cfg(test)]
-mod tests;

@@ -1,5 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-# SPDX-License-Identifier: Apache-2.0
+
 
 [package]
 name = "jackin-usage-store-backend"
@@ -19,7 +18,6 @@ name = "jackin_usage_store_backend"
 path = "src/lib.rs"
 
 [features]
-test-support = []
 
 [dependencies]
 hex = { workspace = true }
@@ -28,11 +26,6 @@ nix = { workspace = true, features = ["fs"] }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync"] }
 turso = { workspace = true }
-
-[dev-dependencies]
-anyhow = { workspace = true }
-tempfile = { workspace = true }
-tokio = { workspace = true, features = ["macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
 
 [lints]
 workspace = true

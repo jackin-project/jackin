@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
@@ -11,7 +10,6 @@ use super::StoreError;
 use super::manifest::{
     create_generation_dir, create_private_file, manifest_bytes, write_immutable,
 };
-
 use super::path::{FileIdentity, ResolvedPath, identity_fields, path_digest, sidecar_path};
 
 #[derive(Clone)]
@@ -117,7 +115,6 @@ fn prepare_preopen_capture(
         .collect::<HashSet<_>>();
     let identity_lease =
         super::registry::reserve_capture_identities(permit, source_identities.iter().copied())?;
-
     Ok(CapturePlan {
         path_hash,
         directory,
@@ -138,7 +135,7 @@ fn capture_source_records(
         .iter()
         .zip(plan.initial.iter())
         .map(|((source, destination, name), stamp)| {
-            capture_one(source, destination, name, stamp.as_ref())
+            capture_one(source, destination, name, &plan.path_hash, stamp.as_ref())
         })
         .collect::<Result<Vec<_>, _>>()?;
     for ((source, _, _), before) in plan.source_paths.iter().zip(plan.initial.iter()) {
@@ -243,6 +240,7 @@ fn capture_one(
     source_path: &Path,
     destination_path: &Path,
     name: &'static str,
+    path_hash: &str,
     before: Option<&FileStamp>,
 ) -> Result<FileRecord, StoreError> {
     let Some(before_stamp) = before else {
@@ -266,6 +264,7 @@ fn capture_one(
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits());
     }
+    fail_capture_at(path_hash, CaptureFaultPhase::SourceOpen)?;
     #[expect(
         clippy::disallowed_methods,
         reason = "all source-file capture runs inside spawn_blocking before backend open"
@@ -273,9 +272,16 @@ fn capture_one(
     let mut source = options
         .open(source_path)
         .map_err(|source| StoreError::io("open preopen source file", source))?;
-
-    let result = capture_open_file(&mut source, source_path, destination_path, before_stamp);
+    record_event(path_hash, CaptureEvent::SourceOpened);
+    let result = capture_open_file(
+        &mut source,
+        source_path,
+        destination_path,
+        before_stamp,
+        path_hash,
+    );
     drop(source);
+    record_event(path_hash, CaptureEvent::SourceClosed);
     let sha256 = result?;
     let artifact_metadata = fs::symlink_metadata(destination_path)
         .map_err(|source| StoreError::io("inspect forensic artifact", source))?;
@@ -303,6 +309,7 @@ fn capture_open_file(
     source_path: &Path,
     destination_path: &Path,
     before: &FileStamp,
+    path_hash: &str,
 ) -> Result<String, StoreError> {
     if stamp_from_metadata(
         &source
@@ -312,13 +319,16 @@ fn capture_open_file(
     {
         return Err(StoreError::SourceChangedDuringCapture);
     }
-    let source_hash = hash_file(source)?;
+    let source_hash = hash_file(source, path_hash)?;
     verify_unchanged(source, source_path, before)?;
+    fail_capture_at(path_hash, CaptureFaultPhase::CopySeek)?;
     source
         .seek(SeekFrom::Start(0))
         .map_err(|source| StoreError::io("rewind preopen source file", source))?;
     let mut destination = create_private_file(destination_path)?;
-    let copied_hash = copy_and_hash(source, &mut destination)?;
+    fail_capture_at(path_hash, CaptureFaultPhase::ArtifactPermission)?;
+    let copied_hash = copy_and_hash(source, &mut destination, path_hash)?;
+    fail_capture_at(path_hash, CaptureFaultPhase::ArtifactSync)?;
     destination
         .sync_all()
         .map_err(|source| StoreError::io("sync forensic artifact", source))?;
@@ -330,12 +340,14 @@ fn capture_open_file(
     Ok(hex::encode(source_hash))
 }
 
-fn hash_file(file: &mut File) -> Result<[u8; 32], StoreError> {
+fn hash_file(file: &mut File, path_hash: &str) -> Result<[u8; 32], StoreError> {
+    fail_capture_at(path_hash, CaptureFaultPhase::HashSeek)?;
     file.seek(SeekFrom::Start(0))
         .map_err(|source| StoreError::io("rewind source for hash", source))?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0_u8; 64 * 1024].into_boxed_slice();
     loop {
+        fail_capture_at(path_hash, CaptureFaultPhase::HashRead)?;
         let read = file
             .read(&mut buffer)
             .map_err(|source| StoreError::io("read source for hash", source))?;
@@ -347,16 +359,22 @@ fn hash_file(file: &mut File) -> Result<[u8; 32], StoreError> {
     Ok(hasher.finalize().into())
 }
 
-fn copy_and_hash(source: &mut File, destination: &mut File) -> Result<[u8; 32], StoreError> {
+fn copy_and_hash(
+    source: &mut File,
+    destination: &mut File,
+    path_hash: &str,
+) -> Result<[u8; 32], StoreError> {
     let mut hasher = Sha256::new();
     let mut buffer = vec![0_u8; 64 * 1024].into_boxed_slice();
     loop {
+        fail_capture_at(path_hash, CaptureFaultPhase::CopyRead)?;
         let read = source
             .read(&mut buffer)
             .map_err(|source| StoreError::io("copy forensic source", source))?;
         if read == 0 {
             break;
         }
+        fail_capture_at(path_hash, CaptureFaultPhase::ArtifactWrite)?;
         destination
             .write_all(&buffer[..read])
             .map_err(|source| StoreError::io("write forensic artifact", source))?;
@@ -410,4 +428,38 @@ fn stamp_from_metadata(metadata: &Metadata) -> FileStamp {
         #[cfg(unix)]
         changed_ns,
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CaptureEvent {
+    SourceOpened,
+    SourceClosed,
+    BuilderStarted,
+    ArtifactOpened(Option<FileIdentity>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) enum CaptureFaultPhase {
+    SourceOpen,
+    HashSeek,
+    HashRead,
+    CopySeek,
+    CopyRead,
+    ArtifactWrite,
+    ArtifactPermission,
+    ArtifactSync,
+}
+
+fn fail_capture_at(_path_hash: &str, _phase: CaptureFaultPhase) -> Result<(), StoreError> {
+    Ok(())
+}
+
+fn record_event(_path_hash: &str, _event: CaptureEvent) {}
+
+pub(super) fn record_builder_started(path: &Path) {
+    record_event(&path_digest(path), CaptureEvent::BuilderStarted);
+}
+
+pub(super) fn record_artifact_open(path: &Path, identity: Option<FileIdentity>) {
+    record_event(&path_digest(path), CaptureEvent::ArtifactOpened(identity));
 }

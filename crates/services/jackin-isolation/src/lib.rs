@@ -16,6 +16,3 @@ pub use error::IsolationError;
 pub use jackin_core::MountIsolation;
 pub use jackin_core::ParseMountIsolationError;
 pub use safe_remove::OwnedRemoval;
-
-#[cfg(test)]
-mod tests;

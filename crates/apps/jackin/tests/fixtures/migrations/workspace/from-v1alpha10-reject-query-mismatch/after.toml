@@ -1,5 +1,0 @@
-version = "v1alpha10"
-workdir = "/workspace/project"
-
-[env]
-BROKEN = { op = "op://vault-id/item-id/field-id?attribute=otp", path = "Private/Item/Field?attribute=totp" }

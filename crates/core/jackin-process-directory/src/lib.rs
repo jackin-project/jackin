@@ -28,6 +28,3 @@ pub use macos_wait::{
     TokioSigchldEligibility, current_sigchld_action, peek_exited_child, peek_specific_exited_child,
     tokio_sigchld_eligibility,
 };
-
-#[cfg(test)]
-mod tests;

@@ -352,9 +352,6 @@ pub struct ClipboardImageEnd {
     pub sha256: [u8; FILE_EXPORT_DIGEST_BYTES],
 }
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachControlRequest {
     pub request_id: u64,

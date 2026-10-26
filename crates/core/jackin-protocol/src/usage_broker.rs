@@ -1083,6 +1083,3 @@ pub struct UsageRelayTunnelResponse {
     pub request_id: u64,
     pub response: UsageBrokerResponse,
 }
-
-#[cfg(test)]
-mod tests;

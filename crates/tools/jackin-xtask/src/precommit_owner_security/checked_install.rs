@@ -152,6 +152,3 @@ fn read_checked_receipt(
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

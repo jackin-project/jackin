@@ -335,49 +335,7 @@ fn validate_root_metadata(metadata: &Metadata, root: &Path) -> anyhow::Result<()
     Ok(())
 }
 
-#[cfg(test)]
-type SelectedRenameHook = Box<dyn FnOnce(&Path) -> anyhow::Result<()> + 'static>;
-
-#[cfg(test)]
-thread_local! {
-    static SELECTED_RENAME_HOOK: std::cell::RefCell<Option<SelectedRenameHook>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-#[cfg(test)]
-pub(super) struct SelectedRenameHookGuard;
-
-#[cfg(test)]
-pub(super) fn pause_after_selected_rename_once(
-    hook: impl FnOnce(&Path) -> anyhow::Result<()> + 'static,
-) -> SelectedRenameHookGuard {
-    SELECTED_RENAME_HOOK.with(|slot| {
-        let mut slot = slot.borrow_mut();
-        assert!(
-            slot.is_none(),
-            "nested marker publication hooks are not supported"
-        );
-        *slot = Some(Box::new(hook));
-    });
-    SelectedRenameHookGuard
-}
-
-#[cfg(test)]
-impl Drop for SelectedRenameHookGuard {
-    fn drop(&mut self) {
-        SELECTED_RENAME_HOOK.with(|slot| {
-            slot.borrow_mut().take();
-        });
-    }
-}
-
 pub(super) fn pause_after_selected_rename(root: &Path) -> anyhow::Result<()> {
-    #[cfg(test)]
-    if let Some(hook) = SELECTED_RENAME_HOOK.with(|slot| slot.borrow_mut().take()) {
-        hook(root)?;
-    }
-
-    #[cfg(not(test))]
     let _ = root;
 
     Ok(())

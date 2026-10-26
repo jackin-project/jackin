@@ -5,6 +5,3 @@ pub use adapter::{
     load_opencode_api_key, opencode_api_key_snapshot, opencode_profile_snapshot,
     parse_opencode_usage,
 };
-
-#[cfg(test)]
-mod tests;

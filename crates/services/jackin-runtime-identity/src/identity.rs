@@ -21,16 +21,6 @@ pub struct GitIdentity {
     pub user_email: String,
 }
 
-#[cfg(any(test, feature = "test-support"))]
-impl GitIdentity {
-    pub fn for_tests(user_name: &str, user_email: &str) -> Self {
-        Self {
-            user_name: user_name.to_owned(),
-            user_email: user_email.to_owned(),
-        }
-    }
-}
-
 pub async fn try_capture(
     runner: &mut impl CommandRunner,
     program: &str,

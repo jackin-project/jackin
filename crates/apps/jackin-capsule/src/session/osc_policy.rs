@@ -96,20 +96,6 @@ impl OscPolicy {
     pub fn allow_hyperlink(self) -> bool {
         self.flags & ALLOW_HYPERLINK != 0
     }
-
-    #[doc(hidden)]
-    #[must_use]
-    pub fn for_test_deny_all() -> Self {
-        Self { flags: 0 }
-    }
-
-    #[doc(hidden)]
-    #[must_use]
-    pub fn for_test_allow_all() -> Self {
-        Self {
-            flags: ALLOW_TITLE | ALLOW_OSC52 | ALLOW_NOTIFY | ALLOW_HYPERLINK,
-        }
-    }
 }
 
 fn is_allow(value: Option<&str>) -> bool {

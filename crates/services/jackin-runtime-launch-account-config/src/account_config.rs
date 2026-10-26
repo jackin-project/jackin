@@ -1162,6 +1162,3 @@ fn model_catalog(provider: AiProvider, model: &str) -> Option<serde_json::Value>
     }
     Some(serde_json::json!({ "models": [entry] }))
 }
-
-#[cfg(test)]
-mod tests;

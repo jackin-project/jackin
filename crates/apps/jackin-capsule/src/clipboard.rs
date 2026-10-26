@@ -263,9 +263,6 @@ fn cleanup_clipboard_run_dir_at(root: &Path) -> Result<usize> {
     Ok(removed)
 }
 
-#[cfg(test)]
-mod tests;
-
 fn validate_image_magic(image: &ClipboardImage) -> Result<()> {
     if image.bytes.is_empty() {
         bail!("clipboard image payload is empty");

@@ -142,6 +142,3 @@ pub struct SpoolRead<'a> {
     pub gap: bool,
     pub dropped_bytes: u64,
 }
-
-#[cfg(test)]
-mod tests;

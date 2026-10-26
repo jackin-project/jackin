@@ -6,16 +6,12 @@ use super::{
 };
 use anyhow::Context;
 use jackin_core::CommandRunner;
-#[cfg(test)]
-use jackin_core::RunOptions;
 use jackin_docker::docker_client::DockerApi;
 use jackin_runtime_launch_capsule_setup::capsule_setup::HostEnvTransport;
 use jackin_runtime_usage_relay::usage_relay::PreparedUsageRelay;
 
 pub(super) struct PreparedDockerLaunch {
     pub(super) spec: jackin_core::ContainerSpec,
-    #[cfg(test)]
-    pub(super) observation_args: Vec<String>,
     pub(super) host_env_transport: HostEnvTransport,
     pub(super) relay: PreparedUsageRelay,
 }
@@ -99,12 +95,8 @@ pub(super) async fn prepare(
         workspace: mount_strings,
     };
     let spec = container_spec(ctx, &capsule, &mounts, &borrowed, &host_env_transport)?;
-    #[cfg(test)]
-    let observation_args = borrowed.iter().map(|value| (*value).to_owned()).collect();
     Ok(PreparedDockerLaunch {
         spec,
-        #[cfg(test)]
-        observation_args,
         host_env_transport,
         relay: capsule.relay,
     })
@@ -283,11 +275,6 @@ pub(super) async fn start(
     runner: &mut impl CommandRunner,
     prepared: PreparedDockerLaunch,
 ) -> anyhow::Result<(jackin_core::ContainerHandle, PreparedUsageRelay)> {
-    #[cfg(test)]
-    let docker_run_opts = RunOptions {
-        quiet: !ctx.debug,
-        ..RunOptions::default()
-    };
     let LaunchContext {
         container_name,
         ownership,
@@ -329,22 +316,7 @@ pub(super) async fn start(
         }
     };
 
-    #[cfg(test)]
-    let run_role_observation = runner
-        .observe(
-            "docker",
-            &prepared
-                .observation_args
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            None,
-            &docker_run_opts,
-        )
-        .await;
-    #[cfg(not(test))]
     let _ = runner;
-    #[cfg(not(test))]
     let run_role_observation: anyhow::Result<()> = Ok(());
     drop(prepared.host_env_transport);
     jackin_diagnostics::active_timing_done(

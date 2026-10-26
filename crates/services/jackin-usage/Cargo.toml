@@ -43,8 +43,6 @@ jackin-usage-host-runtime = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
-jackin-usage-provider-codex = { workspace = true, features = ["test-support"] }
-jackin-usage-snapshot-store = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true }
 jackin-protocol = { workspace = true }
 

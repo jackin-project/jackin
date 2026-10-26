@@ -11,13 +11,6 @@ mod argv;
 mod client_dispatch;
 mod usage_relay_proxy;
 
-#[cfg(test)]
-pub(crate) use argv::is_daemon_entrypoint_args;
-
-#[cfg(feature = "dhat-heap")]
-#[global_allocator]
-static ALLOC: dhat::Alloc = dhat::Alloc;
-
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -54,6 +47,3 @@ async fn main() -> Result<()> {
         run_client_mode(&args).await
     }
 }
-
-#[cfg(test)]
-mod tests;

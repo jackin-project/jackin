@@ -36,10 +36,6 @@ tempfile        = { workspace = true }
 zeroize         = { workspace = true }
 
 [features]
-test-support = []
-
-[dev-dependencies]
-jackin-instance-credentials = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true

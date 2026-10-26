@@ -200,15 +200,6 @@ fn render_capsule_companion(
     Ok(serde_json::to_vec(&manifest)?)
 }
 
-#[cfg(test)]
-pub(super) fn render_capsule_companion_fixture(
-    version: &str,
-    targets: &BTreeMap<String, CapsuleTargetDigests>,
-    features: &[String],
-) -> Result<Vec<u8>> {
-    render_capsule_companion(version, targets, features)
-}
-
 pub(super) fn capsule_binary_sha256(archive_path: &Path) -> Result<String> {
     let archive_fd = open(
         archive_path,

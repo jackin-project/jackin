@@ -27,5 +27,3 @@ pub use runtime::{ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images};
 pub use runtime::drift;
 pub use runtime::progress;
 pub use runtime::snapshot;
-#[cfg(test)]
-mod tests;

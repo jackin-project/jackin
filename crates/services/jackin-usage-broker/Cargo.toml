@@ -1,5 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-# SPDX-License-Identifier: Apache-2.0
+
 
 [package]
 name = "jackin-usage-broker"
@@ -37,10 +36,6 @@ nix = { workspace = true, features = ["fs", "signal"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-
-[dev-dependencies]
-jackin-usage-coordinator = { workspace = true, features = ["test-support"] }
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

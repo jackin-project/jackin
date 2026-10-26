@@ -2,11 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::HashSet;
-#[cfg(any(test, feature = "test-support"))]
-use std::future::Future;
 use std::path::PathBuf;
-#[cfg(any(test, feature = "test-support"))]
-use std::sync::Mutex;
 
 use anyhow::Result;
 use serde::de::{self, IgnoredAny, MapAccess, Visitor};
@@ -145,27 +141,6 @@ impl AppleContainerClient {
         };
         help_advertises_launch_generation_label(&output.stdout, &output.stderr)
     }
-
-    #[cfg(any(test, feature = "test-support"))]
-    #[doc(hidden)]
-    pub async fn list_containers_with_command_runner(
-        &self,
-        runner: &impl AppleContainerCommandRunner,
-        name_prefix: &str,
-    ) -> Result<Vec<AppleContainerInfo>> {
-        self.list_containers_with_runner(runner, name_prefix).await
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    #[doc(hidden)]
-    pub async fn inspect_container_with_command_runner(
-        &self,
-        runner: &impl AppleContainerCommandRunner,
-        container_id: &str,
-    ) -> Result<Option<AppleContainerInfo>> {
-        self.inspect_container_with_runner(runner, container_id)
-            .await
-    }
 }
 
 impl Default for AppleContainerClient {
@@ -220,16 +195,6 @@ impl AppleContainerApi for AppleContainerClient {
     }
 }
 
-#[doc(hidden)]
-#[cfg(any(test, feature = "test-support"))]
-pub trait AppleContainerCommandRunner: Send + Sync {
-    async fn exec(
-        &self,
-        request: &jackin_process::ExecRequest,
-    ) -> Result<jackin_process::ExecResult>;
-}
-
-#[cfg(not(feature = "test-support"))]
 trait AppleContainerCommandRunner: Send + Sync {
     async fn exec(
         &self,
@@ -601,150 +566,5 @@ impl<'de> Deserialize<'de> for AppleContainerStatus {
             "stopping" => Ok(Self::Stopping),
             _ => Err(de::Error::custom("unrecognized Apple Container state")),
         }
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-#[derive(Debug, Default)]
-pub struct FakeAppleContainerClient {
-    pub containers: Mutex<Vec<AppleContainerInfo>>,
-    pub inspect_calls: Mutex<Vec<String>>,
-    pub start_calls: Mutex<Vec<String>>,
-    pub launch_generation_label_supported: Mutex<bool>,
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl FakeAppleContainerClient {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    fn run_container_now(&self, name: &str, spec: &AppleContainerSpec) -> Result<()> {
-        if let Some(generation) = &spec.launch_generation {
-            anyhow::ensure!(
-                is_canonical_uuid(generation),
-                "Apple Container launch generation is not a canonical UUID"
-            );
-        }
-        let mut containers = self
-            .containers
-            .lock()
-            .map_err(|_| anyhow::anyhow!("fake Apple Container inventory lock is poisoned"))?;
-        containers.push(AppleContainerInfo {
-            id: name.to_owned(),
-            status: AppleContainerStatus::Running,
-            launch_generation: spec.launch_generation.clone(),
-        });
-        Ok(())
-    }
-
-    fn launch_generation_label_supported_now(&self) -> bool {
-        self.launch_generation_label_supported
-            .lock()
-            .is_ok_and(|supported| *supported)
-    }
-
-    fn start_container_now(&self, name: &str) -> Result<()> {
-        self.start_calls
-            .lock()
-            .map_err(|_| anyhow::anyhow!("fake Apple Container start-call lock is poisoned"))?
-            .push(name.to_owned());
-        let mut containers = self
-            .containers
-            .lock()
-            .map_err(|_| anyhow::anyhow!("fake Apple Container inventory lock is poisoned"))?;
-        let container = containers
-            .iter_mut()
-            .find(|container| container.id == name)
-            .ok_or_else(|| anyhow::anyhow!("fake Apple Container is absent"))?;
-        container.status = AppleContainerStatus::Running;
-        Ok(())
-    }
-
-    fn stop_container_now(&self, name: &str) -> Result<()> {
-        let mut containers = self
-            .containers
-            .lock()
-            .map_err(|_| anyhow::anyhow!("fake Apple Container inventory lock is poisoned"))?;
-        if let Some(container) = containers.iter_mut().find(|container| container.id == name) {
-            container.status = AppleContainerStatus::Stopped;
-        }
-        Ok(())
-    }
-
-    fn remove_container_now(&self, name: &str) -> Result<()> {
-        self.containers
-            .lock()
-            .map_err(|_| anyhow::anyhow!("fake Apple Container inventory lock is poisoned"))?
-            .retain(|container| container.id != name);
-        Ok(())
-    }
-
-    fn inspect_container_now(&self, name: &str) -> Result<Option<AppleContainerInfo>> {
-        self.inspect_calls
-            .lock()
-            .map_err(|_| anyhow::anyhow!("fake Apple Container inspect-call lock is poisoned"))?
-            .push(name.to_owned());
-        Ok(self
-            .containers
-            .lock()
-            .map_err(|_| anyhow::anyhow!("fake Apple Container inventory lock is poisoned"))?
-            .iter()
-            .find(|container| container.id == name)
-            .cloned())
-    }
-
-    fn list_containers_now(&self, name_prefix: &str) -> Result<Vec<AppleContainerInfo>> {
-        Ok(self
-            .containers
-            .lock()
-            .map_err(|_| anyhow::anyhow!("fake Apple Container inventory lock is poisoned"))?
-            .iter()
-            .filter(|container| container.id.starts_with(name_prefix))
-            .cloned()
-            .collect())
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl AppleContainerApi for FakeAppleContainerClient {
-    fn run_container(
-        &self,
-        name: &str,
-        spec: &AppleContainerSpec,
-    ) -> impl Future<Output = Result<()>> {
-        std::future::poll_fn(move |_| std::task::Poll::Ready(self.run_container_now(name, spec)))
-    }
-
-    fn supports_launch_generation_label(&self) -> impl Future<Output = bool> {
-        std::future::poll_fn(move |_| {
-            std::task::Poll::Ready(self.launch_generation_label_supported_now())
-        })
-    }
-
-    fn start_container(&self, name: &str) -> impl Future<Output = Result<()>> {
-        std::future::poll_fn(move |_| std::task::Poll::Ready(self.start_container_now(name)))
-    }
-
-    fn stop_container(&self, name: &str) -> impl Future<Output = Result<()>> {
-        std::future::poll_fn(move |_| std::task::Poll::Ready(self.stop_container_now(name)))
-    }
-
-    fn remove_container(&self, name: &str) -> impl Future<Output = Result<()>> {
-        std::future::poll_fn(move |_| std::task::Poll::Ready(self.remove_container_now(name)))
-    }
-
-    fn inspect_container(
-        &self,
-        name: &str,
-    ) -> impl Future<Output = Result<Option<AppleContainerInfo>>> {
-        std::future::poll_fn(move |_| std::task::Poll::Ready(self.inspect_container_now(name)))
-    }
-
-    fn list_containers(
-        &self,
-        name_prefix: &str,
-    ) -> impl Future<Output = Result<Vec<AppleContainerInfo>>> {
-        std::future::poll_fn(move |_| std::task::Poll::Ready(self.list_containers_now(name_prefix)))
     }
 }

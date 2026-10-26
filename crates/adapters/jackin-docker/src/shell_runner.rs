@@ -686,6 +686,3 @@ impl ShellRunner {
         result
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -8,9 +8,6 @@ use std::path::Path;
 const SUDOERS_PATH: &str = "/etc/sudoers.d/agent";
 const SUDOERS_ENTRY: &[u8] = b"agent ALL=(ALL) NOPASSWD:ALL\n";
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Debug, PartialEq, Eq)]
 enum SudoAction {
     Write,

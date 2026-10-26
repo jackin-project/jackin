@@ -83,66 +83,11 @@ pub enum FailurePoint {
     Installed,
 }
 
-#[cfg(any(test, feature = "test-support"))]
-thread_local! {
-    pub static FAILURE_POINT: std::cell::Cell<Option<FailurePoint>> = const { std::cell::Cell::new(None) };
-}
+pub fn run_hermes_snapshot_hook() {}
 
-#[cfg(any(test, feature = "test-support"))]
-#[derive(Debug)]
-pub struct FailureGuard;
-
-#[cfg(any(test, feature = "test-support"))]
-impl Drop for FailureGuard {
-    fn drop(&mut self) {
-        FAILURE_POINT.with(|point| point.set(None));
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-pub fn inject_failure(point: FailurePoint) -> FailureGuard {
-    FAILURE_POINT.with(|failure| failure.set(Some(point)));
-    FailureGuard
-}
-
-#[cfg(any(test, feature = "test-support"))]
-thread_local! {
-    pub static HERMES_SNAPSHOT_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
-        const { std::cell::RefCell::new(None) };
-    pub static SOURCE_OPEN_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-#[cfg(any(test, feature = "test-support"))]
-pub fn set_hermes_snapshot_hook(hook: Box<dyn FnOnce()>) {
-    HERMES_SNAPSHOT_HOOK.with(|slot| *slot.borrow_mut() = Some(hook));
-}
-
-#[cfg(any(test, feature = "test-support"))]
-pub fn set_source_open_hook(hook: Box<dyn FnOnce()>) {
-    SOURCE_OPEN_HOOK.with(|slot| *slot.borrow_mut() = Some(hook));
-}
-
-pub fn run_hermes_snapshot_hook() {
-    #[cfg(any(test, feature = "test-support"))]
-    if let Some(hook) = HERMES_SNAPSHOT_HOOK.with(|slot| slot.borrow_mut().take()) {
-        hook();
-    }
-}
-
-pub fn run_source_open_hook() {
-    #[cfg(any(test, feature = "test-support"))]
-    if let Some(hook) = SOURCE_OPEN_HOOK.with(|slot| slot.borrow_mut().take()) {
-        hook();
-    }
-}
+pub fn run_source_open_hook() {}
 
 pub fn maybe_fail(point: FailurePoint) -> anyhow::Result<()> {
-    #[cfg(any(test, feature = "test-support"))]
-    if FAILURE_POINT.with(|failure| failure.get() == Some(point)) {
-        anyhow::bail!("injected auth directory crash at {point:?}");
-    }
-    #[cfg(not(feature = "test-support"))]
     let _ = point;
     Ok(())
 }

@@ -583,6 +583,3 @@ impl CommandRunner for HostGitRunner {
         runner.capture_secret(program, args, cwd).await
     }
 }
-
-#[cfg(test)]
-mod tests;

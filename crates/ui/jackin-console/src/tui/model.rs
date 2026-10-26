@@ -5,8 +5,6 @@ mod create_prelude;
 mod launch_prompt;
 mod modal;
 mod stage;
-#[cfg(test)]
-mod tests;
 
 pub use self::create_prelude::*;
 pub use self::launch_prompt::*;

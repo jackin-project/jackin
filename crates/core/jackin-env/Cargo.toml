@@ -29,8 +29,5 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 
-[dev-dependencies]
-jackin-diagnostics = { workspace = true, features = ["test-support"] }
-
 [lints]
 workspace = true

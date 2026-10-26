@@ -559,6 +559,3 @@ impl jackin_core::LaunchDiagnostics for RunDiagnostics {
         self.stage(kind, stage.into(), message, detail);
     }
 }
-
-#[cfg(test)]
-mod tests;

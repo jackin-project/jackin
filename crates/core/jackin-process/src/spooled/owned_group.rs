@@ -323,11 +323,6 @@ impl OwnedGroup {
         self.cleanup_deadline
     }
 
-    #[cfg(test)]
-    pub(super) fn expire_cleanup_deadline_for_test(&mut self) {
-        self.cleanup_deadline = Some(Instant::now());
-    }
-
     pub(super) fn cleanup_complete(&self) -> bool {
         self.phase == GroupPhase::ReapedOrUncertain || self.phase == GroupPhase::Finished
     }
@@ -589,20 +584,6 @@ impl RecoveryChild {
 
     pub(super) fn retained(&self) -> bool {
         self.registration.is_some()
-    }
-
-    #[cfg(test)]
-    pub(super) fn terminate_and_reap_for_test(&mut self) -> io::Result<()> {
-        if self.child.try_wait()?.is_none() {
-            match self.child.kill() {
-                Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::InvalidInput => {}
-                Err(error) => return Err(error),
-            }
-        }
-        self.child.wait()?;
-        self.registration.take();
-        Ok(())
     }
 }
 

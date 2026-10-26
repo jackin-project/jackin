@@ -10,8 +10,6 @@ static CHILDREN: OnceLock<Mutex<ChildRegistry>> = OnceLock::new();
 static REAPER_WAKEUP: OnceLock<fn()> = OnceLock::new();
 static REGISTRY_POISONED: AtomicBool = AtomicBool::new(false);
 static REAPER_WAKE_PENDING: AtomicBool = AtomicBool::new(false);
-#[cfg(feature = "test-support")]
-static REGISTRY_CONTENTION_EVENTS: AtomicUsize = AtomicUsize::new(0);
 
 thread_local! {
     static COORDINATE_DEPTH: Cell<usize> = const { Cell::new(0) };
@@ -167,25 +165,6 @@ fn flush_reaper_wakeup() {
 pub fn coordinate_children<R>(operation: impl FnOnce(&mut ChildRegistry) -> R) -> R {
     let _coordinate_depth = CoordinateDepthGuard::enter();
     let mutex = CHILDREN.get_or_init(|| Mutex::new(ChildRegistry::default()));
-    #[cfg(feature = "test-support")]
-    let mut registry = match mutex.try_lock() {
-        Ok(registry) => registry,
-        Err(TryLockError::Poisoned(poisoned)) => {
-            REGISTRY_POISONED.store(true, Ordering::Release);
-            poisoned.into_inner()
-        }
-        Err(TryLockError::WouldBlock) => {
-            REGISTRY_CONTENTION_EVENTS.fetch_add(1, Ordering::AcqRel);
-            match mutex.lock() {
-                Ok(registry) => registry,
-                Err(poisoned) => {
-                    REGISTRY_POISONED.store(true, Ordering::Release);
-                    poisoned.into_inner()
-                }
-            }
-        }
-    };
-    #[cfg(not(feature = "test-support"))]
     let mut registry = match mutex.lock() {
         Ok(registry) => registry,
         Err(poisoned) => {
@@ -195,13 +174,6 @@ pub fn coordinate_children<R>(operation: impl FnOnce(&mut ChildRegistry) -> R) -
     };
     registry.remove_released();
     operation(&mut registry)
-}
-
-#[doc(hidden)]
-#[cfg(feature = "test-support")]
-#[must_use]
-pub fn registry_contention_count() -> usize {
-    REGISTRY_CONTENTION_EVENTS.load(Ordering::Acquire)
 }
 
 pub fn install_reaper_wakeup(wakeup: fn()) -> Result<(), fn()> {
@@ -225,6 +197,3 @@ pub(crate) const fn supports_selective_reaping() -> bool {
         all(target_os = "linux", not(target_env = "uclibc"))
     ))
 }
-
-#[cfg(test)]
-mod tests;

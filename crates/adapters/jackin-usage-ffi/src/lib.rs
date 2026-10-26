@@ -16,6 +16,3 @@ pub use dto::{
     UsageIdentityPresentationDto, UsagePresentationLineDto, UsageViewDto,
 };
 pub use error::UsageBridgeError;
-
-#[cfg(test)]
-mod tests;

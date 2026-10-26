@@ -1,5 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-# SPDX-License-Identifier: Apache-2.0
+
 
 [package]
 name = "jackin-usage-snapshot-store"
@@ -19,7 +18,6 @@ name = "jackin_usage_snapshot_store"
 path = "src/lib.rs"
 
 [features]
-test-support = []
 
 [dependencies]
 jackin-core = { workspace = true }
@@ -30,9 +28,6 @@ jackin-usage-provider-core = { workspace = true }
 jackin-usage-store-backend = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
-
-[dev-dependencies]
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

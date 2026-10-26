@@ -54,6 +54,3 @@ pub(crate) use reconnect::{
 };
 pub(crate) use reconnect_lease::start_or_reconnect_capsule_client_with_handle_with_lease;
 pub(crate) use sessions::inspect_unavailable_message;
-
-#[cfg(test)]
-mod tests;

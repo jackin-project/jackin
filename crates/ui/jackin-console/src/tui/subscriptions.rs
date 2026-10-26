@@ -26,8 +26,6 @@ pub enum Subscription {
 
 pub const CONSOLE_SUBSCRIPTIONS: &[Subscription] =
     &[Subscription::TerminalEvents, Subscription::AnimationTick];
-#[cfg(test)]
-mod tests;
 
 pub fn drift_check_worker_disconnected_message() -> &'static str {
     "drift check worker disconnected"

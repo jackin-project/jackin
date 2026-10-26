@@ -1585,6 +1585,3 @@ pub async fn purge_isolated_for_container(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

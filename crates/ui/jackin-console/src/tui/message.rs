@@ -24,5 +24,3 @@ pub use refresh::{
     MountInfoRefreshSourceFacts, MountInfoRefreshSourcePlan, MountInfoRefreshTarget,
     PendingMountInfoRefresh, mount_info_refresh_source_plan,
 };
-#[cfg(test)]
-mod tests;

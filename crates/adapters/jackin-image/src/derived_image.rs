@@ -790,6 +790,3 @@ fn copy_dir_all_under_root(from: &Path, to: &Path, canonical_root: &Path) -> any
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

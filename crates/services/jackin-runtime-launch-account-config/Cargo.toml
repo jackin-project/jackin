@@ -1,5 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-# SPDX-License-Identifier: Apache-2.0
+
 
 [package]
 name = "jackin-runtime-launch-account-config"
@@ -28,10 +27,6 @@ hex = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 toml = { workspace = true }
-
-[dev-dependencies]
-jackin-env = { workspace = true }
-tempfile = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs"] }

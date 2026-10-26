@@ -13,7 +13,6 @@ repository.workspace = true
 publish = false
 
 [features]
-test-support = []
 
 [dependencies]
 nix = { workspace = true, features = ["dir", "fs", "user"] }

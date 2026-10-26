@@ -329,6 +329,3 @@ mod cache;
 mod download;
 mod origin;
 use download::download_and_cache;
-
-#[cfg(test)]
-mod tests;

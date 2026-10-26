@@ -13,8 +13,6 @@ pub use lines::{
 };
 pub(in crate::tui) use render::selection_hit_at;
 pub use render::{render_fatal, render_picker};
-#[cfg(test)]
-mod tests;
 
 pub trait OpPickerRenderState {
     fn stage(&self) -> OpPickerStage;

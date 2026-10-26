@@ -6,9 +6,6 @@ use rustix::fs::fgetxattr;
 use rustix::io::Errno;
 use std::io;
 
-#[cfg(test)]
-use rustix::fs::{XattrFlags, fsetxattr};
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum XattrProbe {
     Absent,
@@ -57,19 +54,4 @@ pub(super) fn classify_probe(result: Result<usize, Errno>) -> XattrProbe {
 
 fn is_unsupported(error: Errno) -> bool {
     error == Errno::NOTSUP || error == Errno::OPNOTSUPP || error == Errno::NOSYS
-}
-
-#[cfg(test)]
-pub(super) fn set_extended_acl_fixture(descriptor: impl AsFd, default: bool) -> io::Result<()> {
-    const EXTENDED_ACL_V2: [u8; 44] = [
-        0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x07, 0x00, 0xff, 0xff, 0xff, 0xff, 0x02, 0x00, 0x04,
-        0x00, 0x01, 0x00, 0x00, 0x00, 0x04, 0x00, 0x05, 0x00, 0xff, 0xff, 0xff, 0xff, 0x10, 0x00,
-        0x05, 0x00, 0xff, 0xff, 0xff, 0xff, 0x20, 0x00, 0x05, 0x00, 0xff, 0xff, 0xff, 0xff,
-    ];
-    let name = if default {
-        c"system.posix_acl_default"
-    } else {
-        c"system.posix_acl_access"
-    };
-    fsetxattr(descriptor, name, &EXTENDED_ACL_V2, XattrFlags::empty()).map_err(Into::into)
 }

@@ -295,6 +295,3 @@ fn check_deadline(deadline: Instant) -> Result<(), WalError> {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests;

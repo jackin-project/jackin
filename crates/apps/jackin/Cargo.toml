@@ -86,12 +86,7 @@ nix = { workspace = true, features = ["process", "signal"] }
 jackin-build-meta = { workspace = true }
 
 [dev-dependencies]
-toml = { workspace = true }
-jackin-config = { workspace = true, features = ["test-support"] }
-jackin-diagnostics = { workspace = true, features = ["test-support"] }
 criterion = { workspace = true, features = ["html_reports"] }
-tempfile = { workspace = true }
-tokio = { workspace = true, features = ["test-util"] }
 
 [[bench]]
 name = "console_frame"

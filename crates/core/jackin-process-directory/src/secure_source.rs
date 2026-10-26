@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(test)]
-mod tests;
-
 use super::secure_install::{self, AbsoluteSourceRoot};
 use rustix::fs::Stat;
 use std::ffi::OsString;

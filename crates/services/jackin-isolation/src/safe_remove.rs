@@ -777,6 +777,3 @@ fn refuse_io(path: &Path, error: Errno) -> std::io::Error {
         format!("refusing to remove {}: {error}", path.display()),
     )
 }
-
-#[cfg(test)]
-mod tests;

@@ -1,9 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-# Baseline rumdl policy (hk builtin `rumdl`). Same intent as the documentation-portal markdownlint policy:
-# long lines, inline HTML and non-H1 first lines are normal in these docs. Broken relative links (MD057) stay ON: after the
-# split many READMEs still point at monorepo paths (../../AGENTS.md, ../../docs/...) and must be fixed or removed.
 [global]
 disable = ["MD013", "MD033", "MD041"]
 exclude = [

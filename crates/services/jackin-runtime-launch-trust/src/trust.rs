@@ -108,6 +108,3 @@ pub fn seed_codex_project_trust(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

@@ -1,5 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-# SPDX-License-Identifier: Apache-2.0
+
 
 [package]
 name = "jackin-runtime-coordination"
@@ -26,10 +25,6 @@ sha2 = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs", "user"] }
-
-[dev-dependencies]
-tempfile = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]
 workspace = true

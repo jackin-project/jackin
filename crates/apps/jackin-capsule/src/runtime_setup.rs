@@ -43,7 +43,9 @@ pub(crate) use paths::{
     gemini_oauth_creds_path, hermes_home, omp_agent_db_path, omp_home, opencode_auth_path,
     xdg_data_home,
 };
+
 pub(crate) use run::session_state_path;
+
 pub(crate) use seed::{
     copy_dir_contents, copy_file_with_mode, dir_nonempty, remove_file_if_exists,
     seed_agent_home_from_enum,

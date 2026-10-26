@@ -1,5 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-# SPDX-License-Identifier: Apache-2.0
+
 
 [package]
 name = "jackin-runtime-universe"
@@ -19,7 +18,6 @@ name = "jackin_runtime_universe"
 path = "src/lib.rs"
 
 [features]
-test-support = []
 
 [dependencies]
 jackin-core = { workspace = true }
@@ -29,13 +27,6 @@ jackin-runtime-discovery = { workspace = true }
 jackin-runtime-universe-claims = { workspace = true }
 jackin-telemetry = { workspace = true }
 anyhow = { workspace = true }
-
-[dev-dependencies]
-jackin-diagnostics = { workspace = true, features = ["test-support"] }
-jackin-test-support = { workspace = true }
-tempfile = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt", "sync"] }
-tracing = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs", "dir"] }

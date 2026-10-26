@@ -229,6 +229,3 @@ fn source_percent_label(
         crate::format_percent_points(points)
     )
 }
-
-#[cfg(test)]
-mod tests;

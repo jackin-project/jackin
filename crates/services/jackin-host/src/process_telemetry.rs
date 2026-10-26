@@ -3,7 +3,7 @@
 
 use jackin_process::{ExecRequest, ExecResult};
 use jackin_telemetry::schema::enums::{ErrorType, OutcomeValue};
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 use std::process::ExitStatus;
 
 fn operation(request: &ExecRequest) -> jackin_telemetry::OperationGuard {
@@ -43,12 +43,12 @@ pub(crate) fn exec_sync(request: &ExecRequest) -> anyhow::Result<ExecResult> {
     result.map_err(|_| anyhow::anyhow!("process spawn failed"))
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 pub(crate) struct ChildOperation {
     operation: Option<jackin_telemetry::OperationGuard>,
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 impl ChildOperation {
     fn finish(mut self, outcome: OutcomeValue, error_type: Option<ErrorType>) {
         if let Some(operation) = self.operation.take() {
@@ -81,7 +81,7 @@ impl ChildOperation {
     }
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 impl Drop for ChildOperation {
     fn drop(&mut self) {
         if let Some(operation) = self.operation.take() {
@@ -93,7 +93,7 @@ impl Drop for ChildOperation {
     }
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 pub(crate) fn spawn_sync(
     request: &ExecRequest,
 ) -> anyhow::Result<(ChildOperation, std::process::Child)> {

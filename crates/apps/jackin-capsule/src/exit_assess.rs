@@ -88,11 +88,6 @@ impl CommandRunner for GitRunner {
     }
 }
 
-#[must_use]
-pub fn policy_is_ask(config: &CapsuleConfig) -> bool {
-    config.dirty_exit_policy.as_deref().unwrap_or("ask") == "ask"
-}
-
 pub async fn assess_dirty(config: &CapsuleConfig) -> Vec<DirtyRepo> {
     let mut runner = GitRunner;
     let mut dirty = Vec::new();

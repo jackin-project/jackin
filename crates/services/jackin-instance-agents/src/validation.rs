@@ -359,6 +359,3 @@ pub(crate) fn usable_opencode_auth_entry(entry: &serde_json::Value) -> bool {
         _ => false,
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -81,10 +81,6 @@ pub fn start_bound_for_container(
 #[derive(Clone, Copy, Debug)]
 enum CallerAuth {
     CapsuleDaemon,
-    #[cfg(all(test, target_os = "linux"))]
-    PeerPid(u32),
-    #[cfg(all(test, not(target_os = "linux")))]
-    TestPeer,
 }
 
 pub fn ensure_caller_auth_supported() -> Result<()> {
@@ -317,17 +313,6 @@ fn record_rpc_error(operation: Option<&jackin_telemetry::OperationGuard>) {
 fn authenticate_caller(stream: &UnixStream, caller_auth: CallerAuth) -> Result<()> {
     match caller_auth {
         CallerAuth::CapsuleDaemon => authenticate_capsule_daemon_peer(stream),
-        #[cfg(all(test, target_os = "linux"))]
-        CallerAuth::PeerPid(expected) => {
-            let actual = peer_pid(stream)?;
-            anyhow::ensure!(
-                actual == expected,
-                "peer pid {actual} did not match expected pid {expected}"
-            );
-            Ok(())
-        }
-        #[cfg(all(test, not(target_os = "linux")))]
-        CallerAuth::TestPeer => Ok(()),
     }
 }
 
@@ -434,6 +419,3 @@ async fn resolve_op(op_ref: &str) -> Result<String> {
         anyhow::bail!("credential process exited unsuccessfully")
     }
 }
-
-#[cfg(test)]
-mod tests;

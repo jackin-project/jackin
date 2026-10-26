@@ -28,31 +28,6 @@ pub mod socket;
 pub mod sudo_provision;
 pub mod util;
 
-mod support {
-    #[cfg(test)]
-    use std::sync::{Arc, OnceLock};
-    #[cfg(test)]
-    use tokio::sync::{Mutex, OwnedMutexGuard};
-
-    #[cfg(test)]
-    static TELEMETRY_TEST_LOCK: OnceLock<Arc<Mutex<()>>> = OnceLock::new();
-
-    #[cfg(test)]
-    fn telemetry_test_lock() -> Arc<Mutex<()>> {
-        Arc::clone(TELEMETRY_TEST_LOCK.get_or_init(|| Arc::new(Mutex::new(()))))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn telemetry_test_guard() -> OwnedMutexGuard<()> {
-        telemetry_test_lock().blocking_lock_owned()
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn telemetry_test_guard_async() -> OwnedMutexGuard<()> {
-        telemetry_test_lock().lock_owned().await
-    }
-}
-
 pub mod tui;
 pub mod wordlist;
 

@@ -32,7 +32,7 @@ cap = 0
 mode = "enforce"
 [[family.entry]]
 key = "clippy::cast_possible_truncation@jackin-capsule"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "clippy::cast_possible_truncation@jackin-usage-provider-openrouter"
 bound = 2
@@ -50,9 +50,6 @@ key = "clippy::cast_precision_loss@jackin-usage-provider-openrouter"
 bound = 2
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-capsule"
-bound = 2
-[[family.entry]]
-key = "clippy::cast_precision_loss@jackin-capsule"
 bound = 1
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-console"
@@ -65,13 +62,10 @@ key = "clippy::cast_sign_loss@jackin-usage-provider-antigravity"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin"
-bound = 10
+bound = 5
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-capsule"
-bound = 10
-[[family.entry]]
-key = "clippy::too_many_lines@jackin-usage-broker"
-bound = 1
+bound = 4
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-config"
 bound = 1
@@ -89,7 +83,7 @@ key = "clippy::disallowed_methods@jackin-host"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-image"
-bound = 5
+bound = 4
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-instance"
 bound = 1
@@ -97,25 +91,13 @@ bound = 1
 key = "clippy::disallowed_methods@jackin-instance-credentials"
 bound = 3
 [[family.entry]]
-key = "clippy::disallowed_methods@jackin-instance-roles"
-bound = 1
-[[family.entry]]
 key = "clippy::disallowed_methods@jackin-omp-store"
-bound = 4
+bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-process"
 bound = 1
 [[family.entry]]
-key = "clippy::disallowed_methods@jackin-process-directory"
-bound = 5
-[[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime-host-attach"
-bound = 1
-[[family.entry]]
-key = "clippy::disallowed_methods@jackin-runtime-image"
-bound = 2
-[[family.entry]]
-key = "clippy::disallowed_methods@jackin-runtime-launch-account-config"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime-launch-account-identity"
@@ -169,9 +151,6 @@ bound = 2
 key = "clippy::exit@jackin-capsule"
 bound = 2
 [[family.entry]]
-key = "clippy::expect_used@jackin"
-bound = 4
-[[family.entry]]
 key = "clippy::expect_used@jackin-capsule"
 bound = 1
 [[family.entry]]
@@ -182,7 +161,7 @@ key = "clippy::expect_used@jackin-diagnostics"
 bound = 3
 [[family.entry]]
 key = "clippy::expect_used@jackin-image"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "clippy::expect_used@jackin-oppicker"
 bound = 3
@@ -220,9 +199,6 @@ bound = 1
 key = "clippy::let_underscore_must_use@jackin-core"
 bound = 1
 [[family.entry]]
-key = "clippy::manual_async_fn@jackin-runtime-image"
-bound = 3
-[[family.entry]]
 key = "clippy::missing_const_for_fn@jackin-oppicker"
 bound = 1
 [[family.entry]]
@@ -234,9 +210,6 @@ bound = 1
 [[family.entry]]
 key = "clippy::option_if_let_else@jackin-console"
 bound = 1
-[[family.entry]]
-key = "clippy::panic@jackin"
-bound = 4
 [[family.entry]]
 key = "clippy::panic@jackin-capsule"
 bound = 1
@@ -258,9 +231,6 @@ bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin"
 bound = 4
-[[family.entry]]
-key = "clippy::print_stderr@jackin-capsule"
-bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin-dev"
 bound = 1
@@ -362,19 +332,10 @@ key = "clippy::suboptimal_flops@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-capsule"
-bound = 5
-[[family.entry]]
-key = "clippy::disallowed_methods@jackin-runtime-universe"
-bound = 5
-[[family.entry]]
-key = "clippy::manual_async_fn@jackin-runtime-universe"
-bound = 1
+bound = 4
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-console"
 bound = 4
-[[family.entry]]
-key = "clippy::too_many_arguments@jackin-image"
-bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-instance-agents"
 bound = 2
@@ -386,7 +347,7 @@ key = "clippy::too_many_arguments@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime"
-bound = 8
+bound = 7
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime-docker-profile"
 bound = 1
@@ -419,7 +380,7 @@ key = "clippy::too_many_arguments@jackin-usage-provider-minimax"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-capsule"
-bound = 8
+bound = 7
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-console"
 bound = 5
@@ -454,9 +415,6 @@ bound = 1
 key = "clippy::too_many_lines@jackin-usage-coordinator"
 bound = 1
 [[family.entry]]
-key = "clippy::too_many_lines@jackin-workflow"
-bound = 1
-[[family.entry]]
 key = "clippy::too_many_lines@jackin-xtask"
 bound = 1
 [[family.entry]]
@@ -475,26 +433,14 @@ bound = 2
 key = "clippy::undocumented_unsafe_blocks@jackin-capsule"
 bound = 10
 [[family.entry]]
-key = "clippy::unused_async_trait_impl@jackin-image"
-bound = 1
-[[family.entry]]
-key = "clippy::unused_async_trait_impl@jackin-isolation"
-bound = 1
-[[family.entry]]
-key = "clippy::unwrap_used@jackin"
-bound = 2
-[[family.entry]]
 key = "clippy::undocumented_unsafe_blocks@jackin-process-directory"
-bound = 6
+bound = 5
 [[family.entry]]
 key = "clippy::undocumented_unsafe_blocks@jackin-usage-host-accounts"
 bound = 4
 [[family.entry]]
-key = "clippy::unnecessary_wraps@jackin-runtime"
-bound = 1
-[[family.entry]]
 key = "clippy::unwrap_used@jackin-capsule"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "clippy::unwrap_used@jackin-runtime"
 bound = 2
@@ -502,14 +448,8 @@ bound = 2
 key = "clippy::unwrap_used@jackin-test-support"
 bound = 1
 [[family.entry]]
-key = "clippy::unwrap_used@jackin-workflow-spec"
-bound = 1
-[[family.entry]]
 key = "clippy::useless_let_if_seq@jackin"
 bound = 1
-[[family.entry]]
-key = "dead_code@jackin"
-bound = 3
 [[family.entry]]
 key = "dead_code@jackin-env"
 bound = 1
@@ -574,17 +514,14 @@ bound = 1
 key = "unreachable_pub@jackin-console"
 bound = 1
 [[family.entry]]
-key = "unreachable_pub@jackin-usage-coordinator"
-bound = 3
-[[family.entry]]
 key = "unsafe_code@jackin-capsule"
-bound = 24
+bound = 23
 [[family.entry]]
 key = "unsafe_code@jackin-process-directory"
-bound = 7
+bound = 6
 [[family.entry]]
 key = "unsafe_code@jackin-usage-host-accounts"
-bound = 6
+bound = 5
 [[family.entry]]
 key = "unused_imports@jackin-capsule"
 bound = 1
@@ -594,9 +531,6 @@ bound = 7
 [[family.entry]]
 key = "unused_imports@jackin-usage"
 bound = 12
-[[family.entry]]
-key = "unused_qualifications@jackin-runtime"
-bound = 1
 [[family]]
 id = "agent-doc-bytes"
 kind = "numeric"
@@ -1039,9 +973,6 @@ bound = 6076
 key = "crates/services/jackin-workflow/README.md"
 bound = 650
 [[family.entry]]
-key = "crates/testing/jackin-otlp-testbed/README.md"
-bound = 1443
-[[family.entry]]
 key = "crates/testing/jackin-test-support/README.md"
 bound = 2647
 [[family.entry]]
@@ -1115,9 +1046,6 @@ bound = 6
 [[family.entry]]
 key = "jackin-capsule"
 bound = 31
-[[family.entry]]
-key = "jackin-config"
-bound = 1
 [[family.entry]]
 key = "jackin-console"
 bound = 7

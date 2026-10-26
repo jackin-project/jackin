@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(test)]
-mod tests;
-
 use super::{CheckedInstallRoot, DIRECTORY_OPEN_FLAGS, NodeRole};
 #[cfg(not(target_os = "linux"))]
 use rustix::fd::AsFd;

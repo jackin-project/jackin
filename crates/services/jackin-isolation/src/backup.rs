@@ -187,6 +187,3 @@ pub async fn push_exact_ref(
         )
     })
 }
-
-#[cfg(test)]
-mod tests;

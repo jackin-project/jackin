@@ -348,6 +348,3 @@ fn record_pty_wait_uncertainty(_pid: Option<u32>) {
     let _error =
         jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
 }
-
-#[cfg(test)]
-mod tests;

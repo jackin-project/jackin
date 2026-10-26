@@ -21,8 +21,5 @@ jackin-manifest = { workspace = true }
 jackin-telemetry = { workspace = true }
 anyhow = { workspace = true }
 
-[dev-dependencies]
-tempfile = { workspace = true }
-
 [lints]
 workspace = true

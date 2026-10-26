@@ -8,8 +8,6 @@ mod ratatui_frame;
 mod regions;
 
 pub(crate) use regions::cached_pane_regions;
-#[cfg(test)]
-pub(crate) use regions::pane_sgr_regions;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AssertedClientState {

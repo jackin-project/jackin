@@ -109,14 +109,6 @@ pub enum GitContext {
 
 impl GitContext {
     #[must_use]
-    pub fn branch_name(&self) -> Option<&BranchName> {
-        match self {
-            Self::Branch { name, .. } => Some(name),
-            _ => None,
-        }
-    }
-
-    #[must_use]
     pub fn head(&self) -> Option<&Oid> {
         match self {
             Self::Detached { head } => Some(head),

@@ -11,8 +11,6 @@ precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Alexey Zhokhov"
 SPDX-License-Identifier = "Apache-2.0"
 
-# Authentic third-party verification vectors retain their upstream licensing.
-# Source revisions and the corresponding unmodified licenses are recorded beside them.
 [[annotations]]
 path = [
   "crates/adapters/jackin-image/src/release_evidence/fixtures/cosign-*",

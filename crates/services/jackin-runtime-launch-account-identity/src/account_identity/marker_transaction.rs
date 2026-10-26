@@ -36,194 +36,7 @@ pub(super) enum TransactionPausePoint {
     AfterCommitSync,
 }
 
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum TransactionRole {
-    Selected,
-    Admission,
-}
-
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum RootHandoffPoint {
-    AfterSharedRelease,
-    AfterExclusiveRelease,
-}
-
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum TransactionFaultPoint {
-    CandidateWrite,
-    CandidateFileSync,
-    CandidateRootSync,
-    PreparedWrite,
-    PreparedFileSync,
-    PreparedRootSync,
-    SelectedRename,
-    SelectedRootSync,
-    AdmissionRename,
-    AdmissionRootSync,
-    CommitRenameBefore,
-    CommitRename,
-    CommitRootSync,
-    RollbackTruncate(TransactionRole),
-    RollbackPartialWrite(TransactionRole),
-    RollbackModeRestore(TransactionRole),
-    RollbackFileSync(TransactionRole),
-    RollbackRootSync(TransactionRole),
-    PreparedStageUnlink,
-    PreparedCandidateUnlink,
-    PreparedResidueRootSync,
-    PreparedPrimaryUnlink,
-    PreparedFinalRootSync,
-    CommittedPrimaryUnlink,
-    CommittedFinalRootSync,
-}
-
-#[cfg(test)]
-type RootHandoffHook = (
-    RootHandoffPoint,
-    Box<dyn FnOnce(&Path) -> anyhow::Result<()>>,
-);
-
-#[cfg(test)]
-thread_local! {
-    static TRANSACTION_PAUSE_POINT: std::cell::Cell<Option<TransactionPausePoint>> = const { std::cell::Cell::new(None) };
-    static TRANSACTION_FAULTS: std::cell::RefCell<Vec<TransactionFaultPoint>> = const { std::cell::RefCell::new(Vec::new()) };
-    static ROOT_HANDOFF_HOOK: std::cell::RefCell<Option<RootHandoffHook>> = const { std::cell::RefCell::new(None) };
-}
-
-#[cfg(test)]
-pub(super) struct TransactionPauseGuard;
-
-#[cfg(test)]
-impl Drop for TransactionPauseGuard {
-    fn drop(&mut self) {
-        TRANSACTION_PAUSE_POINT.with(|slot| slot.set(None));
-    }
-}
-
-#[cfg(test)]
-pub(super) fn pause_at_for_test(point: TransactionPausePoint) -> TransactionPauseGuard {
-    TRANSACTION_PAUSE_POINT.with(|slot| {
-        assert!(
-            slot.replace(Some(point)).is_none(),
-            "nested transaction pause is unsupported"
-        );
-    });
-    TransactionPauseGuard
-}
-
-#[cfg(test)]
-pub(super) struct TransactionFaultGuard {
-    previous: Vec<TransactionFaultPoint>,
-}
-
-#[cfg(test)]
-pub(super) fn inject_faults_for_test(points: &[TransactionFaultPoint]) -> TransactionFaultGuard {
-    let previous = TRANSACTION_FAULTS.with(|faults| {
-        let mut faults = faults.borrow_mut();
-        assert!(
-            faults.is_empty(),
-            "nested marker transaction faults are unsupported"
-        );
-        std::mem::replace(&mut *faults, points.to_vec())
-    });
-    TransactionFaultGuard { previous }
-}
-
-#[cfg(test)]
-impl Drop for TransactionFaultGuard {
-    fn drop(&mut self) {
-        TRANSACTION_FAULTS.with(|faults| *faults.borrow_mut() = std::mem::take(&mut self.previous));
-    }
-}
-
-#[cfg(test)]
-fn take_fault(point: TransactionFaultPoint) -> bool {
-    TRANSACTION_FAULTS.with(|faults| {
-        let mut faults = faults.borrow_mut();
-        if faults.first() == Some(&point) {
-            faults.remove(0);
-            true
-        } else {
-            false
-        }
-    })
-}
-
-#[cfg(test)]
-fn fail_before(point: TransactionFaultPoint) -> anyhow::Result<()> {
-    if take_fault(point) {
-        anyhow::bail!("injected marker transaction failure at {point:?}");
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-pub(super) struct RootHandoffHookGuard;
-
-#[cfg(test)]
-pub(super) fn pause_root_handoff_for_test(
-    point: RootHandoffPoint,
-    hook: impl FnOnce(&Path) -> anyhow::Result<()> + 'static,
-) -> RootHandoffHookGuard {
-    ROOT_HANDOFF_HOOK.with(|slot| {
-        let mut slot = slot.borrow_mut();
-        assert!(slot.is_none(), "nested root-handoff hooks are unsupported");
-        *slot = Some((point, Box::new(hook)));
-    });
-    RootHandoffHookGuard
-}
-
-#[cfg(test)]
-impl Drop for RootHandoffHookGuard {
-    fn drop(&mut self) {
-        ROOT_HANDOFF_HOOK.with(|slot| {
-            slot.borrow_mut().take();
-        });
-    }
-}
-
-#[cfg(test)]
-fn root_handoff_checkpoint(point: RootHandoffPoint, root: &Path) -> anyhow::Result<()> {
-    let hook = ROOT_HANDOFF_HOOK.with(|slot| {
-        let matches = slot
-            .borrow()
-            .as_ref()
-            .is_some_and(|(hook_point, _)| *hook_point == point);
-        if matches {
-            slot.borrow_mut().take().map(|(_, hook)| hook)
-        } else {
-            None
-        }
-    });
-    if let Some(hook) = hook {
-        hook(root)?;
-    }
-    Ok(())
-}
-
 fn transaction_checkpoint(point: TransactionPausePoint) -> anyhow::Result<()> {
-    #[cfg(test)]
-    {
-        use std::io::{BufRead as _, Write as _};
-
-        if TRANSACTION_PAUSE_POINT.with(std::cell::Cell::get) != Some(point) {
-            return Ok(());
-        }
-        println!("MARKER_PAIR_READY {}", std::process::id());
-        std::io::stdout().flush()?;
-        let stdin = std::io::stdin();
-        let mut command = String::new();
-        std::io::BufReader::new(stdin.lock()).read_line(&mut command)?;
-        ensure!(
-            command.trim_end() == "release",
-            "invalid bounded transaction-child command"
-        );
-        Ok(())
-    }
-    #[cfg(not(test))]
     {
         let _ = point;
         Ok(())
@@ -285,31 +98,6 @@ impl std::fmt::Display for PublicationFailure {
 
 impl std::error::Error for PublicationFailure {}
 
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum PublicationFailureKind {
-    PreCommitFailure,
-    PreparedRollbackPending,
-    CommitUncertain,
-    CommittedCleanupPending,
-}
-
-#[cfg(test)]
-pub(super) fn publication_failure_kind(error: &anyhow::Error) -> Option<PublicationFailureKind> {
-    error
-        .downcast_ref::<PublicationFailure>()
-        .map(|failure| match failure {
-            PublicationFailure::PreCommitFailure(_) => PublicationFailureKind::PreCommitFailure,
-            PublicationFailure::PreparedRollbackPending { .. } => {
-                PublicationFailureKind::PreparedRollbackPending
-            }
-            PublicationFailure::CommitUncertain(_) => PublicationFailureKind::CommitUncertain,
-            PublicationFailure::CommittedCleanupPending(_) => {
-                PublicationFailureKind::CommittedCleanupPending
-            }
-        })
-}
-
 #[derive(Debug)]
 struct ObservedFile {
     stat: EntryStat,
@@ -345,9 +133,6 @@ pub(super) fn shared_lease_with_recovery(root: &Path) -> anyhow::Result<Option<M
     }
     drop(shared);
 
-    #[cfg(test)]
-    root_handoff_checkpoint(RootHandoffPoint::AfterSharedRelease, root)?;
-
     let exclusive = MarkerPairLease::acquire(root)
         .context("marker recovery is busy; refusing an unbounded lock retry")?;
     ensure!(
@@ -356,9 +141,6 @@ pub(super) fn shared_lease_with_recovery(root: &Path) -> anyhow::Result<Option<M
     );
     recover_locked(&exclusive)?;
     drop(exclusive);
-
-    #[cfg(test)]
-    root_handoff_checkpoint(RootHandoffPoint::AfterExclusiveRelease, root)?;
 
     let shared = MarkerPairLease::acquire_optional(root)?;
     let Some(shared) = shared else {
@@ -531,25 +313,11 @@ fn prepare_transaction_records(
     let next_file = lease
         .create_entry(NEXT_NAME, STAGE_MODE)
         .context("cannot create Committed candidate; preserving marker stages")?;
-    #[cfg(test)]
-    if take_fault(TransactionFaultPoint::CandidateWrite) {
-        let mut writer = &next_file;
-        writer
-            .write_all(&candidate_bytes[..candidate_bytes.len().min(32)])
-            .context("cannot write injected Committed candidate prefix")?;
-        anyhow::bail!("injected marker transaction failure during candidate write");
-    }
     write_entry(lease, NEXT_NAME, &next_file, &candidate_bytes)
         .context("Committed candidate is incomplete; preserving evidence")?;
-    #[cfg(test)]
-    fail_before(TransactionFaultPoint::CandidateFileSync)
-        .context("Committed candidate file sync failed; preserving evidence")?;
     lease
         .sync_file(&next_file)
         .context("Committed candidate file sync failed; preserving evidence")?;
-    #[cfg(test)]
-    fail_before(TransactionFaultPoint::CandidateRootSync)
-        .context("candidate directory sync failed; preserving evidence")?;
     lease
         .sync_root()
         .context("candidate directory sync failed; preserving evidence")?;
@@ -570,14 +338,6 @@ fn prepare_transaction_records(
     let primary_file = lease
         .create_entry(ACCOUNT_MARKERS_TRANSACTION_FILE, STAGE_MODE)
         .context("cannot create Prepared journal; preserving candidate evidence")?;
-    #[cfg(test)]
-    if take_fault(TransactionFaultPoint::PreparedWrite) {
-        let mut writer = &primary_file;
-        writer
-            .write_all(&prepared_bytes[..prepared_bytes.len().min(32)])
-            .context("cannot write injected Prepared journal prefix")?;
-        anyhow::bail!("injected marker transaction failure during Prepared write");
-    }
     write_entry(
         lease,
         ACCOUNT_MARKERS_TRANSACTION_FILE,
@@ -585,15 +345,9 @@ fn prepare_transaction_records(
         &prepared_bytes,
     )
     .context("Prepared journal is incomplete; preserving transaction evidence")?;
-    #[cfg(test)]
-    fail_before(TransactionFaultPoint::PreparedFileSync)
-        .context("Prepared journal file sync failed; preserving transaction evidence")?;
     lease
         .sync_file(&primary_file)
         .context("Prepared journal file sync failed; preserving transaction evidence")?;
-    #[cfg(test)]
-    fail_before(TransactionFaultPoint::PreparedRootSync)
-        .context("Prepared journal directory sync failed; preserving transaction evidence")?;
     lease
         .sync_root()
         .context("Prepared journal directory sync failed; preserving transaction evidence")?;
@@ -618,8 +372,6 @@ fn commit_prepared_publication(
     lease: &MarkerPairLease,
     publication: &PreparedPublication,
 ) -> anyhow::Result<()> {
-    // The candidate-to-primary rename and following root sync are the commit
-    // decision. Any failure here is uncertain and must not be rolled back.
     if let Err(cause) = lease.ensure_file_name_matches(NEXT_NAME, &publication.next_file) {
         return Err(rollback_prepared_failure(
             lease,
@@ -636,19 +388,7 @@ fn commit_prepared_publication(
             "Prepared journal changed before the commit decision",
         ));
     }
-    #[cfg(test)]
-    if let Err(error) = fail_before(TransactionFaultPoint::CommitRenameBefore) {
-        return Err(anyhow::Error::new(PublicationFailure::CommitUncertain(
-            error,
-        )));
-    }
     if let Err(error) = lease.rename_entry(NEXT_NAME, ACCOUNT_MARKERS_TRANSACTION_FILE) {
-        return Err(anyhow::Error::new(PublicationFailure::CommitUncertain(
-            error,
-        )));
-    }
-    #[cfg(test)]
-    if let Err(error) = fail_before(TransactionFaultPoint::CommitRename) {
         return Err(anyhow::Error::new(PublicationFailure::CommitUncertain(
             error,
         )));
@@ -661,12 +401,6 @@ fn commit_prepared_publication(
         )));
     }
     if let Err(error) = transaction_checkpoint(TransactionPausePoint::AfterCommitRename) {
-        return Err(anyhow::Error::new(PublicationFailure::CommitUncertain(
-            error,
-        )));
-    }
-    #[cfg(test)]
-    if let Err(error) = fail_before(TransactionFaultPoint::CommitRootSync) {
         return Err(anyhow::Error::new(PublicationFailure::CommitUncertain(
             error,
         )));
@@ -734,19 +468,7 @@ fn publish_prepared_markers(
         verify_old_value(lease, marker_name)?;
         verify_stage_value(lease, marker_name)?;
         lease.ensure_file_name_matches(&marker_name.stage_name, stage)?;
-        #[cfg(test)]
-        match marker_name.name.as_str() {
-            ACCOUNT_FINGERPRINT_FILE => fail_before(TransactionFaultPoint::SelectedRename)?,
-            ACCOUNT_ADMISSION_FILE => fail_before(TransactionFaultPoint::AdmissionRename)?,
-            _ => unreachable!("fixed marker names were supplied by the caller"),
-        }
         lease.rename_entry(&marker_name.stage_name, &marker_name.name)?;
-        #[cfg(test)]
-        match marker_name.name.as_str() {
-            ACCOUNT_FINGERPRINT_FILE => fail_before(TransactionFaultPoint::SelectedRootSync)?,
-            ACCOUNT_ADMISSION_FILE => fail_before(TransactionFaultPoint::AdmissionRootSync)?,
-            _ => unreachable!("fixed marker names were supplied by the caller"),
-        }
         lease.sync_root()?;
         if marker_name.name == ACCOUNT_FINGERPRINT_FILE {
             super::marker_pair::pause_after_selected_rename(lease.root_path())?;
@@ -970,11 +692,7 @@ fn recover_committed(lease: &MarkerPairLease, primary: OpenedRecord) -> anyhow::
         lease.entry_stat(NEXT_NAME)?.is_none(),
         "unexpected committed marker candidate residue is present"
     );
-    #[cfg(test)]
-    fail_before(TransactionFaultPoint::CommittedPrimaryUnlink)?;
     unlink_verified_primary(lease, &primary.file)?;
-    #[cfg(test)]
-    fail_before(TransactionFaultPoint::CommittedFinalRootSync)?;
     match lease.sync_root() {
         Ok(()) => Ok(()),
         Err(error) => Err(error.context(
@@ -1073,11 +791,7 @@ fn restore_prepared_marker(
         }
         (OldValue::Present { original, .. }, MarkerState::OriginalOld) => {
             let file = open_verified(lease, &marker.name, original, rustix::fs::OFlags::RDONLY)?;
-            #[cfg(test)]
-            fail_before(TransactionFaultPoint::RollbackFileSync(fault_role(marker)))?;
             lease.sync_file(&file)?;
-            #[cfg(test)]
-            fail_before(TransactionFaultPoint::RollbackRootSync(fault_role(marker)))?;
             lease.sync_root()
         }
         (OldValue::Present { bytes, original }, MarkerState::RestoredOld) => {
@@ -1089,11 +803,7 @@ fn restore_prepared_marker(
                 bytes.len() as u64,
                 rustix::fs::OFlags::RDONLY,
             )?;
-            #[cfg(test)]
-            fail_before(TransactionFaultPoint::RollbackFileSync(fault_role(marker)))?;
             lease.sync_file(&file)?;
-            #[cfg(test)]
-            fail_before(TransactionFaultPoint::RollbackRootSync(fault_role(marker)))?;
             lease.sync_root()?;
             verify_restored_value(lease, &marker.name, &marker.stage, bytes, original.mode)
         }
@@ -1107,16 +817,8 @@ fn restore_prepared_marker(
                 rustix::fs::OFlags::RDWR,
             )?;
             lease.ensure_file_name_matches(&marker.name, &file)?;
-            #[cfg(test)]
-            fail_before(TransactionFaultPoint::RollbackModeRestore(fault_role(
-                marker,
-            )))?;
             lease.set_file_mode(&file, original.mode)?;
-            #[cfg(test)]
-            fail_before(TransactionFaultPoint::RollbackFileSync(fault_role(marker)))?;
             lease.sync_file(&file)?;
-            #[cfg(test)]
-            fail_before(TransactionFaultPoint::RollbackRootSync(fault_role(marker)))?;
             lease.sync_root()?;
             verify_restored_value(lease, &marker.name, &marker.stage, bytes, original.mode)
         }
@@ -1140,27 +842,11 @@ fn restore_old_bytes(
     original_mode: u32,
 ) -> anyhow::Result<()> {
     lease.ensure_file_name_matches(&marker.name, file)?;
-    #[cfg(test)]
-    fail_before(TransactionFaultPoint::RollbackTruncate(fault_role(marker)))?;
     lease.truncate_file(file)?;
     let mut writer = file;
     writer
         .seek(SeekFrom::Start(0))
         .context("cannot position marker restore")?;
-    #[cfg(test)]
-    if take_fault(TransactionFaultPoint::RollbackPartialWrite(fault_role(
-        marker,
-    ))) {
-        let prefix_length = bytes.len().saturating_sub(1).min(bytes.len() / 2);
-        writer
-            .write_all(&bytes[..prefix_length])
-            .context("cannot write injected old marker prefix")?;
-        anyhow::bail!(
-            "injected marker transaction failure after partial old-value write for {:?} marker {}",
-            fault_role(marker),
-            marker.name
-        );
-    }
     writer
         .write_all(bytes)
         .context("cannot restore old marker bytes")?;
@@ -1173,28 +859,11 @@ fn restore_old_bytes(
         bytes.len() as u64,
     )?;
     if original_mode != STAGE_MODE {
-        #[cfg(test)]
-        fail_before(TransactionFaultPoint::RollbackModeRestore(fault_role(
-            marker,
-        )))?;
         lease.set_file_mode(file, original_mode)?;
     }
-    #[cfg(test)]
-    fail_before(TransactionFaultPoint::RollbackFileSync(fault_role(marker)))?;
     lease.sync_file(file)?;
-    #[cfg(test)]
-    fail_before(TransactionFaultPoint::RollbackRootSync(fault_role(marker)))?;
     lease.sync_root()?;
     verify_restored_value(lease, &marker.name, &marker.stage, bytes, original_mode)
-}
-
-#[cfg(test)]
-fn fault_role(marker: &PreparedMarker) -> TransactionRole {
-    match marker.name.as_str() {
-        ACCOUNT_FINGERPRINT_FILE => TransactionRole::Selected,
-        ACCOUNT_ADMISSION_FILE => TransactionRole::Admission,
-        _ => unreachable!("fixed marker names were supplied by the transaction record"),
-    }
 }
 
 fn open_restoring_prefix(
@@ -1303,8 +972,6 @@ fn cleanup_prepared_residues(
                 observed.bytes == marker.new_bytes,
                 "marker stage residue bytes changed"
             );
-            #[cfg(test)]
-            fail_before(TransactionFaultPoint::PreparedStageUnlink)?;
             unlink_expected(lease, &marker.stage_name, &marker.stage)?;
         }
     }
@@ -1317,18 +984,10 @@ fn cleanup_prepared_residues(
             candidate.sha256 == digest_hex(&observed.bytes),
             "marker candidate residue digest changed"
         );
-        #[cfg(test)]
-        fail_before(TransactionFaultPoint::PreparedCandidateUnlink)?;
         unlink_expected(lease, NEXT_NAME, &candidate.file)?;
     }
-    #[cfg(test)]
-    fail_before(TransactionFaultPoint::PreparedResidueRootSync)?;
     lease.sync_root()?;
-    #[cfg(test)]
-    fail_before(TransactionFaultPoint::PreparedPrimaryUnlink)?;
     unlink_verified_primary(lease, primary)?;
-    #[cfg(test)]
-    fail_before(TransactionFaultPoint::PreparedFinalRootSync)?;
     lease
         .sync_root()
         .context("Prepared old state is restored; final journal unlink sync is pending")

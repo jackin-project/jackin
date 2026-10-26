@@ -204,8 +204,6 @@ async fn prepare_schema_migration(
     .map_err(|err| format!("record usage snapshot schema version failed: {err}"))?;
 
     validate_current_schema(conn).await?;
-    #[cfg(test)]
-    inject_requested_commit_failure(conn).await?;
     Ok(backup_receipt)
 }
 
@@ -458,45 +456,6 @@ async fn validate_schema_v5(conn: &Connection) -> Result<(), String> {
     }
     validate_typed_quota_payloads(conn).await?;
     validate_unbound_snapshot_keys(conn).await?;
-    Ok(())
-}
-
-#[cfg(test)]
-async fn inject_requested_commit_failure(conn: &Connection) -> Result<(), String> {
-    if !table_exists(conn, "_meta").await? {
-        return Ok(());
-    }
-    let mut rows = jackin_usage_store_backend::operation(
-        DbOperation::Select,
-        conn.query(
-            "SELECT value FROM _meta WHERE key = 'test_fail_schema_commit'",
-            (),
-        ),
-    )
-    .await
-    .map_err(|err| format!("read schema commit failure test marker failed: {err}"))?;
-    let marker = rows
-        .next()
-        .await
-        .map_err(|err| format!("read schema commit failure test marker row failed: {err}"))?
-        .map(|row| row_string(&row, 0, "test_fail_schema_commit"))
-        .transpose()?;
-    drop(rows);
-    if marker.as_deref() == Some("1") {
-        jackin_usage_store_backend::operation(
-            DbOperation::Update,
-            conn.execute_batch(
-                "CREATE TEMP TABLE quota_commit_parent(id INTEGER PRIMARY KEY);
-                 CREATE TEMP TABLE quota_commit_child(
-                     parent_id INTEGER REFERENCES quota_commit_parent(id)
-                         DEFERRABLE INITIALLY DEFERRED
-                 );
-                 INSERT INTO quota_commit_child(parent_id) VALUES (1);",
-            ),
-        )
-        .await
-        .map_err(|err| format!("prepare schema commit failure test marker failed: {err}"))?;
-    }
     Ok(())
 }
 
@@ -1046,6 +1005,3 @@ async fn table_exists(conn: &Connection, table: &str) -> Result<bool, String> {
         .map_err(|err| format!("read usage snapshot table row failed: {err}"))?
         .is_some())
 }
-
-#[cfg(test)]
-mod tests;

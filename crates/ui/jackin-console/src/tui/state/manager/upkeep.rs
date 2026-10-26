@@ -56,13 +56,6 @@ impl ManagerState<'_> {
         self.instances_refresh_rx = None;
     }
 
-    pub fn force_refresh_instances_for_test(&mut self) {
-        self.instances_last_refresh = None;
-        self.instances_refresh_generation =
-            forced_instance_refresh_generation(self.instances_refresh_generation);
-        self.instances_refresh_rx = None;
-    }
-
     pub fn tick_active_animation(&mut self) -> bool {
         let mut dirty = false;
         if let Some(modal) = self.list_modal.as_mut() {

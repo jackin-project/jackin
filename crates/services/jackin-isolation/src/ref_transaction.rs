@@ -494,15 +494,6 @@ impl CommittedRefDeletion {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn prepare(
-    git: BorrowedFd<'_>,
-    full_ref: &str,
-    expected_oid: &str,
-) -> anyhow::Result<PreparedRefDeletion> {
-    prepare_with_checkout(CheckoutInventory::begin(git)?, git, full_ref, expected_oid)
-}
-
 pub(crate) fn prepare_with_checkout(
     checkout: CheckoutInventory,
     git: BorrowedFd<'_>,
@@ -988,6 +979,3 @@ fn parse_packed(
     }
     Ok((found, output))
 }
-
-#[cfg(test)]
-mod tests;

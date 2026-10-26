@@ -1,4 +1,0 @@
-version = "v1alpha12"
-
-[env]
-BROKEN = { op = "op://vault-id/item-id/section-id/field-id", path = "Private/Item/Field" }

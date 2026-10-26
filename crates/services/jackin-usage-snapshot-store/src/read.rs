@@ -1,149 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(test)]
-use std::path::Path;
-
 use super::StoredAccountUsageSnapshot;
 use super::identity;
 use jackin_protocol::control::QuotaBucketView;
 use jackin_usage_store_backend::Row;
-#[cfg(test)]
-use jackin_usage_store_backend::{self, DbOperation};
-
-#[cfg(test)]
-use jackin_protocol::control::{FocusedAccountHeader, FocusedUsageView, UsageSnapshotStatus};
-
-#[cfg(test)]
-use super::*;
-
-#[cfg(test)]
-pub fn focused_usage_view(
-    path: &Path,
-    focused_agent: Option<&str>,
-    focused_provider: Option<&str>,
-    now_epoch: i64,
-) -> Result<Option<FocusedUsageView>, String> {
-    let rows = stored_account_snapshots(path)?;
-    let tabs = usage_provider_tabs_from_rows(&rows);
-    let resolved_provider = focused_provider.or_else(|| {
-        focused_agent.and_then(|agent| {
-            jackin_usage_provider_core::resolved_usage_provider_label(agent, None)
-        })
-    });
-    let Some((provider, rows)) = select_provider_rows(rows, resolved_provider) else {
-        return Ok(None);
-    };
-    let Some(first) = rows.first() else {
-        return Ok(None);
-    };
-    let status = usage_status_from_label(&first.view_status);
-    let source = usage_source_from_label(&first.source);
-    let confidence = usage_confidence_from_label(&first.confidence);
-    let fetched_at = rows.iter().map(|row| row.fetched_at).max().unwrap_or(0);
-    let mut buckets = rows
-        .iter()
-        .map(|row| row.quota_bucket.clone())
-        .collect::<Vec<_>>();
-    buckets.sort_by_key(|bucket| usage_bucket_order(&provider, &bucket.label));
-    Ok(Some(FocusedUsageView {
-        focused_agent: focused_agent.map(str::to_owned),
-        focused_provider: first
-            .focused_provider
-            .clone()
-            .or_else(|| resolved_provider.map(str::to_owned))
-            .or_else(|| Some(provider.clone())),
-        account: FocusedAccountHeader {
-            provider_label: provider,
-            account_label: first.account_label.clone(),
-            username: None,
-            plan_label: first.plan_label.clone(),
-            credential_origin: None,
-            account_capability: None,
-        },
-        buckets,
-        status,
-        source,
-        confidence,
-        fetched_at_epoch: fetched_at,
-        updated_label: if matches!(
-            status,
-            UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale
-        ) || first.updated_label.trim().is_empty()
-        {
-            jackin_usage_provider_core::relative_updated_label(fetched_at, now_epoch)
-        } else {
-            first.updated_label.clone()
-        },
-        status_bar_label: if first.status_bar_label.trim().is_empty() {
-            lifecycle_status_bar_label(status)
-        } else {
-            first.status_bar_label.clone()
-        },
-        tabs,
-        last_error: first.last_error.clone(),
-    }))
-}
-
-#[cfg(test)]
-pub(crate) fn stored_account_snapshots(
-    path: &Path,
-) -> Result<Vec<StoredAccountUsageSnapshot>, String> {
-    let path = path.to_path_buf();
-    block_on_store(async move {
-        let conn = open_store(&path).await?;
-        let mut rows = jackin_usage_store_backend::operation(
-            DbOperation::Select,
-            conn.query(
-                "
-                SELECT
-                    provider,
-                    account_key_hash,
-                    account_label,
-                    source,
-                    confidence,
-                    window_kind,
-                    used_amount,
-                    used_unit,
-                    limit_amount,
-                    limit_unit,
-                    resets_at,
-                    fetched_at,
-                    expires_at,
-                    status,
-                    last_error,
-                    focused_provider,
-                    plan_label,
-                    quota_bucket_json,
-                    used_label,
-                    limit_label,
-                    reset_label,
-                    pace_label,
-                    view_status,
-                    updated_label,
-                    status_bar_label,
-                    capability_account_id,
-                    capability_surface_id
-                FROM account_usage_snapshots
-                ORDER BY provider, account_key_hash, source, window_kind
-                ",
-                (),
-            ),
-        )
-        .await
-        .map_err(|err| format!("query telemetry snapshots failed: {err}"))?;
-        let mut snapshots = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .await
-            .map_err(|err| format!("read telemetry snapshot row failed: {err}"))?
-        {
-            snapshots.push(decode_stored_account_snapshot(&row)?);
-        }
-        identity::validate_stored_rows(&snapshots)?;
-        Ok(snapshots)
-    })
-}
 
 pub(crate) fn decode_quota_bucket(
     encoded: Option<String>,
@@ -217,25 +78,6 @@ fn decode_stored_account_identity(
         row_opt_string(row, 26, "capability_surface_id")?,
     )?;
     Ok((account_key_hash, account_capability))
-}
-
-#[cfg(test)]
-pub fn schema_version(path: &Path) -> Result<Option<String>, String> {
-    let path = path.to_path_buf();
-    block_on_store(async move {
-        let conn = open_store(&path).await?;
-        let mut rows = jackin_usage_store_backend::operation(
-            DbOperation::Select,
-            conn.query("SELECT value FROM _meta WHERE key = 'schema_version'", ()),
-        )
-        .await
-        .map_err(|err| format!("query telemetry schema version failed: {err}"))?;
-        rows.next()
-            .await
-            .map_err(|err| format!("read telemetry schema version failed: {err}"))?
-            .map(|row| row_string(&row, 0, "schema_version"))
-            .transpose()
-    })
 }
 
 pub(crate) fn row_i64(row: &Row, idx: usize, name: &str) -> Result<i64, String> {

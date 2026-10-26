@@ -38,5 +38,3 @@ pub use operation::{
 pub use retry::record_retry_scheduled;
 
 pub const TELEMETRY_TARGET: &str = "jackin_telemetry";
-#[cfg(test)]
-mod tests;

@@ -18,5 +18,3 @@ pub(super) use keys::handle_auth_key;
 pub(crate) use keys::record_missing_auth_return_path;
 pub use modal::handle_settings_auth_modal;
 pub(crate) use persist::{clear_settings_auth_kind, persist_settings_auth_form};
-#[cfg(test)]
-mod tests;

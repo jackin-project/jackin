@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
@@ -7,7 +6,6 @@ use std::ops::{Deref, DerefMut};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
@@ -259,7 +257,6 @@ pub(super) fn open_readonly_nofollow_expected(
     if expected_identity.is_some() && expected_identity != before_identity {
         return Err(StoreError::InvalidManifest);
     }
-
     let lease = super::registry::reserve_artifact_identity(before_identity)?;
     let mut options = OpenOptions::new();
     options.read(true);
@@ -281,7 +278,7 @@ pub(super) fn open_readonly_nofollow_expected(
     let current_path = fs::symlink_metadata(path)
         .map_err(|source| StoreError::io("recheck backup artifact path", source))?;
     let opened_identity = FileIdentity::from_metadata(&opened_metadata);
-
+    super::forensics::record_artifact_open(path, opened_identity);
     if !opened_metadata.is_file()
         || FileIdentity::is_multiply_linked(&opened_metadata)
         || opened_identity != before_identity

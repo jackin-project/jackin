@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(any(test, feature = "test-support"))]
-use super::path_key;
 use super::{
     AuthMountLease, ensure_same_source_identity, entry_file_at, entry_stat, file_target_lock,
     nix_error, open_directory_at, open_parent, validate_owned_stat,
@@ -106,9 +104,4 @@ pub fn lock_mount_directory(path: &Path) -> anyhow::Result<Option<AuthMountLease
         .map_err(|error| nix_error(error, "statting credential mount directory"))?;
     ensure_same_source_identity(&expected, &actual, "credential mount directory")?;
     Ok(Some(lease))
-}
-
-#[cfg(any(test, feature = "test-support"))]
-pub fn target_lock_key_for_test(path: &Path) -> anyhow::Result<String> {
-    path_key(path)
 }

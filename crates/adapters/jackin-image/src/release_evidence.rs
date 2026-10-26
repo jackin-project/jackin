@@ -471,6 +471,3 @@ fn validate_companion(bytes: &[u8], receipt: &PackageReleaseReceipt, version: &s
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

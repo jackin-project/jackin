@@ -38,7 +38,6 @@ criterion = { workspace = true, features = ["html_reports"] }
 tempfile = { workspace = true }
 
 [features]
-test-support = []
 
 [lints]
 workspace = true

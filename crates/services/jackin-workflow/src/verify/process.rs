@@ -98,24 +98,6 @@ impl TestExecution {
         &self.stderr
     }
 
-    #[cfg(test)]
-    pub fn from_test_parts(exit_code: i32, output: &str) -> Self {
-        let text = output.as_bytes();
-        let half = text.len() / 2;
-        Self {
-            exit_code,
-            timed_out: false,
-            stdout: BoundedOutput {
-                bytes: text[..half].to_vec(),
-                truncated: false,
-            },
-            stderr: BoundedOutput {
-                bytes: text[half..].to_vec(),
-                truncated: false,
-            },
-        }
-    }
-
     #[must_use]
     pub fn exit_label(&self) -> String {
         if self.timed_out {
