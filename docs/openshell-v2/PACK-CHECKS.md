@@ -61,7 +61,7 @@ The runner writes one JSON report to stdout and does not modify the pack. It val
 | Topological readiness groups | 20 |
 | Checked procedural sentences | 1632 |
 
-The ordinary validator report contains 81 ordered checks; `--initial` contains 83, including two initial-only checks and the final inventory check.
+The ordinary validator report contains 82 ordered checks; `--initial` contains 84, including two initial-only checks and the final inventory check.
 The C02 digest checks fixed contract text only. It does not show that source code follows this plan.
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
@@ -101,6 +101,7 @@ Keep no more than eight actual subagents active at once.
 | Case status matches its assignment summary | PASS |
 | `NOT_STARTED` and `READY` tasks have `NOT_RUN` assignments | PASS |
 | `BLOCKED` tasks with incomplete dependencies have `NOT_RUN` assignments | PASS |
+| Every `REVIEW` task has a recorded result for each of its own assignments | PASS |
 | Task progress waits for completed dependencies | PASS |
 | `PASS` tasks have passing results for their own assignments | PASS |
 | Task test references, case coverage, and ownership maps agree | PASS |
@@ -131,8 +132,8 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 193 scenarios passed their exact report, input-derived count, and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 175 targeted scenarios cover assignment ownership and progress, authored task and case fields, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates and result-cell grammar, owner-specific A13/A15/A16 qualification, A17 integrated activation, and serialized target-matrix updates.
+All 208 scenarios passed their exact report, input-derived count, and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 190 targeted scenarios cover assignment ownership and progress, authored task and case fields, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, complete contract and subagent policy pins, task review rules, validator report templates and result-cell grammar, owner-specific A13/A15/A16 qualification, A17 integrated activation, serialized target-matrix updates, malformed record refusal, and review-assignment completion.
 Each fixture copy records source hashes, status-only normalization changes, normalized hashes, intentional mutations, and input and executable hashes before and after validation. The original board is never normalized or repaired.
 A22 is owned by U02 and T32. Its mixed-result fixtures complete T32 dependencies before recording results.
 A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks FAIL precedence without bypassing dependencies.
@@ -247,6 +248,11 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | PACK-CHECKS keeps count and result slots mutable | Accept, exit 0 | PASS, exit 0 |
 | PACK-CHECKS check results accept only documented outcome tokens | Reject release-approval prose, exit 1 | PASS, exit 1 |
 | PACK-CHECKS observations accept only outcome tokens and optional exit codes | Reject release-approval prose, exit 1 | PASS, exit 1 |
+| Task, case, and traceability manifests reject null records | Reject structured input, exit 2 | PASS, exit 2 |
+| All three manifests reject NaN, Infinity, and -Infinity | Reject structured input, exit 2 | PASS, exit 2 |
+| Fixture report parser rejects NaN, Infinity, and -Infinity | Reject malformed report | PASS |
+| `REVIEW` rejects any own `NOT_RUN` assignment despite another owner's result | Reject, exit 1 | PASS, exit 1 |
+| `REVIEW` accepts own `PASS`, `FAIL`, and `BLOCKED` results, plus no-case review | Accept, exit 0 | PASS, exit 0 |
 | A13 cannot omit Cargo metadata for P05's current graph | Reject, exit 1 | PASS, exit 1 |
 | A13 cannot omit fresh Cargo metadata for T39's final post-deletion graph | Reject, exit 1 | PASS, exit 1 |
 | A16 loads the global policy before querying revisions and displaying its source | Reject, exit 1 | PASS, exit 1 |

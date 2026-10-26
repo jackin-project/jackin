@@ -131,6 +131,8 @@ def derive_expected_counts(pack: Path) -> dict[str, int] | None:
         goal_lines = (pack / "GOAL.md").read_text(encoding="utf-8").splitlines()
         if not isinstance(tasks, list) or not isinstance(cases, list):
             return None
+        if any(not isinstance(case, dict) for case in cases):
+            return None
 
         dependency_lists_valid = True
         for task in tasks:
@@ -359,6 +361,8 @@ def inspect_report(stdout: str, exit_code: int, initial: bool = False) -> tuple[
         return None, [str(error)]
     except json.JSONDecodeError:
         return None, ["stdout is not valid JSON"]
+    except ValueError as error:
+        return None, [str(error)]
     if not isinstance(report, dict):
         return None, ["report must be a JSON object"]
 
@@ -1134,6 +1138,53 @@ def main() -> int:
         0, [],
     ))
 
+    review_assignment_check = "REVIEW tasks have recorded results for every owned assignment"
+
+    def review_task_with_results(task_id: str, status: str,
+                                 not_run_case: str | None = None) -> Callable[[Path], None]:
+        def mutate(pack: Path) -> None:
+            all_pass(pack)
+            set_task_states(pack, {task_id: "REVIEW"})
+            owned_cases = task_map(pack)[task_id]["test_cases"]
+
+            def update(cases: dict[str, dict[str, Any]]) -> None:
+                for case_id in owned_cases:
+                    case = cases[case_id]
+                    assigned_status = "NOT_RUN" if case_id == not_run_case else status
+                    set_assignment(case, task_id, assigned_status)
+                    case["status"] = status_summary([row["status"] for row in case["assignment_results"]])
+
+            update_cases(pack, update)
+        return mutate
+
+    receipts.append(run_fixture(
+        "REVIEW task requires its own result when another owner has PASS",
+        review_task_with_results("T32", "PASS", not_run_case="A22"),
+        1, [review_assignment_check],
+    ))
+    receipts.append(run_fixture(
+        "REVIEW task requires every owned assignment to have a result",
+        review_task_with_results("T40", "PASS", not_run_case="A123"),
+        1, [review_assignment_check],
+    ))
+    for status in ("PASS", "FAIL", "BLOCKED"):
+        receipts.append(run_fixture(
+            f"REVIEW task accepts its own {status} assignment results",
+            review_task_with_results("T40", status),
+            0, [],
+        ))
+
+    def no_case_task_in_review(pack: Path) -> None:
+        all_pass(pack)
+        set_task_states(pack, {"U06": "REVIEW"})
+        if task_map(pack)["U06"]["test_cases"]:
+            raise ValueError("Expected U06 to keep its manual no-case review rule")
+    receipts.append(run_fixture(
+        "REVIEW task without acceptance cases remains valid",
+        no_case_task_in_review,
+        0, [],
+    ))
+
     def no_case_task(pack: Path) -> None:
         all_pass(pack)
         if task_map(pack)["U06"]["test_cases"]:
@@ -1727,6 +1778,29 @@ def main() -> int:
         2, ["Planning pack input is valid"],
         expected_report_details={"Planning pack input is valid": "'tasks'"},
     ))
+
+    def append_nonobject_record(pack: Path, relative_path: str, field: str) -> None:
+        path = pack / relative_path
+        data = read_json(path)
+        records = data[field]
+        if not isinstance(records, list):
+            raise ValueError(f"Expected {field} to be an array")
+        records.insert(0, None)
+        write_json(path, data)
+
+    for relative_path, field in (
+        ("task-graph.json", "tasks"),
+        ("acceptance-cases.json", "cases"),
+        ("traceability.json", "sections"),
+    ):
+        receipts.append(run_fixture(
+            f"{relative_path} rejects a null {field} record before owner evaluation",
+            lambda pack, path=relative_path, key=field: append_nonobject_record(pack, path, key),
+            2, ["Planning pack input is valid"],
+            expected_report_details={
+                "Planning pack input is valid": f"{relative_path} '{field}' record at index 0 must be an object",
+            },
+        ))
 
     def validator_report(passed: bool, failures: list[str],
                          checks: list[dict[str, Any]] | None = None,
@@ -2636,6 +2710,34 @@ def main() -> int:
             2, ["Planning pack input is valid"],
         ))
 
+    def add_nonstandard_json_constant(pack: Path, relative_path: str, constant: str) -> None:
+        path = pack / relative_path
+        document = path.read_text(encoding="utf-8")
+        closing = document.rfind("}")
+        if closing < 0:
+            raise ValueError(f"Expected a root JSON object in {relative_path}")
+        prefix = document[:closing].rstrip()
+        separator = "" if prefix.endswith("{") else ","
+        path.write_text(
+            prefix + separator + f'\n  "fixture_constant": {constant}\n}}\n',
+            encoding="utf-8",
+        )
+
+    for relative_path, constant in (
+        ("task-graph.json", "NaN"),
+        ("acceptance-cases.json", "Infinity"),
+        ("traceability.json", "-Infinity"),
+    ):
+        receipts.append(run_fixture(
+            f"{relative_path} rejects nonstandard JSON constant {constant}",
+            lambda pack, path=relative_path, value=constant:
+                add_nonstandard_json_constant(pack, path, value),
+            2, ["Planning pack input is valid"],
+            expected_report_details={
+                "Planning pack input is valid": f"nonstandard JSON constant: {constant}",
+            },
+        ))
+
     receipts.append(run_fixture(
         "fixture report parser rejects duplicate top-level JSON keys",
         lambda _pack: None,
@@ -2653,6 +2755,20 @@ def main() -> int:
         expect_report_match=False,
         expected_report_errors=["duplicate JSON object key: tasks"],
     ))
+
+    def report_with_nonstandard_constant(constant: str) -> str:
+        document = validator_report(True, [])
+        old = '"checked_sentences": 1632'
+        if document.count(old) != 1:
+            raise ValueError("Expected one checked-sentence count in the canonical report")
+        return document.replace(old, f'"checked_sentences": {constant}', 1)
+
+    for constant in ("NaN", "Infinity", "-Infinity"):
+        parser_fixture(
+            f"fixture report parser rejects nonstandard JSON constant {constant}",
+            report_with_nonstandard_constant(constant),
+            [f"nonstandard JSON constant: {constant}"],
+        )
 
     a13_owner_check = "A13 preserves separate current-graph and final-post-deletion runs"
     a15_owner_check = "A15 separates observation, adapter, and integrated activation owners"

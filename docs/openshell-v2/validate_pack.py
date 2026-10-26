@@ -20,7 +20,7 @@ GRAPH_DECLARATIONS_SHA256 = "306e276f1b13e15900188a245c8a210f93d16d4587def937449
 TRACEABILITY_AUTHORED_SHA256 = "33c969b0eec0852fa87dc459663540d8f9136e22f1ba22328a02724c9418c7ee"
 CONTRACTS_SHA256 = "da0f23654f30e8d1a37a12f07c9e5595d51027a5c4eaae3ce8072cb544dd3344"
 SUBAGENTS_SHA256 = "a4a9e5a967a73038b50ecdc4cadb9a51b1c83728f54c6b6fb9a87641566263f8"
-PACK_CHECKS_TEMPLATE_SHA256 = "b4e1206e51ef0ba362cda6cd5ed4ce70f102367f8e7118864f82f799a61faf89"
+PACK_CHECKS_TEMPLATE_SHA256 = "026a999b6e5979339af2f0da93f15e20cd7db150129a8f3c920fc411e8939d5c"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
@@ -140,6 +140,7 @@ ORDINARY_CHECK_NAMES = (
     "Case status matches assignment summary",
     "NOT_STARTED and READY tasks have NOT_RUN assignments",
     "BLOCKED tasks with incomplete dependencies have NOT_RUN assignments",
+    "REVIEW tasks have recorded results for every owned assignment",
     "Task test references exist",
     "PASS tasks have passing assigned case results",
     "Every case has a task owner",
@@ -391,7 +392,14 @@ def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def strict_json_loads(document: str) -> Any:
-    return json.loads(document, object_pairs_hook=_unique_json_object)
+    def reject_nonstandard_constant(value: str) -> None:
+        raise ValueError(f"nonstandard JSON constant: {value}")
+
+    return json.loads(
+        document,
+        object_pairs_hook=_unique_json_object,
+        parse_constant=reject_nonstandard_constant,
+    )
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -399,6 +407,18 @@ def read_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"Expected a JSON object: {path}")
     return value
+
+
+def require_object_records(document: dict[str, Any], field: str, source: str) -> list[dict[str, Any]]:
+    if field not in document:
+        raise KeyError(field)
+    records = document[field]
+    if not isinstance(records, list):
+        raise ValueError(f"{source} '{field}' must be a list of objects")
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            raise ValueError(f"{source} '{field}' record at index {index} must be an object")
+    return records
 
 
 def dependency_text(task: dict[str, Any]) -> str:
@@ -1093,6 +1113,9 @@ def main() -> int:
     graph = read_json(root / "task-graph.json")
     cases_file = read_json(root / "acceptance-cases.json")
     trace = read_json(root / "traceability.json")
+    tasks = require_object_records(graph, "tasks", "task-graph.json")
+    cases = require_object_records(cases_file, "cases", "acceptance-cases.json")
+    require_object_records(trace, "sections", "traceability.json")
     manifest_versions = {
         "task-graph.json": graph.get("schema_version"),
         "acceptance-cases.json": cases_file.get("schema_version"),
@@ -1139,8 +1162,6 @@ def main() -> int:
                                    subagents.count(REVIEW_CAPACITY_SENTENCE), "expected": 1})
     check("Authoritative concurrency declaration matches graph and subagent limit",
           not concurrency_errors, concurrency_errors)
-    tasks = graph["tasks"]
-    cases = cases_file["cases"]
     owner_contract_errors = owner_case_contract_errors(tasks, cases)
     acceptance_document = (root / "ACCEPTANCE.md").read_text(encoding="utf-8")
     target_matrix_errors = target_matrix_contract_errors(tasks, acceptance_document)
@@ -1625,6 +1646,19 @@ def main() -> int:
                 })
     check("BLOCKED tasks with incomplete dependencies have NOT_RUN assignments",
           not blocked_incomplete_assignment_errors, blocked_incomplete_assignment_errors)
+
+    review_assignment_errors = []
+    for task in tasks:
+        if task.get("status") != "REVIEW":
+            continue
+        for case_id in task_cases_by_id.get(task["id"], []):
+            status = assignment_status_by_case_and_task.get((case_id, task["id"]))
+            if status in {None, "NOT_RUN"}:
+                review_assignment_errors.append({
+                    "task": task["id"], "case": case_id, "status": status,
+                })
+    check("REVIEW tasks have recorded results for every owned assignment",
+          not review_assignment_errors, review_assignment_errors)
 
     unknown_cases = [(task["id"], cid) for task in tasks for cid in task_cases_by_id[task["id"]]
                      if cid not in case_set]
