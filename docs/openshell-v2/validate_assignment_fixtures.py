@@ -307,6 +307,12 @@ def run_with_timeout(command: list[str], timeout_seconds: float,
             termination_signals.append("SIGTERM" if os.name == "posix" else "CTRL_BREAK_EVENT")
         try:
             stdout, stderr = process.communicate(timeout=TIMEOUT_TERMINATION_GRACE_SECONDS)
+            # Closed pipes show that the direct child stopped holding its
+            # streams. A same-group descendant may have redirected its own
+            # streams, so always finish cleanup of the owned group after a
+            # timeout, even when communicate returns during the TERM grace.
+            if signal_owned_process_group(signal.SIGKILL):
+                termination_signals.append("SIGKILL" if os.name == "posix" else "PROCESS_KILL")
             return timeout_receipt(
                 partial_stdout, partial_stderr,
                 output_text(stdout), output_text(stderr), termination_signals,
@@ -755,7 +761,7 @@ FIXED_FIXTURE_NAMES = (
     "A86 cannot omit T29 integrated presentation ownership or weaken its assertions",
     "T40 cannot claim direct writes to shared target and compatibility matrices",
 )
-FIXED_RUNNER_CHECK_COUNT = 18
+FIXED_RUNNER_CHECK_COUNT = 19
 FIXED_RUNNER_CHECK_NAMES = (
     "The fixture inventory rejects a missing scenario entry.",
     "The fixture inventory rejects a duplicate scenario entry.",
@@ -775,6 +781,7 @@ FIXED_RUNNER_CHECK_NAMES = (
     "The runner-control inventory rejects a duplicate control.",
     "The runner-control inventory rejects an unexpected control.",
     "The runner-control inventory accepts the complete fixed control list.",
+    "The owned process group kills a no-pipe descendant after the direct child exits.",
 )
 
 
@@ -2504,6 +2511,122 @@ def bounded_timeout_probe() -> dict[str, Any]:
             "canonical_success_hang_exit_code": canonical_timeout["exit_code"],
             "canonical_success_hang_timed_out": canonical_timeout["timed_out"],
             "canonical_success_report_rejected": canonical_report_rejected,
+            "input_sha256_before": snapshot_states(input_before),
+            "input_sha256_after": snapshot_states(input_after),
+            "input_changes": snapshot_changes(input_before, input_after),
+            "executable_before": executable_before,
+            "executable_after": executable_after,
+        }
+
+
+def no_pipe_descendant_timeout_probe() -> dict[str, Any]:
+    scenario = (
+        "The owned process group kills a no-pipe descendant after the direct child exits."
+    )
+    with temporary_directory(prefix="jackin-timeout-no-pipe-probe-") as temp_dir:
+        temporary_root = Path(temp_dir)
+        script = temporary_root / "no-pipe-descendant.py"
+        script.write_text(
+            "import os,subprocess,sys,time\n"
+            "descendant=subprocess.Popen([sys.executable,'-c',"
+            "\"import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); time.sleep(30)\"],"
+            "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n"
+            "print('DESCENDANT_PID='+str(descendant.pid), flush=True)\n"
+            "print('OWNED_PGID='+str(os.getpgrp()), flush=True)\n"
+            "time.sleep(30)\n",
+            encoding="utf-8",
+        )
+        input_before = snapshot_files(temporary_root)
+        executable_before = path_state(script)
+        started = time.monotonic()
+        command = [sys.executable, str(script)]
+        process = run_with_timeout(command, 0.15, cwd=temporary_root)
+        elapsed = time.monotonic() - started
+        captured_output = "\n".join((
+            process["timeout_partial_stdout"],
+            process["stdout"],
+        ))
+        pid_match = re.search(r"DESCENDANT_PID=(\d+)", captured_output)
+        pgid_match = re.search(r"OWNED_PGID=(\d+)", captured_output)
+        descendant_pid = int(pid_match.group(1)) if pid_match else None
+        reported_pgid = int(pgid_match.group(1)) if pgid_match else None
+
+        def process_is_live(pid: int) -> bool:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return False
+            if sys.platform.startswith("linux"):
+                try:
+                    process_stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+                    state = process_stat.rsplit(")", 1)[1].strip().split(maxsplit=1)[0]
+                    if state in {"Z", "X"}:
+                        return False
+                except FileNotFoundError:
+                    return False
+                except (IndexError, OSError):
+                    return True
+            return True
+
+        descendant_still_live: bool | None = None
+        if descendant_pid is not None:
+            descendant_still_live = process_is_live(descendant_pid)
+            for _ in range(40):
+                if not descendant_still_live:
+                    break
+                time.sleep(0.025)
+                descendant_still_live = process_is_live(descendant_pid)
+
+            # A failed or incomplete assertion must not leave this probe's
+            # owned group running. The group ID is the one created for this
+            # execution; never inspect or signal a different group.
+            if os.name == "posix" and descendant_still_live is not False:
+                try:
+                    os.killpg(process["process_group_id"], signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, TypeError):
+                    pass
+                if descendant_pid is not None:
+                    for _ in range(40):
+                        time.sleep(0.025)
+                        if not process_is_live(descendant_pid):
+                            descendant_still_live = False
+                            break
+
+        input_after = snapshot_files(temporary_root)
+        executable_after = path_state(script)
+        expected_direct_exit = -signal.SIGTERM
+        passed = (
+            os.name == "posix"
+            and process["timed_out"]
+            and process["termination_signals"] == ["SIGTERM", "SIGKILL"]
+            and process["exit_code"] == expected_direct_exit
+            and process["child_reaped"]
+            and descendant_pid is not None
+            and reported_pgid == process["process_group_id"]
+            and descendant_still_live is False
+            and elapsed <= 1.5
+            and input_before == input_after
+            and executable_before == executable_after
+        )
+        return {
+            "scenario": scenario,
+            "passed": passed,
+            "argv": process["argv"],
+            "elapsed_seconds": round(elapsed, 6),
+            "timeout_seconds": process["timeout_seconds"],
+            "timed_out": process["timed_out"],
+            "exit_code": process["exit_code"],
+            "expected_direct_child_exit_code": expected_direct_exit,
+            "timeout_partial_stdout": process["timeout_partial_stdout"],
+            "timeout_partial_stderr": process["timeout_partial_stderr"],
+            "stdout": process["stdout"],
+            "stderr": process["stderr"],
+            "termination_signals": process["termination_signals"],
+            "child_reaped": process["child_reaped"],
+            "process_group_id": process["process_group_id"],
+            "reported_owned_pgid": reported_pgid,
+            "descendant_pid": descendant_pid,
+            "descendant_still_live": descendant_still_live,
             "input_sha256_before": snapshot_states(input_before),
             "input_sha256_after": snapshot_states(input_after),
             "input_changes": snapshot_changes(input_before, input_after),
@@ -5598,6 +5721,7 @@ print('{}')
         runner_inventory_control_probe("duplicate"),
         runner_inventory_control_probe("unexpected"),
         runner_inventory_control_probe("complete"),
+        no_pipe_descendant_timeout_probe(),
     ]
     runner_control_inventory = runner_check_inventory_report([
         check.get("scenario") for check in runner_checks
