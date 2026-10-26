@@ -4,6 +4,8 @@
 use super::validate_temporary_parent_facts;
 use rustix::fs::FileType;
 #[cfg(target_os = "linux")]
+use rustix::fs::{Mode, OFlags, open};
+#[cfg(target_os = "linux")]
 use std::path::Path;
 use std::{
     fs,
@@ -74,7 +76,12 @@ fn filesystem_validation_rejects_an_inherited_default_acl() {
     fs::create_dir(&parent).expect("create ACL parent");
     fs::set_permissions(&parent, fs::Permissions::from_mode(0o700))
         .expect("protect ACL parent mode");
-    let descriptor = fs::File::open(&parent).expect("open ACL parent");
+    let descriptor = open(
+        &parent,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .expect("open ACL parent without following links");
     super::super::secure_install::set_source_linux_acl_fixture(&descriptor, true)
         .expect("install default ACL fixture");
 
