@@ -54,7 +54,7 @@ Not responsible for: protocol encoding (`jackin-protocol`), host-side launch orc
 | [`services.rs`](src/services.rs) · [`services/`](src/services) | side-effect adapters | — |
 | [`util.rs`](src/util.rs) · [`util/`](src/util) | shared bounded helpers | [`tests.rs`](src/util/tests.rs) |
 | [`wordlist.rs`](src/wordlist.rs) · [`wordlist/`](src/wordlist) | tab codenames | [`tests.rs`](src/wordlist/tests.rs) |
-| `alloc_telemetry.rs` (removed) | heap profiler guard removed with the `dhat-heap` feature; no profiler surface remains | — |
+| [`alloc_telemetry.rs`](src/alloc_telemetry.rs) | Opt-in live DHAT heap guard; requires `dhat-heap` and `JACKIN_DHAT_ALLOC_LOG`. Testing mode writes no profile artifact on exit. | — |
 | [`debug_panic.rs`](src/debug_panic.rs) · [`debug_panic/`](src/debug_panic) | force-panic debug hook | [`tests.rs`](src/debug_panic/tests.rs) |
 
 ## Public API

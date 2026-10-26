@@ -183,7 +183,10 @@ pub(crate) fn host_runtime_passthrough_env(
     vars.into_iter()
         .filter_map(|(key, value)| {
             if key.starts_with("JACKIN_DISABLE_")
-                || matches!(key.as_str(), "JACKIN_CAPSULE_FORCE_PANIC" | "TZ")
+                || matches!(
+                    key.as_str(),
+                    "JACKIN_DHAT_ALLOC_LOG" | "JACKIN_CAPSULE_FORCE_PANIC" | "TZ"
+                )
             {
                 Some(format!("{key}={value}"))
             } else {
@@ -202,6 +205,25 @@ pub(crate) fn telemetry_runtime_envs_for(level: jackin_diagnostics::TelemetryLev
         jackin_diagnostics::TelemetryLevel::Trace => "trace",
     };
     vec![format!("JACKIN_TELEMETRY_LEVEL={level}")]
+}
+
+#[cfg(test)]
+mod dhat_allocation_passthrough_tests {
+    use super::host_runtime_passthrough_env;
+
+    #[test]
+    fn forwards_explicit_dhat_allocation_switch_without_inventing_one() {
+        let forwarded =
+            host_runtime_passthrough_env([("JACKIN_DHAT_ALLOC_LOG".to_owned(), "on".to_owned())]);
+        assert_eq!(forwarded, ["JACKIN_DHAT_ALLOC_LOG=on"]);
+
+        let absent = host_runtime_passthrough_env(std::iter::empty());
+        assert!(
+            absent
+                .iter()
+                .all(|entry| !entry.starts_with("JACKIN_DHAT_ALLOC_LOG="))
+        );
+    }
 }
 
 pub(crate) fn telemetry_runtime_envs(debug: bool) -> Vec<String> {
