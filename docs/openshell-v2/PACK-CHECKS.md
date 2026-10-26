@@ -227,7 +227,7 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | A13 cannot omit fresh Cargo metadata for T39's final post-deletion graph | Reject, exit 1 | PASS, exit 1 |
 | A16 loads the global policy before querying revisions and displaying its source | Reject, exit 1 | PASS, exit 1 |
 | Canonical reports reject wrong nonempty counts and nonempty all-zero counts | Reject malformed report | PASS |
-| Missing-validator short form rejects fabricated `README.md` detail | Reject against expected `validate_pack.py` detail | PASS |
+| Missing-validator short form rejects fabricated [README.md](README.md) detail | Reject against expected `validate_pack.py` detail | PASS |
 | Missing-`tasks` input-error short form rejects fabricated `cases` detail | Reject against expected `tasks` detail | PASS |
 
 The upstream `PASS` fixture shows U02 cannot close T32's assignment.
