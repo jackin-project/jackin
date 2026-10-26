@@ -56,6 +56,21 @@ Early source cases can use recorded ordinary commands before the harness exists.
 P04 registers and validates those records afterwards.
 Do not create fabricated command transcripts for earlier work.
 
+## Early LIVE records and command registration
+
+Only P02 assignments A05 and A06 use early LIVE records.
+Before P03 starts, P02 records actual runs in `evidence/openshell-v2/P02/early-live-records.json`.
+Store one record per case. Bind each record to case ID, task ID P02, exact target ID and complete compatibility tuple, unique run ID, input source commit, start and end times, exact argv, exit code, assertion results, tool name and version, implementation identity, and an independent reviewer identity.
+Retain stdout and stderr or record explicit truncation. Hash every retained output and evidence file. Record resource ownership before effects and cleanup receipts after effects.
+Do not fabricate transcripts, infer LIVE results from source assertions, or downgrade either case.
+P04 validates the record fields, retained hashes, and independent review before importing each result only for P02.
+T12 later runs both cases again through `v2-test`, with separate fresh run IDs. P02 evidence never satisfies T12 or counts as its independent repeat.
+
+P04 harness command registration occurs before P04 qualification.
+The Integration subagent adds only the v2 command enum, dispatch, and required command registration to `crates/tools/jackin-xtask/src/main.rs` through a P04 patch request.
+P04 owns harness implementation and tests. P05 retains workspace and build graph registration for `jackin-xtask` and test support.
+P05 does not own or defer v2 command dispatch.
+
 ## Required target rows
 
 The rows below are selected plan requirements.

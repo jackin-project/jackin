@@ -156,6 +156,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/P00/`.
 
+**Task report:** `evidence/openshell-v2/P00/implementation.json`.
+
 #### Procedure
 
 1. Record the current commit, branch, dirty files, submodules, and tool versions.
@@ -222,6 +224,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/P01/`.
 
+**Task report:** `evidence/openshell-v2/P01/implementation.json`.
+
 #### Procedure
 
 1. Dispatch the seven read-only reviews in SUBAGENTS.md.
@@ -281,6 +285,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 - docs/openshell-v2/evidence/upstream-contracts.json
 - compatibility.lock.toml through the integration subagent
+- evidence/openshell-v2/P02/early-live-records.json
 
 #### Required inputs
 
@@ -288,6 +293,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - C01 and the dependency register in SPEC.md.
 
 **Task test directory:** `tests/v2/tasks/P02/`.
+
+**Task report:** `evidence/openshell-v2/P02/implementation.json`.
 
 #### Procedure
 
@@ -302,6 +309,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 9. Create U00 through U08 work inputs from actual source paths.
 10. Record one coherent candidate tuple with immutable artifact references.
 11. Record unavailable credentials and test environments as blockers.
+12. Record actual P02 LIVE runs for A05 and A06 before P03 starts.
 
 #### Pass conditions
 
@@ -309,6 +317,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - No invented RPC field or driver feature enters the adapter contract.
 - The mTLS distinction between the release and candidate source is recorded.
 - Every missing platform contract has an upstream task owner.
+- Early A05 and A06 records bind targets, commands, outputs, exits, tools, source, retained evidence hashes, and independent review.
 
 **Acceptance cases:** A04, A05, A06.
 
@@ -325,6 +334,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - `evidence/openshell-v2/P02/commands.jsonl`
 - `evidence/openshell-v2/P02/source-map.json`
 - `evidence/openshell-v2/P02/diff.patch`
+- `evidence/openshell-v2/P02/early-live-records.json`
 
 #### Stop conditions
 
@@ -354,6 +364,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - P01 feature register and P02 upstream contract map.
 
 **Task test directory:** `tests/v2/tasks/P03/`.
+
+**Task report:** `evidence/openshell-v2/P03/implementation.json`.
 
 #### Procedure
 
@@ -414,6 +426,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - crates/tools/jackin-xtask/src/v2/
 - tests/v2/
 - docs/openshell-v2/evidence/test-manifest.json
+- crates/tools/jackin-xtask/src/main.rs: v2 command enum and dispatch only, through the Integration subagent
 
 #### Required inputs
 
@@ -421,6 +434,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - The current test toolchain and CI generator inventory.
 
 **Task test directory:** `tests/v2/tasks/P04/`.
+
+**Task report:** `evidence/openshell-v2/P04/implementation.json`.
 
 #### Procedure
 
@@ -435,6 +450,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 9. Add source, dependency, and subprocess-boundary checks.
 10. Make the harness usable before full product integration.
 11. Implement the fixed release_gate_protocol in the evidence harness.
+12. Request Integration to register the four v2 commands in the existing xtask enum and dispatch before P04 qualification.
+13. Validate and import the P02 A05 and A06 records without assigning them to T12.
 
 #### Pass conditions
 
@@ -443,6 +460,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - A failing assertion makes the command fail even when its subprocess exits zero.
 - The harness preserves failing evidence and unrelated resources.
 - Preflight cannot approve release. Finalization requires every fixed protocol prerequisite.
+- All four harness commands resolve through the registered xtask command enum.
+- Imported P02 results satisfy only P02 assignments; T12 runs both cases again.
 
 **Acceptance cases:** A10, A11, A12.
 
@@ -481,7 +500,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 - Root Cargo.toml and Cargo.lock
 - The fourteen production crate roots in C02
-- crates/tools/jackin-xtask and test-support registration
+- crates/tools/jackin-xtask and test-support workspace and build graph registration only
 
 #### Required inputs
 
@@ -489,6 +508,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - The frozen dependency graph and the current Rust toolchain.
 
 **Task test directory:** `tests/v2/tasks/P05/`.
+
+**Task report:** `evidence/openshell-v2/P05/implementation.json`.
 
 #### Procedure
 
@@ -502,6 +523,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 8. Keep the existing qualified toolchain unless compatibility requires a reviewed change.
 9. Make unfinished operations return explicit unsupported errors.
 10. Do not add placeholder success paths.
+11. Register jackin-xtask and test-support in the production workspace and build graph.
 
 #### Pass conditions
 
@@ -509,6 +531,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Core code imports no upstream protobuf, Docker, or database types.
 - Capsule imports no host credential or builder implementation.
 - A clean build fails on any forbidden dependency edge.
+- Workspace and test-support build registration stays in P05; v2 command dispatch stays in P04.
 
 **Acceptance cases:** A13, A14.
 
@@ -554,6 +577,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - OpenShell policy, provider, image, identity, and runtime-status source.
 
 **Task test directory:** `tests/v2/tasks/U00/`.
+
+**Task report:** `evidence/openshell-v2/U00/implementation.json`.
 
 #### Procedure
 
@@ -619,6 +644,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - C05 and historical same-name replacement failures.
 
 **Task test directory:** `tests/v2/tasks/U01/`.
+
+**Task report:** `evidence/openshell-v2/U01/implementation.json`.
 
 #### Procedure
 
@@ -686,6 +713,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/U02/`.
 
+**Task report:** `evidence/openshell-v2/U02/implementation.json`.
+
 #### Procedure
 
 1. Expose a real workload read-only-root contract in OpenShell.
@@ -750,6 +779,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Native policy and provider executable-identity rules.
 
 **Task test directory:** `tests/v2/tasks/U03/`.
+
+**Task report:** `evidence/openshell-v2/U03/implementation.json`.
 
 #### Procedure
 
@@ -816,6 +847,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/U04/`.
 
+**Task report:** `evidence/openshell-v2/U04/implementation.json`.
+
 #### Procedure
 
 1. Define one dedicated engine VM for each admitted execution domain.
@@ -880,6 +913,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - VM lifecycle source and failure fixtures.
 
 **Task test directory:** `tests/v2/tasks/U05/`.
+
+**Task report:** `evidence/openshell-v2/U05/implementation.json`.
 
 #### Procedure
 
@@ -946,6 +981,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/U06/`.
 
+**Task report:** `evidence/openshell-v2/U06/implementation.json`.
+
 #### Procedure
 
 1. Expose only the approved project at the contract's fixed daemon-side path.
@@ -1008,6 +1045,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - VM networking, endpoint transport, and upstream enforcement code.
 
 **Task test directory:** `tests/v2/tasks/U07/`.
+
+**Task report:** `evidence/openshell-v2/U07/implementation.json`.
 
 #### Procedure
 
@@ -1077,6 +1116,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Real Docker, Compose, and Testcontainers fixtures.
 
 **Task test directory:** `tests/v2/tasks/U08/`.
+
+**Task report:** `evidence/openshell-v2/U08/implementation.json`.
 
 #### Procedure
 
@@ -1156,6 +1197,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T10/`.
 
+**Task report:** `evidence/openshell-v2/T10/implementation.json`.
+
 #### Procedure
 
 1. Create a fresh v2 SQLite schema for all durable entities and receipts.
@@ -1222,6 +1265,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T11/`.
 
+**Task report:** `evidence/openshell-v2/T11/implementation.json`.
+
 #### Procedure
 
 1. Start the control service on demand from the CLI.
@@ -1287,6 +1332,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T12/`.
 
+**Task report:** `evidence/openshell-v2/T12/implementation.json`.
+
 #### Procedure
 
 1. Resolve existing upstream gateway registrations without copying their credential store.
@@ -1299,6 +1346,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 8. Redact credentials from Debug, logs, and evidence.
 9. Test simultaneous requests to two gateways with duplicate sandbox names.
 10. Keep version negotiation inside this adapter.
+11. Run separate fresh A05 and A06 LIVE tests with new run IDs after the P04 harness is available.
 
 #### Pass conditions
 
@@ -1306,6 +1354,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Concurrent calls cannot switch each other's target.
 - The production adapter never sets insecure TLS verification.
 - An expired credential produces the correct authentication outcome.
+- T12 records independent fresh runs for A05 and A06; P02 records do not satisfy T12.
 
 **Acceptance cases:** A05, A06, A46, A47.
 
@@ -1354,6 +1403,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - C05, C06, and C13.
 
 **Task test directory:** `tests/v2/tasks/T13/`.
+
+**Task report:** `evidence/openshell-v2/T13/implementation.json`.
 
 #### Procedure
 
@@ -1421,6 +1472,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - P01 role, agent, tool, plugin, and hook inventory.
 
 **Task test directory:** `tests/v2/tasks/T14/`.
+
+**Task report:** `evidence/openshell-v2/T14/implementation.json`.
 
 #### Procedure
 
@@ -1492,6 +1545,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T15/`.
 
+**Task report:** `evidence/openshell-v2/T15/implementation.json`.
+
 #### Procedure
 
 1. Run builds through an explicit builder endpoint and context.
@@ -1559,6 +1614,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T16/`.
 
+**Task report:** `evidence/openshell-v2/T16/implementation.json`.
+
 #### Procedure
 
 1. Build ordinary OCI images with the complete declared agent set.
@@ -1624,6 +1681,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Reviewed old terminal and protocol regression fixtures.
 
 **Task test directory:** `tests/v2/tasks/T17/`.
+
+**Task report:** `evidence/openshell-v2/T17/implementation.json`.
 
 #### Procedure
 
@@ -1694,6 +1753,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T18/`.
 
+**Task report:** `evidence/openshell-v2/T18/implementation.json`.
+
 #### Procedure
 
 1. Implement the serve command without root or PID1 requirements.
@@ -1761,6 +1822,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - C09 and C10.
 
 **Task test directory:** `tests/v2/tasks/T19/`.
+
+**Task report:** `evidence/openshell-v2/T19/implementation.json`.
 
 #### Procedure
 
@@ -1832,6 +1895,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T20/`.
 
+**Task report:** `evidence/openshell-v2/T20/implementation.json`.
+
 #### Procedure
 
 1. Implement Shared, Worktree, and Clone as explicit source choices.
@@ -1900,6 +1965,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T21/`.
 
+**Task report:** `evidence/openshell-v2/T21/implementation.json`.
+
 #### Procedure
 
 1. Resolve stable Account IDs separately from display labels and provider records.
@@ -1966,6 +2033,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T22/`.
 
+**Task report:** `evidence/openshell-v2/T22/implementation.json`.
+
 #### Procedure
 
 1. Implement explicit agent argv, environment, native-login, usage, and resume adapters.
@@ -2031,6 +2100,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - All build, role, account, project, and Capsule receipts.
 
 **Task test directory:** `tests/v2/tasks/T23/`.
+
+**Task report:** `evidence/openshell-v2/T23/implementation.json`.
 
 #### Procedure
 
@@ -2104,6 +2175,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T24/`.
 
+**Task report:** `evidence/openshell-v2/T24/implementation.json`.
+
 #### Procedure
 
 1. Group several execution domains under one logical instance.
@@ -2174,6 +2247,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T25/`.
 
+**Task report:** `evidence/openshell-v2/T25/implementation.json`.
+
 #### Procedure
 
 1. Keep usage requests and interpretation in trusted host code.
@@ -2238,6 +2313,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Qualified OpenShell domain and credential mechanisms.
 
 **Task test directory:** `tests/v2/tasks/T26/`.
+
+**Task report:** `evidence/openshell-v2/T26/implementation.json`.
 
 #### Procedure
 
@@ -2309,6 +2386,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T27/`.
 
+**Task report:** `evidence/openshell-v2/T27/implementation.json`.
+
 #### Procedure
 
 1. Capture the declared project baseline and selected dirty or untracked content.
@@ -2376,6 +2455,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - The command semantics in SPEC.md.
 
 **Task test directory:** `tests/v2/tasks/T28/`.
+
+**Task report:** `evidence/openshell-v2/T28/implementation.json`.
 
 #### Procedure
 
@@ -2445,6 +2526,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T29/`.
 
+**Task report:** `evidence/openshell-v2/T29/implementation.json`.
+
 #### Procedure
 
 1. Implement target list, load, hardline, shell, inspect, checkpoint, handoff, eject, exile, purge, and doctor entry points.
@@ -2512,6 +2595,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T30/`.
 
+**Task report:** `evidence/openshell-v2/T30/implementation.json`.
+
 #### Procedure
 
 1. Create authenticated private forwards through OpenShell.
@@ -2578,6 +2663,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T31/`.
 
+**Task report:** `evidence/openshell-v2/T31/implementation.json`.
+
 #### Procedure
 
 1. Track builder cache, registry artifacts, prepared images, and recreation artifacts separately.
@@ -2642,6 +2729,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Reviewed frozen-policy and result-binding logic from the old workflow code.
 
 **Task test directory:** `tests/v2/tasks/T32/`.
+
+**Task report:** `evidence/openshell-v2/T32/implementation.json`.
 
 #### Procedure
 
@@ -2710,6 +2799,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T33/`.
 
+**Task report:** `evidence/openshell-v2/T33/implementation.json`.
+
 #### Procedure
 
 1. Resolve the engine request before domain creation.
@@ -2776,6 +2867,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T34/`.
 
+**Task report:** `evidence/openshell-v2/T34/implementation.json`.
+
 #### Procedure
 
 1. Port required workflow state and repair semantics to v2 operations.
@@ -2840,6 +2933,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - The complete v2 application and approved live-account fixtures.
 
 **Task test directory:** `tests/v2/tasks/T35/`.
+
+**Task report:** `evidence/openshell-v2/T35/implementation.json`.
 
 #### Procedure
 
@@ -2907,6 +3002,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T36/`.
 
+**Task report:** `evidence/openshell-v2/T36/implementation.json`.
+
 #### Procedure
 
 1. Test each required VM architecture and fixed resource shape.
@@ -2971,6 +3068,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - The pinned dedicated-supervisor tuple and approved cluster access.
 
 **Task test directory:** `tests/v2/tasks/T37/`.
+
+**Task report:** `evidence/openshell-v2/T37/implementation.json`.
 
 #### Procedure
 
@@ -3041,6 +3140,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 **Task test directory:** `tests/v2/tasks/T38/`.
 
+**Task report:** `evidence/openshell-v2/T38/implementation.json`.
+
 #### Procedure
 
 1. Inject failure before and after every journaled external effect.
@@ -3109,6 +3210,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Passing replacement evidence and the new production dependency graph.
 
 **Task test directory:** `tests/v2/tasks/T39/`.
+
+**Task report:** `evidence/openshell-v2/T39/implementation.json`.
 
 #### Procedure
 
@@ -3179,6 +3282,8 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - The frozen feature register and complete compatibility tuples.
 
 **Task test directory:** `tests/v2/tasks/T40/`.
+
+**Task report:** `evidence/openshell-v2/T40/implementation.json`.
 
 #### Procedure
 

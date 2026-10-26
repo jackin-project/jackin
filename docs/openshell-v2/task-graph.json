@@ -145,7 +145,8 @@
       ],
       "write_scope": [
         "docs/openshell-v2/evidence/upstream-contracts.json",
-        "compatibility.lock.toml through the integration subagent"
+        "compatibility.lock.toml through the integration subagent",
+        "evidence/openshell-v2/P02/early-live-records.json"
       ],
       "inputs": [
         "Pinned OpenShell SDK, protobufs, server handlers, driver code, and CLI registration code.",
@@ -162,13 +163,15 @@
         "Identify every missing authoritative observation and mutation precondition.",
         "Create U00 through U08 work inputs from actual source paths.",
         "Record one coherent candidate tuple with immutable artifact references.",
-        "Record unavailable credentials and test environments as blockers."
+        "Record unavailable credentials and test environments as blockers.",
+        "Record actual P02 LIVE runs for A05 and A06 before P03 starts."
       ],
       "acceptance": [
         "Each API mapping includes a source path, symbol, commit, and qualification case.",
         "No invented RPC field or driver feature enters the adapter contract.",
         "The mTLS distinction between the release and candidate source is recorded.",
-        "Every missing platform contract has an upstream task owner."
+        "Every missing platform contract has an upstream task owner.",
+        "Early A05 and A06 records bind targets, commands, outputs, exits, tools, source, retained evidence hashes, and independent review."
       ],
       "remove_or_replace": [
         "Do not create a permanent custom authentication stack.",
@@ -192,7 +195,8 @@
         "evidence/openshell-v2/P02/test-results.json",
         "evidence/openshell-v2/P02/commands.jsonl",
         "evidence/openshell-v2/P02/source-map.json",
-        "evidence/openshell-v2/P02/diff.patch"
+        "evidence/openshell-v2/P02/diff.patch",
+        "evidence/openshell-v2/P02/early-live-records.json"
       ],
       "test_write_scope": "tests/v2/tasks/P02/",
       "review_rule": "A different subagent reviews the result. The integration subagent reruns affected tests after merge.",
@@ -269,7 +273,8 @@
       "write_scope": [
         "crates/tools/jackin-xtask/src/v2/",
         "tests/v2/",
-        "docs/openshell-v2/evidence/test-manifest.json"
+        "docs/openshell-v2/evidence/test-manifest.json",
+        "crates/tools/jackin-xtask/src/main.rs: v2 command enum and dispatch only, through the Integration subagent"
       ],
       "inputs": [
         "ACCEPTANCE.md and the frozen schemas.",
@@ -286,14 +291,18 @@
         "Add secret redaction and canary-leak assertions.",
         "Add source, dependency, and subprocess-boundary checks.",
         "Make the harness usable before full product integration.",
-        "Implement the fixed release_gate_protocol in the evidence harness."
+        "Implement the fixed release_gate_protocol in the evidence harness.",
+        "Request Integration to register the four v2 commands in the existing xtask enum and dispatch before P04 qualification.",
+        "Validate and import the P02 A05 and A06 records without assigning them to T12."
       ],
       "acceptance": [
         "An omitted case makes the full gate fail.",
         "An unavailable target produces BLOCKED, not PASS.",
         "A failing assertion makes the command fail even when its subprocess exits zero.",
         "The harness preserves failing evidence and unrelated resources.",
-        "Preflight cannot approve release. Finalization requires every fixed protocol prerequisite."
+        "Preflight cannot approve release. Finalization requires every fixed protocol prerequisite.",
+        "All four harness commands resolve through the registered xtask command enum.",
+        "Imported P02 results satisfy only P02 assignments; T12 runs both cases again."
       ],
       "remove_or_replace": [
         "Replace old CI assumptions that equate a command exit with complete qualification.",
@@ -335,7 +344,7 @@
       "write_scope": [
         "Root Cargo.toml and Cargo.lock",
         "The fourteen production crate roots in C02",
-        "crates/tools/jackin-xtask and test-support registration"
+        "crates/tools/jackin-xtask and test-support workspace and build graph registration only"
       ],
       "inputs": [
         "P01 disposition map.",
@@ -351,13 +360,15 @@
         "Add compile-time dependency-boundary tests.",
         "Keep the existing qualified toolchain unless compatibility requires a reviewed change.",
         "Make unfinished operations return explicit unsupported errors.",
-        "Do not add placeholder success paths."
+        "Do not add placeholder success paths.",
+        "Register jackin-xtask and test-support in the production workspace and build graph."
       ],
       "acceptance": [
         "The production graph contains no old runtime backend crate.",
         "Core code imports no upstream protobuf, Docker, or database types.",
         "Capsule imports no host credential or builder implementation.",
-        "A clean build fails on any forbidden dependency edge."
+        "A clean build fails on any forbidden dependency edge.",
+        "Workspace and test-support build registration stays in P05; v2 command dispatch stays in P04."
       ],
       "remove_or_replace": [
         "Remove old workspace-member and feature edges.",
@@ -1123,13 +1134,15 @@
         "Implement bounded connection errors and supported token refresh.",
         "Redact credentials from Debug, logs, and evidence.",
         "Test simultaneous requests to two gateways with duplicate sandbox names.",
-        "Keep version negotiation inside this adapter."
+        "Keep version negotiation inside this adapter.",
+        "Run separate fresh A05 and A06 LIVE tests with new run IDs after the P04 harness is available."
       ],
       "acceptance": [
         "Wrong certificates and wrong server identities fail closed.",
         "Concurrent calls cannot switch each other's target.",
         "The production adapter never sets insecure TLS verification.",
-        "An expired credential produces the correct authentication outcome."
+        "An expired credential produces the correct authentication outcome.",
+        "T12 records independent fresh runs for A05 and A06; P02 records do not satisfy T12."
       ],
       "remove_or_replace": [
         "Remove old Docker and Apple connection clients from production composition.",

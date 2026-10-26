@@ -23,6 +23,20 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def snapshot_files(root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(root).as_posix(): sha256(path)
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and "__pycache__" not in path.parts
+    }
+
+
+def input_state(digest: str | None) -> dict[str, str | None]:
+    if digest is None:
+        return {"state": "missing", "sha256": None}
+    return {"state": "present", "sha256": digest}
+
+
 def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -338,7 +352,9 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
         temporary_root = Path(temp_dir)
         pack = temporary_root / "pack"
         shutil.copytree(ROOT, pack, ignore=shutil.ignore_patterns("__pycache__"))
+        inputs_before = snapshot_files(pack)
         mutate(pack)
+        inputs_after = snapshot_files(pack)
         validator_copy = pack / "validate_pack.py"
         if fake_stdout is not None:
             executable = fake_validator(temporary_root, fake_stdout, fake_stderr, expected_exit)
@@ -378,10 +394,22 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
             "passed": passed,
             "stdout": process.stdout,
             "stderr": process.stderr,
+            "tested_inputs": {
+                path: input_state(inputs_after.get(path))
+                for path in sorted(set(inputs_before) | set(inputs_after))
+            },
+            "changed_inputs": {
+                path: {
+                    "before": input_state(inputs_before.get(path)),
+                    "after": input_state(inputs_after.get(path)),
+                }
+                for path in sorted(set(inputs_before) | set(inputs_after))
+                if inputs_before.get(path) != inputs_after.get(path)
+            },
             "fixture_sha256": {
-                "task-graph.json": sha256(pack / "task-graph.json"),
-                "acceptance-cases.json": sha256(pack / "acceptance-cases.json"),
-                "ACCEPTANCE.md": sha256(pack / "ACCEPTANCE.md"),
+                "task-graph.json": inputs_after.get("task-graph.json"),
+                "acceptance-cases.json": inputs_after.get("acceptance-cases.json"),
+                "ACCEPTANCE.md": inputs_after.get("ACCEPTANCE.md"),
             },
         }
 
@@ -733,6 +761,125 @@ def main() -> int:
         1, ["Task completion rules match the fixed evidence contract"],
     ))
 
+    def remove_standard_task_artifact(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == "P00")
+        task["required_artifacts"].remove("evidence/openshell-v2/P00/review.json")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P00")
+    receipts.append(run_fixture(
+        "canonical review receipt cannot be removed with synchronized cards",
+        remove_standard_task_artifact,
+        1, ["Task required artifacts match canonical evidence set and report path"],
+    ))
+
+    def relocate_report_path(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == "P00")
+        task["report_path"] = "evidence/elsewhere/P00/implementation.json"
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P00")
+    receipts.append(run_fixture(
+        "report path cannot move from its canonical task receipt directory",
+        relocate_report_path,
+        1, ["Task required artifacts match canonical evidence set and report path"],
+    ))
+
+    def remove_upstream_change_artifact(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == "U00")
+        task["required_artifacts"].remove("evidence/openshell-v2/U00/upstream-change.json")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "U00")
+    receipts.append(run_fixture(
+        "upstream task keeps its task-specific change receipt",
+        remove_upstream_change_artifact,
+        1, ["Task required artifacts match canonical evidence set and report path"],
+    ))
+
+    def remove_early_live_artifact(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == "P02")
+        task["required_artifacts"].remove("evidence/openshell-v2/P02/early-live-records.json")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P02")
+    receipts.append(run_fixture(
+        "P02 keeps the required early LIVE records with synchronized cards",
+        remove_early_live_artifact,
+        1, ["Task required artifacts match canonical evidence set and report path"],
+    ))
+
+    def weaken_early_live_task(pack: Path, task_id: str, field: str, exact_text: str) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == task_id)
+        task[field].remove(exact_text)
+        write_json(graph_path, graph)
+        sync_task_packet(pack, task_id)
+    receipts.append(run_fixture(
+        "P02 cannot omit actual early LIVE execution",
+        lambda pack: weaken_early_live_task(
+            pack, "P02", "steps",
+            "Record actual P02 LIVE runs for A05 and A06 before P03 starts.",
+        ),
+        1, ["P02 bootstrap records, P04 imports, and T12 reruns A05/A06"],
+    ))
+    receipts.append(run_fixture(
+        "T12 cannot reuse the earlier P02 LIVE results",
+        lambda pack: weaken_early_live_task(
+            pack, "T12", "steps",
+            "Run separate fresh A05 and A06 LIVE tests with new run IDs after the P04 harness is available.",
+        ),
+        1, ["P02 bootstrap records, P04 imports, and T12 reruns A05/A06"],
+    ))
+    receipts.append(run_fixture(
+        "P04 must validate and import early records without closing T12",
+        lambda pack: weaken_early_live_task(
+            pack, "P04", "steps",
+            "Validate and import the P02 A05 and A06 records without assigning them to T12.",
+        ),
+        1, ["P02 bootstrap records, P04 imports, and T12 reruns A05/A06"],
+    ))
+
+    def weaken_registration_scope(pack: Path, task_id: str, old: str, new: str) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        task = next(task for task in graph["tasks"] if task["id"] == task_id)
+        task["write_scope"].remove(old)
+        task["write_scope"].append(new)
+        write_json(graph_path, graph)
+        sync_task_packet(pack, task_id)
+    receipts.append(run_fixture(
+        "P04 registration is limited to enum and dispatch through Integration",
+        lambda pack: weaken_registration_scope(
+            pack, "P04",
+            "crates/tools/jackin-xtask/src/main.rs: v2 command enum and dispatch only, through the Integration subagent",
+            "crates/tools/jackin-xtask/src/main.rs",
+        ),
+        1, ["P04 harness command registration and P05 build wiring scopes agree"],
+    ))
+    receipts.append(run_fixture(
+        "P05 retains only workspace and build graph registration",
+        lambda pack: weaken_registration_scope(
+            pack, "P05",
+            "crates/tools/jackin-xtask and test-support workspace and build graph registration only",
+            "crates/tools/jackin-xtask and test-support registration",
+        ),
+        1, ["P04 harness command registration and P05 build wiring scopes agree"],
+    ))
+    receipts.append(run_fixture(
+        "P05 must register xtask and test support in the workspace graph",
+        lambda pack: weaken_early_live_task(
+            pack, "P05", "steps",
+            "Register jackin-xtask and test-support in the production workspace and build graph.",
+        ),
+        1, ["P04 harness command registration and P05 build wiring scopes agree"],
+    ))
+
     def mutate_release_protocol(pack: Path, change: Callable[[dict[str, Any]], None]) -> None:
         graph_path = pack / "task-graph.json"
         graph = read_json(graph_path)
@@ -1060,9 +1207,7 @@ def main() -> int:
         "source_sha256": {
             "validate_pack.py": sha256(VALIDATOR),
             "validate_assignment_fixtures.py": sha256(Path(__file__)),
-            "task-graph.json": sha256(ROOT / "task-graph.json"),
-            "acceptance-cases.json": sha256(ROOT / "acceptance-cases.json"),
-            "ACCEPTANCE.md": sha256(ROOT / "ACCEPTANCE.md"),
+            "pack_files": snapshot_files(ROOT),
         },
         "fixtures": receipts,
     }

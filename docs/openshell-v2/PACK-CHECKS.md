@@ -42,9 +42,10 @@ The upgraded validator requires that field; old manifests without it fail valida
 Markdown assignment labels record initial `NOT_RUN` status and stay fixed during ordinary progress.
 
 `validate_assignment_fixtures.py` runs the validator on temporary pack copies.
-Its raw receipts include each actual argument vector, stdout, stderr, exit code, and fixture source hashes.
-It writes one JSON report to stdout and does not modify the pack.
-Redirect stdout outside the repository to retain raw receipts.
+Each receipt records the actual argument vector, stdout, stderr, exit code, executed validator path and hash, and fixture-source hashes.
+Each receipt hashes every tested pack input after mutation. It records changed-input hashes before and after mutation, with explicit `present` or `missing` states.
+The top-level source map hashes the validator, fixture runner, and every source-pack file.
+The runner writes one JSON report to stdout and does not modify the pack. Redirect stdout outside the repository to retain raw receipts.
 
 ## Counts
 
@@ -54,7 +55,7 @@ Redirect stdout outside the repository to retain raw receipts.
 | Acceptance cases | 125 |
 | Mapped specification headings | 30 |
 | Topological readiness groups | 20 |
-| Checked procedural sentences | 1561 |
+| Checked procedural sentences | 1571 |
 
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
@@ -76,6 +77,8 @@ Keep no more than eight actual subagents active at once.
 | Task case references are unique string IDs; completion rules match the fixed contract | PASS |
 | Release-gate protocol semantics, final-case ownership, and P04/T40/A123 mirrors match | PASS |
 | Review packets bind candidate diffs before merge and require merged checks before completion | PASS |
+| P02 early LIVE records, P04 imports, and separate T12 reruns match the fixed contract | PASS |
+| P04 command-dispatch patch and P05 build-registration scopes match | PASS |
 | Acceptance cases have unique string task owners | PASS |
 | Dependency graph has no cycle and stored groups match | PASS |
 | Assignment rows have exact unique owners and valid statuses | PASS |
@@ -84,7 +87,8 @@ Keep no more than eight actual subagents active at once.
 | Task progress waits for completed dependencies | PASS |
 | `PASS` tasks have passing results for their own assignments | PASS |
 | Task test references, case coverage, and ownership maps agree | PASS |
-| Task graph matches indexes and task cards | PASS |
+| Task required artifacts match the canonical six receipts and report path | PASS |
+| Task graph matches indexes and task cards, including report paths | PASS |
 | Acceptance detailed-case anchor is unique | PASS |
 | Acceptance policy before detailed cases matches fixed checksum | PASS |
 | Acceptance case blocks match the manifest | PASS |
@@ -97,8 +101,8 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 66 scenarios passed their exact report and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 48 targeted scenarios cover assignment ownership, source citations, fixed acceptance policy, malformed manifests, release-gate protocol structure, and validator reports.
+All 76 scenarios passed their exact report and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 58 targeted scenarios cover assignment ownership, source citations, canonical task artifacts, early LIVE ownership, command registration, fixed acceptance policy, malformed manifests, release-gate protocol structure, and validator reports.
 The downstream case below is A22, owned by U02 and T32.
 
 | Temporary-copy fixture | Expected validator result | Observed |
@@ -139,9 +143,20 @@ The downstream case below is A22, owned by U02 and T32.
 | Inconsistent counts, checks, failures, scope, or exit code, including an input-error report with exit 1 | Reject malformed report | PASS |
 | Duplicate or malformed check records | Reject malformed report | PASS |
 | Unexpected extra failure name | Reject report against exact expected failures | PASS |
+| Canonical review receipt removed with synchronized task graph, PLAN, and card | Reject, exit 1 | PASS, exit 1 |
+| Report path relocated with synchronized task graph, PLAN, and card | Reject, exit 1 | PASS, exit 1 |
+| U00 upstream-change receipt removed with synchronized task graph, PLAN, and card | Reject, exit 1 | PASS, exit 1 |
+| P02 early LIVE receipt removed with synchronized task graph, PLAN, and card | Reject, exit 1 | PASS, exit 1 |
+| P02 early LIVE execution requirement removed | Reject, exit 1 | PASS, exit 1 |
+| T12 separate fresh LIVE rerun requirement removed | Reject, exit 1 | PASS, exit 1 |
+| P04 import-without-T12-credit requirement removed | Reject, exit 1 | PASS, exit 1 |
+| P04 command-dispatch scope widened beyond the Integration patch | Reject, exit 1 | PASS, exit 1 |
+| P05 command-dispatch ownership deferred from P04 | Reject, exit 1 | PASS, exit 1 |
+| P05 workspace and build graph registration step removed | Reject, exit 1 | PASS, exit 1 |
 
 The upstream `PASS` fixture shows U02 cannot close T32's assignment.
-Each receipt records actual arguments, stdout, stderr, exit code, executable and fixture hashes, plus report-validation results.
+Each raw receipt binds every mutated file actually tested. The traceability-owner receipt hashes both `traceability.json` and `TRACEABILITY.md`; the missing-validator receipt records `validate_pack.py` as `missing`.
+Receipts also hash task cards, `PLAN.md`, `SUBAGENTS.md`, `PACK-CHECKS.md`, and every other copied pack input. They preserve the actual validator executable and fixture source hashes.
 The runner does not write receipts inside the repository.
 Release-gate fixtures mutate only temporary copies of the protocol and its mirrors. They test static refusal and consistency rules, not a release candidate or runtime finalizer.
 
@@ -154,5 +169,5 @@ Do not use this result as a full ASD-STE100 conformance claim.
 
 All 46 tasks remain `NOT_STARTED`.
 All 125 cases and their per-task assignment results remain `NOT_RUN`.
-The initial status text in `ACCEPTANCE.md` remains fixed during execution.
+The initial status text in `ACCEPTANCE.md` remains fixed during execution. Its additive policy prefix digest is `2b39daffda63e2b791c0d442cc1175dea030c92e76facd202b584b93c7ddd8ee`.
 Implementation completion still requires the task, review, and runtime evidence in the pack.

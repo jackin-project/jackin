@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 ORIGINAL_SPEC_SHA256 = "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe767523a3e"
-ACCEPTANCE_POLICY_SHA256 = "56501d9b997996535e14e5014ff477c19784366fbacf83fe613a100da7cebd1b"
+ACCEPTANCE_POLICY_SHA256 = "2b39daffda63e2b791c0d442cc1175dea030c92e76facd202b584b93c7ddd8ee"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
@@ -117,6 +117,42 @@ REVIEW_PACKET_REQUIREMENTS = [
     "Resolve review findings before the integration merge.",
     "Run merged-result checks before task completion.",
 ]
+TASK_ARTIFACTS = ("implementation.json", "review.json", "test-results.json",
+                  "commands.jsonl", "source-map.json")
+EARLY_LIVE_RECORD_PATH = "evidence/openshell-v2/P02/early-live-records.json"
+P02_EARLY_LIVE_STEP = (
+    "Record actual P02 LIVE runs for A05 and A06 before P03 starts."
+)
+P02_EARLY_LIVE_ACCEPTANCE = (
+    "Early A05 and A06 records bind targets, commands, outputs, exits, tools, source, retained evidence hashes, and independent review."
+)
+P04_EARLY_LIVE_STEP = (
+    "Validate and import the P02 A05 and A06 records without assigning them to T12."
+)
+P04_EARLY_LIVE_ACCEPTANCE = (
+    "Imported P02 results satisfy only P02 assignments; T12 runs both cases again."
+)
+T12_FRESH_LIVE_STEP = (
+    "Run separate fresh A05 and A06 LIVE tests with new run IDs after the P04 harness is available."
+)
+T12_FRESH_LIVE_ACCEPTANCE = (
+    "T12 records independent fresh runs for A05 and A06; P02 records do not satisfy T12."
+)
+P04_COMMAND_REGISTRATION_SCOPE = (
+    "crates/tools/jackin-xtask/src/main.rs: v2 command enum and dispatch only, through the Integration subagent"
+)
+P04_COMMAND_REGISTRATION_STEP = (
+    "Request Integration to register the four v2 commands in the existing xtask enum and dispatch before P04 qualification."
+)
+P04_COMMAND_REGISTRATION_ACCEPTANCE = (
+    "All four harness commands resolve through the registered xtask command enum."
+)
+P05_BUILD_REGISTRATION_SCOPE = (
+    "crates/tools/jackin-xtask and test-support workspace and build graph registration only"
+)
+P05_BUILD_REGISTRATION_STEP = (
+    "Register jackin-xtask and test-support in the production workspace and build graph."
+)
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -154,6 +190,8 @@ def render_task_card(task: dict[str, Any]) -> str:
         *[f"- {item}" for item in task["inputs"]],
         "",
         f"**Task test directory:** `{task['test_write_scope']}`.",
+        "",
+        f"**Task report:** `{task['report_path']}`.",
         "",
         "#### Procedure",
         "",
@@ -352,6 +390,28 @@ def main() -> int:
     check("Declared case count matches", graph["acceptance_case_count"] == len(cases), len(cases))
     check("Expected task count", len(tasks) == 46, len(tasks))
     check("Expected acceptance case count", len(cases) == 125, len(cases))
+    artifact_errors = []
+    for task in tasks:
+        task_id = task.get("id")
+        task_root = f"evidence/openshell-v2/{task_id}"
+        expected_report = f"{task_root}/implementation.json"
+        expected_artifacts = [f"{task_root}/{name}" for name in TASK_ARTIFACTS]
+        expected_artifacts.append(
+            f"{task_root}/upstream-change.json" if isinstance(task_id, str)
+            and task_id.startswith("U") else f"{task_root}/diff.patch"
+        )
+        if task_id == "P02":
+            expected_artifacts.append(EARLY_LIVE_RECORD_PATH)
+        if task.get("report_path") != expected_report or task.get("required_artifacts") != expected_artifacts:
+            artifact_errors.append({
+                "task": task_id,
+                "expected_report_path": expected_report,
+                "actual_report_path": task.get("report_path"),
+                "expected_artifacts": expected_artifacts,
+                "actual_artifacts": task.get("required_artifacts"),
+            })
+    check("Task required artifacts match canonical evidence set and report path",
+          not artifact_errors, artifact_errors)
     bad_completion_rules = [
         {"task": task.get("id"), "completion_rule": task.get("completion_rule")}
         for task in tasks if task.get("completion_rule") != TASK_COMPLETION_RULE
@@ -480,6 +540,42 @@ def main() -> int:
         release_gate_task_mirror_errors.append("A123 must specify refusal assertions and finalization contract")
     check("P04, T40, and A123 mirror the fixed release gate contract",
           not release_gate_task_mirror_errors, release_gate_task_mirror_errors)
+
+    early_live_errors = []
+    p02 = tasks_by_id.get("P02", {})
+    p04 = tasks_by_id.get("P04", {})
+    t12 = tasks_by_id.get("T12", {})
+    for task, label, required_step, required_acceptance in [
+        (p02, "P02", P02_EARLY_LIVE_STEP, P02_EARLY_LIVE_ACCEPTANCE),
+        (p04, "P04", P04_EARLY_LIVE_STEP, P04_EARLY_LIVE_ACCEPTANCE),
+        (t12, "T12", T12_FRESH_LIVE_STEP, T12_FRESH_LIVE_ACCEPTANCE),
+    ]:
+        if required_step not in task.get("steps", []):
+            early_live_errors.append(f"{label} lacks the fixed LIVE evidence step")
+        if required_acceptance not in task.get("acceptance", []):
+            early_live_errors.append(f"{label} lacks the fixed LIVE evidence pass condition")
+    if EARLY_LIVE_RECORD_PATH not in p02.get("write_scope", []):
+        early_live_errors.append("P02 does not own the early LIVE record")
+    for case_id in ("A05", "A06"):
+        case = cases_by_id.get(case_id, {})
+        if case.get("level") != "LIVE" or case.get("tasks") != ["P02", "T12"]:
+            early_live_errors.append(f"{case_id} must remain LIVE and owned by P02 and T12")
+    check("P02 bootstrap records, P04 imports, and T12 reruns A05/A06",
+          not early_live_errors, early_live_errors)
+
+    command_registration_errors = []
+    if P04_COMMAND_REGISTRATION_SCOPE not in p04.get("write_scope", []):
+        command_registration_errors.append("P04 scope must permit only the Integration command-dispatch patch")
+    if P04_COMMAND_REGISTRATION_STEP not in p04.get("steps", []):
+        command_registration_errors.append("P04 must request early command enum and dispatch registration")
+    if P04_COMMAND_REGISTRATION_ACCEPTANCE not in p04.get("acceptance", []):
+        command_registration_errors.append("P04 must require all four commands to resolve")
+    if P05_BUILD_REGISTRATION_SCOPE not in tasks_by_id.get("P05", {}).get("write_scope", []):
+        command_registration_errors.append("P05 must retain only workspace/build graph registration")
+    if P05_BUILD_REGISTRATION_STEP not in tasks_by_id.get("P05", {}).get("steps", []):
+        command_registration_errors.append("P05 must register workspace/build graph after P04")
+    check("P04 harness command registration and P05 build wiring scopes agree",
+          not command_registration_errors, command_registration_errors)
 
     pack_checks = (root / "PACK-CHECKS.md").read_text(encoding="utf-8")
     check("PACK-CHECKS limits release-gate claims to static structure",
