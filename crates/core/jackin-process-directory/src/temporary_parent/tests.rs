@@ -74,8 +74,8 @@ fn filesystem_validation_rejects_an_inherited_default_acl() {
     fs::create_dir(&parent).expect("create ACL parent");
     fs::set_permissions(&parent, fs::Permissions::from_mode(0o700))
         .expect("protect ACL parent mode");
-    let descriptor = std::fs::File::open(&parent).expect("open ACL parent");
-    super::super::secure_install::linux_acl::set_extended_acl_fixture(&descriptor, true)
+    let descriptor = fs::File::open(&parent).expect("open ACL parent");
+    super::super::secure_install::set_source_linux_acl_fixture(&descriptor, true)
         .expect("install default ACL fixture");
 
     let error = super::validate_temporary_parent(Path::new(&parent))
