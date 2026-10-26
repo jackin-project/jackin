@@ -25,9 +25,6 @@ const OWNER_DRIVER_SETUP_MS: &str = "JACKIN_F3_OWNER_DRIVER_SETUP_MS";
 const OWNER_DRIVER_GATE_MS: &str = "JACKIN_F3_OWNER_DRIVER_GATE_MS";
 const OWNER_DRIVER_RECOVERY_MS: &str = "JACKIN_F3_OWNER_DRIVER_RECOVERY_MS";
 const OWNER_DRIVER_GIT_PROGRAM: &str = "JACKIN_F3_OWNER_DRIVER_GIT_PROGRAM";
-const OWNER_DRIVER_PROBE_OUTPUT: &str = "JACKIN_F3_OWNER_DRIVER_PROBE_OUTPUT";
-const OWNER_DRIVER_GATE_RELEASE: &str = "JACKIN_F3_OWNER_DRIVER_GATE_RELEASE";
-const OWNER_DRIVER_GATE_READY: &str = "JACKIN_F3_OWNER_DRIVER_GATE_READY";
 
 fn fixture() -> (tempfile::TempDir, git::LiveRepository, git::OwnedSnapshot) {
     let home =
@@ -856,6 +853,7 @@ struct InstalledOwnerFixture {
     _temporary: tempfile::TempDir,
     repository: PathBuf,
     owner: PathBuf,
+    home: PathBuf,
     path: std::ffi::OsString,
     ready: PathBuf,
     ticks: PathBuf,
@@ -885,6 +883,10 @@ impl InstalledOwnerFixture {
         fs::create_dir(&scratch).expect("create private test support directory");
         fs::set_permissions(&scratch, fs::Permissions::from_mode(0o700))
             .expect("protect test support directory");
+        let home = scratch.join("home");
+        fs::create_dir(&home).expect("create private installed-owner HOME");
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o700))
+            .expect("protect private installed-owner HOME");
         let ready = scratch.join("ready");
         let ticks = scratch.join("ticks");
         let recovery_ready = scratch.join("recovery-ready");
@@ -915,6 +917,7 @@ impl InstalledOwnerFixture {
             _temporary: temporary,
             repository,
             owner,
+            home,
             path: env::join_paths(
                 std::iter::once(bin)
                     .chain(env::split_paths(&env::var_os("PATH").unwrap_or_default())),
@@ -976,7 +979,6 @@ impl InstalledOwnerFixture {
         recovery_ms: u64,
         git_program: Option<&Path>,
     ) -> OwnerChild {
-        let home = env::var_os("HOME").expect("HOME is set");
         let mut command = Command::new(&self.owner);
         command
             .args([
@@ -986,7 +988,7 @@ impl InstalledOwnerFixture {
             ])
             .current_dir(&self.repository)
             .env_clear()
-            .env("HOME", home)
+            .env("HOME", &self.home)
             .env("PATH", &self.path)
             .env(OWNER_DRIVER_CHILD, "1")
             .env(OWNER_DRIVER_EXPECTATION, expectation)
@@ -1010,9 +1012,6 @@ impl InstalledOwnerFixture {
         }
         if matches!(self.mode, OwnerFixtureMode::IsolationGate) {
             command
-                .env(OWNER_DRIVER_PROBE_OUTPUT, &self.probe_output)
-                .env(OWNER_DRIVER_GATE_READY, &self.gate_ready)
-                .env(OWNER_DRIVER_GATE_RELEASE, &self.gate_release)
                 .env("GIT_CONFIG", &self.git_alias_config)
                 .env("GIT_CONFIG_COUNT", "1")
                 .env("GIT_CONFIG_KEY_0", "alias.poison")
@@ -1267,12 +1266,18 @@ fn write_owner_toolchain(
             .expect("fixture bin parent")
             .join("gate-environment"),
     );
+    let probe_output = shell_quote(&bin.parent().expect("fixture bin parent").join("gate-probe"));
+    let gate_release = shell_quote(
+        &bin.parent()
+            .expect("fixture bin parent")
+            .join("gate-release"),
+    );
     let gate_body = if matches!(mode, OwnerFixtureMode::IgnoredSourceGate) {
         "#!/bin/sh\nprintf 'ignored staged-source fixture\\n' > ignored-extra.txt\nexit 0\n"
             .to_owned()
     } else if matches!(mode, OwnerFixtureMode::IsolationGate) {
         format!(
-            "#!/bin/sh\nset -eu\nif git f3-poison-file >/dev/null 2>&1; then exit 81; fi\nif git poison >/dev/null 2>&1; then exit 82; fi\nif cargo f3-poison >/dev/null 2>&1; then exit 83; fi\nif [ \"${{CARGO+x}}\" = x ]; then \"$CARGO\" --version || exit 84; fi\nif [ -n \"${{RUSTC_WRAPPER:-}}\" ]; then \"$RUSTC_WRAPPER\" \"$RUSTC\" --version || exit 85; else \"$RUSTC\" --version >/dev/null || exit 86; fi\ncargo --version >/dev/null || exit 87\nmkdir -p \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" || exit 88\nprintf 'private target\\n' > \"$CARGO_TARGET_DIR/artifact\"\nprintf 'private build\\n' > \"$CARGO_BUILD_BUILD_DIR/artifact\"\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" \"$RUSTC\" \"$(command -v cargo)\" > \"${{JACKIN_F3_OWNER_DRIVER_PROBE_OUTPUT}}\"\n: > {}\nprintf x >> {}\ncount=0\nwhile [ ! -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] && [ \"$count\" -lt 300 ]; do /bin/sleep 0.05; printf x >> {}; count=$((count + 1)); done\n[ -e \"${{JACKIN_F3_OWNER_DRIVER_GATE_RELEASE}}\" ] || exit 89\nexit 0\n",
+            "#!/bin/sh\nset -eu\nif git f3-poison-file >/dev/null 2>&1; then exit 81; fi\nif git poison >/dev/null 2>&1; then exit 82; fi\nif cargo f3-poison >/dev/null 2>&1; then exit 83; fi\nif [ \"${{CARGO+x}}\" = x ]; then \"$CARGO\" --version || exit 84; fi\nif [ -n \"${{RUSTC_WRAPPER:-}}\" ]; then \"$RUSTC_WRAPPER\" \"$RUSTC\" --version || exit 85; else \"$RUSTC\" --version >/dev/null || exit 86; fi\ncargo --version >/dev/null || exit 87\nrust-build-guard -- mise exec --locked -- cargo --version >/dev/null || exit 90\nmkdir -p \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" || exit 88\nprintf 'private target\\n' > \"$CARGO_TARGET_DIR/artifact\"\nprintf 'private build\\n' > \"$CARGO_BUILD_BUILD_DIR/artifact\"\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" \"$CARGO_BUILD_BUILD_DIR\" \"$RUSTC\" \"$(command -v cargo)\" > {probe_output}\n: > {}\nprintf x >> {}\ncount=0\nwhile [ ! -e {gate_release} ] && [ \"$count\" -lt 300 ]; do /bin/sleep 0.05; printf x >> {}; count=$((count + 1)); done\n[ -e {gate_release} ] || exit 89\nexit 0\n",
             shell_quote(gate_ready),
             ticks,
             ticks,
@@ -1322,9 +1327,10 @@ fn write_owner_toolchain(
         shell_quote(bin)
     );
     write_executable(&bin.join("rustup"), rustup_body.as_bytes());
-    let guard = PathBuf::from(env::var_os("HOME").expect("HOME is set"))
-        .join(".local/bin/rust-build-guard");
-    symlink(guard, bin.join("rust-build-guard")).expect("link trusted build guard");
+    write_executable(
+        &bin.join("rust-build-guard"),
+        b"#!/bin/sh\n[ \"$#\" -eq 7 ] && [ \"$1\" = \"--\" ] || exit 90\nshift\ncase \"$1\" in mise|*/mise) ;; *) exit 91 ;; esac\n[ \"$2\" = \"exec\" ] && [ \"$3\" = \"--locked\" ] && [ \"$4\" = \"--\" ] && [ \"$5\" = \"cargo\" ] && [ \"$6\" = \"--version\" ] || exit 92\nexec \"$@\"\n",
+    );
 }
 
 fn write_executable(path: &Path, bytes: &[u8]) {
