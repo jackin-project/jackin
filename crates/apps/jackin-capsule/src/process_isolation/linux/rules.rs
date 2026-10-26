@@ -19,6 +19,16 @@ pub(crate) fn rules_for(
     rules_for_impl(config, instance, cwd, session_root, true)
 }
 
+#[cfg(test)]
+pub(crate) fn rules_for_test(
+    config: &CapsuleConfig,
+    instance: Option<&str>,
+    cwd: &Path,
+    session_root: &Path,
+) -> Result<Vec<Rule>> {
+    rules_for_impl(config, instance, cwd, session_root, false)
+}
+
 pub(crate) fn rules_for_impl(
     config: &CapsuleConfig,
     instance: Option<&str>,

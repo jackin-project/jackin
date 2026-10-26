@@ -88,3 +88,8 @@ pub(crate) fn access_for_abi(access: u64, abi: libc::c_long) -> u64 {
         access & !ACCESS_RESOLVE_UNIX
     }
 }
+
+pub(crate) mod support {
+    #[cfg(test)]
+    pub(crate) const WRITABLE: u64 = super::WRITABLE;
+}
