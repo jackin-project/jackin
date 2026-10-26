@@ -56,7 +56,6 @@ chrono = { workspace = true, features = ["clock"] }
 sha2 = { workspace = true }
 ratatui = { workspace = true }
 termrock = { workspace = true }
-hex = { workspace = true }
 tempfile = { workspace = true }
 uuid = { workspace = true }
 

@@ -2584,7 +2584,6 @@ dependencies = [
  "chrono",
  "criterion",
  "crossterm",
- "hex",
  "jackin-agent-status",
  "jackin-brand",
  "jackin-build-meta",
@@ -2700,7 +2699,6 @@ dependencies = [
  "rustls",
  "rustls-native-certs",
  "rustls-pki-types",
- "serde_json",
  "sysinfo",
  "tokio",
  "tokio-rustls",
@@ -2993,7 +2991,6 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "criterion",
- "fs4",
  "jackin-build-meta",
  "jackin-config",
  "jackin-core",
@@ -3029,7 +3026,6 @@ dependencies = [
  "jackin-runtime-cleanup-dind-gc",
  "jackin-runtime-cleanup-eject-resources",
  "jackin-runtime-cleanup-prune-cache",
- "jackin-runtime-cleanup-prune-dir",
  "jackin-runtime-cleanup-prune-home",
  "jackin-runtime-cleanup-prune-images",
  "jackin-runtime-cleanup-prune-roles",
@@ -3090,7 +3086,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
- "toml",
  "tracing",
 ]
 
