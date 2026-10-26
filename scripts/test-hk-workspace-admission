@@ -2,7 +2,12 @@
 set -euo pipefail
 
 repo_root=$(git rev-parse --show-toplevel)
-hk_bin=$(mise which hk)
+hk_path=$(command -v hk)
+hk_bin=$(mise --no-config --no-env --no-hooks --locked which --tool hk@2.8.0 hk)
+[[ "$hk_path" == "$hk_bin" ]] || {
+  printf '%s\n' 'the active Mise task PATH does not select its pinned hk 2.8.0 binary' >&2
+  exit 1
+}
 [[ "$("$hk_bin" --version)" == 'hk 2.8.0' ]] || {
   printf '%s\n' 'workspace-admission tests require the pinned hk 2.8.0 binary' >&2
   exit 1

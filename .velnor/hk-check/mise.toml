@@ -1,0 +1,9 @@
+[tools]
+"github:mongodb/kingfisher" = { version = "2.14.0", matching_regex = '^kingfisher-(darwin|linux)-(arm64|x64)\.tgz$|^kingfisher-windows-x64\.zip$' }
+
+[tasks."test:hk-workspace-admission"]
+run = [
+  "bash ../../scripts/test-hk-workspace-admission",
+  "cd ../.. && cargo nextest run --locked -p jackin-xtask --test hook_security_fixtures -E 'test(=canonical_hook_security_fixtures_run_with_prebuilt_native_binaries)' --build-jobs 1 --test-threads 1 --retries 0 --no-tests=fail",
+]
+tools = { rust = "1.99.1", mr-boxington = "1.28.0", "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.149", hk = "2.8.0", "aqua:gitleaks/gitleaks" = "8.30.1", "aqua:betterleaks/betterleaks" = "1.9.0", "github:mongodb/kingfisher" = "2.14.0" }
