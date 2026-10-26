@@ -4,6 +4,8 @@
 mod archive;
 mod cargo;
 mod document;
+#[cfg(test)]
+mod tests;
 
 use anyhow::{Context, Result, ensure};
 use serde_json::Value;
@@ -101,12 +103,9 @@ use serde_json::json;
 #[cfg(test)]
 use std::{collections::BTreeMap, path::PathBuf};
 
-// Synthetic Cargo-message fixtures model actual workspace package identities.
-
 #[cfg(test)]
 struct Fixture {
     archive: PathBuf,
-    #[expect(dead_code, reason = "read only by the unrestored release_sbom suite")]
     release: PathBuf,
     layout: crate::release_archive::layout::ArchiveLayout,
     records: Vec<u8>,
@@ -206,6 +205,5 @@ pub(crate) fn write_payload_fixture(
         version,
     )
     .unwrap();
-    // Inputs remain private build evidence, outside the producer asset directory.
     fixture.archive
 }

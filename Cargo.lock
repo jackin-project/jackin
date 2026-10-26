@@ -2939,7 +2939,9 @@ dependencies = [
  "jackin-instance-credentials",
  "jackin-manifest",
  "jackin-telemetry",
+ "nix 0.31.3",
  "rustix 1.1.5",
+ "tempfile",
 ]
 
 [[package]]
@@ -4030,6 +4032,7 @@ name = "jackin-runtime-repo-cache"
 version = "0.6.4"
 dependencies = [
  "anyhow",
+ "dialoguer",
  "fs4",
  "jackin-core",
  "jackin-diagnostics",
@@ -4037,8 +4040,10 @@ dependencies = [
  "jackin-manifest",
  "jackin-runtime-identity",
  "jackin-telemetry",
+ "jackin-test-support",
  "tempfile",
  "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]

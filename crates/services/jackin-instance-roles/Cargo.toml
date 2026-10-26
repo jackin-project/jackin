@@ -37,6 +37,8 @@ test-support = []
 jackin-diagnostics          = { workspace = true, features = ["test-support"] }
 jackin-instance-agents      = { workspace = true, features = ["test-support"] }
 jackin-instance-credentials = { workspace = true, features = ["test-support"] }
+nix        = { workspace = true, features = ["dir", "fs", "user"] }
+tempfile   = { workspace = true }
 
 [lints]
 workspace = true

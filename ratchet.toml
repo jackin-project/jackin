@@ -509,7 +509,7 @@ key = "dead_code@jackin-usage-provider-openrouter"
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin-xtask"
-bound = 3
+bound = 2
 [[family.entry]]
 key = "irrefutable_let_patterns@jackin"
 bound = 1

@@ -10,7 +10,8 @@ use jackin_core::RoleSelector;
 use jackin_core::{Clock, CommandRunner, RunOptions, SystemClock};
 use jackin_instance::runtime_slug;
 use jackin_manifest::repo::{CachedRepo, validate_role_repo};
-
+#[cfg(test)]
+use std::io::IsTerminal;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -181,6 +182,41 @@ pub async fn git_branch(dir: &std::path::Path, runner: &mut impl CommandRunner) 
         runner,
         "git",
         &["-C", &dir_str, "rev-parse", "--abbrev-ref", "HEAD"],
+    )
+    .await
+}
+
+#[cfg(test)]
+fn confirm_repo_removal_interactive() -> anyhow::Result<bool> {
+    if !std::io::stdin().is_terminal() {
+        return Ok(false);
+    }
+    Ok(dialoguer::Confirm::new()
+        .with_prompt("Remove the cached repo and re-clone from the configured source?")
+        .default(false)
+        .interact()?)
+}
+
+#[cfg(test)]
+async fn resolve_agent_repo(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    git_url: &str,
+    runner: &mut impl CommandRunner,
+    debug: bool,
+    branch_override: Option<&str>,
+) -> anyhow::Result<(
+    CachedRepo,
+    jackin_manifest::repo::ValidatedRoleRepo,
+    RepoLock,
+)> {
+    resolve_agent_repo_with(
+        paths,
+        selector,
+        git_url,
+        runner,
+        RepoResolveOptions::interactive(debug).with_branch(branch_override),
+        confirm_repo_removal_interactive,
     )
     .await
 }
@@ -567,3 +603,6 @@ pub async fn resolve_agent_repo_with(
 
     Ok((cached_repo, validated_repo, lock_file))
 }
+
+#[cfg(test)]
+mod tests;
