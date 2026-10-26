@@ -98,6 +98,82 @@ fn config_install_rejects_competing_writer_during_candidate_preparation() -> Res
     Ok(())
 }
 
+#[test]
+fn config_install_rejects_owner_replacement_during_candidate_preparation() -> Result<()> {
+    if let Some(mode) = std::env::var_os(CHILD_MODE) {
+        return run_child_mode(mode.to_string_lossy().as_ref());
+    }
+    use std::os::unix::fs::PermissionsExt;
+
+    let temporary = private_dir()?;
+    for (replace_root, committed) in [(true, false), (false, false), (true, true), (false, true)] {
+        let root = temporary
+            .path()
+            .join(format!("root-{replace_root}-committed-{committed}"));
+        fs::create_dir(&root)?;
+        let repository = root.join("repository");
+        init_repository(&repository)?;
+        run_git(
+            &repository,
+            &["config", "--worktree", "fixture.sentinel", "original"],
+        )?;
+        let (git_dir, _, selected_config) = git::installation_paths(&repository)?;
+        let original_config = fs::read(&selected_config)?;
+        let shim = prepare_git_shim_for_phase(&root.join("shim"), committed)?;
+        let _release_on_drop = ReleaseOnDrop(shim.release.clone());
+        let mut child = ChildGuard::new(
+            test_child(
+                if committed {
+                    "owner-committed"
+                } else {
+                    "owner-race"
+                },
+                &repository,
+                &root,
+                Some(&shim.directory),
+            )?
+            .spawn()?,
+        );
+        wait_for_path(&shim.ready, Duration::from_secs(20))?;
+        let config_at_replacement = fs::read(&selected_config)?;
+        assert_eq!(config_at_replacement == original_config, !committed);
+        let owner_root = git_dir.join("jackin-precommit-owner");
+        let owner_path = owner_root.join("owner");
+        let retained = if replace_root {
+            let retained = git_dir.join("retained-owner-root");
+            fs::rename(&owner_root, &retained)?;
+            fs::create_dir(&owner_root)?;
+            fs::set_permissions(&owner_root, fs::Permissions::from_mode(0o700))?;
+            retained.join("owner")
+        } else {
+            let retained = owner_root.join("retained-owner");
+            fs::rename(&owner_path, &retained)?;
+            retained
+        };
+        let original_owner = fs::read(&retained)?;
+        fs::copy(&retained, &owner_path)?;
+        fs::set_permissions(&owner_path, fs::Permissions::from_mode(0o500))?;
+        let canary = owner_root.join("replacement-canary");
+        fs::write(&canary, b"preserve replacement")?;
+        fs::write(&shim.release, b"release")?;
+        let status = child.wait(Duration::from_secs(20))?;
+        ensure!(
+            status.success(),
+            "owner replacement was not rejected: {status}"
+        );
+        assert_eq!(fs::read(&selected_config)?, config_at_replacement);
+        assert_eq!(fs::read(&retained)?, original_owner);
+        assert_eq!(fs::read(&owner_path)?, original_owner);
+        assert_eq!(fs::read(&canary)?, b"preserve replacement");
+        assert!(
+            !selected_config
+                .with_file_name("config.worktree.lock")
+                .exists()
+        );
+    }
+    Ok(())
+}
+
 fn run_competing_writer_case(root: &Path, initially_present: bool) -> Result<()> {
     let name = if initially_present {
         "present"
@@ -161,6 +237,18 @@ fn run_child_mode(mode: &str) -> Result<()> {
             Ok(())
         }
         "install" => install_hooks(),
+        "owner-race" | "owner-committed" => {
+            let error = install_hooks().expect_err("installer accepted a replaced owner");
+            ensure!(
+                format!("{error:#}").contains("owner"),
+                "unexpected owner rejection: {error:#}"
+            );
+            ensure!(
+                super::super::activation_failed_after_rename(&error) == (mode == "owner-committed"),
+                "owner replacement has incorrect activation classification: {error:#}"
+            );
+            Ok(())
+        }
         _ => bail!("unknown installer subprocess mode"),
     }
 }
@@ -171,7 +259,9 @@ fn test_child(
     fixture_root: &Path,
     shim: Option<&Path>,
 ) -> Result<Command> {
-    let name = current_test_name(if mode == "conflict" {
+    let name = current_test_name(if matches!(mode, "owner-race" | "owner-committed") {
+        "config_install_rejects_owner_replacement_during_candidate_preparation"
+    } else if mode == "conflict" {
         "config_install_rejects_competing_writer_during_candidate_preparation"
     } else {
         "config_install_signal_during_candidate_preparation_leaves_config_untouched"
@@ -194,6 +284,10 @@ struct GitShim {
 }
 
 fn prepare_git_shim(root: &Path) -> Result<GitShim> {
+    prepare_git_shim_for_phase(root, false)
+}
+
+fn prepare_git_shim_for_phase(root: &Path, committed: bool) -> Result<GitShim> {
     fs::create_dir_all(root)?;
     let directory = root.join("git shim");
     fs::create_dir(&directory)?;
@@ -203,8 +297,12 @@ fn prepare_git_shim(root: &Path) -> Result<GitShim> {
         .map(|directory| directory.join("git"))
         .find(|path| path.is_file())
         .context("locating real Git for the candidate-preparation shim")?;
-    let mut script =
-        b"#!/bin/sh\nif [ \"$1\" = config ] && [ \"$2\" = --file ] && [ ! -e ".to_vec();
+    let condition = if committed {
+        "[ \"$1\" = hook ] && [ \"$2\" = list ] && [ \"$3\" = pre-commit ]"
+    } else {
+        "[ \"$1\" = config ] && [ \"$2\" = --file ]"
+    };
+    let mut script = format!("#!/bin/sh\nif {condition} && [ ! -e ").into_bytes();
     append_shell_path(&mut script, &ready)?;
     script.extend_from_slice(b" ]; then\n  : > ");
     append_shell_path(&mut script, &ready)?;

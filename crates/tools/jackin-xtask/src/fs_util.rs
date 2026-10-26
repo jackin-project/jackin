@@ -6,6 +6,8 @@ use anyhow::{Context, Result};
 #[path = "shared/fs_util.rs"]
 mod sorted;
 pub(crate) use sorted::read_dir_sorted;
+#[cfg(test)]
+pub(crate) use sorted::read_dir_sorted_with;
 
 pub(crate) fn crate_dir(root: &Path, name: &str) -> Option<std::path::PathBuf> {
     let crates_dir = root.join("crates");

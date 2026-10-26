@@ -252,6 +252,40 @@ pub fn exec_spooled_sync_cancellable(
     stderr: File,
     cancellation: &AtomicBool,
 ) -> anyhow::Result<SpoolExecResult> {
+    exec_spooled_sync_cancellable_inner(request, None, stdout, stderr, cancellation)
+}
+
+/// Run one command with bounded regular-file stdin and strict file-backed output.
+///
+/// The input descriptor must refer to a regular file, be positioned at byte
+/// zero, contain no more than `input_limit` bytes, and be distinct from both
+/// output spools. The request must leave stdin absent and use `Null` routing;
+/// the held file is the only stdin source. The caller owns input-file
+/// confidentiality and must not mutate it while the child runs.
+pub fn exec_spooled_sync_cancellable_with_stdin_file(
+    request: &ExecRequest,
+    input: File,
+    input_limit: usize,
+    stdout: File,
+    stderr: File,
+    cancellation: &AtomicBool,
+) -> anyhow::Result<SpoolExecResult> {
+    exec_spooled_sync_cancellable_inner(
+        request,
+        Some((input, input_limit)),
+        stdout,
+        stderr,
+        cancellation,
+    )
+}
+
+fn exec_spooled_sync_cancellable_inner(
+    request: &ExecRequest,
+    input_file: Option<(File, usize)>,
+    stdout: File,
+    stderr: File,
+    cancellation: &AtomicBool,
+) -> anyhow::Result<SpoolExecResult> {
     if tokio::runtime::Handle::try_current().is_ok() {
         return Err(error(
             SpoolFailureKind::Request,
@@ -278,7 +312,7 @@ pub fn exec_spooled_sync_cancellable(
         .into());
     }
 
-    if let Err(message) = validate_request(request) {
+    if let Err(message) = validate_request(request, input_file.is_some()) {
         return Err(error(
             SpoolFailureKind::Request,
             message,
@@ -293,7 +327,7 @@ pub fn exec_spooled_sync_cancellable(
 
     #[cfg(unix)]
     {
-        run_unix(request, stdout, stderr, cancellation)
+        run_unix(request, input_file, stdout, stderr, cancellation)
     }
     #[cfg(not(unix))]
     {
@@ -310,7 +344,7 @@ pub fn exec_spooled_sync_cancellable(
     }
 }
 
-fn validate_request(request: &ExecRequest) -> Result<(), String> {
+fn validate_request(request: &ExecRequest, input_file: bool) -> Result<(), String> {
     if request.stdout_mode != super::StdioMode::Capture
         || request.stderr_mode != super::StdioMode::Capture
     {
@@ -321,6 +355,12 @@ fn validate_request(request: &ExecRequest) -> Result<(), String> {
     }
     if request.retry.max_retries > 0 {
         return Err("spooled execution does not accept retries".to_owned());
+    }
+    if input_file && request.stdin.is_some() {
+        return Err("file-backed stdin conflicts with request stdin bytes".to_owned());
+    }
+    if input_file && request.stdin_mode != super::StdioMode::Null {
+        return Err("file-backed stdin requires Null routing".to_owned());
     }
     if request
         .stdin
@@ -364,28 +404,20 @@ fn error(
 #[cfg(unix)]
 fn run_unix(
     request: &ExecRequest,
-    mut stdout: File,
-    mut stderr: File,
+    input_file: Option<(File, usize)>,
+    stdout: File,
+    stderr: File,
     cancellation: &AtomicBool,
 ) -> anyhow::Result<SpoolExecResult> {
     use std::os::unix::process::ExitStatusExt;
     use std::time::Instant;
 
-    let identities = match validate_spools(&mut stdout, &mut stderr) {
-        Ok(identities) => identities,
-        Err(message) => {
-            return Err(error(
-                SpoolFailureKind::Request,
-                message,
-                Some(stdout),
-                Some(stderr),
-                None,
-                0,
-                0,
-            )
-            .into());
-        }
-    };
+    let PreparedRunIo {
+        input_file,
+        mut stdout,
+        mut stderr,
+        identities,
+    } = prepare_run_io(input_file, stdout, stderr)?;
 
     let started = Instant::now();
     let deadline = request
@@ -404,10 +436,7 @@ fn run_unix(
         .into());
     }
 
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
+    let runtime = match build_pump_runtime() {
         Ok(runtime) => runtime,
         Err(error_value) => {
             return Err(error(
@@ -425,7 +454,9 @@ fn run_unix(
 
     let mut command = std::process::Command::new(&request.program);
     super::configure_sync_command(&mut command, request);
-    if request.stdin.is_some() {
+    if let Some(input) = input_file {
+        command.stdin(std::process::Stdio::from(input));
+    } else if request.stdin.is_some() {
         command.stdin(std::process::Stdio::piped());
     }
     let group = match owned_group::OwnedGroup::spawn(&mut command) {
@@ -518,6 +549,107 @@ fn run_unix(
         stdout,
         stderr,
     })
+}
+
+#[cfg(unix)]
+fn build_pump_runtime() -> std::io::Result<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+}
+
+#[cfg(unix)]
+struct PreparedRunIo {
+    input_file: Option<File>,
+    stdout: File,
+    stderr: File,
+    identities: (SpoolIdentity, SpoolIdentity),
+}
+
+#[cfg(unix)]
+fn prepare_run_io(
+    input_file: Option<(File, usize)>,
+    mut stdout: File,
+    mut stderr: File,
+) -> Result<PreparedRunIo, SpoolError> {
+    let identities = match validate_spools(&mut stdout, &mut stderr) {
+        Ok(identities) => identities,
+        Err(message) => {
+            return Err(error(
+                SpoolFailureKind::Request,
+                message,
+                Some(stdout),
+                Some(stderr),
+                None,
+                0,
+                0,
+            ));
+        }
+    };
+    let input_file = match input_file {
+        Some((mut input, limit)) => match validate_input_file(&mut input, limit, identities) {
+            Ok(()) => Some(input),
+            Err(message) => {
+                return Err(error(
+                    SpoolFailureKind::Request,
+                    message,
+                    Some(stdout),
+                    Some(stderr),
+                    None,
+                    0,
+                    0,
+                ));
+            }
+        },
+        None => None,
+    };
+    Ok(PreparedRunIo {
+        input_file,
+        stdout,
+        stderr,
+        identities,
+    })
+}
+
+#[cfg(unix)]
+fn validate_input_file(
+    input: &mut File,
+    limit: usize,
+    outputs: (SpoolIdentity, SpoolIdentity),
+) -> Result<(), String> {
+    use nix::fcntl::{FcntlArg, OFlag, fcntl};
+    use std::io::Seek;
+    use std::os::unix::fs::MetadataExt;
+
+    let metadata = input
+        .metadata()
+        .map_err(|error| format!("reading stdin file metadata: {error}"))?;
+    if !metadata.is_file() {
+        return Err("file-backed stdin must be a regular file".to_owned());
+    }
+    if metadata.len() > u64::try_from(limit).unwrap_or(u64::MAX) {
+        return Err("file-backed stdin exceeds its byte limit".to_owned());
+    }
+    let identity = (metadata.dev(), metadata.ino());
+    if [outputs.0, outputs.1]
+        .iter()
+        .any(|output| (output.device, output.inode) == identity)
+    {
+        return Err("file-backed stdin must be distinct from output spools".to_owned());
+    }
+    if input
+        .stream_position()
+        .map_err(|error| format!("reading stdin file position: {error}"))?
+        != 0
+    {
+        return Err("file-backed stdin descriptor must start at byte zero".to_owned());
+    }
+    let raw_flags = fcntl(input, FcntlArg::F_GETFL)
+        .map_err(|error| format!("reading stdin file status flags: {error}"))?;
+    if OFlag::from_bits_truncate(raw_flags) & OFlag::O_ACCMODE == OFlag::O_WRONLY {
+        return Err("file-backed stdin descriptor is not readable".to_owned());
+    }
+    Ok(())
 }
 
 #[cfg(unix)]

@@ -26,7 +26,20 @@ pub(super) fn activation_failed_after_rename(error: &anyhow::Error) -> bool {
     activation::activation_failed_after_rename(error)
 }
 
-pub(super) fn activate(common_config: &Path, selected_config: &Path, owner: &Path) -> Result<()> {
+pub(super) fn after_rename_error(error: anyhow::Error) -> anyhow::Error {
+    if activation_failed_after_rename(&error) {
+        return error;
+    }
+    let marker = activation::ActivationAfterRenameError::from(&error);
+    error.context(marker)
+}
+
+pub(super) fn activate(
+    common_config: &Path,
+    selected_config: &Path,
+    owner: &super::files::OwnerInstallation,
+) -> Result<()> {
+    owner.recheck()?;
     ensure!(
         selected_config
             .file_name()
@@ -58,7 +71,7 @@ pub(super) fn activate(common_config: &Path, selected_config: &Path, owner: &Pat
             candidate.as_file().sync_all()?;
         }
         let candidate_path = candidate.path().to_path_buf();
-        update_candidate(&candidate_path, owner)?;
+        update_candidate(&candidate_path, owner.owner_path())?;
         validate_candidate(&candidate_path)?;
         if let Some(config) = source_config.as_ref() {
             config
@@ -105,7 +118,7 @@ pub(super) fn activate(common_config: &Path, selected_config: &Path, owner: &Pat
 
         let result = (|| {
             write_held_lock(lock.file(), &lock_path, &bytes)?;
-            activation::activate_hook_config(common_config, selected_config)
+            activation::activate_hook_config(common_config, selected_config, owner)
                 .context("activating native worktree hook configuration")?;
             Ok(())
         })();

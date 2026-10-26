@@ -166,14 +166,12 @@ fn cargo_config_aggregate_bytes_are_bounded_across_includes() -> Result<()> {
     let directory = root.join(".cargo");
     fs::create_dir(&directory).expect("staged Cargo config directory");
     let mut includes = Vec::new();
+    let mut contents = vec![b'x'; usize::try_from(MAX_CARGO_CONFIG_FILE_BYTES)?];
+    contents[0] = b'#';
     for index in 0..64 {
         let name = format!("included-{index:02}.toml");
         includes.push(format!("'{name}'"));
-        fs::write(
-            directory.join(name),
-            vec![b'\n'; usize::try_from(MAX_CARGO_CONFIG_FILE_BYTES)?],
-        )
-        .expect("write bounded included config");
+        fs::write(directory.join(name), &contents).expect("write bounded included config");
     }
     fs::write(
         directory.join("config.toml"),
@@ -184,7 +182,10 @@ fn cargo_config_aggregate_bytes_are_bounded_across_includes() -> Result<()> {
     let Err(error) = host_inputs(&root, &isolation, &cargo_home, &controls()) else {
         panic!("included configs exceed the aggregate byte limit");
     };
-    assert!(format!("{error:#}").contains("Cargo config aggregate exceeds its byte limit"));
+    assert!(
+        format!("{error:#}").contains("Cargo config aggregate exceeds its byte limit"),
+        "{error:#}"
+    );
     Ok(())
 }
 

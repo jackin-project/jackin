@@ -7,21 +7,24 @@ use super::{
 };
 use crate::precommit_snapshot::{
     process::{
-        CommandBudget, EnvironmentMode, SetupControls, SpoolOutput, capture_spooled, capture_strict,
+        CommandBudget, EnvironmentMode, SetupControls, SpoolOutput, capture_spooled,
+        capture_spooled_with_stdin_file, capture_strict,
     },
     toolchain::QualifiedTools,
 };
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use jackin_process::{ExecRequest, SpoolRecovery, StdioMode, exec_spooled_sync_cancellable};
 use nix::{
-    fcntl::{OFlag, open},
-    sys::stat::Mode,
+    errno::Errno,
+    fcntl::{AtFlags, OFlag, open, openat},
+    sys::stat::{FchmodatFlags, Mode, SFlag, fchmod, fchmodat, fstat, fstatat, mkdirat},
+    unistd::geteuid,
 };
 use sha2::{Digest, Sha256};
 use std::{
     env,
     ffi::{OsStr, OsString},
-    fs,
+    fs::{self, File},
     io::{BufReader, Read, Write},
     os::unix::{
         ffi::OsStrExt,
@@ -32,12 +35,98 @@ use std::{
 };
 
 mod admission;
+mod source;
+#[cfg(test)]
+pub(in crate::precommit_snapshot) use source::tree_record_path_for_test;
 
 const STAGED_INDEX_OUTPUT_LIMIT: usize = super::capture::INDEX_INPUT_FILE_LIMIT as usize;
 const STAGED_INDEX_STDERR_LIMIT: usize = 32 * 1024 * 1024;
 const STAGED_INDEX_HEADER_LIMIT: usize = 256;
 const STAGED_SYMLINK_PATH_LIMIT: usize = 1024 * 1024;
 const GIT_METADATA_FILE_LIMIT: u64 = super::super::process::METADATA_OUTPUT_LIMIT as u64;
+
+fn write_private_info_attributes(git_dir: &Path) -> Result<()> {
+    let parent = File::from(
+        open(
+            git_dir,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .context("opening private Git directory")?,
+    );
+    let info_name = OsStr::new("info");
+    let created = match mkdirat(&parent, info_name, Mode::from_bits_truncate(0o700)) {
+        Ok(()) => true,
+        Err(Errno::EEXIST) => false,
+        Err(error) => return Err(error).context("creating private Git info directory"),
+    };
+    let before = fstatat(&parent, info_name, AtFlags::AT_SYMLINK_NOFOLLOW)
+        .context("checking private Git info directory")?;
+    ensure!(
+        before.st_mode & SFlag::S_IFMT.bits() == SFlag::S_IFDIR.bits()
+            && before.st_uid == geteuid().as_raw(),
+        "private Git info path is not an owned directory"
+    );
+    let normalized = if created {
+        fchmodat(
+            &parent,
+            info_name,
+            Mode::from_bits_truncate(0o700),
+            FchmodatFlags::NoFollowSymlink,
+        )
+        .context("setting private Git info directory permissions")?;
+        let normalized = fstatat(&parent, info_name, AtFlags::AT_SYMLINK_NOFOLLOW)
+            .context("rechecking private Git info directory")?;
+        ensure!(
+            normalized.st_dev == before.st_dev
+                && normalized.st_ino == before.st_ino
+                && normalized.st_uid == before.st_uid
+                && normalized.st_mode & SFlag::S_IFMT.bits() == SFlag::S_IFDIR.bits()
+                && normalized.st_mode & 0o7777 == 0o700,
+            "private Git info directory changed while setting permissions"
+        );
+        normalized
+    } else {
+        ensure!(
+            before.st_mode & 0o7777 == 0o700,
+            "existing private Git info directory has unsafe permissions"
+        );
+        before
+    };
+    let info = File::from(
+        openat(
+            &parent,
+            info_name,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .context("opening private Git info directory")?,
+    );
+    let opened = fstat(&info).context("checking private Git info directory descriptor")?;
+    ensure!(
+        opened.st_dev == normalized.st_dev
+            && opened.st_ino == normalized.st_ino
+            && opened.st_uid == normalized.st_uid
+            && opened.st_mode & 0o7777 == 0o700,
+        "private Git info directory changed before opening"
+    );
+    let descriptor = openat(
+        &info,
+        OsStr::new("attributes"),
+        OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::from_bits_truncate(0o600),
+    )
+    .context("creating private Git checkout attributes")?;
+    let mut attributes = File::from(descriptor);
+    fchmod(&attributes, Mode::from_bits_truncate(0o600))
+        .context("setting private Git checkout attributes permissions")?;
+    attributes
+        .write_all(b"* -text -ident -filter -working-tree-encoding\n")
+        .context("writing private Git checkout attributes")?;
+    attributes
+        .sync_all()
+        .context("syncing private Git checkout attributes")
+}
 
 impl OwnedSnapshot {
     pub(in crate::precommit_snapshot) fn create(live: &LiveRepository) -> Result<Self> {
@@ -103,6 +192,7 @@ impl OwnedSnapshot {
             #[cfg(test)]
             test_git_program: None,
         };
+        write_private_info_attributes(&snapshot.git_dir)?;
         snapshot.write_alternates(&live.objects, &alternate_records)?;
         if let Some(path) = &live.shallow {
             copy_git_metadata(
@@ -114,6 +204,7 @@ impl OwnedSnapshot {
         }
         snapshot.git(&["config", "core.sparseCheckout", "false"])?;
         snapshot.git(&["config", "core.sparseCheckoutCone", "false"])?;
+        snapshot.git(&["config", "core.autocrlf", "false"])?;
         snapshot.copy_index(live)?;
         Ok(snapshot)
     }
@@ -141,12 +232,13 @@ impl OwnedSnapshot {
         live: &LiveRepository,
         staged_content_limit: u64,
     ) -> Result<()> {
+        let pinned_tree = source::resolve_tree(self, tree)?;
         match fs::remove_file(&self.index) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error).context("removing private snapshot index"),
         }
-        self.git_os([OsString::from("read-tree"), tree.to_os_string()])?;
+        self.git_os([OsString::from("read-tree"), pinned_tree.oid.clone()])?;
         if let Some(head) = &live.head {
             self.git_os([
                 OsString::from("update-ref"),
@@ -166,7 +258,7 @@ impl OwnedSnapshot {
         }
         self.git(&["config", "core.fileMode", "true"])?;
         self.git(&["config", "core.symlinks", "true"])?;
-        self.check_materialized_tree_size_with_limit(tree, staged_content_limit)?;
+        self.check_materialized_tree_size_with_limit(&pinned_tree.oid, staged_content_limit)?;
         self.git(&["checkout-index", "--all", "--force"])?;
         Ok(())
     }
@@ -177,7 +269,7 @@ impl OwnedSnapshot {
 
     pub(in crate::precommit_snapshot) fn admit_with_inventory_limit(
         &self,
-        _tree: &OsStr,
+        tree: &OsStr,
         inventory_limit: usize,
     ) -> Result<()> {
         let mut entries = self.git_spooled(
@@ -191,7 +283,8 @@ impl OwnedSnapshot {
             "running isolated Git command failed with {}",
             entries.status()
         );
-        admit_staged_index_entries(&self.root, entries.stdout_mut(), &self.controls)
+        admit_staged_index_entries(&self.root, entries.stdout_mut(), &self.controls)?;
+        self.admit_materialized_tree(tree, inventory_limit)
     }
 
     pub(in crate::precommit_snapshot) fn retain(&mut self) -> Option<PathBuf> {
@@ -433,6 +526,27 @@ impl OwnedSnapshot {
         .context("capturing descriptor-backed isolated Git output")
     }
 
+    fn git_spooled_with_stdin_file(
+        &self,
+        args: &[impl AsRef<OsStr>],
+        input: File,
+        input_limit: usize,
+        stdout_limit: usize,
+        stderr_limit: usize,
+        budget: CommandBudget,
+    ) -> Result<SpoolOutput> {
+        capture_spooled_with_stdin_file(
+            &mut self.git_command(args),
+            (input, input_limit),
+            &self.controls,
+            EnvironmentMode::Clear,
+            stdout_limit,
+            stderr_limit,
+            budget,
+        )
+        .context("capturing isolated Git batch output")
+    }
+
     fn git_command(&self, args: &[impl AsRef<OsStr>]) -> Command {
         #[cfg(test)]
         let program = self
@@ -576,7 +690,7 @@ pub(super) fn copy_and_verify_index_with_limit(
         input.matches_metadata(&before),
         "{label} differs from admitted input"
     );
-    let mut source = fs::File::from(
+    let mut source = File::from(
         open(
             source_path,
             OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
@@ -764,7 +878,7 @@ pub(in crate::precommit_snapshot) fn verify_private_index_copy(
         "private {label} differs in type or length from admitted input"
     );
     controls.check_start()?;
-    let mut file = fs::File::from(
+    let mut file = File::from(
         open(
             destination,
             OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
