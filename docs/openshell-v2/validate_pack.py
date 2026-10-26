@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -14,6 +15,8 @@ from typing import Any
 
 ORIGINAL_SPEC_SHA256 = "857e2bf002676af9fbc2b8eac0b0aea4d7657d873b90b3a64e8abfe767523a3e"
 GOAL_SHA256 = "d62aaf0477b96b014356b09d23f05bc2d22385a42277639514e6615dfa46f1a0"
+SOURCE_AUDIT_SHA256 = "0f4b1a1eac7ebb8b75e9bad0997c16f7cd28f363bc86727bc167774749e83fe9"
+TERMS_SHA256 = "9441cc3b4889edb39fa7f520058a9473938cbbf8742e15ce672387e83abef614"
 ACCEPTANCE_POLICY_SHA256 = "7609a5f84a1694b1441219ac62e289191d90f367c33a400853ec64728063d36d"
 C02_CONTRACT_SECTION_SHA256 = "017714a83ab1ee7827dfcf8459ef6ca5e58c11787210083856211d1ba8e9cdf2"
 TASK_AUTHORED_SHA256 = "045530b267fe5b237eb579c014cbbb635735c873a88ea3e0f9a9d987d1eb5936"
@@ -22,7 +25,7 @@ GRAPH_DECLARATIONS_SHA256 = "39a190141d0329a1f00b94bab82f19934cf0d1a9860ad742115
 TRACEABILITY_AUTHORED_SHA256 = "33c969b0eec0852fa87dc459663540d8f9136e22f1ba22328a02724c9418c7ee"
 CONTRACTS_SHA256 = "da0f23654f30e8d1a37a12f07c9e5595d51027a5c4eaae3ce8072cb544dd3344"
 SUBAGENTS_SHA256 = "a4a9e5a967a73038b50ecdc4cadb9a51b1c83728f54c6b6fb9a87641566263f8"
-PACK_CHECKS_TEMPLATE_SHA256 = "bed65a732cb7955fbe202e051051640a19fd2ae3bbbe356818377209eaf3a7a8"
+PACK_CHECKS_TEMPLATE_SHA256 = "03b0d03837eb291fee4ba6ebe007fb6179301e2ce35ea7191faa5dffbc21a605"
 PLAN_PREFIX_SHA256 = "3176361a5191c757d69e2461936f80cbf3668f8cf508bc86734e12d80197a5d0"
 SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
@@ -104,6 +107,7 @@ ORDINARY_CHECK_NAMES = (
     "Acceptance case IDs map to fixed evidence levels",
     "Acceptance manifest status uses documented values",
     "Acceptance manifest status matches the case summary",
+    "Acceptance manifest root has the exact schema keys",
     "Task IDs are unique",
     "Case IDs are unique",
     "Acceptance cases have unique string task owners",
@@ -124,6 +128,8 @@ ORDINARY_CHECK_NAMES = (
     "Release gate protocol matches fixed semantics",
     "Original specification matches its fixed checksum and both manifests",
     "GOAL.md matches its fixed checksum",
+    "SOURCE-AUDIT.md matches its fixed checksum",
+    "TERMS.md matches its fixed checksum",
     "Task SPEC citations use valid syntax",
     "Task SPEC citation ranges are within SPEC.md",
     "Dependency lists contain unique string task IDs",
@@ -174,6 +180,7 @@ ORDINARY_CHECK_NAMES = (
     "CONTRACTS.md matches its fixed checksum",
     "SUBAGENTS.md matches its fixed checksum",
     "PACK-CHECKS matches canonical template with mutable count and result slots",
+    "PACK-CHECKS scenario count matches the independent fixture inventory",
 )
 INITIAL_ONLY_CHECK_NAMES = (
     "Initial task, case, and assignment statuses claim no execution",
@@ -1154,7 +1161,12 @@ PACK_CHECKS_OBSERVED_PATTERN = re.compile(
 )
 
 
-def pack_checks_projection_errors(document: str) -> list[dict[str, Any]]:
+def pack_checks_projection_errors(
+    document: str,
+    actual_counts: dict[str, int],
+    ordinary_check_count: int,
+    initial_check_count: int,
+) -> list[dict[str, Any]]:
     lines = document.splitlines()
     normalized: list[str] = []
     section = ""
@@ -1278,8 +1290,18 @@ def pack_checks_projection_errors(document: str) -> list[dict[str, Any]]:
     expected_labels = set(PACK_CHECKS_COUNT_FIELDS)
     if set(count_values) != expected_labels:
         errors.append({"count_rows": sorted(count_values), "expected_count_rows": sorted(expected_labels)})
+    for label, field in PACK_CHECKS_COUNT_FIELDS.items():
+        if label in count_values and count_values[label] != actual_counts[field]:
+            errors.append({"count": label, "actual": count_values[label],
+                           "expected": actual_counts[field], "problem": "count does not match tested input"})
     if ordinary_counts is None:
         errors.append({"problem": "validator check count line must match the report template"})
+    elif ordinary_counts != (ordinary_check_count, initial_check_count):
+        errors.append({"ordinary_check_count": ordinary_counts[0],
+                       "initial_check_count": ordinary_counts[1],
+                       "expected_ordinary_check_count": ordinary_check_count,
+                       "expected_initial_check_count": initial_check_count,
+                       "problem": "check counts do not match canonical inventories"})
     if scenario_summary_count is None or targeted_scenario_count is None:
         errors.append({"problem": "fixture count and result summary slots must match the report template"})
     elif (targeted_scenario_count[0] != 18 or targeted_scenario_count[1] < 0
@@ -1301,6 +1323,55 @@ def pack_checks_projection_errors(document: str) -> list[dict[str, Any]]:
         errors.append({"template_sha256": actual_digest,
                        "expected_sha256": PACK_CHECKS_TEMPLATE_SHA256})
     return errors
+
+
+def pack_checks_scenario_inventory_errors(document: str, fixture_count: int) -> list[dict[str, Any]]:
+    scenario_matches = [PACK_CHECKS_SCENARIO_LINE.fullmatch(line) for line in document.splitlines()]
+    scenario_matches = [match for match in scenario_matches if match is not None]
+    targeted_matches = [PACK_CHECKS_TARGETED_LINE.fullmatch(line) for line in document.splitlines()]
+    targeted_matches = [match for match in targeted_matches if match is not None]
+    if len(scenario_matches) != 1 or len(targeted_matches) != 1:
+        return [{"scenario_summary_rows": len(scenario_matches),
+                 "targeted_summary_rows": len(targeted_matches),
+                 "problem": "fixture summary rows must each be unique"}]
+    total = int(scenario_matches[0].group(1))
+    original = int(targeted_matches[0].group(1))
+    targeted = int(targeted_matches[0].group(2))
+    errors = []
+    if total != fixture_count:
+        errors.append({"displayed_scenarios": total, "fixed_inventory_scenarios": fixture_count})
+    if original != 18 or targeted != fixture_count - original or total != original + targeted:
+        errors.append({"original_scenarios": original, "targeted_scenarios": targeted,
+                       "fixed_inventory_scenarios": fixture_count,
+                       "problem": "original and targeted counts do not match the independent inventory"})
+    return errors
+
+
+def fixed_fixture_inventory_errors(root: Path) -> tuple[int, list[dict[str, Any]]]:
+    """Read the runner's literal fixture-name inventory without importing or running it."""
+    path = root / "validate_assignment_fixtures.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    fixture_names_node = None
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "FIXED_FIXTURE_NAMES"
+            for target in statement.targets
+        ):
+            fixture_names_node = statement.value
+            break
+    if fixture_names_node is None:
+        return 0, [{"problem": "fixed fixture-name inventory is missing"}]
+    try:
+        fixture_names = ast.literal_eval(fixture_names_node)
+    except (ValueError, TypeError) as error:
+        return 0, [{"problem": "fixed fixture-name inventory is not a literal sequence",
+                    "detail": str(error)}]
+    if not isinstance(fixture_names, (tuple, list)) or any(
+        not isinstance(name, str) for name in fixture_names
+    ):
+        return 0, [{"problem": "fixed fixture-name inventory must contain only strings"}]
+    duplicates = sorted({name for name in fixture_names if fixture_names.count(name) > 1})
+    return len(fixture_names), ([{"duplicate_names": duplicates}] if duplicates else [])
 
 
 def main() -> int:
@@ -1493,6 +1564,14 @@ def main() -> int:
     check("Acceptance manifest status matches the case summary",
           manifest_status == expected_manifest_status,
           {"expected": expected_manifest_status, "actual": manifest_status})
+    expected_acceptance_root_keys = {"schema_version", "status", "cases"}
+    actual_acceptance_root_keys = set(cases_file)
+    check("Acceptance manifest root has the exact schema keys",
+          actual_acceptance_root_keys == expected_acceptance_root_keys,
+          {"expected": sorted(expected_acceptance_root_keys),
+           "actual": sorted(actual_acceptance_root_keys),
+           "extra": sorted(actual_acceptance_root_keys - expected_acceptance_root_keys),
+           "missing": sorted(expected_acceptance_root_keys - actual_acceptance_root_keys)})
     check("Task IDs are unique", len(task_set) == len(tasks))
     check("Case IDs are unique", len(case_set) == len(cases))
     case_owner_errors = []
@@ -1613,6 +1692,14 @@ def main() -> int:
     actual_goal_digest = hashlib.sha256((root / "GOAL.md").read_bytes()).hexdigest()
     check("GOAL.md matches its fixed checksum", actual_goal_digest == GOAL_SHA256,
           {"expected": GOAL_SHA256, "actual": actual_goal_digest})
+    actual_source_audit_digest = hashlib.sha256((root / "SOURCE-AUDIT.md").read_bytes()).hexdigest()
+    check("SOURCE-AUDIT.md matches its fixed checksum",
+          actual_source_audit_digest == SOURCE_AUDIT_SHA256,
+          {"expected": SOURCE_AUDIT_SHA256, "actual": actual_source_audit_digest})
+    actual_terms_digest = hashlib.sha256((root / "TERMS.md").read_bytes()).hexdigest()
+    check("TERMS.md matches its fixed checksum",
+          actual_terms_digest == TERMS_SHA256,
+          {"expected": TERMS_SHA256, "actual": actual_terms_digest})
 
     source_citation_syntax_errors = []
     source_citation_range_errors = []
@@ -2195,11 +2282,28 @@ def main() -> int:
     check("SUBAGENTS.md matches its fixed checksum",
           subagents_digest == SUBAGENTS_SHA256,
           {"expected": SUBAGENTS_SHA256, "actual": subagents_digest})
+    pack_checks_document = (root / "PACK-CHECKS.md").read_text(encoding="utf-8")
+    actual_pack_counts = {
+        "tasks": len(tasks),
+        "cases": len(cases),
+        "specification_sections": len(actual_headings),
+        "task_ready_groups": len(levels),
+        "checked_sentences": sentence_count,
+    }
+    fixture_inventory_count, fixture_inventory_errors = fixed_fixture_inventory_errors(root)
+    ordinary_check_count = len(canonical_check_inventory(False))
+    initial_check_count = len(canonical_check_inventory(True))
     pack_checks_errors = pack_checks_projection_errors(
-        (root / "PACK-CHECKS.md").read_text(encoding="utf-8"),
+        pack_checks_document, actual_pack_counts, ordinary_check_count, initial_check_count,
     )
     check("PACK-CHECKS matches canonical template with mutable count and result slots",
           not pack_checks_errors, pack_checks_errors)
+    pack_checks_scenario_errors = (
+        fixture_inventory_errors
+        + pack_checks_scenario_inventory_errors(pack_checks_document, fixture_inventory_count)
+    )
+    check("PACK-CHECKS scenario count matches the independent fixture inventory",
+          not pack_checks_scenario_errors, pack_checks_scenario_errors)
 
     if args.initial:
         bad_status = [task["id"] for task in tasks if task["status"] != "NOT_STARTED"]

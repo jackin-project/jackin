@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import contextlib
+import errno
 import io
 import json
 import os
@@ -15,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from unittest.mock import patch
 from pathlib import Path
 from typing import Any, Callable
 
@@ -430,6 +432,7 @@ FIXTURE_ORDINARY_CHECK_NAMES = (
     'Acceptance case IDs map to fixed evidence levels',
     'Acceptance manifest status uses documented values',
     'Acceptance manifest status matches the case summary',
+    'Acceptance manifest root has the exact schema keys',
     'Task IDs are unique',
     'Case IDs are unique',
     'Acceptance cases have unique string task owners',
@@ -450,6 +453,8 @@ FIXTURE_ORDINARY_CHECK_NAMES = (
     'Release gate protocol matches fixed semantics',
     'Original specification matches its fixed checksum and both manifests',
     'GOAL.md matches its fixed checksum',
+    'SOURCE-AUDIT.md matches its fixed checksum',
+    'TERMS.md matches its fixed checksum',
     'Task SPEC citations use valid syntax',
     'Task SPEC citation ranges are within SPEC.md',
     'Dependency lists contain unique string task IDs',
@@ -500,6 +505,7 @@ FIXTURE_ORDINARY_CHECK_NAMES = (
     'CONTRACTS.md matches its fixed checksum',
     'SUBAGENTS.md matches its fixed checksum',
     'PACK-CHECKS matches canonical template with mutable count and result slots',
+    'PACK-CHECKS scenario count matches the independent fixture inventory',
 )
 FIXTURE_INITIAL_ONLY_CHECK_NAMES = (
     'Initial task, case, and assignment statuses claim no execution',
@@ -508,7 +514,7 @@ FIXTURE_INITIAL_ONLY_CHECK_NAMES = (
 FIXTURE_CHECK_INVENTORY_CHECK = 'Validator check inventory matches its canonical ordered sequence'
 
 
-FIXED_FIXTURE_COUNT = 250
+FIXED_FIXTURE_COUNT = 262
 FIXED_FIXTURE_NAMES = (
     "isolated subprocess detects idempotent README mutation during validator import",
     "shared PASS summary requires every owner",
@@ -760,8 +766,20 @@ FIXED_FIXTURE_NAMES = (
     "Synchronized PLAN concurrency-policy weakening violates the fixed prefix",
     "A86 cannot omit T29 integrated presentation ownership or weaken its assertions",
     "T40 cannot claim direct writes to shared target and compatibility matrices",
+    "acceptance root rejects an unrecognized release approval key",
+    "acceptance root rejects an innocuous unknown key",
+    "SOURCE-AUDIT rejects contradictory appended instructions",
+    "TERMS rejects contradictory appended instructions",
+    "PACK-CHECKS rejects a wrong detailed task-card count",
+    "PACK-CHECKS rejects a wrong acceptance case count",
+    "PACK-CHECKS rejects a wrong specification heading count",
+    "PACK-CHECKS rejects a wrong readiness group count",
+    "PACK-CHECKS rejects a wrong procedural sentence count",
+    "PACK-CHECKS rejects a wrong ordinary check inventory count",
+    "PACK-CHECKS rejects a wrong initial check inventory count",
+    "PACK-CHECKS scenario count must match its independent inventory",
 )
-FIXED_RUNNER_CHECK_COUNT = 19
+FIXED_RUNNER_CHECK_COUNT = 20
 FIXED_RUNNER_CHECK_NAMES = (
     "The fixture inventory rejects a missing scenario entry.",
     "The fixture inventory rejects a duplicate scenario entry.",
@@ -782,6 +800,7 @@ FIXED_RUNNER_CHECK_NAMES = (
     "The runner-control inventory rejects an unexpected control.",
     "The runner-control inventory accepts the complete fixed control list.",
     "The owned process group kills a no-pipe descendant after the direct child exits.",
+    "Shared process liveness classifies running, zombie, dead, absent, and inaccessible processes.",
 )
 
 
@@ -1053,6 +1072,31 @@ def derive_expected_counts(pack: Path) -> dict[str, int] | None:
         }
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None
+
+
+def synchronize_pack_check_counts(pack: Path) -> None:
+    """Keep derived report counts truthful on fixture copies after authored mutations."""
+    counts = derive_expected_counts(pack)
+    if counts is None:
+        return
+    path = pack / "PACK-CHECKS.md"
+    if not path.is_file():
+        return
+    document = path.read_text(encoding="utf-8")
+    fields = {
+        "Detailed task cards": "tasks",
+        "Acceptance cases": "cases",
+        "Mapped specification headings": "specification_sections",
+        "Topological readiness groups": "task_ready_groups",
+        "Checked procedural sentences": "checked_sentences",
+    }
+    for label, field in fields.items():
+        pattern = re.compile(rf"^\| {re.escape(label)} \| \d+ \|$", re.MULTILINE)
+        replacement = f"| {label} | {counts[field]} |"
+        document, replacements = pattern.subn(lambda _: replacement, document)
+        if replacements != 1:
+            return
+    path.write_text(document, encoding="utf-8")
 
 
 def status_summary(statuses: list[str]) -> str:
@@ -1439,7 +1483,8 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
                 expected_report_details: dict[str, Any] | None = None,
                 expected_execution_errors: list[str] | None = None,
                 pre_normalization_mutation: Callable[[Path], None] | None = None,
-                expected_normalization_diff: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+                expected_normalization_diff: list[dict[str, Any]] | None = None,
+                preserve_pack_check_count_mutation: bool = False) -> dict[str, Any]:
     with temporary_directory(prefix="jackin-assignment-") as temp_dir:
         temporary_root = Path(temp_dir)
         pack = temporary_root / "pack"
@@ -1491,6 +1536,8 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
             }
         normalized_inputs = snapshot_files(pack)
         mutate(pack)
+        if not preserve_pack_check_count_mutation:
+            synchronize_pack_check_counts(pack)
         fixture_input_policy_violations = certified_input_violations(pack)
         if fixture_input_policy_violations:
             return {
@@ -2400,6 +2447,70 @@ def validator_import_probe(mode: str) -> dict[str, Any]:
         }
 
 
+def process_liveness(pid: int) -> str:
+    """Classify a process without treating permission failures as proof of termination."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError as error:
+        return "absent" if error.errno in {None, errno.ESRCH} else "unknown"
+    except PermissionError:
+        return "unknown"
+    except OSError as error:
+        if error.errno == errno.ESRCH:
+            return "absent"
+        if error.errno == errno.EPERM:
+            return "unknown"
+        return "unknown"
+
+    if sys.platform.startswith("linux"):
+        try:
+            process_stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+            state = process_stat.rsplit(")", 1)[1].strip().split(maxsplit=1)[0]
+        except FileNotFoundError:
+            return "absent"
+        except (IndexError, OSError):
+            return "unknown"
+        if state in {"Z", "X"}:
+            return "terminated"
+    return "running"
+
+
+def process_liveness_classifier_probe() -> dict[str, Any]:
+    expected = {
+        "running": "running",
+        "zombie": "terminated",
+        "dead": "terminated",
+        "esrch": "absent",
+        "eperm": "unknown",
+    }
+    actual: dict[str, str] = {}
+    actual["running"] = process_liveness(os.getpid())
+    with patch("os.kill", return_value=None), patch("sys.platform", "linux"):
+        for label, state in (("zombie", "Z"), ("dead", "X"), ("linux-running", "S")):
+            with patch.object(Path, "read_text", return_value=f"123 (fixture process) {state} 1 0 0"):
+                actual[label] = process_liveness(123)
+        with patch("os.kill", side_effect=ProcessLookupError(errno.ESRCH, "missing")):
+            actual["esrch"] = process_liveness(123)
+        with patch("os.kill", side_effect=PermissionError(errno.EPERM, "inaccessible")):
+            actual["eperm"] = process_liveness(123)
+    errors = [
+        {"state": state, "expected": expected_status, "actual": actual.get(state)}
+        for state, expected_status in expected.items()
+        if actual.get(state) != expected_status
+    ]
+    errors.extend(
+        {"state": "linux-running", "expected": "running", "actual": actual.get("linux-running")}
+        for _ in [0] if actual.get("linux-running") != "running"
+    )
+    return {
+        "scenario": "Shared process liveness classifies running, zombie, dead, absent, and inaccessible processes.",
+        "passed": not errors,
+        "expected": expected,
+        "actual": actual,
+        "errors": errors,
+    }
+
+
 def bounded_timeout_probe() -> dict[str, Any]:
     with temporary_directory(prefix="jackin-timeout-probe-") as temp_dir:
         temporary_root = Path(temp_dir)
@@ -2424,15 +2535,16 @@ def bounded_timeout_probe() -> dict[str, Any]:
         descendant_match = re.search(r"DESCENDANT_PID=(\d+)", process["timeout_partial_stdout"])
         descendant_pid = int(descendant_match.group(1)) if descendant_match else None
         descendant_still_live = None
+        descendant_liveness = None
         if descendant_pid is not None:
-            descendant_still_live = True
+            descendant_liveness = process_liveness(descendant_pid)
+            descendant_still_live = descendant_liveness not in {"absent", "terminated"}
             for _ in range(20):
-                try:
-                    os.kill(descendant_pid, 0)
-                except ProcessLookupError:
-                    descendant_still_live = False
+                if not descendant_still_live:
                     break
                 time.sleep(0.025)
+                descendant_liveness = process_liveness(descendant_pid)
+                descendant_still_live = descendant_liveness not in {"absent", "terminated"}
 
         input_after = snapshot_files(temporary_root)
         executable_after = path_state(sleeper)
@@ -2500,6 +2612,7 @@ def bounded_timeout_probe() -> dict[str, Any]:
             "termination_signals": process["termination_signals"],
             "child_reaped": process["child_reaped"],
             "descendant_pid": descendant_pid,
+            "descendant_liveness": descendant_liveness,
             "descendant_still_live": descendant_still_live,
             "bounded_descendant_control_passed": descendant_control_passed,
             "canonical_report_argv": canonical_report_process.get("argv"),
@@ -2551,31 +2664,17 @@ def no_pipe_descendant_timeout_probe() -> dict[str, Any]:
         descendant_pid = int(pid_match.group(1)) if pid_match else None
         reported_pgid = int(pgid_match.group(1)) if pgid_match else None
 
-        def process_is_live(pid: int) -> bool:
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                return False
-            if sys.platform.startswith("linux"):
-                try:
-                    process_stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
-                    state = process_stat.rsplit(")", 1)[1].strip().split(maxsplit=1)[0]
-                    if state in {"Z", "X"}:
-                        return False
-                except FileNotFoundError:
-                    return False
-                except (IndexError, OSError):
-                    return True
-            return True
-
         descendant_still_live: bool | None = None
+        descendant_liveness = None
         if descendant_pid is not None:
-            descendant_still_live = process_is_live(descendant_pid)
+            descendant_liveness = process_liveness(descendant_pid)
+            descendant_still_live = descendant_liveness not in {"absent", "terminated"}
             for _ in range(40):
                 if not descendant_still_live:
                     break
                 time.sleep(0.025)
-                descendant_still_live = process_is_live(descendant_pid)
+                descendant_liveness = process_liveness(descendant_pid)
+                descendant_still_live = descendant_liveness not in {"absent", "terminated"}
 
             # A failed or incomplete assertion must not leave this probe's
             # owned group running. The group ID is the one created for this
@@ -2588,9 +2687,11 @@ def no_pipe_descendant_timeout_probe() -> dict[str, Any]:
                 if descendant_pid is not None:
                     for _ in range(40):
                         time.sleep(0.025)
-                        if not process_is_live(descendant_pid):
+                        descendant_liveness = process_liveness(descendant_pid)
+                        if descendant_liveness in {"absent", "terminated"}:
                             descendant_still_live = False
                             break
+                        descendant_still_live = True
 
         input_after = snapshot_files(temporary_root)
         executable_after = path_state(script)
@@ -2626,6 +2727,7 @@ def no_pipe_descendant_timeout_probe() -> dict[str, Any]:
             "process_group_id": process["process_group_id"],
             "reported_owned_pgid": reported_pgid,
             "descendant_pid": descendant_pid,
+            "descendant_liveness": descendant_liveness,
             "descendant_still_live": descendant_still_live,
             "input_sha256_before": snapshot_states(input_before),
             "input_sha256_after": snapshot_states(input_after),
@@ -5494,10 +5596,33 @@ def main() -> int:
         tested_counts = derive_expected_counts(pack)
         if tested_counts is None:
             raise ValueError("Expected input-derived counts for the copied pack")
+        goal_path = pack / "GOAL.md"
+        goal_document = goal_path.read_text(encoding="utf-8")
+        goal_document += "\nA reviewed fixture sentence changes this count.\n"
+        goal_path.write_text(goal_document, encoding="utf-8")
+        goal_digest = hashlib.sha256(goal_path.read_bytes()).hexdigest()
+        validator_path = pack / "validate_pack.py"
+        validator = validator_path.read_text(encoding="utf-8")
+        validator, substitutions = re.subn(
+            r'^GOAL_SHA256 = "[0-9a-f]{64}"$',
+            f'GOAL_SHA256 = "{goal_digest}"',
+            validator,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        if substitutions != 1:
+            raise ValueError("Expected one fixed GOAL checksum declaration in the copied validator")
+        validator_path.write_text(validator, encoding="utf-8")
+        tested_counts = derive_expected_counts(pack)
+        if tested_counts is None:
+            raise ValueError("Expected counts after changing the reviewed GOAL input")
         sentence_count = tested_counts["checked_sentences"]
+        original_counts = derive_expected_counts(ROOT)
+        if original_counts is None or sentence_count == original_counts["checked_sentences"]:
+            raise ValueError("The reviewed GOAL sentence must change the derived sentence count")
         replacements = (
-            (f"| Checked procedural sentences | {sentence_count} |",
-             "| Checked procedural sentences | 0 |"),
+            (f"| Checked procedural sentences | {original_counts['checked_sentences']} |",
+             f"| Checked procedural sentences | {sentence_count} |"),
             ("Result: Static pack validation and per-task assignment fixtures pass.",
              "Result: Static pack validation and per-task assignment fixtures fail."),
             ("| GOAL matches its fixed checksum | PASS |", "| GOAL matches its fixed checksum | FAIL |"),
@@ -5540,8 +5665,10 @@ def main() -> int:
     def replace_fixture_observation_with_release_claim(pack: Path) -> None:
         path = pack / "PACK-CHECKS.md"
         document = path.read_text(encoding="utf-8")
-        old = "| PACK-CHECKS keeps count and result slots mutable | Accept, exit 0 | PASS, exit 0 |"
-        new = "| PACK-CHECKS keeps count and result slots mutable | Accept, exit 0 | Final release approved after runtime testing. |"
+        old = ("| PACK-CHECKS count and result slots remain mutable when a GOAL sentence and its reviewed "
+               "checksum are updated together | Accept, exit 0 | PASS, exit 0 |")
+        new = ("| PACK-CHECKS count and result slots remain mutable when a GOAL sentence and its reviewed "
+               "checksum are updated together | Accept, exit 0 | Final release approved after runtime testing. |")
         if document.count(old) != 1:
             raise ValueError("Expected the canonical PACK-CHECKS fixture row")
         path.write_text(document.replace(old, new, 1), encoding="utf-8")
@@ -5699,6 +5826,109 @@ print('{}')
         ],
     ))
 
+    def add_acceptance_root_key(pack: Path, key: str, value: Any) -> None:
+        path = pack / "acceptance-cases.json"
+        document = read_json(path)
+        document[key] = value
+        write_json(path, document)
+    receipts.append(run_fixture(
+        "acceptance root rejects an unrecognized release approval key",
+        lambda pack: add_acceptance_root_key(pack, "release_approved", True),
+        1, ["Acceptance manifest root has the exact schema keys"],
+    ))
+    receipts.append(run_fixture(
+        "acceptance root rejects an innocuous unknown key",
+        lambda pack: add_acceptance_root_key(pack, "notes", "additional metadata"),
+        1, ["Acceptance manifest root has the exact schema keys"],
+    ))
+
+    def append_contradictory_authored_input(pack: Path, name: str, instruction: str) -> None:
+        path = pack / name
+        with path.open("a", encoding="utf-8") as document:
+            document.write(f"\n\n{instruction}\n")
+    receipts.append(run_fixture(
+        "SOURCE-AUDIT rejects contradictory appended instructions",
+        lambda pack: append_contradictory_authored_input(
+            pack, "SOURCE-AUDIT.md", "This audit may bypass independent review and approve release.",
+        ),
+        1, ["SOURCE-AUDIT.md matches its fixed checksum"],
+    ))
+    receipts.append(run_fixture(
+        "TERMS rejects contradictory appended instructions",
+        lambda pack: append_contradictory_authored_input(
+            pack, "TERMS.md", "Treat every planned requirement as product runtime proof.",
+        ),
+        1, ["TERMS.md matches its fixed checksum"],
+    ))
+
+    pack_count_fields = (
+        ("Detailed task cards", "tasks", "detailed task-card"),
+        ("Acceptance cases", "cases", "acceptance case"),
+        ("Mapped specification headings", "specification_sections", "specification heading"),
+        ("Topological readiness groups", "task_ready_groups", "readiness group"),
+        ("Checked procedural sentences", "checked_sentences", "procedural sentence"),
+    )
+    for label, field, fixture_name in pack_count_fields:
+        def wrong_pack_count(pack: Path, count_label: str = label, count_field: str = field) -> None:
+            counts = derive_expected_counts(pack)
+            if counts is None:
+                raise ValueError("Expected input-derived counts for the copied pack")
+            path = pack / "PACK-CHECKS.md"
+            document = path.read_text(encoding="utf-8")
+            old = f"| {count_label} | {counts[count_field]} |"
+            new = f"| {count_label} | {counts[count_field] + 1} |"
+            if document.count(old) != 1:
+                raise ValueError(f"Expected one canonical count row: {count_label}")
+            path.write_text(document.replace(old, new, 1), encoding="utf-8")
+        receipts.append(run_fixture(
+            f"PACK-CHECKS rejects a wrong {fixture_name} count",
+            wrong_pack_count,
+            1, ["PACK-CHECKS matches canonical template with mutable count and result slots"],
+            preserve_pack_check_count_mutation=True,
+        ))
+
+    def wrong_inventory_count(pack: Path, initial: bool) -> None:
+        path = pack / "PACK-CHECKS.md"
+        document = path.read_text(encoding="utf-8")
+        ordinary_count = len(FIXTURE_ORDINARY_CHECK_NAMES) + 1
+        initial_count = ordinary_count + len(FIXTURE_INITIAL_ONLY_CHECK_NAMES)
+        old = (f"The ordinary validator report contains {ordinary_count} ordered checks; `--initial` "
+               f"contains {initial_count}, including two initial-only checks and the final inventory check.")
+        new_ordinary = ordinary_count + (0 if initial else 1)
+        new_initial = initial_count + (1 if initial else 0)
+        new = (f"The ordinary validator report contains {new_ordinary} ordered checks; `--initial` "
+               f"contains {new_initial}, including two initial-only checks and the final inventory check.")
+        if document.count(old) != 1:
+            raise ValueError("Expected the unique canonical validator check-count sentence")
+        path.write_text(document.replace(old, new, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "PACK-CHECKS rejects a wrong ordinary check inventory count",
+        lambda pack: wrong_inventory_count(pack, False),
+        1, ["PACK-CHECKS matches canonical template with mutable count and result slots"],
+    ))
+    receipts.append(run_fixture(
+        "PACK-CHECKS rejects a wrong initial check inventory count",
+        lambda pack: wrong_inventory_count(pack, True),
+        1, ["PACK-CHECKS matches canonical template with mutable count and result slots"],
+    ))
+
+    def wrong_fixture_scenario_count(pack: Path) -> None:
+        path = pack / "PACK-CHECKS.md"
+        document = path.read_text(encoding="utf-8")
+        old = f"All {FIXED_FIXTURE_COUNT} scenarios passed their exact report, input-derived count, and exit-code expectations."
+        new = f"All {FIXED_FIXTURE_COUNT - 1} scenarios passed their exact report, input-derived count, and exit-code expectations."
+        if document.count(old) != 1:
+            raise ValueError("Expected the unique canonical scenario-count sentence")
+        path.write_text(document.replace(old, new, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "PACK-CHECKS scenario count must match its independent inventory",
+        wrong_fixture_scenario_count,
+        1, [
+            "PACK-CHECKS matches canonical template with mutable count and result slots",
+            "PACK-CHECKS scenario count matches the independent fixture inventory",
+        ],
+    ))
+
     fixture_inventory = fixture_inventory_report([
         receipt.get("scenario") for receipt in receipts
     ])
@@ -5722,6 +5952,7 @@ print('{}')
         runner_inventory_control_probe("unexpected"),
         runner_inventory_control_probe("complete"),
         no_pipe_descendant_timeout_probe(),
+        process_liveness_classifier_probe(),
     ]
     runner_control_inventory = runner_check_inventory_report([
         check.get("scenario") for check in runner_checks
