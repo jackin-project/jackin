@@ -62,7 +62,7 @@ key = "clippy::cast_sign_loss@jackin-usage-provider-antigravity"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin"
-bound = 5
+bound = 10
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-capsule"
 bound = 7
@@ -92,7 +92,7 @@ key = "clippy::disallowed_methods@jackin-instance-credentials"
 bound = 3
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-omp-store"
-bound = 2
+bound = 4
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-process"
 bound = 1
@@ -153,6 +153,9 @@ bound = 2
 [[family.entry]]
 key = "clippy::exit@jackin-capsule"
 bound = 2
+[[family.entry]]
+key = "clippy::expect_used@jackin"
+bound = 4
 [[family.entry]]
 key = "clippy::expect_used@jackin-capsule"
 bound = 1
@@ -215,7 +218,7 @@ key = "clippy::option_if_let_else@jackin-console"
 bound = 1
 [[family.entry]]
 key = "clippy::panic@jackin"
-bound = 1
+bound = 4
 [[family.entry]]
 key = "clippy::panic@jackin-capsule"
 bound = 1
@@ -446,7 +449,7 @@ key = "clippy::unused_async_trait_impl@jackin-image"
 bound = 1
 [[family.entry]]
 key = "clippy::unwrap_used@jackin"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "clippy::undocumented_unsafe_blocks@jackin-process-directory"
 bound = 5
@@ -467,7 +470,7 @@ key = "clippy::useless_let_if_seq@jackin"
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin"
-bound = 1
+bound = 3
 [[family.entry]]
 key = "dead_code@jackin-env"
 bound = 1

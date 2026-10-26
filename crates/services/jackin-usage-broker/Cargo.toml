@@ -40,6 +40,7 @@ sha2 = { workspace = true }
 
 [dev-dependencies]
 jackin-usage-coordinator = { workspace = true, features = ["test-support"] }
+tempfile = { workspace = true }
 
 [lints]
 workspace = true
