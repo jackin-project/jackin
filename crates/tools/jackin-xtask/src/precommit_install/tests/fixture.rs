@@ -8,13 +8,19 @@ use anyhow::{Result, ensure};
 
 pub(super) fn private_dir() -> Result<tempfile::TempDir> {
     let parent = std::env::temp_dir().canonicalize()?;
-    Ok(tempfile::Builder::new()
+    let directory = tempfile::Builder::new()
         .prefix("jackin-owner-install-")
-        .tempdir_in(parent)?)
+        .tempdir_in(parent)?;
+    std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700))?;
+    Ok(directory)
 }
 
 pub(super) fn git(repository: &Path, args: &[&str]) -> Result<Output> {
-    let output = Command::new("git")
+    let output = Command::new("/bin/sh")
+        .arg("-c")
+        .arg("umask 077; exec \"$@\"")
+        .arg("jackin-git-fixture")
+        .arg("git")
         .arg("-C")
         .arg(repository.as_os_str())
         .args(args)
@@ -37,7 +43,9 @@ pub(super) fn git(repository: &Path, args: &[&str]) -> Result<Output> {
 
 pub(super) fn init_repository(root: &Path) -> Result<()> {
     std::fs::create_dir_all(root)?;
+    std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700))?;
     git(root, &["init", "-q"])?;
+    std::fs::set_permissions(root.join(".git"), std::fs::Permissions::from_mode(0o700))?;
     git(root, &["config", "user.name", "Installer Fixture"])?;
     git(
         root,
