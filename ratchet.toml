@@ -1013,7 +1013,7 @@ key = "crates/services/jackin-usage-provider-minimax/README.md"
 bound = 1409
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-openrouter/README.md"
-bound = 1133
+bound = 1764
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-grok/README.md"
 bound = 1206

@@ -38,6 +38,21 @@ struct RawOpenRouterKeyData {
 enum KeyDataView<'a> {
     Value(&'a serde_json::Value),
     Raw(&'a RawObject),
+    Sequence,
+}
+
+enum RawKeyDataSource {
+    Object(RawObject),
+    Sequence,
+}
+
+impl RawKeyDataSource {
+    fn view(&self) -> KeyDataView<'_> {
+        match self {
+            Self::Object(data) => KeyDataView::Raw(data),
+            Self::Sequence => KeyDataView::Sequence,
+        }
+    }
 }
 
 impl KeyDataView<'_> {
@@ -45,6 +60,7 @@ impl KeyDataView<'_> {
         match self {
             Self::Value(data) => data.get(field).and_then(Decimal::from_value),
             Self::Raw(data) => data.get(field).and_then(|value| Decimal::from_raw(value)),
+            Self::Sequence => None,
         }
     }
 }
@@ -104,6 +120,7 @@ fn openrouter_byok_spend(data: KeyDataView<'_>) -> Option<Money> {
             });
             sum_nonnegative_raw(values)
         }
+        KeyDataView::Sequence => None,
     }
 }
 
@@ -149,6 +166,7 @@ fn openrouter_key_expiry(data: KeyDataView<'_>, now: i64) -> Option<String> {
                 .or_else(|| raw_i64(raw).map(epoch_seconds_from_maybe_ms))
                 .or_else(|| raw_f64(raw).and_then(epoch_from_f64))?
         }
+        KeyDataView::Sequence => return None,
     };
     Some(format!("expires {}", expiry_label(epoch, now)))
 }
@@ -190,6 +208,7 @@ fn openrouter_key_reset(data: KeyDataView<'_>) -> Option<i64> {
             .and_then(|raw| raw_string(raw))
             .as_deref()
             .and_then(parse_iso_epoch),
+        KeyDataView::Sequence => None,
     }
 }
 
@@ -227,12 +246,28 @@ pub fn parse_openrouter_key_usage_raw(
     let envelope: RawObject =
         serde_json::from_str(raw_json).map_err(|_| malformed_key_response())?;
     let raw_data = envelope.get("data").ok_or_else(malformed_key_response)?;
-    let data: RawObject =
-        serde_json::from_str(raw_data.get()).map_err(|_| malformed_key_response())?;
-    let typed_data = serde_json::to_string(&data).map_err(|_| malformed_key_response())?;
-    let raw_key: RawOpenRouterKeyData =
-        serde_json::from_str(&typed_data).map_err(|_| malformed_key_response())?;
-    let key = OpenRouterKeyData {
+    let (raw_key, source) = match raw_data.get().trim_start().as_bytes().first().copied() {
+        Some(b'{') => {
+            let data: RawObject =
+                serde_json::from_str(raw_data.get()).map_err(|_| malformed_key_response())?;
+            let typed_data = serde_json::to_string(&data).map_err(|_| malformed_key_response())?;
+            let raw_key: RawOpenRouterKeyData =
+                serde_json::from_str(&typed_data).map_err(|_| malformed_key_response())?;
+            (raw_key, RawKeyDataSource::Object(data))
+        }
+        Some(b'[') => {
+            let raw_key: RawOpenRouterKeyData =
+                serde_json::from_str(raw_data.get()).map_err(|_| malformed_key_response())?;
+            (raw_key, RawKeyDataSource::Sequence)
+        }
+        _ => return Err(malformed_key_response()),
+    };
+    let key = decode_raw_key_data(raw_key)?;
+    project_openrouter_key_usage(key, source.view(), now)
+}
+
+fn decode_raw_key_data(raw_key: RawOpenRouterKeyData) -> Result<OpenRouterKeyData, String> {
+    Ok(OpenRouterKeyData {
         usage: decode_raw_f64(raw_key.usage)?,
         usage_daily: decode_raw_f64(raw_key.usage_daily)?,
         usage_weekly: decode_raw_f64(raw_key.usage_weekly)?,
@@ -240,8 +275,7 @@ pub fn parse_openrouter_key_usage_raw(
         limit: decode_raw_f64(raw_key.limit)?,
         limit_remaining: decode_raw_f64(raw_key.limit_remaining)?,
         is_free_tier: raw_key.is_free_tier,
-    };
-    project_openrouter_key_usage(key, KeyDataView::Raw(&data), now)
+    })
 }
 
 fn decode_raw_f64(raw: Option<Box<RawValue>>) -> Result<Option<f64>, String> {

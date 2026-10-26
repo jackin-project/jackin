@@ -640,7 +640,6 @@ fn openrouter_raw_parser_preserves_duplicate_last_wins_and_typed_validation() {
     for json in [
         "{}",
         r#"{"data":null}"#,
-        r#"{"data":[]}"#,
         r#"{"data":{"usage_monthly":"1"}}"#,
     ] {
         assert!(
@@ -701,22 +700,115 @@ fn openrouter_raw_parser_preserves_duplicate_last_wins_and_typed_validation() {
 }
 
 #[test]
-fn openrouter_value_parser_reports_its_selected_precision_lane() {
-    let quota = parse_openrouter_key_usage(
+fn openrouter_value_parser_uses_the_precision_retained_by_its_number() {
+    let value: serde_json::Value =
         serde_json::from_str(r#"{"data":{"usage_monthly":0.100000000000000001}}"#)
-            .expect("value key JSON"),
-        1_780_000_000,
-    )
-    .expect("value parser");
+            .expect("value key JSON");
+    let retained_number = value
+        .get("data")
+        .and_then(|data| data.get("usage_monthly"))
+        .and_then(serde_json::Value::as_number)
+        .map(ToString::to_string)
+        .expect("monthly number");
+    let quota = parse_openrouter_key_usage(value, 1_780_000_000).expect("value parser");
     let month = quota
         .buckets
         .iter()
         .find(|bucket| bucket.label == "Spent this month")
         .expect("monthly row");
-    #[cfg(feature = "value-arbitrary-precision")]
-    assert_eq!(month.used_label.as_deref(), Some("$0.100000000000000001"));
-    #[cfg(not(feature = "value-arbitrary-precision"))]
-    assert_eq!(month.used_label.as_deref(), Some("$0.10"));
+    match retained_number.as_str() {
+        "0.1" => {
+            assert_eq!(month.used_label.as_deref(), Some("$0.10"));
+            assert_eq!(
+                month.used_money,
+                Some(jackin_protocol::control::Money::new(10, "USD", 2))
+            );
+        }
+        "0.100000000000000001" => {
+            assert_eq!(month.used_label.as_deref(), Some("$0.100000000000000001"));
+            assert_eq!(
+                month.used_money,
+                Some(jackin_protocol::control::Money::new(
+                    100_000_000_000_000_001,
+                    "USD",
+                    18
+                ))
+            );
+        }
+        other => panic!("unexpected retained number spelling: {other}"),
+    }
+}
+
+#[test]
+fn openrouter_raw_and_value_lanes_preserve_key_data_sequence_shapes() {
+    for (json, expected_plan) in [
+        (r#"{"data":[]}"#, None),
+        (r#"{"data":[1.25]}"#, None),
+        (r#"{"data":[null,null,null,2.5]}"#, None),
+        (
+            r#"{"data":[null,null,null,null,null,null,true]}"#,
+            Some("Free tier"),
+        ),
+    ] {
+        let raw = parse_openrouter_key_usage_raw(json, 1_780_000_000);
+        let value = serde_json::from_str::<serde_json::Value>(json)
+            .map_err(|error| error.to_string())
+            .and_then(|value| parse_openrouter_key_usage(value, 1_780_000_000));
+        assert_eq!(raw.is_ok(), value.is_ok(), "input: {json}");
+        let raw = raw.expect("compatible key-data sequence");
+        let value = value.expect("compatible Value key-data sequence");
+        assert_eq!(
+            quota_projection(&raw),
+            quota_projection(&value),
+            "input: {json}"
+        );
+        assert!(
+            raw.buckets.is_empty(),
+            "sequence fields are not named money fields"
+        );
+        assert_eq!(raw.plan_label.as_deref(), expected_plan, "input: {json}");
+    }
+
+    for json in [
+        r#"{"data":null}"#,
+        r#"{"data":"key"}"#,
+        r#"{"data":1}"#,
+        r#"{"data":true}"#,
+        r#"{"data":["1"]}"#,
+        r#"{"data":[null,"1"]}"#,
+        r#"{"data":[null,null,null,null,null,null,0]}"#,
+        r#"{"data":[null,null,null,null,null,null,true,false]}"#,
+    ] {
+        let raw = parse_openrouter_key_usage_raw(json, 1_780_000_000);
+        let value = serde_json::from_str::<serde_json::Value>(json)
+            .map_err(|error| error.to_string())
+            .and_then(|value| parse_openrouter_key_usage(value, 1_780_000_000));
+        assert_eq!(raw.is_ok(), value.is_ok(), "input: {json}");
+        assert!(raw.is_err(), "invalid key-data shape should fail: {json}");
+    }
+
+    for json in [
+        r#"{"data":[1e400]}"#,
+        r#"{"data":[null,null,null,1e400]}"#,
+        r#"{"data":[null,null,null,0e400]}"#,
+        r#"{"data":[null,null,null,1e-400]}"#,
+    ] {
+        let raw = parse_openrouter_key_usage_raw(json, 1_780_000_000)
+            .expect("extreme positional f64 value remains typed-valid");
+        assert!(
+            raw.buckets.is_empty(),
+            "sequence fields are not named money fields"
+        );
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(json) {
+            let value = parse_openrouter_key_usage(value, 1_780_000_000)
+                .expect("Value sequence has the same typed acceptance");
+            assert_eq!(
+                quota_projection(&raw),
+                quota_projection(&value),
+                "input: {json}"
+            );
+        }
+    }
 }
 
 #[cfg(feature = "value-arbitrary-precision")]
