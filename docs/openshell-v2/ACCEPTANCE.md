@@ -1369,9 +1369,9 @@ Do not claim support above measured and qualified resource bounds.
 
 **Setup:** Use every task report, target row, acceptance result, and independent review.
 
-**Action:** Run the full evidence validator and release gate.
+**Action:** Run missing, failed, blocked, and unreviewed prerequisite refusal assertions. Inspect the separate finalization contract.
 
-**Required result:** Any missing, failed, blocked, or unreviewed mandatory item prevents full release approval.
+**Required result:** Every refusal prevents approval. Finalization requires all three actual T40 case results and every fixed prerequisite.
 
 ### A124 — Accurate operational documentation
 

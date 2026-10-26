@@ -16,6 +16,11 @@ SUPPORTED_SCHEMA_VERSION = 1
 PARALLEL_AGENT_LIMIT = 8
 ACCEPTANCE_EVIDENCE_LEVELS = {"SOURCE", "UNIT", "BUILD", "LIVE"}
 PROGRESS_TASK_STATUSES = {"READY", "RUNNING", "REVIEW", "PASS"}
+CASE_STATUSES = {"NOT_RUN", "PASS", "FAIL", "BLOCKED"}
+TASK_COMPLETION_RULE = (
+    "All task checks pass at their declared evidence level. "
+    "Required artifacts and an independent review exist."
+)
 SOURCE_PINS = {
     "jackin_baseline": "faa2ab6c12e3de45a76ab6b98df0c64dac7aac6e",
     "openshell_candidate": "c4688aa8715ea75d6c39fe468361dbbc16c691fa",
@@ -23,6 +28,95 @@ SOURCE_PINS = {
 }
 SOURCE_BASIS_PATTERN = re.compile(r"SPEC L\d+(?:-L\d+)?(?:; L\d+(?:-L\d+)?)*")
 SOURCE_CITATION_PATTERN = re.compile(r"L(\d+)(?:-L(\d+))?")
+RELEASE_GATE_PROTOCOL = {
+    "schema_version": 1,
+    "task_id": "T40",
+    "preflight": {
+        "required_tasks": "Every task other than T40",
+        "required_task_status": "PASS",
+        "required_assignments": "PASS for every assignment owned by a prior task",
+        "required_evidence": (
+            "Every required task artifact, independent review, and merged-source check is present and passes"
+        ),
+        "required_targets": "PASS for every required target row",
+        "allowed_t40_statuses": ["RUNNING", "REVIEW"],
+        "excluded_final_cases": ["A123", "A124", "A125"],
+        "result": "PREFLIGHT_ONLY",
+        "may_approve_release": False,
+    },
+    "finalization": {
+        "required_prior_task_status": "PASS",
+        "required_assignment_status": "PASS for every case assignment, including A123, A124, and A125",
+        "required_t40_cases": ["A123", "A124", "A125"],
+        "required_evidence": [
+            "A123 missing, failed, blocked, and unreviewed prerequisite refusal assertions",
+            "Actual A124 operational documentation result",
+            "Actual A125 provenance and authorization result",
+            "All required target records and task artifacts",
+            "Independent T40 review",
+            "Merged-source checks",
+        ],
+        "synthetic_gate_fixtures_are_candidate_evidence": False,
+        "excluded_inputs": ["Persisted T40 task status PASS", "The future finalization receipt"],
+        "success_outputs": [
+            "Persist T40 task status PASS",
+            "The finalization receipt",
+            "The completion record",
+            "The approval record",
+        ],
+        "approval_binds": ["Reviewed source commit", "Package digests", "Evidence hashes"],
+        "completion_and_approval_together": True,
+        "failed_prerequisite_outputs": [],
+    },
+}
+P04_RELEASE_GATE_STEP = "Implement the fixed release_gate_protocol in the evidence harness."
+P04_RELEASE_GATE_ACCEPTANCE = (
+    "Preflight cannot approve release. Finalization requires every fixed protocol prerequisite."
+)
+QUALIFICATION_SUBAGENT_ROW = "| Qualification subagent | P04, U08, and T35 through T38. |"
+T40_RELEASE_GATE_STEPS = [
+    "Run the release_gate_protocol preflight while T40 is RUNNING or REVIEW.",
+    "Check prior task statuses and assignment results.",
+    "Check reviewed artifacts, merged evidence, and required target results.",
+    "Exercise A123 refusals for missing, failed, blocked, and unreviewed prerequisites.",
+    "Confirm every refusal prevents approval. Treat synthetic refusal fixtures as contract tests only.",
+    "Run A124 and A125 against the actual candidate. Record actual results for all three T40 cases.",
+    "Obtain an independent T40 review and rerun checks against the merged source.",
+    "Finalize only after all prior tasks and every case assignment pass, including A123, A124, and A125.",
+    "Bind completion and approval to the reviewed source commit, package digests, and evidence hashes.",
+    "Write T40 PASS, completion, finalization receipt, and approval together only after every prerequisite passes.",
+]
+T40_RELEASE_GATE_ACCEPTANCE = [
+    "Preflight requires every task except T40 and each prior task assignment to pass.",
+    "Prior task artifacts, independent reviews, merged evidence, and required target results must pass.",
+    "T40 is RUNNING or REVIEW during preflight.",
+    "Preflight excludes A123, A124, and A125, returns PREFLIGHT_ONLY, and never approves release.",
+    "Finalization requires every task except T40 and every case assignment to pass, including A123, A124, and A125.",
+    "Finalization also requires all targets and artifacts, an independent T40 review, and merged-source checks.",
+    "Finalization excludes only persisted T40=PASS and its own future receipt from the input set.",
+    "It writes T40 PASS, a finalization receipt, completion, and approval together.",
+    "Approval binds the reviewed source commit, package digests, and evidence hashes.",
+    "Synthetic gate fixtures test refusals only and never count as candidate evidence.",
+    "A failed prerequisite writes neither a completion record nor approval.",
+]
+RELEASE_GATE_SCOPE_SENTENCE = (
+    "These release-gate checks validate static planning structure only. "
+    "They do not run a release preflight, test a candidate, or issue approval."
+)
+A123_GATE_ACTION = (
+    "Run missing, failed, blocked, and unreviewed prerequisite refusal assertions. "
+    "Inspect the separate finalization contract."
+)
+A123_GATE_EXPECTED = (
+    "Every refusal prevents approval. Finalization requires all three actual T40 case results "
+    "and every fixed prerequisite."
+)
+REVIEW_PACKET_REQUIREMENTS = [
+    "Give the review subagent the original task card, the input commit SHA, and the candidate task diff.",
+    "Bind the candidate task diff to both the input commit SHA and candidate commit SHA.",
+    "Resolve review findings before the integration merge.",
+    "Run merged-result checks before task completion.",
+]
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -38,7 +132,10 @@ def sentences(value: str) -> list[str]:
 
 def render_task_card(task: dict[str, Any]) -> str:
     dependencies = ", ".join(task["depends_on"]) or "None"
-    cases = ", ".join(task["test_cases"]) or "None"
+    case_references = task.get("test_cases")
+    cases = ", ".join(case_id for case_id in case_references
+                       if isinstance(case_id, str)) if isinstance(case_references, list) else "None"
+    cases = cases or "None"
     lines = [
         f"### {task['id']} — {task['title']}",
         "",
@@ -223,7 +320,7 @@ def main() -> int:
     case_ids = [case["id"] for case in cases]
     task_set, case_set = set(task_ids), set(case_ids)
     task_statuses = {"NOT_STARTED", "READY", "RUNNING", "REVIEW", "PASS", "FAIL", "BLOCKED"}
-    case_statuses = {"NOT_RUN", "PASS", "FAIL", "BLOCKED"}
+    case_statuses = CASE_STATUSES
     bad_case_levels = [{"id": case["id"], "level": case["level"]} for case in cases
                        if case["level"] not in ACCEPTANCE_EVIDENCE_LEVELS]
     bad_task_statuses = [{"id": task["id"], "status": task["status"]} for task in tasks
@@ -233,6 +330,14 @@ def main() -> int:
     check("Task statuses use documented values", not bad_task_statuses, bad_task_statuses)
     check("Acceptance case statuses use documented values", not bad_case_statuses, bad_case_statuses)
     check("Acceptance evidence levels use documented values", not bad_case_levels, bad_case_levels)
+    manifest_status = cases_file.get("status")
+    check("Acceptance manifest status uses documented values",
+          isinstance(manifest_status, str) and manifest_status in case_statuses,
+          manifest_status)
+    expected_manifest_status = case_status_summary([case.get("status") for case in cases])
+    check("Acceptance manifest status matches the case summary",
+          manifest_status == expected_manifest_status,
+          {"expected": expected_manifest_status, "actual": manifest_status})
     check("Task IDs are unique", len(task_set) == len(tasks))
     check("Case IDs are unique", len(case_set) == len(cases))
     case_owner_errors = []
@@ -247,6 +352,33 @@ def main() -> int:
     check("Declared case count matches", graph["acceptance_case_count"] == len(cases), len(cases))
     check("Expected task count", len(tasks) == 46, len(tasks))
     check("Expected acceptance case count", len(cases) == 125, len(cases))
+    bad_completion_rules = [
+        {"task": task.get("id"), "completion_rule": task.get("completion_rule")}
+        for task in tasks if task.get("completion_rule") != TASK_COMPLETION_RULE
+    ]
+    check("Task completion rules match the fixed evidence contract",
+          not bad_completion_rules, bad_completion_rules)
+    task_case_reference_errors = []
+    for task in tasks:
+        references = task.get("test_cases")
+        if not isinstance(references, list):
+            task_case_reference_errors.append({"task": task.get("id"), "problem": "test_cases must be a list"})
+        elif any(not isinstance(case_id, str) for case_id in references):
+            task_case_reference_errors.append({
+                "task": task.get("id"), "problem": "test_cases entries must be strings",
+            })
+        elif len(references) != len(set(references)):
+            task_case_reference_errors.append({
+                "task": task.get("id"), "problem": "duplicate test case ID", "test_cases": references,
+            })
+    check("Task test_cases contain unique string IDs", not task_case_reference_errors,
+          task_case_reference_errors)
+    release_protocol = graph.get("release_gate_protocol")
+    release_protocol_errors = [] if release_protocol == RELEASE_GATE_PROTOCOL else [
+        {"actual": release_protocol, "expected": RELEASE_GATE_PROTOCOL}
+    ]
+    check("Release gate protocol matches fixed semantics", not release_protocol_errors,
+          release_protocol_errors)
 
     actual_digest = hashlib.sha256((root / "SPEC.md").read_bytes()).hexdigest()
     spec_lines = (root / "SPEC.md").read_text(encoding="utf-8").splitlines()
@@ -289,6 +421,78 @@ def main() -> int:
                         if dep not in task_set or dep == task["id"]]
     check("Dependencies reference other known tasks", not bad_dependencies, bad_dependencies)
     tasks_by_id = {task["id"]: task for task in tasks}
+    cases_by_id = {case["id"]: case for case in cases}
+    release_protocol_reference_errors = []
+    if not isinstance(release_protocol, dict):
+        release_protocol_reference_errors.append("release_gate_protocol must be an object")
+    else:
+        owner_id = release_protocol.get("task_id")
+        if owner_id != "T40" or owner_id not in tasks_by_id:
+            release_protocol_reference_errors.append({"task_id": owner_id, "expected_owner": "T40"})
+        preflight = release_protocol.get("preflight")
+        finalization = release_protocol.get("finalization")
+        if not isinstance(preflight, dict) or not isinstance(finalization, dict):
+            release_protocol_reference_errors.append("preflight and finalization must be objects")
+        else:
+            final_case_ids = finalization.get("required_t40_cases")
+            if not isinstance(final_case_ids, list) or any(not isinstance(case_id, str)
+                                                            for case_id in final_case_ids):
+                release_protocol_reference_errors.append("required_t40_cases must be string IDs")
+            else:
+                if final_case_ids != ["A123", "A124", "A125"]:
+                    release_protocol_reference_errors.append({
+                        "required_t40_cases": final_case_ids,
+                        "expected": ["A123", "A124", "A125"],
+                    })
+                if tasks_by_id.get("T40", {}).get("test_cases") != final_case_ids:
+                    release_protocol_reference_errors.append("T40 must own every finalization case")
+                if preflight.get("excluded_final_cases") != final_case_ids:
+                    release_protocol_reference_errors.append("preflight exclusions must match T40 final cases")
+                for case_id in final_case_ids:
+                    if case_id not in case_set:
+                        release_protocol_reference_errors.append({"unknown_final_case": case_id})
+                    elif cases_by_id[case_id].get("tasks") != ["T40"]:
+                        release_protocol_reference_errors.append({
+                            "case": case_id, "owners": cases_by_id[case_id].get("tasks"),
+                            "expected_owner": "T40",
+                        })
+    check("Release gate references name T40 and its owned final cases",
+          not release_protocol_reference_errors, release_protocol_reference_errors)
+
+    p04 = tasks_by_id.get("P04", {})
+    t40 = tasks_by_id.get("T40", {})
+    release_gate_task_mirror_errors = []
+    if P04_RELEASE_GATE_STEP not in p04.get("steps", []):
+        release_gate_task_mirror_errors.append("P04 must implement the fixed protocol")
+    if P04_RELEASE_GATE_ACCEPTANCE not in p04.get("acceptance", []):
+        release_gate_task_mirror_errors.append("P04 acceptance must keep preflight separate from approval")
+    t40_steps = t40.get("steps", [])
+    missing_t40_steps = [step for step in T40_RELEASE_GATE_STEPS if step not in t40_steps]
+    if missing_t40_steps:
+        release_gate_task_mirror_errors.append({"missing_T40_steps": missing_t40_steps})
+    t40_acceptance = t40.get("acceptance", [])
+    if t40_acceptance[-len(T40_RELEASE_GATE_ACCEPTANCE):] != T40_RELEASE_GATE_ACCEPTANCE:
+        release_gate_task_mirror_errors.append("T40 acceptance must mirror preflight and finalization rules")
+    if cases_by_id.get("A123", {}).get("tasks") != ["T40"]:
+        release_gate_task_mirror_errors.append("A123 must be owned by T40")
+    if (cases_by_id.get("A123", {}).get("action") != A123_GATE_ACTION
+            or cases_by_id.get("A123", {}).get("expected") != A123_GATE_EXPECTED):
+        release_gate_task_mirror_errors.append("A123 must specify refusal assertions and finalization contract")
+    check("P04, T40, and A123 mirror the fixed release gate contract",
+          not release_gate_task_mirror_errors, release_gate_task_mirror_errors)
+
+    pack_checks = (root / "PACK-CHECKS.md").read_text(encoding="utf-8")
+    check("PACK-CHECKS limits release-gate claims to static structure",
+          RELEASE_GATE_SCOPE_SENTENCE in pack_checks,
+          RELEASE_GATE_SCOPE_SENTENCE if RELEASE_GATE_SCOPE_SENTENCE in pack_checks else "missing")
+    subagents = (root / "SUBAGENTS.md").read_text(encoding="utf-8")
+    qualification_owner_count = subagents.count(QUALIFICATION_SUBAGENT_ROW)
+    check("P04 is listed under the Qualification subagent",
+          qualification_owner_count == 1, qualification_owner_count)
+    review_packet_errors = [line for line in REVIEW_PACKET_REQUIREMENTS if line not in subagents]
+    check("Review packet uses candidate input and post-merge completion stages",
+          not review_packet_errors, review_packet_errors)
+
     incomplete_dependencies = [
         {"task": task["id"], "status": task["status"],
          "dependencies_not_passed": sorted(
@@ -326,8 +530,13 @@ def main() -> int:
     assignment_errors: list[dict[str, Any]] = []
     assignment_summary_errors: list[dict[str, Any]] = []
     assignment_status_by_case_and_task: dict[tuple[str, str], str] = {}
+    task_cases_by_id = {
+        task["id"]: [case_id for case_id in task.get("test_cases", []) if isinstance(case_id, str)]
+        if isinstance(task.get("test_cases"), list) else []
+        for task in tasks
+    }
     expected_owners_by_case = {
-        case_id: {task["id"] for task in tasks if case_id in task["test_cases"]}
+        case_id: {task["id"] for task in tasks if case_id in task_cases_by_id[task["id"]]}
         for case_id in case_set
     }
     for case in cases:
@@ -394,21 +603,23 @@ def main() -> int:
     check("NOT_STARTED and READY tasks have NOT_RUN assignments",
           not not_started_assignment_errors, not_started_assignment_errors)
 
-    unknown_cases = [(task["id"], cid) for task in tasks for cid in task["test_cases"] if cid not in case_set]
+    unknown_cases = [(task["id"], cid) for task in tasks for cid in task_cases_by_id[task["id"]]
+                     if cid not in case_set]
     check("Task test references exist", not unknown_cases, unknown_cases)
     pass_case_errors = [
         {"task": task["id"], "case": case_id,
          "status": assignment_status_by_case_and_task.get((case_id, task["id"]), "MISSING")}
         for task in tasks if task["status"] == "PASS"
-        for case_id in task["test_cases"]
+        for case_id in task_cases_by_id[task["id"]]
         if assignment_status_by_case_and_task.get((case_id, task["id"])) != "PASS"
     ]
     check("PASS tasks have passing assigned case results", not pass_case_errors, pass_case_errors)
-    covered = {cid for task in tasks for cid in task["test_cases"]}
+    covered = {cid for task in tasks for cid in task_cases_by_id[task["id"]]}
     check("Every case has a task owner", covered == case_set, sorted(case_set - covered))
     reverse_errors = []
     for case in cases:
-        expected = {task["id"] for task in tasks if case["id"] in task["test_cases"]}
+        expected = {task["id"] for task in tasks
+                    if case["id"] in task_cases_by_id[task["id"]]}
         if set(case["tasks"]) != expected:
             reverse_errors.append(case["id"])
     check("Case and task ownership maps agree", not reverse_errors, reverse_errors)
@@ -606,6 +817,8 @@ def main() -> int:
     if args.initial:
         bad_status = [task["id"] for task in tasks if task["status"] != "NOT_STARTED"]
         bad_status += [case["id"] for case in cases if case["status"] != "NOT_RUN"]
+        if cases_file.get("status") != "NOT_RUN":
+            bad_status.append("acceptance manifest status")
         bad_assignments = []
         for case in cases:
             rows = case.get("assignment_results")

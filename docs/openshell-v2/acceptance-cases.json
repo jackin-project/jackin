@@ -2328,8 +2328,8 @@
       "title": "Complete release gate",
       "level": "SOURCE",
       "setup": "Use every task report, target row, acceptance result, and independent review.",
-      "action": "Run the full evidence validator and release gate.",
-      "expected": "Any missing, failed, blocked, or unreviewed mandatory item prevents full release approval.",
+      "action": "Run missing, failed, blocked, and unreviewed prerequisite refusal assertions. Inspect the separate finalization contract.",
+      "expected": "Every refusal prevents approval. Finalization requires all three actual T40 case results and every fixed prerequisite.",
       "status": "NOT_RUN",
       "tasks": [
         "T40"

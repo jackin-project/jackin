@@ -434,6 +434,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 8. Add secret redaction and canary-leak assertions.
 9. Add source, dependency, and subprocess-boundary checks.
 10. Make the harness usable before full product integration.
+11. Implement the fixed release_gate_protocol in the evidence harness.
 
 #### Pass conditions
 
@@ -441,6 +442,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - An unavailable target produces BLOCKED, not PASS.
 - A failing assertion makes the command fail even when its subprocess exits zero.
 - The harness preserves failing evidence and unrelated resources.
+- Preflight cannot approve release. Finalization requires every fixed protocol prerequisite.
 
 **Acceptance cases:** A10, A11, A12.
 
@@ -3180,7 +3182,7 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 
 #### Procedure
 
-1. Verify that every mandatory task and acceptance case passes.
+1. Run the release_gate_protocol preflight while T40 is RUNNING or REVIEW.
 2. Check that every upstream patch has a pinned diff, owner, upstream plan, and regression evidence.
 3. Require explicit maintainer approval for any supported patched tuple.
 4. Document fresh setup and manual preservation of old user data.
@@ -3191,6 +3193,15 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 9. Build and inspect packages from a clean checkout.
 10. Produce the final removal inventory, test summary, blocker list, and source references.
 11. Do not publish a release or alter production infrastructure without explicit authorization.
+12. Check prior task statuses and assignment results.
+13. Check reviewed artifacts, merged evidence, and required target results.
+14. Exercise A123 refusals for missing, failed, blocked, and unreviewed prerequisites.
+15. Confirm every refusal prevents approval. Treat synthetic refusal fixtures as contract tests only.
+16. Run A124 and A125 against the actual candidate. Record actual results for all three T40 cases.
+17. Obtain an independent T40 review and rerun checks against the merged source.
+18. Finalize only after all prior tasks and every case assignment pass, including A123, A124, and A125.
+19. Bind completion and approval to the reviewed source commit, package digests, and evidence hashes.
+20. Write T40 PASS, completion, finalization receipt, and approval together only after every prerequisite passes.
 
 #### Pass conditions
 
@@ -3198,6 +3209,17 @@ Keep build-only Docker use separate from sandbox execution in command traces.
 - Documentation matches tested behavior rather than desired behavior.
 - The final report distinguishes code review, mock tests, live tests, and independent repeats.
 - No backward-compatibility path or legacy execution artifact ships.
+- Preflight requires every task except T40 and each prior task assignment to pass.
+- Prior task artifacts, independent reviews, merged evidence, and required target results must pass.
+- T40 is RUNNING or REVIEW during preflight.
+- Preflight excludes A123, A124, and A125, returns PREFLIGHT_ONLY, and never approves release.
+- Finalization requires every task except T40 and every case assignment to pass, including A123, A124, and A125.
+- Finalization also requires all targets and artifacts, an independent T40 review, and merged-source checks.
+- Finalization excludes only persisted T40=PASS and its own future receipt from the input set.
+- It writes T40 PASS, a finalization receipt, completion, and approval together.
+- Approval binds the reviewed source commit, package digests, and evidence hashes.
+- Synthetic gate fixtures test refusals only and never count as candidate evidence.
+- A failed prerequisite writes neither a completion record nor approval.
 
 **Acceptance cases:** A123, A124, A125.
 

@@ -41,7 +41,7 @@ Record serial execution when the runner has no subagent tool.
 | Operations subagent | T31 and T34. |
 | Verifier subagent | T32. |
 | Companion adapter subagent | T33. |
-| Qualification subagent | U08 and T35 through T38. |
+| Qualification subagent | P04, U08, and T35 through T38. |
 | Independent review subagent | Task review, negative tests, evidence checks, and T40. |
 
 A subagent receives a work assignment. It is not a permanently active agent.
@@ -159,10 +159,12 @@ The case-level `status` is a derived summary, not task evidence.
 
 ## Review packet
 
-Give the review subagent the original task card and input commit.
-Give the review subagent the merged diff, implementation report, and raw test results.
-Ask the review subagent to check each acceptance assertion independently.
-Ask the review subagent to inspect hidden execution paths and missing negative cases.
+Give the review subagent the original task card, the input commit SHA, and the candidate task diff.
+Bind the candidate task diff to both the input commit SHA and candidate commit SHA.
+Give the review subagent the implementation report and raw test results.
+Ask the independent reviewer to check each acceptance assertion, hidden execution path, and negative case.
+Resolve review findings before the integration merge.
+Run merged-result checks before task completion.
 Ask the review subagent to check that tests did not become weaker.
 
 Require these review results:

@@ -285,13 +285,15 @@
         "Add cleanup receipts that preserve uncertain failures.",
         "Add secret redaction and canary-leak assertions.",
         "Add source, dependency, and subprocess-boundary checks.",
-        "Make the harness usable before full product integration."
+        "Make the harness usable before full product integration.",
+        "Implement the fixed release_gate_protocol in the evidence harness."
       ],
       "acceptance": [
         "An omitted case makes the full gate fail.",
         "An unavailable target produces BLOCKED, not PASS.",
         "A failing assertion makes the command fail even when its subprocess exits zero.",
-        "The harness preserves failing evidence and unrelated resources."
+        "The harness preserves failing evidence and unrelated resources.",
+        "Preflight cannot approve release. Finalization requires every fixed protocol prerequisite."
       ],
       "remove_or_replace": [
         "Replace old CI assumptions that equate a command exit with complete qualification.",
@@ -3011,7 +3013,7 @@
         "The frozen feature register and complete compatibility tuples."
       ],
       "steps": [
-        "Verify that every mandatory task and acceptance case passes.",
+        "Run the release_gate_protocol preflight while T40 is RUNNING or REVIEW.",
         "Check that every upstream patch has a pinned diff, owner, upstream plan, and regression evidence.",
         "Require explicit maintainer approval for any supported patched tuple.",
         "Document fresh setup and manual preservation of old user data.",
@@ -3021,13 +3023,33 @@
         "Set the approved release candidate version to 2.0.0.",
         "Build and inspect packages from a clean checkout.",
         "Produce the final removal inventory, test summary, blocker list, and source references.",
-        "Do not publish a release or alter production infrastructure without explicit authorization."
+        "Do not publish a release or alter production infrastructure without explicit authorization.",
+        "Check prior task statuses and assignment results.",
+        "Check reviewed artifacts, merged evidence, and required target results.",
+        "Exercise A123 refusals for missing, failed, blocked, and unreviewed prerequisites.",
+        "Confirm every refusal prevents approval. Treat synthetic refusal fixtures as contract tests only.",
+        "Run A124 and A125 against the actual candidate. Record actual results for all three T40 cases.",
+        "Obtain an independent T40 review and rerun checks against the merged source.",
+        "Finalize only after all prior tasks and every case assignment pass, including A123, A124, and A125.",
+        "Bind completion and approval to the reviewed source commit, package digests, and evidence hashes.",
+        "Write T40 PASS, completion, finalization receipt, and approval together only after every prerequisite passes."
       ],
       "acceptance": [
         "A blocked engine, verifier, mutation, account, or target gate prevents full release approval.",
         "Documentation matches tested behavior rather than desired behavior.",
         "The final report distinguishes code review, mock tests, live tests, and independent repeats.",
-        "No backward-compatibility path or legacy execution artifact ships."
+        "No backward-compatibility path or legacy execution artifact ships.",
+        "Preflight requires every task except T40 and each prior task assignment to pass.",
+        "Prior task artifacts, independent reviews, merged evidence, and required target results must pass.",
+        "T40 is RUNNING or REVIEW during preflight.",
+        "Preflight excludes A123, A124, and A125, returns PREFLIGHT_ONLY, and never approves release.",
+        "Finalization requires every task except T40 and every case assignment to pass, including A123, A124, and A125.",
+        "Finalization also requires all targets and artifacts, an independent T40 review, and merged-source checks.",
+        "Finalization excludes only persisted T40=PASS and its own future receipt from the input set.",
+        "It writes T40 PASS, a finalization receipt, completion, and approval together.",
+        "Approval binds the reviewed source commit, package digests, and evidence hashes.",
+        "Synthetic gate fixtures test refusals only and never count as candidate evidence.",
+        "A failed prerequisite writes neither a completion record nor approval."
       ],
       "remove_or_replace": [
         "Remove temporary implementation scaffolding and obsolete v1 documentation from active guidance.",
@@ -3146,5 +3168,62 @@
     [
       "T40"
     ]
-  ]
+  ],
+  "release_gate_protocol": {
+    "schema_version": 1,
+    "task_id": "T40",
+    "preflight": {
+      "required_tasks": "Every task other than T40",
+      "required_task_status": "PASS",
+      "required_assignments": "PASS for every assignment owned by a prior task",
+      "required_evidence": "Every required task artifact, independent review, and merged-source check is present and passes",
+      "required_targets": "PASS for every required target row",
+      "allowed_t40_statuses": [
+        "RUNNING",
+        "REVIEW"
+      ],
+      "excluded_final_cases": [
+        "A123",
+        "A124",
+        "A125"
+      ],
+      "result": "PREFLIGHT_ONLY",
+      "may_approve_release": false
+    },
+    "finalization": {
+      "required_prior_task_status": "PASS",
+      "required_assignment_status": "PASS for every case assignment, including A123, A124, and A125",
+      "required_t40_cases": [
+        "A123",
+        "A124",
+        "A125"
+      ],
+      "required_evidence": [
+        "A123 missing, failed, blocked, and unreviewed prerequisite refusal assertions",
+        "Actual A124 operational documentation result",
+        "Actual A125 provenance and authorization result",
+        "All required target records and task artifacts",
+        "Independent T40 review",
+        "Merged-source checks"
+      ],
+      "synthetic_gate_fixtures_are_candidate_evidence": false,
+      "excluded_inputs": [
+        "Persisted T40 task status PASS",
+        "The future finalization receipt"
+      ],
+      "success_outputs": [
+        "Persist T40 task status PASS",
+        "The finalization receipt",
+        "The completion record",
+        "The approval record"
+      ],
+      "approval_binds": [
+        "Reviewed source commit",
+        "Package digests",
+        "Evidence hashes"
+      ],
+      "completion_and_approval_together": true,
+      "failed_prerequisite_outputs": []
+    }
+  }
 }

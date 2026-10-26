@@ -9,6 +9,7 @@ This report validates planning artifacts and validator behavior only.
 It does not validate Jackin code, an OpenShell deployment, or the proposed upstream contracts.
 No product runtime test or task implementation has been performed.
 The validator does not inspect task artifact contents or review decisions.
+These release-gate checks validate static planning structure only. They do not run a release preflight, test a candidate, or issue approval.
 Tasks without cases still require their task-card artifacts and independent review.
 The original specification remains unchanged.
 
@@ -34,6 +35,8 @@ It is `PASS` only when all assignments pass.
 It is `FAIL` if any assignment fails.
 It is `BLOCKED` when no assignment fails and one or more assignments are blocked.
 It is `NOT_RUN` otherwise.
+The manifest root `status` is a documented status value derived from all detailed case statuses.
+It uses the same precedence: `FAIL`, then `BLOCKED`, then `PASS` only when every case passes, and `NOT_RUN` otherwise.
 The acceptance manifest keeps schema version `1` and adds `assignment_results`.
 The upgraded validator requires that field; old manifests without it fail validation.
 Markdown assignment labels record initial `NOT_RUN` status and stay fixed during ordinary progress.
@@ -51,7 +54,7 @@ Redirect stdout outside the repository to retain raw receipts.
 | Acceptance cases | 125 |
 | Mapped specification headings | 30 |
 | Topological readiness groups | 20 |
-| Checked procedural sentences | 1534 |
+| Checked procedural sentences | 1561 |
 
 Readiness groups indicate dependency order, not permission to ignore file ownership.
 Keep no more than eight actual subagents active at once.
@@ -69,6 +72,10 @@ Keep no more than eight actual subagents active at once.
 | Dependencies reference known tasks | PASS |
 | Task and case statuses use documented values | PASS |
 | Acceptance evidence levels use documented values | PASS |
+| Acceptance manifest status uses documented values and matches the case summary | PASS |
+| Task case references are unique string IDs; completion rules match the fixed contract | PASS |
+| Release-gate protocol semantics, final-case ownership, and P04/T40/A123 mirrors match | PASS |
+| Review packets bind candidate diffs before merge and require merged checks before completion | PASS |
 | Acceptance cases have unique string task owners | PASS |
 | Dependency graph has no cycle and stored groups match | PASS |
 | Assignment rows have exact unique owners and valid statuses | PASS |
@@ -90,8 +97,8 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 48 scenarios passed their exact report and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 30 targeted scenarios cover assignment ownership, source citations, fixed acceptance policy, malformed manifests, and validator reports.
+All 66 scenarios passed their exact report and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 48 targeted scenarios cover assignment ownership, source citations, fixed acceptance policy, malformed manifests, release-gate protocol structure, and validator reports.
 The downstream case below is A22, owned by U02 and T32.
 
 | Temporary-copy fixture | Expected validator result | Observed |
@@ -110,6 +117,14 @@ The downstream case below is A22, owned by U02 and T32.
 | T33 runs before T27 checkpoint task passes | Reject, exit 1 | PASS, exit 1 |
 | `BLOCKED` task and its blocked assignments | Accept as blocked, exit 0 | PASS, exit 0 |
 | U06 `PASS` with no assigned acceptance cases | Accept under existing no-case completion rule, exit 0 | PASS, exit 0 |
+| Duplicate or non-string task case references | Reject before set-based ownership checks, exit 1 | PASS, exit 1 |
+| Root acceptance status is stale or undocumented | Reject stale summary or unknown status, exit 1 | PASS, exit 1 |
+| Root summary mixes `FAIL` and `BLOCKED` | Accept with `FAIL` precedence, exit 0 | PASS, exit 0 |
+| A task completion rule differs from the fixed contract | Reject, exit 1 | PASS, exit 1 |
+| Release protocol weakens prior-task/final-case/review/merged-check requirements | Reject, exit 1 | PASS, exit 1 |
+| Release preflight can approve, or a P04/T40/A123 procedure or acceptance mirror is weakened | Reject, exit 1 | PASS, exit 1 |
+| P04 qualification ownership or review-before-merge requirements are missing | Reject, exit 1 | PASS, exit 1 |
+| Pack report omits the static-only release-gate scope statement | Reject, exit 1 | PASS, exit 1 |
 | `NOT_STARTED` owner has `PASS`, `FAIL`, or `BLOCKED` assignment | Reject, exit 1 | PASS, exit 1 |
 | `READY` owner has `PASS`, `FAIL`, or `BLOCKED` assignment | Reject, exit 1 | PASS, exit 1 |
 | `READY` owner retains `NOT_RUN` assignment | Accept, exit 0 | PASS, exit 0 |
@@ -128,6 +143,7 @@ The downstream case below is A22, owned by U02 and T32.
 The upstream `PASS` fixture shows U02 cannot close T32's assignment.
 Each receipt records actual arguments, stdout, stderr, exit code, executable and fixture hashes, plus report-validation results.
 The runner does not write receipts inside the repository.
+Release-gate fixtures mutate only temporary copies of the protocol and its mirrors. They test static refusal and consistency rules, not a release candidate or runtime finalizer.
 
 ## Language and evidence limits
 

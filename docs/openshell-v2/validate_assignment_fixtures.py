@@ -14,6 +14,9 @@ from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parent
 VALIDATOR = ROOT / "validate_pack.py"
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(ROOT))
+from validate_pack import render_task_card  # noqa: E402
 
 
 def sha256(path: Path) -> str:
@@ -26,6 +29,16 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def status_summary(statuses: list[str]) -> str:
+    if "FAIL" in statuses:
+        return "FAIL"
+    if "BLOCKED" in statuses:
+        return "BLOCKED"
+    if statuses and all(status == "PASS" for status in statuses):
+        return "PASS"
+    return "NOT_RUN"
 
 
 def task_map(pack: Path) -> dict[str, dict[str, Any]]:
@@ -41,6 +54,7 @@ def update_cases(pack: Path, update: Callable[[dict[str, dict[str, Any]]], None]
     data = read_json(path)
     cases = {case["id"]: case for case in data["cases"]}
     update(cases)
+    data["status"] = status_summary([case["status"] for case in data["cases"]])
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
@@ -82,6 +96,30 @@ def set_task_status(pack: Path, task_id: str, status: str) -> None:
     task = next(task for task in graph["tasks"] if task["id"] == task_id)
     task["status"] = status
     graph_path.write_text(json.dumps(graph, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def sync_task_packet(pack: Path, task_id: str) -> None:
+    graph = read_json(pack / "task-graph.json")
+    task = next(task for task in graph["tasks"] if task["id"] == task_id)
+    rendered = render_task_card(task).strip()
+    marker = f"### {task_id} — {task['title']}"
+
+    card_path = pack / task["task_file"]
+    card = card_path.read_text(encoding="utf-8")
+    matches = list(re.finditer(r"(?m)^" + re.escape(marker) + r"$", card))
+    if len(matches) != 1:
+        raise ValueError(f"Expected one task-card block for {task_id}")
+    card_path.write_text(card[:matches[0].start()] + rendered + "\n", encoding="utf-8")
+
+    plan_path = pack / "PLAN.md"
+    plan = plan_path.read_text(encoding="utf-8")
+    matches = list(re.finditer(r"(?m)^" + re.escape(marker) + r"$", plan))
+    if len(matches) != 1:
+        raise ValueError(f"Expected one PLAN block for {task_id}")
+    start = matches[0].start()
+    following = re.search(r"(?m)^### ", plan[matches[0].end():])
+    end = matches[0].end() + following.start() if following else len(plan)
+    plan_path.write_text(plan[:start] + rendered + "\n\n" + plan[end:].lstrip("\n"), encoding="utf-8")
 
 
 def set_shared_summary_with_blocked_owners(
@@ -620,6 +658,224 @@ def main() -> int:
         0, [],
     ))
 
+    def duplicate_task_case_reference(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        p04 = next(task for task in graph["tasks"] if task["id"] == "P04")
+        p04["test_cases"].append(p04["test_cases"][0])
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P04")
+    receipts.append(run_fixture(
+        "duplicate task case reference is rejected with synchronized task cards",
+        duplicate_task_case_reference,
+        1, ["Task test_cases contain unique string IDs"],
+    ))
+
+    def nonstring_task_case_reference(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        p04 = next(task for task in graph["tasks"] if task["id"] == "P04")
+        p04["test_cases"].append(123)
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P04")
+    receipts.append(run_fixture(
+        "non-string task case reference is rejected before ownership set logic",
+        nonstring_task_case_reference,
+        1, ["Task test_cases contain unique string IDs"],
+    ))
+
+    def stale_manifest_summary(pack: Path, status: str) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        data["status"] = status
+        write_json(path, data)
+    receipts.append(run_fixture(
+        "acceptance manifest root status cannot claim PASS for incomplete cases",
+        lambda pack: stale_manifest_summary(pack, "PASS"),
+        1, ["Acceptance manifest status matches the case summary"],
+    ))
+    receipts.append(run_fixture(
+        "acceptance manifest root status rejects undocumented values",
+        lambda pack: stale_manifest_summary(pack, "COMPLETE"),
+        1, ["Acceptance manifest status uses documented values",
+            "Acceptance manifest status matches the case summary"],
+    ))
+
+    def manifest_failure_precedence(pack: Path) -> None:
+        all_pass(pack)
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        for task in graph["tasks"]:
+            task["status"] = "BLOCKED"
+        write_json(graph_path, graph)
+
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            for case_id, status in (("A01", "FAIL"), ("A02", "BLOCKED")):
+                case = cases[case_id]
+                for result in case["assignment_results"]:
+                    result["status"] = status
+                case["status"] = status
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "manifest summary gives FAIL precedence over BLOCKED",
+        manifest_failure_precedence,
+        0, [],
+    ))
+
+    def corrupt_completion_rule(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        next(task for task in graph["tasks"] if task["id"] == "T14")["completion_rule"] = "All checks pass."
+        write_json(graph_path, graph)
+    receipts.append(run_fixture(
+        "task completion rule cannot diverge from the shared evidence contract",
+        corrupt_completion_rule,
+        1, ["Task completion rules match the fixed evidence contract"],
+    ))
+
+    def mutate_release_protocol(pack: Path, change: Callable[[dict[str, Any]], None]) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        change(graph["release_gate_protocol"])
+        write_json(graph_path, graph)
+
+    def weaken_prior_tasks(protocol: dict[str, Any]) -> None:
+        protocol["preflight"]["required_tasks"] = "T39 only"
+    receipts.append(run_fixture(
+        "release preflight cannot weaken the prior-task prerequisite",
+        lambda pack: mutate_release_protocol(pack, weaken_prior_tasks),
+        1, ["Release gate protocol matches fixed semantics"],
+    ))
+
+    def omit_final_case(protocol: dict[str, Any]) -> None:
+        protocol["finalization"]["required_t40_cases"].remove("A125")
+    receipts.append(run_fixture(
+        "release finalization cannot omit A125",
+        lambda pack: mutate_release_protocol(pack, omit_final_case),
+        1, ["Release gate protocol matches fixed semantics",
+            "Release gate references name T40 and its owned final cases"],
+    ))
+
+    def omit_final_review(protocol: dict[str, Any]) -> None:
+        protocol["finalization"]["required_evidence"].remove("Independent T40 review")
+    receipts.append(run_fixture(
+        "release finalization requires independent T40 review",
+        lambda pack: mutate_release_protocol(pack, omit_final_review),
+        1, ["Release gate protocol matches fixed semantics"],
+    ))
+
+    def omit_merged_checks(protocol: dict[str, Any]) -> None:
+        protocol["finalization"]["required_evidence"].remove("Merged-source checks")
+    receipts.append(run_fixture(
+        "release finalization requires merged-source checks",
+        lambda pack: mutate_release_protocol(pack, omit_merged_checks),
+        1, ["Release gate protocol matches fixed semantics"],
+    ))
+
+    def allow_preflight_approval(protocol: dict[str, Any]) -> None:
+        protocol["preflight"]["may_approve_release"] = True
+    receipts.append(run_fixture(
+        "release preflight cannot issue approval",
+        lambda pack: mutate_release_protocol(pack, allow_preflight_approval),
+        1, ["Release gate protocol matches fixed semantics"],
+    ))
+
+    def weaken_p04_protocol(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        p04 = next(task for task in graph["tasks"] if task["id"] == "P04")
+        p04["steps"].remove("Implement the fixed release_gate_protocol in the evidence harness.")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "P04")
+    receipts.append(run_fixture(
+        "P04 task card retains the fixed protocol implementation requirement",
+        weaken_p04_protocol,
+        1, ["P04, T40, and A123 mirror the fixed release gate contract"],
+    ))
+
+    def weaken_t40_finalization(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t40 = next(task for task in graph["tasks"] if task["id"] == "T40")
+        t40["acceptance"].remove("A failed prerequisite writes neither a completion record nor approval.")
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T40")
+    receipts.append(run_fixture(
+        "T40 card retains fail-closed finalization conditions",
+        weaken_t40_finalization,
+        1, ["P04, T40, and A123 mirror the fixed release gate contract"],
+    ))
+
+    def omit_actual_t40_case_results(pack: Path) -> None:
+        graph_path = pack / "task-graph.json"
+        graph = read_json(graph_path)
+        t40 = next(task for task in graph["tasks"] if task["id"] == "T40")
+        t40["steps"].remove(
+            "Run A124 and A125 against the actual candidate. Record actual results for all three T40 cases."
+        )
+        write_json(graph_path, graph)
+        sync_task_packet(pack, "T40")
+    receipts.append(run_fixture(
+        "T40 requires actual results for A123 through A125",
+        omit_actual_t40_case_results,
+        1, ["P04, T40, and A123 mirror the fixed release gate contract"],
+    ))
+
+    def weaken_a123_refusals(pack: Path) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == "A123")
+        case["action"] = "Run the full evidence validator and release gate."
+        write_json(path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "A123 keeps prerequisite refusal assertions and finalization contract",
+        weaken_a123_refusals,
+        1, ["P04, T40, and A123 mirror the fixed release gate contract"],
+    ))
+
+    def remove_static_gate_scope(pack: Path) -> None:
+        path = pack / "PACK-CHECKS.md"
+        text = path.read_text(encoding="utf-8")
+        sentence = ("These release-gate checks validate static planning structure only. "
+                    "They do not run a release preflight, test a candidate, or issue approval.")
+        if text.count(sentence) != 1:
+            raise ValueError("Expected exactly one static release-gate scope sentence")
+        path.write_text(text.replace(sentence + "\n", "", 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "pack report cannot claim runtime finalizer verification",
+        remove_static_gate_scope,
+        1, ["PACK-CHECKS limits release-gate claims to static structure"],
+    ))
+
+    def restore_merged_diff_cycle(pack: Path) -> None:
+        path = pack / "SUBAGENTS.md"
+        text = path.read_text(encoding="utf-8")
+        current = "Resolve review findings before the integration merge."
+        if text.count(current) != 1:
+            raise ValueError("Expected one pre-merge finding-resolution instruction")
+        path.write_text(text.replace(current, "Resolve review findings after the integration merge.", 1),
+                        encoding="utf-8")
+    receipts.append(run_fixture(
+        "review packet requires candidate review before merge",
+        restore_merged_diff_cycle,
+        1, ["Review packet uses candidate input and post-merge completion stages"],
+    ))
+
+    def remove_p04_qualification_owner(pack: Path) -> None:
+        path = pack / "SUBAGENTS.md"
+        text = path.read_text(encoding="utf-8")
+        current = "| Qualification subagent | P04, U08, and T35 through T38. |"
+        replacement = "| Qualification subagent | U08 and T35 through T38. |"
+        if text.count(current) != 1:
+            raise ValueError("Expected one Qualification row with P04")
+        path.write_text(text.replace(current, replacement, 1), encoding="utf-8")
+    receipts.append(run_fixture(
+        "P04 remains owned by the Qualification subagent",
+        remove_p04_qualification_owner,
+        1, ["P04 is listed under the Qualification subagent"],
+    ))
+
     def missing_intersecting_trace_owner(pack: Path) -> None:
         trace_path = pack / "traceability.json"
         trace = read_json(trace_path)
@@ -684,7 +940,7 @@ def main() -> int:
                 "cases": 125,
                 "specification_sections": 30,
                 "task_ready_groups": 20,
-                "checked_sentences": 1534,
+                "checked_sentences": 1561,
             },
             "checks": checks,
             "failures": failures,
