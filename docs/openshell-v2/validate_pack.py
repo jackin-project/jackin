@@ -487,9 +487,16 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
     if a13.get("tasks") != ["P05", "T39"]:
         a13_errors.append({"case_owners": a13.get("tasks"), "expected": ["P05", "T39"]})
     if not case_text_contains(a13, "setup", "newly created current graph",
-                              "final candidate graph after legacy deletion"):
+                              "Cargo metadata", "final candidate graph after legacy deletion"):
         a13_errors.append({"case": "A13", "field": "setup",
-                           "problem": "must distinguish current and final graph runs"})
+                           "problem": "must distinguish both Cargo metadata graph runs"})
+    if not case_text_contains(
+        a13, "action",
+        "P05 captures Cargo metadata for the newly created current graph",
+        "T39 captures fresh Cargo metadata for the final candidate graph",
+    ):
+        a13_errors.append({"case": "A13", "field": "action",
+                           "problem": "P05 and T39 must each capture Cargo metadata for their graph phase"})
     if not task_contains("P05", "test_cases", "A13") or not task_contains(
         "P05", "steps", "Run A13 against the newly created current graph and compile forbidden-import fixtures."
     ) or not task_contains("P05", "acceptance",
@@ -534,6 +541,13 @@ def owner_case_contract_errors(tasks: list[dict[str, Any]],
                               "imaginary policy intersection"):
         a16_errors.append({"case": "A16", "field": "expected",
                            "problem": "must require accepted replacement source without an intersection"})
+    a16_action = a16.get("action", "")
+    load_policy = a16_action.find("Load the global policy.") if isinstance(a16_action, str) else -1
+    query_revision = a16_action.find("Query actual accepted revisions") if isinstance(a16_action, str) else -1
+    display_source = a16_action.find("display the effective policy source") if isinstance(a16_action, str) else -1
+    if not (0 <= load_policy < query_revision < display_source):
+        a16_errors.append({"case": "A16", "field": "action",
+                           "problem": "must load the global policy before querying revisions and displaying its source"})
     for task_id, field, phrase in (
         ("U00", "acceptance", "A15 and A16 at U00 qualify LIVE observation results, not StartSession or product presentation."),
         ("U00", "acceptance", "A16 at U00 verifies the accepted revision and replacement source without claiming a policy intersection."),

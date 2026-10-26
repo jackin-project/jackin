@@ -292,9 +292,9 @@ Do not claim support above measured and qualified resource bounds.
 
 **Evidence:** SOURCE. **Tasks:** P05, T39. **Initial status:** NOT_RUN. **Initial assignment status:** P05=NOT_RUN; T39=NOT_RUN.
 
-**Setup:** P05 inspects the newly created current graph. T39 repeats the checks on the final candidate graph after legacy deletion.
+**Setup:** P05 inspects the newly created current graph with Cargo metadata. T39 repeats the checks with fresh Cargo metadata on the final candidate graph after legacy deletion.
 
-**Action:** P05 inspects dependency edges and compiles forbidden-import fixtures. T39 repeats graph and composition checks after deletion.
+**Action:** P05 captures Cargo metadata for the newly created current graph, inspects dependency edges, and compiles forbidden-import fixtures. T39 captures fresh Cargo metadata for the final candidate graph and repeats graph and composition checks after deletion.
 
 **Required result:** Core has no runtime or database types. Capsule has no host credential path. Forbidden fixtures fail in both the P05 graph and the final post-deletion graph.
 
@@ -324,7 +324,7 @@ Do not claim support above measured and qualified resource bounds.
 
 **Setup:** Use a sandbox policy that differs from the gateway global policy. U00 and T13 verify accepted revisions and replacement source. T29 qualifies product presentation.
 
-**Action:** Query actual accepted revisions and display the effective policy source. Do not infer an intersection.
+**Action:** Load the global policy. Query actual accepted revisions and display the effective policy source. Do not infer an intersection.
 
 **Required result:** The gateway global policy is the effective replacement. T29 displays its accepted revision and source; no task reports an imaginary policy intersection.
 

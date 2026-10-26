@@ -1536,7 +1536,8 @@ def main() -> int:
 
     def parser_fixture(name: str, stdout: str, report_errors: list[str], exit_code: int = 0,
                        expected_exit: int = 0, expected_failures: list[str] | None = None,
-                       initial: bool = False, expect_report_match: bool = False) -> None:
+                       initial: bool = False, expect_report_match: bool = False,
+                       expected_report_details: dict[str, Any] | None = None) -> None:
         receipts.append(run_fixture(
             name,
             lambda _pack: None,
@@ -1546,7 +1547,24 @@ def main() -> int:
             fake_stdout=stdout,
             expect_report_match=expect_report_match,
             expected_report_errors=report_errors,
+            expected_report_details=expected_report_details,
         ))
+
+    def short_form_report(check_name: str, detail: Any) -> str:
+        return json.dumps({
+            "passed": False,
+            "initial": False,
+            "scope": "Static planning-pack checks only",
+            "not_checked": [
+                "Product compilation",
+                "Runtime capabilities",
+                "Independent code review",
+                "Full ASD-STE100 dictionary conformity",
+            ],
+            "counts": {},
+            "checks": [{"check": check_name, "passed": False, "detail": detail}],
+            "failures": [check_name],
+        })
 
     receipts.append(run_fixture(
         "ordinary baseline report contains the complete ordered check inventory",
@@ -1555,6 +1573,38 @@ def main() -> int:
     receipts.append(run_fixture(
         "initial baseline report contains ordinary and initial-only check inventories",
         lambda _pack: None, 0, [], initial=True,
+    ))
+
+    wrong_nonempty_counts = json.loads(validator_report(True, []))
+    wrong_nonempty_counts["counts"]["tasks"] += 1
+    parser_fixture(
+        "canonical report rejects nonempty counts that differ from tested inputs",
+        json.dumps(wrong_nonempty_counts), ["counts do not match tested fixture inputs"],
+    )
+    all_zero_counts = json.loads(validator_report(True, []))
+    all_zero_counts["counts"] = {name: 0 for name in all_zero_counts["counts"]}
+    parser_fixture(
+        "canonical report rejects nonempty all-zero counts",
+        json.dumps(all_zero_counts), ["counts do not match tested fixture inputs"],
+    )
+
+    receipts.append(run_fixture(
+        "missing validator short form rejects fabricated README detail",
+        remove_validator_copy,
+        1, ["Required pack files exist"],
+        fake_stdout=short_form_report("Required pack files exist", ["README.md"]),
+        expect_report_match=False,
+        expected_report_errors=[],
+        expected_report_details={"Required pack files exist": ["validate_pack.py"]},
+    ))
+    receipts.append(run_fixture(
+        "missing tasks short form rejects fabricated cases detail",
+        malformed_manifest,
+        2, ["Planning pack input is valid"],
+        fake_stdout=short_form_report("Planning pack input is valid", "'cases'"),
+        expect_report_match=False,
+        expected_report_errors=[],
+        expected_report_details={"Planning pack input is valid": "'tasks'"},
     ))
 
     parser_fixture("empty validator stdout is rejected", "", ["stdout is empty"])
@@ -2338,6 +2388,38 @@ def main() -> int:
         1, [a13_owner_check],
     ))
 
+    def remove_p05_a13_cargo_metadata(pack: Path) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == "A13")
+        old = "P05 captures Cargo metadata for the newly created current graph, "
+        if case["action"].count(old) != 1:
+            raise ValueError("Expected one P05 current-graph Cargo metadata instruction")
+        case["action"] = case["action"].replace(old, "P05 inspects the newly created current graph, ", 1)
+        write_json(path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "A13 cannot omit P05 current-graph Cargo metadata",
+        remove_p05_a13_cargo_metadata,
+        1, [a13_owner_check],
+    ))
+
+    def remove_t39_a13_cargo_metadata(pack: Path) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == "A13")
+        old = "T39 captures fresh Cargo metadata for the final candidate graph and "
+        if case["action"].count(old) != 1:
+            raise ValueError("Expected one T39 final-graph Cargo metadata instruction")
+        case["action"] = case["action"].replace(old, "T39 checks the final candidate graph and ", 1)
+        write_json(path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "A13 cannot omit T39 final-graph Cargo metadata",
+        remove_t39_a13_cargo_metadata,
+        1, [a13_owner_check],
+    ))
+
     def remove_case_owner(pack: Path, case_id: str, task_id: str) -> None:
         data_path = pack / "acceptance-cases.json"
         data = read_json(data_path)
@@ -2442,6 +2524,22 @@ def main() -> int:
     receipts.append(run_fixture(
         "T29 must display A16's accepted replacement source and revision",
         weaken_t29_a16_presentation,
+        1, [a16_owner_check],
+    ))
+
+    def remove_a16_policy_load(pack: Path) -> None:
+        path = pack / "acceptance-cases.json"
+        data = read_json(path)
+        case = next(row for row in data["cases"] if row["id"] == "A16")
+        old = "Load the global policy. "
+        if case["action"].count(old) != 1:
+            raise ValueError("Expected one A16 global-policy load instruction")
+        case["action"] = case["action"].replace(old, "", 1)
+        write_json(path, data)
+        sync_case_block(pack, case)
+    receipts.append(run_fixture(
+        "A16 loads the global policy before querying and displaying it",
+        remove_a16_policy_load,
         1, [a16_owner_check],
     ))
 

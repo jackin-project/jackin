@@ -55,7 +55,7 @@ The runner writes one JSON report to stdout and does not modify the pack. It val
 | Acceptance cases | 125 |
 | Mapped specification headings | 30 |
 | Topological readiness groups | 20 |
-| Checked procedural sentences | 1599 |
+| Checked procedural sentences | 1600 |
 
 The ordinary validator report contains 72 ordered checks; `--initial` contains 74, including two initial-only checks and the final inventory check.
 The C02 digest checks fixed contract text only. It does not show that source code follows this plan.
@@ -121,8 +121,8 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 167 scenarios passed their exact report, input-derived count, and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 149 targeted scenarios cover assignment ownership and progress, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, task review rules, validator reports, and owner-specific A13/A15/A16 qualification.
+All 174 scenarios passed their exact report, input-derived count, and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 156 targeted scenarios cover assignment ownership and progress, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing and exact short-form input details, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, task review rules, validator reports, and owner-specific A13/A15/A16 qualification.
 Each fixture copy records source hashes, status-only normalization changes, normalized hashes, intentional mutations, and input and executable hashes before and after validation. The original board is never normalized or repaired.
 A22 is owned by U02 and T32. Its mixed-result fixtures complete T32 dependencies before recording results.
 A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks FAIL precedence without bypassing dependencies.
@@ -223,6 +223,12 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | A15 cannot omit T23 or weaken its integrated StartSession barrier | Reject, exit 1 | PASS, exit 1 |
 | U00 and T13 retain A15/A16 LIVE layer checks, accepted revisions, replacement source, and no-intersection claims | Reject, exit 1 | PASS, exit 1 |
 | A16 cannot omit T29 or weaken accepted-revision product presentation | Reject, exit 1 | PASS, exit 1 |
+| A13 cannot omit Cargo metadata for P05's current graph | Reject, exit 1 | PASS, exit 1 |
+| A13 cannot omit fresh Cargo metadata for T39's final post-deletion graph | Reject, exit 1 | PASS, exit 1 |
+| A16 loads the global policy before querying revisions and displaying its source | Reject, exit 1 | PASS, exit 1 |
+| Canonical reports reject wrong nonempty counts and nonempty all-zero counts | Reject malformed report | PASS |
+| Missing-validator short form rejects fabricated `README.md` detail | Reject against expected `validate_pack.py` detail | PASS |
+| Missing-`tasks` input-error short form rejects fabricated `cases` detail | Reject against expected `tasks` detail | PASS |
 
 The upstream `PASS` fixture shows U02 cannot close T32's assignment.
 Each raw receipt binds every mutated file actually tested. The traceability-owner receipt hashes both `traceability.json` and `TRACEABILITY.md`; the missing-validator receipt records `validate_pack.py` as `missing`.
