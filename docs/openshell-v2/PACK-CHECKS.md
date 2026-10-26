@@ -45,7 +45,7 @@ Markdown assignment labels record initial `NOT_RUN` status and stay fixed during
 Each receipt records the actual argument vector, stdout, stderr, exit code, executed validator path and hash, and fixture-source hashes.
 Each receipt hashes every tested pack input after mutation. It records changed-input hashes before and after mutation, with explicit `present` or `missing` states.
 The top-level source map hashes the validator, fixture runner, and every source-pack file.
-The runner writes one JSON report to stdout and does not modify the pack. Redirect stdout outside the repository to retain raw receipts.
+The runner writes one JSON report to stdout and does not modify the pack. It validates the original board in ordinary mode and records its before/after hashes. Redirect stdout outside the repository to retain raw receipts.
 
 ## Counts
 
@@ -121,8 +121,9 @@ Keep no more than eight actual subagents active at once.
 
 ## Assignment-result causal fixtures
 
-All 162 scenarios passed their exact report and exit-code expectations.
-The original 18 scenario intentions remain unchanged; 144 targeted scenarios cover assignment ownership and progress, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, task review rules, validator reports, and owner-specific A13/A15/A16 qualification.
+All 167 scenarios passed their exact report, input-derived count, and exit-code expectations.
+The original 18 scenario intentions remain unchanged; 149 targeted scenarios cover assignment ownership and progress, source citations, canonical task paths, artifacts and packets, evidence levels, early LIVE ownership, command registration, fixed acceptance policy, strict JSON parsing, release-gate protocol structure, Integration write ownership, patched-tuple authorization, GOAL and concurrency pins, C01 pins, C02 integrity, task review rules, validator reports, and owner-specific A13/A15/A16 qualification.
+Each fixture copy records source hashes, status-only normalization changes, normalized hashes, intentional mutations, and input and executable hashes before and after validation. The original board is never normalized or repaired.
 A22 is owned by U02 and T32. Its mixed-result fixtures complete T32 dependencies before recording results.
 A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks FAIL precedence without bypassing dependencies.
 
@@ -162,6 +163,14 @@ A117 is owned by sibling tasks T35, T36, and T37, plus downstream T38. It checks
 | `BLOCKED` owner with incomplete dependencies retains only `NOT_RUN` assignments | Accept, exit 0 | PASS, exit 0 |
 | Duplicate case owner with synchronized acceptance block | Reject, exit 1 | PASS, exit 1 |
 | Copied pack lacks validator; real external validator runs | Reject missing required file, exit 1 | PASS, exit 1 |
+| Missing validator short form names only `validate_pack.py` | Reject with exact missing-file detail | PASS |
+| Missing `tasks` manifest key and missing P00 packet identify their input | Reject with exact task detail | PASS, exit 2 / exit 1 |
+| Temporary-copy status normalization records only existing status-field changes | Accept pristine `--initial` baseline, exit 0 | PASS, exit 0 |
+| Consistent progressed P00/A01 assignment | Accept ordinary board, exit 0 | PASS, exit 0 |
+| Invalid temporary source board with a missing A01 assignment is not repaired by normalization | Reject, exit 1 | PASS, exit 1 |
+| Report counts match task, case, SPEC, dependency, and sentence counts derived from tested files | Accept matching counts; reject mismatches | PASS |
+| Validator input or executable changes during execution | Reject fixture integrity violation | PASS |
+| Original source board passes separate ordinary validation without file changes | Accept unchanged board, exit 0 | PASS, exit 0 |
 | Acceptance policy prefix is mutated or a line is removed | Reject checksum mismatch, exit 1 | PASS, exit 1 |
 | T14 is missing from one cited traceability section while mapped elsewhere, with both tables synchronized | Reject, exit 1 | PASS, exit 1 |
 | Task SPEC citation syntax is malformed or its line is out of range | Reject, exit 1 | PASS, exit 1 |

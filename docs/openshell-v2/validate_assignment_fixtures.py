@@ -33,7 +33,7 @@ def snapshot_files(root: Path) -> dict[str, str]:
     return {
         path.relative_to(root).as_posix(): sha256(path)
         for path in sorted(root.rglob("*"))
-        if path.is_file() and "__pycache__" not in path.parts
+        if path.is_file()
     }
 
 
@@ -41,6 +41,22 @@ def input_state(digest: str | None) -> dict[str, str | None]:
     if digest is None:
         return {"state": "missing", "sha256": None}
     return {"state": "present", "sha256": digest}
+
+
+def path_state(path: Path) -> dict[str, str | None]:
+    return input_state(sha256(path) if path.is_file() else None)
+
+
+def snapshot_states(snapshot: dict[str, str]) -> dict[str, dict[str, str | None]]:
+    return {path: input_state(digest) for path, digest in snapshot.items()}
+
+
+def snapshot_changes(before: dict[str, str], after: dict[str, str]) -> dict[str, Any]:
+    return {
+        path: {"before": input_state(before.get(path)), "after": input_state(after.get(path))}
+        for path in sorted(set(before) | set(after))
+        if before.get(path) != after.get(path)
+    }
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -52,6 +68,121 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def normalize_status_fields(pack: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    changes: list[dict[str, Any]] = []
+    errors: list[str] = []
+
+    for relative_path in ("task-graph.json", "acceptance-cases.json"):
+        path = pack / relative_path
+        try:
+            data = read_json(path)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            errors.append(f"{relative_path}: {error}")
+            continue
+        changed = False
+
+        def set_existing_status(record: dict[str, Any], field_path: str, target: str) -> None:
+            nonlocal changed
+            if "status" not in record or record["status"] == target:
+                return
+            changes.append({"path": relative_path, "field": f"{field_path}.status",
+                            "before": record["status"], "after": target})
+            record["status"] = target
+            changed = True
+
+        if relative_path == "task-graph.json":
+            tasks = data.get("tasks")
+            if isinstance(tasks, list):
+                for index, task in enumerate(tasks):
+                    if isinstance(task, dict):
+                        set_existing_status(task, f"tasks[{index}]", "NOT_STARTED")
+        else:
+            set_existing_status(data, "root", "NOT_RUN")
+            cases = data.get("cases")
+            if isinstance(cases, list):
+                for case_index, case in enumerate(cases):
+                    if not isinstance(case, dict):
+                        continue
+                    set_existing_status(case, f"cases[{case_index}]", "NOT_RUN")
+                    assignments = case.get("assignment_results")
+                    if isinstance(assignments, list):
+                        for assignment_index, assignment in enumerate(assignments):
+                            if isinstance(assignment, dict):
+                                set_existing_status(
+                                    assignment,
+                                    f"cases[{case_index}].assignment_results[{assignment_index}]",
+                                    "NOT_RUN",
+                                )
+        if changed:
+            write_json(path, data)
+    return changes, errors
+
+
+def derive_expected_counts(pack: Path) -> dict[str, int] | None:
+    try:
+        graph = read_json(pack / "task-graph.json")
+        cases_file = read_json(pack / "acceptance-cases.json")
+        tasks = graph["tasks"]
+        cases = cases_file["cases"]
+        spec_lines = (pack / "SPEC.md").read_text(encoding="utf-8").splitlines()
+        goal_lines = (pack / "GOAL.md").read_text(encoding="utf-8").splitlines()
+        if not isinstance(tasks, list) or not isinstance(cases, list):
+            return None
+
+        dependency_lists_valid = True
+        for task in tasks:
+            if not isinstance(task, dict):
+                return None
+            dependencies = task.get("depends_on")
+            if (not isinstance(dependencies, list)
+                    or any(not isinstance(dependency, str) for dependency in dependencies)
+                    or len(dependencies) != len(set(dependencies))):
+                dependency_lists_valid = False
+        task_ids = [task["id"] for task in tasks]
+        task_set = set(task_ids)
+        ready_groups = 0
+        if dependency_lists_valid:
+            done: set[str] = set()
+            while len(done) < len(task_set):
+                ready = [task["id"] for task in tasks
+                         if task["id"] not in done and set(task["depends_on"]).issubset(done)]
+                if not ready:
+                    break
+                ready_groups += 1
+                done.update(ready)
+
+        sentence_count = 0
+
+        def count_sentences(value: str) -> int:
+            return sum(bool(sentence.strip())
+                       for sentence in re.split(r"(?<=[.!?])\s+", value))
+
+        for task in tasks:
+            for field in ("steps", "acceptance", "remove_or_replace", "stop_conditions"):
+                for item in task[field]:
+                    sentence_count += count_sentences(item)
+        for case in cases:
+            for field in ("setup", "action", "expected"):
+                sentence_count += count_sentences(case[field])
+        for line in goal_lines:
+            if not line.strip() or line.startswith(("#", "/goal")):
+                continue
+            sentence_count += count_sentences(line)
+
+        specification_sections = sum(
+            bool(re.match(r"^#{1,2} ", line)) for line in spec_lines
+        )
+        return {
+            "tasks": len(tasks),
+            "cases": len(cases),
+            "specification_sections": specification_sections,
+            "task_ready_groups": ready_groups,
+            "checked_sentences": sentence_count,
+        }
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
 
 
 def status_summary(statuses: list[str]) -> str:
@@ -389,14 +520,24 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
                 validator_executable: Path | None = None,
                 fake_stdout: str | None = None, fake_stderr: str = "",
                 expect_report_match: bool = True,
-                expected_report_errors: list[str] | None = None) -> dict[str, Any]:
+                expected_report_errors: list[str] | None = None,
+                expected_report_details: dict[str, Any] | None = None,
+                expected_execution_errors: list[str] | None = None,
+                pre_normalization_mutation: Callable[[Path], None] | None = None,
+                expected_normalization_diff: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="jackin-assignment-") as temp_dir:
         temporary_root = Path(temp_dir)
         pack = temporary_root / "pack"
-        shutil.copytree(ROOT, pack, ignore=shutil.ignore_patterns("__pycache__"))
-        inputs_before = snapshot_files(pack)
+        shutil.copytree(ROOT, pack)
+        source_inputs = snapshot_files(pack)
+        if pre_normalization_mutation is not None:
+            pre_normalization_mutation(pack)
+        pre_normalization_inputs = snapshot_files(pack)
+        normalization_diff, normalization_errors = normalize_status_fields(pack)
+        normalized_inputs = snapshot_files(pack)
         mutate(pack)
         inputs_after = snapshot_files(pack)
+        expected_counts = derive_expected_counts(pack)
         validator_copy = pack / "validate_pack.py"
         if fake_stdout is not None:
             executable = fake_validator(temporary_root, fake_stdout, fake_stderr, expected_exit)
@@ -405,49 +546,120 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
         command = [sys.executable, str(executable), "--root", str(pack), "--json"]
         if initial:
             command.append("--initial")
+        execution_inputs_before = snapshot_files(pack)
+        executable_before = path_state(executable)
+        validator_copy_before = path_state(validator_copy)
         process = subprocess.run(command, capture_output=True, text=True, check=False)
+        execution_inputs_after = snapshot_files(pack)
+        executable_after = path_state(executable)
+        validator_copy_after = path_state(validator_copy)
         report, report_errors = inspect_report(process.stdout, process.returncode, initial=initial)
+        if report is not None and not report_errors and isinstance(report.get("counts"), dict):
+            if report["counts"] and expected_counts is None:
+                report_errors.append("counts cannot be derived from tested fixture inputs")
+            elif report["counts"] and report["counts"] != expected_counts:
+                report_errors.append("counts do not match tested fixture inputs")
         actual_failures = report.get("failures") if isinstance(report, dict) else None
         expected_report_passed = expected_exit == 0
+        check_records = report.get("checks") if isinstance(report, dict) else None
+        actual_report_details = (
+            {
+                record.get("check"): record.get("detail")
+                for record in check_records
+                if isinstance(record, dict) and isinstance(record.get("check"), str)
+            }
+            if isinstance(check_records, list) else {}
+        )
+        detail_errors = []
+        if expected_report_details is not None:
+            for check_name, expected_detail in expected_report_details.items():
+                if actual_report_details.get(check_name) != expected_detail:
+                    detail_errors.append({
+                        "check": check_name,
+                        "expected": expected_detail,
+                        "actual": actual_report_details.get(check_name),
+                    })
+        execution_changes = snapshot_changes(execution_inputs_before, execution_inputs_after)
+        execution_errors = [
+            f"pack input changed during validator execution: {path}"
+            for path in execution_changes
+        ]
+        if executable_before != executable_after:
+            execution_errors.append("validator executable changed during execution")
+        if executable_before["state"] == "missing":
+            execution_errors.append("validator executable was missing before execution")
+        if executable_after["state"] == "missing":
+            execution_errors.append("validator executable was missing after execution")
+        expected_execution_errors = expected_execution_errors or []
         report_match = (
             process.returncode == expected_exit
             and not report_errors
             and isinstance(report, dict)
             and report.get("passed") is expected_report_passed
             and actual_failures == expected_failures
+            and not detail_errors
         )
         errors_match = expected_report_errors is None or report_errors == expected_report_errors
-        passed = (report_match is expect_report_match) and errors_match
+        execution_match = execution_errors == expected_execution_errors
+        normalization_match = (
+            expected_normalization_diff is None
+            or normalization_diff == expected_normalization_diff
+        )
+        passed = (
+            (report_match is expect_report_match)
+            and errors_match
+            and execution_match
+            and normalization_match
+            and not normalization_errors
+        )
         return {
             "scenario": name,
             "argv": command,
             "exit_code": process.returncode,
             "expected_exit_code": expected_exit,
             "validator_executable": str(executable),
-            "validator_executable_sha256": sha256(executable),
+            "validator_executable_before": executable_before,
+            "validator_executable_after": executable_after,
+            "validator_executable_sha256": executable_after["sha256"],
+            "validator_copy_before": validator_copy_before,
+            "validator_copy_after": validator_copy_after,
             "validator_copy_present": validator_copy.is_file(),
             "validator_copy_sha256": sha256(validator_copy) if validator_copy.is_file() else None,
             "report_match": report_match,
             "expected_report_match": expect_report_match,
             "report_errors": report_errors,
             "expected_report_errors": expected_report_errors,
+            "report_details_match": not detail_errors,
+            "report_detail_errors": detail_errors,
+            "expected_report_details": expected_report_details,
+            "actual_report_details": actual_report_details,
+            "expected_counts": expected_counts,
+            "actual_counts": report.get("counts") if isinstance(report, dict) else None,
             "expected_failures": expected_failures,
             "actual_failures": actual_failures,
+            "expected_execution_errors": expected_execution_errors,
+            "execution_errors": execution_errors,
+            "execution_integrity_match": execution_match,
             "passed": passed,
             "stdout": process.stdout,
             "stderr": process.stderr,
+            "source_input_sha256": snapshot_states(source_inputs),
+            "normalization_diff": normalization_diff,
+            "normalization_errors": normalization_errors,
+            "expected_normalization_diff": expected_normalization_diff,
+            "normalization_match": normalization_match,
+            "pre_normalization_fixture_mutations": snapshot_changes(source_inputs,
+                                                                      pre_normalization_inputs),
+            "normalized_input_sha256": snapshot_states(normalized_inputs),
+            "fixture_mutations": snapshot_changes(normalized_inputs, inputs_after),
+            "pre_execution_input_sha256": snapshot_states(execution_inputs_before),
+            "post_execution_input_sha256": snapshot_states(execution_inputs_after),
+            "execution_input_changes": execution_changes,
             "tested_inputs": {
                 path: input_state(inputs_after.get(path))
-                for path in sorted(set(inputs_before) | set(inputs_after))
+                for path in sorted(set(source_inputs) | set(inputs_after))
             },
-            "changed_inputs": {
-                path: {
-                    "before": input_state(inputs_before.get(path)),
-                    "after": input_state(inputs_after.get(path)),
-                }
-                for path in sorted(set(inputs_before) | set(inputs_after))
-                if inputs_before.get(path) != inputs_after.get(path)
-            },
+            "changed_inputs": snapshot_changes(source_inputs, inputs_after),
             "fixture_sha256": {
                 "task-graph.json": inputs_after.get("task-graph.json"),
                 "acceptance-cases.json": inputs_after.get("acceptance-cases.json"),
@@ -456,8 +668,55 @@ def run_fixture(name: str, mutate: Callable[[Path], None], expected_exit: int,
         }
 
 
+def validate_original_board() -> dict[str, Any]:
+    command = [sys.executable, str(VALIDATOR), "--root", str(ROOT), "--json"]
+    inputs_before = snapshot_files(ROOT)
+    executable_before = path_state(VALIDATOR)
+    process = subprocess.run(command, capture_output=True, text=True, check=False)
+    inputs_after = snapshot_files(ROOT)
+    executable_after = path_state(VALIDATOR)
+    report, report_errors = inspect_report(process.stdout, process.returncode, initial=False)
+    expected_counts = derive_expected_counts(ROOT)
+    if report is not None and not report_errors and isinstance(report.get("counts"), dict):
+        if report["counts"] and expected_counts is None:
+            report_errors.append("counts cannot be derived from original board inputs")
+        elif report["counts"] and report["counts"] != expected_counts:
+            report_errors.append("counts do not match original board inputs")
+    input_changes = snapshot_changes(inputs_before, inputs_after)
+    execution_errors = [
+        f"original board input changed during ordinary validation: {path}"
+        for path in input_changes
+    ]
+    if executable_before != executable_after:
+        execution_errors.append("original validator executable changed during ordinary validation")
+    return {
+        "passed": (
+            process.returncode == 0
+            and not report_errors
+            and isinstance(report, dict)
+            and report.get("passed") is True
+            and not execution_errors
+        ),
+        "argv": command,
+        "exit_code": process.returncode,
+        "validator_executable_before": executable_before,
+        "validator_executable_after": executable_after,
+        "input_sha256_before": snapshot_states(inputs_before),
+        "input_sha256_after": snapshot_states(inputs_after),
+        "input_changes": input_changes,
+        "expected_counts": expected_counts,
+        "actual_counts": report.get("counts") if isinstance(report, dict) else None,
+        "report_errors": report_errors,
+        "execution_errors": execution_errors,
+        "report": report,
+        "stdout": process.stdout,
+        "stderr": process.stderr,
+    }
+
+
 def main() -> int:
     receipts: list[dict[str, Any]] = []
+    original_source_before = snapshot_files(ROOT)
 
     def completed_t32_shared_summary(u02: str, t32: str, summary: str) -> Callable[[Path], None]:
         def mutate(pack: Path) -> None:
@@ -633,6 +892,7 @@ def main() -> int:
         "copied pack without validator fails under the real external validator",
         remove_validator_copy,
         1, ["Required pack files exist"], validator_executable=VALIDATOR,
+        expected_report_details={"Required pack files exist": ["validate_pack.py"]},
     ))
 
     def mutate_acceptance_prefix(pack: Path) -> None:
@@ -684,6 +944,44 @@ def main() -> int:
         "initial mode rejects malformed assignment rows cleanly", malformed_initial_assignment,
         1, ["Assignment results have exact unique case owners and valid statuses",
             "Initial task, case, and assignment statuses claim no execution"], initial=True,
+    ))
+
+    def seed_progress_before_normalization(pack: Path) -> None:
+        set_task_status(pack, "P00", "PASS")
+        update_cases(pack, set_single_summary("P00", "PASS"))
+    receipts.append(run_fixture(
+        "temporary normalization changes only P00 and A01 status fields",
+        lambda _pack: None,
+        0, [], initial=True,
+        pre_normalization_mutation=seed_progress_before_normalization,
+        expected_normalization_diff=[
+            {"path": "task-graph.json", "field": "tasks[0].status",
+             "before": "PASS", "after": "NOT_STARTED"},
+            {"path": "acceptance-cases.json", "field": "cases[0].status",
+             "before": "PASS", "after": "NOT_RUN"},
+            {"path": "acceptance-cases.json", "field": "cases[0].assignment_results[0].status",
+             "before": "PASS", "after": "NOT_RUN"},
+        ],
+    ))
+
+    def consistent_progressed_p00_a01(pack: Path) -> None:
+        set_task_status(pack, "P00", "PASS")
+        update_cases(pack, set_single_summary("P00", "PASS"))
+    receipts.append(run_fixture(
+        "consistent progressed P00 and A01 board passes ordinary validation",
+        consistent_progressed_p00_a01,
+        0, [],
+    ))
+
+    def missing_a01_assignment_control(pack: Path) -> None:
+        def update(cases: dict[str, dict[str, Any]]) -> None:
+            cases["A01"]["assignment_results"].clear()
+        update_cases(pack, update)
+    receipts.append(run_fixture(
+        "invalid temporary source board with missing A01 assignment is not repaired",
+        lambda _pack: None,
+        1, ["Assignment results have exact unique case owners and valid statuses"],
+        pre_normalization_mutation=missing_a01_assignment_control,
     ))
 
     def t33_without_checkpoint_dependency(pack: Path) -> None:
@@ -1210,6 +1508,7 @@ def main() -> int:
         "malformed task manifest returns structured input error with exit two",
         malformed_manifest,
         2, ["Planning pack input is valid"],
+        expected_report_details={"Planning pack input is valid": "'tasks'"},
     ))
 
     def validator_report(passed: bool, failures: list[str],
@@ -1230,13 +1529,7 @@ def main() -> int:
                 "Independent code review",
                 "Full ASD-STE100 dictionary conformity",
             ],
-            "counts": {
-                "tasks": 46,
-                "cases": 125,
-                "specification_sections": 30,
-                "task_ready_groups": 20,
-                "checked_sentences": 1575,
-            },
+            "counts": derive_expected_counts(ROOT) or {},
             "checks": checks,
             "failures": failures,
         })
@@ -1705,6 +1998,17 @@ def main() -> int:
         1, ["Task graph fields and canonical preamble match individual task packets"],
     ))
 
+    def remove_p00_task_packet(pack: Path) -> None:
+        (pack / "tasks/P00.md").unlink()
+    receipts.append(run_fixture(
+        "missing task packet input identifies P00",
+        remove_p00_task_packet,
+        1, ["Task graph fields and canonical preamble match individual task packets"],
+        expected_report_details={
+            "Task graph fields and canonical preamble match individual task packets": ["P00"],
+        },
+    ))
+
     def change_task_packet_id(pack: Path) -> None:
         def update(document: str) -> str:
             old = "# Task packet: P00"
@@ -1903,6 +2207,7 @@ def main() -> int:
         "GOAL.md is a required input",
         delete_goal,
         1, ["Required pack files exist"],
+        expected_report_details={"Required pack files exist": ["GOAL.md"]},
     ))
 
     def add_conflicting_goal_clause(pack: Path) -> None:
@@ -2140,9 +2445,44 @@ def main() -> int:
         1, [a16_owner_check],
     ))
 
+    def validator_mutates_inputs_during_execution(pack: Path) -> None:
+        script = """from pathlib import Path
+import sys
+root = Path(sys.argv[sys.argv.index('--root') + 1])
+tasks = root / 'TASKS.md'
+tasks.write_text(tasks.read_text(encoding='utf-8') + '\\nUnexpected mutation.\\n', encoding='utf-8')
+self_path = Path(__file__)
+self_path.write_text(self_path.read_text(encoding='utf-8') + '\\n# changed during execution\\n', encoding='utf-8')
+print('{}')
+"""
+        (pack / "validate_pack.py").write_text(script, encoding="utf-8")
+    receipts.append(run_fixture(
+        "fixture runner detects input and validator changes during execution",
+        validator_mutates_inputs_during_execution,
+        0, [],
+        expect_report_match=False,
+        expected_report_errors=[
+            "report is missing required fields: checks, counts, failures, initial, not_checked, passed, scope",
+        ],
+        expected_execution_errors=[
+            "pack input changed during validator execution: TASKS.md",
+            "pack input changed during validator execution: validate_pack.py",
+            "validator executable changed during execution",
+        ],
+    ))
+
+    original_board = validate_original_board()
+    original_source_after = snapshot_files(ROOT)
+    runner_source_changes = snapshot_changes(original_source_before, original_source_after)
+    original_board["fixture_runner_source_changes"] = runner_source_changes
+    if runner_source_changes:
+        original_board["execution_errors"].append("fixture runner changed the original pack")
+        original_board["passed"] = False
+
     payload = {
-        "passed": all(receipt["passed"] for receipt in receipts),
+        "passed": original_board["passed"] and all(receipt["passed"] for receipt in receipts),
         "scope": "Static validator fixtures only. No product or runtime tests are performed.",
+        "original_board": original_board,
         "source_sha256": {
             "validate_pack.py": sha256(VALIDATOR),
             "validate_assignment_fixtures.py": sha256(Path(__file__)),
