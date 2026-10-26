@@ -557,7 +557,7 @@ key = "crates/adapters/jackin-usage-ffi/README.md"
 bound = 3137
 [[family.entry]]
 key = "crates/apps/jackin-capsule/README.md"
-bound = 6336
+bound = 6305
 [[family.entry]]
 key = "crates/apps/jackin/README.md"
 bound = 3101
