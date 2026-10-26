@@ -418,3 +418,10 @@ ec3355a170e68aaeddb6306438e8934f83d1a5eb:crates/services/jackin-diagnostics/src/
 ec3355a170e68aaeddb6306438e8934f83d1a5eb:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:generic-password:35
 ec3355a170e68aaeddb6306438e8934f83d1a5eb:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:generic-password:36
 ec3355a170e68aaeddb6306438e8934f83d1a5eb:crates/services/jackin-diagnostics/src/redact/tests/case_02.rs:private-key:114
+# Reason: existing credential-stripping and argument-redaction tests use synthetic fixture inputs; they perform no credential validation or live authenticated operation.
+# 4 findings; rule: generic-credential-uri; files: crates/services/jackin-isolation/src/materialize/tests/case_01.rs (2), crates/services/jackin-isolation/src/materialize/tests/case_03.rs (1), crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs (1).
+# Provenance: source commits e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c and d84c40a1677e4e190c11f9994492aab893f8ac4b; same fixture scenarios are documented in the reviewed 2026-10-22 baseline.
+e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/materialize/tests/case_01.rs:generic-credential-uri:75
+e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/materialize/tests/case_01.rs:generic-credential-uri:104
+e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/materialize/tests/case_03.rs:generic-credential-uri:18
+d84c40a1677e4e190c11f9994492aab893f8ac4b:crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs:generic-credential-uri:245
