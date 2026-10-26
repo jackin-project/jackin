@@ -718,8 +718,8 @@ fn inspect_staged_cargo_configuration_tree(
             )
         })? {
             let name = entry.file_name();
-            // Cargo runs from repository workspaces, never Git metadata or build output.
-            if name == OsStr::new(".git") || name == OsStr::new("target") {
+            // Cargo never runs from Git metadata.
+            if name == OsStr::new(".git") {
                 continue;
             }
             let file_type = entry

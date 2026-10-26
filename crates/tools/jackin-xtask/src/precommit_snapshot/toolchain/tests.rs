@@ -641,40 +641,22 @@ fn hostile_external_and_nested_cargo_configs_fail_before_mise_or_rustup_child_pr
 
         fs::write(&config, "# empty after the global-config cases\n")
             .expect("clear external Cargo config before nested-workspace case");
-        let nested_workspace = root.join("fuzz/jackin-env");
-        fs::create_dir_all(nested_workspace.join(".cargo"))
-            .expect("nested workspace Cargo config directory");
-        fs::write(nested_workspace.join("Cargo.toml"), "[workspace]\n")
-            .expect("nested workspace manifest");
-        fs::write(
-            root.parent().expect("fixture parent").join("host.toml"),
-            "[env]\nJACKIN_NESTED_CONFIG_SENTINEL = 'must not load'\n",
-        )
-        .expect("external nested Cargo include");
-        let nested_config = nested_workspace.join(".cargo/config");
-        fs::write(&nested_config, "include = ['../../../../host.toml']\n")
-            .expect("nested Cargo config with escaping include");
-        let Err(error) = admit_install_environment(&root) else {
-            panic!("nested external Cargo config include must be rejected");
-        };
-        let message = format!("{error:#}");
-        assert!(message.contains("staged Cargo config path escapes the reviewed snapshot"));
-        assert!(message.contains("host.toml"));
-        assert!(!message.contains("must not load"));
-        assert!(!marker.exists(), "nested Cargo config ran a child probe");
-
-        let Err(error) = verify_provision_tool_paths(
+        assert_nested_config_rejected_before_child_probes(
             &root,
-            Path::new("/unused/cargo"),
-            Path::new("/unused/rustc"),
-        ) else {
-            panic!("nested external Cargo include must fail admission");
-        };
-        let message = format!("{error:#}");
-        assert!(message.contains("staged Cargo config path escapes the reviewed snapshot"));
-        assert!(message.contains("host.toml"));
-        assert!(!message.contains("must not load"));
-        assert!(!marker.exists(), "Mise or rustup child probe ran");
+            &marker,
+            "fuzz/jackin-env",
+            "config",
+            "host.toml",
+        );
+        fs::remove_file(root.join("fuzz/jackin-env/.cargo/config"))
+            .expect("remove earlier nested workspace config");
+        assert_nested_config_rejected_before_child_probes(
+            &root,
+            &marker,
+            "target/nested",
+            "config.toml",
+            "host-target.toml",
+        );
         return;
     }
 
@@ -717,6 +699,52 @@ fn hostile_external_and_nested_cargo_configs_fail_before_mise_or_rustup_child_pr
         .expect("run isolated hostile-config child test");
     assert!(status.success(), "hostile-config child failed: {status}");
     assert!(!marker.exists(), "Mise or rustup child probe ran");
+}
+
+fn assert_nested_config_rejected_before_child_probes(
+    root: &Path,
+    marker: &Path,
+    workspace: &str,
+    config_name: &str,
+    host_config: &str,
+) {
+    let nested_workspace = root.join(workspace);
+    fs::create_dir_all(nested_workspace.join(".cargo"))
+        .expect("nested workspace Cargo config directory");
+    fs::write(nested_workspace.join("Cargo.toml"), "[workspace]\n")
+        .expect("nested workspace manifest");
+    fs::write(
+        root.parent().expect("fixture parent").join(host_config),
+        "[env]\nJACKIN_NESTED_CONFIG_SENTINEL = 'must not load'\n",
+    )
+    .expect("external nested Cargo include");
+    let nested_config = nested_workspace.join(".cargo").join(config_name);
+    fs::write(
+        &nested_config,
+        format!("include = ['../../../../{host_config}']\n"),
+    )
+    .expect("nested Cargo config with escaping include");
+
+    let Err(error) = admit_install_environment(root) else {
+        panic!("nested external Cargo include must be rejected");
+    };
+    assert_nested_config_error(&error, host_config);
+    assert!(!marker.exists(), "nested Cargo config ran a child probe");
+
+    let Err(error) =
+        verify_provision_tool_paths(root, Path::new("/unused/cargo"), Path::new("/unused/rustc"))
+    else {
+        panic!("nested external Cargo include must fail admission");
+    };
+    assert_nested_config_error(&error, host_config);
+    assert!(!marker.exists(), "Mise or rustup child probe ran");
+}
+
+fn assert_nested_config_error(error: &anyhow::Error, host_config: &str) {
+    let message = format!("{error:#}");
+    assert!(message.contains("staged Cargo config path escapes the reviewed snapshot"));
+    assert!(message.contains(host_config));
+    assert!(!message.contains("must not load"));
 }
 
 #[test]
