@@ -8,9 +8,46 @@ use jackin_protocol::control::{
 use jackin_usage_provider_core::{
     bucket, epoch_seconds_from_maybe_ms, expiry_label, format_cents, parse_iso_epoch, timed_bucket,
 };
+use serde_json::value::RawValue;
+use std::collections::BTreeMap;
 
-use super::money::{Decimal, format_money, sum_nonnegative};
+use super::money::{Decimal, format_money, sum_nonnegative, sum_nonnegative_raw};
 use super::{OpenRouterCreditsOutcome, OpenRouterCreditsResponse, OpenRouterKeyData};
+
+type RawObject = BTreeMap<String, Box<RawValue>>;
+
+#[derive(serde::Deserialize)]
+struct RawOpenRouterKeyData {
+    #[serde(default)]
+    usage: Option<Box<RawValue>>,
+    #[serde(default)]
+    usage_daily: Option<Box<RawValue>>,
+    #[serde(default)]
+    usage_weekly: Option<Box<RawValue>>,
+    #[serde(default)]
+    usage_monthly: Option<Box<RawValue>>,
+    #[serde(default)]
+    limit: Option<Box<RawValue>>,
+    #[serde(default)]
+    limit_remaining: Option<Box<RawValue>>,
+    #[serde(default)]
+    is_free_tier: Option<bool>,
+}
+
+#[derive(Clone, Copy)]
+enum KeyDataView<'a> {
+    Value(&'a serde_json::Value),
+    Raw(&'a RawObject),
+}
+
+impl KeyDataView<'_> {
+    fn decimal(&self, field: &str) -> Option<Decimal> {
+        match self {
+            Self::Value(data) => data.get(field).and_then(Decimal::from_value),
+            Self::Raw(data) => data.get(field).and_then(|value| Decimal::from_raw(value)),
+        }
+    }
+}
 
 fn openrouter_cents(dollars: f64) -> Option<i64> {
     if !dollars.is_finite() {
@@ -27,17 +64,15 @@ fn openrouter_cents(dollars: f64) -> Option<i64> {
     Some(cents as i64)
 }
 
-fn openrouter_byok_spend(data: &serde_json::Value) -> Option<Money> {
-    let object = data.as_object()?;
+fn openrouter_byok_spend(data: KeyDataView<'_>) -> Option<Money> {
     for key in [
         "byok_usage_monthly",
         "byok_usage_weekly",
         "byok_usage_daily",
         "byok_usage",
     ] {
-        if let Some(money) = object
-            .get(key)
-            .and_then(Decimal::from_value)
+        if let Some(money) = data
+            .decimal(key)
             .filter(|value| !value.is_negative())
             .and_then(|value| value.to_money())
             .filter(|money| money.amount_minor >= 0)
@@ -45,17 +80,35 @@ fn openrouter_byok_spend(data: &serde_json::Value) -> Option<Money> {
             return Some(money);
         }
     }
-    let values = object.iter().filter_map(|(key, value)| {
-        let lower = key.to_ascii_lowercase();
-        (lower.contains("byok")
-            && (lower.contains("usage") || lower.contains("spend") || lower.contains("cost")))
-        .then_some(value)
-    });
-    sum_nonnegative(values)
+    match data {
+        KeyDataView::Value(data) => {
+            let object = data.as_object()?;
+            let values = object.iter().filter_map(|(key, value)| {
+                let lower = key.to_ascii_lowercase();
+                (lower.contains("byok")
+                    && (lower.contains("usage")
+                        || lower.contains("spend")
+                        || lower.contains("cost")))
+                .then_some(value)
+            });
+            sum_nonnegative(values)
+        }
+        KeyDataView::Raw(object) => {
+            let values = object.iter().filter_map(|(key, value)| {
+                let lower = key.to_ascii_lowercase();
+                (lower.contains("byok")
+                    && (lower.contains("usage")
+                        || lower.contains("spend")
+                        || lower.contains("cost")))
+                .then_some(value.as_ref())
+            });
+            sum_nonnegative_raw(values)
+        }
+    }
 }
 
-fn openrouter_money_field(data: &serde_json::Value, field: &str) -> Option<Money> {
-    Decimal::from_value(data.get(field)?)
+fn openrouter_money_field(data: KeyDataView<'_>, field: &str) -> Option<Money> {
+    data.decimal(field)
         .filter(|value| !value.is_negative())
         .and_then(|value| value.to_money())
         .filter(|money| money.amount_minor >= 0)
@@ -79,33 +132,65 @@ fn openrouter_cap_and_used(
     (cap_default, used.to_money())
 }
 
-fn openrouter_key_expiry(data: &serde_json::Value, now: i64) -> Option<String> {
-    let raw = data.get("expires_at")?;
-    let epoch = raw
-        .as_str()
-        .and_then(parse_iso_epoch)
-        .or_else(|| raw.as_i64().map(epoch_seconds_from_maybe_ms))
-        .or_else(|| {
-            raw.as_f64().and_then(|value| {
-                value.is_finite().then(|| {
-                    #[expect(
-                        clippy::cast_possible_truncation,
-                        reason = "epoch millis fit i64 for any plausible date"
-                    )]
-                    {
-                        epoch_seconds_from_maybe_ms(value.round() as i64)
-                    }
-                })
-            })
-        })?;
+fn openrouter_key_expiry(data: KeyDataView<'_>, now: i64) -> Option<String> {
+    let epoch = match data {
+        KeyDataView::Value(data) => {
+            let raw = data.get("expires_at")?;
+            raw.as_str()
+                .and_then(parse_iso_epoch)
+                .or_else(|| raw.as_i64().map(epoch_seconds_from_maybe_ms))
+                .or_else(|| raw.as_f64().and_then(epoch_from_f64))?
+        }
+        KeyDataView::Raw(data) => {
+            let raw = data.get("expires_at")?;
+            raw_string(raw)
+                .as_deref()
+                .and_then(parse_iso_epoch)
+                .or_else(|| raw_i64(raw).map(epoch_seconds_from_maybe_ms))
+                .or_else(|| raw_f64(raw).and_then(epoch_from_f64))?
+        }
+    };
     Some(format!("expires {}", expiry_label(epoch, now)))
 }
 
-fn openrouter_key_reset(data: &serde_json::Value) -> Option<i64> {
-    data.get("reset_at")
-        .or_else(|| data.get("resets_at"))
-        .and_then(serde_json::Value::as_str)
-        .and_then(parse_iso_epoch)
+fn epoch_from_f64(value: f64) -> Option<i64> {
+    value.is_finite().then(|| {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "epoch millis fit i64 for any plausible date"
+        )]
+        {
+            epoch_seconds_from_maybe_ms(value.round() as i64)
+        }
+    })
+}
+
+fn raw_string(raw: &RawValue) -> Option<String> {
+    serde_json::from_str(raw.get()).ok()
+}
+
+fn raw_i64(raw: &RawValue) -> Option<i64> {
+    serde_json::from_str(raw.get()).ok()
+}
+
+fn raw_f64(raw: &RawValue) -> Option<f64> {
+    serde_json::from_str(raw.get()).ok()
+}
+
+fn openrouter_key_reset(data: KeyDataView<'_>) -> Option<i64> {
+    match data {
+        KeyDataView::Value(data) => data
+            .get("reset_at")
+            .or_else(|| data.get("resets_at"))
+            .and_then(serde_json::Value::as_str)
+            .and_then(parse_iso_epoch),
+        KeyDataView::Raw(data) => data
+            .get("reset_at")
+            .or_else(|| data.get("resets_at"))
+            .and_then(|raw| raw_string(raw))
+            .as_deref()
+            .and_then(parse_iso_epoch),
+    }
 }
 
 #[derive(Debug)]
@@ -114,6 +199,12 @@ pub struct OpenRouterKeyQuota {
     pub(crate) plan_label: Option<String>,
 }
 
+/// Parses key usage from a caller-provided JSON value.
+///
+/// The value parser can use only the numeric precision retained by `Value`.
+/// Enable the `value-arbitrary-precision` feature to preserve the value path's
+/// original numeric spelling, or pass the response text to
+/// [`parse_openrouter_key_usage_raw`] for exact response-number parsing.
 pub fn parse_openrouter_key_usage(
     value: serde_json::Value,
     now: i64,
@@ -122,21 +213,66 @@ pub fn parse_openrouter_key_usage(
         .get("data")
         .cloned()
         .unwrap_or(serde_json::Value::Null);
-    let key: OpenRouterKeyData = serde_json::from_value(data.clone())
-        .map_err(|_| "OpenRouter key response is malformed".to_owned())?;
+    let key: OpenRouterKeyData =
+        serde_json::from_value(data.clone()).map_err(|_| malformed_key_response())?;
+    project_openrouter_key_usage(key, KeyDataView::Value(&data), now)
+}
+
+/// Parses key usage from the original JSON response text without first
+/// converting numeric tokens to `serde_json::Value`.
+pub fn parse_openrouter_key_usage_raw(
+    raw_json: &str,
+    now: i64,
+) -> Result<OpenRouterKeyQuota, String> {
+    let envelope: RawObject =
+        serde_json::from_str(raw_json).map_err(|_| malformed_key_response())?;
+    let raw_data = envelope.get("data").ok_or_else(malformed_key_response)?;
+    let data: RawObject =
+        serde_json::from_str(raw_data.get()).map_err(|_| malformed_key_response())?;
+    let typed_data = serde_json::to_string(&data).map_err(|_| malformed_key_response())?;
+    let raw_key: RawOpenRouterKeyData =
+        serde_json::from_str(&typed_data).map_err(|_| malformed_key_response())?;
+    let key = OpenRouterKeyData {
+        usage: decode_raw_f64(raw_key.usage)?,
+        usage_daily: decode_raw_f64(raw_key.usage_daily)?,
+        usage_weekly: decode_raw_f64(raw_key.usage_weekly)?,
+        usage_monthly: decode_raw_f64(raw_key.usage_monthly)?,
+        limit: decode_raw_f64(raw_key.limit)?,
+        limit_remaining: decode_raw_f64(raw_key.limit_remaining)?,
+        is_free_tier: raw_key.is_free_tier,
+    };
+    project_openrouter_key_usage(key, KeyDataView::Raw(&data), now)
+}
+
+fn decode_raw_f64(raw: Option<Box<RawValue>>) -> Result<Option<f64>, String> {
+    raw.map(|raw| {
+        raw.get()
+            .parse::<f64>()
+            .map_err(|_| malformed_key_response())
+    })
+    .transpose()
+}
+
+fn malformed_key_response() -> String {
+    "OpenRouter key response is malformed".to_owned()
+}
+
+fn project_openrouter_key_usage(
+    key: OpenRouterKeyData,
+    data: KeyDataView<'_>,
+    now: i64,
+) -> Result<OpenRouterKeyQuota, String> {
     let mut buckets = Vec::new();
     if let Some(cap) = key
         .limit
-        .and_then(|_| data.get("limit"))
-        .and_then(Decimal::from_value)
+        .and_then(|_| data.decimal("limit"))
         .filter(|cap| !cap.is_negative())
         .filter(|cap| cap.to_money().is_some_and(|money| money.amount_minor > 0))
         && let Some(cap_default) = cap.to_money().filter(|money| money.amount_minor > 0)
     {
         let remaining = key
             .limit_remaining
-            .and_then(|_| data.get("limit_remaining"))
-            .and_then(Decimal::from_value)
+            .and_then(|_| data.decimal("limit_remaining"))
             .filter(|remaining| !remaining.is_negative())
             .filter(|remaining| remaining.to_money().is_some());
         let (limit_money, used_money) =
@@ -154,9 +290,9 @@ pub fn parse_openrouter_key_usage(
             used_money.as_ref().map(format_money),
             Some(format_money(&limit_money)),
             remaining_percent,
-            openrouter_key_reset(&data),
+            openrouter_key_reset(data),
             now,
-            openrouter_key_expiry(&data, now).as_deref(),
+            openrouter_key_expiry(data, now).as_deref(),
             UsageSnapshotStatus::Fresh,
         );
         view.used_money = used_money;
@@ -169,7 +305,7 @@ pub fn parse_openrouter_key_usage(
         ("Spent this week", key.usage_weekly, "usage_weekly"),
         ("Spent this month", key.usage_monthly, "usage_monthly"),
     ] {
-        if let Some(money) = spend.and_then(|_| openrouter_money_field(&data, field)) {
+        if let Some(money) = spend.and_then(|_| openrouter_money_field(data, field)) {
             let mut view = bucket(
                 label,
                 Some(format_money(&money)),
@@ -183,7 +319,7 @@ pub fn parse_openrouter_key_usage(
             buckets.push(view);
         }
     }
-    if let Some(byok) = openrouter_byok_spend(&data) {
+    if let Some(byok) = openrouter_byok_spend(data) {
         let mut view = bucket(
             "BYOK spend",
             Some(format_money(&byok)),

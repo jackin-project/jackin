@@ -11,8 +11,11 @@ description = "OpenRouter usage snapshot collection: key quota, credits, and mod
 license.workspace = true
 readme = "README.md"
 publish = false
-
 repository.workspace = true
+
+[features]
+default = []
+value-arbitrary-precision = ["serde_json/arbitrary_precision"]
 
 [lib]
 name = "jackin_usage_provider_openrouter"
@@ -25,7 +28,7 @@ jackin-usage-provider-core = { workspace = true }
 
 reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true, features = ["arbitrary_precision"] }
+serde_json = { workspace = true, features = ["raw_value"] }
 
 [lints]
 workspace = true

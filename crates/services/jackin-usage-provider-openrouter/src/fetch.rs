@@ -68,6 +68,20 @@ pub fn fetch_openrouter_key_usage(
     )
 }
 
+pub(crate) fn fetch_openrouter_key_usage_raw(
+    base_url: &str,
+    key: &str,
+) -> Result<Box<serde_json::value::RawValue>, ProviderHttpError> {
+    get_json_bearer::<Box<serde_json::value::RawValue>>(
+        jackin_telemetry::schema::enums::ProviderName::Openrouter,
+        "GET",
+        "OpenRouter key",
+        &format!("{base_url}/key"),
+        key,
+        &[],
+    )
+}
+
 pub fn openrouter_key_error_status(error: &ProviderError) -> UsageSnapshotStatus {
     match error.status() {
         Some(401) => UsageSnapshotStatus::NeedsLogin,

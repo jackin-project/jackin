@@ -262,6 +262,7 @@ fn openrouter_byok_stays_a_separate_row() {
     assert_eq!(cap.used_label.as_deref(), Some("$12.50"));
 }
 
+#[cfg(feature = "value-arbitrary-precision")]
 #[test]
 fn openrouter_subcent_cap_preserves_key_limit_and_money_geometry() {
     let quota = parse_openrouter_key_usage(
@@ -303,6 +304,7 @@ fn openrouter_subcent_cap_preserves_key_limit_and_money_geometry() {
     );
 }
 
+#[cfg(feature = "value-arbitrary-precision")]
 #[test]
 fn openrouter_period_spend_preserves_decimal_scale() {
     let quota = parse_openrouter_key_usage(
@@ -327,6 +329,7 @@ fn openrouter_period_spend_preserves_decimal_scale() {
     assert_eq!(month.used_label.as_deref(), Some("$0.100000000000000001"));
 }
 
+#[cfg(feature = "value-arbitrary-precision")]
 #[test]
 fn openrouter_byok_fallback_sums_exact_subcent_values() {
     let quota = parse_openrouter_key_usage(
@@ -347,6 +350,7 @@ fn openrouter_byok_fallback_sums_exact_subcent_values() {
     assert_eq!(byok.used_label.as_deref(), Some("$0.0019"));
 }
 
+#[cfg(feature = "value-arbitrary-precision")]
 #[test]
 fn openrouter_byok_sums_fractional_carries_before_narrowing() {
     let quota = parse_openrouter_key_usage(
@@ -368,6 +372,7 @@ fn openrouter_byok_sums_fractional_carries_before_narrowing() {
     );
 }
 
+#[cfg(feature = "value-arbitrary-precision")]
 #[test]
 fn openrouter_byok_omits_unrepresentable_numeric_fallback_groups() {
     for json in [
@@ -388,6 +393,7 @@ fn openrouter_byok_omits_unrepresentable_numeric_fallback_groups() {
     }
 }
 
+#[cfg(feature = "value-arbitrary-precision")]
 #[test]
 fn openrouter_byok_omits_final_fallback_overflow() {
     let quota = parse_openrouter_key_usage(
@@ -426,6 +432,7 @@ fn openrouter_byok_skips_null_and_string_fallback_fields() {
     assert_eq!(byok.used_label.as_deref(), Some("$1"));
 }
 
+#[cfg(feature = "value-arbitrary-precision")]
 #[test]
 fn openrouter_byok_primary_skips_unrepresentable_month_and_selects_week() {
     let quota = parse_openrouter_key_usage(
@@ -522,6 +529,305 @@ fn openrouter_omitted_tier_flag_is_unknown_plan() {
     )
     .expect("tierless fixture");
     assert_eq!(quota.plan_label, None);
+}
+
+#[test]
+fn openrouter_raw_key_preserves_exact_money_and_snapshot_handoff() {
+    let raw = r#"{"data":{"limit":0.001,"limit_remaining":0.0009,"usage_monthly":0.100000000000000001,"is_free_tier":false}}"#;
+    let payload =
+        serde_json::value::RawValue::from_string(raw.to_owned()).expect("valid raw key JSON");
+    let quota =
+        parse_fetched_openrouter_key_quota(payload, 1_780_000_000).expect("raw snapshot payload");
+
+    let cap = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "Key Limit")
+        .expect("cap row");
+    assert_eq!(cap.limit_label.as_deref(), Some("$0.001"));
+    assert_eq!(cap.used_label.as_deref(), Some("$0.0001"));
+    assert_eq!(
+        cap.limit_money,
+        Some(jackin_protocol::control::Money::new(10, "USD", 4))
+    );
+    assert_eq!(
+        cap.used_money,
+        Some(jackin_protocol::control::Money::new(1, "USD", 4))
+    );
+    let month = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "Spent this month")
+        .expect("monthly row");
+    assert_eq!(month.used_label.as_deref(), Some("$0.100000000000000001"));
+    assert_eq!(
+        month.used_money,
+        Some(jackin_protocol::control::Money::new(
+            100_000_000_000_000_001,
+            "USD",
+            18
+        ))
+    );
+}
+
+#[test]
+fn openrouter_raw_byok_preserves_dynamic_numeric_fallbacks_and_ignores_other_values() {
+    let quota = parse_openrouter_key_usage_raw(
+        r#"{"data":{"BYOK_COST_first":0.001,"my_Byok_Spend":0.0009,"byok_null":null,"byok_text":"5.00","byok_array":[3],"byok_flag":false}}"#,
+        1_780_000_000,
+    )
+    .expect("mixed dynamic BYOK fields");
+    let byok = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "BYOK spend")
+        .expect("numeric BYOK row");
+    assert_eq!(byok.used_label.as_deref(), Some("$0.0019"));
+    assert_eq!(
+        byok.used_money,
+        Some(jackin_protocol::control::Money::new(19, "USD", 4))
+    );
+}
+
+#[test]
+fn openrouter_raw_byok_omits_incomplete_groups_and_selects_first_convertible_period() {
+    for json in [
+        r#"{"data":{"byok_spend_a":1,"byok_cost_b":1e-256}}"#,
+        r#"{"data":{"byok_spend_a":1,"byok_cost_b":1e30}}"#,
+        r#"{"data":{"byok_spend_a":9223372036854775807,"byok_cost_b":1}}"#,
+    ] {
+        let quota = parse_openrouter_key_usage_raw(json, 1_780_000_000)
+            .expect("incomplete numeric group is a valid response");
+        assert!(
+            quota
+                .buckets
+                .iter()
+                .all(|bucket| bucket.label != "BYOK spend")
+        );
+    }
+
+    let quota = parse_openrouter_key_usage_raw(
+        r#"{"data":{"byok_usage_monthly":1e-256,"byok_usage_weekly":1}}"#,
+        1_780_000_000,
+    )
+    .expect("period fallback key");
+    let byok = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "BYOK spend")
+        .expect("weekly BYOK row");
+    assert_eq!(byok.used_label.as_deref(), Some("$1"));
+}
+
+#[test]
+fn openrouter_raw_parser_preserves_duplicate_last_wins_and_typed_validation() {
+    let quota = parse_openrouter_key_usage_raw(
+        r#"{"data":{"usage_monthly":1},"data":{"usage_monthly":1.25,"usage_monthly":2.5}}"#,
+        1_780_000_000,
+    )
+    .expect("duplicate keys use the final value");
+    let month = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "Spent this month")
+        .expect("monthly row");
+    assert_eq!(month.used_label.as_deref(), Some("$2.50"));
+    assert_eq!(
+        month.used_money,
+        Some(jackin_protocol::control::Money::new(250, "USD", 2))
+    );
+
+    for json in [
+        "{}",
+        r#"{"data":null}"#,
+        r#"{"data":[]}"#,
+        r#"{"data":{"usage_monthly":"1"}}"#,
+    ] {
+        assert!(
+            parse_openrouter_key_usage_raw(json, 1_780_000_000).is_err(),
+            "invalid typed response should fail: {json}"
+        );
+    }
+
+    let quota = parse_openrouter_key_usage_raw(
+        r#"{"data":{"usage_monthly":1.25,"usage_daily":null,"byok_cost_null":null,"byok_usage_text":"4.00"}}"#,
+        1_780_000_000,
+    )
+    .expect("nullable known and nonnumeric dynamic fields are skipped");
+    assert_eq!(
+        quota
+            .buckets
+            .iter()
+            .find(|bucket| bucket.label == "Spent this month")
+            .and_then(|bucket| bucket.used_label.as_deref()),
+        Some("$1.25")
+    );
+    assert!(
+        quota
+            .buckets
+            .iter()
+            .all(|bucket| bucket.label != "BYOK spend")
+    );
+
+    let quota = parse_openrouter_key_usage_raw(
+        r#"{"data":{"usage_monthly":0e-400,"unknown_number":1e400}}"#,
+        1_780_000_000,
+    )
+    .expect("zero exponent and unknown numeric field are accepted");
+    let month = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "Spent this month")
+        .expect("zero monthly row");
+    assert_eq!(month.used_label.as_deref(), Some("$0"));
+    assert_eq!(
+        month.used_money,
+        Some(jackin_protocol::control::Money::new(0, "USD", 2))
+    );
+
+    for json in [
+        r#"{"data":{"usage_monthly":1e-400}}"#,
+        r#"{"data":{"usage_monthly":1e400}}"#,
+    ] {
+        let quota = parse_openrouter_key_usage_raw(json, 1_780_000_000)
+            .expect("valid f64-shaped exponent is omitted from exact money");
+        assert!(
+            quota
+                .buckets
+                .iter()
+                .all(|bucket| bucket.label != "Spent this month")
+        );
+    }
+}
+
+#[test]
+fn openrouter_value_parser_reports_its_selected_precision_lane() {
+    let quota = parse_openrouter_key_usage(
+        serde_json::from_str(r#"{"data":{"usage_monthly":0.100000000000000001}}"#)
+            .expect("value key JSON"),
+        1_780_000_000,
+    )
+    .expect("value parser");
+    let month = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "Spent this month")
+        .expect("monthly row");
+    #[cfg(feature = "value-arbitrary-precision")]
+    assert_eq!(month.used_label.as_deref(), Some("$0.100000000000000001"));
+    #[cfg(not(feature = "value-arbitrary-precision"))]
+    assert_eq!(month.used_label.as_deref(), Some("$0.10"));
+}
+
+#[cfg(feature = "value-arbitrary-precision")]
+#[test]
+fn openrouter_raw_and_value_lanes_match_typed_extreme_exponent_behavior() {
+    for json in [
+        r#"{"data":{"usage_monthly":0e-400}}"#,
+        r#"{"data":{"usage_monthly":-0e-400}}"#,
+        r#"{"data":{"usage_monthly":0e400}}"#,
+        r#"{"data":{"usage_monthly":1e-400}}"#,
+        r#"{"data":{"usage_monthly":1e400}}"#,
+        r#"{"data":{"usage_monthly":1,"unknown_number":1e400}}"#,
+    ] {
+        let raw = parse_openrouter_key_usage_raw(json, 1_780_000_000);
+        let value_json = serde_json::from_str(json).expect("arbitrary precision value JSON");
+        let value = parse_openrouter_key_usage(value_json, 1_780_000_000);
+        assert_eq!(raw.is_ok(), value.is_ok(), "input: {json}");
+        if let (Ok(raw), Ok(value)) = (raw, value) {
+            let projection = |quota: &OpenRouterKeyQuota| {
+                quota
+                    .buckets
+                    .iter()
+                    .map(|bucket| {
+                        (
+                            bucket.label.clone(),
+                            bucket.used_label.clone(),
+                            bucket.limit_label.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(raw.plan_label, value.plan_label, "input: {json}");
+            assert_eq!(projection(&raw), projection(&value), "input: {json}");
+        }
+    }
+}
+
+#[test]
+fn openrouter_raw_and_value_lanes_match_duplicate_and_byok_projection() {
+    for (index, json) in [
+        r#"{"data":{"byok_spend_a":1.25,"BYOK_cost_b":2.5,"byok_cost_b":0.5,"byok_usage_text":"5","byok_null":null}}"#,
+        r#"{"data":{"byok_spend_a":1,"byok_spend_a":3,"byok_cost_b":2}}"#,
+        r#"{"data":{"usage_monthly":1},"data":{"usage_monthly":2}}"#,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let raw = parse_openrouter_key_usage_raw(json, 1_780_000_000);
+        let value_json = serde_json::from_str(json).expect("ordinary numeric value JSON");
+        let value = parse_openrouter_key_usage(value_json, 1_780_000_000);
+        assert_eq!(raw.is_ok(), value.is_ok(), "input: {json}");
+        if let (Ok(raw), Ok(value)) = (raw, value) {
+            assert_eq!(quota_projection(&raw), quota_projection(&value), "input: {json}");
+            match index {
+                0 => assert_eq!(
+                    raw.buckets
+                        .iter()
+                        .find(|bucket| bucket.label == "BYOK spend")
+                        .and_then(|bucket| bucket.used_label.as_deref()),
+                    Some("$4.25")
+                ),
+                1 => assert_eq!(
+                    raw.buckets
+                        .iter()
+                        .find(|bucket| bucket.label == "BYOK spend")
+                        .and_then(|bucket| bucket.used_label.as_deref()),
+                    Some("$5")
+                ),
+                2 => assert_eq!(
+                    raw.buckets
+                        .iter()
+                        .find(|bucket| bucket.label == "Spent this month")
+                        .and_then(|bucket| bucket.used_label.as_deref()),
+                    Some("$2")
+                ),
+                _ => unreachable!("three fixed corpora"),
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct QuotaProjection {
+    plan_label: Option<String>,
+    buckets: Vec<BucketProjection>,
+}
+
+#[derive(Debug, PartialEq)]
+struct BucketProjection {
+    label: String,
+    used_label: Option<String>,
+    limit_label: Option<String>,
+    used_money: Option<jackin_protocol::control::Money>,
+    limit_money: Option<jackin_protocol::control::Money>,
+}
+
+fn quota_projection(quota: &OpenRouterKeyQuota) -> QuotaProjection {
+    QuotaProjection {
+        plan_label: quota.plan_label.clone(),
+        buckets: quota
+            .buckets
+            .iter()
+            .map(|bucket| BucketProjection {
+                label: bucket.label.clone(),
+                used_label: bucket.used_label.clone(),
+                limit_label: bucket.limit_label.clone(),
+                used_money: bucket.used_money.clone(),
+                limit_money: bucket.limit_money.clone(),
+            })
+            .collect(),
+    }
 }
 
 #[test]
