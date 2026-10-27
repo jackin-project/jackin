@@ -137,3 +137,4 @@ impl Drop for CannedSnapshotServer {
 }
 
 mod case_01;
+mod case_02;
