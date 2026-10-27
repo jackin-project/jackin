@@ -5,18 +5,24 @@ use super::*;
 
 #[test]
 fn openrouter_credits_separates_spend_from_remaining_balance() {
-    let outcome = parse_openrouter_credits(serde_json::json!({
-        "data": {"total_credits": 100.0, "total_usage": 25.0}
-    }))
-    .expect("credits fixture");
-    let OpenRouterCreditsOutcome::Available {
-        spent_cents,
-        ceiling_cents,
-    } = outcome
-    else {
-        panic!("expected available credits");
+    let snapshot = |credits_body: &str| {
+        let server =
+            CannedSnapshotServer::start_with_credits(key_fixture(), credits_body.to_owned());
+        openrouter_snapshot_with_base(
+            "opencode",
+            Some("fixture-key"),
+            server.base_url(),
+            1_780_000_000,
+        )
     };
-    let view = openrouter_credits_bucket(spent_cents, ceiling_cents);
+
+    let normal = snapshot(r#"{"data":{"total_credits":100.0,"total_usage":25.0}}"#);
+    assert_eq!(
+        normal.status,
+        jackin_protocol::control::UsageSnapshotStatus::Fresh
+    );
+    assert_eq!(normal.account.provider_label, "OpenRouter");
+    let view = account_credits_bucket(&normal);
     assert_eq!(view.used_label.as_deref(), Some("$25"));
     assert_eq!(view.limit_label.as_deref(), Some("$100"));
     assert_eq!(
@@ -37,7 +43,13 @@ fn openrouter_credits_separates_spend_from_remaining_balance() {
         Some(jackin_protocol::control::PercentObservationOrigin::Derived)
     );
 
-    let exhausted = openrouter_credits_bucket(1_000, 1_000);
+    let exhausted = snapshot(r#"{"data":{"total_credits":10.0,"total_usage":10.0}}"#);
+    assert_eq!(
+        exhausted.status,
+        jackin_protocol::control::UsageSnapshotStatus::Fresh
+    );
+    assert_eq!(exhausted.account.provider_label, "OpenRouter");
+    let exhausted = account_credits_bucket(&exhausted);
     assert_eq!(exhausted.used_label.as_deref(), Some("$10"));
     assert_eq!(
         exhausted
@@ -50,11 +62,17 @@ fn openrouter_credits_separates_spend_from_remaining_balance() {
         Some(jackin_protocol::control::PercentObservationOrigin::Derived)
     );
 
-    let overage = openrouter_credits_bucket(12_000, 10_000);
+    let overage = snapshot(r#"{"data":{"total_credits":100.0,"total_usage":120.0}}"#);
+    assert_eq!(
+        overage.status,
+        jackin_protocol::control::UsageSnapshotStatus::Fresh
+    );
+    assert_eq!(overage.account.provider_label, "OpenRouter");
+    let overage = account_credits_bucket(&overage);
     assert_eq!(overage.used_label.as_deref(), Some("$120"));
     assert_eq!(overage.remaining_percent, None);
     assert_eq!(
-        jackin_usage_provider_core::money_used_percent(&overage)
+        jackin_usage_provider_core::money_used_percent(overage)
             .map(jackin_protocol::control::RawPercentPoints::get),
         Some(120.0)
     );
@@ -63,7 +81,13 @@ fn openrouter_credits_separates_spend_from_remaining_balance() {
         Some(12_000)
     );
 
-    let bare = openrouter_credits_bucket(0, 0);
+    let bare = snapshot(r#"{"data":{"total_credits":0.0,"total_usage":0.0}}"#);
+    assert_eq!(
+        bare.status,
+        jackin_protocol::control::UsageSnapshotStatus::Fresh
+    );
+    assert_eq!(bare.account.provider_label, "OpenRouter");
+    let bare = account_credits_bucket(&bare);
     assert_eq!(bare.remaining_percent, None);
 }
 

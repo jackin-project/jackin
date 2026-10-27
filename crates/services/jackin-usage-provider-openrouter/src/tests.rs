@@ -5,6 +5,24 @@ use super::*;
 
 use jackin_protocol::control::StatusSlot;
 
+fn account_credits_bucket(
+    view: &jackin_protocol::control::FocusedUsageView,
+) -> &jackin_protocol::control::QuotaBucketView {
+    view.buckets
+        .iter()
+        .find(|bucket| bucket.label == "Account credits")
+        .unwrap_or_else(|| {
+            panic!(
+                "account credits bucket missing: last_error={:?}, bucket_labels={:?}",
+                view.last_error,
+                view.buckets
+                    .iter()
+                    .map(|bucket| bucket.label.as_str())
+                    .collect::<Vec<_>>()
+            )
+        })
+}
+
 pub(super) const fn key_fixture() -> &'static str {
     r#"{"data":{"label":"test-key","usage":12.5,"usage_daily":1.2,"usage_weekly":5.0,"usage_monthly":12.5,"limit":100.0,"limit_remaining":87.5,"is_free_tier":false}}"#
 }
@@ -17,6 +35,13 @@ struct CannedSnapshotServer {
 
 impl CannedSnapshotServer {
     fn start(key_body: &'static str) -> Self {
+        Self::start_with_credits(
+            key_body,
+            serde_json::json!({"data": {"total_credits": 10.0, "total_usage": 2.5}}).to_string(),
+        )
+    }
+
+    fn start_with_credits(key_body: &'static str, credits_body: String) -> Self {
         use std::net::{Ipv4Addr, TcpListener};
         use std::sync::mpsc;
         use std::time::{Duration, Instant};
@@ -30,7 +55,13 @@ impl CannedSnapshotServer {
         let worker = jackin_telemetry::spawn::thread_joined(move || {
             let accept_deadline = Instant::now() + ACCEPT_TIMEOUT;
             loop {
-                if !serve_connection(&listener, &worker_stop, key_body, accept_deadline) {
+                if !serve_connection(
+                    &listener,
+                    &worker_stop,
+                    key_body,
+                    &credits_body,
+                    accept_deadline,
+                ) {
                     return;
                 }
             }
@@ -51,6 +82,7 @@ fn serve_connection(
     listener: &std::net::TcpListener,
     stop: &std::sync::mpsc::Receiver<()>,
     key_body: &'static str,
+    credits_body: &str,
     accept_deadline: std::time::Instant,
 ) -> bool {
     use std::io::{Read, Write};
@@ -104,7 +136,18 @@ fn serve_connection(
         }
         let count = match stream.read(&mut chunk) {
             Ok(count) if count > 0 => count,
-            _ => return false,
+            Ok(_) => return false,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                ) =>
+            {
+                continue;
+            }
+            Err(_) => return false,
         };
         if request.len() + count > MAX_REQUEST_BYTES {
             return false;
@@ -113,7 +156,7 @@ fn serve_connection(
     }
 
     let body = if String::from_utf8_lossy(&request).contains("/credits") {
-        serde_json::json!({"data": {"total_credits": 10.0, "total_usage": 2.5}}).to_string()
+        credits_body.to_owned()
     } else {
         key_body.to_owned()
     };
