@@ -54,21 +54,7 @@ pub fn check_openrouter_model_in_catalog(
     }
 }
 
-pub fn fetch_openrouter_key_usage(
-    base_url: &str,
-    key: &str,
-) -> Result<serde_json::Value, ProviderHttpError> {
-    get_json_bearer::<serde_json::Value>(
-        jackin_telemetry::schema::enums::ProviderName::Openrouter,
-        "GET",
-        "OpenRouter key",
-        &format!("{base_url}/key"),
-        key,
-        &[],
-    )
-}
-
-pub(crate) fn fetch_openrouter_key_usage_raw(
+pub fn fetch_openrouter_key_usage_raw(
     base_url: &str,
     key: &str,
 ) -> Result<Box<serde_json::value::RawValue>, ProviderHttpError> {

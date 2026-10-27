@@ -38,7 +38,7 @@ fn openrouter_snapshot_carries_delayed_429_retry_after_to_broker_boundary() {
         Some("fixture-key"),
         &format!("http://{address}"),
         request_now,
-        fetch_openrouter_key_usage,
+        fetch_openrouter_key_usage_raw,
     );
     server.join().expect("429 fixture server");
 

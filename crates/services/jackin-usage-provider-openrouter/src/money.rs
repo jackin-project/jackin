@@ -58,12 +58,6 @@ impl Decimal {
         })
     }
 
-    pub(crate) fn from_value(value: &serde_json::Value) -> Option<Self> {
-        value
-            .as_number()
-            .and_then(|number| Self::parse(&number.to_string()))
-    }
-
     pub(crate) fn from_raw(value: &RawValue) -> Option<Self> {
         let raw = value.get();
         is_json_number(raw).then(|| Self::parse(raw)).flatten()
@@ -289,29 +283,7 @@ fn adjust_mantissa_scale(
     u8::try_from(scale).ok()
 }
 
-pub(crate) fn sum_nonnegative<'a>(
-    values: impl IntoIterator<Item = &'a serde_json::Value>,
-) -> Option<Money> {
-    let mut accumulator = DecimalAccumulator::default();
-    let mut found = false;
-    for value in values {
-        let Some(number) = value.as_number() else {
-            continue;
-        };
-        let raw = number.to_string();
-        if is_negative_nonzero_number(&raw) {
-            continue;
-        }
-        let decimal = Decimal::parse(&raw)?;
-        accumulator.add(&decimal)?;
-        found = true;
-    }
-    found.then(|| accumulator.into_money()).flatten()
-}
-
-pub(crate) fn sum_nonnegative_raw<'a>(
-    values: impl IntoIterator<Item = &'a RawValue>,
-) -> Option<Money> {
+pub(crate) fn sum_nonnegative<'a>(values: impl IntoIterator<Item = &'a RawValue>) -> Option<Money> {
     let mut accumulator = DecimalAccumulator::default();
     let mut found = false;
     for value in values {

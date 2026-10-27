@@ -140,10 +140,10 @@ pub(crate) use jackin_usage_provider_opencode::{load_opencode_api_key, parse_ope
 pub(crate) use jackin_usage_provider_openrouter::{
     OPENROUTER_DEFAULT_BASE_URL, OpenRouterCreditsOutcome, OpenRouterKeyQuota,
     OpenRouterModelCheck, check_openrouter_model_in_catalog, fetch_openrouter_credits,
-    fetch_openrouter_key_usage, fetch_openrouter_model_check, openrouter_base_url,
+    fetch_openrouter_key_usage_raw, fetch_openrouter_model_check, openrouter_base_url,
     openrouter_base_url_from, openrouter_credits_bucket, openrouter_snapshot,
     openrouter_snapshot_with_base, openrouter_snapshot_with_rate_limit, parse_openrouter_credits,
-    parse_openrouter_key_usage,
+    parse_openrouter_key_usage_raw,
 };
 #[expect(
     unused_imports,

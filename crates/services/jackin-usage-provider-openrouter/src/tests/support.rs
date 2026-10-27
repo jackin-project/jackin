@@ -1,19 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-pub(super) fn key_fixture() -> serde_json::Value {
-    serde_json::json!({
-        "data": {
-            "label": "test-key",
-            "usage": 12.5,
-            "usage_daily": 1.2,
-            "usage_weekly": 5.0,
-            "usage_monthly": 12.5,
-            "limit": 100.0,
-            "limit_remaining": 87.5,
-            "is_free_tier": false
-        }
-    })
+pub(super) const fn key_fixture() -> &'static str {
+    r#"{"data":{"label":"test-key","usage":12.5,"usage_daily":1.2,"usage_weekly":5.0,"usage_monthly":12.5,"limit":100.0,"limit_remaining":87.5,"is_free_tier":false}}"#
 }
 
 pub(super) fn one_shot_key_server(

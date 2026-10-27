@@ -11,7 +11,7 @@ use jackin_usage_provider_core::{
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 
-use super::money::{Decimal, format_money, sum_nonnegative, sum_nonnegative_raw};
+use super::money::{Decimal, format_money, sum_nonnegative};
 use super::{OpenRouterCreditsOutcome, OpenRouterCreditsResponse, OpenRouterKeyData};
 
 type RawObject = BTreeMap<String, Box<RawValue>>;
@@ -35,8 +35,7 @@ struct RawOpenRouterKeyData {
 }
 
 #[derive(Clone, Copy)]
-enum KeyDataView<'a> {
-    Value(&'a serde_json::Value),
+enum RawKeyDataView<'a> {
     Raw(&'a RawObject),
     Sequence,
 }
@@ -47,18 +46,17 @@ enum RawKeyDataSource {
 }
 
 impl RawKeyDataSource {
-    fn view(&self) -> KeyDataView<'_> {
+    fn view(&self) -> RawKeyDataView<'_> {
         match self {
-            Self::Object(data) => KeyDataView::Raw(data),
-            Self::Sequence => KeyDataView::Sequence,
+            Self::Object(data) => RawKeyDataView::Raw(data),
+            Self::Sequence => RawKeyDataView::Sequence,
         }
     }
 }
 
-impl KeyDataView<'_> {
-    fn decimal(&self, field: &str) -> Option<Decimal> {
+impl RawKeyDataView<'_> {
+    fn decimal(self, field: &str) -> Option<Decimal> {
         match self {
-            Self::Value(data) => data.get(field).and_then(Decimal::from_value),
             Self::Raw(data) => data.get(field).and_then(|value| Decimal::from_raw(value)),
             Self::Sequence => None,
         }
@@ -80,7 +78,7 @@ fn openrouter_cents(dollars: f64) -> Option<i64> {
     Some(cents as i64)
 }
 
-fn openrouter_byok_spend(data: KeyDataView<'_>) -> Option<Money> {
+fn openrouter_byok_spend(data: RawKeyDataView<'_>) -> Option<Money> {
     for key in [
         "byok_usage_monthly",
         "byok_usage_weekly",
@@ -97,19 +95,7 @@ fn openrouter_byok_spend(data: KeyDataView<'_>) -> Option<Money> {
         }
     }
     match data {
-        KeyDataView::Value(data) => {
-            let object = data.as_object()?;
-            let values = object.iter().filter_map(|(key, value)| {
-                let lower = key.to_ascii_lowercase();
-                (lower.contains("byok")
-                    && (lower.contains("usage")
-                        || lower.contains("spend")
-                        || lower.contains("cost")))
-                .then_some(value)
-            });
-            sum_nonnegative(values)
-        }
-        KeyDataView::Raw(object) => {
+        RawKeyDataView::Raw(object) => {
             let values = object.iter().filter_map(|(key, value)| {
                 let lower = key.to_ascii_lowercase();
                 (lower.contains("byok")
@@ -118,13 +104,13 @@ fn openrouter_byok_spend(data: KeyDataView<'_>) -> Option<Money> {
                         || lower.contains("cost")))
                 .then_some(value.as_ref())
             });
-            sum_nonnegative_raw(values)
+            sum_nonnegative(values)
         }
-        KeyDataView::Sequence => None,
+        RawKeyDataView::Sequence => None,
     }
 }
 
-fn openrouter_money_field(data: KeyDataView<'_>, field: &str) -> Option<Money> {
+fn openrouter_money_field(data: RawKeyDataView<'_>, field: &str) -> Option<Money> {
     data.decimal(field)
         .filter(|value| !value.is_negative())
         .and_then(|value| value.to_money())
@@ -149,16 +135,9 @@ fn openrouter_cap_and_used(
     (cap_default, used.to_money())
 }
 
-fn openrouter_key_expiry(data: KeyDataView<'_>, now: i64) -> Option<String> {
+fn openrouter_key_expiry(data: RawKeyDataView<'_>, now: i64) -> Option<String> {
     let epoch = match data {
-        KeyDataView::Value(data) => {
-            let raw = data.get("expires_at")?;
-            raw.as_str()
-                .and_then(parse_iso_epoch)
-                .or_else(|| raw.as_i64().map(epoch_seconds_from_maybe_ms))
-                .or_else(|| raw.as_f64().and_then(epoch_from_f64))?
-        }
-        KeyDataView::Raw(data) => {
+        RawKeyDataView::Raw(data) => {
             let raw = data.get("expires_at")?;
             raw_string(raw)
                 .as_deref()
@@ -166,7 +145,7 @@ fn openrouter_key_expiry(data: KeyDataView<'_>, now: i64) -> Option<String> {
                 .or_else(|| raw_i64(raw).map(epoch_seconds_from_maybe_ms))
                 .or_else(|| raw_f64(raw).and_then(epoch_from_f64))?
         }
-        KeyDataView::Sequence => return None,
+        RawKeyDataView::Sequence => return None,
     };
     Some(format!("expires {}", expiry_label(epoch, now)))
 }
@@ -195,20 +174,15 @@ fn raw_f64(raw: &RawValue) -> Option<f64> {
     serde_json::from_str(raw.get()).ok()
 }
 
-fn openrouter_key_reset(data: KeyDataView<'_>) -> Option<i64> {
+fn openrouter_key_reset(data: RawKeyDataView<'_>) -> Option<i64> {
     match data {
-        KeyDataView::Value(data) => data
-            .get("reset_at")
-            .or_else(|| data.get("resets_at"))
-            .and_then(serde_json::Value::as_str)
-            .and_then(parse_iso_epoch),
-        KeyDataView::Raw(data) => data
+        RawKeyDataView::Raw(data) => data
             .get("reset_at")
             .or_else(|| data.get("resets_at"))
             .and_then(|raw| raw_string(raw))
             .as_deref()
             .and_then(parse_iso_epoch),
-        KeyDataView::Sequence => None,
+        RawKeyDataView::Sequence => None,
     }
 }
 
@@ -218,27 +192,7 @@ pub struct OpenRouterKeyQuota {
     pub(crate) plan_label: Option<String>,
 }
 
-/// Parses key usage from a caller-provided JSON value.
-///
-/// The value parser can use only the numeric precision retained by `Value`.
-/// Enable the `value-arbitrary-precision` feature to preserve the value path's
-/// original numeric spelling, or pass the response text to
-/// [`parse_openrouter_key_usage_raw`] for exact response-number parsing.
-pub fn parse_openrouter_key_usage(
-    value: serde_json::Value,
-    now: i64,
-) -> Result<OpenRouterKeyQuota, String> {
-    let data = value
-        .get("data")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
-    let key: OpenRouterKeyData =
-        serde_json::from_value(data.clone()).map_err(|_| malformed_key_response())?;
-    project_openrouter_key_usage(key, KeyDataView::Value(&data), now)
-}
-
-/// Parses key usage from the original JSON response text without first
-/// converting numeric tokens to `serde_json::Value`.
+/// Parses key usage from the original JSON response text, preserving numeric tokens.
 pub fn parse_openrouter_key_usage_raw(
     raw_json: &str,
     now: i64,
@@ -293,7 +247,7 @@ fn malformed_key_response() -> String {
 
 fn project_openrouter_key_usage(
     key: OpenRouterKeyData,
-    data: KeyDataView<'_>,
+    data: RawKeyDataView<'_>,
     now: i64,
 ) -> Result<OpenRouterKeyQuota, String> {
     let mut buckets = Vec::new();

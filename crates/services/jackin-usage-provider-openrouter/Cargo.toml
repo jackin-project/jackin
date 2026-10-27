@@ -13,10 +13,6 @@ readme = "README.md"
 publish = false
 repository.workspace = true
 
-[features]
-default = []
-value-arbitrary-precision = ["serde_json/arbitrary_precision"]
-
 [lib]
 name = "jackin_usage_provider_openrouter"
 path = "src/lib.rs"

@@ -9,34 +9,19 @@ use jackin_usage_provider_core::{
     ProviderHttpError, UsageSurface, UsageViewInput, bucket, usage_view,
 };
 
+use serde_json::value::RawValue;
+
 use super::fetch::fetch_openrouter_key_usage_raw;
 use super::{
     OpenRouterCreditsOutcome, OpenRouterKeyQuota, fetch_openrouter_credits, openrouter_base_url,
-    openrouter_credits_bucket, openrouter_key_error_status, parse_openrouter_key_usage,
-    parse_openrouter_key_usage_raw,
+    openrouter_credits_bucket, openrouter_key_error_status, parse_openrouter_key_usage_raw,
 };
 
-pub(crate) trait OpenRouterKeyPayload {
-    fn into_quota(self, now: i64) -> Result<OpenRouterKeyQuota, String>;
-}
-
-impl OpenRouterKeyPayload for serde_json::Value {
-    fn into_quota(self, now: i64) -> Result<OpenRouterKeyQuota, String> {
-        parse_openrouter_key_usage(self, now)
-    }
-}
-
-impl OpenRouterKeyPayload for Box<serde_json::value::RawValue> {
-    fn into_quota(self, now: i64) -> Result<OpenRouterKeyQuota, String> {
-        parse_openrouter_key_usage_raw(self.get(), now)
-    }
-}
-
-pub(crate) fn parse_fetched_openrouter_key_quota<Response: OpenRouterKeyPayload>(
-    response: Response,
+pub(crate) fn parse_fetched_openrouter_key_quota(
+    response: &RawValue,
     now: i64,
 ) -> Result<OpenRouterKeyQuota, ProviderError> {
-    response.into_quota(now).map_err(ProviderError::from)
+    parse_openrouter_key_usage_raw(response.get(), now).map_err(ProviderError::from)
 }
 
 pub fn openrouter_snapshot(agent: &str, key: Option<&str>, now: i64) -> FocusedUsageView {
@@ -49,14 +34,7 @@ pub fn openrouter_snapshot_with_base(
     base_url: &str,
     now: i64,
 ) -> FocusedUsageView {
-    openrouter_snapshot_with_key_payload_fetch(
-        agent,
-        key,
-        base_url,
-        now,
-        fetch_openrouter_key_usage_raw,
-    )
-    .0
+    openrouter_snapshot_with_key_fetch(agent, key, base_url, now, fetch_openrouter_key_usage_raw).0
 }
 
 pub fn openrouter_snapshot_with_rate_limit(
@@ -64,7 +42,7 @@ pub fn openrouter_snapshot_with_rate_limit(
     key: Option<&str>,
     now: i64,
 ) -> (FocusedUsageView, Option<ProviderRateLimit>) {
-    openrouter_snapshot_with_key_payload_fetch(
+    openrouter_snapshot_with_key_fetch(
         agent,
         key,
         &openrouter_base_url(),
@@ -81,21 +59,7 @@ pub(crate) fn openrouter_snapshot_with_key_fetch<F>(
     fetch_key: F,
 ) -> (FocusedUsageView, Option<ProviderRateLimit>)
 where
-    F: FnOnce(&str, &str) -> Result<serde_json::Value, ProviderHttpError>,
-{
-    openrouter_snapshot_with_key_payload_fetch(agent, key, base_url, now, fetch_key)
-}
-
-fn openrouter_snapshot_with_key_payload_fetch<F, Response>(
-    agent: &str,
-    key: Option<&str>,
-    base_url: &str,
-    now: i64,
-    fetch_key: F,
-) -> (FocusedUsageView, Option<ProviderRateLimit>)
-where
-    F: FnOnce(&str, &str) -> Result<Response, ProviderHttpError>,
-    Response: OpenRouterKeyPayload,
+    F: FnOnce(&str, &str) -> Result<Box<RawValue>, ProviderHttpError>,
 {
     let Some(key) = key.filter(|key| !key.trim().is_empty()) else {
         return (
@@ -127,7 +91,7 @@ where
     };
     let key_result = fetch_key(base_url, key)
         .map_err(ProviderError::from)
-        .and_then(|response| parse_fetched_openrouter_key_quota(response, now));
+        .and_then(|response| parse_fetched_openrouter_key_quota(&response, now));
     let (quota, key_error) = match key_result {
         Ok(quota) => (Some(quota), None),
         Err(error) => (None, Some(error)),

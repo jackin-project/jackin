@@ -26,15 +26,13 @@ discovery, credential snapshots).
 `openrouter_snapshot`, key/credit fetch, and quota types consumed by
 `jackin-usage`.
 
-Key snapshots parse the original JSON response text so exact decimal money
-values do not pass through floating-point `Value` numbers. The existing
-`parse_openrouter_key_usage(Value, ..)` API remains available, but it can use
-only the precision retained by its input value. Enable the nondefault
-`value-arbitrary-precision` feature to preserve the older exact-number behavior
-for that API. Cargo feature unification means opting in also enables serde_json
-arbitrary precision for other packages selected in the same dependency graph.
-Callers that have original JSON text can use
-`parse_openrouter_key_usage_raw` without opting in.
+Key quota responses are decoded from their original JSON text. This preserves
+the exact numeric tokens used for money calculations, including decimal digits
+that a floating-point JSON value cannot retain. Use
+`parse_openrouter_key_usage_raw` for key quota input and
+`fetch_openrouter_key_usage_raw` to receive the complete key response body as
+raw JSON. Decode that body into `serde_json::Value` in the caller when dynamic
+inspection is more important than exact numeric spelling.
 
 ## How to verify
 
