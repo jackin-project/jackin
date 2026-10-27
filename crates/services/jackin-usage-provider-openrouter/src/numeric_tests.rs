@@ -215,6 +215,57 @@ mod case_01 {
             ))
         );
         assert_eq!(month.used_label.as_deref(), Some("$0.100000000000000001"));
+
+        {
+            let quota = parse_openrouter_key_usage_raw(
+                r#"{"data":{"usage_monthly":12.50}}"#,
+                1_780_000_000,
+            )
+            .expect("cent-scale monthly spend");
+            let month = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "Spent this month")
+                .expect("cent-scale monthly row");
+            assert_eq!(
+                month.used_money,
+                Some(jackin_protocol::control::Money::new(1_250, "USD", 2))
+            );
+            assert_eq!(month.used_label.as_deref(), Some("$12.50"));
+        }
+
+        {
+            let quota = parse_openrouter_key_usage_raw(
+                r#"{"data":{"usage_monthly":92233720368547758070e-1}}"#,
+                1_780_000_000,
+            )
+            .expect("normalized maximum monthly spend");
+            let month = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "Spent this month")
+                .expect("maximum monthly row");
+            assert_eq!(
+                month.used_money,
+                Some(jackin_protocol::control::Money::new(i64::MAX, "USD", 0))
+            );
+            assert_eq!(month.used_label.as_deref(), Some("$9223372036854775807"));
+        }
+
+        {
+            let quota = parse_openrouter_key_usage_raw(
+                r#"{"data":{"usage_monthly":9223372036854775808}}"#,
+                1_780_000_000,
+            )
+            .expect("valid response with unrepresentable monthly spend");
+            assert!(
+                quota
+                    .buckets
+                    .iter()
+                    .all(|bucket| bucket.label != "Spent this month"),
+                "unrepresentable monthly spend omits the monthly row"
+            );
+        }
     }
     #[test]
     fn openrouter_byok_fallback_sums_exact_subcent_values() {

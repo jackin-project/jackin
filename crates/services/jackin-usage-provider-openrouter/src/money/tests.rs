@@ -8,22 +8,6 @@ fn raw(raw: &str) -> Box<RawValue> {
 }
 
 #[test]
-fn raw_money_normalizes_before_narrowing_and_preserves_cent_scale() {
-    assert_eq!(
-        Decimal::from_raw(&raw("12.50")).and_then(|value| value.to_money()),
-        Some(Money::new(1_250, "USD", 2))
-    );
-    assert_eq!(
-        Decimal::from_raw(&raw("92233720368547758070e-1")).and_then(|value| value.to_money()),
-        Some(Money::new(i64::MAX, "USD", 0))
-    );
-    assert_eq!(
-        Decimal::from_raw(&raw("9223372036854775808")).and_then(|value| value.to_money()),
-        None
-    );
-}
-
-#[test]
 fn raw_money_accepts_max_scale_and_rejects_scale_overflow() {
     assert_eq!(
         Decimal::from_raw(&raw("1e-255")).and_then(|value| value.to_money()),
