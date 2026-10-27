@@ -14,6 +14,9 @@ mod refresh;
 mod screen;
 mod selection;
 mod state;
+#[cfg(test)]
+#[path = "usage/numeric_tests.rs"]
+mod tests;
 use self::labels_metric::count_quota_summary;
 pub(crate) use body::{
     append_account_full_body, append_account_summary_body, append_overview_account, meter_line,
