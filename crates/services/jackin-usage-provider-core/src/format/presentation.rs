@@ -95,12 +95,44 @@ pub(crate) fn usage_money_cap_segment(
 pub fn usage_bucket_presentation(
     bucket: &jackin_protocol::control::QuotaBucketView,
 ) -> UsageBucketPresentation {
-    use crate::provider_quota_state_summary;
+    usage_bucket_presentation_with_count_label(bucket, crate::count_summary_label(bucket))
+}
 
-    match provider_quota_state_summary(bucket) {
+fn usage_bucket_detail_presentation(
+    bucket: &jackin_protocol::control::QuotaBucketView,
+) -> UsageBucketPresentation {
+    let count_label = bucket
+        .count_quota
+        .map(count_observation_detail_label)
+        .or_else(|| crate::count_summary_label(bucket));
+    usage_bucket_presentation_with_count_label(bucket, count_label)
+}
+
+fn usage_bucket_presentation_with_count_label(
+    bucket: &jackin_protocol::control::QuotaBucketView,
+    count_label: Option<String>,
+) -> UsageBucketPresentation {
+    use crate::quota::provider_quota_state_summary_with_count_label;
+
+    match provider_quota_state_summary_with_count_label(bucket, count_label.as_deref()) {
         Some(summary) => provider_state_bucket_presentation(bucket, summary),
-        None => quantity_bucket_presentation(bucket),
+        None => quantity_bucket_presentation(bucket, count_label),
     }
+}
+
+fn count_observation_detail_label(count: jackin_protocol::control::CountQuota) -> String {
+    fn value_label(value: Option<u64>) -> String {
+        value.map_or_else(|| "unknown".to_owned(), |value| value.to_string())
+    }
+
+    format!(
+        "Reported count ({}/{}): used {}, limit {}, remaining {}",
+        count.unit.wire_label(),
+        count.period.wire_label(),
+        value_label(count.used),
+        value_label(count.limit),
+        value_label(count.remaining),
+    )
 }
 
 fn provider_state_bucket_presentation(
@@ -143,8 +175,9 @@ struct BucketPresentationLabels {
 
 fn bucket_presentation_labels(
     bucket: &jackin_protocol::control::QuotaBucketView,
+    count_label: Option<String>,
 ) -> BucketPresentationLabels {
-    use crate::{count_summary_label, money_used_percent};
+    use crate::money_used_percent;
     use jackin_protocol::control::PercentObservationOrigin;
 
     let used = bucket
@@ -159,7 +192,7 @@ fn bucket_presentation_labels(
     });
     let money =
         money_used_percent(bucket).map(|percent| format!("{}% used", percent.display_value()));
-    let count = count_summary_label(bucket);
+    let count = count_label;
     let provider_used = (bucket.used_percent_origin
         == Some(PercentObservationOrigin::ProviderReported))
     .then(|| used.clone())
@@ -181,10 +214,11 @@ fn bucket_presentation_labels(
 
 fn quantity_bucket_presentation(
     bucket: &jackin_protocol::control::QuotaBucketView,
+    count_label: Option<String>,
 ) -> UsageBucketPresentation {
     use jackin_protocol::control::StatusSlot;
 
-    let labels = bucket_presentation_labels(bucket);
+    let labels = bucket_presentation_labels(bucket, count_label);
     let (headline, segments) = if bucket.status_slot == Some(StatusSlot::Spend) {
         spend_bucket_segments(bucket, &labels)
     } else {
@@ -368,7 +402,7 @@ pub fn usage_detail_presentation(
     }
 
     for (index, bucket) in view.buckets.iter().enumerate() {
-        let presentation = usage_bucket_presentation(bucket);
+        let presentation = usage_bucket_detail_presentation(bucket);
         let layout_lines: Vec<UsagePresentationLine> = presentation
             .display_segments
             .iter()
@@ -406,3 +440,6 @@ pub fn usage_detail_presentation(
 
     jackin_protocol::control::UsageDetailPresentation { rows }
 }
+
+#[cfg(test)]
+mod tests;
