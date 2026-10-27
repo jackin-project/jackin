@@ -96,48 +96,6 @@ mod case_01 {
         assert!((points - 10.0).abs() < 1e-12);
     }
     #[test]
-    fn openrouter_null_cap_means_no_cap_never_infinite() {
-        let quota = parse_openrouter_key_usage_raw(
-            r#"{"data":{"usage_monthly":12.5,"limit":null,"limit_remaining":null,"is_free_tier":true}}"#,
-            1_780_000_000,
-        )
-        .expect("null cap");
-        assert_eq!(quota.plan_label.as_deref(), Some("Free tier"));
-        assert!(
-            quota
-                .buckets
-                .iter()
-                .all(|bucket| bucket.label != "Key Limit"),
-            "no cap row without a configured cap"
-        );
-        assert!(
-            quota
-                .buckets
-                .iter()
-                .all(|bucket| bucket.remaining_percent.is_none()),
-            "no percentage without a denominator"
-        );
-        let month = quota
-            .buckets
-            .iter()
-            .find(|bucket| bucket.label == "Spent this month")
-            .expect("monthly spend still renders");
-        assert_eq!(month.status_slot, Some(StatusSlot::Spend));
-    }
-    #[test]
-    fn openrouter_cap_without_remaining_shows_limit_only() {
-        let quota = parse_openrouter_key_usage_raw(r#"{"data":{"limit":50.0}}"#, 1_780_000_000)
-            .expect("cap without remaining");
-        let cap = quota
-            .buckets
-            .iter()
-            .find(|bucket| bucket.label == "Key Limit")
-            .expect("cap row");
-        assert_eq!(cap.limit_label.as_deref(), Some("$50"));
-        assert_eq!(cap.used_label, None);
-        assert_eq!(cap.remaining_percent, None);
-    }
-    #[test]
     fn openrouter_byok_stays_a_separate_row() {
         let quota = parse_openrouter_key_usage_raw(
             r#"{"data":{"usage_monthly":12.5,"limit":100.0,"limit_remaining":87.5,"byok_usage_monthly":3.0}}"#,
@@ -193,6 +151,48 @@ mod case_01 {
                 .map(jackin_protocol::control::RawPercentPoints::get),
             Some(10.0)
         );
+
+        {
+            let quota = parse_openrouter_key_usage_raw(
+                r#"{"data":{"usage_monthly":12.5,"limit":null,"limit_remaining":null,"is_free_tier":true}}"#,
+                1_780_000_000,
+            )
+            .expect("null cap");
+            assert_eq!(quota.plan_label.as_deref(), Some("Free tier"));
+            assert!(
+                quota
+                    .buckets
+                    .iter()
+                    .all(|bucket| bucket.label != "Key Limit"),
+                "no cap row without a configured cap"
+            );
+            assert!(
+                quota
+                    .buckets
+                    .iter()
+                    .all(|bucket| bucket.remaining_percent.is_none()),
+                "no percentage without a denominator"
+            );
+            let month = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "Spent this month")
+                .expect("monthly spend still renders");
+            assert_eq!(month.status_slot, Some(StatusSlot::Spend));
+        }
+
+        {
+            let quota = parse_openrouter_key_usage_raw(r#"{"data":{"limit":50.0}}"#, 1_780_000_000)
+                .expect("cap without remaining");
+            let cap = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "Key Limit")
+                .expect("cap row");
+            assert_eq!(cap.limit_label.as_deref(), Some("$50"));
+            assert_eq!(cap.used_label, None);
+            assert_eq!(cap.remaining_percent, None);
+        }
     }
     #[test]
     fn openrouter_period_spend_preserves_decimal_scale() {
