@@ -188,17 +188,15 @@ fn public_bucket_geometry_keeps_count_and_reported_inputs_distinct() {
         Some(43.375)
     );
     assert_eq!(presentation.meter_side, Some(UsageMeterSide::Used));
-    assert_eq!(
-        independent_sides
-            .used_percent
-            .map(CanonicalUsedPercent::get),
-        Some(43.375)
+    assert!(
+        presentation
+            .display_segments
+            .contains(&"43.38% used".to_owned())
     );
-    assert_eq!(
-        independent_sides
-            .remaining_percent
-            .map(CanonicalRemainingPercent::get),
-        Some(12.625)
+    assert!(
+        presentation
+            .display_segments
+            .contains(&"12.63% left".to_owned())
     );
 
     let mut money_and_provider = bucket();
