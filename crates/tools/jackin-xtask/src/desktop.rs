@@ -1,6 +1,8 @@
 mod bootstrap;
 mod release_state;
 mod sign_notarize;
+#[cfg(test)]
+mod tests;
 
 use std::env;
 use std::fs;
