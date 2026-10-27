@@ -60,62 +60,6 @@ mod case_01 {
         );
     }
     #[test]
-    fn openrouter_raw_money_keeps_mixed_scale_cap_and_used_values() {
-        let quota = parse_openrouter_key_usage_raw(
-            r#"{"data":{"limit":100000000000000000,"limit_remaining":90000000000000000.01}}"#,
-            1_780_000_000,
-        )
-        .expect("large mixed-scale key response");
-        let cap = quota
-            .buckets
-            .iter()
-            .find(|bucket| bucket.label == "Key Limit")
-            .expect("cap row");
-
-        assert_eq!(
-            cap.limit_money,
-            Some(jackin_protocol::control::Money::new(
-                100_000_000_000_000_000,
-                "USD",
-                0
-            ))
-        );
-        assert_eq!(
-            cap.used_money,
-            Some(jackin_protocol::control::Money::new(
-                999_999_999_999_999_999,
-                "USD",
-                2
-            ))
-        );
-        assert_eq!(cap.limit_label.as_deref(), Some("$100000000000000000"));
-        assert_eq!(cap.used_label.as_deref(), Some("$9999999999999999.99"));
-        let points = jackin_usage_provider_core::money_used_percent(cap)
-            .map(jackin_protocol::control::RawPercentPoints::get)
-            .expect("mixed-scale ratio is available");
-        assert!((points - 10.0).abs() < 1e-12);
-    }
-    #[test]
-    fn openrouter_byok_stays_a_separate_row() {
-        let quota = parse_openrouter_key_usage_raw(
-            r#"{"data":{"usage_monthly":12.5,"limit":100.0,"limit_remaining":87.5,"byok_usage_monthly":3.0}}"#,
-            1_780_000_000,
-        )
-        .expect("byok fixture");
-        let byok = quota
-            .buckets
-            .iter()
-            .find(|bucket| bucket.label == "BYOK spend")
-            .expect("byok row");
-        assert_eq!(byok.used_label.as_deref(), Some("$3"));
-        let cap = quota
-            .buckets
-            .iter()
-            .find(|bucket| bucket.label == "Key Limit")
-            .expect("cap row");
-        assert_eq!(cap.used_label.as_deref(), Some("$12.50"));
-    }
-    #[test]
     fn openrouter_subcent_cap_preserves_key_limit_and_money_geometry() {
         let quota = parse_openrouter_key_usage_raw(
             r#"{"data":{"limit":0.001,"limit_remaining":0.0009,"is_free_tier":false}}"#,
@@ -236,6 +180,35 @@ mod case_01 {
                     .map(jackin_protocol::control::RawPercentPoints::get),
                 Some(0.0)
             );
+        }
+        {
+            use jackin_protocol::control::Money;
+
+            let quota = parse_openrouter_key_usage_raw(
+                r#"{"data":{"limit":100000000000000000,"limit_remaining":90000000000000000.01}}"#,
+                1_780_000_000,
+            )
+            .expect("large mixed-scale key response");
+            let cap = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "Key Limit")
+                .expect("cap row");
+
+            assert_eq!(
+                cap.limit_money,
+                Some(Money::new(100_000_000_000_000_000, "USD", 0))
+            );
+            assert_eq!(
+                cap.used_money,
+                Some(Money::new(999_999_999_999_999_999, "USD", 2))
+            );
+            assert_eq!(cap.limit_label.as_deref(), Some("$100000000000000000"));
+            assert_eq!(cap.used_label.as_deref(), Some("$9999999999999999.99"));
+            let points = jackin_usage_provider_core::money_used_percent(cap)
+                .map(jackin_protocol::control::RawPercentPoints::get)
+                .expect("mixed-scale ratio is available");
+            assert!((points - 10.0).abs() < 1e-12);
         }
     }
     #[test]
@@ -454,6 +427,25 @@ mod case_01 {
             .find(|bucket| bucket.label == "BYOK spend")
             .expect("byok row");
         assert_eq!(byok.used_label.as_deref(), Some("$3"));
+        {
+            let quota = parse_openrouter_key_usage_raw(
+                r#"{"data":{"usage_monthly":12.5,"limit":100.0,"limit_remaining":87.5,"byok_usage_monthly":3.0}}"#,
+                1_780_000_000,
+            )
+            .expect("byok fixture");
+            let byok = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "BYOK spend")
+                .expect("byok row");
+            assert_eq!(byok.used_label.as_deref(), Some("$3"));
+            let cap = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "Key Limit")
+                .expect("cap row");
+            assert_eq!(cap.used_label.as_deref(), Some("$12.50"));
+        }
     }
     #[test]
     fn openrouter_raw_key_preserves_exact_money_and_snapshot_handoff() {
@@ -618,6 +610,55 @@ mod case_01 {
                     .all(|bucket| bucket.label != "Spent this month")
             );
         }
+        {
+            let quota = parse_openrouter_key_usage_raw(
+                r#"{"data":{"byok_spend_a":1.25,"BYOK_cost_b":2.5,"byok_cost_b":0.5,"byok_usage_text":"5","byok_null":null}}"#,
+                1_780_000_000,
+            )
+            .expect("dynamic BYOK fields");
+            let byok = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "BYOK spend")
+                .expect("numeric BYOK row");
+            assert_eq!(
+                byok.used_money,
+                Some(jackin_protocol::control::Money::new(425, "USD", 2))
+            );
+            assert_eq!(byok.used_label.as_deref(), Some("$4.25"));
+
+            let quota = parse_openrouter_key_usage_raw(
+                r#"{"data":{"byok_spend_a":1,"byok_spend_a":3,"byok_cost_b":2}}"#,
+                1_780_000_000,
+            )
+            .expect("duplicate BYOK key");
+            let byok = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "BYOK spend")
+                .expect("duplicate BYOK row");
+            assert_eq!(
+                byok.used_money,
+                Some(jackin_protocol::control::Money::new(500, "USD", 2))
+            );
+            assert_eq!(byok.used_label.as_deref(), Some("$5"));
+
+            let quota = parse_openrouter_key_usage_raw(
+                r#"{"data":{"usage_monthly":1},"data":{"usage_monthly":2}}"#,
+                1_780_000_000,
+            )
+            .expect("duplicate top-level data key");
+            let month = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "Spent this month")
+                .expect("last data object supplies monthly row");
+            assert_eq!(
+                month.used_money,
+                Some(jackin_protocol::control::Money::new(200, "USD", 2))
+            );
+            assert_eq!(month.used_label.as_deref(), Some("$2"));
+        }
     }
     #[test]
     fn openrouter_raw_parser_preserves_key_data_sequence_shapes_and_defaults() {
@@ -719,56 +760,6 @@ mod case_01 {
             Some(jackin_protocol::control::Money::new(100, "USD", 2))
         );
         assert_eq!(month.used_label.as_deref(), Some("$1"));
-    }
-    #[test]
-    fn openrouter_raw_parser_preserves_duplicate_last_wins_and_byok_projection() {
-        let quota = parse_openrouter_key_usage_raw(
-            r#"{"data":{"byok_spend_a":1.25,"BYOK_cost_b":2.5,"byok_cost_b":0.5,"byok_usage_text":"5","byok_null":null}}"#,
-            1_780_000_000,
-        )
-        .expect("dynamic BYOK fields");
-        let byok = quota
-            .buckets
-            .iter()
-            .find(|bucket| bucket.label == "BYOK spend")
-            .expect("numeric BYOK row");
-        assert_eq!(
-            byok.used_money,
-            Some(jackin_protocol::control::Money::new(425, "USD", 2))
-        );
-        assert_eq!(byok.used_label.as_deref(), Some("$4.25"));
-
-        let quota = parse_openrouter_key_usage_raw(
-            r#"{"data":{"byok_spend_a":1,"byok_spend_a":3,"byok_cost_b":2}}"#,
-            1_780_000_000,
-        )
-        .expect("duplicate BYOK key");
-        let byok = quota
-            .buckets
-            .iter()
-            .find(|bucket| bucket.label == "BYOK spend")
-            .expect("duplicate BYOK row");
-        assert_eq!(
-            byok.used_money,
-            Some(jackin_protocol::control::Money::new(500, "USD", 2))
-        );
-        assert_eq!(byok.used_label.as_deref(), Some("$5"));
-
-        let quota = parse_openrouter_key_usage_raw(
-            r#"{"data":{"usage_monthly":1},"data":{"usage_monthly":2}}"#,
-            1_780_000_000,
-        )
-        .expect("duplicate top-level data key");
-        let month = quota
-            .buckets
-            .iter()
-            .find(|bucket| bucket.label == "Spent this month")
-            .expect("last data object supplies monthly row");
-        assert_eq!(
-            month.used_money,
-            Some(jackin_protocol::control::Money::new(200, "USD", 2))
-        );
-        assert_eq!(month.used_label.as_deref(), Some("$2"));
     }
     #[test]
     fn openrouter_raw_byok_skips_unrepresentable_negative_numeric_components() {
