@@ -4284,6 +4284,7 @@ dependencies = [
  "jackin-telemetry",
  "jackin-usage",
  "jackin-usage-provider-core",
+ "tempfile",
 ]
 
 [[package]]
