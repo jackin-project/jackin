@@ -43,25 +43,6 @@ mod case_01 {
     use super::*;
 
     #[test]
-    fn metric_group_validate_accepts_same_currency_independent_scales() {
-        let mut group = window_group("g-mixed-scale", 0);
-        group.kind = UsageMetricGroupKindV1::SpendCap;
-        group.value = UsageMetricValueV1::SpendCap {
-            cap: Some(Money::new(100_000_000_000_000_000, "USD", 0)),
-            spent: Some(Money::new(999_999_999_999_999_999, "USD", 2)),
-            remaining: Some(Money::new(9_000_000_000_000_000_001, "USD", 2)),
-        };
-        group
-            .validate(0)
-            .expect("independent Money scales validate");
-
-        let bytes = serde_json::to_vec(&group).expect("group serializes");
-        assert_eq!(
-            serde_json::from_slice::<UsageMetricGroupV1>(&bytes).expect("group deserializes"),
-            group
-        );
-    }
-    #[test]
     fn metric_group_validate_rejects_each_mixed_currency_spend_pair() {
         for value in [
             UsageMetricValueV1::SpendCap {
@@ -87,7 +68,7 @@ mod case_01 {
         }
     }
     #[test]
-    fn metric_group_validate_rejects_mismatched_kind_value_and_money() {
+    fn metric_group_validate_accepts_independent_scales_and_rejects_mismatches() {
         let mut group = window_group("g", 0);
         group.kind = UsageMetricGroupKindV1::Balance;
         group.validate(0).unwrap_err();
@@ -109,5 +90,21 @@ mod case_01 {
         group
             .validate(0)
             .expect("same-currency Money values may use independent scales");
+
+        group.group_id = "g-mixed-scale".to_owned();
+        group.value = UsageMetricValueV1::SpendCap {
+            cap: Some(Money::new(100_000_000_000_000_000, "USD", 0)),
+            spent: Some(Money::new(999_999_999_999_999_999, "USD", 2)),
+            remaining: Some(Money::new(9_000_000_000_000_000_001, "USD", 2)),
+        };
+        group
+            .validate(0)
+            .expect("independent Money scales validate");
+
+        let bytes = serde_json::to_vec(&group).expect("group serializes");
+        assert_eq!(
+            serde_json::from_slice::<UsageMetricGroupV1>(&bytes).expect("group deserializes"),
+            group
+        );
     }
 }
