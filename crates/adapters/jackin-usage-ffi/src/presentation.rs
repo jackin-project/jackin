@@ -33,7 +33,7 @@ use crate::dto::{
 mod quota_labels;
 use quota_labels::{
     metric_window_bar_label, metric_window_headline, metric_window_percent_label,
-    window_display_summary, window_headline, window_numeric_label,
+    window_detail_summary, window_display_summary, window_headline, window_numeric_label,
 };
 
 #[derive(Clone)]
@@ -1180,7 +1180,7 @@ fn typed_detail_presentation(
         lifecycle_display(account.lifecycle).to_owned(),
     ));
     for window in &account.windows {
-        let summary = window_display_summary(window, format_prefs);
+        let summary = window_detail_summary(window, format_prefs);
         rows.push(UsageDetailRowDto {
             row_id: window.window_id.clone(),
             kind: "bucket".to_owned(),

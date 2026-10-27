@@ -120,7 +120,7 @@ fn usage_bucket_presentation_with_count_label(
     }
 }
 
-fn count_observation_detail_label(count: jackin_protocol::control::CountQuota) -> String {
+pub fn count_observation_detail_label(count: jackin_protocol::control::CountQuota) -> String {
     fn value_label(value: Option<u64>) -> String {
         value.map_or_else(|| "unknown".to_owned(), |value| value.to_string())
     }
