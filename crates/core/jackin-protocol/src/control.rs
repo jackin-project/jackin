@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 
 use crate::TelemetryContext;
 use crate::agent_status::AgentStatusReport;
 use crate::usage_broker::UsageAccountCapability;
+
+mod money_numeric;
 
 pub use crate::quota::{
     CanonicalRemainingPercent, CanonicalUsedPercent, CountQuota, CountQuotaPeriod,
@@ -481,32 +484,144 @@ impl Money {
 
     #[must_use]
     pub fn format_compact(&self) -> String {
-        self.format_with_precision(0)
+        self.format_amount(&self.rounded_major())
     }
 
     #[must_use]
     pub fn major_amount(&self) -> i64 {
-        self.major().round() as i64
+        if self.exponent == 0 {
+            return self.amount_minor;
+        }
+        if self.exponent >= 20 {
+            return 0;
+        }
+
+        let divisor = 10_u64.pow(u32::from(self.exponent));
+        let magnitude = self.amount_minor.unsigned_abs();
+        let mut rounded = magnitude / divisor;
+        if magnitude % divisor >= divisor / 2 {
+            rounded += 1;
+        }
+
+        let rounded = i64::try_from(rounded).unwrap_or(i64::MAX);
+        if self.amount_minor.is_negative() {
+            -rounded
+        } else {
+            rounded
+        }
     }
 
     #[must_use]
     pub fn raw_percent_of(&self, cap: &Money) -> Option<i32> {
-        if self.currency != cap.currency || self.exponent != cap.exponent || cap.amount_minor <= 0 {
-            return None;
-        }
-        let scaled = self.amount_minor.saturating_mul(100);
-        let raw = scaled.checked_div(cap.amount_minor)?;
-        Some(i32::try_from(raw).unwrap_or(if raw < 0 { i32::MIN } else { i32::MAX }))
+        money_numeric::raw_percent_of(self, cap)
+    }
+
+    #[must_use]
+    pub fn raw_percent_points_of(&self, cap: &Money) -> Option<f64> {
+        money_numeric::raw_percent_points_of(self, cap)
+    }
+
+    #[must_use]
+    pub fn checked_cmp(&self, other: &Money) -> Option<Ordering> {
+        money_numeric::checked_cmp(self, other)
+    }
+
+    #[must_use]
+    pub fn checked_difference(&self, other: &Money) -> Option<Money> {
+        money_numeric::checked_difference(self, other)
+    }
+
+    #[must_use]
+    pub fn checked_nonnegative_difference(&self, other: &Money) -> Option<Money> {
+        money_numeric::checked_nonnegative_difference(self, other)
     }
 
     fn format_with_precision(&self, prec: usize) -> String {
-        let value = self.major();
-        match self.currency.as_str() {
-            "USD" => format!("${value:.prec$}"),
-            code if code.len() == 3 && code.chars().all(|c| c.is_ascii_uppercase()) => {
-                format!("{code} {value:.prec$}")
+        let digits = self.amount_minor.unsigned_abs().to_string();
+        let sign = if self.amount_minor.is_negative() {
+            "-"
+        } else {
+            ""
+        };
+        let value = if prec == 0 {
+            format!("{sign}{digits}")
+        } else if digits.len() > prec {
+            let split = digits.len() - prec;
+            let mut whole = String::new();
+            let mut fractional = String::new();
+            for (index, digit) in digits.chars().enumerate() {
+                if index < split {
+                    whole.push(digit);
+                } else {
+                    fractional.push(digit);
+                }
             }
-            other => format!("{value:.prec$} {other}"),
+            format!("{sign}{whole}.{fractional}")
+        } else {
+            format!("{sign}0.{}{digits}", "0".repeat(prec - digits.len()))
+        };
+        self.format_amount(&value)
+    }
+
+    fn rounded_major(&self) -> String {
+        let digits = self.amount_minor.unsigned_abs().to_string();
+        let precision = usize::from(self.exponent);
+        let whole_len = digits.len().saturating_sub(precision);
+        let mut whole = digits
+            .as_bytes()
+            .iter()
+            .take(whole_len)
+            .copied()
+            .collect::<Vec<_>>();
+        if whole.is_empty() {
+            whole.push(b'0');
+        }
+
+        let round_up = if precision == 0 || precision > digits.len() {
+            false
+        } else {
+            let mut fractional = digits.as_bytes().iter().skip(whole_len).copied();
+            match fractional.next() {
+                Some(digit) if digit > b'5' => true,
+                Some(b'5') => {
+                    fractional.any(|digit| digit != b'0')
+                        || whole.last().is_some_and(|digit| (*digit - b'0') % 2 == 1)
+                }
+                _ => false,
+            }
+        };
+
+        if round_up {
+            let mut carry = true;
+            for digit in whole.iter_mut().rev() {
+                if *digit == b'9' {
+                    *digit = b'0';
+                } else {
+                    *digit += 1;
+                    carry = false;
+                    break;
+                }
+            }
+            if carry {
+                whole.insert(0, b'1');
+            }
+        }
+
+        let whole = whole.into_iter().map(char::from).collect::<String>();
+        if self.amount_minor.is_negative() {
+            format!("-{whole}")
+        } else {
+            whole
+        }
+    }
+
+    fn format_amount(&self, value: &str) -> String {
+        match self.currency.as_str() {
+            "USD" => format!("${value}"),
+            code if code.len() == 3 && code.chars().all(|c| c.is_ascii_uppercase()) => {
+                format!("{code} {value}")
+            }
+            other => format!("{value} {other}"),
         }
     }
 }
@@ -749,3 +864,7 @@ pub fn frame(msg: &impl Serialize) -> Vec<u8> {
     out.extend_from_slice(&json);
     out
 }
+
+#[cfg(test)]
+#[path = "control/numeric_tests.rs"]
+mod tests;

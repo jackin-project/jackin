@@ -760,14 +760,13 @@ impl UsageMetricGroupV1 {
             remaining,
         } = &self.value
         {
-            let mut denomination: Option<(&str, u8)> = None;
+            let mut denomination: Option<&str> = None;
             for money in [cap, spent, remaining].into_iter().flatten() {
                 match denomination {
                     None => {
-                        denomination = Some((money.currency.as_str(), money.exponent));
+                        denomination = Some(money.currency.as_str());
                     }
-                    Some((currency, exponent))
-                        if currency == money.currency && exponent == money.exponent => {}
+                    Some(currency) if currency == money.currency => {}
                     Some(_) => {
                         return Err(format!(
                             "metric group {} mixes money denominations",
@@ -1083,3 +1082,7 @@ pub struct UsageRelayTunnelResponse {
     pub request_id: u64,
     pub response: UsageBrokerResponse,
 }
+
+#[cfg(test)]
+#[path = "usage_broker/numeric_tests.rs"]
+mod tests;
