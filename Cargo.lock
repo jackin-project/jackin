@@ -4283,6 +4283,7 @@ dependencies = [
  "jackin-protocol",
  "jackin-usage",
  "jackin-usage-provider-core",
+ "tempfile",
 ]
 
 [[package]]
