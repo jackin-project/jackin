@@ -8,7 +8,10 @@ use jackin_protocol::usage_broker::{
     UsageMembershipStateV1, UsageProjectionRefreshStateV1, UsageProjectionSchemaV2,
     UsageProjectionV1, UsageProviderV1, UsageQuotaStateV1, UsageWindowCategoryV1,
 };
-use jackin_protocol::usage_broker::{UsageFreshnessPhaseV1, UsageMetricScopeV1};
+use jackin_protocol::usage_broker::{
+    UsageCalendarPeriodV1, UsageFreshnessPhaseV1, UsageMetricGroupKindV1, UsageMetricGroupV1,
+    UsageMetricPeriodV1, UsageMetricScopeV1, UsageMetricValueV1,
+};
 use jackin_protocol::usage_monitor::{MonitorOperation, MonitorReply};
 use jackin_usage::coordinator::{
     FileProjectionStateStore, ProjectionAlias, ProjectionStateEnvelope,
@@ -108,6 +111,261 @@ fn public_snapshot_detail_preserves_count_observations() {
     fixture
         .stop_and_join()
         .expect("local usage service stops and joins");
+}
+
+#[test]
+fn public_metric_window_detail_preserves_full_count_observations() {
+    let mut fixture =
+        LocalUsageFixture::start_with_metric_groups(Vec::new(), metric_window_groups());
+    assert_primary_metric_descriptor(&fixture);
+
+    let view = fixture
+        .bridge
+        .snapshot("openrouter".to_owned())
+        .expect("public OpenRouter snapshot");
+    assert_metric_window_public_controls(&view);
+    assert_metric_window_detail_labels(&view);
+
+    fixture
+        .stop_and_join()
+        .expect("local usage service stops and joins");
+}
+
+fn metric_window_groups() -> Vec<UsageMetricGroupV1> {
+    let mut count_group = metric_window_group(
+        "metric-count-model",
+        0,
+        "Model requests",
+        Some(request_count(Some(2), Some(10), Some(7))),
+    );
+    count_group.scope = UsageMetricScopeV1 {
+        service: Some("chat/completions".to_owned()),
+        model: Some("gpt-4o".to_owned()),
+        ..UsageMetricScopeV1::default()
+    };
+    let unknown_count_group = metric_window_group(
+        "metric-count-unknown",
+        1,
+        "Unknown requests",
+        Some(request_count(None, None, None)),
+    );
+    let no_count_group = metric_window_group("metric-count-none", 2, "Requests fallback", None);
+    let mut exhausted_group = metric_window_group(
+        "metric-count-exhausted",
+        3,
+        "Exhausted requests",
+        Some(request_count(Some(2), None, Some(7))),
+    );
+    exhausted_group.quota_state = UsageQuotaStateV1::Exhausted;
+    exhausted_group.scope = UsageMetricScopeV1 {
+        service: Some("chat/completions".to_owned()),
+        model: Some("gpt-4o".to_owned()),
+        pool: Some("priority".to_owned()),
+        ..UsageMetricScopeV1::default()
+    };
+    exhausted_group.value = UsageMetricValueV1::Window {
+        remaining_percent: Some(RawPercentPoints::new(75.0).expect("valid raw percentage")),
+        remaining_percent_origin: Some(PercentObservationOrigin::Derived),
+        used_percent: Some(RawPercentPoints::new(25.0).expect("valid raw percentage")),
+        used_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        meter_percent: Some(MeterPercentPoints::ZERO),
+        meter_side: Some(UsageMeterSide::Remaining),
+        count_quota: Some(request_count(Some(2), None, Some(7))),
+        provider_quota_state: Some(ProviderQuotaState::Exhausted),
+        money_used_percent: None,
+        period: UsageMetricPeriodV1::Calendar {
+            granularity: UsageCalendarPeriodV1::Daily,
+        },
+        unit: Some("requests".to_owned()),
+    };
+
+    vec![
+        count_group,
+        unknown_count_group,
+        no_count_group,
+        exhausted_group,
+        metric_spend_cap_group(),
+    ]
+}
+
+fn metric_spend_cap_group() -> UsageMetricGroupV1 {
+    UsageMetricGroupV1 {
+        group_id: "metric-spend-cap-control".to_owned(),
+        rank: 4,
+        kind: UsageMetricGroupKindV1::SpendCap,
+        label: "Precise spend".to_owned(),
+        scope: UsageMetricScopeV1::default(),
+        observed_at_epoch: Some(1_780_000_000),
+        fetched_at_epoch: 1_780_000_000,
+        last_success_at_epoch: Some(1_780_000_000),
+        phase: UsageFreshnessPhaseV1::Current,
+        is_stale: false,
+        quota_state: UsageQuotaStateV1::Available,
+        value: UsageMetricValueV1::SpendCap {
+            cap: Some(Money::new(100_000_000_000_000_001, "USD", 18)),
+            spent: Some(Money::new(100_000_000_000_000_000, "USD", 18)),
+            remaining: Some(Money::new(1, "USD", 18)),
+        },
+        reset_at_epoch: None,
+        renews_at_epoch: None,
+        issues: Vec::new(),
+    }
+}
+
+fn assert_primary_metric_descriptor(fixture: &LocalUsageFixture) {
+    let desktop = fixture
+        .bridge
+        .desktop_projection(3)
+        .expect("public OpenRouter desktop projection");
+    let provider = desktop
+        .providers
+        .iter()
+        .find(|provider| provider.group.surface_id == "openrouter")
+        .expect("public OpenRouter provider projection");
+    assert_eq!(provider.selected_account_route.status, "available");
+    let account = provider
+        .group
+        .accounts
+        .iter()
+        .find(|account| account.account_key == "count_fixture")
+        .expect("public fixture account descriptor");
+    let count = account
+        .count_quota
+        .as_ref()
+        .expect("public metric-window Count tuple");
+    assert_eq!(
+        (count.used, count.limit, count.remaining),
+        (Some(2), Some(10), Some(7))
+    );
+    assert_eq!(count.unit, "requests");
+    assert_eq!(count.period, "utc_daily");
+    assert_eq!(count.provenance, "provider_reported");
+    assert_eq!(account.remaining_label, "7 requests left · daily");
+}
+
+fn assert_metric_window_public_controls(view: &UsageViewDto) {
+    let metric_rows = view
+        .detail_presentation
+        .rows
+        .iter()
+        .filter(|row| row.kind == "bucket")
+        .collect::<Vec<_>>();
+    assert_eq!(metric_rows.len(), 5);
+    let mut row_ids = metric_rows
+        .iter()
+        .map(|row| row.row_id.as_str())
+        .collect::<Vec<_>>();
+    row_ids.sort_unstable();
+    assert_eq!(
+        row_ids,
+        vec![
+            "metric-count-exhausted",
+            "metric-count-model",
+            "metric-count-none",
+            "metric-count-unknown",
+            "metric-spend-cap-control",
+        ]
+    );
+    let count_row = metric_detail_row(view, "metric-count-model");
+    assert_eq!(count_row.kind, "bucket");
+    assert_eq!(count_row.label, "Model requests");
+    assert_eq!(
+        count_row.layout_lines[0].trailing.as_deref(),
+        Some("service: chat/completions · model: gpt-4o")
+    );
+    let unknown_count_row = metric_detail_row(view, "metric-count-unknown");
+    assert_eq!(unknown_count_row.kind, "bucket");
+    assert_eq!(unknown_count_row.label, "Unknown requests");
+    let no_count_row = metric_detail_row(view, "metric-count-none");
+    assert_eq!(no_count_row.kind, "bucket");
+    assert_eq!(no_count_row.label, "Requests fallback");
+    let exhausted_row = metric_detail_row(view, "metric-count-exhausted");
+    assert_eq!(exhausted_row.kind, "bucket");
+    assert_eq!(exhausted_row.label, "Exhausted requests");
+    assert_eq!(
+        exhausted_row.layout_lines[0].trailing.as_deref(),
+        Some("service: chat/completions · model: gpt-4o · pool: priority")
+    );
+    assert!(
+        exhausted_row
+            .display_label
+            .starts_with("Exhausted · Reported used: 25% · Derived remaining: 75%")
+    );
+    assert_eq!(exhausted_row.severity, "danger");
+    assert_eq!(exhausted_row.meter_percent, Some(0.0));
+    assert_eq!(exhausted_row.meter_side.as_deref(), Some("remaining"));
+    let spend_cap_row = metric_detail_row(view, "metric-spend-cap-control");
+    assert_eq!(
+        spend_cap_row.display_label,
+        "spent $0.100000000000000000 · cap $0.100000000000000001 · remaining $0.000000000000000001"
+    );
+}
+
+fn assert_metric_window_detail_labels(view: &UsageViewDto) {
+    let count_row = metric_detail_row(view, "metric-count-model");
+    let unknown_count_row = metric_detail_row(view, "metric-count-unknown");
+    let no_count_row = metric_detail_row(view, "metric-count-none");
+    let exhausted_row = metric_detail_row(view, "metric-count-exhausted");
+    assert_eq!(
+        unknown_count_row.display_label,
+        "daily · quota available · Reported count (requests/utc_daily): used unknown, limit unknown, remaining unknown"
+    );
+    assert_eq!(no_count_row.display_label, "daily · quota available");
+    assert_eq!(
+        count_row.display_label,
+        "Reported count (requests/utc_daily): used 2, limit 10, remaining 7 · daily"
+    );
+    assert_eq!(
+        exhausted_row.display_label,
+        "Exhausted · Reported used: 25% · Derived remaining: 75% · Reported count (requests/utc_daily): used 2, limit unknown, remaining 7 · daily"
+    );
+}
+
+fn metric_detail_row<'a>(view: &'a UsageViewDto, row_id: &str) -> &'a UsageDetailRowDto {
+    view.detail_presentation
+        .rows
+        .iter()
+        .find(|row| row.row_id == row_id)
+        .expect("public metric detail row")
+}
+
+fn metric_window_group(
+    group_id: &str,
+    rank: u32,
+    label: &str,
+    count_quota: Option<CountQuota>,
+) -> UsageMetricGroupV1 {
+    UsageMetricGroupV1 {
+        group_id: group_id.to_owned(),
+        rank,
+        kind: UsageMetricGroupKindV1::Window,
+        label: label.to_owned(),
+        scope: UsageMetricScopeV1::default(),
+        observed_at_epoch: Some(1_780_000_000),
+        fetched_at_epoch: 1_780_000_000,
+        last_success_at_epoch: Some(1_780_000_000),
+        phase: UsageFreshnessPhaseV1::Current,
+        is_stale: false,
+        quota_state: UsageQuotaStateV1::Available,
+        value: UsageMetricValueV1::Window {
+            remaining_percent: None,
+            remaining_percent_origin: None,
+            used_percent: None,
+            used_percent_origin: None,
+            meter_percent: None,
+            meter_side: None,
+            count_quota,
+            provider_quota_state: None,
+            money_used_percent: None,
+            period: UsageMetricPeriodV1::Calendar {
+                granularity: UsageCalendarPeriodV1::Daily,
+            },
+            unit: Some("requests".to_owned()),
+        },
+        reset_at_epoch: None,
+        renews_at_epoch: None,
+        issues: Vec::new(),
+    }
 }
 
 fn assert_snapshot_identity(view: &UsageViewDto, windows: &[UsageLimitWindowV1]) {
@@ -604,8 +862,15 @@ struct LocalUsageFixture {
 
 impl LocalUsageFixture {
     fn start(windows: Vec<UsageLimitWindowV1>) -> Self {
+        Self::start_with_metric_groups(windows, Vec::new())
+    }
+
+    fn start_with_metric_groups(
+        windows: Vec<UsageLimitWindowV1>,
+        metric_groups: Vec<UsageMetricGroupV1>,
+    ) -> Self {
         let directory = FixtureDirectory::create();
-        seed_projection(directory.path(), windows);
+        seed_projection(directory.path(), windows, metric_groups);
         let resolved_data_dir = fs::canonicalize(directory.path()).expect("canonical fixture root");
         let socket_path = resolved_data_dir.join("usage-broker/run/usage-broker.sock");
         assert!(socket_path.as_os_str().as_encoded_bytes().len() < 104);
@@ -706,7 +971,11 @@ impl Drop for LocalUsageFixture {
     }
 }
 
-fn seed_projection(data_dir: &Path, windows: Vec<UsageLimitWindowV1>) {
+fn seed_projection(
+    data_dir: &Path,
+    windows: Vec<UsageLimitWindowV1>,
+    metric_groups: Vec<UsageMetricGroupV1>,
+) {
     let freshness = UsageFreshnessV1 {
         generation: 1,
         phase: UsageFreshnessPhaseV1::Stale,
@@ -740,7 +1009,7 @@ fn seed_projection(data_dir: &Path, windows: Vec<UsageLimitWindowV1>) {
                 freshness,
                 provenance_count: 1,
                 windows,
-                metric_groups: Vec::new(),
+                metric_groups,
                 credential_expires_at_epoch: None,
                 issues: Vec::new(),
             }],
