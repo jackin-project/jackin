@@ -24,8 +24,8 @@ pub use numbers::{
     used_percent_from_fraction,
 };
 pub use presentation::{
-    UsageBucketPresentation, usage_bucket_presentation, usage_detail_presentation,
-    usage_display_status_label, usage_identity_presentation,
+    UsageBucketPresentation, count_observation_detail_label, usage_bucket_presentation,
+    usage_detail_presentation, usage_display_status_label, usage_identity_presentation,
 };
 pub use text::percent_before_used;
 pub use text::{

@@ -5,8 +5,13 @@ use jackin_protocol::control::{
     CanonicalRemainingPercent, CountQuota, PercentObservationOrigin, ProviderQuotaState,
     QuotaBucketView, RawPercentPoints, UsageMeterSide, UsageSeverity, UsageSnapshotStatus,
 };
-use jackin_protocol::usage_broker::{UsageLimitWindowV1, UsageMetricGroupV1, UsageMetricValueV1};
-use jackin_usage_provider_core::{PercentStyle, UsageFormatPrefs, count_summary_label};
+use jackin_protocol::usage_broker::{
+    UsageLimitWindowV1, UsageMetricGroupKindV1, UsageMetricGroupV1, UsageMetricPeriodV1,
+    UsageMetricValueV1,
+};
+use jackin_usage_provider_core::{
+    PercentStyle, UsageFormatPrefs, count_observation_detail_label, count_summary_label,
+};
 
 fn raw_percent_observation_label(
     side: &str,
@@ -40,6 +45,15 @@ fn count_observation_label(count: CountQuota) -> Option<String> {
     })
 }
 
+pub(super) fn metric_period_label(period: &UsageMetricPeriodV1) -> String {
+    match period {
+        UsageMetricPeriodV1::Rolling { window_secs } => format!("{window_secs}s"),
+        UsageMetricPeriodV1::Calendar { granularity } => format!("{granularity:?}").to_lowercase(),
+        UsageMetricPeriodV1::ProviderDefined => "provider-defined period".to_owned(),
+        UsageMetricPeriodV1::Unknown => "period unknown".to_owned(),
+    }
+}
+
 fn raw_provider_state_summary(
     provider_state: Option<ProviderQuotaState>,
     used_percent: Option<RawPercentPoints>,
@@ -47,6 +61,27 @@ fn raw_provider_state_summary(
     remaining_percent: Option<RawPercentPoints>,
     remaining_percent_origin: Option<PercentObservationOrigin>,
     count_quota: Option<CountQuota>,
+    money_used_percent: Option<RawPercentPoints>,
+) -> Option<String> {
+    let count_label = count_quota.and_then(count_observation_label);
+    raw_provider_state_summary_with_count_label(
+        provider_state,
+        used_percent,
+        used_percent_origin,
+        remaining_percent,
+        remaining_percent_origin,
+        count_label.as_deref(),
+        money_used_percent,
+    )
+}
+
+fn raw_provider_state_summary_with_count_label(
+    provider_state: Option<ProviderQuotaState>,
+    used_percent: Option<RawPercentPoints>,
+    used_percent_origin: Option<PercentObservationOrigin>,
+    remaining_percent: Option<RawPercentPoints>,
+    remaining_percent_origin: Option<PercentObservationOrigin>,
+    count_label: Option<&str>,
     money_used_percent: Option<RawPercentPoints>,
 ) -> Option<String> {
     let state = provider_state?;
@@ -65,8 +100,8 @@ fn raw_provider_state_summary(
             remaining_percent_origin,
         ));
     }
-    if let Some(count) = count_quota.and_then(count_observation_label) {
-        parts.push(count);
+    if let Some(count) = count_label {
+        parts.push(count.to_owned());
     }
     if let Some(money) = money_used_percent {
         parts.push(format!("Money ratio: {}% used", money.display_value()));
@@ -109,6 +144,61 @@ fn window_provider_state_summary(window: &UsageLimitWindowV1) -> Option<String> 
         window.count_quota,
         window.money_used_percent,
     )
+}
+
+pub(super) fn metric_window_detail_summary(
+    group: &UsageMetricGroupV1,
+    quota_state_label: &str,
+) -> Option<String> {
+    if group.kind != UsageMetricGroupKindV1::Window {
+        return None;
+    }
+    let UsageMetricValueV1::Window {
+        remaining_percent,
+        remaining_percent_origin,
+        used_percent,
+        used_percent_origin,
+        count_quota: Some(count),
+        provider_quota_state,
+        money_used_percent,
+        period,
+        ..
+    } = &group.value
+    else {
+        return None;
+    };
+
+    let detail_count = count_observation_detail_label(*count);
+    let period = metric_period_label(period);
+    if let Some(summary) = raw_provider_state_summary_with_count_label(
+        *provider_quota_state,
+        *used_percent,
+        *used_percent_origin,
+        *remaining_percent,
+        *remaining_percent_origin,
+        Some(&detail_count),
+        *money_used_percent,
+    ) {
+        return Some(format!("{summary} · {period}"));
+    }
+    if let Some(summary) = raw_source_money_collision_label(
+        *used_percent,
+        *used_percent_origin,
+        *remaining_percent,
+        *remaining_percent_origin,
+        *money_used_percent,
+    ) {
+        return Some(format!("{summary} · {detail_count} · {period}"));
+    }
+    if count.used.is_some() || count.limit.is_some() || count.remaining.is_some() {
+        return Some(format!("{detail_count} · {period}"));
+    }
+
+    let summary = metric_window_percent_label(group, PercentStyle::Left);
+    Some(match summary {
+        Some(summary) => format!("{summary} · {period} · {detail_count}"),
+        None => format!("{period} · quota {quota_state_label} · {detail_count}"),
+    })
 }
 
 fn raw_source_money_collision_label(
@@ -334,6 +424,45 @@ pub(super) fn window_display_summary(
             .unwrap_or_else(|| window.value_label.clone());
     }
     window.value_label.clone()
+}
+
+pub(super) fn window_detail_summary(
+    window: &UsageLimitWindowV1,
+    format_prefs: UsageFormatPrefs,
+) -> String {
+    let Some(count) = window.count_quota else {
+        return window_display_summary(window, format_prefs);
+    };
+
+    let detail_count = count_observation_detail_label(count);
+    if let Some(summary) = raw_provider_state_summary_with_count_label(
+        window.provider_quota_state,
+        window.used_percent,
+        window.used_percent_origin,
+        window.remaining_percent,
+        window.remaining_percent_origin,
+        Some(&detail_count),
+        window.money_used_percent,
+    ) {
+        return summary;
+    }
+    if let Some(summary) = raw_source_money_collision_label(
+        window.used_percent,
+        window.used_percent_origin,
+        window.remaining_percent,
+        window.remaining_percent_origin,
+        window.money_used_percent,
+    ) {
+        return format!("{summary} · {detail_count}");
+    }
+
+    let summary = window_display_summary(window, format_prefs);
+    let compact_count = count_summary_label(&count_bucket(count));
+    if summary.is_empty() || compact_count.as_deref() == Some(summary.as_str()) {
+        detail_count
+    } else {
+        format!("{summary} · {detail_count}")
+    }
 }
 
 fn count_bucket(count: CountQuota) -> QuotaBucketView {

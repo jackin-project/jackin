@@ -11,9 +11,9 @@ use jackin_protocol::control::{
 };
 use jackin_protocol::usage_broker::{
     UsageAccountV1, UsageFreshnessPhaseV1, UsageIssueScopeV1, UsageIssueV1, UsageLifecycleV1,
-    UsageLimitWindowV1, UsageMetricGroupKindV1, UsageMetricGroupV1, UsageMetricPeriodV1,
-    UsageMetricValueV1, UsageProjectionRefreshStateV1, UsageProjectionV1, UsageProviderV1,
-    UsageQuotaStateV1, UsageWindowCategoryV1,
+    UsageLimitWindowV1, UsageMetricGroupKindV1, UsageMetricGroupV1, UsageMetricValueV1,
+    UsageProjectionRefreshStateV1, UsageProjectionV1, UsageProviderV1, UsageQuotaStateV1,
+    UsageWindowCategoryV1,
 };
 use jackin_usage::host::{
     HostSurfaceId, HostUsageProjectionRuntime, HostUsageProjectionSelectedAccount,
@@ -32,7 +32,8 @@ use crate::dto::{
 
 mod quota_labels;
 use quota_labels::{
-    metric_window_bar_label, metric_window_headline, metric_window_percent_label,
+    metric_period_label, metric_window_bar_label, metric_window_detail_summary,
+    metric_window_headline, metric_window_percent_label, window_detail_summary,
     window_display_summary, window_headline, window_numeric_label,
 };
 
@@ -1180,7 +1181,7 @@ fn typed_detail_presentation(
         lifecycle_display(account.lifecycle).to_owned(),
     ));
     for window in &account.windows {
-        let summary = window_display_summary(window, format_prefs);
+        let summary = window_detail_summary(window, format_prefs);
         rows.push(UsageDetailRowDto {
             row_id: window.window_id.clone(),
             kind: "bucket".to_owned(),
@@ -1196,7 +1197,8 @@ fn typed_detail_presentation(
         });
     }
     for group in &account.metric_groups {
-        let summary = metric_group_summary(group);
+        let summary = metric_window_detail_summary(group, quota_state_label(group.quota_state))
+            .unwrap_or_else(|| metric_group_summary(group));
         let scope = metric_scope_label(group);
         rows.push(UsageDetailRowDto {
             row_id: group.group_id.clone(),
@@ -1286,14 +1288,7 @@ fn metric_group_summary(group: &UsageMetricGroupV1) -> String {
             unit,
             ..
         } => {
-            let period = match period {
-                UsageMetricPeriodV1::Rolling { window_secs } => format!("{window_secs}s"),
-                UsageMetricPeriodV1::Calendar { granularity } => {
-                    format!("{granularity:?}").to_lowercase()
-                }
-                UsageMetricPeriodV1::ProviderDefined => "provider-defined period".to_owned(),
-                UsageMetricPeriodV1::Unknown => "period unknown".to_owned(),
-            };
+            let period = metric_period_label(period);
             if count_quota.is_some()
                 && let Some(summary) = metric_window_percent_label(group, PercentStyle::Left)
             {
