@@ -287,6 +287,86 @@ fn money_formats_currency_and_credit_labels() {
 }
 
 #[test]
+fn money_display_preserves_exact_declared_scale() {
+    assert_eq!(
+        Money::new(100_000_000_000_000_001, "USD", 18).to_string(),
+        "$0.100000000000000001"
+    );
+    assert_eq!(
+        Money::new(-100_000_000_000_000_001, "USD", 18).to_string(),
+        "$-0.100000000000000001"
+    );
+    assert_eq!(Money::new(1_200, "USD", 3).to_string(), "$1.200");
+    assert_eq!(Money::new(153, "USD", 0).to_string(), "$153");
+    assert_eq!(Money::new(1, "SGD", 3).to_string(), "SGD 0.001");
+    assert_eq!(Money::new(-1, "credits", 2).to_string(), "-0.01 credits");
+    assert_eq!(Money::new(10, "usd", 2).to_string(), "0.10 usd");
+    assert_eq!(Money::new(1, "", 0).to_string(), "1 ");
+    assert_eq!(Money::new(0, "USD", 0).to_string(), "$0");
+    assert_eq!(Money::new(0, "USD", 2).to_string(), "$0.00");
+    assert_eq!(
+        Money::new(0, "USD", 255).to_string(),
+        format!("$0.{}", "0".repeat(255))
+    );
+    assert_eq!(
+        Money::new(i64::MAX, "USD", 0).to_string(),
+        "$9223372036854775807"
+    );
+    assert_eq!(
+        Money::new(i64::MAX, "USD", 2).to_string(),
+        "$92233720368547758.07"
+    );
+    assert_eq!(
+        Money::new(i64::MAX, "USD", 18).to_string(),
+        "$9.223372036854775807"
+    );
+    assert_eq!(
+        Money::new(i64::MAX, "USD", 255).to_string(),
+        format!("$0.{}9223372036854775807", "0".repeat(236))
+    );
+    assert_eq!(
+        Money::new(i64::MIN, "USD", 0).to_string(),
+        "$-9223372036854775808"
+    );
+    assert_eq!(
+        Money::new(i64::MIN, "USD", 2).to_string(),
+        "$-92233720368547758.08"
+    );
+    assert_eq!(
+        Money::new(i64::MIN, "USD", 18).to_string(),
+        "$-9.223372036854775808"
+    );
+    assert_eq!(
+        Money::new(i64::MIN, "USD", 255).to_string(),
+        format!("$-0.{}9223372036854775808", "0".repeat(236))
+    );
+}
+
+#[test]
+fn money_compact_rounds_decimal_ties_to_even() {
+    assert_eq!(Money::new(149, "USD", 2).format_compact(), "$1");
+    assert_eq!(Money::new(-149, "USD", 2).format_compact(), "$-1");
+    assert_eq!(Money::new(150, "USD", 2).format_compact(), "$2");
+    assert_eq!(Money::new(250, "USD", 2).format_compact(), "$2");
+    assert_eq!(Money::new(-150, "USD", 2).format_compact(), "$-2");
+    assert_eq!(Money::new(-250, "USD", 2).format_compact(), "$-2");
+    assert_eq!(Money::new(50, "USD", 2).format_compact(), "$0");
+    assert_eq!(Money::new(-50, "USD", 2).format_compact(), "$-0");
+    assert_eq!(Money::new(-1, "USD", 2).format_compact(), "$-0");
+    assert_eq!(Money::new(500, "USD", 3).format_compact(), "$0");
+    assert_eq!(Money::new(1_500, "USD", 3).format_compact(), "$2");
+    assert_eq!(
+        Money::new(i64::MAX, "USD", 1).format_compact(),
+        "$922337203685477581"
+    );
+    assert_eq!(
+        Money::new(i64::MIN, "USD", 1).format_compact(),
+        "$-922337203685477581"
+    );
+    assert_eq!(Money::new(i64::MIN, "USD", 255).format_compact(), "$-0");
+}
+
+#[test]
 fn money_raw_percent_keeps_overage_and_rejects_bad_denominations() {
     assert_eq!(
         Money::new(15_000, "USD", 2).raw_percent_of(&Money::new(10_000, "USD", 2)),

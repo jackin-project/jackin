@@ -1652,3 +1652,6 @@ fn now_epoch() -> i64 {
         .and_then(|duration| i64::try_from(duration.as_secs()).ok())
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests;
