@@ -185,6 +185,12 @@ mod case_01 {
                 .count(),
             3
         );
+        {
+            let quota =
+                parse_openrouter_key_usage_raw(r#"{"data":{"usage_monthly":1.0}}"#, 1_780_000_000)
+                    .expect("tierless fixture");
+            assert_eq!(quota.plan_label, None);
+        }
     }
     #[test]
     fn openrouter_subcent_cap_preserves_key_limit_and_money_geometry() {
