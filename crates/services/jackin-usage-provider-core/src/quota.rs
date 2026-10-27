@@ -225,5 +225,4 @@ fn source_percent_label(
 }
 
 #[cfg(test)]
-#[path = "quota/numeric_tests.rs"]
 mod tests;

@@ -26,5 +26,4 @@ pub use types::{OpenRouterCreditsOutcome, OpenRouterModelCheck};
 pub use types::{OpenRouterCreditsResponse, OpenRouterKeyData};
 
 #[cfg(test)]
-#[path = "numeric_tests.rs"]
 mod tests;

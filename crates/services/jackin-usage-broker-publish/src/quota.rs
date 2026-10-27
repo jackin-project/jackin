@@ -105,5 +105,4 @@ pub fn issue_code(kind: UsageCoordinationErrorKind) -> String {
 }
 
 #[cfg(test)]
-#[path = "quota/numeric_tests.rs"]
 mod tests;

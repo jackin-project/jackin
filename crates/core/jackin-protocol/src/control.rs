@@ -866,5 +866,4 @@ pub fn frame(msg: &impl Serialize) -> Vec<u8> {
 }
 
 #[cfg(test)]
-#[path = "control/numeric_tests.rs"]
 mod tests;
