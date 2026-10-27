@@ -192,7 +192,6 @@ pub struct OpenRouterKeyQuota {
     pub(crate) plan_label: Option<String>,
 }
 
-/// Parses key usage from the original JSON response text, preserving numeric tokens.
 pub fn parse_openrouter_key_usage_raw(
     raw_json: &str,
     now: i64,
