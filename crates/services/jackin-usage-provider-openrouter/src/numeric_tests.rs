@@ -233,6 +233,24 @@ mod case_01 {
             Some(jackin_protocol::control::Money::new(19, "USD", 4))
         );
         assert_eq!(byok.used_label.as_deref(), Some("$0.0019"));
+
+        {
+            let quota = parse_openrouter_key_usage_raw(
+                r#"{"data":{"byok_spend_a":1,"byok_cost_null":null,"byok_usage_text":"1.00"}}"#,
+                1_780_000_000,
+            )
+            .expect("mixed BYOK key");
+            let byok = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "BYOK spend")
+                .expect("numeric BYOK component remains available");
+            assert_eq!(
+                byok.used_money,
+                Some(jackin_protocol::control::Money::new(100, "USD", 2))
+            );
+            assert_eq!(byok.used_label.as_deref(), Some("$1"));
+        }
     }
     #[test]
     fn openrouter_byok_sums_fractional_carries_before_narrowing() {
@@ -266,24 +284,6 @@ mod case_01 {
                     .all(|bucket| bucket.label != "BYOK spend")
             );
         }
-    }
-    #[test]
-    fn openrouter_byok_skips_null_and_string_fallback_fields() {
-        let quota = parse_openrouter_key_usage_raw(
-            r#"{"data":{"byok_spend_a":1,"byok_cost_null":null,"byok_usage_text":"1.00"}}"#,
-            1_780_000_000,
-        )
-        .expect("mixed BYOK key");
-        let byok = quota
-            .buckets
-            .iter()
-            .find(|bucket| bucket.label == "BYOK spend")
-            .expect("numeric BYOK component remains available");
-        assert_eq!(
-            byok.used_money,
-            Some(jackin_protocol::control::Money::new(100, "USD", 2))
-        );
-        assert_eq!(byok.used_label.as_deref(), Some("$1"));
     }
     #[test]
     fn openrouter_byok_primary_skips_unrepresentable_month_and_selects_week() {
