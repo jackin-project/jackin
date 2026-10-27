@@ -26,6 +26,14 @@ discovery, credential snapshots).
 `openrouter_snapshot`, key/credit fetch, and quota types consumed by
 `jackin-usage`.
 
+Key quota responses are decoded from their original JSON text. This preserves
+the exact numeric tokens used for money calculations, including decimal digits
+that a floating-point JSON value cannot retain. Use
+`parse_openrouter_key_usage_raw` for key quota input and
+`fetch_openrouter_key_usage_raw` to receive the complete key response body as
+raw JSON. Decode that body into `serde_json::Value` in the caller when dynamic
+inspection is more important than exact numeric spelling.
+
 ## How to verify
 
 ```sh

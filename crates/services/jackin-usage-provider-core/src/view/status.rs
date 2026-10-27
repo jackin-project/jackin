@@ -181,3 +181,6 @@ pub fn count_summary_label(bucket: &QuotaBucketView) -> Option<String> {
         (None, None, None) => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

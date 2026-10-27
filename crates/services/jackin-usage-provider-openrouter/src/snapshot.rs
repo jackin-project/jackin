@@ -9,11 +9,20 @@ use jackin_usage_provider_core::{
     ProviderHttpError, UsageSurface, UsageViewInput, bucket, usage_view,
 };
 
+use serde_json::value::RawValue;
+
+use super::fetch::fetch_openrouter_key_usage_raw;
 use super::{
-    OpenRouterCreditsOutcome, fetch_openrouter_credits, fetch_openrouter_key_usage,
-    openrouter_base_url, openrouter_credits_bucket, openrouter_key_error_status,
-    parse_openrouter_key_usage,
+    OpenRouterCreditsOutcome, OpenRouterKeyQuota, fetch_openrouter_credits, openrouter_base_url,
+    openrouter_credits_bucket, openrouter_key_error_status, parse_openrouter_key_usage_raw,
 };
+
+pub(crate) fn parse_fetched_openrouter_key_quota(
+    response: &RawValue,
+    now: i64,
+) -> Result<OpenRouterKeyQuota, ProviderError> {
+    parse_openrouter_key_usage_raw(response.get(), now).map_err(ProviderError::from)
+}
 
 pub fn openrouter_snapshot(agent: &str, key: Option<&str>, now: i64) -> FocusedUsageView {
     openrouter_snapshot_with_rate_limit(agent, key, now).0
@@ -25,7 +34,7 @@ pub fn openrouter_snapshot_with_base(
     base_url: &str,
     now: i64,
 ) -> FocusedUsageView {
-    openrouter_snapshot_with_key_fetch(agent, key, base_url, now, fetch_openrouter_key_usage).0
+    openrouter_snapshot_with_key_fetch(agent, key, base_url, now, fetch_openrouter_key_usage_raw).0
 }
 
 pub fn openrouter_snapshot_with_rate_limit(
@@ -38,7 +47,7 @@ pub fn openrouter_snapshot_with_rate_limit(
         key,
         &openrouter_base_url(),
         now,
-        fetch_openrouter_key_usage,
+        fetch_openrouter_key_usage_raw,
     )
 }
 
@@ -50,7 +59,7 @@ pub(crate) fn openrouter_snapshot_with_key_fetch<F>(
     fetch_key: F,
 ) -> (FocusedUsageView, Option<ProviderRateLimit>)
 where
-    F: FnOnce(&str, &str) -> Result<serde_json::Value, ProviderHttpError>,
+    F: FnOnce(&str, &str) -> Result<Box<RawValue>, ProviderHttpError>,
 {
     let Some(key) = key.filter(|key| !key.trim().is_empty()) else {
         return (
@@ -82,7 +91,7 @@ where
     };
     let key_result = fetch_key(base_url, key)
         .map_err(ProviderError::from)
-        .and_then(|value| parse_openrouter_key_usage(value, now).map_err(ProviderError::from));
+        .and_then(|response| parse_fetched_openrouter_key_quota(&response, now));
     let (quota, key_error) = match key_result {
         Ok(quota) => (Some(quota), None),
         Err(error) => (None, Some(error)),
