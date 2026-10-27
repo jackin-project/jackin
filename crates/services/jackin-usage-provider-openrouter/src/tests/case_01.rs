@@ -348,6 +348,11 @@ fn openrouter_period_spend_preserves_decimal_scale() {
                 18
             ))
         );
+        assert_eq!(
+            view.status,
+            jackin_protocol::control::UsageSnapshotStatus::Fresh
+        );
+        assert_eq!(view.account.provider_label, "OpenRouter");
     }
 }
 #[test]
