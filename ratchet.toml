@@ -1458,9 +1458,6 @@ bound = 60
 key = "jackin-usage-coordinator"
 bound = 23
 [[family.entry]]
-key = "jackin-usage-ffi"
-bound = 22
-[[family.entry]]
 key = "jackin-usage-provider-core"
 bound = 22
 [[family.entry]]

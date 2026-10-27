@@ -4279,6 +4279,7 @@ dependencies = [
  "boltffi",
  "jackin-core",
  "jackin-protocol",
+ "jackin-telemetry",
  "jackin-usage",
  "jackin-usage-provider-core",
 ]
