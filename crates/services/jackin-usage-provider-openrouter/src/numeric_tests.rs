@@ -310,6 +310,37 @@ mod case_01 {
                 "unrepresentable monthly spend omits the monthly row"
             );
         }
+        {
+            let quota =
+                parse_openrouter_key_usage_raw(r#"{"data":{"usage_monthly":1e-3}}"#, 1_780_000_000)
+                    .expect("exponent-form monthly spend");
+            let month = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "Spent this month")
+                .expect("exponent-form monthly row");
+            assert_eq!(
+                month.used_money,
+                Some(jackin_protocol::control::Money::new(1, "USD", 3))
+            );
+            assert_eq!(month.used_label.as_deref(), Some("$0.001"));
+        }
+
+        {
+            let quota =
+                parse_openrouter_key_usage_raw(r#"{"data":{"usage_monthly":3.0}}"#, 1_780_000_000)
+                    .expect("whole decimal monthly spend");
+            let month = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "Spent this month")
+                .expect("whole decimal monthly row");
+            assert_eq!(
+                month.used_money,
+                Some(jackin_protocol::control::Money::new(300, "USD", 2))
+            );
+            assert_eq!(month.used_label.as_deref(), Some("$3"));
+        }
     }
     #[test]
     fn openrouter_byok_fallback_sums_exact_subcent_values() {

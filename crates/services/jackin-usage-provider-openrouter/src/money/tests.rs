@@ -34,17 +34,6 @@ fn raw_money_distinguishes_zero_negative_and_non_numeric_values() {
 }
 
 #[test]
-fn raw_money_supports_decimal_exponent_and_labels() {
-    assert_eq!(
-        Decimal::from_raw(&raw("1e-3")).and_then(|value| value.to_money()),
-        Some(Money::new(1, "USD", 3))
-    );
-    assert_eq!(format_money(&Money::new(1_250, "USD", 2)), "$12.50");
-    assert_eq!(format_money(&Money::new(300, "USD", 2)), "$3");
-    assert_eq!(format_money(&Money::new(1, "USD", 3)), "$0.001");
-}
-
-#[test]
 fn aligned_zero_keeps_one_magnitude_digit_at_every_scale() {
     let zero = Decimal::from_raw(&raw("-0")).expect("negative zero decimal");
     for scale in 0..=u8::MAX {
