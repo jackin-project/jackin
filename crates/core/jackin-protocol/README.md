@@ -21,3 +21,9 @@ Primary entry: [`ClientFrame`](src/attach.rs) (attach-protocol client frames). R
 - `UsageDetailPresentation` / `UsageDetailRow` / `UsagePresentationLine` / `UsageDetailRowKind` — the shared Capsule-parity provider-detail card contract: fixed row order (focused, header, provider, account, status, updated, optional username/plan/auth, `bucket:<i>` per source bucket, optional detail), position-based bucket ids, and already-grouped `leading`/`trailing` layout lines. `display_label` equals the row's non-empty line fields joined with `" · "`. Built by `jackin_usage_provider_core::usage_detail_presentation`; the Capsule dialog and the Desktop Usage window render it verbatim.
 
 `#![deny(missing_docs)]` is on; public surface is rustdoc-complete.
+
+## Money scale
+
+`Money.amount_minor` is interpreted with that value's own decimal `exponent`. A `SpendCap` may use different exponents for `cap`, `spent`, and `remaining`, but all present values must use the same currency. `raw_percent_of` returns a signed integer percentage truncated toward zero and saturates only the final quotient. `raw_percent_points_of` returns a continuous, approximate `f64` percentage.
+
+`checked_cmp` compares same-currency values exactly across exponents. `checked_difference` returns an exact signed `Money` when the result fits its fields. `checked_nonnegative_difference` clamps a negative result to zero before conversion; either method returns `None` when no exact `Money` can represent the derived result. Original observed amounts remain available even when a derived amount is unavailable.

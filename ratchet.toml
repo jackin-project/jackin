@@ -581,7 +581,7 @@ key = "crates/core/jackin-process/README.md"
 bound = 1097
 [[family.entry]]
 key = "crates/core/jackin-protocol/README.md"
-bound = 2507
+bound = 3334
 [[family.entry]]
 key = "crates/core/jackin-workflow-spec/README.md"
 bound = 3043
@@ -947,7 +947,7 @@ key = "crates/services/jackin-usage-provider-opencode/README.md"
 bound = 1232
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-openrouter/README.md"
-bound = 1149
+bound = 1631
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-zai/README.md"
 bound = 1218
