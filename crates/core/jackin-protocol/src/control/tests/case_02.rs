@@ -68,12 +68,10 @@ fn usage_messages_roundtrip_public_wire_values() {
         serde_json::from_value::<UsageProviderTab>(tab_wire).unwrap(),
         tab
     );
-    let legacy: UsageProviderTab = serde_json::from_str(
+    serde_json::from_str::<UsageProviderTab>(
         r#"{"label":"Anthropic","status_label":"fresh","account_label":"a@example.com","plan_label":null,"source_label":null,"active":true}"#,
     )
-    .unwrap();
-    assert_eq!(legacy.id, "");
-    assert_eq!(legacy.label, "Anthropic");
+    .unwrap_err();
 
     let request_wire = serde_json::to_value(&ClientMsg::TokenUsage { session_id: 9 }).unwrap();
     assert_eq!(request_wire["type"], "token_usage");
