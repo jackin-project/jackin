@@ -45,21 +45,6 @@ fn raw_money_supports_decimal_exponent_and_labels() {
 }
 
 #[test]
-fn raw_money_subtraction_aligns_scale_and_clamps_negative_use() {
-    let cap = Decimal::from_raw(&raw("0.001")).expect("cap decimal");
-    let remaining = Decimal::from_raw(&raw("0.0009")).expect("remaining decimal");
-    let used = cap.saturating_sub(&remaining).expect("subcent difference");
-    assert_eq!(used.money_at_scale(4), Some(Money::new(1, "USD", 4)));
-    assert_eq!(cap.money_at_scale(4), Some(Money::new(10, "USD", 4)));
-    assert_eq!(
-        remaining
-            .saturating_sub(&cap)
-            .and_then(|value| value.money_at_scale(4)),
-        Some(Money::new(0, "USD", 4))
-    );
-}
-
-#[test]
 fn aligned_zero_keeps_one_magnitude_digit_at_every_scale() {
     let zero = Decimal::from_raw(&raw("-0")).expect("negative zero decimal");
     for scale in 0..=u8::MAX {

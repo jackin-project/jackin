@@ -193,6 +193,50 @@ mod case_01 {
             assert_eq!(cap.used_label, None);
             assert_eq!(cap.remaining_percent, None);
         }
+
+        {
+            let quota = parse_openrouter_key_usage_raw(
+                r#"{"data":{"limit":0.0009,"limit_remaining":0.001,"is_free_tier":false}}"#,
+                1_780_000_000,
+            )
+            .expect("remaining exceeds subcent cap");
+            let cap = quota
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "Key Limit")
+                .expect("reversed subcent cap row");
+            assert_eq!(
+                cap.limit_money,
+                Some(jackin_protocol::control::Money::new(9, "USD", 4))
+            );
+            assert_eq!(
+                cap.used_money,
+                Some(jackin_protocol::control::Money::new(0, "USD", 4))
+            );
+            assert_eq!(cap.limit_label.as_deref(), Some("$0.0009"));
+            assert_eq!(cap.used_label.as_deref(), Some("$0"));
+            let remaining_percent = cap
+                .remaining_percent
+                .map(jackin_protocol::control::CanonicalRemainingPercent::get)
+                .expect("derived remaining percentage");
+            assert!(
+                (remaining_percent - 111.11111111111111).abs() < 1.0e-12,
+                "expected approximately 111.11111111111111 percent, got {remaining_percent}"
+            );
+            assert!(
+                remaining_percent > 100.0,
+                "overage remains visible above 100 percent"
+            );
+            assert_eq!(
+                cap.remaining_percent_origin,
+                Some(jackin_protocol::control::PercentObservationOrigin::Derived)
+            );
+            assert_eq!(
+                jackin_usage_provider_core::money_used_percent(cap)
+                    .map(jackin_protocol::control::RawPercentPoints::get),
+                Some(0.0)
+            );
+        }
     }
     #[test]
     fn openrouter_period_spend_preserves_decimal_scale() {
