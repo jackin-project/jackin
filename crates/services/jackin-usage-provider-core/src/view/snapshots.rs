@@ -83,3 +83,6 @@ pub(crate) const fn snapshot_status_rank(status: UsageSnapshotStatus) -> u8 {
         UsageSnapshotStatus::Error => 6,
     }
 }
+
+#[cfg(test)]
+mod tests;
