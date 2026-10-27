@@ -9,6 +9,133 @@ pub(super) const fn key_fixture() -> &'static str {
     r#"{"data":{"label":"test-key","usage":12.5,"usage_daily":1.2,"usage_weekly":5.0,"usage_monthly":12.5,"limit":100.0,"limit_remaining":87.5,"is_free_tier":false}}"#
 }
 
+struct CannedSnapshotServer {
+    base_url: String,
+    stop: std::sync::mpsc::Sender<()>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+impl CannedSnapshotServer {
+    fn start(key_body: &'static str) -> Self {
+        use std::net::{Ipv4Addr, TcpListener};
+        use std::sync::mpsc;
+        use std::time::{Duration, Instant};
+
+        const ACCEPT_TIMEOUT: Duration = Duration::from_secs(5);
+
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop, worker_stop) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let accept_deadline = Instant::now() + ACCEPT_TIMEOUT;
+            loop {
+                if !serve_connection(&listener, &worker_stop, key_body, accept_deadline) {
+                    return;
+                }
+            }
+        });
+        Self {
+            base_url: format!("http://{address}"),
+            stop,
+            worker: Some(worker),
+        }
+    }
+
+    fn base_url(&self) -> &str {
+        &self.base_url
+    }
+}
+
+fn serve_connection(
+    listener: &std::net::TcpListener,
+    stop: &std::sync::mpsc::Receiver<()>,
+    key_body: &'static str,
+    accept_deadline: std::time::Instant,
+) -> bool {
+    use std::io::{Read, Write};
+    use std::sync::mpsc::{RecvTimeoutError, TryRecvError};
+    use std::time::{Duration, Instant};
+
+    const MAX_REQUEST_BYTES: usize = 8192;
+    const IO_TIMEOUT: Duration = Duration::from_millis(250);
+
+    if Instant::now() >= accept_deadline {
+        return false;
+    }
+    let mut stream = match listener.accept() {
+        Ok((stream, _)) => stream,
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+            let remaining = accept_deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return false;
+            }
+            return matches!(
+                stop.recv_timeout(remaining.min(Duration::from_millis(5))),
+                Err(RecvTimeoutError::Timeout)
+            );
+        }
+        Err(_) => return false,
+    };
+
+    let header_deadline = Instant::now() + Duration::from_secs(5);
+    if stream.set_write_timeout(Some(IO_TIMEOUT)).is_err() {
+        return false;
+    }
+    let mut request = Vec::with_capacity(1024);
+    let mut chunk = [0_u8; 1024];
+    loop {
+        if request.windows(4).any(|part| part == b"\r\n\r\n") {
+            break;
+        }
+        if request.len() >= MAX_REQUEST_BYTES || Instant::now() >= header_deadline {
+            return false;
+        }
+        if matches!(stop.try_recv(), Ok(()) | Err(TryRecvError::Disconnected)) {
+            return false;
+        }
+        let remaining = header_deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero()
+            || stream
+                .set_read_timeout(Some(remaining.min(IO_TIMEOUT)))
+                .is_err()
+        {
+            return false;
+        }
+        let count = match stream.read(&mut chunk) {
+            Ok(count) if count > 0 => count,
+            _ => return false,
+        };
+        if request.len() + count > MAX_REQUEST_BYTES {
+            return false;
+        }
+        request.extend_from_slice(&chunk[..count]);
+    }
+
+    let body = if String::from_utf8_lossy(&request).contains("/credits") {
+        serde_json::json!({"data": {"total_credits": 10.0, "total_usage": 2.5}}).to_string()
+    } else {
+        key_body.to_owned()
+    };
+    let response = format!(
+        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    if stream.write_all(response.as_bytes()).is_err() {
+        return false;
+    }
+    true
+}
+
+impl Drop for CannedSnapshotServer {
+    fn drop(&mut self) {
+        if let Some(worker) = self.worker.take() {
+            let _send_result = self.stop.send(());
+            drop(worker.join());
+        }
+    }
+}
+
 mod case_01 {
     use super::*;
 
@@ -314,6 +441,47 @@ mod case_01 {
             );
             assert_eq!(month.used_label.as_deref(), Some("$3"));
         }
+        {
+            let server = CannedSnapshotServer::start(
+                r#"{"data":{"limit":0.001,"limit_remaining":0.0009,"usage_monthly":0.100000000000000001,"is_free_tier":false}}"#,
+            );
+            let view = openrouter_snapshot_with_base(
+                "opencode",
+                Some("fixture-key"),
+                server.base_url(),
+                1_780_000_000,
+            );
+
+            let cap = view
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "Key Limit")
+                .expect("cap row");
+            assert_eq!(cap.limit_label.as_deref(), Some("$0.001"));
+            assert_eq!(cap.used_label.as_deref(), Some("$0.0001"));
+            assert_eq!(
+                cap.limit_money,
+                Some(jackin_protocol::control::Money::new(10, "USD", 4))
+            );
+            assert_eq!(
+                cap.used_money,
+                Some(jackin_protocol::control::Money::new(1, "USD", 4))
+            );
+            let month = view
+                .buckets
+                .iter()
+                .find(|bucket| bucket.label == "Spent this month")
+                .expect("monthly row");
+            assert_eq!(month.used_label.as_deref(), Some("$0.100000000000000001"));
+            assert_eq!(
+                month.used_money,
+                Some(jackin_protocol::control::Money::new(
+                    100_000_000_000_000_001,
+                    "USD",
+                    18
+                ))
+            );
+        }
     }
     #[test]
     fn openrouter_byok_fallback_sums_exact_subcent_values() {
@@ -446,44 +614,6 @@ mod case_01 {
                 .expect("cap row");
             assert_eq!(cap.used_label.as_deref(), Some("$12.50"));
         }
-    }
-    #[test]
-    fn openrouter_raw_key_preserves_exact_money_and_snapshot_handoff() {
-        let raw = r#"{"data":{"limit":0.001,"limit_remaining":0.0009,"usage_monthly":0.100000000000000001,"is_free_tier":false}}"#;
-        let payload =
-            serde_json::value::RawValue::from_string(raw.to_owned()).expect("valid raw key JSON");
-        let quota = parse_fetched_openrouter_key_quota(&payload, 1_780_000_000)
-            .expect("raw snapshot payload");
-
-        let cap = quota
-            .buckets
-            .iter()
-            .find(|bucket| bucket.label == "Key Limit")
-            .expect("cap row");
-        assert_eq!(cap.limit_label.as_deref(), Some("$0.001"));
-        assert_eq!(cap.used_label.as_deref(), Some("$0.0001"));
-        assert_eq!(
-            cap.limit_money,
-            Some(jackin_protocol::control::Money::new(10, "USD", 4))
-        );
-        assert_eq!(
-            cap.used_money,
-            Some(jackin_protocol::control::Money::new(1, "USD", 4))
-        );
-        let month = quota
-            .buckets
-            .iter()
-            .find(|bucket| bucket.label == "Spent this month")
-            .expect("monthly row");
-        assert_eq!(month.used_label.as_deref(), Some("$0.100000000000000001"));
-        assert_eq!(
-            month.used_money,
-            Some(jackin_protocol::control::Money::new(
-                100_000_000_000_000_001,
-                "USD",
-                18
-            ))
-        );
     }
     #[test]
     fn openrouter_raw_byok_preserves_dynamic_numeric_fallbacks_and_ignores_other_values() {
