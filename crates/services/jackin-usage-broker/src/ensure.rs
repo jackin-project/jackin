@@ -111,3 +111,6 @@ fn add_socket_alias_root(command: &mut Command, alias_root: Option<&Path>) {
         command.arg("--socket-alias-root").arg(alias_root);
     }
 }
+
+#[cfg(test)]
+mod tests;
