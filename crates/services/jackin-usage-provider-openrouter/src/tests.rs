@@ -5,6 +5,24 @@ use super::*;
 
 use jackin_protocol::control::StatusSlot;
 
+fn account_credits_bucket(
+    view: &jackin_protocol::control::FocusedUsageView,
+) -> &jackin_protocol::control::QuotaBucketView {
+    view.buckets
+        .iter()
+        .find(|bucket| bucket.label == "Account credits")
+        .unwrap_or_else(|| {
+            panic!(
+                "account credits bucket missing: last_error={:?}, bucket_labels={:?}",
+                view.last_error,
+                view.buckets
+                    .iter()
+                    .map(|bucket| bucket.label.as_str())
+                    .collect::<Vec<_>>()
+            )
+        })
+}
+
 pub(super) const fn key_fixture() -> &'static str {
     r#"{"data":{"label":"test-key","usage":12.5,"usage_daily":1.2,"usage_weekly":5.0,"usage_monthly":12.5,"limit":100.0,"limit_remaining":87.5,"is_free_tier":false}}"#
 }
@@ -17,20 +35,22 @@ struct CannedSnapshotServer {
 
 impl CannedSnapshotServer {
     fn start(key_body: &'static str) -> Self {
+        Self::start_with_credits(
+            key_body,
+            serde_json::json!({"data": {"total_credits": 10.0, "total_usage": 2.5}}).to_string(),
+        )
+    }
+
+    fn start_with_credits(key_body: &'static str, credits_body: String) -> Self {
         use std::net::{Ipv4Addr, TcpListener};
         use std::sync::mpsc;
-        use std::time::{Duration, Instant};
-
-        const ACCEPT_TIMEOUT: Duration = Duration::from_secs(5);
-
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         listener.set_nonblocking(true).unwrap();
         let address = listener.local_addr().unwrap();
         let (stop, worker_stop) = mpsc::channel();
         let worker = jackin_telemetry::spawn::thread_joined(move || {
-            let accept_deadline = Instant::now() + ACCEPT_TIMEOUT;
             loop {
-                if !serve_connection(&listener, &worker_stop, key_body, accept_deadline) {
+                if !serve_connection(&listener, &worker_stop, key_body, &credits_body) {
                     return;
                 }
             }
@@ -51,7 +71,7 @@ fn serve_connection(
     listener: &std::net::TcpListener,
     stop: &std::sync::mpsc::Receiver<()>,
     key_body: &'static str,
-    accept_deadline: std::time::Instant,
+    credits_body: &str,
 ) -> bool {
     use std::io::{Read, Write};
     use std::sync::mpsc::{RecvTimeoutError, TryRecvError};
@@ -60,18 +80,14 @@ fn serve_connection(
     const MAX_REQUEST_BYTES: usize = 8192;
     const IO_TIMEOUT: Duration = Duration::from_millis(250);
 
-    if Instant::now() >= accept_deadline {
+    if matches!(stop.try_recv(), Ok(()) | Err(TryRecvError::Disconnected)) {
         return false;
     }
     let mut stream = match listener.accept() {
         Ok((stream, _)) => stream,
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-            let remaining = accept_deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return false;
-            }
             return matches!(
-                stop.recv_timeout(remaining.min(Duration::from_millis(5))),
+                stop.recv_timeout(Duration::from_millis(5)),
                 Err(RecvTimeoutError::Timeout)
             );
         }
@@ -104,7 +120,18 @@ fn serve_connection(
         }
         let count = match stream.read(&mut chunk) {
             Ok(count) if count > 0 => count,
-            _ => return false,
+            Ok(_) => return false,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                ) =>
+            {
+                continue;
+            }
+            Err(_) => return false,
         };
         if request.len() + count > MAX_REQUEST_BYTES {
             return false;
@@ -113,7 +140,7 @@ fn serve_connection(
     }
 
     let body = if String::from_utf8_lossy(&request).contains("/credits") {
-        serde_json::json!({"data": {"total_credits": 10.0, "total_usage": 2.5}}).to_string()
+        credits_body.to_owned()
     } else {
         key_body.to_owned()
     };
@@ -137,3 +164,4 @@ impl Drop for CannedSnapshotServer {
 }
 
 mod case_01;
+mod case_02;
