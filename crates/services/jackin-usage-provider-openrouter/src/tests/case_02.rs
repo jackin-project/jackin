@@ -95,7 +95,22 @@ fn openrouter_credits_separates_spend_from_remaining_balance() {
 fn openrouter_money_derived_remaining_stays_continuous_and_signed_ratio_stays_raw() {
     use jackin_protocol::control::PercentObservationOrigin::Derived;
 
-    let fractional = openrouter_credits_bucket(1, 3);
+    let server = CannedSnapshotServer::start_with_credits(
+        key_fixture(),
+        r#"{"data":{"total_credits":0.03,"total_usage":0.01}}"#.to_owned(),
+    );
+    let snapshot = openrouter_snapshot_with_base(
+        "opencode",
+        Some("fixture-key"),
+        server.base_url(),
+        1_780_000_000,
+    );
+    assert_eq!(
+        snapshot.status,
+        jackin_protocol::control::UsageSnapshotStatus::Fresh
+    );
+    assert_eq!(snapshot.account.provider_label, "OpenRouter");
+    let fractional = account_credits_bucket(&snapshot);
     let remaining = fractional
         .remaining_percent
         .map(jackin_protocol::control::CanonicalRemainingPercent::get)
@@ -117,7 +132,7 @@ fn openrouter_money_derived_remaining_stays_continuous_and_signed_ratio_stays_ra
         Some(3)
     );
     assert!(
-        (jackin_usage_provider_core::money_used_percent(&fractional)
+        (jackin_usage_provider_core::money_used_percent(fractional)
             .expect("money ratio")
             .get()
             - (100.0 / 3.0))
