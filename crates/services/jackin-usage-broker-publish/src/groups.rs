@@ -236,15 +236,7 @@ fn group_period_for_bucket(bucket: &QuotaBucketView) -> UsageMetricPeriodV1 {
 pub fn spend_remaining(bucket: &QuotaBucketView) -> Option<Money> {
     let used = bucket.used_money.as_ref()?;
     let limit = bucket.limit_money.as_ref()?;
-    if used.currency != limit.currency || used.exponent != limit.exponent {
-        return None;
-    }
-    let remaining = limit.amount_minor.saturating_sub(used.amount_minor).max(0);
-    Some(Money::new(
-        remaining,
-        limit.currency.clone(),
-        limit.exponent,
-    ))
+    limit.checked_nonnegative_difference(used)
 }
 
 pub fn spend_quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
@@ -270,16 +262,24 @@ pub fn spend_quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
 }
 
 pub fn spend_ratio_state(used: &Money, limit: &Money) -> UsageQuotaStateV1 {
-    if used.currency != limit.currency || used.exponent != limit.exponent || limit.amount_minor <= 0
-    {
+    if limit.amount_minor <= 0 {
         return UsageQuotaStateV1::Unknown;
     }
-    if used.amount_minor >= limit.amount_minor {
-        UsageQuotaStateV1::Exhausted
-    } else if i128::from(used.amount_minor) * 100 / i128::from(limit.amount_minor) >= 80 {
-        UsageQuotaStateV1::Warning
-    } else {
-        UsageQuotaStateV1::Available
+    match used.checked_cmp(limit) {
+        None => UsageQuotaStateV1::Unknown,
+        Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal) => {
+            UsageQuotaStateV1::Exhausted
+        }
+        Some(std::cmp::Ordering::Less) => {
+            if used
+                .raw_percent_of(limit)
+                .is_some_and(|percent| percent >= 80)
+            {
+                UsageQuotaStateV1::Warning
+            } else {
+                UsageQuotaStateV1::Available
+            }
+        }
     }
 }
 
@@ -296,3 +296,6 @@ pub fn lifecycle(status: UsageSnapshotStatus, confidence: UsageConfidence) -> Us
         UsageSnapshotStatus::Error => UsageLifecycleV1::Error,
     }
 }
+
+#[cfg(test)]
+mod tests;

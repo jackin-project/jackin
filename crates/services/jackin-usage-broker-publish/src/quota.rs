@@ -69,10 +69,13 @@ pub fn quota_state_for_bucket(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
 pub fn money_is_exhausted(bucket: &QuotaBucketView) -> bool {
     match (bucket.used_money.as_ref(), bucket.limit_money.as_ref()) {
         (Some(used), Some(limit)) => {
-            used.currency == limit.currency
-                && used.exponent == limit.exponent
-                && limit.amount_minor > 0
-                && used.amount_minor >= limit.amount_minor
+            limit.amount_minor > 0
+                && used.checked_cmp(limit).is_some_and(|order| {
+                    matches!(
+                        order,
+                        std::cmp::Ordering::Equal | std::cmp::Ordering::Greater
+                    )
+                })
         }
         _ => false,
     }
@@ -100,3 +103,7 @@ pub fn issue_code(kind: UsageCoordinationErrorKind) -> String {
     }
     .to_owned()
 }
+
+#[cfg(test)]
+#[path = "quota/numeric_tests.rs"]
+mod tests;
