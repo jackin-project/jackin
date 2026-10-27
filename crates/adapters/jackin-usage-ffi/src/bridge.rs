@@ -734,3 +734,6 @@ fn map_coordination_err(error: UsageCoordinationError) -> UsageBridgeError {
     };
     UsageBridgeError::rejected(code, error.message)
 }
+
+#[cfg(test)]
+mod tests;
