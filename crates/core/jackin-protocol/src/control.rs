@@ -489,7 +489,26 @@ impl Money {
 
     #[must_use]
     pub fn major_amount(&self) -> i64 {
-        self.major().round() as i64
+        if self.exponent == 0 {
+            return self.amount_minor;
+        }
+        if self.exponent >= 20 {
+            return 0;
+        }
+
+        let divisor = 10_u64.pow(u32::from(self.exponent));
+        let magnitude = self.amount_minor.unsigned_abs();
+        let mut rounded = magnitude / divisor;
+        if magnitude % divisor >= divisor / 2 {
+            rounded += 1;
+        }
+
+        let rounded = i64::try_from(rounded).unwrap_or(i64::MAX);
+        if self.amount_minor.is_negative() {
+            -rounded
+        } else {
+            rounded
+        }
     }
 
     #[must_use]

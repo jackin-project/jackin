@@ -662,3 +662,57 @@ fn events_request_omits_absent_filter_and_declares_itself_a_subscription() {
         ClientMsg::Events { session: Some(4) }
     ));
 }
+
+#[test]
+fn money_major_amount_preserves_decimal_precision() {
+    let cases = [
+        (
+            Money::new(9_007_199_254_740_993, "USD", 0),
+            9_007_199_254_740_993,
+        ),
+        (
+            Money::new(-9_007_199_254_740_993, "USD", 0),
+            -9_007_199_254_740_993,
+        ),
+        (Money::new(149_999_999_999_999_999, "USD", 17), 1),
+        (Money::new(-149_999_999_999_999_999, "USD", 17), -1),
+        (Money::new(i64::MAX, "USD", 1), 922_337_203_685_477_581),
+    ];
+
+    let actual = cases
+        .iter()
+        .map(|(money, _)| money.major_amount())
+        .collect::<Vec<_>>();
+    let expected = cases.map(|(_, amount)| amount);
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn money_major_amount_keeps_ties_away_signs_and_bounds() {
+    let cases = [
+        (Money::new(5, "USD", 1), 1),
+        (Money::new(15, "USD", 1), 2),
+        (Money::new(25, "USD", 1), 3),
+        (Money::new(-5, "USD", 1), -1),
+        (Money::new(-15, "USD", 1), -2),
+        (Money::new(-25, "USD", 1), -3),
+        (Money::new(14, "USD", 1), 1),
+        (Money::new(16, "USD", 1), 2),
+        (Money::new(-14, "USD", 1), -1),
+        (Money::new(-16, "USD", 1), -2),
+        (Money::new(i64::MAX, "USD", 0), i64::MAX),
+        (Money::new(i64::MIN, "USD", 0), i64::MIN),
+        (Money::new(i64::MAX, "USD", 19), 1),
+        (Money::new(i64::MIN, "USD", 19), -1),
+        (Money::new(i64::MAX, "USD", 20), 0),
+        (Money::new(i64::MIN, "USD", 20), 0),
+        (Money::new(i64::MAX, "USD", 255), 0),
+        (Money::new(i64::MIN, "USD", 255), 0),
+        (Money::new(0, "USD", 0), 0),
+        (Money::new(0, "USD", 255), 0),
+    ];
+
+    for (money, expected) in cases {
+        assert_eq!(money.major_amount(), expected, "{money:?}");
+    }
+}
