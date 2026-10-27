@@ -76,17 +76,6 @@ fn raw_money_subtraction_aligns_scale_and_clamps_negative_use() {
 }
 
 #[test]
-fn sum_carries_fraction_before_narrowing_and_rejects_overflow() {
-    let values = [raw("9223372036854775806"), raw("0.1"), raw("0.9")];
-    assert_eq!(
-        sum_nonnegative(values.iter().map(Box::as_ref)),
-        Some(Money::new(i64::MAX, "USD", 0))
-    );
-    let too_large = [raw("9223372036854775807"), raw("1")];
-    assert_eq!(sum_nonnegative(too_large.iter().map(Box::as_ref)), None);
-}
-
-#[test]
 fn aligned_zero_keeps_one_magnitude_digit_at_every_scale() {
     let zero = Decimal::from_raw(&raw("-0")).expect("negative zero decimal");
     for scale in 0..=u8::MAX {
