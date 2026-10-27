@@ -1093,4 +1093,5 @@ pub struct UsageRelayTunnelResponse {
 }
 
 #[cfg(test)]
+#[path = "usage_broker/numeric_tests.rs"]
 mod tests;

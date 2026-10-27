@@ -15,6 +15,7 @@ mod screen;
 mod selection;
 mod state;
 #[cfg(test)]
+#[path = "usage/numeric_tests.rs"]
 mod tests;
 use self::labels_metric::count_quota_summary;
 pub(crate) use body::{
@@ -38,8 +39,6 @@ pub(crate) use labels_time::{
     past_age_label, quota_state_label, relative_time_label, summary_category_rank,
     updated_age_label,
 };
-#[cfg(test)]
-pub(crate) use list::render_account_list;
 pub use model::{
     USAGE_HEARTBEAT_INTERVAL, UsageAccount, UsageFilter, UsageMetricGroup, UsageRefreshOutcome,
     UsageRefreshRequest, UsageSort, UsageWindow,
