@@ -44,24 +44,13 @@ impl CannedSnapshotServer {
     fn start_with_credits(key_body: &'static str, credits_body: String) -> Self {
         use std::net::{Ipv4Addr, TcpListener};
         use std::sync::mpsc;
-        use std::time::{Duration, Instant};
-
-        const ACCEPT_TIMEOUT: Duration = Duration::from_secs(5);
-
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         listener.set_nonblocking(true).unwrap();
         let address = listener.local_addr().unwrap();
         let (stop, worker_stop) = mpsc::channel();
         let worker = jackin_telemetry::spawn::thread_joined(move || {
-            let accept_deadline = Instant::now() + ACCEPT_TIMEOUT;
             loop {
-                if !serve_connection(
-                    &listener,
-                    &worker_stop,
-                    key_body,
-                    &credits_body,
-                    accept_deadline,
-                ) {
+                if !serve_connection(&listener, &worker_stop, key_body, &credits_body) {
                     return;
                 }
             }
@@ -83,7 +72,6 @@ fn serve_connection(
     stop: &std::sync::mpsc::Receiver<()>,
     key_body: &'static str,
     credits_body: &str,
-    accept_deadline: std::time::Instant,
 ) -> bool {
     use std::io::{Read, Write};
     use std::sync::mpsc::{RecvTimeoutError, TryRecvError};
@@ -92,18 +80,14 @@ fn serve_connection(
     const MAX_REQUEST_BYTES: usize = 8192;
     const IO_TIMEOUT: Duration = Duration::from_millis(250);
 
-    if Instant::now() >= accept_deadline {
+    if matches!(stop.try_recv(), Ok(()) | Err(TryRecvError::Disconnected)) {
         return false;
     }
     let mut stream = match listener.accept() {
         Ok((stream, _)) => stream,
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-            let remaining = accept_deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return false;
-            }
             return matches!(
-                stop.recv_timeout(remaining.min(Duration::from_millis(5))),
+                stop.recv_timeout(Duration::from_millis(5)),
                 Err(RecvTimeoutError::Timeout)
             );
         }
