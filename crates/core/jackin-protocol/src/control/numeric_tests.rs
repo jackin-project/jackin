@@ -154,33 +154,6 @@ mod case_01 {
         assert_eq!(Money::new(i64::MIN, "USD", 255).format_compact(), "$-0");
     }
     #[test]
-    fn money_raw_percent_keeps_overage_and_rejects_bad_denominations() {
-        assert_eq!(
-            Money::new(15_000, "USD", 2).raw_percent_of(&Money::new(10_000, "USD", 2)),
-            Some(150)
-        );
-        assert_eq!(
-            Money::new(27_00, "USD", 2).raw_percent_of(&Money::new(30_000, "USD", 2)),
-            Some(9)
-        );
-        assert_eq!(
-            Money::new(0, "USD", 2).raw_percent_of(&Money::new(10_000, "USD", 2)),
-            Some(0)
-        );
-        assert_eq!(
-            Money::new(50_00, "USD", 2).raw_percent_of(&Money::new(10_000, "SGD", 2)),
-            None
-        );
-        assert_eq!(
-            Money::new(1, "USD", 2).raw_percent_of(&Money::new(0, "USD", 2)),
-            None
-        );
-        assert_eq!(
-            Money::new(i64::MAX, "USD", 2).raw_percent_of(&Money::new(1, "USD", 2)),
-            Some(i32::MAX)
-        );
-    }
-    #[test]
     fn money_raw_percent_handles_large_and_mixed_scale_values() {
         assert_eq!(
             Money::new(100_000_000_000_000_000, "USD", 0).raw_percent_of(&Money::new(
@@ -224,6 +197,30 @@ mod case_01 {
         );
         assert_eq!(
             Money::new(1, "USD", 0).raw_percent_of(&Money::new(i64::MAX, "USD", 255)),
+            Some(i32::MAX)
+        );
+        assert_eq!(
+            Money::new(15_000, "USD", 2).raw_percent_of(&Money::new(10_000, "USD", 2)),
+            Some(150)
+        );
+        assert_eq!(
+            Money::new(27_00, "USD", 2).raw_percent_of(&Money::new(30_000, "USD", 2)),
+            Some(9)
+        );
+        assert_eq!(
+            Money::new(0, "USD", 2).raw_percent_of(&Money::new(10_000, "USD", 2)),
+            Some(0)
+        );
+        assert_eq!(
+            Money::new(50_00, "USD", 2).raw_percent_of(&Money::new(10_000, "SGD", 2)),
+            None
+        );
+        assert_eq!(
+            Money::new(1, "USD", 2).raw_percent_of(&Money::new(0, "USD", 2)),
+            None
+        );
+        assert_eq!(
+            Money::new(i64::MAX, "USD", 2).raw_percent_of(&Money::new(1, "USD", 2)),
             Some(i32::MAX)
         );
     }

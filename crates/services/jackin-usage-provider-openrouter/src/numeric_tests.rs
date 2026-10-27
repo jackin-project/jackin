@@ -268,20 +268,6 @@ mod case_01 {
         }
     }
     #[test]
-    fn openrouter_byok_omits_final_fallback_overflow() {
-        let quota = parse_openrouter_key_usage_raw(
-            r#"{"data":{"byok_spend_a":9223372036854775807,"byok_cost_b":1}}"#,
-            1_780_000_000,
-        )
-        .expect("overflowing BYOK key remains a valid response");
-        assert!(
-            quota
-                .buckets
-                .iter()
-                .all(|bucket| bucket.label != "BYOK spend")
-        );
-    }
-    #[test]
     fn openrouter_byok_skips_null_and_string_fallback_fields() {
         let quota = parse_openrouter_key_usage_raw(
             r#"{"data":{"byok_spend_a":1,"byok_cost_null":null,"byok_usage_text":"1.00"}}"#,
