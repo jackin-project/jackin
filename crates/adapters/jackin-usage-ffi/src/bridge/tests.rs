@@ -4,22 +4,27 @@
 #![cfg(unix)]
 
 use std::error::Error;
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::{OpenConfig, UsageBridgeError, UsageMenuBarBridge};
 
-const TEST_NAME: &str = "bridge::tests::missing_broker_executable_keeps_the_runtime_closed";
+const TEST_NAME: &str = "bridge::tests::nonexecutable_broker_reports_startup_failure";
+const CHILD_PROCESS_NAME: &str = "jackin-usage-ffi-startup-child";
 const CHILD_ROOT_ENV: &str = "JACKIN_USAGE_FFI_MISSING_BROKER_CHILD_ROOT";
 const BROKER_BIN_ENV: &str = "JACKIN_USAGE_BROKER_BIN";
 const MAX_DATA_DIRECTORY_PATH_BYTES: usize = 64;
 
 #[test]
-fn missing_broker_executable_keeps_the_runtime_closed() -> Result<(), Box<dyn Error>> {
-    if let Some(root) = std::env::var_os(CHILD_ROOT_ENV) {
+fn nonexecutable_broker_reports_startup_failure() -> Result<(), Box<dyn Error>> {
+    if std::env::args_os().next().as_deref() == Some(OsStr::new(CHILD_PROCESS_NAME)) {
+        let root = std::env::var_os(CHILD_ROOT_ENV)
+            .ok_or_else(|| io::Error::other("child fixture root is missing"))?;
         verify_failed_open(PathBuf::from(root))?;
         return Ok(());
     }
@@ -43,6 +48,7 @@ fn missing_broker_executable_keeps_the_runtime_closed() -> Result<(), Box<dyn Er
     assert_data_directory_path_is_short(&data_dir);
 
     let output = Command::new(std::env::current_exe()?)
+        .arg0(CHILD_PROCESS_NAME)
         .arg("--exact")
         .arg(TEST_NAME)
         .arg("--nocapture")
