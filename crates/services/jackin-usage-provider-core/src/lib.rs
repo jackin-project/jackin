@@ -42,8 +42,9 @@ pub use self::format::{
 
 pub use self::format::{CliOutput, percent_before_used, run_cli_with_timeout_full};
 pub use self::format::{
-    PercentStyle, ResetStyle, UsageBucketPresentation, UsageFormatPrefs, usage_bucket_presentation,
-    usage_detail_presentation, usage_display_status_label, usage_identity_presentation,
+    PercentStyle, ResetStyle, UsageBucketPresentation, UsageFormatPrefs,
+    count_observation_detail_label, usage_bucket_presentation, usage_detail_presentation,
+    usage_display_status_label, usage_identity_presentation,
 };
 pub use self::format::{
     compact_duration_label, exact_reset_parenthetical, percent_headline, reset_label_with_prefs,

@@ -169,6 +169,15 @@ pub const fn provider_quota_state_label(state: ProviderQuotaState) -> &'static s
 
 #[must_use]
 pub fn provider_quota_state_summary(bucket: &QuotaBucketView) -> Option<String> {
+    bucket.provider_quota_state?;
+    let count_label = crate::count_summary_label(bucket);
+    provider_quota_state_summary_with_count_label(bucket, count_label.as_deref())
+}
+
+pub(crate) fn provider_quota_state_summary_with_count_label(
+    bucket: &QuotaBucketView,
+    count_label: Option<&str>,
+) -> Option<String> {
     let state = bucket.provider_quota_state?;
     let mut parts = vec![provider_quota_state_label(state).to_owned()];
 
@@ -186,8 +195,8 @@ pub fn provider_quota_state_summary(bucket: &QuotaBucketView) -> Option<String> 
             bucket.remaining_percent_origin,
         ));
     }
-    if let Some(count) = crate::count_summary_label(bucket) {
-        parts.push(count);
+    if let Some(count) = count_label {
+        parts.push(count.to_owned());
     }
     if let Some(money_used) = money_used_percent(bucket) {
         parts.push(format!("{}% used", money_used.display_value()));

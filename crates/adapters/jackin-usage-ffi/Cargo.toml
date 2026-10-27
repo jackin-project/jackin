@@ -25,6 +25,7 @@ jackin-protocol = { workspace = true }
 boltffi = "=0.31.1"
 
 [dev-dependencies]
+jackin-telemetry = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]
