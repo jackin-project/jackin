@@ -40,3 +40,4 @@ pub(super) fn window_group(group_id: &str, rank: u32) -> UsageMetricGroupV1 {
 }
 
 mod case_01;
+mod case_02;
