@@ -139,13 +139,7 @@ fn requests_count_remaining_rank_points(count: CountQuota) -> Option<f64> {
 pub fn money_used_percent(bucket: &QuotaBucketView) -> Option<RawPercentPoints> {
     let used = bucket.used_money.as_ref()?;
     let limit = bucket.limit_money.as_ref()?;
-    if used.currency != limit.currency || used.exponent != limit.exponent || limit.amount_minor <= 0
-    {
-        return None;
-    }
-
-    let numerator = i128::from(used.amount_minor).checked_mul(100)?;
-    let points = numerator as f64 / i128::from(limit.amount_minor) as f64;
+    let points = used.raw_percent_points_of(limit)?;
     RawPercentPoints::new(points).ok()
 }
 
@@ -229,3 +223,6 @@ fn source_percent_label(
         crate::format_percent_points(points)
     )
 }
+
+#[cfg(test)]
+mod tests;
