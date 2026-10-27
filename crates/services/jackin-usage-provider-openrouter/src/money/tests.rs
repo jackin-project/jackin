@@ -184,3 +184,51 @@ fn negative_numeric_classification_preserves_signed_zero() {
     assert!(!is_negative_nonzero_number("-0e400"));
     assert!(!is_negative_nonzero_number("1"));
 }
+
+#[test]
+fn aligned_zero_keeps_one_magnitude_digit_at_every_scale() {
+    let zero = Decimal::from_raw(&raw("-0")).expect("negative zero decimal");
+    for scale in [0, 1, u8::MAX] {
+        let aligned = zero.aligned(scale).expect("aligned zero");
+        assert_eq!(aligned.len, 1);
+        assert_eq!(aligned.scale(), scale);
+        assert!(!aligned.is_negative());
+        assert_eq!(aligned.digits[0], 0);
+    }
+}
+
+#[test]
+fn exact_subtraction_preserves_cap_minus_zero_and_saturates_zero_minus_cap() {
+    let cap = Decimal::from_raw(&raw("0.5")).expect("cap decimal");
+    let zero = Decimal::from_raw(&raw("0")).expect("zero decimal");
+    let negative_zero = Decimal::from_raw(&raw("-0.0e-400")).expect("negative zero decimal");
+
+    assert_eq!(
+        cap.saturating_sub(&zero)
+            .and_then(|value| value.money_at_scale(2)),
+        Some(Money::new(50, "USD", 2))
+    );
+    assert_eq!(
+        cap.saturating_sub(&negative_zero)
+            .and_then(|value| value.money_at_scale(2)),
+        Some(Money::new(50, "USD", 2))
+    );
+    assert_eq!(
+        zero.saturating_sub(&cap)
+            .and_then(|value| value.money_at_scale(2)),
+        Some(Money::new(0, "USD", 2))
+    );
+    assert_eq!(
+        cap.saturating_sub(&cap)
+            .and_then(|value| value.money_at_scale(2)),
+        Some(Money::new(0, "USD", 2))
+    );
+
+    let subcent = Decimal::from_raw(&raw("0.001")).expect("subcent cap");
+    assert_eq!(
+        subcent
+            .saturating_sub(&zero)
+            .and_then(|value| value.money_at_scale(3)),
+        Some(Money::new(1, "USD", 3))
+    );
+}

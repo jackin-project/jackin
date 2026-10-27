@@ -174,6 +174,9 @@ impl Decimal {
         if scale < self.scale {
             return None;
         }
+        if self.digits[..self.len].iter().all(|digit| *digit == 0) {
+            return Some(Self::zero(scale));
+        }
         let shift = usize::from(scale - self.scale);
         let len = self.len.checked_add(shift)?;
         if len > MAX_DIGITS {

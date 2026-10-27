@@ -1127,3 +1127,100 @@ fn openrouter_raw_byok_skips_unrepresentable_negative_numeric_components() {
         assert_eq!(byok.used_label.as_deref(), Some("$0"));
     }
 }
+
+#[cfg(feature = "value-arbitrary-precision")]
+#[test]
+fn openrouter_value_cap_minus_zero_preserves_fractional_usage() {
+    for remaining in ["0", "-0", "-0.0e-400"] {
+        let json = format!(
+            r#"{{"data":{{"limit":0.5,"limit_remaining":{remaining},"is_free_tier":false}}}}"#
+        );
+        let input = serde_json::from_str(&json).expect("fractional cap JSON");
+        let quota = parse_openrouter_key_usage(input, 1_780_000_000).expect("fractional cap");
+        let cap = quota
+            .buckets
+            .iter()
+            .find(|bucket| bucket.label == "Key Limit")
+            .expect("cap row");
+        assert_eq!(
+            cap.limit_money,
+            Some(jackin_protocol::control::Money::new(50, "USD", 2))
+        );
+        assert_eq!(cap.limit_label.as_deref(), Some("$0.50"));
+        assert_eq!(
+            cap.used_money,
+            Some(jackin_protocol::control::Money::new(50, "USD", 2))
+        );
+        assert_eq!(cap.used_label.as_deref(), Some("$0.50"));
+        assert_eq!(
+            cap.remaining_percent
+                .map(jackin_protocol::control::CanonicalRemainingPercent::get),
+            Some(0.0)
+        );
+        assert_eq!(
+            cap.remaining_percent_origin,
+            Some(jackin_protocol::control::PercentObservationOrigin::Derived)
+        );
+        assert_eq!(
+            jackin_usage_provider_core::money_used_percent(cap)
+                .map(jackin_protocol::control::RawPercentPoints::get),
+            Some(100.0)
+        );
+    }
+}
+
+#[test]
+fn openrouter_raw_cap_minus_zero_preserves_fractional_usage() {
+    for remaining in ["0", "-0", "-0.0e-400"] {
+        let json = format!(
+            r#"{{"data":{{"limit":0.5,"limit_remaining":{remaining},"is_free_tier":false}}}}"#
+        );
+        let quota =
+            parse_openrouter_key_usage_raw(&json, 1_780_000_000).expect("fractional raw cap");
+        let cap = quota
+            .buckets
+            .iter()
+            .find(|bucket| bucket.label == "Key Limit")
+            .expect("cap row");
+        assert_eq!(
+            cap.limit_money,
+            Some(jackin_protocol::control::Money::new(50, "USD", 2))
+        );
+        assert_eq!(cap.limit_label.as_deref(), Some("$0.50"));
+        assert_eq!(
+            cap.used_money,
+            Some(jackin_protocol::control::Money::new(50, "USD", 2))
+        );
+        assert_eq!(cap.used_label.as_deref(), Some("$0.50"));
+        assert_eq!(
+            cap.remaining_percent
+                .map(jackin_protocol::control::CanonicalRemainingPercent::get),
+            Some(0.0)
+        );
+        assert_eq!(
+            cap.remaining_percent_origin,
+            Some(jackin_protocol::control::PercentObservationOrigin::Derived)
+        );
+        assert_eq!(
+            jackin_usage_provider_core::money_used_percent(cap)
+                .map(jackin_protocol::control::RawPercentPoints::get),
+            Some(100.0)
+        );
+    }
+
+    let quota = parse_openrouter_key_usage_raw(
+        r#"{"data":{"limit":0.001,"limit_remaining":0,"is_free_tier":false}}"#,
+        1_780_000_000,
+    )
+    .expect("subcent raw cap");
+    let cap = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "Key Limit")
+        .expect("subcent cap row");
+    assert_eq!(
+        cap.used_money,
+        Some(jackin_protocol::control::Money::new(1, "USD", 3))
+    );
+    assert_eq!(cap.used_label.as_deref(), Some("$0.001"));
+}
