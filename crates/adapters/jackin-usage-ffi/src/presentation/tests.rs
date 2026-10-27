@@ -261,6 +261,56 @@ fn assert_compact_count_labels(view: &UsageViewDto) {
         compact_label(view, "Unlimited count"),
         "Unlimited · Reported count (requests/utc_daily): used 2, limit 10, remaining 7"
     );
+
+    let money_collision = view
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "Count with source and money")
+        .expect("count and money collision bucket");
+    assert_eq!(money_collision.used_percent, Some(37.5));
+    assert_eq!(
+        money_collision.used_percent_origin.as_deref(),
+        Some("provider_reported")
+    );
+    assert_eq!(money_collision.remaining_percent, Some(62.5));
+    assert_eq!(
+        money_collision.remaining_percent_origin.as_deref(),
+        Some("derived")
+    );
+    assert_eq!(money_collision.meter_percent, Some(12.5));
+    assert_eq!(money_collision.meter_side.as_deref(), Some("used"));
+    assert_eq!(
+        compact_label(view, "Count with source and money"),
+        "Reported used: 37.5% · Derived remaining: 62.5% · Money ratio: 12.5% used"
+    );
+
+    let opaque_count = view
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "Opaque count")
+        .expect("opaque count bucket");
+    assert_eq!(opaque_count.used_percent, None);
+    assert_eq!(opaque_count.remaining_percent, None);
+    assert_eq!(opaque_count.meter_percent, None);
+    assert_eq!(opaque_count.meter_side, None);
+    assert_eq!(compact_label(view, "Opaque count"), "6 requests left");
+
+    let money_detail_row = view
+        .detail_presentation
+        .rows
+        .iter()
+        .find(|row| row.row_id == "count-money-collision")
+        .expect("count and money collision detail row");
+    assert_eq!(money_detail_row.meter_percent, Some(12.5));
+    assert_eq!(money_detail_row.meter_side.as_deref(), Some("used"));
+    let opaque_detail_row = view
+        .detail_presentation
+        .rows
+        .iter()
+        .find(|row| row.row_id == "count-opaque-label")
+        .expect("opaque count detail row");
+    assert_eq!(opaque_detail_row.meter_percent, None);
+    assert_eq!(opaque_detail_row.meter_side, None);
 }
 
 fn assert_detail_count_labels(view: &UsageViewDto) {
@@ -284,6 +334,12 @@ fn assert_detail_count_labels(view: &UsageViewDto) {
         detail_label(view, "count-zero-remaining"),
         "Reported count (requests/utc_daily): used unknown, limit unknown, remaining 0"
     );
+    let opaque_detail = detail_label(view, "count-opaque-label");
+    assert_eq!(
+        opaque_detail,
+        "Provider status note [opaque-42] · Reported count (requests/utc_daily): used 4, limit 10, remaining 6"
+    );
+    assert_eq!(opaque_detail.matches("Reported count").count(), 1);
     assert_eq!(
         detail_label(view, "count-all-unknown"),
         "fresh · Reported count (requests/utc_daily): used unknown, limit unknown, remaining unknown"
@@ -300,6 +356,10 @@ fn assert_detail_count_labels(view: &UsageViewDto) {
     assert_eq!(
         detail_label(view, "count-unlimited"),
         "Unlimited · Reported count (requests/utc_daily): used 2, limit 10, remaining 7"
+    );
+    assert_eq!(
+        detail_label(view, "count-money-collision"),
+        "Reported used: 37.5% · Derived remaining: 62.5% · Money ratio: 12.5% used · Reported count (requests/utc_daily): used 2, limit 10, remaining 7"
     );
 }
 
@@ -379,6 +439,18 @@ fn count_fixture_windows() -> Vec<UsageLimitWindowV1> {
             "7 requests left",
             Some(request_count(Some(2), Some(10), Some(7))),
         ),
+        (
+            "count-money-collision",
+            "Count with source and money",
+            "Provider supplied raw and Money values",
+            Some(request_count(Some(2), Some(10), Some(7))),
+        ),
+        (
+            "count-opaque-label",
+            "Opaque count",
+            "Provider status note [opaque-42]",
+            Some(request_count(Some(4), Some(10), Some(6))),
+        ),
     ];
     let mut windows = cases
         .into_iter()
@@ -415,6 +487,21 @@ fn count_fixture_windows() -> Vec<UsageLimitWindowV1> {
         .expect("unlimited fixture window");
     unlimited.provider_quota_state = Some(ProviderQuotaState::Unlimited);
     unlimited.quota_state = UsageQuotaStateV1::NotApplicable;
+
+    let money_collision = windows
+        .iter_mut()
+        .find(|window| window.window_id == "count-money-collision")
+        .expect("count and money collision fixture window");
+    money_collision.used_percent = Some(RawPercentPoints::new(37.5).expect("valid raw percentage"));
+    money_collision.used_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    money_collision.remaining_percent =
+        Some(RawPercentPoints::new(62.5).expect("valid raw percentage"));
+    money_collision.remaining_percent_origin = Some(PercentObservationOrigin::Derived);
+    money_collision.money_used_percent =
+        Some(RawPercentPoints::new(12.5).expect("valid Money ratio"));
+    money_collision.meter_percent =
+        Some(MeterPercentPoints::new(12.5).expect("valid meter percentage"));
+    money_collision.meter_side = Some(UsageMeterSide::Used);
 
     windows
 }
