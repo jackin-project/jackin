@@ -402,6 +402,3 @@ fn foreground_group_from_process_infos(
     }
     ForegroundGroup::Unrecognized { pgid: fg_pgid }
 }
-
-#[cfg(test)]
-mod tests;

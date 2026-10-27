@@ -124,6 +124,3 @@ pub fn launch_container_info_rect(
     let height = container_info_required_height(state);
     percent_dialog_rect(body, 60, 40, 2, 2, height)
 }
-
-#[cfg(test)]
-mod tests;

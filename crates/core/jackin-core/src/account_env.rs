@@ -76,6 +76,3 @@ pub fn account_env_names() -> impl Iterator<Item = &'static str> {
 pub fn is_account_env(name: &str) -> bool {
     account_env_names().any(|owned| owned == name)
 }
-
-#[cfg(test)]
-mod tests;

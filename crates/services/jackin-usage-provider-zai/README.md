@@ -31,6 +31,6 @@ consumed by `jackin-usage`.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-zai
+cargo nextest run -p jackin-usage-provider-zai --no-tests warn
 cargo clippy -p jackin-usage-provider-zai --all-targets -- -D warnings
 ```

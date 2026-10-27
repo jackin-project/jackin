@@ -17,7 +17,7 @@ use jackin_process_directory::{
 };
 use nix::{
     errno::Errno,
-    fcntl::{AtFlags, OFlag, open, openat, renameat},
+    fcntl::{AtFlags, OFlag, openat, renameat},
     sys::stat::{FchmodatFlags, Mode, SFlag, fchmod, fchmodat, fstat, fstatat, mkdirat},
     unistd::{UnlinkatFlags, fsync, unlinkat},
 };
@@ -71,12 +71,18 @@ pub(super) fn read_current_owner(
             && before.len() <= limit,
         "running owner executable has unsafe custody or exceeds its bound"
     );
-    let descriptor = open(
-        path,
-        OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-        Mode::empty(),
-    )?;
-    let mut file = File::from(descriptor);
+    let parent = CheckedSourceRoot::from_absolute_directory(
+        path.parent()
+            .context("running owner executable has no parent")?,
+    )
+    .context("validating running owner executable directory")?;
+    let checked = parent
+        .open_file(Path::new(
+            path.file_name()
+                .context("running owner executable has no leaf")?,
+        ))
+        .context("validating running owner executable permissions and ACL")?;
+    let mut file = checked.file().try_clone()?;
     let opened = file.metadata()?;
     ensure!(
         opened.dev() == before.dev() && opened.ino() == before.ino() && opened.nlink() == 1,
@@ -104,15 +110,18 @@ pub(super) fn read_current_owner(
             && named.len() == opened.len(),
         "running owner executable changed while reading"
     );
+    checked
+        .recheck()
+        .context("rechecking running owner executable permissions and ACL")?;
     Ok(bytes)
 }
 
-#[cfg(test)]
-pub(super) fn publish_owner(git_dir: &Path, owner: &[u8]) -> Result<PathBuf> {
-    Ok(install_owner(git_dir, owner)?.owner_path.clone())
-}
-
-pub(super) fn install_owner(git_dir: &Path, owner: &[u8]) -> Result<OwnerInstallation> {
+pub(super) fn install_owner(
+    git_dir: &Path,
+    owner: &[u8],
+    signals: &super::config::InstallSignals,
+) -> Result<OwnerInstallation> {
+    signals.check()?;
     let parent = CheckedSourceRoot::from_absolute_directory(git_dir)
         .context("validating worktree Git directory")?;
     let parent_fd = File::from(parent.as_fd().try_clone_to_owned()?);
@@ -219,7 +228,7 @@ pub(super) fn install_owner(git_dir: &Path, owner: &[u8]) -> Result<OwnerInstall
     }
 
     let temporary = format!(".owner.{}", uuid::Uuid::new_v4());
-    let result = publish_owner_entry(&root, &checked_root, &temporary, owner)
+    let result = publish_owner_entry(&root, &checked_root, &temporary, owner, signals)
         .context("publishing stable owner while holding installer lock");
     let installed_owner = match result {
         Ok(installed_owner) => installed_owner,
@@ -277,7 +286,9 @@ fn publish_owner_entry(
     checked_root: &CheckedInstallRoot,
     temporary: &str,
     owner: &[u8],
+    signals: &super::config::InstallSignals,
 ) -> Result<CheckedInstallFile> {
+    signals.check()?;
     let descriptor = openat(
         root,
         temporary,
@@ -288,14 +299,17 @@ fn publish_owner_entry(
     let mut file = File::from(descriptor);
     (|| {
         file.write_all(owner)?;
+        signals.check()?;
         fchmod(&file, Mode::from_bits_truncate(0o500))?;
         file.sync_all().context("syncing staged hook owner")?;
+        signals.check()?;
         ensure_file_identity(root, temporary, &file, 0o500, owner.len() as u64)
             .context("validating staged worktree hook owner identity")?;
         let checked = checked_root
             .open_file(Path::new(temporary), InstallFileKind::SealedCopy)
             .context("validating staged hook owner")?;
         checked.recheck().context("rechecking staged hook owner")?;
+        signals.check()?;
         renameat(root, temporary, root, OWNER_FILE)
             .context("atomically replacing stable worktree hook owner")?;
         ensure_file_identity(root, OWNER_FILE, &file, 0o500, owner.len() as u64)

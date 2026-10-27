@@ -38,17 +38,11 @@ pub use journal::{
     TreeEntryKind, classify_tree_entry_for_removal, read_journal, target_present, unlink_entry,
     write_journal,
 };
-#[cfg(any(test, feature = "test-support"))]
-#[cfg(unix)]
-pub use locks::lock_source_dir_for_test;
 #[cfg(unix)]
 pub use locks::{
     entry_file_at, file_target_lock, lock_source_dir, new_journal_temporary, new_previous,
     new_private_file_temporary, new_stage, target_lock,
 };
-#[cfg(any(test, feature = "test-support"))]
-#[cfg(unix)]
-pub use mount_locks::target_lock_key_for_test;
 #[cfg(unix)]
 pub use mount_locks::{
     lock_mount_directory, lock_mount_file, mount_directory_present, mount_file_present,
@@ -70,9 +64,6 @@ pub use source::{
 pub use stage::{snapshot_source, stage_auth_directory_with_locked_source, wipe_auth_directory};
 #[cfg(unix)]
 pub use transactions::{recover, remove_tree};
-#[cfg(any(test, feature = "test-support"))]
-#[cfg(unix)]
-pub use types::{FailureGuard, inject_failure, set_hermes_snapshot_hook, set_source_open_hook};
 #[cfg(unix)]
 pub use types::{
     FailurePoint, JOURNAL_SCHEMA_VERSION, LockedSource, MAX_JOURNAL_BYTES, SOURCE_LOCK_POLL,

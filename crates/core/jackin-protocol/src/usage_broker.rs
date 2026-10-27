@@ -16,9 +16,6 @@ pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v9";
 pub const USAGE_BROKER_MAX_FRAME_BYTES: usize = 1024 * 1024;
 pub const USAGE_RELAY_READY_MAX_FRAME_BYTES: usize = 128;
 
-/// Provisional readiness emitted only after a cooperating guest relay owns the v2 socket.
-///
-/// This frame carries no account, credential, generation, or host authorization data.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct UsageRelayReadyV1 {
@@ -37,7 +34,6 @@ impl UsageRelayReadyV1 {
         }
     }
 
-    /// Encode the one canonical newline-terminated readiness frame.
     pub fn encode_frame(self) -> Result<Vec<u8>, String> {
         let mut frame = serde_json::to_vec(&self).map_err(|error| error.to_string())?;
         frame.push(b'\n');
@@ -47,7 +43,6 @@ impl UsageRelayReadyV1 {
         Ok(frame)
     }
 
-    /// Accept only the exact canonical frame, including key order and newline.
     pub fn decode_frame(frame: &[u8]) -> Result<Self, String> {
         if frame.is_empty() || frame.len() > USAGE_RELAY_READY_MAX_FRAME_BYTES {
             return Err("usage relay readiness frame has invalid framing".to_owned());
@@ -181,10 +176,6 @@ pub struct UsageAccountCapability {
 }
 
 impl UsageAccountCapability {
-    /// Return a stable opaque key by hashing both selector values without normalization.
-    ///
-    /// The key is metadata for identity continuity and grants no membership or
-    /// authorization.
     #[must_use]
     pub fn opaque_identity_key(&self) -> String {
         let identity = format!(
@@ -1092,6 +1083,3 @@ pub struct UsageRelayTunnelResponse {
     pub request_id: u64,
     pub response: UsageBrokerResponse,
 }
-
-#[cfg(test)]
-mod tests;

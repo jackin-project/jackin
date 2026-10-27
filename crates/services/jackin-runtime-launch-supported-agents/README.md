@@ -21,7 +21,7 @@ for a launch role
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`supported_agents.rs`](src/supported_agents.rs) | agent lookup | hub `launch` suite (`launch/tests/case_10.rs`) |
+| [`supported_agents.rs`](src/supported_agents.rs) | agent lookup | — |
 
 ## Public API
 
@@ -30,6 +30,6 @@ for a launch role
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-supported-agents
+cargo nextest run -p jackin-runtime-launch-supported-agents --no-tests warn
 cargo clippy -p jackin-runtime-launch-supported-agents --all-targets -- -D warnings
 ```

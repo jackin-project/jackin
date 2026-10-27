@@ -25,7 +25,6 @@
     "rust-jackin-isolation",
     "rust-jackin-launch",
     "rust-jackin-manifest",
-    "rust-jackin-otlp-testbed",
     "rust-jackin-process",
     "rust-jackin-process-directory",
     "rust-jackin-protocol",

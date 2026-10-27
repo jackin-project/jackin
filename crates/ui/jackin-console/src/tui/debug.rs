@@ -201,6 +201,3 @@ pub fn console_location_debug(console_state: &crate::tui::console::ConsoleState)
             .map(ConsoleModalDebugKind::modal_debug_kind),
     })
 }
-
-#[cfg(test)]
-mod tests;

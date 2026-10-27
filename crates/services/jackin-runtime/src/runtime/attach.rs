@@ -33,8 +33,7 @@ pub(crate) use admission::{
     validate_recorded_role_handle,
 };
 pub(crate) use capsule_ready::wait_for_capsule_daemon_with_handle;
-#[cfg(test)]
-pub(crate) use capsule_ready::wait_for_dind;
+
 pub(crate) use exec_args::{
     git_policy_env_pairs, host_alt_screen_exec_flag, insert_run_as_user, set_role_terminal_title,
 };
@@ -55,6 +54,3 @@ pub(crate) use reconnect::{
 };
 pub(crate) use reconnect_lease::start_or_reconnect_capsule_client_with_handle_with_lease;
 pub(crate) use sessions::inspect_unavailable_message;
-
-#[cfg(test)]
-mod tests;

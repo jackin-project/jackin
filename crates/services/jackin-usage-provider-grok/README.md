@@ -31,6 +31,6 @@ credential snapshots).
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-grok
+cargo nextest run -p jackin-usage-provider-grok --no-tests warn
 cargo clippy -p jackin-usage-provider-grok --all-targets -- -D warnings
 ```

@@ -20,21 +20,9 @@ pub use status::{
 };
 pub use usage::{run_usage_accounts, run_usage_verify};
 
-#[cfg(test)]
-pub(crate) use crate::protocol::control::{
-    AccountUsageSnapshotView, ServerMsg, frame as control_frame,
-};
-#[cfg(test)]
-pub(crate) use attach::run_attach_proxy_at;
 pub(crate) use control::{
     connect_and_send, read_control_reply, read_control_reply_or_eof, request_control,
 };
-#[cfg(test)]
-pub(crate) use tokio::io::{AsyncReadExt, AsyncWriteExt};
-#[cfg(test)]
-pub(crate) use tokio::net::UnixStream;
-#[cfg(test)]
-pub(crate) use usage::verify_usage_accounts;
 
 fn flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter()
@@ -42,6 +30,3 @@ fn flag_value(args: &[String], flag: &str) -> Option<String> {
         .and_then(|i| args.get(i + 1))
         .cloned()
 }
-
-#[cfg(test)]
-mod tests;

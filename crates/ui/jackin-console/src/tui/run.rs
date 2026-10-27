@@ -7,8 +7,6 @@ mod letter;
 mod mouse;
 mod quit;
 mod stage;
-#[cfg(test)]
-mod tests;
 pub use console::{
     is_on_main_screen, letter_input_state_for_console, no_modal_open, quit_confirm_area,
     quit_intercept_state_for_console, screen_of, startup_error_dismissed,

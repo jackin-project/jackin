@@ -21,29 +21,15 @@ pub(crate) struct ProbeJob {
     pub(crate) credential_scope: Option<UsageCredentialScope>,
 }
 
-#[cfg_attr(
-    not(feature = "test-support"),
-    expect(
-        unreachable_pub,
-        reason = "this type is re-exported only by the test-support feature"
-    )
-)]
 #[derive(Debug, Clone, Copy)]
-pub struct ClockSample {
-    pub wall_epoch: Duration,
-    pub monotonic: Duration,
+pub(crate) struct ClockSample {
+    pub(crate) wall_epoch: Duration,
+    pub(crate) monotonic: Duration,
 }
 
-#[cfg_attr(
-    not(feature = "test-support"),
-    expect(
-        unreachable_pub,
-        reason = "this constructor is reachable only by the test-support feature"
-    )
-)]
 impl ClockSample {
     #[must_use]
-    pub fn anchored(epoch_seconds: i64, monotonic: Duration) -> Self {
+    pub(crate) fn anchored(epoch_seconds: i64, monotonic: Duration) -> Self {
         let wall_epoch =
             Duration::from_secs(u64::try_from(epoch_seconds.max(0)).unwrap_or(u64::MAX));
         Self {
@@ -62,14 +48,7 @@ impl ClockSample {
     }
 }
 
-#[cfg_attr(
-    not(feature = "test-support"),
-    expect(
-        unreachable_pub,
-        reason = "this trait is re-exported only by the test-support feature"
-    )
-)]
-pub trait MonotonicClock: Send + Sync {
+pub(crate) trait MonotonicClock: Send + Sync {
     fn now(&self) -> Duration;
 
     fn sample(&self, fallback_epoch: i64) -> ClockSample {

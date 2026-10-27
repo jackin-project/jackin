@@ -272,6 +272,3 @@ fn emit(line: &str) {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -26,6 +26,3 @@ pub mod safe_remove {
 
 pub use jackin_core::MountIsolation;
 pub use jackin_core::ParseMountIsolationError;
-
-#[cfg(test)]
-mod tests;

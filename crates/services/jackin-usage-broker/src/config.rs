@@ -21,7 +21,7 @@ pub struct UsageBrokerConfig {
     pub lease_duration: Duration,
     pub lease_renewal: Duration,
     pub service_executable: Option<PathBuf>,
-    /// Optional trusted root for short broker socket aliases.
+
     pub socket_alias_root: Option<PathBuf>,
 }
 

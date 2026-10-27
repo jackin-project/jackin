@@ -17,10 +17,10 @@ Host OS integration for jackin❯: desktop notifications, clipboard, and caffein
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
-| [`caffeinate.rs`](src/caffeinate.rs) · [`caffeinate/`](src/caffeinate) | keep-awake | [`tests.rs`](src/caffeinate/tests.rs) |
-| [`host_clipboard.rs`](src/host_clipboard.rs) · [`host_clipboard/`](src/host_clipboard) | clipboard | [`tests.rs`](src/host_clipboard/tests.rs) |
-| [`host_desktop.rs`](src/host_desktop.rs) · [`host_desktop/`](src/host_desktop) | desktop notifications | [`tests.rs`](src/host_desktop/tests.rs) |
-| [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry) | bounded host subprocess telemetry ownership | [`tests.rs`](src/process_telemetry/tests.rs) |
+| [`caffeinate.rs`](src/caffeinate.rs) · [`caffeinate/`](src/caffeinate.rs) | keep-awake | — |
+| [`host_clipboard.rs`](src/host_clipboard.rs) · [`host_clipboard/`](src/host_clipboard.rs) | clipboard | — |
+| [`host_desktop.rs`](src/host_desktop.rs) · [`host_desktop/`](src/host_desktop.rs) | desktop notifications | — |
+| [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry.rs) | bounded host subprocess telemetry ownership | — |
 | [`naming.rs`](src/naming.rs) | host naming | — |
 | [`universe.rs`](src/universe.rs) | host universe aggregate | — |
 
@@ -31,6 +31,6 @@ Keep-awake, clipboard, and desktop-notify entry points consumed by `jackin-runti
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-host
+cargo nextest run -p jackin-host --no-tests warn
 cargo clippy -p jackin-host --all-targets -- -D warnings
 ```

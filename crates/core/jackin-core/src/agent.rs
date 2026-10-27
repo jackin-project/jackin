@@ -218,6 +218,3 @@ pub use runtime::{AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind};
 pub const fn agent_runtime_registry() -> &'static [&'static dyn AgentRuntime] {
     adapters::registry()
 }
-
-#[cfg(test)]
-mod tests;

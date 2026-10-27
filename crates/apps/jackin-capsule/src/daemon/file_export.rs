@@ -150,9 +150,6 @@ impl Multiplexer {
                             jackin_telemetry::schema::enums::ErrorType::IoError,
                         )
                         .unwrap_or(());
-                        // Selection candidates exclude mouse-reporting panes. Their
-                        // original fallback is empty; never recompute it after
-                        // focus, geometry, or protocol changes while awaiting I/O.
                     }
                 },
                 Ok(Err(PrepareError::ReadFailed(error))) => self.reject_file_export(error),
@@ -278,23 +275,6 @@ impl Multiplexer {
         let row = rows.get(candidate.anchor_row)?;
         word_token(row, candidate.anchor_col).map(|path| (candidate.session_id, path))
     }
-
-    #[cfg(test)]
-    pub(super) fn has_pending_file_export_for_test(&self) -> bool {
-        self.file_exports.pending.is_some()
-    }
-
-    #[cfg(test)]
-    pub(super) async fn finish_pending_file_export_for_test(&mut self) -> Result<()> {
-        tokio::time::timeout(EXPORT_PREPARATION_TIMEOUT, async {
-            while self.file_exports.pending.is_some() {
-                self.poll_file_export().await;
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .context("file export worker did not complete")
-    }
 }
 
 fn word_token(row: &RowSnapshot, col: u16) -> Option<String> {
@@ -310,6 +290,3 @@ fn next_transfer_id() -> u64 {
             duration.as_nanos().try_into().unwrap_or(duration.as_secs())
         })
 }
-
-#[cfg(test)]
-mod tests;

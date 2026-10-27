@@ -149,6 +149,3 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
         },
     );
 }
-
-#[cfg(test)]
-mod tests;

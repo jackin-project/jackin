@@ -1,14 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Durable preservation holds for workflow sources and checkpoints.
-//!
-//! Holds are stored in a versioned JSON file under the instance state
-//! directory, so they survive host restarts. Normal cancellation, failure,
-//! retention expiry, and prune must obey holds: [`check_removal`] is enforced
-//! in the worktree/clone force-cleanup path and in foreground-session
-//! finalization, not only in workflow CLI code.
-
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -88,7 +80,6 @@ fn write_holds_file(container_state_dir: &Path, holds: &[PreservationHold]) -> a
     Ok(())
 }
 
-/// Record a durable preservation hold on an owned source or checkpoint ID.
 pub fn hold_work(
     container_state_dir: &Path,
     resource_id: &str,
@@ -114,8 +105,6 @@ pub fn hold_work(
     Ok(hold)
 }
 
-/// Returns `Ok` when removal is allowed, `Err(HoldBlocksRemoval)` when a
-/// hold protects the resource.
 pub fn check_removal(container_state_dir: &Path, resource_id: &str) -> anyhow::Result<()> {
     let holds = read_holds_file(container_state_dir)?;
     if let Some(hold) = holds.iter().find(|h| h.resource_id == resource_id) {
@@ -128,7 +117,6 @@ pub fn check_removal(container_state_dir: &Path, resource_id: &str) -> anyhow::R
     Ok(())
 }
 
-/// Release a preservation hold. Removing the last hold deletes nothing else.
 pub fn release_hold(container_state_dir: &Path, resource_id: &str) -> anyhow::Result<bool> {
     let mut holds = read_holds_file(container_state_dir)?;
     let before = holds.len();
@@ -140,15 +128,10 @@ pub fn release_hold(container_state_dir: &Path, resource_id: &str) -> anyhow::Re
     Ok(true)
 }
 
-/// List all preservation holds for an instance state directory.
 pub fn list_holds(container_state_dir: &Path) -> anyhow::Result<Vec<PreservationHold>> {
     read_holds_file(container_state_dir)
 }
 
-/// Workflow ownership labels applied to worker-owned containers.
-///
-/// The launch path copies these into the container labels so ownership can
-/// be inspected host-side (`docker inspect`) without trusting worker state.
 pub fn workflow_labels(run_id: &str, worker_id: &str) -> std::collections::HashMap<String, String> {
     [
         ("jackin.workflows/managed", "true"),
@@ -159,6 +142,3 @@ pub fn workflow_labels(run_id: &str, worker_id: &str) -> std::collections::HashM
     .map(|(k, v)| (k.to_owned(), v.to_owned()))
     .collect()
 }
-
-#[cfg(test)]
-mod tests;

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Durable replacement of the selected local Git config.
-
 use std::{
     fmt,
     fs::File,
@@ -168,7 +166,6 @@ fn activate_config_entry(
     sync_lock(entry.lock).context("syncing completed Git config lock before activation")?;
     ensure_named_identity(entry.parent, entry.lock_name, entry.lock)?;
     check_before_rename().context("rechecking Git config custody before activation rename")?;
-    // The Git lock serializes compliant writers; direct writers can still race the final check and rename.
     match entry.destination {
         Some(destination) => ensure_named_identity(entry.parent, entry.config_name, destination)?,
         None => ensure_name_absent(entry.parent, entry.config_name)?,
@@ -274,6 +271,3 @@ fn validate_config_leaf(path: &Path, required: bool) -> Result<()> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

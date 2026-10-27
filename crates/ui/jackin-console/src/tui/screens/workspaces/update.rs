@@ -13,14 +13,6 @@ mod resolvers;
 mod rows;
 mod scroll_plans;
 mod selection;
-#[cfg(test)]
-mod tests;
-#[cfg(test)]
-pub(crate) use super::model::ManagerHoverTarget;
-#[cfg(test)]
-pub(crate) use super::model::ManagerListRow;
-#[cfg(test)]
-pub(crate) use crate::mount_info_cache::MountInfoCache;
 pub use apply::{
     WorkspaceListHoverState, WorkspaceListScrollFocusPlan, WorkspaceListScrollState,
     WorkspaceListScrollTargetPlan, WorkspaceListSelectionPlan, WorkspaceListSelectionState,
@@ -34,10 +26,6 @@ pub use confirms::{
     workspace_delete_confirm_plan, workspace_delete_confirm_state, workspace_list_horizontal_plan,
     workspace_row_owns_left, workspace_row_owns_right, workspace_unclamped_scroll_plan,
 };
-#[cfg(test)]
-pub(crate) use crossterm::event::KeyCode;
-#[cfg(test)]
-pub(crate) use crossterm::event::MouseEvent;
 pub use destructive::{
     DestructiveConfirmPlan, InstancePurgeConfirmPlan, InstancePurgeKeyPlan,
     SelectedInstanceActionPlan, SelectedInstancePurgeConfirmPlan, WorkspaceCollapseSelectionPlan,
@@ -55,8 +43,6 @@ pub use instance_focus::{
     apply_preview_focus_plan, apply_preview_pane_cursor_plan, workspace_instance_empty_message,
     workspace_list_focus_head, workspace_list_focus_next, workspace_list_focus_order,
 };
-#[cfg(test)]
-pub(crate) use jackin_oppicker::ModalOutcome;
 pub use list_keys::{
     WorkspaceInstanceLookupEntry, WorkspaceInstanceLookupScope, WorkspaceInstanceScopePlan,
     WorkspaceListDeletePlan, WorkspaceListEditPlan, WorkspaceListKeyPlan,

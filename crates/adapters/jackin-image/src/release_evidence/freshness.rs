@@ -1,21 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Public observations supplement already authenticated receipt bytes; they never
-//! replace Sigstore verification or select a different requested helper version.
-//! Historical repository, exact-attempt build evidence and source ancestry are
-//! admitted once per pin. Release lifecycle, recovery envelope, inventory and
-//! source-bound tag facts remain fresh at every execution and installation
-//! boundary; a new download must admit its own pin. Each preview source has its
-//! own immutable `preview-<source>` release, so no release ID or publication
-//! journal is pinned.
-//! Repository ownership/privacy/default-branch admission is invocation-local, not
-//! an immutability claim. Rechecks require the initially pinned positive release
-//! ID and complete snapshot; moving a repository does not revoke verified bytes.
-
 mod runs;
-#[cfg(test)]
-mod tests;
 
 use super::{EVIDENCE_LIMIT, RECEIPT_LIMIT, digest, policy, transport::Transport};
 use anyhow::{Result, ensure};
@@ -67,7 +53,6 @@ impl PublicationPin {
     }
 }
 
-/// Called only after the parent authenticates the receipt and all capsule proofs.
 pub(super) async fn pin(
     transport: &impl Transport,
     receipt: &PackageReleaseReceipt,

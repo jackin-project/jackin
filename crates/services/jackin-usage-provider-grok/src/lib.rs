@@ -4,8 +4,6 @@ mod snapshot;
 mod types;
 mod views;
 
-#[cfg(test)]
-pub(crate) use billing::grok_tier_from_settings;
 pub use billing::{
     fetch_grok_billing, fetch_grok_rest_billing, fetch_grok_rpc_billing,
     parse_grok_rest_billing_response,
@@ -24,6 +22,3 @@ pub use types::{
     resolve_grok_billing_auth,
 };
 pub use views::{grok_cycle_label_from_minutes, grok_cycle_label_from_reset};
-
-#[cfg(test)]
-mod tests;

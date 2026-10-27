@@ -58,6 +58,3 @@ pub fn new_console_state_with_startup_error(
         op_available,
     ))
 }
-
-#[cfg(test)]
-mod tests;

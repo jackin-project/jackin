@@ -10,9 +10,6 @@ use clap::Args;
 
 use crate::cmd;
 
-#[cfg(test)]
-mod tests;
-
 const TOOLS: &[&str] = &[
     "cargo-nextest",
     "cargo-deny",

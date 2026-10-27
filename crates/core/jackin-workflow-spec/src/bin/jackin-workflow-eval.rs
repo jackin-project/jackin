@@ -1,21 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Sandboxed Pkl evaluation helper.
-//!
-//! The parent spawns this binary through `jackin-process` with the
-//! memory cap in bytes as argv[1] and the frozen bundle request as
-//! JSON on stdin, then reads one response object from stdout. Exit 0
-//! always means evaluation completed (success or Pkl failure, told
-//! apart by the `ok` flag); any other exit means the helper died,
-//! which the parent maps to `evaluation_limit`.
-//!
-//! Memory is capped with a counting global allocator (`cap` crate):
-//! an rlimit-based cap cannot work on every host this repository
-//! targets (macOS refuses to lower the address-space limit), while
-//! counting is portable and fail-closed. The cap installs before the
-//! request is read; breaching it aborts the process.
-
 use std::alloc::System;
 use std::io::Read as _;
 

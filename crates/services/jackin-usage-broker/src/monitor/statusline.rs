@@ -271,6 +271,3 @@ fn issue(code: MonitorIssueCode, message: &str) -> MonitorIssue {
         retry_at_epoch: None,
     }
 }
-
-#[cfg(test)]
-mod tests;

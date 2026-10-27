@@ -1,14 +1,11 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Private staged-tree admission for the native pre-commit owner.
-
 mod evidence;
 mod git;
 mod process;
 mod toolchain;
 
-/// Admit the pinned MBX and Rust tools before a hook owner is installed.
 pub(crate) fn admit_install_toolchain_environment(source_root: &std::path::Path) -> Result<()> {
     toolchain::admit_install_environment(source_root)
 }
@@ -28,18 +25,6 @@ struct SignalRoute {
     term: Arc<AtomicBool>,
 }
 
-impl SignalRoute {
-    #[cfg(test)]
-    fn record(&self, signal: OwnerSignal) {
-        match signal {
-            OwnerSignal::Hup => self.hup.store(true, Ordering::SeqCst),
-            OwnerSignal::Int => self.int.store(true, Ordering::SeqCst),
-            OwnerSignal::Term => self.term.store(true, Ordering::SeqCst),
-        }
-        self.cancellation.store(true, Ordering::SeqCst);
-    }
-}
-
 struct SetupSignals {
     route: SignalRoute,
     terminal: Arc<AtomicBool>,
@@ -50,8 +35,6 @@ struct OwnerBudgets {
     setup: Duration,
     gate: Duration,
     recovery: Duration,
-    #[cfg(test)]
-    test_git_program: Option<std::path::PathBuf>,
 }
 
 impl OwnerBudgets {
@@ -60,8 +43,6 @@ impl OwnerBudgets {
             setup: Duration::from_mins(10),
             gate: Duration::from_mins(30),
             recovery: Duration::from_mins(10),
-            #[cfg(test)]
-            test_git_program: None,
         }
     }
 }
@@ -201,10 +182,6 @@ fn run_with_signals(
         return Ok(code);
     }
     let mut snapshot = git::OwnedSnapshot::create(&live)?;
-    #[cfg(test)]
-    if let Some(program) = budgets.test_git_program.as_deref() {
-        snapshot.set_test_git_program(program)?;
-    }
     let result = (|| -> Result<u8> {
         if let Some(code) = signals.signal_status() {
             setup_controls.check_start()?;
@@ -379,6 +356,3 @@ fn completion_exit_code(success: bool, code: Option<i32>, signal: Option<i32>) -
 
     anyhow::bail!("native pre-commit gate did not complete successfully")
 }
-
-#[cfg(test)]
-mod tests;

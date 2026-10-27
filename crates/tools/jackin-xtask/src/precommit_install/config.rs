@@ -4,6 +4,8 @@
 mod activation;
 mod signals;
 
+pub(super) use signals::{InstallSignals, with_install_signals};
+
 use std::{
     ffi::OsStr,
     fs::{self, File},
@@ -13,7 +15,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use jackin_process_directory::CheckedSourceRoot;
+use jackin_process_directory::{CheckedSourceFile, CheckedSourceRoot};
 use nix::{
     fcntl::{AtFlags, OFlag, open, openat},
     sys::stat::{Mode, fchmod, fstat, fstatat},
@@ -38,7 +40,9 @@ pub(super) fn activate(
     common_config: &Path,
     selected_config: &Path,
     owner: &super::files::OwnerInstallation,
+    signals: &InstallSignals,
 ) -> Result<()> {
+    signals.check()?;
     owner.recheck()?;
     ensure!(
         selected_config
@@ -61,7 +65,7 @@ pub(super) fn activate(
     activation::validate_hook_config_source_custody(common_config, selected_config)
         .context("validating Git config and lock custody before preparing candidate")?;
     let (source_config, original) = read_selected_config(&checked_parent, selected_config)?;
-    signals::with_install_signals(|signals| {
+    {
         let mut candidate = tempfile::NamedTempFile::new_in(parent)
             .context("creating private Git config candidate")?;
         fchmod(candidate.as_file(), Mode::from_bits_truncate(0o600))
@@ -71,8 +75,7 @@ pub(super) fn activate(
             candidate.as_file().sync_all()?;
         }
         let candidate_path = candidate.path().to_path_buf();
-        update_candidate(&candidate_path, owner.owner_path())?;
-        validate_candidate(&candidate_path)?;
+        let prepared = update_candidate(&checked_parent, &candidate_path)?;
         if let Some(config) = source_config.as_ref() {
             config
                 .recheck()
@@ -81,7 +84,7 @@ pub(super) fn activate(
         checked_parent
             .recheck()
             .context("rechecking Git config directory after candidate preparation")?;
-        let bytes = read_candidate(&candidate_path)?;
+        let bytes = read_candidate(&prepared)?;
         signals.enter_critical_phase()?;
 
         let mut lock = ConfigLock::create(
@@ -117,6 +120,9 @@ pub(super) fn activate(
         signals.check()?;
 
         let result = (|| {
+            prepared
+                .recheck()
+                .context("rechecking prepared Git config before activation")?;
             write_held_lock(lock.file(), &lock_path, &bytes)?;
             activation::activate_hook_config(common_config, selected_config, owner)
                 .context("activating native worktree hook configuration")?;
@@ -138,7 +144,7 @@ pub(super) fn activate(
         }
         lock.disarm();
         Ok(())
-    })
+    }
 }
 
 struct ConfigLock {
@@ -182,9 +188,9 @@ impl Drop for ConfigLock {
 }
 
 fn ensure_config_unchanged(
-    expected_file: Option<&jackin_process_directory::CheckedSourceFile>,
+    expected_file: Option<&CheckedSourceFile>,
     expected_bytes: Option<&[u8]>,
-    current_file: Option<&jackin_process_directory::CheckedSourceFile>,
+    current_file: Option<&CheckedSourceFile>,
     current_bytes: Option<&[u8]>,
 ) -> Result<()> {
     match (expected_file, expected_bytes, current_file, current_bytes) {
@@ -209,9 +215,8 @@ fn ensure_config_unchanged(
     }
 }
 
-fn update_candidate(candidate: &Path, owner: &Path) -> Result<()> {
-    let mut owner_command = super::git::shell_quote_path(owner)?;
-    owner_command.push(" run-snapshot");
+fn update_candidate(parent: &CheckedSourceRoot, candidate: &Path) -> Result<CheckedSourceFile> {
+    let owner_command = super::git::owner_command();
     for key in ["hook.hk-pre-commit.command", "hook.hk-pre-commit.event"] {
         super::git::config_unset_all(candidate, key)?;
     }
@@ -237,6 +242,14 @@ fn update_candidate(candidate: &Path, owner: &Path) -> Result<()> {
     ] {
         super::git::config_set(candidate, key, value)?;
     }
+    let prepared = parent
+        .open_file(Path::new(
+            candidate
+                .file_name()
+                .context("Git config candidate has no leaf")?,
+        ))
+        .context("retaining prepared Git config candidate")?;
+    validate_candidate(&prepared)?;
     for (key, expected) in [
         ("hook.hk-pre-commit.enabled", OsStr::new("false")),
         ("hook.jackin-pre-commit.command", owner_command.as_os_str()),
@@ -250,16 +263,20 @@ fn update_candidate(candidate: &Path, owner: &Path) -> Result<()> {
         ("hook.jackin-pre-push.event", OsStr::new("pre-push")),
         ("hook.jackin-pre-push.enabled", OsStr::new("true")),
     ] {
+        prepared.recheck()?;
+        let actual = super::git::config_get(candidate, key)?;
+        prepared.recheck()?;
         ensure!(
-            super::git::config_get(candidate, key)?.as_os_str() == expected,
+            actual.as_os_str() == expected,
             "staged worktree config has an invalid {key}"
         );
     }
-    Ok(())
+    Ok(prepared)
 }
 
-fn validate_candidate(path: &Path) -> Result<()> {
-    let metadata = fs::symlink_metadata(path)?;
+fn validate_candidate(candidate: &CheckedSourceFile) -> Result<()> {
+    candidate.recheck()?;
+    let metadata = candidate.file().metadata()?;
     ensure!(
         metadata.is_file()
             && !metadata.file_type().is_symlink()
@@ -272,13 +289,9 @@ fn validate_candidate(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn read_candidate(path: &Path) -> Result<Vec<u8>> {
-    validate_candidate(path)?;
-    let mut file = File::from(open(
-        path,
-        OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK,
-        Mode::empty(),
-    )?);
+fn read_candidate(candidate: &CheckedSourceFile) -> Result<Vec<u8>> {
+    validate_candidate(candidate)?;
+    let mut file = candidate.file().try_clone()?;
     let opened = file.metadata()?;
     ensure!(
         opened.is_file(),
@@ -288,12 +301,13 @@ fn read_candidate(path: &Path) -> Result<Vec<u8>> {
     Read::by_ref(&mut file)
         .take(CONFIG_LIMIT + 1)
         .read_to_end(&mut bytes)?;
-    let named = fs::symlink_metadata(path)?;
+    let after = file.metadata()?;
+    candidate.recheck()?;
     ensure!(
         bytes.len() as u64 <= CONFIG_LIMIT
-            && opened.dev() == named.dev()
-            && opened.ino() == named.ino()
-            && opened.len() == named.len()
+            && opened.dev() == after.dev()
+            && opened.ino() == after.ino()
+            && opened.len() == after.len()
             && opened.len() == bytes.len() as u64,
         "Git config candidate changed while reading"
     );
@@ -303,10 +317,7 @@ fn read_candidate(path: &Path) -> Result<Vec<u8>> {
 fn read_selected_config(
     parent: &CheckedSourceRoot,
     path: &Path,
-) -> Result<(
-    Option<jackin_process_directory::CheckedSourceFile>,
-    Option<Vec<u8>>,
-)> {
+) -> Result<(Option<CheckedSourceFile>, Option<Vec<u8>>)> {
     let name = path
         .file_name()
         .context("selected Git config has no leaf")?;

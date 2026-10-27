@@ -1,17 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Definition validation and plan compilation.
-//!
-//! [`validate_definition`] turns evaluated JSON into a typed
-//! [`CheckedDefinition`]. Pkl enforces declaration-site constraints,
-//! but this crate re-checks every range in Rust: the selected
-//! evaluator does not re-check constraints on amendments, and a
-//! missing amended module is silently dropped, so the Rust layer owns
-//! required fields, ranges, the closed template, and the cross-field
-//! role rules. [`compile_plan`] freezes those checks together with
-//! resolved inputs and host facts into an [`ExecutionPlan`].
-
 use std::collections::BTreeMap;
 
 use serde_json::Value;
@@ -26,8 +15,6 @@ use crate::model::{
 };
 use crate::resolve::ResolvedInputs;
 
-/// Schema-scale bounds mirrored from the Pkl schema so amendments are
-/// checked in Rust even when the evaluator skips them.
 const MAX_CPU_MILLICORES: u64 = 16_000;
 const MIN_MEMORY_BYTES: u64 = 268_435_456;
 const MAX_MEMORY_BYTES: u64 = 68_719_476_736;
@@ -37,8 +24,6 @@ const MAX_DISK_MONITOR_BYTES: u64 = 1_099_511_627_776;
 const MAX_CHECK_TIMEOUT_SECONDS: u64 = 3600;
 const MAX_REPAIR_TURNS: u32 = 2;
 
-/// Top-level properties the repair template accepts. Anything else is
-/// an extra field and rejected.
 const KNOWN_TOP_LEVEL: &[&str] = &[
     "schemaVersion",
     "template",
@@ -54,76 +39,70 @@ const KNOWN_TOP_LEVEL: &[&str] = &[
     "maxRepairTurns",
 ];
 
-/// Checked workflow definition: every field present and in range.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckedDefinition {
-    /// Task file path relative to the workflow file's directory.
     pub task: String,
-    /// Reference paths relative to the workflow file's directory.
+
     pub references: Vec<String>,
-    /// Implementer runtime; always `claude` after validation.
+
     pub implementer_runtime: String,
-    /// Implementer selection name; always `workspace-default`.
+
     pub implementer_selection: String,
-    /// Implementer delegation mode.
+
     pub implementer_vendor_subagents: String,
-    /// Reviewer runtime; always `codex` after validation.
+
     pub reviewer_runtime: String,
-    /// Reviewer selection name; always `workspace-default`.
+
     pub reviewer_selection: String,
-    /// Reviewer delegation mode.
+
     pub reviewer_vendor_subagents: String,
-    /// Trusted test bundle name.
+
     pub checks_bundle: String,
-    /// Exact check argv.
+
     pub checks_argv: Vec<String>,
-    /// Check timeout in seconds.
+
     pub checks_timeout: u64,
-    /// Sandbox backend; always `docker` after validation.
+
     pub sandbox_backend: String,
-    /// Sandbox profile name.
+
     pub sandbox_profile: String,
-    /// Requested resource limits.
+
     pub resources: ResourceLimits,
-    /// Whether a hard disk limit is requested (unsupported).
+
     pub require_hard_disk_limit: bool,
-    /// Backup mode.
+
     pub backup_mode: String,
-    /// Backup remote ID, if any.
+
     pub backup_remote: Option<String>,
-    /// Bounded repair turns.
+
     pub max_repair_turns: u32,
 }
 
-/// Host authorization and capability facts for admission.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostGrant {
-    /// Sandbox profile the host grants.
     pub profile: String,
-    /// Sandbox backend the host grants.
+
     pub backend: String,
-    /// Granted CPU ceiling in millicores.
+
     pub max_cpu_millicores: u64,
-    /// Granted memory ceiling in bytes.
+
     pub max_memory_bytes: u64,
-    /// Granted process ceiling.
+
     pub max_pids: u32,
-    /// Granted run time ceiling in seconds.
+
     pub max_run_seconds: u64,
-    /// Granted disk monitor ceiling in bytes.
+
     pub max_disk_monitor_bytes: u64,
-    /// Repository IDs the host authorizes.
+
     pub authorized_repository_ids: Vec<String>,
-    /// Backup remote IDs the host authorizes (identifiers only).
+
     pub authorized_remote_ids: Vec<String>,
 }
 
-/// Resolved agent selections for both workers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selections {
-    /// Implementer selection.
     pub implementer: AgentSelection,
-    /// Reviewer selection.
+
     pub reviewer: AgentSelection,
 }
 
@@ -159,7 +138,6 @@ struct BackupParts {
     remote: Option<String>,
 }
 
-/// Validate evaluated JSON into a [`CheckedDefinition`].
 pub fn validate_definition(json: &Value, file_label: &str) -> WorkflowResult<CheckedDefinition> {
     reject_extra_fields(json, file_label)?;
     let head = validate_head(json, file_label)?;
@@ -455,7 +433,6 @@ fn validate_backup(json: &Value, file_label: &str) -> WorkflowResult<BackupParts
     Ok(BackupParts { mode, remote })
 }
 
-/// Compile a checked definition plus resolved inputs into a hashed plan.
 pub fn compile_plan(
     checked: &CheckedDefinition,
     inputs: &ResolvedInputs,
@@ -659,8 +636,6 @@ fn plan_input_digests(inputs: &ResolvedInputs) -> BTreeMap<String, String> {
     digests
 }
 
-/// Closed node sequence for a repair limit: `prepare` once, then every
-/// stage per round from zero through the limit.
 #[must_use]
 pub fn repair_nodes(max_repair_turns: u32) -> Vec<PlanNode> {
     let mut nodes = vec![PlanNode {

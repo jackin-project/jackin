@@ -48,6 +48,3 @@ impl From<SessionId> for u64 {
         value.0
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -39,6 +39,6 @@ env helpers.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-auth-error
+cargo nextest run -p jackin-runtime-launch-auth-error --no-tests warn
 cargo clippy -p jackin-runtime-launch-auth-error --all-targets -- -D warnings
 ```

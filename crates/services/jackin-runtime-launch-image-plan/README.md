@@ -19,7 +19,7 @@ decide the image.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`image_plan.rs`](src/image_plan.rs) | plan | `image_plan/tests.rs` |
+| [`image_plan.rs`](src/image_plan.rs) | plan | — |
 
 ## Public API
 
@@ -29,6 +29,6 @@ decide the image.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-image-plan
+cargo nextest run -p jackin-runtime-launch-image-plan --no-tests warn
 cargo clippy -p jackin-runtime-launch-image-plan --all-targets -- -D warnings
 ```

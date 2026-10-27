@@ -48,8 +48,6 @@ pub(super) fn sources_inventory(sources: &[String]) -> Result<Inventory> {
     Ok(inventory)
 }
 
-// Tokenize code, excluding comments and string contents: source assertions often
-// contain complete Swift declarations which must never inflate the inventory.
 fn swift_tokens(source: &str) -> Result<Vec<String>> {
     let bytes = source.as_bytes();
     let mut tokens = Vec::new();
@@ -120,13 +118,6 @@ fn swift_tokens(source: &str) -> Result<Vec<String>> {
     Ok(tokens)
 }
 
-#[cfg(test)]
-pub(super) fn source_inventory(source: &str) -> Result<Inventory> {
-    let tokens = swift_tokens(source)?;
-    let known_xctest_types = declared_xctest_types(&tokens)?;
-    source_inventory_with_tokens(tokens, &known_xctest_types)
-}
-
 fn declared_xctest_types(tokens: &[String]) -> Result<HashSet<String>> {
     let mut result = HashSet::new();
     for (index, token) in tokens.iter().enumerate() {
@@ -168,7 +159,6 @@ fn source_inventory_with_tokens(
     for (index, token) in tokens.iter().enumerate() {
         match token.as_str() {
             "class" | "struct" | "enum" | "extension" => {
-                // `class func` is a modifier, not a type declaration.
                 if tokens.get(index + 1).is_some_and(|next| next == "func") {
                     continue;
                 }

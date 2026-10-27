@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
+
 [package]
 name = "jackin-runtime-usage-relay"
 version.workspace = true
@@ -34,9 +35,6 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "io-std", "macros", "rt", "sync", "time"] }
-
-[dev-dependencies]
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

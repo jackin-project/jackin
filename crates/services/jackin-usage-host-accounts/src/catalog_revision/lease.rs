@@ -9,7 +9,6 @@ use std::fs::File;
 use std::sync::Arc;
 use zeroize::Zeroizing;
 
-/// A loaded adopted authority whose key is kept in zeroizing private storage.
 pub struct CatalogRevisionAuthority {
     pub(super) root: Arc<RootAnchor>,
     pub(super) state: StateRecord,
@@ -49,7 +48,6 @@ impl CatalogRevisionAuthority {
         }
     }
 
-    /// Acquires and retains a shared store lease after revalidating durable state.
     pub fn lease_current(
         self: &Arc<Self>,
         store: &CatalogAuthorityStore,
@@ -75,7 +73,6 @@ impl CatalogRevisionAuthority {
     }
 }
 
-/// A non-cloneable shared lock retained across revision use.
 pub struct CatalogRevisionLease {
     authority: Arc<CatalogRevisionAuthority>,
     lock: File,
@@ -90,7 +87,6 @@ impl std::fmt::Debug for CatalogRevisionLease {
 }
 
 impl CatalogRevisionLease {
-    /// Rechecks the held lease against named files and the anchored root.
     pub fn validate_current(&self) -> Result<(), CatalogAuthorityError> {
         validate_authority_handles(AuthorityValidationRefs {
             root: &self.authority.root,
@@ -104,7 +100,6 @@ impl CatalogRevisionLease {
         })
     }
 
-    /// Computes a bounded domain-separated HMAC revision while retaining the lease.
     pub fn revision(
         &self,
         domain: RevisionDomain,

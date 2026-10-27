@@ -1,8 +1,3 @@
-// MVP repair workflow fixture. Amends the versioned schema in
-// Workflow.pkl; all relative input paths resolve from this file's
-// directory. `HEAD` is an input selector resolved to an exact commit by
-// the plan compiler before hashing, never stored as-is.
-
 amends "Workflow.pkl"
 
 task = "task.md"

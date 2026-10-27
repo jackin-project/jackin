@@ -30,6 +30,6 @@ progress surfaces.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-progress
+cargo nextest run -p jackin-runtime-progress --no-tests warn
 cargo clippy -p jackin-runtime-progress --all-targets -- -D warnings
 ```

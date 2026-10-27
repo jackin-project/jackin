@@ -19,7 +19,7 @@ terminal.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`spin_wait.rs`](src/spin_wait.rs) | spinner + waits | `spin_wait/tests/` |
+| [`spin_wait.rs`](src/spin_wait.rs) | spinner + waits | — |
 
 ## Public API
 
@@ -29,6 +29,6 @@ terminal.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-spin-wait
+cargo nextest run -p jackin-runtime-spin-wait --no-tests warn
 cargo clippy -p jackin-runtime-spin-wait --all-targets -- -D warnings
 ```

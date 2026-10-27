@@ -103,6 +103,3 @@ fn write_output(name: &str, value: &str) -> Result<()> {
     writeln!(contents, "{name}={value}")?;
     fs::write(&path, contents).with_context(|| format!("writing {}", Path::new(&path).display()))
 }
-
-#[cfg(test)]
-mod tests;

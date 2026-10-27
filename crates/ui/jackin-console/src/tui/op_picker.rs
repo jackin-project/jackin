@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-pub mod input;
 pub mod load;
 pub mod model;
 pub mod state;
@@ -30,41 +29,6 @@ pub type OpPickerSelection = model::OpPickerSelection<
     jackin_core::OpItem,
     jackin_core::FieldTarget,
 >;
-
-#[cfg(test)]
-thread_local! {
-    pub(crate) static TEST_RUNNER: std::cell::RefCell<
-        Option<std::sync::Arc<dyn jackin_env::OpStructRunner + Send + Sync>>,
-    > = const { std::cell::RefCell::new(None) };
-}
-
-#[cfg(test)]
-pub(crate) fn new_picker_with_runner(
-    runner: std::sync::Arc<dyn jackin_env::OpStructRunner + Send + Sync>,
-) -> OpPickerState {
-    TEST_RUNNER.with(|r| *r.borrow_mut() = Some(runner));
-    OpPickerState::new()
-}
-
-#[cfg(test)]
-pub(crate) fn new_picker_with_runner_and_cache(
-    runner: std::sync::Arc<dyn jackin_env::OpStructRunner + Send + Sync>,
-    op_cache: std::rc::Rc<std::cell::RefCell<model::OpPickerCache>>,
-) -> OpPickerState {
-    TEST_RUNNER.with(|r| *r.borrow_mut() = Some(runner));
-    OpPickerState::new_with_cache(op_cache)
-}
-
-#[cfg(test)]
-pub(crate) fn new_create_picker_with_runner_and_cache(
-    runner: std::sync::Arc<dyn jackin_env::OpStructRunner + Send + Sync>,
-    op_cache: std::rc::Rc<std::cell::RefCell<model::OpPickerCache>>,
-    item_name_default: impl Into<String>,
-    field_label_default: impl Into<String>,
-) -> OpPickerState {
-    TEST_RUNNER.with(|r| *r.borrow_mut() = Some(runner));
-    OpPickerState::new_create_with_cache(op_cache, item_name_default, field_label_default)
-}
 
 pub fn invalidate_cache_for_ref(
     op_cache: &std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
@@ -122,12 +86,3 @@ fn execute_op_picker_pending_load(state: &mut OpPickerState) -> bool {
     state.attach_load_receiver(rx);
     true
 }
-
-#[cfg(test)]
-use model::{
-    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerError, OpPickerFatalState,
-    OpPickerStage,
-};
-
-#[cfg(test)]
-mod tests;

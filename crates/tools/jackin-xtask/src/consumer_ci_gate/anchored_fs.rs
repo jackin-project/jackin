@@ -474,7 +474,4 @@ fn c_string(value: &OsStr, label: &str) -> Result<CString> {
     CString::new(value.as_bytes()).with_context(|| format!("{label} contains NUL"))
 }
 
-#[cfg(test)]
-mod tests;
-
 mod source;

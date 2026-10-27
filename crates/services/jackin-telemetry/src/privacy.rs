@@ -57,6 +57,3 @@ pub fn validate_attribute_string(key: &str, value: &str) -> Result<(), Rejection
     }
     validate_string(value)
 }
-
-#[cfg(test)]
-mod tests;

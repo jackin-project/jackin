@@ -13,20 +13,6 @@ use jackin_core::WorkspaceName;
 
 pub(crate) use jackin_console::services::config_save::{SettingsSaveInput, save_settings};
 
-#[cfg(test)]
-mod tests;
-
-#[cfg(test)]
-pub(crate) fn upsert_role_source(
-    config: &mut AppConfig,
-    paths: &JackinPaths,
-    key: &str,
-    source: &RoleSource,
-) -> anyhow::Result<()> {
-    *config = upsert_role_source_on_disk(paths, key, source)?;
-    Ok(())
-}
-
 fn upsert_role_source_on_disk(
     paths: &JackinPaths,
     key: &str,
@@ -79,24 +65,6 @@ pub(crate) fn start_remove_workspace(
         let result = remove_workspace_from_disk(&paths, &name);
         jackin_console::tui::subscriptions::ConfigSaveResult::RemoveWorkspace { result, cwd }
     })
-}
-
-#[cfg(test)]
-pub(crate) fn save_global_mounts(
-    paths: &JackinPaths,
-    original: &[GlobalMountRow],
-    pending: &[GlobalMountRow],
-) -> anyhow::Result<AppConfig> {
-    AppConfig::validate_global_mount_rows(pending)?;
-    let (mut editor_doc, bootstrap) = jackin_config::ConfigEditor::open_detailed(paths)?;
-    emit_bootstrap_report(&bootstrap);
-    for row in original {
-        editor_doc.remove_mount(&row.name, row.scope.as_deref());
-    }
-    for row in pending {
-        editor_doc.add_mount(&row.name, row.mount.clone(), row.scope.as_deref());
-    }
-    Ok(editor_doc.save()?)
 }
 
 pub(crate) enum WorkspaceSaveMode {

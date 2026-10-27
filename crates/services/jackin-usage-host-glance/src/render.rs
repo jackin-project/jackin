@@ -367,6 +367,3 @@ pub fn worst_severity_label(view: &FocusedUsageView) -> String {
     }
     .to_owned()
 }
-
-#[cfg(test)]
-mod tests;

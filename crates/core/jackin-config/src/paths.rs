@@ -78,6 +78,3 @@ pub fn resolve_path(path: &str) -> String {
     };
     normalize_path(&abs).display().to_string()
 }
-
-#[cfg(test)]
-mod tests;

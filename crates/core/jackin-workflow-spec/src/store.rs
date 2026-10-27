@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Protected input store. Task, reference, and test-bundle bytes are
-//! copied into hash-addressed read-only files; the canonical plan
-//! bytes are stored beside them. [`InputStore::read_plan`] re-hashes
-//! the stored bytes and reports `plan_digest_mismatch` when anything
-//! changed. The active run reads these copies, never the source Pkl or
-//! edited workspace files.
-
 use std::path::{Path, PathBuf};
 
 use crate::digest::plan_hash;
@@ -15,18 +8,15 @@ use crate::error::{Diagnostic, ErrorCode, WorkflowError, WorkflowResult};
 use crate::model::ExecutionPlan;
 use crate::resolve::FrozenInput;
 
-/// Directory layout roots inside the store.
 const PLANS_DIR: &str = "plans";
 const INPUTS_DIR: &str = "inputs";
 
-/// Hash-addressed store for plans and their frozen inputs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InputStore {
     root: PathBuf,
 }
 
 impl InputStore {
-    /// Open (creating) a store at `root`.
     pub fn open(root: &Path) -> WorkflowResult<Self> {
         for dir in [PLANS_DIR, INPUTS_DIR] {
             std::fs::create_dir_all(root.join(dir)).map_err(|_| {
@@ -44,10 +34,6 @@ impl InputStore {
         })
     }
 
-    /// Persist the full plan plus every frozen input. Returns the
-    /// verified plan hash. The stored bytes always carry the hash they
-    /// are addressed by; verification recomputes it from the canonical
-    /// bytes (which exclude the hash field itself).
     pub fn persist(&self, plan: &ExecutionPlan, inputs: &[&FrozenInput]) -> WorkflowResult<String> {
         for input in inputs {
             self.write_input(&input.digest, &input.bytes)?;
@@ -85,9 +71,6 @@ impl InputStore {
         Ok(hash)
     }
 
-    /// Read a stored plan and verify its digest. Any mismatch (edited
-    /// plan bytes, or a `plan_hash` that does not match the bytes)
-    /// reports `plan_digest_mismatch`.
     pub fn read_plan(&self, hash: &str) -> WorkflowResult<ExecutionPlan> {
         let path = self.root.join(PLANS_DIR).join(format!("{hash}.plan.json"));
         let bytes = std::fs::read(&path).map_err(|_| {
@@ -130,7 +113,6 @@ impl InputStore {
         Ok(plan)
     }
 
-    /// Read one frozen input by its content digest.
     pub fn read_input(&self, digest: &str) -> WorkflowResult<Vec<u8>> {
         let path = self.root.join(INPUTS_DIR).join(digest);
         std::fs::read(&path).map_err(|_| {
@@ -163,8 +145,6 @@ impl InputStore {
     }
 }
 
-/// Make a stored file read-only so later edits fail loudly instead of
-/// silently changing frozen inputs.
 fn protect(path: &Path) {
     #[cfg(unix)]
     {

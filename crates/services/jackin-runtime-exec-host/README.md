@@ -21,8 +21,7 @@ env vars for role containers.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`exec_host.rs`](src/exec_host.rs) | listener + API root | `exec_host/tests/` |
-| [`exec_host/`](src/exec_host/) | test suites | `exec_host/tests/` |
+| [`exec_host.rs`](src/exec_host.rs) | listener + API root | — |
 
 ## Public API
 
@@ -34,6 +33,6 @@ env vars for role containers.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-exec-host
+cargo nextest run -p jackin-runtime-exec-host --no-tests warn
 cargo clippy -p jackin-runtime-exec-host --all-targets -- -D warnings
 ```

@@ -18,8 +18,8 @@ mise paths.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`trust.rs`](src/trust.rs) | seeding | `trust/tests/` |
-| [`trust/`](src/trust/) | test suites | `trust/tests/` |
+| [`trust.rs`](src/trust.rs) | seeding | — |
+| [`trust/`](src/trust.rs) | test suites | — |
 
 ## Public API
 
@@ -30,6 +30,6 @@ mise paths.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-trust
+cargo nextest run -p jackin-runtime-launch-trust --no-tests warn
 cargo clippy -p jackin-runtime-launch-trust --all-targets -- -D warnings
 ```

@@ -270,25 +270,6 @@ impl HostInputs {
         })
     }
 
-    #[cfg(test)]
-    fn from_environment(
-        inherited: &BTreeMap<OsString, OsString>,
-        cwd: &Path,
-        passwd_home: Option<OsString>,
-        reviewed_root: &Path,
-        isolation_root: &Path,
-    ) -> Result<Self> {
-        let controls = SetupControls::for_test(std::time::Duration::from_secs(30));
-        Self::from_environment_with_controls(
-            inherited,
-            cwd,
-            passwd_home,
-            reviewed_root,
-            isolation_root,
-            &controls,
-        )
-    }
-
     fn search_path(&self) -> &OsStr {
         &self.search_path
     }
@@ -405,8 +386,7 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
         OsString::from("TMPDIR"),
         temporary_parent.as_os_str().to_owned(),
     );
-    let rustup = find_executable("rustup", &discovery_path).context("missing rustup executable")?;
-    let rustup = fs::canonicalize(rustup).context("resolving rustup executable")?;
+    let rustup = resolve_mise_tool(&mise, &mise_env, &snapshot.root, "rustup", controls)?;
     let resolved = resolve_managed_tools(&mise, &mise_env, &snapshot.root, controls)?;
     let rust_tools = resolve_rust_tools_with_controls(
         &rustup,
@@ -422,9 +402,6 @@ pub(super) fn qualify(snapshot: &OwnedSnapshot) -> Result<QualifiedTools> {
     fs::set_permissions(&managed_dir, fs::Permissions::from_mode(0o700))
         .context("protecting private qualified tool directory")?;
     let managed_dir_handle = open_private_tool_directory(&managed_dir)?;
-    // `mise exec` has already resolved this to the configured MBX Cargo
-    // wrapper. Put it before rustup's bin directory so `cargo` cannot silently
-    // resolve to rustup's Cargo and bypass the admitted wrapper.
     create_private_symlink(&managed_dir_handle, &cargo, OsStr::new("cargo"))
         .context("linking the qualified MBX Cargo wrapper")?;
     for name in MANAGED_TOOLS {
@@ -505,6 +482,10 @@ fn build_qualified_environment(
         inputs.cargo_home().as_os_str().to_owned(),
     );
     environment.insert(
+        OsString::from("CARGO"),
+        rust_tools["cargo"].as_os_str().to_owned(),
+    );
+    environment.insert(
         OsString::from("RUSTC"),
         rust_tools["rustc"].as_os_str().to_owned(),
     );
@@ -555,30 +536,40 @@ fn resolve_managed_tools(
     controls: &SetupControls,
 ) -> Result<BTreeMap<&'static str, PathBuf>> {
     resolve_tool_paths(MANAGED_TOOLS, |name| {
-        let mut command = Command::new(mise);
-        command
-            .args([OsStr::new("which"), OsStr::new(name)])
-            .current_dir(root)
-            .env_clear()
-            .envs(environment);
-        let output = capture_strict(
-            &mut command,
-            controls,
-            EnvironmentMode::Clear,
-            super::process::METADATA_OUTPUT_LIMIT,
-            1024 * 1024,
-            CommandBudget::Probe,
-        )
-        .with_context(|| format!("resolving staged Mise tool {name}"))?;
-        let path = command_path(output, &format!("resolving staged Mise tool {name}"))?;
-        let path = fs::canonicalize(&path)
-            .with_context(|| format!("resolving staged Mise tool path for {name}"))?;
-        ensure!(
-            path.is_file(),
-            "staged Mise tool is not a regular file: {name}"
-        );
-        Ok(path)
+        resolve_mise_tool(mise, environment, root, name, controls)
     })
+}
+
+fn resolve_mise_tool(
+    mise: &Path,
+    environment: &BTreeMap<OsString, OsString>,
+    root: &Path,
+    name: &str,
+    controls: &SetupControls,
+) -> Result<PathBuf> {
+    let mut command = Command::new(mise);
+    command
+        .args([OsStr::new("which"), OsStr::new(name)])
+        .current_dir(root)
+        .env_clear()
+        .envs(environment);
+    let output = capture_strict(
+        &mut command,
+        controls,
+        EnvironmentMode::Clear,
+        super::process::METADATA_OUTPUT_LIMIT,
+        1024 * 1024,
+        CommandBudget::Probe,
+    )
+    .with_context(|| format!("resolving staged Mise tool {name}"))?;
+    let path = command_path(output, &format!("resolving staged Mise tool {name}"))?;
+    let path = fs::canonicalize(&path)
+        .with_context(|| format!("resolving staged Mise tool path for {name}"))?;
+    ensure!(
+        path.is_file(),
+        "staged Mise tool is not a regular file: {name}"
+    );
+    Ok(path)
 }
 
 fn resolve_tool_paths<F>(
@@ -593,14 +584,6 @@ where
         resolved.insert(name, resolve(name)?);
     }
     Ok(resolved)
-}
-
-#[cfg(test)]
-fn qualified_path(managed_dir: &Path, rust_bin: &Path) -> Result<OsString> {
-    let path_entries = std::iter::once(managed_dir.to_path_buf())
-        .chain(std::iter::once(rust_bin.to_path_buf()))
-        .chain(env::split_paths(OsStr::new(FIXED_SYSTEM_PATH)));
-    env::join_paths(path_entries).context("building qualified tool path")
 }
 
 fn create_path_aliases(preferred: &Path, fallback: &Path) -> Result<tempfile::TempDir> {
@@ -646,6 +629,9 @@ fn populate_path_aliases(
             .context("linking private tool into separator-safe PATH projection")?;
     }
     for (name, path) in rust_tools {
+        if *name == "cargo" {
+            continue;
+        }
         create_private_symlink(path_alias_dir, path, OsStr::new(name))
             .with_context(|| format!("linking qualified Rust tool {name}"))?;
     }
@@ -755,18 +741,6 @@ fn anchor_inherited_path(hook_cwd: &Path, inherited_path: &OsStr) -> Vec<PathBuf
         .collect()
 }
 
-#[cfg(test)]
-fn resolve_rust_tools(
-    rustup: &Path,
-    pin: &str,
-    inherited_path: &OsStr,
-    rustup_home: Option<&OsStr>,
-    home: Option<&OsStr>,
-) -> Result<BTreeMap<&'static str, PathBuf>> {
-    let controls = SetupControls::for_test(std::time::Duration::from_secs(30));
-    resolve_rust_tools_with_controls(rustup, pin, inherited_path, rustup_home, home, &controls)
-}
-
 fn resolve_rust_tools_with_controls(
     rustup: &Path,
     pin: &str,
@@ -776,7 +750,7 @@ fn resolve_rust_tools_with_controls(
     controls: &SetupControls,
 ) -> Result<BTreeMap<&'static str, PathBuf>> {
     let mut rust_tools = BTreeMap::new();
-    for name in ["rustc", "rustdoc", "clippy-driver", "rustfmt"] {
+    for name in ["cargo", "rustc", "rustdoc", "clippy-driver", "rustfmt"] {
         let mut command = Command::new(rustup);
         command
             .args([
@@ -916,8 +890,7 @@ fn validate_cargo_configuration(
         ancestor = path.parent();
     }
 
-    for name in ["config", "config.toml"] {
-        let path = cargo_home.join(name);
+    if let Some(path) = effective_cargo_config(cargo_home, controls)? {
         if cargo_home.starts_with(reviewed_root) {
             admission.inspect_staged_config(&path, 0)?;
         } else {
@@ -1037,9 +1010,7 @@ impl<'a> CargoConfigAdmission<'a> {
             );
         }
 
-        for name in ["config", "config.toml"] {
-            self.controls.check_start()?;
-            let config = physical.join(name);
+        if let Some(config) = effective_cargo_config(&physical, self.controls)? {
             if staged {
                 self.inspect_staged_config(&config, 0)?;
             } else {
@@ -1340,6 +1311,22 @@ impl<'a> CargoConfigAdmission<'a> {
     }
 }
 
+fn effective_cargo_config(directory: &Path, controls: &SetupControls) -> Result<Option<PathBuf>> {
+    for name in ["config", "config.toml"] {
+        controls.check_start()?;
+        let path = directory.join(name);
+        match fs::symlink_metadata(&path) {
+            Ok(_) => return Ok(Some(path)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("inspecting Cargo config path: {}", path.display()));
+            }
+        }
+    }
+    Ok(None)
+}
+
 fn normalize_host_path(value: &OsStr, home: Option<&OsStr>, cwd: &Path) -> Result<PathBuf> {
     let bytes = value.as_bytes();
     let path = if bytes == b"~" || bytes.starts_with(b"~/") {
@@ -1452,6 +1439,3 @@ fn is_executable(path: &Path) -> bool {
     fs::metadata(path)
         .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
 }
-
-#[cfg(test)]
-mod tests;

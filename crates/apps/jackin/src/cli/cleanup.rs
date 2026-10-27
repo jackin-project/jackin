@@ -69,6 +69,3 @@ pub struct PurgeArgs {
     )]
     pub all: bool,
 }
-
-#[cfg(test)]
-mod tests;

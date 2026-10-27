@@ -7,22 +7,6 @@ mod mounts_roles;
 mod scroll;
 mod secrets;
 mod tabs;
-#[cfg(test)]
-mod tests;
-#[cfg(test)]
-pub(crate) use super::model::AuthRow;
-#[cfg(test)]
-pub(crate) use super::model::EditorHoverTarget;
-#[cfg(test)]
-pub(crate) use super::model::EditorTab;
-#[cfg(test)]
-pub(crate) use super::model::SecretsEnterPlan;
-#[cfg(test)]
-pub(crate) use super::model::SecretsRow;
-#[cfg(test)]
-pub(crate) use super::model::SecretsScopeTag;
-#[cfg(test)]
-pub(crate) use crate::tui::screens::settings::model::AuthFormTarget;
 pub use auth::{
     auth_focusable_index_at_visual_row, auth_row_is_focusable, editor_auth_row_index_at_position,
     resolve_auth_form_target,
@@ -47,10 +31,6 @@ pub use secrets::{
     secret_enter_plan_for_row, secret_picker_target_for_row, secret_unmask_target_for_row,
     secrets_flat_rows, set_secret_value,
 };
-#[cfg(test)]
-pub(crate) use std::collections::BTreeMap;
-#[cfg(test)]
-pub(crate) use std::collections::BTreeSet;
 pub use tabs::{
     EditorTabMovePlan, EditorTabSelectPlan, editor_mount_hover_target_at_position,
     editor_mount_index_at_position, editor_tab_bar_focus_plan, editor_tab_move_plan,

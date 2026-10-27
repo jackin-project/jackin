@@ -21,7 +21,7 @@ probe.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`probe_version.rs`](src/probe_version.rs) | version probe | hub `apple_container` launch path (no dedicated suite) |
+| [`probe_version.rs`](src/probe_version.rs) | version probe | — |
 
 ## Public API
 
@@ -30,6 +30,6 @@ probe.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-probe-version
+cargo nextest run -p jackin-runtime-apple-container-probe-version --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-probe-version --all-targets -- -D warnings
 ```

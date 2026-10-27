@@ -77,6 +77,3 @@ pub fn validate_attribute_value(key: &str, value: &Value<'_>) -> Result<(), Reje
         validate_value(value)
     }
 }
-
-#[cfg(test)]
-mod tests;

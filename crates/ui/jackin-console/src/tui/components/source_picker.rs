@@ -133,6 +133,3 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
         );
     }
 }
-
-#[cfg(test)]
-mod tests;

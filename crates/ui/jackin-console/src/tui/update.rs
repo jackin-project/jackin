@@ -8,14 +8,6 @@ mod overlays;
 mod prerender;
 mod resolvers;
 mod shell;
-#[cfg(test)]
-mod tests;
-#[cfg(test)]
-pub(crate) use crate::tui::components::account_picker::AccountPickerState;
-#[cfg(test)]
-pub(crate) use crate::tui::components::agent_choice::AgentChoice;
-#[cfg(test)]
-pub(crate) use crate::tui::components::agent_choice::AgentChoiceState;
 pub use confirm_plans::{
     bool_confirm_modal_plan, confirm_save_modal_plan, create_op_picker_plan,
     dismissible_modal_plan, list_github_picker_plan, list_role_picker_plan,

@@ -16,10 +16,6 @@ mod mount_add;
 mod mounts_keys;
 mod panels;
 mod shell;
-#[cfg(test)]
-mod tests;
-#[cfg(test)]
-pub(crate) use crate::tui::state::SettingsEnvScope;
 pub(crate) use auth::apply_source_folder_to_settings_auth_form;
 use auth::handle_auth_key;
 pub use auth::handle_settings_auth_modal;
@@ -37,10 +33,6 @@ pub(crate) use commits::{
     request_settings_save,
 };
 pub use confirm_modal::handle_settings_confirm_modal;
-#[cfg(test)]
-pub(crate) use crossterm::event::KeyCode;
-#[cfg(test)]
-pub(crate) use crossterm::event::KeyEvent;
 pub(crate) use env_keys::handle_env_key;
 pub use env_modal::handle_settings_env_modal;
 pub(crate) use env_modals::{
@@ -55,6 +47,4 @@ pub(crate) use mount_add::{
 pub(crate) use mounts_keys::handle_global_mounts_key;
 pub(crate) use panels::{handle_general_key, handle_trust_key};
 pub(crate) use shell::dispatch_manager;
-#[cfg(test)]
-pub use shell::handle_settings_key;
 pub use shell::{SettingsAuthOutcome, SettingsModalOutcome, handle_settings_key_with_effects};

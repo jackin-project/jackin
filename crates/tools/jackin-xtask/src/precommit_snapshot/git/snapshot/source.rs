@@ -396,17 +396,7 @@ impl OwnedSnapshot {
         tree: &OsStr,
         inventory_limit: usize,
     ) -> Result<()> {
-        admit_materialized_tree_with_hook(self, tree, inventory_limit, || Ok(()))
-    }
-
-    #[cfg(test)]
-    pub(in crate::precommit_snapshot) fn admit_materialized_tree_with_hook(
-        &self,
-        tree: &OsStr,
-        inventory_limit: usize,
-        after_first_pass: impl FnOnce() -> Result<()>,
-    ) -> Result<()> {
-        admit_materialized_tree_with_hook(self, tree, inventory_limit, after_first_pass)
+        admit_materialized_tree(self, tree, inventory_limit)
     }
 }
 
@@ -443,11 +433,10 @@ pub(super) fn resolve_tree(snapshot: &OwnedSnapshot, tree: &OsStr) -> Result<Pin
     })
 }
 
-pub(super) fn admit_materialized_tree_with_hook(
+pub(super) fn admit_materialized_tree(
     snapshot: &OwnedSnapshot,
     tree: &OsStr,
     inventory_limit: usize,
-    after_first_pass: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
     let pinned = resolve_tree(snapshot, tree)?;
     let index_tree =
@@ -466,7 +455,6 @@ pub(super) fn admit_materialized_tree_with_hook(
         ObservationSink::Save(&mut observations),
     )?;
     snapshot.controls.check_start()?;
-    after_first_pass()?;
     observations
         .seek(SeekFrom::Start(0))
         .context("rewinding private source measurement spool")?;
@@ -954,11 +942,6 @@ fn split_tree_record(record: &[u8]) -> Result<(&[u8], &[u8])> {
     let path = &record[separator + 1..];
     validate_relative_path(path)?;
     Ok((metadata, path))
-}
-
-#[cfg(test)]
-pub(in crate::precommit_snapshot) fn tree_record_path_for_test(record: &[u8]) -> Result<Vec<u8>> {
-    Ok(split_tree_record(record)?.1.to_vec())
 }
 
 fn validate_oid(oid: &[u8], format: ObjectFormat) -> Result<()> {

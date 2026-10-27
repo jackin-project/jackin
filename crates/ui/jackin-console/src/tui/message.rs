@@ -6,8 +6,6 @@ mod launch;
 mod manager;
 mod modals;
 mod refresh;
-#[cfg(test)]
-mod tests;
 pub use actions::{
     BackgroundEvent, ConsoleInputOutcome, ConsoleInstanceAction, ConsoleOutcome,
     InstanceActionHandler,

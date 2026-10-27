@@ -19,8 +19,8 @@ There is no client-side discovery or credential resolver in this crate.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | public `host` module | — |
-| [`host.rs`](src/host.rs) | narrow broker and projection exports | [`host/tests.rs`](src/host/tests.rs) |
-| [`host/projection/presentation.rs`](src/host/projection/presentation.rs) | projection validation, selection, and presentation | `host/tests/projection_presentation.rs` |
+| [`host.rs`](src/host.rs) | narrow broker and projection exports | — |
+| [`host/projection/presentation.rs`](src/host/projection/presentation.rs) | projection validation, selection, and presentation | — |
 
 ## Auth interaction limit
 
@@ -34,6 +34,6 @@ Keychain credentials only; it does not prepare `OpRef` environment sources.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-host-runtime
+cargo nextest run -p jackin-usage-host-runtime --no-tests warn
 cargo clippy -p jackin-usage-host-runtime --all-targets -- -D warnings
 ```

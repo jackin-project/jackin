@@ -24,7 +24,7 @@ builders.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`exec_args.rs`](src/exec_args.rs) | arg builders | hub `attach` suite |
+| [`exec_args.rs`](src/exec_args.rs) | arg builders | — |
 
 ## Public API
 
@@ -36,6 +36,6 @@ builders.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-attach-exec-args
+cargo nextest run -p jackin-runtime-attach-exec-args --no-tests warn
 cargo clippy -p jackin-runtime-attach-exec-args --all-targets -- -D warnings
 ```

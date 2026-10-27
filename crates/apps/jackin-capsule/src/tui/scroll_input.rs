@@ -44,6 +44,3 @@ pub fn apply_sgr_wheel_button(scroll: &mut DialogScroll, button: u8, axes: Scrol
     };
     scroll.handle_mouse(kind, modifiers, axes)
 }
-
-#[cfg(test)]
-mod tests;

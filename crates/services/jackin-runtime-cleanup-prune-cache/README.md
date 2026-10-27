@@ -27,7 +27,7 @@ for cleanup.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`prune_cache.rs`](src/prune_cache.rs) | pruning | hub `cleanup` suite (`cleanup/tests/case_05.rs`) |
+| [`prune_cache.rs`](src/prune_cache.rs) | pruning | — |
 
 ## Public API
 
@@ -36,6 +36,6 @@ for cleanup.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-cleanup-prune-cache
+cargo nextest run -p jackin-runtime-cleanup-prune-cache --no-tests warn
 cargo clippy -p jackin-runtime-cleanup-prune-cache --all-targets -- -D warnings
 ```

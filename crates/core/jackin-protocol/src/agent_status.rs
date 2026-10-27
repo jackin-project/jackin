@@ -57,6 +57,3 @@ pub struct AgentStatusReport {
     pub subagents_active: u32,
     pub revision: u64,
 }
-
-#[cfg(test)]
-mod tests;

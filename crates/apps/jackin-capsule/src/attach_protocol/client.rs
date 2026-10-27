@@ -13,16 +13,6 @@ pub(crate) async fn detach_client(mux: &mut Multiplexer) {
     detach_attached_task(mux, "detach_client").await;
 }
 
-#[cfg(test)]
-pub(crate) async fn handle_attach_client(
-    stream: UnixStream,
-    out_rx: mpsc::UnboundedReceiver<Vec<u8>>,
-    cmd_tx: mpsc::UnboundedSender<ClientFrame>,
-) {
-    let (_completion_tx, completion_rx) = mpsc::unbounded_channel();
-    handle_attach_client_with_handshake(stream, out_rx, completion_rx, cmd_tx, None).await;
-}
-
 pub(crate) async fn handle_attach_client_with_handshake(
     mut stream: UnixStream,
     mut out_rx: mpsc::UnboundedReceiver<Vec<u8>>,

@@ -59,11 +59,6 @@ pub(super) struct RootAnchor {
     owner_uid: u32,
 }
 
-/// A non-cloneable, process-scoped gate for supported authority writers.
-///
-/// The descriptor is opened independently from `RootAnchor::directory`, so
-/// closing another root descriptor cannot release this open-file-description
-/// lock.
 pub(super) struct InitializationGuard {
     directory: File,
     identity: FileIdentity,
@@ -85,7 +80,6 @@ impl InitializationGuard {
     }
 }
 
-/// Acquires the root-local writer gate on a fresh directory open description.
 pub(super) fn acquire_initialization_guard(
     root: &RootAnchor,
 ) -> Result<InitializationGuard, CatalogAuthorityError> {
@@ -181,7 +175,6 @@ impl RootAnchor {
     }
 }
 
-/// A pinned, nofollow handle to the caller-provisioned private authority root.
 pub struct CatalogAuthorityStore {
     pub(super) root: Arc<RootAnchor>,
 }
@@ -195,14 +188,12 @@ impl std::fmt::Debug for CatalogAuthorityStore {
 }
 
 impl CatalogAuthorityStore {
-    /// Anchors an existing absolute private directory without creating or repairing it.
     pub fn open(root: &Path) -> Result<Self, CatalogAuthorityError> {
         Ok(Self {
             root: RootAnchor::open(root)?,
         })
     }
 
-    /// Loads the already-adopted authority without creating any filesystem objects.
     pub fn load_existing(&self) -> Result<Arc<CatalogRevisionAuthority>, CatalogAuthorityError> {
         self.root.verify_path()?;
         let layout = inspect_root(self.root.directory())?;
@@ -225,10 +216,6 @@ impl CatalogAuthorityStore {
         Ok(authority)
     }
 
-    /// Performs only an explicit first-use or legacy-adoption transaction.
-    ///
-    /// The intent records the caller's decision. It does not independently
-    /// validate any legacy evidence or establish a provider identity.
     pub fn initialize_explicit(
         &self,
         intent: InitializationIntent,
@@ -1469,10 +1456,6 @@ fn validate_intent(intent: &InitializationIntent) -> Result<(), CatalogAuthority
 }
 
 fn fill_random(destination: &mut [u8]) -> Result<(), CatalogAuthorityError> {
-    #[cfg(test)]
-    if RANDOM_FAILURE.with(|slot| slot.replace(false)) {
-        return Err(CatalogAuthorityError::RandomnessUnavailable);
-    }
     getrandom_fill(destination).map_err(|_| CatalogAuthorityError::RandomnessUnavailable)
 }
 
@@ -1556,20 +1539,6 @@ fn validate_directory_descriptor(
     Ok(stat)
 }
 
-#[cfg(test)]
-pub(super) fn validate_root_owner_for_test(
-    root: &RootAnchor,
-    candidate_owner_uid: u32,
-) -> Result<(), CatalogAuthorityError> {
-    validate_directory_descriptor(
-        root.directory(),
-        candidate_owner_uid,
-        Some(PRIVATE_DIRECTORY_MODE),
-        Some(root.identity),
-    )
-    .map(|_| ())
-}
-
 fn identity_from_file(file: &File) -> Result<FileIdentity, CatalogAuthorityError> {
     let stat = fstat(file).map_err(storage_error)?;
     Ok(identity_from_stat(&stat))
@@ -1639,102 +1608,10 @@ pub(super) enum FailurePoint {
     AdoptedStateRootSynced,
 }
 
-#[cfg(test)]
-thread_local! {
-    static FAILURE_POINT: std::cell::Cell<Option<FailurePoint>> = const { std::cell::Cell::new(None) };
-    static RANDOM_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    static INITIAL_STATE_PUBLISH_PAUSE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
-}
-
-#[cfg(test)]
-pub(super) struct FailureGuard;
-
-#[cfg(test)]
-impl Drop for FailureGuard {
-    fn drop(&mut self) {
-        FAILURE_POINT.with(|slot| slot.set(None));
-        RANDOM_FAILURE.with(|slot| slot.set(false));
-    }
-}
-
-#[cfg(test)]
-pub(super) fn fail_at_for_test(point: FailurePoint) -> FailureGuard {
-    FAILURE_POINT.with(|slot| slot.set(Some(point)));
-    FailureGuard
-}
-
-#[cfg(test)]
-pub(super) fn fail_random_for_test() -> FailureGuard {
-    RANDOM_FAILURE.with(|slot| slot.set(true));
-    FailureGuard
-}
-
-#[cfg(test)]
-pub(super) struct InitialStatePauseGuard;
-
-#[cfg(test)]
-impl Drop for InitialStatePauseGuard {
-    fn drop(&mut self) {
-        INITIAL_STATE_PUBLISH_PAUSE.with(|slot| slot.borrow_mut().take());
-    }
-}
-
-#[cfg(test)]
-pub(super) fn pause_after_initial_state_published_for_test(
-    control: &Path,
-) -> InitialStatePauseGuard {
-    INITIAL_STATE_PUBLISH_PAUSE.with(|slot| {
-        let previous = slot.borrow_mut().replace(control.to_path_buf());
-        assert!(
-            previous.is_none(),
-            "one initial-state pause is allowed per thread"
-        );
-    });
-    InitialStatePauseGuard
-}
-
-#[cfg(test)]
-fn pause_after_initial_state_published_for_test_run() -> Result<(), CatalogAuthorityError> {
-    let control = INITIAL_STATE_PUBLISH_PAUSE.with(|slot| slot.borrow().clone());
-    let Some(control) = control else {
-        return Ok(());
-    };
-    let mut ready = super::tests::create_new_test_file(&control.join("INITIAL_STATE_READY"))
-        .map_err(|_| CatalogAuthorityError::StorageFailure)?;
-    ready
-        .write_all(b"ready")
-        .map_err(|_| CatalogAuthorityError::StorageFailure)?;
-    ready
-        .sync_all()
-        .map_err(|_| CatalogAuthorityError::StorageFailure)?;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while !control.join("RELEASE_INITIALIZER").is_file() {
-        if std::time::Instant::now() >= deadline {
-            return Err(CatalogAuthorityError::StorageFailure);
-        }
-        std::thread::park_timeout(std::time::Duration::from_millis(10));
-    }
-    Ok(())
-}
-
-#[cfg(not(test))]
 fn pause_after_initial_state_published_for_test_run() -> Result<(), CatalogAuthorityError> {
     Ok(())
 }
 
-#[cfg(test)]
-fn failure_point(point: FailurePoint) -> Result<(), CatalogAuthorityError> {
-    FAILURE_POINT.with(|slot| {
-        if slot.get() == Some(point) {
-            slot.set(None);
-            Err(CatalogAuthorityError::StorageFailure)
-        } else {
-            Ok(())
-        }
-    })
-}
-
-#[cfg(not(test))]
 fn failure_point(_point: FailurePoint) -> Result<(), CatalogAuthorityError> {
     Ok(())
 }

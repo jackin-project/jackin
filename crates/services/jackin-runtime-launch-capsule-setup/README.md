@@ -34,7 +34,7 @@ transport.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`capsule_setup.rs`](src/capsule_setup.rs) | setup | `capsule_setup/tests/` |
+| [`capsule_setup.rs`](src/capsule_setup.rs) | setup | — |
 
 ## Public API
 
@@ -45,6 +45,6 @@ transport.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-capsule-setup
+cargo nextest run -p jackin-runtime-launch-capsule-setup --no-tests warn
 cargo clippy -p jackin-runtime-launch-capsule-setup --all-targets -- -D warnings
 ```

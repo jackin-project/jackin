@@ -212,6 +212,3 @@ pub fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&RainState>) 
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

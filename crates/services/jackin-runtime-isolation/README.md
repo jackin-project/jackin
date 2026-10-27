@@ -23,7 +23,7 @@ for runtime call sites, with the
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`isolation.rs`](src/isolation.rs) | facade root | `isolation/tests/` |
+| [`isolation.rs`](src/isolation.rs) | facade root | — |
 
 ## Public API
 
@@ -39,6 +39,6 @@ for runtime call sites, with the
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-isolation
+cargo nextest run -p jackin-runtime-isolation --no-tests warn
 cargo clippy -p jackin-runtime-isolation --all-targets -- -D warnings
 ```

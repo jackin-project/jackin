@@ -168,12 +168,7 @@ pub(super) async fn validate(
         matches!(run.status.as_str(), "in_progress" | "completed"),
         "release run has not started"
     );
-    // Admit the original successful producers, assembler and signer independently
-    // of the original publisher's terminal result. A downstream Tap failure or
-    // still-running promotion does not unpublish the complete signed generation.
-    // Recovery retains the original signed receipt even when its publisher failed.
-    // Current publication authority comes from the complete authenticated release
-    // inventory, immutable lifecycle and signed source-bound tag, checked separately.
+
     let jobs: Jobs = read(
         transport,
         &format!(
@@ -204,8 +199,7 @@ pub(super) async fn validate(
         ci.status == "completed" && ci.conclusion.as_deref() == Some("success"),
         "signed source CI is not successful"
     );
-    // Source ancestry is immutable signing context and is admitted once per pin.
-    // Rechecks observe mutable publication state without repeating this history query.
+
     ancestry(
         transport,
         &receipt.source.commit_sha,
@@ -215,12 +209,11 @@ pub(super) async fn validate(
     ancestry(transport, &receipt.workflow.authority_sha, "main").await
 }
 
-/// Require `base` to be `head` or one of its ancestors (`A <= B <= main`).
 async fn ancestry(transport: &impl Transport, base: &str, head: &str) -> Result<()> {
     if base == head {
         return Ok(());
     }
-    // Page 2 keeps comparison metadata without the potentially large file list.
+
     let comparison: Comparison = read(
         transport,
         &format!("compare/{base}...{head}?per_page=1&page=2"),

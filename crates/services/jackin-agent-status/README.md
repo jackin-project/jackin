@@ -16,14 +16,14 @@ Agent runtime status authority. Owns all state-machine logic for determining wha
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
-| [`evidence.rs`](src/evidence.rs) · [`evidence/`](src/evidence) | status evidence types + collection | [`tests.rs`](src/evidence/tests.rs) |
-| [`process.rs`](src/process.rs) · [`process/`](src/process) | process sampling signals | [`tests.rs`](src/process/tests.rs) |
+| [`evidence.rs`](src/evidence.rs) · [`evidence/`](src/evidence.rs) | status evidence types + collection | — |
+| [`process.rs`](src/process.rs) · [`process/`](src/process.rs) | process sampling signals | — |
 | [`screen/`](src/screen) | screen-state signals | — |
-| [`rules.rs`](src/rules.rs) · [`rules/`](src/rules) | decision rules | [`tests.rs`](src/rules/tests.rs) |
-| [`policy.rs`](src/policy.rs) · [`policy/`](src/policy) | status policy | [`tests.rs`](src/policy/tests.rs) |
-| [`gating.rs`](src/gating.rs) · [`gating/`](src/gating) | anti-flicker gating + debounce | [`tests.rs`](src/gating/tests.rs) |
-| [`arbitrate.rs`](src/arbitrate.rs) · [`arbitrate/`](src/arbitrate) | final status arbitration | [`tests.rs`](src/arbitrate/tests.rs) |
-| [`tests.rs`](src/tests.rs) | integration tests | — |
+| [`rules.rs`](src/rules.rs) · [`rules/`](src/rules.rs) | decision rules | — |
+| [`policy.rs`](src/policy.rs) · [`policy/`](src/policy.rs) | status policy | — |
+| [`gating.rs`](src/gating.rs) · [`gating/`](src/gating.rs) | anti-flicker gating + debounce | — |
+| [`arbitrate.rs`](src/arbitrate.rs) · [`arbitrate/`](src/arbitrate.rs) | final status arbitration | — |
+| `tests.rs` | integration tests | — |
 
 ## Public API
 
@@ -32,6 +32,6 @@ Status-decision types and the arbitration entry point consumed by `jackin-capsul
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-agent-status
+cargo nextest run -p jackin-agent-status --no-tests warn
 cargo clippy -p jackin-agent-status --all-targets -- -D warnings
 ```

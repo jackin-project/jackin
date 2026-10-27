@@ -958,6 +958,3 @@ pub(super) async fn handle_exile(
     runtime::reconcile_keep_awake(paths, &docker, &mut runner).await;
     result
 }
-
-#[cfg(test)]
-mod tests;

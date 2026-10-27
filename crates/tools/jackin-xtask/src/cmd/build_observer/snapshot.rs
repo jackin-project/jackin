@@ -17,8 +17,6 @@ pub(super) struct Stats {
 
 impl Stats {
     pub(super) fn line(&self) -> String {
-        // Role order: cargo,rustc,rustdoc,linker,compiler-driver,other.
-        // Alive sampled CPU is a lower bound, not lifetime CPU or utilization.
         format!(
             "count:{};alive_cpu_ms:{:?};rss_kib:{:?};max_rss_kib:{}",
             self.count, self.alive_cpu_ms, self.rss_kib, self.max_rss_kib

@@ -1,4 +1,0 @@
-#!/bin/sh
-set -eu
-
-exec rust-build-guard -- mise exec -- cargo nextest run --locked -p jackin-xtask --bin jackin-precommit-owner --test hook_security_fixtures

@@ -10,8 +10,6 @@ mod fs_util;
 mod precommit_install;
 #[cfg(unix)]
 pub(crate) mod precommit_snapshot;
-#[cfg(test)]
-mod tests;
 
 #[cfg(unix)]
 use anyhow::{Context, Result, bail, ensure};

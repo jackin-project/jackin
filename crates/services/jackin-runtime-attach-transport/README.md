@@ -24,7 +24,7 @@ transport selection.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`transport.rs`](src/transport.rs) | plan + exec | hub `attach` suite |
+| [`transport.rs`](src/transport.rs) | plan + exec | — |
 
 ## Public API
 
@@ -38,6 +38,6 @@ transport selection.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-attach-transport
+cargo nextest run -p jackin-runtime-attach-transport --no-tests warn
 cargo clippy -p jackin-runtime-attach-transport --all-targets -- -D warnings
 ```

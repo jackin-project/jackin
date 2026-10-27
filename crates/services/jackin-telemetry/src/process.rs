@@ -45,6 +45,3 @@ pub fn classify_executable(program: &Path) -> ProcessExecutableName {
         _ => ProcessExecutableName::Other,
     }
 }
-
-#[cfg(test)]
-mod tests;

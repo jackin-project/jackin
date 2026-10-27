@@ -18,13 +18,9 @@ pub use parse::{
     OpenRouterKeyQuota, openrouter_credits_bucket, parse_openrouter_credits,
     parse_openrouter_key_usage,
 };
-#[cfg(test)]
-pub(crate) use snapshot::openrouter_snapshot_with_key_fetch;
+
 pub use snapshot::{
     openrouter_snapshot, openrouter_snapshot_with_base, openrouter_snapshot_with_rate_limit,
 };
 pub use types::{OpenRouterCreditsOutcome, OpenRouterModelCheck};
 pub use types::{OpenRouterCreditsResponse, OpenRouterKeyData};
-
-#[cfg(test)]
-mod tests;

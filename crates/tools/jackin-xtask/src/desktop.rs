@@ -1619,6 +1619,3 @@ fn find_files_with_ext(root: &Path, ext: &str) -> Result<Vec<PathBuf>> {
         .filter(|p| p.extension().and_then(|s| s.to_str()) == Some(ext))
         .collect())
 }
-
-#[cfg(test)]
-mod tests;

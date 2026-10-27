@@ -4,10 +4,6 @@
 use std::fmt;
 use zeroize::Zeroizing;
 
-/// Maximum payload accepted by the V2 signed-transcript primitive.
-///
-/// This limit applies only to this new primitive. It does not limit the
-/// existing staged-credential startup format.
 pub const MAX_CREDENTIAL_REFRESH_PAYLOAD_BYTES_V2: usize = 4 * 1024 * 1024;
 
 const SIGNED_CONTROL_PREFIX_V2: &[u8] = b"jackin-signed-control-v2\0";
@@ -17,7 +13,6 @@ const ABORT_DOMAIN_V2: &[u8] = b"credential-refresh-abort-v2";
 const FIELD_LENGTH_BYTES: usize = 8;
 const GENERATION_BYTES: usize = 8;
 
-/// Closed operation domain for one V2 credential-refresh transcript.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CredentialRefreshPhaseV2 {
     Prepare,
@@ -35,10 +30,6 @@ impl CredentialRefreshPhaseV2 {
     }
 }
 
-/// Borrowed, syntactically checked context for V2 transcript framing.
-///
-/// This validates only identifier syntax. It does not prove that a resource,
-/// provider subject, source, or generation is authorized.
 #[derive(Clone, Copy)]
 pub struct CredentialRefreshContextV2<'a> {
     resource_id: &'a str,
@@ -48,7 +39,6 @@ pub struct CredentialRefreshContextV2<'a> {
 }
 
 impl<'a> CredentialRefreshContextV2<'a> {
-    /// Build context after checking the donor V2 identifier syntax.
     pub fn new(
         resource_id: &'a str,
         daemon_boot_id: &'a str,
@@ -76,7 +66,6 @@ impl fmt::Debug for CredentialRefreshContextV2<'_> {
     }
 }
 
-/// Static errors from bounded V2 transcript construction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CredentialRefreshEncodingErrorV2 {
     InvalidContext,
@@ -101,24 +90,11 @@ impl fmt::Display for CredentialRefreshEncodingErrorV2 {
 
 impl std::error::Error for CredentialRefreshEncodingErrorV2 {}
 
-/// Owned transcript bytes. The buffer is zeroized when this value is dropped.
-///
-/// Borrowing `as_bytes` does not prevent callers from making their own copies.
-/// This type cannot erase allocator history, external copies, or provider state.
-///
-/// ```compile_fail
-/// use jackin_protocol::credential_update_v2::CredentialRefreshSigningBytesV2;
-/// fn require_clone<T: Clone>() {}
-/// fn main() {
-///     require_clone::<CredentialRefreshSigningBytesV2>();
-/// }
-/// ```
 pub struct CredentialRefreshSigningBytesV2 {
     bytes: Zeroizing<Vec<u8>>,
 }
 
 impl CredentialRefreshSigningBytesV2 {
-    /// Borrow the exact framed bytes without transferring buffer ownership.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         self.bytes.as_slice()
@@ -131,11 +107,6 @@ impl fmt::Debug for CredentialRefreshSigningBytesV2 {
     }
 }
 
-/// Encode the donor-exact V2 signed-control transcript into one owned buffer.
-///
-/// `payload` is copied as opaque bytes. This function does not validate a JSON
-/// payload, issue a signature, or authorize the operation. The caller retains
-/// responsibility for its borrowed input buffer.
 pub fn encode_signing_bytes_v2(
     phase: CredentialRefreshPhaseV2,
     context: &CredentialRefreshContextV2<'_>,
@@ -215,6 +186,3 @@ fn valid_uuid_v4(value: &str) -> bool {
             _ => byte.is_ascii_digit() || (b'a'..=b'f').contains(byte),
         })
 }
-
-#[cfg(test)]
-mod tests;

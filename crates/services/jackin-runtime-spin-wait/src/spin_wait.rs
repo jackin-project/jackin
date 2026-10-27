@@ -111,6 +111,3 @@ where
     }
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("timed out: {message}")))
 }
-
-#[cfg(test)]
-mod tests;

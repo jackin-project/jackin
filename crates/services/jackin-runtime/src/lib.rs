@@ -21,7 +21,7 @@ pub use runtime::{
     reconcile_keep_awake, resolve_supported_agents_for_console, spawn_agent_session,
     spawn_background_sidecar_prewarm, spawn_shell_session, write_prewarmed_dind_state,
 };
-#[cfg(not(test))]
+
 pub use runtime::{ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images};
 
 pub use runtime::drift;

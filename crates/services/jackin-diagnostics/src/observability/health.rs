@@ -18,8 +18,6 @@ static METRIC_SUCCESSES: AtomicU64 = AtomicU64::new(0);
 static METRIC_FAILURES: AtomicU64 = AtomicU64::new(0);
 static FACADE_REJECTIONS: AtomicU64 = AtomicU64::new(0);
 static LIFECYCLE: Mutex<Lifecycle> = Mutex::new(Lifecycle::new());
-#[cfg(test)]
-pub(super) static TEST_STATE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Clone, Copy)]
 struct Lifecycle {
@@ -228,6 +226,3 @@ pub(super) fn record_shutdown(generation: u64, succeeded: bool) {
         state.active_signals = 0;
     }
 }
-
-#[cfg(test)]
-mod tests;

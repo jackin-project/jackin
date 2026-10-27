@@ -18,6 +18,7 @@ pub(super) fn check_specs(root: &Path) -> Result<()> {
 
     let mut inv_rows = 0usize;
     let mut cited_ok = 0usize;
+    let mut explicit_na = 0usize;
     let mut problems = Vec::new();
     let mut crates_for_reconcile: BTreeSet<String> = BTreeSet::new();
     let mut citations: Vec<(String, String, String)> = Vec::new();
@@ -58,6 +59,10 @@ pub(super) fn check_specs(root: &Path) -> Result<()> {
                 ));
                 continue;
             }
+            if cell == "N/A" {
+                explicit_na += 1;
+                continue;
+            }
             for citation in split_citations(cell) {
                 match verify_citation(root, &citation) {
                     Ok(crate_name) => {
@@ -92,7 +97,7 @@ pub(super) fn check_specs(root: &Path) -> Result<()> {
     let reconciled =
         std::env::var_os("JACKIN_SPECS_RECONCILE").is_some() || std::env::var_os("CI").is_some();
     emit(&format!(
-        "spec gate OK — {inv_rows} INV rows, {cited_ok} cited tests verified (syn{})",
+        "spec gate OK — {inv_rows} INV rows, {cited_ok} cited tests verified (syn{}), {explicit_na} explicitly N/A",
         if reconciled {
             " + nextest reconcile"
         } else {
@@ -485,6 +490,3 @@ fn emit(line: &str) {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

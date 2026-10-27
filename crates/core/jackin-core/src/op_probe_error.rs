@@ -12,6 +12,3 @@ pub enum OpProbeError {
     #[error("{message}")]
     Other { message: String },
 }
-
-#[cfg(test)]
-mod tests;

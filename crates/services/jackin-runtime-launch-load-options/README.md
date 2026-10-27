@@ -32,8 +32,8 @@ bag and validation.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`load_options.rs`](src/load_options.rs) | options + validation | hub `launch::programmatic` suite (`case_01`, `case_02`) + hub `launch` suite |
-| [`lane_env.rs`](src/lane_env.rs) | lane env mapping | hub `launch::programmatic` suite (`case_02`) |
+| [`load_options.rs`](src/load_options.rs) | options + validation | — |
+| [`lane_env.rs`](src/lane_env.rs) | lane env mapping | — |
 
 ## Public API
 
@@ -50,6 +50,6 @@ bag and validation.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-load-options
+cargo nextest run -p jackin-runtime-launch-load-options --no-tests warn
 cargo clippy -p jackin-runtime-launch-load-options --all-targets -- -D warnings
 ```

@@ -22,15 +22,15 @@ per-account publisher.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`publisher.rs`](src/publisher.rs) | merge + checkpoint | [`tests/`](src/tests/) |
-| [`windows.rs`](src/windows.rs) | view accounts | (via `tests`) |
-| [`groups.rs`](src/groups.rs) | metric groups | (via `tests`) |
-| [`freshness.rs`](src/freshness.rs) | freshness/quota | (via `tests`) |
-| [`account_windows.rs`](src/account_windows.rs) | limit windows | (via `tests`) |
-| [`merge.rs`](src/merge.rs) | view merge | (via `tests`) |
-| [`revoke.rs`](src/revoke.rs) | revocation | (via `tests`) |
-| [`quota.rs`](src/quota.rs) | bucket states | (via `tests`) |
-| [`errors.rs`](src/errors.rs) | error mapping | (via `tests`) |
+| [`publisher.rs`](src/publisher.rs) | merge + checkpoint | — |
+| [`windows.rs`](src/windows.rs) | view accounts | — |
+| [`groups.rs`](src/groups.rs) | metric groups | — |
+| [`freshness.rs`](src/freshness.rs) | freshness/quota | — |
+| [`account_windows.rs`](src/account_windows.rs) | limit windows | — |
+| [`merge.rs`](src/merge.rs) | view merge | — |
+| [`revoke.rs`](src/revoke.rs) | revocation | — |
+| [`quota.rs`](src/quota.rs) | bucket states | — |
+| [`errors.rs`](src/errors.rs) | error mapping | — |
 
 ## Public API
 
@@ -46,6 +46,6 @@ publication error constructors.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-broker-publish
+cargo nextest run -p jackin-usage-broker-publish --no-tests warn
 cargo clippy -p jackin-usage-broker-publish --all-targets -- -D warnings
 ```

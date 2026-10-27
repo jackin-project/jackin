@@ -16,8 +16,3 @@ pub use records::{
 pub use resources::{AppleContainerResources, BackendResources, DockerIdentity, DockerResources};
 
 pub(crate) use index::now_rfc3339;
-#[cfg(test)]
-pub(crate) use index::{INSTANCE_INDEX_FILE, INSTANCE_INDEX_LOCK_FILE};
-
-#[cfg(test)]
-mod tests;

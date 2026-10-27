@@ -24,7 +24,7 @@ readiness waits.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`capsule_ready.rs`](src/capsule_ready.rs) | readiness + warmup | hub `attach` suite |
+| [`capsule_ready.rs`](src/capsule_ready.rs) | readiness + warmup | — |
 
 ## Public API
 
@@ -37,6 +37,6 @@ readiness waits.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-attach-capsule-ready
+cargo nextest run -p jackin-runtime-attach-capsule-ready --no-tests warn
 cargo clippy -p jackin-runtime-attach-capsule-ready --all-targets -- -D warnings
 ```

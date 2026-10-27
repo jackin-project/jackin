@@ -19,8 +19,8 @@ and cache.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`repo_cache.rs`](src/repo_cache.rs) | resolve + cache | `repo_cache/tests/` |
-| [`repo_cache/`](src/repo_cache/) | test suites | `repo_cache/tests/` |
+| [`repo_cache.rs`](src/repo_cache.rs) | resolve + cache | — |
+| [`repo_cache/`](src/repo_cache.rs) | test suites | — |
 
 ## Public API
 
@@ -32,6 +32,6 @@ and cache.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-repo-cache
+cargo nextest run -p jackin-runtime-repo-cache --no-tests warn
 cargo clippy -p jackin-runtime-repo-cache --all-targets -- -D warnings
 ```

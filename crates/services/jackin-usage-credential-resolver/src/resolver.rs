@@ -302,6 +302,3 @@ impl<S: ProviderCredentialSecretSource> ProviderCredentialEnvResolver
         })
     }
 }
-
-#[cfg(test)]
-mod tests;

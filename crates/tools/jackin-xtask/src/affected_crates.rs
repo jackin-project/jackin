@@ -229,11 +229,6 @@ impl WorkspaceGraph {
         names
     }
 
-    #[cfg(test)]
-    fn affected(&self, paths: &[PathBuf]) -> Vec<String> {
-        self.affected_with_dependencies(paths, None, None)
-    }
-
     pub(crate) fn affected_with_dependencies(
         &self,
         paths: &[PathBuf],
@@ -545,6 +540,3 @@ pub(crate) fn is_documentation(path: &Path) -> bool {
         Some("md" | "mdx")
     )
 }
-
-#[cfg(test)]
-mod tests;

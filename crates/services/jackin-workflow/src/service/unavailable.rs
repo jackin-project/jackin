@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Unavailable backend implements the same closed service contract.
 use super::UnavailableBackend;
 use super::{CheckpointRecord, RecordTestParams, SessionAttachment};
 use super::{

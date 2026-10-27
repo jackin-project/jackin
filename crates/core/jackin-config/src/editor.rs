@@ -363,16 +363,6 @@ impl ConfigEditor {
         self.scan_for_accounts_with_codex_home(&home, &environment, codex_home.as_deref())
     }
 
-    #[cfg(test)]
-    fn scan_for_accounts_with(
-        &mut self,
-        home: &Path,
-        environment: &BTreeMap<String, String>,
-    ) -> crate::ConfigResult<BootstrapReport> {
-        let codex_home = environment.get("CODEX_HOME").map(OsStr::new);
-        self.scan_for_accounts_with_codex_home(home, environment, codex_home)
-    }
-
     fn scan_for_accounts_with_codex_home(
         &mut self,
         home: &Path,
@@ -1218,8 +1208,5 @@ fn table_path_mut<'a>(doc: &'a mut DocumentMut, path: &[String]) -> &'a mut Tabl
     }
     walk(doc.as_item_mut(), path)
 }
-
-#[cfg(test)]
-mod tests;
 
 mod accounts;

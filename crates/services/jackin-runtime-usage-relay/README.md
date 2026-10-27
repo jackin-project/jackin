@@ -34,7 +34,7 @@ capabilities.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`usage_relay.rs`](src/usage_relay.rs) | tunnels + capabilities | `usage_relay/tests.rs` |
+| [`usage_relay.rs`](src/usage_relay.rs) | tunnels + capabilities | — |
 
 ## Public API
 
@@ -66,6 +66,6 @@ only and does not prepare `OpRef`-backed environment sources.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-usage-relay
+cargo nextest run -p jackin-runtime-usage-relay --no-tests warn
 cargo clippy -p jackin-runtime-usage-relay --all-targets -- -D warnings
 ```

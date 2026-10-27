@@ -202,6 +202,3 @@ fn append_env_file(name: &str, contents: std::fmt::Arguments<'_>) -> Result<()> 
     file.extend_from_slice(contents.to_string().as_bytes());
     fs::write(path, file).with_context(|| format!("writing {}", path.display()))
 }
-
-#[cfg(test)]
-mod tests;

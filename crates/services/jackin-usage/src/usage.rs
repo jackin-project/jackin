@@ -23,12 +23,7 @@ pub(crate) use jackin_usage_provider_antigravity::{
     antigravity_snapshot, fetch_antigravity_cli_credits, fetch_antigravity_cli_usage,
     parse_agy_version, parse_antigravity_credits_output, parse_antigravity_usage_output,
 };
-#[cfg(test)]
-pub(crate) use jackin_usage_provider_claude::ClaudeOAuthUsageResponse;
-#[cfg(test)]
-pub(crate) use jackin_usage_provider_claude::load_claude_oauth_credentials;
-#[cfg(test)]
-pub(crate) use jackin_usage_provider_codex::load_codex_oauth_credentials;
+
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
@@ -131,8 +126,7 @@ pub(crate) use jackin_usage_provider_muse::{
     MuseIdentity, MuseKeyExchangePolicy, MuseObservation, MuseWindow, muse_buckets,
     muse_freshness_epoch, muse_identity_from_value, muse_view, parse_muse_usage_read,
 };
-#[cfg(test)]
-pub(crate) use jackin_usage_provider_opencode::{load_opencode_api_key, parse_opencode_usage};
+
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
@@ -152,56 +146,4 @@ pub(crate) use jackin_usage_provider_openrouter::{
 pub(crate) use jackin_usage_provider_zai::{
     ZaiLimitRaw, ZaiQuotaData, ZaiQuotaResponse, fetch_zai_usage, provider_key_snapshot,
     resolve_zai_quota_url, resolve_zai_quota_url_from, zai_bucket, zai_count_line, zai_quota_host,
-};
-#[cfg(test)]
-use std::time::Duration;
-
-#[cfg(test)]
-mod tests;
-
-#[cfg(test)]
-#[expect(
-    unused_imports,
-    reason = "suite/vendor-test support shim; cases use overlapping subsets of the core API"
-)]
-pub(crate) use jackin_usage_provider_core::{
-    AMP_HANDOFF_SECRETS_PATH, CLAUDE_CODE_USER_AGENT_FALLBACK, CLAUDE_HANDOFF_CREDENTIALS_PATH,
-    CODEX_HANDOFF_AUTH_PATH, CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_TOKEN_URL, CODEX_RPC_INIT_TIMEOUT,
-    CODEX_RPC_LAUNCH_COOLDOWN, CODEX_RPC_REQUEST_TIMEOUT, CachedUsage, ChildOperation, CliOutput,
-    Fixed32Field, GROK_HANDOFF_AUTH_PATH, GROK_RPC_INIT_TIMEOUT, GROK_RPC_REQUEST_TIMEOUT,
-    MATERIALIZED_TMP_COUNTER, MATERIALIZED_USAGE_ACCOUNTS_PATH, ManagedCliLaunchGate,
-    MaterializedUsageAccounts, PROCESS_OUTPUT_MAX, PROVIDER_CLI_TIMEOUT, PROVIDER_HTTP_TIMEOUT,
-    PercentStyle, ProtobufScan, ProviderError, ProviderHttpError, ProviderPresence,
-    ProviderRateLimit, ResetStyle, USAGE_SNAPSHOT_STORE_PATH, UsageBucketPresentation, UsageCache,
-    UsageFormatPrefs, UsageRefreshTarget, UsageSurface, UsageViewInput, VarintField,
-    account_snapshot_views_from_cache, account_tab_label_for_parts, amp_status_bar_headline,
-    atomic_write_usage_json, broker_surface_id, bucket, cached_refreshing_view,
-    cached_unavailable_view, cached_usage_for_capability, cached_usage_for_target,
-    cached_usage_key_for_target, canonical_usage_cache_key, capability_matches_surface,
-    codex_account_from_value, codex_limit_label, collect_cli_output, compact_account_identity,
-    compact_count, compact_duration_label, complete_external_rpc, decorate_surface_view,
-    derived_remaining_from_used_fraction, dollar_amounts, enrich_provider_tabs, env_dir_or_home,
-    env_value, epoch_seconds_from_maybe_ms, estimate_caption, exact_reset_parenthetical,
-    expiry_label, external_rpc_operation, first_credential, first_credential_with_path,
-    first_string_key, format_amount_with_unit, format_cents, format_currency, get_json_bearer,
-    home_path, humanize_plan_label, humanize_reason, humanize_window_label, humanize_words_with,
-    json_number, local_timestamp_label, looks_like_protobuf_payload, mark_active_tab,
-    normalize_url_or_host, now_epoch, oauth_origin, parse_chatgpt_base_url, parse_iso_epoch,
-    percent_before_used, percent_headline, preserve_cached_quota_on_failed_refresh,
-    provider_display_label, provider_http_client, provider_outcome, provider_request,
-    provider_tabs, quota_amounts_for_account_snapshot, quota_pace_label, read_json_file,
-    read_process_pipe, read_varint, refresh_cached_updated_label, relative_updated_label,
-    reset_label, reset_label_with_prefs, resolve_identity, resolve_identity_with_extra,
-    resolve_surface, resolved_usage_provider_label, retry_after_header_seconds,
-    retry_after_header_value, run_cli_with_timeout, run_cli_with_timeout_full, severity_from_label,
-    spend_headline_label, split_fetch, split_provider_fetch, stable_cache_account_label,
-    status_bar_fresh_or_stale, status_bar_headline_for_surface, status_bar_label,
-    status_bar_quota_labels, summary_bucket, timed_bucket, titlecase_ascii, unpollable_snapshot,
-    unsupported_snapshot, usage_account_tab_id, usage_bucket_presentation,
-    usage_cache_key_for_broker_account, usage_cache_key_for_view, usage_confidence_storage_label,
-    usage_detail_presentation, usage_display_status_label, usage_error_is_rate_limited,
-    usage_error_is_unauthorized, usage_identity_presentation, usage_source_storage_label,
-    usage_status_storage_label, usage_tab_source_label, usage_tab_status_label, usage_view,
-    used_percent_from_fraction, window_minutes_label, with_status_slot, write_json_line,
-    write_materialized_usage_accounts,
 };

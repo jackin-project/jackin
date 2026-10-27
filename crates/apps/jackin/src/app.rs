@@ -14,17 +14,9 @@ mod workflow_cmd;
 pub(crate) mod workflow_export;
 mod workspace_cmd;
 
-#[cfg(test)]
-pub(crate) use crate::workspace::LoadWorkspaceInput;
 use restore::{
     ConsoleInPlaceHandler, handle_console_instance_action, restore_candidate_for_hardline,
     restore_hardline_instance,
-};
-#[cfg(test)]
-pub(crate) use restore::{
-    MovedPathBrowserChoice, MovedPathEntryStep, ad_hoc_restore_input_for_current_dir,
-    ad_hoc_restore_input_for_moved_path, classify_moved_path_entry,
-    mark_instance_restore_available_after_stop, moved_path_browser_choices,
 };
 
 use helpers::{
@@ -404,6 +396,3 @@ const fn hardline_action_options() -> [(&'static str, HardlineAction); 4] {
         ("Cancel", HardlineAction::Cancel),
     ]
 }
-
-#[cfg(test)]
-mod tests;

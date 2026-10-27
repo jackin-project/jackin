@@ -24,17 +24,6 @@ impl UsageCoordinator {
         Self::start(executor, store, config, None, None)
     }
 
-    #[cfg(feature = "test-support")]
-    #[must_use]
-    pub fn new_with_clock(
-        executor: Arc<dyn UsageProviderExecutor>,
-        store: Arc<dyn AccountStateStore>,
-        config: UsageCoordinatorConfig,
-        clock: Arc<dyn MonotonicClock>,
-    ) -> Self {
-        Self::start_with_clock(executor, store, config, None, None, clock)
-    }
-
     pub fn authorize_credential_scope(
         &self,
         capability: &UsageAccountCapability,
@@ -57,22 +46,6 @@ impl UsageCoordinator {
             .map(|entry| (entry.capability, entry.revision))
             .collect();
         Self::start(executor, store, config, Some(catalog), None)
-    }
-
-    #[cfg(feature = "test-support")]
-    #[must_use]
-    pub fn with_catalog_and_clock(
-        executor: Arc<dyn UsageProviderExecutor>,
-        store: Arc<dyn AccountStateStore>,
-        config: UsageCoordinatorConfig,
-        catalog: impl IntoIterator<Item = UsageCatalogEntry>,
-        clock: Arc<dyn MonotonicClock>,
-    ) -> Self {
-        let catalog = catalog
-            .into_iter()
-            .map(|entry| (entry.capability, entry.revision))
-            .collect();
-        Self::start_with_clock(executor, store, config, Some(catalog), None, clock)
     }
 
     #[must_use]

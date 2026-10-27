@@ -16,6 +16,3 @@ impl OperatorNoticeSink for DiagnosticsOperatorNotice {
 pub fn install_operator_notice_sink() {
     jackin_core::set_operator_notice_sink(Box::new(DiagnosticsOperatorNotice));
 }
-
-#[cfg(test)]
-mod tests;

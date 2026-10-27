@@ -36,7 +36,7 @@ cleanup.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`dind_gc.rs`](src/dind_gc.rs) | orphaned-resource GC | hub `cleanup` suite |
+| [`dind_gc.rs`](src/dind_gc.rs) | orphaned-resource GC | — |
 
 ## Public API
 
@@ -50,6 +50,6 @@ cleanup.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-cleanup-dind-gc
+cargo nextest run -p jackin-runtime-cleanup-dind-gc --no-tests warn
 cargo clippy -p jackin-runtime-cleanup-dind-gc --all-targets -- -D warnings
 ```

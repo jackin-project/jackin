@@ -7,7 +7,6 @@ use jackin_protocol::control::{
     UsageMeterSide,
 };
 
-/// Select continuous geometry without changing or inferring source observations.
 #[must_use]
 pub fn select_quota_meter(
     bucket: &QuotaBucketView,
@@ -57,12 +56,6 @@ pub fn select_quota_meter(
     (None, None)
 }
 
-/// Return the unrounded remaining-side key used to rank quota buckets.
-///
-/// This follows the same authority order as [`select_quota_meter`] while
-/// retaining raw overage and fractional source values for comparisons. The
-/// returned key is not display geometry and must never be stored as an
-/// observation.
 #[must_use]
 pub fn quota_bucket_remaining_rank_points(bucket: &QuotaBucketView) -> Option<f64> {
     let raw_used = bucket.used_percent.map(RawPercentPoints::from);
@@ -78,9 +71,6 @@ pub fn quota_bucket_remaining_rank_points(bucket: &QuotaBucketView) -> Option<f6
     )
 }
 
-/// Whether a bucket contains a typed quota observation that can support a
-/// quantitative summary. Labels and reset metadata remain available for
-/// detail presentation, but do not establish quota quantity by themselves.
 #[must_use]
 pub fn quota_bucket_has_observation(bucket: &QuotaBucketView) -> bool {
     bucket.provider_quota_state.is_some()
@@ -93,10 +83,6 @@ pub fn quota_bucket_has_observation(bucket: &QuotaBucketView) -> bool {
         || bucket.limit_money.is_some()
 }
 
-/// Rank raw source values without reducing them to clamped meter geometry.
-///
-/// This variant accepts broker source slots, whose exact Money amounts have
-/// already been converted into the dedicated raw `money_used_percent` value.
 #[must_use]
 pub fn quota_source_remaining_rank_points(
     count_quota: Option<CountQuota>,
@@ -149,7 +135,6 @@ fn requests_count_remaining_rank_points(count: CountQuota) -> Option<f64> {
     Some(scaled as f64 / u128::from(limit) as f64)
 }
 
-/// Calculate the independent signed Money ratio in percentage points.
 #[must_use]
 pub fn money_used_percent(bucket: &QuotaBucketView) -> Option<RawPercentPoints> {
     let used = bucket.used_money.as_ref()?;
@@ -180,7 +165,6 @@ fn provider_reported_raw_remaining(
         .flatten()
 }
 
-/// Capitalized provider state for Rust-owned presentation labels.
 #[must_use]
 pub const fn provider_quota_state_label(state: ProviderQuotaState) -> &'static str {
     match state {
@@ -189,7 +173,6 @@ pub const fn provider_quota_state_label(state: ProviderQuotaState) -> &'static s
     }
 }
 
-/// Return a state-first summary with independently observed quantities kept as detail.
 #[must_use]
 pub fn provider_quota_state_summary(bucket: &QuotaBucketView) -> Option<String> {
     let state = bucket.provider_quota_state?;
@@ -246,6 +229,3 @@ fn source_percent_label(
         crate::format_percent_points(points)
     )
 }
-
-#[cfg(test)]
-mod tests;

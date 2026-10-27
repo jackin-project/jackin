@@ -218,29 +218,6 @@ pub fn init_tracing_for(
     Ok(false)
 }
 
-#[cfg(feature = "test-support")]
-pub fn init_wire_test_export(endpoint: &str, identity: ServiceIdentity) -> anyhow::Result<()> {
-    let endpoints = otlp::OtlpEndpoints::new(endpoint, endpoint, endpoint);
-    otlp::init(false, "wire-conformance", identity, &endpoints)
-}
-
-#[cfg(feature = "test-support")]
-pub fn flush_wire_test_export() -> Result<(), ValidationFailure> {
-    otlp::validate_flush()
-}
-
-#[cfg(feature = "test-support")]
-#[doc(hidden)]
-pub fn otlp_runtime_creation_count_for_test() -> u64 {
-    otlp::runtime_creation_count()
-}
-
-#[cfg(feature = "test-support")]
-#[doc(hidden)]
-pub fn otlp_runtime_active_for_test() -> bool {
-    otlp::runtime_is_active()
-}
-
 #[must_use]
 pub fn unsupported_otlp_protocol() -> Option<String> {
     let env = |key: &str| std::env::var(key).ok();
@@ -388,15 +365,7 @@ fn rewrite_endpoint_for_container(endpoint: &str) -> ContainerOtlp {
     }
 }
 
-#[cfg(test)]
-mod tests;
-
 mod otlp;
-
-#[cfg(any(test, feature = "test-support"))]
-pub use otlp::{TestExport, test_capsule_layers};
-#[cfg(test)]
-pub(crate) use otlp::{emit_session_start_for_test, test_layers};
 
 pub(crate) fn emit_progress_event(
     _invocation_id: &str,

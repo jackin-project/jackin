@@ -5,11 +5,6 @@ use jackin_protocol::control::ServerMsg;
 
 use super::{ClientRegistry, ControlRouting, SessionRegistry, SessionSupervisor};
 
-#[cfg(test)]
-use std::sync::Mutex;
-#[cfg(test)]
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-
 pub(crate) struct RuntimeEvent<'a> {
     pub(crate) session_id: u64,
     pub(crate) source_id: &'a str,
@@ -115,79 +110,3 @@ impl PersistencePort for DefaultDaemonPorts {
 }
 
 pub(crate) const PORTS: DefaultDaemonPorts = DefaultDaemonPorts;
-
-#[cfg(test)]
-#[derive(Debug, Default)]
-pub(crate) struct FakeDaemonPorts {
-    pub fail_spawn: AtomicBool,
-    pub attach_count: AtomicUsize,
-    pub detach_count: AtomicUsize,
-    pub transitions: Mutex<Vec<AttachTransition>>,
-    pub runtime_events: Mutex<Vec<u64>>,
-}
-
-#[cfg(test)]
-impl FakeDaemonPorts {
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-}
-
-#[cfg(test)]
-impl ControlPort for FakeDaemonPorts {
-    fn report_runtime_event(
-        &self,
-        sessions: &mut SessionRegistry,
-        event: RuntimeEvent<'_>,
-    ) -> ServerMsg {
-        self.runtime_events.lock().unwrap().push(event.session_id);
-        DefaultDaemonPorts.report_runtime_event(sessions, event)
-    }
-}
-
-#[cfg(test)]
-impl AttachPort for FakeDaemonPorts {
-    fn begin_attach(&self, clients: &ClientRegistry) -> AttachTransition {
-        let transition = DefaultDaemonPorts.begin_attach(clients);
-        self.transitions.lock().unwrap().push(transition);
-        transition
-    }
-
-    fn record_attached(&self) {
-        self.attach_count.fetch_add(1, Ordering::SeqCst);
-    }
-
-    fn record_detached(&self) {
-        self.detach_count.fetch_add(1, Ordering::SeqCst);
-    }
-
-    fn prepare_session_spawn(&self, _sessions: &SessionSupervisor) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            !self.fail_spawn.load(Ordering::SeqCst),
-            "injected PTY spawn failure"
-        );
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-impl StatusPort for FakeDaemonPorts {
-    fn retire_codename(
-        &self,
-        sessions: &mut SessionSupervisor,
-        codename: &str,
-        observed_at: DateTime<Utc>,
-    ) {
-        sessions.retire_codename(codename, observed_at);
-    }
-}
-
-#[cfg(test)]
-impl PersistencePort for FakeDaemonPorts {
-    fn last_session_exit(&self, control: &ControlRouting) -> ExitDisposition {
-        DefaultDaemonPorts.last_session_exit(control)
-    }
-}
-
-#[cfg(test)]
-mod tests;

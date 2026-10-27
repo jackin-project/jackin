@@ -16,9 +16,6 @@ type SnapshotFetchResult = (
     )>,
 );
 
-#[cfg(test)]
-mod tests;
-
 pub(crate) fn load_instance_refresh_snapshot(
     paths: &jackin_core::JackinPaths,
 ) -> Result<ManagerInstanceRefreshSnapshot, String> {

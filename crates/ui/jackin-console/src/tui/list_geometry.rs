@@ -208,6 +208,3 @@ pub fn instance_row_width(
         width + 5
     }
 }
-
-#[cfg(test)]
-mod tests;

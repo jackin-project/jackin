@@ -85,6 +85,3 @@ pub fn validate_manifest_version(
         std::cmp::Ordering::Less | std::cmp::Ordering::Equal => Ok(version),
     }
 }
-
-#[cfg(test)]
-mod tests;

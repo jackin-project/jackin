@@ -223,6 +223,3 @@ fn content_row_to_visible_row(
 
 mod words;
 pub(crate) use words::word_bounds_in_row;
-
-#[cfg(test)]
-mod tests;

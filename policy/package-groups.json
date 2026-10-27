@@ -24,7 +24,6 @@
     "jackin-manifest": "library",
     "jackin-omp-store": "library",
     "jackin-oppicker": "library",
-    "jackin-otlp-testbed": "library",
     "jackin-pr-trailers": "tool",
     "jackin-process": "library",
     "jackin-process-directory": "library",

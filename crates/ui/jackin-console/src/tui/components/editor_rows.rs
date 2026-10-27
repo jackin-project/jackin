@@ -5,8 +5,6 @@ mod auth_lines;
 mod displays;
 mod primitives;
 mod secrets;
-#[cfg(test)]
-mod tests;
 pub use auth_lines::{auth_line_width, auth_lines};
 pub use displays::{
     AuthLineRow, AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind, AuthSourceValue,

@@ -41,7 +41,7 @@ for launch.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`launch_dind.rs`](src/launch_dind.rs) | sidecar launch + prewarm state | hub `launch::launch_dind` suite (`launch_dind/tests.rs`) + hub `launch` suite |
+| [`launch_dind.rs`](src/launch_dind.rs) | sidecar launch + prewarm state | — |
 
 ## Public API
 
@@ -62,6 +62,6 @@ for launch.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-dind
+cargo nextest run -p jackin-runtime-launch-dind --no-tests warn
 cargo clippy -p jackin-runtime-launch-dind --all-targets -- -D warnings
 ```

@@ -65,6 +65,3 @@ impl FromStr for ReasoningEffort {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

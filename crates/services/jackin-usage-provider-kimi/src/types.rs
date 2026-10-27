@@ -172,9 +172,7 @@ pub(crate) fn kimi_reported_used_percent(
     if !reported_ratio.is_finite() || reported_ratio < 0.0 {
         return Err(());
     }
-    // Kimi Code's managed `/coding/v1/usages` contract reports `used_ratio` as
-    // a fraction. Keep this source-path conversion uniform, including values
-    // above one that represent overage; magnitude never changes the unit.
+
     let points = reported_ratio * 100.0;
     CanonicalUsedPercent::new(points).map(Some).map_err(|_| ())
 }

@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Trusted Cargo selector and output custody, chosen only by archive entrypoints.
 use anyhow::{Context, Result, ensure};
 use std::{
     fs,
@@ -48,8 +47,6 @@ impl ArchiveLayout {
                 .all(|c| !matches!(c, Component::ParentDir | Component::CurDir)),
             "noncanonical Cargo build root"
         );
-        // Resolve only the trusted root, including platform/configured aliases.
-        // Descendant artifacts still cannot introduce aliases or traversal.
         let root = canonical_root(&root)?;
         Ok(Self {
             root,

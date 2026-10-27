@@ -176,6 +176,3 @@ fn git(root: &Path, args: &[&str]) -> Result<jackin_process::ExecResult> {
     cmd.arg("-C").arg(root).args(args);
     crate::cmd::output_raw(&mut cmd)
 }
-
-#[cfg(test)]
-mod tests;

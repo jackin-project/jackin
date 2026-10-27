@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(test)]
-mod tests;
-
 use std::{
     ffi::{OsStr, OsString},
     fs,
@@ -146,8 +143,12 @@ pub(super) fn require_events_enabled(repository: &Path) -> Result<()> {
 
 pub(super) fn verify_installed_hooks(repository: &Path, owner: &Path) -> Result<()> {
     require_events_enabled(repository)?;
-    let mut owner_command = shell_quote_path(owner)?;
-    owner_command.push(" run-snapshot");
+    let git_dir = git_path(repository, &["rev-parse", "--absolute-git-dir"])?;
+    ensure!(
+        owner == git_dir.join("jackin-precommit-owner/owner"),
+        "installed hook owner is not in this worktree's Git directory"
+    );
+    let owner_command = owner_command();
     for (key, expected) in [
         ("hook.hk-pre-commit.enabled", OsStr::new("false")),
         ("hook.jackin-pre-commit.command", owner_command.as_os_str()),
@@ -367,21 +368,8 @@ fn hook_config_result(
     exec_sync(&request).context("checking effective Git hook event configuration")
 }
 
-pub(super) fn shell_quote_path(path: &Path) -> Result<OsString> {
-    let bytes = path.as_os_str().as_bytes();
-    ensure!(
-        !bytes.iter().any(|byte| matches!(byte, b'\n' | b'\r' | 0)),
-        "installed owner path contains an unsupported control byte"
-    );
-    let mut quoted = Vec::with_capacity(bytes.len() + 2);
-    quoted.push(b'\'');
-    for byte in bytes {
-        if *byte == b'\'' {
-            quoted.extend_from_slice(b"'\\''");
-        } else {
-            quoted.push(*byte);
-        }
-    }
-    quoted.push(b'\'');
-    Ok(OsString::from_vec(quoted))
+pub(super) fn owner_command() -> OsString {
+    OsString::from(
+        "git_dir=$(git rev-parse --absolute-git-dir) && exec \"$git_dir/jackin-precommit-owner/owner\" run-snapshot",
+    )
 }

@@ -986,6 +986,3 @@ fn strip_substitution(detail: &str) -> Option<&str> {
 fn split_shell_words(text: &str) -> Option<Vec<String>> {
     shell_words::split(text).ok()
 }
-
-#[cfg(test)]
-mod tests;

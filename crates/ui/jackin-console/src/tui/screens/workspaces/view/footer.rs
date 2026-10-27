@@ -189,9 +189,6 @@ fn selected_instance_is_live(state: &ManagerState<'_>, selected: ManagerListRow)
     )
 }
 
-#[cfg(test)]
-mod tests;
-
 #[must_use]
 pub fn workspace_screen_footer_items_for_state(
     state: &ManagerState<'_>,

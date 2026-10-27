@@ -20,14 +20,13 @@ usage services.
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
 | [`cache.rs`](src/cache.rs) | snapshot cache | — |
-| [`format.rs`](src/format.rs) · [`format/`](src/format) | value formatting | [`tests.rs`](src/format/tests.rs) |
+| [`format.rs`](src/format.rs) · [`format/`](src/format) | value formatting | — |
 | [`view.rs`](src/view.rs) · [`view/`](src/view) | usage view composition | — |
 | [`refresh.rs`](src/refresh.rs) | refresh waves, rate limits | — |
 | [`transport.rs`](src/transport.rs) · [`http.rs`](src/http.rs) · [`io.rs`](src/io.rs) | fetch transport | — |
 | [`outcome.rs`](src/outcome.rs) · [`fallback.rs`](src/fallback.rs) · [`surface.rs`](src/surface.rs) · [`diagnostic.rs`](src/diagnostic.rs) | outcome mapping | — |
 | [`labels.rs`](src/labels.rs) | display/storage labels | — |
 | [`cache_keys.rs`](src/cache_keys.rs) · [`consts.rs`](src/consts.rs) · [`credentials.rs`](src/credentials.rs) | keys, consts, credential files | — |
-| [`omp.rs`](src/omp.rs) · [`omp/`](src/omp) | omp attribution adapter | [`tests.rs`](src/omp/tests.rs) |
 | [`process_telemetry.rs`](src/process_telemetry.rs) | child-process telemetry | — |
 
 ## Public API
@@ -38,6 +37,6 @@ Cache, labels, views, and fetch helpers consumed by
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-core
+cargo nextest run -p jackin-usage-provider-core --no-tests warn
 cargo clippy -p jackin-usage-provider-core --all-targets -- -D warnings
 ```

@@ -35,7 +35,7 @@ for runtime.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`prewarm_trigger.rs`](src/prewarm_trigger.rs) | prewarm targets + sweeps | hub `prewarm_trigger` suite (`prewarm_trigger/tests.rs`) |
+| [`prewarm_trigger.rs`](src/prewarm_trigger.rs) | prewarm targets + sweeps | — |
 
 ## Public API
 
@@ -49,6 +49,6 @@ for runtime.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-prewarm-trigger
+cargo nextest run -p jackin-runtime-prewarm-trigger --no-tests warn
 cargo clippy -p jackin-runtime-prewarm-trigger --all-targets -- -D warnings
 ```

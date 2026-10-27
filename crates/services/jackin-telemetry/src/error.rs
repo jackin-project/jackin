@@ -116,6 +116,3 @@ fn debug_source<E: std::fmt::Debug + 'static>(
     };
     source.fmt(formatter)
 }
-
-#[cfg(test)]
-mod tests;

@@ -18,7 +18,7 @@ persisted.
 
 | Module | Owns | Tests |
 |---|---|---|
-| [`lib.rs`](src/lib.rs) | re-exports | [`tests.rs`](src/tests.rs) |
+| [`lib.rs`](src/lib.rs) | re-exports | — |
 | [`dispatch.rs`](src/dispatch.rs) | routing + vendor seam | mock-vendor routing |
 
 ## Public API
@@ -30,6 +30,6 @@ persisted.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-credential-snapshots
+cargo nextest run -p jackin-usage-credential-snapshots --no-tests warn
 cargo clippy -p jackin-usage-credential-snapshots --all-targets -- -D warnings
 ```

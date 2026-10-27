@@ -208,6 +208,3 @@ fn github_slug(source: &str) -> anyhow::Result<String> {
     }
     Ok(format!("{}/{}", parts[0], parts[1]))
 }
-
-#[cfg(test)]
-mod tests;

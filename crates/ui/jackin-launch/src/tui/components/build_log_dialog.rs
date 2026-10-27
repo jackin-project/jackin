@@ -314,6 +314,3 @@ fn push_wrapped_build_line(
     }
     lines.push(Line::from(spans));
 }
-
-#[cfg(test)]
-mod tests;

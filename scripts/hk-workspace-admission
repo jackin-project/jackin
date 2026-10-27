@@ -42,7 +42,7 @@ while :; do
     *) path_entry=$path_list; path_list=; finished=1 ;;
   esac
   candidate="${path_entry:-.}/rust-build-guard"
-  if [[ -e "$candidate" || -L "$candidate" ]]; then
+  if [[ -f "$candidate" && -x "$candidate" ]]; then
     guard_path=$candidate
     break
   fi

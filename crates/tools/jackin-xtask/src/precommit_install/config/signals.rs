@@ -15,14 +15,14 @@ const INSTALL_SIGNALS: [i32; 3] = [
     signal_hook::consts::signal::SIGTERM,
 ];
 
-pub(super) struct InstallSignals {
+pub(in crate::precommit_install) struct InstallSignals {
     hup: Arc<AtomicBool>,
     int: Arc<AtomicBool>,
     term: Arc<AtomicBool>,
     terminal: Arc<AtomicBool>,
 }
 
-pub(super) fn with_install_signals(
+pub(in crate::precommit_install) fn with_install_signals(
     operation: impl FnOnce(&InstallSignals) -> Result<()>,
 ) -> Result<()> {
     let signals = InstallSignals::register()?;
@@ -92,7 +92,7 @@ impl InstallSignals {
         Ok(())
     }
 
-    pub(super) fn check(&self) -> Result<()> {
+    pub(in crate::precommit_install) fn check(&self) -> Result<()> {
         if self.term.load(Ordering::SeqCst) {
             return Err(InstallInterruption::new(InstallSignal::Term, false).into());
         }

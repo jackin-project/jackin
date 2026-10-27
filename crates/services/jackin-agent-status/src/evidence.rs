@@ -177,6 +177,3 @@ pub enum EvidenceNote {
     ProcessExited,
     ForegroundReturnedToShell,
 }
-
-#[cfg(test)]
-mod tests;

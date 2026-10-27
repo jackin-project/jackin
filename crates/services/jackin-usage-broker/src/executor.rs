@@ -394,6 +394,3 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests;

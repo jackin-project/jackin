@@ -7,8 +7,6 @@ mod host_open;
 mod hover;
 mod selection;
 
-#[cfg(test)]
-pub(crate) use host_open::host_url_opening_allowed_for;
 pub(crate) use host_open::{host_url_opening_allowed, is_double_click};
 
 #[derive(Clone, Copy, Debug)]

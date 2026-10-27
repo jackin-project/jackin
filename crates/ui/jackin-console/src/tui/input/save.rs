@@ -5,8 +5,6 @@ use crate::services::config_save::{
     EditorSavePreviewError, EditorSavePreviewInput, EditorSavePreviewPlan,
     plan_editor_save_preview, pre_existing_redundant_mounts_message,
 };
-#[cfg(test)]
-use crate::tui::auth_config::env_display_map;
 pub use crate::tui::components::save_preview::build_settings_save_lines;
 use crate::tui::components::save_preview::{
     build_workspace_save_lines as build_confirm_save_lines, collapse_removal_lines,
@@ -22,22 +20,6 @@ use crate::tui::state::{
     PendingIsolationCleanup,
 };
 use jackin_config::AppConfig;
-
-#[cfg(test)]
-pub fn append_env_map_diff_lines(
-    out: &mut Vec<ratatui::text::Line<'static>>,
-    indent: Option<&str>,
-    original: &std::collections::BTreeMap<String, jackin_core::EnvValue>,
-    pending: &std::collections::BTreeMap<String, jackin_core::EnvValue>,
-    value: ratatui::style::Style,
-    dim: ratatui::style::Style,
-) {
-    let original = env_display_map(original);
-    let pending = env_display_map(pending);
-    crate::tui::components::save_preview::append_env_map_diff_lines(
-        out, indent, &original, &pending, value, dim,
-    );
-}
 
 pub fn continue_save_after_drift_check(
     state: &mut ManagerState<'_>,

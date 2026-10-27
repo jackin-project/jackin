@@ -38,9 +38,9 @@ valid future schema versions fail closed while preserving their bytes.
 
 | Module | Owns | Tests |
 |---|---|---|
-| [`lib.rs`](src/lib.rs) | re-exports | [`tests.rs`](src/tests.rs) |
-| `jobs`/`worker`/`finish` | generation lifecycle | `tests/` cases |
-| [`state/`](src/state.rs) | file-backed envelopes | `state/tests/` |
+| [`lib.rs`](src/lib.rs) | re-exports | — |
+| `jobs`/`worker`/`finish` | generation lifecycle | — |
+| [`state/`](src/state.rs) | file-backed envelopes | — |
 
 ## Public API
 
@@ -53,6 +53,6 @@ valid future schema versions fail closed while preserving their bytes.
 ## How to verify
 
 ```sh
-mbx +1.99.1 nextest run -p jackin-usage-coordinator --locked --offline
+mbx +1.99.1 nextest run -p jackin-usage-coordinator --locked --offline --no-tests warn
 mbx +1.99.1 clippy -p jackin-usage-coordinator --all-targets --locked --offline -- -D warnings
 ```

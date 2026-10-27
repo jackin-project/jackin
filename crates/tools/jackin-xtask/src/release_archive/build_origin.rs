@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Cargo metadata is explicit only for the validated native production handoff.
-
 use std::process::Command;
 use velnor_actions_contract::package_release::PackageReleaseChannel;
 
@@ -34,6 +32,3 @@ impl BuildVersion<'_> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

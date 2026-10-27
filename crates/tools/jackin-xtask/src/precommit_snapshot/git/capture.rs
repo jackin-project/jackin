@@ -19,8 +19,6 @@ use nix::{
 use sha2::{Digest, Sha256};
 
 use super::super::process::{CommandBudget, EnvironmentMode, SetupControls, capture_strict};
-#[cfg(test)]
-use std::time::Duration;
 
 pub(super) const INDEX_INPUT_FILE_LIMIT: u64 = 1024 * 1024 * 1024;
 
@@ -85,11 +83,6 @@ impl LiveRepository {
             &env::current_dir().context("reading current directory")?,
             controls,
         )
-    }
-
-    #[cfg(test)]
-    pub(in crate::precommit_snapshot) fn capture_at(root: &Path) -> Result<Self> {
-        Self::capture_at_with_controls(root, &SetupControls::for_test(Duration::from_mins(10)))
     }
 
     fn capture_at_with_controls(root: &Path, controls: &SetupControls) -> Result<Self> {

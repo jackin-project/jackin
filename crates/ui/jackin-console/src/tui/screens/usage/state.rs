@@ -20,9 +20,7 @@ pub struct UsageScreenState {
     pub detail: bool,
     pub sort: UsageSort,
     pub filter: UsageFilter,
-    /// Scroll offset consumed by the Usage list Paragraph.
     pub list_scroll: u16,
-    /// Scroll offset consumed by the Usage detail Paragraph.
     pub scroll: u16,
     pub notice: Option<String>,
     pub generated_at_epoch: Option<i64>,

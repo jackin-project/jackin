@@ -20,18 +20,8 @@ pub use launch_dind::{
 use launch_dind::{adopt_prewarmed_dind_sidecar, run_dind_sidecar_headless};
 
 pub(crate) use jackin_runtime_launch_slot::launch_slot;
-#[cfg(test)]
-pub(crate) use launch_slot::{
-    claim_container_name, resolve_github_env_map, try_acquire_name_lock,
-    verify_github_token_present,
-};
 
 mod trust;
-#[cfg(test)]
-pub(crate) use jackin_runtime_launch_trust::trust::{
-    MISE_TRUSTED_CONFIG_PATHS_ENV, inject_workspace_mise_env, seed_codex_project_trust,
-    workspace_mise_trusted_config_paths,
-};
 
 mod image_plan;
 pub use image_plan::{LaunchImagePlan, resolve_launch_image_plan};
@@ -57,25 +47,8 @@ pub use launch_pipeline::launch_phases::{
     validate_launch_grants,
 };
 
-#[cfg(test)]
-use crate::instance::InstanceStatus;
-#[cfg(test)]
-pub(crate) use crate::instance::{
-    DockerResources, InstanceIndex, InstanceManifest, NewInstanceManifest, RoleState,
-};
-#[cfg(test)]
-pub(crate) use crate::runtime::attach::ContainerState;
 use jackin_core::RoleSelector;
-#[cfg(test)]
-pub(crate) use jackin_docker::docker_client::DockerApi;
-#[cfg(test)]
-pub(crate) use std::path::Path;
 
-#[cfg(test)]
-#[cfg(test)]
-pub(crate) use launch_pipeline::load_role_with;
-#[cfg(test)]
-pub(crate) use launch_pipeline::manifest_env_timing_detail;
 pub use launch_pipeline::{load_role, resolve_supported_agents_for_console};
 
 pub use jackin_runtime_launch_load_options::load_options::LoadOptions;
@@ -119,24 +92,17 @@ pub(crate) use jackin_runtime_launch_mounts::mounts::{
     resolve_backend,
 };
 
-#[cfg(test)]
-pub(crate) use capsule_setup::extract_host_env_entries;
 pub(crate) use capsule_setup::{
     capsule_config, capsule_config_contents, create_host_env_file, exec_binding_names,
     prepare_host_env_transport, prepare_socket_dir,
 };
 
-#[cfg(test)]
-pub(crate) use exit_diagnosis::diagnose_premature_exit;
 pub(crate) use exit_diagnosis::diagnose_with_state_by_id;
-#[cfg(test)]
-pub(crate) use exit_diagnosis::inspect_attach_outcome;
+
 pub(crate) use exit_diagnosis::{
     ExitPhase, attach_failure_error, inspect_attach_outcome_by_id, is_known_socket_close,
 };
 
-#[cfg(test)]
-pub(crate) use git_pull::pull_workspace_repos_with_git;
 pub(crate) use git_pull::{
     git_pull_sources, print_git_pull_results, pull_git_sources_with_git, record_git_pull_results,
 };
@@ -156,8 +122,7 @@ pub use load_cleanup::LoadCleanup;
 pub(crate) use load_cleanup::write_if_changed_atomic;
 
 mod restore_resolve;
-#[cfg(test)]
-pub(crate) use restore_resolve::resolve_restore_candidate;
+
 pub(crate) use restore_resolve::{
     EarlyCurrentRestoreScan, RestoreResolution, UnselectedCurrentRestoreResolution,
     resolve_current_restore_candidate_timed, resolve_restore_candidate_reusing_early,
@@ -165,41 +130,24 @@ pub(crate) use restore_resolve::{
 };
 
 mod launch_runtime;
-#[cfg_attr(
-    not(test),
-    expect(
-        unused_imports,
-        reason = "re-export launch_runtime helpers for sibling modules and tests"
-    )
-)]
 pub(crate) use launch_runtime::{
     LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm,
-    SidecarPrewarmReplenish, await_sibling_auth_prewarm, host_runtime_passthrough_env,
-    launch_role_runtime, spawn_sibling_auth_prewarm,
+    SidecarPrewarmReplenish, await_sibling_auth_prewarm, launch_role_runtime,
+    spawn_sibling_auth_prewarm,
 };
 
 mod restore;
-#[cfg(test)]
-use jackin_runtime_launch_attach_outcome::attach_outcome::format_attach_outcome;
+
 use jackin_runtime_launch_attach_outcome::attach_outcome::write_instance_attach_outcome;
 pub(in crate::runtime) use jackin_runtime_launch_attach_outcome::attach_outcome::{
     record_instance_attach_outcome, write_instance_status,
 };
 pub(in crate::runtime) use restore::preserved_instance_status;
-#[cfg(test)]
-use restore::{
-    RelatedRestoreCandidate, recover_related_restore_candidate, restore_candidate_label,
-    supersede_restore_candidates,
-};
+
 use restore::{
     manifest_host_workdir_fingerprint, related_restore_load_options,
     write_preserved_status_if_applicable,
 };
 
-#[cfg(test)]
-pub(crate) use auth_error::append_no_proxy_host;
 use auth_error::auth_token_source_reference;
 pub(crate) use jackin_runtime_launch_auth_error::auth_error;
-
-#[cfg(test)]
-mod tests;

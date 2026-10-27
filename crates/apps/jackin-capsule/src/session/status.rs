@@ -98,14 +98,6 @@ impl Session {
             .collect()
     }
 
-    pub fn sample_process_evidence(
-        &mut self,
-        now: std::time::Instant,
-    ) -> crate::agent_status::evidence::ProcessEvidence {
-        let mut sampler = crate::agent_status::process::ProcfsProcessSampler;
-        self.sample_process_evidence_with(&mut sampler, now)
-    }
-
     pub(crate) fn sample_process_evidence_with(
         &mut self,
         sampler: &mut impl crate::agent_status::process::ProcessSampler,

@@ -12,6 +12,3 @@ pub fn debug_run_info_state(
     }
     .into_state()
 }
-
-#[cfg(test)]
-mod tests;

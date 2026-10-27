@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! One origin-selected cache lookup shared by normal resolution and its controls.
-
 use super::{cache_key_version, origin, record, verify_version};
 use crate::binary_artifact::{is_executable_file, repair_executable_file};
 use anyhow::Result;

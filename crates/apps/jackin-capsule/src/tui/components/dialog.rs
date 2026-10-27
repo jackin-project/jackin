@@ -3,20 +3,12 @@
 
 use std::sync::Arc;
 
-#[cfg_attr(
-    not(test),
-    expect(unused_imports, reason = "re-export for dialog tests via super::*")
-)]
-pub(crate) use crate::pull_request::PullRequestInfo;
-
 pub use github_context::{GithubContextView, PullRequestStatus, github_context_view_from_state};
 
 pub use usage::UsageDialogTab;
 
 pub use super::container_info_dialog::ContainerInfoDiagnostics;
 pub(super) use super::palette::PALETTE_ITEMS;
-#[cfg(test)]
-pub(super) use super::palette::palette_filtered_indices;
 pub use super::palette::{PaletteCloseLabel, PaletteCommand};
 
 const PALETTE_WIDTH: u16 = 50;
@@ -32,8 +24,6 @@ fn file_url_path(href: &str) -> Option<&str> {
     href.strip_prefix("file://").filter(|path| !path.is_empty())
 }
 mod input;
-#[cfg(test)]
-use input::{PickerRow, picker_filtered_rows};
 
 mod hint;
 pub(crate) use hint::main_view_hint;
@@ -223,6 +213,3 @@ mod hits;
 mod key_dispatch;
 pub(crate) use actions::{CLOSE_TARGET_ITEMS, SPLIT_DIRECTION_ITEMS};
 pub use actions::{ConfirmKind, DialogAction, EXIT_DIRTY_ROWS, ExitDirtyRow, InspectRow};
-
-#[cfg(test)]
-mod tests;

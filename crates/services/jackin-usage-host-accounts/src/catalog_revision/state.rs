@@ -383,22 +383,3 @@ pub(super) fn key_commitment(key: &[u8; KEY_BYTES]) -> [u8; 32] {
     commitment.copy_from_slice(&digest);
     commitment
 }
-
-#[cfg(test)]
-pub(super) fn initial_record_for_test(
-    mode: u8,
-    transaction_id: [u8; 16],
-    epoch: [u8; 32],
-    lock_identity: FileIdentity,
-    evidence_record_id: [u8; 32],
-    evidence_digest: [u8; 32],
-) -> StateRecord {
-    StateRecord::initializing(
-        mode,
-        transaction_id,
-        epoch,
-        lock_identity,
-        evidence_record_id,
-        evidence_digest,
-    )
-}

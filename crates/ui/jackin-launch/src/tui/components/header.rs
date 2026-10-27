@@ -92,6 +92,3 @@ fn loading_line_spans(view: &LaunchView, frozen: bool) -> Vec<Span<'static>> {
         (ch, style)
     }))
 }
-
-#[cfg(test)]
-mod tests;

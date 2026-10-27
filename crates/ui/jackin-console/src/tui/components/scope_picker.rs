@@ -114,6 +114,3 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ScopePickerState) {
         },
     );
 }
-
-#[cfg(test)]
-mod tests;

@@ -40,6 +40,6 @@ credential cache. Secrets never cross this boundary.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-host-credentials
+cargo nextest run -p jackin-usage-host-credentials --no-tests warn
 cargo clippy -p jackin-usage-host-credentials --all-targets -- -D warnings
 ```

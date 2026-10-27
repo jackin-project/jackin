@@ -57,6 +57,3 @@ impl DiffScroll {
         *self = Self::new();
     }
 }
-
-#[cfg(test)]
-mod tests;

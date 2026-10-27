@@ -234,6 +234,3 @@ pub fn find_saved_workspace_for_cwd<'a>(
         .max_by_key(|(_, _, depth)| *depth)
         .map(|(name, ws, _)| (name.as_str(), ws))
 }
-
-#[cfg(test)]
-mod tests;

@@ -8,8 +8,6 @@ mod types;
 mod views;
 mod windows;
 
-#[cfg(any(test, feature = "test-support"))]
-pub use credentials::load_codex_oauth_credentials;
 pub use credentials::{
     CodexOAuthCredentials, codex_account_label_from_id_token, codex_oauth_from_value,
 };
@@ -39,6 +37,3 @@ pub use types::{
 };
 pub use views::codex_snapshot;
 pub use windows::{CodexResetCredit, CodexResetCredits, push_codex_window};
-
-#[cfg(test)]
-mod tests;

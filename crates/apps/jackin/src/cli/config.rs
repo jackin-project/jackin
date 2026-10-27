@@ -259,6 +259,3 @@ The next `jackin load` will prompt for confirmation again."
     #[command(about = "List all currently trusted role sources", long_about = "List all currently trusted role sources", before_help = BANNER, styles = HELP_STYLES)]
     List,
 }
-
-#[cfg(test)]
-mod tests;

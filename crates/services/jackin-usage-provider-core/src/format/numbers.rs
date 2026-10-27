@@ -20,10 +20,6 @@ pub fn used_percent_from_fraction(value: f64) -> Option<CanonicalUsedPercent> {
     CanonicalUsedPercent::new(value * 100.0).ok()
 }
 
-/// Convert a used fraction into a locally derived remaining percentage.
-///
-/// This complement is presentation data. It must not be tagged as a
-/// provider-reported remaining observation.
 pub fn derived_remaining_from_used_fraction(value: f64) -> Option<CanonicalRemainingPercent> {
     let used = used_percent_from_fraction(value)?;
     CanonicalRemainingPercent::new((100.0 - used.get()).max(0.0)).ok()

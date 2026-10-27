@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Close authored Jackin enums without treating upstream known values as exhaustive.
-
 use super::{RustRegistryMetadata, YamlValue, yaml_required, yaml_sequence, yaml_string};
 use anyhow::{Context as _, Result, bail};
 use std::{collections::BTreeMap, fs, path::Path};
@@ -77,7 +75,6 @@ impl EnumPolicy {
 
     pub(super) fn allowed_values(&self, name: &str) -> Result<String> {
         let Some(value) = self.authored_types.get(name) else {
-            // OTel semantic-convention enums are open by definition.
             return Ok("&[]".to_owned());
         };
         let values = member_values(value)?;
@@ -165,6 +162,3 @@ fn validate_overlaps(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

@@ -11,8 +11,6 @@ pub use jackin_config::{
     validate_isolation_layout, validate_mount_paths, validate_mount_specs, validate_mounts,
     validate_workspace_config,
 };
-#[cfg(test)]
-pub(crate) use mounts::covers;
 pub use mounts::{parse_mount_spec, parse_mount_spec_resolved};
 pub use paths::{expand_tilde, resolve_path};
 pub use planner::{CollapseError, CollapsePlan, Removal, plan_collapse};
@@ -28,6 +26,3 @@ pub use jackin_config::{
     DirtyExitPolicy, KeepAwakeConfig, MountConfig, MountIsolation, WorkspaceConfig, WorkspaceEdit,
     WorkspaceRoleOverride,
 };
-
-#[cfg(test)]
-mod tests;

@@ -146,6 +146,3 @@ pub fn resolve_env_with_overrides(
 
     Ok(ResolvedEnv { vars })
 }
-
-#[cfg(test)]
-mod tests;

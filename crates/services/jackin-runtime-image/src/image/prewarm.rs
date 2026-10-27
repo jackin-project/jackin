@@ -1,7 +1,5 @@
 use jackin_core::Agent;
-#[cfg(not(test))]
 use jackin_core::{JackinPaths, RoleSelector};
-#[cfg(not(test))]
 use jackin_telemetry::spawn::JoinSetExt as _;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,7 +15,6 @@ pub struct RoleImagePrewarmRow {
     pub status: ImagePrewarmStatus,
 }
 
-#[cfg(not(test))]
 pub async fn prewarm_role_images(
     paths: &JackinPaths,
     selector: &RoleSelector,

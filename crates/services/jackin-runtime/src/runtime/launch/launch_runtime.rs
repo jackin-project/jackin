@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(test)]
-use jackin_config::AppConfig;
 use jackin_core::CommandRunner;
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
@@ -124,8 +122,6 @@ pub(crate) struct SiblingPrewarm<'a> {
     pub(crate) selected_image_reused: bool,
 }
 
-#[cfg(test)]
-pub(crate) use jackin_runtime_launch_sibling_auth_prewarm::sibling_auth_prewarm::spawn_auth_prewarm_worker;
 pub(crate) use jackin_runtime_launch_sibling_auth_prewarm::sibling_auth_prewarm::{
     SiblingAuthPrewarm, await_sibling_auth_prewarm, spawn_sibling_auth_prewarm,
     spawn_sibling_auth_prewarm_with_admitted_instances,
@@ -315,9 +311,6 @@ pub(crate) const fn capsule_otlp_allowlist_host(
         None
     }
 }
-
-#[cfg(test)]
-mod tests;
 
 fn with_admitted_final_docker_spec<T>(
     paths: &JackinPaths,

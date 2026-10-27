@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
+
 [package]
 name = "jackin-runtime-launch-trust"
 version.workspace = true
@@ -24,10 +25,6 @@ jackin-core = { workspace = true }
 jackin-instance = { workspace = true }
 anyhow = { workspace = true }
 toml_edit = { workspace = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }
-toml = { workspace = true }
 
 [lints]
 workspace = true

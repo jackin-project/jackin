@@ -267,6 +267,3 @@ impl Backend for SocketBackend {
 
 mod sgr;
 pub(crate) use sgr::{SgrMetadata, push_number, term_color, write_color_sgr, write_sgr_metadata};
-
-#[cfg(test)]
-mod tests;

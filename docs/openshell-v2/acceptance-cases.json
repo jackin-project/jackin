@@ -1,0 +1,2426 @@
+{
+  "schema_version": 1,
+  "status": "NOT_RUN",
+  "cases": [
+    {
+      "id": "A01",
+      "title": "Safe source freeze",
+      "level": "SOURCE",
+      "setup": "Use a checkout with one committed file and one uncommitted sentinel.",
+      "action": "Create the v2 worktree and source lock. Compare the original bytes and Git status.",
+      "expected": "The original sentinel and status remain unchanged. All source pins and tool limits appear in the lock.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "P00"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "P00",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A02",
+      "title": "Complete call inventory",
+      "level": "SOURCE",
+      "setup": "Use the frozen baseline and all executable repository paths.",
+      "action": "Trace direct calls, wrappers, scripts, FFI, generated launch code, and inactive paths.",
+      "expected": "Every discovered runtime effect has a caller, owner, disposition, replacement task, and test reference.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "P01"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "P01",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A03",
+      "title": "Product behavior coverage",
+      "level": "SOURCE",
+      "setup": "Use the current CLI, account, role, project, Capsule, and workflow behavior register.",
+      "action": "Map every behavior to preservation, deliberate removal, or a visible blocker.",
+      "expected": "No retained behavior lacks an implementation task. Every removal names its specification basis.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "P01"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "P01",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A04",
+      "title": "Real upstream contract map",
+      "level": "SOURCE",
+      "setup": "Use the exact candidate SDK, protobufs, handlers, and drivers.",
+      "action": "Resolve each required operation to an actual symbol and field.",
+      "expected": "Proposed fields are marked proposed. Missing capabilities have upstream tasks. No moving source reference enters the lock.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "P02"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "P02",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A05",
+      "title": "SDK mutual TLS",
+      "level": "LIVE",
+      "setup": "Use a disposable gateway with valid, invalid, and missing client certificates.",
+      "action": "Connect through the selected SDK and perform a scoped read.",
+      "expected": "The valid identity succeeds. Invalid and missing identities fail. No insecure TLS path is used.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "P02",
+        "T12"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "P02",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T12",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A06",
+      "title": "Concurrent explicit targets",
+      "level": "LIVE",
+      "setup": "Use two gateways with identical friendly sandbox names and different content sentinels.",
+      "action": "Interleave scoped read and allowed mutation requests without changing active registrations.",
+      "expected": "Each result matches its explicit target and workspace. No request reaches the other gateway.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "P02",
+        "T12"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "P02",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T12",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A07",
+      "title": "Strict v2 schemas",
+      "level": "UNIT",
+      "setup": "Prepare valid v2 configurations and variants with unknown fields, wrong versions, and ambiguous IDs.",
+      "action": "Parse and resolve each variant.",
+      "expected": "Valid inputs resolve once. Invalid inputs fail explicitly. No old schema or first-match fallback succeeds.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T14"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T14",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A08",
+      "title": "Domain identity rules",
+      "level": "UNIT",
+      "setup": "Prepare two accounts, two policies, two trust classes, and one logical instance.",
+      "action": "Attempt domain reuse across each changed field.",
+      "expected": "Only identical admitted trust sets can reuse a domain. Human labels cannot replace stable identity.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T24"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T24",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A09",
+      "title": "Operation state contract",
+      "level": "UNIT",
+      "setup": "Enumerate every frozen phase, outcome, error, and recovery transition.",
+      "action": "Apply legal and illegal transitions, including cancellation after an uncertain remote effect.",
+      "expected": "Legal transitions preserve receipts. Illegal transitions fail. Local cancellation does not imply remote termination.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T10"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T10",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A10",
+      "title": "Honest test gate",
+      "level": "UNIT",
+      "setup": "Prepare one passing case, one failed assertion, one missing case, and one unavailable target.",
+      "action": "Run the harness and full-gate command.",
+      "expected": "Only the passing case reports PASS. The full gate fails for missing, failed, or blocked required cases.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "P04"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "P04",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A11",
+      "title": "Disposable resource ownership",
+      "level": "LIVE",
+      "setup": "Create owned test resources and unrelated sentinel resources in the same environment.",
+      "action": "Interrupt setup and run scoped cleanup.",
+      "expected": "Cleanup changes only recorded owned resources. Uncertain cleanup remains visible. Sentinels survive.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "P04"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "P04",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A12",
+      "title": "Evidence secret protection",
+      "level": "UNIT",
+      "setup": "Use synthetic credential canaries in allowed secret inputs and denied ordinary records.",
+      "action": "Exercise log, report, panic, transcript, and evidence serialization paths.",
+      "expected": "No known canary appears in ordinary artifacts. A leakage assertion fails the harness.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "P04"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "P04",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A13",
+      "title": "Production dependency boundary",
+      "level": "SOURCE",
+      "setup": "P05 inspects the newly created current graph with Cargo metadata. T39 repeats the checks with fresh Cargo metadata on the final candidate graph after legacy deletion.",
+      "action": "P05 captures Cargo metadata for the newly created current graph, inspects dependency edges, and compiles forbidden-import fixtures. T39 captures fresh Cargo metadata for the final candidate graph and repeats graph and composition checks after deletion.",
+      "expected": "Core has no runtime or database types. Capsule has no host credential path. Forbidden fixtures fail in both the P05 graph and the final post-deletion graph.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "P05",
+        "T39"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "P05",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T39",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A14",
+      "title": "No production backend selection",
+      "level": "SOURCE",
+      "setup": "Use the active crate graph and application composition.",
+      "action": "Search and inspect runtime enums, trait implementations, feature flags, and command dispatch.",
+      "expected": "OpenShell is the only production sandbox adapter. Mocks exist only in test scope.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "P05",
+        "T39"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "P05",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T39",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A15",
+      "title": "Authoritative activation observations",
+      "level": "LIVE",
+      "setup": "Create a sandbox with forged helper claims and real gateway observations. U00 and T13 qualify LIVE observation and adapter layers. T23 tests integrated activation through StartSession.",
+      "action": "U00 verifies scoped observations. T13 verifies adapter binding and fail-closed behavior. T23 attempts StartSession with missing, stale, or mismatched image, policy, provider, or generation evidence. It also tests forged helper claims.",
+      "expected": "Only matching authoritative observations satisfy the integrated StartSession barrier. U00 and T13 results do not replace T23's full activation attempt. A helper echo cannot replace gateway evidence.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U00",
+        "T13",
+        "T23"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U00",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T13",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T23",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A16",
+      "title": "Effective policy source",
+      "level": "LIVE",
+      "setup": "Use a sandbox policy that differs from the gateway global policy. U00 and T13 verify accepted revisions and replacement source; T29 qualifies product presentation. Establish one connection that loses authority and one that remains authorized.",
+      "action": "Load the global policy. Query actual accepted revisions and display the effective policy source afterward. Test established connections after the update. Reconnect unrelated authorized flow under effective policy if its connection closes.",
+      "expected": "The gateway global policy is the effective replacement. Network updates close existing connections. The revoked connection becomes unusable and closes; no automatic permissive replacement restores it. The unrelated flow remains authorized after the update and may resume through a qualified reconnect under the effective policy. T29 presents the accepted revision and source only; no task reports an imaginary policy intersection or claims presentation enforces policy.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U00",
+        "T13",
+        "T29"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U00",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T13",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T29",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A17",
+      "title": "Provider authority observation",
+      "level": "LIVE",
+      "setup": "Use a provider binding that adds approved endpoint access. U00 and T13 qualify LIVE attach, revoke, and change observations against installed revisions. T23 qualifies integrated StartSession and re-admission.",
+      "action": "U00 and T13 observe binding attach, revoke, and change operations and query installed status. Verify added access and refusal after revocation. T23 attempts StartSession and re-admission against each observed revision.",
+      "expected": "U00 and T13 layer observations remain separate from T23's integrated activation and re-admission. Activation uses the installed revision. Added access is visible. A revoked binding cannot pass readiness.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U00",
+        "T13",
+        "T23"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U00",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T13",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T23",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A18",
+      "title": "Same-name replacement fencing",
+      "level": "LIVE",
+      "setup": "Record sandbox A identity and generation. Replace it with B under the same name.",
+      "action": "Deliver delayed stop, start, delete, exec, policy, provider, transfer, and service mutations for A.",
+      "expected": "Every mutation rejects the stale binding. B and its data remain unchanged.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U01",
+        "T13"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U01",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T13",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A19",
+      "title": "Mutation replay integrity",
+      "level": "LIVE",
+      "setup": "Use one effect with a persisted request ID and canonical digest.",
+      "action": "Lose the first response. Retry the same request. Then change the payload under that ID.",
+      "expected": "The identical retry causes no duplicate effect. The changed payload fails. The original result stays attributable.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U01",
+        "T13"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U01",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T13",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A20",
+      "title": "Scope and permission masking",
+      "level": "LIVE",
+      "setup": "Use two workspaces and a caller without authority in one scope.",
+      "action": "Read, mutate, and replay requests across the forbidden scope.",
+      "expected": "Access fails without foreign data exposure. Permission masking does not cause local data deletion.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U01",
+        "T13"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U01",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T13",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A21",
+      "title": "Lost effectful exec response",
+      "level": "LIVE",
+      "setup": "Start a counted effect through the qualified exec API and drop its response.",
+      "action": "Recover the operation and attempt its permitted replay path.",
+      "expected": "The effect count stays one, or the result remains OutcomeUnknown. No new-ID blind retry occurs.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U01",
+        "T13"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U01",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T13",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A22",
+      "title": "Strict worker immutability",
+      "level": "LIVE",
+      "setup": "Use a worker with immutable candidate, checks, and root plus approved scratch.",
+      "action": "Attempt write, chmod, chown, rename, unlink, hardlink, xattr, and symlink-based escape operations.",
+      "expected": "Every out-of-grant content or metadata mutation fails. Approved scratch remains usable.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U02",
+        "T32"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U02",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T32",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A23",
+      "title": "Worker resource limits",
+      "level": "LIVE",
+      "setup": "Use fixed memory, CPU, PID, disk, output, and deadline limits.",
+      "action": "Exhaust each resource with disposable fixtures. Spawn child and grandchild processes.",
+      "expected": "Limits apply to the required scope. Output stays bounded. Timeout cleanup removes all owned worker processes.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U02",
+        "T32"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U02",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T32",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A24",
+      "title": "Worker authority denial",
+      "level": "LIVE",
+      "setup": "Use a strict worker with no account, provider, host mount, or ordinary network grant.",
+      "action": "Probe credential canaries, host sockets, DNS, IPv4, IPv6, and metadata endpoints.",
+      "expected": "All forbidden access fails. No unapproved account or network path appears.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U02",
+        "T32"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U02",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T32",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A25",
+      "title": "Trustworthy worker completion",
+      "level": "LIVE",
+      "setup": "Use success, nonzero exit, signal, OOM, timeout, and lost-status fixtures.",
+      "action": "Observe each result through the runtime completion contract.",
+      "expected": "Results remain distinct. Unknown infrastructure state cannot become a passing verdict.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U02",
+        "T32"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U02",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T32",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A26",
+      "title": "Ordinary native rebuilds",
+      "level": "LIVE",
+      "setup": "Use an approved native Rust network test and a fixed executable path.",
+      "action": "Run Cargo and nextest. Edit and rebuild twice at the same path. Repeat the allowed connection.",
+      "expected": "All approved development cycles work under the selected contract without path changes or Docker execution substitutes.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U03"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U03",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A27",
+      "title": "Replaced executable authority",
+      "level": "LIVE",
+      "setup": "Use a protected provider route and an untrusted replacement executable.",
+      "action": "Replace or race the executable while it requests the protected route.",
+      "expected": "Replacement cannot acquire unrelated credential authority. Destination and provider restrictions remain enforced.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U03"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U03",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A28",
+      "title": "Default-off engine",
+      "level": "LIVE",
+      "setup": "Use a role and target with engine access disabled.",
+      "action": "Load, prewarm, inspect, stop, and delete the domain.",
+      "expected": "No engine VM, endpoint, credential, engine prewarm, or engine-owned storage appears.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U08",
+        "T33"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U08",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T33",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A29",
+      "title": "Companion ownership identity",
+      "level": "LIVE",
+      "setup": "Use two domains and a restarted parent generation.",
+      "action": "Request each endpoint from the other domain and from an old generation.",
+      "expected": "Only the current owning domain can use its endpoint. Names alone cannot transfer ownership.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U05",
+        "T33"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U05",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T33",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A30",
+      "title": "Companion lifecycle",
+      "level": "LIVE",
+      "setup": "Use an admitted domain with engine data and running Docker children.",
+      "action": "Stop, start, recreate, and delete the parent.",
+      "expected": "Stop revokes access. Start issues new access. Recreation uses a new engine. Delete confirms destruction and revocation.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U05",
+        "U08",
+        "T33"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U05",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "U08",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T33",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A31",
+      "title": "Companion failure cleanup",
+      "level": "LIVE",
+      "setup": "Use checkpoints at every companion provisioning and cleanup transition.",
+      "action": "Kill the parent, gateway, or provisioning process at each checkpoint. Recover the owner.",
+      "expected": "Recovery does not duplicate engines. Orphans are reconciled. Uncertain cleanup never reports completed deletion.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U05",
+        "U08",
+        "T33"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U05",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "U08",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T33",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A32",
+      "title": "Confined project projection",
+      "level": "LIVE",
+      "setup": "Place approved project files beside forbidden host and account sentinels.",
+      "action": "Access the projection from the daemon machine and privileged Docker children.",
+      "expected": "Only approved project data is reachable. Account and control-state sentinels remain outside daemon authority.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U08"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U08",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A33",
+      "title": "Live Docker bind behavior",
+      "level": "LIVE",
+      "setup": "Use Compose binds at the agreed absolute project path.",
+      "action": "Edit, rename, create, and delete files from both sides. Observe file watches.",
+      "expected": "Both sides see the specified changes and ownership. A streamed build context is not accepted as a bind substitute.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U08"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U08",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A34",
+      "title": "Projection path attacks",
+      "level": "LIVE",
+      "setup": "Add escaping links, traversal paths, and unsupported special-file fixtures.",
+      "action": "Attempt projection and child-container access through each fixture.",
+      "expected": "The projection rejects or confines each case. It never widens the host source mount.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U08"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U08",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A35",
+      "title": "Complete Docker API behavior",
+      "level": "LIVE",
+      "setup": "Use the authenticated managed engine endpoint.",
+      "action": "Run online pull, build, run, exec, logs, events, and concurrent long-lived streams.",
+      "expected": "Required API behavior works without a host socket. Stream cancellation does not corrupt ownership.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U08"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U08",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A36",
+      "title": "Outer engine egress",
+      "level": "LIVE",
+      "setup": "Define one allowed destination and denied destinations for the companion.",
+      "action": "Connect from the daemon, a build step, and a child container.",
+      "expected": "All three layers obey outer egress. Agent binary policy alone does not satisfy this assertion.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U08"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U08",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A37",
+      "title": "Dynamic ports and callbacks",
+      "level": "LIVE",
+      "setup": "Use concurrent Testcontainers services with dynamic published ports.",
+      "action": "Discover service hosts. Test callbacks, collisions, exhaustion, release, and reuse.",
+      "expected": "Each route reaches its owner. Failures are bounded. Revoked routes cannot be reused through stale credentials.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U08"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U08",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A38",
+      "title": "Aggregate engine budgets",
+      "level": "LIVE",
+      "setup": "Set one domain budget for the engine and all children.",
+      "action": "Start multiple containers that jointly exceed CPU, RAM, PID, disk, and network limits.",
+      "expected": "The aggregate admitted budget remains enforced. Per-child limits alone do not pass.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U08"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U08",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A39",
+      "title": "Real Compose and Testcontainers",
+      "level": "LIVE",
+      "setup": "Use two managed companions, a live project, and an ordinary native test project.",
+      "action": "Run Compose and Testcontainers after two source edits. Repeat from fresh resources independently.",
+      "expected": "Real service data exchange succeeds. Ownership, isolation, cleanup, and native rebuild assertions also pass.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "U08",
+        "T33"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "U08",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T33",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A40",
+      "title": "Journal crash boundaries",
+      "level": "UNIT",
+      "setup": "Use fault points before and after each local commit and simulated external effect, including each simulated Docker effect. Apply P02 gateway constraints and seed collision and deletion-tombstone names.",
+      "action": "Crash and restart coordinator at every point; validate one secure P02 name, persist reservation before create, and test collision/tombstone retries.",
+      "expected": "Request identities and receipts survive. Recovery follows the declared state table without duplicate effects. Report OutcomeUnknown only when the authoritative effect outcome is unavailable; for known outcomes, follow the declared state table. Names use jk- plus 16 lowercase base32 secure-random characters. Invalid or colliding names block before create. Deletion leaves a tombstone; names are never intentionally reused.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T10"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T10",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A41",
+      "title": "Unknown outcome recovery",
+      "level": "LIVE",
+      "setup": "Lose responses from create, exec, stop, delete, and publication effects.",
+      "action": "Restart host control and inspect each operation.",
+      "expected": "Each operation resolves through qualified replay or stays explicitly uncertain. No guessed success appears.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T38"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T38",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A42",
+      "title": "Fresh v2 state",
+      "level": "UNIT",
+      "setup": "Provide a clean directory, a valid v2 database, and an old-format database.",
+      "action": "Initialize and open each state location.",
+      "expected": "Fresh and valid v2 state work. Old state is rejected with fresh-setup guidance and remains unchanged.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T10"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T10",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A43",
+      "title": "Local IPC authentication",
+      "level": "LIVE",
+      "setup": "Use the host service, another local user, and unsafe socket-path fixtures.",
+      "action": "Attempt connection through valid and forged peer identities or symlink paths.",
+      "expected": "Only the authorized local peer succeeds. Socket replacement cannot grant host authority.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T11"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T11",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A44",
+      "title": "Host service death",
+      "level": "LIVE",
+      "setup": "Run a remote Capsule with a live PTY and a durable operation record.",
+      "action": "Kill the local host service. Restart it and reconnect.",
+      "expected": "Remote execution continues. Recovery preserves the binding and does not replay uncertain agent startup.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T19"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T19",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A45",
+      "title": "Approval-service outage",
+      "level": "LIVE",
+      "setup": "Run a domain that requests a host-approved action. Stop the host control service.",
+      "action": "Attempt the action and then restore host control.",
+      "expected": "The action stays unavailable or pending. The remote coding session does not die or gain default approval.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T26"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T26",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A46",
+      "title": "Authentication expiry",
+      "level": "LIVE",
+      "setup": "Use qualified mTLS and intended token-based routes with invalid and expired credentials.",
+      "action": "Rotate or expire credentials during reads and an operation boundary.",
+      "expected": "Errors and supported refresh follow the upstream contract. Scope and server verification remain intact.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T12"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T12",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A47",
+      "title": "Connection secret redaction",
+      "level": "UNIT",
+      "setup": "Construct transport errors and Debug output with synthetic certificates, keys, and tokens.",
+      "action": "Serialize diagnostics and error reports.",
+      "expected": "Secret bytes stay absent from ordinary output. Target attribution remains useful.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T12"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T12",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A48",
+      "title": "Partial inventory and false absence",
+      "level": "LIVE",
+      "setup": "Use paginated resources and inject permission, authentication, and transport failures.",
+      "action": "List, refresh, and run cleanup preflight.",
+      "expected": "Partial results remain partial. No retained row or checkpoint is purged from ambiguous absence.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T13"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T13",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A49",
+      "title": "Complete role cache identity",
+      "level": "UNIT",
+      "setup": "Vary each declared build input independently.",
+      "action": "Resolve the role and compare cache keys.",
+      "expected": "Every meaningful input changes the identity. Unchanged valid inputs can reuse the exact artifact.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T14"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T14",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A50",
+      "title": "Complete installed agent set",
+      "level": "BUILD",
+      "setup": "Declare two agents but provide a candidate image that lacks one.",
+      "action": "Resolve selection and validate the advertised executable inventory.",
+      "expected": "Validation fails for the missing agent. The image cannot be reused under a different selected-agent assumption.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T16"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T16",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A51",
+      "title": "Ignore rules and secret-dependent builds",
+      "level": "BUILD",
+      "setup": "Use ignored files, included files, and an explicitly secret-dependent build fixture.",
+      "action": "Change each input and compare build identity and logs.",
+      "expected": "Ignore behavior matches the actual build context. Secret bytes do not leak. Secret-output caching follows its declared policy.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T15"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T15",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A52",
+      "title": "Explicit builder routing",
+      "level": "BUILD",
+      "setup": "Configure explicit builder A without trust and ambient DOCKER_HOST=B. Then authorize A for an isolated source and approved-secret fixture.",
+      "action": "Attempt a build before approving A and inspect whether any source or secret transfer starts. Approve A, build the sentinel, and inspect argv and delivery records.",
+      "expected": "An unapproved endpoint refuses before source or approved-secret transfer begins. After approval, only A receives them; ambient DOCKER_HOST=B cannot redirect the build. Keep argv boundaries, secret-log protection, immutable registry identity, and same-engine verification.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T15"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T15",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A53",
+      "title": "Remote immutable image delivery",
+      "level": "BUILD",
+      "setup": "Use a local image ID and a reachable registry artifact with an immutable digest.",
+      "action": "Deliver to a remote target reference and resolve pull authorization.",
+      "expected": "The remote plan uses the registry digest. A local image ID is never treated as a pullable reference.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T15"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T15",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A54",
+      "title": "Platform artifact identity",
+      "level": "BUILD",
+      "setup": "Use a multi-platform OCI index and mismatched architecture fixtures.",
+      "action": "Select the target platform and record both index and platform manifest.",
+      "expected": "The exact platform artifact is explicit. An unsupported architecture fails before activation.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T15"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T15",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A55",
+      "title": "Separate builder outage",
+      "level": "LIVE",
+      "setup": "Run a healthy remote gateway and then stop only its independent builder.",
+      "action": "Inspect, attach, stop, and attempt a new uncached build.",
+      "expected": "Management still works. Only builder-dependent work fails. Shared physical-engine loss is not misreported.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T35"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T35",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A56",
+      "title": "Unprivileged role ABI",
+      "level": "LIVE",
+      "setup": "Build the complete role with the C08 layout.",
+      "action": "Start it on the qualified target and attempt normal setup.",
+      "expected": "Setup needs no root, sudo, chown, setuid, firewall, or namespace operation.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T16"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T16",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A57",
+      "title": "Advertised agent validation",
+      "level": "LIVE",
+      "setup": "Use the built role and its complete executable inventory.",
+      "action": "Check each executable through OpenShell and run its declared startup route.",
+      "expected": "Every advertised binary exists at its recorded version. Runtime identity matches the qualified image evidence.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T16"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T16",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A58",
+      "title": "Empty canonical Capsule startup",
+      "level": "LIVE",
+      "setup": "Create a domain with canonical restart policy Never.",
+      "action": "Inspect Capsule before activation and after a new boot.",
+      "expected": "Each fresh boot has zero agent sessions. Setup cannot start a default agent implicitly.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T16"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T16",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A59",
+      "title": "Frame allocation limits",
+      "level": "UNIT",
+      "setup": "Feed maximum, excessive, truncated, and nested protocol frames.",
+      "action": "Decode both protocol directions under bounded memory assertions.",
+      "expected": "Valid limits work. Invalid frames fail before unbounded allocation or arithmetic overflow.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T17"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T17",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A60",
+      "title": "Protocol compatibility",
+      "level": "UNIT",
+      "setup": "Use golden v2 frames and incompatible major-version peers.",
+      "action": "Negotiate capabilities and request an effect.",
+      "expected": "Compatible frames retain meaning. Incompatible major versions fail before the effect.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T17"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T17",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A61",
+      "title": "Protocol fuzzing",
+      "level": "UNIT",
+      "setup": "Use bounded random frames and valid messages with mutated identifiers.",
+      "action": "Fuzz encode/decode, state transitions, and diagnostics separation.",
+      "expected": "No panic, unsafe allocation, cross-session input, or diagnostic-as-command behavior occurs.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T17"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T17",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A62",
+      "title": "Nonroot Capsule process",
+      "level": "UNIT",
+      "setup": "Run the Capsule test fixture as an ordinary user with no agent credentials.",
+      "action": "Start serve, inspect its boot, and request deterministic fixture sessions.",
+      "expected": "No root or PID1 assumption appears. Production agent execution is not part of this host unit fixture.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T18"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T18",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A63",
+      "title": "Session child lifetime",
+      "level": "UNIT",
+      "setup": "Use deterministic PTY fixture children and grandchildren.",
+      "action": "Exit one child, detach one client, resize, interrupt, and stop another session.",
+      "expected": "Capsule and unrelated sessions survive. Normal child groups are reaped. No security-boundary claim follows from process groups.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T18"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T18",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A64",
+      "title": "Bounded replay and snapshots",
+      "level": "UNIT",
+      "setup": "Produce output beyond retention with one stalled viewer.",
+      "action": "Drain the PTY and request replay plus a snapshot watermark.",
+      "expected": "Memory stays bounded. The stalled viewer receives a gap. Snapshot and later output have a consistent sequence boundary.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T18"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T18",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A65",
+      "title": "Binary relay transport",
+      "level": "LIVE",
+      "setup": "Use a real OpenShell exec stream without an outer PTY.",
+      "action": "Send all byte values, large frames, diagnostics, resize, and terminal input.",
+      "expected": "Protocol bytes are unchanged. Diagnostics stay on stderr. Inner PTY behavior remains correct.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T19"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T19",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A66",
+      "title": "Same-PTY reconnect",
+      "level": "LIVE",
+      "setup": "Record a live inner process identity and output sequence.",
+      "action": "Detach, break the network, create a fresh relay, and reconnect.",
+      "expected": "The same surviving PTY continues. Reconnect uses a new exec request ID and application replay, not admission replay.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T19"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T19",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A67",
+      "title": "Single input writer",
+      "level": "LIVE",
+      "setup": "Attach two viewers and one writer to a session.",
+      "action": "Transfer the writer lease. Send stale-generation and unacknowledged input during disconnect.",
+      "expected": "Only the current writer input succeeds. Stale input is discarded. Lost keystrokes are not replayed automatically.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T19"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T19",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A68",
+      "title": "Portable worktree and unpushed commits",
+      "level": "LIVE",
+      "setup": "Use a linked worktree with unpushed commits and dirty selected files.",
+      "action": "Export and materialize it on an independent remote filesystem.",
+      "expected": "The checkout and Git base are valid without host .git pointers. Selected unpushed and dirty content survives.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T20"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T20",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A69",
+      "title": "Atomic materialization",
+      "level": "LIVE",
+      "setup": "Import a multi-file source into a unique staging epoch.",
+      "action": "Interrupt transfer, corrupt one chunk, and retry through the allowed operation contract.",
+      "expected": "Partial or corrupt staging never becomes active. Only a verified complete epoch is published.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T20"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T20",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A70",
+      "title": "Archive and path safety",
+      "level": "UNIT",
+      "setup": "Prepare traversal, escaping-link, special-file, excessive-size, and credential-store fixtures.",
+      "action": "Validate and extract them into a disposable staging directory.",
+      "expected": "Unsafe inputs fail without outside writes. Known credential stores are excluded. Budget violations remain explicit.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T20"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T20",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A71",
+      "title": "Source mode and host Git safety",
+      "level": "LIVE",
+      "setup": "Use Shared, Worktree, and Clone fixtures with malicious repository command configuration.",
+      "action": "Materialize through live and snapshot profiles and inspect host effects.",
+      "expected": "Requested live behavior stays live. Snapshot behavior is explicit. Repository settings cannot execute unapproved host commands.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T20"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T20",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A72",
+      "title": "Stable account selection",
+      "level": "LIVE",
+      "setup": "Save an instance with account A and later change the user's default to B.",
+      "action": "Reconnect and create an approved session from the saved instance.",
+      "expected": "Account A remains selected. A revision change requires re-admission instead of silent reassignment.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T24"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T24",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A73",
+      "title": "Private authority scope",
+      "level": "LIVE",
+      "setup": "Use a private account, personal workspace, and team workspace with another member. T21 qualifies scope membership; T23 tests integrated admission.",
+      "action": "T21 attempts private-account admission in both scopes. T23 tests authorized launch and denied private scope before domain creation or credential staging.",
+      "expected": "T21 records its LIVE scope result. T23 admits only the authorized scope after checking authority before effects. Denied scope creates no domain and stages no credential. Separate sandboxes alone do not imply account privacy.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T21",
+        "T23"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T21",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T23",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A74",
+      "title": "Account-provider activation binding",
+      "level": "LIVE",
+      "setup": "Use a saved grant and change its provider or policy revision before activation.",
+      "action": "Attempt StartSession with the stale activation inputs.",
+      "expected": "Activation fails until the current authorized binding and effective policy are observed and admitted.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T23"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T23",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A75",
+      "title": "Native credential isolation",
+      "level": "LIVE",
+      "setup": "Use two approved native-login accounts and one generic shell domain.",
+      "action": "Inspect permitted account files and attempt cross-domain access.",
+      "expected": "Each domain receives only its admitted files. The generic shell cannot read either account store.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T24"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T24",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A76",
+      "title": "Atomic rotating refresh state",
+      "level": "LIVE",
+      "setup": "Use a native-login route with rotating tokens and explicit single-writer scope.",
+      "action": "Interrupt publication and attempt concurrent refresh from another writer or device.",
+      "expected": "One valid revision survives. Unsupported cross-device sharing fails explicitly. No generic refresh broker appears.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T22"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T22",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A77",
+      "title": "Real advertised agent routes",
+      "level": "LIVE",
+      "setup": "Use approved disposable credentials for every advertised authentication route.",
+      "action": "Perform an actual authenticated coding task through each agent adapter.",
+      "expected": "Each advertised route completes its declared task. Version output or mocked login cannot substitute.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T23"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T23",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A78",
+      "title": "Activation barrier negatives",
+      "level": "LIVE",
+      "setup": "Prepare mismatched image, generation, account grant, materialization epoch, and missing policy observations. Restart the helper with a changed boot ID and incompatible protocol.",
+      "action": "Attempt StartSession for every mismatch. Retry only after a fresh qualified receipt binds the current boot ID and exact protocol.",
+      "expected": "Every mismatch blocks StartSession until current observations match. Changed boot IDs and stale protocols block activation after restart. Require a fresh qualified receipt for the current boot and exact protocol. SandboxReady and helper handshakes alone are not activation evidence or attestation.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T23"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T23",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A79",
+      "title": "Launch interruption and replay",
+      "level": "LIVE",
+      "setup": "Inject loss after build, reservation, create, publication, activation receipt, and StartSession. Prepare an existing collision and deleted-name tombstone.",
+      "action": "Restart host control and recover the original operation. Validate its reservation and retry. Verify collision and tombstoned-name reuse refuse before create.",
+      "expected": "Recovery uses the originally persisted name and resumes only through qualified evidence. Collision or tombstone reuse cannot create another domain. No duplicate agent or silent replacement appears. Request identity survives OutcomeUnknown.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T23"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T23",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A80",
+      "title": "Complete native vertical path",
+      "level": "LIVE",
+      "setup": "Use one actual role, project, target, account, and fresh configuration.",
+      "action": "Load, produce useful agent output, detach, reconnect, inspect, and stop.",
+      "expected": "Every phase has matching receipts. Reconnect preserves a surviving PTY. No direct Docker agent execution occurs.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T23"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T23",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A81",
+      "title": "Domain split and collaboration",
+      "level": "LIVE",
+      "setup": "Use two accounts with separate materializations and a proposed shared-write option.",
+      "action": "Create sessions and then request shared writable source.",
+      "expected": "Accounts remain separate domains. Shared writes require explicit collaboration authorization and visible risk.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T24"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T24",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A82",
+      "title": "Default and in-domain shells",
+      "level": "LIVE",
+      "setup": "Use an account domain and its logical instance. Keep T24 service behavior separate from T29's final shell presentation.",
+      "action": "T24 opens the credential-free default shell and an explicitly selected in-domain shell. T29 then displays the trusted inherited-authority label on the final shell.",
+      "expected": "T24 qualifies default-domain isolation and selected-domain authority; the default shell stays credential-free and separate. T29's final shell labels that inherited authority from the selected domain.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T24",
+        "T29"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T24",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T29",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A83",
+      "title": "Session and instance lifecycle",
+      "level": "LIVE",
+      "setup": "Use several sessions across two domains.",
+      "action": "Interrupt one, detach another, exit one agent, and restart Capsule explicitly.",
+      "expected": "Unrelated sessions survive appropriate actions. A new Capsule boot cannot claim the old PTY still exists.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T24"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T24",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A84",
+      "title": "Usage cache identity",
+      "level": "UNIT",
+      "setup": "Use two accounts, two credential revisions, and stale or failed provider responses. Preserve a backend phase and a final presentation phase.",
+      "action": "T25 resolves the backend usage snapshots. T29 serializes and renders snapshots for both account identities and credential-source revisions.",
+      "expected": "T25 keeps account revisions isolated by stable account identity and credential-source revision. T25 distinguishes stale or unavailable usage from zero. T29 preserves identity and revision through serialization and never renders stale or unavailable usage as zero.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T25",
+        "T29"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T25",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T29",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A85",
+      "title": "Ended-run usage denial",
+      "level": "LIVE",
+      "setup": "End an account grant while a delayed usage request remains queued.",
+      "action": "Deliver that request and attempt unrelated account enumeration.",
+      "expected": "Both unauthorized requests fail. No global account catalog reaches Capsule.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T25"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T25",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A86",
+      "title": "Host affordance injection",
+      "level": "LIVE",
+      "setup": "Emit hostile terminal escape sequences and unsolicited helper clipboard, URL, and export requests through backend and integrated product paths.",
+      "action": "T26 qualifies backend host-action and approval refusals without a matching operator action. T29 exercises the finished CLI, Console, and desktop presentation with the same hostile requests and no matching operator action.",
+      "expected": "No host action occurs. T26 records backend refusal; T29 keeps unsolicited requests inert. Untrusted output cannot forge trusted labels or approval state.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T26",
+        "T29"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T26",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T29",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A87",
+      "title": "Bound approval semantics",
+      "level": "LIVE",
+      "setup": "Approve one fixed tool request, then vary domain, image, argv, inputs, destination, expiry, or replay identity.",
+      "action": "Execute each changed request and replay the original effect.",
+      "expected": "Every changed or replayed unauthorized request fails. Only the exact admitted operation can run.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T26"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T26",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A88",
+      "title": "Isolated secret consumer",
+      "level": "LIVE",
+      "setup": "Use a coding domain and a separately approved tool domain with a synthetic secret.",
+      "action": "Run the fixed consumer and inspect the coding PTY, logs, and host command path.",
+      "expected": "Only the approved consumer receives the secret. No arbitrary host shell or coding-session injection occurs.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T26"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T26",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A89",
+      "title": "Independent checkpoint restore",
+      "level": "LIVE",
+      "setup": "Create an accepted checkpoint outside source-owned storage.",
+      "action": "Delete the source sandbox and owned storage. Restore into a new admitted domain.",
+      "expected": "Required project and approved conversation state survive. The checkpoint does not depend on the deleted resource.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T27"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T27",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A90",
+      "title": "Dirty untracked and unpushed retention",
+      "level": "LIVE",
+      "setup": "Use tracked changes, selected untracked files, deletions, and unpushed commits.",
+      "action": "Checkpoint and restore the project.",
+      "expected": "All selected changes and the Git base match the manifest. No category silently disappears.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T27"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T27",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A91",
+      "title": "Checkpoint credential exclusion",
+      "level": "LIVE",
+      "setup": "Place known account and token canaries beside allowlisted conversation data.",
+      "action": "Create the checkpoint and inspect its manifest and content.",
+      "expected": "Known credentials and unrequested host data are absent. The report does not claim a scan proves arbitrary secrecy.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T27"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T27",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A92",
+      "title": "Conflict-aware export",
+      "level": "LIVE",
+      "setup": "Launch from baseline A and change the host checkout to B before return.",
+      "action": "Apply a returned patch based on A.",
+      "expected": "Conflicting content is preserved and reported. Host work is not overwritten blindly.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T27"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T27",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A93",
+      "title": "Failed handoff safety",
+      "level": "LIVE",
+      "setup": "Use an accepted checkpoint and independently authorized destination.",
+      "action": "Fail transfer, admission, resume, and source retirement at separate points.",
+      "expected": "The last accepted checkpoint remains recoverable. The source retires only after destination acceptance.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T28"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T28",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A94",
+      "title": "Scoped eject and exile",
+      "level": "LIVE",
+      "setup": "Use instances across two projects and two targets.",
+      "action": "Eject one instance and bulk-exile one explicit scope.",
+      "expected": "Only selected domains stop. Retained state follows its documented contract. Other scopes remain unchanged.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T28"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T28",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A95",
+      "title": "Purge ownership guards",
+      "level": "LIVE",
+      "setup": "Use original checkouts, owned runtime data, external PVCs, shared providers, and masked absence.",
+      "action": "Request purge under valid and uncertain ownership conditions.",
+      "expected": "Only confirmed selected owned data can be removed. Original and unrelated resources survive.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T28"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T28",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A96",
+      "title": "CLI and JSON contract",
+      "level": "UNIT",
+      "setup": "Use all frozen command forms, ambiguous selectors, old backend flags, and a trusted-live-local profile with external-resource-label admission disabled.",
+      "action": "Parse commands and compare JSON output with v2 golden schemas. Present the disabled external-resource-label admission tradeoff before authorizing the trusted-live-local bind.",
+      "expected": "Valid commands preserve semantics. Ambiguous and obsolete forms fail clearly. No v1 output compatibility path appears. The disabled tradeoff is visible before the operator authorizes the trusted-live-local bind.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T29"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T29",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A97",
+      "title": "Partial fleet visibility",
+      "level": "LIVE",
+      "setup": "Use three targets, paginated scopes, and one unreachable target.",
+      "action": "Refresh the Console while one target fails mid-list.",
+      "expected": "Reachable targets stay usable. Stale rows remain. Coverage and completeness are explicit.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T29"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T29",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A98",
+      "title": "Trusted status presentation",
+      "level": "LIVE",
+      "setup": "Make an agent print false account labels, done events, and a fabricated passing result.",
+      "action": "Inspect Console state and attempt cleanup or acceptance.",
+      "expected": "Trusted host labels remain distinct. Agent output cannot grant authority, delete data, or set a verification verdict.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T29"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T29",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A99",
+      "title": "Private developer forward",
+      "level": "LIVE",
+      "setup": "Run a private sandbox service and an authorized local client. Observe T30 service results before T29's final presentation.",
+      "action": "T30 creates a loopback-bound authenticated forward and attempts external access. T30 verifies intended client access and scoped cleanup. T29 presents the qualified URL and access status in the final CLI and Console.",
+      "expected": "T30 confirms the intended local client works, unapproved public access fails, and ownership and cleanup stay scoped. T29 shows the URL and private access state without an unauthorized public route.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T30",
+        "T29"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T30",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T29",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A100",
+      "title": "Public exposure separation",
+      "level": "LIVE",
+      "setup": "Request a public service and a Capsule control endpoint. Preserve T30's forwarding and exposure checks before T29's final presentation.",
+      "action": "T30 checks the separate public grant, listener TLS, application authentication, and Capsule refusal. T29 displays the grant and requirements in the final CLI and Console.",
+      "expected": "T30 requires a separate public grant, TLS, and application authentication. T29 displays these requirements and confirms Capsule control is never public.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T30",
+        "T29"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T30",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T29",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A101",
+      "title": "Artifact liveness under outage",
+      "level": "LIVE",
+      "setup": "Reference an image from an active domain and a retained checkpoint on an unavailable target.",
+      "action": "Run cache and image-prune planning.",
+      "expected": "Required or uncertain artifacts remain live. Only confirmed owned unused artifacts are eligible.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T31"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T31",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A102",
+      "title": "Safe prewarm",
+      "level": "LIVE",
+      "setup": "Use a role with an optional account and optional engine capability.",
+      "action": "Prewarm tools and images without launch.",
+      "expected": "No account grant, credential exposure, companion, or engine prewarm occurs.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T31"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T31",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A103",
+      "title": "Diagnostics and resource attribution",
+      "level": "LIVE",
+      "setup": "Vary builder, gateway, host, and companion availability independently.",
+      "action": "Run doctor and inspect resource summaries.",
+      "expected": "Failures identify the correct owner. Requested, enforced, reserved, and measured resources stay distinct.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T31"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T31",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A104",
+      "title": "Frozen verification binding",
+      "level": "LIVE",
+      "setup": "Change the candidate, image, check bundle, argv, or budget after a prior passing check.",
+      "action": "Attempt to reuse the prior evidence for acceptance.",
+      "expected": "The host rejects stale evidence. Every verdict matches the complete frozen input identity.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T32"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T32",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A105",
+      "title": "Verification outcome classes",
+      "level": "LIVE",
+      "setup": "Run successful, failing, timed-out, cancelled, killed, and disconnected checks.",
+      "action": "Record verdict and cleanup results.",
+      "expected": "Each class remains distinct. Unknown completion and failed cleanup never count as a passing check.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T32"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T32",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A106",
+      "title": "No verification fallback",
+      "level": "LIVE",
+      "setup": "Make the OpenShell verifier unavailable while host Python and Docker remain available.",
+      "action": "Request independent verification.",
+      "expected": "The request is blocked. No host or direct Docker verification process starts.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T32"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T32",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A107",
+      "title": "Engine capability change",
+      "level": "LIVE",
+      "setup": "Use a running engine-disabled domain with retained work.",
+      "action": "Request engine enablement on supported and unsupported targets.",
+      "expected": "The supported route checkpoints and reprovisions. Unsupported targets reject before launch. No hidden sidecar appears.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T33"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T33",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A108",
+      "title": "Full retained product coverage",
+      "level": "LIVE",
+      "setup": "Use the P01 behavior register and the integrated v2 application.",
+      "action": "Execute each retained user journey and inspect its replacement path.",
+      "expected": "Every retained journey has real evidence or a release blocker. No old runtime helper serves a feature.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T34"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T34",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A109",
+      "title": "External metadata outage",
+      "level": "LIVE",
+      "setup": "Run a useful local session and make pull-request or CI metadata unavailable.",
+      "action": "Refresh status and perform local project work.",
+      "expected": "Local state remains useful. External data is marked unavailable without ending the session.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T34"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T34",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A110",
+      "title": "Local container target matrix",
+      "level": "LIVE",
+      "setup": "Prepare native Linux, macOS Docker Desktop, and macOS OrbStack rows.",
+      "action": "Run the required container journeys separately on each tuple.",
+      "expected": "Every claimed row has its own evidence. Live source behavior, identity, and cleanup match that row's contract.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T35"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T35",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A111",
+      "title": "Remote container target matrix",
+      "level": "LIVE",
+      "setup": "Prepare independent remote Linux and required remote macOS gateways.",
+      "action": "Build locally, deliver by registry, materialize remotely, attach, checkpoint, and clean up.",
+      "expected": "No laptop path or local image-ID assumption leaks into remote execution. Authorization and retention remain correct.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T35"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T35",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A112",
+      "title": "VM identity and resource shapes",
+      "level": "LIVE",
+      "setup": "Prepare required architectures and separate small and large VM gateways.",
+      "action": "Run role, project, account, shell, and resource tests on each row.",
+      "expected": "Actual identity works. Fixed gateway shapes are visible. Ignored per-sandbox limits are not claimed as enforced.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T36"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T36",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A113",
+      "title": "VM storage and shutdown",
+      "level": "LIVE",
+      "setup": "Use guest-owned project data, restricted projections, and an independent checkpoint.",
+      "action": "Test mount limits, guest access, orderly stop, interrupted shutdown, and flush failure.",
+      "expected": "No raw host-bind escape or widened mount occurs. Flush failures remain visible. Accepted checkpoints survive deletion.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T36"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T36",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A114",
+      "title": "Coherent Kubernetes tuple",
+      "level": "LIVE",
+      "setup": "Deploy official resources with dedicated supervisors and a fully pinned tuple.",
+      "action": "Inspect actual versions, ownership, developer permissions, and service accounts.",
+      "expected": "The deployment matches the lock. Jackin owns no Pod controller. Agents have no privileged cluster authority.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T37"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T37",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A115",
+      "title": "Kubernetes network and control denial",
+      "level": "LIVE",
+      "setup": "Use the real CNI and scoped developer identity.",
+      "action": "Probe denied ingress and egress. Attempt to weaken NetworkPolicy and bootstrap resources.",
+      "expected": "Traffic is actually blocked. Untrusted callers cannot weaken enforcement. Policy-object presence alone cannot pass.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T37"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T37",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A116",
+      "title": "Kubernetes storage and image delivery",
+      "level": "LIVE",
+      "setup": "Use automatic /sandbox storage, explicit StorageClass, quotas, and scoped pull credentials.",
+      "action": "Test Pod replacement, stop/start, role-image change, Sandbox deletion, and external PVC ownership.",
+      "expected": "Storage follows its actual owner. Image change does not imply PVC refresh. No child mount silently disables persistence.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T37"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T37",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A117",
+      "title": "Combined real-agent journey",
+      "level": "LIVE",
+      "setup": "Use one qualified target mechanism, two approved accounts, a real role, and a generic shell.",
+      "action": "Complete coding work, attach control, host action, checkpoint, failure recovery, verification, and cleanup. Repeat independently from fresh state.",
+      "expected": "The combined journey passes with actual credentials and intended isolation. Separate demos cannot substitute.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T35",
+        "T36",
+        "T37",
+        "T38"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T35",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T36",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T37",
+          "status": "NOT_RUN"
+        },
+        {
+          "task_id": "T38",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A118",
+      "title": "Cross-area failure sweep",
+      "level": "LIVE",
+      "setup": "Use the full product and every recorded external-effect boundary.",
+      "action": "Inject response loss, identity replacement, wrong scopes, storage faults, and process or gateway death.",
+      "expected": "No silent duplicate effect, authority expansion, unrelated deletion, or false persistence receipt occurs.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T38"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T38",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A119",
+      "title": "Honest performance and resource report",
+      "level": "LIVE",
+      "setup": "Use declared hosts, cache states, fixed workloads, and approved resource budgets.",
+      "action": "Measure one and two logical instances plus each critical-path phase. Record every sample.",
+      "expected": "Median, range, counts, overhead, and limits are explicit. Percentiles require the declared minimum samples. Unsupported scale is not claimed.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T38"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T38",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A120",
+      "title": "Complete legacy deletion",
+      "level": "SOURCE",
+      "setup": "Use the frozen P01 inventory and final source tree.",
+      "action": "Resolve each inventory record to a deleted path or reviewed pure/build-only replacement.",
+      "expected": "No obsolete executable implementation, hidden feature flag, old parser, or backend manifest remains.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T39"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T39",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A121",
+      "title": "Semantic runtime-call audit",
+      "level": "SOURCE",
+      "setup": "Inspect production subprocess sites, APIs, scripts, transitive imports, and packaged assets.",
+      "action": "Trace each possible Docker, Apple, host-worker, and Kubernetes execution route.",
+      "expected": "Only approved image infrastructure uses Docker directly. All agent and independent-worker execution uses OpenShell.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T39"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T39",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A122",
+      "title": "Clean packaging and installation",
+      "level": "BUILD",
+      "setup": "Use a fresh checkout and empty v2 configuration and state directories.",
+      "action": "Build packages, generate completions, install, and perform the fresh-start smoke tests.",
+      "expected": "No old binary, crate, fixture, parser, configuration, or state is required or shipped as a fallback.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T39"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T39",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A123",
+      "title": "Complete release gate",
+      "level": "SOURCE",
+      "setup": "Use every task report, target row, acceptance result, and independent review.",
+      "action": "Run missing, failed, blocked, unreviewed, and stale LIVE-evidence refusal assertions. Inspect the separate finalization contract.",
+      "expected": "Every refusal prevents approval. Finalization requires all three actual T40 results and every fixed prerequisite. It also requires fresh, bound PASS results for affected LIVE cases after the latest runtime change.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T40"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T40",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A124",
+      "title": "Accurate operational documentation",
+      "level": "SOURCE",
+      "setup": "Use fresh-install, account, target, checkpoint, recovery, and capability documentation.",
+      "action": "Compare every supported claim with the qualified matrix and changed command contracts.",
+      "expected": "Documentation states actual limits and fresh setup. It includes no importer, automatic migration, or unsupported security promise.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T40"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T40",
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "A125",
+      "title": "Release provenance and authorization",
+      "level": "BUILD",
+      "setup": "Use the final source commit, approved tuples, patch records, and package digests.",
+      "action": "Build the release candidate and inspect its provenance, conditional maintainer-approval records for supported patched tuples, and publication actions.",
+      "expected": "Artifacts match the approved source. For each supported patched tuple, evidence/openshell-v2/T40/maintainer-approvals.json records maintainer approval bound to tuple ID and patch digest. Unpatched tuples need no approval record. No unauthorized publication or production change occurs.",
+      "status": "NOT_RUN",
+      "tasks": [
+        "T40"
+      ],
+      "assignment_results": [
+        {
+          "task_id": "T40",
+          "status": "NOT_RUN"
+        }
+      ]
+    }
+  ]
+}

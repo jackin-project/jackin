@@ -36,8 +36,6 @@ use std::{
 
 mod admission;
 mod source;
-#[cfg(test)]
-pub(in crate::precommit_snapshot) use source::tree_record_path_for_test;
 
 const STAGED_INDEX_OUTPUT_LIMIT: usize = super::capture::INDEX_INPUT_FILE_LIMIT as usize;
 const STAGED_INDEX_STDERR_LIMIT: usize = 32 * 1024 * 1024;
@@ -189,8 +187,6 @@ impl OwnedSnapshot {
             invocation_dir: live.invocation_dir.clone(),
             extra_alternates: live.alternates.clone(),
             controls: live.controls.clone(),
-            #[cfg(test)]
-            test_git_program: None,
         };
         write_private_info_attributes(&snapshot.git_dir)?;
         snapshot.write_alternates(&live.objects, &alternate_records)?;
@@ -292,20 +288,6 @@ impl OwnedSnapshot {
             return Some(directory.keep());
         }
         None
-    }
-
-    #[cfg(test)]
-    pub(in crate::precommit_snapshot) fn set_test_git_program(
-        &mut self,
-        program: &Path,
-    ) -> Result<()> {
-        ensure!(
-            program.is_absolute(),
-            "test Git executable must be absolute"
-        );
-        ensure!(program.is_file(), "test Git executable is missing");
-        self.test_git_program = Some(program.to_path_buf());
-        Ok(())
     }
 
     pub(in crate::precommit_snapshot) fn spool_failure_error(
@@ -446,7 +428,6 @@ impl OwnedSnapshot {
             tree.to_os_string(),
             OsString::from("--"),
         ];
-        // The tree hash is an object identifier from write-tree, never user input.
         let output = self.git_bytes_limited(&args, PATCH_LIMIT, controls)?;
         Ok(output)
     }
@@ -548,12 +529,6 @@ impl OwnedSnapshot {
     }
 
     fn git_command(&self, args: &[impl AsRef<OsStr>]) -> Command {
-        #[cfg(test)]
-        let program = self
-            .test_git_program
-            .as_deref()
-            .map_or(OsStr::new("git"), Path::as_os_str);
-        #[cfg(not(test))]
         let program = OsStr::new("git");
         let mut command = isolated_git_command(program, args);
         configure_isolated_git(
@@ -776,7 +751,7 @@ pub(super) fn copy_git_metadata(
     controls: &SetupControls,
 ) -> Result<()> {
     controls.check_start()?;
-    let before = fs::metadata(source).with_context(|| format!("inspecting {label}"))?;
+    let before = fs::symlink_metadata(source).with_context(|| format!("inspecting {label}"))?;
     ensure!(
         before.file_type().is_file(),
         "{label} is not a regular file"

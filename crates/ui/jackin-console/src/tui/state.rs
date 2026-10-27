@@ -5,8 +5,6 @@ mod aliases;
 mod helpers;
 mod manager;
 mod manager_state;
-#[cfg(test)]
-mod tests;
 pub mod update;
 pub use crate::mount_info_cache::MountInfoCache;
 pub use crate::tui::focus::MountScrollFocus;

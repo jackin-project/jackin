@@ -546,7 +546,6 @@ fn prewarmed_dind_expected_handle(state: &DindSidecarPrewarmState) -> Option<Con
     ContainerHandle::new(state.dind.clone(), state.dind_id.clone()?).ok()
 }
 
-#[cfg(not(test))]
 pub async fn prewarmed_dind_state_is_live(paths: &JackinPaths, docker: &impl DockerApi) -> bool {
     let Ok(Some(state)) = read_prewarmed_dind_state(paths) else {
         return false;

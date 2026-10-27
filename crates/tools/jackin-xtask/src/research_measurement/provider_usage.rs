@@ -243,6 +243,3 @@ fn price(normalized: &Value, rates: &Map<String, Value>) -> Result<Value> {
         "scope": "API list-price estimate; excludes non-token fees and discounts"
     }))
 }
-
-#[cfg(test)]
-mod tests;

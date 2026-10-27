@@ -5,8 +5,6 @@ mod confirm;
 mod hints;
 mod popups;
 mod save_discard;
-#[cfg(test)]
-mod tests;
 mod text_input;
 pub use confirm::{ConfirmKind, ConfirmState, render_confirm_dialog};
 pub use hints::{
@@ -15,6 +13,3 @@ pub use hints::{
 pub use popups::{ErrorPopupState, StatusPopupState, render_error_dialog, render_status_popup};
 pub use save_discard::{SaveDiscardChoice, SaveDiscardState, render_save_discard_dialog};
 pub use text_input::{TextInputState, render_text_input};
-
-#[cfg(test)]
-pub(crate) use termrock::input::KeyEvent;

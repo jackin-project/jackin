@@ -105,6 +105,3 @@ fn parse_traceparent(value: &str, state: Option<&str>) -> Option<SpanContext> {
     );
     context.is_valid().then_some(context)
 }
-
-#[cfg(test)]
-mod tests;

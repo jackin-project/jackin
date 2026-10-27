@@ -1,14 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! C7 workflow screen state: one run list plus one run detail, both
-//! backed by daemon snapshots the host supplies. The screen never
-//! touches the daemon or Capsule sockets itself: every mutating or
-//! attaching intent becomes a [`WorkflowsEffect`] the host executes.
-
 use jackin_workflow::{RunDetail, RunSummary};
 
-/// Destructive workflow action behind a confirmation dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkflowAction {
     Resume,
@@ -34,7 +28,6 @@ impl WorkflowAction {
     }
 }
 
-/// Screen state: the list always exists; the detail opens over it.
 #[derive(Debug, Default)]
 pub struct WorkflowScreen {
     runs: Vec<RunSummary>,
@@ -45,8 +38,6 @@ pub struct WorkflowScreen {
     observing: Option<ObserveTarget>,
 }
 
-/// Exact session attachment resolved from the run record. Observe
-/// and takeover open this session, never a copied transcript.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObserveTarget {
     pub run_id: String,
@@ -147,8 +138,6 @@ impl WorkflowScreen {
         self.observing.as_ref()
     }
 
-    /// Resolve the exact session for a worker from the open detail
-    /// (C7: observe/takeover opens the recorded session).
     #[must_use]
     pub fn observe_target(&self, worker_id: &str) -> Option<ObserveTarget> {
         let detail = self.detail.as_ref()?;

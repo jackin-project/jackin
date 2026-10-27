@@ -37,15 +37,19 @@ a stable path inside this worktree's Git directory. Re-running installation
 atomically replaces changed owner bytes and leaves identical bytes in place.
 Each hook invocation qualifies the staged toolchain and builds in its own
 private snapshot and temporary Cargo target directory. The native owner
-handles process cleanup, source custody, and symlink checks. Compiler
+handles process cleanup, staged-input validation, and symlink checks. Compiler
 artifacts cannot collide with builds in the live checkout.
 
 The hook uses the developer’s shared Cargo cache and credentials and admitted
 Rustup and Mise storage roots. Gate tools are qualified against the staged
 configuration, and auxiliary commands use the controlled gate PATH. Ambient
 Cargo configuration and global or system Mise configuration are not accepted
-as arbitrary gate inputs. The owner does not provide a host sandbox or
-authenticate how an already-built executable was compiled.
+as arbitrary gate inputs. The hook validates observed inputs for cooperative
+local use; it does not isolate checks from another process running as the same
+user or authenticate how an already-built executable was compiled. Do not
+modify the snapshot, Git metadata, Cargo configuration, or installed Mise/Rustup
+tools while a hook runs. Same-user concurrent replacement can invalidate
+admission checks. `HK=0` remains an explicit operator bypass.
 
 Git's [`extensions.worktreeConfig`](https://git-scm.com/docs/git-config#Documentation/git-config.txt-extensionsworktreeConfig)
 must already be enabled for the repository;
@@ -78,8 +82,8 @@ hook never fires from Git; run it with `mise x -- hk run security-audit`.
 Checks run in the private snapshot. Strict whole-workspace Clippy and
 `xtask ci --only lint` remain required merge-readiness gates.
 
-Review mode, not auto-stage: the launcher validates the exact staged tree in
-an isolated temporary repository. Original tracked, untracked, ignored files,
+Review mode, not auto-stage: under these operating conditions, the launcher
+validates the staged tree in a private temporary repository. Original tracked, untracked, ignored files,
 file metadata, the index, stash stack, and compiler outputs stay untouched.
 The isolated repository preserves the original HEAD and merge index, so hk
 and affected-package selection see the original staged diff. Unmerged index
@@ -124,8 +128,7 @@ Linux developers: same setup (`mise install`, `scripts/hooks-install`;
 hook commands are POSIX `sh` and the Swift steps skip themselves where
 `swiftlint`/`xcrun` are absent). CI-on-Linux (the velnor Rust lane on
 `ubuntu-26.04`) proves the shared pieces there: per-package `fmt`,
-`clippy -- -D warnings`, and the `jackin-xtask` nextest suite including
-the affected-closure tests. Hook firing/isolation behavior is verified on
+`clippy -- -D warnings`, and the `jackin-xtask` nextest suite. Hook firing/isolation behavior is verified on
 macOS; it rides identical hk + mise artifacts on Linux (both pinned in
 `mise.lock`).
 
@@ -209,7 +212,7 @@ For a faster local pass that skips feature-powerset and Docker-backed smoke test
 mise exec -- mbx +1.99.1 xtask ci --fast
 ```
 
-`mise exec -- mbx +1.99.1 xtask ci --e2e` includes the Docker-backed lane. It first checks that Docker is running, builds and exports the local capsule binary, then runs `mise exec -- mbx +1.99.1 nextest run -p jackin --features e2e --profile docker-e2e`. In PR checkouts, `jackin-dev pr sync <PR_NUMBER>` still prepares the isolated env and capsule export for manual smoke tests; source `$(jackin-dev pr path <PR_NUMBER>)/env.sh` before manual `jackin` commands.
+`mise exec -- mbx +1.99.1 xtask ci --e2e` includes the Docker-backed lane. It first checks that Docker is running, builds and exports the local capsule binary, then runs `mise exec -- mbx +1.99.1 nextest run -p jackin --features e2e --profile docker-e2e --no-tests warn`. The `crates/apps/jackin/tests/` corpus was removed, so that nextest step currently selects no tests. In PR checkouts, `jackin-dev pr sync <PR_NUMBER>` still prepares the isolated env and capsule export for manual smoke tests; source `$(jackin-dev pr path <PR_NUMBER>)/env.sh` before manual `jackin` commands.
 
 Local builds outside CI default to the package version for `JACKIN_VERSION` / `JACKIN_CAPSULE_VERSION` so each commit does not invalidate every build-meta consumer and capsule cache entry. GitHub Actions sets `CI`, so release, preview, construct, and CI builds still stamp the real `<version>+<sha>`. Set `JACKIN_VERSION_OVERRIDE=<value>` only when you need an explicit local version.
 

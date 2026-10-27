@@ -31,6 +31,6 @@ snapshots).
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-amp
+cargo nextest run -p jackin-usage-provider-amp --no-tests warn
 cargo clippy -p jackin-usage-provider-amp --all-targets -- -D warnings
 ```

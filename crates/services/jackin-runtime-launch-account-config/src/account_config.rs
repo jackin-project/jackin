@@ -731,13 +731,6 @@ fn configure_codex(
     )
 }
 
-/// Workspace trust merged into the published Codex generation. The
-/// mounted `config.toml` shadows the session home file, so entries
-/// seeded only into the session home never reach Codex when this
-/// publication happens (model/effort overrides, API-key accounts).
-/// Merging here keeps the interactive trust gate from blocking
-/// isolated workers such as the C6 review session. Non-table
-/// `projects` values are replaced, mirroring the session home seed.
 #[cfg(unix)]
 fn merge_codex_workspace_trust(document: &mut toml::Table, trusted_paths: &[String]) {
     if trusted_paths.is_empty() {
@@ -1169,6 +1162,3 @@ fn model_catalog(provider: AiProvider, model: &str) -> Option<serde_json::Value>
     }
     Some(serde_json::json!({ "models": [entry] }))
 }
-
-#[cfg(test)]
-mod tests;

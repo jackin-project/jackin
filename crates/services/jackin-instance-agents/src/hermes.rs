@@ -13,9 +13,6 @@ use jackin_config::{AiProvider, AuthForwardMode, ProfileSelector};
 use jackin_core::Agent;
 use std::path::Path;
 
-#[cfg(all(test, unix))]
-use std::cell::RefCell;
-
 use crate::validate_store_source_dir;
 use jackin_instance_credentials::auth_directory;
 
@@ -75,8 +72,6 @@ pub fn provision_hermes_auth_from_source_dir(
     if mode == AuthForwardMode::Sync {
         let live_source = auth_directory::lock_source_dir(source_dir)?;
         let Some(source) = live_source.as_ref() else {
-            #[cfg(all(test, unix))]
-            run_hermes_absent_source_hook();
             return provision_hermes_dir_credential_with_locked_source(
                 hermes_dir, source_dir, mode, None,
             );
@@ -103,41 +98,6 @@ pub fn provision_hermes_auth_from_source_dir(
     }
     provision_hermes_dir_credential(hermes_dir, source_dir, mode)
 }
-
-#[cfg(all(test, unix))]
-thread_local! {
-    static HERMES_ABSENT_SOURCE_HOOK: RefCell<Option<Box<dyn FnOnce()>>> = const {
-        RefCell::new(None)
-    };
-}
-
-#[cfg(all(test, unix))]
-struct HermesAbsentSourceHookGuard {
-    previous: Option<Box<dyn FnOnce()>>,
-}
-
-#[cfg(all(test, unix))]
-impl Drop for HermesAbsentSourceHookGuard {
-    fn drop(&mut self) {
-        HERMES_ABSENT_SOURCE_HOOK.with(|slot| *slot.borrow_mut() = self.previous.take());
-    }
-}
-
-#[cfg(all(test, unix))]
-fn set_hermes_absent_source_hook(hook: impl FnOnce() + 'static) -> HermesAbsentSourceHookGuard {
-    let previous = HERMES_ABSENT_SOURCE_HOOK.with(|slot| slot.replace(Some(Box::new(hook))));
-    HermesAbsentSourceHookGuard { previous }
-}
-
-#[cfg(all(test, unix))]
-fn run_hermes_absent_source_hook() {
-    if let Some(hook) = HERMES_ABSENT_SOURCE_HOOK.with(|slot| slot.borrow_mut().take()) {
-        hook();
-    }
-}
-
-#[cfg(test)]
-mod tests;
 
 pub(crate) fn provision_hermes_dir_credential(
     target_dir: &Path,

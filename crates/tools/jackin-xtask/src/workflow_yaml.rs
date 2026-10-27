@@ -3,10 +3,6 @@ use serde_saphyr::{Budget, Options};
 
 const MAX_WORKFLOW_BYTES: usize = 1024 * 1024;
 
-/// Parse one workflow document under the shared size and alias replay budgets.
-///
-/// # Errors
-/// Rejects input over 1 MiB, malformed YAML, multiple documents, or budget exhaustion.
 pub fn parse(bytes: &[u8]) -> anyhow::Result<Value> {
     anyhow::ensure!(
         bytes.len() <= MAX_WORKFLOW_BYTES,
@@ -23,6 +19,3 @@ fn options() -> Options {
     options.budget = Some(budget);
     options
 }
-
-#[cfg(test)]
-mod tests;

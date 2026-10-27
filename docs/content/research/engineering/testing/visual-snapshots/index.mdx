@@ -17,7 +17,7 @@ Every surface jackin❯ renders is something an operator sees: the operator cons
 
 There are two concrete blind spots:
 
-- **The console snapshot helper captures glyphs only.** It dumps each cell's `.symbol()` and discards colour and every text attribute (see <RepoFile path="crates/ui/jackin-console/src/tui/view/tests.rs">crates/ui/jackin-console/src/tui/view/tests.rs</RepoFile>). A change to colour, underline, or `REVERSED` alone cannot change this glyph-only artifact. Separate render assertions may catch those changes; they do not make the text snapshot style-complete.
+- **The console snapshot helper captures glyphs only.** It dumps each cell's `.symbol()` and discards colour and every text attribute (see `crates/ui/jackin-console/src/tui/view/tests.rs`). A change to colour, underline, or `REVERSED` alone cannot change this glyph-only artifact. Separate render assertions may catch those changes; they do not make the text snapshot style-complete.
 - **The historical component SVG encoder is absent.** The removed `jackin-tui-lookbook` implementation encoded foreground/background colour but omitted modifiers. Its old gallery and `--check` command cannot establish current coverage. Current render assertions and text snapshots need separate style-fidelity evidence; this proposal supplies no executed SVG gate.
 
 The goal is a single, deterministic, **PR-diffable snapshot of what is on screen** — for both TUI screens and CLI output — so that every visual change is surfaced as a reviewable before/after in the pull request, and an unintended change fails CI.
@@ -107,8 +107,8 @@ Multi-source, adversarially-verified external research (primary sources: crates.
 ## Current state (absorbed from prior items)
 
 - **Historical component SVG lookbook** — the former `jackin-tui-lookbook`, `buffer_to_svg`, `--check`, and `docs/public/tui-lookbook` gallery are absent from the current tree. This records the earlier implementation, not shipped capability. Restoring styled SVG artifacts and a gate requires new implementation and proof.
-- **Text-only console snapshots** — `insta` snapshots (including list, settings, editor-general, and editor-mounts) in <RepoFile path="crates/ui/jackin-console/src/tui/view/tests.rs">crates/ui/jackin-console/src/tui/view/tests.rs</RepoFile> with committed `.snap` files, generated with `INSTA_UPDATE=new`. These capture glyphs only.
-- **Capsule render tests** — `insta` and buffer assertions exist for capsule chrome and the branch-context bar.
+- **Text-only console snapshots** — the former `insta` snapshots (list, settings, editor-general, editor-mounts) in `crates/ui/jackin-console/src/tui/view/tests.rs` with committed `.snap` files are absent from the current tree. This records the earlier implementation, not shipped capability.
+- **Capsule render tests (historical)** — the former `insta` snapshots and buffer assertions for capsule chrome and the branch-context bar are absent from the current tree, along with the crate's `insta` dependency. This records the earlier implementation, not shipped capability.
 - **Live screen model** — `DamageGrid::dump()` produces a `GridSnapshot` whose cells can feed a future styled renderer; the snapshot API does not itself serialize a complete styled screen.
 
 ## Design implications

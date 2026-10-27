@@ -1,15 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Host workflow service: the only applier of run transitions (C5).
-//!
-//! The service owns the single active-run slot, the persisted owner
-//! epoch, command delivery correlation, the launch/capture/backup
-//! effect dispatcher, pause/cancel semantics, operator resolution of
-//! uncertain delivery, and restart recovery. Workers submit
-//! observations through [`WorkflowService::submit_observation`]; they
-//! cannot mark a run accepted.
-
 mod backend;
 mod recovery;
 mod unavailable;
@@ -35,7 +26,6 @@ use super::verify::{
 };
 use super::{CommandState, EffectKind, EffectStatus, WorkflowError};
 
-/// Machine-readable run snapshot served to the CLI.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunSummary {
     pub run_id: String,
@@ -51,10 +41,6 @@ pub struct RunSummary {
     pub max_repair_turns: u32,
 }
 
-/// Machine-readable run detail for the C7 Console view, `graph`,
-/// `events`, and Markdown export: the summary plus the sessions that
-/// pin the exact Capsule attachment, the effects that carry backup
-/// state, and the bounded durable event/evidence/checkpoint history.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunDetail {
     pub summary: RunSummary,
@@ -65,9 +51,6 @@ pub struct RunDetail {
     pub checkpoints: Vec<StoredCheckpoint>,
 }
 
-/// Fixed pipeline stage list for the C7 graph view: every run
-/// moves through these stages in order; the detail response marks
-/// each with its node state.
 pub const GRAPH_STAGES: [&str; 6] = [
     "prepare",
     "implement",
@@ -77,8 +60,6 @@ pub const GRAPH_STAGES: [&str; 6] = [
     "decide",
 ];
 
-/// Node state for one graph stage relative to the run's current
-/// stage: done (passed), current, or pending.
 #[must_use]
 pub fn graph_node_state(stage: &str, current: &str) -> &'static str {
     let order = |name: &str| GRAPH_STAGES.iter().position(|s| *s == name);
@@ -90,7 +71,6 @@ pub fn graph_node_state(stage: &str, current: &str) -> &'static str {
     }
 }
 
-/// Operator decision for uncertain command delivery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OperatorDecision {
@@ -120,7 +100,6 @@ impl OperatorDecision {
     }
 }
 
-/// One live instance observed during recovery.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiveInstance {
     pub instance_id: String,
@@ -131,32 +110,24 @@ pub struct LiveInstance {
     pub process_identity: Option<String>,
 }
 
-/// Instance inventory plus known remote backup refs for recovery.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceInventory {
     pub instances: Vec<LiveInstance>,
     pub backup_refs: Vec<String>,
 }
 
-/// Outcome of `record_dispatch_intent`: the committed command ID
-/// plus the staged prompt digest. The command row is left in
-/// `dispatching` with no transport send.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecordedDispatch {
     pub command_id: String,
     pub prompt_digest: String,
 }
 
-/// Recovery findings for one restart.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecoveryReport {
     pub run_id: Option<String>,
     pub actions: Vec<String>,
 }
 
-/// Backend surface the host daemon drives. The trait keeps the
-/// daemon's trait-param injection shape: production serves a
-/// [`WorkflowService`], request-line tests serve an unavailable stub.
 pub trait WorkflowBackend {
     fn backend_epoch(&self) -> u64;
     fn start_run(
@@ -250,45 +221,33 @@ pub trait WorkflowBackend {
     fn recover(&mut self, inventory: &InstanceInventory) -> Result<RecoveryReport, WorkflowError>;
 }
 
-/// Unavailable backend for request paths without a store (tests and
-/// degraded serve). Every run-control call reports the stored reason.
 #[derive(Debug, Clone)]
 pub struct UnavailableBackend {
     reason: String,
 }
 
-/// Durable host workflow service.
 #[derive(Debug)]
 pub struct WorkflowService {
     store: RunStore,
 }
 
 impl WorkflowService {
-    /// Open the service on `db_path` (dedicated Turso file) with
-    /// artifacts under `artifacts_dir`. Opening persists the
-    /// incremented owner epoch, so every `serve()` startup invalidates
-    /// automatic input stamped with older epochs.
     pub fn open(db_path: &Path, artifacts_dir: &Path) -> Result<Self, WorkflowError> {
         Ok(Self {
             store: RunStore::open(db_path, artifacts_dir)?,
         })
     }
 
-    /// Current persisted owner epoch.
     #[must_use]
     pub fn epoch(&self) -> u64 {
         self.store.epoch()
     }
 
-    /// Borrow the durable store (command correlation, tests).
     #[must_use]
     pub fn store(&self) -> &RunStore {
         &self.store
     }
 
-    /// Start a run for a stored plan hash. The same idempotency key
-    /// returns the existing run; a different key while a run is active
-    /// returns `busy`. No queue exists in the MVP.
     pub fn start_run(
         &self,
         plan_hash: &str,
@@ -319,7 +278,6 @@ impl WorkflowService {
         self.summary_of(&run_id)
     }
 
-    /// Current snapshot of a run (or the active slot when `None`).
     pub fn run_summary(&self, run_id: Option<&str>) -> Result<RunSummary, WorkflowError> {
         match run_id {
             Some(run_id) => self.summary_of(run_id),
@@ -337,16 +295,12 @@ impl WorkflowService {
         }
     }
 
-    /// Bounded run list, newest first (C7 `workflow.list`).
     pub fn list_runs(&self, limit: u32) -> Result<Vec<RunSummary>, WorkflowError> {
         self.store
             .list_runs(limit)
             .and_then(|runs| runs.iter().map(summarize).collect())
     }
 
-    /// Full run detail for the C7 Console view, `graph`, `events`,
-    /// and Markdown export. The event window is bounded by
-    /// `event_limit` starting after `after_seq` (resume cursor).
     pub fn run_detail(
         &self,
         run_id: &str,
@@ -364,7 +318,6 @@ impl WorkflowService {
         })
     }
 
-    /// Stamp a pending transition onto the stored row version.
     fn apply(
         &self,
         stored: &StoredRun,
@@ -385,9 +338,6 @@ impl WorkflowService {
         })
     }
 
-    /// Submit a worker/host observation. `caller_epoch` must equal the
-    /// persisted owner epoch: automatic input stamped with an older
-    /// epoch (pre-restart) is rejected instead of applied.
     pub fn submit_observation(
         &self,
         run_id: &str,
@@ -433,13 +383,10 @@ impl WorkflowService {
     }
 }
 
-/// Verified local source: the tree HEAD pins, for checkpoint rows.
 struct VerifiedSource {
     tree: String,
 }
 
-/// Outcome of `record_test`: the host-observed verdict plus the
-/// digests that bind it to the run, candidate, and frozen policy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecordedTest {
     pub passed: bool,
@@ -450,19 +397,12 @@ pub struct RecordedTest {
     pub excerpt: String,
 }
 
-/// Outcome of `record_review`: host validation of the isolated
-/// review file plus its content digest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecordedReview {
     pub acceptable: bool,
     pub artifact_digest: String,
 }
 
-/// Host paths for one trusted test recording. The executed check
-/// script must be a member of `bundle_files`, and `bundle_files`
-/// must recompute to `bundle_digest` (the manifest digest the daemon
-/// already bound to the run's stored plan); the repository defaults
-/// to the recorded checkpoint's local path.
 #[derive(Debug, Clone)]
 pub struct RecordTestParams<'a> {
     pub check_program: &'a str,
@@ -474,10 +414,6 @@ pub struct RecordTestParams<'a> {
     pub timeout_secs: u64,
 }
 
-/// Optimistic-concurrency guard for record paths. The caller names
-/// the run row version it acted on; a moved row refuses instead of
-/// collecting side rows against a stale run. Paths that also move
-/// the run row re-check the version in their store compare-and-swap.
 fn check_expected_version(
     stored: &StoredRun,
     run_id: &str,
@@ -492,8 +428,6 @@ fn check_expected_version(
     Ok(())
 }
 
-/// A candidate identity is a single non-empty path-safe token, so it
-/// can name workers, artifacts, and evidence rows without escaping.
 fn check_candidate_id(candidate: &str) -> Result<(), WorkflowError> {
     if candidate.trim().is_empty()
         || candidate
@@ -508,13 +442,6 @@ fn check_candidate_id(candidate: &str) -> Result<(), WorkflowError> {
 }
 
 impl WorkflowService {
-    /// Record the candidate under verification. The row version must
-    /// match: a moved run refuses the record. The generation counts
-    /// every recorded identity, so evidence for a superseded identity
-    /// never decides. An identity that already carries verification
-    /// evidence is never re-recorded: changed source needs a new
-    /// candidate, and identical source keeps its existing rows.
-    /// Terminal runs refuse new candidates.
     pub fn record_candidate(
         &self,
         run_id: &str,
@@ -560,10 +487,6 @@ impl WorkflowService {
         self.summary_of(run_id)
     }
 
-    /// Record a worker session attachment for recovery comparison.
-    /// The run must exist and stay non-terminal; the row is an upsert
-    /// on the worker, so re-recording the same healthy session is
-    /// idempotent.
     pub fn record_session(
         &self,
         session: &SessionAttachment<'_>,
@@ -591,12 +514,6 @@ impl WorkflowService {
         self.summary_of(run_id)
     }
 
-    /// Record a checkpoint for the run's current candidate. The local
-    /// source is verified before the row is written: HEAD and the tree
-    /// must equal the recorded identity and the worktree must be
-    /// clean. A checkpoint that moves the commit after verification
-    /// evidence exists is refused: changed source needs a new
-    /// candidate. A backup-state flip for the same commit is allowed.
     pub fn record_checkpoint(
         &self,
         checkpoint: &CheckpointRecord<'_>,
@@ -673,8 +590,6 @@ impl WorkflowService {
         self.summary_of(checkpoint.run_id)
     }
 
-    /// Verify that a local path holds the candidate identity: HEAD
-    /// equals the commit, the tree matches, and the worktree is clean.
     fn verify_source(
         local_path: &str,
         commit: &str,
@@ -703,13 +618,6 @@ impl WorkflowService {
         Ok(VerifiedSource { tree })
     }
 
-    /// Run the frozen check in a fresh pinned test worker and bind the
-    /// host-observed verdict to the run. Only the test stage records
-    /// tests, and only one verdict per candidate: re-verification
-    /// needs a new candidate. The executed script must be a manifest
-    /// member and the manifest must recompute to the frozen bundle
-    /// digest; the recorded policy hash covers the exact host argv
-    /// that ran.
     pub fn record_test(
         &self,
         run_id: &str,
@@ -844,9 +752,6 @@ impl WorkflowService {
         Ok((self.summary_of(run_id)?, recorded))
     }
 
-    /// Validate one isolated review file against the checkpoint
-    /// identity and bind the verdict to the run. Only the review stage
-    /// records reviews, and only one verdict per candidate.
     pub fn record_review(
         &self,
         run_id: &str,
@@ -890,10 +795,7 @@ impl WorkflowService {
                 ))
             })?;
         let evidence = self.store.load_evidence(run_id)?;
-        // The review binds to the recorded test policy: a review for a
-        // candidate with no recorded test verdict, or with a policy
-        // hash that disagrees with it, refuses here instead of
-        // storing a verdict the acceptance gate must later reject.
+
         let recorded_policy = evidence
             .iter()
             .find(|row| row.candidate == candidate && row.kind == "test")
@@ -948,9 +850,6 @@ impl WorkflowService {
         Ok((self.summary_of(run_id)?, recorded))
     }
 
-    /// Confirm the candidate at its backup ref, then mark the backup
-    /// effect done. The ref must resolve to the checkpoint commit:
-    /// nothing is pushed or marked without comparison.
     pub fn record_backup(
         &self,
         run_id: &str,
@@ -1028,15 +927,6 @@ impl WorkflowService {
         self.summary_of(run_id)
     }
 
-    /// Submit one named observation with optimistic-concurrency and
-    /// epoch checks. Every call executes in the live service at its
-    /// current owner epoch: RPC callers are operator-originated, so
-    /// the epoch is read here rather than trusted from the wire, and
-    /// the reducer still rejects pre-restart automatic input through
-    /// [`WorkflowService::submit_observation`]. `verified_current`
-    /// does not go through the plain reducer path: it runs the
-    /// acceptance gate, which consults the recorded evidence before
-    /// anything can mark a run accepted.
     pub fn advance_run(
         &self,
         run_id: &str,
@@ -1090,14 +980,6 @@ impl WorkflowService {
         self.submit_observation(run_id, expected_version, self.epoch(), actor, &observation)
     }
 
-    /// Accept a run only when the recorded evidence decides
-    /// acceptance: passing tests and an acceptable review on the same
-    /// policy, a current source, host-owned input on the current
-    /// epoch, no unresolved uncertainty, and a completed backup.
-    /// Anything else refuses with the decision reason; repair and
-    /// failure verdicts never mark a run accepted. Host-only: RPC
-    /// callers must route through [`WorkflowService::advance_run`],
-    /// which admits `verified_current` from the host actor alone.
     pub fn accept_run(
         &self,
         run_id: &str,
@@ -1220,10 +1102,6 @@ impl WorkflowService {
         }
     }
 
-    /// Pause a run. `checkpoint` marks a C4 source-capture freeze,
-    /// shown separately from a normal operator pause. An active agent
-    /// turn may still finish within its deadline (`TurnEnded` stays
-    /// admissible while paused); nothing else advances.
     pub fn pause_run(
         &self,
         run_id: &str,
@@ -1273,10 +1151,6 @@ impl WorkflowService {
         self.summary_of(run_id)
     }
 
-    /// Resume a paused or operator-blocked run. Resume alone never
-    /// clears uncertainty: any command stuck in `delivery_unknown`
-    /// blocks the resume until an operator resolves it with
-    /// [`WorkflowService::resolve_input`].
     pub fn resume_run(&self, run_id: &str, actor: &str) -> Result<RunSummary, WorkflowError> {
         let stored = self
             .store
@@ -1315,9 +1189,6 @@ impl WorkflowService {
         self.summary_of(run_id)
     }
 
-    /// Cancel a run. New actions stop; the checkpoint preservation
-    /// hold is recorded before cleanup; the CLI process is never
-    /// signalled to deliver this feedback.
     pub fn cancel_run(
         &self,
         run_id: &str,
@@ -1364,11 +1235,6 @@ impl WorkflowService {
         self.summary_of(run_id)
     }
 
-    /// Resolve uncertain command delivery. The operator must first
-    /// inspect the original session: `observed_session_state` carries
-    /// that inspection and is required. The original command stays
-    /// marked uncertain with a link to its resolution; a decision
-    /// never replaces tests or review.
     pub fn resolve_input(
         &self,
         run_id: &str,
@@ -1439,8 +1305,6 @@ impl WorkflowService {
         self.summary_of(run_id)
     }
 
-    /// Move a `needs_operator` run back to `active` at its current
-    /// position after an operator decision.
     fn reactivate(&self, run_id: &str, actor: &str, event_kind: &str) -> Result<(), WorkflowError> {
         let stored = self
             .store
@@ -1465,10 +1329,6 @@ impl WorkflowService {
         )
     }
 
-    /// Commit a command to `dispatching` BEFORE the transport send and
-    /// return its ID. The caller sends the prompt, then records the
-    /// matched receipt with [`WorkflowService::command_written`].
-    /// Prompt bytes are staged through tmpfile-flush-rename first.
     pub fn begin_dispatch(
         &self,
         run_id: &str,
@@ -1490,15 +1350,6 @@ impl WorkflowService {
         Ok((command_id, artifact.digest))
     }
 
-    /// Record a dispatch intent as a `queued` row and immediately
-    /// commit it to `dispatching`, WITHOUT any transport send. This
-    /// is the fault-test seam for crash-between-commit-and-receipt
-    /// coverage: it stages the prompt artifact and leaves the exact
-    /// row a restart must recover as `delivery_unknown`.
-    ///
-    /// Transport stays with the session-control / repair flow; this
-    /// method must never gain a send path. Recovery never resubmits:
-    /// only an inspected operator resolution moves the run forward.
     pub fn record_dispatch_intent(
         &self,
         run_id: &str,
@@ -1542,8 +1393,6 @@ impl WorkflowService {
         ))
     }
 
-    /// Record the matched Capsule receipt: only this moves a command
-    /// to `written`. Never called on a lost receipt.
     pub fn command_written(&self, command_id: &str, bytes: u64) -> Result<(), WorkflowError> {
         let command = self
             .store
@@ -1562,8 +1411,6 @@ impl WorkflowService {
         )
     }
 
-    /// Record a correlated session event as `turn_ended` with its
-    /// evidence quality. Command states never imply code acceptance.
     pub fn command_turn_ended(
         &self,
         command_id: &str,
@@ -1586,10 +1433,6 @@ impl WorkflowService {
         )
     }
 
-    /// Fetch or create the intent for an external effect. Stable
-    /// operation IDs (`run:kind:n`) and ownership-label comparison
-    /// mean a repeated call adopts the matching intent instead of
-    /// duplicating it.
     pub fn plan_effect(
         &self,
         run_id: &str,
@@ -1602,9 +1445,6 @@ impl WorkflowService {
         self.store.ensure_effect(run_id, kind, ownership_label)
     }
 
-    /// Adopt a planned effect to the exact live identity observed in
-    /// the inventory. Never matches by display name: the caller must
-    /// pass the ownership label the backend assigned.
     pub fn adopt_effect(
         &self,
         run_id: &str,
@@ -1621,8 +1461,6 @@ impl WorkflowService {
     }
 }
 
-/// One pending host transition: position plus event/effect intent.
-/// [`WorkflowService::apply`] stamps it onto the stored row version.
 #[derive(Debug)]
 struct TransitionRequest<'a> {
     status: RunStatus,
@@ -1671,8 +1509,6 @@ fn summarize(stored: &StoredRun) -> Result<RunSummary, WorkflowError> {
     })
 }
 
-/// Next effect intent for a reducer output. A finished implementer
-/// turn needs a capture; everything else dispatches on demand.
 fn effect_for(next: &NextState, run_id: &str) -> Option<NewEffect> {
     if next.event_kind == "turn_ended"
         && matches!(next.status, RunStatus::Active | RunStatus::Paused)

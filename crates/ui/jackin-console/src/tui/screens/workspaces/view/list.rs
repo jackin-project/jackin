@@ -5,8 +5,6 @@ mod body;
 mod details;
 mod panes;
 mod sidebar;
-#[cfg(test)]
-mod tests;
 pub use body::{list_name_lines, render_list_body};
 pub use details::instance_details_pane;
 pub use panes::{

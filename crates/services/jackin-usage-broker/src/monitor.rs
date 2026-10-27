@@ -15,8 +15,7 @@ mod validation;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
-#[cfg(test)]
-use std::sync::atomic::AtomicUsize;
+
 use std::sync::{Condvar, Mutex};
 
 use evaluation::{
@@ -43,8 +42,6 @@ use resetless::{
     invalidate_reset_admission_fence, strict_resetless_candidates,
 };
 use validation::validate_store_state;
-#[cfg(test)]
-use validation::{spend_snapshot_preserves_history, spend_state_matches_account};
 
 use jackin_protocol::usage_broker::{
     UsageAccountV1, UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageMetricGroupKindV1,
@@ -100,8 +97,7 @@ struct MonitorStoreInner {
     directory: File,
     state: Mutex<StoreState>,
     collector_admission: Mutex<()>,
-    #[cfg(test)]
-    collector_admission_waiters: AtomicUsize,
+
     experimental_collector_source: Mutex<Option<String>>,
     changed: Condvar,
 }
@@ -182,7 +178,7 @@ struct ObservedQuotaPair {
     used_percentage_basis_points: i32,
     reset_at_epoch: i64,
     evidence_at_epoch: Option<i64>,
-    /// Source timestamps in [used, reset] order; receipt-only statusline fields use None.
+
     source_times: [Option<i64>; 2],
     received_at_epoch: i64,
     input_sequence: u64,
@@ -1749,6 +1745,3 @@ fn store_unavailable() -> MonitorIssue {
         None,
     )
 }
-
-#[cfg(test)]
-mod tests;

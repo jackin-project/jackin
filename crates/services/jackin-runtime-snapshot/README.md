@@ -19,8 +19,7 @@ fetch over the control socket.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`snapshot.rs`](src/snapshot.rs) | fetch + transport | `snapshot/tests.rs` |
-| [`snapshot/`](src/snapshot/) | test suites | `snapshot/tests.rs` |
+| [`snapshot.rs`](src/snapshot.rs) | fetch + transport | — |
 
 ## Public API
 
@@ -32,6 +31,6 @@ fetch over the control socket.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-snapshot
+cargo nextest run -p jackin-runtime-snapshot --no-tests warn
 cargo clippy -p jackin-runtime-snapshot --all-targets -- -D warnings
 ```

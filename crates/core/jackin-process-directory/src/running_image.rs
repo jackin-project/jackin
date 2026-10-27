@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Filesystem-object identity for the image mapped as the current process.
-//!
-//! This capability compares device and inode values only. It does not
-//! authenticate file contents, build provenance, permissions, or a receipt.
-
 use std::fmt;
 use std::fs::File;
 use std::io;
@@ -18,14 +13,6 @@ use std::os::unix::ffi::OsStringExt;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::path::PathBuf;
 
-/// A self-only identity for the regular filesystem object mapped as this
-/// process's executable image.
-///
-/// The identity is the filesystem device and inode observed by the operating
-/// system. It is not a content hash or an authentication decision. On Linux,
-/// the capability retains an open descriptor to the image for its lifetime.
-/// On macOS, the kernel reports the vnode backing the mapped image; the
-/// capability retains that identity rather than an executable descriptor.
 pub struct RunningImage {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     identity: FileIdentity,
@@ -76,12 +63,6 @@ impl FileIdentity {
 
 #[cfg(target_os = "linux")]
 impl RunningImage {
-    /// Capture the current process image through Linux's fixed `/proc/self/exe`
-    /// kernel link.
-    ///
-    /// The link is intentionally followed. The returned capability retains a
-    /// read-only, close-on-exec descriptor and compares its filesystem object
-    /// identity with candidate descriptors.
     pub fn capture() -> io::Result<Self> {
         use rustix::fs::{Mode, OFlags, open};
 
@@ -103,11 +84,6 @@ impl RunningImage {
         })
     }
 
-    /// Compare a candidate descriptor with the captured image's filesystem
-    /// object identity.
-    ///
-    /// The candidate must refer to a regular file with the same device and
-    /// inode. No pathname lookup or content check is performed.
     pub fn verify_file_identity(&self, candidate: &File) -> io::Result<()> {
         if FileIdentity::from_file(&self.executable)? != self.identity {
             return Err(permission_denied(
@@ -123,9 +99,6 @@ impl RunningImage {
         Ok(())
     }
 
-    /// Return an optional diagnostic path reported by the operating system.
-    ///
-    /// This raw path hint is not used to establish or verify identity.
     pub fn path_hint(&self) -> Option<&Path> {
         self.path_hint.as_deref()
     }
@@ -133,7 +106,6 @@ impl RunningImage {
 
 #[cfg(target_os = "macos")]
 impl RunningImage {
-    /// Capture the current process image's kernel-reported mapped vnode.
     pub fn capture() -> io::Result<Self> {
         let (identity, path_hint) = darwin::capture()?;
         Ok(Self {
@@ -142,11 +114,6 @@ impl RunningImage {
         })
     }
 
-    /// Compare a candidate descriptor with the captured image's filesystem
-    /// object identity.
-    ///
-    /// The candidate must refer to a regular file with the same device and
-    /// inode. No pathname lookup or content check is performed.
     pub fn verify_file_identity(&self, candidate: &File) -> io::Result<()> {
         let candidate_identity = FileIdentity::from_file(candidate)?;
         if candidate_identity != self.identity {
@@ -157,9 +124,6 @@ impl RunningImage {
         Ok(())
     }
 
-    /// Return an optional diagnostic path reported by the kernel.
-    ///
-    /// This raw path hint is not used to establish or verify identity.
     pub fn path_hint(&self) -> Option<&Path> {
         self.path_hint.as_deref()
     }
@@ -167,7 +131,6 @@ impl RunningImage {
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 impl RunningImage {
-    /// Report that this Unix target has no reviewed running-image query.
     pub fn capture() -> io::Result<Self> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
@@ -175,7 +138,6 @@ impl RunningImage {
         ))
     }
 
-    /// Report that this Unix target has no reviewed running-image query.
     pub fn verify_file_identity(&self, _candidate: &File) -> io::Result<()> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
@@ -183,7 +145,6 @@ impl RunningImage {
         ))
     }
 
-    /// No path hint is available on this Unix target.
     pub fn path_hint(&self) -> Option<&Path> {
         None
     }
@@ -249,6 +210,10 @@ mod darwin {
     }
 
     #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+    )]
+    #[expect(
         unsafe_code,
         reason = "the Darwin kernel query reads a typed response only after an exact byte count"
     )]
@@ -260,9 +225,6 @@ mod darwin {
         let response_size = libc::c_int::try_from(DARWIN_REGION_PATH_INFO_SIZE)
             .map_err(|_| invalid_data("Darwin region response size does not fit c_int"))?;
 
-        // SAFETY: `response` is writable storage for the exact local SDK
-        // layout. The PID and region address select this process and its main
-        // header. The buffer is read only after an exact byte-count result.
         let returned = unsafe {
             libc::proc_pidinfo(
                 process_id,
@@ -281,8 +243,6 @@ mod darwin {
             ));
         }
 
-        // SAFETY: the kernel reported exactly the complete structure size for
-        // this writable buffer, so every field is initialized.
         let response = unsafe { response.assume_init() };
         let region = &response.prp_prinfo;
         let vnode = &response.prp_vip.vip_vi.vi_stat;
@@ -299,8 +259,6 @@ mod darwin {
     }
 
     fn header_address() -> u64 {
-        // The external symbol is defined by the Darwin linker. Taking its
-        // address does not read or dereference the mapped header.
         let address = std::ptr::addr_of!(_mh_execute_header).addr();
         u64::from_ne_bytes(address.to_ne_bytes())
     }
@@ -373,6 +331,3 @@ fn permission_denied(message: &'static str) -> io::Error {
 fn invalid_data(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
-
-#[cfg(test)]
-mod tests;

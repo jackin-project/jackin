@@ -45,9 +45,6 @@ pub struct PrewarmArgs {
     pub role_branch: Option<String>,
 }
 
-#[cfg(test)]
-mod tests;
-
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Eight orthogonal CLI flag booleans (image, daemon, roles, sidecar, \

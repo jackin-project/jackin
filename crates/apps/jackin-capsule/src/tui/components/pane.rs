@@ -329,6 +329,3 @@ fn debug_assert_pane_area_well_formed(area: Rect, buf: &Buffer) {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -1,16 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! C6 verification and repair: trusted tests, independent review,
-//! bounded feedback, and the acceptance decision.
-//!
-//! The host runs the pinned test command in a fresh credential-free
-//! test worker, validates one structured review result through the
-//! adapter path, binds both to the run, round, candidate, and policy
-//! hash in the evidence table, and delivers at most one bounded
-//! feedback document per round to the same healthy implementer
-//! session. Workers submit observations; only the host decides.
-
 mod process;
 
 use std::path::{Path, PathBuf};
@@ -22,32 +12,20 @@ use sha2::{Digest as _, Sha256};
 
 use super::{EvidenceRecord, RunStore, WorkflowError, WorkflowService};
 
-/// Captured bytes kept per test output stream. Anything beyond this
-/// is dropped with a truncation marker; the exit status is unaffected.
 pub const MAX_TEST_OUTPUT_BYTES: usize = 64 * 1024;
 
-/// Largest accepted review JSON document. The review worker writes one
-/// exact file; anything larger is rejected, never scraped for fragments.
 pub const MAX_REVIEW_BYTES: u64 = 64 * 1024;
 
-/// Largest repair feedback document delivered to the implementer.
 pub const MAX_FEEDBACK_BYTES: usize = 4 * 1024;
 
-/// Excerpt bytes carried on a test result for feedback construction.
 pub const MAX_TEST_EXCERPT_BYTES: usize = 1_500;
 
-/// At most one correction request for malformed review output in a
-/// review session. Further failure requires operator action.
 pub const MAX_REVIEW_CORRECTIONS: u32 = 1;
 
-/// Immutable Python runtime used by the frozen C6 check policy.
 pub const TEST_SANDBOX_IMAGE: &str =
     "python@sha256:1b668429b3511ab407d8e00648891631b0b1a4d7e15e3ca70f38ab5b91ad4ab4";
 const TEST_COMMAND_WRAPPER: &str = "import os,signal,subprocess,sys,time\ndeadline=float(sys.argv[1])\nargv=sys.argv[2:]\nremaining=deadline-time.time()\nif remaining <= 0: sys.exit(124)\ntry: child=subprocess.Popen(argv,start_new_session=True)\nexcept OSError as error:\n print(error,file=sys.stderr); sys.exit(125)\ntry: code=child.wait(timeout=remaining)\nexcept subprocess.TimeoutExpired:\n try: os.killpg(child.pid,signal.SIGKILL)\n except ProcessLookupError: pass\n child.wait(); sys.exit(124)\nsys.exit(code)";
 
-/// Frozen trusted test policy: the exact argv from the plan plus its
-/// canonical hash. A changed policy requires a new plan; the hash
-/// check rejects stale evidence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestPolicy {
     argv: Vec<String>,
@@ -56,8 +34,6 @@ pub struct TestPolicy {
 }
 
 impl TestPolicy {
-    /// Freeze an exact argv with a timeout. No shell is ever involved:
-    /// the first element is the program, the rest are literal arguments.
     pub fn freeze(argv: Vec<String>, timeout_secs: u64) -> Result<Self, WorkflowError> {
         if argv.is_empty() || argv.iter().any(|part| part.trim().is_empty()) {
             return Err(WorkflowError::invalid(
@@ -84,54 +60,41 @@ impl TestPolicy {
         })
     }
 
-    /// Exact argv: element zero is the program, the rest are arguments.
     #[must_use]
     pub fn argv(&self) -> &[String] {
         &self.argv
     }
 
-    /// Program to execute, never a shell command line.
     #[must_use]
     pub fn program(&self) -> &str {
         &self.argv[0]
     }
 
-    /// Literal arguments, passed without shell interpretation.
     #[must_use]
     pub fn args(&self) -> &[String] {
         &self.argv[1..]
     }
 
-    /// Execution deadline for one test attempt.
     #[must_use]
     pub const fn timeout(&self) -> Duration {
         Duration::from_secs(self.timeout_secs)
     }
 
-    /// Canonical hash of the frozen policy. Evidence rows carry it;
-    /// [`decide_candidate`] rejects rows with a different hash.
     #[must_use]
     pub fn policy_hash(&self) -> &str {
         &self.policy_hash
     }
 }
 
-/// Marker that a test worker carries no agent credentials: no account
-/// binding, no credential files, no picker dispatch. The only
-/// constructible value is [`NoAgentCredentials::NONE`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NoAgentCredentials {
     _private: (),
 }
 
 impl NoAgentCredentials {
-    /// The sole credential state a test worker may carry: none.
     pub const NONE: Self = Self { _private: () };
 }
 
-/// Exact identity and checkpoint for one non-interactive test worker.
-/// The worker is single-use: its directory must not exist before
-/// preparation and is never reused after a run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestWorkerSpec {
     worker_id: String,
@@ -144,9 +107,6 @@ pub struct TestWorkerSpec {
 }
 
 impl TestWorkerSpec {
-    /// Define the worker for one candidate. The ID is deterministic
-    /// (`test-<run>-r<round>-<candidate>`) so transcripts name the exact
-    /// worker that produced an exit status.
     pub fn new(
         run_id: &str,
         round: u32,
@@ -182,46 +142,37 @@ impl TestWorkerSpec {
         })
     }
 
-    /// Deterministic single-use worker identity.
     #[must_use]
     pub fn worker_id(&self) -> &str {
         &self.worker_id
     }
 
-    /// Candidate under test.
     #[must_use]
     pub fn candidate_id(&self) -> &str {
         &self.candidate_id
     }
 
-    /// Exact commit the worker source must match.
     #[must_use]
     pub fn commit(&self) -> &str {
         &self.commit
     }
 
-    /// Exact tree the worker source must match.
     #[must_use]
     pub fn tree(&self) -> &str {
         &self.tree
     }
 
-    /// Policy hash the run binds to its evidence rows.
     #[must_use]
     pub fn policy_hash(&self) -> &str {
         &self.policy_hash
     }
 
-    /// Credential state: always none. Reading it proves the launch
-    /// path threaded the marker through.
     #[must_use]
     pub const fn credentials(&self) -> NoAgentCredentials {
         self.credentials
     }
 }
 
-/// A prepared test worker: a fresh private clone pinned to the exact
-/// checkpoint, verified before any test byte runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedTestWorker {
     worker_id: String,
@@ -231,25 +182,21 @@ pub struct PreparedTestWorker {
 }
 
 impl PreparedTestWorker {
-    /// Single-use worker identity.
     #[must_use]
     pub fn worker_id(&self) -> &str {
         &self.worker_id
     }
 
-    /// Private clone directory holding the pinned source.
     #[must_use]
     pub fn work_dir(&self) -> &Path {
         &self.work_dir
     }
 
-    /// Verified commit of the prepared source.
     #[must_use]
     pub fn commit(&self) -> &str {
         &self.commit
     }
 
-    /// Verified tree of the prepared source.
     #[must_use]
     pub fn tree(&self) -> &str {
         &self.tree
@@ -257,9 +204,6 @@ impl PreparedTestWorker {
 }
 
 pub(crate) fn run_git(dir: &Path, args: &[&str]) -> Result<String, WorkflowError> {
-    // Spawn plus wait_with_output (never Command::output): short-lived
-    // local git plumbing on the host verification path, off
-    // render/runtime threads like the rest of this module.
     let child = std::process::Command::new("git")
         .args(args)
         .current_dir(dir)
@@ -281,10 +225,6 @@ pub(crate) fn run_git(dir: &Path, args: &[&str]) -> Result<String, WorkflowError
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
-/// Prepare a fresh test worker from the source repository: private
-/// clone with no hardlinks, detached checkout of the exact commit,
-/// then proof that HEAD, the tree, and a clean worktree all match the
-/// checkpoint. The trusted bundle is never copied into the worker.
 pub fn prepare_test_worker(
     repo: &Path,
     spec: &TestWorkerSpec,
@@ -346,8 +286,6 @@ pub fn prepare_test_worker(
     })
 }
 
-/// Bounded test output: at most [`MAX_TEST_OUTPUT_BYTES`] kept, with
-/// a flag recording whether the tail was dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoundedOutput {
     bytes: Vec<u8>,
@@ -411,10 +349,6 @@ pub(super) fn run_host_command_output_until(
     }))
 }
 
-/// Host-observed outcome of one pinned test execution. A completed
-/// process always yields an outcome, whatever its exit code; only
-/// spawn, timeout, and reader failures are errors, and they never
-/// read as pass or fail.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestExecution {
     exit_code: i32,
@@ -423,11 +357,6 @@ pub struct TestExecution {
     stderr: BoundedOutput,
 }
 
-/// Run the frozen executable policy in a disposable Docker sandbox. The
-/// trusted check bundle and candidate source are read-only, and the
-/// host filesystem and network are unavailable. Only bounded tmpfs
-/// directories are writable.
-/// Missing Docker or image fails closed; there is no host fallback.
 pub fn run_test_command(
     policy: &TestPolicy,
     worker: &PreparedTestWorker,
@@ -764,15 +693,6 @@ fn docker_sandbox_command(
     container_name: &str,
     deadline_unix: f64,
 ) -> std::process::Command {
-    // Environment allowlist for the test process. Default-deny: agent
-    // credentials live in files and host variables that candidate code
-    // must never observe, so only locale, temp, and path entries pass.
-    //
-    // Python bytecode writing is always disabled: trusted checks import
-    // candidate modules, and an emitted `__pycache__` would dirty the
-    // pinned worker source (and any host-mounted fixture tree) outside
-    // the candidate diff. The frozen policy argv stays untouched; the
-    // flag travels in the environment instead.
     let mut command = std::process::Command::new("docker");
     command
         .args([
@@ -862,8 +782,6 @@ impl Drop for RemoveContainerOnDrop {
     }
 }
 
-/// Host verdict on one candidate: the exact revision, the actual exit
-/// status, and a bounded excerpt. Never an agent-written JSON file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestResult {
     candidate_id: String,
@@ -878,9 +796,6 @@ pub struct TestResult {
 }
 
 impl TestResult {
-    /// Map a host-observed execution to pass or fail. Exit zero passes;
-    /// anything else fails. Infrastructure errors never reach this
-    /// mapping: they return as errors from [`run_test_command`].
     #[must_use]
     pub fn from_execution(
         spec: &TestWorkerSpec,
@@ -911,39 +826,32 @@ impl TestResult {
         }
     }
 
-    /// Candidate under test.
     #[must_use]
     pub fn candidate_id(&self) -> &str {
         &self.candidate_id
     }
 
-    /// Whether the pinned command exited zero.
     #[must_use]
     pub const fn passed(&self) -> bool {
         self.passed
     }
 
-    /// Actual exit code.
     #[must_use]
     pub const fn exit_code(&self) -> i32 {
         self.exit_code
     }
 
-    /// Bounded output excerpt for feedback construction.
     #[must_use]
     pub fn excerpt(&self) -> &str {
         &self.excerpt
     }
 
-    /// Digest of the full bounded outputs, stored with the artifact.
     #[must_use]
     pub fn output_digest(&self) -> &str {
         &self.output_digest
     }
 }
 
-/// Persist the bounded test outputs as a content-addressed artifact
-/// and return its digest for the evidence row.
 pub fn persist_test_output(
     store: &RunStore,
     candidate_id: &str,
@@ -964,9 +872,6 @@ pub fn persist_test_output(
     Ok(artifact.digest)
 }
 
-/// Bind a test verdict to the run, candidate, and policy hash in the
-/// evidence table. Source and quality are host-assigned: only the
-/// trusted worker path writes these rows.
 pub fn record_test_evidence(
     store: &RunStore,
     run_id: &str,
@@ -985,8 +890,6 @@ pub fn record_test_evidence(
     })
 }
 
-/// Finding severity. Any `blocker`, `major`, or `minor` finding
-/// prevents acceptance; a `note` never does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
@@ -996,7 +899,6 @@ pub enum Severity {
     Note,
 }
 
-/// One structured review finding against the candidate source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviewFinding {
     pub id: String,
@@ -1010,7 +912,6 @@ pub struct ReviewFinding {
     pub suggestion: String,
 }
 
-/// Review verdict: pass or fail with structured findings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewStatus {
@@ -1028,9 +929,6 @@ impl ReviewStatus {
     }
 }
 
-/// Closed review result schema. The host adds trusted source and
-/// session metadata after validation; the reviewer cannot grant
-/// permissions or remove a required test.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviewResult {
     pub schema_version: u8,
@@ -1042,8 +940,6 @@ pub struct ReviewResult {
     pub findings: Vec<ReviewFinding>,
 }
 
-/// Expected candidate identity for review validation, supplied by the
-/// host from the checkpoint, never by the reviewer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReviewExpectation<'a> {
     pub candidate_id: &'a str,
@@ -1051,9 +947,6 @@ pub struct ReviewExpectation<'a> {
     pub tree: &'a str,
 }
 
-/// Separate review worker: fresh instance and session, read-only
-/// source, one writable result file. The implementer's conversation,
-/// memory, and repository are never shared.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewWorkerSpec {
     worker_id: String,
@@ -1065,8 +958,6 @@ pub struct ReviewWorkerSpec {
 }
 
 impl ReviewWorkerSpec {
-    /// Define the reviewer for one candidate. The result path is the
-    /// single file the adapter reads; transcripts are never scraped.
     pub fn new(
         run_id: &str,
         round: u32,
@@ -1101,26 +992,21 @@ impl ReviewWorkerSpec {
         })
     }
 
-    /// Deterministic review worker identity.
     #[must_use]
     pub fn worker_id(&self) -> &str {
         &self.worker_id
     }
 
-    /// The single result file the adapter reads.
     #[must_use]
     pub fn result_path(&self) -> &Path {
         &self.result_path
     }
 
-    /// Corrections consumed in this review session (at most one).
     #[must_use]
     pub const fn corrections_used(&self) -> u32 {
         self.corrections_used
     }
 
-    /// Record a consumed correction request. Further malformed output
-    /// after the first correction requires operator action.
     pub fn take_correction(&mut self) -> Result<(), WorkflowError> {
         if !correction_allowed(self.corrections_used) {
             return Err(WorkflowError::blocked(
@@ -1131,7 +1017,6 @@ impl ReviewWorkerSpec {
         Ok(())
     }
 
-    /// Candidate identity the review must name exactly.
     #[must_use]
     pub fn expectation(&self) -> ReviewExpectation<'_> {
         ReviewExpectation {
@@ -1142,16 +1027,11 @@ impl ReviewWorkerSpec {
     }
 }
 
-/// Whether another correction request fits the budget.
 #[must_use]
 pub const fn correction_allowed(used: u32) -> bool {
     used < MAX_REVIEW_CORRECTIONS
 }
 
-/// Read the review result through the adapter's tested output path:
-/// the exact file the review worker was told to write, size-checked.
-/// Missing files and oversize documents are errors, never fragments
-/// scraped from a transcript.
 pub fn read_review_bytes(path: &Path) -> Result<Vec<u8>, WorkflowError> {
     let len = std::fs::metadata(path)
         .map_err(|err| {
@@ -1195,10 +1075,6 @@ fn valid_relative_path(path: &str) -> bool {
     !path.split('/').any(|part| part.is_empty() || part == "..")
 }
 
-/// Validate a review document: size, schema version, exact candidate
-/// identity, finding shape, permitted paths, and internal consistency
-/// (a passing review carries no blocking findings; a failing review
-/// carries at least one finding). Symbolic or mismatched IDs fail.
 pub fn validate_review(
     bytes: &[u8],
     expected: ReviewExpectation<'_>,
@@ -1300,8 +1176,6 @@ pub fn validate_review(
     Ok(result)
 }
 
-/// Whether a validated review lets the candidate proceed: status pass
-/// with no blocker, major, or minor findings. Notes never block.
 #[must_use]
 pub fn review_acceptable(result: &ReviewResult) -> bool {
     result.status == ReviewStatus::Pass
@@ -1311,9 +1185,6 @@ pub fn review_acceptable(result: &ReviewResult) -> bool {
             .all(|finding| finding.severity == Severity::Note)
 }
 
-/// Bind a validated review to the run, candidate, and policy hash in
-/// the evidence table. Reviews are stored before any repair turn, so
-/// feedback can only cite persisted verdicts.
 pub fn record_review_evidence(
     store: &RunStore,
     run_id: &str,
@@ -1334,9 +1205,6 @@ pub fn record_review_evidence(
     })
 }
 
-/// One failing check distilled from host-observed output: the test
-/// name, a short excerpt, and an optional `file:line` location with
-/// the host path stripped to its file name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FailingCheck {
     pub name: String,
@@ -1344,9 +1212,6 @@ pub struct FailingCheck {
     pub location: Option<String>,
 }
 
-/// Distill one failing execution into a [`FailingCheck`]. Only the
-/// current candidate's output is used; outdated findings are never
-/// recycled as instructions for newer code.
 #[must_use]
 pub fn summarize_test_failure(
     policy: &TestPolicy,
@@ -1385,8 +1250,6 @@ pub fn summarize_test_failure(
     }
 }
 
-/// First `File "…", line N` traceback hit, reduced to `file:line` so
-/// feedback never leaks host worker paths.
 fn traceback_location(lines: &[&str]) -> Option<String> {
     for line in lines {
         let Some(file_start) = line.find("File \"") else {
@@ -1414,10 +1277,6 @@ fn traceback_location(lines: &[&str]) -> Option<String> {
     None
 }
 
-/// Redact credential-shaped values from feedback text. Feedback is
-/// built from allowlisted fields only, so this is defense in depth:
-/// known token prefixes and `label=value` secrets never reach the
-/// implementer, and neither do session or agent identities.
 fn redact_secrets(text: &str) -> String {
     const TOKEN_PREFIXES: &[&str] = &[
         "sk-", "AKIA", "xoxa-", "xoxb-", "xoxp-", "ghp_", "gho_", "gsk_", "Bearer ",
@@ -1479,8 +1338,6 @@ fn redact_secrets(text: &str) -> String {
     out.join("\n")
 }
 
-/// Input for one bounded feedback document: the current candidate and
-/// its own failures only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeedbackInput<'a> {
     pub candidate_id: &'a str,
@@ -1502,12 +1359,6 @@ fn finding_location(finding: &ReviewFinding) -> String {
     }
 }
 
-/// Build one bounded feedback document for the current round. It names
-/// the candidate, its failing checks with short excerpts and
-/// `file:line` locations, the blocking review findings, the evidence
-/// references, and the remaining repair count. Secrets, session IDs,
-/// and agent IDs never appear: fields are allowlisted and the text is
-/// scrubbed before the size cap is applied.
 pub fn build_feedback(input: &FeedbackInput<'_>) -> Result<String, WorkflowError> {
     if input.candidate_id.trim().is_empty() || input.commit.trim().is_empty() {
         return Err(WorkflowError::invalid(
@@ -1579,8 +1430,6 @@ const fn severity_label(severity: Severity) -> &'static str {
     }
 }
 
-/// Candidate identity: exact revision plus its generation in the
-/// run record. Evidence for a superseded identity never decides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CandidateRef<'a> {
     pub candidate_id: &'a str,
@@ -1589,7 +1438,6 @@ pub struct CandidateRef<'a> {
     pub generation: u64,
 }
 
-/// What verification observed, and the policy it ran under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VerificationOutcome<'a> {
     pub test_passed: bool,
@@ -1598,17 +1446,12 @@ pub struct VerificationOutcome<'a> {
     pub expected_policy_hash: &'a str,
 }
 
-/// Host-side readiness: the source still matches the candidate and
-/// required backup completed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HostReadiness {
     pub source_current: bool,
     pub backup_satisfied: bool,
 }
 
-/// Input-ownership state for automatic progress: the host owns
-/// automatic input, the owner epoch is current, and no delivery is
-/// uncertain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InputOwnership {
     pub host_owned: bool,
@@ -1616,8 +1459,6 @@ pub struct InputOwnership {
     pub uncertainty_pending: bool,
 }
 
-/// Evidence snapshot the host decision reads. Every field is
-/// host-observed; workers cannot supply any of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CandidateEvidence<'a> {
     pub candidate: CandidateRef<'a>,
@@ -1629,8 +1470,6 @@ pub struct CandidateEvidence<'a> {
     pub max_repair_turns: u32,
 }
 
-/// Host verdict on a candidate: accept it, repair it in the same
-/// session, fail it with the budget spent, or hold for the operator.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
     Accept,
@@ -1639,13 +1478,6 @@ pub enum Decision {
     NeedsOperator(String),
 }
 
-/// Decide a candidate from complete current evidence. Acceptance needs
-/// every condition at once: passing tests on the current policy,
-/// an acceptable review of the same candidate, a C4-current source,
-/// host-owned automatic input on the current epoch, no unresolved
-/// uncertainty, and satisfied backup. Stale, absent, malformed, or
-/// incomplete evidence never accepts; failures with rounds left
-/// repair, without rounds fail.
 #[must_use]
 pub fn decide_candidate(evidence: &CandidateEvidence<'_>) -> Decision {
     let candidate = &evidence.candidate;
@@ -1700,9 +1532,6 @@ pub fn decide_candidate(evidence: &CandidateEvidence<'_>) -> Decision {
     Decision::Fail("repair budget is exhausted with failing verification".to_owned())
 }
 
-/// Physical implementer session identity for repair delivery: the
-/// recorded attachment and the freshly observed live values must
-/// match exactly, or delivery is refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionIdentity {
     pub instance_id: String,
@@ -1711,9 +1540,6 @@ pub struct SessionIdentity {
     pub process_identity: Option<String>,
 }
 
-/// Admission gate for one repair delivery: same healthy session,
-/// current owner epoch, no operator input ownership, and a finished
-/// implementer turn. Never deliver on uncertain input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeliveryGate {
     pub recorded: SessionIdentity,
@@ -1723,8 +1549,6 @@ pub struct DeliveryGate {
     pub turn_ended: bool,
 }
 
-/// Admit or refuse one repair delivery. Any mismatch refuses with its
-/// reason; a refused delivery sends nothing.
 pub fn admit_repair_delivery(gate: &DeliveryGate) -> Result<(), WorkflowError> {
     if gate.recorded != gate.observed {
         return Err(WorkflowError::blocked(
@@ -1751,18 +1575,12 @@ pub fn admit_repair_delivery(gate: &DeliveryGate) -> Result<(), WorkflowError> {
     Ok(())
 }
 
-/// Staged repair delivery: the frozen prompt bytes saved through C5
-/// before any transport send, with its command correlation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepairDelivery {
     pub command_id: String,
     pub prompt_digest: String,
 }
 
-/// Freeze the repair prompt and commit its dispatch BEFORE the
-/// transport send. The caller sends `feedback` through the proven
-/// session path and records the matched receipt; the receipt later
-/// moves the command to `written`, never this staging call.
 pub fn stage_repair_feedback(
     service: &WorkflowService,
     run_id: &str,

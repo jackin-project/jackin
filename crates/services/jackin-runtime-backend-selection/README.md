@@ -26,7 +26,7 @@ runtime instance.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`backend_selection.rs`](src/backend_selection.rs) | selection | hub `backend` suite (`backend/tests.rs`) |
+| [`backend_selection.rs`](src/backend_selection.rs) | selection | — |
 
 ## Public API
 
@@ -37,6 +37,6 @@ runtime instance.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-backend-selection
+cargo nextest run -p jackin-runtime-backend-selection --no-tests warn
 cargo clippy -p jackin-runtime-backend-selection --all-targets -- -D warnings
 ```

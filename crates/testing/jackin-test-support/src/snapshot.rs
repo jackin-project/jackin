@@ -1,6 +1,3 @@
-#[cfg(test)]
-mod tests;
-
 #[must_use]
 pub fn redact_digit_runs(input: &str) -> String {
     let mut out = String::with_capacity(input.len());

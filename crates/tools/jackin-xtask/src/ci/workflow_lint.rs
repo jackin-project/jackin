@@ -1,5 +1,3 @@
-//! Native jactionlint command with repository-mode custody checks.
-
 use std::{
     collections::BTreeSet,
     ffi::OsString,

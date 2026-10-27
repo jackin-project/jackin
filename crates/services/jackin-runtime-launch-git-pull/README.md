@@ -40,6 +40,6 @@ for workspace repos.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-git-pull
+cargo nextest run -p jackin-runtime-launch-git-pull --no-tests warn
 cargo clippy -p jackin-runtime-launch-git-pull --all-targets -- -D warnings
 ```

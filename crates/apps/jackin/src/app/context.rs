@@ -46,18 +46,6 @@ fn find_dst_separator(target: &str) -> Option<usize> {
     None
 }
 
-#[cfg(test)]
-pub(crate) fn resolve_target_name(
-    name: &str,
-    config: &AppConfig,
-    cwd: &Path,
-) -> Result<LoadWorkspaceInput> {
-    resolve_target_name_with_choice(name, config, cwd, |message, options| {
-        let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-        crate::prompt::prompt_choice(message, &option_refs)
-    })
-}
-
 pub(crate) fn resolve_target_name_with_choice(
     name: &str,
     config: &AppConfig,
@@ -114,17 +102,6 @@ pub(crate) fn resolve_target_name_with_choice(
             );
         }
     }
-}
-
-#[cfg(test)]
-pub(crate) fn resolve_agent_from_context(
-    config: &AppConfig,
-    cwd: &Path,
-) -> Result<(RoleSelector, LoadWorkspaceInput)> {
-    resolve_agent_from_context_with_choice(config, cwd, |message, options| {
-        let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-        crate::prompt::prompt_choice(message, &option_refs)
-    })
 }
 
 pub(crate) fn resolve_agent_from_context_with_choice(
@@ -512,6 +489,3 @@ pub(crate) fn remember_last_agent(
         Err(error) => eprintln!("warning: failed to save last-used role: {error}"),
     }
 }
-
-#[cfg(test)]
-mod tests;

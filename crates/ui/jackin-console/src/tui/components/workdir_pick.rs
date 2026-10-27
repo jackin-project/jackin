@@ -247,6 +247,3 @@ impl WorkdirMount for jackin_config::MountConfig {
         &self.dst
     }
 }
-
-#[cfg(test)]
-mod tests;

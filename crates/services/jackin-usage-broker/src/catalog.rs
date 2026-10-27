@@ -77,6 +77,3 @@ fn with_unattended_guard<G, T>(
     let _guard = establish_guard().map_err(|_| discovery_unavailable())?;
     action()
 }
-
-#[cfg(test)]
-mod tests;

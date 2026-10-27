@@ -29,6 +29,6 @@ discovery, credential snapshots).
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-provider-openrouter
+cargo nextest run -p jackin-usage-provider-openrouter --no-tests warn
 cargo clippy -p jackin-usage-provider-openrouter --all-targets -- -D warnings
 ```

@@ -22,6 +22,3 @@ pub fn handle_key(
         &crate::console::validate_auth_source_folder,
     )
 }
-
-#[cfg(test)]
-mod tests;

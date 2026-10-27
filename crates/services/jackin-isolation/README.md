@@ -17,12 +17,12 @@ Mount isolation subsystem. Materializes per-workspace isolated git worktree moun
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
-| [`materialize.rs`](src/materialize.rs) · [`materialize/`](src/materialize) | mount materialization | [`tests.rs`](src/materialize/tests.rs) |
-| [`branch.rs`](src/branch.rs) · [`branch/`](src/branch) | branch tracking | [`tests.rs`](src/branch/tests.rs) |
-| [`state.rs`](src/state.rs) · [`state/`](src/state) | isolation-state tracking | [`tests.rs`](src/state/tests.rs) |
-| [`git_inspect.rs`](src/git_inspect.rs) · [`git_inspect/`](src/git_inspect) | git/worktree inspection | [`tests.rs`](src/git_inspect/tests.rs) |
-| [`finalize.rs`](src/finalize.rs) · [`finalize/`](src/finalize) | finalize | [`tests.rs`](src/finalize/tests.rs) |
-| [`cleanup.rs`](src/cleanup.rs) · [`cleanup/`](src/cleanup) | teardown/cleanup | [`tests.rs`](src/cleanup/tests.rs) |
+| [`materialize.rs`](src/materialize.rs) · [`materialize/`](src/materialize.rs) | mount materialization | — |
+| [`branch.rs`](src/branch.rs) · [`branch/`](src/branch.rs) | branch tracking | — |
+| [`state.rs`](src/state.rs) · [`state/`](src/state) | isolation-state tracking | — |
+| [`git_inspect.rs`](src/git_inspect.rs) · [`git_inspect/`](src/git_inspect.rs) | git/worktree inspection | — |
+| [`finalize.rs`](src/finalize.rs) · [`finalize/`](src/finalize.rs) | finalize | — |
+| [`cleanup.rs`](src/cleanup.rs) · [`cleanup/`](src/cleanup.rs) | teardown/cleanup | — |
 
 ## Public API
 
@@ -33,6 +33,6 @@ Worktree add/adopt/prune and cleanup share a persistent OS lock in the repositor
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-isolation
+cargo nextest run -p jackin-isolation --no-tests warn
 cargo clippy -p jackin-isolation --all-targets -- -D warnings
 ```

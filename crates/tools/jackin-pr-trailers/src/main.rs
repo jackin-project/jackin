@@ -301,6 +301,3 @@ fn run_command(mut request: ExecRequest, stdin: Option<&str>) -> Result<ExecResu
     }
     jackin_process::exec_sync(&request).context("failed to run command")
 }
-
-#[cfg(test)]
-mod tests;

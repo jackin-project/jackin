@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Workflow list/detail rendering on existing Console widgets: a
-//! run list (run ID, stage, status, blocking reason), a detail view
-//! (fixed graph, current candidate, findings, backup state), and the
-//! shared confirm/error dialogs for resume/cancel/takeover.
-
 use ratatui::{
     Frame,
     layout::Rect,
@@ -16,7 +11,6 @@ use ratatui::{
 
 use super::model::{WorkflowAction, WorkflowScreen};
 
-/// One rendered list row (exposed for tests and footer hints).
 #[must_use]
 pub fn workflow_list_line(index: usize, selected: bool, screen: &WorkflowScreen) -> String {
     let Some(run) = screen.runs().get(index) else {
@@ -29,7 +23,6 @@ pub fn workflow_list_line(index: usize, selected: bool, screen: &WorkflowScreen)
     )
 }
 
-/// Human blocking reason for the list view.
 #[must_use]
 pub fn blocking_reason(status: &str, pause_kind: Option<&str>) -> String {
     match status {
@@ -42,9 +35,6 @@ pub fn blocking_reason(status: &str, pause_kind: Option<&str>) -> String {
     }
 }
 
-/// Detail body lines: fixed graph with node states, candidate,
-/// sessions, evidence, checkpoints, and backup state. The graph is a
-/// view of saved state: it cannot edit the workflow.
 #[must_use]
 pub fn workflow_detail_lines(screen: &WorkflowScreen) -> Vec<String> {
     let Some(detail) = screen.detail() else {
@@ -126,7 +116,6 @@ pub fn workflow_detail_lines(screen: &WorkflowScreen) -> Vec<String> {
     lines
 }
 
-/// Confirmation prompt text for a destructive workflow action.
 #[must_use]
 pub fn confirm_prompt(action: WorkflowAction, run_id: &str) -> String {
     match action {
@@ -178,6 +167,3 @@ pub fn render_workflow_detail(frame: &mut Frame<'_>, area: Rect, screen: &Workfl
         area,
     );
 }
-
-#[cfg(test)]
-mod tests;

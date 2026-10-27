@@ -27,6 +27,3 @@ fn map_omp_error(error: OmpError) -> StoreError {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

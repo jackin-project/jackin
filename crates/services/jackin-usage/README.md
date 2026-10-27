@@ -42,13 +42,13 @@ boltffi lives in sibling crate `jackin-usage-ffi`.
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
 | [`host.rs`](src/host.rs) · `host/` | broker and projection consumer facade | — |
-| `coordinator.rs` · `coordinator/` | Broker-owned single-flight generations and host-only atomic account state | `tests.rs` |
-| `token_monitor.rs` · `token_monitor/` | token spend monitoring | `tests.rs` |
-| [`usage.rs`](src/usage.rs) · [`usage/`](src/usage) | usage/pricing accounting | [`tests.rs`](src/usage/tests.rs) |
+| `coordinator.rs` · `coordinator/` | Broker-owned single-flight generations and host-only atomic account state | — |
+| `token_monitor.rs` · `token_monitor/` | token spend monitoring | — |
+| [`usage.rs`](src/usage.rs) | usage/pricing accounting | — |
 | `telemetry.rs` | telemetry emission | — |
 | `process_telemetry.rs` | child-process telemetry ownership and redaction | — |
 | `logging.rs` | telemetry-level state and Capsule panic handling | — |
-| `usage_snapshot_store.rs` · `usage_snapshot_store/` | persistent usage snapshot store | `tests.rs` |
+| `usage_snapshot_store.rs` · `usage_snapshot_store/` | persistent usage snapshot store | — |
 | `store_backend.rs` | turso SQLite import chokepoint | — |
 | `output.rs` | usage output shaping | — |
 
@@ -108,6 +108,6 @@ exactly.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage -p jackin-usage-ffi
+cargo nextest run -p jackin-usage -p jackin-usage-ffi --no-tests warn
 cargo clippy -p jackin-usage -p jackin-usage-ffi --all-targets -- -D warnings
 ```

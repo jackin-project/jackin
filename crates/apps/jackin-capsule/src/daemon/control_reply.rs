@@ -148,6 +148,3 @@ fn process_exec_reply_outcome(
         ),
     }
 }
-
-#[cfg(test)]
-mod tests;

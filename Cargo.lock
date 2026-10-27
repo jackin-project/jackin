@@ -4,9 +4,9 @@ version = 4
 
 [[package]]
 name = "addr2line"
-version = "0.25.1"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b5d307320b3181d6d7954e663bd7c774a838b8220fe0593c86d9fb09f498b4b"
+checksum = "e567177890eb1617b1f774005b66b26b2377afd138a2ca37aae7d8f0c81429d4"
 dependencies = [
  "gimli",
 ]
@@ -235,70 +235,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d902e3d592a523def97af8f317b08ce16b7ab854c1985a0c671e6f15cebc236"
 
 [[package]]
-name = "arrayref"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76a2e8124351fda1ef8aaaa3bbd7ebbcb486bbcd4225aca0aa0d84bb2db8fecb"
-
-[[package]]
 name = "arrayvec"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
-
-[[package]]
-name = "asn1-rs"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7f43a50ac4fdca5df8e885c21b835997f0a1cdee65494a6847694a98652d9d8"
-dependencies = [
- "asn1-rs-derive",
- "asn1-rs-impl",
- "displaydoc",
- "nom",
- "num-traits",
- "rusticata-macros",
- "thiserror 2.0.21",
- "time",
-]
-
-[[package]]
-name = "asn1-rs-derive"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3109e49b1e4909e9db6515a30c633684d68cdeaa252f215214cb4fa1a5bfee2c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
- "synstructure 0.13.2",
-]
-
-[[package]]
-name = "asn1-rs-impl"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b18050c2cd6fe86c3a76584ef5e0baf286d038cda203eb6223df2cc413565f7"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "assert_cmd"
-version = "2.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2aa3a22042e45de04255c7bf3626e239f450200fd0493c1e382263544b20aea6"
-dependencies = [
- "anstyle",
- "bstr",
- "libc",
- "predicates",
- "predicates-core",
- "predicates-tree",
- "wait-timeout",
-]
 
 [[package]]
 name = "assoc"
@@ -429,14 +369,14 @@ dependencies = [
 
 [[package]]
 name = "backtrace"
-version = "0.3.76"
+version = "0.3.77"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb531853791a215d7c62a30daf0dde835f381ab5de4589cfe7c649d2cbe92bd6"
+checksum = "42f4220217f3288537b83684130f42fad43320b1c3b805f1910d683d52ded24f"
 dependencies = [
  "addr2line",
  "cfg-if",
  "libc",
- "miniz_oxide 0.8.9",
+ "miniz_oxide",
  "object",
  "rustc-demangle",
  "windows-link",
@@ -515,15 +455,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bit-set"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56d87354e4229f54a44f7bf2435906a4656dba36026ab6eaca629a2c436a691c"
-dependencies = [
- "bit-vec 0.10.1",
-]
-
-[[package]]
 name = "bit-vec"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -534,25 +465,6 @@ name = "bit-vec"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
-
-[[package]]
-name = "bit-vec"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b71798fca2c1fe1086445a7258a4bc81e6e49dcd24c8d0dd9a1e57395b603f51"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "bit-vec"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5727b15fa97d4f4fee0a3b7c3d550ed0269f54329207b86388de918604e31269"
-dependencies = [
- "borsh",
- "serde",
-]
 
 [[package]]
 name = "bitflags"
@@ -733,45 +645,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "borsh"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "553c5d846a6ba5150c65e3b1b8ec073bcf1abc20f9b7220de384a4443ea4e20a"
-dependencies = [
- "borsh-derive",
- "bytes",
- "cfg_aliases 0.2.2",
-]
-
-[[package]]
-name = "borsh-derive"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12cdfe656708a01f89b451a7d36466e6fe6c414de0aa18fc54f864f6f9ca9f56"
-dependencies = [
- "once_cell",
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 3.0.9",
-]
-
-[[package]]
 name = "branches"
 version = "0.4.6"
 dependencies = [
  "rustc_version",
-]
-
-[[package]]
-name = "bstr"
-version = "1.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bb31b46c14244e20ee9984b11bf5c992b91fb6939fea616e3512c8baecdbe5f"
-dependencies = [
- "memchr",
- "regex-automata",
- "serde_core",
 ]
 
 [[package]]
@@ -1399,12 +1276,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "data-encoding"
-version = "2.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
-
-[[package]]
 name = "defmt"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1452,20 +1323,6 @@ dependencies = [
  "flagset",
  "pem-rfc7468",
  "zeroize",
-]
-
-[[package]]
-name = "der-parser"
-version = "10.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07da5016415d5a3c4dd39b11ed26f915f52fc4e0dc197d87908bc916e51bc1a6"
-dependencies = [
- "asn1-rs",
- "displaydoc",
- "nom",
- "num-bigint",
- "num-traits",
- "rusticata-macros",
 ]
 
 [[package]]
@@ -1534,12 +1391,6 @@ dependencies = [
  "tempfile",
  "zeroize",
 ]
-
-[[package]]
-name = "difflib"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6184e33543162437515c2e2b48714794e37845ec9851711914eec9d308f6ebe8"
 
 [[package]]
 name = "digest"
@@ -1805,15 +1656,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
-name = "fdeflate"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
-dependencies = [
- "simd-adler32",
-]
-
-[[package]]
 name = "filedescriptor"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1865,17 +1707,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
 dependencies = [
  "crc32fast",
- "miniz_oxide 0.9.1",
+ "miniz_oxide",
  "zlib-rs",
-]
-
-[[package]]
-name = "float-cmp"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b09cf3155332e944990140d967ff5eceb70df778b34f77d8075db46e4704e6d8"
-dependencies = [
- "num-traits",
 ]
 
 [[package]]
@@ -1889,15 +1722,6 @@ name = "foldhash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
-
-[[package]]
-name = "font-types"
-version = "0.12.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "835ae9d781464a79026cde387f9cbc650c9a4909d7cf7e658b127e3c35d2f35d"
-dependencies = [
- "bytemuck",
-]
 
 [[package]]
 name = "form_urlencoded"
@@ -2111,9 +1935,9 @@ dependencies = [
 
 [[package]]
 name = "gimli"
-version = "0.32.3"
+version = "0.34.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
+checksum = "1033caf0b349c518623b5396bfb2cf0bddf44f0306d543a250e5743297aafd10"
 
 [[package]]
 name = "glob"
@@ -2600,20 +2424,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "insta"
-version = "1.49.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b67d3d2e287e4b86c10b3f3b641033d1f89b74bdb39d05f34952e2b9a6fe21cd"
-dependencies = [
- "console",
- "once_cell",
- "regex",
- "similar",
- "strip-ansi-escapes",
- "tempfile",
-]
-
-[[package]]
 name = "instability"
 version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2732,7 +2542,6 @@ name = "jackin"
 version = "0.6.4"
 dependencies = [
  "anyhow",
- "assert_cmd",
  "clap",
  "clap_mangen",
  "criterion",
@@ -2752,13 +2561,11 @@ dependencies = [
  "jackin-image",
  "jackin-launch",
  "jackin-manifest",
- "jackin-otlp-testbed",
  "jackin-process",
  "jackin-protocol",
  "jackin-runtime",
  "jackin-runtime-session-control",
  "jackin-telemetry",
- "jackin-test-support",
  "jackin-tui",
  "jackin-usage",
  "jackin-usage-broker",
@@ -2767,26 +2574,21 @@ dependencies = [
  "jackin-usage-host-credentials",
  "jackin-usage-provider-claude",
  "jackin-usage-provider-core",
- "jackin-usage-store-backend",
  "jackin-workflow",
  "jackin-workflow-spec",
  "nix 0.31.3",
  "owo-colors 4.4.0",
- "predicates",
  "ratatui",
  "reqwest",
  "rustls",
  "serde",
  "serde_json",
- "syn 3.0.9",
  "tabled",
  "tempfile",
  "termrock",
  "thiserror 2.0.21",
  "tokio",
- "toml",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -2801,7 +2603,6 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "tempfile",
  "toml",
 ]
 
@@ -2817,7 +2618,6 @@ name = "jackin-build-meta"
 version = "0.6.4"
 dependencies = [
  "jackin-process",
- "tempfile",
 ]
 
 [[package]]
@@ -2829,14 +2629,11 @@ dependencies = [
  "criterion",
  "crossterm",
  "dhat",
- "hex",
- "insta",
  "jackin-agent-status",
  "jackin-brand",
  "jackin-build-meta",
  "jackin-core",
  "jackin-diagnostics",
- "jackin-otlp-testbed",
  "jackin-process",
  "jackin-process-directory",
  "jackin-protocol",
@@ -2846,9 +2643,6 @@ dependencies = [
  "jackin-usage-provider-core",
  "libc",
  "nix 0.31.3",
- "opentelemetry",
- "opentelemetry-proto",
- "opentelemetry_sdk",
  "portable-pty",
  "ratatui",
  "serde",
@@ -2859,10 +2653,6 @@ dependencies = [
  "termrock",
  "tokio",
  "toml",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "unicode-width 0.2.2",
  "url",
  "uuid",
 ]
@@ -2874,26 +2664,19 @@ dependencies = [
  "anyhow",
  "criterion",
  "directories",
- "filetime",
  "fs4",
  "hex",
  "jackin-core",
- "jackin-diagnostics",
  "jackin-omp-store",
- "jackin-otlp-testbed",
  "jackin-telemetry",
- "proptest",
- "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "shell-words",
  "tempfile",
  "thiserror 2.0.21",
- "tokio",
  "toml",
  "toml_edit",
- "tracing",
 ]
 
 [[package]]
@@ -2903,13 +2686,10 @@ dependencies = [
  "anyhow",
  "crossterm",
  "directories",
- "insta",
  "jackin-config",
  "jackin-core",
- "jackin-diagnostics",
  "jackin-env",
  "jackin-oppicker",
- "jackin-otlp-testbed",
  "jackin-protocol",
  "jackin-telemetry",
  "jackin-tui",
@@ -2917,14 +2697,9 @@ dependencies = [
  "jackin-workflow",
  "nix 0.31.3",
  "open",
- "opentelemetry-proto",
  "ratatui",
- "tempfile",
  "termrock",
- "termrock-raster",
  "tokio",
- "toml",
- "tracing",
 ]
 
 [[package]]
@@ -2937,7 +2712,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
- "tempfile",
  "thiserror 2.0.21",
 ]
 
@@ -2948,7 +2722,6 @@ dependencies = [
  "anyhow",
  "clap",
  "serde_json",
- "tempfile",
 ]
 
 [[package]]
@@ -2959,24 +2732,19 @@ dependencies = [
  "crossterm",
  "hyper-util",
  "jackin-core",
- "jackin-otlp-testbed",
  "jackin-telemetry",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
- "opentelemetry-proto",
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
  "rand 0.10.3",
- "rcgen",
  "regex",
  "rustc_version",
  "rustls",
  "rustls-native-certs",
  "rustls-pki-types",
- "serde_json",
  "sysinfo",
- "tempfile",
  "tokio",
  "tokio-rustls",
  "tonic",
@@ -2999,17 +2767,14 @@ dependencies = [
  "jackin-build-meta",
  "jackin-core",
  "jackin-diagnostics",
- "jackin-otlp-testbed",
  "jackin-process",
  "jackin-process-directory",
  "jackin-telemetry",
  "reqwest",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -3023,11 +2788,9 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-telemetry",
- "proptest",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
- "tracing",
 ]
 
 [[package]]
@@ -3042,10 +2805,6 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-telemetry",
- "jackin-test-support",
- "tempfile",
- "tokio",
- "tracing",
  "url",
 ]
 
@@ -3055,7 +2814,6 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
- "filetime",
  "flate2",
  "hex",
  "jackin-build-meta",
@@ -3063,7 +2821,6 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-docker",
  "jackin-manifest",
- "jackin-otlp-testbed",
  "jackin-process",
  "jackin-telemetry",
  "nix 0.31.3",
@@ -3080,8 +2837,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tracing",
- "tracing-subscriber",
  "velnor-actions-contract",
 ]
 
@@ -3102,7 +2857,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
- "tempfile",
 ]
 
 [[package]]
@@ -3114,7 +2868,6 @@ dependencies = [
  "hex",
  "jackin-config",
  "jackin-core",
- "jackin-diagnostics",
  "jackin-instance-credentials",
  "jackin-process",
  "jackin-telemetry",
@@ -3123,7 +2876,6 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
- "tracing",
  "zeroize",
 ]
 
@@ -3154,14 +2906,8 @@ dependencies = [
  "jackin-instance-agents",
  "jackin-instance-credentials",
  "jackin-manifest",
- "jackin-omp-store",
  "jackin-telemetry",
- "nix 0.31.3",
- "rusqlite",
  "rustix 1.1.5",
- "serde_json",
- "tempfile",
- "tracing",
 ]
 
 [[package]]
@@ -3169,7 +2915,6 @@ name = "jackin-isolation"
 version = "0.6.4"
 dependencies = [
  "anyhow",
- "directories",
  "hex",
  "jackin-config",
  "jackin-core",
@@ -3179,16 +2924,13 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-telemetry",
- "jackin-test-support",
  "nix 0.31.3",
  "rustix 1.1.5",
  "serde",
  "serde_json",
  "sha2 0.11.1",
- "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -3205,7 +2947,6 @@ dependencies = [
  "jackin-tui",
  "owo-colors 4.4.0",
  "ratatui",
- "tempfile",
  "termrock",
  "tokio",
  "tokio-util",
@@ -3220,8 +2961,6 @@ dependencies = [
  "dockerfile-parser-rs",
  "jackin-config",
  "jackin-core",
- "proptest",
- "tempfile",
  "thiserror 2.0.21",
  "toml",
  "toml_edit",
@@ -3251,17 +2990,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jackin-otlp-testbed"
-version = "0.6.4"
-dependencies = [
- "futures-util",
- "jackin-telemetry",
- "opentelemetry-proto",
- "tokio",
- "tonic",
-]
-
-[[package]]
 name = "jackin-pr-trailers"
 version = "0.6.4"
 dependencies = [
@@ -3269,7 +2997,6 @@ dependencies = [
  "clap",
  "jackin-process",
  "serde_json",
- "tempfile",
 ]
 
 [[package]]
@@ -3278,7 +3005,6 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "nix 0.31.3",
- "tempfile",
  "tokio",
 ]
 
@@ -3287,9 +3013,7 @@ name = "jackin-process-directory"
 version = "0.6.4"
 dependencies = [
  "libc",
- "nix 0.31.3",
  "rustix 1.1.5",
- "tempfile",
 ]
 
 [[package]]
@@ -3312,7 +3036,6 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "criterion",
- "fs4",
  "jackin-build-meta",
  "jackin-config",
  "jackin-core",
@@ -3324,8 +3047,6 @@ dependencies = [
  "jackin-instance",
  "jackin-isolation",
  "jackin-manifest",
- "jackin-otlp-testbed",
- "jackin-process",
  "jackin-protocol",
  "jackin-runtime-apple-container-activate-entry",
  "jackin-runtime-apple-container-attach",
@@ -3350,7 +3071,6 @@ dependencies = [
  "jackin-runtime-cleanup-dind-gc",
  "jackin-runtime-cleanup-eject-resources",
  "jackin-runtime-cleanup-prune-cache",
- "jackin-runtime-cleanup-prune-dir",
  "jackin-runtime-cleanup-prune-home",
  "jackin-runtime-cleanup-prune-images",
  "jackin-runtime-cleanup-prune-roles",
@@ -3407,17 +3127,11 @@ dependencies = [
  "jackin-runtime-usage-relay",
  "jackin-telemetry",
  "jackin-test-support",
- "jackin-usage",
  "owo-colors 4.4.0",
- "serde",
  "serde_json",
- "sha2 0.11.1",
  "tempfile",
  "tokio",
- "toml",
- "toml_edit",
  "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -3451,9 +3165,6 @@ dependencies = [
  "jackin-runtime-isolation",
  "jackin-runtime-launch-attach-outcome",
  "jackin-telemetry",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -3475,8 +3186,6 @@ dependencies = [
  "jackin-runtime-process-telemetry",
  "serde",
  "serde_json",
- "tempfile",
- "tokio",
 ]
 
 [[package]]
@@ -3744,7 +3453,6 @@ dependencies = [
  "jackin-telemetry",
  "nix 0.31.3",
  "sha2 0.11.1",
- "tempfile",
 ]
 
 [[package]]
@@ -3754,8 +3462,6 @@ dependencies = [
  "anyhow",
  "jackin-docker",
  "jackin-runtime-naming",
- "jackin-test-support",
- "tokio",
 ]
 
 [[package]]
@@ -3775,9 +3481,6 @@ dependencies = [
  "jackin-docker",
  "jackin-runtime-discovery",
  "jackin-runtime-isolation",
- "jackin-test-support",
- "tempfile",
- "tokio",
 ]
 
 [[package]]
@@ -3786,16 +3489,13 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "futures-util",
- "jackin-diagnostics",
  "jackin-env",
  "jackin-process",
  "jackin-protocol",
  "jackin-runtime-process-telemetry",
  "jackin-telemetry",
  "serde_json",
- "tempfile",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -3823,9 +3523,7 @@ dependencies = [
  "jackin-telemetry",
  "nix 0.31.3",
  "sha2 0.11.1",
- "tempfile",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -3833,23 +3531,16 @@ name = "jackin-runtime-host-daemon"
 version = "0.6.4"
 dependencies = [
  "anyhow",
- "hex",
  "jackin-core",
  "jackin-diagnostics",
- "jackin-otlp-testbed",
  "jackin-process",
  "jackin-protocol",
  "jackin-runtime-process-telemetry",
  "jackin-telemetry",
  "jackin-workflow",
  "jackin-workflow-spec",
- "nix 0.31.3",
  "serde",
  "serde_json",
- "sha2 0.11.1",
- "tempfile",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -3879,9 +3570,7 @@ dependencies = [
  "jackin-runtime-progress",
  "jackin-runtime-repo-cache",
  "jackin-telemetry",
- "jackin-test-support",
  "serde_json",
- "tempfile",
  "tokio",
 ]
 
@@ -3902,12 +3591,10 @@ dependencies = [
  "hex",
  "jackin-config",
  "jackin-core",
- "jackin-env",
  "jackin-instance",
  "nix 0.31.3",
  "serde_json",
  "sha2 0.11.1",
- "tempfile",
  "toml",
 ]
 
@@ -3919,7 +3606,6 @@ dependencies = [
  "jackin-config",
  "jackin-core",
  "jackin-docker",
- "jackin-env",
  "jackin-instance",
  "jackin-protocol",
  "rustix 1.1.5",
@@ -3927,7 +3613,6 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
- "toml",
 ]
 
 [[package]]
@@ -4090,7 +3775,6 @@ dependencies = [
  "jackin-isolation",
  "jackin-protocol",
  "jackin-runtime-apple-container-client",
- "tempfile",
  "thiserror 2.0.21",
 ]
 
@@ -4128,11 +3812,8 @@ dependencies = [
  "jackin-core",
  "jackin-diagnostics",
  "jackin-env",
- "jackin-launch",
- "jackin-otlp-testbed",
  "jackin-runtime-progress",
  "jackin-telemetry",
- "tokio",
 ]
 
 [[package]]
@@ -4214,8 +3895,6 @@ dependencies = [
  "jackin-config",
  "jackin-core",
  "jackin-instance",
- "tempfile",
- "toml",
  "toml_edit",
 ]
 
@@ -4235,7 +3914,6 @@ dependencies = [
  "anyhow",
  "jackin-config",
  "jackin-core",
- "jackin-diagnostics",
  "jackin-docker",
  "jackin-runtime-image",
  "jackin-runtime-launch-dind",
@@ -4247,11 +3925,9 @@ name = "jackin-runtime-process-telemetry"
 version = "0.6.4"
 dependencies = [
  "anyhow",
- "jackin-diagnostics",
  "jackin-process",
  "jackin-telemetry",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -4290,7 +3966,6 @@ name = "jackin-runtime-repo-cache"
 version = "0.6.4"
 dependencies = [
  "anyhow",
- "dialoguer",
  "fs4",
  "jackin-core",
  "jackin-diagnostics",
@@ -4298,10 +3973,8 @@ dependencies = [
  "jackin-manifest",
  "jackin-runtime-identity",
  "jackin-telemetry",
- "jackin-test-support",
  "tempfile",
  "thiserror 2.0.21",
- "tokio",
 ]
 
 [[package]]
@@ -4364,17 +4037,12 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "jackin-core",
- "jackin-diagnostics",
  "jackin-docker",
  "jackin-runtime-coordination",
  "jackin-runtime-discovery",
  "jackin-runtime-universe-claims",
  "jackin-telemetry",
- "jackin-test-support",
  "nix 0.31.3",
- "tempfile",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -4405,7 +4073,6 @@ dependencies = [
  "jackin-usage-host-runtime",
  "serde",
  "serde_json",
- "tempfile",
  "tokio",
 ]
 
@@ -4414,14 +4081,11 @@ name = "jackin-telemetry"
 version = "0.6.4"
 dependencies = [
  "criterion",
- "dhat",
  "opentelemetry",
  "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
  "tokio",
  "tracing",
  "tracing-opentelemetry",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -4449,11 +4113,8 @@ dependencies = [
 name = "jackin-usage"
 version = "0.6.4"
 dependencies = [
- "base64 0.23.1",
  "criterion",
- "jackin-diagnostics",
  "jackin-protocol",
- "jackin-telemetry",
  "jackin-usage-capsule-telemetry",
  "jackin-usage-coordinator",
  "jackin-usage-credential-resolver",
@@ -4461,9 +4122,7 @@ dependencies = [
  "jackin-usage-output",
  "jackin-usage-provider-amp",
  "jackin-usage-provider-antigravity",
- "jackin-usage-provider-claude",
  "jackin-usage-provider-codex",
- "jackin-usage-provider-core",
  "jackin-usage-provider-cursor",
  "jackin-usage-provider-gemini",
  "jackin-usage-provider-grok",
@@ -4471,16 +4130,12 @@ dependencies = [
  "jackin-usage-provider-kimi",
  "jackin-usage-provider-minimax",
  "jackin-usage-provider-muse",
- "jackin-usage-provider-opencode",
  "jackin-usage-provider-openrouter",
  "jackin-usage-provider-zai",
  "jackin-usage-snapshot-store",
  "jackin-usage-store-backend",
  "jackin-usage-token-monitor",
- "serde",
- "serde_json",
  "tempfile",
- "tracing",
 ]
 
 [[package]]
@@ -4505,7 +4160,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
- "tempfile",
 ]
 
 [[package]]
@@ -4516,7 +4170,6 @@ dependencies = [
  "jackin-protocol",
  "jackin-usage-coordinator",
  "jackin-usage-provider-core",
- "tempfile",
 ]
 
 [[package]]
@@ -4536,11 +4189,8 @@ dependencies = [
 name = "jackin-usage-capsule-telemetry"
 version = "0.6.4"
 dependencies = [
- "anyhow",
  "jackin-diagnostics",
- "jackin-otlp-testbed",
  "jackin-telemetry",
- "tokio",
 ]
 
 [[package]]
@@ -4554,7 +4204,6 @@ dependencies = [
  "nix 0.31.3",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror 2.0.21",
 ]
 
@@ -4619,8 +4268,6 @@ dependencies = [
  "jackin-usage-provider-opencode",
  "security-framework",
  "serde_json",
- "tempfile",
- "toml",
  "zeroize",
 ]
 
@@ -4633,8 +4280,6 @@ dependencies = [
  "jackin-protocol",
  "jackin-usage",
  "jackin-usage-provider-core",
- "serde_json",
- "tempfile",
 ]
 
 [[package]]
@@ -4696,7 +4341,6 @@ dependencies = [
  "jackin-usage-provider-core",
  "serde",
  "serde_json",
- "tempfile",
 ]
 
 [[package]]
@@ -4709,16 +4353,12 @@ version = "0.6.4"
 dependencies = [
  "icu_collator",
  "icu_locale",
- "jackin-config",
- "jackin-console",
  "jackin-protocol",
  "jackin-usage-broker-publish",
  "jackin-usage-destination",
  "jackin-usage-discovery",
  "jackin-usage-host-accounts",
  "jackin-usage-host-presentation",
- "jackin-usage-provider-core",
- "ratatui",
 ]
 
 [[package]]
@@ -4753,7 +4393,6 @@ dependencies = [
  "security-framework",
  "serde",
  "serde_json",
- "tempfile",
  "zeroize",
 ]
 
@@ -4768,7 +4407,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "tempfile",
 ]
 
 [[package]]
@@ -4779,8 +4417,6 @@ dependencies = [
  "criterion",
  "httpdate",
  "jackin-core",
- "jackin-diagnostics",
- "jackin-otlp-testbed",
  "jackin-protocol",
  "jackin-telemetry",
  "nix 0.31.3",
@@ -4788,7 +4424,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "tokio",
  "tower",
  "tracing",
 ]
@@ -4802,7 +4437,6 @@ dependencies = [
  "jackin-usage-provider-core",
  "reqwest",
  "serde_json",
- "tempfile",
 ]
 
 [[package]]
@@ -4921,7 +4555,6 @@ dependencies = [
  "jackin-usage-provider-core",
  "jackin-usage-store-backend",
  "serde_json",
- "tempfile",
  "tokio",
 ]
 
@@ -4929,16 +4562,11 @@ dependencies = [
 name = "jackin-usage-store-backend"
 version = "0.6.4"
 dependencies = [
- "anyhow",
  "hex",
- "jackin-diagnostics",
- "jackin-otlp-testbed",
  "jackin-telemetry",
  "nix 0.31.3",
  "sha2 0.11.1",
- "tempfile",
  "tokio",
- "tracing",
  "turso",
 ]
 
@@ -4947,15 +4575,10 @@ name = "jackin-usage-token-monitor"
 version = "0.6.4"
 dependencies = [
  "jackin-core",
- "jackin-diagnostics",
- "jackin-otlp-testbed",
  "jackin-protocol",
  "jackin-telemetry",
  "jackin-usage-store-backend",
  "serde_json",
- "tempfile",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -4964,14 +4587,12 @@ version = "0.6.4"
 dependencies = [
  "hex",
  "jackin-core",
- "jackin-isolation",
  "jackin-telemetry",
  "jackin-usage-store-backend",
  "jackin-workflow-spec",
  "serde",
  "serde_json",
  "sha2 0.11.1",
- "tempfile",
  "tokio",
  "uuid",
 ]
@@ -4987,7 +4608,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
- "tempfile",
  "thiserror 2.0.21",
 ]
 
@@ -5010,7 +4630,6 @@ dependencies = [
  "quick-xml",
  "reqwest",
  "rusqlite",
- "rustix 1.1.5",
  "serde",
  "serde-saphyr",
  "serde_json",
@@ -5419,16 +5038,6 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
-dependencies = [
- "adler2",
- "simd-adler32",
-]
-
-[[package]]
-name = "miniz_oxide"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
@@ -5513,12 +5122,6 @@ dependencies = [
  "memchr",
  "minimal-lexical",
 ]
-
-[[package]]
-name = "normalize-line-endings"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61807f77802ff30975e01f4f071c8ba10c022052f98b3294119f3e615d13e5be"
 
 [[package]]
 name = "ntapi"
@@ -5613,20 +5216,11 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.37.3"
+version = "0.40.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
+checksum = "dd229a0361b9d0d4396176e02d65897f487eebeab7caa6d443855ee152ca0b9c"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "oid-registry"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12f40cff3dde1b6087cc5d5f5d4d65712f34016a03ed60e9c08dcc392736b5b7"
-dependencies = [
- "asn1-rs",
 ]
 
 [[package]]
@@ -6072,19 +5666,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "png"
-version = "0.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60769b8b31b2a9f263dae2776c37b1b28ae246943cf719eb6946a1db05128a61"
-dependencies = [
- "bitflags 2.13.2",
- "crc32fast",
- "fdeflate",
- "flate2",
- "miniz_oxide 0.8.9",
-]
-
-[[package]]
 name = "pointers"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6179,36 +5760,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "predicates"
-version = "3.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ada8f2932f28a27ee7b70dd6c1c39ea0675c55a36879ab92f3a715eaa1e63cfe"
-dependencies = [
- "anstyle",
- "difflib",
- "float-cmp",
- "normalize-line-endings",
- "predicates-core",
- "regex",
-]
-
-[[package]]
-name = "predicates-core"
-version = "1.0.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cad38746f3166b4031b1a0d39ad9f954dd291e7854fcc0eed52ee41a0b50d144"
-
-[[package]]
-name = "predicates-tree"
-version = "1.0.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0de1b847b39c8131db0467e9df1ff60e6d0562ab8e9a16e568ad0fdb372e2f2"
-dependencies = [
- "predicates-core",
- "termtree",
-]
-
-[[package]]
 name = "prettyplease"
 version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6261,26 +5812,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "proptest"
-version = "1.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8530004ccb15eae51c7e40009fbe317f341f804db54dc033eec1c50be28cfa0"
-dependencies = [
- "bit-set 0.11.1",
- "bit-vec 0.10.1",
- "bitflags 2.13.2",
- "chacha20",
- "core_detect",
- "num-traits",
- "rand 0.10.3",
- "rand_xorshift",
- "regex-syntax",
- "rusty-fork",
- "tempfile",
- "unarray",
-]
-
-[[package]]
 name = "prost"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6320,12 +5851,6 @@ checksum = "200b9ff220857e53e184257720a14553b2f4aa02577d2ed9842d45d4b9654810"
 dependencies = [
  "cc",
 ]
-
-[[package]]
-name = "quick-error"
-version = "1.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 
 [[package]]
 name = "quick-xml"
@@ -6515,15 +6040,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rand_xorshift"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60aa6af80be32871323012e02e6e65f8a7cc7890931ae421d217ad8fe0df2ccf"
-dependencies = [
- "rand_core 0.10.1",
-]
-
-[[package]]
 name = "rapidhash"
 version = "4.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6651,31 +6167,6 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
-]
-
-[[package]]
-name = "rcgen"
-version = "0.14.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8774e05a7d0de114588e6a28fe7e71694b82614ed569d86d8b389dfbc98b8ad8"
-dependencies = [
- "pem",
- "ring",
- "rustls-pki-types",
- "time",
- "x509-parser",
- "yasna",
-]
-
-[[package]]
-name = "read-fonts"
-version = "0.41.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "046a7d674daf459825b32f5062056d6882db0d2f5a479fbd76ccfc870ac18709"
-dependencies = [
- "bytemuck",
- "font-types",
- "once_cell",
 ]
 
 [[package]]
@@ -6856,15 +6347,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rusticata-macros"
-version = "4.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "faf0c4a6ece9950b9abdb62b1cfcf2a68b3b67a10ba445b3bb85be2a293d0632"
-dependencies = [
- "nom",
-]
-
-[[package]]
 name = "rustix"
 version = "0.38.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6972,18 +6454,6 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
-
-[[package]]
-name = "rusty-fork"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc6bf79ff24e648f6da1f8d1f011e9cac26491b619e6b9280f2b47f1774e6ee2"
-dependencies = [
- "fnv",
- "quick-error",
- "tempfile",
- "wait-timeout",
-]
 
 [[package]]
 name = "ryu"
@@ -7479,12 +6949,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
-name = "similar"
-version = "2.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
-
-[[package]]
 name = "simsimd"
 version = "6.5.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7498,16 +6962,6 @@ name = "siphasher"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
-
-[[package]]
-name = "skrifa"
-version = "0.44.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "819ab7d62b1d3e72d9d9dea5650bac30424f9111364bb94928dbf5ecad1baa68"
-dependencies = [
- "bytemuck",
- "read-fonts",
-]
 
 [[package]]
 name = "slab"
@@ -7571,21 +7025,6 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
-
-[[package]]
-name = "strict-num"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6637bab7722d379c8b41ba849228d680cc12d0a45ba1fa2b48f2a30577a06731"
-
-[[package]]
-name = "strip-ansi-escapes"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a8f8038e7e7969abb3f1b7c2a811225e9296da208539e0f79c5251d6cac0025"
-dependencies = [
- "vte 0.14.1",
-]
 
 [[package]]
 name = "strsim"
@@ -7662,17 +7101,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "swash"
-version = "0.2.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c2499c2d826531388872b2268718aed907a39bd785ab0dcfe57fab26283f92e"
-dependencies = [
- "skrifa",
- "yazi",
- "zeno",
-]
-
-[[package]]
 name = "symlink"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7718,17 +7146,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
 dependencies = [
  "futures-core",
-]
-
-[[package]]
-name = "synstructure"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "728a70f3dbaf5bab7f0c4b1ac8d7ae5ea60a4b5549c8a5914361c99147a709d2"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -7803,7 +7220,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
  "windows-sys 0.61.2",
@@ -7851,7 +7268,7 @@ dependencies = [
  "compact_str 0.10.0",
  "smallvec",
  "unicode-width 0.2.2",
- "vte 0.15.0",
+ "vte",
 ]
 
 [[package]]
@@ -7871,24 +7288,6 @@ dependencies = [
  "unicode-width 0.2.2",
  "web-time",
 ]
-
-[[package]]
-name = "termrock-raster"
-version = "0.11.0"
-source = "git+https://github.com/tailrocks/termrock.git?rev=1ac0d0793b8cfd9edc61ced241e2b2ecb89162b4#1ac0d0793b8cfd9edc61ced241e2b2ecb89162b4"
-dependencies = [
- "ratatui",
- "swash",
- "termrock",
- "tiny-skia",
- "unicode-width 0.2.2",
-]
-
-[[package]]
-name = "termtree"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "termwiz"
@@ -8026,32 +7425,6 @@ checksum = "7e689342a48d2ea927c87ea50cabf8594854bf940e9310208848d680d668ed85"
 dependencies = [
  "num-conv",
  "time-core",
-]
-
-[[package]]
-name = "tiny-skia"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47ffee5eaaf5527f630fb0e356b90ebdec84d5d18d937c5e440350f88c5a91ea"
-dependencies = [
- "arrayref",
- "arrayvec",
- "bytemuck",
- "cfg-if",
- "log",
- "png",
- "tiny-skia-path",
-]
-
-[[package]]
-name = "tiny-skia-path"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edca365c3faccca67d06593c5980fa6c57687de727a03131735bb85f01fdeeb9"
-dependencies = [
- "arrayref",
- "bytemuck",
- "strict-num",
 ]
 
 [[package]]
@@ -8649,12 +8022,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2896d95c02a80c6d6a5d6e953d479f5ddf2dfdb6a244441010e373ac0fb88971"
 
 [[package]]
-name = "unarray"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
-
-[[package]]
 name = "uncased"
 version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8789,8 +8156,8 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "velnor-actions-contract"
-version = "0.1.54"
-source = "git+https://github.com/tailrocks/velnor-new?rev=a2ec35929e51b336bf54bd982f4cc0f5774eb397#a2ec35929e51b336bf54bd982f4cc0f5774eb397"
+version = "0.1.57"
+source = "git+https://github.com/tailrocks/velnor-new?rev=173040a882f1f2109d40bd619d1e074a0da6c9a0#173040a882f1f2109d40bd619d1e074a0da6c9a0"
 dependencies = [
  "blake3",
  "serde",
@@ -8804,15 +8171,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "vte"
-version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "231fdcd7ef3037e8330d8e17e61011a2c244126acc0a982f4040ac3f9f0bc077"
-dependencies = [
- "memchr",
-]
 
 [[package]]
 name = "vte"
@@ -8831,15 +8189,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d9b2acfb050df409c972a37d3b8e08cdea3bddb0c09db9d53137e504cfabed0"
 dependencies = [
  "utf8parse",
-]
-
-[[package]]
-name = "wait-timeout"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09ac3b126d3914f9849036f826e054cbabdc8519970b8998ddaf3b5bd3c65f11"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -9335,24 +8684,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "x509-parser"
-version = "0.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d43b0f71ce057da06bc0851b23ee24f3f86190b07203dd8f567d0b706a185202"
-dependencies = [
- "asn1-rs",
- "data-encoding",
- "der-parser",
- "lazy_static",
- "nom",
- "oid-registry",
- "ring",
- "rusticata-macros",
- "thiserror 2.0.21",
- "time",
-]
-
-[[package]]
 name = "xattr"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9361,22 +8692,6 @@ dependencies = [
  "libc",
  "rustix 1.1.5",
 ]
-
-[[package]]
-name = "yasna"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5f6765e852b9b4dc8e2a76843e4d64d1cea8e79bcde0b6901aea8e7c7f08282"
-dependencies = [
- "bit-vec 0.9.1",
- "time",
-]
-
-[[package]]
-name = "yazi"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e01738255b5a16e78bbb83e7fbba0a1e7dd506905cfc53f4622d89015a03fbb5"
 
 [[package]]
 name = "yoke"
@@ -9398,14 +8713,8 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
- "synstructure 0.14.0",
+ "synstructure",
 ]
-
-[[package]]
-name = "zeno"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6df3dc4292935e51816d896edcd52aa30bc297907c26167fec31e2b0c6a32524"
 
 [[package]]
 name = "zerocopy"
@@ -9445,7 +8754,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
- "synstructure 0.14.0",
+ "synstructure",
 ]
 
 [[package]]

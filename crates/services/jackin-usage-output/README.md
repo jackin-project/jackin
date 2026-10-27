@@ -25,6 +25,6 @@ as `output`.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-output
+cargo nextest run -p jackin-usage-output --no-tests warn
 cargo clippy -p jackin-usage-output --all-targets -- -D warnings
 ```

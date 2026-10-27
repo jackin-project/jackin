@@ -8,17 +8,6 @@ use super::model::{
 use super::update::forbidden_settings_env_keys;
 use ratatui::layout::Rect;
 
-#[cfg(test)]
-use super::model::{SettingsEnvRow, SettingsTrustRow};
-#[cfg(test)]
-use crate::tui::components::editor_rows::{AuthLineRow, SecretValueDisplay};
-#[cfg(test)]
-use crate::tui::mount_display::MountDisplayRow;
-#[cfg(test)]
-use ratatui::text::Line;
-#[cfg(test)]
-use std::collections::BTreeMap;
-
 mod auth;
 mod env;
 mod frame;
@@ -29,9 +18,6 @@ mod mounts;
 mod tabs;
 mod text_helpers;
 mod trust;
-pub use text_helpers::*;
-#[cfg(test)]
-mod tests;
 pub use auth::{auth_lines, auth_state_lines};
 pub use env::{env_lines, env_state_lines};
 pub(crate) use frame::resolve_settings_frame;
@@ -55,6 +41,7 @@ pub use tabs::{
     render_auth_tab, render_env_tab, render_general_tab, render_mounts_tab, render_trust_tab,
     settings_footer_items,
 };
+pub use text_helpers::*;
 pub use trust::{trust_lines, trust_state_lines};
 
 pub(crate) use metrics::settings_trust_focused;

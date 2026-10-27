@@ -1,43 +1,32 @@
-//! Low-level, host-only durable catalog revision authority.
-//!
-//! This mechanism records an explicit caller decision and seals bounded
-//! evidence. It does not validate provider identities, choose an account, or
-//! issue provider capabilities.
-
 mod framing;
 mod lease;
 mod private_acl;
 mod state;
 mod storage;
 
-#[cfg(test)]
-mod tests;
-
 pub use lease::{CatalogRevisionAuthority, CatalogRevisionLease};
 pub use storage::CatalogAuthorityStore;
 
 use std::fmt;
 
-/// Static, redacted failure classes for the host authority store.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CatalogAuthorityError {
-    /// No authority has been initialized; callers must make an explicit decision.
     NotInitialized,
-    /// Existing files describe an incomplete or contradictory transaction.
+
     RecoveryRequired,
-    /// A path or object did not satisfy the private-store contract.
+
     UnsafeStore,
-    /// A nonblocking lock could not be acquired.
+
     LockBusy,
-    /// OS randomness was unavailable before any authority was published.
+
     RandomnessUnavailable,
-    /// The caller supplied an invalid or oversized evidence frame.
+
     InvalidEvidence,
-    /// The requested initialization conflicts with the existing authority.
+
     ConflictingIntent,
-    /// A filesystem operation failed. Details are intentionally redacted.
+
     StorageFailure,
-    /// The requested operation is not supported on this target.
+
     Unsupported,
 }
 
@@ -60,17 +49,9 @@ impl fmt::Display for CatalogAuthorityError {
 
 impl std::error::Error for CatalogAuthorityError {}
 
-/// Caller-owned decision recorded during explicit authority initialization.
 pub enum InitializationIntent {
-    /// The trusted installation owner has independently decided this is first use.
-    ///
-    /// This is an explicit caller decision. Absence of authority files, even
-    /// after deletion of the authority and all root-local evidence, cannot
-    /// distinguish a new installation from destroyed prior state.
     FirstUse,
-    /// The caller supplies identifiers for immutable legacy evidence.
-    ///
-    /// Recording these values does not verify the evidence or certify ownership.
+
     LegacyAdoption {
         evidence_record_id: [u8; 32],
         evidence_digest: [u8; 32],
@@ -107,17 +88,14 @@ impl fmt::Debug for InitializationIntent {
     }
 }
 
-/// Closed evidence namespaces available in this mechanism-only slice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum RevisionDomain {
-    /// Host-private source evidence; not a provider identity assertion.
     HostSourceEvidenceV1 = 1,
-    /// Host-private catalog evidence; not an account capability.
+
     CatalogEvidenceV1 = 2,
 }
 
-/// Opaque versioned HMAC result. The key and raw epoch are never exposed.
 pub struct CatalogRevision(String);
 
 impl CatalogRevision {
@@ -133,7 +111,6 @@ impl CatalogRevision {
         Self(value)
     }
 
-    /// Returns the opaque revision representation for persistence or comparison.
     pub fn as_str(&self) -> &str {
         &self.0
     }

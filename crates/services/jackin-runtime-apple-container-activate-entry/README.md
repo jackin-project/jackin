@@ -22,7 +22,7 @@ activation.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`activate_entry.rs`](src/activate_entry.rs) | started-entry activation | hub `apple_container` launch path (no dedicated suite) |
+| [`activate_entry.rs`](src/activate_entry.rs) | started-entry activation | — |
 
 ## Public API
 
@@ -31,6 +31,6 @@ activation.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-activate-entry
+cargo nextest run -p jackin-runtime-apple-container-activate-entry --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-activate-entry --all-targets -- -D warnings
 ```

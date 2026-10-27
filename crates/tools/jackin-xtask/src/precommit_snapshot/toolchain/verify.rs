@@ -21,9 +21,6 @@ struct ProvisionToolPaths {
     rustc: PathBuf,
 }
 
-/// Admit the current installer environment before it publishes the running owner.
-/// The installer interface does not provide authenticated build-path evidence;
-/// this checks the configured MBX and Rust toolchain against the staged pin.
 pub(super) fn admit_install_environment(source_root: &Path) -> Result<()> {
     let ProvisionToolPaths { cargo, rustc } = resolve_provision_tool_paths(source_root)?;
     drop((cargo, rustc));
@@ -47,10 +44,9 @@ fn resolve_provision_tool_paths(source_root: &Path) -> Result<ProvisionToolPaths
     let home = inputs.home.as_deref().map(Path::new);
     let mise = super::find_executable("mise", inherited_path).context("missing Mise executable")?;
     let mise = fs::canonicalize(mise).context("resolving Mise executable")?;
-    let rustup =
-        super::find_executable("rustup", inherited_path).context("missing rustup executable")?;
-    let rustup = fs::canonicalize(rustup).context("resolving rustup executable")?;
     let mise_environment = inputs.command_environment(&source_root);
+    let rustup =
+        super::resolve_mise_tool(&mise, &mise_environment, &source_root, "rustup", &controls)?;
     let cargo = super::effective_cargo(&mise, &mise_environment, &source_root, &controls)?;
     let rust_tools = super::resolve_rust_tools_with_controls(
         &rustup,
@@ -86,20 +82,23 @@ pub(super) fn verify_rust_toolchain(
     let bin = tools["rustc"]
         .parent()
         .context("rustc path has no bin directory")?;
-    for name in ["rustc", "rustdoc", "clippy-driver", "rustfmt"] {
+    for name in ["cargo", "rustc", "rustdoc", "clippy-driver", "rustfmt"] {
         ensure!(
             tools[name].parent() == Some(bin),
             "hook Rust tools do not belong to one toolchain bin directory"
         );
     }
-    // Cargo is deliberately resolved through Mise's configured MBX wrapper.
-    // `mise which cargo` points at rustup's shim and would bypass that policy.
+    let mut cargo_environment = mise_environment.clone();
+    cargo_environment.insert(
+        OsString::from("CARGO"),
+        tools["cargo"].as_os_str().to_owned(),
+    );
     let mut command = Command::new(mise);
     command
         .args(["exec", "--locked", "--", "cargo", "--version"])
         .current_dir(root)
         .env_clear()
-        .envs(mise_environment);
+        .envs(&cargo_environment);
     let cargo = capture_strict(
         &mut command,
         controls,
@@ -113,6 +112,11 @@ pub(super) fn verify_rust_toolchain(
     ensure!(
         cargo.starts_with(&format!("cargo {pin} ")),
         "hook Cargo version does not match Rust {pin}"
+    );
+    let rust_cargo = run_version(&tools["cargo"], &["--version"], controls)?;
+    ensure!(
+        rust_cargo.starts_with(&format!("cargo {pin} ")),
+        "pinned rustup Cargo version does not match Rust {pin}"
     );
     let rustc = run_version(&tools["rustc"], &["--version", "--verbose"], controls)?;
     let rustdoc = run_version(&tools["rustdoc"], &["--version", "--verbose"], controls)?;

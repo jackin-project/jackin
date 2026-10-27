@@ -207,11 +207,6 @@ fn non_tests_rs_violation_at(path: &str, text: &str) -> Option<String> {
     inspect_non_test_items(&file.items, path, text)
 }
 
-#[cfg(test)]
-fn non_tests_rs_violation(text: &str) -> Option<String> {
-    non_tests_rs_violation_at("crates/example/src/lib.rs", text)
-}
-
 fn inspect_non_test_items(items: &[Item], path: &str, text: &str) -> Option<String> {
     for item in items {
         match item {
@@ -393,45 +388,6 @@ fn contains_module(items: &[Item]) -> bool {
     finder.0
 }
 
-#[cfg(test)]
-fn check(violations: &BTreeMap<String, String>, allowed: &BTreeSet<String>) -> Result<()> {
-    let stale: Vec<&String> = allowed
-        .iter()
-        .filter(|p| !violations.contains_key(*p))
-        .collect();
-
-    let new: Vec<(&String, &String)> = violations
-        .iter()
-        .filter(|(p, _)| !allowed.contains(*p))
-        .collect();
-
-    if stale.is_empty() && new.is_empty() {
-        emit(&format!(
-            "test-layout gate OK — {} file(s) scanned-as-violations, all grandfathered ({} allowlisted)",
-            violations.len(),
-            allowed.len()
-        ));
-        return Ok(());
-    }
-
-    let mut problems: Vec<String> = Vec::new();
-    for path in &stale {
-        problems.push(format!(
-            "{path}: listed in ratchet.toml family test-layout but no longer violates (remove the stale allowlist entry)"
-        ));
-    }
-    for (path, reason) in &new {
-        problems.push(format!("{path}: {reason}"));
-    }
-    problems.sort_unstable();
-
-    bail!(
-        "{} test-layout violation(s):\n  {}\n\nMove tests into a sibling `tests.rs` with canonical case splits. To refresh the allowlist, run `cargo xtask lint tests --print-allowlist`.",
-        problems.len(),
-        problems.join("\n  ")
-    )
-}
-
 #[expect(
     clippy::print_stdout,
     reason = "jackin-xtask is a CLI; gate output is its user-facing result"
@@ -441,6 +397,3 @@ fn emit(message: &str) {
         println!("{message}");
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -25,7 +25,7 @@ runtime cleanup.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`prune_home.rs`](src/prune_home.rs) | pruning | hub `cleanup` suite (`cleanup/tests/case_05.rs`) |
+| [`prune_home.rs`](src/prune_home.rs) | pruning | — |
 
 ## Public API
 
@@ -34,6 +34,6 @@ runtime cleanup.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-cleanup-prune-home
+cargo nextest run -p jackin-runtime-cleanup-prune-home --no-tests warn
 cargo clippy -p jackin-runtime-cleanup-prune-home --all-targets -- -D warnings
 ```

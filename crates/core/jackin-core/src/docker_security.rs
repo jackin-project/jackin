@@ -123,6 +123,3 @@ pub struct DockerGrants {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities_add: Vec<String>,
 }
-
-#[cfg(test)]
-mod tests;

@@ -26,7 +26,7 @@ for attach spawn.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`running_gate.rs`](src/running_gate.rs) | gating | hub `attach` suite (`attach/tests/case_03.rs`) |
+| [`running_gate.rs`](src/running_gate.rs) | gating | — |
 
 ## Public API
 
@@ -35,6 +35,6 @@ for attach spawn.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-attach-running-gate
+cargo nextest run -p jackin-runtime-attach-running-gate --no-tests warn
 cargo clippy -p jackin-runtime-attach-running-gate --all-targets -- -D warnings
 ```

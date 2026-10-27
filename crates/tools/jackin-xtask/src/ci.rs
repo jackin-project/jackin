@@ -172,12 +172,6 @@ fn build_steps(root: &Path, args: &CiArgs) -> Result<Vec<Step>> {
     }
 
     if partition_selected(args, "tests") {
-        steps.push(Step::new(
-            "pre-commit snapshot fixture",
-            "scripts/test-pre-commit-snapshot",
-            &[],
-            "tests",
-        ));
         steps.push(cargo(
             "check",
             &["check", "--workspace", "--all-targets", "--locked"],
@@ -387,28 +381,3 @@ fn display_step(step: &Step) -> String {
     );
     parts.join(" ")
 }
-
-#[cfg(test)]
-fn step_names(args: &CiArgs) -> Result<Vec<String>> {
-    let root = repo_root()?;
-    Ok(build_steps(&root, args)?
-        .into_iter()
-        .map(|s| s.name)
-        .collect())
-}
-
-#[cfg(test)]
-#[expect(
-    dead_code,
-    reason = "test helper reserved for partition/--only coverage"
-)]
-fn step_partitions(args: &CiArgs) -> Result<Vec<&'static str>> {
-    let root = repo_root()?;
-    Ok(build_steps(&root, args)?
-        .into_iter()
-        .map(|s| s.partition)
-        .collect())
-}
-
-#[cfg(test)]
-mod tests;

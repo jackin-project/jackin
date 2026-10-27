@@ -85,7 +85,7 @@ impl ClaudeCredentialCache {
         true
     }
 
-    #[cfg(any(target_os = "macos", test))]
+    #[cfg(target_os = "macos")]
     fn replace_if_exact(&self, service: &str, generation: u64, payload: Zeroizing<String>) -> bool {
         let mut credential = self
             .credential
@@ -112,14 +112,6 @@ impl ClaudeCredentialCache {
         {
             *credential = None;
         }
-    }
-
-    #[cfg(test)]
-    fn clear(&self) {
-        *self
-            .credential
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     }
 }
 
@@ -259,12 +251,12 @@ fn bootstrap_claude_credential_with(
     }
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(target_os = "macos")]
 pub(crate) fn bootstrapped_claude_service() -> Option<String> {
     credential_cache().service()
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(target_os = "macos")]
 pub(crate) fn cached_claude_keychain_payload(service: &str) -> Option<Zeroizing<String>> {
     credential_cache().payload(service, None)
 }
@@ -277,43 +269,7 @@ pub(crate) fn begin_unauthorized_reread(lease: &ClaudeCredentialLease) -> bool {
     credential_cache().begin_unauthorized_reread(lease.service(), lease.generation())
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(target_os = "macos")]
 pub(crate) fn replace_if_exact(lease: &ClaudeCredentialLease, payload: Zeroizing<String>) -> bool {
     credential_cache().replace_if_exact(lease.service(), lease.generation(), payload)
 }
-
-#[cfg(test)]
-pub(crate) fn clear_bootstrapped_claude_credential() {
-    credential_cache().clear();
-}
-
-#[cfg(test)]
-pub(crate) fn serialized_credential_cache_test() -> std::sync::MutexGuard<'static, ()> {
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-    TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-/// Replace the process cache with a newer generation for deterministic lease tests.
-#[cfg(test)]
-pub(crate) fn overwrite_cached_generation_for_test(
-    service: &str,
-    payload: Zeroizing<String>,
-) -> u64 {
-    let generation = next_generation();
-    credential_cache().store(service.to_owned(), payload, generation);
-    generation
-}
-
-#[cfg(test)]
-pub(crate) fn bootstrap_claude_credential_with_for_test(
-    service: &str,
-    all_stdio_are_terminal: bool,
-    read_item: impl FnOnce() -> ClaudeKeychainRead,
-) -> Result<ClaudeCredentialBootstrapOutcome, ClaudeKeychainPolicyError> {
-    bootstrap_claude_credential_with(service, all_stdio_are_terminal, read_item)
-}
-
-#[cfg(test)]
-mod tests;

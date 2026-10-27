@@ -5,7 +5,6 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=versions.env
 . "${script_dir}/versions.env"
-# The construct must support the same minimum as the root project.
 MISE_VERSION="$(mise --no-config --no-env --no-hooks config get \
   --file "${script_dir}/../../mise.toml" min_version)"
 if [[ ! "${MISE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then

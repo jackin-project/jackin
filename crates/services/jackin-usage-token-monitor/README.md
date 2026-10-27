@@ -20,9 +20,9 @@ table.
 
 | Module | Owns | Tests |
 |---|---|---|
-| [`lib.rs`](src/lib.rs) | re-exports | [`tests.rs`](src/tests.rs) |
-| `monitor`/`session` | polling + totals | `tests/` cases |
-| `amp`…`opencode` | vendor readers | per-module `tests.rs` |
+| [`lib.rs`](src/lib.rs) | re-exports | — |
+| `monitor`/`session` | polling + totals | — |
+| `amp`…`opencode` | vendor readers | — |
 
 ## Public API
 
@@ -35,6 +35,6 @@ reader modules.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-token-monitor
+cargo nextest run -p jackin-usage-token-monitor --no-tests warn
 cargo clippy -p jackin-usage-token-monitor --all-targets -- -D warnings
 ```

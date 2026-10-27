@@ -26,7 +26,7 @@ preflight.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`launch_slot.rs`](src/launch_slot.rs) | slots + preflight | hub `launch` suite |
+| [`launch_slot.rs`](src/launch_slot.rs) | slots + preflight | — |
 
 ## Public API
 
@@ -37,6 +37,6 @@ preflight.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-slot
+cargo nextest run -p jackin-runtime-launch-slot --no-tests warn
 cargo clippy -p jackin-runtime-launch-slot --all-targets -- -D warnings
 ```

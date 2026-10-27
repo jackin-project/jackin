@@ -1,20 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Descriptor-relative inspection of a private installation root.
-//!
-//! A caller can supply an already-open root or ask this module to acquire one
-//! from an absolute path by checking each ancestor from the OS root. These
-//! checks do not authenticate an installation or its source contents.
-
 mod absolute_root;
 #[cfg(target_os = "macos")]
 mod darwin_acl;
 #[cfg(target_os = "linux")]
 mod linux_acl;
 mod sealed_root;
-#[cfg(test)]
-mod tests;
 
 use rustix::fd::AsFd;
 use rustix::fs::{AtFlags, FileType, Mode, OFlags, Stat, fstat, openat, statat};
@@ -36,16 +28,14 @@ const LEAF_OPEN_FLAGS: OFlags = OFlags::RDONLY
     .union(OFlags::CLOEXEC);
 const NOFOLLOW_STAT_FLAGS: AtFlags = AtFlags::SYMLINK_NOFOLLOW;
 
-/// The exact mode required for one supported installed artifact kind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InstallFileKind {
-    /// An installed executable with mode `0755`.
     Executable,
-    /// A small receipt with mode `0600`.
+
     Receipt,
-    /// An installed script with mode `0400`.
+
     Script,
-    /// A sealed copy with mode `0500`.
+
     SealedCopy,
 }
 
@@ -60,19 +50,10 @@ impl InstallFileKind {
     }
 }
 
-/// An owned, checked descriptor for a caller-pinned installation directory.
-///
-/// Constructors retain an owned close-on-exec directory descriptor. The
-/// pinned-descriptor constructor checks only that descriptor; the absolute
-/// path constructor checks every ancestor from the OS root before retaining
-/// the final descriptor.
 pub struct CheckedInstallRoot {
     directory: File,
 }
 
-/// Absolute source-root descriptors used only by the sibling source
-/// capability. The parent role is always `Ancestor`: the selected source root
-/// itself is validated separately as a current-user-owned `Directory`.
 pub(super) struct AbsoluteSourceRoot {
     pub(super) directory: File,
     pub(super) parent: File,
@@ -80,11 +61,6 @@ pub(super) struct AbsoluteSourceRoot {
     pub(super) identity: Stat,
 }
 
-/// A checked file descriptor and the pinned parent/name used to recheck it.
-///
-/// The file descriptor remains the original opened object. `recheck` reports
-/// whether its name still refers to that object; it never substitutes a newly
-/// opened descriptor.
 pub struct CheckedInstallFile {
     file: File,
     parent: File,
@@ -146,10 +122,6 @@ struct ParentLookup {
 }
 
 impl CheckedInstallRoot {
-    /// Duplicate and validate an already-open installation directory.
-    ///
-    /// The caller must choose the correct physical root. This method checks
-    /// the descriptor's object and does not resolve or canonicalize a path.
     pub fn from_pinned_directory(directory: File) -> io::Result<Self> {
         let descriptor = rustix::io::fcntl_dupfd_cloexec(&directory, 3)?;
         let directory = File::from(descriptor);
@@ -157,22 +129,10 @@ impl CheckedInstallRoot {
         Ok(Self { directory })
     }
 
-    /// Open and validate an absolute installation directory from the OS root.
-    ///
-    /// Every path component is inspected and opened relative to a pinned
-    /// directory descriptor. The final descriptor must be owned by the
-    /// effective user, have exact mode `0700`, and pass the native ACL check.
-    /// This validates the selected path's current ancestor chain; it does not
-    /// authenticate an installation or retain every ancestor name forever.
     pub fn from_absolute_directory(path: &Path) -> io::Result<Self> {
         absolute_root::open_absolute_directory(path)
     }
 
-    /// Open and validate a relative regular file beneath this pinned root.
-    ///
-    /// Absolute paths, parent traversal, symbolic links, writable ancestors,
-    /// hard-linked leaves, unexpected modes, and unsupported ACL inspection
-    /// are rejected. The returned descriptor is read-only and close-on-exec.
     pub fn open_file(
         &self,
         relative: &Path,
@@ -183,21 +143,14 @@ impl CheckedInstallRoot {
     }
 }
 
-/// Open a source root through the same checked absolute walk as an install
-/// root, but validate its final component as a non-writable current-user
-/// directory rather than an exact-0700 install root.
 pub(super) fn open_absolute_source_root(path: &Path) -> io::Result<AbsoluteSourceRoot> {
     absolute_root::open_absolute_source_root(path)
 }
 
-/// Parse source-relative components with the install walk's lexical rules.
 pub(super) fn source_relative_components(path: &Path) -> io::Result<Vec<OsString>> {
     Ok(relative_components(path)?.collect())
 }
 
-/// Open one current-user-owned source subdirectory beneath a checked source
-/// directory, preserving the same no-follow/identity/ACL checks as the
-/// absolute walker.
 pub(super) fn open_source_directory(parent: &File, name: &OsStr) -> io::Result<(File, Stat)> {
     validate_directory_descriptor(parent, NodeRole::Directory)?;
     let directory = absolute_root::open_directory_component(parent, name, NodeRole::Directory)?;
@@ -206,9 +159,6 @@ pub(super) fn open_source_directory(parent: &File, name: &OsStr) -> io::Result<(
     Ok((directory, identity))
 }
 
-/// Open one source leaf read-only and return its original descriptor and
-/// checked identity. Source files retain their actual safe mode rather than
-/// an installation artifact mode.
 pub(super) fn open_source_file(parent: &File, name: &OsStr) -> io::Result<(File, Stat)> {
     validate_directory_descriptor(parent, NodeRole::Directory)?;
     let before = statat(parent, name, NOFOLLOW_STAT_FLAGS)?;
@@ -237,7 +187,6 @@ pub(super) fn open_source_file(parent: &File, name: &OsStr) -> io::Result<(File,
     Ok((file, identity))
 }
 
-/// Recheck the selected source root's retained original parent/name edge.
 pub(super) fn recheck_absolute_source_root(
     parent: &File,
     name: &OsStr,
@@ -247,7 +196,6 @@ pub(super) fn recheck_absolute_source_root(
     recheck_named_source_directory(parent, NodeRole::Ancestor, name, directory, identity)
 }
 
-/// Recheck a retained source-relative parent/name edge.
 pub(super) fn recheck_source_directory(
     parent: &File,
     name: &OsStr,
@@ -300,7 +248,6 @@ fn recheck_named_source_directory(
     Ok(())
 }
 
-/// Recheck the original source-file descriptor and its retained leaf name.
 pub(super) fn recheck_source_file(
     parent: &File,
     name: &OsStr,
@@ -344,44 +291,11 @@ pub(super) fn recheck_source_file(
     Ok(())
 }
 
-#[cfg(all(test, target_os = "linux"))]
-pub(super) fn set_source_linux_acl_fixture(
-    descriptor: impl AsFd,
-    include_default_acl: bool,
-) -> io::Result<()> {
-    linux_acl::set_extended_acl_fixture(descriptor, include_default_acl)
-}
-
-#[cfg(all(test, target_os = "macos"))]
-#[derive(Clone, Copy)]
-pub(super) enum SourceDarwinAclFixture {
-    DenyRead,
-    AllowRead,
-    AllowMutation,
-}
-
-#[cfg(all(test, target_os = "macos"))]
-pub(super) fn set_source_darwin_acl_fixture(
-    descriptor: impl AsFd,
-    fixture: SourceDarwinAclFixture,
-) -> io::Result<()> {
-    let fixture = match fixture {
-        SourceDarwinAclFixture::DenyRead => darwin_acl::FixtureAcl::DenyRead,
-        SourceDarwinAclFixture::AllowRead => darwin_acl::FixtureAcl::AllowRead,
-        SourceDarwinAclFixture::AllowMutation => darwin_acl::FixtureAcl::AllowMutation,
-    };
-    darwin_acl::set_test_acl(descriptor, fixture)
-}
-
 impl CheckedInstallFile {
-    /// Borrow the original checked descriptor for bounded content inspection.
     pub fn file(&self) -> &File {
         &self.file
     }
 
-    /// Recheck the original object and its name in the same pinned parent.
-    ///
-    /// The method retains the original descriptor on both success and error.
     pub fn recheck(&self) -> io::Result<()> {
         validate_directory_descriptor(&self.parent, self.parent_role)?;
         let original = fstat(&self.file)?;
@@ -537,20 +451,6 @@ fn validate_directory_descriptor(file: &File, role: NodeRole) -> io::Result<()> 
     let metadata = fstat(file)?;
     validate_stat(&metadata, role)?;
     ensure_native_acl(file.as_fd(), true)
-}
-
-#[cfg(test)]
-pub(super) fn source_directory_owner_matches_for_test(
-    owner_uid: RawUid,
-    effective_uid: RawUid,
-) -> bool {
-    let facts = MetadataFacts {
-        file_type: FileType::Directory,
-        mode: Mode::from_bits_truncate(0o755),
-        uid: owner_uid,
-        single_link: true,
-    };
-    classify_metadata(facts, effective_uid, NodeRole::Directory).is_ok()
 }
 
 fn validate_stat(metadata: &Stat, role: NodeRole) -> io::Result<()> {

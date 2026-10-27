@@ -62,7 +62,6 @@ impl ClaudeOAuthMoney {
 
 #[derive(Debug, Deserialize)]
 pub struct ClaudeOAuthUsageWindow {
-    /// OAuth API percentage points; for example, `0.84` means `0.84%`.
     pub utilization: Option<f64>,
     #[serde(rename = "resets_at")]
     pub resets_at: Option<String>,
@@ -101,7 +100,7 @@ pub struct ClaudeOAuthExtraUsage {
     pub monthly_limit: Option<f64>,
     #[serde(rename = "used_credits")]
     pub used_credits: Option<f64>,
-    /// OAuth API percentage points, kept independent from the money ratio.
+
     pub utilization: Option<f64>,
     pub currency: Option<String>,
     #[serde(rename = "decimal_places")]

@@ -11,7 +11,7 @@ use jackin_core::JackinPaths;
 use jackin_manifest::repo::CachedRepo;
 
 use crate::capsule_binary;
-use crate::derived_image::{AgentInstall, render_derived_dockerfile};
+use crate::derived_image::render_derived_dockerfile;
 use crate::naming::{
     HOST_IDENTITY_STRATEGY, LABEL_IMAGE_CAPSULE_VERSION, LABEL_IMAGE_CONSTRUCT,
     LABEL_IMAGE_MANIFEST_VERSION, LABEL_IMAGE_RECIPE_HASH, LABEL_IMAGE_RECIPE_VERSION,
@@ -268,63 +268,6 @@ fn sha256_hex(bytes: &[u8]) -> String {
     out
 }
 
-pub fn image_recipe_label_map_for_test(
-    cached_repo: &CachedRepo,
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    agent: Agent,
-    head_sha: Option<&str>,
-    branch_override: Option<&str>,
-    base_image_override: Option<&str>,
-    cache_bust: &str,
-) -> std::collections::HashMap<String, String> {
-    image_recipe_label_map_for_install_test(
-        cached_repo,
-        validated_repo,
-        agent,
-        head_sha,
-        branch_override,
-        base_image_override,
-        cache_bust,
-        AgentInstall::Prefetched(format!(".jackin-runtime/agent-binaries/{}", agent.slug())),
-    )
-}
-
-#[expect(clippy::expect_used, reason = "test-only API surface")]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Test-only API surface: passes the full recipe input set to the \
-              label-map builder. Each arg is a real recipe input; bundling is a \
-              parallel-pass refactor."
-)]
-pub fn image_recipe_label_map_for_install_test(
-    cached_repo: &CachedRepo,
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    _agent: Agent,
-    head_sha: Option<&str>,
-    branch_override: Option<&str>,
-    base_image_override: Option<&str>,
-    cache_bust: &str,
-    _selected_install: AgentInstall<String>,
-) -> std::collections::HashMap<String, String> {
-    let recipe = build_image_recipe(
-        cached_repo,
-        validated_repo,
-        head_sha,
-        branch_override,
-        base_image_override,
-        cache_bust,
-    )
-    .expect("test image recipe should build");
-    let recipe_hash = recipe.hash().expect("test image recipe should hash");
-    recipe_labels(&recipe, &recipe_hash)
-        .into_iter()
-        .filter_map(|label| {
-            let (key, value) = label.split_once('=')?;
-            Some((key.to_owned(), value.to_owned()))
-        })
-        .collect()
-}
-
 #[expect(clippy::expect_used, reason = "test-only API surface")]
 pub fn expected_image_recipe_for_test(
     cached_repo: &CachedRepo,
@@ -347,6 +290,3 @@ pub fn expected_image_recipe_for_test(
     let hash = recipe.hash().expect("test image recipe should hash");
     ExpectedImageRecipe { recipe, hash }
 }
-
-#[cfg(test)]
-mod tests;

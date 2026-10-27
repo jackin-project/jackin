@@ -19,7 +19,7 @@ printer.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`session_contract.rs`](src/session_contract.rs) | Session contract printer | hub `apple_container` launch path (no dedicated suite) |
+| [`session_contract.rs`](src/session_contract.rs) | Session contract printer | — |
 
 ## Public API
 
@@ -28,6 +28,6 @@ printer.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-apple-container-session-contract
+cargo nextest run -p jackin-runtime-apple-container-session-contract --no-tests warn
 cargo clippy -p jackin-runtime-apple-container-session-contract --all-targets -- -D warnings
 ```

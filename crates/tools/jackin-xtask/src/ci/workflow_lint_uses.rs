@@ -1,5 +1,3 @@
-//! Local-use custody for inputs the native repository-mode linter reads.
-
 use std::{
     collections::{BTreeSet, VecDeque},
     fs,

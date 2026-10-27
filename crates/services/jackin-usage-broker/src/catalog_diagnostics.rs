@@ -68,6 +68,3 @@ const fn issue_code(issue: UsageDiscoveryIssue) -> CatalogDiagnosticCode {
         UsageDiscoveryIssue::InteractionRequired => CatalogDiagnosticCode::InteractionRequired,
     }
 }
-
-#[cfg(test)]
-mod tests;

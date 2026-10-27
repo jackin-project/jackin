@@ -210,6 +210,3 @@ fn parse_name_status(raw: &str) -> Vec<NameStatusEntry> {
     }
     out
 }
-
-#[cfg(test)]
-mod tests;

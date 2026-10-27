@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Caller-thread asynchronous pipe draining and spool-budget enforcement.
-
 use std::fs::File;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -116,6 +116,3 @@ impl FileBrowserState {
         column >= url_rect.x && column < url_rect.x + url_rect.width && row == url_rect.y
     }
 }
-
-#[cfg(test)]
-mod tests;

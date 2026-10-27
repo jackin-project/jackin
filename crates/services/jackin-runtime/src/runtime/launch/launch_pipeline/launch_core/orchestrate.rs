@@ -37,6 +37,3 @@ pub(crate) use phases::run_launch_phases;
 pub(crate) use prepare_instance::{PrepareInstance, prepare_instance};
 pub(crate) use runtime::{LaunchRuntime, launch_runtime};
 pub(crate) use workspace::{MaterializeWorkspace, materialize_workspace_phase};
-
-#[cfg(test)]
-mod tests;

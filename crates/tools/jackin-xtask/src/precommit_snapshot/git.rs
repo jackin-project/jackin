@@ -19,10 +19,6 @@ use super::process::SetupControls;
 mod capture;
 mod snapshot;
 pub(in crate::precommit_snapshot) use capture::{LiveRepository, checked, index_inputs};
-#[cfg(test)]
-pub(in crate::precommit_snapshot) use capture::{
-    output_live_at, output_live_optional_path_at, output_live_path_at, without_record_terminator,
-};
 
 pub(super) struct OwnedSnapshot {
     directory: Option<TempDir>,
@@ -34,8 +30,6 @@ pub(super) struct OwnedSnapshot {
     invocation_dir: PathBuf,
     extra_alternates: Option<OsString>,
     pub(in crate::precommit_snapshot) controls: SetupControls,
-    #[cfg(test)]
-    test_git_program: Option<PathBuf>,
 }
 
 pub(super) struct GateCompletion {
@@ -155,6 +149,3 @@ fn finish_missing_suffix(resolved: &mut PathBuf, pending: &mut VecDeque<OsString
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

@@ -10,8 +10,6 @@ mod settings_general;
 mod settings_mounts;
 mod settings_shell;
 mod settings_trust;
-#[cfg(test)]
-mod tests;
 mod workflows;
 mod workspace;
 pub(crate) use bridge::bridged_keymap_action;

@@ -89,7 +89,4 @@ pub(crate) fn access_for_abi(access: u64, abi: libc::c_long) -> u64 {
     }
 }
 
-pub(crate) mod support {
-    #[cfg(test)]
-    pub(crate) const WRITABLE: u64 = super::WRITABLE;
-}
+pub(crate) mod support {}

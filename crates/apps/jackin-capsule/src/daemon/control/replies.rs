@@ -150,16 +150,11 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
             super::super::events::session_send_reply(session, outcome)
         }
         ClientMsg::TakeControl { session } => {
-            // The daemon runs a single-threaded control loop, so no automatic
-            // write can interleave between this flag flip and the Ack: every
-            // SessionSend that reaches the PTY is decided before or after it.
             if let Some(target) = mux.session_supervisor.sessions.get_mut(session) {
                 target.take_operator_control();
                 ServerMsg::Ack
             } else {
                 let _error = jackin_telemetry::record_error(RPC_ERROR);
-                // Reuses the addressed-send denial: the session id is not
-                // actionable, and UnknownSession already carries that meaning.
                 super::super::events::session_send_reply(
                     session,
                     Err(SessionSendRejection::UnknownSession),

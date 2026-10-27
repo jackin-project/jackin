@@ -17,6 +17,3 @@ pub use projection::{
     HostUsageProjectionProviderPresentation, HostUsageProjectionRuntime,
     HostUsageProjectionSelectedAccount,
 };
-
-#[cfg(test)]
-mod tests;

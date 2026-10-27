@@ -8,7 +8,7 @@ pub mod redact;
 pub mod run;
 pub mod screen;
 pub mod secret_scrub;
-mod span_snapshot;
+
 mod stage;
 pub mod terminal;
 
@@ -31,11 +31,6 @@ pub use observability::{
     record_telemetry_rejection, resolved_otlp_config_fingerprint, shutdown_capsule_tracing,
     telemetry_health_snapshot, unsupported_otlp_protocol, validate_delivery,
 };
-#[cfg(feature = "test-support")]
-pub use observability::{
-    flush_wire_test_export, init_wire_test_export, otlp_runtime_active_for_test,
-    otlp_runtime_creation_count_for_test,
-};
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,
     active_subprocess_done, active_timing_done, active_timing_started, emit_panic_crash,
@@ -43,17 +38,8 @@ pub use run::{
 };
 pub use screen::current_screen_name;
 pub use secret_scrub::scrub_secrets;
-#[cfg(feature = "test-support")]
-#[doc(hidden)]
-pub use span_snapshot::TestSpanSnapshot;
 pub use stage::DiagnosticStage;
 pub use terminal::{
     host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,
     set_host_screen_owned, set_rich_surface_active, set_terminal_title, shorten_home,
 };
-
-#[cfg(test)]
-pub(crate) static DIAGNOSTICS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-#[cfg(test)]
-mod tests;

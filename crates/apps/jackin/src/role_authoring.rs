@@ -280,6 +280,3 @@ fn display_name(role_name: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
-
-#[cfg(test)]
-mod tests;

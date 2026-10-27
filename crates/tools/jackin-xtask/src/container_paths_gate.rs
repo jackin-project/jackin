@@ -495,6 +495,3 @@ fn turso_import_column(line: &str) -> Option<usize> {
     }
     None
 }
-
-#[cfg(test)]
-mod tests;

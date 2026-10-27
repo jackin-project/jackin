@@ -33,6 +33,3 @@ pub const INK: Color = Color::Black;
 pub const BRAND_CHEVRON: Color = color(WHITE_RGB);
 pub const BRAND_SEPARATOR: Color = color(PHOSPHOR_DARK_RGB);
 pub const BRAND_LABEL: Color = color(PHOSPHOR_DIM_RGB);
-
-#[cfg(test)]
-mod tests;

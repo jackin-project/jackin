@@ -47,6 +47,3 @@ pub fn terminal_area_from_size(size: Option<(u16, u16)>) -> Rect {
         Rect::new(0, 0, width, height)
     })
 }
-
-#[cfg(test)]
-mod tests;

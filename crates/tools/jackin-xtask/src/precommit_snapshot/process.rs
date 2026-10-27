@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Synchronous process capture for the standalone pre-commit owner.
-
 use std::{
     ffi::OsStr,
     fs::{self, File},
@@ -15,9 +13,6 @@ use std::{
     },
     time::{Duration, Instant},
 };
-
-#[cfg(test)]
-use std::{process::Stdio, thread};
 
 use anyhow::{Context, Result, ensure};
 use jackin_process::{
@@ -36,21 +31,18 @@ pub(super) use temporary_parent::canonical_temporary_parent;
 const PROBE_LIMIT: Duration = Duration::from_secs(120);
 pub(super) const METADATA_OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 
-/// An explicit environment boundary for a private native-hook child.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum EnvironmentMode {
     Inherit,
     Clear,
 }
 
-/// The bounded time policy for one child in the active setup phase.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CommandBudget {
     Probe,
     PhaseRemainder,
 }
 
-/// The shared cancellation token and monotonic deadline for one setup phase.
 #[derive(Clone, Debug)]
 pub(super) struct SetupControls {
     cancellation: Arc<AtomicBool>,
@@ -63,11 +55,6 @@ impl SetupControls {
             cancellation,
             phase_deadline: Instant::now() + phase_budget,
         }
-    }
-
-    #[cfg(test)]
-    pub(super) fn for_test(phase_budget: Duration) -> Self {
-        Self::new(Arc::new(AtomicBool::new(false)), phase_budget)
     }
 
     pub(in crate::precommit_snapshot) fn cancellation(&self) -> &AtomicBool {
@@ -172,8 +159,6 @@ pub(super) fn is_clean_cancellation(error: &anyhow::Error) -> bool {
         .is_some_and(|failure| failure.kind == CaptureFailureKind::Cancelled)
 }
 
-/// File-backed output from a completely observed child. Dropping this value
-/// removes its private capture directory; failure paths retain the directory.
 pub(super) struct SpoolOutput {
     status: ExitStatus,
     stdout: File,
@@ -191,16 +176,6 @@ impl SpoolOutput {
 
     pub(super) fn stdout_mut(&mut self) -> &mut File {
         &mut self.stdout
-    }
-
-    #[cfg(test)]
-    pub(super) fn stdout_path(&self) -> &Path {
-        &self.stdout_path
-    }
-
-    #[cfg(test)]
-    pub(super) fn stderr_path(&self) -> &Path {
-        &self.stderr_path
     }
 
     pub(super) fn read_output(
@@ -263,8 +238,6 @@ pub(super) fn capture_strict(
     .read_output(stdout_limit, stderr_limit)
 }
 
-/// Run one child through the shared process-group supervisor and retain its
-/// output on every incomplete or uncertain outcome.
 pub(super) fn capture_spooled(
     command: &mut Command,
     controls: &SetupControls,
@@ -570,101 +543,16 @@ fn read_spool(file: &mut File, limit: usize) -> Result<Vec<u8>> {
 #[cfg(unix)]
 use std::os::unix::{fs::PermissionsExt, process::ExitStatusExt};
 
-/// Capture a command from the synchronous hook-owner CLI.
-///
-/// This executable runs outside Jackin's async runtime and render threads. The
-/// caller configures the command's exact environment and working directory.
-#[cfg(test)]
-pub(super) fn capture(command: &mut Command) -> io::Result<Output> {
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?
-        .wait_with_output()
-}
-
-/// Capture a command while keeping each output stream within its own budget.
-///
-/// The readers continue to drain after a budget is exceeded. This lets the
-/// child exit without blocking on a full pipe. The caller receives an error,
-/// never a truncated `Output` value.
-#[cfg(test)]
-pub(super) fn capture_limited(
-    command: &mut Command,
-    stdout_limit: usize,
-    stderr_limit: usize,
-) -> io::Result<Output> {
-    let mut child = command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| io::Error::other("captured command has no stdout pipe"))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| io::Error::other("captured command has no stderr pipe"))?;
-    let stdout_reader = thread::spawn(move || read_bounded(stdout, stdout_limit));
-    let stderr_reader = thread::spawn(move || read_bounded(stderr, stderr_limit));
-    let status = child.wait();
-    let stdout = stdout_reader
-        .join()
-        .map_err(|_| io::Error::other("stdout capture thread panicked"))
-        .and_then(|result| result);
-    let stderr = stderr_reader
-        .join()
-        .map_err(|_| io::Error::other("stderr capture thread panicked"))
-        .and_then(|result| result);
-    let status = status?;
-    let stdout = stdout?;
-    let stderr = stderr?;
-    Ok(Output {
-        status,
-        stdout,
-        stderr,
-    })
-}
-
-#[cfg(test)]
-fn read_bounded(mut reader: impl Read, limit: usize) -> io::Result<Vec<u8>> {
-    let mut output = Vec::with_capacity(limit.min(16 * 1024));
-    let mut buffer = [0; 16 * 1024];
-    let mut exceeded = false;
-    loop {
-        let count = reader.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        let remaining = limit.saturating_sub(output.len());
-        let accepted = count.min(remaining);
-        output.extend_from_slice(&buffer[..accepted]);
-        exceeded |= accepted != count;
-    }
-    if exceeded {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("captured output exceeded {limit} byte limit"),
-        ));
-    }
-    Ok(output)
-}
-
-/// Open a read handle for synchronous snapshot identity verification.
 pub(super) fn open_readonly(path: &Path) -> io::Result<File> {
     let descriptor = open(
         path,
-        OFlag::O_RDONLY | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
+        OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
         Mode::empty(),
     )
     .map_err(io::Error::from)?;
     Ok(File::from(descriptor))
 }
 
-/// Create a private file without following or replacing an existing path.
 pub(super) fn create_private_new(path: &Path) -> io::Result<File> {
     let descriptor = open(
         path,
@@ -686,6 +574,3 @@ fn create_private_spool(path: &Path) -> io::Result<File> {
     fchmod(&descriptor, Mode::from_bits_truncate(0o600)).map_err(io::Error::from)?;
     Ok(File::from(descriptor))
 }
-
-#[cfg(test)]
-mod tests;

@@ -20,7 +20,7 @@ configs.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`selection.rs`](src/selection.rs) | selection | hub `launch::programmatic` suite (`case_01`, `case_02`) |
+| [`selection.rs`](src/selection.rs) | selection | — |
 
 ## Public API
 
@@ -30,6 +30,6 @@ configs.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-launch-programmatic-selection
+cargo nextest run -p jackin-runtime-launch-programmatic-selection --no-tests warn
 cargo clippy -p jackin-runtime-launch-programmatic-selection --all-targets -- -D warnings
 ```

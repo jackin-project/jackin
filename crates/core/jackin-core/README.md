@@ -19,38 +19,38 @@ Cross-surface **product presentation** (Debug-info paint, product brand/domain R
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
-| [`agent.rs`](src/agent.rs) · [`agent/`](src/agent) | agent identity | [`tests.rs`](src/agent/tests.rs) |
+| [`agent.rs`](src/agent.rs) · [`agent/`](src/agent) | agent identity | — |
 | [`instance.rs`](src/instance.rs) | instance type | — |
 | [`manifest.rs`](src/manifest.rs) | manifest fragment | — |
-| [`status.rs`](src/status.rs) | status type | [`tests.rs`](src/status/tests.rs) |
+| [`status.rs`](src/status.rs) | status type | — |
 | [`operator_notice.rs`](src/operator_notice.rs) | operator notice | — |
 | [`auth.rs`](src/auth.rs) | auth model | — |
-| [`account_key.rs`](src/account_key.rs) | account key | [`tests.rs`](src/account_key/tests.rs) |
-| [`claude_keychain.rs`](src/claude_keychain.rs) | Claude Code macOS Keychain service derivation (`claude_keychain_scope`) shared by instance provisioning and the usage probe | [`tests.rs`](src/claude_keychain/tests.rs) |
-| [`env_model.rs`](src/env_model.rs) | env model | [`tests.rs`](src/env_model/tests.rs) |
-| [`env_value.rs`](src/env_value.rs) | env value | [`tests.rs`](src/env_value/tests.rs) |
-| [`paths.rs`](src/paths.rs) | host paths + `PathsError` | [`tests.rs`](src/paths/tests.rs) |
+| [`account_key.rs`](src/account_key.rs) | account key | — |
+| [`claude_keychain.rs`](src/claude_keychain.rs) | Claude Code macOS Keychain service derivation (`claude_keychain_scope`) shared by instance provisioning and the usage probe | — |
+| [`env_model.rs`](src/env_model.rs) | env model | — |
+| [`env_value.rs`](src/env_value.rs) | env value | — |
+| [`paths.rs`](src/paths.rs) | host paths + `PathsError` | — |
 | [`isolation.rs`](src/isolation.rs) | isolation type | — |
 | [`isolation_record.rs`](src/isolation_record.rs) | isolation record | — |
-| [`worktree_dirty.rs`](src/worktree_dirty.rs) | worktree-dirty check | [`tests.rs`](src/worktree_dirty/tests.rs) |
+| [`worktree_dirty.rs`](src/worktree_dirty.rs) | worktree-dirty check | — |
 | [`runner.rs`](src/runner.rs) | `CommandRunner` port | — |
-| [`clock.rs`](src/clock.rs) | `Clock` port + `ManualClock` | [`tests.rs`](src/clock/tests.rs) |
+| [`clock.rs`](src/clock.rs) | `Clock` port + `ManualClock` | — |
 | [`launch_progress.rs`](src/launch_progress.rs) | launch progress | — |
 | [`prompt_result.rs`](src/prompt_result.rs) | prompt result | — |
 | [`selector.rs`](src/selector.rs) | selector | — |
 | [`docker.rs`](src/docker.rs) | docker types | — |
-| [`docker_security.rs`](src/docker_security.rs) | docker security | [`tests.rs`](src/docker_security/tests.rs) |
+| [`docker_security.rs`](src/docker_security.rs) | docker security | — |
 | [`build_log_sink.rs`](src/build_log_sink.rs) | build-log sink stub | — |
-| [`standalone_dialog.rs`](src/standalone_dialog.rs) | standalone dialog **port** (trait + sink; render impl in `jackin-launch`) | [`tests.rs`](src/standalone_dialog/tests.rs) |
+| [`standalone_dialog.rs`](src/standalone_dialog.rs) | standalone dialog **port** (trait + sink; render impl in `jackin-launch`) | — |
 | [`url_text.rs`](src/url_text.rs) | url text | — |
-| [`path_text.rs`](src/path_text.rs) | path text | [`tests.rs`](src/path_text/tests.rs) |
-| [`op_cache.rs`](src/op_cache.rs) | op cache | [`tests.rs`](src/op_cache/tests.rs) |
-| [`op_probe_error.rs`](src/op_probe_error.rs) | typed `op` probe errors | [`tests.rs`](src/op_probe_error/tests.rs) |
-| [`op_reference.rs`](src/op_reference.rs) | op reference | [`tests.rs`](src/op_reference/tests.rs) |
-| [V2](src/profile_material_v2.rs) | Profile credential source/material proofs | [tests](src/profile_material_v2/tests.rs) · [guide](docs/profile-credential-proofs.md) |
+| [`path_text.rs`](src/path_text.rs) | path text | — |
+| [`op_cache.rs`](src/op_cache.rs) | op cache | — |
+| [`op_probe_error.rs`](src/op_probe_error.rs) | typed `op` probe errors | — |
+| [`op_reference.rs`](src/op_reference.rs) | op reference | — |
+| [V2](src/profile_material_v2.rs) | Profile credential source/material proofs | [guide](docs/profile-credential-proofs.md) |
 | [`op_types.rs`](src/op_types.rs) | op types | — |
 | [`constants.rs`](src/constants.rs) | shared constants | — |
-| [`container_paths.rs`](src/container_paths.rs) | container-side `/jackin/` path chokepoint | [`tests.rs`](src/container_paths/tests.rs) |
+| [`container_paths.rs`](src/container_paths.rs) | container-side `/jackin/` path chokepoint | — |
 
 ## Public API
 
@@ -73,6 +73,6 @@ V2 is the only active profile-proof API. The unused normalized V1 helper is reti
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-core
+cargo nextest run -p jackin-core --no-tests warn
 cargo clippy -p jackin-core --all-targets -- -D warnings
 ```

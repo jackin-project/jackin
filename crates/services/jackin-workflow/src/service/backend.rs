@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Durable service implementation of the backend contract.
 use super::{CheckpointRecord, RecordTestParams, SessionAttachment, WorkflowService};
 use super::{
     InstanceInventory, OperatorDecision, RecordedDispatch, RecordedReview, RecordedTest,

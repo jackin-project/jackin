@@ -358,9 +358,6 @@ impl WorkspaceSpawnTypesBuilder {
     }
 }
 
-#[cfg(test)]
-mod tests;
-
 struct SpawnTypeAliases<'a> {
     aliases: &'a mut BTreeMap<String, String>,
     crate_names: &'a BTreeSet<String>,

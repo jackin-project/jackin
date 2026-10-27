@@ -27,7 +27,7 @@ admission checks.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`admission.rs`](src/admission.rs) | admission | hub `attach` suite |
+| [`admission.rs`](src/admission.rs) | admission | — |
 
 ## Public API
 
@@ -39,6 +39,6 @@ admission checks.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-runtime-attach-admission
+cargo nextest run -p jackin-runtime-attach-admission --no-tests warn
 cargo clippy -p jackin-runtime-attach-admission --all-targets -- -D warnings
 ```

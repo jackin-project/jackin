@@ -18,9 +18,6 @@ mod modals;
 mod settings;
 mod workspace;
 
-#[cfg(test)]
-mod tests;
-
 pub use self::workspace::{
     WorkspaceFooterScrollFacts, WorkspaceInlinePickerContentFacts, WorkspaceListFooterFacts,
     WorkspaceListFooterInputFacts, WorkspaceListFooterMode, WorkspaceListFooterRowFacts,

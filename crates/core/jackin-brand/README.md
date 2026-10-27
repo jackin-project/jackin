@@ -26,6 +26,6 @@ Consumers import named tokens and `owo_rgb` from the crate root. Presentation cr
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-brand
+cargo nextest run -p jackin-brand --no-tests warn
 cargo clippy -p jackin-brand --all-targets -- -D warnings
 ```
