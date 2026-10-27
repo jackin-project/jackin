@@ -395,6 +395,105 @@ fn money_raw_percent_keeps_overage_and_rejects_bad_denominations() {
 }
 
 #[test]
+fn money_raw_percent_handles_large_and_mixed_scale_values() {
+    assert_eq!(
+        Money::new(100_000_000_000_000_000, "USD", 0).raw_percent_of(&Money::new(
+            100_000_000_000_000_000,
+            "USD",
+            0
+        )),
+        Some(100)
+    );
+    assert_eq!(
+        Money::new(999_999_999_999_999_999, "USD", 2).raw_percent_of(&Money::new(
+            100_000_000_000_000_000,
+            "USD",
+            0
+        )),
+        Some(9)
+    );
+    assert_eq!(
+        Money::new(-150, "USD", 2).raw_percent_of(&Money::new(1, "USD", 0)),
+        Some(-150)
+    );
+    assert_eq!(
+        Money::new(97, "USD", 2).raw_percent_of(&Money::new(1, "USD", 0)),
+        Some(97)
+    );
+    assert_eq!(
+        Money::new(-1, "USD", 2).raw_percent_of(&Money::new(3, "USD", 0)),
+        Some(0)
+    );
+    assert_eq!(
+        Money::new(i64::MAX, "USD", 0).raw_percent_of(&Money::new(1, "USD", 0)),
+        Some(i32::MAX)
+    );
+    assert_eq!(
+        Money::new(i64::MIN, "USD", 0).raw_percent_of(&Money::new(1, "USD", 0)),
+        Some(i32::MIN)
+    );
+    assert_eq!(
+        Money::new(i64::MAX, "USD", 255).raw_percent_of(&Money::new(1, "USD", 0)),
+        Some(0)
+    );
+    assert_eq!(
+        Money::new(1, "USD", 0).raw_percent_of(&Money::new(i64::MAX, "USD", 255)),
+        Some(i32::MAX)
+    );
+}
+
+#[test]
+fn money_checked_arithmetic_preserves_exact_values_or_reports_unavailable() {
+    let cap = Money::new(100_000_000_000_000_000, "USD", 0);
+    let spent = Money::new(999_999_999_999_999_999, "USD", 2);
+    assert_eq!(cap.checked_cmp(&spent), Some(Ordering::Greater));
+    assert_eq!(
+        cap.checked_difference(&spent),
+        Some(Money::new(9_000_000_000_000_000_001, "USD", 2))
+    );
+    assert_eq!(
+        Money::new(200, "USD", 2).checked_difference(&Money::new(100, "USD", 2)),
+        Some(Money::new(100, "USD", 2))
+    );
+    assert_eq!(
+        Money::new(50, "USD", 2).checked_difference(&Money::new(100, "USD", 2)),
+        Some(Money::new(-50, "USD", 2))
+    );
+    assert_eq!(
+        Money::new(i64::MAX, "USD", 1).checked_difference(&Money::new(-3, "USD", 1)),
+        Some(Money::new(922_337_203_685_477_581, "USD", 0))
+    );
+    assert_eq!(
+        Money::new(i64::MIN, "USD", 0).checked_difference(&Money::new(0, "USD", 0)),
+        Some(Money::new(i64::MIN, "USD", 0))
+    );
+    assert_eq!(
+        Money::new(i64::MAX, "USD", 0).checked_difference(&Money::new(-1, "USD", 0)),
+        None
+    );
+    assert_eq!(
+        Money::new(1, "USD", 0).checked_difference(&Money::new(1, "USD", 255)),
+        None
+    );
+    assert_eq!(
+        Money::new(i64::MIN, "USD", 0).checked_nonnegative_difference(&Money::new(
+            i64::MAX,
+            "USD",
+            0
+        )),
+        Some(Money::new(0, "USD", 0))
+    );
+    assert_eq!(
+        Money::new(i64::MAX, "USD", 0).checked_nonnegative_difference(&Money::new(-1, "USD", 0)),
+        None
+    );
+    assert_eq!(
+        Money::new(1, "USD", 0).checked_cmp(&Money::new(100, "SGD", 2)),
+        None
+    );
+}
+
+#[test]
 fn status_slot_daily_serializes_as_daily() {
     assert_eq!(
         serde_json::to_value(StatusSlot::Daily).unwrap(),

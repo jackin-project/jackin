@@ -133,6 +133,41 @@ fn exact_signed_money_ratio_and_provider_percent_remain_independent() {
 }
 
 #[test]
+fn money_percent_uses_each_amount_scale() {
+    let mut bucket = bucket();
+    bucket.used_money = Some(Money::new(150, "USD", 2));
+    bucket.limit_money = Some(Money::new(1, "USD", 0));
+
+    assert_eq!(
+        money_used_percent(&bucket).map(RawPercentPoints::get),
+        Some(150.0)
+    );
+
+    bucket.used_money = Some(Money::new(999_999_999_999_999_999, "USD", 2));
+    bucket.limit_money = Some(Money::new(100_000_000_000_000_000, "USD", 0));
+    let points = money_used_percent(&bucket)
+        .map(RawPercentPoints::get)
+        .expect("large mixed-scale ratio remains finite");
+    assert!(points.is_finite());
+    assert!((points - 10.0).abs() < 1e-12);
+
+    bucket.used_money = Some(Money::new(1, "USD", 0));
+    bucket.limit_money = Some(Money::new(i64::MAX, "USD", 255));
+    assert!(
+        money_used_percent(&bucket)
+            .map(RawPercentPoints::get)
+            .is_some_and(f64::is_finite)
+    );
+    bucket.used_money = Some(Money::new(1, "USD", 255));
+    bucket.limit_money = Some(Money::new(i64::MAX, "USD", 0));
+    assert!(
+        money_used_percent(&bucket)
+            .map(RawPercentPoints::get)
+            .is_some_and(|points| points > 0.0)
+    );
+}
+
+#[test]
 fn derived_money_percent_does_not_establish_zero_remaining_geometry() {
     let mut bucket = bucket();
     bucket.used_money = Some(Money::new(1, "USD", 2));

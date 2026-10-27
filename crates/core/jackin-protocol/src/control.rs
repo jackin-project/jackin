@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 
 use crate::TelemetryContext;
 use crate::agent_status::AgentStatusReport;
 use crate::usage_broker::UsageAccountCapability;
+
+mod money_numeric;
 
 pub use crate::quota::{
     CanonicalRemainingPercent, CanonicalUsedPercent, CountQuota, CountQuotaPeriod,
@@ -491,12 +494,27 @@ impl Money {
 
     #[must_use]
     pub fn raw_percent_of(&self, cap: &Money) -> Option<i32> {
-        if self.currency != cap.currency || self.exponent != cap.exponent || cap.amount_minor <= 0 {
-            return None;
-        }
-        let scaled = self.amount_minor.saturating_mul(100);
-        let raw = scaled.checked_div(cap.amount_minor)?;
-        Some(i32::try_from(raw).unwrap_or(if raw < 0 { i32::MIN } else { i32::MAX }))
+        money_numeric::raw_percent_of(self, cap)
+    }
+
+    #[must_use]
+    pub fn raw_percent_points_of(&self, cap: &Money) -> Option<f64> {
+        money_numeric::raw_percent_points_of(self, cap)
+    }
+
+    #[must_use]
+    pub fn checked_cmp(&self, other: &Money) -> Option<Ordering> {
+        money_numeric::checked_cmp(self, other)
+    }
+
+    #[must_use]
+    pub fn checked_difference(&self, other: &Money) -> Option<Money> {
+        money_numeric::checked_difference(self, other)
+    }
+
+    #[must_use]
+    pub fn checked_nonnegative_difference(&self, other: &Money) -> Option<Money> {
+        money_numeric::checked_nonnegative_difference(self, other)
     }
 
     fn format_with_precision(&self, prec: usize) -> String {

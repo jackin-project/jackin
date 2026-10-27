@@ -8,7 +8,7 @@ use jackin_protocol::control::{
 };
 use jackin_protocol::usage_broker::{UsageMetricValueV1, UsageQuotaStateV1};
 
-use super::{bucket_has_quantity, quota_state_for_bucket};
+use super::{bucket_has_quantity, money_is_exhausted, quota_state_for_bucket};
 
 fn bucket(
     remaining: Option<u64>,
@@ -217,6 +217,28 @@ fn quota_status_gate_precedes_exact_count_state() {
         assert_eq!(crate::quota_state(&bucket), expected);
         assert_eq!(quota_state_for_bucket(&bucket), expected);
     }
+}
+
+#[test]
+fn money_exhaustion_compares_each_amount_scale_exactly() {
+    let mut view = bucket(
+        None,
+        UsageSeverity::Normal,
+        UsageSnapshotStatus::Fresh,
+        CountQuotaUnit::Requests,
+    );
+    view.used_money = Some(Money::new(100, "USD", 2));
+    view.limit_money = Some(Money::new(1, "USD", 0));
+    assert!(money_is_exhausted(&view));
+
+    view.used_money = Some(Money::new(999_999_999_999_999_999, "USD", 2));
+    view.limit_money = Some(Money::new(100_000_000_000_000_000, "USD", 0));
+    assert!(!money_is_exhausted(&view));
+
+    view.limit_money = Some(Money::new(0, "USD", 0));
+    assert!(!money_is_exhausted(&view));
+    view.limit_money = Some(Money::new(1, "SGD", 0));
+    assert!(!money_is_exhausted(&view));
 }
 
 #[test]

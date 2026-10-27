@@ -51,6 +51,43 @@ fn openrouter_key_maps_cap_remaining_and_period_spend() {
 }
 
 #[test]
+fn openrouter_raw_money_keeps_mixed_scale_cap_and_used_values() {
+    let quota = parse_openrouter_key_usage_raw(
+        r#"{"data":{"limit":100000000000000000,"limit_remaining":90000000000000000.01}}"#,
+        1_780_000_000,
+    )
+    .expect("large mixed-scale key response");
+    let cap = quota
+        .buckets
+        .iter()
+        .find(|bucket| bucket.label == "Key Limit")
+        .expect("cap row");
+
+    assert_eq!(
+        cap.limit_money,
+        Some(jackin_protocol::control::Money::new(
+            100_000_000_000_000_000,
+            "USD",
+            0
+        ))
+    );
+    assert_eq!(
+        cap.used_money,
+        Some(jackin_protocol::control::Money::new(
+            999_999_999_999_999_999,
+            "USD",
+            2
+        ))
+    );
+    assert_eq!(cap.limit_label.as_deref(), Some("$100000000000000000"));
+    assert_eq!(cap.used_label.as_deref(), Some("$9999999999999999.99"));
+    let points = jackin_usage_provider_core::money_used_percent(cap)
+        .map(jackin_protocol::control::RawPercentPoints::get)
+        .expect("mixed-scale ratio is available");
+    assert!((points - 10.0).abs() < 1e-12);
+}
+
+#[test]
 fn openrouter_null_cap_means_no_cap_never_infinite() {
     let quota = parse_openrouter_key_usage_raw(
         r#"{"data":{"usage_monthly":12.5,"limit":null,"limit_remaining":null,"is_free_tier":true}}"#,
