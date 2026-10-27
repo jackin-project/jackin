@@ -1035,6 +1035,7 @@ fn openrouter_value_byok_skips_unrepresentable_negative_numeric_components() {
         r#"{"data":{"byok_spend_a":-1e-256,"byok_cost_b":1}}"#,
         r#"{"data":{"byok_spend_a":1,"byok_cost_b":-1e30}}"#,
         r#"{"data":{"byok_spend_a":1,"byok_cost_b":-1e400}}"#,
+        r#"{"data":{"byok_spend_a":1,"byok_cost_b":-0.01}}"#,
     ] {
         let input = serde_json::from_str(json).expect("BYOK JSON");
         let quota = parse_openrouter_key_usage(input, 1_780_000_000).expect("BYOK key");
@@ -1050,9 +1051,10 @@ fn openrouter_value_byok_skips_unrepresentable_negative_numeric_components() {
         assert_eq!(byok.used_label.as_deref(), Some("$1"));
     }
 
-    let all_negative =
-        serde_json::from_str(r#"{"data":{"byok_spend_a":-1e-256,"byok_cost_b":-1e30}}"#)
-            .expect("all-negative BYOK JSON");
+    let all_negative = serde_json::from_str(
+        r#"{"data":{"byok_spend_a":-1e-256,"byok_cost_b":-1e30,"byok_cost_c":-0.01}}"#,
+    )
+    .expect("all-negative BYOK JSON");
     let quota = parse_openrouter_key_usage(all_negative, 1_780_000_000).expect("BYOK key");
     assert!(
         quota
@@ -1086,6 +1088,7 @@ fn openrouter_raw_byok_skips_unrepresentable_negative_numeric_components() {
         r#"{"data":{"byok_spend_a":-1e-256,"byok_cost_b":1}}"#,
         r#"{"data":{"byok_spend_a":1,"byok_cost_b":-1e30}}"#,
         r#"{"data":{"byok_spend_a":1,"byok_cost_b":-1e400}}"#,
+        r#"{"data":{"byok_spend_a":1,"byok_cost_b":-0.01}}"#,
     ] {
         let quota = parse_openrouter_key_usage_raw(json, 1_780_000_000).expect("BYOK key");
         let byok = quota
@@ -1101,7 +1104,7 @@ fn openrouter_raw_byok_skips_unrepresentable_negative_numeric_components() {
     }
 
     let all_negative = parse_openrouter_key_usage_raw(
-        r#"{"data":{"byok_spend_a":-1e-256,"byok_cost_b":-1e30}}"#,
+        r#"{"data":{"byok_spend_a":-1e-256,"byok_cost_b":-1e30,"byok_cost_c":-0.01}}"#,
         1_780_000_000,
     )
     .expect("all-negative BYOK key");

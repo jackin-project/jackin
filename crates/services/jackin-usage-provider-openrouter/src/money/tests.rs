@@ -175,20 +175,9 @@ fn raw_sum_carries_fraction_before_narrowing_and_rejects_overflow() {
 }
 
 #[test]
-fn negative_numeric_classification_preserves_signed_zero() {
-    assert!(is_negative_nonzero_number("-1e-256"));
-    assert!(is_negative_nonzero_number("-1e400"));
-    assert!(is_negative_nonzero_number("-0.01"));
-    assert!(!is_negative_nonzero_number("-0"));
-    assert!(!is_negative_nonzero_number("-0.0e-400"));
-    assert!(!is_negative_nonzero_number("-0e400"));
-    assert!(!is_negative_nonzero_number("1"));
-}
-
-#[test]
 fn aligned_zero_keeps_one_magnitude_digit_at_every_scale() {
     let zero = Decimal::from_raw(&raw("-0")).expect("negative zero decimal");
-    for scale in [0, 1, u8::MAX] {
+    for scale in 0..=u8::MAX {
         let aligned = zero.aligned(scale).expect("aligned zero");
         assert_eq!(aligned.len, 1);
         assert_eq!(aligned.scale(), scale);
