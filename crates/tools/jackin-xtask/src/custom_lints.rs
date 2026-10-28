@@ -404,3 +404,6 @@ fn status_description(output: &ExecResult) -> String {
         None => "terminated without an exit code".to_owned(),
     }
 }
+
+#[cfg(test)]
+mod tests;
