@@ -214,3 +214,28 @@ fn usage_relay_ready_frames_keep_canonical_and_reject_invalid_forms() {
     let oversized = [b'x'; USAGE_RELAY_READY_MAX_FRAME_BYTES + 1];
     let _error = UsageRelayReadyV1::decode_frame(&oversized).unwrap_err();
 }
+
+#[test]
+fn response_round_trip_keeps_typed_sanitized_failure() {
+    let response = UsageBrokerResponse::Error {
+        error: UsageCoordinationError {
+            kind: UsageCoordinationErrorKind::Unauthorized,
+            message: "usage account capability is not authorized".into(),
+        },
+    };
+
+    let bytes = serde_json::to_vec(&response).unwrap();
+    assert!(bytes.len() < USAGE_BROKER_MAX_FRAME_BYTES);
+    assert_eq!(
+        serde_json::from_slice::<UsageBrokerResponse>(&bytes).unwrap(),
+        response
+    );
+}
+
+#[test]
+fn broker_conflict_has_a_stable_sanitized_wire_name() {
+    let value = serde_json::to_value(UsageCoordinationErrorKind::BrokerConflict)
+        .expect("broker conflict should encode");
+    assert_eq!(value, "broker_conflict");
+    assert_eq!(USAGE_BROKER_PROTOCOL_VERSION, "v9");
+}

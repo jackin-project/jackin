@@ -510,3 +510,54 @@ fn projection_wire_preserves_rich_unlimited_count_and_meter_only_windows() {
             .contains("meter geometry and side without a matching pair")
     );
 }
+
+#[test]
+fn projection_operations_and_publication_response_round_trip() {
+    let operations = [
+        UsageBrokerOperation::CurrentProjection,
+        UsageBrokerOperation::RequestRefresh {
+            force: true,
+            observed_projection_id: Some("projection-1".into()),
+        },
+        UsageBrokerOperation::JoinPublication {
+            projection_id: "projection-1".into(),
+            timeout_ms: 500,
+        },
+    ];
+    for operation in operations {
+        let request = UsageBrokerRequest {
+            protocol_version: USAGE_BROKER_PROTOCOL_VERSION.into(),
+            build_id: "test-build".into(),
+            operation,
+            launch_credential_scope: None,
+        };
+        let bytes = serde_json::to_vec(&request).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<UsageBrokerRequest>(&bytes).unwrap(),
+            request
+        );
+    }
+
+    let mut rich = projection_window();
+    rich.count_quota = Some(CountQuota::new(
+        Some(9),
+        Some(10),
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::Unknown,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    let unlimited = unlimited_projection_window();
+    let count_only = count_only_projection_window();
+    let meter_only = meter_only_projection_window();
+    let projection = projection_with_windows(vec![rich, unlimited, count_only, meter_only]);
+    projection.validate().unwrap();
+    let response = UsageBrokerResponse::Projection {
+        projection: Box::new(projection),
+    };
+    let bytes = serde_json::to_vec(&response).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<UsageBrokerResponse>(&bytes).unwrap(),
+        response
+    );
+}
