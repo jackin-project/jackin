@@ -154,3 +154,31 @@ fn metric_groups_round_trip_all_six_wire_values() {
         assert_eq!(&decoded, group);
     }
 }
+
+fn capability() -> UsageAccountCapability {
+    UsageAccountCapability {
+        account_id: "opaque-account".into(),
+        surface_id: "claude".into(),
+    }
+}
+
+#[test]
+fn request_round_trip_preserves_generation_and_force_semantics() {
+    let request = UsageBrokerRequest {
+        protocol_version: USAGE_BROKER_PROTOCOL_VERSION.into(),
+        build_id: "test-build".into(),
+        operation: UsageBrokerOperation::Refresh {
+            capability: capability(),
+            observed_generation: 7,
+            force: true,
+        },
+        launch_credential_scope: None,
+    };
+
+    let bytes = serde_json::to_vec(&request).unwrap();
+    assert!(bytes.len() < USAGE_BROKER_MAX_FRAME_BYTES);
+    assert_eq!(
+        serde_json::from_slice::<UsageBrokerRequest>(&bytes).unwrap(),
+        request
+    );
+}
