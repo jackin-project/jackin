@@ -14,6 +14,12 @@ mod secure_install;
 mod secure_source;
 
 #[cfg(unix)]
+mod temporary_parent;
+
+#[cfg(unix)]
+mod running_image;
+
+#[cfg(unix)]
 pub use unix::current_dir;
 
 #[cfg(unix)]
@@ -21,6 +27,12 @@ pub use secure_install::{CheckedInstallFile, CheckedInstallRoot, InstallFileKind
 
 #[cfg(unix)]
 pub use secure_source::{CheckedSourceFile, CheckedSourceRoot};
+
+#[cfg(unix)]
+pub use temporary_parent::validate_temporary_parent;
+
+#[cfg(unix)]
+pub use running_image::RunningImage;
 
 #[cfg(target_os = "macos")]
 pub use macos_wait::{

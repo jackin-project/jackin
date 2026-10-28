@@ -31,4 +31,3 @@ url = { workspace = true }
 
 [lints]
 workspace = true
-

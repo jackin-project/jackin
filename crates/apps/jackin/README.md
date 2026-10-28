@@ -22,11 +22,11 @@ The jackin❯ CLI — the operator-facing binary that loads roles into isolated 
 | [`cli.rs`](src/cli.rs) · [`cli/`](src/cli) | CLI parsing, including diagnostics validation (no local logs command) | — |
 | [`app.rs`](src/app.rs) · [`app/`](src/app) | app wiring | — |
 | [`console.rs`](src/console.rs) · [`console/`](src/console) | console entry and dependency-crossing host adapters | — |
-| [`prompt.rs`](src/prompt.rs) · [`prompt/`](src/prompt) | prompt flow | — |
-| [`preflight.rs`](src/preflight.rs) · [`preflight/`](src/preflight) | preflight checks | — |
+| [`prompt.rs`](src/prompt.rs) · [`prompt/`](src/prompt.rs) | prompt flow | — |
+| [`preflight.rs`](src/preflight.rs) · [`preflight/`](src/preflight.rs) | preflight checks | — |
 | [`workspace.rs`](src/workspace.rs) · [`workspace/`](src/workspace) | workspace commands | — |
-| [`role_authoring.rs`](src/role_authoring.rs) · [`role_authoring/`](src/role_authoring) | role-authoring commands | — |
-| [`role_claude_plugins.rs`](src/role_claude_plugins.rs) · [`role_claude_plugins/`](src/role_claude_plugins) | role Claude-plugins commands | — |
+| [`role_authoring.rs`](src/role_authoring.rs) · [`role_authoring/`](src/role_authoring.rs) | role-authoring commands | — |
+| [`role_claude_plugins.rs`](src/role_claude_plugins.rs) · [`role_claude_plugins/`](src/role_claude_plugins.rs) | role Claude-plugins commands | — |
 | [`warp.rs`](src/warp.rs) | Warp integration | — |
 | [`error.rs`](src/error.rs) | top-level error type | — |
 | [`bin/`](src/bin) | extra binaries | — |

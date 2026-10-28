@@ -22,3 +22,10 @@ path = [
 precedence = "override"
 SPDX-FileCopyrightText = "NOASSERTION"
 SPDX-License-Identifier = "Apache-2.0"
+
+# Vendored branches 0.4.6 source keeps its upstream MIT license and attribution.
+[[annotations]]
+path = "vendor/branches-0.4.6/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2023 Khashayar Fereidani"
+SPDX-License-Identifier = "MIT"

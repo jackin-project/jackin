@@ -11,13 +11,36 @@ steps {
   ["mise"] = Builtins.mise
   ["gitleaks"] = Builtins.gitleaks
   ["cargo_fmt"] = (Builtins.cargo_fmt) {
-    check { command = "cargo fmt --all --check --manifest-path {{workspace_indicator}}" }
-    check_list_files { command = "cargo fmt --all --check --manifest-path {{workspace_indicator}} -- --files-with-diff" }
-    fix { command = "cargo fmt --all --manifest-path {{workspace_indicator}}" }
+    workspace_indicator = "Cargo.toml"
+    dir = "{{workspace}}"
+    prefix = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-workspace-admission\" \"$(pwd -P)/Cargo.toml\" -- mise exec --"
+    exclude = List("vendor/branches-0.4.6/**")
+    check { command = "cargo fmt --all --check" }
+    check_list_files { command = "cargo fmt --all --check -- --files-with-diff" }
+    fix { command = "cargo fmt --all" }
   }
-  ["cargo_check"] = (Builtins.cargo_check) { exclude = List("crates/tools/jackin-lints/**") }
-  ["cargo_clippy"] = (Builtins.cargo_clippy) { exclude = List("crates/tools/jackin-lints/**") }
-  ["cargo_deny"] = (Builtins.cargo_deny) { exclude = List("fuzz/**", "crates/tools/jackin-lints/**") }
+  ["cargo_check"] = (Builtins.cargo_check) {
+    workspace_indicator = "Cargo.toml"
+    dir = "{{workspace}}"
+    prefix = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-workspace-admission\" \"$(pwd -P)/Cargo.toml\" -- mise exec --"
+    exclude = List("crates/tools/jackin-lints/**")
+    check { command = "cargo check --locked --quiet" }
+    fix { command = "cargo fix --locked --allow-dirty --allow-staged --quiet" }
+  }
+  ["cargo_clippy"] = (Builtins.cargo_clippy) {
+    workspace_indicator = "Cargo.toml"
+    dir = "{{workspace}}"
+    prefix = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-workspace-admission\" \"$(pwd -P)/Cargo.toml\" -- mise exec --"
+    exclude = List("crates/tools/jackin-lints/**")
+    check { command = "cargo clippy --locked --quiet" }
+    fix { command = "cargo clippy --locked --fix --allow-dirty --allow-staged --quiet" }
+  }
+  ["cargo_deny"] = (Builtins.cargo_deny) {
+    workspace_indicator = "Cargo.lock"
+    prefix = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-workspace-admission\" \"$(pwd -P)/Cargo.toml\" -- mise exec --"
+    exclude = List("fuzz/**", "crates/tools/jackin-lints/**", "vendor/branches-0.4.6/**")
+    check { command = "cargo deny --locked --workspace check" }
+  }
   ["rust-toolchain-mirror"] {
     glob = List("mise.toml", "rust-toolchain.toml")
     check = "sh scripts/check-rust-toolchain-mirror.sh"

@@ -19,7 +19,7 @@ mise paths.
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
 | [`trust.rs`](src/trust.rs) | seeding | — |
-| [`trust/`](src/trust/) | test suites | — |
+| [`trust/`](src/trust.rs) | test suites | — |
 
 ## Public API
 

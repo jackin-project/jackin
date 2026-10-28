@@ -27,7 +27,6 @@ usage services.
 | [`outcome.rs`](src/outcome.rs) · [`fallback.rs`](src/fallback.rs) · [`surface.rs`](src/surface.rs) · [`diagnostic.rs`](src/diagnostic.rs) | outcome mapping | — |
 | [`labels.rs`](src/labels.rs) | display/storage labels | — |
 | [`cache_keys.rs`](src/cache_keys.rs) · [`consts.rs`](src/consts.rs) · [`credentials.rs`](src/credentials.rs) | keys, consts, credential files | — |
-| [`omp.rs`](src/omp.rs) · [`omp/`](src/omp) | omp attribution adapter | — |
 | [`process_telemetry.rs`](src/process_telemetry.rs) | child-process telemetry | — |
 
 ## Public API

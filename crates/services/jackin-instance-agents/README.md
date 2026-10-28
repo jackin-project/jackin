@@ -21,7 +21,7 @@ Per-agent credential provisioning for role instances: agent provisioners, auth-s
 | [`agent_slots.rs`](src/agent_slots.rs) · [`single_file_slots.rs`](src/single_file_slots.rs) | slot constructors | — |
 | [`snapshot.rs`](src/snapshot.rs) · [`capture.rs`](src/capture.rs) · [`validation.rs`](src/validation.rs) | source snapshot/capture | — |
 | [`slots.rs`](src/slots.rs) · [`agent_auth.rs`](src/agent_auth.rs) | slot layout/bindings | — |
-| [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry) | bounded provisioning telemetry | — |
+| [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry.rs) | bounded provisioning telemetry | — |
 
 ## Public API
 

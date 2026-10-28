@@ -24,12 +24,12 @@ and build-metadata crates. Launch TUI presentation stays in `jackin-launch` /
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
 | [`runtime.rs`](src/runtime.rs) · [`runtime/`](src/runtime) | launch pipeline + phases with governed telemetry; no local log-artifact subsystem | — |
-| [`apple_container_client.rs`](src/apple_container_client.rs) · [`apple_container_client/`](../jackin-runtime-apple-container-client/src/apple_container_client) | Apple container backend | — |
-| [`host_daemon.rs`](src/host_daemon.rs) · [`host_daemon/`](../jackin-runtime-host-daemon/src/host_daemon) | host daemon backend | — |
-| [`exec_host.rs`](src/exec_host.rs) · [`exec_host/`](../jackin-runtime-exec-host/src/exec_host) | host-side command exec | — |
-| [`isolation.rs`](src/isolation.rs) · [`isolation/`](../jackin-runtime-isolation/src/isolation) | mount isolation integration | — |
-| [`reactive_daemon.rs`](src/reactive_daemon.rs) · [`reactive_daemon/`](../jackin-runtime-reactive-daemon/src/reactive_daemon) | reactive daemon | — |
-| [`spin_wait.rs`](src/spin_wait.rs) · [`spin_wait/`](../jackin-runtime-spin-wait/src/spin_wait) | wait-for-state | — |
+| [`apple_container_client.rs`](src/apple_container_client.rs) · [`apple_container_client/`](../jackin-runtime-apple-container-client/src/apple_container_client.rs) | Apple container backend | — |
+| [`host_daemon.rs`](src/host_daemon.rs) · [`host_daemon/`](../jackin-runtime-host-daemon/src/host_daemon.rs) | host daemon backend | — |
+| [`exec_host.rs`](src/exec_host.rs) · [`exec_host/`](../jackin-runtime-exec-host/src/exec_host.rs) | host-side command exec | — |
+| [`isolation.rs`](src/isolation.rs) · [`isolation/`](../jackin-runtime-isolation/src/isolation.rs) | mount isolation integration | — |
+| [`reactive_daemon.rs`](src/reactive_daemon.rs) · [`reactive_daemon/`](../jackin-runtime-reactive-daemon/src/reactive_daemon.rs) | reactive daemon | — |
+| [`spin_wait.rs`](src/spin_wait.rs) · [`spin_wait/`](../jackin-runtime-spin-wait/src/spin_wait.rs) | wait-for-state | — |
 | [`usage_relay.rs`](../jackin-runtime-usage-relay/src/usage_relay.rs) | capability-scoped relay between a container and the host-owned usage broker | — |
 
 ## Public API

@@ -172,12 +172,6 @@ fn build_steps(root: &Path, args: &CiArgs) -> Result<Vec<Step>> {
     }
 
     if partition_selected(args, "tests") {
-        steps.push(Step::new(
-            "pre-commit snapshot fixture",
-            "scripts/test-pre-commit-snapshot",
-            &[],
-            "tests",
-        ));
         steps.push(cargo(
             "check",
             &["check", "--workspace", "--all-targets", "--locked"],
@@ -194,8 +188,9 @@ fn build_steps(root: &Path, args: &CiArgs) -> Result<Vec<Step>> {
             ],
             "tests",
         ));
-        steps.push(cargo(
-            "doctest",
+        steps.push(Step::new(
+            "mbx doctest",
+            "mbx",
             &["test", "--doc", "--workspace", "--locked"],
             "tests",
         ));
@@ -274,7 +269,14 @@ fn cargo(name: &str, args: &[&str], partition: &'static str) -> Step {
 }
 
 fn cargo_xtask(name: &str, args: &[&str], partition: &'static str) -> Step {
-    let mut cargo_args = vec!["xtask"];
+    let mut cargo_args = vec![
+        "run",
+        "--quiet",
+        "--locked",
+        "--package",
+        "jackin-xtask",
+        "--",
+    ];
     cargo_args.extend_from_slice(args);
     cargo(name, &cargo_args, partition)
 }

@@ -81,4 +81,6 @@ mise exec -- mbx +1.99.1 xtask ci --fast
 
 `mise exec -- mbx +1.99.1 xtask ci --e2e` includes the Docker-backed lane. It checks Docker availability, builds and exports the local capsule binary, then runs the Docker-backed nextest profile.
 
+Set `JACKIN_TOOLCHAIN_GUARD` to an absolute executable path when local policy requires a guard for toolchain commands. The shared xtask command launcher prefixes Cargo and mbx commands with that executable and `-- mise exec --`, including commands launched by nested xtasks. The guard must admit the requested commands; workspace doctests use `mbx test --doc --workspace --locked`.
+
 If formatting fails, run `mise exec -- mbx +1.99.1 fmt`, then re-run `mise exec -- mbx +1.99.1 fmt --check`.

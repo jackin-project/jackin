@@ -17,10 +17,10 @@ Concrete Docker daemon client and subprocess shell runner for jackin❯. The wor
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
-| [`docker_client.rs`](src/docker_client.rs) · [`docker_client/`](src/docker_client) | Docker daemon client | — |
-| [`shell_runner.rs`](src/shell_runner.rs) · [`shell_runner/`](src/shell_runner) | captured shell-command runner | — |
-| [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry) | bounded subprocess telemetry ownership | — |
-| [`net.rs`](src/net.rs) · [`net/`](src/net) | Docker networking helpers | — |
+| [`docker_client.rs`](src/docker_client.rs) · [`docker_client/`](src/docker_client.rs) | Docker daemon client | — |
+| [`shell_runner.rs`](src/shell_runner.rs) · [`shell_runner/`](src/shell_runner.rs) | captured shell-command runner | — |
+| [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry.rs) | bounded subprocess telemetry ownership | — |
+| [`net.rs`](src/net.rs) · [`net/`](src/net.rs) | Docker networking helpers | — |
 
 ## Public API
 

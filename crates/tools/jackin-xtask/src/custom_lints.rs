@@ -4,18 +4,27 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use jackin_process::{ExecRequest, ExecResult, StdioMode};
+#[cfg(unix)]
+use jackin_process_directory::validate_temporary_parent;
 
 mod paths;
+#[cfg(unix)]
+mod private_paths;
 
 const NIGHTLY: &str = "nightly-2026-10-18";
 const COMPILER_COMMIT: &str = "8006091eb71ae7d9e9bccb66c6122c9d68af4466";
 const COMPILER_RELEASE: &str = "1.101.0-nightly";
 const COMPONENTS: &[&str] = &["clippy", "llvm-tools", "rustc-dev", "rustfmt"];
-const TOOL_NAMES: &[&str] = &["dylint-link", "cargo-nextest", "cargo-dylint"];
+const TOOL_NAMES: &[&str] = &["dylint-link", "cargo-nextest", "cargo-dylint", "mbx"];
 
 type Environment = BTreeMap<OsString, OsString>;
+
+#[cfg(unix)]
+type CargoShimDirectory = private_paths::PrivateDirectory;
+#[cfg(not(unix))]
+type CargoShimDirectory = tempfile::TempDir;
 
 pub(crate) fn run(root: &Path) -> Result<()> {
     run_with(root, std::env::vars_os().collect(), execute)
@@ -40,8 +49,9 @@ where
 {
     let lint = root.join("crates/tools/jackin-lints");
     let search_path = tool_search_path(&inherited, root, &mut execute)?;
-    let (base_env, target, tools) =
+    let (mut base_env, target, tools) =
         build_environment_with(root, inherited, &search_path, passwd_home)?;
+    let cargo_shim = create_cargo_shim(&mut base_env, &tools)?;
     let mut nightly = vec![OsString::from("rustup"), OsString::from("run")];
     nightly.push(OsString::from(NIGHTLY));
 
@@ -69,7 +79,7 @@ where
 
     let mut build = nightly.clone();
     build.extend([
-        OsString::from("cargo"),
+        tools["mbx"].as_os_str().to_owned(),
         OsString::from("build"),
         OsString::from("--locked"),
     ]);
@@ -77,7 +87,7 @@ where
 
     let mut nextest = nightly;
     nextest.extend([
-        tools["cargo-nextest"].as_os_str().to_owned(),
+        tools["mbx"].as_os_str().to_owned(),
         OsString::from("nextest"),
         OsString::from("run"),
         OsString::from("--locked"),
@@ -85,12 +95,20 @@ where
     execute(&nextest, &lint, &base_env, false)?;
 
     let library = library_path(&target, &host)?;
-    let directory = tempfile::Builder::new()
+    let temp_directory = tempfile::Builder::new()
         .prefix("jackin-custom-lints-")
-        .tempdir()
+        .tempdir_in(cargo_shim.path())
         .context("creating isolated Dylint library directory")?;
+    #[cfg(unix)]
+    let directory = private_paths::normalize_directory(cargo_shim.descriptor(), temp_directory)?;
+    #[cfg(not(unix))]
+    let directory = temp_directory;
+    let directory_path = directory
+        .path()
+        .canonicalize()
+        .context("resolving isolated Dylint library directory")?;
     let body_result = (|| -> Result<()> {
-        let destination = directory.path().join(
+        let destination = directory_path.join(
             library
                 .file_name()
                 .context("nightly lint library has no filename")?,
@@ -104,7 +122,7 @@ where
         );
         workspace_env.insert(
             OsString::from("DYLINT_LIBRARY_PATH"),
-            directory.path().as_os_str().to_owned(),
+            directory_path.as_os_str().to_owned(),
         );
         workspace_env.remove(OsStr::new("DYLINT_LINK_ENABLE_COPY_LIBRARY"));
         workspace_env.remove(OsStr::new("CARGO_ENCODED_RUSTFLAGS"));
@@ -127,6 +145,91 @@ where
     finish_with_cleanup(body_result, directory.close())
 }
 
+fn create_cargo_shim(
+    env: &mut Environment,
+    tools: &BTreeMap<&'static str, PathBuf>,
+) -> Result<CargoShimDirectory> {
+    #[cfg(unix)]
+    {
+        let requested_temp = PathBuf::from(
+            env.get(OsStr::new("TMPDIR"))
+                .context("anchored custom lint temporary directory is missing")?,
+        );
+        let temp_parent = if requested_temp
+            .as_os_str()
+            .as_encoded_bytes()
+            .contains(&b':')
+        {
+            fs::canonicalize("/tmp").context("resolving separator-safe temporary fallback")?
+        } else {
+            requested_temp
+        };
+        validate_temporary_parent(&temp_parent)
+            .context("validating private MBX Cargo shim parent")?;
+        ensure!(
+            !temp_parent.as_os_str().as_encoded_bytes().contains(&b':'),
+            "private MBX Cargo shim parent contains the PATH delimiter"
+        );
+        let temp_parent_directory = private_paths::open_directory(&temp_parent)?;
+        let temp_directory = tempfile::Builder::new()
+            .prefix("jackin-custom-lints-mbx-")
+            .tempdir_in(&temp_parent)
+            .context("creating private MBX Cargo shim directory")?;
+        let shim_directory =
+            private_paths::normalize_directory(&temp_parent_directory, temp_directory)?;
+        let directory_path = shim_directory
+            .path()
+            .canonicalize()
+            .context("resolving private MBX Cargo shim directory")?;
+        let alias = directory_path.join("cargo");
+        private_paths::create_symlink(
+            shim_directory.descriptor(),
+            &tools["mbx"],
+            OsStr::new("cargo"),
+        )
+        .context("creating private native Cargo-to-MBX shim")?;
+        let old_path = env.get(OsStr::new("PATH")).cloned().unwrap_or_default();
+        let nextest_parent = tools["cargo-nextest"]
+            .parent()
+            .context("pinned cargo-nextest has no parent directory")?
+            .to_path_buf();
+        let cargo_home = PathBuf::from(
+            env.get(OsStr::new("CARGO_HOME"))
+                .context("resolved Cargo home is missing")?,
+        );
+        let cargo_bin = cargo_home.join("bin");
+        let nextest_parent = path_entry_alias(
+            shim_directory.descriptor(),
+            &directory_path,
+            &nextest_parent,
+            "cargo-nextest",
+        )?;
+        let cargo_bin = path_entry_alias(
+            shim_directory.descriptor(),
+            &directory_path,
+            &cargo_bin,
+            "cargo-home-bin",
+        )?;
+        let mut path = vec![directory_path, nextest_parent, cargo_bin];
+        path.extend(std::env::split_paths(&old_path));
+        env.insert(
+            OsString::from("PATH"),
+            std::env::join_paths(path).context("prepending MBX Cargo shim to PATH")?,
+        );
+        env.insert(
+            OsString::from("MBX_CARGO_SHIM_PATH"),
+            alias.into_os_string(),
+        );
+        env.insert(OsString::from("MBX_CARGO_SHIM_MODE"), OsString::from("1"));
+        Ok(shim_directory)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (env, tools);
+        bail!("custom lint qualification requires Unix native Cargo shims")
+    }
+}
+
 fn finish_with_cleanup<T>(body: Result<T>, cleanup: std::io::Result<()>) -> Result<T> {
     match (body, cleanup) {
         (Ok(value), Ok(())) => Ok(value),
@@ -147,10 +250,6 @@ fn build_environment_with<H>(
 where
     H: FnOnce() -> Result<Option<OsString>>,
 {
-    let child_path = inherited
-        .get(OsStr::new("PATH"))
-        .cloned()
-        .unwrap_or_default();
     let mut tools = BTreeMap::new();
     for name in TOOL_NAMES {
         let selected = find_executable(OsStr::new(name), search_path)
@@ -163,21 +262,33 @@ where
         Some(value) => PathBuf::from(value),
         None => root.join("target/custom-lints"),
     };
+    let invocation_cwd = fs::canonicalize(
+        std::env::current_dir().context("reading custom lint invocation directory")?,
+    )
+    .context("resolving custom lint invocation directory")?;
     let current_dir = if cargo_home.is_absolute() && target.is_absolute() {
-        None
+        Path::new("/")
     } else {
-        Some(std::env::current_dir().context("reading current directory")?)
+        &invocation_cwd
     };
-    let current_dir = current_dir.as_deref().unwrap_or_else(|| Path::new("/"));
     let cargo_home = paths::resolve(&cargo_home, current_dir)?;
     let target = paths::resolve(&target, current_dir)?;
-    let cargo_bin = cargo_home.join("bin");
+    let requested_temp = inherited
+        .get(OsStr::new("TMPDIR"))
+        .map_or_else(std::env::temp_dir, PathBuf::from);
+    let temporary_path = if requested_temp.is_absolute() {
+        requested_temp
+    } else {
+        invocation_cwd.join(requested_temp)
+    };
+    let temporary_parent =
+        fs::canonicalize(&temporary_path).context("anchoring custom lint temporary directory")?;
+    #[cfg(unix)]
+    validate_temporary_parent(&temporary_parent)
+        .context("validating custom lint temporary directory")?;
     let mut env = inherited;
-    env.insert(
-        OsString::from("PATH"),
-        std::env::join_paths(std::iter::once(cargo_bin).chain(std::env::split_paths(&child_path)))
-            .context("prepending Cargo home to PATH")?,
-    );
+    env.insert(OsString::from("CARGO_HOME"), cargo_home.into_os_string());
+    env.insert(OsString::from("TMPDIR"), temporary_parent.into_os_string());
     for key in env
         .keys()
         .filter(|key| key.to_string_lossy().starts_with("DYLINT_"))
@@ -195,6 +306,8 @@ where
         "RUSTC_WORKSPACE_WRAPPER",
         "RUSTFLAGS",
         "CARGO_ENCODED_RUSTFLAGS",
+        "MBX_CARGO_SHIM_MODE",
+        "MBX_CARGO_SHIM_PATH",
     ] {
         env.remove(OsStr::new(key));
     }
@@ -212,6 +325,23 @@ where
     encoded_flags.push(linker);
     env.insert(OsString::from("CARGO_ENCODED_RUSTFLAGS"), encoded_flags);
     Ok((env, target, tools))
+}
+
+#[cfg(unix)]
+fn path_entry_alias(
+    parent: &fs::File,
+    alias_directory: &Path,
+    target: &Path,
+    name: &str,
+) -> Result<PathBuf> {
+    if target.as_os_str().as_encoded_bytes().contains(&b':') {
+        let alias = alias_directory.join(name);
+        private_paths::create_symlink(parent, target, OsStr::new(name))
+            .with_context(|| format!("aliasing PATH entry for {name}"))?;
+        Ok(alias)
+    } else {
+        Ok(target.to_path_buf())
+    }
 }
 
 fn tool_search_path<F>(inherited: &Environment, root: &Path, execute: &mut F) -> Result<OsString>

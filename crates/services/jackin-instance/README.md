@@ -19,7 +19,7 @@ Auth provisioning lives in the sibling crates `jackin-instance-roles` (orchestra
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | instance index + lifecycle | — |
 | [`manifest.rs`](src/manifest.rs) · [`manifest/`](src/manifest) | instance manifest view | — |
-| [`naming.rs`](src/naming.rs) · [`naming/`](src/naming) | container/instance naming | — |
+| [`naming.rs`](src/naming.rs) · [`naming/`](src/naming.rs) | container/instance naming | — |
 | `tests.rs` | integration tests | — |
 
 ## Public API
