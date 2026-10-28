@@ -324,3 +324,189 @@ fn versioned_window_wire_preserves_signed_money_ratio() {
         );
     }
 }
+
+fn projection_with_windows(windows: Vec<UsageLimitWindowV1>) -> UsageProjectionV1 {
+    let mut projection = projection_with_window(projection_window());
+    projection.providers[0].accounts[0].windows = windows;
+    projection
+}
+
+fn unlimited_projection_window() -> UsageLimitWindowV1 {
+    let mut window = projection_window();
+    window.window_id = "unlimited".into();
+    window.rank = 1;
+    window.label = "Unlimited".into();
+    window.value_label = "Unlimited".into();
+    window.remaining_percent = None;
+    window.remaining_percent_origin = None;
+    window.used_percent = None;
+    window.used_percent_origin = None;
+    window.meter_percent = None;
+    window.meter_side = None;
+    window.count_quota = None;
+    window.provider_quota_state = Some(ProviderQuotaState::Unlimited);
+    window.quota_state = UsageQuotaStateV1::NotApplicable;
+    window
+}
+
+fn count_only_projection_window() -> UsageLimitWindowV1 {
+    UsageLimitWindowV1 {
+        window_id: "large-count".into(),
+        rank: 2,
+        category: UsageWindowCategoryV1::Other,
+        label: "Requests".into(),
+        value_label: "9007199254740993 requests".into(),
+        reset_label: "resets daily".into(),
+        remaining_percent: None,
+        remaining_percent_origin: None,
+        used_percent: None,
+        used_percent_origin: None,
+        meter_percent: None,
+        meter_side: None,
+        count_quota: Some(CountQuota::new(
+            Some(9_007_199_254_740_993),
+            None,
+            None,
+            CountQuotaUnit::Requests,
+            CountQuotaPeriod::UtcDaily,
+            CountQuotaProvenance::ProviderReported,
+        )),
+        provider_quota_state: None,
+        money_used_percent: None,
+        reset_at_epoch: None,
+        quota_state: UsageQuotaStateV1::Available,
+        pace_label: None,
+        runs_out_label: None,
+    }
+}
+
+fn meter_only_projection_window() -> UsageLimitWindowV1 {
+    UsageLimitWindowV1 {
+        window_id: "meter-only".into(),
+        rank: 3,
+        category: UsageWindowCategoryV1::Other,
+        label: "Weekly".into(),
+        value_label: "57% left".into(),
+        reset_label: "Resets 3d".into(),
+        remaining_percent: None,
+        remaining_percent_origin: None,
+        used_percent: None,
+        used_percent_origin: None,
+        meter_percent: Some(MeterPercentPoints::new(57.0).unwrap()),
+        meter_side: Some(UsageMeterSide::Remaining),
+        count_quota: None,
+        provider_quota_state: None,
+        money_used_percent: None,
+        reset_at_epoch: None,
+        quota_state: UsageQuotaStateV1::Warning,
+        pace_label: None,
+        runs_out_label: None,
+    }
+}
+
+fn assert_no_projection_window_geometry(window: &serde_json::Value) {
+    for field in [
+        "remaining_percent",
+        "remaining_percent_origin",
+        "used_percent",
+        "used_percent_origin",
+        "meter_percent",
+        "meter_side",
+    ] {
+        assert!(window.get(field).is_none());
+    }
+}
+
+#[test]
+fn projection_wire_preserves_rich_unlimited_count_and_meter_only_windows() {
+    let mut rich = projection_window();
+    rich.count_quota = Some(CountQuota::new(
+        Some(9),
+        Some(10),
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::Unknown,
+        CountQuotaProvenance::ProviderReported,
+    ));
+
+    let unlimited = unlimited_projection_window();
+    let count_only = count_only_projection_window();
+    let meter_only = meter_only_projection_window();
+
+    let projection = projection_with_windows(vec![
+        rich.clone(),
+        unlimited.clone(),
+        count_only.clone(),
+        meter_only.clone(),
+    ]);
+    projection.validate().unwrap();
+
+    let wire = serde_json::to_value(&projection).unwrap();
+    let windows = wire["providers"][0]["accounts"][0]["windows"]
+        .as_array()
+        .unwrap();
+    assert_eq!(windows.len(), 4);
+
+    assert_eq!(windows[0]["rank"], 0);
+    assert_eq!(windows[0]["remaining_percent"], 57.125);
+    assert_eq!(windows[0]["remaining_percent_origin"], "provider_reported");
+    assert_eq!(windows[0]["used_percent"], 43.375);
+    assert_eq!(windows[0]["used_percent_origin"], "provider_reported");
+    assert_eq!(windows[0]["meter_percent"], 10.0);
+    assert_eq!(windows[0]["meter_side"], "remaining");
+    assert_eq!(windows[0]["count_quota"]["used"], 9);
+    assert_eq!(windows[0]["count_quota"]["limit"], 10);
+    assert_eq!(windows[0]["count_quota"]["remaining"], 1);
+
+    assert_eq!(windows[1]["rank"], 1);
+    assert_eq!(windows[1]["provider_quota_state"], "unlimited");
+    assert_eq!(windows[1]["quota_state"], "not_applicable");
+    assert!(windows[1].get("count_quota").is_none());
+    assert_no_projection_window_geometry(&windows[1]);
+
+    assert_eq!(windows[2]["rank"], 2);
+    assert_eq!(windows[2]["quota_state"], "available");
+    assert_eq!(
+        windows[2]["count_quota"],
+        serde_json::json!({
+            "used": 9_007_199_254_740_993_u64,
+            "limit": null,
+            "remaining": null,
+            "unit": "requests",
+            "period": "utc_daily",
+            "provenance": "provider_reported"
+        })
+    );
+    assert_no_projection_window_geometry(&windows[2]);
+
+    assert_eq!(windows[3]["rank"], 3);
+    assert_eq!(windows[3]["label"], "Weekly");
+    assert_eq!(windows[3]["value_label"], "57% left");
+    assert_eq!(windows[3]["quota_state"], "warning");
+    assert_eq!(windows[3]["meter_percent"], 57.0);
+    assert_eq!(windows[3]["meter_side"], "remaining");
+    for field in [
+        "remaining_percent",
+        "remaining_percent_origin",
+        "used_percent",
+        "used_percent_origin",
+        "count_quota",
+        "provider_quota_state",
+        "money_used_percent",
+    ] {
+        assert!(windows[3].get(field).is_none());
+    }
+    assert_eq!(
+        serde_json::from_value::<UsageProjectionV1>(wire).unwrap(),
+        projection
+    );
+
+    let mut missing_meter_side = rich;
+    missing_meter_side.meter_side = None;
+    assert!(
+        projection_with_windows(vec![missing_meter_side, unlimited, count_only, meter_only,])
+            .validate()
+            .unwrap_err()
+            .contains("meter geometry and side without a matching pair")
+    );
+}
