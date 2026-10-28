@@ -161,3 +161,221 @@ fn openrouter_money_derived_remaining_stays_continuous_and_signed_ratio_stays_ra
         Some(-2_500)
     );
 }
+
+#[test]
+fn openrouter_base_url_prefers_api_url_override() {
+    assert_eq!(
+        openrouter_base_url_from(None, None),
+        "https://openrouter.ai/api/v1"
+    );
+    assert_eq!(
+        openrouter_base_url_from(Some("https://api.test/"), Some("https://base.test")),
+        "https://api.test"
+    );
+    assert_eq!(
+        openrouter_base_url_from(None, Some("https://base.test/")),
+        "https://base.test"
+    );
+    assert_eq!(
+        openrouter_base_url_from(Some("  "), Some("https://base.test")),
+        "https://base.test"
+    );
+}
+
+#[test]
+fn openrouter_snapshot_public_failures_keep_diagnostics_without_rate_limit() {
+    const TEST_NAME: &str =
+        "tests::case_02::openrouter_snapshot_public_failures_keep_diagnostics_without_rate_limit";
+
+    if let Ok(child_state) = std::env::var("JACKIN_OPENROUTER_TEST_CHILD") {
+        let (scenario, completion_marker) = child_state
+            .split_once('|')
+            .expect("child state includes a scenario and completion marker");
+        let base_url =
+            std::env::var("OPENROUTER_BASE_URL").expect("child has an owned loopback endpoint");
+        assert!(base_url.starts_with("http://127.0.0.1:"));
+        let (view, rate_limit) =
+            openrouter_snapshot_with_rate_limit("opencode", Some("fixture-key"), 1_780_000_000);
+        assert_eq!(
+            view.status,
+            jackin_protocol::control::UsageSnapshotStatus::Error
+        );
+        assert_eq!(view.account.provider_label, "OpenRouter");
+        let error = view.last_error.as_deref().expect("public error diagnostic");
+        match scenario {
+            "connection-close" => {
+                assert!(
+                    error.starts_with("OpenRouter key request failed:"),
+                    "unexpected request diagnostic: {error}"
+                );
+            }
+            "decode-invalid-json" => {
+                assert!(
+                    error.starts_with("OpenRouter key decode failed:"),
+                    "unexpected decode diagnostic: {error}"
+                );
+            }
+            _ => panic!("unknown child scenario: {scenario}"),
+        }
+        assert_eq!(rate_limit, None);
+        println!("{completion_marker}");
+        return;
+    }
+
+    for (scenario, response) in [
+        ("connection-close", ChildSnapshotResponse::Close),
+        (
+            "decode-invalid-json",
+            ChildSnapshotResponse::Http {
+                status: 200,
+                reason: "OK",
+                header: None,
+                body: "not-json",
+            },
+        ),
+    ] {
+        let server = ChildSnapshotServer::start(response);
+        let completion_marker = format!(
+            "OPENROUTER_CHILD_COMPLETE:{scenario}:{}",
+            std::process::id()
+        );
+        let output = run_snapshot_child(&server, TEST_NAME, scenario, &completion_marker);
+        assert_snapshot_child_completed(&output, server.request_seen(), &completion_marker);
+    }
+}
+
+#[test]
+#[ignore = "https://github.com/jackin-project/jackin/pull/1257#discussion_r4398666804: absolute receipt freshness requires a deterministic clock boundary"]
+fn openrouter_snapshot_public_429_preserves_retry_after_deadline() {
+    const TEST_NAME: &str =
+        "tests::case_02::openrouter_snapshot_public_429_preserves_retry_after_deadline";
+
+    if let Ok(child_state) = std::env::var("JACKIN_OPENROUTER_TEST_CHILD") {
+        let (scenario, completion_marker) = child_state
+            .split_once('|')
+            .expect("child state includes a scenario and completion marker");
+        assert_eq!(scenario, "http-429-retry-after");
+        let base_url =
+            std::env::var("OPENROUTER_BASE_URL").expect("child has an owned loopback endpoint");
+        assert!(base_url.starts_with("http://127.0.0.1:"));
+        let before_call_epoch = jackin_usage_provider_core::now_epoch();
+        let request_now = before_call_epoch.saturating_sub(120);
+        let (view, rate_limit) =
+            openrouter_snapshot_with_rate_limit("opencode", Some("fixture-key"), request_now);
+        let after_call_epoch = jackin_usage_provider_core::now_epoch();
+        assert_eq!(
+            view.status,
+            jackin_protocol::control::UsageSnapshotStatus::Error
+        );
+        assert_eq!(view.account.provider_label, "OpenRouter");
+        let error = view.last_error.as_deref().expect("public error diagnostic");
+        assert!(
+            error.starts_with("OpenRouter key HTTP 429"),
+            "unexpected HTTP status diagnostic: {error}"
+        );
+        let retry_at_epoch = rate_limit
+            .expect("429 response retains a public rate-limit observation")
+            .retry_at_epoch
+            .expect("Retry-After produces a public deadline");
+        assert!(
+            retry_at_epoch >= request_now.saturating_add(100),
+            "retry deadline {retry_at_epoch} is not anchored after request time {request_now}"
+        );
+        assert!(
+            retry_at_epoch >= before_call_epoch.saturating_add(37),
+            "retry deadline {retry_at_epoch} precedes the observed response window"
+        );
+        assert!(
+            retry_at_epoch <= after_call_epoch.saturating_add(37),
+            "retry deadline {retry_at_epoch} exceeds the observed response window"
+        );
+        println!("{completion_marker}");
+        return;
+    }
+
+    let server = ChildSnapshotServer::start(ChildSnapshotResponse::Http {
+        status: 429,
+        reason: "Too Many Requests",
+        header: Some(("Retry-After", "37")),
+        body: "{}",
+    });
+    let completion_marker = format!(
+        "OPENROUTER_CHILD_COMPLETE:http-429-retry-after:{}",
+        std::process::id()
+    );
+    let output = run_snapshot_child(
+        &server,
+        TEST_NAME,
+        "http-429-retry-after",
+        &completion_marker,
+    );
+    assert_snapshot_child_completed(&output, server.request_seen(), &completion_marker);
+}
+
+#[test]
+fn openrouter_snapshot_public_429_preserves_retry_after_conversion() {
+    const TEST_NAME: &str =
+        "tests::case_02::openrouter_snapshot_public_429_preserves_retry_after_conversion";
+
+    if let Ok(child_state) = std::env::var("JACKIN_OPENROUTER_TEST_CHILD") {
+        let (scenario, completion_marker) = child_state
+            .split_once('|')
+            .expect("child state includes a scenario and completion marker");
+        assert_eq!(scenario, "http-429-retry-after-conversion");
+        let base_url =
+            std::env::var("OPENROUTER_BASE_URL").expect("child has an owned loopback endpoint");
+        assert!(base_url.starts_with("http://127.0.0.1:"));
+        let request_now = -120_i64;
+        let (view, rate_limit) =
+            openrouter_snapshot_with_rate_limit("opencode", Some("fixture-key"), request_now);
+        assert_eq!(
+            view.status,
+            jackin_protocol::control::UsageSnapshotStatus::Error
+        );
+        assert_eq!(view.account.provider_label, "OpenRouter");
+        let error = view.last_error.as_deref().expect("public error diagnostic");
+        assert!(
+            error.starts_with("OpenRouter key HTTP 429"),
+            "unexpected HTTP status diagnostic: {error}"
+        );
+        let retry_at_epoch = rate_limit
+            .expect("429 response retains a public rate-limit observation")
+            .retry_at_epoch
+            .expect("Retry-After produces a public deadline");
+        assert!(
+            retry_at_epoch >= request_now.saturating_add(100),
+            "retry deadline {retry_at_epoch} is not anchored after request time {request_now}"
+        );
+        let exact_rate_limit = jackin_usage_provider_core::ProviderError::from(
+            jackin_usage_provider_core::ProviderHttpError::HttpStatus {
+                status: 429,
+                message: "OpenRouter key HTTP 429".to_owned(),
+                retry_after_seconds: Some(37),
+                response_received_at_epoch: Some(1_000),
+            },
+        )
+        .rate_limit()
+        .expect("429 conversion retains a public rate-limit observation");
+        assert_eq!(exact_rate_limit.retry_at_epoch, Some(1_037));
+        println!("{completion_marker}");
+        return;
+    }
+
+    let server = ChildSnapshotServer::start(ChildSnapshotResponse::Http {
+        status: 429,
+        reason: "Too Many Requests",
+        header: Some(("Retry-After", "37")),
+        body: "{}",
+    });
+    let completion_marker = format!(
+        "OPENROUTER_CHILD_COMPLETE:http-429-retry-after-conversion:{}",
+        std::process::id()
+    );
+    let output = run_snapshot_child(
+        &server,
+        TEST_NAME,
+        "http-429-retry-after-conversion",
+        &completion_marker,
+    );
+    assert_snapshot_child_completed(&output, server.request_seen(), &completion_marker);
+}
