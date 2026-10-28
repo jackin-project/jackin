@@ -155,7 +155,7 @@ members = [
     "crates/ui/jackin-launch",
     "crates/ui/jackin-tui",
 ]
-exclude = ["crates/tools/jackin-lints"]
+exclude = ["crates/tools/jackin-lints", "vendor/branches-0.4.6"]
 resolver = "3"
 
 [workspace.package]
@@ -531,3 +531,6 @@ lto = "thin"
 codegen-units = 1
 strip = false
 debug = "line-tables-only"
+
+[patch.crates-io]
+branches = { path = "vendor/branches-0.4.6" }

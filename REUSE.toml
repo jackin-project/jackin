@@ -12,6 +12,12 @@ SPDX-FileCopyrightText = "2026 Alexey Zhokhov"
 SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
+path = "vendor/branches-0.4.6/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2023 Khashayar Fereidani"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
 path = [
   "crates/adapters/jackin-image/src/release_evidence/fixtures/cosign-*",
   "crates/adapters/jackin-image/src/release_evidence/fixtures/sigstore-python-*",
