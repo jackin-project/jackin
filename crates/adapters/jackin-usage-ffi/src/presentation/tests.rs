@@ -131,6 +131,52 @@ fn public_metric_window_detail_preserves_full_count_observations() {
         .expect("local usage service stops and joins");
 }
 
+#[test]
+fn desktop_projection_preserves_provider_order_and_caps_status_by_reset() {
+    let mut fixture = LocalUsageFixture::start_with_projection(
+        provider_ordering_projection(),
+        vec![
+            "codex".to_owned(),
+            "claude".to_owned(),
+            "grok".to_owned(),
+            "zai".to_owned(),
+        ],
+    );
+    let projection = fixture
+        .bridge
+        .desktop_projection(3)
+        .expect("public desktop projection");
+
+    assert_eq!(
+        projection
+            .providers
+            .iter()
+            .map(|provider| provider.group.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["codex", "claude", "grok", "zai"]
+    );
+    assert_eq!(
+        projection
+            .glance_rows
+            .iter()
+            .map(|row| row.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["codex", "claude", "grok", "zai"]
+    );
+    assert_eq!(
+        projection
+            .status_bar_glance_rows
+            .iter()
+            .map(|row| row.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["grok", "zai", "claude"]
+    );
+
+    fixture
+        .stop_and_join()
+        .expect("local usage service stops and joins");
+}
+
 fn metric_window_groups() -> Vec<UsageMetricGroupV1> {
     let mut count_group = metric_window_group(
         "metric-count-model",
@@ -869,8 +915,18 @@ impl LocalUsageFixture {
         windows: Vec<UsageLimitWindowV1>,
         metric_groups: Vec<UsageMetricGroupV1>,
     ) -> Self {
+        Self::start_with_projection(
+            fixture_projection(windows, metric_groups),
+            vec!["openrouter".to_owned()],
+        )
+    }
+
+    fn start_with_projection(
+        projection: UsageProjectionV1,
+        enabled_surface_ids: Vec<String>,
+    ) -> Self {
         let directory = FixtureDirectory::create();
-        seed_projection(directory.path(), windows, metric_groups);
+        seed_projection(directory.path(), projection);
         let resolved_data_dir = fs::canonicalize(directory.path()).expect("canonical fixture root");
         let socket_path = resolved_data_dir.join("usage-broker/run/usage-broker.sock");
         assert!(socket_path.as_os_str().as_encoded_bytes().len() < 104);
@@ -902,7 +958,7 @@ impl LocalUsageFixture {
                 data_dir_override: Some(root.clone()),
                 config_root_override: Some(root),
                 refresh_floor_secs: 60,
-                enabled_surface_ids: vec!["openrouter".to_owned()],
+                enabled_surface_ids,
                 allow_live_probes: false,
             })
             .expect("open public bridge without live probes");
@@ -971,11 +1027,58 @@ impl Drop for LocalUsageFixture {
     }
 }
 
-fn seed_projection(
-    data_dir: &Path,
+fn provider_ordering_projection() -> UsageProjectionV1 {
+    let mut projection = fixture_projection(Vec::new(), Vec::new());
+    let source = projection.providers[0].clone();
+    let provider_specs = [
+        ("openai", "OpenAI", 0_u32, Some(1_800_070_000), 10_u8),
+        ("anthropic", "Anthropic", 1, Some(1_800_050_000), 80),
+        ("xai", "xAI", 2, Some(1_800_050_000), 32),
+        ("zai", "Z.AI", 3, Some(1_800_050_000), 32),
+    ];
+    projection.providers = provider_specs
+        .into_iter()
+        .map(
+            |(provider_id, display_name, rank, reset_at_epoch, remaining)| {
+                let mut provider = source.clone();
+                provider.provider_id = provider_id.to_owned();
+                provider.display_name = display_name.to_owned();
+                provider.rank = rank;
+                let account = provider
+                    .accounts
+                    .first_mut()
+                    .expect("ordering fixture account");
+                account.canonical_account_id = format!("{provider_id}-account");
+                account.display_label = format!("{provider_id}-fixture");
+                let mut window = fixture_window(
+                    0,
+                    &format!("{provider_id}-window"),
+                    "Usage",
+                    &format!("{remaining}% left"),
+                    None,
+                );
+                window.reset_at_epoch = reset_at_epoch;
+                window.remaining_percent = Some(
+                    RawPercentPoints::new(f64::from(remaining))
+                        .expect("valid remaining percentage"),
+                );
+                window.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+                window.meter_percent = Some(
+                    MeterPercentPoints::new(f64::from(remaining)).expect("valid meter percentage"),
+                );
+                window.meter_side = Some(UsageMeterSide::Remaining);
+                account.windows = vec![window];
+                provider
+            },
+        )
+        .collect();
+    projection
+}
+
+fn fixture_projection(
     windows: Vec<UsageLimitWindowV1>,
     metric_groups: Vec<UsageMetricGroupV1>,
-) {
+) -> UsageProjectionV1 {
     let freshness = UsageFreshnessV1 {
         generation: 1,
         phase: UsageFreshnessPhaseV1::Stale,
@@ -984,7 +1087,7 @@ fn seed_projection(
         is_stale: true,
     };
     let account_id = "count_fixture".to_owned();
-    let projection = UsageProjectionV1 {
+    UsageProjectionV1 {
         schema_version: UsageProjectionSchemaV2,
         projection_id: "count-fixture-projection".to_owned(),
         generated_at_epoch: 1_780_000_000,
@@ -1017,7 +1120,10 @@ fn seed_projection(
         }],
         unresolved: Vec::new(),
         issues: Vec::new(),
-    };
+    }
+}
+
+fn seed_projection(data_dir: &Path, projection: UsageProjectionV1) {
     let envelope = ProjectionStateEnvelope {
         schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
         projection,
