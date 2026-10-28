@@ -21,7 +21,7 @@ Host client for capsule
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
 | [`session_control.rs`](src/session_control.rs) | send + events | — |
-| [`session_control/`](src/session_control/) | test suites | — |
+| [`session_control/`](src/session_control.rs) | test suites | — |
 
 ## Public API
 

@@ -31,7 +31,7 @@ the operator span.
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
 | [`universe.rs`](src/universe.rs) | boundaries | — |
-| [`universe/`](src/universe/) | test suites | — |
+| [`universe/`](src/universe.rs) | test suites | — |
 
 ## Public API
 

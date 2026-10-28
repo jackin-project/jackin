@@ -16,12 +16,13 @@ const WORKFLOW_PATH: &str = ".github/workflows/ci.yml";
 fn required_needs_include_every_job_except_the_exact_exclusions() -> Result<()> {
     let snapshot = workflow_fixture()?;
     let workflow = read_workflow(snapshot.path())?;
+    let rust_job = required_rust_job_id(&workflow)?;
 
     for missing_job in [
         "plan",
         "jactionlint",
         "check-repository-policy",
-        "rust-jackin-image",
+        rust_job.as_str(),
     ] {
         let changed = replace_in_job(
             &workflow,
@@ -71,6 +72,7 @@ fn required_needs_include_every_job_except_the_exact_exclusions() -> Result<()> 
 fn only_dependency_seed_may_tolerate_job_failure() -> Result<()> {
     let snapshot = workflow_fixture()?;
     let workflow = read_workflow(snapshot.path())?;
+    let rust_job = required_rust_job_id(&workflow)?;
     assert_seed_has_step_level_tolerance(&workflow)?;
 
     let with_explicit_false = insert_job_property(&workflow, "required", "false")?;
@@ -123,7 +125,7 @@ fn only_dependency_seed_may_tolerate_job_failure() -> Result<()> {
         &["must define the dependency-seed job"],
     );
 
-    for job_id in ["rust-jackin-image", "plan", "required"] {
+    for job_id in [rust_job.as_str(), "plan", "required"] {
         let changed = insert_job_property(&workflow, job_id, "true")?;
         write_workflow(snapshot.path(), &changed)?;
         assert_rejected(
@@ -218,6 +220,27 @@ fn assert_seed_has_step_level_tolerance(workflow: &str) -> Result<()> {
         "the published dependency-seed job should retain a step-level true tolerance"
     );
     Ok(())
+}
+
+fn required_rust_job_id(workflow: &str) -> Result<String> {
+    let document = jackin_xtask::workflow_yaml::parse(workflow.as_bytes())
+        .context("the published workflow should parse")?;
+    let jobs = document
+        .get("jobs")
+        .and_then(serde_json::Value::as_object)
+        .context("the published workflow should define jobs")?;
+    let required_needs = jobs
+        .get("required")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|required| required.get("needs"))
+        .and_then(serde_json::Value::as_array)
+        .context("the required job should define dependencies")?;
+    required_needs
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .find(|job_id| job_id.starts_with("rust-") && jobs.contains_key(*job_id))
+        .map(str::to_owned)
+        .context("the required job should depend on an existing rust-* job")
 }
 
 fn read_workflow(snapshot: &Path) -> Result<String> {

@@ -24,4 +24,3 @@ path = "junit.xml"
 [test-groups]
 docker-e2e = { max-threads = 1 }
 load-agent = { max-threads = 2 }
-

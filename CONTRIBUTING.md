@@ -26,19 +26,42 @@ root; the version is pinned in `mise.toml`/`mise.lock`). Install per checkout �
 idempotent, safe to re-run:
 
 ```sh
-scripts/hooks-install   # installs scripts/pre-commit-snapshot and the hk pre-push hook
+scripts/hooks-install   # guarded build-and-install of the native hook owner and hk pre-push hook
 ```
 
 No shell activation needed. Requirements: Git 2.56+ (config-based hooks with
-named-hook disabling) and `mise` on Git's runtime PATH —
-true in terminals with mise shims, otherwise the hook fails closed with
-`mise: command not found` (use a terminal or add the shims directory to
-the GUI client's PATH). Each hook invocation builds in its own temporary Cargo target directory.
-Compiler artifacts cannot collide with builds in the live checkout.
-Python 3 (pinned in mise) provides process group isolation and symlink checks.
-The installer disables the named `hk-pre-commit` hook locally so an inherited
-global hook cannot bypass the repository-owned snapshot boundary. Global
-configuration and unrelated hooks remain unchanged.
+named-hook disabling), `mise` on Git's runtime PATH, and the executable
+`rust-build-guard` in that PATH or `$HOME/.local/bin`. The installer runs the
+guarded locked Cargo command once, then publishes the resulting native owner at
+a stable path inside this worktree's Git directory. Re-running installation
+atomically replaces changed owner bytes and leaves identical bytes in place.
+Each hook invocation qualifies the staged toolchain and builds in its own
+private snapshot and temporary Cargo target directory. The native owner
+handles process cleanup, staged-input validation, and symlink checks. Compiler
+artifacts cannot collide with builds in the live checkout.
+
+The hook uses the developer’s shared Cargo cache and credentials and admitted
+Rustup and Mise storage roots. Gate tools are qualified against the staged
+configuration, and auxiliary commands use the controlled gate PATH. Ambient
+Cargo configuration and global or system Mise configuration are not accepted
+as arbitrary gate inputs. The hook validates observed inputs for cooperative
+local use; it does not isolate checks from another process running as the same
+user or authenticate how an already-built executable was compiled. Do not
+modify the snapshot, Git metadata, Cargo configuration, or installed Mise/Rustup
+tools while a hook runs. Same-user concurrent replacement can invalidate
+admission checks. `HK=0` remains an explicit operator bypass.
+
+Git's [`extensions.worktreeConfig`](https://git-scm.com/docs/git-config#Documentation/git-config.txt-extensionsworktreeConfig)
+must already be enabled for the repository;
+the installer refuses to run otherwise and does not migrate existing config.
+This keeps hook registration scoped to the current checkout while leaving
+common config available to other worktrees. Review existing Git configuration
+and repository/worktree layout before enabling this extension manually; Git's
+documentation notes that existing `core.worktree` and `core.bare` settings may
+need to move into the main worktree config. The installer does not migrate them.
+The installer disables the named `hk-pre-commit` hook in this checkout's
+worktree config so an inherited global hook cannot bypass the repository-owned
+snapshot boundary. Global configuration and unrelated hooks remain unchanged.
 
 The hook selects steps from the staged diff (see `hk.pkl` for exact commands).
 It follows the owner hk standard: the pre-commit hook only checks (`fix = false`),
@@ -46,7 +69,7 @@ and the same step list backs `hk check` and `hk fix`:
 
 - `mise` (hk builtin): `mise fmt --check` on `mise.toml`
 - `gitleaks` (hk builtin) and `kingfisher-staged`: secret scans of the staged change
-- `cargo_fmt`, `cargo_check`, `cargo_clippy`, `cargo_deny` (hk builtins) for affected Cargo manifests
+- `cargo_fmt`, `cargo_check`, `cargo_clippy`, `cargo_deny` (hk builtins) for affected Cargo manifests; format, check and Clippy use hk's workspace directory and the guarded Mise execution prefix
 - `rust-toolchain-mirror`: `rust-toolchain.toml` must mirror the `mise.toml` rust entry
   (channel, profile, components, targets)
 - `rumdl` (hk builtin): Markdown
@@ -59,12 +82,16 @@ hook never fires from Git; run it with `mise x -- hk run security-audit`.
 Checks run in the private snapshot. Strict whole-workspace Clippy and
 `xtask ci --only lint` remain required merge-readiness gates.
 
-Review mode, not auto-stage: the launcher validates the exact staged tree in
-an isolated temporary repository. Original tracked, untracked, ignored files,
+Review mode, not auto-stage: under these operating conditions, the launcher
+validates the staged tree in a private temporary repository. Original tracked, untracked, ignored files,
 file metadata, the index, stash stack, and compiler outputs stay untouched.
 The isolated repository preserves the original HEAD and merge index, so hk
 and affected-package selection see the original staged diff. Unmerged index
 entries or staged symlinks escaping the snapshot fail before tools run.
+Before checkout, the launcher limits staged blob content to 1 GiB, counting each
+path separately. Temporary parents must preserve rename custody; root- or
+effective-user-owned sticky temporary directories are supported. Colon-containing scratch
+paths retain their location, with private PATH aliases under `/tmp` when needed.
 
 If a step still changes source, the commit fails. The launcher saves a private
 patch under the common Git directory's `jackin-hook-evidence/pre-commit.*/`
@@ -80,19 +107,22 @@ git add -p && git commit -m "..."
 
 `hk check` runs checks on modified files outside a commit. Partial commits
 remain safe: the hook never clears, restores, or cleans the live worktree.
-Success, failure, and catchable signals remove only the invocation's temporary
-repository and build outputs after terminating its tool process group. Review
-patches remain until the author removes them. Bypass with `HK=0 git commit`
-(emergencies only).
+A successfully completed gate removes the invocation's temporary repository
+and build outputs after terminating its tool process group. Failed gates and
+execution errors retain the private snapshot and diagnostics and print the
+evidence path. The launcher still terminates its tool process group before
+returning. Review patches remain until the author removes them. Bypass with
+`HK=0 git commit` (emergencies only).
 
 One intentional divergence from CI: `hk check --all` scopes steps by `git status`
 (skips green on a clean tree). The global install
 (`hk install --global --mise`) is GUI-robust but forces `--staged`,
-which disables stashing — hence the repo-owned bootstrap above.
-`scripts/hooks-install` sets `hook.hk-pre-commit.enabled=false` locally while
-keeping the repository-owned snapshot hook enabled. A global hk installation
-can remain active for other projects; reinstalling it does not remove this
-local ownership setting. Event-wide pre-commit disabling fails installation.
+which disables stashing — hence the repo-owned hook registration above.
+`scripts/hooks-install` sets `hook.hk-pre-commit.enabled=false` in this
+checkout's worktree config while keeping the repository-owned snapshot hook
+enabled. A global hk installation can remain active for other projects;
+reinstalling it does not remove this checkout's ownership setting. Event-wide
+pre-commit disabling fails installation.
 
 Linux developers: same setup (`mise install`, `scripts/hooks-install`;
 hook commands are POSIX `sh` and the Swift steps skip themselves where

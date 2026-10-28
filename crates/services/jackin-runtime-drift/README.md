@@ -23,7 +23,7 @@ preserved state.
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
 | [`drift.rs`](src/drift.rs) | classifier | — |
-| [`drift/`](src/drift/) | test suites | — |
+| [`drift/`](src/drift.rs) | test suites | — |
 
 ## Public API
 

@@ -20,7 +20,7 @@ and cache.
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
 | [`repo_cache.rs`](src/repo_cache.rs) | resolve + cache | — |
-| [`repo_cache/`](src/repo_cache/) | test suites | — |
+| [`repo_cache/`](src/repo_cache.rs) | test suites | — |
 
 ## Public API
 

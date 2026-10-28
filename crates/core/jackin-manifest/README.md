@@ -17,11 +17,11 @@ Role manifest (`jackin.role.toml`) loading, validation, and migration. Owns the 
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
-| [`manifest.rs`](src/manifest.rs) · [`manifest/`](src/manifest) | manifest types + loading | — |
-| [`repo.rs`](src/repo.rs) · [`repo/`](src/repo) | role-repo contract + access | — |
-| [`repo_contract.rs`](src/repo_contract.rs) · [`repo_contract/`](src/repo_contract) | repo contract | — |
-| [`validate.rs`](src/validate.rs) · [`validate/`](src/validate) | schema validation | — |
-| [`migrations.rs`](src/migrations.rs) · [`migrations/`](src/migrations) | versioned migrations | — |
+| [`manifest.rs`](src/manifest.rs) · [`manifest/`](src/manifest.rs) | manifest types + loading | — |
+| [`repo.rs`](src/repo.rs) · [`repo/`](src/repo.rs) | role-repo contract + access | — |
+| [`repo_contract.rs`](src/repo_contract.rs) · [`repo_contract/`](src/repo_contract.rs) | repo contract | — |
+| [`validate.rs`](src/validate.rs) · [`validate/`](src/validate.rs) | schema validation | — |
+| [`migrations.rs`](src/migrations.rs) · [`migrations/`](src/migrations.rs) | versioned migrations | — |
 
 ## Public API
 

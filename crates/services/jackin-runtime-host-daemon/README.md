@@ -24,7 +24,7 @@ Unix-only.
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports (unix) | — |
 | [`host_daemon.rs`](src/host_daemon.rs) | server + API root | — |
-| [`host_daemon/`](src/host_daemon/) | test suites | — |
+| [`host_daemon/`](src/host_daemon.rs) | test suites | — |
 
 ## Public API
 

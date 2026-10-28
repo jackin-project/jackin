@@ -1,85 +1,16 @@
 #!/bin/sh
 set -eu
 
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
+unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_SHALLOW_FILE GIT_PREFIX
+unset GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
-
-# Named-hook disabling must work independently of the actual event policy.
-for enabled in true false; do
-    if ! probe=$(git -c hook.jackin-capability-probe.event=jackin-capability-event \
-        -c hook.jackin-capability-probe.command=: \
-        -c hook.jackin-capability-probe.enabled="$enabled" \
-        -c hook.jackin-capability-event.enabled=true \
-        hook list --allow-unknown-hook-name jackin-capability-event); then
-        printf '%s\n' 'error: Git with config-based named-hook disabling is required' >&2
-        exit 1
-    fi
-    expected=jackin-capability-probe
-    if [ "$enabled" = false ]; then
-        expected=$(printf 'disabled\tjackin-capability-probe')
-    fi
-    if [ "$probe" != "$expected" ]; then
-        printf '%s\n' 'error: Git does not enforce config-based named-hook disabling' >&2
-        exit 1
-    fi
-done
-
-# Preserve global hooks for other repositories while owning this boundary.
-git config --local --replace-all hook.hk-pre-commit.enabled false
-
-for key in hook.hk-pre-commit.command hook.hk-pre-commit.event; do
-    if git config --local --unset-all "$key" >/dev/null 2>&1; then
-        :
-    else
-        status=$?
-        if [ "$status" -ne 5 ]; then
-            exit "$status"
-        fi
-    fi
-done
-
-git config --local --replace-all hook.jackin-pre-commit.command 'sh scripts/pre-commit-snapshot'
-git config --local --replace-all hook.jackin-pre-commit.event pre-commit
-git config --local --replace-all hook.jackin-pre-commit.enabled true
-
-git config --local --replace-all hook.hk-pre-push.enabled false
-
-for key in hook.hk-pre-push.command hook.hk-pre-push.event; do
-    if git config --local --unset-all "$key" >/dev/null 2>&1; then
-        :
-    else
-        status=$?
-        if [ "$status" -ne 5 ]; then
-            exit "$status"
-        fi
-    fi
-done
-
-git config --local --replace-all hook.jackin-pre-push.command 'sh scripts/pre-push-security'
-git config --local --replace-all hook.jackin-pre-push.event pre-push
-git config --local --replace-all hook.jackin-pre-push.enabled true
-
-if [ "$(git config --local --get hook.jackin-pre-push.command)" != 'sh scripts/pre-push-security' ] ||
-    [ "$(git config --local --get hook.jackin-pre-push.event)" != pre-push ] ||
-    [ "$(git config --local --get hook.jackin-pre-push.enabled)" != true ] ||
-    [ "$(git config --local --get hook.hk-pre-push.enabled)" != false ]; then
-    printf '%s\n' 'error: pre-push must enable the pinned Jackin launcher and disable direct hk' >&2
-    exit 1
+guard=$(command -v rust-build-guard 2>/dev/null || true)
+if [ -z "$guard" ] && [ -n "${HOME:-}" ] && [ -x "$HOME/.local/bin/rust-build-guard" ]; then
+    guard=$HOME/.local/bin/rust-build-guard
 fi
+[ -n "$guard" ] || { printf '%s\n' 'error: rust-build-guard is required' >&2; exit 1; }
 
-effective=$(git hook list pre-commit)
-if ! printf '%s\n' "$effective" | grep -Fx 'jackin-pre-commit' >/dev/null ||
-    printf '%s\n' "$effective" | grep -Fx 'hk-pre-commit' >/dev/null; then
-    printf '%s\n' 'error: pre-commit must enable Jackin snapshot ownership and disable direct hk' >&2
-    exit 1
-fi
-
-# Owner hk standard: use the locked launcher for the repository pre-push scan.
-effective=$(git hook list pre-push)
-if ! printf '%s\n' "$effective" | grep -Fx 'jackin-pre-push' >/dev/null ||
-    printf '%s\n' "$effective" | grep -Fx 'hk-pre-push' >/dev/null; then
-    printf '%s\n' 'error: pre-push must enable the pinned Jackin launcher and disable direct hk' >&2
-    exit 1
-fi
-
-printf '%s\n' "installed Jackin staged-snapshot pre-commit and pinned pre-push hooks"
+exec "$guard" -- mise exec -- cargo run --locked \
+    -p jackin-xtask --bin jackin-precommit-owner -- install-hooks

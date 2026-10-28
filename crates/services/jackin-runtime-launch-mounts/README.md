@@ -28,7 +28,7 @@ backend.
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
 | [`mounts.rs`](src/mounts.rs) | assembly | — |
-| [`mounts/`](src/mounts/) | test suites | — |
+| [`mounts/`](src/mounts.rs) | test suites | — |
 
 ## Public API
 

@@ -16,13 +16,13 @@ Agent runtime status authority. Owns all state-machine logic for determining wha
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
-| [`evidence.rs`](src/evidence.rs) · [`evidence/`](src/evidence) | status evidence types + collection | — |
-| [`process.rs`](src/process.rs) · [`process/`](src/process) | process sampling signals | — |
+| [`evidence.rs`](src/evidence.rs) · [`evidence/`](src/evidence.rs) | status evidence types + collection | — |
+| [`process.rs`](src/process.rs) · [`process/`](src/process.rs) | process sampling signals | — |
 | [`screen/`](src/screen) | screen-state signals | — |
-| [`rules.rs`](src/rules.rs) · [`rules/`](src/rules) | decision rules | — |
-| [`policy.rs`](src/policy.rs) · [`policy/`](src/policy) | status policy | — |
-| [`gating.rs`](src/gating.rs) · [`gating/`](src/gating) | anti-flicker gating + debounce | — |
-| [`arbitrate.rs`](src/arbitrate.rs) · [`arbitrate/`](src/arbitrate) | final status arbitration | — |
+| [`rules.rs`](src/rules.rs) · [`rules/`](src/rules.rs) | decision rules | — |
+| [`policy.rs`](src/policy.rs) · [`policy/`](src/policy.rs) | status policy | — |
+| [`gating.rs`](src/gating.rs) · [`gating/`](src/gating.rs) | anti-flicker gating + debounce | — |
+| [`arbitrate.rs`](src/arbitrate.rs) · [`arbitrate/`](src/arbitrate.rs) | final status arbitration | — |
 | `tests.rs` | integration tests | — |
 
 ## Public API

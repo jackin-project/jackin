@@ -10,7 +10,7 @@ use anyhow::{Context, Result, anyhow, ensure};
 
 pub(crate) fn run(cmd: &mut Command) -> Result<()> {
     let display = display_command(cmd);
-    let request = exec_request(cmd);
+    let request = exec_request(cmd)?;
     let result =
         jackin_process::exec_sync(&request).with_context(|| format!("running {display}"))?;
     if result.success {
@@ -27,7 +27,7 @@ pub(crate) fn run(cmd: &mut Command) -> Result<()> {
 
 pub(crate) fn run_streaming(cmd: &mut Command) -> Result<()> {
     let display = display_command(cmd);
-    let mut request = exec_request(cmd);
+    let mut request = exec_request(cmd)?;
     request.stdout_mode = jackin_process::StdioMode::Inherit;
     request.stderr_mode = jackin_process::StdioMode::Inherit;
     let result =
@@ -41,7 +41,7 @@ pub(crate) fn run_streaming(cmd: &mut Command) -> Result<()> {
 
 pub(crate) fn run_streaming_timeout(cmd: &mut Command, timeout: Duration) -> Result<()> {
     let display = display_command(cmd);
-    let mut request = exec_request(cmd);
+    let mut request = exec_request(cmd)?;
     request.stdout_mode = jackin_process::StdioMode::Inherit;
     request.stderr_mode = jackin_process::StdioMode::Inherit;
     request = request.timeout(timeout);
@@ -109,7 +109,7 @@ pub(crate) fn output_timeout_bounded(
     let stderr_limit = max_stderr_bytes
         .checked_add(1)
         .context("stderr capture bound is too large")?;
-    let mut request = exec_request(cmd);
+    let mut request = exec_request(cmd)?;
     request = request
         .timeout(timeout)
         .output_limits(stdout_limit, stderr_limit);
@@ -142,7 +142,7 @@ fn output_request(
     output_limits: Option<(usize, usize)>,
 ) -> Result<Vec<u8>> {
     let display = display_command(cmd);
-    let mut request = exec_request(cmd);
+    let mut request = exec_request(cmd)?;
     if let Some(timeout) = timeout {
         request = request.timeout(timeout);
     }
@@ -167,13 +167,33 @@ fn output_request(
     }
 }
 
-fn exec_request(cmd: &Command) -> jackin_process::ExecRequest {
+fn exec_request(cmd: &Command) -> Result<jackin_process::ExecRequest> {
     let program = cmd.get_program();
     if program.is_empty() {
-        return jackin_process::ExecRequest::new(program, None::<&str>);
+        return Ok(jackin_process::ExecRequest::new(program, None::<&str>));
     }
     let args: Vec<_> = cmd.get_args().collect();
-    let mut request = jackin_process::ExecRequest::new(program, args);
+    let mut request = if matches!(program.to_str(), Some("cargo" | "mbx")) {
+        if let Some(guard) = std::env::var_os("JACKIN_TOOLCHAIN_GUARD") {
+            ensure!(
+                Path::new(&guard).is_absolute(),
+                "JACKIN_TOOLCHAIN_GUARD must be an absolute executable path"
+            );
+            let mut guarded_args = vec![
+                OsStr::new("--"),
+                OsStr::new("mise"),
+                OsStr::new("exec"),
+                OsStr::new("--"),
+                program,
+            ];
+            guarded_args.extend(args);
+            jackin_process::ExecRequest::new(&guard, guarded_args)
+        } else {
+            jackin_process::ExecRequest::new(program, args)
+        }
+    } else {
+        jackin_process::ExecRequest::new(program, args)
+    };
     if let Some(cwd) = cmd.get_current_dir() {
         request = request.cwd(cwd);
     }
@@ -184,7 +204,7 @@ fn exec_request(cmd: &Command) -> jackin_process::ExecRequest {
             request.env_remove.push(key.to_os_string());
         }
     }
-    request
+    Ok(request)
 }
 
 pub(crate) fn output_string(cmd: &mut Command) -> Result<String> {
@@ -197,7 +217,7 @@ pub(crate) fn command(program: impl AsRef<OsStr>) -> Command {
 
 pub(crate) fn output_raw(cmd: &mut Command) -> Result<jackin_process::ExecResult> {
     let display = display_command(cmd);
-    jackin_process::exec_sync(&exec_request(cmd)).with_context(|| format!("running {display}"))
+    jackin_process::exec_sync(&exec_request(cmd)?).with_context(|| format!("running {display}"))
 }
 
 pub(crate) fn display_command(cmd: &Command) -> String {

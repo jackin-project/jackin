@@ -17,15 +17,15 @@ Image generation and binary-artifact management for jackin❯. Builds the derive
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
-| [`derived_image.rs`](src/derived_image.rs) · [`derived_image/`](src/derived_image) | derived-image Dockerfile generation | — |
-| [`image_recipe.rs`](src/image_recipe.rs) · [`image_recipe/`](src/image_recipe) | Dockerfile recipe | — |
-| [`image_build.rs`](src/image_build.rs) · [`image_build/`](src/image_build) | build pipeline | — |
-| [`agent_binary.rs`](src/agent_binary.rs) · [`agent_binary/`](src/agent_binary) | agent binary acquisition + cache | — |
+| [`derived_image.rs`](src/derived_image.rs) · [`derived_image/`](src/derived_image.rs) | derived-image Dockerfile generation | — |
+| [`image_recipe.rs`](src/image_recipe.rs) · [`image_recipe/`](src/image_recipe.rs) | Dockerfile recipe | — |
+| [`image_build.rs`](src/image_build.rs) · [`image_build/`](src/image_build.rs) | build pipeline | — |
+| [`agent_binary.rs`](src/agent_binary.rs) · [`agent_binary/`](src/agent_binary.rs) | agent binary acquisition + cache | — |
 | [`capsule_binary.rs`](src/capsule_binary.rs) · [`capsule_binary/`](src/capsule_binary) | capsule binary acquisition + cache | — |
-| [`binary_artifact.rs`](src/binary_artifact.rs) · [`binary_artifact/`](src/binary_artifact) | shared artifact helpers | — |
-| [`image_decision.rs`](src/image_decision.rs) · [`image_decision/`](src/image_decision) | build-vs-reuse decision | — |
-| [`version_check.rs`](src/version_check.rs) · [`version_check/`](src/version_check) | version check | — |
-| [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry) | bounded image subprocess telemetry ownership | — |
+| [`binary_artifact.rs`](src/binary_artifact.rs) · [`binary_artifact/`](src/binary_artifact.rs) | shared artifact helpers | — |
+| [`image_decision.rs`](src/image_decision.rs) · [`image_decision/`](src/image_decision.rs) | build-vs-reuse decision | — |
+| [`version_check.rs`](src/version_check.rs) · [`version_check/`](src/version_check.rs) | version check | — |
+| [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry.rs) | bounded image subprocess telemetry ownership | — |
 | [`telemetry_boundary.rs`](src/telemetry_boundary.rs) | governed download/cache/retry boundaries | — |
 | [`naming.rs`](src/naming.rs) | image naming | — |
 

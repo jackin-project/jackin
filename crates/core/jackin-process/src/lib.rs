@@ -21,7 +21,7 @@ pub use child_ownership::{
 pub use spooled::{
     SpoolCaptureObservation, SpoolCleanupObservation, SpoolError, SpoolExecResult,
     SpoolExecutionObservation, SpoolFailure, SpoolFailureKind, SpoolPipeObservation, SpoolRecovery,
-    exec_spooled_sync_cancellable,
+    exec_spooled_sync_cancellable, exec_spooled_sync_cancellable_with_stdin_file,
 };
 
 pub const DEFAULT_CAPTURE_LIMIT: usize = 16 * 1024 * 1024;

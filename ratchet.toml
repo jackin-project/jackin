@@ -428,7 +428,7 @@ key = "clippy::undocumented_unsafe_blocks@jackin-capsule"
 bound = 10
 [[family.entry]]
 key = "clippy::undocumented_unsafe_blocks@jackin-process-directory"
-bound = 5
+bound = 6
 [[family.entry]]
 key = "clippy::undocumented_unsafe_blocks@jackin-usage-host-accounts"
 bound = 4
@@ -512,7 +512,7 @@ key = "unsafe_code@jackin-capsule"
 bound = 23
 [[family.entry]]
 key = "unsafe_code@jackin-process-directory"
-bound = 6
+bound = 8
 [[family.entry]]
 key = "unsafe_code@jackin-usage-host-accounts"
 bound = 5
@@ -539,10 +539,10 @@ key = "CLAUDE.md"
 bound = 4998
 [[family.entry]]
 key = "crates/adapters/jackin-docker/README.md"
-bound = 1739
+bound = 1751
 [[family.entry]]
 key = "crates/adapters/jackin-image/README.md"
-bound = 2667
+bound = 2691
 [[family.entry]]
 key = "crates/adapters/jackin-oppicker/README.md"
 bound = 1591
@@ -551,10 +551,10 @@ key = "crates/adapters/jackin-usage-ffi/README.md"
 bound = 3153
 [[family.entry]]
 key = "crates/apps/jackin-capsule/README.md"
-bound = 5614
+bound = 5644
 [[family.entry]]
 key = "crates/apps/jackin/README.md"
-bound = 2886
+bound = 2898
 [[family.entry]]
 key = "crates/core/jackin-brand/README.md"
 bound = 981
@@ -572,7 +572,7 @@ key = "crates/core/jackin-env/README.md"
 bound = 2593
 [[family.entry]]
 key = "crates/core/jackin-manifest/README.md"
-bound = 1649
+bound = 1664
 [[family.entry]]
 key = "crates/core/jackin-process-directory/README.md"
 bound = 1168
@@ -587,16 +587,16 @@ key = "crates/core/jackin-workflow-spec/README.md"
 bound = 3043
 [[family.entry]]
 key = "crates/services/jackin-agent-status/README.md"
-bound = 1944
+bound = 1962
 [[family.entry]]
 key = "crates/services/jackin-diagnostics/README.md"
 bound = 2010
 [[family.entry]]
 key = "crates/services/jackin-host/README.md"
-bound = 1866
+bound = 1878
 [[family.entry]]
 key = "crates/services/jackin-instance-agents/README.md"
-bound = 1963
+bound = 1966
 [[family.entry]]
 key = "crates/services/jackin-instance-credentials/README.md"
 bound = 1729
@@ -605,10 +605,10 @@ key = "crates/services/jackin-instance-roles/README.md"
 bound = 1226
 [[family.entry]]
 key = "crates/services/jackin-instance/README.md"
-bound = 2010
+bound = 2013
 [[family.entry]]
 key = "crates/services/jackin-isolation/README.md"
-bound = 2547
+bound = 2562
 [[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-activate-entry/README.md"
 bound = 784
@@ -710,7 +710,7 @@ key = "crates/services/jackin-runtime-docker-profile/README.md"
 bound = 917
 [[family.entry]]
 key = "crates/services/jackin-runtime-drift/README.md"
-bound = 746
+bound = 748
 [[family.entry]]
 key = "crates/services/jackin-runtime-exec-host/README.md"
 bound = 896
@@ -722,7 +722,7 @@ key = "crates/services/jackin-runtime-host-attach/README.md"
 bound = 883
 [[family.entry]]
 key = "crates/services/jackin-runtime-host-daemon/README.md"
-bound = 960
+bound = 962
 [[family.entry]]
 key = "crates/services/jackin-runtime-identity/README.md"
 bound = 710
@@ -779,7 +779,7 @@ key = "crates/services/jackin-runtime-launch-load-options/README.md"
 bound = 1217
 [[family.entry]]
 key = "crates/services/jackin-runtime-launch-mounts/README.md"
-bound = 899
+bound = 901
 [[family.entry]]
 key = "crates/services/jackin-runtime-launch-plan/README.md"
 bound = 847
@@ -809,7 +809,7 @@ key = "crates/services/jackin-runtime-launch-supported-agents/README.md"
 bound = 780
 [[family.entry]]
 key = "crates/services/jackin-runtime-launch-trust/README.md"
-bound = 769
+bound = 771
 [[family.entry]]
 key = "crates/services/jackin-runtime-naming/README.md"
 bound = 754
@@ -830,10 +830,10 @@ key = "crates/services/jackin-runtime-reactive-daemon/README.md"
 bound = 873
 [[family.entry]]
 key = "crates/services/jackin-runtime-repo-cache/README.md"
-bound = 815
+bound = 817
 [[family.entry]]
 key = "crates/services/jackin-runtime-session-control/README.md"
-bound = 1009
+bound = 1011
 [[family.entry]]
 key = "crates/services/jackin-runtime-shared-runner/README.md"
 bound = 588
@@ -848,13 +848,13 @@ key = "crates/services/jackin-runtime-universe-claims/README.md"
 bound = 872
 [[family.entry]]
 key = "crates/services/jackin-runtime-universe/README.md"
-bound = 1035
+bound = 1037
 [[family.entry]]
 key = "crates/services/jackin-runtime-usage-relay/README.md"
 bound = 2241
 [[family.entry]]
 key = "crates/services/jackin-runtime/README.md"
-bound = 3540
+bound = 3558
 [[family.entry]]
 key = "crates/services/jackin-telemetry/README.md"
 bound = 2083
@@ -920,7 +920,7 @@ key = "crates/services/jackin-usage-provider-codex/README.md"
 bound = 1651
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-core/README.md"
-bound = 2009
+bound = 1929
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-cursor/README.md"
 bound = 1652
@@ -974,7 +974,7 @@ key = "crates/tools/jackin-dev/README.md"
 bound = 1198
 [[family.entry]]
 key = "crates/tools/jackin-lints/README.md"
-bound = 1776
+bound = 1773
 [[family.entry]]
 key = "crates/tools/jackin-pr-trailers/README.md"
 bound = 1882
@@ -983,13 +983,13 @@ key = "crates/tools/jackin-xtask/README.md"
 bound = 5505
 [[family.entry]]
 key = "crates/ui/jackin-console/README.md"
-bound = 2565
+bound = 2577
 [[family.entry]]
 key = "crates/ui/jackin-launch/README.md"
-bound = 1848
+bound = 1854
 [[family.entry]]
 key = "crates/ui/jackin-tui/README.md"
-bound = 2722
+bound = 2728
 [[family]]
 id = "perf"
 kind = "numeric"
