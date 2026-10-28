@@ -3,9 +3,14 @@
 
 #![cfg(all(unix, any(target_os = "linux", target_os = "macos")))]
 
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::Path,
+    process::{Command, Stdio},
+};
 
 use anyhow::{Context, Result};
+use tempfile::TempDir;
 
 mod custom_lints_support;
 
@@ -166,5 +171,26 @@ fn build_failure_stops_before_nextest_and_receives_configured_environment() -> R
     assert!(text.contains("custom-lints command failed"));
     assert!(text.contains("mbx build --locked"));
     assert!(text.contains("simulated nightly build failure"));
+    Ok(())
+}
+
+#[test]
+fn empty_path_is_rejected_before_child_execution() -> Result<()> {
+    let temp = TempDir::new()?;
+    fs::create_dir_all(temp.path().join("docs/content"))?;
+    let output = Command::new(env!("CARGO_BIN_EXE_jackin-xtask"))
+        .arg("custom-lints")
+        .current_dir(temp.path())
+        .env_clear()
+        .env("PATH", "")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("spawn public custom-lints command")?
+        .wait_with_output()
+        .context("wait for public custom-lints command")?;
+    assert!(!output.status.success());
+    assert!(String::from_utf8(output.stderr)?.contains("PATH is empty"));
+    assert!(output.stdout.is_empty());
     Ok(())
 }
