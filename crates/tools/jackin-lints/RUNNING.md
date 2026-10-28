@@ -56,7 +56,9 @@ qualified on macOS ARM with the pinned compiler. The one-line vendored
 `branches` fix resolves the prior root-workspace blocker. In an isolated
 `--no-default-features --lib` check, the original package passes on stable Rust
 1.99.1 but fails on nightly-2026-10-18; the patched package passes on both.
-Stable `jackin-image` and `jackin-xtask` checks also pass. The full nightly
+Stable `jackin-image` and `jackin-xtask` checks also pass. A pinned
+`nightly-2026-10-18` check of `jackin-usage-store-backend` also passes with
+vendored `branches` and its `std` feature disabled. The full nightly
 workspace and Dylint qualification have not been rerun after the fix. Those
 earlier results do not qualify the complete workspace after this dependency
 correction.
