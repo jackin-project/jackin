@@ -250,6 +250,168 @@ fn projection_glance_preserves_percent_and_reset_preferences() {
         .expect("local usage service stops and joins");
 }
 
+#[test]
+fn cached_refresh_tracks_publication_across_service_restart() {
+    let initial_projection = format_preferences_projection();
+    let mut fixture = LocalUsageFixture::start_with_projection(
+        initial_projection.clone(),
+        vec!["codex".to_owned()],
+    );
+
+    assert!(fixture.bridge.refresh_due().expect("initial refresh due"));
+    fixture
+        .bridge
+        .set_refresh_floor_secs(120)
+        .expect("set refresh floor");
+    assert_eq!(
+        fixture.bridge.refresh_floor_secs().expect("refresh floor"),
+        120
+    );
+    assert!(fixture.bridge.refresh_due().expect("refresh remains due"));
+    assert_cached_fixture_snapshot(&fixture);
+
+    let initial_generation = fixture
+        .bridge
+        .desktop_projection(3)
+        .expect("initial desktop projection")
+        .generation;
+    let initial_events = fixture
+        .bridge
+        .next_events(0, 256)
+        .expect("initial public events");
+    assert!(!initial_events.resync_required);
+    assert!(
+        initial_events
+            .events
+            .iter()
+            .any(|event| event.kind == "runtime_opened")
+    );
+    let mut cursor = initial_events.next_cursor;
+
+    fixture
+        .bridge
+        .refresh(None, false)
+        .expect("nonforced cached refresh");
+    assert!(!fixture.bridge.refresh_due().expect("refresh no longer due"));
+    assert_eq!(
+        fixture.bridge.refresh_floor_secs().expect("refresh floor"),
+        120
+    );
+    assert_cached_fixture_snapshot(&fixture);
+    assert_eq!(
+        fixture
+            .bridge
+            .desktop_projection(3)
+            .expect("unchanged desktop projection")
+            .generation,
+        initial_generation
+    );
+    let unchanged_events = fixture
+        .bridge
+        .next_events(cursor, 256)
+        .expect("events after unchanged refresh");
+    assert!(!unchanged_events.resync_required);
+    assert!(
+        !unchanged_events
+            .events
+            .iter()
+            .any(|event| event.kind == "projection_published")
+    );
+    cursor = unchanged_events.next_cursor;
+
+    fixture
+        .bridge
+        .refresh(Some("codex".to_owned()), true)
+        .expect("passive forced refresh with live probes disabled");
+    assert!(!fixture.bridge.refresh_due().expect("refresh no longer due"));
+    assert_cached_fixture_snapshot(&fixture);
+    assert_eq!(
+        fixture
+            .bridge
+            .desktop_projection(3)
+            .expect("passive desktop projection")
+            .generation,
+        initial_generation
+    );
+    let passive_events = fixture
+        .bridge
+        .next_events(cursor, 256)
+        .expect("events after passive refresh");
+    assert!(!passive_events.resync_required);
+    assert!(
+        !passive_events
+            .events
+            .iter()
+            .any(|event| event.kind == "projection_published")
+    );
+    cursor = passive_events.next_cursor;
+
+    fixture
+        .stop_service_only()
+        .expect("stop local service without closing the bridge");
+    let mut published_projection = initial_projection;
+    published_projection.projection_id = "fixture-projection-2".to_owned();
+    published_projection.broker_generation = 2;
+    for provider in &mut published_projection.providers {
+        provider.freshness.generation = 2;
+        for account in &mut provider.accounts {
+            account.freshness.generation = 2;
+        }
+    }
+    seed_projection(fixture.directory.path(), published_projection);
+    fixture
+        .start_service()
+        .expect("restart local service on the same fixture paths");
+
+    fixture
+        .bridge
+        .refresh(None, false)
+        .expect("refresh changed public projection");
+    assert!(!fixture.bridge.refresh_due().expect("refresh no longer due"));
+    assert_eq!(
+        fixture.bridge.refresh_floor_secs().expect("refresh floor"),
+        120
+    );
+    assert_cached_fixture_snapshot(&fixture);
+    assert_eq!(
+        fixture
+            .bridge
+            .desktop_projection(3)
+            .expect("updated desktop projection")
+            .generation,
+        2
+    );
+    let published_events = fixture
+        .bridge
+        .next_events(cursor, 256)
+        .expect("events after changed projection");
+    assert!(!published_events.resync_required);
+    assert!(published_events.events.iter().any(|event| {
+        event.kind == "projection_published"
+            && event.detail.as_deref() == Some("fixture-projection-2")
+    }));
+
+    fixture
+        .stop_and_join()
+        .expect("local usage service stops and joins");
+}
+
+fn assert_cached_fixture_snapshot(fixture: &LocalUsageFixture) {
+    let snapshot = fixture
+        .bridge
+        .snapshot("codex".to_owned())
+        .expect("public cached snapshot");
+    assert_eq!(snapshot.account_label, "alice@example.test");
+    assert_eq!(snapshot.status, "fresh");
+    assert_eq!(
+        snapshot
+            .buckets
+            .first()
+            .and_then(|bucket| bucket.remaining_percent),
+        Some(64.0)
+    );
+}
+
 fn metric_window_groups() -> Vec<UsageMetricGroupV1> {
     let mut count_group = metric_window_group(
         "metric-count-model",
@@ -962,6 +1124,10 @@ impl FixtureDirectory {
         self.0 = None;
         Ok(())
     }
+
+    fn retain_path(&mut self) -> Option<PathBuf> {
+        self.0.take()
+    }
 }
 
 impl Drop for FixtureDirectory {
@@ -1004,21 +1170,17 @@ impl LocalUsageFixture {
         let socket_path = resolved_data_dir.join("usage-broker/run/usage-broker.sock");
         assert!(socket_path.as_os_str().as_encoded_bytes().len() < 104);
 
-        let mut config = UsageBrokerConfig::for_data_dir(directory.path().to_path_buf());
-        config.idle_exit = Duration::from_secs(30);
+        let config = UsageBrokerConfig::for_data_dir(directory.path().to_path_buf());
         let client = config.client();
-        let worker = jackin_telemetry::spawn::thread_joined_named(
-            "count-detail-fixture".to_owned(),
-            move || run_usage_monitor_service(config),
-        )
-        .expect("spawn joined local-only usage service");
-        let fixture = Self {
+        let mut fixture = Self {
             directory,
             client,
             bridge: crate::UsageMenuBarBridge::create(),
-            worker: Some(worker),
+            worker: None,
         };
-        fixture.wait_for_service();
+        fixture
+            .start_service()
+            .expect("start joined local-only usage service");
         let root = fixture
             .directory
             .path()
@@ -1038,29 +1200,48 @@ impl LocalUsageFixture {
         fixture
     }
 
-    fn wait_for_service(&self) {
+    fn start_service(&mut self) -> Result<(), String> {
+        if self.worker.is_some() {
+            return Err("local usage service worker is already running".to_owned());
+        }
+        let mut config = UsageBrokerConfig::for_data_dir(self.directory.path().to_path_buf());
+        config.idle_exit = Duration::from_secs(30);
+        self.worker = Some(
+            jackin_telemetry::spawn::thread_joined_named(
+                "count-detail-fixture".to_owned(),
+                move || run_usage_monitor_service(config),
+            )
+            .map_err(|error| format!("spawn joined local-only usage service: {error:?}"))?,
+        );
+        self.wait_for_service()
+    }
+
+    fn wait_for_service(&self) -> Result<(), String> {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             if matches!(
                 self.client.monitor(MonitorOperation::ServiceStatus),
                 Ok(MonitorReply::ServiceStatus { .. })
             ) {
-                return;
+                return Ok(());
             }
-            assert!(
-                Instant::now() < deadline,
-                "local usage service did not become ready"
-            );
-            std::thread::park_timeout(Duration::from_millis(10));
+            if self.worker.as_ref().is_some_and(JoinHandle::is_finished) {
+                return Err("local usage service exited before becoming ready".to_owned());
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err("local usage service did not become ready before timeout".to_owned());
+            }
+            std::thread::park_timeout(remaining.min(Duration::from_millis(10)));
         }
     }
 
-    fn stop_and_join(&mut self) -> Result<(), String> {
-        let bridge_shutdown = self
-            .bridge
-            .shutdown()
-            .map_err(|error| format!("close public bridge: {error:?}"));
-        let service_stop = self
+    fn stop_service_only(&mut self) -> Result<(), String> {
+        self.stop_service_and_drain()
+    }
+
+    fn stop_service_and_drain(&mut self) -> Result<(), String> {
+        let stopped = self
             .client
             .monitor(MonitorOperation::ServiceStop)
             .map_err(|error| format!("stop local usage service: {error:?}"))
@@ -1071,21 +1252,59 @@ impl LocalUsageFixture {
                     Err("local usage service returned a non-stop reply".to_owned())
                 }
             });
-        let joined = self.worker.take().map_or_else(
-            || Err("local usage service worker was already joined".to_owned()),
-            |worker| match worker.join() {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(error)) => Err(format!("local usage service failed: {}", error.message)),
-                Err(_) => Err("local usage service worker panicked".to_owned()),
-            },
-        );
+        let joined = self.join_worker_bounded();
+        match (stopped, joined) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(stop_error), Ok(())) => Err(stop_error),
+            (Ok(()), Err(join_error)) => Err(join_error),
+            (Err(stop_error), Err(join_error)) => Err(format!("{stop_error}; {join_error}")),
+        }
+    }
+
+    fn join_worker_bounded(&mut self) -> Result<(), String> {
+        if self.worker.is_none() {
+            return Err("local usage service worker was already joined".to_owned());
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if self.worker.as_ref().is_some_and(JoinHandle::is_finished) {
+                break;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                drop(self.worker.take());
+                let retained_path = self
+                    .directory
+                    .retain_path()
+                    .map_or_else(|| "unknown".to_owned(), |path| path.display().to_string());
+                return Err(format!(
+                    "local usage service did not stop within timeout; detached worker and retained fixture directory at {retained_path}"
+                ));
+            }
+            std::thread::park_timeout(remaining.min(Duration::from_millis(10)));
+        }
+        let Some(worker) = self.worker.take() else {
+            return Err("local usage service worker was already joined".to_owned());
+        };
+        match worker.join() {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(format!("local usage service failed: {}", error.message)),
+            Err(_) => Err("local usage service worker panicked".to_owned()),
+        }
+    }
+
+    fn stop_and_join(&mut self) -> Result<(), String> {
+        let bridge_shutdown = self
+            .bridge
+            .shutdown()
+            .map_err(|error| format!("close public bridge: {error:?}"));
+        let service_stop_and_join = self.stop_service_and_drain();
         let removed = self
             .directory
             .remove()
             .map_err(|error| format!("remove local usage fixture directory: {error}"));
         bridge_shutdown?;
-        service_stop?;
-        joined?;
+        service_stop_and_join?;
         removed
     }
 }
@@ -1093,9 +1312,10 @@ impl LocalUsageFixture {
 impl Drop for LocalUsageFixture {
     fn drop(&mut self) {
         drop(self.bridge.shutdown());
-        if let Some(worker) = self.worker.take() {
-            drop(self.client.monitor(MonitorOperation::ServiceStop));
-            drop(worker.join());
+        if self.worker.is_some()
+            && let Err(error) = self.stop_service_and_drain()
+        {
+            eprintln!("local usage fixture cleanup failed: {error}");
         }
     }
 }
