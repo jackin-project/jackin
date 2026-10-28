@@ -181,6 +181,24 @@ fn request_round_trip_preserves_generation_and_force_semantics() {
         serde_json::from_slice::<UsageBrokerRequest>(&bytes).unwrap(),
         request
     );
+    let wire = serde_json::json!({
+        "protocol_version": "v9",
+        "build_id": "test-build",
+        "operation": {
+            "operation": "refresh",
+            "capability": {
+                "account_id": "opaque-account",
+                "surface_id": "claude"
+            },
+            "observed_generation": 7,
+            "force": true
+        }
+    });
+    assert_eq!(serde_json::to_value(&request).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<UsageBrokerRequest>(wire).unwrap(),
+        request
+    );
 }
 
 #[test]
@@ -213,6 +231,14 @@ fn usage_relay_ready_frames_keep_canonical_and_reject_invalid_forms() {
 
     let oversized = [b'x'; USAGE_RELAY_READY_MAX_FRAME_BYTES + 1];
     let _error = UsageRelayReadyV1::decode_frame(&oversized).unwrap_err();
+
+    let mut padded = vec![b' '; USAGE_RELAY_READY_MAX_FRAME_BYTES + 1 - frame.len()];
+    padded.extend_from_slice(&frame);
+    assert_eq!(padded.len(), USAGE_RELAY_READY_MAX_FRAME_BYTES + 1);
+    assert_eq!(
+        UsageRelayReadyV1::decode_frame(&padded).unwrap_err(),
+        "usage relay readiness frame has invalid framing"
+    );
 }
 
 #[test]
@@ -228,6 +254,18 @@ fn response_round_trip_keeps_typed_sanitized_failure() {
     assert!(bytes.len() < USAGE_BROKER_MAX_FRAME_BYTES);
     assert_eq!(
         serde_json::from_slice::<UsageBrokerResponse>(&bytes).unwrap(),
+        response
+    );
+    let wire = serde_json::json!({
+        "status": "error",
+        "error": {
+            "kind": "unauthorized",
+            "message": "usage account capability is not authorized"
+        }
+    });
+    assert_eq!(serde_json::to_value(&response).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<UsageBrokerResponse>(wire).unwrap(),
         response
     );
 }
