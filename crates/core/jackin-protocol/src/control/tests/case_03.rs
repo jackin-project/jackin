@@ -138,3 +138,104 @@ fn ordinary_messages_preserve_optional_payload_and_dispatch_metadata() {
     );
     assert!(!session_send.is_subscription());
 }
+
+#[test]
+fn events_subscription_and_session_replies_keep_their_public_contracts() {
+    let events = ClientMsg::Events { session: None };
+    let events_wire = serde_json::to_value(&events).unwrap();
+    assert_eq!(events_wire, serde_json::json!({"type": "events"}));
+    assert_eq!(events.rpc_method(), "jackin.capsule.Control/Events");
+    assert!(matches!(
+        serde_json::from_value::<ClientMsg>(events_wire).unwrap(),
+        ClientMsg::Events { session: None }
+    ));
+    let scoped_events = ClientMsg::Events { session: Some(4) };
+    let scoped_events_wire = serde_json::to_value(&scoped_events).unwrap();
+    assert_eq!(
+        scoped_events_wire,
+        serde_json::json!({"type": "events", "session": 4})
+    );
+    assert!(matches!(
+        serde_json::from_value::<ClientMsg>(scoped_events_wire).unwrap(),
+        ClientMsg::Events { session: Some(4) }
+    ));
+
+    let sent = ServerMsg::SessionSent {
+        session: 3,
+        bytes: 8,
+    };
+    let sent_wire = serde_json::to_value(&sent).unwrap();
+    assert_eq!(
+        sent_wire,
+        serde_json::json!({"type": "session_sent", "session": 3, "bytes": 8})
+    );
+    match serde_json::from_value::<ServerMsg>(sent_wire).unwrap() {
+        ServerMsg::SessionSent { session, bytes } => {
+            assert_eq!(session, 3);
+            assert_eq!(bytes, 8);
+        }
+        other => panic!("decoded wrong variant: {other:?}"),
+    }
+
+    let denied = ServerMsg::SessionSendDenied {
+        session: 9,
+        reason: SessionSendRejection::UnknownSession,
+    };
+    let denied_wire = serde_json::to_value(&denied).unwrap();
+    assert_eq!(
+        denied_wire,
+        serde_json::json!({
+            "type": "session_send_denied",
+            "session": 9,
+            "reason": "unknown_session"
+        })
+    );
+    match serde_json::from_value::<ServerMsg>(denied_wire).unwrap() {
+        ServerMsg::SessionSendDenied { session, reason } => {
+            assert_eq!(session, 9);
+            assert_eq!(reason, SessionSendRejection::UnknownSession);
+            assert_eq!(reason.label(), "no such session");
+        }
+        other => panic!("decoded wrong variant: {other:?}"),
+    }
+    assert!(events.is_subscription());
+}
+
+#[test]
+fn refreshing_placeholder_requires_unavailable_status_and_empty_usage() {
+    let mut refreshing = FocusedUsageView::refreshing(Some("Codex"), 0);
+    assert!(refreshing.is_refreshing_placeholder());
+    refreshing.focused_agent = Some("codex".to_owned());
+    refreshing.focused_provider = Some("OpenAI / Codex".to_owned());
+    refreshing.account.provider_label = "Codex CLI".to_owned();
+    assert!(refreshing.is_refreshing_placeholder());
+
+    for status in [
+        UsageSnapshotStatus::Fresh,
+        UsageSnapshotStatus::Stale,
+        UsageSnapshotStatus::Error,
+    ] {
+        let mut view = refreshing.clone();
+        view.status = status;
+        assert!(!view.is_refreshing_placeholder());
+    }
+
+    let mut with_bucket = refreshing.clone();
+    with_bucket.buckets.push(placeholder_sample_bucket());
+    assert!(!with_bucket.is_refreshing_placeholder());
+
+    let mut with_account = refreshing.clone();
+    with_account.account.account_label = "Account".to_owned();
+    assert!(!with_account.is_refreshing_placeholder());
+
+    let mut status_bar_only = FocusedUsageView::unavailable("not refreshing", 0);
+    status_bar_only.status_bar_label = "refreshing".to_owned();
+    assert!(!status_bar_only.is_refreshing_placeholder());
+
+    let mut updated_only = FocusedUsageView::unavailable("not refreshing", 0);
+    updated_only.updated_label = "Refreshing".to_owned();
+    assert!(!updated_only.is_refreshing_placeholder());
+
+    let error_only = FocusedUsageView::unavailable("refreshing", 0);
+    assert!(!error_only.is_refreshing_placeholder());
+}
