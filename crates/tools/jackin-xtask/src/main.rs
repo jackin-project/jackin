@@ -16,6 +16,7 @@ mod ci_route;
 mod ci_stage;
 mod ci_target;
 mod ci_toolchain;
+mod ci_workflow_contracts;
 mod clippy_affected;
 mod cmd;
 mod construct;
@@ -146,6 +147,8 @@ enum LintCommand {
     AgentLinks(agent_links::LintAgentLinksArgs),
     AgentStatusTruth(agent_status_truth::LintAgentStatusTruthArgs),
     Arch(arch::LintArchArgs),
+    #[command(about = "Validate the required CI job graph and failure tolerance.")]
+    CiWorkflow,
     ContainerPaths(container_paths_gate::LintContainerPathsArgs),
     ReadmeFreshness(readme_freshness::LintReadmeFreshnessArgs),
     Suppressions(suppressions::LintSuppressionsArgs),
@@ -153,7 +156,9 @@ enum LintCommand {
 }
 
 fn run_all_lints(strict: bool) -> anyhow::Result<()> {
-    fs_util::enforce_sorted_iteration(&docs::repo_root()?)?;
+    let root = docs::repo_root()?;
+    ci_workflow_contracts::enforce(&root)?;
+    fs_util::enforce_sorted_iteration(&root)?;
 
     let failures = thread::scope(|scope| {
         let gates = [
@@ -200,6 +205,9 @@ fn run_lint(command: Option<LintCommand>, strict: bool) -> anyhow::Result<()> {
         Some(LintCommand::AgentLinks(args)) => agent_links::run(args),
         Some(LintCommand::AgentStatusTruth(args)) => agent_status_truth::run(args),
         Some(LintCommand::Arch(args)) => arch::run(args),
+        Some(LintCommand::CiWorkflow) => {
+            docs::repo_root().and_then(|root| ci_workflow_contracts::enforce(&root))
+        }
         Some(LintCommand::ContainerPaths(args)) => container_paths_gate::run(args),
         Some(LintCommand::ReadmeFreshness(args)) => readme_freshness::run(args),
         Some(LintCommand::Suppressions(args)) => suppressions::run(args),
