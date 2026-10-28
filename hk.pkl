@@ -35,7 +35,12 @@ steps {
     check { command = "cargo clippy --locked --quiet" }
     fix { command = "cargo clippy --locked --fix --allow-dirty --allow-staged --quiet" }
   }
-  ["cargo_deny"] = (Builtins.cargo_deny) { exclude = List("fuzz/**", "crates/tools/jackin-lints/**", "vendor/branches-0.4.6/**") }
+  ["cargo_deny"] = (Builtins.cargo_deny) {
+    workspace_indicator = "Cargo.lock"
+    prefix = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-workspace-admission\" \"$(pwd -P)/Cargo.toml\" -- mise exec --"
+    exclude = List("fuzz/**", "crates/tools/jackin-lints/**", "vendor/branches-0.4.6/**")
+    check { command = "cargo deny --locked --workspace check" }
+  }
   ["rust-toolchain-mirror"] {
     glob = List("mise.toml", "rust-toolchain.toml")
     check = "sh scripts/check-rust-toolchain-mirror.sh"

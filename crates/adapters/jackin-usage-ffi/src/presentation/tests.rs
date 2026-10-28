@@ -1,4 +1,5 @@
 use super::*;
+use crate::UsageFormatPrefsDto;
 use jackin_protocol::control::{
     CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit, MeterPercentPoints,
     PercentObservationOrigin, ProviderQuotaState, RawPercentPoints, UsageMeterSide,
@@ -129,6 +130,341 @@ fn public_metric_window_detail_preserves_full_count_observations() {
     fixture
         .stop_and_join()
         .expect("local usage service stops and joins");
+}
+
+#[test]
+fn desktop_projection_preserves_provider_order_and_caps_status_by_reset() {
+    let mut fixture = LocalUsageFixture::start_with_projection(
+        provider_ordering_projection(),
+        vec![
+            "codex".to_owned(),
+            "claude".to_owned(),
+            "grok".to_owned(),
+            "zai".to_owned(),
+        ],
+    );
+    let projection = fixture
+        .bridge
+        .desktop_projection(3)
+        .expect("public desktop projection");
+
+    assert_eq!(
+        projection
+            .providers
+            .iter()
+            .map(|provider| provider.group.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["codex", "claude", "grok", "zai"]
+    );
+    assert_eq!(
+        projection
+            .glance_rows
+            .iter()
+            .map(|row| row.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["codex", "claude", "grok", "zai"]
+    );
+    assert_eq!(
+        projection
+            .status_bar_glance_rows
+            .iter()
+            .map(|row| row.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["grok", "zai", "claude"]
+    );
+
+    fixture
+        .stop_and_join()
+        .expect("local usage service stops and joins");
+}
+
+#[test]
+fn desktop_projection_ranks_unknown_status_reset_after_known_resets() {
+    let mut fixture = LocalUsageFixture::start_with_projection(
+        unknown_reset_ordering_projection(),
+        vec!["codex".to_owned(), "claude".to_owned(), "amp".to_owned()],
+    );
+    let projection = fixture
+        .bridge
+        .desktop_projection(3)
+        .expect("public desktop projection");
+
+    assert_eq!(
+        projection
+            .status_bar_glance_rows
+            .iter()
+            .map(|row| row.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["amp", "claude", "codex"]
+    );
+
+    fixture
+        .stop_and_join()
+        .expect("local usage service stops and joins");
+}
+
+#[test]
+fn projection_glance_preserves_percent_and_reset_preferences() {
+    let mut fixture = LocalUsageFixture::start_with_projection(
+        format_preferences_projection(),
+        vec!["codex".to_owned()],
+    );
+    fixture
+        .bridge
+        .set_format_prefs(UsageFormatPrefsDto {
+            percent_style: "used".to_owned(),
+            reset_style: "exact_clock".to_owned(),
+        })
+        .expect("format preferences");
+
+    let codex = fixture
+        .bridge
+        .provider_glance_rows()
+        .expect("glance rows")
+        .into_iter()
+        .find(|row| row.surface_id == "codex")
+        .expect("codex glance row");
+    assert_eq!(codex.bar_label, "36%");
+    assert_eq!(codex.headline, "gpt-5 36% used");
+    assert!(codex.reset_label.is_some());
+    assert_eq!(
+        codex.reset_label,
+        Some(format!(
+            "Resets {}",
+            jackin_usage_provider_core::local_timestamp_label(FAR_FUTURE_RESET)
+        ))
+    );
+    assert!(codex.exact_reset.is_some());
+
+    assert_eq!(
+        fixture
+            .bridge
+            .compact_status_bar_label_for("codex".to_owned())
+            .expect("compact label")
+            .as_deref(),
+        Some("Cx 36%")
+    );
+
+    fixture
+        .stop_and_join()
+        .expect("local usage service stops and joins");
+}
+
+#[test]
+fn native_selection_updates_public_account_route_and_details() {
+    let mut fixture = LocalUsageFixture::start_with_projection(
+        format_preferences_projection(),
+        vec!["codex".to_owned()],
+    );
+    let accounts = fixture
+        .bridge
+        .list_accounts(Some("codex".to_owned()))
+        .expect("public Codex account inventory");
+    assert_eq!(accounts.len(), 2);
+    assert_eq!(accounts[0].account_key, "canonical-openai-a");
+    assert!(accounts[0].selected);
+
+    let snapshot = fixture
+        .bridge
+        .snapshot("codex".to_owned())
+        .expect("public Codex snapshot");
+    let weekly_detail = snapshot
+        .detail_presentation
+        .rows
+        .iter()
+        .find(|row| row.row_id == "weekly-group")
+        .expect("weekly detail row");
+    assert!(weekly_detail.display_label.contains("weekly"));
+
+    fixture
+        .bridge
+        .set_selected_account("codex".to_owned(), "canonical-openai-b".to_owned())
+        .expect("select public Codex account B");
+    let codex = fixture
+        .bridge
+        .desktop_projection(3)
+        .expect("public desktop projection")
+        .providers
+        .into_iter()
+        .find(|provider| provider.group.surface_id == "codex")
+        .expect("Codex desktop provider");
+    assert_eq!(codex.selected_account_route.status, "available");
+    assert_eq!(
+        codex.selected_account_route.account_key.as_deref(),
+        Some("canonical-openai-b")
+    );
+    assert_eq!(codex.selected_usage.account_label, "bob@example.test");
+
+    fixture
+        .bridge
+        .set_selected_account("codex".to_owned(), "unknown-account".to_owned())
+        .expect_err("unknown Codex account is rejected");
+
+    fixture
+        .stop_and_join()
+        .expect("local usage service stops and joins");
+}
+
+#[test]
+fn cached_refresh_tracks_publication_across_service_restart() {
+    let initial_projection = format_preferences_projection();
+    let mut fixture = LocalUsageFixture::start_with_projection(
+        initial_projection.clone(),
+        vec!["codex".to_owned()],
+    );
+
+    assert!(fixture.bridge.refresh_due().expect("initial refresh due"));
+    fixture
+        .bridge
+        .set_refresh_floor_secs(120)
+        .expect("set refresh floor");
+    assert_eq!(
+        fixture.bridge.refresh_floor_secs().expect("refresh floor"),
+        120
+    );
+    assert!(fixture.bridge.refresh_due().expect("refresh remains due"));
+    assert_cached_fixture_snapshot(&fixture);
+
+    let initial_generation = fixture
+        .bridge
+        .desktop_projection(3)
+        .expect("initial desktop projection")
+        .generation;
+    let initial_events = fixture
+        .bridge
+        .next_events(0, 256)
+        .expect("initial public events");
+    assert!(!initial_events.resync_required);
+    assert!(
+        initial_events
+            .events
+            .iter()
+            .any(|event| event.kind == "runtime_opened")
+    );
+    let mut cursor = initial_events.next_cursor;
+
+    fixture
+        .bridge
+        .refresh(None, false)
+        .expect("nonforced cached refresh");
+    assert!(!fixture.bridge.refresh_due().expect("refresh no longer due"));
+    assert_eq!(
+        fixture.bridge.refresh_floor_secs().expect("refresh floor"),
+        120
+    );
+    assert_cached_fixture_snapshot(&fixture);
+    assert_eq!(
+        fixture
+            .bridge
+            .desktop_projection(3)
+            .expect("unchanged desktop projection")
+            .generation,
+        initial_generation
+    );
+    let unchanged_events = fixture
+        .bridge
+        .next_events(cursor, 256)
+        .expect("events after unchanged refresh");
+    assert!(!unchanged_events.resync_required);
+    assert!(
+        !unchanged_events
+            .events
+            .iter()
+            .any(|event| event.kind == "projection_published")
+    );
+    cursor = unchanged_events.next_cursor;
+
+    fixture
+        .bridge
+        .refresh(Some("codex".to_owned()), true)
+        .expect("passive forced refresh with live probes disabled");
+    assert!(!fixture.bridge.refresh_due().expect("refresh no longer due"));
+    assert_cached_fixture_snapshot(&fixture);
+    assert_eq!(
+        fixture
+            .bridge
+            .desktop_projection(3)
+            .expect("passive desktop projection")
+            .generation,
+        initial_generation
+    );
+    let passive_events = fixture
+        .bridge
+        .next_events(cursor, 256)
+        .expect("events after passive refresh");
+    assert!(!passive_events.resync_required);
+    assert!(
+        !passive_events
+            .events
+            .iter()
+            .any(|event| event.kind == "projection_published")
+    );
+    cursor = passive_events.next_cursor;
+
+    fixture
+        .stop_service_only()
+        .expect("stop local service without closing the bridge");
+    let mut published_projection = initial_projection;
+    published_projection.projection_id = "fixture-projection-2".to_owned();
+    published_projection.broker_generation = 2;
+    for provider in &mut published_projection.providers {
+        provider.freshness.generation = 2;
+        for account in &mut provider.accounts {
+            account.freshness.generation = 2;
+        }
+    }
+    seed_projection(fixture.directory.path(), published_projection);
+    fixture
+        .start_service()
+        .expect("restart local service on the same fixture paths");
+
+    fixture
+        .bridge
+        .refresh(None, false)
+        .expect("refresh changed public projection");
+    assert!(!fixture.bridge.refresh_due().expect("refresh no longer due"));
+    assert_eq!(
+        fixture.bridge.refresh_floor_secs().expect("refresh floor"),
+        120
+    );
+    assert_cached_fixture_snapshot(&fixture);
+    assert_eq!(
+        fixture
+            .bridge
+            .desktop_projection(3)
+            .expect("updated desktop projection")
+            .generation,
+        2
+    );
+    let published_events = fixture
+        .bridge
+        .next_events(cursor, 256)
+        .expect("events after changed projection");
+    assert!(!published_events.resync_required);
+    assert!(published_events.events.iter().any(|event| {
+        event.kind == "projection_published"
+            && event.detail.as_deref() == Some("fixture-projection-2")
+    }));
+
+    fixture
+        .stop_and_join()
+        .expect("local usage service stops and joins");
+}
+
+fn assert_cached_fixture_snapshot(fixture: &LocalUsageFixture) {
+    let snapshot = fixture
+        .bridge
+        .snapshot("codex".to_owned())
+        .expect("public cached snapshot");
+    assert_eq!(snapshot.account_label, "alice@example.test");
+    assert_eq!(snapshot.status, "fresh");
+    assert_eq!(
+        snapshot
+            .buckets
+            .first()
+            .and_then(|bucket| bucket.remaining_percent),
+        Some(64.0)
+    );
 }
 
 fn metric_window_groups() -> Vec<UsageMetricGroupV1> {
@@ -843,6 +1179,10 @@ impl FixtureDirectory {
         self.0 = None;
         Ok(())
     }
+
+    fn retain_path(&mut self) -> Option<PathBuf> {
+        self.0.take()
+    }
 }
 
 impl Drop for FixtureDirectory {
@@ -869,27 +1209,33 @@ impl LocalUsageFixture {
         windows: Vec<UsageLimitWindowV1>,
         metric_groups: Vec<UsageMetricGroupV1>,
     ) -> Self {
+        Self::start_with_projection(
+            fixture_projection(windows, metric_groups),
+            vec!["openrouter".to_owned()],
+        )
+    }
+
+    fn start_with_projection(
+        projection: UsageProjectionV1,
+        enabled_surface_ids: Vec<String>,
+    ) -> Self {
         let directory = FixtureDirectory::create();
-        seed_projection(directory.path(), windows, metric_groups);
+        seed_projection(directory.path(), projection);
         let resolved_data_dir = fs::canonicalize(directory.path()).expect("canonical fixture root");
         let socket_path = resolved_data_dir.join("usage-broker/run/usage-broker.sock");
         assert!(socket_path.as_os_str().as_encoded_bytes().len() < 104);
 
-        let mut config = UsageBrokerConfig::for_data_dir(directory.path().to_path_buf());
-        config.idle_exit = Duration::from_secs(30);
+        let config = UsageBrokerConfig::for_data_dir(directory.path().to_path_buf());
         let client = config.client();
-        let worker = jackin_telemetry::spawn::thread_joined_named(
-            "count-detail-fixture".to_owned(),
-            move || run_usage_monitor_service(config),
-        )
-        .expect("spawn joined local-only usage service");
-        let fixture = Self {
+        let mut fixture = Self {
             directory,
             client,
             bridge: crate::UsageMenuBarBridge::create(),
-            worker: Some(worker),
+            worker: None,
         };
-        fixture.wait_for_service();
+        fixture
+            .start_service()
+            .expect("start joined local-only usage service");
         let root = fixture
             .directory
             .path()
@@ -902,36 +1248,55 @@ impl LocalUsageFixture {
                 data_dir_override: Some(root.clone()),
                 config_root_override: Some(root),
                 refresh_floor_secs: 60,
-                enabled_surface_ids: vec!["openrouter".to_owned()],
+                enabled_surface_ids,
                 allow_live_probes: false,
             })
             .expect("open public bridge without live probes");
         fixture
     }
 
-    fn wait_for_service(&self) {
+    fn start_service(&mut self) -> Result<(), String> {
+        if self.worker.is_some() {
+            return Err("local usage service worker is already running".to_owned());
+        }
+        let mut config = UsageBrokerConfig::for_data_dir(self.directory.path().to_path_buf());
+        config.idle_exit = Duration::from_secs(30);
+        self.worker = Some(
+            jackin_telemetry::spawn::thread_joined_named(
+                "count-detail-fixture".to_owned(),
+                move || run_usage_monitor_service(config),
+            )
+            .map_err(|error| format!("spawn joined local-only usage service: {error:?}"))?,
+        );
+        self.wait_for_service()
+    }
+
+    fn wait_for_service(&self) -> Result<(), String> {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             if matches!(
                 self.client.monitor(MonitorOperation::ServiceStatus),
                 Ok(MonitorReply::ServiceStatus { .. })
             ) {
-                return;
+                return Ok(());
             }
-            assert!(
-                Instant::now() < deadline,
-                "local usage service did not become ready"
-            );
-            std::thread::park_timeout(Duration::from_millis(10));
+            if self.worker.as_ref().is_some_and(JoinHandle::is_finished) {
+                return Err("local usage service exited before becoming ready".to_owned());
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err("local usage service did not become ready before timeout".to_owned());
+            }
+            std::thread::park_timeout(remaining.min(Duration::from_millis(10)));
         }
     }
 
-    fn stop_and_join(&mut self) -> Result<(), String> {
-        let bridge_shutdown = self
-            .bridge
-            .shutdown()
-            .map_err(|error| format!("close public bridge: {error:?}"));
-        let service_stop = self
+    fn stop_service_only(&mut self) -> Result<(), String> {
+        self.stop_service_and_drain()
+    }
+
+    fn stop_service_and_drain(&mut self) -> Result<(), String> {
+        let stopped = self
             .client
             .monitor(MonitorOperation::ServiceStop)
             .map_err(|error| format!("stop local usage service: {error:?}"))
@@ -942,21 +1307,59 @@ impl LocalUsageFixture {
                     Err("local usage service returned a non-stop reply".to_owned())
                 }
             });
-        let joined = self.worker.take().map_or_else(
-            || Err("local usage service worker was already joined".to_owned()),
-            |worker| match worker.join() {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(error)) => Err(format!("local usage service failed: {}", error.message)),
-                Err(_) => Err("local usage service worker panicked".to_owned()),
-            },
-        );
+        let joined = self.join_worker_bounded();
+        match (stopped, joined) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(stop_error), Ok(())) => Err(stop_error),
+            (Ok(()), Err(join_error)) => Err(join_error),
+            (Err(stop_error), Err(join_error)) => Err(format!("{stop_error}; {join_error}")),
+        }
+    }
+
+    fn join_worker_bounded(&mut self) -> Result<(), String> {
+        if self.worker.is_none() {
+            return Err("local usage service worker was already joined".to_owned());
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if self.worker.as_ref().is_some_and(JoinHandle::is_finished) {
+                break;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                drop(self.worker.take());
+                let retained_path = self
+                    .directory
+                    .retain_path()
+                    .map_or_else(|| "unknown".to_owned(), |path| path.display().to_string());
+                return Err(format!(
+                    "local usage service did not stop within timeout; detached worker and retained fixture directory at {retained_path}"
+                ));
+            }
+            std::thread::park_timeout(remaining.min(Duration::from_millis(10)));
+        }
+        let Some(worker) = self.worker.take() else {
+            return Err("local usage service worker was already joined".to_owned());
+        };
+        match worker.join() {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(format!("local usage service failed: {}", error.message)),
+            Err(_) => Err("local usage service worker panicked".to_owned()),
+        }
+    }
+
+    fn stop_and_join(&mut self) -> Result<(), String> {
+        let bridge_shutdown = self
+            .bridge
+            .shutdown()
+            .map_err(|error| format!("close public bridge: {error:?}"));
+        let service_stop_and_join = self.stop_service_and_drain();
         let removed = self
             .directory
             .remove()
             .map_err(|error| format!("remove local usage fixture directory: {error}"));
         bridge_shutdown?;
-        service_stop?;
-        joined?;
+        service_stop_and_join?;
         removed
     }
 }
@@ -964,18 +1367,152 @@ impl LocalUsageFixture {
 impl Drop for LocalUsageFixture {
     fn drop(&mut self) {
         drop(self.bridge.shutdown());
-        if let Some(worker) = self.worker.take() {
-            drop(self.client.monitor(MonitorOperation::ServiceStop));
-            drop(worker.join());
+        if self.worker.is_some()
+            && let Err(error) = self.stop_service_and_drain()
+        {
+            eprintln!("local usage fixture cleanup failed: {error}");
         }
     }
 }
 
-fn seed_projection(
-    data_dir: &Path,
+fn provider_ordering_projection() -> UsageProjectionV1 {
+    fixture_provider_projection([
+        ("openai", "OpenAI", 0_u32, Some(1_800_070_000), 10_u8),
+        ("anthropic", "Anthropic", 1, Some(1_800_050_000), 80),
+        ("xai", "xAI", 2, Some(1_800_050_000), 32),
+        ("zai", "Z.AI", 3, Some(1_800_050_000), 32),
+    ])
+}
+
+fn unknown_reset_ordering_projection() -> UsageProjectionV1 {
+    fixture_provider_projection([
+        ("openai", "OpenAI", 0_u32, None, 5_u8),
+        ("anthropic", "Anthropic", 1, Some(1_800_070_000), 80),
+        ("amp", "Amp", 2, Some(1_800_050_000), 70),
+    ])
+}
+
+const FAR_FUTURE_RESET: i64 = 253_370_764_800;
+
+fn format_preferences_projection() -> UsageProjectionV1 {
+    let mut projection = fixture_projection(Vec::new(), Vec::new());
+    projection.projection_id = "fixture-projection-1".to_owned();
+    projection.generated_at_epoch = 1_800_000_001;
+    projection.discovery_revision = "fixture-catalog-1".to_owned();
+    projection.broker_instance_id = "fixture-broker".to_owned();
+
+    let fresh = UsageFreshnessV1 {
+        generation: 1,
+        phase: UsageFreshnessPhaseV1::Current,
+        last_good_at_epoch: Some(1_800_000_000),
+        retry_at_epoch: None,
+        is_stale: false,
+    };
+    let provider = &mut projection.providers[0];
+    provider.provider_id = "openai".to_owned();
+    provider.display_name = "OpenAI".to_owned();
+    provider.freshness = fresh.clone();
+
+    let account = &mut provider.accounts[0];
+    account.canonical_account_id = "canonical-openai-a".to_owned();
+    account.display_label = "alice@example.test".to_owned();
+    account.plan_label = Some("Pro".to_owned());
+    account.freshness = fresh.clone();
+
+    let mut weekly_group = metric_window_group("weekly-group", 0, "Weekly quota", None);
+    weekly_group.scope = UsageMetricScopeV1 {
+        model: Some("gpt-5".to_owned()),
+        ..UsageMetricScopeV1::default()
+    };
+    weekly_group.observed_at_epoch = Some(1_800_000_000);
+    weekly_group.fetched_at_epoch = 1_800_000_001;
+    weekly_group.last_success_at_epoch = Some(1_800_000_000);
+    weekly_group.reset_at_epoch = Some(FAR_FUTURE_RESET);
+    weekly_group.value = UsageMetricValueV1::Window {
+        remaining_percent: Some(RawPercentPoints::new(64.0).expect("valid remaining percentage")),
+        remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        used_percent: None,
+        used_percent_origin: None,
+        meter_percent: None,
+        meter_side: None,
+        count_quota: None,
+        provider_quota_state: None,
+        money_used_percent: None,
+        period: UsageMetricPeriodV1::Calendar {
+            granularity: UsageCalendarPeriodV1::Weekly,
+        },
+        unit: Some("tokens".to_owned()),
+    };
+
+    let mut weekly_window =
+        fixture_window(0, "canonical-openai-a-weekly", "Weekly", "64% left", None);
+    weekly_window.category = UsageWindowCategoryV1::LongRange;
+    weekly_window.reset_at_epoch = Some(FAR_FUTURE_RESET);
+    weekly_window.remaining_percent =
+        Some(RawPercentPoints::new(64.0).expect("valid remaining percentage"));
+    weekly_window.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    account.windows = vec![weekly_window.clone()];
+    account.metric_groups = vec![weekly_group];
+
+    let mut secondary_account = account.clone();
+    secondary_account.canonical_account_id = "canonical-openai-b".to_owned();
+    secondary_account.rank = 1;
+    secondary_account.display_label = "bob@example.test".to_owned();
+    secondary_account.metric_groups.clear();
+    secondary_account.windows[0].window_id = "canonical-openai-b-weekly".to_owned();
+    provider.accounts.push(secondary_account);
+
+    projection
+}
+
+fn fixture_provider_projection<const N: usize>(
+    provider_specs: [(&str, &str, u32, Option<i64>, u8); N],
+) -> UsageProjectionV1 {
+    let mut projection = fixture_projection(Vec::new(), Vec::new());
+    let source = projection.providers[0].clone();
+    projection.providers = provider_specs
+        .into_iter()
+        .map(
+            |(provider_id, display_name, rank, reset_at_epoch, remaining)| {
+                let mut provider = source.clone();
+                provider.provider_id = provider_id.to_owned();
+                provider.display_name = display_name.to_owned();
+                provider.rank = rank;
+                let account = provider
+                    .accounts
+                    .first_mut()
+                    .expect("ordering fixture account");
+                account.canonical_account_id = format!("{provider_id}-account");
+                account.display_label = format!("{provider_id}-fixture");
+                let mut window = fixture_window(
+                    0,
+                    &format!("{provider_id}-window"),
+                    "Usage",
+                    &format!("{remaining}% left"),
+                    None,
+                );
+                window.reset_at_epoch = reset_at_epoch;
+                window.remaining_percent = Some(
+                    RawPercentPoints::new(f64::from(remaining))
+                        .expect("valid remaining percentage"),
+                );
+                window.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+                window.meter_percent = Some(
+                    MeterPercentPoints::new(f64::from(remaining)).expect("valid meter percentage"),
+                );
+                window.meter_side = Some(UsageMeterSide::Remaining);
+                account.windows = vec![window];
+                provider
+            },
+        )
+        .collect();
+    projection
+}
+
+fn fixture_projection(
     windows: Vec<UsageLimitWindowV1>,
     metric_groups: Vec<UsageMetricGroupV1>,
-) {
+) -> UsageProjectionV1 {
     let freshness = UsageFreshnessV1 {
         generation: 1,
         phase: UsageFreshnessPhaseV1::Stale,
@@ -984,7 +1521,7 @@ fn seed_projection(
         is_stale: true,
     };
     let account_id = "count_fixture".to_owned();
-    let projection = UsageProjectionV1 {
+    UsageProjectionV1 {
         schema_version: UsageProjectionSchemaV2,
         projection_id: "count-fixture-projection".to_owned(),
         generated_at_epoch: 1_780_000_000,
@@ -1017,7 +1554,10 @@ fn seed_projection(
         }],
         unresolved: Vec::new(),
         issues: Vec::new(),
-    };
+    }
+}
+
+fn seed_projection(data_dir: &Path, projection: UsageProjectionV1) {
     let envelope = ProjectionStateEnvelope {
         schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
         projection,

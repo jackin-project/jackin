@@ -170,3 +170,17 @@ fn path_string(path: &Path) -> io::Result<String> {
         .map(str::to_owned)
         .ok_or_else(|| io::Error::other("fixture path is not UTF-8"))
 }
+
+#[test]
+fn broker_conflict_maps_to_specific_error_code() {
+    let error = jackin_protocol::usage_broker::UsageCoordinationError {
+        kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::BrokerConflict,
+        message: "another process owns the usage broker lease".to_owned(),
+    };
+    let mapped = super::map_coordination_err(error);
+    let UsageBridgeError::Rejected { code, .. } = mapped else {
+        panic!("broker conflict did not map to a rejected bridge error: {mapped:?}");
+    };
+
+    assert_eq!(code, "coordination_broker_conflict");
+}
