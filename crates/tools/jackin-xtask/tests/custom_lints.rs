@@ -27,6 +27,16 @@ const MISSING_COMPONENTS: &str = concat!(
     "llvm-tools-aarch64-apple-darwin\n",
     "rustc-dev-aarch64-apple-darwin\n",
 );
+const FRESH_LIBRARY_BYTES: &str = "fresh qualified library";
+const STALE_LIBRARY_BYTES: &str = "stale ABI library";
+#[cfg(target_os = "linux")]
+const FRESH_LIBRARY_NAME: &str = "libjackin_lints@nightly-2026-10-18-aarch64-apple-darwin.so";
+#[cfg(target_os = "macos")]
+const FRESH_LIBRARY_NAME: &str = "libjackin_lints@nightly-2026-10-18-aarch64-apple-darwin.dylib";
+#[cfg(target_os = "linux")]
+const STALE_LIBRARY_NAME: &str = "libjackin_lints@nightly-2026-10-17-aarch64-apple-darwin.so";
+#[cfg(target_os = "macos")]
+const STALE_LIBRARY_NAME: &str = "libjackin_lints@nightly-2026-10-17-aarch64-apple-darwin.dylib";
 const RECEIPT_FUNCTION: &str = r#"record_receipt() {
     name=$1
     {
@@ -264,6 +274,196 @@ fn command_text(output: &Output) -> String {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     )
+}
+
+fn install_pipeline_shims(fixture: &Fixture) -> Result<()> {
+    let rustup = r#"#!/bin/sh
+set -eu
+if [ "$1" = "run" ] && [ "$3" = "rustc" ]; then
+    printf '%s' "$XTASK_TEST_COMPILER_VERSION"
+    exit 0
+fi
+if [ "$1" = "component" ]; then
+    printf '%s' "$XTASK_TEST_COMPONENTS"
+    exit 0
+fi
+if [ "$1" = "run" ]; then
+    shift 2
+    exec "$@"
+fi
+printf 'unexpected rustup request\n' >&2
+exit 90
+"#;
+    write_executable(&fixture.tools.join("rustup"), rustup)?;
+
+    let cargo = format!(
+        "#!/bin/sh\nset -eu\n{{ printf 'args=%s\\n' \"$*\"; printf 'cwd=%s\\n' \"$(pwd)\"; printf 'target=%s\\n' \"$CARGO_TARGET_DIR\"; }} > \"$XTASK_TEST_RECEIPTS/cargo.receipt\"\nmkdir -p \"$CARGO_TARGET_DIR/debug\"\nprintf '%s' '{FRESH_LIBRARY_BYTES}' > \"$CARGO_TARGET_DIR/debug/{FRESH_LIBRARY_NAME}\"\n"
+    );
+    write_executable(&fixture.tools.join("cargo"), &cargo)?;
+
+    let nextest = r#"#!/bin/sh
+set -eu
+{
+    printf 'selected_executable=%s\n' "$0"
+    printf 'args=%s\n' "$*"
+    printf 'cwd=%s\n' "$(pwd)"
+    printf 'target=%s\n' "$CARGO_TARGET_DIR"
+    printf 'dylint_path=%s\n' "${DYLINT_LIBRARY_PATH-<unset>}"
+} > "$XTASK_TEST_RECEIPTS/nextest.receipt"
+printf 'reached\n' > "$XTASK_TEST_RECEIPTS/nextest.marker"
+"#;
+    write_executable(&fixture.tools.join("cargo-nextest"), nextest)?;
+
+    let dylint = r#"#!/bin/sh
+set -eu
+{
+    printf 'selected_executable=%s\n' "$0"
+    printf 'args=%s\n' "$*"
+    printf 'cwd=%s\n' "$(pwd)"
+    printf 'target=%s\n' "$CARGO_TARGET_DIR"
+    printf 'library=%s\n' "$DYLINT_LIBRARY_PATH"
+    printf 'encoded_flags=%s\n' "${CARGO_ENCODED_RUSTFLAGS-<unset>}"
+    printf 'rustflags=%s\n' "${RUSTFLAGS-<unset>}"
+    printf 'copy_library=%s\n' "${DYLINT_LINK_ENABLE_COPY_LIBRARY-<unset>}"
+    printf 'toolchain=%s\n' "${RUSTUP_TOOLCHAIN-<unset>}"
+    for artifact in "$DYLINT_LIBRARY_PATH"/*; do
+        [ -f "$artifact" ] || continue
+        printf 'entry=%s:%s\n' "$(basename "$artifact")" "$(cat "$artifact")"
+    done
+} > "$XTASK_TEST_RECEIPTS/dylint.receipt"
+printf 'reached\n' > "$XTASK_TEST_RECEIPTS/dylint.marker"
+if [ -f "$XTASK_TEST_RECEIPTS/fail-dylint" ]; then
+    printf 'simulated workspace failure\n' >&2
+    exit 37
+fi
+"#;
+    write_executable(&fixture.tools.join("cargo-dylint"), dylint)?;
+
+    for (name, marker) in [
+        ("cargo-nextest", "nextest-decoy.marker"),
+        ("cargo-dylint", "dylint-decoy.marker"),
+    ] {
+        let decoy = format!(
+            "#!/bin/sh\nset -eu\nprintf 'selected\\n' > \"$XTASK_TEST_RECEIPTS/{marker}\"\nexit 91\n"
+        );
+        write_executable(&fixture.cargo_home.join("bin").join(name), &decoy)?;
+    }
+
+    Ok(())
+}
+
+fn assert_pipeline_case(workspace_failure: bool) -> Result<()> {
+    let fixture = Fixture::new()?;
+    install_pipeline_shims(&fixture)?;
+    let target_dir = Path::new("build target");
+    let target_root = fixture.root.join(target_dir);
+    let build_library_dir = target_root.join("library/debug");
+    fs::create_dir_all(&build_library_dir)?;
+    let stale_library = build_library_dir.join(STALE_LIBRARY_NAME);
+    fs::write(&stale_library, STALE_LIBRARY_BYTES)?;
+    if workspace_failure {
+        fs::write(fixture.receipts.join("fail-dylint"), b"")?;
+    }
+
+    let output = fixture.run(COMPLETE_COMPONENTS, target_dir)?;
+    let dylint_raw = fs::read_to_string(fixture.receipts.join("dylint.receipt"))?;
+    let entries = dylint_raw
+        .lines()
+        .filter_map(|line| line.strip_prefix("entry="))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        entries,
+        [format!("{FRESH_LIBRARY_NAME}:{FRESH_LIBRARY_BYTES}")],
+        "Dylint must receive only the fresh library and its bytes"
+    );
+
+    let library_target = fs::canonicalize(target_root.join("library"))?;
+    let canonical_target_root = library_target
+        .parent()
+        .context("library target has a parent")?;
+    let lint_dir = fs::canonicalize(fixture.root.join("crates/tools/jackin-lints"))?;
+    let cargo = read_receipt(&fixture.receipts.join("cargo.receipt"))?;
+    assert_eq!(cargo["args"], "build --locked");
+    assert_eq!(cargo["cwd"], lint_dir.to_str().context("UTF-8 lint path")?);
+    assert_eq!(
+        cargo["target"],
+        library_target.to_str().context("UTF-8 library target")?
+    );
+
+    let nextest = read_receipt(&fixture.receipts.join("nextest.receipt"))?;
+    assert_eq!(
+        nextest["selected_executable"],
+        fs::canonicalize(fixture.tools.join("cargo-nextest"))?
+            .to_str()
+            .context("UTF-8 Nextest path")?
+    );
+    assert_eq!(nextest["args"], "nextest run --locked");
+    assert_eq!(
+        nextest["cwd"],
+        lint_dir.to_str().context("UTF-8 lint path")?
+    );
+    assert_eq!(
+        nextest["target"],
+        library_target.to_str().context("UTF-8 library target")?
+    );
+    assert_eq!(nextest["dylint_path"], "<unset>");
+
+    let dylint = read_receipt(&fixture.receipts.join("dylint.receipt"))?;
+    assert_eq!(
+        dylint["selected_executable"],
+        fs::canonicalize(fixture.tools.join("cargo-dylint"))?
+            .to_str()
+            .context("UTF-8 Dylint path")?
+    );
+    assert_eq!(
+        dylint["args"],
+        "dylint --no-metadata --all --fail-on-no-libraries -- --workspace --locked"
+    );
+    assert_eq!(
+        dylint["cwd"],
+        fs::canonicalize(&fixture.root)?
+            .to_str()
+            .context("UTF-8 workspace path")?
+    );
+    assert_eq!(
+        dylint["target"],
+        canonical_target_root
+            .join("workspace")
+            .to_str()
+            .context("UTF-8 workspace target")?
+    );
+    assert_eq!(dylint["encoded_flags"], "<unset>");
+    assert_eq!(dylint["rustflags"], "<unset>");
+    assert_eq!(dylint["copy_library"], "<unset>");
+    assert_eq!(dylint["toolchain"], "<unset>");
+    assert_eq!(fs::read(&stale_library)?, STALE_LIBRARY_BYTES.as_bytes());
+    assert_eq!(
+        fs::read(build_library_dir.join(FRESH_LIBRARY_NAME))?,
+        FRESH_LIBRARY_BYTES.as_bytes()
+    );
+    assert!(
+        !Path::new(&dylint["library"]).exists(),
+        "temporary Dylint library directory survived the workspace outcome"
+    );
+    assert!(fixture.receipts.join("nextest.marker").is_file());
+    assert!(fixture.receipts.join("dylint.marker").is_file());
+    assert!(!fixture.receipts.join("nextest-decoy.marker").exists());
+    assert!(!fixture.receipts.join("dylint-decoy.marker").exists());
+    assert_eq!(output.status.success(), !workspace_failure);
+    if workspace_failure {
+        let text = command_text(&output);
+        assert!(text.contains("exit status: 37"));
+        assert!(text.contains("simulated workspace failure"));
+    }
+
+    Ok(())
+}
+
+#[test]
+fn full_pipeline_hands_off_only_fresh_library_and_cleans_after_workspace_outcomes() -> Result<()> {
+    assert_pipeline_case(false)?;
+    assert_pipeline_case(true)
 }
 
 #[test]
