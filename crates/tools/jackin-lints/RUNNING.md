@@ -51,13 +51,17 @@ before describing Dylint as a CI gate.
 
 ## Current qualification
 
-The explicit nightly library build and the Nextest UI corpus pass on macOS ARM
-with the pinned compiler. The root workspace check currently fails closed:
-Turso 0.8.3 brings `branches` 0.4.6 without its `std` feature, whose nightly path
-calls the removed `core::intrinsics::abort`. Both Cargo lockfiles remain
-unchanged. This pre-existing upstream dependency incompatibility requires a
-separate dependency correction; it is not suppressed or treated as a passing
-workspace lint run. The historical pilot result below is not a current result.
+The standalone nightly library build and Nextest UI corpus were previously
+qualified on macOS ARM with the pinned compiler. The one-line vendored
+`branches` fix resolves the prior root-workspace blocker. In an isolated
+`--no-default-features --lib` check, the original package passes on stable Rust
+1.99.1 but fails on nightly-2026-10-18; the patched package passes on both.
+Stable `jackin-image` and `jackin-xtask` checks also pass. A pinned
+`nightly-2026-10-18` check of `jackin-usage-store-backend` also passes with
+vendored `branches` and its `std` feature disabled. The full nightly
+workspace and Dylint qualification have not been rerun after the fix. Those
+earlier results do not qualify the complete workspace after this dependency
+correction.
 
 The canonical Mise task runs the 11 selected Rust regression tests through pinned
 Nextest before it starts the complete check. It installs no toolchain and makes
