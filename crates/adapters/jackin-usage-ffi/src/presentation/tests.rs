@@ -227,6 +227,13 @@ fn projection_glance_preserves_percent_and_reset_preferences() {
     assert_eq!(codex.bar_label, "36%");
     assert_eq!(codex.headline, "gpt-5 36% used");
     assert!(codex.reset_label.is_some());
+    assert_eq!(
+        codex.reset_label,
+        Some(format!(
+            "Resets {}",
+            jackin_usage_provider_core::local_timestamp_label(FAR_FUTURE_RESET)
+        ))
+    );
     assert!(codex.exact_reset.is_some());
 
     assert_eq!(
@@ -1110,6 +1117,8 @@ fn unknown_reset_ordering_projection() -> UsageProjectionV1 {
     ])
 }
 
+const FAR_FUTURE_RESET: i64 = 253_370_764_800;
+
 fn format_preferences_projection() -> UsageProjectionV1 {
     let mut projection = fixture_projection(Vec::new(), Vec::new());
     projection.projection_id = "fixture-projection-1".to_owned();
@@ -1143,7 +1152,7 @@ fn format_preferences_projection() -> UsageProjectionV1 {
     weekly_group.observed_at_epoch = Some(1_800_000_000);
     weekly_group.fetched_at_epoch = 1_800_000_001;
     weekly_group.last_success_at_epoch = Some(1_800_000_000);
-    weekly_group.reset_at_epoch = Some(1_800_100_000);
+    weekly_group.reset_at_epoch = Some(FAR_FUTURE_RESET);
     weekly_group.value = UsageMetricValueV1::Window {
         remaining_percent: Some(RawPercentPoints::new(64.0).expect("valid remaining percentage")),
         remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
@@ -1163,7 +1172,7 @@ fn format_preferences_projection() -> UsageProjectionV1 {
     let mut weekly_window =
         fixture_window(0, "canonical-openai-a-weekly", "Weekly", "64% left", None);
     weekly_window.category = UsageWindowCategoryV1::LongRange;
-    weekly_window.reset_at_epoch = Some(1_800_100_000);
+    weekly_window.reset_at_epoch = Some(FAR_FUTURE_RESET);
     weekly_window.remaining_percent =
         Some(RawPercentPoints::new(64.0).expect("valid remaining percentage"));
     weekly_window.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
