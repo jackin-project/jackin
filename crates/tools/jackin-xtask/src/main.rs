@@ -16,6 +16,7 @@ mod ci_route;
 mod ci_stage;
 mod ci_target;
 mod ci_toolchain;
+mod ci_workflow_contracts;
 mod clippy_affected;
 mod cmd;
 mod construct;
@@ -153,7 +154,9 @@ enum LintCommand {
 }
 
 fn run_all_lints(strict: bool) -> anyhow::Result<()> {
-    fs_util::enforce_sorted_iteration(&docs::repo_root()?)?;
+    let root = docs::repo_root()?;
+    ci_workflow_contracts::enforce(&root)?;
+    fs_util::enforce_sorted_iteration(&root)?;
 
     let failures = thread::scope(|scope| {
         let gates = [
