@@ -118,12 +118,14 @@ Acceptance and backup stay separate actions.
 
 ## Fixture task and source
 
-The fixture uses POSIX shell, available in the existing sandbox image.
-It does not add a Python or Ruby dependency.
+The fixture uses POSIX shell to keep the product test small.
+Use an existing role with `sh` for this fixture.
+Python is not required for this fixture.
 
 Create a fixture repository containing `calculator.sh`:
 
 ```sh
+#!/bin/sh
 add() {
     [ "$#" -eq 2 ] || return 2
     printf '%s\n' "$(($1 - $2))"
@@ -155,18 +157,22 @@ Create the trusted `check_add.sh` outside the implementation repository:
 set -eu
 
 root=${1:?usage: check_add.sh REPOSITORY}
-. "$root/calculator.sh"
-
 check_add() {
-    actual=$(add "$1" "$2")
+    if ! actual=$(/bin/sh -c '
+# shellcheck source=examples/workflows/calculator.sh
+. "$1" && add "$2" "$3"
+' check-add "$root/calculator.sh" "$1" "$2"); then
+        printf '%s\n' 'FAIL: calculator candidate exited unsuccessfully' >&2
+        return 1
+    fi
     if [ "$actual" != "$3" ]; then
         printf 'FAIL: add(%s, %s) returned %s; expected %s\n' "$1" "$2" "$actual" "$3" >&2
         return 1
     fi
 }
 
-check_add 2 3 5
-check_add -2 -3 -5
+check_add 2 3 5 || exit 1
+check_add -2 -3 -5 || exit 1
 printf '%s\n' 'PASS: required arithmetic cases'
 ```
 
