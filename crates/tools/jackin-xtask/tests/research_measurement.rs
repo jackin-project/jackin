@@ -4,10 +4,13 @@
 use std::{
     ffi::OsString,
     fs,
+    io::Read,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use flate2::{Crc, read::ZlibDecoder};
 use serde_json::{Value, json};
 use tempfile::tempdir;
 
@@ -659,5 +662,112 @@ fn session_cost_normalizes_iterations_ttls_and_exact_model_prices()
         report["list_price_estimate"]["null-priced-model"],
         json!({"usd": null, "reason": "no rate for exact model"})
     );
+    Ok(())
+}
+
+fn run_image_tokens(dimensions: &[&str]) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
+    let mut args = strings(&["image-tokens", "--model", "fixture-model"]);
+    args.extend(dimensions.iter().map(OsString::from));
+    let output = json_output(&run_measurement(args)?)?;
+    output
+        .as_array()
+        .cloned()
+        .ok_or_else(|| std::io::Error::other("image output is an array").into())
+}
+
+fn assert_png_contract(
+    row: &Value,
+    dimension: &str,
+    width: u32,
+    height: u32,
+) -> Result<(Vec<u8>, usize), Box<dyn std::error::Error>> {
+    assert_eq!(row["dimensions"], dimension);
+    assert_eq!(row["model"], "fixture-model");
+    assert_eq!(row["request"]["model"], "fixture-model");
+    assert_eq!(row["request"]["messages"][0]["content"][0]["type"], "image");
+    assert_eq!(
+        row["request"]["messages"][0]["content"][0]["source"]["media_type"],
+        "image/png"
+    );
+    assert_eq!(
+        row["request"]["messages"][0]["content"][0]["source"]["type"],
+        "base64"
+    );
+    let encoded = row["request"]["messages"][0]["content"][0]["source"]["data"]
+        .as_str()
+        .ok_or_else(|| std::io::Error::other("PNG data is base64 text"))?;
+    let png = BASE64.decode(encoded)?;
+    assert_eq!(row["png_bytes"], png.len());
+    assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+
+    let mut offset = 8;
+    let mut chunk_types = Vec::new();
+    let mut compressed = Vec::new();
+    while offset < png.len() {
+        assert!(png.len() - offset >= 12);
+        let length = u32::from_be_bytes(png[offset..offset + 4].try_into()?) as usize;
+        offset += 4;
+        let kind: [u8; 4] = png[offset..offset + 4].try_into()?;
+        offset += 4;
+        let end = offset
+            .checked_add(length)
+            .ok_or_else(|| std::io::Error::other("PNG chunk length overflow"))?;
+        assert!(end <= png.len().saturating_sub(4));
+        let payload = &png[offset..end];
+        offset = end;
+        let actual_crc = u32::from_be_bytes(png[offset..offset + 4].try_into()?);
+        offset += 4;
+        let mut crc = Crc::new();
+        crc.update(&kind);
+        crc.update(payload);
+        assert_eq!(crc.sum(), actual_crc, "CRC for {kind:?}");
+        chunk_types.push(kind);
+        match &kind {
+            b"IHDR" => {
+                assert_eq!(payload.len(), 13);
+                assert_eq!(u32::from_be_bytes(payload[0..4].try_into()?), width);
+                assert_eq!(u32::from_be_bytes(payload[4..8].try_into()?), height);
+                assert_eq!(&payload[8..], &[8, 2, 0, 0, 0]);
+            }
+            b"IDAT" => compressed.extend_from_slice(payload),
+            b"IEND" => assert!(payload.is_empty()),
+            _ => {
+                return Err(std::io::Error::other(format!("unexpected PNG chunk {kind:?}")).into());
+            }
+        }
+    }
+    assert_eq!(chunk_types, [*b"IHDR", *b"IDAT", *b"IEND"]);
+
+    let mut decoder = ZlibDecoder::new(compressed.as_slice());
+    let mut raw = Vec::new();
+    decoder.read_to_end(&mut raw)?;
+    let row_bytes = width as usize * 3;
+    assert_eq!(raw.len(), (row_bytes + 1) * height as usize);
+    assert_eq!(&raw[..5], &[0, 0, 1, 2, 3]);
+    let row_stride = row_bytes + 1;
+    assert_eq!(raw[row_stride], 0);
+    assert_eq!(&raw[row_stride + 1..row_stride + 4], &[7, 8, 9]);
+    for row_index in 0..height as usize {
+        assert_eq!(raw[row_index * row_stride], 0);
+    }
+    Ok((png, raw.len()))
+}
+
+#[test]
+fn image_tokens_emit_valid_deterministic_pngs_without_batch_cap()
+-> Result<(), Box<dyn std::error::Error>> {
+    let dimensions = ["280x140", "280x140", "4096x4096", "2048x2048", "2048x2048"];
+    let rows = run_image_tokens(&dimensions)?;
+    assert_eq!(rows.len(), dimensions.len());
+    let (first, _) = assert_png_contract(&rows[0], dimensions[0], 280, 140)?;
+    let (repeated, _) = assert_png_contract(&rows[1], dimensions[1], 280, 140)?;
+    assert_eq!(rows[0]["png_bytes"], rows[1]["png_bytes"]);
+    assert_eq!(first, repeated);
+    assert_png_contract(&rows[2], dimensions[2], 4096, 4096)?;
+    let (_, first_large_raw_len) = assert_png_contract(&rows[3], dimensions[3], 2048, 2048)?;
+    let (_, second_large_raw_len) = assert_png_contract(&rows[4], dimensions[4], 2048, 2048)?;
+    let large_batch_raw_len = first_large_raw_len + second_large_raw_len;
+    assert_eq!(large_batch_raw_len, 25_169_920);
+    assert!(large_batch_raw_len > 16 * 1024 * 1024);
     Ok(())
 }
