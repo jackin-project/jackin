@@ -6,7 +6,31 @@ use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 use anyhow::{Context, Result, anyhow};
 use jackin_process::{RetryPolicy, StdioMode};
 
-use super::{build_exec_request, finish_with_cleanup};
+use super::{build_exec_request, finish_with_cleanup, parse_getconf_path};
+
+#[test]
+fn parse_getconf_path_accepts_single_line_paths_and_rejects_malformed_output() {
+    let expected = OsString::from("/tools with spaces/bin");
+    for output in [
+        &b"/tools with spaces/bin"[..],
+        &b"/tools with spaces/bin\n"[..],
+        &b"/tools with spaces/bin\r\n"[..],
+    ] {
+        assert_eq!(parse_getconf_path(output), Some(expected.clone()));
+    }
+
+    for output in [
+        &b""[..],
+        &b"\n"[..],
+        &b"\r\n"[..],
+        &b"/first\nsecond\n"[..],
+        &b"/first\rsecond"[..],
+        &b"/first\0second"[..],
+        &b"/tools/\xff\n"[..],
+    ] {
+        assert_eq!(parse_getconf_path(output), None);
+    }
+}
 
 #[test]
 fn exec_request_preserves_capture_stream_environment_and_retry_modes() -> Result<()> {
