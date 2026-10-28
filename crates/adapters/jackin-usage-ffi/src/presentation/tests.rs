@@ -177,6 +177,31 @@ fn desktop_projection_preserves_provider_order_and_caps_status_by_reset() {
         .expect("local usage service stops and joins");
 }
 
+#[test]
+fn desktop_projection_ranks_unknown_status_reset_after_known_resets() {
+    let mut fixture = LocalUsageFixture::start_with_projection(
+        unknown_reset_ordering_projection(),
+        vec!["codex".to_owned(), "claude".to_owned(), "amp".to_owned()],
+    );
+    let projection = fixture
+        .bridge
+        .desktop_projection(3)
+        .expect("public desktop projection");
+
+    assert_eq!(
+        projection
+            .status_bar_glance_rows
+            .iter()
+            .map(|row| row.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["amp", "claude", "codex"]
+    );
+
+    fixture
+        .stop_and_join()
+        .expect("local usage service stops and joins");
+}
+
 fn metric_window_groups() -> Vec<UsageMetricGroupV1> {
     let mut count_group = metric_window_group(
         "metric-count-model",
@@ -1028,14 +1053,27 @@ impl Drop for LocalUsageFixture {
 }
 
 fn provider_ordering_projection() -> UsageProjectionV1 {
-    let mut projection = fixture_projection(Vec::new(), Vec::new());
-    let source = projection.providers[0].clone();
-    let provider_specs = [
+    fixture_provider_projection([
         ("openai", "OpenAI", 0_u32, Some(1_800_070_000), 10_u8),
         ("anthropic", "Anthropic", 1, Some(1_800_050_000), 80),
         ("xai", "xAI", 2, Some(1_800_050_000), 32),
         ("zai", "Z.AI", 3, Some(1_800_050_000), 32),
-    ];
+    ])
+}
+
+fn unknown_reset_ordering_projection() -> UsageProjectionV1 {
+    fixture_provider_projection([
+        ("openai", "OpenAI", 0_u32, None, 5_u8),
+        ("anthropic", "Anthropic", 1, Some(1_800_070_000), 80),
+        ("amp", "Amp", 2, Some(1_800_050_000), 70),
+    ])
+}
+
+fn fixture_provider_projection<const N: usize>(
+    provider_specs: [(&str, &str, u32, Option<i64>, u8); N],
+) -> UsageProjectionV1 {
+    let mut projection = fixture_projection(Vec::new(), Vec::new());
+    let source = projection.providers[0].clone();
     projection.providers = provider_specs
         .into_iter()
         .map(
