@@ -279,7 +279,6 @@ fn spawn_service(data_root: &Path) -> io::Result<ServiceChild> {
         .arg(SERVICE_FIXTURE_NAME)
         .arg("--ignored")
         .arg("--nocapture")
-        .env_remove("JACKIN_USAGE_MONITOR_RESTART_DATA_ROOT")
         .stdin(Stdio::piped())
         .spawn()?;
     let mut service = ServiceChild { child };
