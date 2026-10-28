@@ -1,4 +1,5 @@
 use super::*;
+use crate::UsageFormatPrefsDto;
 use jackin_protocol::control::{
     CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit, MeterPercentPoints,
     PercentObservationOrigin, ProviderQuotaState, RawPercentPoints, UsageMeterSide,
@@ -195,6 +196,46 @@ fn desktop_projection_ranks_unknown_status_reset_after_known_resets() {
             .map(|row| row.surface_id.as_str())
             .collect::<Vec<_>>(),
         vec!["amp", "claude", "codex"]
+    );
+
+    fixture
+        .stop_and_join()
+        .expect("local usage service stops and joins");
+}
+
+#[test]
+fn projection_glance_preserves_percent_and_reset_preferences() {
+    let mut fixture = LocalUsageFixture::start_with_projection(
+        format_preferences_projection(),
+        vec!["codex".to_owned()],
+    );
+    fixture
+        .bridge
+        .set_format_prefs(UsageFormatPrefsDto {
+            percent_style: "used".to_owned(),
+            reset_style: "exact_clock".to_owned(),
+        })
+        .expect("format preferences");
+
+    let codex = fixture
+        .bridge
+        .provider_glance_rows()
+        .expect("glance rows")
+        .into_iter()
+        .find(|row| row.surface_id == "codex")
+        .expect("codex glance row");
+    assert_eq!(codex.bar_label, "36%");
+    assert_eq!(codex.headline, "gpt-5 36% used");
+    assert!(codex.reset_label.is_some());
+    assert!(codex.exact_reset.is_some());
+
+    assert_eq!(
+        fixture
+            .bridge
+            .compact_status_bar_label_for("codex".to_owned())
+            .expect("compact label")
+            .as_deref(),
+        Some("Cx 36%")
     );
 
     fixture
@@ -1067,6 +1108,77 @@ fn unknown_reset_ordering_projection() -> UsageProjectionV1 {
         ("anthropic", "Anthropic", 1, Some(1_800_070_000), 80),
         ("amp", "Amp", 2, Some(1_800_050_000), 70),
     ])
+}
+
+fn format_preferences_projection() -> UsageProjectionV1 {
+    let mut projection = fixture_projection(Vec::new(), Vec::new());
+    projection.projection_id = "fixture-projection-1".to_owned();
+    projection.generated_at_epoch = 1_800_000_001;
+    projection.discovery_revision = "fixture-catalog-1".to_owned();
+    projection.broker_instance_id = "fixture-broker".to_owned();
+
+    let fresh = UsageFreshnessV1 {
+        generation: 1,
+        phase: UsageFreshnessPhaseV1::Current,
+        last_good_at_epoch: Some(1_800_000_000),
+        retry_at_epoch: None,
+        is_stale: false,
+    };
+    let provider = &mut projection.providers[0];
+    provider.provider_id = "openai".to_owned();
+    provider.display_name = "OpenAI".to_owned();
+    provider.freshness = fresh.clone();
+
+    let account = &mut provider.accounts[0];
+    account.canonical_account_id = "canonical-openai-a".to_owned();
+    account.display_label = "alice@example.test".to_owned();
+    account.plan_label = Some("Pro".to_owned());
+    account.freshness = fresh.clone();
+
+    let mut weekly_group = metric_window_group("weekly-group", 0, "Weekly quota", None);
+    weekly_group.scope = UsageMetricScopeV1 {
+        model: Some("gpt-5".to_owned()),
+        ..UsageMetricScopeV1::default()
+    };
+    weekly_group.observed_at_epoch = Some(1_800_000_000);
+    weekly_group.fetched_at_epoch = 1_800_000_001;
+    weekly_group.last_success_at_epoch = Some(1_800_000_000);
+    weekly_group.reset_at_epoch = Some(1_800_100_000);
+    weekly_group.value = UsageMetricValueV1::Window {
+        remaining_percent: Some(RawPercentPoints::new(64.0).expect("valid remaining percentage")),
+        remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        used_percent: None,
+        used_percent_origin: None,
+        meter_percent: None,
+        meter_side: None,
+        count_quota: None,
+        provider_quota_state: None,
+        money_used_percent: None,
+        period: UsageMetricPeriodV1::Calendar {
+            granularity: UsageCalendarPeriodV1::Weekly,
+        },
+        unit: Some("tokens".to_owned()),
+    };
+
+    let mut weekly_window =
+        fixture_window(0, "canonical-openai-a-weekly", "Weekly", "64% left", None);
+    weekly_window.category = UsageWindowCategoryV1::LongRange;
+    weekly_window.reset_at_epoch = Some(1_800_100_000);
+    weekly_window.remaining_percent =
+        Some(RawPercentPoints::new(64.0).expect("valid remaining percentage"));
+    weekly_window.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    account.windows = vec![weekly_window.clone()];
+    account.metric_groups = vec![weekly_group];
+
+    let mut secondary_account = account.clone();
+    secondary_account.canonical_account_id = "canonical-openai-b".to_owned();
+    secondary_account.rank = 1;
+    secondary_account.display_label = "bob@example.test".to_owned();
+    secondary_account.metric_groups.clear();
+    secondary_account.windows[0].window_id = "canonical-openai-b-weekly".to_owned();
+    provider.accounts.push(secondary_account);
+
+    projection
 }
 
 fn fixture_provider_projection<const N: usize>(
