@@ -170,6 +170,12 @@ checksum_source = "mise-versions"
 url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.150/cargo-nextest-0.9.150-universal-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/679078149"
 
+[tools."aqua:nextest-rs/nextest/cargo-nextest"."platforms.windows-x64"]
+checksum = "sha256:b7a8bf567140b8b366716f2dea27b32e088dc12f53597315f976d0dbf7c6ade8"
+checksum_source = "mise-versions"
+url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.150/cargo-nextest-0.9.150-x86_64-pc-windows-msvc.tar.gz"
+url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/679074355"
+
 [[tools."aqua:rust-cross/cargo-zigbuild"]]
 version = "0.24.0"
 backend = "aqua:rust-cross/cargo-zigbuild"
@@ -835,6 +841,12 @@ repository_ids = { repository = "1340721957" }
 [tools.mr-boxington."platforms.macos-arm64"]
 checksum = "sha256:ac73ba0637a443ba9c43354008f6bcd5d9e8a84b703e46f23202025c1f849472"
 url = "https://github.com/jdx/mr-boxington/releases/download/v1.28.0/mbx-aarch64-apple-darwin.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
+repository_ids = { repository = "1340721957" }
+
+[tools.mr-boxington."platforms.windows-x64"]
+checksum = "sha256:3fdecc44d68f37215079f6b6fa8c1e2ad95ee9dd30668759ed9dfd98e02bc95d"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.28.0/mbx-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 repository_ids = { repository = "1340721957" }
 
