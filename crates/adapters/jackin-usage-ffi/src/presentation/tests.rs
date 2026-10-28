@@ -251,6 +251,61 @@ fn projection_glance_preserves_percent_and_reset_preferences() {
 }
 
 #[test]
+fn native_selection_updates_public_account_route_and_details() {
+    let mut fixture = LocalUsageFixture::start_with_projection(
+        format_preferences_projection(),
+        vec!["codex".to_owned()],
+    );
+    let accounts = fixture
+        .bridge
+        .list_accounts(Some("codex".to_owned()))
+        .expect("public Codex account inventory");
+    assert_eq!(accounts.len(), 2);
+    assert_eq!(accounts[0].account_key, "canonical-openai-a");
+    assert!(accounts[0].selected);
+
+    let snapshot = fixture
+        .bridge
+        .snapshot("codex".to_owned())
+        .expect("public Codex snapshot");
+    let weekly_detail = snapshot
+        .detail_presentation
+        .rows
+        .iter()
+        .find(|row| row.row_id == "weekly-group")
+        .expect("weekly detail row");
+    assert!(weekly_detail.display_label.contains("weekly"));
+
+    fixture
+        .bridge
+        .set_selected_account("codex".to_owned(), "canonical-openai-b".to_owned())
+        .expect("select public Codex account B");
+    let codex = fixture
+        .bridge
+        .desktop_projection(3)
+        .expect("public desktop projection")
+        .providers
+        .into_iter()
+        .find(|provider| provider.group.surface_id == "codex")
+        .expect("Codex desktop provider");
+    assert_eq!(codex.selected_account_route.status, "available");
+    assert_eq!(
+        codex.selected_account_route.account_key.as_deref(),
+        Some("canonical-openai-b")
+    );
+    assert_eq!(codex.selected_usage.account_label, "bob@example.test");
+
+    fixture
+        .bridge
+        .set_selected_account("codex".to_owned(), "unknown-account".to_owned())
+        .expect_err("unknown Codex account is rejected");
+
+    fixture
+        .stop_and_join()
+        .expect("local usage service stops and joins");
+}
+
+#[test]
 fn cached_refresh_tracks_publication_across_service_restart() {
     let initial_projection = format_preferences_projection();
     let mut fixture = LocalUsageFixture::start_with_projection(
