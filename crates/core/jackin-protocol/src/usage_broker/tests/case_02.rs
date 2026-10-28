@@ -182,3 +182,35 @@ fn request_round_trip_preserves_generation_and_force_semantics() {
         request
     );
 }
+
+#[test]
+fn usage_relay_ready_frames_keep_canonical_and_reject_invalid_forms() {
+    let ready = UsageRelayReadyV1::canonical();
+    let frame = ready.encode_frame().unwrap();
+    assert_eq!(
+        frame,
+        b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1}\n"
+    );
+    assert!(frame.len() <= USAGE_RELAY_READY_MAX_FRAME_BYTES);
+    assert_eq!(UsageRelayReadyV1::decode_frame(&frame).unwrap(), ready);
+
+    for frame in [
+        &b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1}"[..],
+        &b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1}\n\n"[..],
+        &b"{ \"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1}\n"[..],
+        &b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1,\"extra\":false}\n"[..],
+        &b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":2}\n"[..],
+        &b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v1\",\"version\":1}\n"[..],
+        &b"{\"kind\":\"usage_relay_ready\",\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1}\n"[..],
+        &b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1}\ntrailing"[..],
+    ] {
+        assert!(
+            UsageRelayReadyV1::decode_frame(frame).is_err(),
+            "unexpectedly accepted {:?}",
+            String::from_utf8_lossy(frame)
+        );
+    }
+
+    let oversized = [b'x'; USAGE_RELAY_READY_MAX_FRAME_BYTES + 1];
+    let _error = UsageRelayReadyV1::decode_frame(&oversized).unwrap_err();
+}
