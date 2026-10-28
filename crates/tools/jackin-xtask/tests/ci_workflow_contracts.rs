@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    io::Cursor,
+    fs,
     ops::Range,
     path::Path,
     process::{Command, Output, Stdio},
@@ -14,7 +14,7 @@ const WORKFLOW_PATH: &str = ".github/workflows/ci.yml";
 
 #[test]
 fn required_needs_include_every_job_except_the_exact_exclusions() -> Result<()> {
-    let snapshot = published_snapshot()?;
+    let snapshot = workflow_fixture()?;
     let workflow = read_workflow(snapshot.path())?;
 
     for missing_job in [
@@ -31,10 +31,17 @@ fn required_needs_include_every_job_except_the_exact_exclusions() -> Result<()> 
         )?;
         write_workflow(snapshot.path(), &changed)?;
         assert_rejected(
-            run_strict_lint(snapshot.path())?,
+            run_ci_workflow(snapshot.path())?,
             &["required.needs", missing_job],
         );
     }
+
+    let missing_plan = replace_in_job(&workflow, "required", "      - plan\n", "")?;
+    write_workflow(snapshot.path(), &missing_plan)?;
+    assert_rejected(
+        run_strict_lint(snapshot.path())?,
+        &["required.needs", "plan"],
+    );
 
     let with_seed_dependency = replace_in_job(
         &workflow,
@@ -44,7 +51,7 @@ fn required_needs_include_every_job_except_the_exact_exclusions() -> Result<()> 
     )?;
     write_workflow(snapshot.path(), &with_seed_dependency)?;
     assert_rejected(
-        run_strict_lint(snapshot.path())?,
+        run_ci_workflow(snapshot.path())?,
         &["required.needs", "dependency-seed"],
     );
 
@@ -54,7 +61,7 @@ fn required_needs_include_every_job_except_the_exact_exclusions() -> Result<()> 
     );
     write_workflow(snapshot.path(), &with_shadow_job)?;
     assert_rejected(
-        run_strict_lint(snapshot.path())?,
+        run_ci_workflow(snapshot.path())?,
         &["required.needs", "dependency-seed-shadow"],
     );
     Ok(())
@@ -62,16 +69,16 @@ fn required_needs_include_every_job_except_the_exact_exclusions() -> Result<()> 
 
 #[test]
 fn only_dependency_seed_may_tolerate_job_failure() -> Result<()> {
-    let snapshot = published_snapshot()?;
+    let snapshot = workflow_fixture()?;
     let workflow = read_workflow(snapshot.path())?;
     assert_seed_has_step_level_tolerance(&workflow)?;
 
     let with_explicit_false = insert_job_property(&workflow, "required", "false")?;
     write_workflow(snapshot.path(), &with_explicit_false)?;
-    let output = run_strict_lint(snapshot.path())?;
+    let output = run_ci_workflow(snapshot.path())?;
     assert!(
         output.status.success(),
-        "strict lint rejected an explicit false job tolerance:\n{}\n{}",
+        "CI workflow lint rejected an explicit false job tolerance:\n{}\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -93,7 +100,7 @@ fn only_dependency_seed_may_tolerate_job_failure() -> Result<()> {
         };
         write_workflow(snapshot.path(), &changed)?;
         assert_rejected(
-            run_strict_lint(snapshot.path())?,
+            run_ci_workflow(snapshot.path())?,
             &["dependency-seed", "continue-on-error"],
         );
     }
@@ -112,7 +119,7 @@ fn only_dependency_seed_may_tolerate_job_failure() -> Result<()> {
     )?;
     write_workflow(snapshot.path(), &with_renamed_seed_needed)?;
     assert_rejected(
-        run_strict_lint(snapshot.path())?,
+        run_ci_workflow(snapshot.path())?,
         &["must define the dependency-seed job"],
     );
 
@@ -120,7 +127,7 @@ fn only_dependency_seed_may_tolerate_job_failure() -> Result<()> {
         let changed = insert_job_property(&workflow, job_id, "true")?;
         write_workflow(snapshot.path(), &changed)?;
         assert_rejected(
-            run_strict_lint(snapshot.path())?,
+            run_ci_workflow(snapshot.path())?,
             &[job_id, "continue-on-error"],
         );
     }
@@ -129,59 +136,49 @@ fn only_dependency_seed_may_tolerate_job_failure() -> Result<()> {
         let changed = insert_job_property(&workflow, "required", value)?;
         write_workflow(snapshot.path(), &changed)?;
         assert_rejected(
-            run_strict_lint(snapshot.path())?,
+            run_ci_workflow(snapshot.path())?,
             &["required", "continue-on-error"],
         );
     }
     Ok(())
 }
 
-fn published_snapshot() -> Result<tempfile::TempDir> {
+fn workflow_fixture() -> Result<tempfile::TempDir> {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(3)
         .context("xtask crate path should be inside the repository")?;
-    let mut archive_command = Command::new("git");
-    archive_command
-        .args(["archive", "--format=tar", "HEAD"])
-        .current_dir(repository)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let archive = archive_command
-        .spawn()?
-        .wait_with_output()
-        .context("creating the tracked source archive")?;
-    ensure!(
-        archive.status.success(),
-        "git archive failed: {}",
-        String::from_utf8_lossy(&archive.stderr)
-    );
-    let snapshot = tempfile::tempdir().context("creating an isolated source snapshot")?;
-    tar::Archive::new(Cursor::new(archive.stdout))
-        .unpack(snapshot.path())
-        .context("extracting the tracked source archive")?;
+    let workflow = fs::read(repository.join(WORKFLOW_PATH))
+        .context("reading the current repository CI workflow")?;
+    let snapshot = tempfile::tempdir().context("creating an isolated CI workflow fixture")?;
+    fs::create_dir_all(snapshot.path().join("docs/content"))
+        .context("creating the repository-root marker")?;
+    fs::create_dir_all(snapshot.path().join(".github/workflows"))
+        .context("creating the CI workflow fixture path")?;
+    fs::write(snapshot.path().join(WORKFLOW_PATH), workflow)
+        .context("writing the current CI workflow fixture")?;
     Ok(snapshot)
 }
 
 fn run_strict_lint(snapshot: &Path) -> Result<Output> {
-    let mut lint_command = Command::new("mise");
+    run_lint(snapshot, &["lint", "--strict"])
+}
+
+fn run_ci_workflow(snapshot: &Path) -> Result<Output> {
+    run_lint(snapshot, &["lint", "ci-workflow"])
+}
+
+fn run_lint(snapshot: &Path, args: &[&str]) -> Result<Output> {
+    let mut lint_command = Command::new(env!("CARGO_BIN_EXE_jackin-xtask"));
     lint_command
-        .args([
-            "exec",
-            "--locked",
-            "github:open-telemetry/weaver",
-            "--",
-            env!("CARGO_BIN_EXE_jackin-xtask"),
-            "lint",
-            "--strict",
-        ])
+        .args(args)
         .current_dir(snapshot)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     lint_command
         .spawn()?
         .wait_with_output()
-        .context("running the public strict-lint CLI through pinned Mise tools")
+        .context("running the public lint CLI")
 }
 
 fn assert_rejected(output: Output, expected: &[&str]) {
@@ -189,14 +186,18 @@ fn assert_rejected(output: Output, expected: &[&str]) {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !output.status.success(),
-        "strict lint unexpectedly accepted the workflow:\n{stdout}\n{stderr}"
+        "CI workflow lint unexpectedly accepted the workflow:\n{stdout}\n{stderr}"
     );
     for expected_text in expected {
         assert!(
             stderr.contains(expected_text),
-            "strict lint failed without the expected `{expected_text}` diagnostic:\n{stdout}\n{stderr}"
+            "CI workflow lint failed without the expected `{expected_text}` diagnostic:\n{stdout}\n{stderr}"
         );
     }
+    assert!(
+        !stderr.contains("lint gates failed:"),
+        "CI workflow rejection should occur before unrelated lint gates:\n{stdout}\n{stderr}"
+    );
 }
 
 fn assert_seed_has_step_level_tolerance(workflow: &str) -> Result<()> {
@@ -220,11 +221,11 @@ fn assert_seed_has_step_level_tolerance(workflow: &str) -> Result<()> {
 }
 
 fn read_workflow(snapshot: &Path) -> Result<String> {
-    std::fs::read_to_string(snapshot.join(WORKFLOW_PATH)).context("reading archived CI workflow")
+    fs::read_to_string(snapshot.join(WORKFLOW_PATH)).context("reading CI workflow fixture")
 }
 
 fn write_workflow(snapshot: &Path, workflow: &str) -> Result<()> {
-    std::fs::write(snapshot.join(WORKFLOW_PATH), workflow).context("writing test workflow variant")
+    fs::write(snapshot.join(WORKFLOW_PATH), workflow).context("writing test workflow variant")
 }
 
 fn replace_in_job(workflow: &str, job_id: &str, from: &str, to: &str) -> Result<String> {
