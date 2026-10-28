@@ -4,7 +4,7 @@
 use std::{
     ffi::OsString,
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Output, Stdio},
 };
 
@@ -48,6 +48,335 @@ fn assert_text_row(row: &Value, label: &str, text: &str) {
 
 fn append_path(args: &mut Vec<OsString>, path: &Path) {
     args.push(path.as_os_str().to_owned());
+}
+
+fn session_cost_output(transcripts: &[&Path], prices: Option<&Path>) -> std::io::Result<Output> {
+    let mut args = vec![OsString::from("session-cost")];
+    for transcript in transcripts {
+        append_path(&mut args, transcript);
+    }
+    if let Some(prices) = prices {
+        args.push(OsString::from("--prices"));
+        append_path(&mut args, prices);
+    }
+    run_measurement(args)
+}
+
+fn write_jsonl(path: &Path, records: &[Value]) -> std::io::Result<()> {
+    let mut contents = records
+        .iter()
+        .map(Value::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    contents.push('\n');
+    fs::write(path, contents)
+}
+
+fn assistant_record(
+    session_id: Option<&str>,
+    id: Option<&str>,
+    model: &str,
+    usage: Value,
+) -> Value {
+    let mut message = json!({"model": model, "usage": usage});
+    if let Some(id) = id {
+        message["id"] = json!(id);
+    }
+    let mut record = json!({"type": "assistant", "message": message});
+    if let Some(session_id) = session_id {
+        record["sessionId"] = json!(session_id);
+    }
+    record
+}
+
+fn cache_write_usage(five_minutes: u64, one_hour: u64, aggregate: u64) -> Value {
+    json!({
+        "input_tokens": 1,
+        "cache_creation_input_tokens": aggregate,
+        "cache_creation": {
+            "ephemeral_5m_input_tokens": five_minutes,
+            "ephemeral_1h_input_tokens": one_hour
+        },
+        "output_tokens": 1
+    })
+}
+
+fn assert_session_cost_error(
+    path: &Path,
+    records: &[Value],
+    expected: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    write_jsonl(path, records)?;
+    let output = session_cost_output(&[path], None)?;
+    assert!(!output.status.success(), "{expected}");
+    assert!(stderr(&output).contains(expected), "{}", stderr(&output));
+    Ok(())
+}
+
+fn assert_session_cost_usage_errors(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    for (name, usage, expected) in [
+        ("false", json!(false), "usage must be an object"),
+        ("zero", json!(0), "usage must be an object"),
+        ("empty-string", json!(""), "usage must be an object"),
+        ("empty-array", json!([]), "usage must be an object"),
+        ("empty-object", json!({}), "missing or invalid input_tokens"),
+        ("missing-input", json!({"output_tokens": 5}), "input_tokens"),
+        (
+            "missing-output",
+            json!({"input_tokens": 5}),
+            "output_tokens",
+        ),
+        (
+            "negative-input",
+            json!({"input_tokens": -1, "output_tokens": 0}),
+            "input_tokens",
+        ),
+        (
+            "breakdown-exceeds-aggregate",
+            json!({
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_creation_input_tokens": 2,
+                "cache_creation": {"ephemeral_5m_input_tokens": 3}
+            }),
+            "breakdown exceeds aggregate",
+        ),
+        (
+            "empty-iterations",
+            json!({"iterations": []}),
+            "iterations must be a nonempty final usage array",
+        ),
+        (
+            "nested-iterations",
+            json!({"iterations": [{"iterations": [{"input_tokens": 1, "output_tokens": 1}]}]}),
+            "nested usage iterations are invalid",
+        ),
+    ] {
+        let path = directory.join(format!("{name}.jsonl"));
+        assert_session_cost_error(
+            &path,
+            &[assistant_record(Some("s"), Some("id"), "model", usage)],
+            expected,
+        )?;
+    }
+
+    let iteration_overflow = json!({
+        "iterations": [
+            cache_write_usage(u64::MAX, 0, u64::MAX),
+            cache_write_usage(0, 1, 1)
+        ]
+    });
+    assert_session_cost_error(
+        &directory.join("iteration-overflow.jsonl"),
+        &[assistant_record(
+            Some("s"),
+            Some("id"),
+            "model",
+            iteration_overflow,
+        )],
+        "combined cache-write total overflow",
+    )?;
+    assert_session_cost_error(
+        &directory.join("receipt-total-overflow.jsonl"),
+        &[
+            assistant_record(
+                Some("s"),
+                Some("max"),
+                "model",
+                cache_write_usage(u64::MAX, 0, u64::MAX),
+            ),
+            assistant_record(Some("s"), Some("one"), "model", cache_write_usage(0, 1, 1)),
+        ],
+        "combined cache-write total overflow",
+    )?;
+    Ok(())
+}
+
+fn assert_session_cost_stream_errors(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let malformed = directory.join("malformed.jsonl");
+    fs::write(&malformed, b"\nnot-json")?;
+    let output = session_cost_output(&[malformed.as_path()], None)?;
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains(":2: invalid JSON"));
+
+    let invalid_utf8 = directory.join("invalid-utf8.jsonl");
+    fs::write(&invalid_utf8, b"{}\n\xff")?;
+    let output = session_cost_output(&[invalid_utf8.as_path()], None)?;
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains(":2: invalid UTF-8"));
+
+    let records = |input: u64, output: u64| {
+        assistant_record(
+            Some("s"),
+            Some("id"),
+            "model",
+            json!({"input_tokens": input, "output_tokens": output}),
+        )
+    };
+    assert_session_cost_error(
+        &directory.join("non-monotone.jsonl"),
+        &[records(10, 12), records(10, 1)],
+        "non-monotone duplicate usage",
+    )?;
+    assert_session_cost_error(
+        &directory.join("model-conflict.jsonl"),
+        &[
+            records(1, 1),
+            assistant_record(
+                Some("s"),
+                Some("id"),
+                "other-model",
+                json!({"input_tokens": 1, "output_tokens": 1}),
+            ),
+        ],
+        "response model changed for the same ID",
+    )?;
+    assert_session_cost_error(
+        &directory.join("missing-id.jsonl"),
+        &[
+            assistant_record(Some("s"), None, "model", json!({})),
+            assistant_record(
+                Some("s"),
+                Some("later"),
+                "model",
+                json!({"input_tokens": 10, "output_tokens": 12}),
+            ),
+        ],
+        "usage-bearing response has no message ID",
+    )?;
+
+    let ttl_breakdown = |five_minutes: u64, one_hour: u64| {
+        json!({
+            "input_tokens": 1,
+            "cache_creation_input_tokens": 2,
+            "cache_creation": {
+                "ephemeral_5m_input_tokens": five_minutes,
+                "ephemeral_1h_input_tokens": one_hour
+            },
+            "output_tokens": 1
+        })
+    };
+    assert_session_cost_error(
+        &directory.join("ttl-conflict.jsonl"),
+        &[
+            assistant_record(Some("s"), Some("id"), "model", ttl_breakdown(2, 0)),
+            assistant_record(Some("s"), Some("id"), "model", ttl_breakdown(1, 1)),
+        ],
+        "conflicting cache TTL breakdown",
+    )?;
+    Ok(())
+}
+
+fn write_session_cost_pricing_fixture(
+    directory: &Path,
+) -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
+    let transcript = directory.join("receipts.jsonl");
+    let compacted = assistant_record(
+        Some("s"),
+        Some("compacted"),
+        "compacted-model",
+        json!({
+            "input_tokens": 100,
+            "output_tokens": 10,
+            "iterations": [
+                {"type": "compaction", "input_tokens": 200, "output_tokens": 20},
+                {"type": "message", "input_tokens": 100, "output_tokens": 10}
+            ]
+        }),
+    );
+    let mut records = vec![
+        assistant_record(
+            Some("s"),
+            Some("partial-ttl"),
+            "rated-unknown",
+            json!({
+                "input_tokens": 10,
+                "cache_read_input_tokens": 4,
+                "cache_creation": {
+                    "ephemeral_5m_input_tokens": 70,
+                    "ephemeral_1h_input_tokens": 30
+                },
+                "cache_creation_input_tokens": 200,
+                "output_tokens": 6
+            }),
+        ),
+        assistant_record(
+            Some("s"),
+            Some("untimed"),
+            "untimed-model",
+            json!({
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_creation_input_tokens": 100
+            }),
+        ),
+        assistant_record(
+            Some("s"),
+            Some("partitioned"),
+            "partitioned-model",
+            json!({
+                "input_tokens": 1,
+                "output_tokens": 2,
+                "cache_creation_input_tokens": 100,
+                "cache_creation": {
+                    "ephemeral_5m_input_tokens": 70,
+                    "ephemeral_1h_input_tokens": 30
+                }
+            }),
+        ),
+        compacted.clone(),
+        compacted,
+    ];
+    records.extend([
+        assistant_record(
+            Some("s"),
+            Some("free"),
+            "free-model",
+            json!({"input_tokens": 2, "output_tokens": 3}),
+        ),
+        assistant_record(
+            Some("s"),
+            Some("unpriced"),
+            "unpriced-model",
+            json!({"input_tokens": 1, "output_tokens": 1}),
+        ),
+        assistant_record(
+            Some("s"),
+            Some("null-rate"),
+            "null-priced-model",
+            json!({"input_tokens": 1, "output_tokens": 1}),
+        ),
+    ]);
+    write_jsonl(&transcript, &records)?;
+
+    let prices = directory.join("prices.json");
+    fs::write(
+        &prices,
+        json!({
+            "rated-unknown": {
+                "input": 1, "cache_read": 1, "cache_write_5m": 1,
+                "cache_write_1h": 1, "output": 1
+            },
+            "untimed-model": {
+                "input": 1, "cache_read": 1, "cache_write_5m": 1,
+                "cache_write_1h": 1, "output": 1
+            },
+            "partitioned-model": {
+                "input": 1, "cache_read": 1, "cache_write_5m": 1,
+                "cache_write_1h": 1, "output": 1
+            },
+            "free-model": {
+                "input": 0.0,
+                "cache_read": 0.0,
+                "cache_write_5m": 0.0,
+                "cache_write_1h": 0.0,
+                "output": 0.0
+            },
+            "null-priced-model": null
+        })
+        .to_string(),
+    )?;
+    Ok((transcript, prices))
 }
 
 #[test]
@@ -133,5 +462,202 @@ fn image_dimension_batches_validate_bounds_before_output() -> Result<(), Box<dyn
     ]))?;
     assert!(!mixed.status.success());
     assert!(mixed.stdout.is_empty());
+    Ok(())
+}
+
+#[test]
+fn session_cost_uses_latest_receipt_with_session_and_file_scopes()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = tempdir().unwrap();
+    let first_path = directory.path().join("first.jsonl");
+    let second_path = directory.path().join("second.jsonl");
+    let repeated_record = assistant_record(
+        Some("session-repeat"),
+        Some("repeated-id"),
+        "model-a",
+        json!({"input_tokens": 1, "output_tokens": 1}),
+    );
+    let mut first_records = vec![
+        assistant_record(Some("session-a"), None, "ignored-model", Value::Null),
+        assistant_record(
+            Some("session-a"),
+            Some("shared-id"),
+            "model-a",
+            json!({
+                "input_tokens": 3,
+                "cache_read_input_tokens": 1,
+                "cache_creation_input_tokens": 2,
+                "cache_creation": {"ephemeral_5m_input_tokens": 2},
+                "output_tokens": 2
+            }),
+        ),
+        assistant_record(
+            None,
+            Some("file-id"),
+            "model-a",
+            json!({"input_tokens": 1, "output_tokens": 1}),
+        ),
+    ];
+    first_records.extend([
+        repeated_record.clone(),
+        repeated_record.clone(),
+        repeated_record,
+    ]);
+    write_jsonl(&first_path, &first_records)?;
+    write_jsonl(
+        &second_path,
+        &[
+            assistant_record(
+                Some("session-a"),
+                Some("shared-id"),
+                "model-a",
+                json!({
+                    "input_tokens": 5,
+                    "cache_read_input_tokens": 2,
+                    "cache_creation_input_tokens": 3,
+                    "cache_creation": {"ephemeral_5m_input_tokens": 3},
+                    "output_tokens": 4
+                }),
+            ),
+            assistant_record(
+                Some("session-b"),
+                Some("shared-id"),
+                "model-b",
+                json!({
+                    "input_tokens": 7,
+                    "cache_read_input_tokens": 1,
+                    "cache_creation_input_tokens": 4,
+                    "cache_creation": {"ephemeral_1h_input_tokens": 4},
+                    "output_tokens": 6
+                }),
+            ),
+            assistant_record(
+                None,
+                Some("file-id"),
+                "model-a",
+                json!({"input_tokens": 1, "output_tokens": 1}),
+            ),
+        ],
+    )?;
+
+    let report = json_output(&session_cost_output(
+        &[first_path.as_path(), second_path.as_path()],
+        None,
+    )?)?;
+    assert_eq!(report["unique_responses"], 5);
+    assert_eq!(report["duplicate_records"], 3);
+    assert!(report["tokens_by_model"].get("ignored-model").is_none());
+    assert_eq!(
+        report["tokens_by_model"]["model-a"],
+        json!({
+            "input": 8,
+            "cache_read": 2,
+            "cache_write_5m": 3,
+            "cache_write_1h": 0,
+            "cache_write_unknown": 0,
+            "output": 7
+        })
+    );
+    assert_eq!(
+        report["tokens_by_model"]["model-b"],
+        json!({
+            "input": 7,
+            "cache_read": 1,
+            "cache_write_5m": 0,
+            "cache_write_1h": 4,
+            "cache_write_unknown": 0,
+            "output": 6
+        })
+    );
+    Ok(())
+}
+
+#[test]
+fn session_cost_rejects_falsey_usage_and_invalid_receipt_streams()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = tempdir().unwrap();
+    assert_session_cost_usage_errors(directory.path())?;
+    assert_session_cost_stream_errors(directory.path())?;
+    Ok(())
+}
+
+#[test]
+fn session_cost_normalizes_iterations_ttls_and_exact_model_prices()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = tempdir().unwrap();
+    let (transcript, prices) = write_session_cost_pricing_fixture(directory.path())?;
+
+    let report = json_output(&session_cost_output(
+        &[transcript.as_path()],
+        Some(prices.as_path()),
+    )?)?;
+    assert_eq!(report["unique_responses"], 7);
+    assert_eq!(report["duplicate_records"], 1);
+    assert_eq!(
+        report["tokens_by_model"]["rated-unknown"],
+        json!({
+            "input": 10,
+            "cache_read": 4,
+            "cache_write_5m": 70,
+            "cache_write_1h": 30,
+            "cache_write_unknown": 100,
+            "output": 6
+        })
+    );
+    assert_eq!(
+        report["tokens_by_model"]["untimed-model"],
+        json!({
+            "input": 0,
+            "cache_read": 0,
+            "cache_write_5m": 0,
+            "cache_write_1h": 0,
+            "cache_write_unknown": 100,
+            "output": 0
+        })
+    );
+    assert_eq!(
+        report["tokens_by_model"]["partitioned-model"],
+        json!({
+            "input": 1,
+            "cache_read": 0,
+            "cache_write_5m": 70,
+            "cache_write_1h": 30,
+            "cache_write_unknown": 0,
+            "output": 2
+        })
+    );
+    assert_eq!(
+        report["tokens_by_model"]["compacted-model"],
+        json!({"input": 300, "cache_read": 0, "cache_write_5m": 0, "cache_write_1h": 0, "cache_write_unknown": 0, "output": 30})
+    );
+    assert_eq!(
+        report["list_price_estimate"]["rated-unknown"],
+        json!({"usd": null, "reason": "cache write TTL unknown"})
+    );
+    assert_eq!(
+        report["list_price_estimate"]["untimed-model"],
+        json!({"usd": null, "reason": "cache write TTL unknown"})
+    );
+    assert_eq!(
+        report["list_price_estimate"]["free-model"],
+        json!({
+            "usd": 0.0,
+            "by_class": {
+                "input": 0.0,
+                "cache_read": 0.0,
+                "cache_write_5m": 0.0,
+                "cache_write_1h": 0.0,
+                "output": 0.0
+            }
+        })
+    );
+    assert_eq!(
+        report["list_price_estimate"]["unpriced-model"],
+        json!({"usd": null, "reason": "no rate for exact model"})
+    );
+    assert_eq!(
+        report["list_price_estimate"]["null-priced-model"],
+        json!({"usd": null, "reason": "no rate for exact model"})
+    );
     Ok(())
 }
