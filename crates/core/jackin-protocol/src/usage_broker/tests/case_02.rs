@@ -154,3 +154,126 @@ fn metric_groups_round_trip_all_six_wire_values() {
         assert_eq!(&decoded, group);
     }
 }
+
+fn capability() -> UsageAccountCapability {
+    UsageAccountCapability {
+        account_id: "opaque-account".into(),
+        surface_id: "claude".into(),
+    }
+}
+
+#[test]
+fn request_round_trip_preserves_generation_and_force_semantics() {
+    let request = UsageBrokerRequest {
+        protocol_version: USAGE_BROKER_PROTOCOL_VERSION.into(),
+        build_id: "test-build".into(),
+        operation: UsageBrokerOperation::Refresh {
+            capability: capability(),
+            observed_generation: 7,
+            force: true,
+        },
+        launch_credential_scope: None,
+    };
+
+    let bytes = serde_json::to_vec(&request).unwrap();
+    assert!(bytes.len() < USAGE_BROKER_MAX_FRAME_BYTES);
+    assert_eq!(
+        serde_json::from_slice::<UsageBrokerRequest>(&bytes).unwrap(),
+        request
+    );
+    let wire = serde_json::json!({
+        "protocol_version": "v9",
+        "build_id": "test-build",
+        "operation": {
+            "operation": "refresh",
+            "capability": {
+                "account_id": "opaque-account",
+                "surface_id": "claude"
+            },
+            "observed_generation": 7,
+            "force": true
+        }
+    });
+    assert_eq!(serde_json::to_value(&request).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<UsageBrokerRequest>(wire).unwrap(),
+        request
+    );
+}
+
+#[test]
+fn usage_relay_ready_frames_keep_canonical_and_reject_invalid_forms() {
+    let ready = UsageRelayReadyV1::canonical();
+    let frame = ready.encode_frame().unwrap();
+    assert_eq!(
+        frame,
+        b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1}\n"
+    );
+    assert!(frame.len() <= USAGE_RELAY_READY_MAX_FRAME_BYTES);
+    assert_eq!(UsageRelayReadyV1::decode_frame(&frame).unwrap(), ready);
+
+    for frame in [
+        &b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1}"[..],
+        &b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1}\n\n"[..],
+        &b"{ \"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1}\n"[..],
+        &b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1,\"extra\":false}\n"[..],
+        &b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":2}\n"[..],
+        &b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v1\",\"version\":1}\n"[..],
+        &b"{\"kind\":\"usage_relay_ready\",\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1}\n"[..],
+        &b"{\"kind\":\"usage_relay_ready\",\"protocol\":\"usage-relay-owner-v2\",\"version\":1}\ntrailing"[..],
+    ] {
+        assert!(
+            UsageRelayReadyV1::decode_frame(frame).is_err(),
+            "unexpectedly accepted {:?}",
+            String::from_utf8_lossy(frame)
+        );
+    }
+
+    let oversized = [b'x'; USAGE_RELAY_READY_MAX_FRAME_BYTES + 1];
+    let _error = UsageRelayReadyV1::decode_frame(&oversized).unwrap_err();
+
+    let mut padded = vec![b' '; USAGE_RELAY_READY_MAX_FRAME_BYTES + 1 - frame.len()];
+    padded.extend_from_slice(&frame);
+    assert_eq!(padded.len(), USAGE_RELAY_READY_MAX_FRAME_BYTES + 1);
+    assert_eq!(
+        UsageRelayReadyV1::decode_frame(&padded).unwrap_err(),
+        "usage relay readiness frame has invalid framing"
+    );
+}
+
+#[test]
+fn response_round_trip_keeps_typed_sanitized_failure() {
+    let response = UsageBrokerResponse::Error {
+        error: UsageCoordinationError {
+            kind: UsageCoordinationErrorKind::Unauthorized,
+            message: "usage account capability is not authorized".into(),
+        },
+    };
+
+    let bytes = serde_json::to_vec(&response).unwrap();
+    assert!(bytes.len() < USAGE_BROKER_MAX_FRAME_BYTES);
+    assert_eq!(
+        serde_json::from_slice::<UsageBrokerResponse>(&bytes).unwrap(),
+        response
+    );
+    let wire = serde_json::json!({
+        "status": "error",
+        "error": {
+            "kind": "unauthorized",
+            "message": "usage account capability is not authorized"
+        }
+    });
+    assert_eq!(serde_json::to_value(&response).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<UsageBrokerResponse>(wire).unwrap(),
+        response
+    );
+}
+
+#[test]
+fn broker_conflict_has_a_stable_sanitized_wire_name() {
+    let value = serde_json::to_value(UsageCoordinationErrorKind::BrokerConflict)
+        .expect("broker conflict should encode");
+    assert_eq!(value, "broker_conflict");
+    assert_eq!(USAGE_BROKER_PROTOCOL_VERSION, "v9");
+}
