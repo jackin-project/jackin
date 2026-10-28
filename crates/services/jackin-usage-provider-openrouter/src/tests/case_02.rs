@@ -161,3 +161,23 @@ fn openrouter_money_derived_remaining_stays_continuous_and_signed_ratio_stays_ra
         Some(-2_500)
     );
 }
+
+#[test]
+fn openrouter_base_url_prefers_api_url_override() {
+    assert_eq!(
+        openrouter_base_url_from(None, None),
+        "https://openrouter.ai/api/v1"
+    );
+    assert_eq!(
+        openrouter_base_url_from(Some("https://api.test/"), Some("https://base.test")),
+        "https://api.test"
+    );
+    assert_eq!(
+        openrouter_base_url_from(None, Some("https://base.test/")),
+        "https://base.test"
+    );
+    assert_eq!(
+        openrouter_base_url_from(Some("  "), Some("https://base.test")),
+        "https://base.test"
+    );
+}
