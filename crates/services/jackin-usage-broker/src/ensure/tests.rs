@@ -5,11 +5,16 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 
-use jackin_protocol::usage_broker::UsageCoordinationErrorKind;
+use jackin_protocol::usage_broker::{UsageCoordinationError, UsageCoordinationErrorKind};
 use jackin_usage_discovery::UsageDiscoveryScope;
 
 use super::{ensure_usage_broker_process, ensure_usage_monitor_process};
 use crate::{BROKER_DIR, BROKER_RUN_DIR, BROKER_SOCKET, UNIX_SOCKET_PATH_LIMIT, UsageBrokerConfig};
+
+type EnsureFunction = fn(
+    UsageBrokerConfig,
+    &UsageDiscoveryScope,
+) -> Result<crate::UsageBrokerClient, UsageCoordinationError>;
 
 fn host_scope(root: &Path) -> UsageDiscoveryScope {
     UsageDiscoveryScope::HostDesktop {
@@ -115,29 +120,44 @@ fn nonexecutable_monitor_broker_is_unavailable_before_a_run_directory_exists() {
 }
 
 #[test]
-fn missing_broker_executable_config_is_unavailable_before_a_run_directory_exists() {
-    let root = tempfile::Builder::new()
-        .prefix("jb-")
-        .tempdir_in("/tmp")
-        .expect("short owned fixture root");
-    let mut config = UsageBrokerConfig::for_data_dir(root.path().join("data"));
-    config.service_executable = None;
-    let run_dir = config.data_dir.join(BROKER_DIR).join(BROKER_RUN_DIR);
-    assert!(!run_dir.exists(), "fixture run directory already exists");
+fn missing_broker_executable_config_is_unavailable_for_each_public_ensure_entrypoint() {
+    let ensure_functions: [(&str, EnsureFunction); 2] = [
+        ("broker", ensure_usage_broker_process),
+        ("monitor", ensure_usage_monitor_process),
+    ];
 
-    let error = ensure_usage_broker_process(config, &host_scope(root.path()))
-        .expect_err("missing broker executable configuration");
-    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
-    assert!(
-        error
-            .message
-            .contains("usage broker executable cannot be located"),
-        "unexpected broker error: {}",
-        error.message
-    );
-    assert!(
-        !run_dir.exists(),
-        "missing executable configuration created a broker run directory"
-    );
-    assert_actionable_spawn_failure(&error.message);
+    for (entrypoint, ensure) in ensure_functions {
+        let root = tempfile::Builder::new()
+            .prefix("jb-")
+            .tempdir_in("/tmp")
+            .expect("short owned fixture root");
+        let mut config = UsageBrokerConfig::for_data_dir(root.path().join("data"));
+        config.service_executable = None;
+        let run_dir = config.data_dir.join(BROKER_DIR).join(BROKER_RUN_DIR);
+        assert!(
+            !run_dir.exists(),
+            "{entrypoint} fixture run directory already exists"
+        );
+
+        let Err(error) = ensure(config, &host_scope(root.path())) else {
+            panic!("missing broker executable configuration for {entrypoint}");
+        };
+        assert_eq!(
+            error.kind,
+            UsageCoordinationErrorKind::Unavailable,
+            "unexpected {entrypoint} error kind"
+        );
+        assert!(
+            error
+                .message
+                .contains("usage broker executable cannot be located"),
+            "unexpected {entrypoint} error: {}",
+            error.message
+        );
+        assert!(
+            !run_dir.exists(),
+            "missing executable configuration created a {entrypoint} broker run directory"
+        );
+        assert_actionable_spawn_failure(&error.message);
+    }
 }
