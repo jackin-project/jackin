@@ -700,3 +700,6 @@ fn validate_artifacts(artifacts: &Artifacts) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
