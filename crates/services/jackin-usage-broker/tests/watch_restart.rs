@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::error::Error;
-use std::io;
-use std::path::Path;
-use std::process::{Child, Command, ExitStatus};
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use jackin_protocol::usage_monitor::{
@@ -14,9 +15,9 @@ use jackin_protocol::usage_monitor::{
 };
 use jackin_usage_broker::{UsageBrokerClient, UsageBrokerConfig, run_usage_monitor_service};
 
-const TEST_NAME: &str = "cursor_zero_watch_replays_only_latest_event_after_restart";
-const CHILD_DATA_ROOT: &str = "JACKIN_USAGE_MONITOR_RESTART_DATA_ROOT";
+const SERVICE_FIXTURE_NAME: &str = "monitor_service_fixture_entry";
 const SESSION_ID: &str = "watch-restart-session";
+const MAX_FIXTURE_CONFIG_BYTES: usize = 4_096;
 
 struct ServiceChild {
     child: Child,
@@ -33,12 +34,6 @@ impl Drop for ServiceChild {
 
 #[test]
 fn cursor_zero_watch_replays_only_latest_event_after_restart() -> Result<(), Box<dyn Error>> {
-    if let Some(data_root) = std::env::var_os(CHILD_DATA_ROOT) {
-        run_usage_monitor_service(broker_config(Path::new(&data_root))?)
-            .map_err(|error| io::Error::other(format!("monitor service failed: {error:?}")))?;
-        return Ok(());
-    }
-
     let temp = tempfile::tempdir_in("/tmp")?;
     let data_root = temp.path();
     let config = broker_config(data_root)?;
@@ -162,6 +157,58 @@ fn cursor_zero_watch_replays_only_latest_event_after_restart() -> Result<(), Box
     Ok(())
 }
 
+#[test]
+#[ignore = "service re-execution fixture for PR #1259"]
+fn monitor_service_fixture_entry() -> Result<(), Box<dyn Error>> {
+    let data_root = read_service_data_root()?;
+    run_usage_monitor_service(broker_config(&data_root)?)
+        .map_err(|error| io::Error::other(format!("monitor service failed: {error:?}")))?;
+    Ok(())
+}
+
+fn read_service_data_root() -> io::Result<PathBuf> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let mut input = Vec::new();
+        let result = io::stdin()
+            .take((MAX_FIXTURE_CONFIG_BYTES + 1) as u64)
+            .read_to_end(&mut input)
+            .map(|_| input);
+        drop(sender.send(result));
+    });
+
+    let input = receiver
+        .recv_timeout(Duration::from_secs(2))
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "missing service fixture input"))??;
+    if input.len() > MAX_FIXTURE_CONFIG_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "service fixture input is too large",
+        ));
+    }
+    let path_bytes = input.strip_suffix(b"\n").unwrap_or(&input);
+    if path_bytes.is_empty()
+        || path_bytes.contains(&b'\n')
+        || path_bytes.contains(&b'\r')
+        || path_bytes.contains(&0)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "service fixture input must contain one data-root path",
+        ));
+    }
+    let path = std::str::from_utf8(path_bytes)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    let data_root = PathBuf::from(path);
+    if !data_root.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "service fixture data-root path must be absolute",
+        ));
+    }
+    Ok(data_root)
+}
+
 fn broker_config(data_root: &Path) -> io::Result<UsageBrokerConfig> {
     let mut config = UsageBrokerConfig::for_data_dir(data_root.join("data"));
     let socket_alias_root = data_root.join("socket-aliases");
@@ -229,12 +276,35 @@ fn spawn_service(data_root: &Path) -> io::Result<ServiceChild> {
     let executable = std::env::current_exe()?;
     let child = Command::new(executable)
         .arg("--exact")
-        .arg(TEST_NAME)
+        .arg(SERVICE_FIXTURE_NAME)
+        .arg("--ignored")
         .arg("--nocapture")
-        .env_remove(CHILD_DATA_ROOT)
-        .env(CHILD_DATA_ROOT, data_root)
+        .env_remove("JACKIN_USAGE_MONITOR_RESTART_DATA_ROOT")
+        .stdin(Stdio::piped())
         .spawn()?;
-    Ok(ServiceChild { child })
+    let mut service = ServiceChild { child };
+    let mut input = service
+        .child
+        .stdin
+        .take()
+        .ok_or_else(|| io::Error::other("service fixture stdin was not piped"))?;
+    let path = data_root
+        .to_str()
+        .ok_or_else(|| io::Error::other("service fixture data-root path is not UTF-8"))?;
+    if path.len() > MAX_FIXTURE_CONFIG_BYTES
+        || path
+            .chars()
+            .any(|character| matches!(character, '\n' | '\r' | '\0'))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "service fixture data-root path cannot be encoded",
+        ));
+    }
+    input.write_all(path.as_bytes())?;
+    input.write_all(b"\n")?;
+    drop(input);
+    Ok(service)
 }
 
 fn wait_until_running(client: &UsageBrokerClient, service: &mut ServiceChild) -> io::Result<()> {
