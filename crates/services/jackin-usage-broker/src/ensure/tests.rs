@@ -113,3 +113,31 @@ fn nonexecutable_monitor_broker_is_unavailable_before_a_run_directory_exists() {
     );
     assert_actionable_spawn_failure(&error.message);
 }
+
+#[test]
+fn missing_broker_executable_config_is_unavailable_before_a_run_directory_exists() {
+    let root = tempfile::Builder::new()
+        .prefix("jb-")
+        .tempdir_in("/tmp")
+        .expect("short owned fixture root");
+    let mut config = UsageBrokerConfig::for_data_dir(root.path().join("data"));
+    config.service_executable = None;
+    let run_dir = config.data_dir.join(BROKER_DIR).join(BROKER_RUN_DIR);
+    assert!(!run_dir.exists(), "fixture run directory already exists");
+
+    let error = ensure_usage_broker_process(config, &host_scope(root.path()))
+        .expect_err("missing broker executable configuration");
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    assert!(
+        error
+            .message
+            .contains("usage broker executable cannot be located"),
+        "unexpected broker error: {}",
+        error.message
+    );
+    assert!(
+        !run_dir.exists(),
+        "missing executable configuration created a broker run directory"
+    );
+    assert_actionable_spawn_failure(&error.message);
+}
