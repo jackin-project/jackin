@@ -341,6 +341,10 @@ fn run_snapshot_child(
         .env("JACKIN_OPENROUTER_TEST_CHILD", child_state)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if test_name == "tests::case_02::openrouter_snapshot_public_429_preserves_retry_after_deadline"
+    {
+        command.arg("--include-ignored");
+    }
     command
         .spawn()
         .unwrap_or_else(|error| panic!("could not spawn current test executable: {error}"))
