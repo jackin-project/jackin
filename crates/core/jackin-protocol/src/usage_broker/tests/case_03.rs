@@ -607,3 +607,21 @@ fn projection_operations_and_publication_response_round_trip() {
         response
     );
 }
+
+#[test]
+fn local_source_handle_identity_kind_preserves_wire_tag() {
+    let mut expected = projection_with_window(projection_window());
+    expected.providers[0].accounts[0].identity_kind = UsageIdentityKindV1::LocalSourceHandle;
+    let encoded = serde_json::to_value(&expected).unwrap();
+    assert_eq!(
+        encoded["providers"][0]["accounts"][0]["identity_kind"],
+        "local_source_handle"
+    );
+
+    let mut wire = serde_json::to_value(projection_with_window(projection_window())).unwrap();
+    wire["providers"][0]["accounts"][0]["identity_kind"] = serde_json::json!("local_source_handle");
+    assert_eq!(
+        serde_json::from_value::<UsageProjectionV1>(wire).unwrap(),
+        expected
+    );
+}
