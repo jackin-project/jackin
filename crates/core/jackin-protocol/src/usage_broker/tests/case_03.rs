@@ -510,3 +510,100 @@ fn projection_wire_preserves_rich_unlimited_count_and_meter_only_windows() {
             .contains("meter geometry and side without a matching pair")
     );
 }
+
+#[test]
+fn projection_operations_and_publication_response_round_trip() {
+    let operations = [
+        (
+            UsageBrokerOperation::CurrentProjection,
+            serde_json::json!({
+                "protocol_version": "v9",
+                "build_id": "test-build",
+                "operation": {
+                    "operation": "current_projection"
+                }
+            }),
+        ),
+        (
+            UsageBrokerOperation::RequestRefresh {
+                force: true,
+                observed_projection_id: Some("projection-1".into()),
+            },
+            serde_json::json!({
+                "protocol_version": "v9",
+                "build_id": "test-build",
+                "operation": {
+                    "operation": "request_refresh",
+                    "force": true,
+                    "observed_projection_id": "projection-1"
+                }
+            }),
+        ),
+        (
+            UsageBrokerOperation::JoinPublication {
+                projection_id: "projection-1".into(),
+                timeout_ms: 500,
+            },
+            serde_json::json!({
+                "protocol_version": "v9",
+                "build_id": "test-build",
+                "operation": {
+                    "operation": "join_publication",
+                    "projection_id": "projection-1",
+                    "timeout_ms": 500
+                }
+            }),
+        ),
+    ];
+    for (operation, wire) in operations {
+        let request = UsageBrokerRequest {
+            protocol_version: USAGE_BROKER_PROTOCOL_VERSION.into(),
+            build_id: "test-build".into(),
+            operation,
+            launch_credential_scope: None,
+        };
+        let bytes = serde_json::to_vec(&request).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<UsageBrokerRequest>(&bytes).unwrap(),
+            request
+        );
+        assert_eq!(serde_json::to_value(&request).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<UsageBrokerRequest>(wire).unwrap(),
+            request
+        );
+    }
+
+    let mut rich = projection_window();
+    rich.count_quota = Some(CountQuota::new(
+        Some(9),
+        Some(10),
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::Unknown,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    let unlimited = unlimited_projection_window();
+    let count_only = count_only_projection_window();
+    let meter_only = meter_only_projection_window();
+    let projection = projection_with_windows(vec![rich, unlimited, count_only, meter_only]);
+    projection.validate().unwrap();
+    let nested_projection = serde_json::to_value(&projection).unwrap();
+    let response = UsageBrokerResponse::Projection {
+        projection: Box::new(projection),
+    };
+    let bytes = serde_json::to_vec(&response).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<UsageBrokerResponse>(&bytes).unwrap(),
+        response
+    );
+    let wire = serde_json::json!({
+        "status": "projection",
+        "projection": nested_projection
+    });
+    assert_eq!(serde_json::to_value(&response).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<UsageBrokerResponse>(wire).unwrap(),
+        response
+    );
+}
