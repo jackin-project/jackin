@@ -70,12 +70,13 @@ fn identity(
     attempt: u32,
     path: &str,
     event: &str,
+    expected_sha: &str,
     receipt: &PackageReleaseReceipt,
 ) -> Result<()> {
     ensure!(
         run.id == id
             && run.run_attempt == attempt
-            && run.head_sha == receipt.source.commit_sha
+            && run.head_sha == expected_sha
             && run.head_branch.as_deref() == Some("main")
             && run.path == path
             && run.event == event
@@ -99,7 +100,7 @@ fn original_build_jobs(jobs: Jobs, receipt: &PackageReleaseReceipt) -> Result<()
                 && ids.insert(job.id)
                 && names.insert(&job.name)
                 && job.run_id == receipt.workflow.run_id
-                && job.head_sha == receipt.source.commit_sha,
+                && job.head_sha == receipt.workflow.authority_sha,
             "duplicate or mismatched release job identity"
         );
     }
@@ -147,6 +148,7 @@ pub(super) async fn validate(
         receipt.workflow.run_attempt,
         receipt.channel.workflow_path(),
         receipt.channel.event().as_str(),
+        &receipt.workflow.authority_sha,
         receipt,
     )?;
     ensure!(
@@ -158,7 +160,7 @@ pub(super) async fn validate(
     // still-running promotion does not unpublish the complete signed generation.
     // Recovery retains the original signed receipt even when its publisher failed.
     // Current publication authority comes from the complete authenticated release
-    // inventory and committed journal or immutable lifecycle, checked separately.
+    // inventory, immutable lifecycle and signed source-bound tag, checked separately.
     let jobs: Jobs = read(
         transport,
         &format!(
@@ -182,6 +184,7 @@ pub(super) async fn validate(
         receipt.source.ci_run_attempt,
         ".github/workflows/ci.yml",
         "push",
+        &receipt.source.commit_sha,
         receipt,
     )?;
     ensure!(

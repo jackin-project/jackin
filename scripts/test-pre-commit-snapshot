@@ -167,6 +167,10 @@ mode=$(stat -f '%Lp' mode.sh 2>/dev/null || stat -c '%a' mode.sh)
 [ "$NEXTEST_TEST_THREADS" = 4 ]
 [ "${CARGO_ALIAS_XTASK+x}" = "" ]
 [ "$(command -v cargo)" = "$TOOLCHAIN_FIXTURE/cargo" ]
+managed_tools=$(dirname "$(command -v hk)")
+for name in jactionlint shellcheck; do
+    [ "$(readlink "$managed_tools/$name")" = "${TOOLCHAIN_FIXTURE%/pinned}/$name" ]
+done
 [ "$RUSTC_WRAPPER$RUSTC_WORKSPACE_WRAPPER$CARGO_BUILD_RUSTC_WRAPPER$CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER" = "" ]
 case "$CARGO_BUILD_BUILD_DIR" in "$SNAPSHOT_TMP"/*/build) ;; *) exit 66 ;; esac
 [ ! -e "$CARGO_TARGET_DIR" ]
