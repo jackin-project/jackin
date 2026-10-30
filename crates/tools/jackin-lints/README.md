@@ -13,7 +13,7 @@ jackin❯-specific invariants that Clippy cannot express structurally.
 
 - **Not a workspace member.** Listed under the workspace root exclude list and has
   its own `[workspace]` table.
-- **Pinned nightly** via `scripts/custom-lints.py` (Dylint compiles against rustc-private).
+- **Pinned nightly** via the native `mise run check:custom-lints` xtask (Dylint compiles against rustc-private).
   No nested Rust toolchain file or directory override changes the root compiler.
 - Main-workspace `cargo check --workspace` must never compile this crate.
 

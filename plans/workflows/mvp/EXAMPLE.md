@@ -80,8 +80,8 @@ references = new { "requirements.md" }
 checks {
   bundle = "fixture-checks"
   argv = new {
-    "python3"
-    "/jackin/checks/check_add.py"
+    "sh"
+    "/jackin/checks/check_add.sh"
     "/work/repo"
   }
 }
@@ -118,21 +118,22 @@ Acceptance and backup stay separate actions.
 
 ## Fixture task and source
 
-The fixture uses Python only to keep the product test small.
-Use an existing role with `python3` for this fixture.
-Python is not a new workflow-engine dependency.
+The fixture uses POSIX shell, available in the existing sandbox image.
+It does not add a Python or Ruby dependency.
 
-Create a fixture repository containing `calculator.py`:
+Create a fixture repository containing `calculator.sh`:
 
-```python
-def add(a: int, b: int) -> int:
-    return a - b
+```sh
+add() {
+    [ "$#" -eq 2 ] || return 2
+    printf '%s\n' "$(($1 - $2))"
+}
 ```
 
 Use this text for `task.md`:
 
 ```text
-Inspect calculator.py and the arithmetic requirement.
+Inspect calculator.sh and the arithmetic requirement.
 Do not change source files during your initial turn.
 Wait for Jackin to return the test and review findings.
 Then correct the defect in the same session.
@@ -142,29 +143,31 @@ Do not change the trusted test bundle.
 Use this text for `requirements.md`:
 
 ```text
-The add function must return the arithmetic sum of its two integer inputs.
-The function must return 5 for inputs 2 and 3.
-The function must return -5 for inputs -2 and -3.
+The add function must print the arithmetic sum of its two integer inputs.
+It must print 5 for inputs 2 and 3.
+It must print -5 for inputs -2 and -3.
 ```
 
-Create the trusted `check_add.py` outside the implementation repository:
+Create the trusted `check_add.sh` outside the implementation repository:
 
-```python
-import importlib.util
-import pathlib
-import sys
+```sh
+#!/bin/sh
+set -eu
 
-root = pathlib.Path(sys.argv[1])
-spec = importlib.util.spec_from_file_location("candidate", root / "calculator.py")
-if spec is None or spec.loader is None:
-    raise RuntimeError("Cannot load candidate module")
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-for a, b, expected in [(2, 3, 5), (-2, -3, -5)]:
-    actual = module.add(a, b)
-    if actual != expected:
-        raise AssertionError(f"add({a}, {b}) returned {actual}; expected {expected}")
-print("PASS: required arithmetic cases")
+root=${1:?usage: check_add.sh REPOSITORY}
+. "$root/calculator.sh"
+
+check_add() {
+    actual=$(add "$1" "$2")
+    if [ "$actual" != "$3" ]; then
+        printf 'FAIL: add(%s, %s) returned %s; expected %s\n' "$1" "$2" "$actual" "$3" >&2
+        return 1
+    fi
+}
+
+check_add 2 3 5
+check_add -2 -3 -5
+printf '%s\n' 'PASS: required arithmetic cases'
 ```
 
 Execute this code only in the test sandbox.

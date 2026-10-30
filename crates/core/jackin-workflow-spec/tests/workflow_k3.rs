@@ -119,14 +119,14 @@ fn scratch_repo() -> tempfile::TempDir {
         "Workflow.pkl",
         "task.md",
         "requirements.md",
-        "calculator.py",
+        "calculator.sh",
     ] {
         std::fs::write(root.join(name), read_example(name)).unwrap();
     }
     std::fs::create_dir(root.join("checks")).unwrap();
     std::fs::write(
-        root.join("checks/check_add.py"),
-        read_example("checks/check_add.py"),
+        root.join("checks/check_add.sh"),
+        read_example("checks/check_add.sh"),
     )
     .unwrap();
     git(&root, &["init", "-q"]);
@@ -684,7 +684,7 @@ fn workflow_test_bundle_manifest_lists_every_file() {
     use jackin_workflow_spec::digest::bundle_manifest_digest;
 
     let scratch = scratch_repo();
-    std::fs::write(scratch.path().join("checks/helper.py"), "x = 2\n").unwrap();
+    std::fs::write(scratch.path().join("checks/helper.sh"), "x=2\n").unwrap();
     let (_checked, inputs, plan) = compile_in_repo(
         scratch.path(),
         &fixture_repair_text(),
@@ -694,8 +694,8 @@ fn workflow_test_bundle_manifest_lists_every_file() {
     assert_eq!(inputs.test_bundle.len(), 2);
     let files = &plan.verification.test_bundle_files;
     assert_eq!(files.len(), 2);
-    assert_eq!(files[0].logical_path, "check_add.py");
-    assert_eq!(files[1].logical_path, "helper.py");
+    assert_eq!(files[0].logical_path, "check_add.sh");
+    assert_eq!(files[1].logical_path, "helper.sh");
     for (frozen, pinned) in inputs.test_bundle.iter().zip(files.iter()) {
         assert_eq!(frozen.logical_path, pinned.logical_path);
         assert_eq!(frozen.digest, pinned.digest);
@@ -881,8 +881,8 @@ fn workflow_repository_head_exact() {
     assert_eq!(first.base_commit.len(), 40);
 
     std::fs::write(
-        repo.join("calculator.py"),
-        "def add(a, b):\n    return a + b\n",
+        repo.join("calculator.sh"),
+        "add() { printf '%s\\n' \"$(($1 + $2))\"; }\n",
     )
     .unwrap();
     git(repo, &["add", "."]);

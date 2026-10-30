@@ -11,8 +11,8 @@ references = new { "requirements.md" }
 checks {
   bundle = "fixture-checks"
   argv = new {
-    "python3"
-    "/jackin/checks/check_add.py"
+    "sh"
+    "/jackin/checks/check_add.sh"
     "/work/repo"
   }
 }
