@@ -7,6 +7,9 @@ mod darwin_acl;
 #[cfg(target_os = "linux")]
 mod linux_acl;
 
+#[cfg(test)]
+mod tests;
+
 use rustix::fd::AsFd;
 use rustix::fs::{AtFlags, FileType, Mode, OFlags, Stat, fstat, openat, statat};
 use rustix::process::{RawUid, geteuid};
@@ -290,6 +293,35 @@ pub(super) fn recheck_source_file(
     Ok(())
 }
 
+#[cfg(all(test, target_os = "linux"))]
+pub(super) fn set_source_linux_acl_fixture(
+    descriptor: impl AsFd,
+    include_default_acl: bool,
+) -> io::Result<()> {
+    linux_acl::set_extended_acl_fixture(descriptor, include_default_acl)
+}
+
+#[cfg(all(test, target_os = "macos"))]
+#[derive(Clone, Copy)]
+pub(super) enum SourceDarwinAclFixture {
+    DenyRead,
+    AllowRead,
+    AllowMutation,
+}
+
+#[cfg(all(test, target_os = "macos"))]
+pub(super) fn set_source_darwin_acl_fixture(
+    descriptor: impl AsFd,
+    fixture: SourceDarwinAclFixture,
+) -> io::Result<()> {
+    let fixture = match fixture {
+        SourceDarwinAclFixture::DenyRead => darwin_acl::FixtureAcl::DenyRead,
+        SourceDarwinAclFixture::AllowRead => darwin_acl::FixtureAcl::AllowRead,
+        SourceDarwinAclFixture::AllowMutation => darwin_acl::FixtureAcl::AllowMutation,
+    };
+    darwin_acl::set_test_acl(descriptor, fixture)
+}
+
 impl CheckedInstallFile {
     pub fn file(&self) -> &File {
         &self.file
@@ -450,6 +482,20 @@ fn validate_directory_descriptor(file: &File, role: NodeRole) -> io::Result<()> 
     let metadata = fstat(file)?;
     validate_stat(&metadata, role)?;
     ensure_native_acl(file.as_fd(), true)
+}
+
+#[cfg(test)]
+pub(super) fn source_directory_owner_matches_for_test(
+    owner_uid: RawUid,
+    effective_uid: RawUid,
+) -> bool {
+    let facts = MetadataFacts {
+        file_type: FileType::Directory,
+        mode: Mode::from_bits_truncate(0o755),
+        uid: owner_uid,
+        single_link: true,
+    };
+    classify_metadata(facts, effective_uid, NodeRole::Directory).is_ok()
 }
 
 fn validate_stat(metadata: &Stat, role: NodeRole) -> io::Result<()> {

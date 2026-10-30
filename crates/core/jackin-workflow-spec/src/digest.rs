@@ -84,3 +84,6 @@ pub fn finalize_plan(mut plan: ExecutionPlan) -> WorkflowResult<ExecutionPlan> {
     plan.plan_hash = hash;
     Ok(plan)
 }
+
+#[cfg(test)]
+mod tests;

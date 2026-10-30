@@ -388,10 +388,15 @@ fn rewrite_endpoint_for_container(endpoint: &str) -> ContainerOtlp {
     }
 }
 
+#[cfg(test)]
+mod tests;
+
 mod otlp;
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub use otlp::{TestExport, test_capsule_layers};
+#[cfg(test)]
+pub(crate) use otlp::{emit_session_start_for_test, test_layers};
 
 pub(crate) fn emit_progress_event(
     _invocation_id: &str,

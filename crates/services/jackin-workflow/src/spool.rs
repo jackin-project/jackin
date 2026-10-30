@@ -93,7 +93,6 @@ impl SessionSpool {
         self.text.push_str(&clean);
         if self.text.len() > self.capacity_bytes {
             let cut = self.text.len() - self.capacity_bytes;
-
             let mut boundary = cut;
             while !self.text.is_char_boundary(boundary) {
                 boundary += 1;
@@ -143,3 +142,6 @@ pub struct SpoolRead<'a> {
     pub gap: bool,
     pub dropped_bytes: u64,
 }
+
+#[cfg(test)]
+mod tests;

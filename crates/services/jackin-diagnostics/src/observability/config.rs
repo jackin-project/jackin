@@ -370,3 +370,6 @@ pub(super) fn normalize_endpoint(
     }
     Ok(endpoint.as_str().trim_end_matches('/').to_owned())
 }
+
+#[cfg(test)]
+mod tests;

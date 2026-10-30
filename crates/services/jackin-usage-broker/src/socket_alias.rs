@@ -429,3 +429,6 @@ fn alias_error(message: String) -> UsageCoordinationError {
         message: format!("cannot provision usage broker socket alias: {message}"),
     }
 }
+
+#[cfg(test)]
+mod tests;

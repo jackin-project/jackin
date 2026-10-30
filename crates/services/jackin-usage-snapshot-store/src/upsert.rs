@@ -61,7 +61,18 @@ pub(crate) async fn upsert_account_snapshot_rows(
             return Err(format!("upsert telemetry account snapshot failed: {err}"));
         }
     }
-
+    #[cfg(test)]
+    if let Err(error) = inject_requested_upsert_commit_failure(conn).await {
+        let rollback = jackin_usage_store_backend::operation(
+            DbOperation::Rollback,
+            conn.execute("ROLLBACK", ()),
+        )
+        .await;
+        return match rollback {
+            Ok(_) => Err(error),
+            Err(rollback_error) => Err(format!("{error}; rollback failed: {rollback_error}")),
+        };
+    }
     match jackin_usage_store_backend::operation(DbOperation::Commit, conn.execute("COMMIT", ()))
         .await
     {
@@ -234,6 +245,46 @@ async fn validate_existing_identity_assignments(
             )
         }));
     validate_identity_groups(assignments)
+}
+
+#[cfg(test)]
+async fn inject_requested_upsert_commit_failure(conn: &Connection) -> Result<(), String> {
+    let mut rows = jackin_usage_store_backend::operation(
+        DbOperation::Select,
+        conn.query(
+            "SELECT value FROM _meta WHERE key = 'test_fail_snapshot_upsert_commit'",
+            (),
+        ),
+    )
+    .await
+    .map_err(|error| format!("read snapshot upsert commit failure marker failed: {error}"))?;
+    let marker = rows
+        .next()
+        .await
+        .map_err(|error| format!("read snapshot upsert commit failure row failed: {error}"))?
+        .map(|row| {
+            row.get::<String>(0).map_err(|error| {
+                format!("decode snapshot upsert commit failure marker failed: {error}")
+            })
+        })
+        .transpose()?;
+    drop(rows);
+    if marker.as_deref() == Some("1") {
+        jackin_usage_store_backend::operation(
+            DbOperation::Update,
+            conn.execute_batch(
+                "CREATE TEMP TABLE quota_upsert_commit_parent(id INTEGER PRIMARY KEY);
+                 CREATE TEMP TABLE quota_upsert_commit_child(
+                     parent_id INTEGER REFERENCES quota_upsert_commit_parent(id)
+                         DEFERRABLE INITIALLY DEFERRED
+                 );
+                 INSERT INTO quota_upsert_commit_child(parent_id) VALUES (1);",
+            ),
+        )
+        .await
+        .map_err(|error| format!("prepare snapshot upsert commit failure failed: {error}"))?;
+    }
+    Ok(())
 }
 
 pub(crate) fn account_snapshot_rows(

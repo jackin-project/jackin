@@ -1,24 +1,29 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(not(test))]
 use jackin_core::Agent;
 use jackin_core::CommandRunner;
-
+#[cfg(not(test))]
 use jackin_core::JackinPaths;
-
+#[cfg(not(test))]
 use jackin_core::RoleSelector;
 
+#[cfg(not(test))]
 use jackin_docker::{ShellRunner, docker_client::BollardDockerClient};
 
 use jackin_manifest::repo::CachedRepo;
 
+#[cfg(not(test))]
 use jackin_runtime_repo_cache::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
+#[cfg(not(test))]
 use super::ImagePrewarmStatus;
 use super::git_head_sha;
-
+#[cfg(not(test))]
 use super::{SiblingImagePrewarmOutcome, prewarm_agent_image_from_validated_repo};
 
+#[cfg(not(test))]
 pub async fn prewarm_sibling_image(
     paths: &JackinPaths,
     selector: &RoleSelector,

@@ -14,3 +14,5 @@ mod scroll;
 mod sessions;
 mod upkeep;
 pub(crate) use recovery::record_manager_recovery;
+#[cfg(test)]
+mod tests;

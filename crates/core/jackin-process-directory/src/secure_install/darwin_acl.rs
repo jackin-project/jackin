@@ -1,16 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(
-    clippy::undocumented_unsafe_blocks,
-    reason = "no comments in code; unsafe removal is deferred work"
-)]
-
 use rustix::fd::{AsFd, AsRawFd};
 use rustix::io::Errno;
 use std::ffi::{c_int, c_void};
 use std::io;
 use std::ptr::NonNull;
+
+#[cfg(test)]
+use std::ffi::{CStr, c_char};
 
 const ACL_TYPE_EXTENDED: c_int = 0x100;
 const ACL_FIRST_ENTRY: c_int = 0;
@@ -67,7 +65,12 @@ unsafe extern "C" {
     fn acl_get_permset_mask_np(entry: *mut c_void, mask: *mut u64) -> c_int;
     fn acl_maximal_permset_mask_np(mask: *mut u64) -> c_int;
     fn acl_free(object: *mut c_void) -> c_int;
-
+    #[cfg(test)]
+    fn acl_from_text(text: *const c_char) -> *mut c_void;
+    #[cfg(test)]
+    fn acl_set_fd_np(fd: c_int, acl: *mut c_void, acl_type: c_int) -> c_int;
+    #[cfg(test)]
+    fn acl_set_permset_mask_np(entry: *mut c_void, mask: u64) -> c_int;
 }
 
 struct OwnedAcl(NonNull<c_void>);
@@ -85,6 +88,10 @@ impl Drop for OwnedAcl {
 }
 
 #[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+)]
+#[expect(
     unsafe_code,
     reason = "release the single owned opaque Darwin ACL allocation"
 )]
@@ -92,6 +99,10 @@ fn release_acl(acl: NonNull<c_void>) {
     let _released = unsafe { acl_free(acl.as_ptr()) };
 }
 
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+)]
 #[expect(
     unsafe_code,
     reason = "inspect Darwin ACLs through the audited opaque descriptor ABI"
@@ -293,4 +304,79 @@ fn invalid_acl_result() -> io::Error {
 
 fn permission_denied(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied, message)
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FixtureAcl {
+    DenyRead,
+    AllowRead,
+    AllowMutation,
+    InheritableMutation,
+    DeleteChild,
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+)]
+#[expect(
+    unsafe_code,
+    reason = "audited fixed Darwin ACL fixture creation on private temp descriptors"
+)]
+pub(super) fn set_test_acl(descriptor: impl AsFd, kind: FixtureAcl) -> io::Result<()> {
+    let text = fixture_text(kind);
+    let raw_acl = unsafe { acl_from_text(text.as_ptr()) };
+    let raw_error = if raw_acl.is_null() {
+        last_errno()
+    } else {
+        None
+    };
+    if !classify_getter_result(!raw_acl.is_null(), raw_error)? {
+        return Err(invalid_acl_result());
+    }
+    let acl_pointer = NonNull::new(raw_acl).ok_or_else(invalid_acl_result)?;
+    let acl = OwnedAcl(acl_pointer);
+
+    if kind == FixtureAcl::DeleteChild {
+        let mut entry_pointer = std::ptr::null_mut();
+        let result =
+            unsafe { acl_get_entry(acl.as_ptr(), ACL_FIRST_ENTRY, &raw mut entry_pointer) };
+        let errno = if result == -1 { last_errno() } else { None };
+        classify_zero_result(result, errno, "acl_get_entry test fixture")?;
+        let entry = NonNull::new(entry_pointer).ok_or_else(invalid_acl_result)?;
+        let result = unsafe { acl_set_permset_mask_np(entry.as_ptr(), ACL_DELETE_CHILD) };
+        let errno = if result == -1 { last_errno() } else { None };
+        classify_zero_result(result, errno, "acl_set_permset_mask_np test fixture")?;
+    }
+
+    let validity = unsafe { acl_valid(acl.as_ptr()) };
+    let errno = if validity == -1 { last_errno() } else { None };
+    classify_zero_result(validity, errno, "acl_valid test fixture")?;
+    let result = unsafe {
+        acl_set_fd_np(
+            descriptor.as_fd().as_raw_fd(),
+            acl.as_ptr(),
+            ACL_TYPE_EXTENDED,
+        )
+    };
+    let errno = if result == -1 { last_errno() } else { None };
+    classify_zero_result(result, errno, "acl_set_fd_np test fixture")
+}
+
+#[cfg(test)]
+fn fixture_text(kind: FixtureAcl) -> &'static CStr {
+    match kind {
+        FixtureAcl::DenyRead => {
+            c"!#acl 1\nuser:00000000-0000-0000-0000-000000000001:::deny:read\n"
+        }
+        FixtureAcl::AllowRead | FixtureAcl::DeleteChild => {
+            c"!#acl 1\nuser:00000000-0000-0000-0000-000000000001:::allow:read\n"
+        }
+        FixtureAcl::AllowMutation => {
+            c"!#acl 1\nuser:00000000-0000-0000-0000-000000000001:::allow:write\n"
+        }
+        FixtureAcl::InheritableMutation => c"!#acl 1\nuser:00000000-0000-0000-0000-000000000001:::allow,file_inherit,directory_inherit:write\n",
+    }
 }

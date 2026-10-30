@@ -33,6 +33,7 @@ pub(crate) enum Lane {
 pub(crate) struct ConsumerCiGateArgs {
     #[arg(long, value_enum)]
     lane: Lane,
+    /// Fresh repository-relative Velnor scenario report.
     #[arg(long)]
     report: PathBuf,
 }

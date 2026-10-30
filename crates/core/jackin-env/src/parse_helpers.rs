@@ -25,3 +25,6 @@ pub(crate) fn is_valid_env_name(s: &str) -> bool {
     }
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
+
+#[cfg(test)]
+mod tests;

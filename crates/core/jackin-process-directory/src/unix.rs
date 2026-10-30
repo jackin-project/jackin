@@ -1,17 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(
-    clippy::undocumented_unsafe_blocks,
-    reason = "no comments in code; unsafe removal is deferred work"
-)]
-
 use std::fs::File;
 use std::io;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 use std::sync::Arc;
 
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+)]
 #[expect(
     unsafe_code,
     reason = "sole audited Unix pre_exec boundary; callback invokes only async-signal-safe fchdir"

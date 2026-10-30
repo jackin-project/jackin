@@ -110,3 +110,6 @@ impl PersistencePort for DefaultDaemonPorts {
 }
 
 pub(crate) const PORTS: DefaultDaemonPorts = DefaultDaemonPorts;
+
+#[cfg(test)]
+mod tests;

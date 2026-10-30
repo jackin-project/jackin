@@ -1,0 +1,11 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "packageRules": [
+    {
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["projectjackin/construct"],
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)-trixie$"
+    }
+  ]
+}

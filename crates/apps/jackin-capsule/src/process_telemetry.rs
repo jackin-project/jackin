@@ -188,3 +188,22 @@ pub(crate) async fn exec_async_as(
     complete(operation, &result);
     result.map_err(|_| anyhow::anyhow!("process spawn failed"))
 }
+
+#[cfg(test)]
+pub(crate) fn run_wire_test_in_child(test_name: &str, child_marker: &str) -> anyhow::Result<bool> {
+    if std::env::var_os(child_marker).is_some() {
+        return Ok(false);
+    }
+    let status = std::process::Command::new(std::env::current_exe()?)
+        .args(["--exact", test_name, "--nocapture"])
+        .env(child_marker, "1")
+        .status()?;
+    anyhow::ensure!(
+        status.success(),
+        "isolated Capsule wire test failed: {test_name}"
+    );
+    Ok(true)
+}
+
+#[cfg(test)]
+mod tests;

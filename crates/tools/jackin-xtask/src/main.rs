@@ -61,10 +61,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Prepare offline requests and account for explicit measurement receipts.
     #[command(subcommand)]
     Measurement(research_measurement::ResearchMeasurementCommand),
+    /// Build, UI-test, and run the pinned custom lint library.
     CustomLints,
+    /// Regenerate and validate synthetic OMP SQLite/WAL fixtures.
     FixtureOmp,
+    /// Exercise the pinned secret scanners on synthetic fixtures.
     SecurityAuditFixtures,
     AffectedCrates(affected_crates::AffectedCratesArgs),
     Ci(ci::CiArgs),

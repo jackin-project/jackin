@@ -4,6 +4,9 @@ mod private_acl;
 mod state;
 mod storage;
 
+#[cfg(test)]
+mod tests;
+
 pub use lease::{CatalogRevisionAuthority, CatalogRevisionLease};
 pub use storage::CatalogAuthorityStore;
 

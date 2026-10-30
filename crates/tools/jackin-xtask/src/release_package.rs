@@ -8,6 +8,8 @@ use velnor_actions_contract::preview_production::ReleaseProductionStage;
 mod assembly;
 mod handoff;
 mod inventory;
+#[cfg(test)]
+mod tests;
 
 pub(crate) fn run() -> Result<()> {
     let handoff = handoff::load()?;

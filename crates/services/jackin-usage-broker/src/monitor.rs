@@ -42,6 +42,8 @@ use resetless::{
     invalidate_reset_admission_fence, strict_resetless_candidates,
 };
 use validation::validate_store_state;
+#[cfg(test)]
+use validation::{spend_snapshot_preserves_history, spend_state_matches_account};
 
 use jackin_protocol::usage_broker::{
     UsageAccountV1, UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageMetricGroupKindV1,
@@ -1745,3 +1747,6 @@ fn store_unavailable() -> MonitorIssue {
         None,
     )
 }
+
+#[cfg(test)]
+mod tests;

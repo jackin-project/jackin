@@ -6,6 +6,7 @@ use jackin_core::Agent;
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 
+#[cfg(not(test))]
 use super::reuse_staleness_sentinel;
 
 pub fn spawn_reuse_staleness_sentinel(
@@ -17,6 +18,20 @@ pub fn spawn_reuse_staleness_sentinel(
     image: &str,
     debug: bool,
 ) {
+    #[cfg(test)]
+    {
+        let _ = (paths, selector, role_git, branch_override, debug);
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.stage(
+                "reuse_staleness_sentinel_skipped",
+                jackin_diagnostics::DiagnosticStage::DerivedImage,
+                "reuse staleness sentinel disabled in unit tests",
+                Some(&format!("{}:{image}", selected_agent.slug())),
+            );
+        }
+    }
+
+    #[cfg(not(test))]
     {
         let paths = paths.clone();
         let selector = selector.clone();
@@ -98,6 +113,7 @@ pub fn sibling_agents(
         .collect()
 }
 
+#[cfg(not(test))]
 #[derive(Debug)]
 pub enum SiblingImagePrewarmOutcome {
     Reused,

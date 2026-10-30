@@ -4,3 +4,6 @@
 pub mod operator_info;
 pub mod runtime;
 pub mod tokens;
+
+#[cfg(test)]
+mod tests;

@@ -1,3 +1,4 @@
+mod buckets;
 mod identity;
 mod read;
 mod schema;
@@ -6,9 +7,22 @@ mod upsert;
 mod views;
 mod write;
 
+#[cfg(test)]
+pub(crate) use buckets::{
+    lifecycle_status_bar_label, select_provider_rows, usage_bucket_order,
+    usage_confidence_from_label, usage_provider_tabs_from_rows, usage_source_from_label,
+    usage_status_from_label,
+};
+#[cfg(test)]
+use jackin_core::account_key_hash;
+#[cfg(test)]
+pub(crate) use read::stored_account_snapshots;
+#[cfg(test)]
+pub use read::{focused_usage_view, schema_version};
 pub(crate) use read::{row_i64, row_opt_i64, row_opt_string, row_string};
 pub(crate) use schema::initialize_schema;
-
+#[cfg(test)]
+pub(crate) use types::CONNECTION_BUILDS;
 pub(crate) use types::SCHEMA_VERSION;
 pub use types::{AccountIdentitySummary, StoredAccountUsageSnapshot};
 pub(crate) use upsert::{account_snapshot_rows, upsert_account_snapshot_rows};
@@ -16,8 +30,14 @@ pub use views::{
     StoredAccountUsageView, list_account_identities, load_account_usage_view,
     load_all_account_usage_views,
 };
-
-#[cfg(feature = "test-support")]
+#[cfg(test)]
+pub(crate) use write::close_cached_store;
+#[cfg(test)]
+pub(crate) use write::connection_build_count;
+#[cfg(any(test, feature = "test-support"))]
 pub use write::store_usage_snapshot;
 pub use write::store_usage_snapshots;
 pub(crate) use write::{block_on_store, open_store};
+
+#[cfg(test)]
+mod tests;

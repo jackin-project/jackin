@@ -166,3 +166,6 @@ fn is_secret_key(key: &str) -> bool {
         || key.contains("AUTH")
         || key.contains("CREDENTIAL")
 }
+
+#[cfg(test)]
+mod tests;

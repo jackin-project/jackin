@@ -16,5 +16,7 @@ pub use key_plans::{
     auth_form_focus_chain, auth_form_key_plan, auth_form_key_plan_with_source_folder,
 };
 pub use render::{render_form, required_height};
+#[cfg(test)]
+mod tests;
 
 pub(crate) use lines::{action_buttons_line, credential_env_line, label_style, source_folder_line};

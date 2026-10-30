@@ -46,3 +46,6 @@ pub use wave::{
 };
 pub use windows::ClaudeQuotaWindow;
 pub use windows::{CLAUDE_SESSION_WINDOW_SECONDS, CLAUDE_WEEKLY_WINDOW_SECONDS};
+
+#[cfg(test)]
+mod tests;

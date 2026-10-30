@@ -39,5 +39,9 @@ futures-util = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
+[dev-dependencies]
+jackin-test-support = { workspace = true }
+tempfile = { workspace = true }
+
 [lints]
 workspace = true

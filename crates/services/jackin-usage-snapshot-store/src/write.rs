@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::ops::Deref;
 use std::path::Path;
-
+#[cfg(test)]
+use std::sync::Mutex;
 use std::sync::{Arc, OnceLock};
 
 use jackin_usage_store_backend::{
@@ -14,6 +15,8 @@ use jackin_usage_store_backend::{
 
 use jackin_protocol::control::FocusedUsageView;
 
+#[cfg(test)]
+use super::CONNECTION_BUILDS;
 use super::{account_snapshot_rows, initialize_schema, upsert_account_snapshot_rows};
 
 static STORE_CONNECTIONS: OnceLock<tokio::sync::Mutex<HashMap<String, Arc<LocalStore>>>> =
@@ -32,7 +35,7 @@ impl Deref for StoreLease {
     }
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub fn store_usage_snapshot(path: &Path, view: &FocusedUsageView) -> Result<(), String> {
     store_usage_snapshots(path, std::slice::from_ref(view))
 }
@@ -118,6 +121,17 @@ pub(crate) async fn open_store(path: &Path) -> Result<StoreLease, String> {
     })
 }
 
+#[cfg(test)]
+pub(crate) async fn close_cached_store(path: &Path) -> Result<(), String> {
+    let path = canonical_store_path(path)?;
+    let path = path_to_turso(&path)?;
+    let _operation = acquire_store_operation(Path::new(&path))
+        .await
+        .map_err(|err| format!("acquire usage snapshot store operation failed: {err}"))?;
+    remove_cached_store_by_key(&path).await;
+    Ok(())
+}
+
 async fn remove_cached_store(path: &Path) -> Result<(), String> {
     let path = canonical_store_path(path)?;
     let path = path_to_turso(&path)?;
@@ -149,4 +163,26 @@ fn canonical_store_path(path: &Path) -> Result<std::path::PathBuf, String> {
     Ok(canonical_parent.join(file_name))
 }
 
+#[cfg(test)]
+pub(crate) fn record_connection_build(path: &str) {
+    if let Ok(mut builds) = CONNECTION_BUILDS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+    {
+        *builds.entry(path.to_owned()).or_default() += 1;
+    }
+}
+
+#[cfg(not(test))]
 pub(crate) fn record_connection_build(_path: &str) {}
+
+#[cfg(test)]
+pub(crate) fn connection_build_count(path: &Path) -> Result<usize, String> {
+    let path = canonical_store_path(path)?;
+    let path = path_to_turso(&path)?;
+    Ok(CONNECTION_BUILDS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .map(|builds| builds.get(&path).copied().unwrap_or_default())
+        .unwrap_or_default())
+}

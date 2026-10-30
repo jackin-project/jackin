@@ -27,16 +27,22 @@ use tokio::io::{
     AsyncWriteExt as _, BufReader,
 };
 use tokio::net::UnixListener;
+#[cfg(test)]
+use tokio::net::UnixStream;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
 mod authorization;
 mod identity;
 
 pub(crate) use authorization::UsageRelayAuthorization;
+#[cfg(test)]
+pub(crate) use identity::{DEFAULT_CAPSULE_SUPERVISOR_PID, parse_supervisor_pid};
 pub(crate) use identity::{
     PeerIdentity, SupervisorIdentity, load_supervisor_identity, peer_identity,
     supervisor_peer_allows,
 };
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) use identity::{parse_proc_stat_start_time, process_start_time};
 
 const TUNNEL_CAPACITY: usize = 128;
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(35);
@@ -1125,3 +1131,6 @@ impl Drop for SocketCleanup {
         drop(std::fs::remove_file(&self.0));
     }
 }
+
+#[cfg(test)]
+mod tests;

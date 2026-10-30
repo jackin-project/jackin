@@ -1,0 +1,298 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+#![cfg(feature = "e2e")]
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use anyhow::{Context, Result};
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, FocusedUsageView, PercentObservationOrigin, QuotaBucketView,
+    UsageConfidence, UsageSeverity, UsageSnapshotStatus, UsageSource,
+};
+use jackin_protocol::usage_broker::{UsageAccountCapability, UsageRefreshPhase};
+use jackin_protocol::usage_broker::{UsageCoordinationError, UsageCoordinationErrorKind};
+use jackin_usage::coordinator::{ProviderProbeOutcome, UsageProviderExecutor};
+use jackin_usage::host::{UsageBrokerConfig, ensure_usage_broker_with_executor};
+
+const CHILD_ENV: &str = "JACKIN_USAGE_BROKER_E2E_CHILD";
+const ROOT_ENV: &str = "JACKIN_USAGE_BROKER_E2E_ROOT";
+const MODE_ENV: &str = "JACKIN_USAGE_BROKER_E2E_MODE";
+const EXPECTED_ENV: &str = "JACKIN_USAGE_BROKER_E2E_EXPECTED";
+const CLIENTS: usize = 20;
+static PROCESS_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+trait CoordinationResultExt<T> {
+    fn test_result(self) -> Result<T>;
+}
+
+impl<T> CoordinationResultExt<T> for std::result::Result<T, UsageCoordinationError> {
+    fn test_result(self) -> Result<T> {
+        self.map_err(|error| anyhow::anyhow!("{:?}: {}", error.kind, error.message))
+    }
+}
+
+struct FileCountingProvider {
+    root: PathBuf,
+    release: Option<PathBuf>,
+}
+
+impl UsageProviderExecutor for FileCountingProvider {
+    fn probe(&self, capability: &UsageAccountCapability, _generation: u64) -> ProviderProbeOutcome {
+        let call = PROCESS_CALLS.fetch_add(1, Ordering::SeqCst);
+        if fs::write(
+            self.root
+                .join(format!("provider-call-{}-{call}", std::process::id())),
+            b"called\n",
+        )
+        .is_err()
+        {
+            return ProviderProbeOutcome::Failure {
+                kind: UsageCoordinationErrorKind::ProviderUnavailable,
+                message: "fake provider counter is unavailable".to_owned(),
+                retry_at_epoch: None,
+            };
+        }
+        if let Some(release) = &self.release {
+            wait_until(Duration::from_secs(10), || release.exists());
+        }
+        std::thread::park_timeout(Duration::from_millis(100));
+        match quota_view(&capability.surface_id) {
+            Ok(view) => ProviderProbeOutcome::success(view),
+            Err(error) => ProviderProbeOutcome::Failure {
+                kind: UsageCoordinationErrorKind::ProviderUnavailable,
+                message: format!("invalid test quota fixture: {error}"),
+                retry_at_epoch: None,
+            },
+        }
+    }
+}
+
+fn capability() -> UsageAccountCapability {
+    UsageAccountCapability {
+        account_id: "shared-account".to_owned(),
+        surface_id: "claude".to_owned(),
+    }
+}
+
+fn owner_recovery_capability() -> UsageAccountCapability {
+    UsageAccountCapability {
+        account_id: "shared-account".to_owned(),
+        surface_id: "codex".to_owned(),
+    }
+}
+
+fn quota_view(surface_id: &str) -> Result<FocusedUsageView> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let mut view =
+        FocusedUsageView::unavailable(surface_id, i64::try_from(now).unwrap_or(i64::MAX));
+    view.status = UsageSnapshotStatus::Fresh;
+    view.source = UsageSource::ProviderApi;
+    view.confidence = UsageConfidence::Authoritative;
+    view.account.provider_label = match surface_id {
+        "claude" => "Claude",
+        "codex" => "Codex",
+        other => other,
+    }
+    .to_owned();
+    view.account.account_label = "shared@example.test".to_owned();
+    view.buckets = vec![QuotaBucketView {
+        label: "Weekly".to_owned(),
+        used_label: None,
+        limit_label: None,
+        remaining_percent: Some(CanonicalRemainingPercent::new(64.0).map_err(anyhow::Error::msg)?),
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent_origin: Some(PercentObservationOrigin::HistoricalUnknown),
+        count_quota: None,
+        provider_quota_state: None,
+        reset_label: None,
+        resets_at: None,
+        status_slot: None,
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::Normal,
+    }];
+    Ok(view)
+}
+
+#[test]
+fn usage_broker_child() -> Result<()> {
+    let Ok(child) = std::env::var(CHILD_ENV) else {
+        return Ok(());
+    };
+    let root = PathBuf::from(std::env::var_os(ROOT_ENV).context("missing broker E2E root")?);
+    let mode = std::env::var(MODE_ENV).unwrap_or_else(|_| "standard".to_owned());
+    let capability = if matches!(mode.as_str(), "owner" | "recovery") {
+        owner_recovery_capability()
+    } else {
+        capability()
+    };
+    let expected = std::env::var(EXPECTED_ENV)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(CLIENTS);
+    if mode == "owner" {
+        let executor: Arc<dyn UsageProviderExecutor> = Arc::new(FileCountingProvider {
+            root: root.clone(),
+            release: Some(root.join("release-owner")),
+        });
+        let client = ensure_usage_broker_with_executor(
+            UsageBrokerConfig::for_data_dir(root.join("data")),
+            executor,
+        )
+        .test_result()?;
+        let state = client.refresh(capability, 0, true).test_result()?;
+        assert_eq!(state.generation, 1);
+        wait_until(Duration::from_secs(10), || {
+            entries_with_prefix(&root, "provider-call-") == 1
+        });
+        fs::write(root.join("owner-active"), b"active\n")?;
+        loop {
+            std::thread::park_timeout(Duration::from_secs(1));
+        }
+    }
+    fs::write(root.join(format!("ready-{child}")), b"ready\n")?;
+    wait_until(Duration::from_secs(10), || root.join("go").exists());
+
+    let executor: Arc<dyn UsageProviderExecutor> = Arc::new(FileCountingProvider {
+        root: root.clone(),
+        release: None,
+    });
+    const ENSURE_DEADLINE: Duration = Duration::from_secs(90);
+    let deadline = Instant::now() + ENSURE_DEADLINE;
+    let client = loop {
+        match ensure_usage_broker_with_executor(
+            child_broker_config(&root, &mode),
+            Arc::clone(&executor),
+        ) {
+            Ok(client) => break client,
+            Err(error)
+                if error.kind == UsageCoordinationErrorKind::Unavailable
+                    && Instant::now() < deadline =>
+            {
+                std::thread::park_timeout(Duration::from_millis(500));
+            }
+            Err(error) => return Err(error).test_result(),
+        }
+    };
+    let mut state = client.refresh(capability.clone(), 0, true).test_result()?;
+    if mode == "recovery" && state.generation == 1 {
+        assert_eq!(state.phase, UsageRefreshPhase::Failed);
+        let error = state
+            .error
+            .as_ref()
+            .context("recovered owner state lacked an error")?;
+        assert_eq!(error.kind, UsageCoordinationErrorKind::OwnerLost);
+        let retry_at = state
+            .retry_at_epoch
+            .context("recovered owner state lacked a retry deadline")?;
+        wait_until(Duration::from_secs(10), || epoch_now() >= retry_at);
+        state = client
+            .refresh(capability.clone(), state.generation, true)
+            .test_result()?;
+    }
+    if mode == "recovery" {
+        assert_eq!(state.generation, 2);
+    }
+    let terminal = client
+        .join(capability, state.generation, Duration::from_secs(5))
+        .test_result()?;
+    assert_eq!(terminal.generation, if mode == "recovery" { 2 } else { 1 });
+    assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
+    fs::write(root.join(format!("done-{child}")), b"done\n")?;
+    wait_until(Duration::from_secs(10), || {
+        entries_with_prefix(&root, "done-") == expected
+    });
+    Ok(())
+}
+
+#[test]
+fn usage_broker_twenty_host_processes_make_one_provider_call() -> Result<()> {
+    assert_host_process_singleflight(CLIENTS)
+}
+
+#[test]
+fn usage_broker_two_host_processes_make_one_provider_call() -> Result<()> {
+    assert_host_process_singleflight(2)
+}
+
+fn assert_host_process_singleflight(clients: usize) -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let root = temp.path();
+    let executable = std::env::current_exe()?;
+    let mut children = Vec::new();
+    for child in 0..clients {
+        let envs: Vec<(std::ffi::OsString, std::ffi::OsString)> = vec![
+            (CHILD_ENV.into(), child.to_string().into()),
+            (ROOT_ENV.into(), root.as_os_str().to_owned()),
+            (EXPECTED_ENV.into(), clients.to_string().into()),
+        ];
+        let request = jackin_process::ExecRequest::new(
+            &executable,
+            ["--exact", "usage_broker_child", "--nocapture"],
+        )
+        .envs(envs)
+        .stdout_mode(jackin_process::StdioMode::Inherit)
+        .stderr_mode(jackin_process::StdioMode::Inherit);
+        children.push(jackin_process::spawn_sync(&request)?);
+    }
+    wait_until(Duration::from_secs(10), || {
+        entries_with_prefix(root, "ready-") == clients
+    });
+    fs::write(root.join("go"), b"go\n")?;
+    for mut child in children {
+        assert!(child.wait()?.success());
+    }
+    assert_eq!(entries_with_prefix(root, "provider-call-"), 1);
+    Ok(())
+}
+
+fn wait_until(timeout: Duration, condition: impl Fn() -> bool) {
+    let started = Instant::now();
+    while !condition() {
+        assert!(started.elapsed() < timeout, "timed out waiting for barrier");
+        std::thread::park_timeout(Duration::from_millis(10));
+    }
+}
+
+fn child_broker_config(root: &Path, mode: &str) -> UsageBrokerConfig {
+    let mut config = UsageBrokerConfig::for_data_dir(root.join("data"));
+    if mode == "recovery" {
+        config.coordinator.retry_policy.retry_base = Duration::from_secs(1);
+        config.coordinator.retry_policy.retry_cap = Duration::from_secs(1);
+    }
+    config
+}
+
+fn epoch_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_secs()).ok())
+        .unwrap_or_default()
+}
+
+fn entries_with_prefix(root: &Path, prefix: &str) -> usize {
+    let Ok(entries) = fs::read_dir(root) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with(prefix))
+        .count()
+}
+
+#[path = "usage_broker_e2e/docker.rs"]
+mod docker;
+#[path = "usage_broker_e2e/recovery.rs"]
+mod recovery;

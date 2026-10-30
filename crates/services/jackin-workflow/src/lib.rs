@@ -7,6 +7,9 @@ pub mod spool;
 mod store;
 mod verify;
 
+#[cfg(test)]
+mod tests;
+
 pub use model::{
     Actor, CommandState, EffectKind, EffectStatus, NextState, Observation, ReducerRefusal,
     RunStatus, RunView, Stage, advance,

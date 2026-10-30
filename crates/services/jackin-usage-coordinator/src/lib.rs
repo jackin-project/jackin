@@ -47,3 +47,6 @@ pub(crate) use upkeep::{
     revoke_envelope,
 };
 pub(crate) use worker::coordinator_worker;
+
+#[cfg(test)]
+mod tests;

@@ -8,3 +8,6 @@ pub use docker_client::BollardDockerClient;
 pub use error::DockerError;
 pub use jackin_core::{CommandRunner, DockerApi, RunOptions};
 pub use shell_runner::ShellRunner;
+
+#[cfg(test)]
+mod tests;

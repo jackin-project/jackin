@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{Read, Write};
@@ -25,6 +27,35 @@ const STORE_MODE: u32 = 0o600;
 const STORE_DIR_MODE: u32 = 0o700;
 pub(super) const MAX_STORE_BYTES: usize = 32 * 1024 * 1024;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SaveFailurePoint {
+    BeforeRename,
+    AfterRename,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SAVE_FAILURE_POINT: Cell<Option<SaveFailurePoint>> = const { Cell::new(None) };
+}
+
+#[cfg(test)]
+pub(super) fn set_test_save_failure_point(point: SaveFailurePoint) {
+    SAVE_FAILURE_POINT.with(|failure| failure.set(Some(point)));
+}
+
+#[cfg(test)]
+fn fail_at_test_point(point: SaveFailurePoint) -> bool {
+    SAVE_FAILURE_POINT.with(|failure| {
+        if failure.get() == Some(point) {
+            failure.set(None);
+            true
+        } else {
+            false
+        }
+    })
+}
 
 pub(super) fn open_store_dir(data_dir: &Path) -> Result<File, MonitorIssue> {
     crate::secure_run_directory(data_dir).map_err(|_| unavailable())?;
@@ -524,9 +555,15 @@ pub(super) fn save(dir: &File, state: &StoreState) -> Result<(), MonitorIssue> {
         validate_owned_file(&file)?;
         file.write_all(&bytes).map_err(|_| unavailable())?;
         file.sync_all().map_err(|_| unavailable())?;
-
+        #[cfg(test)]
+        if fail_at_test_point(SaveFailurePoint::BeforeRename) {
+            return Err(unavailable());
+        }
         renameat(dir, temporary.as_str(), dir, STORE_FILE).map_err(|_| unavailable())?;
-
+        #[cfg(test)]
+        if fail_at_test_point(SaveFailurePoint::AfterRename) {
+            return Err(unavailable());
+        }
         fsync(dir).map_err(|_| unavailable())
     })();
     if result.is_err() {

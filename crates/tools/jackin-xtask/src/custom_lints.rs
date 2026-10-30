@@ -81,7 +81,6 @@ where
         OsString::from("nextest"),
         OsString::from("run"),
         OsString::from("--locked"),
-        OsString::from("--no-tests=pass"),
     ]);
     execute(&nextest, &lint, &base_env, false)?;
 
@@ -405,3 +404,6 @@ fn status_description(output: &ExecResult) -> String {
         None => "terminated without an exit code".to_owned(),
     }
 }
+
+#[cfg(test)]
+mod tests;

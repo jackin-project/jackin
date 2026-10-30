@@ -129,3 +129,6 @@ impl SessionStatus {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

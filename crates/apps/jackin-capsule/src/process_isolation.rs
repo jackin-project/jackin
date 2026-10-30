@@ -51,3 +51,6 @@ fn admitted_identity(
 
 #[cfg(target_os = "linux")]
 mod linux;
+
+#[cfg(test)]
+mod tests;

@@ -17,3 +17,6 @@ pub(super) fn ensure_private_descriptor(
 ) -> Result<(), CatalogAuthorityError> {
     Ok(())
 }
+
+#[cfg(all(test, target_os = "macos"))]
+pub(super) use macos::{FixtureAclKind, set_test_acl};

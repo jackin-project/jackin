@@ -123,6 +123,9 @@ pub(crate) use load_cleanup::write_if_changed_atomic;
 
 mod restore_resolve;
 
+#[cfg(test)]
+mod tests;
+
 pub(crate) use restore_resolve::{
     EarlyCurrentRestoreScan, RestoreResolution, UnselectedCurrentRestoreResolution,
     resolve_current_restore_candidate_timed, resolve_restore_candidate_reusing_early,

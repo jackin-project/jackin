@@ -209,6 +209,7 @@ jackin-launch = { version = "0.6.4", path = "crates/ui/jackin-launch" }
 jackin-manifest = { version = "0.6.4", path = "crates/core/jackin-manifest" }
 jackin-workflow-spec = { version = "0.6.4", path = "crates/core/jackin-workflow-spec" }
 jackin-omp-store = { version = "0.6.4", path = "crates/adapters/jackin-omp-store" }
+jackin-otlp-testbed = { version = "0.6.4", path = "crates/testing/jackin-otlp-testbed" }
 jackin-process = { version = "0.6.4", path = "crates/core/jackin-process" }
 jackin-process-directory = { version = "0.6.4", path = "crates/core/jackin-process-directory" }
 jackin-protocol = { version = "0.6.4", path = "crates/core/jackin-protocol" }
@@ -345,6 +346,7 @@ proc-macro2 = { version = "1", features = ["span-locations"] }
 procfs = "0.18"
 quick-xml = "0.42.0"
 rand = "0.10"
+rcgen = "0.14.10"
 ratatui = "0.30"
 termpane = { version = "0.1.0", git = "https://github.com/tailrocks/termpane.git", tag = "v0.1.0" }
 termrock = { version = "=0.11.0", git = "https://github.com/tailrocks/termrock.git", rev = "1ac0d0793b8cfd9edc61ced241e2b2ecb89162b4", features = ["crossterm", "serde"] }

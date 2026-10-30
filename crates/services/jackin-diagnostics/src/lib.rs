@@ -51,3 +51,9 @@ pub use terminal::{
     host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,
     set_host_screen_owned, set_rich_surface_active, set_terminal_title, shorten_home,
 };
+
+#[cfg(test)]
+pub(crate) static DIAGNOSTICS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+mod tests;

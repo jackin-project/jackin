@@ -1,7 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(test)]
+use std::collections::HashMap;
+
+#[cfg(test)]
+use std::sync::{Mutex, OnceLock};
+
 pub(crate) const SCHEMA_VERSION: &str = "6";
+
+#[cfg(test)]
+pub(crate) static CONNECTION_BUILDS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AccountIdentitySummary {

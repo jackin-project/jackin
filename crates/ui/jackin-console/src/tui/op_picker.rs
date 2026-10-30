@@ -7,6 +7,8 @@ pub mod state;
 
 pub use load::{execute_load_request, start_load};
 pub use state::{LoadResult, OpPickerState};
+#[cfg(test)]
+mod tests;
 
 pub fn cli_available() -> bool {
     use jackin_env::OpRunner as _;

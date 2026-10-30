@@ -48,3 +48,6 @@ pub use scan::discover_usage_sources;
 pub use scope::{HostCredentialRootRow, UsageDiscoveryScope, host_credential_root_matrix};
 pub(crate) use source::{source_diagnostic, validate_source};
 pub use validate::validate_usage_sources;
+
+#[cfg(test)]
+mod tests;

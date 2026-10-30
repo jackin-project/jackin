@@ -1,11 +1,7 @@
-#![allow(
-    clippy::undocumented_unsafe_blocks,
-    reason = "no comments in code; unsafe removal is deferred work"
-)]
-
 use super::super::CatalogAuthorityError;
 use rustix::io::Errno;
-
+#[cfg(test)]
+use std::ffi::{CStr, c_char};
 use std::ffi::{c_int, c_void};
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::ptr::NonNull;
@@ -21,11 +17,19 @@ unsafe extern "C" {
     fn acl_get_entry(acl: *mut c_void, entry_id: c_int, entry: *mut *mut c_void) -> c_int;
     fn acl_free(object: *mut c_void) -> c_int;
 
+    #[cfg(test)]
+    fn acl_from_text(text: *const c_char) -> *mut c_void;
+    #[cfg(test)]
+    fn acl_set_fd_np(fd: c_int, acl: *mut c_void, acl_type: c_int) -> c_int;
 }
 
 struct OwnedAcl(NonNull<c_void>);
 
 impl OwnedAcl {
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+    )]
     #[expect(unsafe_code, reason = "audited Darwin ACL allocation ownership")]
     fn get_from_descriptor(
         descriptor: BorrowedFd<'_>,
@@ -46,6 +50,10 @@ impl OwnedAcl {
 }
 
 impl Drop for OwnedAcl {
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+    )]
     #[expect(unsafe_code, reason = "audited Darwin ACL allocation release")]
     fn drop(&mut self) {
         let _ = unsafe { acl_free(self.0.as_ptr()) };
@@ -62,6 +70,10 @@ pub(super) fn ensure_private_descriptor(
     first_entry_is_absent(&acl)
 }
 
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+)]
 #[expect(unsafe_code, reason = "audited Darwin ACL validity check")]
 fn validate_acl(acl: &OwnedAcl) -> Result<(), CatalogAuthorityError> {
     let result = unsafe { acl_valid(acl.as_ptr()) };
@@ -73,6 +85,10 @@ fn validate_acl(acl: &OwnedAcl) -> Result<(), CatalogAuthorityError> {
     classify_validity_result(result, errno)
 }
 
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "safety case lives on the accompanying expect(unsafe_code) attribute; repo rule forbids SAFETY comments"
+)]
 #[expect(unsafe_code, reason = "audited Darwin first ACL entry query")]
 fn first_entry_is_absent(acl: &OwnedAcl) -> Result<(), CatalogAuthorityError> {
     let mut entry = std::ptr::null_mut();
@@ -138,3 +154,54 @@ fn classify_native_error(errno: Errno) -> CatalogAuthorityError {
         CatalogAuthorityError::StorageFailure
     }
 }
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::catalog_revision) enum FixtureAclKind {
+    Empty,
+    InheritableAllow,
+    Deny,
+}
+
+#[cfg(test)]
+fn fixture_acl_text(kind: FixtureAclKind) -> &'static CStr {
+    match kind {
+        FixtureAclKind::Empty => c"!#acl 1\n",
+        FixtureAclKind::InheritableAllow => {
+            c"!#acl 1\nuser:00000000-0000-0000-0000-000000000001:::allow,file_inherit,directory_inherit:read,write\n"
+        }
+        FixtureAclKind::Deny => {
+            c"!#acl 1\nuser:00000000-0000-0000-0000-000000000001:::deny:read,write\n"
+        }
+    }
+}
+
+#[cfg(test)]
+#[expect(unsafe_code, reason = "audited fixed macOS ACL test fixtures")]
+pub(in crate::catalog_revision) fn set_test_acl(
+    descriptor: BorrowedFd<'_>,
+    kind: FixtureAclKind,
+) -> Result<(), CatalogAuthorityError> {
+    let text = fixture_acl_text(kind);
+    // SAFETY: The fixed C string is NUL-terminated and lives for the call;
+    // acl_from_text returns an opaque allocation that is immediately owned.
+    let acl = unsafe { acl_from_text(text.as_ptr()) };
+    let Some(acl) = NonNull::new(acl) else {
+        return Err(classify_native_error(current_errno()?));
+    };
+    let acl = OwnedAcl(acl);
+    validate_acl(&acl)?;
+    // SAFETY: The borrowed descriptor remains live, the ACL owner remains live,
+    // and only ACL_TYPE_EXTENDED is set by this test-only fixed fixture helper.
+    let result = unsafe { acl_set_fd_np(descriptor.as_raw_fd(), acl.as_ptr(), ACL_TYPE_EXTENDED) };
+    if result == 0 {
+        Ok(())
+    } else if result == -1 {
+        Err(classify_native_error(current_errno()?))
+    } else {
+        Err(CatalogAuthorityError::StorageFailure)
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -58,6 +58,16 @@ impl Budget<'_> {
     }
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stage {
+    Resolved,
+    BeforeOpen,
+    Admitted,
+    AfterChunk,
+    BeforeFinal,
+}
+
 pub(super) fn prepare_export(
     requested_path: &str,
     workdir: &Path,
@@ -68,15 +78,29 @@ pub(super) fn prepare_export(
         cancelled,
         deadline,
     };
-    prepare(requested_path, workdir, &budget)
+    prepare(
+        requested_path,
+        workdir,
+        &budget,
+        #[cfg(test)]
+        &mut |_| Ok(()),
+    )
 }
 
 fn prepare(
     requested_path: &str,
     workdir: &Path,
     budget: &Budget<'_>,
+    #[cfg(test)] hook: &mut dyn FnMut(Stage) -> Result<()>,
 ) -> Result<PreparedExport, PrepareError> {
-    let mut admitted = admit(requested_path, workdir, budget).map_err(|error| {
+    let mut admitted = admit(
+        requested_path,
+        workdir,
+        budget,
+        #[cfg(test)]
+        &mut *hook,
+    )
+    .map_err(|error| {
         if budget.check().is_err() {
             PrepareError::ReadFailed(error)
         } else {
@@ -84,6 +108,8 @@ fn prepare(
         }
     })?;
     let result = (|| -> Result<PreparedExport> {
+        #[cfg(test)]
+        hook(Stage::Admitted)?;
         let size = usize::try_from(admitted.fingerprint.len).context("export size overflow")?;
         let mut bytes = Vec::with_capacity(size);
         let mut hash = Sha256::new();
@@ -99,11 +125,15 @@ fn prepare(
             );
             bytes.extend_from_slice(&buffer[..count]);
             hash.update(&buffer[..count]);
+            #[cfg(test)]
+            hook(Stage::AfterChunk)?;
         }
         ensure!(
             read_once(&mut admitted.file, &mut [0_u8; 1], budget)? == 0,
             "export source grew while reading"
         );
+        #[cfg(test)]
+        hook(Stage::BeforeFinal)?;
         admitted.validate(budget)?;
         Ok(PreparedExport {
             source: admitted.source,
@@ -211,8 +241,15 @@ fn resolve(requested: &str, workdir: &Path, budget: &Budget<'_>) -> Result<(Path
     Ok((source, name))
 }
 
-fn admit(requested: &str, workdir: &Path, budget: &Budget<'_>) -> Result<Admitted> {
+fn admit(
+    requested: &str,
+    workdir: &Path,
+    budget: &Budget<'_>,
+    #[cfg(test)] hook: &mut dyn FnMut(Stage) -> Result<()>,
+) -> Result<Admitted> {
     let (source, file_name) = resolve(requested, workdir, budget)?;
+    #[cfg(test)]
+    hook(Stage::Resolved)?;
     let parent = source.parent().context("export source has no parent")?;
     let directories = pin_directories(parent, budget)?;
     let directory = &directories.last().context("export parent missing")?.fd;
@@ -226,6 +263,8 @@ fn admit(requested: &str, workdir: &Path, budget: &Budget<'_>) -> Result<Admitte
         kind(&before, SFlag::S_IFREG),
         "only regular files can be exported"
     );
+    #[cfg(test)]
+    hook(Stage::BeforeOpen)?;
     budget.check()?;
     let fd = openat(directory, member.as_os_str(), file_flags(), Mode::empty())?;
     budget.check()?;
@@ -343,3 +382,6 @@ impl Admitted {
         budget.check()
     }
 }
+
+#[cfg(test)]
+mod tests;

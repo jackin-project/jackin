@@ -27,5 +27,8 @@ jackin-runtime-apple-container-running = { workspace = true }
 jackin-runtime-isolation = { workspace = true }
 jackin-runtime-launch-attach-outcome = { workspace = true }
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+
 [lints]
 workspace = true

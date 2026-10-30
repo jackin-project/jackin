@@ -100,3 +100,6 @@ impl Clock for ManualClock {
         self.lock_state().system
     }
 }
+
+#[cfg(test)]
+mod tests;

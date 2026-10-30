@@ -206,6 +206,27 @@ pub(crate) fn read_bounded_file(path: &Path, limit: u64) -> std::io::Result<Vec<
     Ok(bytes)
 }
 
+#[cfg(test)]
+fn acquire_lock_with_timing<N, W>(
+    config_file: &Path,
+    mode: LockMode,
+    timeout: Duration,
+    poll: Duration,
+    elapsed: N,
+    wait: W,
+) -> crate::ConfigResult<File>
+where
+    N: FnMut() -> Duration,
+    W: FnMut(Duration),
+{
+    let lock_path = config_file.with_file_name("config.lock");
+    if let Some(parent) = lock_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = open_private(&lock_path)?;
+    acquire_open_lock_with_timing(file, &lock_path, mode, timeout, poll, elapsed, wait)
+}
+
 fn recorded_holder(lock_path: &Path) -> String {
     let mut raw = String::new();
     let Ok(mut file) = File::open(lock_path) else {
@@ -343,6 +364,15 @@ fn publication_ops(writes: &[StagedWrite], deletes: &[StagedDelete]) -> Vec<Publ
             target: delete.target.clone(),
         }))
         .collect()
+}
+
+#[cfg(test)]
+pub(crate) fn write_publication_journal(
+    journal_path: &Path,
+    writes: &[StagedWrite],
+    deletes: &[StagedDelete],
+) -> crate::ConfigResult<()> {
+    write_publication_ops(journal_path, &publication_ops(writes, deletes))
 }
 
 fn write_publication_ops(journal_path: &Path, ops: &[PublicationOp]) -> crate::ConfigResult<()> {
@@ -733,6 +763,11 @@ fn open_private(path: &Path) -> std::io::Result<File> {
     options.open(path)
 }
 
+#[cfg(test)]
+pub(crate) fn leak_staged_writes(staged: Vec<StagedWrite>) {
+    let _leaked = std::mem::ManuallyDrop::new(staged);
+}
+
 fn sync_parent(path: &Path) -> crate::ConfigResult<()> {
     if let Some(parent) = path.parent() {
         File::open(parent)
@@ -774,3 +809,6 @@ impl Drop for StagedWrite {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

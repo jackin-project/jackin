@@ -196,3 +196,6 @@ fn ensure_tool(tool: &str) -> Result<()> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
