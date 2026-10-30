@@ -60,6 +60,10 @@ run = "cargo run --locked -p jackin-xtask -- lint --strict"
 description = "Validate links across tracked repository documentation"
 run = "cargo run --locked -p jackin-xtask -- docs repo-links"
 
+[tasks."check:merge-readiness"]
+description = "Run the required strict whole-workspace merge-readiness lint gate"
+run = "mbx +1.99.1 xtask ci --only lint"
+
 [tasks."check:dependency-usage"]
 description = "Reject unused workspace dependencies"
 run = "cargo shear --deny-warnings"

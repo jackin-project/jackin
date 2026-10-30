@@ -163,6 +163,36 @@ labels = ["velnor", "ubuntu-26.04-scale-set"]
 platform = "linux/amd64"
 
 [[qualified_tools]]
+id = "actionlint"
+version = "1.7.12"
+depends_on = []
+
+[qualified_tools.backend]
+kind = "aqua"
+package = "rhysd/actionlint"
+
+[qualified_tools.options]
+kind = "default"
+
+[[qualified_tools.platforms]]
+platform = "macos_arm64"
+dependency_artifacts = []
+install_tree_sha256 = "3557b6871de70d4c59052d8d3d24613cea3dfacc3cba69fead18458d4b263cf4"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_darwin_arm64.tar.gz"
+sha256 = "aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f"
+
+[[qualified_tools.platforms.executables]]
+name = "actionlint"
+path = "actionlint"
+sha256 = "8db11704dc296f096216db4db65d86cd7f0ebfdf4c38453a1da276b137b88388"
+
+[qualified_tools.platforms.executables.probe]
+kind = "version"
+expected = "1.7.12"
+
+[[qualified_tools]]
 depends_on = ["rust"]
 id = "cargo-shear"
 version = "1.14.0"
@@ -245,6 +275,38 @@ sha256 = "c6d03127641e360e6c550117ff084607c1dfe25abf4359ca384c7d28cccd6e52"
 [qualified_tools.platforms.executables.probe]
 kind = "version"
 expected = "cargo-zigbuild 0.23.4"
+
+[[qualified_tools]]
+id = "mr-boxington"
+version = "1.26.0"
+depends_on = []
+
+# The named-check runtime pins measured artifact bytes and does not re-run Packslip verification.
+# The separate Mise tool remains constrained by the authenticated release workflow in mise.toml.
+[qualified_tools.backend]
+kind = "aqua"
+package = "jdx/mr-boxington"
+
+[qualified_tools.options]
+kind = "default"
+
+[[qualified_tools.platforms]]
+platform = "macos_arm64"
+dependency_artifacts = []
+install_tree_sha256 = "77719a52954403c0ead0c62befe26267b62a9ff0942f2afafb16c8c2f1bdc1d7"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.26.0/mbx-aarch64-apple-darwin.tar.gz"
+sha256 = "5927803d54f313600f7c6792369867eb26f9dfaa909b04fb5727efcf0d17b0b7"
+
+[[qualified_tools.platforms.executables]]
+name = "mbx"
+path = "mbx"
+sha256 = "8f4ab568569c5ade98482236d157ed4ad70879e270fcd6757ae494392697c388"
+
+[qualified_tools.platforms.executables.probe]
+kind = "version"
+expected = "mbx 1.26.0"
 
 [[qualified_tools]]
 id = "rust"
@@ -503,4 +565,47 @@ timeout_minutes = 10
 [checks.runner]
 label = "ubuntu-26.04"
 platform = "linux_x64"
+executor = "hosted"
+
+[[checks]]
+id = "merge-readiness"
+task = "check:merge-readiness"
+directory = "."
+inputs = [
+  ".cargo/config.toml",
+  ".velnor/config.toml",
+  "Cargo.lock",
+  "Cargo.toml",
+  "clippy.toml",
+  "container-path-allowlist.toml",
+  "crates/tools/jackin-xtask/Cargo.toml",
+  "crates/tools/jackin-xtask/src/agent_files.rs",
+  "crates/tools/jackin-xtask/src/agent_links.rs",
+  "crates/tools/jackin-xtask/src/arch.rs",
+  "crates/tools/jackin-xtask/src/ci.rs",
+  "crates/tools/jackin-xtask/src/ci/workflow_lint.rs",
+  "crates/tools/jackin-xtask/src/cmd.rs",
+  "crates/tools/jackin-xtask/src/container_paths_gate.rs",
+  "crates/tools/jackin-xtask/src/docs.rs",
+  "crates/tools/jackin-xtask/src/fs_util.rs",
+  "crates/tools/jackin-xtask/src/lint.rs",
+  "crates/tools/jackin-xtask/src/main.rs",
+  "crates/tools/jackin-xtask/src/ratchet.rs",
+  "crates/tools/jackin-xtask/src/telemetry_registry.rs",
+  "crates/tools/jackin-xtask/src/telemetry_registry/enum_policy.rs",
+  "crates/tools/jackin-xtask/src/telemetry_registry/namespace.rs",
+  "crates/tools/jackin-xtask/src/telemetry_registry/ownership_census.rs",
+  "crates/tools/jackin-xtask/src/telemetry_registry/source_policy.rs",
+  "mise.lock",
+  "mise.toml",
+  "ratchet.toml",
+  "rust-toolchain.toml",
+  "rustfmt.toml",
+]
+tools = ["actionlint", "mr-boxington", "rust", "shellcheck", "weaver"]
+timeout_minutes = 30
+
+[checks.runner]
+label = "macos-26"
+platform = "macos_arm64"
 executor = "hosted"
