@@ -457,4 +457,6 @@ EOF
     cmp "$install_fixture/.git/config" "$fake_bin/local-supported"
     cmp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-reinstalled"
 )
+sh "$repo_root/scripts/test-pre-push-security"
+python3 "$repo_root/scripts/test-security-audit"
 printf '%s\n' 'pre-commit isolated staged-tree fixture passed'

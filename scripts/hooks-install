@@ -42,6 +42,31 @@ git config --local --replace-all hook.jackin-pre-commit.command 'sh scripts/pre-
 git config --local --replace-all hook.jackin-pre-commit.event pre-commit
 git config --local --replace-all hook.jackin-pre-commit.enabled true
 
+git config --local --replace-all hook.hk-pre-push.enabled false
+
+for key in hook.hk-pre-push.command hook.hk-pre-push.event; do
+    if git config --local --unset-all "$key" >/dev/null 2>&1; then
+        :
+    else
+        status=$?
+        if [ "$status" -ne 5 ]; then
+            exit "$status"
+        fi
+    fi
+done
+
+git config --local --replace-all hook.jackin-pre-push.command 'sh scripts/pre-push-security'
+git config --local --replace-all hook.jackin-pre-push.event pre-push
+git config --local --replace-all hook.jackin-pre-push.enabled true
+
+if [ "$(git config --local --get hook.jackin-pre-push.command)" != 'sh scripts/pre-push-security' ] ||
+    [ "$(git config --local --get hook.jackin-pre-push.event)" != pre-push ] ||
+    [ "$(git config --local --get hook.jackin-pre-push.enabled)" != true ] ||
+    [ "$(git config --local --get hook.hk-pre-push.enabled)" != false ]; then
+    printf '%s\n' 'error: pre-push must enable the pinned Jackin launcher and disable direct hk' >&2
+    exit 1
+fi
+
 effective=$(git hook list pre-commit)
 if ! printf '%s\n' "$effective" | grep -Fx 'jackin-pre-commit' >/dev/null ||
     printf '%s\n' "$effective" | grep -Fx 'hk-pre-commit' >/dev/null; then
@@ -49,4 +74,11 @@ if ! printf '%s\n' "$effective" | grep -Fx 'jackin-pre-commit' >/dev/null ||
     exit 1
 fi
 
-printf '%s\n' "installed Jackin staged-snapshot pre-commit hook"
+effective=$(git hook list pre-push)
+if ! printf '%s\n' "$effective" | grep -Fx 'jackin-pre-push' >/dev/null ||
+    printf '%s\n' "$effective" | grep -Fx 'hk-pre-push' >/dev/null; then
+    printf '%s\n' 'error: pre-push must enable the pinned Jackin launcher and disable direct hk' >&2
+    exit 1
+fi
+
+printf '%s\n' "installed Jackin staged-snapshot pre-commit and pinned pre-push hooks"
