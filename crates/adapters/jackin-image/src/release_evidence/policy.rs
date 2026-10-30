@@ -13,7 +13,6 @@ use velnor_actions_contract::{
 
 pub(super) const REPOSITORY: &str = "https://github.com/jackin-project/jackin";
 pub(super) const ISSUER: &str = "https://token.actions.githubusercontent.com";
-pub(super) const PREVIEW_RELEASE_ID: u64 = 328_385_904;
 
 pub(super) fn identity(channel: PackageReleaseChannel) -> &'static str {
     match channel {
@@ -36,11 +35,26 @@ pub(crate) fn release_channel(version: &str) -> Result<PackageReleaseChannel> {
     }
 }
 
-pub(crate) fn release_tag(version: &str) -> Result<String> {
+pub(crate) fn release_tag(version: &str, source: &str) -> Result<String> {
     Ok(match release_channel(version)? {
-        PackageReleaseChannel::Preview => "preview".to_owned(),
+        PackageReleaseChannel::Preview => {
+            ensure!(hex_sha(source), "invalid preview source SHA");
+            let sha7 = preview_sha7(version)?;
+            ensure!(
+                source.starts_with(sha7),
+                "preview source/version SHA mismatch"
+            );
+            format!("preview-{source}")
+        }
         PackageReleaseChannel::Stable => format!("v{version}"),
     })
+}
+
+fn hex_sha(value: &str) -> bool {
+    value.len() == 40
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn validate_base(base: &str) -> Result<()> {
@@ -78,6 +92,16 @@ fn preview_base(version: &str) -> Result<&str> {
         "invalid preview version"
     );
     Ok(base)
+}
+
+fn preview_sha7(version: &str) -> Result<&str> {
+    let (_, suffix) = version
+        .split_once("-preview.")
+        .context("remote preview capsule requires X.Y.Z-preview.N+sha7 version")?;
+    let (_, sha7) = suffix
+        .split_once('+')
+        .context("preview version requires count and sha7")?;
+    Ok(sha7)
 }
 
 fn trusted_plan(version: &str) -> Result<PackageReleasePlan> {
@@ -132,7 +156,8 @@ pub(super) fn validate_receipt(receipt: &PackageReleaseReceipt, version: &str) -
         "release repository numeric identity mismatch"
     );
     ensure!(
-        receipt.version.value == version && receipt.tag == release_tag(version)?,
+        receipt.version.value == version
+            && receipt.tag == release_tag(version, &receipt.source.commit_sha)?,
         "release version/tag mismatch"
     );
     Ok(())
@@ -253,7 +278,7 @@ fn validate_source_claims(
         (
             "source digest",
             claims.source_repository_digest.as_deref(),
-            receipt.source.commit_sha.as_str(),
+            receipt.workflow.authority_sha.as_str(),
         ),
         (
             "owner URI",

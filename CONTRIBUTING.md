@@ -44,7 +44,7 @@ The hook selects steps from the staged diff (see `hk.pkl` for exact commands):
 
 - `cargo_fmt` (hk builtin): `cargo fmt` for affected Cargo manifests
 - `cargo_clippy` (hk builtin): `cargo clippy --fix --allow-dirty --allow-staged --quiet` for affected Cargo manifests
-- `actionlint`: changed workflows (`.github/workflows/*.yml`)
+- `jactionlint`: changed workflows, composite actions, and Dependabot YAML, using the generated config and strict offline flags
 - `swiftlint`, `swift-format`: `native/**` on macOS; skipped elsewhere
 
 Rust fixers run in the private snapshot. Strict whole-workspace Clippy and

@@ -7,10 +7,9 @@ import "package://github.com/jdx/hk/releases/download/v2.7.0/hk@2.7.0#/Builtins.
 steps {
   ["cargo_fmt"] = Builtins.cargo_fmt
   ["cargo_clippy"] = Builtins.cargo_clippy
-  ["actionlint"] {
-    glob = ".github/workflows/*.yml"
-    // Match Velnor22’s exact native step-concurrency bridge; keep ShellCheck active.
-    check = "actionlint -color -ignore '^unexpected key \"background\" for step to (run shell command|execute action)\\. ' -ignore '^step must run script with \"run\" section or run action with \"uses\" section$' {{files}}"
+  ["jactionlint"] {
+    glob = "{.github/workflows/*.y*ml,.github/actions/**/action.y*ml,.github/dependabot.y*ml}"
+    check = "jactionlint --config-file .github/jactionlint.yaml --format oneline --strict-exit --no-online --shellcheck=shellcheck --pyflakes= --no-color {{files}}"
   }
   ["swiftlint"] {
     glob = "native/**/*.swift"

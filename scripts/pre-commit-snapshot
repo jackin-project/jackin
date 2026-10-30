@@ -176,7 +176,7 @@ for name in list(os.environ):
 # Resolve hk and platform lint tools from mise, avoiding inherited PATH shims.
 managed = pathlib.Path(owned) / "tools"
 managed.mkdir()
-for name in ("hk", "actionlint") + (("swiftlint",) if sys.platform == "darwin" else ()):
+for name in ("hk", "jactionlint", "shellcheck") + (("swiftlint",) if sys.platform == "darwin" else ()):
     path = pathlib.Path(output(mise, "which", name)).resolve(strict=True)
     (managed / name).symlink_to(path)
 if sys.platform == "darwin":

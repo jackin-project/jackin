@@ -5,7 +5,7 @@ min_version = "2026.10.17"
 
 [tools]
 "github:open-telemetry/weaver" = "0.28.0"
-actionlint = "1.7.12"
+jactionlint = "2.3.0"
 "aqua:betterleaks/betterleaks" = "1.9.0"
 bun = "1.4.3"
 cargo-binstall = "1.26.0"

@@ -18,7 +18,10 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new(channel: PackageReleaseChannel) -> Self {
-        let receipt = crate::release_evidence::tests::channel_receipt(channel);
+        let mut receipt = crate::release_evidence::tests::channel_receipt(channel);
+        if channel == PackageReleaseChannel::Preview {
+            receipt.workflow.authority_sha = "b".repeat(40);
+        }
         let raw = canonical_json_bytes(&receipt).unwrap();
         let bundle = b"API model signature bundle".to_vec();
         let expected = expected_assets(&receipt, &raw, &bundle);
@@ -109,7 +112,7 @@ fn workflow_observations(receipt: &PackageReleaseReceipt, responses: &mut BTreeM
         .enumerate()
         .map(|(i, name)| {
             json!({"id":i+1,"name":name,
-        "run_id":receipt.workflow.run_id,"head_sha":receipt.source.commit_sha,
+        "run_id":receipt.workflow.run_id,"head_sha":receipt.workflow.authority_sha,
         "status":"completed","conclusion":"success"})
         })
         .collect();
@@ -127,38 +130,32 @@ fn publication_observations(
 ) {
     let channel = receipt.channel;
     let release_id = if channel == PackageReleaseChannel::Preview {
-        policy::PREVIEW_RELEASE_ID
+        901
     } else {
         900
     };
     let rows: Vec<_> = expected.iter().enumerate().map(|(i,(name,(size,sha)))|
         json!({"id":i+1,"name":name,"state":"uploaded","size":size,"digest":format!("sha256:{sha}")})).collect();
-    let body = if channel == PackageReleaseChannel::Preview {
-        json!(journal(receipt, raw, expected))
-    } else {
-        Value::Null
-    };
+    let body = Value::Null;
     responses.insert(
         release_route(receipt),
         json!({"id":release_id,"tag_name":receipt.tag,
         "draft":false,"prerelease":channel == PackageReleaseChannel::Preview,
-        "immutable":channel == PackageReleaseChannel::Stable,"body":body}),
+        "immutable":true,"body":body}),
     );
     responses.insert(
         route(&format!("releases/{release_id}/assets?per_page=100&page=1")),
         json!(rows),
     );
-    let object = if channel == PackageReleaseChannel::Preview {
-        json!({"sha":receipt.source.commit_sha,"type":"commit"})
-    } else {
-        let sha = "b".repeat(40);
-        responses.insert(
-            route(&format!("git/tags/{sha}")),
-            json!({"sha":sha,"tag":receipt.tag,
+    let sha = "b".repeat(40);
+    let message = (channel == PackageReleaseChannel::Preview)
+        .then(|| recovery_envelope(raw, b"API model signature bundle").unwrap());
+    responses.insert(
+        route(&format!("git/tags/{sha}")),
+        json!({"sha":sha,"tag":receipt.tag,"message":message,
         "object":{"sha":receipt.source.commit_sha,"type":"commit"}}),
-        );
-        json!({"sha":sha,"type":"tag"})
-    };
+    );
+    let object = json!({"sha":sha,"type":"tag"});
     responses.insert(
         tag_route(receipt),
         json!({"ref":format!("refs/tags/{}",receipt.tag),"object":object}),
@@ -203,8 +200,24 @@ pub(super) fn route(path: &str) -> String {
 pub(super) fn release_route(receipt: &PackageReleaseReceipt) -> String {
     route(&format!("releases/tags/{}", receipt.tag))
 }
+pub(super) fn release_id(receipt: &PackageReleaseReceipt) -> u64 {
+    if receipt.channel == PackageReleaseChannel::Preview {
+        901
+    } else {
+        900
+    }
+}
+pub(super) fn assets_route(receipt: &PackageReleaseReceipt) -> String {
+    route(&format!(
+        "releases/{}/assets?per_page=100&page=1",
+        release_id(receipt)
+    ))
+}
 pub(super) fn tag_route(receipt: &PackageReleaseReceipt) -> String {
     route(&format!("git/ref/tags/{}", receipt.tag))
+}
+pub(super) fn annotated_tag_route() -> String {
+    route(&format!("git/tags/{}", "b".repeat(40)))
 }
 pub(super) fn jobs_route(receipt: &PackageReleaseReceipt) -> String {
     route(&format!(
@@ -222,33 +235,12 @@ fn run(
     status: &str,
     conclusion: Value,
 ) -> Value {
-    json!({"id":id,"run_attempt":attempt,"head_sha":receipt.source.commit_sha,"head_branch":"main",
+    let head_sha = if id == receipt.workflow.run_id {
+        &receipt.workflow.authority_sha
+    } else {
+        &receipt.source.commit_sha
+    };
+    json!({"id":id,"run_attempt":attempt,"head_sha":head_sha,"head_branch":"main",
         "path":path,"event":event,"status":status,"conclusion":conclusion,
         "repository":{"id":receipt.repository.id},"head_repository":{"id":receipt.repository.id}})
-}
-
-fn journal(
-    receipt: &PackageReleaseReceipt,
-    raw: &[u8],
-    expected: &BTreeMap<String, (u64, String)>,
-) -> String {
-    use velnor_actions_contract::publication_retry::{PublicationIdentity, rolling::staged_name};
-    let identity = PublicationIdentity {
-        source_sha: receipt.source.commit_sha.clone(),
-        receipt_digest: digest(raw),
-        assets: expected
-            .iter()
-            .map(|(name, (_, sha))| (name.clone(), sha.clone()))
-            .collect(),
-    };
-    let staged: BTreeMap<_,_> = expected.iter().enumerate().map(|(i,(name,(size,sha)))|
-        (name.clone(),json!({"id":i+1,"name":staged_name(&identity,name),"state":"uploaded","size":size,"sha256":sha}))).collect();
-    let envelope = json!({"schema":"velnor.rolling-preview-journal.v1","repository":"jackin-project/jackin",
-        "repository_id":receipt.repository.id,"release_id":policy::PREVIEW_RELEASE_ID,"tag":"preview",
-        "journal":{"identity":identity,"original":{"run_id":receipt.workflow.run_id,"run_attempt":receipt.workflow.run_attempt,
-        "artifact_id":100,"archive_sha256":"a".repeat(64)},"phase":"committed","staged":staged,"obsolete":[]},"predecessor":null});
-    format!(
-        "velnor-rolling-preview-v1\n{}",
-        String::from_utf8(canonical_json_bytes(&envelope).unwrap()).unwrap()
-    )
 }

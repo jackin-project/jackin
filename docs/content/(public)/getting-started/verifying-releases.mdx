@@ -2,13 +2,19 @@
 title: "Verifying Releases"
 ---
 
-Jackin uses native Velnor-generated workflows for two release channels. Preview
-publication follows successful exact-commit `main` CI and replaces the assets
-of the single rolling `preview` tag and release. Stable publication starts only
-through manual workflow dispatch and creates a permanent, immutable `v<version>`
-tag and release. Builds, signing, publication, and Homebrew writes have separate
-permissions. Configuration and generated workflows define these boundaries;
-inspect the actual release and workflow run before treating them as live proof.
+Jackin's native Velnor release policy defines two channels. A preview is bound
+to one exact `main` source commit and uses the immutable tag
+`preview-<full-source-sha>`. Its Homebrew version remains
+`<package-version>-preview.<main-commit-count>+<source-sha7>`. The annotated tag
+is bound to the signed receipt envelope. Preview releases and their assets are
+immutable; retries must verify the same receipt and bytes and cannot move a tag
+or replace an asset. Stable publication starts only through manual workflow
+dispatch and keeps its permanent `v<version>` tag and release. Stable release
+behavior is unchanged. Builds, signing, publication, and Homebrew writes have
+separate permissions. Configuration and generated workflows define these
+boundaries; inspect the actual release and workflow run before treating them as
+live proof. See <RepoFile path="docs/integration/immutable-preview-publication.md">Preview publication and migration</RepoFile>
+for required rollout acceptance.
 
 ## Automatic capsule verification
 
@@ -28,9 +34,9 @@ fixed repository and workflow policy.
 The downloader also admits the original exact-attempt successful producer and
 signing jobs and source CI. Before executing or installing a downloaded capsule,
 it rechecks the current receipt, signature, complete release asset inventory,
-and tag. Preview requires the configured release ID and committed publication
-journal; stable requires an immutable release and a permanent version tag.
-Superseded, partial, mixed, or source-mismatched publications are rejected.
+and tag. Preview requires the full source SHA in both the immutable tag and
+signed receipt envelope; stable requires an immutable release and a permanent
+version tag. Partial, mixed, or source-mismatched publications are rejected.
 Native caches are isolated by channel and full source commit from local caches.
 
 `JACKIN_CAPSULE_BIN` explicitly selects a local executable and bypasses remote
@@ -80,13 +86,13 @@ cyclonedx validate --input-file <file>.sbom.json
 ## Download release assets
 
 Preview assets use
-`https://github.com/jackin-project/jackin/releases/download/preview/<asset>`.
-The tag moves to the newly published source commit and the release retains only
-that generation's assets once publication commits. GitHub's asset listing may
-be transient during replacement; only a complete signed generation with a
-committed publication journal is accepted. Always audit that receipt and
-publication; an older native preview cannot fetch a replacement capsule from a
-newer source commit merely because the URL is unchanged.
+`https://github.com/jackin-project/jackin/releases/download/preview-<full-source-sha>/<asset>`.
+The release tag identifies one source commit and is bound to its signed receipt
+envelope. Published tags and assets are never moved or replaced. Always verify
+the receipt envelope, signatures, SBOMs, hashes, provenance, and exact asset
+inventory before trusting a release. An older native preview cannot fetch a
+replacement capsule from a newer source commit because the release URL includes
+the full source SHA.
 
 Stable assets use
 `https://github.com/jackin-project/jackin/releases/download/v<version>/<asset>`.

@@ -171,9 +171,9 @@ fn remove_with_debug_log(path: &Path) {
     }
 }
 
-fn download_failure_message(version: &str, url: &str) -> String {
-    let tag =
-        crate::release_evidence::release_tag(version).unwrap_or_else(|_| "unavailable".into());
+fn download_failure_message(version: &str, source: &str, url: &str) -> String {
+    let tag = crate::release_evidence::release_tag(version, source)
+        .unwrap_or_else(|_| "unavailable".into());
     format!(
         "jackin-capsule {version} download failed.\n\
              \n\
@@ -214,18 +214,19 @@ fn local_capsule_only_message(version: &str) -> String {
     )
 }
 
-fn download_url(version: &str, arch: &str, channel: ReleaseChannel) -> Result<String> {
+fn download_url(
+    version: &str,
+    arch: &str,
+    channel: ReleaseChannel,
+    source: &str,
+) -> Result<String> {
     anyhow::ensure!(
         version_channel(version) == channel && channel != ReleaseChannel::LocalOnly,
         "invalid remote capsule channel/version"
     );
     let target = linux_target(arch);
     let asset = format!("{ASSET_PREFIX}-{target}.tar.gz");
-    let tag = match channel {
-        ReleaseChannel::Preview => "preview".to_owned(),
-        ReleaseChannel::Stable => format!("v{version}"),
-        ReleaseChannel::LocalOnly => anyhow::bail!(local_capsule_only_message(version)),
-    };
+    let tag = crate::release_evidence::release_tag(version, source)?;
     Ok(format!(
         "https://github.com/jackin-project/jackin/releases/download/{tag}/{asset}"
     ))
