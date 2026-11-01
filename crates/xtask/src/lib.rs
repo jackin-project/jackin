@@ -3,6 +3,7 @@
 
 mod checks;
 mod ci;
+mod lex;
 mod repo;
 mod violation;
 

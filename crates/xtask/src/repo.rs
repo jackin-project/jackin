@@ -1,5 +1,320 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::ffi::OsString;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
+
+use serde::Deserialize;
+
+use crate::ci::CiError;
+
+pub const GENERATED_PATHS: &[&str] = &[".github/"];
+
+pub const PENDING_PORT_PATHS: &[&str] = &["crates/usage/"];
+
+const BUILD_OUTPUT_PATHS: &[&str] = &["target/", ".git/"];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FileKind {
+    Rust,
+    Toml,
+    Shell,
+    Dockerfile,
+}
+
+impl FileKind {
+    fn of(path: &str) -> Option<Self> {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        if name == "Dockerfile" || name.ends_with(".Dockerfile") {
+            return Some(Self::Dockerfile);
+        }
+        match name.rsplit_once('.')?.1 {
+            "rs" => Some(Self::Rust),
+            "toml" => Some(Self::Toml),
+            "sh" => Some(Self::Shell),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
-pub struct Repo {}
+pub struct RepoFile {
+    path: PathBuf,
+    kind: FileKind,
+    text: String,
+}
+
+impl RepoFile {
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    #[must_use]
+    pub fn kind(&self) -> FileKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DependencyKind {
+    Normal,
+    Dev,
+    Build,
+}
+
+#[derive(Clone, Debug)]
+pub struct Dependency {
+    name: String,
+    kind: DependencyKind,
+    optional: bool,
+}
+
+impl Dependency {
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub fn kind(&self) -> DependencyKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub fn optional(&self) -> bool {
+        self.optional
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Member {
+    name: String,
+    manifest: PathBuf,
+    dir: PathBuf,
+    dependencies: Vec<Dependency>,
+}
+
+impl Member {
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub fn manifest(&self) -> &Path {
+        &self.manifest
+    }
+
+    #[must_use]
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    #[must_use]
+    pub fn dependencies(&self) -> &[Dependency] {
+        &self.dependencies
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Repo {
+    root: PathBuf,
+    files: Vec<RepoFile>,
+    members: Vec<Member>,
+}
+
+impl Repo {
+    pub fn open(root: PathBuf) -> Result<Self, CiError> {
+        let root = fs::canonicalize(root)?;
+        let members = read_members(&root)?;
+        let files = read_files(&root)?;
+        Ok(Self {
+            root,
+            files,
+            members,
+        })
+    }
+
+    #[must_use]
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    #[must_use]
+    pub fn files(&self) -> &[RepoFile] {
+        &self.files
+    }
+
+    #[must_use]
+    pub fn members(&self) -> &[Member] {
+        &self.members
+    }
+}
+
+pub(crate) fn cargo_program() -> OsString {
+    std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into())
+}
+
+fn capture(command: &mut Command) -> io::Result<Output> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?
+        .wait_with_output()
+}
+
+#[derive(Deserialize)]
+struct Metadata {
+    workspace_root: PathBuf,
+    packages: Vec<MetaPackage>,
+}
+
+#[derive(Deserialize)]
+struct MetaPackage {
+    name: String,
+    manifest_path: PathBuf,
+    dependencies: Vec<MetaDependency>,
+}
+
+#[derive(Deserialize)]
+struct MetaDependency {
+    name: String,
+    kind: Option<String>,
+    optional: bool,
+}
+
+fn read_members(root: &Path) -> Result<Vec<Member>, CiError> {
+    let output = capture(
+        Command::new(cargo_program())
+            .args([
+                "metadata",
+                "--no-deps",
+                "--offline",
+                "--format-version",
+                "1",
+            ])
+            .current_dir(root),
+    )?;
+    if !output.status.success() {
+        return Err(CiError::Metadata(
+            String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        ));
+    }
+    let metadata: Metadata = serde_json::from_slice(&output.stdout)
+        .map_err(|error| CiError::Metadata(error.to_string()))?;
+    let mut members = metadata
+        .packages
+        .into_iter()
+        .map(|package| member_of(package, &metadata.workspace_root))
+        .collect::<Result<Vec<_>, _>>()?;
+    members.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(members)
+}
+
+fn member_of(package: MetaPackage, workspace_root: &Path) -> Result<Member, CiError> {
+    let manifest = relative(&package.manifest_path, workspace_root)?;
+    let dir = manifest.parent().map(Path::to_path_buf).unwrap_or_default();
+    let dependencies = package
+        .dependencies
+        .into_iter()
+        .map(|dependency| {
+            let kind = match dependency.kind.as_deref() {
+                None => DependencyKind::Normal,
+                Some("dev") => DependencyKind::Dev,
+                Some("build") => DependencyKind::Build,
+                Some(other) => {
+                    return Err(CiError::Metadata(format!(
+                        "unknown dependency kind {other:?} for {}",
+                        dependency.name
+                    )));
+                }
+            };
+            Ok(Dependency {
+                name: dependency.name,
+                kind,
+                optional: dependency.optional,
+            })
+        })
+        .collect::<Result<Vec<_>, CiError>>()?;
+    Ok(Member {
+        name: package.name,
+        manifest,
+        dir,
+        dependencies,
+    })
+}
+
+fn relative(path: &Path, root: &Path) -> Result<PathBuf, CiError> {
+    let stripped = path.strip_prefix(root).map_err(|_| {
+        CiError::Metadata(format!(
+            "{} is outside the workspace root {}",
+            path.display(),
+            root.display()
+        ))
+    })?;
+    let parts: Vec<_> = stripped
+        .components()
+        .map(|part| part.as_os_str().to_string_lossy())
+        .collect();
+    Ok(PathBuf::from(parts.join("/")))
+}
+
+fn is_skipped(path: &str) -> bool {
+    [BUILD_OUTPUT_PATHS, GENERATED_PATHS, PENDING_PORT_PATHS]
+        .into_iter()
+        .flatten()
+        .any(|prefix| path.starts_with(prefix))
+}
+
+fn read_files(root: &Path) -> Result<Vec<RepoFile>, CiError> {
+    let output = capture(
+        Command::new("git")
+            .args([
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+            ])
+            .current_dir(root),
+    )?;
+    if !output.status.success() {
+        return Err(CiError::ListFiles(
+            String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        ));
+    }
+    let mut files = Vec::new();
+    for entry in output.stdout.split(|&byte| byte == 0) {
+        let Ok(path) = std::str::from_utf8(entry) else {
+            continue;
+        };
+        let Some(kind) = FileKind::of(path) else {
+            continue;
+        };
+        if path.is_empty() || is_skipped(path) {
+            continue;
+        }
+        let absolute = root.join(path);
+        if !absolute.is_file() {
+            continue;
+        }
+        files.push(RepoFile {
+            path: PathBuf::from(path),
+            kind,
+            text: fs::read_to_string(&absolute)?,
+        });
+    }
+    files.sort_by(|a, b| a.path.as_os_str().cmp(b.path.as_os_str()));
+    files.dedup_by(|a, b| a.path == b.path);
+    Ok(files)
+}

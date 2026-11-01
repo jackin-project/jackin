@@ -34,6 +34,8 @@ openshell-policy = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.6"
 openshell-sdk = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.6", version = "0.0.0" }
 russh = "0.65.0"
 serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", default-features = false, features = ["sync"] }
 tokio-util = "0.7.20"
