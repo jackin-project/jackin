@@ -1,0 +1,640 @@
+# Jackin OpenShell rewrite plan
+
+This plan rebuilds jackin from zero around OpenShell, with Codex as the only agent. It changes five repositories on one branch, `feature/openshell-native`. They are the four jackin repositories and `terminal-components-baseline`. Work on jackin and jackin-sentinel comes first, because the sentinel journey proves that jackin works. Work on Agent Smith and The Architect starts after the first proof.
+
+[DESIGN.md](DESIGN.md) is the authority for what to build. This plan tells you how to build it and how to prove each task.
+
+## How to read this
+
+- Each task has an ID, such as `P3.2`. Cite the ID in commits, briefs, evidence files, and trail rows.
+- Each task names its repository, its owner subagent, its dependencies, its write scope, its steps, and its proof.
+- Mark a task box only when its proof exists. A proof is a gate output, a commit SHA, an evidence file, or a reviewer verdict.
+- A task that cannot finish because OpenShell lacks a capability is `BLOCKED`. Write a report for it in [blockers/](blockers/). Do not mark its box.
+- Tests alone do not prove a task. A task that changes behavior is proven only when its unit tests pass and its live proof exists.
+
+## Repositories
+
+All five repositories are under `/Users/donbeave/Projects/jackin-project/`. Each one has the branch `feature/openshell-native`. It was created from `origin/main` on 2026-11-02.
+
+| Repository | Path | Base commit |
+|---|---|---|
+| jackin | `jackin/` | `470fc5d6` |
+| jackin-sentinel | `jackin-sentinel/` | `cb2ce2a` |
+| jackin-agent-smith | `jackin-agent-smith/` | `f9e06ba` |
+| jackin-the-architect | `jackin-the-architect/` | `7b72b38` |
+| terminal-components-baseline | `terminal-components-baseline/` | `95bbcbb` |
+
+## Autonomy
+
+The program runs silently from start to end. Never ask a human. Never use `AskUserQuestion`. Never stop to wait for a reply. The operator reads the trail, the evidence, and the pull requests after the program ends.
+
+If you do not know what to do, use this procedure:
+
+1. Start two analysis subagents on different AI models with the same brief. Each subagent finds the facts and proposes a way to continue within DESIGN.md.
+2. If they agree, do what they propose. If they disagree, run `pstack:arena` and take the winner.
+3. Add a trail row with the decision, the reason, and the evidence. If the decision changes DESIGN.md, edit it in the same commit.
+4. Continue.
+
+These items had no obvious owner. Resolve each one with this procedure. Do not ask a question.
+
+- **A1. Codex credential.** Tasks P0.3, P8.2, P8.3, P9.5, P10.1, P11.1, P11.2, and P13.2 need a Codex credential. Find one in this order:
+  1. the `OPENAI_API_KEY` environment variable
+  2. a 1Password item that holds an OpenAI API key, read with `op item list` and `op read`, only if `op whoami` exits with code 0
+  3. the host Codex ChatGPT login in `~/.codex/auth.json`, imported through credential mode B (D10)
+
+  On 2026-11-02 the development Mac has only source 3. Record which source you used. Never record the value. With source 3, the gateway can rotate the refresh token, and the host login can break. Accept this risk and record it in the trail. Run live tasks that share one refresh token one after the other. If no source works, write `blockers/A1.md`. Run no live task. Report the gap at the end. Never report `SKIP` as `PASS`.
+- **A2. Image delivery.** Jackin builds images with BuildKit (D05). The gateway driver must see them (D23). Use the first method that works with the P0.2 driver:
+  1. `docker-local`. The OpenShell Docker driver reads the OrbStack image store.
+  2. `registry`. A local OCI registry runs on OrbStack, and the gateway pulls from it.
+
+  Record the method in the trail.
+- **A3. Merge.** The program ends with one open pull request for each repository. Do not merge. Do not ask whether to merge.
+- **A4. Product change.** If evidence shows that a decision in the product statement of DESIGN.md is wrong, use the procedure above. Then change the decision and continue.
+
+## Orchestrator protocol
+
+You are the orchestrator. You run as Opus 5.5 at effort `high`. You own the plan, the briefs, the integration, and the evidence. You do not write product code.
+
+### Start and restart
+
+1. Read [README.md](README.md), [DESIGN.md](DESIGN.md), this plan, and the last 30 rows of [decisions.tsv](decisions.tsv).
+2. In each repository, run `git switch feature/openshell-native` and `git pull --ff-only`.
+3. Find the first task whose box is not marked and whose dependencies are satisfied. Start there. A dependency is satisfied in one of two cases. Its box is marked. Or the task is `BLOCKED`, has `blockers/<id>.md`, and has a reviewer verdict that confirms the block.
+4. After a context compaction, do steps 1 to 3 again. The marked boxes and the trail are the only durable state.
+
+### Use pstack and the subagent roster
+
+- Work in the `pstack:poteto-mode` style. Name the principle that changed each decision.
+- Select subagents by the routing table in `~/.claude/CLAUDE.md`. Each task names its owner subagent.
+- Write each brief to the brief contract in `~/.claude/CLAUDE.md`. The contract has six fields, which are Repo, Scope, Task, Gate, Return, and Permissions. Put the task ID and the decision IDs that apply in the brief. Tell the subagent to read DESIGN.md.
+- Use these pstack skills at these points:
+
+| Point | Skill |
+|---|---|
+| Public API of each crate (P2.1) | `pstack:architect` |
+| Credential, policy, and image changes (P7.3, P10.2, P13.3) | `pstack:interrogate` |
+| Independent live verification (P8.3, P13.2) | `pstack:swarm` |
+| Before each commit | `pstack:deslop` |
+| Before each review | `pstack:no-comments` |
+| Every document | `pstack:technical-writing`, then `pstack:unslop` |
+| Trail rows | `pstack:show-me-your-work` |
+
+### Run each code task through this pipeline
+
+1. If the task creates a new public API, `architect` designs it first.
+2. `test-reviewer` approves the test plan before anyone writes a test.
+3. The implementer writes the code and the tests in its own worktree.
+4. `verifier` runs the gate and reports PASS or FAIL.
+5. `test-reviewer` proves each new test red, then green, at the committed SHA.
+6. At the end of each phase, one `code-reviewer` reviews `<phase start SHA>..HEAD`. Add `security-reviewer` when the phase touches credentials, policy, images, or the gateway connection.
+7. A fresh implementer fixes the findings. You verify each fix against its finding. `verifier` runs the gate again.
+
+### Keep one remote branch
+
+- Give each parallel writer its own worktree: `git worktree add ../wt/<repo>-<task> -b wt/<task> feature/openshell-native`.
+- Parallel writers never share a file.
+- The implementer may commit on its `wt/<task>` branch. It never pushes.
+- After the verifier passes, merge the work into `feature/openshell-native` with `git merge --ff-only` or `git cherry-pick`. Then remove the worktree and delete the local `wt/<task>` branch.
+- Push only `feature/openshell-native`. Push after each commit.
+- Before each commit, verify that the committer is `Alexey Zhokhov <alexey@zhokhov.com>`. Use `git commit -s`. Use Conventional Commits. Put the task ID in the commit body.
+
+### Record the work
+
+- When a task is done, make a follow-up commit in jackin with the subject `docs(rewrite): record <task-id>`. In that commit, mark the task box in this plan and add a row to [decisions.tsv](decisions.tsv). The row names the task, the commit SHA of the work in each repository, the gate result, and the evidence path.
+- Put live outputs in `evidence/<task-id>-<slug>.md`. Copy the raw command output. Remove secrets first.
+- After each task, paste these lines into the chat: the task ID, the commit SHA, the last line of each gate, and each reviewer verdict. The `/goal` evaluator reads only the chat.
+
+### Handle failure
+
+- When a result fails its gate, start a fresh subagent of the same type with the failure evidence.
+- After two failed rounds on one finding, use the next stronger AI model, as `~/.claude/CLAUDE.md` says.
+- When OpenShell lacks a capability that a task needs, write `blockers/<task-id>.md`. Give the OpenShell version, the command, the output, the smallest failing case, and the upstream change that the task needs. Continue with independent tasks. Do not add a Docker fallback, a host fallback, or a weaker verification.
+
+## Gates
+
+Run every cargo command from the jackin repository root through mise and mbx.
+
+| Gate | Command | When |
+|---|---|---|
+| G0 | `mise exec -- mbx +1.99.1 check --workspace --locked` | P2.2 only, before `xtask` exists |
+| G-FAST | `mise exec -- mbx +1.99.1 xtask ci --fast` | After each unit, from P2.3 |
+| G-FULL | `mise exec -- mbx +1.99.1 xtask ci --no-docs` until P12.1, then `mise exec -- mbx +1.99.1 xtask ci` | At the end of each phase |
+| G-E2E | `mise exec -- mbx +1.99.1 xtask e2e --gateway jackin-local --role ../jackin-sentinel` | From P8, at the end of each later phase |
+| G-ROLE | `/Users/donbeave/Projects/jackin-project/jackin/target/debug/jackin role check .` in the role repository, after `mise exec -- mbx +1.99.1 build -p jackin` in jackin | Each role task, from P6.1 |
+
+If D02 changes the Rust version, change `+1.99.1` in this table, in `COMMITS.md`, and in `mise.toml`. Make all three changes in the same commit.
+
+## Phase P0. Prove the platform
+
+The program depends on facts that only a real run can prove. Prove them before you delete code.
+
+### P0.1 Pin the latest stable tools
+
+- **Repo:** jackin. **Owner:** `docs-researcher` finds the versions. `mechanic` at `model: sonnet, effort: high` applies them. **Depends:** none.
+- **Scope:** `mise.toml`, `mise.lock`, `rust-toolchain.toml`, `COMMITS.md`, new `compatibility.lock.toml`.
+- **Steps:**
+  1. Find the latest stable version of Rust, mr-boxington, OpenShell, Codex CLI, cargo-nextest, cargo-deny, and cargo-shear.
+  2. Set the pins. Set the mise tool option `mr_boxington = true` on `rust`.
+  3. Write `compatibility.lock.toml` with the OpenShell version, tag, commit, and date, and the Codex version.
+- **Proof:** `evidence/P0.1-pins.md` contains the output of these commands: `mise exec -- mbx --version`, `mise exec -- rustc --version`, and `openshell --version`.
+- [ ] P0.1 done
+
+### P0.2 Run a local OpenShell gateway
+
+- **Repo:** jackin. **Owner:** `openshell-specialist`. **Depends:** none.
+- **Scope:** new `rewrite/evidence/P0.2-gateway.md` and a new draft of a `docs/content/` how-to page in `rewrite/drafts/gateway.md`.
+- **Steps:**
+  1. Start `openshell-gateway` with the `vm` compute driver. Register it as `jackin-local`.
+  2. If the `vm` driver fails, record the error. Then use the Docker driver with `DOCKER_HOST` from OrbStack.
+  3. Create a sandbox from the OpenShell default image. Run `id`, `sudo -n true`, and `ls /usr/bin/docker` in it.
+  4. Upload a git repository. Verify that `.git` arrives and that `git bundle create` works in the sandbox. Download the bundle. Compare the digests.
+  5. Start a long command with a TTY. Detach with Ctrl-P Ctrl-Q. Reconnect and verify the replayed output.
+  6. Apply a policy that denies `example.com`. Show that `curl https://example.com` fails.
+  7. Create a sandbox whose main process waits for a marker file. Upload a project. Write the marker. Attach. These actions prove the D09 `jackin-start` pattern.
+  8. Stop the sandbox and start it again. Show that the uploaded files remain.
+  9. Delete the sandboxes.
+- **Proof:** `evidence/P0.2-gateway.md` shows the raw commands and outputs. A trail row names the chosen driver.
+- [ ] P0.2 done
+
+### P0.3 Run Codex in a sandbox with an OpenShell provider
+
+- **Repo:** jackin. **Owner:** `openshell-specialist`. **Depends:** P0.2, A1.
+- **Scope:** `rewrite/evidence/P0.3-codex.md`, `rewrite/drafts/construct.Dockerfile`, `rewrite/drafts/role.Dockerfile`, `rewrite/drafts/derived.Dockerfile`, `rewrite/drafts/codex-provider.yaml`.
+- **Steps:**
+  1. Write draft construct, role, and derived Dockerfiles (D05, D06). Build them by hand with `docker buildx build`, in the same order that jackin uses. Give the construct image to the role build as the named build context `construct`.
+  2. Deliver the final image to the gateway with the A2 method.
+  3. Adapt the upstream `providers/codex.yaml` so `binaries` names `/usr/local/bin/codex`. Import it.
+  4. Create an OpenShell provider with the A1 credential. For source 3, follow the upstream `examples/codex-app-server` pattern by hand. Put the refresh material into the OpenShell provider. Give the sandbox a placeholder `auth.json`.
+  5. Create a sandbox with the image and the OpenShell provider. Run `codex exec "Reply with the word ready"`. Then start interactive Codex with the D04 launch command and verify that the first prompt appears.
+  6. Show that `env` in the sandbox has a placeholder and not the key. Show that `curl` from a binary that is not Codex gets no credential.
+- **Proof:** `evidence/P0.3-codex.md`. Record the A1 source in the trail.
+- [ ] P0.3 done
+
+### P0.4 Correct the design from the evidence
+
+- **Repo:** jackin. **Owner:** orchestrator. **Depends:** P0.2, P0.3, P0.5, P0.6.
+- **Steps:** Compare the P0 evidence with D03, D05, D06, D08, D09, D10, D13, D23, D24, and D28. Change each decision that the evidence refutes. Add one trail row for each change.
+- **Proof:** the DESIGN.md diff and the trail rows.
+- [ ] P0.4 done
+
+### P0.5 Prove a Docker engine for sandboxes
+
+- **Repo:** jackin. **Owner:** `openshell-specialist` and `agent-sandbox-engineer`, in parallel, with the same brief. **Depends:** P0.2.
+- **Scope:** `rewrite/evidence/P0.5-docker.md`, `rewrite/drafts/docker-*`.
+- **Steps:** Try each D24 engine source in order, on the P0.2 driver:
+  1. An engine inside the sandbox. Find which OpenShell policy, process settings, and driver let `dockerd` or rootless Docker run as the sandbox user. Run `docker run --rm hello-world` in the sandbox.
+  2. A dedicated external engine on OrbStack. Permit only its endpoint in the policy. Run `docker run --rm hello-world` from the sandbox. Find whether OpenShell can keep the engine credentials outside the sandbox.
+  3. The host engine, with the same test.
+  4. For each source, record whether it works, the exact settings, the isolation that it gives, and the credential path.
+- **Proof:** `evidence/P0.5-docker.md` exists, and a trail row names the chosen source. If no source works, write `blockers/P0.5-docker.md` and continue. The capability then stays `BLOCKED` until upstream OpenShell changes.
+- [ ] P0.5 done
+
+### P0.6 Prove a terminal session in a console pane
+
+- **Repo:** jackin. **Owner:** `openshell-specialist`, with `rust-cli-tui-engineer` for the prototype. **Depends:** P0.2.
+- **Scope:** `rewrite/evidence/P0.6-panes.md`, a prototype on a local worktree branch that you do not merge.
+- **Steps:**
+  1. In a Rust prototype, open an `ExecSandboxInteractive` session and render it in a ratatui pane. Send keys and a resize.
+  2. Attach to the sandbox main process from the same prototype. Try SSH over `ForwardTcp` to the `openshell-main` subsystem with `russh`. If that fails, try a sandbox-side terminal multiplexer started by `jackin-start`.
+  3. Detach the pane and attach it again. Verify the replay.
+- **Proof:** `evidence/P0.6-panes.md` names the chosen transport for the Codex pane and for shell panes. If no transport works for the Codex pane, write `blockers/P0.6.md`. The Codex pane then opens with the hand-off to `openshell sandbox connect`.
+- [ ] P0.6 done
+
+## Phase P1. Delete the old product
+
+Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 ends it.
+
+### P1.1 Delete the old code and assets
+
+- **Repo:** jackin. **Owner:** `mechanic` at `model: sonnet, effort: high`. **Depends:** P0.4.
+- **Steps:**
+  1. Move the D25 usage crates to `crates/usage/`. Delete their tests and keep them out of the workspace members until P6.3.
+  2. Delete the rest of `crates/`, and delete `native/`, `docker/`, `docker-bake.hcl`, `vendor/`, `fuzz/`, `policy/`, `plans/`, `examples/`, `scripts/`, `release.toml`, `ratchet.toml`, `container-path-allowlist.toml`, `code-health-baseline.toml`, `.alint.yml`, `.codebook.toml`, `.xcode-version`, and `Cargo.lock`.
+  3. Delete `docs/openshell-v2/` if it still exists.
+  4. Delete `docs/integration/`, the `research/`, `roadmap/`, and `development/` sections under `docs/content/`, and every page about Docker runtime, Apple containers, or agents other than Codex. Keep the ADR pages, because P12.1 marks them superseded. Keep the site code.
+  5. Delete the `REUSE.toml` annotations for deleted paths.
+  6. Make the root `Cargo.toml` an empty workspace with the workspace lints only.
+- **Proof:** `git ls-files crates native docker vendor fuzz | grep -v '^crates/usage/' | wc -l` prints `0`.
+- [ ] P1.1 done
+
+### P1.2 Rewrite the glossary
+
+- **Repo:** jackin. **Owner:** `docs-writer`. **Depends:** P1.1.
+- **Scope:** `CONTEXT.md`.
+- **Steps:** Write the glossary for these terms only: operator, role, workspace, provider, agent, account, default account, binding, usage, gateway, sandbox, OpenShell provider, policy, image, construct, Docker capability, launch, attach, shell, export, purge. Use the DESIGN.md meaning for each term.
+- **Proof:** the diff, and proof that no other term from the old glossary remains.
+- [ ] P1.2 done
+
+## Phase P2. Build the skeleton and the gates
+
+### P2.1 Design the crate APIs
+
+- **Repo:** jackin. **Owner:** orchestrator runs `pstack:architect` with `architect` runners. **Depends:** P1.1.
+- **Scope:** new `rewrite/API.md`.
+- **Steps:** Write the public types and function signatures of each D14 crate. Include the `Gateway` trait, `AgentSpec`, the config schema, the role manifest schema, `LaunchPlan`, the launch steps, and the error enums. Include the test plan outline for each crate.
+- **Proof:** `rewrite/API.md`, reviewed by a second `architect` run on a different AI model.
+- [ ] P2.1 done
+
+### P2.2 Create the workspace and the eight crates
+
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P2.1.
+- **Scope:** root `Cargo.toml`, `Cargo.lock`, `crates/*` except `crates/usage/`, `.cargo/config.toml`, `deny.toml`, `clippy.toml`, `rustfmt.toml`, `.config/nextest.toml`. The xtask package name is `jackin-xtask`, so the `.cargo/config.toml` alias works.
+- **Steps:**
+  1. Create the eight crates from D14 with the API.md signatures and no logic.
+  2. Keep the old workspace lint list. Add `unsafe_code = "forbid"`.
+  3. In `deny.toml`, ban `bollard` and each Docker client crate, and keep the `openssl` ban.
+  4. Add `openshell-sdk` as a git dependency at the pinned tag, used only by `jackin-openshell`.
+- **Proof:** G0 passes.
+- [ ] P2.2 done
+
+### P2.3 Write the repository gates in xtask
+
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P2.2.
+- **Scope:** `crates/xtask/`.
+- **Steps:** `xtask ci` runs these steps in order and stops at the first failure:
+  1. `fmt --check`
+  2. `clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  3. `nextest run --workspace --all-features --locked`
+  4. `deny check`
+  5. `shear`
+  6. the comment step (D17)
+  7. the layer step (D14)
+  8. the container step (D01). It fails if code runs `podman` or `container`, runs `docker` outside `jackin-image`, or runs a `docker` subcommand that D01 does not permit.
+  9. `reuse lint`
+  10. the docs build. `--fast` and `--no-docs` skip this step.
+
+  `xtask e2e` is a stub that P8.1 fills.
+- **Proof:** G-FAST passes. For each of steps 6, 7, and 8, `test-reviewer` records a red run and a green run. Add a forbidden comment, a forbidden dependency, and a forbidden `docker run` call. Verify that each step fails.
+- [ ] P2.3 done
+
+### P2.4 Update the tool config and the generated CI
+
+- **Repo:** jackin. **Owner:** `cicd-architect`. **Depends:** P2.3.
+- **Scope:** `mise.toml`, `hk.pkl`, `renovate.json`, `.velnor/config.toml`, `.github/` through `velnor-actions generate` only.
+- **Steps:**
+  1. Remove the Swift, weaver, boltffi, and xcodegen tools from `mise.toml`.
+  2. Make `hk.pkl` run fmt, clippy, gitleaks, rumdl, and the comment step.
+  3. Change `.velnor/config.toml` for the eight crates. Run `velnor-actions generate`. Never edit `.github/workflows/` by hand.
+  4. If Velnor cannot express a need, write the need in `blockers/P2.4-velnor.md` for the upstream `tailrocks/velnor-new`.
+- **Proof:** `hk check --all` passes. `velnor-actions generate` leaves no diff on a second run.
+- [ ] P2.4 done
+
+## Phase P3. Build jackin-core
+
+### P3.1 Build the ids, the agent table, and redaction
+
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P2.3.
+- **Scope:** `crates/jackin-core/src/{ids,agent,redact}.rs`.
+- **Steps:** Build the branded ids, `Agent::Codex`, the `AgentSpec` row (D04, D06, D10, D12), the `ProcessRunner` trait, and the redaction of secret values. Take the Codex row values from `rewrite/drafts/agentspec-codex.toml` when P7.1 has written it.
+- **Proof:** G-FAST passes. Tests show that the code rejects each invalid id with its reason. Tests show that a secret value never appears in a rendered error.
+- [ ] P3.1 done
+
+### P3.2 Build the config schema and the role manifest
+
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P3.1.
+- **Scope:** `crates/jackin-core/src/{config,manifest}/`.
+- **Steps:** Build the D15 config with atomic writes and the D11 manifest parser, including the D24 `docker` settings and the D26 account bindings. Reject each unknown field and name the key.
+- **Proof:** G-FAST passes. Tests show a round trip of a valid file. Tests show the rejection of each invalid case. Tests show that a crash during a write leaves the old file intact.
+- [ ] P3.2 done
+
+### P3.3 Build the image plan
+
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P3.2.
+- **Scope:** `crates/jackin-image/src/plan/`.
+- **Steps:** Build the pure part of D05 and D06: the `Dockerfile` validation, the derived layer from the Codex `AgentSpec` row, the cache key, and the buildx argument list with an explicit builder and the named context `construct`.
+- **Proof:** G-FAST passes. Tests show that the code rejects a final stage without `FROM construct`. Tests show that each cache key input changes the key. Tests show that the derived layer uses the `AgentSpec` binary path.
+- [ ] P3.3 done
+
+## Phase P4. Build the OpenShell adapter
+
+### P4.1 Build the Gateway trait and the SDK adapter
+
+- **Repo:** jackin. **Owner:** `rust-engineer`, with `openshell-specialist` as reviewer. **Depends:** P3.1.
+- **Scope:** `crates/jackin-openshell/`.
+- **Steps:**
+  1. Build the `Gateway` trait from API.md.
+  2. Build `GrpcGateway` on `openshell-sdk`. Use raw clients for OpenShell providers and policy.
+  3. Map each gRPC status to a `GatewayError` variant.
+  4. Build the argument builders for `sandbox connect`, `sandbox exec --tty`, `sandbox upload`, and `sandbox download`. Each one takes an explicit gateway.
+  5. Resolve the gateway endpoint through `openshell gateway list -o json` (D03).
+- **Proof:** G-FAST passes. Tests show the status mapping against an in-process tonic server. Tests show that each argument list names the gateway.
+- [ ] P4.1 done
+
+### P4.2 Build the fake gateway
+
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P4.1.
+- **Scope:** `crates/jackin-testkit/`.
+- **Steps:** Build an in-process fake that implements `Gateway` with sandboxes, labels, OpenShell providers, and injectable failures.
+- **Proof:** G-FAST passes. The `code-reviewer` of phase P4 confirms that the fake obeys the same contract as `GrpcGateway`.
+- [ ] P4.2 done
+
+### P4.3 Build the image builder and the delivery
+
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P3.3, P0.3, P7.1.
+- **Scope:** `crates/jackin-image/src/{build,deliver}.rs`, `crates/jackin-image/images/construct/Dockerfile`.
+- **Steps:**
+  1. Run the buildx plan through the `ProcessRunner` trait of `jackin-core`. Stream the build output as typed progress events.
+  2. Read the image digest from the build metadata.
+  3. Deliver the image with the D23 method of the gateway.
+  4. Put the construct `Dockerfile` and `jackin-start` from P7.1 in the crate.
+- **Proof:** G-FAST passes. `evidence/P4.3-build.md` shows a build of the construct image and of a minimal role. It shows a second build that uses the cache. It shows a delivered image that the gateway can start.
+- [ ] P4.3 done
+
+### P4.4 Review phase P4
+
+- **Owner:** `code-reviewer` and `security-reviewer` on `<P4 start>..HEAD`. **Depends:** P4.2, P4.3.
+- **Proof:** both verdicts in the chat, the fix round, and G-FULL.
+- [ ] P4.4 done
+
+## Phase P5. Build jackin-session
+
+### P5.1 Build the launch planner and executor
+
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P3.2, P4.2, P4.3.
+- **Scope:** `crates/jackin-session/src/launch/`.
+- **Steps:** Build the pure planner and the idempotent executor from the DESIGN.md launch sequence. Support cancel.
+- **Proof:** G-FAST passes. Tests against the fake gateway prove these behaviors:
+  - Two runs with one launch ID give one image build, one sandbox, one upload, and one setup run.
+  - A failure after create leaves the sandbox, and a retry continues it.
+  - A cancel leaves the sandbox as a restore candidate.
+  - Jackin never reuses a live sandbox as a new launch (ADR-008).
+- [ ] P5.1 done
+
+### P5.2 Build attach, shell, export, list, stop, start, and purge
+
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P5.1.
+- **Scope:** `crates/jackin-session/src/{attach,export,lifecycle,host}.rs`.
+- **Steps:** Build each operation from DESIGN.md. Build the host process runner. `purge` refuses unexported work without `--force` (ADR-010).
+- **Proof:** G-FAST passes. Tests show that an export writes only `refs/heads/jackin/<sandbox>` and never the working tree. Tests show that purge refuses unexported work. Tests show that list finds sandboxes by label only.
+- [ ] P5.2 done
+
+### P5.3 Review phase P5
+
+- **Owner:** `code-reviewer` and `security-reviewer` on `<P5 start>..HEAD`. **Depends:** P5.2.
+- **Proof:** both verdicts in the chat, the fix round, and G-FULL.
+- [ ] P5.3 done
+
+### P5.4 Build the Docker capability
+
+- **Repo:** jackin. **Owner:** `agent-sandbox-engineer`. **Depends:** P5.3, P0.5.
+- **Scope:** the D24 parts of `crates/jackin-core/`, `crates/jackin-image/`, and `crates/jackin-session/`.
+- **Steps:** If P0.5 is `BLOCKED`, build only the settings and a launch error that names the blocker. Otherwise, build D24 with the engine source that P0.5 chose. Resolve the capability from the role and the workspace. Add the Docker layer to the derived image only when the capability is enabled. Add the engine policy rule only when the capability is enabled. Show the host engine warning.
+- **Proof:** G-FAST passes. Tests show that the capability is disabled by default. Tests show that the role or the workspace can enable it. Tests show that the cache key changes with it.
+- [ ] P5.4 done
+
+### P5.5 Review the Docker capability
+
+- **Owner:** `security-reviewer`, then the orchestrator runs `pstack:interrogate`. **Depends:** P5.4.
+- **Proof:** the verdicts in the chat. No open blocking finding.
+- [ ] P5.5 done
+
+## Phase P6. Build the CLI
+
+### P6.1 Build the clap commands
+
+- **Repo:** jackin. **Owner:** `rust-cli-tui-engineer`. **Depends:** P5.2.
+- **Scope:** `crates/jackin/`.
+- **Steps:** Build each command in the DESIGN.md CLI table. Write help text with clap attributes, not doc comments (D17). `--json` output is stable and has a typed schema.
+- **Proof:** G-FAST passes. Tests run the binary against the fake gateway and assert the exit code, the JSON output, and the resulting fake state.
+- [ ] P6.1 done
+
+### P6.3 Port the usage crates
+
+- **Repo:** jackin. **Owner:** `rust-engineer`, with `mechanic` for the comment removal. **Depends:** P6.1.
+- **Scope:** `crates/usage/`, the workspace members, the `jackin usage` command.
+- **Steps:**
+  1. Apply D25. Remove each dependency on a deleted crate.
+  2. Remove every comment with a script, then run the D17 comment step.
+  3. Make each usage provider read the credentials of a jackin account of that provider on the host.
+  4. Add the usage crates to the workspace members and to the layer step.
+  5. Build `jackin usage` and `jackin usage --json`. Show each limit window that a provider reports, such as the 5-hour and weekly windows, with the percentage used, the remaining amount, and the reset time.
+- **Proof:** G-FAST passes with the usage crates in the workspace. Tests verify the usage behavior through public interfaces, with a fake HTTP server for each provider backend that a test covers.
+- [ ] P6.3 done
+
+### P6.2 Run the CLI against the real gateway
+
+- **Owner:** `verifier` at `model: sonnet, effort: high`. **Depends:** P6.1, P0.2.
+- **Steps:** Run `jackin doctor`, `jackin ls --json`, and `jackin role check` on a valid and an invalid manifest against `jackin-local`.
+- **Proof:** `evidence/P6.2-cli.md`.
+- [ ] P6.2 done
+
+## Phase P7. Write the construct image and the sentinel role
+
+P7.1 can start after P0.3. It runs in parallel with P2 to P6.
+
+### P7.1 Write the construct image and the derived layer
+
+- **Repo:** jackin. **Owner:** `agent-sandbox-engineer`. **Depends:** P0.3, A2.
+- **Scope:** `rewrite/drafts/construct.Dockerfile`, `rewrite/drafts/derived.Dockerfile`, `rewrite/drafts/jackin-start`, `rewrite/drafts/agentspec-codex.toml`.
+- **Steps:** Finish the D06 construct image, the D05 derived layer, and the D09 `jackin-start` launcher from the P0.3 drafts. Write the Codex `AgentSpec` row values in `agentspec-codex.toml`. P4.3 moves them into `jackin-image`.
+- **Proof:** `evidence/P7.1-image.md` shows the output of `id` and `codex --version`. It shows that a derived image has no `sudo` and no `docker`.
+- [ ] P7.1 done
+
+### P7.2 Rewrite the sentinel role
+
+- **Repo:** jackin-sentinel. **Owner:** `agent-sandbox-engineer`. **Depends:** P7.1, P6.1, P0.4.
+- **Steps:**
+  1. Delete every Claude file, old hook, old script, and the old manifest.
+  2. Write a `Dockerfile` whose final stage starts `FROM construct`. It installs `jackin-sentinel-probe` in a `RUN` layer, so the build output is visible.
+  3. Write `jackin.role.toml` (D11), `policy.yaml` (D12), `hooks/setup.sh`, and `hooks/preflight.sh`. The preflight hook fails when `SENTINEL_FAIL_PREFLIGHT=1`.
+  4. Write `jackin/rewrite/probe-schema.json` first. Then write the probe. It prints one JSON object with the result of each in-sandbox journey step, including the J15 and J16 Docker steps.
+  5. Rewrite `README.md`.
+- **Proof:** G-ROLE passes after P6.1. `evidence/P7.2-sentinel.md` shows a build by hand in the P0.3 order. It shows the probe output in a sandbox.
+- [ ] P7.2 done
+
+### P7.3 Review the images, the OpenShell provider profile, and the policy
+
+- **Owner:** `security-reviewer`, then the orchestrator runs `pstack:interrogate`. **Depends:** P7.2.
+- **Proof:** the verdicts in the chat. No open blocking finding.
+- [ ] P7.3 done
+
+## Phase P8. Prove the sentinel journey
+
+This phase is the first end-to-end proof.
+
+### P8.0 Look for newer stable releases
+
+- **Owner:** `docs-researcher`. **Depends:** P7.3.
+- **Steps:** Look for newer stable releases of the D02 tools. For each newer release, add a task that updates the pin and runs the affected live proofs again.
+- **Proof:** a trail row with the versions found.
+- [ ] P8.0 done
+
+### P8.1 Build xtask e2e
+
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P6.1, P7.2, P8.0.
+- **Scope:** `crates/xtask/src/e2e/`. Drive the PTY steps J11 and J12 with the `portable-pty` crate. Validate the probe output against `rewrite/probe-schema.json`.
+- **Steps:** Run each journey step in order. Compare the host observation with the probe output. Print one line for each step. The line has the ID, `PASS`, `FAIL`, or `SKIP`, and the reason. Exit non-zero if a step fails.
+- **Proof:** a run against `jackin-local`.
+- [ ] P8.1 done
+
+### P8.2 Run the journey
+
+- **Owner:** orchestrator. **Depends:** P8.1, A1.
+- **Steps:** Run G-E2E. Fix each `FAIL` through the code task pipeline. Run G-E2E again.
+- **Proof:** every journey step prints `PASS`. Copy the full output into `evidence/P8.2-journey.md` and into the chat.
+- [ ] P8.2 done
+
+### P8.3 Repeat the journey independently
+
+- **Owner:** orchestrator runs `pstack:swarm` with three `verifier` lanes. **Depends:** P8.2.
+- **Steps:** Each lane starts from a fresh clone of the head SHA, a new workspace name, and no old sandboxes. Each lane runs G-E2E. With A1 source 3, the lanes run one after the other.
+- **Proof:** three PASS outputs in `evidence/P8.3-lanes.md`.
+- [ ] P8.3 done
+
+### Sentinel journey
+
+| ID | Step | PASS when |
+|---|---|---|
+| J00 | Image build | `jackin build sentinel --rebuild` builds the image and shows the sentinel `RUN` output. A second `jackin build sentinel` uses the cache. The derived image has Codex at the pinned version at `/usr/local/bin/codex`. |
+| J01 | Doctor | `jackin doctor` reports OpenShell at the pinned version and a healthy gateway. |
+| J02 | Strict manifest | `jackin role check` on a manifest with an unknown field exits non-zero and names the field. |
+| J03 | One sandbox per launch | `jackin load` gives one sandbox with all the D07 labels, and the image digest label matches the J00 digest. A retry with the same launch ID gives no second sandbox. |
+| J04 | Sandbox identity | The probe reports the user `sandbox`, no working `sudo`, and no `docker` binary. |
+| J05 | Upload | The digests of the probe match the digests of `git ls-files` on the host. An ignored file is absent. `git status --porcelain` on the host is the same before and after. |
+| J06 | Hooks | `setup` ran once across two starts. `preflight` ran at each start. With `SENTINEL_FAIL_PREFLIGHT=1`, the launch stops with the hook error. |
+| J07 | Codex | Codex is the main process at the pinned version. `codex exec` answers the fixed prompt. |
+| J08 | Credential | The sandbox environment has only a placeholder. The key is absent from the sandbox files, `jackin inspect`, and the captured stderr of each jackin command in the journey. |
+| J09 | Egress | Codex reaches its API. A host outside the policy is denied. A binary that is not Codex gets no credential. |
+| J10 | Filesystem | A write outside `/sandbox` and `/tmp` is denied. |
+| J11 | Detach and reattach | After a detach, the Codex process is still alive. `jackin attach` replays the output. |
+| J12 | Shell | `jackin shell` opens a second process. The Codex process does not change. |
+| J13 | Export | A commit made in the sandbox appears at `refs/heads/jackin/<sandbox>` on the host. The host working tree does not change. |
+| J14 | Lifecycle | Stop and start keep the files. `purge` refuses unexported work. `purge --force` deletes the sandbox. Other sandboxes do not change. |
+| J15 | Docker capability on | With `SENTINEL_DOCKER=1`, the workspace has `docker = true`. In the sandbox, `docker run --rm hello-world` passes. The container exists only in the chosen engine. |
+| J16 | Docker capability off | Without the capability, the sandbox has no `docker` binary, and a connection to the engine endpoint is denied. |
+| J17 | Accounts and usage | With no `--account` flag, `jackin load` uses the workspace binding. Without a workspace binding, `jackin load` uses the role binding. Without both bindings, it uses the provider default. `jackin usage --json` has a record for each account that has credentials. Each Codex record has its 5-hour and weekly windows with the percentage used and the reset time, or a typed reason when Codex gives no data. |
+
+## Phase P9. Build the console
+
+P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run in parallel with P3 to P8. Each baseline task obeys the baseline `AGENTS.md`.
+
+### P9.1 Move the jackin-preview screens into baseline blocks
+
+- **Repo:** terminal-components-baseline. **Owner:** `rust-cli-tui-engineer`. **Depends:** P2.1.
+- **Scope:** the baseline `src/` and the `jackin-preview` binary. Never the files under `tests/functional/baselines/`.
+- **Steps:**
+  1. Run the full baseline suite and record the result as the before state.
+  2. Move each D27 screen pattern into a reusable block behind a data interface. Make `jackin-preview` use the blocks with its demo data.
+  3. Add the terminal hand-off API, the external message input, a pane block that renders a terminal session from a byte stream, and the `clap` feature (D27, D28).
+  4. Run the full baseline suite again.
+- **Proof:** the full baseline suite passes. `git diff --stat -- tests/functional/baselines` prints nothing. Record both outputs in `jackin/rewrite/evidence/P9.1-baseline.md`.
+- [ ] P9.1 done
+
+### P9.2 Add the new jackin screens to the baseline
+
+- **Repo:** terminal-components-baseline. **Owner:** `ux-specialist` writes the screen specs. `rust-cli-tui-engineer` builds them. **Depends:** P9.1.
+- **Steps:** Specify and build the role editor, the role binding, the Docker setting, and the doctor panel with baseline components. Follow the demo navigation and key bindings (D28). Add them to `jackin-preview`. Approve one new tuiscotti baseline for each new screen.
+- **Proof:** the full baseline suite passes. The existing baseline files have no diff. `jackin/rewrite/evidence/P9.2-baseline.md` lists the new baseline files.
+- [ ] P9.2 done
+
+### P9.3 Wire the console to jackin data
+
+- **Repo:** jackin. **Owner:** `rust-cli-tui-engineer`. **Depends:** P8.2, P9.2.
+- **Scope:** `crates/jackin-tui/`, the console entry in `crates/jackin/`.
+- **Steps:**
+  1. Pin `junie-tui` to the head of the baseline branch `feature/openshell-native`.
+  2. Implement the baseline data interfaces with `jackin-session`, `jackin-core`, and the usage crates.
+  3. Show the D24 Docker setting, the D25 usage windows, and the D26 accounts, defaults, and bindings.
+  4. Build the D28 session tabs and panes with the P0.6 transport. Use the hand-off API for `jackin attach` and `jackin shell`.
+  5. Build the D28 1Password flow and the gateway health screen.
+- **Proof:** G-FAST passes. Tests drive key sequences and assert the resulting jackin config and session state.
+- [ ] P9.3 done
+
+### P9.4 Prove that the console is identical to the baseline
+
+- **Repo:** jackin. **Owner:** `rust-cli-tui-engineer`, with `test-reviewer` for the red and green record. **Depends:** P9.3.
+- **Steps:** Add the D27 identity gate to the nextest suite. It runs the jackin console in a PTY on the baseline fixture data. It drives each demo scenario and each key-driven demo state with the demo key sequence (D28). It verifies each result against its `jackin-preview` tuiscotti baseline.
+- **Proof:** G-FAST passes. `test-reviewer` records a red run after a one-cell color change and a green run after the revert.
+- [ ] P9.4 done
+
+### P9.5 Drive the console live
+
+- **Owner:** `verifier` at `model: sonnet, effort: high`, with the `run` skill. **Depends:** P9.4.
+- **Steps:** Start the console in a PTY against `jackin-local`. Follow the demo flows with real data. Create a workspace. Add a Codex account and an account of one other provider. Set a default account. Bind accounts to the sentinel role and to the workspace. Open the usage panel. Launch the sentinel role. Open a shell pane next to the Codex pane. Detach. Attach again from the list. Purge.
+- **Proof:** terminal captures in `evidence/P9.5-console.md`.
+- [ ] P9.5 done
+
+## Phase P10. Add the ChatGPT login mode
+
+### P10.1 Build credential mode B
+
+- **Repo:** jackin. **Owner:** `agent-sandbox-engineer`. **Depends:** P8.2.
+- **Steps:** Build D10 mode B. `jackin account add codex --chatgpt-from <codex-home>` imports the login into the OpenShell provider. The sandbox gets a placeholder `auth.json`. Device login is interactive only and is not part of the proof.
+- **Proof:** G-FAST passes. J07 and J08 pass with a mode B account. `evidence/P10.1-chatgpt.md` shows the output.
+- [ ] P10.1 done
+
+### P10.2 Review mode B
+
+- **Owner:** `security-reviewer`, then the orchestrator runs `pstack:interrogate`. **Depends:** P10.1.
+- **Proof:** the verdicts in the chat. No open blocking finding.
+- [ ] P10.2 done
+
+## Phase P11. Rewrite Agent Smith and The Architect
+
+P11.1 and P11.2 run in parallel.
+
+### P11.1 Rewrite Agent Smith
+
+- **Repo:** jackin-agent-smith. **Owner:** `agent-sandbox-engineer`. **Depends:** P8.2.
+- **Steps:** Apply D20. Delete every Claude file and the marketplace scripts. Write the Dockerfile, manifest, policy, review instructions for Codex, and README.
+- **Proof:** G-ROLE passes. `evidence/P11.1-smith.md` shows that `jackin load agent-smith` builds the image and starts Codex.
+- [ ] P11.1 done
+
+### P11.2 Rewrite The Architect
+
+- **Repo:** jackin-the-architect. **Owner:** `agent-sandbox-engineer`. **Depends:** P8.2.
+- **Steps:** Apply D20. Delete `jackin-toolchain/`, `scripts/update-jackin-toolchain.rs`, `AGENTS.md.d/`, `docs/pr-workflow.md`, `caveman-config.json`, and every Claude file. Install the D02 Rust toolchain and mr-boxington in the image. Write the policy for crates.io, GitHub, and the mise download hosts.
+- **Proof:** G-ROLE passes. In a sandbox of this role, G-FAST passes on a clone of jackin. Record it in `evidence/P11.2-architect.md`.
+- [ ] P11.2 done
+
+## Phase P12. Rewrite the documents
+
+### P12.1 Rewrite the jackin documents
+
+- **Repo:** jackin. **Owner:** `docs-writer`. **Depends:** P9.5.
+- **Scope:** `README.md`, `CONTRIBUTING.md`, `COMMITS.md`, `docs/content/`.
+- **Steps:** Write the install guide, the gateway how-to from `rewrite/drafts/gateway.md`, the role author guide, the CLI reference, and the console guide. Mark ADR-005, ADR-007, and ADR-011 as superseded by DESIGN.md.
+- **Proof:** the docs build in G-FULL passes. No page mentions a Docker or Apple runtime for agents.
+- [ ] P12.1 done
+
+### P12.2 Rewrite the role documents and the project note
+
+- **Owner:** `docs-writer` for the role READMEs. The orchestrator updates `~/.claude/project-notes/jackin.md` and the index row for the three role repositories. **Depends:** P11.1, P11.2.
+- **Proof:** the diffs.
+- [ ] P12.2 done
+
+## Phase P13. Finish and open the pull requests
+
+### P13.0 Look for newer stable releases
+
+- **Owner:** `docs-researcher`. **Depends:** all tasks of P0 to P12.
+- **Steps:** Do the P8.0 steps again.
+- **Proof:** a trail row with the versions found.
+- [ ] P13.0 done
+
+### P13.1 Run the full gate
+
+- **Owner:** `verifier`. **Depends:** P13.0 and the tasks that it added.
+- **Steps:** Run G-FULL. Run `rg -l -i 'bollard|dind|capsule' --glob '!rewrite/**' --glob '!docs/content/**/adr*/**'` and verify that it prints nothing.
+- **Proof:** G-FULL passes on the head of jackin. G-ROLE passes in each role repository. The full baseline suite passes in terminal-components-baseline, and its existing baseline files have no diff against `95bbcbb`.
+- [ ] P13.1 done
+
+### P13.2 Repeat the journey from fresh resources
+
+- **Owner:** orchestrator runs `pstack:swarm` with three `verifier` lanes, as in P8.3. Each lane starts with an empty image cache. **Depends:** P13.1.
+- **Proof:** three PASS outputs in `evidence/P13.2-lanes.md` and in the chat.
+- [ ] P13.2 done
+
+### P13.3 Review the whole change
+
+- **Owner:** one `code-reviewer` for each repository on `origin/main..feature/openshell-native`. One `security-reviewer` across all five. Then the orchestrator runs `pstack:interrogate` on the credential, policy, and image diffs. **Depends:** P13.2.
+- **Steps:** Fix each accepted finding through the code task pipeline. Write the evidence for each rejected finding.
+- **Proof:** every verdict in the chat. No open blocking finding.
+- [ ] P13.3 done
+
+### P13.4 Open the pull requests
+
+- **Owner:** orchestrator. **Depends:** P13.3.
+- **Steps:** Open one ready pull request for each repository from `feature/openshell-native` to `main`. The title is `feat!: rebuild jackin on OpenShell`, or the equivalent for the role or the baseline. The body opens with the goal and names the evidence files. After all five exist, edit each body to link the other four. Do not merge (A3).
+- **Proof:** the output of `gh pr view <url> --json url,state,isDraft,baseRefName,headRefName` for each of the five pull requests, in the chat.
+- [ ] P13.4 done
