@@ -47,7 +47,7 @@ These items had no obvious owner. Resolve each one with this procedure. Do not a
   1. `docker-local`. The OpenShell Docker driver reads the OrbStack image store.
   2. `registry`. A local OCI registry runs on OrbStack, and the gateway pulls from it.
 
-  Record the method in the trail.
+  Record the method in the trail. P0.3 proved method 1 with the `vm` driver (D23).
 - **A3. Merge.** The program ends with one open pull request for each repository. Do not merge. Do not ask whether to merge.
 - **A4. Product change.** If evidence shows that a decision in the product statement of DESIGN.md is wrong, use the procedure above. Then change the decision and continue.
 
@@ -175,7 +175,7 @@ The program depends on facts that only a real run can prove. Prove them before y
 - **Repo:** jackin. **Owner:** orchestrator. **Depends:** P0.2, P0.3, P0.5, P0.6.
 - **Steps:** Compare the P0 evidence with D03, D05, D06, D08, D09, D10, D13, D23, D24, and D28. Change each decision that the evidence refutes. Add one trail row for each change.
 - **Proof:** the DESIGN.md diff and the trail rows.
-- [ ] P0.4 done
+- [x] P0.4 done — DESIGN.md D03 D05 D06 D08 D09 D10 D11 D12 D13 D14 D23 D24 D27 D28, CLI table, Launch sequence corrected; arena between Sonnet and Opus architect analyses with a Sonnet cross-judge; new task P7.4
 
 ### P0.5 Prove a Docker engine for sandboxes
 
@@ -315,8 +315,9 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
   1. Build the `Gateway` trait from API.md.
   2. Build `GrpcGateway` on `openshell-sdk`. Use raw clients for OpenShell providers and policy.
   3. Map each gRPC status to a `GatewayError` variant.
-  4. Build the argument builders for `sandbox connect`, `sandbox exec --tty`, `sandbox upload`, and `sandbox download`. Each one takes an explicit gateway.
-  5. Resolve the gateway endpoint through `openshell gateway list -o json` (D03).
+  4. Build the argument builders for `sandbox upload` and `sandbox download`. Each one takes an explicit gateway, runs with stdin from `/dev/null`, and has a timeout (D03).
+  5. Build the terminal sessions from `evidence/P0.6-panes.md`: the main-process attach (`CreateSshSession`, `ForwardTcp`, `russh`) and `ExecSandboxInteractive` with and without a PTY. Expose one session handle with the commands `Input`, `Resize`, and `Detach` and the events `Output`, `Exited`, and `Ended`. Do not leak tonic or russh types.
+  6. Resolve the gateway endpoint through `openshell gateway list -o json` (D03).
 - **Proof:** G-FAST passes. Tests show the status mapping against an in-process tonic server. Tests show that each argument list names the gateway.
 - [ ] P4.1 done
 
@@ -330,7 +331,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P4.3 Build the image builder and the delivery
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P3.3, P0.3, P7.1.
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P3.3, P0.3, P7.1, P7.4.
 - **Scope:** `crates/jackin-image/src/{build,deliver}.rs`, `crates/jackin-image/images/construct/Dockerfile`.
 - **Steps:**
   1. Run the buildx plan through the `ProcessRunner` trait of `jackin-core`. Stream the build output as typed progress events.
@@ -378,7 +379,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 - **Repo:** jackin. **Owner:** `agent-sandbox-engineer`. **Depends:** P5.3, P0.5.
 - **Scope:** the D24 parts of `crates/jackin-core/`, `crates/jackin-image/`, and `crates/jackin-session/`.
-- **Steps:** If P0.5 is `BLOCKED`, build only the settings and a launch error that names the blocker. Otherwise, build D24 with the engine source that P0.5 chose. Resolve the capability from the role and the workspace. Add the Docker layer to the derived image only when the capability is enabled. Add the engine policy rule only when the capability is enabled. Show the host engine warning.
+- **Steps:** If P0.5 is `BLOCKED`, build only the settings and a launch error that names the blocker. Otherwise, build D24 with the engine source that P0.5 chose. Resolve the capability from the role and the workspace. Add the Docker layer to the derived image only when the capability is enabled. Add the engine policy rule only when the capability is enabled. Show the D24 warning.
 - **Proof:** G-FAST passes. Tests show that the capability is disabled by default. Tests show that the role or the workspace can enable it. Tests show that the cache key changes with it.
 - [ ] P5.4 done
 
@@ -432,7 +433,7 @@ P7.1 can start after P0.3. It runs in parallel with P2 to P6.
 
 ### P7.2 Rewrite the sentinel role
 
-- **Repo:** jackin-sentinel. **Owner:** `agent-sandbox-engineer`. **Depends:** P7.1, P6.1, P0.4.
+- **Repo:** jackin-sentinel. **Owner:** `agent-sandbox-engineer`. **Depends:** P7.1, P7.4, P6.1, P0.4.
 - **Steps:**
   1. Delete every Claude file, old hook, old script, and the old manifest.
   2. Write a `Dockerfile` whose final stage starts `FROM construct`. It installs `jackin-sentinel-probe` in a `RUN` layer, so the build output is visible.
@@ -447,6 +448,20 @@ P7.1 can start after P0.3. It runs in parallel with P2 to P6.
 - **Owner:** `security-reviewer`, then the orchestrator runs `pstack:interrogate`. **Depends:** P7.2.
 - **Proof:** the verdicts in the chat. No open blocking finding.
 - [ ] P7.3 done
+
+### P7.4 Prove the jackin-start supervisor
+
+- **Repo:** jackin. **Owner:** `agent-sandbox-engineer`. **Depends:** P0.4, P7.1.
+- **Scope:** `rewrite/drafts/jackin-start`, `rewrite/drafts/derived.Dockerfile`, `rewrite/drafts/agentspec-codex.toml`, new `rewrite/evidence/P7.4-supervisor.md`.
+- **Steps:** Rewrite `jackin-start` to the D09 supervisor. Remove the hooks from it. Prove each fact on `jackin-local` with the derived image:
+  1. The state goes `waiting`, then `running <attempt>` after jackin writes the attempt ID, then `exited <attempt> <code>` after Codex quits. The sandbox stays `Ready` after Codex exits with 0 and with a non-zero code. Exec and `git bundle` still work.
+  2. A second attempt ID starts Codex again. A stale attempt ID does nothing.
+  3. Ctrl-C while `jackin-start` waits does not end it. A stop and a start give `waiting` again.
+  4. Codex as the child gets the PTY: the first prompt appears on attach, and a resize reaches it.
+  5. A hook under `/usr/local/lib/jackin/hooks` runs through a non-PTY exec with the `[env]` values. A failing hook returns its exit code, and the sandbox stays `Ready`. Closing the exec stream stops a long hook.
+  6. A file written through exec stdin arrives with mode 0600 and the exact bytes.
+- **Proof:** `evidence/P7.4-supervisor.md` shows each step with raw output.
+- [ ] P7.4 done
 
 ## Phase P8. Prove the sentinel journey
 
@@ -491,14 +506,14 @@ This phase is the first end-to-end proof.
 | J03 | One sandbox per launch | `jackin load` gives one sandbox with all the D07 labels, and the image digest label matches the J00 digest. A retry with the same launch ID gives no second sandbox. |
 | J04 | Sandbox identity | The probe reports the user `sandbox`, no working `sudo`, and no `docker` binary. |
 | J05 | Upload | The digests of the probe match the digests of `git ls-files` on the host. An ignored file is absent. `git status --porcelain` on the host is the same before and after. |
-| J06 | Hooks | `setup` ran once across two starts. `preflight` ran at each start. With `SENTINEL_FAIL_PREFLIGHT=1`, the launch stops with the hook error. |
-| J07 | Codex | Codex is the main process at the pinned version. `codex exec` answers the fixed prompt. |
+| J06 | Hooks | `setup` ran once across two starts. `preflight` ran at each start. With `SENTINEL_FAIL_PREFLIGHT=1`, the launch stops with the hook error, the sandbox stays `Ready`, and `jackin export` works. A retry without the variable starts Codex. |
+| J07 | Codex | Codex at the pinned version runs as the child of `jackin-start`, the sandbox main process. `codex exec` answers the fixed prompt. After Codex exits, the sandbox stays `Ready` and `jackin attach --restart` starts it again. |
 | J08 | Credential | The sandbox environment has only a placeholder. The key is absent from the sandbox files, `jackin inspect`, and the captured stderr of each jackin command in the journey. |
-| J09 | Egress | Codex reaches its API. A host outside the policy is denied. A binary that is not Codex gets no credential. |
+| J09 | Egress | Codex reaches its API. A host outside the policy is denied. A process that is not Codex or started by Codex, such as `curl` in `jackin shell`, gets no credential. `jackin role check` rejects a role policy with a rule for a Codex provider host (D10). |
 | J10 | Filesystem | A write outside `/sandbox` and `/tmp` is denied. |
 | J11 | Detach and reattach | After a detach, the Codex process is still alive. `jackin attach` replays the output. |
 | J12 | Shell | `jackin shell` opens a second process. The Codex process does not change. |
-| J13 | Export | A commit made in the sandbox appears at `refs/heads/jackin/<sandbox>` on the host. The host working tree does not change. |
+| J13 | Export | A commit made in the sandbox appears at `refs/heads/jackin/<sandbox>/<branch>` on the host. The host working tree does not change. |
 | J14 | Lifecycle | Stop and start keep the files. `purge` refuses unexported work. `purge --force` deletes the sandbox. Other sandboxes do not change. |
 | J15 | Docker capability on | With `SENTINEL_DOCKER=1`, the workspace has `docker = true`. In the sandbox, `docker run --rm hello-world` passes. The container exists only in the chosen engine. |
 | J16 | Docker capability off | Without the capability, the sandbox has no `docker` binary, and a connection to the engine endpoint is denied. |
@@ -515,7 +530,7 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 - **Steps:**
   1. Run the full baseline suite and record the result as the before state.
   2. Move each D27 screen pattern into a reusable block behind a data interface. Make `jackin-preview` use the blocks with its demo data.
-  3. Add the terminal hand-off API, the external message input, a pane block that renders a terminal session from a byte stream, and the `clap` feature (D27, D28).
+  3. Add the external message input, the terminal pane block that renders a session from a byte stream (D27), and the `clap` feature (D27, D28).
   4. Run the full baseline suite again.
 - **Proof:** the full baseline suite passes. `git diff --stat -- tests/functional/baselines` prints nothing. Record both outputs in `jackin/rewrite/evidence/P9.1-baseline.md`.
 - [ ] P9.1 done
@@ -535,7 +550,7 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
   1. Pin `junie-tui` to the head of the baseline branch `feature/openshell-native`.
   2. Implement the baseline data interfaces with `jackin-session`, `jackin-core`, and the usage crates.
   3. Show the D24 Docker setting, the D25 usage windows, and the D26 accounts, defaults, and bindings.
-  4. Build the D28 session tabs and panes with the P0.6 transport. Use the hand-off API for `jackin attach` and `jackin shell`.
+  4. Build the D28 session tabs and panes with the P0.6 transport. `jackin attach` and `jackin shell` use the same sessions (D03).
   5. Build the D28 1Password flow and the gateway health screen.
 - **Proof:** G-FAST passes. Tests drive key sequences and assert the resulting jackin config and session state.
 - [ ] P9.3 done

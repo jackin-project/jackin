@@ -1,6 +1,6 @@
 # Target design of jackin on OpenShell
 
-This document is dated 2026-11-02. Its status is approved for execution. The branch is `feature/openshell-native` in all five repositories (PLAN.md lists them).
+This document is dated 2026-11-02 and was corrected from the P0 evidence in task P0.4. Its status is approved for execution. The branch is `feature/openshell-native` in all five repositories (PLAN.md lists them).
 
 This document records the target design and the decisions behind it. It is a reference. [PLAN.md](PLAN.md) tells you how to build the design. The reports in [research/](research/) are evidence. If a report disagrees with this document, this document is correct.
 
@@ -46,14 +46,19 @@ mise use --global --tool-option mr_boxington=true rust mr-boxington
 
 The repository `mise.toml` and `rust-toolchain.toml` must agree with these pins. Run every cargo command through `mise exec -- mbx`. Record the OpenShell pin in `compatibility.lock.toml` at the repository root.
 
-### D03. Talk to OpenShell through the SDK, and use the CLI for terminal and file transfer
+### D03. Talk to OpenShell through the SDK, and use the CLI only for file transfer
 
-- Use the `openshell-sdk` crate as a git dependency at the pinned tag.
-- Use its raw tonic clients for OpenShell providers and policy.
-- Use the `openshell` CLI for four things only: `sandbox connect`, `sandbox exec --tty`, `sandbox upload`, and `sandbox download`. These run over SSH in OpenShell 0.1.6 and have no plain gRPC form. They need the system `ssh` binary.
-- Pass the gateway, the OpenShell workspace, and the sandbox name explicitly on every call. Never change the active gateway of the operator. If you give no name, `sandbox connect` uses the last sandbox. Always give the name.
+- Use the `openshell-sdk` crate as a git dependency at the pinned tag. Use it for sandboxes, labels, exec, and terminal sessions. Use its raw tonic clients for OpenShell providers and policy.
+- Run a command in a sandbox with `ExecSandboxInteractive`. A hook run and a file write use no PTY and send their data on stdin. A shell uses a PTY.
+- Attach to the sandbox main process in the jackin process: `CreateSshSession`, then `ForwardTcp` with an `SshRelayTarget`, then a `russh` client that requests a PTY and the `openshell-main` subsystem. Pin the host key to the `host_key_fingerprint` of the `CreateSshSession` response. Create one session token for each attachment. One token allows 3 streams, and one sandbox allows 20.
+- `jackin attach`, `jackin shell`, and the console panes use these transports. Jackin does not hand the terminal to the `openshell` CLI.
+- Use the `openshell` CLI for three things only: `sandbox upload`, `sandbox download`, and `gateway list -o json`. Upload and download run over the system `ssh` binary, and the filtered upload runs the host `git`. Run each CLI call with stdin from `/dev/null` and a hard timeout. P0.2 saw one upload call hang before it reached the gateway.
+- Pass the gateway, the OpenShell workspace, and the sandbox name explicitly on every call. Never change the active gateway of the operator.
 - A jackin workspace is not an OpenShell workspace. The jackin gateway config names the OpenShell workspace that jackin uses.
 - Jackin gets the gateway endpoint from `openshell gateway list -o json`. For mTLS, jackin reads the `ca.crt`, `tls.crt`, and `tls.key` files of that gateway entry. Jackin does not write the registry.
+- Only `jackin-openshell` depends on `openshell-sdk`, `tonic`, and `russh`. The SDK does not re-export tonic.
+
+Evidence: `evidence/P0.6-panes.md` (transport research), `evidence/P0.2-gateway.md` (Gaps G1).
 
 ### D04. Codex is the only agent
 
@@ -71,24 +76,35 @@ Jackin builds the image for each launch that needs one:
 
 1. Jackin validates the role `Dockerfile`. The final stage must start `FROM construct`.
 2. Jackin builds the construct image (D06), or takes it from the cache.
-3. Jackin builds the role image with `docker buildx build`. It gives the construct image to the build as the named build context `construct`.
-4. Jackin derives the final image. The derived layer installs Codex at the D02 version at `/usr/local/bin/codex`. It disables automatic update. It sets the user to `sandbox`.
+3. Jackin builds the role image with `docker buildx build`. It uses a builder with the `docker` driver, because a `docker-container` builder cannot read a local `docker-image://` context. It passes `--provenance=false --sbom=false --load` and the platform of the gateway. It gives the construct image to the build as the named build context `construct`.
+4. Jackin derives the final image from its own embedded derived `Dockerfile`, with the role image as the named build context `role`. The build context holds only `jackin-start` and the role hook files (D11). As root, the derived layer:
+   - installs `codex` and `codex-code-mode-host` at the D02 version from the pinned Codex package archive, selected by `TARGETARCH`, with the checksum of each platform from the `AgentSpec` row
+   - writes `/etc/codex/config.toml` with `check_for_update_on_startup = false`
+   - runs `codex --version` with `CODEX_HOME` in a temporary directory and deletes the directory in the same `RUN`
+   - installs `jackin-start` at `/usr/local/bin/jackin-start`
+   - installs the hooks at `/usr/local/lib/jackin/hooks/setup` and `/usr/local/lib/jackin/hooks/preflight`, owned by root, mode 0755
+   - sets the user to `sandbox`
 5. Jackin delivers the final image to the gateway (D23).
 
-The image identity is its content digest. The cache key is a hash of the role commit, the `Dockerfile` digest, the construct digest, and the Codex version. When the key matches a cached image, jackin does not build again. `--rebuild` ignores the cache. Jackin streams the build output to the CLI and to the console.
+The image identity is the Docker image ID. The cache key is a hash of the role commit, the `Dockerfile` digest, the construct digest, the Codex version, the platform, the Docker capability, and the digests of `jackin-start` and each hook file. The image tag is the cache key. When a local image with that tag exists, jackin does not build again. `--rebuild` ignores the cache. Jackin streams the build output to the CLI and to the console.
+
+Evidence: `evidence/P0.3-codex.md`, `evidence/P7.1-image.md`.
 
 ### D06. Jackin owns the construct base image
 
 `jackin-image` embeds `images/construct/Dockerfile`. Jackin builds the construct image locally and caches it by digest. The base image needs no registry. The image has these properties:
 
-- It starts from the OpenShell default sandbox base image.
-- It has the non-root user `sandbox`.
-- It contains no `sudo`, no firewall tool, and no container tool.
-- It contains the shared shell tools that roles need.
+- It starts from the OpenShell default sandbox image `nvcr.io/nvidia/base/ubuntu:24.04`, pinned by digest.
+- It removes the user `ubuntu` and creates the user `sandbox` with uid and gid 1000 and home `/sandbox`. The `vm` driver takes the runtime user from `/etc/passwd`, not from the image `USER`.
+- It clears every setuid and setgid bit. The build fails when `sudo`, a firewall tool, or a container tool is on `PATH`.
+- It contains `git`, `curl`, `ca-certificates`, `jq`, `bash`, and the other shared shell tools that roles need. Export needs `git` (D08).
+- Jackin puts each of its files under `/usr/local`, because the default Landlock policy denies `/opt`.
 
-The derived layer adds the Docker client, and the engine when D24 needs one, only when the Docker capability is enabled. The cache key includes the capability.
+When the Docker capability is enabled, the derived layer adds the Docker client at `/usr/local/bin/docker` and its `buildx` and `compose` plugins. It never adds an engine (D24). The cache key includes the capability.
 
-The Codex binary path is part of the `AgentSpec` row. The derived layer and the OpenShell provider profile use the same path, so the profile and the image cannot differ.
+The `AgentSpec` row holds the Codex binary paths, the install archive URL template, and the checksum of each platform. The derived layer and the OpenShell provider profile read the same row, so the profile and the image cannot differ. The profile `binaries` list names only `/usr/local/bin/codex`.
+
+Evidence: `evidence/P0.2-gateway.md`, `evidence/P0.3-codex.md`, `evidence/P7.1-image.md`.
 
 ### D07. One sandbox for each launch, and labels are the only index
 
@@ -100,30 +116,53 @@ The Codex binary path is part of the `AgentSpec` row. The derived layer and the 
 
 ### D08. Upload the project and export work as a git bundle
 
-- At create time, jackin runs `openshell sandbox upload` to copy the project directory into `/sandbox/project`. The upload respects `.gitignore` and includes `.git`.
-- To retrieve work, `jackin export` creates a git bundle in the sandbox and downloads it. It then fetches the bundle into the host repository as `refs/heads/jackin/<sandbox-name>`.
+- Jackin uploads the project with two CLI calls, with the project root as the working directory:
+  1. `openshell sandbox upload <sandbox> . /sandbox/project`. It respects `.gitignore`, uploads untracked files that are not ignored, and omits `.git`.
+  2. `openshell sandbox upload <sandbox> .git /sandbox/project --no-git-ignore`. It adds `.git`.
+- A path other than `.` lands in `/sandbox/project/<basename>`. The first call needs `git` and a work tree on the host.
+- To retrieve work, `jackin export` runs `git bundle create` in `/sandbox/project` through exec, downloads the bundle from `/sandbox/.jackin/`, compares the sha256 digests, and fetches each branch into the host repository as `refs/heads/jackin/<sandbox-name>/<branch>`.
+- Work is exported when the sandbox has no uncommitted change and each branch tip exists under `refs/heads/jackin/<sandbox-name>/` on the host. A sandbox that jackin cannot inspect counts as not exported.
 - Jackin never writes to the host working tree.
 - Jackin has no bind mounts and no sync daemon.
 
-### D09. The agent is the sandbox main process
+Evidence: `evidence/P0.2-gateway.md` step 4.
 
-- The main process of the sandbox is `/usr/local/bin/jackin-start`, with a kept PTY. The derived layer installs it. It waits for the marker `/sandbox/.jackin/ready-<launch-id>`. Then it runs the `setup` hook once and the `preflight` hook. Then it replaces itself with Codex. If a hook fails, it exits with a non-zero code. Jackin reads the code from the sandbox status.
-- `jackin attach` gives the terminal to `openshell sandbox connect`. OpenShell keeps the PTY alive after detach and replays output on reattach.
-- `jackin shell` gives the terminal to `openshell sandbox exec --tty`.
-- There is no Capsule and no in-sandbox daemon. In the console, the tabs and panes of the `jackin-preview` demo run on the host (D28). Each pane is an OpenShell terminal session.
+### D09. jackin-start supervises Codex and never exits by itself
+
+OpenShell 0.1.6 does not reach a sandbox after its main process exits. Exit code 0 gives the phase `Completed`, and another code gives `Error`. Both phases refuse exec and attach. In `Error`, `stop` fails and `start` stays in `Starting`. So the main process must stay alive, or unexported work is trapped (ADR-010).
+
+- The main process is `/usr/local/bin/jackin-start <Codex launch command>`, with a kept PTY. The derived layer installs it. Jackin passes the launch command of the `AgentSpec` row as the arguments, and `JACKIN_LAUNCH_ID` in the environment.
+- At each start, `jackin-start` removes its old state and writes `waiting` to `/sandbox/.jackin/run/state`. When jackin writes a new attempt ID to `/sandbox/.jackin/run/start`, `jackin-start` writes `running <attempt>` and runs Codex as its child in `/sandbox/project`. When Codex exits, `jackin-start` writes `exited <attempt> <code>`, prints one line to the PTY, and waits for the next attempt ID.
+- `jackin-start` writes only `state`, and jackin writes only `start`. Each write is a temporary file and a rename. The attempt ID fences a stale request.
+- `jackin-start` runs no hooks. Jackin runs them through exec (D11).
+- `jackin-start` traps `SIGINT`, `SIGTERM`, and `SIGHUP`, so a Ctrl-C while it waits does not end it. It exits only when the launch ID or the arguments are invalid, before the first attempt.
+- The state files are writable by the agent. Jackin treats them as advisory. Jackin never decides on export or purge from them.
+- `jackin attach` opens the main PTY in the jackin process (D03). OpenShell keeps the PTY alive after detach and replays up to 1 MiB of raw output on reattach. The replay can start inside an escape sequence, so after each attach jackin resizes the PTY to one row less and back to force a redraw.
+- Ctrl-D always detaches, so Codex never receives it. A lone Ctrl-P is held until the next byte, and Ctrl-P Ctrl-Q detaches.
+- A second attachment is a read-only viewer, but it still resizes the shared PTY. The console opens one pane for each main process.
+- `jackin shell` opens a new process with `ExecSandboxInteractive` and a PTY. It has no detach and no replay. The process ends when the stream closes.
+- `jackin stop` and `jackin start` stop and start the sandbox. The main process starts again from the beginning and writes `waiting`.
+- There is no Capsule and no in-sandbox daemon. In the console, the tabs and panes of the `jackin-preview` demo run on the host (D28).
+
+Evidence: `evidence/P0.2-gateway.md` steps 5, 7, 8; `evidence/P7.1-image.md` F3; `evidence/P0.6-panes.md`. Task P7.4 proves this supervisor live.
 
 ### D10. Credentials stay on the gateway
 
 In this document, an **OpenShell provider** is the OpenShell credential object. A **provider** without the word OpenShell is an AI coding service (D26).
 
-- Each account and agent pair has one OpenShell provider. Its name is `jackin-<account>-codex`.
+- Each account and agent pair has one OpenShell provider. Its name is `jackin-<account>-codex`. It uses the OpenShell provider profile `codex`, which starts from the upstream `examples/codex-app-server/codex.yaml`, because `providers/codex.yaml` has no refresh block. Its `binaries` list is `/usr/local/bin/codex`. A profile ID can be imported once, so jackin imports the profile only when it is absent.
 - Mode A is an API key. The sandbox receives an `OPENAI_API_KEY` placeholder. The gateway replaces the placeholder only on the allowed hosts.
-- Mode B is a ChatGPT login. It uses the upstream Codex refresh pattern. The gateway holds the refresh token, and the sandbox receives a placeholder `auth.json`.
+- Mode B is a ChatGPT login. The gateway holds the access token and the refresh token and refreshes the access token. At each launch, jackin writes `/sandbox/.codex/auth.json`, mode 0600, through exec stdin. The file holds the access token placeholder, an empty refresh token, a non-secret placeholder ID token, and the real ChatGPT account ID.
+- The account ID is an identifier, not a secret. Codex 0.166.0 fails with a placeholder account ID. Jackin stores the account ID in the jackin account entry.
 - Build the mode that the A1 credential permits first. The development Mac has only a host ChatGPT login, so build mode B first.
-- Mode B imports an existing Codex login. The command `jackin account add codex --chatgpt-from <codex-home>` reads `auth.json` and puts the refresh material into the OpenShell provider. A device login needs a person, so no proof includes it.
-- Jackin never writes a real token into a sandbox, an image, a log, a label, or the jackin config.
+- Mode B imports an existing Codex login. The command `jackin account add codex --chatgpt-from <codex-home>` reads `auth.json` and puts the refresh material into the OpenShell provider. The gateway then rotates the refresh token, so the host login may need a new `codex login` later. A device login needs a person, so no proof includes it.
+- The gateway replaces a placeholder by destination host, for each process that the policy lets reach the host. A rule for a binary also covers the processes that the binary starts. So a command that Codex starts can use the credential, but it cannot read it.
+- Provider host closure: in the merged policy, only the generated `_provider_<name>` rule may match a host of the Codex OpenShell provider profile. This includes wildcard hosts, any port, and any binary. `jackin role check` and `jackin load` reject a role policy that breaks the rule. `jackin inspect` reports a live policy that breaks it.
+- Jackin never writes a real token into a sandbox, an image, a log, a label, or the jackin config. The one exception is the Docker client key of D24.
 - For live tests, find the credential in the order that PLAN.md item A1 gives. A shared ChatGPT refresh token can rotate and break the host login. Accept this risk, and record the choice in the trail.
 - Run live runs that share one refresh token one after the other. Never run them in parallel.
+
+Evidence: `evidence/P0.3-codex.md`.
 
 ### D11. The role manifest is small and strict
 
@@ -151,7 +190,9 @@ prompt = "Text for the operator"
 ```
 
 - The parser rejects unknown fields.
-- `jackin-start` runs `setup` once after the upload and `preflight` before each Codex start (D09). A non-zero exit stops the launch.
+- Hook paths are relative to the role repository. The parser rejects a path that is absolute, contains `..`, or is not a regular file in the role repository. The derived layer copies the hooks into the image (D05). The agent cannot change them.
+- Jackin runs the hooks through exec as the user `sandbox`, with no PTY, the working directory `/sandbox/project`, the `[env]` values, and stdin closed. `setup` runs once for each launch: one exec runs the hook and then writes `/sandbox/.jackin/setup-done-<launch-id>`. `setup` must be idempotent, because a crash before the marker runs it again. `preflight` runs before each Codex start.
+- A non-zero exit stops the launch. Jackin shows the hook name, the exit code, and the output, with terminal control sequences removed. The sandbox stays `Ready` and is a restore candidate. A cancel ends the exec stream, which stops the hook.
 - Put only non-secret values in `[env]`.
 - Without a TTY, an `[env]` entry uses its `default`. An entry without a default stops the launch, unless `--env NAME=VALUE` gives the value.
 - `[docker] enabled = true` enables the Docker capability for each launch of the role (D24).
@@ -159,11 +200,13 @@ prompt = "Text for the operator"
 
 ### D12. Policy is native OpenShell policy
 
-Jackin sends the role `policy.yaml` to OpenShell without change. Jackin adds the network rules from the Codex `AgentSpec` row. Jackin has no policy language of its own. After jackin creates the sandbox, only the `network_policies` section can change.
+Jackin sends the role `policy.yaml` to OpenShell without change. OpenShell adds the `_provider_<name>` network rule of the Codex OpenShell provider itself. Jackin adds the D24 engine rule when the Docker capability is enabled. Jackin has no policy language of its own. After jackin creates the sandbox, only the `network_policies` section can change.
 
 ### D13. The operator owns the gateway
 
-Jackin does not install, start, or stop an OpenShell gateway. The operator runs `openshell-gateway` and registers it with `openshell gateway add`. The operator, not jackin, chooses the compute driver. On macOS, try the `vm` driver first. If task P0.2 proves that the `vm` driver does not work, use the OpenShell Docker driver. The development Mac has OrbStack Docker 29.8.2 at `~/.orbstack/bin/docker`. Jackin uses it only for BuildKit builds (D01). `jackin doctor` verifies the gateway health and the pinned version. It does not repair the gateway.
+Jackin does not install, start, or stop an OpenShell gateway. The operator runs `openshell-gateway` and registers it with `openshell gateway add`. The operator, not jackin, chooses the compute driver. On the development Mac the driver is `vm`. The Homebrew package lacks the `openshell-driver-vm` binary, so the operator downloads it from the release, checks its digest, signs it with the hypervisor entitlement, installs `e2fsprogs`, and generates the certificates. The gateway how-to (from `drafts/gateway.md`) gives the script. The development Mac has OrbStack Docker 29.8.2 at `~/.orbstack/bin/docker`. Jackin uses it for BuildKit builds (D01). The `vm` driver reads images from the same engine through `/var/run/docker.sock` (D23). `jackin doctor` verifies the `openshell`, `ssh`, and `git` binaries, the gateway health, the pinned version, and the engine socket. It does not repair the gateway.
+
+Evidence: `evidence/P0.2-gateway.md` step 1.
 
 ### D14. The workspace has eight crates
 
@@ -181,7 +224,7 @@ crates/
 
 The kept usage crates (D25) live under `crates/usage/`. They are below `jackin-tui` and `jackin`, and above `jackin-core`.
 
-The layer rule orders the crates. `jackin-core` is below `jackin-image` and `jackin-openshell`. Both are below `jackin-session`. `jackin-session` is below `jackin-tui` and `jackin`. `xtask` verifies this rule from `cargo metadata`. Only `jackin-openshell` imports `openshell-sdk`. Only `jackin-image` starts `docker`.
+The layer rule orders the crates. `jackin-core` is below `jackin-image` and `jackin-openshell`. Both are below `jackin-session`. `jackin-session` is below `jackin-tui` and `jackin`. `xtask` verifies this rule from `cargo metadata`. Only `jackin-openshell` imports `openshell-sdk`, `tonic`, and `russh`. Only `jackin-image` starts `docker`.
 
 ### D15. Configuration is one TOML file
 
@@ -245,12 +288,9 @@ Keep the Fumadocs site in `docs/`. Rewrite the content for OpenShell and Codex. 
 
 ### D23. Jackin delivers the image to the gateway
 
-The final image must be visible to the gateway compute driver. The gateway config in jackin names one delivery method:
+The final image must be visible to the gateway compute driver. Jackin has one delivery method, `docker-local`. The `vm` driver looks up the image in the local Docker engine through `/var/run/docker.sock` or the `DOCKER_HOST` of the gateway process, before it tries a registry. Jackin loads the final image into that engine (D05) and creates the sandbox with the image tag. The driver ignores a local image of another platform, so jackin builds for the platform of the gateway. Jackin builds no registry method until a gateway needs one.
 
-- `docker-local`. The OpenShell Docker driver reads the same Docker image store that BuildKit loads into.
-- `registry`. Jackin pushes the image to a registry that the gateway can pull from, such as a local registry.
-
-The `vm` driver can read a local engine first. Task P0.3 proves which method works with the chosen driver. Task P0.3 also records the buildx builder, because a `docker-container` builder cannot read a local `docker-image://` named context. Record the result in the trail.
+Evidence: `evidence/P0.3-codex.md` step 2.
 
 ### D25. The usage crates stay
 
@@ -308,17 +348,28 @@ If no rule selects an account, the launch stops with an error that names the mis
 Some workspaces must start Docker containers during implementation and tests. The Docker capability gives the agent in a sandbox a Docker engine.
 
 - The capability is disabled by default. A launch enables it when the role manifest has `[docker] enabled = true` or the workspace has `docker = true`.
-- When the capability is disabled, the image has no Docker client, and the policy permits no engine endpoint.
+- When the capability is disabled, the image has no Docker client, the policy permits no engine endpoint, and the sandbox gets no engine file or variable.
 - When the capability is enabled, the agent starts its containers through the engine. Jackin does not start containers.
 - Jackin never starts or stops an engine itself.
 
-Use the first engine source in this list that task P0.5 proves:
+The engine is a dedicated external engine. It holds nothing else. The operator starts it on the gateway host and names it in the jackin gateway config, because OpenShell has no place for an engine endpoint. The recommended form is rootless Docker-in-Docker. The engine listens on `127.0.0.1` with TLS and client certificates, and its server certificate names `host.openshell.internal`.
 
-1. An engine inside the sandbox. The containers stay inside the sandbox isolation, and OpenShell deletes them with the sandbox. This is the preferred source.
-2. A dedicated external engine that the operator names in the gateway config. The sandbox reaches it through an OpenShell network policy rule that permits only that endpoint.
-3. The default Docker engine of the host. Use it only when the operator names it explicitly in the config. In this program, only the `xtask e2e` config names it, and `security-reviewer` records the acceptance in task P5.5. Access to it equals root access on the host. `jackin load` and the console show a warning for each launch that uses it.
+An engine inside the sandbox is impossible in OpenShell 0.1.6. The workload has no capabilities, `no_new_privs` is set, and seccomp denies `mount` and user namespaces. Upstream tracks it as `NVIDIA/OpenShell#4970`. When upstream allows it, it becomes the preferred source. The default engine of the host is not a source, because a sandbox that reaches it has root access to the host.
 
-The engine credentials stay outside the sandbox when OpenShell can inject them. If OpenShell cannot inject them, task P0.5 records the gap in a blocker report. Then the operator-named engine must be a dedicated engine that holds nothing else.
+When the capability is enabled:
+
+- The policy gets one rule: host `host.openshell.internal`, the engine port, `protocol: tcp`, `tls: skip`, binary `/usr/local/bin/docker`. `tls: skip` is required, because the proxy removes the `Upgrade` header and `docker run` then fails. A role that runs `docker build` adds registry egress for the `docker-buildx` plugin in its own policy.
+- Jackin writes `ca.pem`, `cert.pem`, and `key.pem` to `/sandbox/.jackin/docker/` through exec stdin before the first attempt. The key has mode 0600.
+- The sandbox environment and each shell request have `DOCKER_HOST=tcp://host.openshell.internal:<port>`, `DOCKER_TLS_VERIFY=1`, and `DOCKER_CERT_PATH=/sandbox/.jackin/docker`.
+
+OpenShell 0.1.6 cannot keep a working engine credential outside the sandbox (`blockers/P0.5-docker-credentials.md`). So the agent can read the client key. `jackin load` and the console show a warning for each launch with the capability. The warning says these facts:
+
+- The agent can read the engine client key.
+- Containers bypass the sandbox network policy.
+- A bind mount names a path on the engine host, not in the sandbox.
+- The engine outlives the sandbox, and sandboxes that use one engine see each other's containers. The operator removes them.
+
+Evidence: `evidence/P0.5-docker.md`, `blockers/P0.5-docker-credentials.md`.
 
 ### D27. The console looks identical to terminal-components-baseline
 
@@ -329,7 +380,7 @@ The jackin console is visually identical to the `jackin-preview` app in `tailroc
 - On 2026-11-02 the `jackin-preview` screens exist only in the baseline binary. Move each screen pattern into a reusable block of the baseline library. Make `jackin-preview` use those blocks. Make jackin use the same blocks with real data.
 - If the baseline lacks what jackin needs, extend the baseline. Do not copy baseline code into jackin. The known extensions are:
   - the blocks for the jackin screens, behind a data interface
-  - an API that gives the terminal to a child process and takes it back, for `openshell sandbox connect`
+  - a terminal pane block that renders a session from a byte stream with the `vt100` parser and encodes keys, behind a Cargo feature. It does no I/O.
   - an input variant for external messages, for tokio events
   - a Cargo feature for `clap`, so the library does not always include it
 - A baseline change must never change its existing visual output. Each baseline task runs the full baseline test suite. All approved tuiscotti baselines under `tests/functional/baselines/` must pass unchanged. Never move the `visual-baseline` git tag.
@@ -344,7 +395,7 @@ The jackin console is visually identical to the `jackin-preview` app in `tailroc
 Jackin has the same screens, the same flows, the same key bindings, and the same navigation as the `jackin-preview` demo in the baseline. Each demo scenario and each key-driven demo state is an acceptance case for jackin.
 
 - The demo shows Docker and Capsule words in some screens. Jackin shows the same screen with OpenShell content. For example, the cockpit stages name the image build, the OpenShell provider, the sandbox, and the upload. The daemon health screen shows the OpenShell gateway health.
-- The session tabs and panes of the demo run in the host console. Each pane is an OpenShell terminal session. The Codex pane connects to the sandbox main process. A shell pane uses `ExecSandboxInteractive`. Task P0.6 proves how the console attaches to the main process in a pane.
+- The session tabs and panes of the demo run in the host console. Each pane is an OpenShell terminal session in the jackin process (D03). The Codex pane attaches to the main process through `CreateSshSession`, `ForwardTcp`, and `russh`. A shell pane uses `ExecSandboxInteractive`. The console opens one pane for each main process, owns the detach and close keys, never sends Ctrl-D, and sends the pane size after each layout change. Each attach creates a fresh parser and runs the D09 redraw resize. Evidence: `evidence/P0.6-panes.md`.
 - The 1Password flow of the demo stays. An account can name its credential as an `op://` reference. Jackin resolves it on the host with `op` and sends it only to the OpenShell provider.
 - When a demo screen has no jackin data yet, build the data. Do not remove the screen.
 - The CLI commands in this document stay. The console is the main way to use jackin, as in the demo.
@@ -355,14 +406,14 @@ Jackin has the same screens, the same flows, the same key bindings, and the same
 | Command | Result |
 |---|---|
 | `jackin` | Opens the console on a TTY. Prints help when there is no TTY. |
-| `jackin doctor` | Verifies the `openshell` binary, the `ssh` binary, the gateway health, and the pinned version. |
+| `jackin doctor` | Verifies the `openshell`, `ssh`, and `git` binaries, the gateway health, the pinned version, and the engine socket (D13). |
 | `jackin build [<role>] [--rebuild]` | Builds the role image and delivers it to the gateway. |
 | `jackin load [<role>] [<path>] [--account <a>] [--gateway <g>] [--rebuild] [--launch-id <id>] [--env NAME=VALUE]...` | Builds the image when necessary, creates or restores a sandbox, uploads, runs hooks, starts Codex, and attaches. |
-| `jackin attach <sandbox>` | Reattaches to the Codex PTY. |
+| `jackin attach <sandbox> [--restart]` | Reattaches to the Codex PTY. When Codex has exited, it shows the exit code. `--restart` runs `preflight` and starts Codex again (D09). |
 | `jackin shell <sandbox>` | Opens a new shell in the sandbox. |
 | `jackin ls [--json]` | Lists jackin sandboxes by label. |
 | `jackin inspect <sandbox> --json` | Prints the sandbox, labels, OpenShell providers, and policy status. |
-| `jackin export <sandbox>` | Fetches the sandbox work into `refs/heads/jackin/<sandbox>`. |
+| `jackin export <sandbox>` | Fetches each sandbox branch into `refs/heads/jackin/<sandbox>/<branch>` (D08). |
 | `jackin stop <sandbox>` and `jackin start <sandbox>` | Stops or starts the sandbox. |
 | `jackin purge <sandbox> [--force]` | Deletes the sandbox. It refuses when the work is not exported and `--force` is absent. |
 | `jackin account add <provider> [--chatgpt-from <codex-home>]\|ls\|rm` | Manages accounts of any provider. Codex accounts also get an OpenShell provider. |
@@ -375,14 +426,19 @@ Jackin has the same screens, the same flows, the same key bindings, and the same
 
 ## Launch sequence
 
-`jackin-session` has a pure planner and an executor. The planner turns the config and the request into a `LaunchPlan`. The executor runs these steps against the `Gateway` trait. Each step is idempotent.
+`jackin-session` has a pure planner and an executor. The planner turns the config and the request into a `LaunchPlan`. The executor runs these steps against the `Gateway` trait. Each step is idempotent. The identity of a launch is its launch ID.
 
 1. Resolve the Docker capability (D24). Build the image, or take it from the cache, and deliver it to the gateway (D05, D23).
-2. Ensure that the OpenShell provider for the account exists.
-3. Find a sandbox with the launch ID label. If none exists, create the sandbox with the role image, the merged policy, the OpenShell provider, the labels, and `jackin-start` as the main process.
-4. Wait until the sandbox is ready.
-5. Upload the project, unless the marker `/sandbox/.jackin/uploaded-<launch-id>` exists. Write the marker last.
-6. Write the marker `/sandbox/.jackin/ready-<launch-id>`. `jackin-start` runs the hooks and starts Codex (D09).
-7. Attach. If `jackin-start` exits with a non-zero code, show the hook error instead.
+2. Ensure that the OpenShell provider profile `codex` and the OpenShell provider for the account exist (D10).
+3. Find the sandbox with the launch ID label. More than one is an error. If none exists, create the sandbox with the role image, the merged policy, the OpenShell provider, the labels, the environment, a kept PTY, and `jackin-start` as the main process.
+4. Wait until the sandbox is `Ready`, because the create call returns first. Start a `Stopped` sandbox and wait. A `Completed` or `Error` sandbox stops the launch with its phase and exit code. Jackin never deletes it here.
+5. Write the Codex `auth.json` (D10) and, when the capability is enabled, the Docker client files (D24), through exec stdin.
+6. Upload the project (D08), unless the marker `/sandbox/.jackin/uploaded-<launch-id>` exists. Write the marker last.
+7. Wait until `/sandbox/.jackin/run/state` exists, with a timeout. If it says `running`, go to step 10.
+8. Run `setup`, unless `/sandbox/.jackin/setup-done-<launch-id>` exists. Run `preflight`. A failure stops the launch with the hook error (ADR-009). The sandbox stays `Ready`.
+9. Write a new attempt ID to `/sandbox/.jackin/run/start`. Wait until the state says `running <attempt>`.
+10. Attach (D09).
+
+A retry with the same launch ID continues at the observed state. Jackin starts Codex again only on an explicit request: `jackin load` with the same launch ID, or `jackin attach --restart` (ADR-008).
 
 If the operator cancels, jackin keeps the sandbox and reports it as a restore candidate.
