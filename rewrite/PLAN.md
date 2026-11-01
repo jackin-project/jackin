@@ -137,7 +137,7 @@ The program depends on facts that only a real run can prove. Prove them before y
   2. Set the pins. Set the mise tool option `mr_boxington = true` on `rust`.
   3. Write `compatibility.lock.toml` with the OpenShell version, tag, commit, and date, and the Codex version.
 - **Proof:** `evidence/P0.1-pins.md` contains the output of these commands: `mise exec -- mbx --version`, `mise exec -- rustc --version`, and `openshell --version`.
-- [ ] P0.1 done
+- [x] P0.1 done — 17975729, evidence/P0.1-pins.md (mbx 1.29.1, rustc 1.99.1, openshell 0.1.6)
 
 ### P0.2 Run a local OpenShell gateway
 
