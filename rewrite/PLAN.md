@@ -223,7 +223,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 - **Scope:** `CONTEXT.md`.
 - **Steps:** Write the glossary for these terms only: operator, role, workspace, provider, agent, account, default account, binding, usage, gateway, sandbox, OpenShell provider, policy, image, construct, Docker capability, launch, attach, shell, export, purge. Use the DESIGN.md meaning for each term.
 - **Proof:** the diff, and proof that no other term from the old glossary remains.
-- [ ] P1.2 done
+- [x] P1.2 done — d58d631e, CONTEXT.md has the 21 terms only; rumdl passes; old terms Instance, Session, Reconnect, Restore, Durable home, Default-home, First-seed, Role hook removed
 
 ## Phase P2. Build the skeleton and the gates
 
