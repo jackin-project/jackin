@@ -11,3 +11,11 @@ targetRules = ["generic-api-key"]
 regexTarget = "match"
 regexes = ['''^matrix_key":"m-[0-9a-f]{16}"$''', '''^key":"m-[0-9a-f]{16}"$''']
 paths = ['''^\.github/velnor/task-execution-manifest-v1\.json$''']
+
+[[allowlists]]
+description = "SSH host key fingerprints printed by attach evidence"
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+regexes = ['''host key pinned SHA256:[A-Za-z0-9+/]{43}''']
+paths = ['''^rewrite/evidence/.*\.md$''']

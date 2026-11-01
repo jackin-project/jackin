@@ -277,3 +277,9 @@ crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs:jwt:8
 crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs:jwt:14
 # Reason: prose in Markdown documentation matched by a keyword rule, no literal credential
 crates/services/jackin-usage-provider-kimi/README.md:generic-api-key:3
+
+# Reason: P2.4 triage of a tree scan. The gateway token ID is an identifier, not the token.
+rewrite/evidence/P0.5-docker-laneA.md:generic-api-key:114
+
+# Reason: P2.4 triage of a tree scan. Prose in a README, no value.
+crates/usage/jackin-usage-provider-kimi/README.md:generic-api-key:3
