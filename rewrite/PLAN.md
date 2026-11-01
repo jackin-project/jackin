@@ -215,7 +215,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
   5. Delete the `REUSE.toml` annotations for deleted paths.
   6. Make the root `Cargo.toml` an empty workspace with the workspace lints only.
 - **Proof:** `git ls-files crates native docker vendor fuzz | grep -v '^crates/usage/' | wc -l` prints `0`.
-- [ ] P1.1 done
+- [x] P1.1 done — 2ff4c2c4, gate prints 0; 34 usage crates under crates/usage without tests
 
 ### P1.2 Rewrite the glossary
 
