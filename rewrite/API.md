@@ -2971,3 +2971,18 @@ What waits, and why. U0 creates only items whose dependencies exist today.
 | xtask `e2e` items | U15 | they need `jackin-openshell` and the usage facade |
 
 U5 comes before U6 because PLAN P4.2 depends on P4.1. The session units (U8 to U10) are built and proven against the fake. U7 follows U6 because `ensure_image` is tested over `FakeEngine`, and it also depends on P3.3, P0.3, P7.1, and P7.4. U4 and U5 are independent of each other and may run in parallel worktrees. U13 follows U12 (PLAN P6.3 depends on P6.1). U14 starts only after P9.1 and P9.2 finish in the baseline repository.
+
+## Implementation reconciliation
+
+### U0 (P2.2, accepted by the orchestrator)
+
+- U0 holds only types, traits, error enums, and data constants. Parsers, `Display`, `FromStr`, and `Deserialize` impls arrive with their units, because a stub that always fails would be wrong.
+- Deferred to U13 (P6.3): `ConsoleDeps.usage`, `Deps.usage_endpoints`, `CommandError::Usage`, `World.usage`, `UsageServer`.
+- Deferred to U14 (P9.3): `Pane.screen`, the pane model, the `junie-tui` dependency, and `impl Application for Console`.
+- Deferred to U12 (P6.1): `Cli`, `Command`, the argument structs, and `run`, because clap derive needs `FromStr` on the ids.
+- Deferred to U2 (P3.1): `sandbox_layout` and `Compatibility::pinned`.
+- Deferred to U1 (P2.3): the xtask `LAYERS` table, `run_ci`, and `RepoFile`. The `e2e` feature waits for U15.
+- `FsOp`, `ProcessReply`, and `HttpFixture` are not defined yet. U6 (P4.2) defines them before use.
+- Dependency edges in the layer table are allowed edges, not required ones. Each unit adds the edges it uses.
+- `PollError<E>` carries the bound `E: std::error::Error + 'static`.
+- `jackin-openshell` lists its unused SDK dependencies in `[package.metadata.cargo-shear] ignored` until U5 (P4.1) uses them. U5 removes the entry.

@@ -2,8 +2,43 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [workspace]
-members = []
+members = [
+  "crates/jackin",
+  "crates/jackin-core",
+  "crates/jackin-image",
+  "crates/jackin-openshell",
+  "crates/jackin-session",
+  "crates/jackin-testkit",
+  "crates/jackin-tui",
+  "crates/xtask",
+]
 resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+license = "Apache-2.0"
+repository = "https://github.com/jackin-project/jackin"
+publish = false
+
+[workspace.dependencies]
+jackin-core = { path = "crates/jackin-core", version = "0.1.0" }
+jackin-image = { path = "crates/jackin-image", version = "0.1.0" }
+jackin-openshell = { path = "crates/jackin-openshell", version = "0.1.0" }
+jackin-session = { path = "crates/jackin-session", version = "0.1.0" }
+jackin-tui = { path = "crates/jackin-tui", version = "0.1.0" }
+async-trait = "0.1.92"
+clap = { version = "4.6.7", features = ["derive"] }
+openshell-policy = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.6", version = "0.0.0" }
+openshell-sdk = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.6", version = "0.0.0" }
+russh = "0.65.0"
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", default-features = false, features = ["sync"] }
+tokio-util = "0.7.20"
+tonic = "0.14.9"
+zeroize = { version = "1.9.1", features = ["derive"] }
 
 [workspace.lints.rust]
 rust_2024_compatibility = { level = "deny", priority = -1 }
@@ -22,7 +57,7 @@ missing_unsafe_on_extern = "deny"
 never_type_fallback_flowing_into_unsafe = "deny"
 missing_docs = "allow"
 
-unsafe_code = "deny"
+unsafe_code = "forbid"
 unused_qualifications = "deny"
 unused_lifetimes = "deny"
 redundant_lifetimes = "deny"

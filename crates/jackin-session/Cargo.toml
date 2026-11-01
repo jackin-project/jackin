@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-image = { workspace = true }
+jackin-openshell = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
