@@ -45,8 +45,14 @@ pub enum LabelError {
     Invalid { key: &'static str, source: IdError },
     #[error("unknown agent label {0}")]
     UnknownAgent(String),
+    #[error("invalid label key {key}: {reason}")]
+    InvalidKey { key: String, reason: &'static str },
+    #[error("invalid value for label {key}: {reason}")]
+    InvalidValue { key: String, reason: &'static str },
 }
 
+const LABEL_KEY_MAX: usize = 253;
+const LABEL_VALUE_MAX: usize = 63;
 const MANAGED: &str = "jackin.dev/managed";
 const WORKSPACE: &str = "jackin.dev/workspace";
 const ROLE: &str = "jackin.dev/role";
@@ -113,7 +119,78 @@ impl SandboxLabels {
     }
 }
 
+fn label_name_problem(name: &str) -> Option<&'static str> {
+    let (Some(first), Some(last)) = (name.chars().next(), name.chars().next_back()) else {
+        return Some("is empty");
+    };
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    {
+        return Some("has a character outside letters, digits, '-', '_' and '.'");
+    }
+    if !first.is_alphanumeric() || !last.is_alphanumeric() {
+        return Some("does not start and end with a letter or digit");
+    }
+    None
+}
+
+fn label_key_problem(key: &str) -> Option<&'static str> {
+    if key.len() > LABEL_KEY_MAX {
+        return Some("is longer than 253 characters");
+    }
+    let (prefix, name) = match key.split_once('/') {
+        Some((prefix, name)) => (Some(prefix), name),
+        None => (None, key),
+    };
+    if name.len() > LABEL_VALUE_MAX {
+        return Some("has a name part longer than 63 characters");
+    }
+    if let Some(problem) = label_name_problem(name) {
+        return Some(problem);
+    }
+    let prefix = prefix?;
+    let dns_char = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '.');
+    let edge = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
+    let valid = !prefix.is_empty()
+        && prefix.chars().all(dns_char)
+        && prefix.chars().next().is_some_and(edge)
+        && prefix.chars().next_back().is_some_and(edge)
+        && !prefix.contains("..");
+    if valid {
+        None
+    } else {
+        Some("has an invalid DNS prefix")
+    }
+}
+
+fn label_value_problem(value: &str) -> Option<&'static str> {
+    if value.is_empty() {
+        return None;
+    }
+    if value.len() > LABEL_VALUE_MAX {
+        return Some("is longer than 63 characters");
+    }
+    label_name_problem(value)
+}
+
 impl Labels {
+    pub fn from_pairs(
+        pairs: impl IntoIterator<Item = (String, String)>,
+    ) -> Result<Labels, LabelError> {
+        let mut labels = BTreeMap::new();
+        for (key, value) in pairs {
+            if let Some(reason) = label_key_problem(&key) {
+                return Err(LabelError::InvalidKey { key, reason });
+            }
+            if let Some(reason) = label_value_problem(&value) {
+                return Err(LabelError::InvalidValue { key, reason });
+            }
+            labels.insert(LabelKey(key), LabelValue(value));
+        }
+        Ok(Labels(labels))
+    }
+
     pub fn is_managed(&self) -> bool {
         self.0
             .get(&LabelKey(MANAGED.to_owned()))
