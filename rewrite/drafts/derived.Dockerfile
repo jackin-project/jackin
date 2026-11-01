@@ -33,5 +33,6 @@ RUN --mount=type=bind,from=codex-archive,source=/,target=/archive \
     && test "$(CODEX_HOME="$work/home" "${CODEX_BIN_DIR}/codex" --version)" = "codex-cli ${CODEX_VERSION}" \
     && rm -rf "$work"
 COPY --chown=root:root --chmod=0755 jackin-start /usr/local/bin/jackin-start
+COPY --chown=root:root --chmod=0755 hooks/setup hooks/preflight /usr/local/lib/jackin/hooks/
 USER sandbox
 WORKDIR /sandbox

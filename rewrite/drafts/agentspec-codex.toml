@@ -62,8 +62,28 @@ last_refresh = "UTC timestamp at write time"
 
 [start]
 launch_id_env = "JACKIN_LAUNCH_ID"
-setup_hook_env = "JACKIN_HOOK_SETUP"
-preflight_hook_env = "JACKIN_HOOK_PREFLIGHT"
-state_dir = "/sandbox/.jackin"
-ready_marker = "/sandbox/.jackin/ready-{launch_id}"
-setup_done_marker = "/sandbox/.jackin/setup-done-{launch_id}"
+launch_id_rule = "non-empty, no leading dot, only A-Z a-z 0-9 . _ -"
+run_dir = "/sandbox/.jackin/run"
+state_file = "/sandbox/.jackin/run/state"
+start_file = "/sandbox/.jackin/run/start"
+state_writer = "jackin-start, temp file state.tmp and rename"
+start_writer = "jackin, temp file start.tmp and rename"
+states = ["waiting", "running {attempt}", "exited {attempt} {code}"]
+attempt_id = "positive decimal integer of 1 to 18 digits without a leading zero; jackin-start starts the agent only for an id greater than the last id it handled since it started"
+agent_workdir = "/sandbox/project"
+exit_code_invalid_input = 64
+exit_code_workdir_missing = 66
+
+[jackin_markers]
+uploaded = "/sandbox/.jackin/uploaded-{launch_id}"
+setup_done = "/sandbox/.jackin/setup-done-{launch_id}"
+writer = "jackin, through exec"
+
+[hooks]
+dir = "/usr/local/lib/jackin/hooks"
+setup = "/usr/local/lib/jackin/hooks/setup"
+preflight = "/usr/local/lib/jackin/hooks/preflight"
+build_context_dir = "hooks"
+build_context_files = ["hooks/setup", "hooks/preflight"]
+undeclared_hook = "zero-byte file in the build context; the build fails when a file is missing"
+runner = "jackin, through non-PTY exec as the user sandbox in /sandbox/project"
