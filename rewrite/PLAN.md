@@ -265,7 +265,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
   `xtask e2e` is a stub that P8.1 fills.
 - **Proof:** G-FAST passes. For each of steps 6, 7, and 8, `test-reviewer` records a red run and a green run. Add a forbidden comment, a forbidden dependency, and a forbidden `docker run` call. Verify that each step fails.
-- [ ] P2.3 done
+- [x] P2.3 done — 8ead8ba7, G-FAST exit 0 (`18 tests run: 18 passed`; reuse compliant); test-reviewer red/green for all 18 tests and live red/green for steps 6, 7, 8
 
 ### P2.4 Update the tool config and the generated CI
 
