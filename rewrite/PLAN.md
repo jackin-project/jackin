@@ -337,7 +337,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
   1. Run the buildx plan through the `ProcessRunner` trait of `jackin-core`. Stream the build output as typed progress events.
   2. Read the image digest from the build metadata.
   3. Deliver the image with the D23 method of the gateway.
-  4. Put the construct `Dockerfile` and `jackin-start` from P7.1 in the crate.
+  4. Put the construct `Dockerfile` and `jackin-start` from P7.4 in the crate. Make `jackin-start` read `/sandbox/.jackin/env-<launch-id>` before each attempt (D11).
 - **Proof:** G-FAST passes. `evidence/P4.3-build.md` shows a build of the construct image and of a minimal role. It shows a second build that uses the cache. It shows a delivered image that the gateway can start.
 - [ ] P4.3 done
 
@@ -503,7 +503,7 @@ This phase is the first end-to-end proof.
 | J00 | Image build | `jackin build sentinel --rebuild` builds the image and shows the sentinel `RUN` output. A second `jackin build sentinel` uses the cache. The derived image has Codex at the pinned version at `/usr/local/bin/codex`. |
 | J01 | Doctor | `jackin doctor` reports OpenShell at the pinned version and a healthy gateway. |
 | J02 | Strict manifest | `jackin role check` on a manifest with an unknown field exits non-zero and names the field. |
-| J03 | One sandbox per launch | `jackin load` gives one sandbox with all the D07 labels, and the image digest label matches the J00 digest. A retry with the same launch ID gives no second sandbox. |
+| J03 | One sandbox per launch | `jackin load` gives one sandbox with all the D07 labels and a name of at most 19 characters, and the image label matches the first 32 hex characters of the J00 image ID. A retry with the same launch ID gives no second sandbox. |
 | J04 | Sandbox identity | The probe reports the user `sandbox`, no working `sudo`, and no `docker` binary. |
 | J05 | Upload | The digests of the probe match the digests of `git ls-files` on the host. An ignored file is absent. `git status --porcelain` on the host is the same before and after. |
 | J06 | Hooks | `setup` ran once across two starts. `preflight` ran at each start. With `SENTINEL_FAIL_PREFLIGHT=1`, the launch stops with the hook error, the sandbox stays `Ready`, and `jackin export` works. A retry without the variable starts Codex. |
@@ -517,7 +517,7 @@ This phase is the first end-to-end proof.
 | J14 | Lifecycle | Stop and start keep the files. `purge` refuses unexported work. `purge --force` deletes the sandbox. Other sandboxes do not change. |
 | J15 | Docker capability on | With `SENTINEL_DOCKER=1`, the workspace has `docker = true`. In the sandbox, `docker run --rm hello-world` passes. The container exists only in the chosen engine. |
 | J16 | Docker capability off | Without the capability, the sandbox has no `docker` binary, and a connection to the engine endpoint is denied. |
-| J17 | Accounts and usage | With no `--account` flag, `jackin load` uses the workspace binding. Without a workspace binding, `jackin load` uses the role binding. Without both bindings, it uses the provider default. `jackin usage --json` has a record for each account that has credentials. Each Codex record has its 5-hour and weekly windows with the percentage used and the reset time, or a typed reason when Codex gives no data. |
+| J17 | Accounts and usage | With no `--account` flag, `jackin load` uses the workspace binding. Without a workspace binding, `jackin load` uses the role binding. Without both bindings, it uses the provider default. The Codex accounts other than the A1 account use a fixture login whose refresh token does not work, so they never rotate the A1 token (D10). J17 observes the selection through the account label and the OpenShell provider of the sandbox. `jackin usage --json` has a record for each account that has credentials. Each Codex record has its 5-hour and weekly windows with the percentage used and the reset time, or a typed reason when Codex gives no data. |
 
 ## Phase P9. Build the console
 
@@ -571,10 +571,10 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 
 ## Phase P10. Add the ChatGPT login mode
 
-### P10.1 Build credential mode B
+### P10.1 Prove credential mode B
 
 - **Repo:** jackin. **Owner:** `agent-sandbox-engineer`. **Depends:** P8.2.
-- **Steps:** Build D10 mode B. `jackin account add codex --chatgpt-from <codex-home>` imports the login into the OpenShell provider. The sandbox gets a placeholder `auth.json`. Device login is interactive only and is not part of the proof.
+- **Steps:** P4.1, P5.1, and P6.1 build mode B, because the journey in P8.2 needs it (D10). This task proves it in isolation and hardens it. Prove D10 mode B. `jackin account add codex --chatgpt-from <codex-home>` imports the login into the OpenShell provider. The sandbox gets a placeholder `auth.json`. Device login is interactive only and is not part of the proof.
 - **Proof:** G-FAST passes. J07 and J08 pass with a mode B account. `evidence/P10.1-chatgpt.md` shows the output.
 - [ ] P10.1 done
 

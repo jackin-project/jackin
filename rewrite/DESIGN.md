@@ -56,7 +56,7 @@ The repository `mise.toml` and `rust-toolchain.toml` must agree with these pins.
 - Pass the gateway, the OpenShell workspace, and the sandbox name explicitly on every call. Never change the active gateway of the operator.
 - A jackin workspace is not an OpenShell workspace. The jackin gateway config names the OpenShell workspace that jackin uses.
 - Jackin gets the gateway endpoint from `openshell gateway list -o json`. For mTLS, jackin reads the `ca.crt`, `tls.crt`, and `tls.key` files of that gateway entry. Jackin does not write the registry.
-- Only `jackin-openshell` depends on `openshell-sdk`, `tonic`, and `russh`. The SDK does not re-export tonic.
+- Only `jackin-openshell` depends on `openshell-sdk`, `openshell-policy`, `tonic`, and `russh`. The SDK does not re-export tonic. `openshell-policy` parses and serializes the policy YAML.
 
 Evidence: `evidence/P0.6-panes.md` (transport research), `evidence/P0.2-gateway.md` (Gaps G1).
 
@@ -86,7 +86,7 @@ Jackin builds the image for each launch that needs one:
    - sets the user to `sandbox`
 5. Jackin delivers the final image to the gateway (D23).
 
-The image identity is the Docker image ID. The cache key is a hash of the role commit, the `Dockerfile` digest, the construct digest, the Codex version, the platform, the Docker capability, and the digests of `jackin-start` and each hook file. The image tag is the cache key. When a local image with that tag exists, jackin does not build again. `--rebuild` ignores the cache. Jackin streams the build output to the CLI and to the console.
+The image identity is the Docker image ID. The cache key is a hash of the role revision, the `Dockerfile` digest, the built construct image ID, the Codex version, the platform, the Docker capability, and the digests of `jackin-start` and each hook file. The image tag is the cache key. The role revision is the role commit, or the commit and a digest of the changed files when the role tree has uncommitted changes. When a local image with that tag exists, jackin does not build again. `--rebuild` ignores the cache. Jackin streams the build output to the CLI and to the console.
 
 Evidence: `evidence/P0.3-codex.md`, `evidence/P7.1-image.md`.
 
@@ -109,8 +109,8 @@ Evidence: `evidence/P0.2-gateway.md`, `evidence/P0.3-codex.md`, `evidence/P7.1-i
 ### D07. One sandbox for each launch, and labels are the only index
 
 - `jackin load` creates one OpenShell sandbox for one workspace, role, and account.
-- The sandbox name is `jackin-<workspace>-<random suffix>`.
-- Labels on the sandbox hold the workspace, role, agent, account, image digest, and launch ID.
+- The sandbox name is `jackin-<slug>-<suffix>`. The slug is the first 7 characters of the workspace name in lowercase DNS-1123 form. The suffix is 4 characters derived from the launch ID, which is random. OpenShell 0.1.6 limits a sandbox name to 19 characters, so the full workspace name lives in a label. Because the name is derived from the launch ID, the gateway rejects a second create of the same launch.
+- Labels on the sandbox hold the workspace, role, agent, account, the first 32 hex characters of the image ID, and the launch ID. A label value has at most 63 characters.
 - Jackin keeps no local instance index and no database. To find sandboxes, jackin lists them by label.
 - A retry with the same launch ID finds the existing sandbox and continues from its observed state. It does not create a second sandbox.
 
@@ -151,7 +151,7 @@ Evidence: `evidence/P0.2-gateway.md` steps 5, 7, 8; `evidence/P7.1-image.md` F3;
 
 In this document, an **OpenShell provider** is the OpenShell credential object. A **provider** without the word OpenShell is an AI coding service (D26).
 
-- Each account and agent pair has one OpenShell provider. Its name is `jackin-<account>-codex`. It uses the OpenShell provider profile `codex`, which starts from the upstream `examples/codex-app-server/codex.yaml`, because `providers/codex.yaml` has no refresh block. Its `binaries` list is `/usr/local/bin/codex`. A profile ID can be imported once, so jackin imports the profile only when it is absent.
+- Each account and agent pair has one OpenShell provider. Its name is `jackin-<account>-codex`. It uses the OpenShell provider profile `codex`, which starts from the upstream `examples/codex-app-server/codex.yaml`, because `providers/codex.yaml` has no refresh block. Its `binaries` list is `/usr/local/bin/codex`. A profile ID can be imported once, so jackin imports the profile when it is absent and updates it with `UpdateProviderProfiles` when it differs from the embedded profile.
 - Mode A is an API key. The sandbox receives an `OPENAI_API_KEY` placeholder. The gateway replaces the placeholder only on the allowed hosts.
 - Mode B is a ChatGPT login. The gateway holds the access token and the refresh token and refreshes the access token. At each launch, jackin writes `/sandbox/.codex/auth.json`, mode 0600, through exec stdin. The file holds the access token placeholder, an empty refresh token, a non-secret placeholder ID token, and the real ChatGPT account ID.
 - The account ID is an identifier, not a secret. Codex 0.166.0 fails with a placeholder account ID. Jackin stores the account ID in the jackin account entry.
@@ -195,6 +195,7 @@ prompt = "Text for the operator"
 - Jackin runs the hooks through exec as the user `sandbox`, with no PTY, the working directory `/sandbox/project`, the `[env]` values, and stdin closed. `setup` runs once for each launch: one exec runs the hook and then writes `/sandbox/.jackin/setup-done-<launch-id>`. `setup` must be idempotent, because a crash before the marker runs it again. `preflight` runs before each Codex start.
 - A non-zero exit stops the launch. Jackin shows the hook name, the exit code, and the output, with terminal control sequences removed. The sandbox stays `Ready` and is a restore candidate. A cancel ends the exec stream, which stops the hook.
 - Put only non-secret values in `[env]`.
+- At each launch run, jackin resolves the `[env]` values and writes them to `/sandbox/.jackin/env-<launch-id>` through exec stdin. This file is the one source of the role environment. Hooks, `jackin-start` before each attempt, and shells read it. A retry with new values replaces the file.
 - Without a TTY, an `[env]` entry uses its `default`. An entry without a default stops the launch, unless `--env NAME=VALUE` gives the value.
 - `[docker] enabled = true` enables the Docker capability for each launch of the role (D24).
 - There is no schema migration. A change to the format is a breaking change.
@@ -225,7 +226,7 @@ crates/
 
 The kept usage crates (D25) live under `crates/usage/`. They are below `jackin-tui` and `jackin`, and above `jackin-core`.
 
-The layer rule orders the crates. `jackin-core` is below `jackin-image` and `jackin-openshell`. Both are below `jackin-session`. `jackin-session` is below `jackin-tui` and `jackin`. `xtask` verifies this rule from `cargo metadata`. Only `jackin-openshell` imports `openshell-sdk`, `tonic`, and `russh`. Only `jackin-image` starts `docker`.
+The layer rule orders the crates. `jackin-core` is below `jackin-image` and `jackin-openshell`. Both are below `jackin-session`. `jackin-session` is below `jackin-tui` and `jackin`. `xtask` verifies this rule from `cargo metadata`. Only `jackin-openshell` imports `openshell-sdk`, `openshell-policy`, `tonic`, and `russh`. Only `jackin-image` starts `docker`. Product crates import only the `jackin-usage` facade from `crates/usage/`. The `jackin` binary and `xtask` also have library targets, so tests run their commands against the fakes.
 
 ### D15. Configuration is one TOML file
 
@@ -261,7 +262,7 @@ Delete these features. Do not rebuild them in this program:
 - Delete every old test.
 - Write new tests only for the behavior that this program builds.
 - Obey the test rules in `AGENTS.md`. Before you write a test, get approval of its plan from the `test-reviewer` subagent. Keep a test only after `test-reviewer` sees it fail on broken code and pass on fixed code.
-- The nextest suite is hermetic. It uses the fake gateway from `jackin-testkit`.
+- The nextest suite is hermetic. It uses the fakes from `jackin-testkit`. The fake boundaries are the OpenShell gateway, the image engine that the gateway driver reads (D23), the network, the clock, and the filesystem. A test may fake the host processes `docker`, `openshell`, `ssh`, and `op` only, because they are those boundaries. Tests run `git` for real.
 - Live tests against a real gateway run through `xtask e2e`, outside nextest. The orchestrator runs them and records the output in [evidence/](evidence/).
 
 ### D19. Sentinel is the verification role
@@ -325,7 +326,7 @@ For each window, it shows the percentage used, the remaining amount when the pro
 
 Jackin uses two different terms:
 
-- A **provider** is an AI coding service that has accounts and usage, such as Codex, Claude, Amp, Grok, Gemini, Cursor, Kimi, MiniMax, Z.AI, or OpenRouter. The provider list comes from the usage provider crates (D25).
+- A **provider** is an AI coding service that has accounts and usage, such as Codex, Claude, Amp, Grok, Gemini, Cursor, Kimi, MiniMax, Z.AI, or OpenRouter. `jackin-core` holds the `Provider` enum, so the config parser rejects an unknown provider. `jackin-usage` matches it exhaustively, so the build fails until each usage provider crate (D25) has a variant and each variant has a usage provider.
 - An **agent** is a CLI that runs in a sandbox. Codex is the only agent (D04). The Codex agent uses accounts of the Codex provider.
 
 The operator adds an account for any provider. The console and the CLI create, edit, and delete workspaces, roles, and accounts. They manage these bindings:
@@ -407,8 +408,9 @@ Jackin has the same screens, the same flows, the same key bindings, and the same
 | Command | Result |
 |---|---|
 | `jackin` | Opens the console on a TTY. Prints help when there is no TTY. |
+| `jackin gateway add\|ls\|rm` | Manages the jackin gateway entries: the registered OpenShell gateway name, the OpenShell workspace, the buildx builder, the platform, and the D24 engine. `--gateway` is a global flag, and the config names a default gateway. |
 | `jackin doctor` | Verifies the `openshell`, `ssh`, and `git` binaries, the gateway health, the pinned version, and the engine socket (D13). |
-| `jackin build [<role>] [--rebuild]` | Builds the role image and delivers it to the gateway. |
+| `jackin build [<role>] [--rebuild] [--json]` | Builds the role image, delivers it to the gateway, and prints the image ID. |
 | `jackin load [<role>] [<path>] [--account <a>] [--gateway <g>] [--rebuild] [--launch-id <id>] [--env NAME=VALUE]...` | Builds the image when necessary, creates or restores a sandbox, uploads, runs hooks, starts Codex, and attaches. |
 | `jackin attach <sandbox> [--restart]` | Reattaches to the Codex PTY. When Codex has exited, it shows the exit code. `--restart` runs `preflight` and starts Codex again (D09). |
 | `jackin shell <sandbox>` | Opens a new shell in the sandbox. |
@@ -417,13 +419,13 @@ Jackin has the same screens, the same flows, the same key bindings, and the same
 | `jackin export <sandbox>` | Fetches each sandbox branch into `refs/heads/jackin/<sandbox>/<branch>` (D08). |
 | `jackin stop <sandbox>` and `jackin start <sandbox>` | Stops or starts the sandbox. |
 | `jackin purge <sandbox> [--force]` | Deletes the sandbox. It refuses when the work is not exported and `--force` is absent. |
-| `jackin account add <provider> [--chatgpt-from <codex-home>]\|ls\|rm` | Manages accounts of any provider. Codex accounts also get an OpenShell provider. |
+| `jackin account add <provider> --name <a> [--chatgpt-from <codex-home>] [--credential <op-reference>]\|ls\|rm` | Manages accounts of any provider. Codex accounts also get an OpenShell provider. A Codex account takes `--chatgpt-from` (D10). |
 | `jackin account default <account>` | Makes the account the default for its provider (D26). |
 | `jackin account bind <account> --role <r> \| --workspace <w>` | Binds an account to a role or a workspace (D26). |
 | `jackin usage [--json]` | Shows the 5-hour, weekly, and other limit windows of each account, with the percentage used and the reset time (D25). |
 | `jackin role add\|ls\|rm` | Manages role sources. |
 | `jackin role check <path>` | Validates a role manifest, its `Dockerfile`, and its policy file. Role repositories use it as their gate. |
-| `jackin workspace add\|ls\|rm` | Manages workspaces, including the `docker` setting. |
+| `jackin workspace add <name> <path> [--docker]\|ls\|rm` | Manages workspaces, including the `docker` setting. |
 
 ## Launch sequence
 
