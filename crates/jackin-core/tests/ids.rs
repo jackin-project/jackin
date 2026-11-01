@@ -224,7 +224,9 @@ fn attempt_id_parses_one_to_eighteen_digits_and_steps_to_the_next() -> TestResul
         rej(rep('7', 20), Want::TooLong(18, 20)),
     ];
     for (text, want) in &rejected {
-        let error = AttemptId::parse(text).err().ok_or("accepted")?;
+        let error = AttemptId::parse(text)
+            .err()
+            .ok_or_else(|| format!("{text:?} was accepted"))?;
         assert!(
             satisfies(want, &error),
             "{text:?}: wanted {want:?}, got {error:?}"

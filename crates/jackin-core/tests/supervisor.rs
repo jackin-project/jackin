@@ -131,7 +131,9 @@ fn supervisor_state_rejects_each_malformed_text_with_its_reason() -> TestResult 
         ("running 1 2", Expect::TrailingText("2")),
     ];
     for (text, expect) in cases {
-        let error = SupervisorState::parse(text).err().ok_or("accepted")?;
+        let error = SupervisorState::parse(text)
+            .err()
+            .ok_or_else(|| format!("{text:?} was accepted"))?;
         assert!(
             matches_expectation(&expect, &error),
             "{text:?}: wanted {expect:?}, got {error:?}"

@@ -962,7 +962,16 @@ pub struct StdFileSystem { }
 
 pub async fn write_atomic(fs: &dyn FileSystem, path: &HostPath, bytes: &[u8], mode: FileMode) -> Result<(), FsError>;
 
-pub enum Program { Docker, Openshell, Git, Ssh, Op }
+pub enum Program { Docker(DockerSubcommand), Openshell, Git, Ssh, Op }
+pub enum DockerSubcommand { BuildxBuild, BuildxCreate, BuildxInspect, ImageInspect, Push }
+
+impl DockerSubcommand {
+    pub fn argv(self) -> &'static [&'static str];
+}
+
+impl Program {
+    pub fn binary(self) -> &'static str;
+}
 pub struct ProcessSpec {
     pub program: Program,
     pub args: Vec<String>,
@@ -3019,6 +3028,14 @@ U5 comes before U6 because PLAN P4.2 depends on P4.1. The session units (U8 to U
 - `Redactor::apply` replaces the longest secret at each position with `<redacted>` and skips empty secrets.
 - `StdFileSystem` runs each blocking call in `spawn_blocking`, so `jackin-core` enables the tokio feature `rt`. `lock` creates the file if it is missing and takes an exclusive `flock` that conflicts across handles in one process.
 - `jackin-core` gains the dependencies `sha2` and `toml` (`Compatibility::pinned` reads `compatibility.lock.toml` embedded with `include_str!`) and the dev-dependencies `static_assertions`, `tempfile`, `serde_json`, and tokio with `macros`. `toml` is a normal dependency, so the tests use it too.
+
+- `Program::Docker` carries a `DockerSubcommand` (`BuildxBuild`, `BuildxCreate`, `BuildxInspect`, `ImageInspect`, `Push`), as the coordinator decided after the phase P2 review. `DockerSubcommand::argv` renders the leading argv words (`buildx build`, `buildx create`, `buildx inspect`, `image inspect`, `push`), and `ProcessSpec.args` holds only the remaining arguments. `Program::binary` maps the program to its executable inside core, so no other crate names the variant to find the binary. The D01 subcommand rule is now enforced by the type system; the xtask container step only has to guard the crate boundary (a separate fix round).
+
+- `Provider` and `Agent` serialize as their lowercase `as_str` spelling, which is the config spelling (D26).
+- `EnvFile::parse` accepts exactly the `render` output: every line ends in `\n`, and names are in strictly ascending order, so a duplicate name or an unsorted file is a `Syntax` error at the offending line.
+- `SupervisorState::parse` takes an exit code only in the canonical `i32` spelling (`3`, not `+3` or `03`), so `parse(render(s)) == s` and `render(parse(t)) == t`. `StartRequest::parse` accepts one optional trailing `\n`, and `render` emits none.
+- `BranchName::parse` follows `git check-ref-format --branch` and also rejects a leading `-` and the name `HEAD`. A test compares it with the real `git` on a fixed candidate list, and the work for P3.1 compared it with `git` on about 8,400 generated names.
+- `AttemptId` serializes as a JSON number and deserializes through the same range check as `parse`.
 
 ### P9.2 additions (accepted by the orchestrator)
 

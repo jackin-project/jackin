@@ -88,11 +88,44 @@ impl FsError {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Program {
-    Docker,
+    Docker(DockerSubcommand),
     Openshell,
     Git,
     Ssh,
     Op,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DockerSubcommand {
+    BuildxBuild,
+    BuildxCreate,
+    BuildxInspect,
+    ImageInspect,
+    Push,
+}
+
+impl DockerSubcommand {
+    pub fn argv(self) -> &'static [&'static str] {
+        match self {
+            DockerSubcommand::BuildxBuild => &["buildx", "build"],
+            DockerSubcommand::BuildxCreate => &["buildx", "create"],
+            DockerSubcommand::BuildxInspect => &["buildx", "inspect"],
+            DockerSubcommand::ImageInspect => &["image", "inspect"],
+            DockerSubcommand::Push => &["push"],
+        }
+    }
+}
+
+impl Program {
+    pub fn binary(self) -> &'static str {
+        match self {
+            Self::Docker(_) => "docker",
+            Self::Openshell => "openshell",
+            Self::Git => "git",
+            Self::Ssh => "ssh",
+            Self::Op => "op",
+        }
+    }
 }
 
 #[derive(Debug)]
