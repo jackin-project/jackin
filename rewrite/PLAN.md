@@ -233,7 +233,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 - **Scope:** new `rewrite/API.md`.
 - **Steps:** Write the public types and function signatures of each D14 crate. Include the `Gateway` trait, `AgentSpec`, the config schema, the role manifest schema, `LaunchPlan`, the launch steps, and the error enums. Include the test plan outline for each crate.
 - **Proof:** `rewrite/API.md`, reviewed by a second `architect` run on a different AI model.
-- [ ] P2.1 done
+- [x] P2.1 done — a27464d6, rewrite/API.md (arena: Sonnet and Opus runners, Sonnet cross-judge picked candidate 1; Opus second-model review CHANGES REQUIRED with 4 blocking findings, all fixed in one round and checked by the orchestrator)
 
 ### P2.2 Create the workspace and the eight crates
 
