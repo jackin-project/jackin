@@ -3000,3 +3000,8 @@ U5 comes before U6 because PLAN P4.2 depends on P4.1. The session units (U8 to U
 - The container step scans `.rs` tokens only. The exemption for `Program::Docker` is the crate directory `crates/jackin-image/`, not only its `src`. Inside it, the step reads the leading string literals of the `args` field of the literal that holds `program: Program::Docker` and rejects a subcommand outside `buildx build`, `buildx create`, `buildx inspect`, `image inspect`, and `push`. An `args` value that is not an array of literals is not checked. `Command::new` of `docker` fails in every crate, and of `podman` or `container` in every crate. `Program` maps to its binary with `Self::Docker` inside `impl Program`.
 - The tool steps run `fmt --all --check`, `clippy --workspace --all-targets --all-features --locked -- -D warnings`, `nextest run --workspace --all-features --locked`, `deny --locked check`, `shear --deny-warnings`, `reuse lint`, and in `docs/` `bun install --frozen-lockfile` and `bun run build`. Cargo subcommands run through `$CARGO`. The docs build fails today because `docs/` still describes the old crates, so G-FULL uses `--no-docs` until P12.1.
 - `xtask e2e` accepts and ignores trailing arguments, prints that it is not built yet, and exits 1.
+
+### P9.2 additions (accepted by the orchestrator)
+
+- `jackin-core` gains a role manifest writer (atomic, same parser round trip) and `jackin-session` gains a check of a staged manifest directory, for the console role editor. `jackin role check` and the staged check report every finding in one pass.
+- Removing an account that a workspace or role binding names asks for confirmation with the list of bindings and then clears them (D26).
