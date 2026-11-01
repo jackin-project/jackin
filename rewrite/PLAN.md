@@ -245,7 +245,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
   3. In `deny.toml`, ban `bollard` and each Docker client crate, and keep the `openssl` ban.
   4. Add `openshell-sdk` as a git dependency at the pinned tag, used only by `jackin-openshell`.
 - **Proof:** G0 passes.
-- [ ] P2.2 done
+- [x] P2.2 done — c8a358c5, G0 `Finished dev profile [unoptimized] target(s)`; clippy -D warnings, fmt, deny, shear clean
 
 ### P2.3 Write the repository gates in xtask
 
