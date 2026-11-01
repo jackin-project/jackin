@@ -168,7 +168,7 @@ The program depends on facts that only a real run can prove. Prove them before y
   5. Create a sandbox with the image and the OpenShell provider. Run `codex exec "Reply with the word ready"`. Then start interactive Codex with the D04 launch command and verify that the first prompt appears.
   6. Show that `env` in the sandbox has a placeholder and not the key. Show that `curl` from a binary that is not Codex gets no credential.
 - **Proof:** `evidence/P0.3-codex.md`. Record the A1 source in the trail.
-- [ ] P0.3 done
+- [x] P0.3 done — 32b9caa7, evidence/P0.3-codex.md (codex exec answers ready; interactive prompt; placeholder env; A1 source 3; A2 docker-local via vm driver)
 
 ### P0.4 Correct the design from the evidence
 
