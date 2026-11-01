@@ -187,7 +187,7 @@ The program depends on facts that only a real run can prove. Prove them before y
   3. The host engine, with the same test.
   4. For each source, record whether it works, the exact settings, the isolation that it gives, and the credential path.
 - **Proof:** `evidence/P0.5-docker.md` exists, and a trail row names the chosen source. If no source works, write `blockers/P0.5-docker.md` and continue. The capability then stays `BLOCKED` until upstream OpenShell changes.
-- [ ] P0.5 done
+- [x] P0.5 done — 7d0c04bb, evidence/P0.5-docker.md (source 2 dedicated external engine; source 1 fails on vm driver; credential gap in blockers/P0.5-docker-credentials.md)
 
 ### P0.6 Prove a terminal session in a console pane
 
