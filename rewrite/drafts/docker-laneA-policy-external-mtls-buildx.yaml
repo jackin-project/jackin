@@ -1,0 +1,45 @@
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /bin
+    - /sbin
+    - /usr
+    - /lib
+    - /proc
+    - /dev/urandom
+    - /etc
+    - /var/log
+  read_write:
+    - /tmp
+    - /dev/null
+    - /sandbox
+landlock:
+  compatibility: best_effort
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+network_policies:
+  docker_engine:
+    name: docker_engine
+    endpoints:
+      - host: host.openshell.internal
+        port: 18476
+        protocol: tcp
+        tls: skip
+    binaries:
+      - path: /usr/local/bin/docker
+  docker_registry:
+    name: docker_registry
+    endpoints:
+      - host: registry-1.docker.io
+        port: 443
+        protocol: tcp
+      - host: auth.docker.io
+        port: 443
+        protocol: tcp
+      - host: production.cloudflare.docker.com
+        port: 443
+        protocol: tcp
+    binaries:
+      - path: /usr/local/libexec/docker/cli-plugins/docker-buildx
