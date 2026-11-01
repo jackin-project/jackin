@@ -1,0 +1,14 @@
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only: [/bin, /sbin, /usr, /lib, /etc, /proc, /dev/urandom, /var/log]
+  read_write: [/tmp, /dev/null]
+landlock:
+  compatibility: hard_requirement
+network_policies:
+  docker_engine:
+    name: docker_engine
+    endpoints:
+      - { host: host.openshell.internal, port: 12376, protocol: tcp, tls: skip }
+    binaries:
+      - path: /usr/local/bin/docker
