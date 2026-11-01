@@ -198,7 +198,7 @@ The program depends on facts that only a real run can prove. Prove them before y
   2. Attach to the sandbox main process from the same prototype. Try SSH over `ForwardTcp` to the `openshell-main` subsystem with `russh`. If that fails, try a sandbox-side terminal multiplexer started by `jackin-start`.
   3. Detach the pane and attach it again. Verify the replay.
 - **Proof:** `evidence/P0.6-panes.md` names the chosen transport for the Codex pane and for shell panes. If no transport works for the Codex pane, write `blockers/P0.6.md`. The Codex pane then opens with the hand-off to `openshell sandbox connect`.
-- [ ] P0.6 done
+- [x] P0.6 done — 8e619ca9, evidence/P0.6-panes.md (Codex pane: CreateSshSession + ForwardTcp + russh openshell-main; shell pane: ExecSandboxInteractive; ratatui prototype 47 checks PASS on local branch wt/P0.6)
 
 ## Phase P1. Delete the old product
 
