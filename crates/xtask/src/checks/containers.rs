@@ -9,15 +9,13 @@ use crate::lex::{Token, lex_rust};
 use crate::repo::{FileKind, Repo};
 use crate::violation::{Violation, sorted};
 
-pub const IMAGE_CRATE_DIR: &str = "crates/jackin-image";
-
-pub const DOCKER_SUBCOMMANDS: &[&[&str]] = &[
-    &["buildx", "build"],
-    &["buildx", "create"],
-    &["buildx", "inspect"],
-    &["image", "inspect"],
-    &["push"],
+pub const DOCKER_CRATE_DIRS: &[&str] = &[
+    "crates/jackin-image",
+    "crates/jackin-core",
+    "crates/jackin-testkit",
 ];
+
+pub const COMPUTED_COMMAND_DIRS: &[&str] = &["crates/xtask"];
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ContainersCheck;
@@ -34,9 +32,12 @@ impl Check for ContainersCheck {
                 continue;
             }
             let tokens = lex_rust(file.text()).tokens;
-            let in_image = file.path().starts_with(IMAGE_CRATE_DIR);
+            let scope = Scope {
+                docker: under(file.path(), DOCKER_CRATE_DIRS),
+                computed_command: under(file.path(), COMPUTED_COMMAND_DIRS),
+            };
             for index in 0..tokens.len() {
-                if let Some(message) = problem(&tokens, index, in_image) {
+                if let Some(message) = problem(&tokens, index, scope) {
                     violations.push(Violation::at_line(
                         self.step(),
                         file.path(),
@@ -50,6 +51,16 @@ impl Check for ContainersCheck {
     }
 }
 
+#[derive(Clone, Copy)]
+struct Scope {
+    docker: bool,
+    computed_command: bool,
+}
+
+fn under(path: &Path, dirs: &[&str]) -> bool {
+    dirs.iter().any(|dir| path.starts_with(dir))
+}
+
 fn path_pair(tokens: &[Token], index: usize, head: &str, tail: &str) -> bool {
     tokens[index].is_ident(head)
         && tokens.get(index + 1).is_some_and(|t| t.is_punct(':'))
@@ -57,158 +68,93 @@ fn path_pair(tokens: &[Token], index: usize, head: &str, tail: &str) -> bool {
         && tokens.get(index + 3).is_some_and(|t| t.is_ident(tail))
 }
 
-fn problem(tokens: &[Token], index: usize, in_image: bool) -> Option<String> {
-    if path_pair(tokens, index, "Program", "Docker") {
-        if !in_image {
-            return Some(
-                "Program::Docker is used outside crates/jackin-image; only jackin-image starts docker (D01)"
-                    .to_owned(),
-            );
-        }
-        return forbidden_subcommand(tokens, index);
+fn problem(tokens: &[Token], index: usize, scope: Scope) -> Option<String> {
+    if !scope.docker
+        && let Some(message) = docker_name_problem(tokens, index)
+    {
+        return Some(message);
     }
     if path_pair(tokens, index, "Command", "new") && tokens.get(index + 4)?.is_punct('(') {
-        let program = tokens.get(index + 5)?.string()?;
-        let name = Path::new(program).file_name()?.to_str()?;
-        return match name {
-            "podman" | "container" => Some(format!(
-                "Command::new({name:?}) starts a container engine; jackin never runs podman or container (D01)"
-            )),
-            "docker" => Some(
-                "Command::new(\"docker\") starts docker directly; use Program::Docker in jackin-image (D01)"
-                    .to_owned(),
-            ),
-            _ => None,
-        };
+        return command_problem(tokens, index + 5, scope);
     }
     None
 }
 
-fn forbidden_subcommand(tokens: &[Token], index: usize) -> Option<String> {
-    let literals = leading_args(tokens, index)?;
-    if literals.is_empty() {
-        return None;
-    }
-    let permitted = DOCKER_SUBCOMMANDS.iter().any(|allowed| {
-        literals.len() >= allowed.len()
-            && literals
-                .iter()
-                .zip(*allowed)
-                .all(|(have, want)| have == want)
-    });
-    if permitted {
-        return None;
-    }
-    let words = match literals[0].as_str() {
-        "buildx" | "image" => &literals[..literals.len().min(2)],
-        _ => &literals[..1],
-    };
-    Some(format!(
-        "docker {} is not a permitted docker subcommand (D01)",
-        words.join(" ")
-    ))
+fn outside(what: &str) -> String {
+    format!(
+        "{what} outside jackin-image, jackin-core, and jackin-testkit; only jackin-image starts docker (D01)"
+    )
 }
 
-fn leading_args(tokens: &[Token], index: usize) -> Option<Vec<String>> {
-    let field = path_start(tokens, index);
-    if field < 2 || !tokens[field - 1].is_punct(':') || !tokens[field - 2].is_ident("program") {
+fn docker_name_problem(tokens: &[Token], index: usize) -> Option<String> {
+    if tokens[index].is_ident("DockerSubcommand") {
+        return Some(outside("DockerSubcommand is used"));
+    }
+    if !tokens[index].is_ident("Program") {
         return None;
     }
-    let open = enclosing_brace(tokens, index)?;
-    let start = args_value(tokens, open)?;
-    Some(literal_elements(tokens, start))
-}
-
-fn path_start(tokens: &[Token], mut index: usize) -> usize {
-    while index >= 2 && tokens[index - 1].is_punct(':') && tokens[index - 2].is_punct(':') {
-        index -= 2;
-        if index >= 1 && tokens[index - 1].ident().is_some() {
-            index -= 1;
+    if tokens.get(index + 1).is_some_and(|t| t.is_ident("as")) {
+        return Some(outside("`Program as` hides Program::Docker"));
+    }
+    if path_pair(tokens, index, "Program", "Docker") {
+        return Some(outside("Program::Docker is used"));
+    }
+    let after_path = tokens.get(index + 1).is_some_and(|t| t.is_punct(':'))
+        && tokens.get(index + 2).is_some_and(|t| t.is_punct(':'));
+    match tokens.get(index + 3) {
+        Some(t) if after_path && t.is_punct('*') => {
+            Some(outside("`Program::*` hides Program::Docker"))
         }
-    }
-    index
-}
-
-fn enclosing_brace(tokens: &[Token], index: usize) -> Option<usize> {
-    let mut depth = 0usize;
-    for position in (0..index).rev() {
-        if tokens[position].is_punct('}') {
-            depth += 1;
-        } else if tokens[position].is_punct('{') {
-            if depth == 0 {
-                return Some(position);
-            }
-            depth -= 1;
+        Some(t) if after_path && t.is_punct('{') && group_names_docker(tokens, index + 3) => {
+            Some(outside("a `Program::{..}` group imports Program::Docker"))
         }
+        _ => None,
     }
-    None
 }
 
-fn args_value(tokens: &[Token], open: usize) -> Option<usize> {
+fn group_names_docker(tokens: &[Token], open: usize) -> bool {
     let mut depth = 0usize;
-    for position in open + 1..tokens.len() {
-        let token = &tokens[position];
+    for token in &tokens[open..] {
         if token.is_punct('{') {
             depth += 1;
         } else if token.is_punct('}') {
+            depth = depth.saturating_sub(1);
             if depth == 0 {
-                return None;
+                return false;
             }
-            depth -= 1;
-        } else if depth == 0
-            && token.is_ident("args")
-            && (tokens[position - 1].is_punct(',') || tokens[position - 1].is_punct('{'))
-            && tokens.get(position + 1).is_some_and(|t| t.is_punct(':'))
-            && tokens.get(position + 2).is_some_and(|t| !t.is_punct(':'))
-        {
-            return bracket_start(tokens, position + 2);
+        } else if token.is_ident("Docker") {
+            return true;
         }
     }
-    None
+    false
 }
 
-fn bracket_start(tokens: &[Token], mut position: usize) -> Option<usize> {
-    if tokens.get(position)?.is_punct('&') {
-        position += 1;
-    }
-    if tokens.get(position)?.is_ident("vec") && tokens.get(position + 1)?.is_punct('!') {
-        position += 2;
-    }
-    tokens.get(position)?.is_punct('[').then_some(position + 1)
-}
-
-fn literal_elements(tokens: &[Token], mut position: usize) -> Vec<String> {
-    let mut literals = Vec::new();
-    loop {
-        let Some((text, next)) = string_element(tokens, position) else {
-            return literals;
-        };
-        literals.push(text);
-        position = next;
-        if tokens.get(position).is_some_and(|t| t.is_punct(',')) {
-            position += 1;
-        } else {
-            return literals;
-        }
-    }
-}
-
-fn string_element(tokens: &[Token], position: usize) -> Option<(String, usize)> {
-    if path_pair(tokens, position, "String", "from") && tokens.get(position + 4)?.is_punct('(') {
-        let text = tokens.get(position + 5)?.string()?;
-        return tokens
-            .get(position + 6)?
-            .is_punct(')')
-            .then(|| (text.to_owned(), position + 7));
-    }
-    let text = tokens.get(position)?.string()?;
-    let mut next = position + 1;
-    while tokens.get(next).is_some_and(|t| t.is_punct('.'))
-        && tokens.get(next + 1).is_some_and(|t| t.ident().is_some())
-        && tokens.get(next + 2).is_some_and(|t| t.is_punct('('))
-        && tokens.get(next + 3).is_some_and(|t| t.is_punct(')'))
+fn command_problem(tokens: &[Token], argument: usize, scope: Scope) -> Option<String> {
+    if let Some(program) = tokens.get(argument).and_then(Token::string)
+        && let Some(message) = container_program(program)
     {
-        next += 4;
+        return Some(message);
     }
-    Some((text.to_owned(), next))
+    let single_literal = tokens.get(argument).is_some_and(|t| t.string().is_some())
+        && (tokens.get(argument + 1).is_some_and(|t| t.is_punct(')'))
+            || (tokens.get(argument + 1).is_some_and(|t| t.is_punct(','))
+                && tokens.get(argument + 2).is_some_and(|t| t.is_punct(')'))));
+    (!single_literal && !scope.computed_command).then(|| {
+        "Command::new takes a program that is not a string literal; a computed program can hide docker (D01)"
+            .to_owned()
+    })
+}
+
+fn container_program(program: &str) -> Option<String> {
+    let name = Path::new(program).file_name()?.to_str()?;
+    match name {
+        "podman" | "container" => Some(format!(
+            "Command::new({name:?}) starts a container engine; jackin never runs podman or container (D01)"
+        )),
+        "docker" => Some(
+            "Command::new(\"docker\") starts docker directly; use Program::Docker in jackin-image (D01)"
+                .to_owned(),
+        ),
+        _ => None,
+    }
 }

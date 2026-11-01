@@ -73,13 +73,19 @@ Use the aggregate local CI gate:
 mise exec -- mbx +1.99.1 xtask ci
 ```
 
-For a faster local pass that skips feature-powerset and Docker-backed smoke tests:
+To skip the docs build, run `--fast` or `--no-docs` (both skip only that step):
 
 ```sh
 mise exec -- mbx +1.99.1 xtask ci --fast
 ```
 
-`mise exec -- mbx +1.99.1 xtask ci --e2e` includes the Docker-backed lane. It checks Docker availability, builds and exports the local capsule binary, then runs the Docker-backed nextest profile.
+To run named steps only, once each in plan order, use `--only` with a comma-delimited list from `fmt clippy nextest deny shear comments layers pins containers reuse docs`. `--only` cannot combine with `--fast` or `--no-docs`. A usage error exits with status 2, and a failed step exits with status 1:
+
+```sh
+mise exec -- mbx +1.99.1 xtask ci --only comments,layers,pins,containers
+```
+
+`xtask e2e` runs the live journey against a gateway. It is not part of `xtask ci`.
 
 Set `JACKIN_TOOLCHAIN_GUARD` to an absolute executable path when local policy requires a guard for toolchain commands. The shared xtask command launcher prefixes Cargo and mbx commands with that executable and `-- mise exec --`, including commands launched by nested xtasks. The guard must admit the requested commands; workspace doctests use `mbx test --doc --workspace --locked`.
 

@@ -4,10 +4,12 @@
 mod comments;
 mod containers;
 mod layers;
+mod pins;
 
 pub use comments::*;
 pub use containers::*;
 pub use layers::*;
+pub use pins::*;
 
 use crate::ci::CiStep;
 use crate::repo::Repo;

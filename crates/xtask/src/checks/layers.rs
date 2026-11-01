@@ -16,7 +16,7 @@ pub struct LayerRule {
     pub imports: &'static [&'static str],
 }
 
-pub const GATEWAY_CRATES: &[&str] = &["openshell-sdk", "openshell-policy", "tonic", "russh"];
+pub const GATEWAY_FAMILIES: &[&str] = &["openshell", "tonic", "russh"];
 
 pub const LAYERS: &[LayerRule] = &[
     LayerRule {
@@ -38,7 +38,7 @@ pub const LAYERS: &[LayerRule] = &[
         depends: &["jackin-core"],
         dev_depends: &["jackin-testkit"],
         optional: &[],
-        imports: GATEWAY_CRATES,
+        imports: GATEWAY_FAMILIES,
     },
     LayerRule {
         member: "jackin-session",
@@ -124,6 +124,14 @@ impl Check for LayersCheck {
     }
 }
 
+fn gateway_family(package: &str) -> Option<&'static str> {
+    GATEWAY_FAMILIES.iter().copied().find(|family| {
+        package
+            .strip_prefix(family)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('-'))
+    })
+}
+
 fn is_internal(name: &str) -> bool {
     name == "jackin" || name.starts_with("jackin-")
 }
@@ -157,8 +165,8 @@ fn dependency_problem(
 ) -> Option<String> {
     let name = dependency.name();
     let subject = format!("{} {} {name}", member.name(), verb(dependency.kind()));
-    if GATEWAY_CRATES.contains(&name) {
-        return (!rule.imports.contains(&name))
+    if let Some(family) = gateway_family(name) {
+        return (!rule.imports.contains(&family))
             .then(|| format!("{subject}; only jackin-openshell may use the gateway crates (D14)"));
     }
     if !is_internal(name) {
@@ -194,10 +202,10 @@ fn import_violations(repo: &Repo, member: &Member, allowed: &[&str]) -> Vec<Viol
         }
         let tokens = lex_rust(file.text()).tokens;
         for (index, token) in tokens.iter().enumerate() {
-            let Some(crate_name) = gateway_import(&tokens, index) else {
+            let Some((family, crate_name)) = gateway_import(&tokens, index) else {
                 continue;
             };
-            if allowed.contains(&crate_name) {
+            if allowed.contains(&family) {
                 continue;
             }
             violations.push(Violation::at_line(
@@ -214,12 +222,13 @@ fn import_violations(repo: &Repo, member: &Member, allowed: &[&str]) -> Vec<Viol
     violations
 }
 
-fn gateway_import(tokens: &[Token], index: usize) -> Option<&'static str> {
+fn gateway_import(tokens: &[Token], index: usize) -> Option<(&'static str, String)> {
     let ident = tokens[index].ident()?;
-    let crate_name = GATEWAY_CRATES
-        .iter()
-        .copied()
-        .find(|name| name.replace('-', "_") == ident)?;
+    let family = GATEWAY_FAMILIES.iter().copied().find(|family| {
+        ident
+            .strip_prefix(family)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('_'))
+    })?;
     let followed_by_path = tokens.get(index + 1).is_some_and(|t| t.is_punct(':'))
         && tokens.get(index + 2).is_some_and(|t| t.is_punct(':'));
     let nested = index >= 3
@@ -228,5 +237,5 @@ fn gateway_import(tokens: &[Token], index: usize) -> Option<&'static str> {
         && tokens[index - 3]
             .ident()
             .is_some_and(|previous| previous != "use");
-    (followed_by_path && !nested).then_some(crate_name)
+    (followed_by_path && !nested).then(|| (family, ident.replace('_', "-")))
 }

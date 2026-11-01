@@ -40,6 +40,8 @@ impl Check for CommentsCheck {
     }
 }
 
+const SPDX_TAGS: [&str; 2] = ["SPDX-FileCopyrightText:", "SPDX-License-Identifier:"];
+
 struct Found {
     line: u32,
     text: String,
@@ -47,11 +49,7 @@ struct Found {
 }
 
 fn is_allowed(kind: FileKind, comment: &Found, next_directive: &mut u32) -> bool {
-    let marker = match kind {
-        FileKind::Rust => "// SPDX-",
-        _ => "# SPDX-",
-    };
-    let header = !comment.after_content && comment.text.starts_with(marker);
+    let header = !comment.after_content && is_spdx_header(kind, &comment.text);
     match kind {
         FileKind::Shell => header || (comment.line == 1 && comment.text.starts_with("#!")),
         FileKind::Dockerfile => {
@@ -64,6 +62,18 @@ fn is_allowed(kind: FileKind, comment: &Found, next_directive: &mut u32) -> bool
         }
         FileKind::Rust | FileKind::Toml => header,
     }
+}
+
+fn is_spdx_header(kind: FileKind, text: &str) -> bool {
+    let marker = if kind == FileKind::Rust { "//" } else { "#" };
+    let Some(body) = text.strip_prefix(marker) else {
+        return false;
+    };
+    SPDX_TAGS.iter().any(|tag| {
+        body.trim_start()
+            .strip_prefix(tag)
+            .is_some_and(|value| !value.trim().is_empty())
+    })
 }
 
 fn is_directive(text: &str) -> bool {
@@ -168,11 +178,21 @@ fn toml_single_line(cursor: &mut Cursor, quote: char) {
     }
 }
 
+struct Heredoc {
+    delimiter: String,
+    strip_tabs: bool,
+}
+
+fn is_shell_boundary(c: char) -> bool {
+    c.is_whitespace() || matches!(c, ';' | '&' | '|' | '(' | ')' | '`' | '<' | '>')
+}
+
 fn shell_comments(text: &str) -> Vec<Found> {
     let mut cursor = Cursor::new(text);
     let mut found = Vec::new();
     let mut content = false;
     let mut word_start = true;
+    let mut pending: Vec<Heredoc> = Vec::new();
     while let Some(c) = cursor.peek(0) {
         match c {
             '#' if word_start => found.push(hash_comment(&mut cursor, content)),
@@ -191,17 +211,25 @@ fn shell_comments(text: &str) -> Vec<Found> {
                 content = true;
                 word_start = false;
                 cursor.bump();
-                loop {
-                    match cursor.bump() {
-                        None | Some('"') => break,
-                        Some('\\') => {
-                            cursor.bump();
-                        }
-                        Some(_) => {}
-                    }
-                }
+                shell_double_quoted(&mut cursor);
             }
-            c if c.is_whitespace() || matches!(c, ';' | '&' | '|' | '(' | ')') => {
+            '<' if cursor.run_of('<') >= 3 => {
+                content = true;
+                word_start = true;
+                cursor.skip(3);
+            }
+            '<' if cursor.run_of('<') == 2 => {
+                content = true;
+                cursor.skip(2);
+                pending.extend(heredoc_delimiter(&mut cursor));
+                word_start = false;
+            }
+            '\n' => {
+                cursor.bump();
+                skip_heredoc_bodies(&mut cursor, &mut pending);
+                word_start = true;
+            }
+            c if is_shell_boundary(c) => {
                 if !c.is_whitespace() {
                     content = true;
                 }
@@ -216,6 +244,73 @@ fn shell_comments(text: &str) -> Vec<Found> {
         }
     }
     found
+}
+
+fn shell_double_quoted(cursor: &mut Cursor) {
+    loop {
+        match cursor.bump() {
+            None | Some('"') => break,
+            Some('\\') => {
+                cursor.bump();
+            }
+            Some(_) => {}
+        }
+    }
+}
+
+fn heredoc_delimiter(cursor: &mut Cursor) -> Option<Heredoc> {
+    let strip_tabs = cursor.peek(0) == Some('-');
+    if strip_tabs {
+        cursor.bump();
+    }
+    while matches!(cursor.peek(0), Some(' ' | '\t')) {
+        cursor.bump();
+    }
+    let mut delimiter = String::new();
+    while let Some(c) = cursor.peek(0) {
+        match c {
+            '\'' | '"' => {
+                cursor.bump();
+                while let Some(inner) = cursor.bump() {
+                    if inner == c {
+                        break;
+                    }
+                    delimiter.push(inner);
+                }
+            }
+            '\\' => {
+                cursor.bump();
+                delimiter.extend(cursor.bump());
+            }
+            c if is_shell_boundary(c) => break,
+            c => {
+                delimiter.push(c);
+                cursor.bump();
+            }
+        }
+    }
+    (!delimiter.is_empty()).then_some(Heredoc {
+        delimiter,
+        strip_tabs,
+    })
+}
+
+fn skip_heredoc_bodies(cursor: &mut Cursor, pending: &mut Vec<Heredoc>) {
+    for heredoc in pending.drain(..) {
+        while cursor.peek(0).is_some() {
+            let line = cursor.rest_of_line();
+            cursor.bump();
+            let line = line.trim_end_matches('\r');
+            let line = if heredoc.strip_tabs {
+                line.trim_start_matches('\t')
+            } else {
+                line
+            };
+            if line == heredoc.delimiter {
+                break;
+            }
+        }
+    }
 }
 
 fn dockerfile_comments(text: &str) -> Vec<Found> {

@@ -42,7 +42,7 @@ fn ci(args: CiArgs) -> ExitCode {
         Ok(repo) => repo,
         Err(error) => return fail(error),
     };
-    match run_ci(args.profile(), &repo) {
+    match run_ci(&args.steps(), &repo) {
         Ok(()) => ExitCode::SUCCESS,
         Err(CiFailure::Violations { step, violations }) => {
             let mut stderr = io::stderr().lock();

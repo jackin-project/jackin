@@ -274,10 +274,10 @@ An independent review of the first synthesis found 16 problems. The orchestrator
 | 7 | Replay answers reach the PTY | one pure `split_replies` behind `AttachedTerminal::input`, which the CLI and every pane use; the state is read when a reply appears; tested with a replayed CPR query | 4 Attach; 6 panes; 8 `term.rs` |
 | 8 | A transient create failure ends the launch | `SandboxView.provisioning`; `decide` deletes and recreates a sandbox this run created, up to `limits.create_attempts`; typed `ProvisioningFailed` after that | 3 types; 4 `decide`; 7 `ProvisionFails` |
 | 9 | `[codex] model` is not used | rendered into the Codex `config.toml` | 1 Manifest; 4 `PlannedFiles` |
-| 10 | A string rule for `docker` in the layer step | deleted; the `containers` step alone flags `Program::Docker`, `Command::new` of container programs, and subcommands | 9 Rules, tests |
+| 10 | A string rule for `docker` in the layer step | deleted; the `containers` step alone guards the crate boundary of `Program::Docker` and `DockerSubcommand` and flags `Command::new` of container programs and computed programs; the subcommand rule is the `DockerSubcommand` type | 9 Rules, tests |
 | 11 | The contract suite needs infrastructure the in-process server lacks | groups `Core`, `Transfer`, `Terminal`; all against the fake and the live gateway; `Core` only in process; name length moves to `SandboxName::parse` tests and a raw adapter test | 3 Contract suite |
 | 12 | The 0.1.6 input lease is not modeled | `Lease` event and the lease rules in the `open_terminal` contract; the fake models them; the Terminal group checks them | 3 Terminal sessions; 7 `open_terminal` |
-| 13 | The `ToolRunner` seam fakes the repository's own tools | deleted; `CiStep::ALL` and `runs_in` are tested as data; the stop at the first failure is proven by the P2.3 live red and green runs | 9 Types, Rules, tests |
+| 13 | The `ToolRunner` seam fakes the repository's own tools | deleted; the run tests drive the shipped `jackin-xtask` binary with scripted `cargo`, `reuse`, and `bun` on `PATH` and assert the log of tool calls and the exit status (U1 fix round) | 9 Types, Rules, tests |
 | 14 | Decisions are not cited accurately | the citation names DESIGN anchors and says `decisions.tsv` has no rows yet | Synthesis decision |
 | 15 | Argument structs are missing | all structs and enums defined; `account add --name`; `build` prints the image ID and `--json` writes `BuildOutput` | 8 Commands, Output |
 | 16 | Minor findings | `Suspending` and `Suspended` rows; private `SandboxCreate` fields with a constructor; `LineDelivery`; `Prompting` with defaults pre-filled; reserved credential keys and `CODEX_HOME`; three call-asserting tests rewritten; `boot` guards a stale `running`; profile update through `UpdateProviderProfiles`; U5 and U7 merged to follow PLAN P4.1 then P4.2; `capture_env` moved to `jackin-session::host`; xtask `e2e` feature | 1; 3; 4; 5; 9; 10 |
@@ -311,10 +311,6 @@ Whole-shape alternatives. Crate-level choices follow.
 - **H. Plan with a placeholder image tag, patched by the executor.** Rejected. A patched plan is mutable state. A `SandboxDraft` that only `complete(&BuiltImage)` can turn into a `SandboxCreate` makes the missing image impossible to forget.
 
 Per-crate choices that lost are named where they arise: the `docker-container` builder (P0.3), a separate delivery step (D23), one trait per gateway concern, a `CliTransfer` trait, a pane-owned redraw nudge, a local launch journal (D07), reading `run/state` for export or purge (D09), a second event loop (D27), a fake that interprets shell lines, and a second crate list for the layer step.
-
-## Implementation reconciliation
-
-Empty. Fill during Phase D of `architect` when a unit deviates from this file, with the acceptance source.
 
 ## Open questions and risks
 
@@ -2816,6 +2812,7 @@ crates/xtask/src/
   checks/comments.rs     lexer-based comment scan (D17)
   checks/layers.rs       LAYERS table, import rules, Secret::expose allowlist
   checks/containers.rs   forbidden container invocations (D01)
+  checks/pins.rs         Rust version pins agree (U1 fix round, P3)
   e2e.rs          feature e2e (U15): Journey, JourneyStep, StepResult, JourneyReport, E2eArgs
   e2e/probe.rs    feature e2e: ProbeReport (serde, JsonSchema)
   e2e/pty.rs      feature e2e: portable-pty driver for J11 and J12
@@ -2827,21 +2824,25 @@ crates/xtask/src/
 ```rust
 #[derive(Args)]
 pub struct CiArgs {
-    #[arg(long, help = "Skip the docs build; same steps as --no-docs")]
+    #[arg(long, conflicts_with = "only", help = "Skip the docs build; same steps as --no-docs")]
     pub fast: bool,
-    #[arg(long = "no-docs", help = "Skip the docs build")]
+    #[arg(long = "no-docs", conflicts_with = "only", help = "Skip the docs build")]
     pub no_docs: bool,
+    #[arg(long, value_enum, value_delimiter = ',', help = "Run only the named steps, once each in plan order")]
+    pub only: Vec<CiStep>,
 }
 pub enum CiProfile { Full, SkipDocs }
 
 impl CiArgs {
     pub fn profile(&self) -> CiProfile;
+    pub fn steps(&self) -> Vec<CiStep>;
 }
 
-pub enum CiStep { Fmt, Clippy, Nextest, Deny, Shear, Comments, Layers, Containers, Reuse, Docs }
+#[derive(ValueEnum)]
+pub enum CiStep { Fmt, Clippy, Nextest, Deny, Shear, Comments, Layers, Pins, Containers, Reuse, Docs }
 
 impl CiStep {
-    pub const ALL: [CiStep; 10];
+    pub const ALL: [CiStep; 11];
     pub fn runs_in(self, profile: CiProfile) -> bool;
 }
 
@@ -2852,13 +2853,14 @@ pub trait Check {
     fn run(&self, repo: &Repo) -> Vec<Violation>;
 }
 
-pub fn run_ci(profile: CiProfile, repo: &Repo) -> Result<(), CiFailure>;
+pub fn run_ci(steps: &[CiStep], repo: &Repo) -> Result<(), CiFailure>;
 
 pub enum CiFailure { Violations { step: CiStep, violations: Vec<Violation> }, Tool(CiError) }
 pub struct Repo { }
 
 impl Repo {
-    pub fn open(root: PathBuf) -> Result<Repo, CiError>;
+    pub fn open(path: PathBuf) -> Result<Repo, CiError>;
+    pub fn root(&self) -> &Path;
     pub fn files(&self) -> &[RepoFile];
     pub fn members(&self) -> &[Member];
 }
@@ -2921,10 +2923,10 @@ Every item from `JourneyStep` down to `E2eError` is behind `#[cfg(feature = "e2e
 
 Rules.
 
-- `CiStep::ALL` is the one ordered list of the P2.3 steps. `run_ci` runs each tool as a cargo subprocess itself, in that order, and stops at the first failing step; it has no seam to fake, because the tools are the repository's own and not an external boundary. `--fast` and `--no-docs` both give `CiProfile::SkipDocs`: every step but `Docs`. There is no other skipped step (PLAN P2.3, decision 6). `Full` runs all ten. The order and `runs_in` are tested as pure data; the stop at the first failure is proven by the P2.3 red and green runs on the live repository, which `test-reviewer` records.
-- `comments` uses a Rust lexer for `.rs` and line-prefix rules for `.toml`, `.sh`, and `Dockerfile`. It allows SPDX header lines, shebang lines, `# syntax=` parser directives, and listed generated files. A `//` inside a string literal is not a comment.
+- `CiStep::ALL` is the one ordered list of the P2.3 steps. `run_ci` runs the given steps in that order and stops at the first failing step. It runs each tool as a subprocess itself and has no seam to fake, because the tools are the repository's own and not an external boundary. `--fast` and `--no-docs` both give `CiProfile::SkipDocs`: every step but `Docs`. `--only` selects steps by name and conflicts with both flags (U1 fix round, P1). `Full` runs all eleven. The run tests drive the shipped binary with scripted tools, so the order, the profiles, `--only`, the stop at the first failure, and the exit codes (0, 1, and 2 for a usage error) are tested through the real entry point.
+- `comments` uses a Rust lexer for `.rs` and line-prefix rules for `.toml`, `.sh`, and `Dockerfile`. It allows SPDX header lines (`SPDX-FileCopyrightText:` or `SPDX-License-Identifier:` with a value), shebang lines, `# syntax=` parser directives, and files whose first line carries the Velnor generated header. A `//` inside a string literal is not a comment.
 - `layers` reads `cargo metadata` and checks `LAYERS` against every workspace member. It fails for a member with no row, for a dependency or dev-dependency the row does not list, for a dependency the row lists as `optional` that is not optional in the manifest, for a banned import, and for a `Secret::expose` call outside the allowlist. It does not look for container programs: `containers` does. `LAYERS` is the table in the Shape section; the `crates/usage/` crates are rows with a `jackin-usage-*` pattern, added in U13. Adding a crate without a row fails the gate, so a new crate cannot skip the rule. One table drives the D14 order, the usage rules, and the import rules.
-- `containers` is the only step that looks for container programs (D01). It flags a `ProcessSpec` with `Program::Docker` outside `crates/jackin-image/src`, any `Command::new` of `docker`, `podman`, or `container`, and a `docker` subcommand other than `buildx build`, `buildx create`, `buildx inspect`, `image inspect`, and `push`.
+- `containers` is the only step that looks for container programs (D01). The subcommand rule is the `DockerSubcommand` type in `jackin-core`, so the step guards the crate boundary: it flags `Program::Docker`, `DockerSubcommand`, and the aliases, globs, and groups that reach them outside `jackin-image`, `jackin-core`, and `jackin-testkit`; any `Command::new` with a program that is not one string literal outside `crates/xtask/`; and any literal `docker`, `podman`, or `container`. U1 fix round P4 has the exact rules.
 - `Journey::start` connects a `GrpcGateway` through the private `e2e/runner.rs` runner (about 50 lines over `tokio::process`: stdin from `/dev/null`, a timeout, kill on cancel), because `xtask` cannot use `jackin-session::host`. It then runs `contract::run` against the live gateway and fails with `E2eError::Contract` on a failed check. The journey runs the `jackin` binary as a subprocess, runs `/usr/local/bin/jackin-sentinel-probe` in the sandbox through `Gateway::run_program`, parses `ls --json`, `inspect --json`, and `usage --json` into the `jackin-core` and `jackin-usage` types, and compares the host observation with the probe report per step.
 - J17 observes the account selection through the `jackin.dev/account` label in `ls --json` and the OpenShell provider names in `inspect --json`. The Codex accounts other than the A1 account are `CodexLogin` sources whose fixture `auth.json` holds a refresh token that does not work, written by xtask into a temporary Codex home, so they never rotate the A1 token (D10); their usage record is a typed `Unavailable` reason.
 - A step without credentials returns `Skip`. There is no conversion from `Skip` to `Pass`. `JourneyReport::exit_code` is non-zero when any step is `Fail`, and also when any step is `Skip` unless `--allow-skip` names it, so a green run cannot hide a skipped credential step (D19, PLAN P8.2: every step prints `PASS`).
@@ -2939,9 +2941,9 @@ Location: `crates/xtask/tests/*.rs`, through the lib target. Boundary faked: the
 |---|---|---|
 | Comments step | a fixture with an SPDX header, a shebang, `# syntax=`, and a `//` inside a string passes | an added `// note`, a `/* */` block, a `#` comment in a `.sh` body, and a TOML comment each give a `Violation` with path and line |
 | Layers step | the real `cargo metadata` of the workspace passes; from U13 the usage rules pass | a fixture graph with `jackin-image -> jackin-openshell`, `jackin-core -> tonic`, an `openshell-sdk` import under `jackin-session`, and a member with no `LAYERS` row each fail with the rule named; `jackin-xtask -> jackin-session` fails, and so does a non-optional `jackin-xtask -> jackin-openshell`; from U13 `jackin-session -> jackin-usage` fails |
-| Containers step | a spawn of `docker buildx build` inside `jackin-image` passes; the string `docker` in a log message of `jackin-session` passes | `docker run` in `jackin-image`, `Program::Docker` in `jackin-session`, `Command::new("docker")` anywhere, `podman`, and `container` each fail |
+| Containers step | `Program::Docker(DockerSubcommand::BuildxBuild)` inside `jackin-image`, `jackin-core`, and `jackin-testkit` passes; the string `docker` in a log message of `jackin-session` passes | `Program::Docker`, `DockerSubcommand`, `Program as P`, and `Program::*` in `jackin-session`, a computed `Command::new` argument, `Command::new("docker")` anywhere, `podman`, and `container` each fail |
 | Secret expose allowlist | `expose` in a listed file passes | `expose` in `jackin-session/src/launch.rs` fails |
-| Profiles (decision 6) | `CiStep::ALL` lists the ten steps in the PLAN order; `CiStep::runs_in(SkipDocs)` is true for every step but `Docs`; `--fast` and `--no-docs` give the same profile; `Full` contains every step | `Docs` is the only step excluded by either flag |
+| Profiles and `--only` (decision 6, U1 fix round) | a scripted run executes the eight tool calls once each in plan order; `--fast` and `--no-docs` drop only the docs build; `--only` runs the named steps once each in plan order | a failing tool stops the run with status 1; an unknown step, `--only` with `--fast`, and an unknown flag exit with status 2 before any step runs |
 | Journey list | `JourneyStep::ALL` is J00 to J17 in order | none |
 | Skip is not Pass | a `JourneyReport` with a `Skip` has a non-zero exit code unless allowed | a `Pass` line is never printed for a `Skip` |
 | Probe schema | the generated schema equals the checked-in file | an extra field in `ProbeReport` fails the equality test |
@@ -3000,15 +3002,30 @@ U5 comes before U6 because PLAN P4.2 depends on P4.1. The session units (U8 to U
 
 - The pinned public surface is `Repo::open(PathBuf) -> Result<Repo, CiError>`, the unit structs `CommentsCheck`, `LayersCheck`, and `ContainersCheck` (each implements `Check`), `CiArgs::profile`, and `CiStep::runs_in`. `CiArgs::profile` takes `self`, because `CiArgs` is `Copy`. The tests use only these items, `Violation`, and `CiStep`.
 - `Repo::open` canonicalizes the root, runs `cargo metadata --no-deps --offline` (`$CARGO` when set, else `cargo`), and reads the file list from `git ls-files -z --cached --others --exclude-standard`. It reads every `.rs`, `.toml`, `.sh`, `Dockerfile`, and `*.Dockerfile` file into memory, so a check is a pure function of the `Repo`. `Member` carries the name, the manifest path, and per dependency the package `name`, the `kind` (normal, dev, or build), and `optional`. A renamed dependency keeps its package name.
-- `Repo::open` skips `target/`, `.git/`, git-ignored paths, `GENERATED_PATHS` (`.github/`, which Velnor writes), and `PENDING_PORT_PATHS` (`crates/usage/`). `crates/usage/` is not a workspace member until P6.3, and U13 deletes `PENDING_PORT_PATHS`. Every check shares these lists.
+- `Repo::open` skips `target/`, `.git/`, git-ignored paths, files with the Velnor generated header (U1 fix round, P5; there is no `GENERATED_PATHS`), and `PENDING_PORT_PATHS` (`crates/usage/`). `crates/usage/` is not a workspace member until P6.3, and U13 deletes `PENDING_PORT_PATHS`. Every check shares these lists.
 - A `Violation` path is relative to the root with forward slashes, a line is 1-based, and `step` is the step of the check. The layer step reports a manifest problem at the member's `Cargo.toml` with `line: None`, and an import problem at the source line. Every check returns its violations sorted by path (byte order), then line (`None` first), then message.
 - `CiError` gains `Spawn { program, source }` for a tool that does not start and `ListFiles(String)` for a failed `git ls-files`.
-- The comment step lexes `.rs` files into tokens (`lex.rs`, shared with the layer and container steps). An SPDX line comment passes only before the first token. For `.toml` and `.sh` it scans for `#` outside quotes, and a `#` inside a word (`a#b`, `$#`, `${#1}`) is not a comment. A `Dockerfile` comment is a line that starts with `#`. A shebang passes on line 1 of a `.sh` file. `# syntax=`, `# escape=`, and `# check=` pass when they form a run that starts on line 1. A shell here-document body is scanned as shell.
-- `LayerRule` loses `bans`. `imports` lists the gateway crates (`GATEWAY_CRATES`: `openshell-sdk`, `openshell-policy`, `tonic`, `russh`) that the member may name, and only `jackin-openshell` has them. A dependency is internal when its package name is `jackin` or starts with `jackin-`. A dependency of kind dev passes when `dev_depends`, `depends`, or `optional` lists it, and any other kind passes when `depends` or `optional` lists it. An `optional` entry that is not optional in the manifest fails. Gateway crates fail by package name, so a rename does not hide one, and a `use` or path that starts with a gateway crate fails in the sources of every other member.
+- The comment step lexes `.rs` files into tokens (`lex.rs`, shared with the layer and container steps). An SPDX line comment passes only before the first token. For `.toml` and `.sh` it scans for `#` outside quotes, and a `#` inside a word (`a#b`, `$#`, `${#1}`) is not a comment. A `Dockerfile` comment is a line that starts with `#`. A shebang passes on line 1 of a `.sh` file. `# syntax=`, `# escape=`, and `# check=` pass when they form a run that starts on line 1. A shell here-document body is scanned as shell (superseded by P8: the body is skipped).
+- `LayerRule` loses `bans`. `imports` lists the gateway crate families (`GATEWAY_FAMILIES`: `openshell`, `tonic`, `russh`; the fix round replaced the four exact names) that the member may name, and only `jackin-openshell` has them. A dependency is internal when its package name is `jackin` or starts with `jackin-`. A dependency of kind dev passes when `dev_depends`, `depends`, or `optional` lists it, and any other kind passes when `depends` or `optional` lists it. An `optional` entry that is not optional in the manifest fails. Gateway crates fail by package name, so a rename does not hide one, and a `use` or path that starts with a gateway crate fails in the sources of every other member.
 - The `Secret::expose` allowlist, import bans beyond the four gateway crates, and the `jackin-usage-*` rows are not in U1. U13 adds the rows, and the import and `expose` rules wait for a unit that needs them.
-- The container step scans `.rs` tokens only. The exemption for `Program::Docker` is the crate directory `crates/jackin-image/`, not only its `src`. Inside it, the step reads the leading string literals of the `args` field of the literal that holds `program: Program::Docker` and rejects a subcommand outside `buildx build`, `buildx create`, `buildx inspect`, `image inspect`, and `push`. An `args` value that is not an array of literals is not checked. `Command::new` of `docker` fails in every crate, and of `podman` or `container` in every crate. `Program` maps to its binary with `Self::Docker` inside `impl Program`.
+- Superseded by the U1 fix round (P4): the argument scan is deleted. The container step scans `.rs` tokens only. The exemption for `Program::Docker` is the crate directory `crates/jackin-image/`, not only its `src`. Inside it, the step reads the leading string literals of the `args` field of the literal that holds `program: Program::Docker` and rejects a subcommand outside `buildx build`, `buildx create`, `buildx inspect`, `image inspect`, and `push`. An `args` value that is not an array of literals is not checked. `Command::new` of `docker` fails in every crate, and of `podman` or `container` in every crate. `Program` maps to its binary with `Self::Docker` inside `impl Program`.
 - The tool steps run `fmt --all --check`, `clippy --workspace --all-targets --all-features --locked -- -D warnings`, `nextest run --workspace --all-features --locked`, `deny --locked check`, `shear --deny-warnings`, `reuse lint`, and in `docs/` `bun install --frozen-lockfile` and `bun run build`. Cargo subcommands run through `$CARGO`. The docs build fails today because `docs/` still describes the old crates, so G-FULL uses `--no-docs` until P12.1.
 - `xtask e2e` accepts and ignores trailing arguments, prints that it is not built yet, and exits 1.
+
+### U1 fix round (P2 review, accepted by the orchestrator)
+
+- P1. CLI contract. `xtask ci [--fast|--no-docs] [--only STEP[,STEP...]]`. `--only` is repeatable and comma-delimited. `CiStep` implements clap `ValueEnum` with the names `fmt clippy nextest deny shear comments layers pins containers reuse docs`. `CiStep::ALL` is Fmt, Clippy, Nextest, Deny, Shear, Comments, Layers, Pins, Containers, Reuse, Docs. The selected steps run once each in `CiStep::ALL` order, whatever the order or duplication on the command line. An unknown or empty step name is a usage error, and so is `--only` with `--fast` or `--no-docs` (the intersection could select zero steps). A usage error exits with status 2 before any step runs. A violation or a tool failure exits 1. Success exits 0.
+- P2. Tool argv and working directory stay as U1 records them: cargo subcommands through `$CARGO` (`fmt --all --check`, `clippy --workspace --all-targets --all-features --locked -- -D warnings`, `nextest run --workspace --all-features --locked`, `deny --locked check`, `shear --deny-warnings`), `reuse lint` and `bun` resolved on `PATH`, and `bun install --frozen-lockfile` and `bun run build` with the working directory `<root>/docs`.
+- P3. Pins step. `PinsCheck` is a unit struct that implements `Check` with the step `CiStep::Pins`. The authority is `[workspace.package] rust-version` in the root `Cargo.toml`. It is compared with `[toolchain] channel` in `rust-toolchain.toml`, with `[tools] rust` in `mise.toml` (a string, or the `version` key of a table), and with every `+X.Y.Z` token after `mbx` in the `run` strings of `mise.toml` `[tasks.*]`. Each differing occurrence gives one violation at that file and line, and the message holds the found version and the authority version. A missing file, a missing `rust` tool, or a missing `rust-version` gives one violation at that file with `line: None`. When the authority is missing, nothing else is compared.
+- P4. Container step. D01's subcommand rule is a type (`DockerSubcommand`), so the `args` scan is deleted and the step guards the crate boundary. The Docker-specific names are allowed only under `crates/jackin-image/`, `crates/jackin-core/` (the definition), and `crates/jackin-testkit/` (a fake `ProcessRunner`, D18). Elsewhere these are violations: the path `Program::Docker` whatever its qualifier, the identifier `DockerSubcommand`, `Program as X` in a `use` tree, and `use` paths `Program::Docker`, `Program::*`, and `Program::{..Docker..}`. These are not violations: plain `use ...::Program;`, `Program::Openshell`, `Git`, `Ssh`, and `Op`, `use ...::Program::{Git, Ssh}`, `ScriptedProgram::Docker`, `ProgramRun as Run`, and any other identifier. `Command::new(<anything but one string literal>)` is a violation everywhere except under `crates/xtask/`, which computes the cargo and tool programs. A literal `docker`, `podman`, or `container`, or a path whose last component is one of those, as the argument of `Command::new` is a violation in every crate, including `crates/xtask/` and `jackin-image`. The step reports one violation per offending token or per `Command::new` occurrence, at the line of the first token. A later unit that needs a computed program name (P5.2 `TokioProcessRunner`) adds its path to the allowlist and to the K6 test in the same commit.
+- P5. Generated exemption. A file is exempt from the comment step when its first line contains `Generated by Velnor Actions`, at any path. There is no path rule, so `GENERATED_PATHS` is deleted. `.github/workflows/*.yml` stays an unscanned file type.
+- P6. File kinds. Dockerfile rules apply to `Dockerfile`, `*.Dockerfile`, `Dockerfile.*`, `Containerfile`, and `*.Containerfile`. Shell rules apply to `*.sh` and to any other file whose first line starts with `#!`. The SPDX tags are `SPDX-FileCopyrightText:` and `SPDX-License-Identifier:`, each with a non-empty value. `Repo::open` never fails on a tracked file that is not valid UTF-8 and has no `#!` first line.
+- P7. Root. `Repo::open(path)` takes the root from the `workspace_root` of `cargo metadata`, run in `path`, canonicalized. `Repo::root()` returns it. All violation paths and git paths are relative to it, so `cargo xtask ci` gives the same result from any subdirectory.
+- P8. Heredocs and the backtick. The shell scan skips heredoc bodies up to their delimiter. That covers `<<-` with tab-indented terminators and quoted delimiters. `<<<` is not a heredoc. The rest of the line that opens a heredoc is lexed normally. A backtick starts a new word, and so do `<` and `>`.
+- P9. Test-source rules. The real gates run over the xtask test files. The test source has no comments, every fixture is a string literal, and `Program::Docker`, `DockerSubcommand`, `Program as`, gateway-crate paths, and SPDX lines appear only inside string literals. The only real `Command::new` calls are `Command::new("git")` and `Command::new(env!("CARGO_BIN_EXE_jackin-xtask"))`. A fixture line with a bare SPDX tag with an empty or other value is built with `[..].concat()`, because `reuse lint` reads tags inside string literals. Fixture trees live in the OS temp dir. Tool scripts, logs, and captured stderr live in a second temporary directory outside the fixture.
+- `GATEWAY_CRATES` is a list of families: the exact names `openshell-sdk`, `openshell-policy`, `tonic`, and `russh`, plus the prefix families `tonic-*`, `russh-*`, and `openshell-*`. The import scan matches the Rust identifier of the family (`tonic_prost`), not a substring (`tonicity`, `openshellfish`).
+- The run tests drive the shipped `jackin-xtask` binary (`CARGO_BIN_EXE_jackin-xtask`) with scripted `cargo`, `reuse`, and `bun` on `PATH`, because `unsafe_code = forbid` makes `std::env::set_var` unusable in a test. The data-only profile tests are deleted.
+- Deferred, not covered by a decision: `use std::process::Command as C; C::new("docker")`, `type P = Program;`, and `let f = Command::new;` evade the container step.
 
 ### U2 (P3.1)
 

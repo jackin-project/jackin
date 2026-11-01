@@ -5,29 +5,59 @@ use std::ffi::OsString;
 use std::io::{self, Write};
 use std::process::Command;
 
-use clap::Args;
+use clap::{Args, ValueEnum};
 use thiserror::Error;
 
-use crate::checks::{Check, CommentsCheck, ContainersCheck, LayersCheck};
+use crate::checks::{Check, CommentsCheck, ContainersCheck, LayersCheck, PinsCheck};
 use crate::repo::{Repo, cargo_program};
 use crate::violation::Violation;
 
-#[derive(Args, Clone, Copy, Debug)]
+#[derive(Args, Clone, Debug)]
 pub struct CiArgs {
-    #[arg(long, help = "Skip the docs build; same steps as --no-docs")]
+    #[arg(
+        long,
+        conflicts_with = "only",
+        help = "Skip the docs build; same steps as --no-docs"
+    )]
     pub fast: bool,
-    #[arg(long = "no-docs", help = "Skip the docs build")]
+    #[arg(
+        long = "no-docs",
+        conflicts_with = "only",
+        help = "Skip the docs build"
+    )]
     pub no_docs: bool,
+    #[arg(
+        long,
+        value_enum,
+        value_delimiter = ',',
+        value_name = "STEP",
+        help = "Run only the named steps, once each in plan order; repeatable and comma-delimited"
+    )]
+    pub only: Vec<CiStep>,
 }
 
 impl CiArgs {
     #[must_use]
-    pub fn profile(self) -> CiProfile {
+    pub fn profile(&self) -> CiProfile {
         if self.fast || self.no_docs {
             CiProfile::SkipDocs
         } else {
             CiProfile::Full
         }
+    }
+
+    #[must_use]
+    pub fn steps(&self) -> Vec<CiStep> {
+        CiStep::ALL
+            .into_iter()
+            .filter(|step| {
+                if self.only.is_empty() {
+                    step.runs_in(self.profile())
+                } else {
+                    self.only.contains(step)
+                }
+            })
+            .collect()
     }
 }
 
@@ -37,7 +67,7 @@ pub enum CiProfile {
     SkipDocs,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, ValueEnum)]
 pub enum CiStep {
     Fmt,
     Clippy,
@@ -46,13 +76,14 @@ pub enum CiStep {
     Shear,
     Comments,
     Layers,
+    Pins,
     Containers,
     Reuse,
     Docs,
 }
 
 impl CiStep {
-    pub const ALL: [CiStep; 10] = [
+    pub const ALL: [CiStep; 11] = [
         CiStep::Fmt,
         CiStep::Clippy,
         CiStep::Nextest,
@@ -60,6 +91,7 @@ impl CiStep {
         CiStep::Shear,
         CiStep::Comments,
         CiStep::Layers,
+        CiStep::Pins,
         CiStep::Containers,
         CiStep::Reuse,
         CiStep::Docs,
@@ -94,6 +126,7 @@ impl CiStep {
             CiStep::Shear => Action::Tools(vec![ToolCall::cargo(&["shear", "--deny-warnings"])]),
             CiStep::Comments => Action::Check(&CommentsCheck),
             CiStep::Layers => Action::Check(&LayersCheck),
+            CiStep::Pins => Action::Check(&PinsCheck),
             CiStep::Containers => Action::Check(&ContainersCheck),
             CiStep::Reuse => Action::Tools(vec![ToolCall::named("reuse", &["lint"])]),
             CiStep::Docs => Action::Tools(vec![
@@ -167,9 +200,9 @@ pub enum CiError {
     Io(#[from] io::Error),
 }
 
-pub fn run_ci(profile: CiProfile, repo: &Repo) -> Result<(), CiFailure> {
+pub fn run_ci(steps: &[CiStep], repo: &Repo) -> Result<(), CiFailure> {
     let mut stderr = io::stderr().lock();
-    for step in CiStep::ALL.into_iter().filter(|step| step.runs_in(profile)) {
+    for &step in steps {
         writeln!(stderr, "xtask: {step:?}").map_err(CiError::from)?;
         match step.action() {
             Action::Tools(calls) => {
