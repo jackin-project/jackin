@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG BASE_IMAGE=nvcr.io/nvidia/base/ubuntu:24.04
+ARG BASE_IMAGE=nvcr.io/nvidia/base/ubuntu:24.04@sha256:d9461f428eea54e553add3a5158a0f245c6e1ea73efc59fff8e98e3d4a38e378
 
 FROM ${BASE_IMAGE}
 
@@ -35,7 +35,9 @@ RUN if getent passwd ubuntu >/dev/null; then userdel --remove ubuntu; fi \
 
 RUN for tool in sudo su-exec gosu doas iptables ip6tables nft ufw docker podman nerdctl containerd runc; do \
         if command -v "$tool" >/dev/null; then echo "forbidden tool in construct: $tool" >&2; exit 1; fi; \
-    done
+    done \
+    && find / -xdev -type f -perm /6000 -print -exec chmod a-s {} + \
+    && test -z "$(find / -xdev -type f -perm /6000 -print)"
 
 ENV HOME=/sandbox
 WORKDIR /sandbox

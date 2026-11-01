@@ -1,0 +1,51 @@
+#!/bin/sh
+set -eu
+
+state=/sandbox/.jackin
+project=/sandbox/project
+
+fail() {
+    code=$1
+    shift
+    echo "jackin-start: $*" >&2
+    exit "$code"
+}
+
+[ "$#" -gt 0 ] || fail 64 "missing agent command"
+
+launch=${JACKIN_LAUNCH_ID:-}
+case $launch in
+    '' | .* | *[!A-Za-z0-9._-]*) fail 64 "JACKIN_LAUNCH_ID is missing or invalid" ;;
+esac
+
+run_hook() {
+    name=$1
+    path=$2
+    [ -n "$path" ] || return 0
+    case $path in
+        /*) ;;
+        *) fail 65 "$name hook path is not absolute: $path" ;;
+    esac
+    [ -f "$path" ] && [ -x "$path" ] || fail 65 "$name hook is not an executable file: $path"
+    rc=0
+    (cd "$project" && "$path") || rc=$?
+    [ "$rc" -eq 0 ] || fail "$rc" "$name hook failed with exit code $rc: $path"
+}
+
+mkdir -p "$state"
+
+while [ ! -e "$state/ready-$launch" ]; do
+    sleep 0.5
+done
+
+[ -d "$project" ] || fail 66 "project directory is missing: $project"
+
+if [ ! -e "$state/setup-done-$launch" ]; then
+    run_hook setup "${JACKIN_HOOK_SETUP:-}"
+    : >"$state/setup-done-$launch"
+fi
+
+run_hook preflight "${JACKIN_HOOK_PREFLIGHT:-}"
+
+cd "$project"
+exec "$@"
