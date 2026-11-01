@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
+use crate::ids::EnvName;
 use crate::paths::HostPath;
 use crate::secret::SecretBytes;
 
@@ -55,7 +56,35 @@ pub struct DirEntry {
 }
 
 #[derive(Debug)]
-pub struct FileLock {}
+pub struct FileLock {
+    _file: std::fs::File,
+}
+
+impl FileLock {
+    pub(crate) fn new(file: std::fs::File) -> FileLock {
+        FileLock { _file: file }
+    }
+}
+
+impl EnvSnapshot {
+    pub fn from_pairs(pairs: impl IntoIterator<Item = (String, String)>) -> EnvSnapshot {
+        EnvSnapshot(pairs.into_iter().collect())
+    }
+
+    pub fn get(&self, name: &EnvName) -> Option<&str> {
+        self.0.get(name.as_str()).map(String::as_str)
+    }
+}
+
+impl FsError {
+    pub(crate) fn io(path: &HostPath, source: &std::io::Error) -> FsError {
+        FsError::Io {
+            path: path.clone(),
+            kind: source.kind(),
+            message: source.to_string(),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Program {

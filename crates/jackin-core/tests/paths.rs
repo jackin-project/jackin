@@ -1,0 +1,150 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::collections::HashSet;
+
+use jackin_core::{
+    Agent, HookKind, HostPath, LaunchId, PathError, ProjectRoot, RepoPath, SandboxPath,
+    StdFileSystem, sandbox_layout,
+};
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+#[test]
+fn sandbox_path_normalizes_and_rejects_non_absolute_or_parent_paths() -> TestResult {
+    for (input, expected) in [
+        ("/sandbox/project", "/sandbox/project"),
+        ("/sandbox/./project", "/sandbox/project"),
+        ("/sandbox/project/", "/sandbox/project"),
+    ] {
+        assert_eq!(SandboxPath::parse(input)?.as_str(), expected, "{input}");
+    }
+    assert!(matches!(
+        SandboxPath::parse(""),
+        Err(PathError::NotAbsolute(_))
+    ));
+    assert!(matches!(
+        SandboxPath::parse("sandbox/project"),
+        Err(PathError::NotAbsolute(_))
+    ));
+    assert!(matches!(
+        SandboxPath::parse("/sandbox/../etc"),
+        Err(PathError::ParentSegment(_))
+    ));
+    assert!(matches!(
+        SandboxPath::parse("/sandbox//project"),
+        Err(PathError::EmptySegment(_))
+    ));
+    let base = SandboxPath::parse("/sandbox/project")?;
+    assert_eq!(base.join("x")?.as_str(), "/sandbox/project/x");
+    assert!(matches!(base.join(".."), Err(PathError::ParentSegment(_))));
+    assert!(matches!(base.join(""), Err(PathError::EmptySegment(_))));
+    Ok(())
+}
+
+#[test]
+fn repo_path_is_relative_without_dot_or_empty_segments() -> TestResult {
+    assert_eq!(RepoPath::parse("src/main.rs")?.as_str(), "src/main.rs");
+    assert_eq!(RepoPath::parse("a")?.as_str(), "a");
+    assert!(matches!(
+        RepoPath::parse("/abs"),
+        Err(PathError::NotRelative(_))
+    ));
+    for text in ["../x", "a/../b"] {
+        assert!(
+            matches!(RepoPath::parse(text), Err(PathError::ParentSegment(_))),
+            "{text}"
+        );
+    }
+    for text in ["a//b", "a/./b", "a/", ""] {
+        assert!(
+            matches!(RepoPath::parse(text), Err(PathError::EmptySegment(_))),
+            "{text}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn sandbox_layout_matches_the_documented_literals() -> TestResult {
+    assert_eq!(sandbox_layout::PROJECT.as_str(), "/sandbox/project");
+    assert_eq!(sandbox_layout::JACKIN_DIR.as_str(), "/sandbox/.jackin");
+    assert_eq!(
+        sandbox_layout::RUN_STATE.as_str(),
+        "/sandbox/.jackin/run/state"
+    );
+    assert_eq!(
+        sandbox_layout::RUN_START.as_str(),
+        "/sandbox/.jackin/run/start"
+    );
+    assert_eq!(
+        sandbox_layout::HOOKS_DIR.as_str(),
+        "/usr/local/lib/jackin/hooks"
+    );
+    assert_eq!(sandbox_layout::GIT.as_str(), "/usr/bin/git");
+    assert_eq!(sandbox_layout::PRINTENV.as_str(), "/usr/bin/printenv");
+    assert_eq!(sandbox_layout::SHA256SUM.as_str(), "/usr/bin/sha256sum");
+    let launch = LaunchId::parse("L")?;
+    assert_eq!(
+        sandbox_layout::env_file(&launch).as_str(),
+        "/sandbox/.jackin/env-L"
+    );
+    assert_eq!(
+        sandbox_layout::uploaded_marker(&launch).as_str(),
+        "/sandbox/.jackin/uploaded-L"
+    );
+    assert_eq!(
+        sandbox_layout::setup_done_marker(&launch).as_str(),
+        "/sandbox/.jackin/setup-done-L"
+    );
+    assert_eq!(
+        sandbox_layout::hook_path(HookKind::Setup).as_str(),
+        "/usr/local/lib/jackin/hooks/setup"
+    );
+    assert_eq!(
+        sandbox_layout::hook_path(HookKind::Preflight).as_str(),
+        "/usr/local/lib/jackin/hooks/preflight"
+    );
+    let fixed = sandbox_layout::fixed();
+    assert_eq!(fixed.len(), 10);
+    let distinct: HashSet<&str> = fixed.iter().map(|path| path.as_str()).collect();
+    assert_eq!(distinct.len(), 10);
+    for entry in fixed {
+        assert_eq!(&SandboxPath::parse(entry.as_str())?, entry);
+    }
+    for entry in Agent::Codex.spec().paths() {
+        assert_eq!(&SandboxPath::parse(entry.as_str())?, entry);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn project_root_open_requires_a_directory_with_a_git_entry() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let at = |name: &str| HostPath::parse(&dir.path().join(name));
+
+    std::fs::create_dir_all(dir.path().join("plain/.git"))?;
+    ProjectRoot::open(&fs, &at("plain")?).await?;
+
+    std::fs::create_dir_all(dir.path().join("worktree"))?;
+    std::fs::write(dir.path().join("worktree/.git"), "gitdir: /elsewhere\n")?;
+    ProjectRoot::open(&fs, &at("worktree")?).await?;
+
+    std::fs::create_dir_all(dir.path().join("bare"))?;
+    assert!(matches!(
+        ProjectRoot::open(&fs, &at("bare")?).await,
+        Err(PathError::NotAGitWorkTree(_))
+    ));
+
+    std::fs::write(dir.path().join("file"), "x")?;
+    assert!(matches!(
+        ProjectRoot::open(&fs, &at("file")?).await,
+        Err(PathError::NotADirectory(_))
+    ));
+    assert!(matches!(
+        ProjectRoot::open(&fs, &at("missing")?).await,
+        Err(PathError::NotADirectory(_))
+    ));
+    Ok(())
+}

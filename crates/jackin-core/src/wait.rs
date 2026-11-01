@@ -4,6 +4,9 @@
 use std::time::Duration;
 
 use thiserror::Error;
+use tokio_util::sync::CancellationToken;
+
+use crate::boundary::Clock;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PollPlan {
@@ -25,4 +28,43 @@ pub enum PollError<E: std::error::Error + 'static> {
     Cancelled,
     #[error("probe failed")]
     Probe(#[source] E),
+}
+
+const MIN_INTERVAL: Duration = Duration::from_millis(1);
+
+pub async fn poll_until<T, E, Fut, F>(
+    clock: &dyn Clock,
+    plan: PollPlan,
+    cancel: &CancellationToken,
+    mut probe: F,
+) -> Result<T, PollError<E>>
+where
+    E: std::error::Error + 'static,
+    F: FnMut() -> Fut + Send,
+    Fut: Future<Output = Result<Poll<T>, E>> + Send,
+{
+    let interval = plan.interval.max(MIN_INTERVAL);
+    let mut elapsed = Duration::ZERO;
+    loop {
+        match probe().await.map_err(PollError::Probe)? {
+            Poll::Ready(value) => return Ok(value),
+            Poll::Pending => {}
+        }
+        if cancel.is_cancelled() {
+            return Err(PollError::Cancelled);
+        }
+        let remaining = plan.timeout.saturating_sub(elapsed);
+        if remaining.is_zero() {
+            return Err(PollError::Timeout { after: elapsed });
+        }
+        let step = interval.min(remaining);
+        if cancel
+            .run_until_cancelled(clock.sleep(step))
+            .await
+            .is_none()
+        {
+            return Err(PollError::Cancelled);
+        }
+        elapsed += step;
+    }
 }

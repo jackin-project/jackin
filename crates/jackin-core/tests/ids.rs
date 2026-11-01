@@ -1,0 +1,505 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::collections::HashSet;
+use std::error::Error;
+use std::fmt::{Debug, Display};
+use std::process::{Command, Stdio};
+use std::str::FromStr;
+
+use jackin_core::{
+    AccountName, Agent, AttemptId, BranchName, BuilderName, ChatgptAccountId, CommitId, EnvName,
+    GatewayName, IdError, ImageId, ImageLabel, ImageTag, LaunchId, ModelName, NameSuffix,
+    OpReference, OpenShellWorkspace, ProfileId, ProviderName, RoleName, SandboxName, SandboxSlug,
+    Sha256, WorkspaceName,
+};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+
+type TestResult = Result<(), Box<dyn Error>>;
+
+#[derive(Debug, PartialEq)]
+enum Want {
+    Empty,
+    TooLong(usize, usize),
+    CharAt(char, usize),
+    Char(char),
+    Edge,
+    Format,
+}
+
+fn kind_of(error: &IdError) -> &'static str {
+    match error {
+        IdError::Empty { kind }
+        | IdError::TooLong { kind, .. }
+        | IdError::InvalidChar { kind, .. }
+        | IdError::BadEdge { kind }
+        | IdError::BadFormat { kind, .. } => kind,
+    }
+}
+
+fn satisfies(want: &Want, error: &IdError) -> bool {
+    match (want, error) {
+        (Want::Empty, IdError::Empty { .. })
+        | (Want::Edge, IdError::BadEdge { .. })
+        | (Want::Format, IdError::BadFormat { .. }) => true,
+        (Want::TooLong(max, len), IdError::TooLong { max: m, len: l, .. }) => max == m && len == l,
+        (
+            Want::CharAt(ch, index),
+            IdError::InvalidChar {
+                ch: c, index: i, ..
+            },
+        ) => ch == c && index == i,
+        (Want::Char(ch), IdError::InvalidChar { ch: c, .. }) => ch == c,
+        _ => false,
+    }
+}
+
+fn grammar<T>(accept: &[&str], reject: &[(String, Want)]) -> Result<&'static str, Box<dyn Error>>
+where
+    T: FromStr<Err = IdError> + Display + Serialize + DeserializeOwned + Debug + PartialEq,
+{
+    for text in accept {
+        let parsed: T = text.parse()?;
+        assert_eq!(parsed.to_string(), *text);
+        let json = format!("\"{text}\"");
+        assert_eq!(serde_json::to_string(&parsed)?, json);
+        assert_eq!(serde_json::from_str::<T>(&json)?, parsed);
+    }
+    let mut kind = "";
+    for (text, want) in reject {
+        let error = text
+            .parse::<T>()
+            .err()
+            .ok_or_else(|| format!("{text:?} was accepted"))?;
+        assert!(
+            satisfies(want, &error),
+            "{text:?}: wanted {want:?}, got {error:?}"
+        );
+        assert!(error.to_string().contains(kind_of(&error)), "{error}");
+        kind = kind_of(&error);
+        let json = serde_json::to_string(text)?;
+        assert!(
+            serde_json::from_str::<T>(&json).is_err(),
+            "{text:?} deserialized"
+        );
+    }
+    Ok(kind)
+}
+
+fn rep(ch: char, count: usize) -> String {
+    ch.to_string().repeat(count)
+}
+
+fn rej(text: impl Into<String>, want: Want) -> (String, Want) {
+    (text.into(), want)
+}
+
+fn distinct(kinds: &[&str]) {
+    let unique: HashSet<&&str> = kinds.iter().collect();
+    assert_eq!(unique.len(), kinds.len(), "{kinds:?}");
+}
+
+#[test]
+fn label_value_ids_follow_the_gateway_grammar() -> TestResult {
+    let max = rep('a', 63);
+    let accept = [
+        "a",
+        "Z9",
+        "my-project",
+        "My.Project_1",
+        "a-b.c_d",
+        max.as_str(),
+    ];
+    let reject = vec![
+        rej("", Want::Empty),
+        rej(rep('a', 64), Want::TooLong(63, 64)),
+        rej("-ab", Want::Edge),
+        rej("_ab", Want::Edge),
+        rej(".ab", Want::Edge),
+        rej("ab-", Want::Edge),
+        rej("ab.", Want::Edge),
+        rej("ab_", Want::Edge),
+        rej("a b", Want::CharAt(' ', 1)),
+        rej("a/b", Want::CharAt('/', 1)),
+        rej("a:b", Want::Char(':')),
+        rej("a\u{e9}b", Want::CharAt('\u{e9}', 1)),
+        rej("a\nb", Want::CharAt('\n', 1)),
+    ];
+    distinct(&[
+        grammar::<WorkspaceName>(&accept, &reject)?,
+        grammar::<RoleName>(&accept, &reject)?,
+        grammar::<LaunchId>(&accept, &reject)?,
+        grammar::<ImageLabel>(&accept, &reject)?,
+    ]);
+    Ok(())
+}
+
+#[test]
+fn account_name_and_openshell_workspace_are_capped_dns_labels() -> TestResult {
+    let account_max = rep('a', 32);
+    let account_accept = ["a", "work", "team-1", "0day", account_max.as_str()];
+    let account_reject = vec![
+        rej("", Want::Empty),
+        rej(rep('a', 33), Want::TooLong(32, 33)),
+        rej("Work", Want::CharAt('W', 0)),
+        rej("wo_rk", Want::CharAt('_', 2)),
+        rej("wo.rk", Want::CharAt('.', 2)),
+        rej("-work", Want::Edge),
+        rej("work-", Want::Edge),
+    ];
+    let workspace_max = rep('a', 19);
+    let workspace_accept = ["default", "a", workspace_max.as_str()];
+    let workspace_reject = vec![
+        rej(rep('a', 20), Want::TooLong(19, 20)),
+        rej("Default", Want::CharAt('D', 0)),
+        rej("-x", Want::Edge),
+    ];
+    distinct(&[
+        grammar::<AccountName>(&account_accept, &account_reject)?,
+        grammar::<OpenShellWorkspace>(&workspace_accept, &workspace_reject)?,
+    ]);
+    Ok(())
+}
+
+#[test]
+fn sandbox_name_parse_enforces_prefix_length_and_single_hyphens() -> TestResult {
+    let accept = ["jackin-ws-ab12", "jackin-a-0000", "jackin-abcdefg-wxyz"];
+    let reject = vec![
+        rej("", Want::Empty),
+        rej("jackin-abcdefgh-wxyz", Want::TooLong(19, 20)),
+        rej("jackin-WS-ab12", Want::CharAt('W', 7)),
+        rej("jackin-w_s-ab1", Want::CharAt('_', 8)),
+        rej("jackin-ws--ab12", Want::Format),
+        rej("ws-ab12", Want::Format),
+        rej("jackin-ws-ab12-", Want::Edge),
+    ];
+    grammar::<SandboxName>(&accept, &reject)?;
+    Ok(())
+}
+
+#[test]
+fn slug_and_suffix_have_exact_grammars() -> TestResult {
+    let slug_accept = ["a", "ws", "my-proj", "abcdefg"];
+    let slug_reject = vec![
+        rej("", Want::Empty),
+        rej("abcdefgh", Want::TooLong(7, 8)),
+        rej("My", Want::CharAt('M', 0)),
+        rej("-a", Want::Edge),
+        rej("a-", Want::Edge),
+        rej("a--b", Want::Format),
+        rej("a_b", Want::CharAt('_', 1)),
+    ];
+    let suffix_accept = ["ab12", "0000", "zzzz"];
+    let suffix_reject = vec![
+        rej("", Want::Empty),
+        rej("abc", Want::Format),
+        rej("abcde", Want::Format),
+        rej("AB12", Want::CharAt('A', 0)),
+        rej("ab-1", Want::CharAt('-', 2)),
+    ];
+    distinct(&[
+        grammar::<SandboxSlug>(&slug_accept, &slug_reject)?,
+        grammar::<NameSuffix>(&suffix_accept, &suffix_reject)?,
+    ]);
+    Ok(())
+}
+
+#[test]
+fn attempt_id_parses_one_to_eighteen_digits_and_steps_to_the_next() -> TestResult {
+    for text in ["1", "9", "10", "123456789012345678", "999999999999999999"] {
+        let parsed: AttemptId = text.parse()?;
+        assert_eq!(parsed.to_string(), text);
+    }
+    let rejected = vec![
+        rej("", Want::Empty),
+        rej("0", Want::Format),
+        rej("00", Want::Format),
+        rej("01", Want::Format),
+        rej("a1", Want::CharAt('a', 0)),
+        rej("-1", Want::CharAt('-', 0)),
+        rej("+1", Want::CharAt('+', 0)),
+        rej("1 ", Want::CharAt(' ', 1)),
+        rej("1000000000000000000", Want::TooLong(18, 19)),
+        rej(rep('7', 20), Want::TooLong(18, 20)),
+    ];
+    for (text, want) in &rejected {
+        let error = AttemptId::parse(text).err().ok_or("accepted")?;
+        assert!(
+            satisfies(want, &error),
+            "{text:?}: wanted {want:?}, got {error:?}"
+        );
+        assert!(error.to_string().contains(kind_of(&error)));
+    }
+    assert_eq!(AttemptId::FIRST, AttemptId::parse("1")?);
+    assert_eq!(AttemptId::FIRST.next(), Some(AttemptId::parse("2")?));
+    let before_max = AttemptId::parse("999999999999999998")?;
+    assert_eq!(
+        before_max.next(),
+        Some(AttemptId::parse("999999999999999999")?)
+    );
+    assert_eq!(AttemptId::parse("999999999999999999")?.next(), None);
+    let copy = before_max;
+    assert_eq!(copy, before_max);
+    Ok(())
+}
+
+#[test]
+fn env_name_is_a_posix_name_and_reserved_names_are_detected() -> TestResult {
+    let accept = ["A", "_x", "FOO_BAR1", "lower_ok"];
+    let reject = vec![
+        rej("", Want::Empty),
+        rej("1A", Want::CharAt('1', 0)),
+        rej("A-B", Want::CharAt('-', 1)),
+        rej("A B", Want::CharAt(' ', 1)),
+        rej("A=B", Want::CharAt('=', 1)),
+        rej("\u{c9}", Want::CharAt('\u{c9}', 0)),
+    ];
+    grammar::<EnvName>(&accept, &reject)?;
+    for name in [
+        "JACKIN_X",
+        "JACKIN_LAUNCH_ID",
+        "DOCKER_HOST",
+        "DOCKER_TLS_VERIFY",
+        "DOCKER_CERT_PATH",
+        "CODEX_HOME",
+    ] {
+        assert!(EnvName::parse(name)?.is_reserved(), "{name}");
+    }
+    for name in [
+        "FOO",
+        "PATH",
+        "JACKIN",
+        "JACKINX",
+        "XJACKIN_A",
+        "DOCKER",
+        "MY_DOCKER_HOST",
+    ] {
+        assert!(!EnvName::parse(name)?.is_reserved(), "{name}");
+    }
+    Ok(())
+}
+
+#[test]
+fn other_ids_reject_one_input_of_each_violated_class() -> TestResult {
+    let hex40 = "0123456789abcdef0123456789abcdef01234567";
+    let hex64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let tag = "0123456789abcdef";
+    let mut kinds = Vec::new();
+
+    kinds.push(grammar::<ProviderName>(
+        &["jackin-work-codex", "a"],
+        &[
+            rej("", Want::Empty),
+            rej(rep('a', 64), Want::TooLong(63, 64)),
+            rej("Codex", Want::CharAt('C', 0)),
+            rej("-a", Want::Edge),
+            rej("a--b", Want::Format),
+            rej("a_b", Want::CharAt('_', 1)),
+        ],
+    )?);
+    kinds.push(grammar::<ProfileId>(
+        &["codex"],
+        &[rej("co_dex", Want::CharAt('_', 2)), rej("", Want::Empty)],
+    )?);
+    kinds.push(grammar::<GatewayName>(
+        &["jackin-local", "My.Gw_1"],
+        &[
+            rej("", Want::Empty),
+            rej(rep('a', 65), Want::TooLong(64, 65)),
+            rej("a b", Want::CharAt(' ', 1)),
+        ],
+    )?);
+    kinds.push(grammar::<BuilderName>(
+        &["orbstack"],
+        &[rej("a/b", Want::CharAt('/', 1))],
+    )?);
+    kinds.push(grammar::<ChatgptAccountId>(
+        &["67e55044-10b1-426f-9247-bb680e5fe0c8"],
+        &[
+            rej("a_b", Want::CharAt('_', 1)),
+            rej(rep('a', 65), Want::TooLong(64, 65)),
+        ],
+    )?);
+    kinds.push(grammar::<CommitId>(
+        &[hex40, hex64],
+        &[
+            rej(&hex40[..39], Want::Format),
+            rej(format!("{hex40}0"), Want::Format),
+            rej(format!("{}g", &hex40[..39]), Want::CharAt('g', 39)),
+        ],
+    )?);
+    kinds.push(grammar::<Sha256>(
+        &[hex64],
+        &[
+            rej(&hex64[..63], Want::Format),
+            rej(format!("{hex64}0"), Want::Format),
+            rej(format!("A{}", &hex64[1..]), Want::Char('A')),
+        ],
+    )?);
+    kinds.push(grammar::<OpReference>(
+        &["op://vault/item", "op://vault/item/field"],
+        &[
+            rej("", Want::Format),
+            rej("op://vault", Want::Format),
+            rej("op://vault/", Want::Format),
+            rej("op:///item", Want::Format),
+            rej("op://vault//field", Want::Format),
+            rej("http://vault/item", Want::Format),
+        ],
+    )?);
+    kinds.push(grammar::<ModelName>(
+        &["gpt-5.1-codex", "o3", "openai/gpt-4:latest"],
+        &[
+            rej("", Want::Empty),
+            rej(rep('a', 65), Want::TooLong(64, 65)),
+            rej("-gpt", Want::Edge),
+            rej("gpt\"x", Want::CharAt('"', 3)),
+            rej("gpt x", Want::CharAt(' ', 3)),
+            rej("a\nb", Want::CharAt('\n', 1)),
+            rej("a\"\nmodel_provider=\"x", Want::Char('"')),
+        ],
+    )?);
+    let good_tag = format!("jackin/my-role:{tag}");
+    kinds.push(grammar::<ImageTag>(
+        &[good_tag.as_str()],
+        &[
+            rej("", Want::Empty),
+            rej(format!("other/my-role:{tag}"), Want::Format),
+            rej(format!("jackin/my-role:{}", &tag[..15]), Want::Format),
+            rej(format!("jackin/my-role:{}g", &tag[..15]), Want::Char('g')),
+        ],
+    )?);
+    let good_id = format!("sha256:{hex64}");
+    kinds.push(grammar::<ImageId>(
+        &[good_id.as_str()],
+        &[
+            rej("", Want::Empty),
+            rej(format!("sha512:{hex64}"), Want::Format),
+            rej(hex64, Want::Format),
+            rej(format!("sha256:{}", &hex64[..63]), Want::Format),
+            rej(format!("sha256:A{}", &hex64[1..]), Want::Char('A')),
+        ],
+    )?);
+    distinct(&kinds);
+    Ok(())
+}
+
+fn git_accepts(candidate: &str, dir: &std::path::Path) -> Result<bool, Box<dyn Error>> {
+    let output = Command::new("git")
+        .args(["check-ref-format", "--branch", candidate])
+        .current_dir(dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?
+        .wait_with_output()?;
+    Ok(output.status.success())
+}
+
+#[test]
+fn branch_name_agrees_with_git_check_ref_format() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let candidates = [
+        "main",
+        "feature/x-1",
+        "release/1.2",
+        "a/b/c",
+        "x.y",
+        "a..b",
+        "x.lock",
+        "a/x.lock",
+        "a b",
+        "a~b",
+        "a^b",
+        "a:b",
+        "a?b",
+        "a*b",
+        "a[b",
+        "/a",
+        "a/",
+        "a//b",
+        "a.",
+        ".a",
+        "@",
+        "a@{b",
+        "a\\b",
+        "-a",
+    ];
+    let mut accepted = 0;
+    for candidate in candidates {
+        let ours = BranchName::parse(candidate).is_ok();
+        assert_eq!(ours, git_accepts(candidate, dir.path())?, "{candidate:?}");
+        accepted += usize::from(ours);
+    }
+    assert!(accepted >= 5);
+    let error = BranchName::parse("jackin/x").err().ok_or("accepted")?;
+    assert!(satisfies(&Want::Format, &error), "{error:?}");
+    let error = BranchName::parse("").err().ok_or("accepted")?;
+    assert!(satisfies(&Want::Empty, &error), "{error:?}");
+    let main: BranchName = "main".parse()?;
+    assert_eq!(main.to_string(), "main");
+    assert_eq!(serde_json::to_string(&main)?, "\"main\"");
+    assert_eq!(serde_json::from_str::<BranchName>("\"main\"")?, main);
+    Ok(())
+}
+
+#[test]
+fn launch_id_generate_yields_valid_distinct_ids() -> TestResult {
+    let ids: Vec<LaunchId> = (0..64).map(|_| LaunchId::generate()).collect();
+    for id in &ids {
+        let text = id.to_string();
+        assert_eq!(text.len(), 26, "{text}");
+        assert!(
+            text.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
+            "{text}"
+        );
+        assert_eq!(LaunchId::parse(&text)?, *id);
+    }
+    let distinct: HashSet<String> = ids.iter().map(ToString::to_string).collect();
+    assert_eq!(distinct.len(), 64);
+    Ok(())
+}
+
+#[test]
+fn sha256_image_tag_and_image_label_match_known_vectors() -> TestResult {
+    let abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    assert_eq!(Sha256::of(b"abc").to_string(), abc);
+    assert_eq!(
+        Sha256::of(b"").to_string(),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    assert_eq!(
+        ImageTag::for_image("backend", &Sha256::of(b"abc")).to_string(),
+        "jackin/backend:ba7816bf8f01cfea"
+    );
+    let input = format!("sha256:{abc}");
+    let image = ImageId::parse(&input)?;
+    assert_eq!(image.to_string(), input);
+    let label = image.label_value();
+    assert_eq!(label.to_string(), "ba7816bf8f01cfea414140de5dae2223");
+    ImageLabel::parse(&label.to_string())?;
+    Ok(())
+}
+
+#[test]
+fn provider_name_for_every_valid_account_name_is_a_valid_provider_name() -> TestResult {
+    let long = rep('a', 32);
+    let candidates = ["work", "a", "x-y", "0day", "a--b", long.as_str(), "a-b-c"];
+    let mut accepted = Vec::new();
+    for candidate in candidates {
+        let Ok(account) = AccountName::parse(candidate) else {
+            continue;
+        };
+        accepted.push(candidate);
+        let provider = ProviderName::for_account(&account, Agent::Codex);
+        assert_eq!(provider.to_string(), format!("jackin-{candidate}-codex"));
+        assert_eq!(ProviderName::parse(&provider.to_string())?, provider);
+    }
+    for control in ["work", "x-y", long.as_str()] {
+        assert!(accepted.contains(&control), "{control}");
+    }
+    Ok(())
+}

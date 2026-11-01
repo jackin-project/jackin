@@ -18,3 +18,34 @@ pub enum CompatibilityError {
     #[error("missing key {key} in compatibility.lock.toml")]
     MissingField { key: String },
 }
+
+const LOCK_TEXT: &str = include_str!("../../../compatibility.lock.toml");
+
+fn field(table: &toml::Table, section: &str, key: &str) -> Result<String, CompatibilityError> {
+    table
+        .get(section)
+        .and_then(toml::Value::as_table)
+        .and_then(|section| section.get(key))
+        .and_then(toml::Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| CompatibilityError::MissingField {
+            key: format!("{section}.{key}"),
+        })
+}
+
+impl Compatibility {
+    pub fn pinned() -> Result<Compatibility, CompatibilityError> {
+        let table: toml::Table =
+            LOCK_TEXT
+                .parse()
+                .map_err(|error: toml::de::Error| CompatibilityError::Syntax {
+                    message: error.message().to_owned(),
+                })?;
+        Ok(Compatibility {
+            openshell_version: field(&table, "openshell", "version")?,
+            openshell_tag: field(&table, "openshell", "tag")?,
+            openshell_commit: field(&table, "openshell", "commit")?,
+            codex_version: field(&table, "codex", "version")?,
+        })
+    }
+}

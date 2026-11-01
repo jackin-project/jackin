@@ -1,0 +1,152 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::io::ErrorKind;
+
+use async_trait::async_trait;
+use jackin_core::{
+    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, StdFileSystem,
+    write_atomic,
+};
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Fault {
+    None,
+    WriteNew,
+    Rename,
+    SyncDir,
+}
+
+#[derive(Debug)]
+struct FaultFs {
+    inner: StdFileSystem,
+    fault: Fault,
+    kind: ErrorKind,
+}
+
+impl FaultFs {
+    fn fail(&self, at: Fault, path: &HostPath) -> Result<(), FsError> {
+        if self.fault != at {
+            return Ok(());
+        }
+        let (kind, message) = (self.kind, "injected".to_owned());
+        Err(FsError::Io {
+            path: path.clone(),
+            kind,
+            message,
+        })
+    }
+}
+
+#[async_trait]
+impl FileSystem for FaultFs {
+    async fn read(&self, p: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
+        self.inner.read(p).await
+    }
+    async fn stat(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.inner.stat(p).await
+    }
+    async fn list(&self, d: &HostPath) -> Result<Vec<DirEntry>, FsError> {
+        self.inner.list(d).await
+    }
+    async fn create_dir_all(&self, d: &HostPath) -> Result<(), FsError> {
+        self.inner.create_dir_all(d).await
+    }
+    async fn remove_file(&self, p: &HostPath) -> Result<(), FsError> {
+        self.inner.remove_file(p).await
+    }
+    async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
+        self.inner.lock(p).await
+    }
+    async fn write_new(&self, p: &HostPath, b: &[u8], m: FileMode) -> Result<(), FsError> {
+        let half = if self.fault == Fault::WriteNew {
+            &b[..b.len() / 2]
+        } else {
+            b
+        };
+        self.inner.write_new(p, half, m).await?;
+        self.fail(Fault::WriteNew, p)
+    }
+    async fn rename(&self, f: &HostPath, t: &HostPath) -> Result<(), FsError> {
+        self.fail(Fault::Rename, f)?;
+        self.inner.rename(f, t).await
+    }
+    async fn sync_dir(&self, d: &HostPath) -> Result<(), FsError> {
+        self.fail(Fault::SyncDir, d)?;
+        self.inner.sync_dir(d).await
+    }
+}
+
+fn faulty(fault: Fault) -> FaultFs {
+    FaultFs {
+        inner: StdFileSystem::default(),
+        fault,
+        kind: ErrorKind::StorageFull,
+    }
+}
+
+fn names(entries: Vec<DirEntry>) -> Vec<String> {
+    entries.into_iter().map(|e| e.name).collect()
+}
+
+#[tokio::test]
+async fn write_atomic_replaces_the_target_and_leaves_no_temp_file() -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir()?;
+    let root = HostPath::parse(dir.path())?;
+    let target = HostPath::parse(&dir.path().join("config.toml"))?;
+    let fs = faulty(Fault::None);
+
+    std::fs::write(target.as_path(), b"old")?;
+    std::fs::set_permissions(target.as_path(), std::fs::Permissions::from_mode(0o644))?;
+    write_atomic(&fs, &target, b"first", FileMode(0o600)).await?;
+    assert_eq!(fs.read(&target).await?, Some(b"first".to_vec()));
+    let mode = std::fs::metadata(target.as_path())?.permissions().mode();
+    assert_eq!(mode & 0o777, 0o600);
+    assert_eq!(names(fs.list(&root).await?), ["config.toml"]);
+
+    write_atomic(&fs, &target, b"second", FileMode(0o600)).await?;
+    assert_eq!(fs.read(&target).await?, Some(b"second".to_vec()));
+    assert_eq!(names(fs.list(&root).await?), ["config.toml"]);
+
+    let fresh = HostPath::parse(&dir.path().join("fresh.toml"))?;
+    write_atomic(&fs, &fresh, b"created", FileMode(0o600)).await?;
+    assert_eq!(fs.read(&fresh).await?, Some(b"created".to_vec()));
+    assert_eq!(names(fs.list(&root).await?), ["config.toml", "fresh.toml"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn write_atomic_failure_keeps_the_old_file_and_leaves_no_temp_file() -> TestResult {
+    for fault in [Fault::WriteNew, Fault::Rename, Fault::SyncDir] {
+        for existing in [true, false] {
+            let dir = tempfile::tempdir()?;
+            let root = HostPath::parse(dir.path())?;
+            let target = HostPath::parse(&dir.path().join("config.toml"))?;
+            if existing {
+                std::fs::write(target.as_path(), b"old bytes")?;
+            }
+            let fs = faulty(fault);
+            let outcome = write_atomic(&fs, &target, b"new bytes", FileMode(0o600)).await;
+            match outcome {
+                Err(FsError::Io { kind, .. }) => assert_eq!(kind, ErrorKind::StorageFull),
+                other => panic!("{fault:?}: {other:?}"),
+            }
+            let after = fs.read(&target).await?;
+            let listed = names(fs.list(&root).await?);
+            if fault == Fault::SyncDir {
+                assert_eq!(after, Some(b"new bytes".to_vec()), "{fault:?} {existing}");
+                assert_eq!(listed, ["config.toml"]);
+            } else if existing {
+                assert_eq!(after, Some(b"old bytes".to_vec()), "{fault:?}");
+                assert_eq!(listed, ["config.toml"]);
+            } else {
+                assert_eq!(after, None, "{fault:?}");
+                assert!(listed.is_empty(), "{listed:?}");
+            }
+        }
+    }
+    Ok(())
+}

@@ -3001,6 +3001,25 @@ U5 comes before U6 because PLAN P4.2 depends on P4.1. The session units (U8 to U
 - The tool steps run `fmt --all --check`, `clippy --workspace --all-targets --all-features --locked -- -D warnings`, `nextest run --workspace --all-features --locked`, `deny --locked check`, `shear --deny-warnings`, `reuse lint`, and in `docs/` `bun install --frozen-lockfile` and `bun run build`. Cargo subcommands run through `$CARGO`. The docs build fails today because `docs/` still describes the old crates, so G-FULL uses `--no-docs` until P12.1.
 - `xtask e2e` accepts and ignores trailing arguments, prints that it is not built yet, and exits 1.
 
+### U2 (P3.1)
+
+- R1. `SupervisorState::parse` accepts the text with exactly one trailing `\n`, because `jackin-start` publishes with `printf '%s\n'`. `render` emits no newline. Any other leading or trailing whitespace is an error.
+- R2. `AccountName` rejects `--` (reason `BadFormat`), so `ProviderName::for_account` is infallible and always yields a valid `ProviderName`.
+- R3. `CredentialKeys` gains `id_token`, because `codex-provider.yaml` declares `CODEX_AUTH_ID_TOKEN` beside the other three credential variables. `EnvName::is_reserved` covers `access_token`, `refresh_token`, `account_id`, and `id_token` of every `Agent`, plus every `reserved_env` name. `reserved_env` stays `["CODEX_HOME"]`.
+- R4. `NameSuffix::for_launch` hashes the launch ID bytes with SHA-256, reads the first 8 digest bytes as a big-endian `u64` `n`, and writes `n mod 36^4` as exactly 4 base-36 digits (`0-9a-z`, most significant first, zero padded).
+- R5. `poll_until` bounds time by summing the durations it passes to `Clock::sleep` and never calls `Clock::now`. The last sleep is clamped to the time left, a zero interval counts as 1 ms, and the probe runs once more after the last sleep. `Timestamp` keeps no unit in U2.
+- R6. `write_atomic` writes `.<file name>.tmp` in the target directory, removes a leftover temporary file first, removes its own temporary file on any error (best effort), and returns the original error. Callers serialize concurrent writers with `FileSystem::lock`. `FileSystem::remove_file` of a missing file is `Ok`.
+- R7. `LabelKey` and `LabelValue` implement `Display`. The negative `from_labels` cases, `is_managed()` false, and `LabelSelector::render` wait for U5, which adds a `Labels` constructor when the adapter needs it.
+- R8. The `ws` result of `WorkspaceName::slug` is unreachable, because a valid name starts with an alphanumeric. It stays as the internal fallback of the infallible constructor, and no public path reaches it.
+- R9. A wrong length on an exact-length id (`NameSuffix`, `Sha256`, `CommitId`, `ImageId`, `ImageTag`) is `BadFormat`. `TooLong` is for max-length grammars only. An empty `OpReference` is `BadFormat`, because its format rule covers it; every other empty id is `Empty`.
+- `ImageId::full` returns the 64 hex digits without the `sha256:` prefix, because `ImageId` wraps a `Sha256`. `Display` and `parse` use the `sha256:` prefix.
+- The `AgentSpec` methods `install_target`, `profile_for`, and `profiles` take `&'static self`, so their `&'static` results borrow from the static row.
+- `LaunchId::generate` draws 26 base-32 characters from `std::collections::hash_map::RandomState`, which std seeds from the OS and which cannot fail, because `generate` has no error path.
+- `sandbox_layout::DOCKER_DIR` is `/sandbox/.jackin/docker` (D24). `BUNDLE_DIR` is `/sandbox/.jackin/bundle`, and `bundle_path` is `<BUNDLE_DIR>/<sandbox>.bundle`.
+- `Redactor::apply` replaces the longest secret at each position with `<redacted>` and skips empty secrets.
+- `StdFileSystem` runs each blocking call in `spawn_blocking`, so `jackin-core` enables the tokio feature `rt`. `lock` creates the file if it is missing and takes an exclusive `flock` that conflicts across handles in one process.
+- `jackin-core` gains the dependencies `sha2` and `toml` (`Compatibility::pinned` reads `compatibility.lock.toml` embedded with `include_str!`) and the dev-dependencies `static_assertions`, `tempfile`, `serde_json`, and tokio with `macros`. `toml` is a normal dependency, so the tests use it too.
+
 ### P9.2 additions (accepted by the orchestrator)
 
 - `jackin-core` gains a role manifest writer (atomic, same parser round trip) and `jackin-session` gains a check of a staged manifest directory, for the console role editor. `jackin role check` and the staged check report every finding in one pass.

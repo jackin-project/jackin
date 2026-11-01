@@ -1,5 +1,198 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#[derive(Clone, Copy, Debug)]
+use std::ffi::OsString;
+use std::fs::{self, File, OpenOptions, TryLockError};
+use std::io::{self, ErrorKind, Write};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::path::Path;
+
+use async_trait::async_trait;
+
+use crate::boundary::{DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError};
+use crate::paths::HostPath;
+
+#[derive(Clone, Copy, Debug, Default)]
 pub struct StdFileSystem {}
+
+async fn blocking<T, F>(path: &HostPath, work: F) -> Result<T, FsError>
+where
+    T: Send + 'static,
+    F: FnOnce(&Path) -> io::Result<T> + Send + 'static,
+{
+    let owned = path.clone();
+    match tokio::task::spawn_blocking(move || work(owned.as_path())).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(source)) => Err(FsError::io(path, &source)),
+        Err(join) => Err(FsError::Io {
+            path: path.clone(),
+            kind: ErrorKind::Other,
+            message: join.to_string(),
+        }),
+    }
+}
+
+fn missing_is_none<T>(result: io::Result<T>) -> io::Result<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(source) if source.kind() == ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(source),
+    }
+}
+
+fn kind_of(file_type: fs::FileType) -> FileKind {
+    if file_type.is_dir() {
+        FileKind::Dir
+    } else if file_type.is_symlink() {
+        FileKind::Symlink
+    } else {
+        FileKind::File
+    }
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "runs on the blocking pool through StdFileSystem::write_new"
+)]
+fn create_new_file(path: &Path, bytes: &[u8], mode: u32) -> io::Result<()> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(mode)
+        .open(path)?;
+    file.set_permissions(fs::Permissions::from_mode(mode))?;
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "runs on the blocking pool through StdFileSystem::sync_dir"
+)]
+fn sync_directory(dir: &Path) -> io::Result<()> {
+    File::open(dir)?.sync_all()
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "runs on the blocking pool through StdFileSystem::lock"
+)]
+fn lock_file(path: &Path) -> io::Result<Result<File, ()>> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(path)?;
+    match file.try_lock() {
+        Ok(()) => Ok(Ok(file)),
+        Err(TryLockError::WouldBlock) => Ok(Err(())),
+        Err(TryLockError::Error(source)) => Err(source),
+    }
+}
+
+#[async_trait]
+impl FileSystem for StdFileSystem {
+    async fn read(&self, path: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
+        blocking(path, |p| missing_is_none(fs::read(p))).await
+    }
+
+    async fn stat(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        blocking(path, |p| {
+            missing_is_none(fs::symlink_metadata(p))
+                .map(|meta| meta.map(|m| kind_of(m.file_type())))
+        })
+        .await
+    }
+
+    async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
+        blocking(dir, |p| {
+            let mut entries = Vec::new();
+            for entry in fs::read_dir(p)? {
+                let entry = entry?;
+                entries.push(DirEntry {
+                    name: entry.file_name().to_string_lossy().into_owned(),
+                    kind: kind_of(entry.file_type()?),
+                });
+            }
+            entries.sort_by(|a, b| a.name.cmp(&b.name));
+            Ok(entries)
+        })
+        .await
+    }
+
+    async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
+        blocking(dir, |p| fs::create_dir_all(p)).await
+    }
+
+    async fn write_new(
+        &self,
+        path: &HostPath,
+        bytes: &[u8],
+        mode: FileMode,
+    ) -> Result<(), FsError> {
+        let bytes = bytes.to_vec();
+        blocking(path, move |p| create_new_file(p, &bytes, mode.0))
+            .await
+            .map_err(|error| match error {
+                FsError::Io {
+                    path,
+                    kind: ErrorKind::AlreadyExists,
+                    ..
+                } => FsError::AlreadyExists(path),
+                other => other,
+            })
+    }
+
+    async fn rename(&self, from: &HostPath, to: &HostPath) -> Result<(), FsError> {
+        let target = to.clone();
+        blocking(from, move |p| fs::rename(p, target.as_path())).await
+    }
+
+    async fn remove_file(&self, path: &HostPath) -> Result<(), FsError> {
+        blocking(path, |p| {
+            missing_is_none(fs::remove_file(p)).map(|_removed| ())
+        })
+        .await
+    }
+
+    async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError> {
+        blocking(dir, sync_directory).await
+    }
+
+    async fn lock(&self, path: &HostPath) -> Result<FileLock, FsError> {
+        match blocking(path, lock_file).await? {
+            Ok(file) => Ok(FileLock::new(file)),
+            Err(()) => Err(FsError::LockHeld(path.clone())),
+        }
+    }
+}
+
+pub async fn write_atomic(
+    fs: &dyn FileSystem,
+    path: &HostPath,
+    bytes: &[u8],
+    mode: FileMode,
+) -> Result<(), FsError> {
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        return Err(FsError::Io {
+            path: path.clone(),
+            kind: ErrorKind::InvalidInput,
+            message: "path has no parent directory or file name".to_owned(),
+        });
+    };
+    let mut temp_name = OsString::from(".");
+    temp_name.push(name);
+    temp_name.push(".tmp");
+    let temp = path.with_file_name(&temp_name);
+    fs.remove_file(&temp).await?;
+    let written = match fs.write_new(&temp, bytes, mode).await {
+        Ok(()) => fs.rename(&temp, path).await,
+        Err(error) => Err(error),
+    };
+    if let Err(error) = written {
+        let _cleanup = fs.remove_file(&temp).await;
+        return Err(error);
+    }
+    fs.sync_dir(&dir).await
+}
