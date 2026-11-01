@@ -428,7 +428,7 @@ P7.1 can start after P0.3. It runs in parallel with P2 to P6.
 - **Scope:** `rewrite/drafts/construct.Dockerfile`, `rewrite/drafts/derived.Dockerfile`, `rewrite/drafts/jackin-start`, `rewrite/drafts/agentspec-codex.toml`.
 - **Steps:** Finish the D06 construct image, the D05 derived layer, and the D09 `jackin-start` launcher from the P0.3 drafts. Write the Codex `AgentSpec` row values in `agentspec-codex.toml`. P4.3 moves them into `jackin-image`.
 - **Proof:** `evidence/P7.1-image.md` shows the output of `id` and `codex --version`. It shows that a derived image has no `sudo` and no `docker`.
-- [ ] P7.1 done
+- [x] P7.1 done — 349e8d3a, evidence/P7.1-image.md (uid 1000 sandbox, codex-cli 0.166.0, no sudo, no docker; jackin-start markers proven)
 
 ### P7.2 Rewrite the sentinel role
 
