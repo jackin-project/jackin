@@ -461,7 +461,7 @@ P7.1 can start after P0.3. It runs in parallel with P2 to P6.
   5. A hook under `/usr/local/lib/jackin/hooks` runs through a non-PTY exec with the `[env]` values. A failing hook returns its exit code, and the sandbox stays `Ready`. Closing the exec stream stops a long hook.
   6. A file written through exec stdin arrives with mode 0600 and the exact bytes.
 - **Proof:** `evidence/P7.4-supervisor.md` shows each step with raw output.
-- [ ] P7.4 done
+- [x] P7.4 done — 4a5c599a, evidence/P7.4-supervisor.md (six steps PASS: state machine, fencing, signals, Codex on the PTY, hooks through exec, 0600 stdin writes)
 
 ## Phase P8. Prove the sentinel journey
 

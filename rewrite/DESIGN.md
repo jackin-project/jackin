@@ -133,7 +133,8 @@ OpenShell 0.1.6 does not reach a sandbox after its main process exits. Exit code
 
 - The main process is `/usr/local/bin/jackin-start <Codex launch command>`, with a kept PTY. The derived layer installs it. Jackin passes the launch command of the `AgentSpec` row as the arguments, and `JACKIN_LAUNCH_ID` in the environment.
 - At each start, `jackin-start` removes its old state and writes `waiting` to `/sandbox/.jackin/run/state`. When jackin writes a new attempt ID to `/sandbox/.jackin/run/start`, `jackin-start` writes `running <attempt>` and runs Codex as its child in `/sandbox/project`. When Codex exits, `jackin-start` writes `exited <attempt> <code>`, prints one line to the PTY, and waits for the next attempt ID.
-- `jackin-start` writes only `state`, and jackin writes only `start`. Each write is a temporary file and a rename. The attempt ID fences a stale request.
+- `jackin-start` writes only `state`, and jackin writes only `start`. Each write is a temporary file and a rename. The attempt ID is a positive integer that grows with each request since the last start of the sandbox. `jackin-start` ignores an ID that is not greater than the last one. Jackin writes `start` only when the state is `waiting` or `exited`, because a request written while Codex runs takes effect at its exit.
+- Before each attempt, `jackin-start` drops input queued on the PTY. After each exit, it resets the terminal modes. While no Codex runs, jackin sends no terminal replies to the replay queries.
 - `jackin-start` runs no hooks. Jackin runs them through exec (D11).
 - `jackin-start` traps `SIGINT`, `SIGTERM`, and `SIGHUP`, so a Ctrl-C while it waits does not end it. It exits only when the launch ID or the arguments are invalid, before the first attempt.
 - The state files are writable by the agent. Jackin treats them as advisory. Jackin never decides on export or purge from them.
@@ -432,7 +433,7 @@ Jackin has the same screens, the same flows, the same key bindings, and the same
 2. Ensure that the OpenShell provider profile `codex` and the OpenShell provider for the account exist (D10).
 3. Find the sandbox with the launch ID label. More than one is an error. If none exists, create the sandbox with the role image, the merged policy, the OpenShell provider, the labels, the environment, a kept PTY, and `jackin-start` as the main process.
 4. Wait until the sandbox is `Ready`, because the create call returns first. Start a `Stopped` sandbox and wait. A `Completed` or `Error` sandbox stops the launch with its phase and exit code. Jackin never deletes it here.
-5. Write the Codex `auth.json` (D10) and, when the capability is enabled, the Docker client files (D24), through exec stdin.
+5. Write the Codex `auth.json` (D10), the Codex `config.toml` that marks `/sandbox/project` as trusted, and, when the capability is enabled, the Docker client files (D24), through exec stdin. Without the trust entry, Codex opens a trust question instead of its prompt.
 6. Upload the project (D08), unless the marker `/sandbox/.jackin/uploaded-<launch-id>` exists. Write the marker last.
 7. Wait until `/sandbox/.jackin/run/state` exists, with a timeout. If it says `running`, go to step 10.
 8. Run `setup`, unless `/sandbox/.jackin/setup-done-<launch-id>` exists. Run `preflight`. A failure stops the launch with the hook error (ADR-009). The sandbox stays `Ready`.
