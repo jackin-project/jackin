@@ -30,6 +30,20 @@ fn assert_no_leak(secret: &str, output: &str) {
     }
 }
 
+fn assert_no_byte_leak(output: &str) {
+    let numbers: Vec<&str> = output
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .collect();
+    let bytes: Vec<String> = SENTINEL.bytes().map(|b| b.to_string()).collect();
+    for run in numbers.windows(3) {
+        assert!(
+            !bytes.windows(3).any(|known| known == run),
+            "leaked bytes {run:?} in {output:?}"
+        );
+    }
+}
+
 #[test]
 fn secret_debug_output_hides_the_value_wherever_it_is_nested() {
     let secret = Secret::new(SENTINEL.to_owned());
@@ -63,6 +77,7 @@ fn secret_debug_output_hides_the_value_wherever_it_is_nested() {
         format!("{spec:#?}"),
     ] {
         assert_no_leak(SENTINEL, &rendered);
+        assert_no_byte_leak(&rendered);
     }
     assert_eq!(secret.expose(), SENTINEL);
     assert_eq!(bytes.expose(), SENTINEL.as_bytes());
@@ -101,6 +116,10 @@ fn redactor_masks_every_occurrence_of_every_secret() {
             format!("Bearer {mask}.suffix"),
         ),
         (format!("pre-{a_text}-post"), format!("pre-{mask}-post")),
+        (
+            format!("\u{e9} {a_text} \u{20ac}"),
+            format!("\u{e9} {mask} \u{20ac}"),
+        ),
         (format!("x {b_text} y"), format!("x {mask} y")),
         (format!("key:\n{c_text}\nend"), format!("key:\n{mask}\nend")),
         (
