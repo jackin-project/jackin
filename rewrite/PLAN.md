@@ -288,7 +288,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 - **Scope:** `crates/jackin-core/src/{ids,agent,redact}.rs`.
 - **Steps:** Build the branded ids, `Agent::Codex`, the `AgentSpec` row (D04, D06, D10, D12), the `ProcessRunner` trait, and the redaction of secret values. Take the Codex row values from `rewrite/drafts/agentspec-codex.toml` when P7.1 has written it.
 - **Proof:** G-FAST passes. Tests show that the code rejects each invalid id with its reason. Tests show that a secret value never appears in a rendered error.
-- [ ] P3.1 done
+- [x] P3.1 done — fd42bbde, G-FAST exit 0 (`65 tests run: 65 passed`); test-reviewer KEEP (47 tests, 285 mutants) plus a reviewer-proven hardening patch
 
 ### P3.2 Build the config schema and the role manifest
 
