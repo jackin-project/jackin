@@ -154,7 +154,7 @@ The program depends on facts that only a real run can prove. Prove them before y
   8. Stop the sandbox and start it again. Show that the uploaded files remain.
   9. Delete the sandboxes.
 - **Proof:** `evidence/P0.2-gateway.md` shows the raw commands and outputs. A trail row names the chosen driver.
-- [ ] P0.2 done
+- [x] P0.2 done — 43bf7590, evidence/P0.2-gateway.md (vm driver, steps 1-9 PASS; D08 .git and D06 user findings feed P0.4)
 
 ### P0.3 Run Codex in a sandbox with an OpenShell provider
 
