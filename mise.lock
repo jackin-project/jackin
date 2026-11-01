@@ -915,7 +915,7 @@ url_api = "https://api.github.com/repos/peripheryapp/periphery/releases/assets/4
 version = "6.3.0"
 backend = "pipx:reuse"
 specifiers = ["6.3.0"]
-uv = { path = ".mise/locks/pipx-reuse/6.3.0~068c1fb0", digest = "sha256:71fd76b09e8e77e843b177bff94c094678934960da686200ca86f3dbd9d66bba" }
+uv = { path = ".mise/locks/pipx-reuse/6.3.0~068c1fb0", digest = "sha256:5a10ec22a8804e7a19ef19cbf366f644545b379d3ade2ba52de209e7456a134e" }
 
 [tools."pipx:reuse".options]
 extras = "charset-normalizer"
