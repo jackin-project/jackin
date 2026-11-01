@@ -259,9 +259,10 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
   5. `shear`
   6. the comment step (D17)
   7. the layer step (D14)
-  8. the container step (D01). It fails if code runs `podman` or `container`, runs `docker` outside `jackin-image`, or runs a `docker` subcommand that D01 does not permit.
-  9. `reuse lint`
-  10. the docs build. `--fast` and `--no-docs` skip this step.
+  8. the pins step: `Cargo.toml` `rust-version`, `rust-toolchain.toml`, the `mise.toml` `rust` tool, and each `mbx +<version>` in `mise.toml` tasks agree
+  9. the container step (D01). It fails if code runs `podman` or `container`, runs `docker` outside `jackin-image`, or runs a `docker` subcommand that D01 does not permit.
+  10. `reuse lint`
+  11. the docs build. `--fast` and `--no-docs` skip this step. `--only <step>[,<step>]` runs only the named steps in this order.
 
   `xtask e2e` is a stub that P8.1 fills.
 - **Proof:** G-FAST passes. For each of steps 6, 7, and 8, `test-reviewer` records a red run and a green run. Add a forbidden comment, a forbidden dependency, and a forbidden `docker run` call. Verify that each step fails.
