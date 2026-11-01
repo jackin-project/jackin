@@ -41,7 +41,9 @@ deny = [
     { crate = "dockworker", reason = "Docker runs only through docker buildx in jackin-image; no Docker client crate (D01)." },
     { crate = "rs-docker", reason = "Docker runs only through docker buildx in jackin-image; no Docker client crate (D01)." },
     { crate = "docker-sdk", reason = "Docker runs only through docker buildx in jackin-image; no Docker client crate (D01)." },
-    { crate = "dockerfile-parser-rs", reason = "Docker runs only through docker buildx in jackin-image; no Docker client crate (D01)." },
+    { crate = "bollard-next", reason = "Docker runs only through docker buildx in jackin-image; no Docker client crate (D01)." },
+    { crate = "docker-wrapper", reason = "Docker runs only through docker buildx in jackin-image; no Docker client crate (D01)." },
+    { crate = "podman-api", reason = "Jackin never runs Podman, and Docker runs only through docker buildx in jackin-image; no container client crate (D01)." },
 ]
 skip = [
     { crate = "block-buffer@0.10.4", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
