@@ -533,7 +533,7 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
   3. Add the external message input, the terminal pane block that renders a session from a byte stream (D27), and the `clap` feature (D27, D28).
   4. Run the full baseline suite again.
 - **Proof:** the full baseline suite passes. `git diff --stat -- tests/functional/baselines` prints nothing. Record both outputs in `jackin/rewrite/evidence/P9.1-baseline.md`.
-- [ ] P9.1 done
+- [x] P9.1 done — baseline 2565a0c, evidence/P9.1-baseline.md (93/93 before and after; baselines diff empty vs 95bbcbb and f7f5769)
 
 ### P9.2 Add the new jackin screens to the baseline
 
