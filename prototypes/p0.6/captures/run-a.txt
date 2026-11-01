@@ -1,0 +1,179 @@
+RUN a: sandbox=p06t-main terminal 120x30 (pane inner 58x27)
+--- screen: initial: left main process, right shell ---
+|┏ left main [attached #1 | 58x27 | rx 524B] ━━━━━━━━━━━━━━━┓┌ right shell [attached #1 | 58x27 | rx 28B] ──────────────┐
+|┃ main pid=366 pty=27x58                                   ┃│ubuntu@p06t-main:~$                                       │
+|┃typed:                                                    ┃│                                                          │
+|┃--------------------------------------------------------- ┃│                                                          │
+|┃tick 6                                                    ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────────────────────────────────────┘
+| ^W focus (left)  ^X detach/attach left  ^Q quit
+--- end ---
+CHECK both panes attach and render (left main banner, right bash prompt): PASS
+
+## Proof 1: keys reach the focused pane
+--- screen: after typing 'hello' with focus on the left pane ---
+|┏ left main [attached #1 | 58x27 | rx 664B] ━━━━━━━━━━━━━━━┓┌ right shell [attached #1 | 58x27 | rx 28B] ──────────────┐
+|┃ main pid=366 pty=27x58                                   ┃│ubuntu@p06t-main:~$                                       │
+|┃typed: hello                                              ┃│                                                          │
+|┃--------------------------------------------------------- ┃│                                                          │
+|┃tick 6                                                    ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+|┃                                                          ┃│                                                          │
+--- end ---
+CHECK 1a keys typed into the focused left pane reached the main process (typed: hello): PASS
+CHECK 1b the unfocused right pane did not receive them: PASS
+--- screen: Ctrl-W then 'stty size' in the right pane ---
+|┌ left main [attached #1 | 58x27 | rx 664B] ───────────────┐┏ right shell [attached #1 | 58x27 | rx 83B] ━━━━━━━━━━━━━━┓
+|│ main pid=366 pty=27x58                                   │┃ubuntu@p06t-main:~$ stty size                             ┃
+|│typed: hello                                              │┃27 58                                                     ┃
+|│--------------------------------------------------------- │┃ubuntu@p06t-main:~$                                       ┃
+|│tick 6                                                    │┃                                                          ┃
+|│                                                          │┃                                                          ┃
+|│                                                          │┃                                                          ┃
+|│                                                          │┃                                                          ┃
+|│                                                          │┃                                                          ┃
+|│                                                          │┃                                                          ┃
+|│                                                          │┃                                                          ┃
+|│                                                          │┃                                                          ┃
+--- end ---
+CHECK 1c Ctrl-W moved focus; keys typed into the right pane reached its shell (stty size = 27 58): PASS
+CHECK 1d the left pane did not receive the right pane's keys: PASS
+
+## Proof 2: terminal resize reaches the remote with the pane's inner size
+--- screen: after the terminal grew to 140x36 (pane inner 68x33) ---
+|┌ left main [attached #1 | 68x33 | rx 851B] ─────────────────────────┐┏ right shell [attached #1 | 68x33 | rx 163B] ━━━━━━━━━━━━━━━━━━━━━━━┓
+|│ main pid=366 pty=33x68                                             │┃ubuntu@p06t-main:~$ stty size                                       ┃
+|│typed: hello                                                        │┃27 58                                                               ┃
+|│------------------------------------------------------------------- │┃ubuntu@p06t-main:~$ stty size                                       ┃
+|│tick 6                                                              │┃33 68                                                               ┃
+|│                                                                    │┃ubuntu@p06t-main:~$                                                 ┃
+|│                                                                    │┃                                                                    ┃
+|│                                                                    │┃                                                                    ┃
+|│                                                                    │┃                                                                    ┃
+|│                                                                    │┃                                                                    ┃
+|│                                                                    │┃                                                                    ┃
+|│                                                                    │┃                                                                    ┃
+|│                                                                    │┃                                                                    ┃
+|│                                                                    │┃                                                                    ┃
+--- end ---
+CHECK 2a left main process saw SIGWINCH and the new PTY size (pty=33x68 in its header row): PASS
+CHECK 2b right shell reports stty size = 33 68: PASS
+CHECK 2c app sent window_change/Resize cols=68 rows=33 for both panes: PASS
+CHECK 2d a 6x3 terminal does not panic (app still running): PASS
+CHECK 2d2 the tiny size is not forwarded to the remote (floor 20x5): PASS
+--- screen: back at 140x36 after the 6x3 terminal ---
+|┌ left main [attached #1 | 68x33 | rx 875B] ─────────────────────────┐┏ right shell [attached #1 | 68x33 | rx 163B] ━━━━━━━━━━━━━━━━━━━━━━━┓
+|│ main pid=366 pty=33x68                                             │┃ubuntu@p06t-main:~$ stty size                                       ┃
+|│typed: hello                                                        │┃27 58                                                               ┃
+|│------------------------------------------------------------------- │┃ubuntu@p06t-main:~$ stty size                                       ┃
+|│tick 7                                                              │┃33 68                                                               ┃
+|│                                                                    │┃ubuntu@p06t-main:~$                                                 ┃
+--- end ---
+CHECK 2e after the tiny terminal the panes recover to 68x33: PASS
+
+## Proof 3: detach, reattach, replay
+--- screen: after Ctrl-X on the left pane (channel closed; the last screen stays) ---
+|┏ left main [detached | 68x33 | rx 971B] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌ right shell [attached #1 | 68x33 | rx 163B] ───────────────────────┐
+|┃ main pid=366 pty=33x68                                             ┃│ubuntu@p06t-main:~$ stty size                                       │
+|┃typed: helloabc                                                     ┃│27 58                                                               │
+|┃------------------------------------------------------------------- ┃│ubuntu@p06t-main:~$ stty size                                       │
+|┃tick 7                                                              ┃│33 68                                                               │
+|┃                                                                    ┃│ubuntu@p06t-main:~$                                                 │
+|┃                                                                    ┃│                                                                    │
+|┃                                                                    ┃│                                                                    │
+--- end ---
+CHECK 3a detach left the main process running (still detached, no exit): PASS
+--- screen: right after Ctrl-X reattach (fresh parser fed by the replay) ---
+|┏ left main [attached #2 | 68x33 | rx 1.1kB] ━━━━━━━━━━━━━━━━━━━━━━━━┓┌ right shell [attached #1 | 68x33 | rx 163B] ───────────────────────┐
+|┃ main pid=366 pty=33x68                                             ┃│ubuntu@p06t-main:~$ stty size                                       │
+|┃typed: helloabc                                                     ┃│27 58                                                               │
+|┃------------------------------------------------------------------- ┃│ubuntu@p06t-main:~$ stty size                                       │
+|┃tick 12                                                             ┃│33 68                                                               │
+|┃                                                                    ┃│ubuntu@p06t-main:~$                                                 │
+|┃                                                                    ┃│                                                                    │
+|┃                                                                    ┃│                                                                    │
+--- end ---
+--- screen: live ticks continue after the replay ---
+|┏ left main [attached #2 | 68x33 | rx 1.2kB] ━━━━━━━━━━━━━━━━━━━━━━━━┓┌ right shell [attached #1 | 68x33 | rx 163B] ───────────────────────┐
+|┃ main pid=366 pty=33x68                                             ┃│ubuntu@p06t-main:~$ stty size                                       │
+|┃typed: helloabc                                                     ┃│27 58                                                               │
+|┃------------------------------------------------------------------- ┃│ubuntu@p06t-main:~$ stty size                                       │
+|┃tick 15                                                             ┃│33 68                                                               │
+|┃                                                                    ┃│ubuntu@p06t-main:~$                                                 │
+|┃                                                                    ┃│                                                                    │
+|┃                                                                    ┃│                                                                    │
+--- end ---
+CHECK 3b replay re-rendered the header rows 1-3 that the main process painted once before the detach (it repaints them only on SIGWINCH): PASS
+CHECK 3c replay kept the typed state 'helloabc' typed before the detach: PASS
+CHECK 3d replayed screen equals the pre-detach screen on the unchanged rows (header, typed): PASS
+CHECK 3e tick counter continued past the detached period (ticks while detached were replayed or live): PASS
+left first chunk lines:
+  [+   0.01s] left first chunk 14 bytes, head=\x1b[?1049h\x1b[?25l
+  [+   7.24s] left first chunk 14 bytes, head=\x1b[?1049h\x1b[?25l
+
+## Proof 3b (plain (no resync, no nudge)): replay when the 1 MiB window starts mid escape sequence
+CHECK 3f flood 1 completed while attached: PASS
+--- screen: after the flood (several MB of in-place repaints) while attached ---
+|┏ left main [attached #2 | 68x33 | rx 6.65MB] ━━━━━━━━━━━━━━━━━━━━━━━┓┌ right shell [attached #1 | 68x33 | rx 163B] ───────────────────────┐
+|┃ main pid=366 pty=33x68                                             ┃│ubuntu@p06t-main:~$ stty size                                       │
+|┃typed:                                                              ┃│27 58                                                               │
+|┃------------------------------------------------------------------- ┃│ubuntu@p06t-main:~$ stty size                                       │
+|┃tick 15                                                             ┃│33 68                                                               │
+|┃flood done f=1500                                                   ┃│ubuntu@p06t-main:~$                                                 │
+|┃log f=1500 r=06 #############################################       ┃│                                                                    │
+|┃log f=1500 r=07 #############################################       ┃│                                                                    │
+|┃log f=1500 r=08 #############################################       ┃│                                                                    │
+|┃log f=1500 r=09 #############################################       ┃│                                                                    │
+--- end ---
+CHECK colors survive the parser and the widget (live pane after flood): row r is bold and indexed color r%7+1: PASS
+attempt 1: replay head = ###\x1b[36m###\x1b[37m###\x1b[31m###\x1b[K\x1b[32;1H\x1b[1;35mlog 
+CHECK 3f flood 2 completed while attached: PASS
+attempt 2: replay head = 7m###\x1b[31m###\x1b[32m###\x1b[33m###\x1b[34m###\x1b[35m###\x1b[3
+CHECK 3g the replay window starts mid escape sequence (head '7m###\\x1b[31') after 2 floods: PASS
+--- screen: replay after overflow, fresh parser (plain (no resync, no nudge)), 0.25 s after attach ---
+|┏ left main [attached #4 | 68x33 | rx 1.05MB] ━━━━━━━━━━━━━━━━━━━━━━━┓┌ right shell [attached #1 | 68x33 | rx 163B] ───────────────────────┐
+|┃7m########################                                          ┃│ubuntu@p06t-main:~$ stty size                                       │
+|┃                                                                    ┃│27 58                                                               │
+|┃                                                                    ┃│ubuntu@p06t-main:~$ stty size                                       │
+|┃tick 18                                                             ┃│33 68                                                               │
+|┃flood done f=1500                                                   ┃│ubuntu@p06t-main:~$                                                 │
+|┃log f=1500 r=06 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=07 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=08 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=09 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=10 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=11 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=12 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=13 ##########################################          ┃│                                                                    │
+--- end ---
+CHECK 3h replay after overflow shows the flood log rows: PASS
+CHECK colors survive the parser and the widget (replay after overflow, plain (no resync, no nudge)): row r is bold and indexed color r%7+1: PASS
+INFO row 1 of the pane = '7m########################'
+CHECK 3i plain: the cut fragment is painted as text on row 1 and the header rows painted before the window are lost: PASS
+CHECK 4 Ctrl-Q quits and the terminal is restored (alt screen left, cursor shown): PASS
+
+SUMMARY 24/24 checks passed

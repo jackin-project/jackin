@@ -1,0 +1,64 @@
+[+   0.00s] left attach #1 generation=1 pty=58x27 fresh parser
+[+   0.00s] right attach #1 generation=1 pty=58x27 fresh parser
+[+   0.01s] right attached
+[+   0.01s] left attached
+[+   0.01s] left first chunk 14 bytes, head=\x1b[?1049h\x1b[?25l
+[+   0.01s] right first chunk 8 bytes, head=\x1b[?2004h
+[+   0.03s] left key -> remote bytes h
+[+   0.06s] left key -> remote bytes e
+[+   0.10s] left key -> remote bytes l
+[+   0.13s] left key -> remote bytes l
+[+   0.16s] left key -> remote bytes o
+[+   0.20s] focus -> right
+[+   0.25s] right key -> remote bytes s
+[+   0.28s] right key -> remote bytes t
+[+   0.31s] right key -> remote bytes t
+[+   0.34s] right key -> remote bytes y
+[+   0.38s] right key -> remote bytes  
+[+   0.41s] right key -> remote bytes s
+[+   0.45s] right key -> remote bytes i
+[+   0.48s] right key -> remote bytes z
+[+   0.51s] right key -> remote bytes e
+[+   0.55s] right key -> remote bytes \r
+[+   0.58s] left resize inner 68x33 -> window_change/Resize cols=68 rows=33 (sent)
+[+   0.58s] right resize inner 68x33 -> window_change/Resize cols=68 rows=33 (sent)
+[+   0.63s] right key -> remote bytes s
+[+   0.66s] right key -> remote bytes t
+[+   0.70s] right key -> remote bytes t
+[+   0.73s] right key -> remote bytes y
+[+   0.76s] right key -> remote bytes  
+[+   0.80s] right key -> remote bytes s
+[+   0.83s] right key -> remote bytes i
+[+   0.87s] right key -> remote bytes z
+[+   0.91s] right key -> remote bytes e
+[+   0.94s] right key -> remote bytes \r
+[+   0.97s] left resize inner 1x0 below floor 20x5: remote keeps 68x33, widget truncates
+[+   1.17s] left resize inner 1x0 below floor 20x5: remote keeps 68x33, widget truncates
+[+   2.03s] focus -> left
+[+   2.08s] left key -> remote bytes a
+[+   2.11s] left key -> remote bytes b
+[+   2.14s] left key -> remote bytes c
+[+   2.18s] left detach: channel eof+close, 971 bytes received in this attachment
+[+   7.23s] left attach #2 generation=2 pty=68x33 fresh parser
+[+   7.24s] left attached
+[+   7.24s] left first chunk 14 bytes, head=\x1b[?1049h\x1b[?25l
+[+  10.23s] left key -> remote bytes f
+[+  10.26s] left key -> remote bytes l
+[+  10.30s] left key -> remote bytes o
+[+  10.33s] left key -> remote bytes o
+[+  10.36s] left key -> remote bytes d
+[+  10.39s] left key -> remote bytes \r
+[+  10.90s] left detach: channel eof+close, 6649415 bytes received in this attachment
+[+  12.45s] left attach #3 generation=3 pty=68x33 fresh parser
+[+  12.46s] left attached
+[+  12.55s] left first chunk 336 bytes, head=###\x1b[36m###\x1b[37m###\x1b[31m###\x1b[K\x1b[32;1H\x1b[1;35mlog 
+[+  12.76s] left key -> remote bytes f
+[+  12.80s] left key -> remote bytes l
+[+  12.83s] left key -> remote bytes o
+[+  12.86s] left key -> remote bytes o
+[+  12.90s] left key -> remote bytes d
+[+  12.93s] left key -> remote bytes \r
+[+  13.08s] left detach: channel eof+close, 1920144 bytes received in this attachment
+[+  14.63s] left attach #4 generation=4 pty=68x33 fresh parser
+[+  14.64s] left attached
+[+  14.72s] left first chunk 2257 bytes, head=7m###\x1b[31m###\x1b[32m###\x1b[33m###\x1b[34m###\x1b[35m###\x1b[3

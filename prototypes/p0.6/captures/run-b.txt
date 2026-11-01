@@ -1,0 +1,51 @@
+RUN b: sandbox=p06t-main terminal 140x36 flags=['--resync']
+
+## Proof 3b (resync): replay when the 1 MiB window starts mid escape sequence
+CHECK 3f flood 1 completed while attached: PASS
+--- screen: after the flood (several MB of in-place repaints) while attached ---
+|┏ left main [attached #1 | 68x33 | rx 7.00MB] ━━━━━━━━━━━━━━━━━━━━━━━┓┌ right shell [attached #1 | 68x33 | rx 28B] ────────────────────────┐
+|┃                                                                    ┃│ubuntu@p06t-main:~$                                                 │
+|┃typed:                                                              ┃│                                                                    │
+|┃                                                                    ┃│                                                                    │
+|┃tick 19                                                             ┃│                                                                    │
+|┃flood done f=1500                                                   ┃│                                                                    │
+|┃log f=1500 r=06 #######################################             ┃│                                                                    │
+|┃log f=1500 r=07 #######################################             ┃│                                                                    │
+|┃log f=1500 r=08 #######################################             ┃│                                                                    │
+|┃log f=1500 r=09 #######################################             ┃│                                                                    │
+--- end ---
+CHECK colors survive the parser and the widget (live pane after flood): row r is bold and indexed color r%7+1: PASS
+attempt 1: replay head = \x1b[5;1H\x1b[1;36mlog f=1237 r=05 \x1b[31m###\x1b[32m###\x1b[3
+CHECK 3f flood 2 completed while attached: PASS
+attempt 2: replay head = \x1b[5;1H\x1b[1;36mlog f=1221 r=05 \x1b[31m###\x1b[32m###\x1b[3
+CHECK 3f flood 3 completed while attached: PASS
+attempt 3: replay head = \x1b[5;1H\x1b[1;36mlog f=1202 r=05 \x1b[31m###\x1b[32m###\x1b[3
+CHECK 3f flood 4 completed while attached: PASS
+attempt 4: replay head = ##\x1b[37m###\x1b[31m###\x1b[32m###\x1b[33m###\x1b[34m###\x1b[35m#
+CHECK 3f flood 5 completed while attached: PASS
+attempt 5: replay head = m###\x1b[36m###\x1b[37m###\x1b[31m###\x1b[K\x1b[32;1H\x1b[1;35mlog
+CHECK 3f flood 6 completed while attached: PASS
+attempt 6: replay head = 32m###\x1b[33m###\x1b[34m###\x1b[35m###\x1b[36m###\x1b[37m###\x1b[
+CHECK 3g the replay window starts mid escape sequence (head '32m###\\x1b[3') after 6 floods: PASS
+--- screen: replay after overflow, fresh parser (resync), 0.25 s after attach ---
+|┏ left main [attached #7 | 68x33 | rx 1.05MB] ━━━━━━━━━━━━━━━━━━━━━━━┓┌ right shell [attached #1 | 68x33 | rx 28B] ────────────────────────┐
+|┃                                                                    ┃│ubuntu@p06t-main:~$                                                 │
+|┃                                                                    ┃│                                                                    │
+|┃                                                                    ┃│                                                                    │
+|┃tick 27                                                             ┃│                                                                    │
+|┃flood done f=1500                                                   ┃│                                                                    │
+|┃log f=1500 r=06 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=07 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=08 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=09 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=10 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=11 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=12 ##########################################          ┃│                                                                    │
+|┃log f=1500 r=13 ##########################################          ┃│                                                                    │
+--- end ---
+CHECK 3h replay after overflow shows the flood log rows: PASS
+CHECK colors survive the parser and the widget (replay after overflow, resync): row r is bold and indexed color r%7+1: PASS
+[+  13.65s] left resync: dropped 105 leading bytes before the first CR/LF/CUP
+CHECK 3i resync: no fragment of the cut sequence is painted (row 1 empty): PASS
+
+SUMMARY 11/11 checks passed

@@ -1,0 +1,74 @@
+[+   0.00s] left attach #1 generation=1 pty=68x33 fresh parser
+[+   0.00s] right attach #1 generation=1 pty=68x33 fresh parser
+[+   0.01s] right attached
+[+   0.01s] left attached
+[+   0.10s] left first chunk 2257 bytes, head=7m###\x1b[31m###\x1b[32m###\x1b[33m###\x1b[34m###\x1b[35m###\x1b[3
+[+   0.10s] left resync: dropped 64 leading bytes before the first CR/LF/CUP
+[+   0.10s] right first chunk 8 bytes, head=\x1b[?2004h
+[+   0.10s] right resync: dropped 0 leading bytes before the first CR/LF/CUP
+[+   0.14s] left key -> remote bytes f
+[+   0.17s] left key -> remote bytes l
+[+   0.21s] left key -> remote bytes o
+[+   0.24s] left key -> remote bytes o
+[+   0.27s] left key -> remote bytes d
+[+   0.31s] left key -> remote bytes \r
+[+   0.82s] left detach: channel eof+close, 6998306 bytes received in this attachment
+[+   2.38s] left attach #2 generation=2 pty=68x33 fresh parser
+[+   2.38s] left attached
+[+   2.47s] left first chunk 3968 bytes, head=\x1b[5;1H\x1b[1;36mlog f=1237 r=05 \x1b[31m###\x1b[32m###\x1b[3
+[+   2.47s] left resync: dropped 0 leading bytes before the first CR/LF/CUP
+[+   2.69s] left key -> remote bytes f
+[+   2.72s] left key -> remote bytes l
+[+   2.75s] left key -> remote bytes o
+[+   2.78s] left key -> remote bytes o
+[+   2.82s] left key -> remote bytes d
+[+   2.85s] left key -> remote bytes \r
+[+   2.98s] left detach: channel eof+close, 1851048 bytes received in this attachment
+[+   4.49s] left attach #3 generation=3 pty=68x33 fresh parser
+[+   4.50s] left attached
+[+   4.58s] left first chunk 3072 bytes, head=\x1b[5;1H\x1b[1;36mlog f=1221 r=05 \x1b[31m###\x1b[32m###\x1b[3
+[+   4.58s] left resync: dropped 0 leading bytes before the first CR/LF/CUP
+[+   4.80s] left key -> remote bytes f
+[+   4.83s] left key -> remote bytes l
+[+   4.87s] left key -> remote bytes o
+[+   4.90s] left key -> remote bytes o
+[+   4.93s] left key -> remote bytes d
+[+   4.97s] left key -> remote bytes \r
+[+   5.13s] left detach: channel eof+close, 1932823 bytes received in this attachment
+[+   6.67s] left attach #4 generation=4 pty=68x33 fresh parser
+[+   6.67s] left attached
+[+   6.75s] left first chunk 3504 bytes, head=\x1b[5;1H\x1b[1;36mlog f=1202 r=05 \x1b[31m###\x1b[32m###\x1b[3
+[+   6.75s] left resync: dropped 0 leading bytes before the first CR/LF/CUP
+[+   6.97s] left key -> remote bytes f
+[+   7.01s] left key -> remote bytes l
+[+   7.04s] left key -> remote bytes o
+[+   7.08s] left key -> remote bytes o
+[+   7.11s] left key -> remote bytes d
+[+   7.14s] left key -> remote bytes \r
+[+   7.31s] left detach: channel eof+close, 2050687 bytes received in this attachment
+[+   8.85s] left attach #5 generation=5 pty=68x33 fresh parser
+[+   8.86s] left attached
+[+   8.93s] left first chunk 568 bytes, head=##\x1b[37m###\x1b[31m###\x1b[32m###\x1b[33m###\x1b[34m###\x1b[35m#
+[+   8.93s] left resync: dropped 85 leading bytes before the first CR/LF/CUP
+[+   9.16s] left key -> remote bytes f
+[+   9.19s] left key -> remote bytes l
+[+   9.23s] left key -> remote bytes o
+[+   9.26s] left key -> remote bytes o
+[+   9.29s] left key -> remote bytes d
+[+   9.33s] left key -> remote bytes \r
+[+   9.48s] left detach: channel eof+close, 1985119 bytes received in this attachment
+[+  11.02s] left attach #6 generation=6 pty=68x33 fresh parser
+[+  11.03s] left attached
+[+  11.11s] left first chunk 337 bytes, head=m###\x1b[36m###\x1b[37m###\x1b[31m###\x1b[K\x1b[32;1H\x1b[1;35mlog
+[+  11.11s] left resync: dropped 31 leading bytes before the first CR/LF/CUP
+[+  11.33s] left key -> remote bytes f
+[+  11.36s] left key -> remote bytes l
+[+  11.39s] left key -> remote bytes o
+[+  11.42s] left key -> remote bytes o
+[+  11.46s] left key -> remote bytes d
+[+  11.49s] left key -> remote bytes \r
+[+  12.01s] left detach: channel eof+close, 7346561 bytes received in this attachment
+[+  13.56s] left attach #7 generation=7 pty=68x33 fresh parser
+[+  13.57s] left attached
+[+  13.65s] left first chunk 105 bytes, head=32m###\x1b[33m###\x1b[34m###\x1b[35m###\x1b[36m###\x1b[37m###\x1b[
+[+  13.65s] left resync: dropped 105 leading bytes before the first CR/LF/CUP
