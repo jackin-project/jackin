@@ -19,10 +19,7 @@ export const publicPageUrls = source
   .getPages()
   .map((page) => page.url)
   .filter(
-    (url) =>
-      !url.startsWith('/reference') &&
-      !url.startsWith('/roadmap') &&
-      !url.startsWith('/research'),
+    (url) => !url.startsWith('/reference'),
   )
 
 const serializedPageTreeJson = source

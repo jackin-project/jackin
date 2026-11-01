@@ -1,5 +1,0 @@
-{
-  "title": "Live operations",
-  "defaultOpen": false,
-  "pages": ["agent-runtime-status", "launch-progress-tui", "console-agent-session-control", "session-keep-and-resume", "console-resource-panel", "agent-tag-protocol", "github-link-tracking", "custom-operator-tools"]
-}

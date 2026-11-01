@@ -1,5 +1,0 @@
-  Bubble Tea cosmetic redraw output
-  cursor movement sequences
-  status bar update — no affordances
-  Previous task output visible here
-  No active working or blocked indicators

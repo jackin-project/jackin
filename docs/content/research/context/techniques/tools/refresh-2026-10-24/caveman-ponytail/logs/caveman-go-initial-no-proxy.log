@@ -1,8 +1,0 @@
-[Curated diagnostic excerpts. Complete original log hash and byte count in execution-manifest.json.]
-FAIL	github.com/JuliusBrussee/caveman/engine [setup failed]
-FAIL	github.com/JuliusBrussee/caveman/engine/ccr [setup failed]
-FAIL	github.com/JuliusBrussee/caveman/engine/tokens [setup failed]
-FAIL	github.com/JuliusBrussee/caveman/engine/pixel [setup failed]
-FAIL	github.com/JuliusBrussee/caveman/proxy/internal/config [setup failed]
-FAIL	github.com/JuliusBrussee/caveman/mcp [setup failed]
-FAIL

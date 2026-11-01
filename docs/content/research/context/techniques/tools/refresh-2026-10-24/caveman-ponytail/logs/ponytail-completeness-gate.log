@@ -1,6 +1,0 @@
-offline gate -- well-ordered (expect ok):
-ok cache: complete(3) > stub(0)
-offline gate -- stub out-scores complete (expect XX):
-XX cache: did not rank complete above stub
-
-completeness gate selftest (offline): valid

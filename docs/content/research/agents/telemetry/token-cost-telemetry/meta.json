@@ -1,9 +1,0 @@
-{
-  "title": "Usage-limit telemetry and attribution",
-  "defaultOpen": false,
-  "pages": [
-    "index",
-    "01-account-limit-model",
-    "02-sources-and-attribution"
-  ]
-}

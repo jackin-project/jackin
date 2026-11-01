@@ -1,4 +1,0 @@
-
-  permission required
-
-  dismiss  enter  select

@@ -1,9 +1,0 @@
-parent_config: ../../.swiftlint.yml
-# Owner: native desktop presentation maintainers.
-# Deletion condition: remove each size-rule exception after its owning component is split under root limits.
-disabled_rules:
-  - cyclomatic_complexity
-  - file_length
-  - function_body_length
-  - function_parameter_count
-  - type_body_length

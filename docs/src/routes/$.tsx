@@ -11,7 +11,7 @@ import { staticFunctionMiddleware } from '@tanstack/start-static-server-function
 import browserCollections from 'collections/browser'
 import { useFumadocsLoader } from 'fumadocs-core/source/client'
 import { DocsLayout } from 'fumadocs-ui/layouts/docs'
-import { Layers, Microscope, Route as RoadmapIcon, SquareTerminal } from 'lucide-react'
+import { Layers, SquareTerminal } from 'lucide-react'
 import {
   DocsBody,
   DocsDescription,
@@ -148,18 +148,6 @@ function Page() {
             description: 'Internals and developer reference.',
             url: '/reference',
             icon: <Layers />,
-          },
-          {
-            title: 'Roadmap',
-            description: 'Planned, in-progress, and brainstormed work.',
-            url: '/roadmap',
-            icon: <RoadmapIcon />,
-          },
-          {
-            title: 'Research',
-            description: 'Evidence, comparisons, and design rationale.',
-            url: '/research',
-            icon: <Microscope />,
           },
         ],
         footer: (
