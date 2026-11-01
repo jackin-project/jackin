@@ -110,12 +110,23 @@ fn forbidden_subcommand(tokens: &[Token], index: usize) -> Option<String> {
 }
 
 fn leading_args(tokens: &[Token], index: usize) -> Option<Vec<String>> {
-    if index < 2 || !tokens[index - 1].is_punct(':') || !tokens[index - 2].is_ident("program") {
+    let field = path_start(tokens, index);
+    if field < 2 || !tokens[field - 1].is_punct(':') || !tokens[field - 2].is_ident("program") {
         return None;
     }
     let open = enclosing_brace(tokens, index)?;
     let start = args_value(tokens, open)?;
     Some(literal_elements(tokens, start))
+}
+
+fn path_start(tokens: &[Token], mut index: usize) -> usize {
+    while index >= 2 && tokens[index - 1].is_punct(':') && tokens[index - 2].is_punct(':') {
+        index -= 2;
+        if index >= 1 && tokens[index - 1].ident().is_some() {
+            index -= 1;
+        }
+    }
+    index
 }
 
 fn enclosing_brace(tokens: &[Token], index: usize) -> Option<usize> {

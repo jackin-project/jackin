@@ -201,16 +201,6 @@ fn shell_comments(text: &str) -> Vec<Found> {
                     }
                 }
             }
-            '$' => {
-                content = true;
-                word_start = false;
-                cursor.bump();
-                if cursor.peek(0) == Some('{') && cursor.peek(1) == Some('#') {
-                    cursor.skip(2);
-                } else if cursor.peek(0) == Some('#') {
-                    cursor.bump();
-                }
-            }
             c if c.is_whitespace() || matches!(c, ';' | '&' | '|' | '(' | ')') => {
                 if !c.is_whitespace() {
                     content = true;

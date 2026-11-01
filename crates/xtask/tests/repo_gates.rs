@@ -271,7 +271,7 @@ mod comments {
     #[test]
     fn rust_header_and_string_contents_are_not_comments() -> TestResult {
         let source = format!(
-            "{HEADER}\nfn f<'a>(x: &'a str) {{\n    let a = \"// x\";\n    let b = \"/* x */\";\n    let c = \"/// x\";\n    let d = r#\"// raw \"q\" /* \"#;\n    let e = b\"//\";\n    let f = \"\\\" // still string\";\n    let g = '\"';\n    let h = \"a // b\";\n    let i = '/';\n}}\n"
+            "{HEADER}\nfn f<'a>(x: &'a str) {{\n    let a = \"// x\";\n    let b = \"/* x */\";\n    let c = \"/// x\";\n    let d = r#\"// raw \"q /* \"#;\n    let e = b\"//\";\n    let f = \"\\\" // still string\";\n    let g = '\"';\n    let h = \"a // b\";\n    let i = '/';\n}}\n"
         );
         let fixture = Fixture::new(&bare(&["jackin-core"]))?;
         fixture.write("crates/jackin-core/src/lib.rs", &source)?;
@@ -283,7 +283,7 @@ mod comments {
     fn every_rust_comment_form_is_reported_at_its_line() -> TestResult {
         let late = ["// SPDX-License", "-Identifier: MIT"].concat();
         let source = format!(
-            "{HEADER}\n//! inner\nfn f<'a>() {{ // after lifetime\n    let c = '\"'; // after char quote\n    /* one-line */\n    /* start\n       middle\n       end */\n    /* outer /* nested */ tail */\n    /** doc block */\n    /// doc line\n    // plain\n}}\n{late}\n"
+            "{HEADER}\n//! inner\nfn f<'a>() {{ // after lifetime\n    let c = '\"'; // after char quote\n    /* one-line */\n    /* start\n       middle\n       end */\n    /* outer /* nested */ tail\n       // inside outer */\n    /** doc block */\n    /// doc line\n    // plain\n}}\n{late}\n"
         );
         let fixture = Fixture::new(&bare(&["jackin-core"]))?;
         fixture.write("crates/jackin-core/src/lib.rs", &source)?;
@@ -583,7 +583,7 @@ mod containers {
 
     #[test]
     fn docker_subcommands_outside_the_permitted_list_are_reported() -> TestResult {
-        let engine = "fn bad() {\n    let multi = ProcessSpec { program: Program::Docker, args: vec![\n        \"run\".to_owned(),\n    ] };\n    let exec = ProcessSpec {\n        args: vec![\"exec\".to_owned()],\n        program: Program::Docker,\n    };\n    let create = ProcessSpec { program: Program::Docker, args: vec![\"create\".to_owned()] };\n    let start = ProcessSpec { program: Program::Docker, args: vec![\"start\".to_owned()] };\n    let pull = ProcessSpec { program: Program::Docker, args: vec![\"pull\".to_owned()] };\n    let bake = ProcessSpec { program: Program::Docker, args: vec![\"buildx\".to_owned(), \"bake\".to_owned()] };\n    let rm = ProcessSpec { program: Program::Docker, args: vec![\"buildx\".to_owned(), \"rm\".to_owned()] };\n    let image_rm = ProcessSpec { program: Program::Docker, args: vec![\"image\".to_owned(), \"rm\".to_owned()] };\n}\n";
+        let engine = "fn bad() {\n    let multi = ProcessSpec { program: Program::Docker, args: vec![\n        \"run\".to_owned(),\n    ] };\n    let exec = ProcessSpec {\n        args: vec![\"exec\".to_owned()],\n        program: Program::Docker,\n    };\n    let create = ProcessSpec { program: Program::Docker, args: vec![\"create\".to_owned()] };\n    let start = ProcessSpec { program: Program::Docker, args: vec![\"start\".to_owned()] };\n    let pull = ProcessSpec { program: Program::Docker, args: vec![\"pull\".to_owned()] };\n    let bake = ProcessSpec { program: jackin_core::Program::Docker, args: vec![\"buildx\".to_owned(), \"bake\".to_owned()] };\n    let rm = ProcessSpec { program: Program::Docker, args: vec![\"buildx\".to_owned(), \"rm\".to_owned()] };\n    let image_rm = ProcessSpec { program: Program::Docker, args: vec![\"image\".to_owned(), \"rm\".to_owned()] };\n}\n";
         let violations = run(&[("crates/jackin-image/src/engine.rs", engine)])?;
         let tags = [
             "let multi",
