@@ -277,7 +277,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
   3. Change `.velnor/config.toml` for the eight crates. Run `velnor-actions generate`. Never edit `.github/workflows/` by hand.
   4. If Velnor cannot express a need, write the need in `blockers/P2.4-velnor.md` for the upstream `tailrocks/velnor-new`.
 - **Proof:** `hk check --all` passes. `velnor-actions generate` leaves no diff on a second run.
-- [ ] P2.4 done
+- [x] P2.4 done — 431279fa, `hk check --all` exit 0; `velnor-actions generate` 0.1.71 leaves no diff on a second run; blockers/P2.4-velnor.md (reuse in CI)
 
 ## Phase P3. Build jackin-core
 
