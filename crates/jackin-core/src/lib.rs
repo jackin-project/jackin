@@ -17,6 +17,7 @@ mod platform;
 mod provider;
 mod secret;
 mod supervisor;
+mod tomlkit;
 mod views;
 mod wait;
 

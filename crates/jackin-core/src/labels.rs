@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::agent::Agent;
@@ -19,7 +19,7 @@ pub struct LabelValue(String);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Labels(BTreeMap<LabelKey, LabelValue>);
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlannedLabels {
     pub workspace: WorkspaceName,
     pub role: RoleName,
@@ -28,7 +28,7 @@ pub struct PlannedLabels {
     pub launch: LaunchId,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SandboxLabels {
     pub planned: PlannedLabels,
     pub image: ImageLabel,

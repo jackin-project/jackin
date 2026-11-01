@@ -1,0 +1,458 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::io::ErrorKind;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use async_trait::async_trait;
+use jackin_core::{
+    DirEntry, EnvName, EnvSpec, FileKind, FileLock, FileMode, FileSystem, FsError, HookKind,
+    HostPath, ManifestError, RepoPath, RoleManifest, StdFileSystem,
+};
+
+type Fallible<T> = Result<T, Box<dyn std::error::Error>>;
+type TestResult = Fallible<()>;
+
+const FULL: &str = r#"schema = 1
+
+[role]
+name = "sentinel"
+dockerfile = "Dockerfile"
+policy = "policy.yaml"
+
+[codex]
+model = "gpt-5.1-codex"
+
+[docker]
+enabled = false
+
+[hooks]
+setup = "hooks/setup.sh"
+preflight = "hooks/preflight.sh"
+
+[env.EXAMPLE_NAME]
+default = "value"
+prompt = "Text for the operator"
+"#;
+
+const MIN: &str = "schema = 1\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n";
+
+fn label(error: &ManifestError) -> String {
+    match error {
+        ManifestError::Syntax { line, .. } => format!("syntax@{line}"),
+        ManifestError::UnknownField { key } => format!("unknown:{key}"),
+        ManifestError::MissingField { key } => format!("missing:{key}"),
+        ManifestError::InvalidValue { key, .. } => format!("invalid:{key}"),
+        ManifestError::UnsupportedSchema { found } => format!("schema:{found}"),
+        ManifestError::ReservedEnvName(name) => format!("reserved:{name}"),
+        ManifestError::Fs(_) => "fs".to_owned(),
+    }
+}
+
+fn outcome(text: &str) -> String {
+    match RoleManifest::parse(text) {
+        Ok(_) => "ok".to_owned(),
+        Err(error) => label(&error),
+    }
+}
+
+fn model(text: &str) -> Fallible<toml::Table> {
+    Ok(text.parse::<toml::Table>()?)
+}
+
+fn env_name(name: &str) -> Fallible<EnvName> {
+    Ok(EnvName::parse(name)?)
+}
+
+#[test]
+fn manifest_parses_the_d11_example() -> TestResult {
+    let manifest = RoleManifest::parse(FULL)?;
+    assert_eq!(manifest.role.name.as_str(), "sentinel");
+    assert_eq!(manifest.role.dockerfile.as_str(), "Dockerfile");
+    assert_eq!(manifest.role.policy.as_str(), "policy.yaml");
+    assert_eq!(
+        manifest.codex.model.as_ref().map(ToString::to_string),
+        Some("gpt-5.1-codex".to_owned())
+    );
+    assert!(!manifest.docker.enabled);
+    assert_eq!(
+        manifest.hook(HookKind::Setup).map(RepoPath::as_str),
+        Some("hooks/setup.sh")
+    );
+    assert_eq!(
+        manifest.hook(HookKind::Preflight).map(RepoPath::as_str),
+        Some("hooks/preflight.sh")
+    );
+    assert_eq!(manifest.env.len(), 1);
+    let spec = manifest.env.get(&env_name("EXAMPLE_NAME")?).ok_or("env")?;
+    assert_eq!(spec.default.as_deref(), Some("value"));
+    assert_eq!(spec.prompt.as_deref(), Some("Text for the operator"));
+    Ok(())
+}
+
+#[test]
+fn manifest_render_round_trips_and_writes_the_documented_keys() -> TestResult {
+    let manifest = RoleManifest::parse(FULL)?;
+    let rendered = manifest.render();
+    assert_eq!(RoleManifest::parse(&rendered)?, manifest);
+    assert_eq!(RoleManifest::parse(&rendered)?.render(), rendered);
+    assert_eq!(model(&rendered)?, model(FULL)?);
+    let min = RoleManifest::parse(MIN)?;
+    assert_eq!(RoleManifest::parse(&min.render())?, min);
+    Ok(())
+}
+
+#[test]
+fn manifest_render_escapes_arbitrary_env_text() -> TestResult {
+    let samples = [
+        "",
+        "plain",
+        "a\"b",
+        "a\\b",
+        "line1\nline2",
+        "a\r\nb",
+        "tab\there",
+        "\u{1}",
+        "é€😀",
+        "'single'",
+        "'''",
+        "\"\"\"",
+        "# not a comment",
+        "[table]",
+        "key = \"v\"",
+        " padded ",
+    ];
+    for sample in samples {
+        let mut manifest = RoleManifest::parse(MIN)?;
+        manifest.env.insert(
+            env_name("X")?,
+            EnvSpec {
+                default: Some(sample.to_owned()),
+                prompt: Some(sample.to_owned()),
+            },
+        );
+        let rendered = manifest.render();
+        assert_eq!(RoleManifest::parse(&rendered)?, manifest, "{sample:?}");
+        let table = model(&rendered)?;
+        let entry = table
+            .get("env")
+            .and_then(|env| env.get("X"))
+            .ok_or("env.X")?;
+        assert_eq!(entry.get("default").and_then(|v| v.as_str()), Some(sample));
+        assert_eq!(entry.get("prompt").and_then(|v| v.as_str()), Some(sample));
+    }
+    Ok(())
+}
+
+#[test]
+fn manifest_rejects_an_unknown_field_at_every_level_naming_its_path() -> TestResult {
+    let cases = [
+        ("root", "", "extra = 1", "extra", true),
+        ("role", "", "nmae = \"x\"", "role.nmae", false),
+        ("codex", "[codex]\n", "modle = \"x\"", "codex.modle", false),
+        (
+            "docker",
+            "[docker]\n",
+            "enable = true",
+            "docker.enable",
+            false,
+        ),
+        (
+            "hooks",
+            "[hooks]\n",
+            "setpu = \"a.sh\"",
+            "hooks.setpu",
+            false,
+        ),
+        (
+            "env",
+            "[env.FOO]\n",
+            "defualt = \"x\"",
+            "env.FOO.defualt",
+            false,
+        ),
+        (
+            "env description",
+            "[env.FOO]\ndefault = \"d\"\nprompt = \"p\"\n",
+            "description = \"c\"",
+            "env.FOO.description",
+            false,
+        ),
+        ("claude", "", "[claude]\nmodel = \"x\"", "claude", false),
+    ];
+    for (name, context, injected, key, first) in cases {
+        let (control, text) = if first {
+            (MIN.to_owned(), format!("{injected}\n{MIN}"))
+        } else {
+            let base = format!("{MIN}{context}");
+            (base.clone(), format!("{base}{injected}\n"))
+        };
+        assert_eq!(outcome(&control), "ok", "control {name}");
+        assert_eq!(outcome(&text), format!("unknown:{key}"), "{name}");
+        let shown = RoleManifest::parse(&text).err().ok_or(name)?.to_string();
+        assert!(shown.contains(key), "{name}: {shown}");
+    }
+    Ok(())
+}
+
+fn hook_cases() -> Vec<(String, String)> {
+    let mut cases = Vec::new();
+    for bad in ["/etc/x.sh", "../x.sh", "hooks/../x.sh", "hooks//x.sh", ""] {
+        cases.push((
+            format!("[hooks]\nsetup = \"{bad}\"\n"),
+            "invalid:hooks.setup".to_owned(),
+        ));
+    }
+    cases.push((
+        "[hooks]\npreflight = \"/abs\"\n".to_owned(),
+        "invalid:hooks.preflight".to_owned(),
+    ));
+    for good in ["hooks/setup.sh", "setup.sh"] {
+        cases.push((format!("[hooks]\nsetup = \"{good}\"\n"), "ok".to_owned()));
+    }
+    cases
+}
+
+#[test]
+fn manifest_rejects_invalid_values_naming_the_key() -> TestResult {
+    let role = |name: &str, dockerfile: &str, policy: &str| {
+        format!(
+            "schema = 1\n[role]\nname = \"{name}\"\ndockerfile = \"{dockerfile}\"\npolicy = \"{policy}\"\n"
+        )
+    };
+    let mut cases: Vec<(String, String)> = vec![
+        (
+            "schema = 2\n".to_owned() + &MIN["schema = 1\n".len()..],
+            "schema:2".to_owned(),
+        ),
+        (
+            "schema = 0\n".to_owned() + &MIN["schema = 1\n".len()..],
+            "schema:0".to_owned(),
+        ),
+        (
+            MIN["schema = 1\n".len()..].to_owned(),
+            "missing:schema".to_owned(),
+        ),
+        (
+            "schema = \"1\"\n".to_owned() + &MIN["schema = 1\n".len()..],
+            "invalid:schema".to_owned(),
+        ),
+        (
+            "schema = 1\n[role]\nname = \"s\"\ndockerfile = \"Dockerfile\"\n".to_owned(),
+            "missing:role.policy".to_owned(),
+        ),
+        (
+            role("bad name", "Dockerfile", "p.yaml"),
+            "invalid:role.name".to_owned(),
+        ),
+        (
+            role("s", "/Dockerfile", "p.yaml"),
+            "invalid:role.dockerfile".to_owned(),
+        ),
+        (
+            role("s", "Dockerfile", "../p.yaml"),
+            "invalid:role.policy".to_owned(),
+        ),
+        (
+            format!("{MIN}[codex]\nmodel = \"<optional model name>\"\n"),
+            "invalid:codex.model".to_owned(),
+        ),
+        (
+            format!("{MIN}[codex]\nmodel = \"gpt\\\"\\nmodel_provider=\\\"x\"\n"),
+            "invalid:codex.model".to_owned(),
+        ),
+        (
+            format!("{MIN}[docker]\nenabled = \"yes\"\n"),
+            "invalid:docker.enabled".to_owned(),
+        ),
+        (format!("{MIN}[env.\"1A\"]\n"), "invalid:env.1A".to_owned()),
+        (
+            format!("{MIN}[env.FOO]\ndefault = 1\n"),
+            "invalid:env.FOO.default".to_owned(),
+        ),
+        (
+            format!("{MIN}[env.FOO]\nprompt = true\n"),
+            "invalid:env.FOO.prompt".to_owned(),
+        ),
+        ("schema =".to_owned(), "syntax@1".to_owned()),
+    ];
+    for name in [
+        "JACKIN_X",
+        "DOCKER_HOST",
+        "CODEX_HOME",
+        "CODEX_AUTH_ACCESS_TOKEN",
+    ] {
+        cases.push((format!("{MIN}[env.{name}]\n"), format!("reserved:{name}")));
+    }
+    for name in ["FOO", "MY_DOCKER_HOST", "PATH"] {
+        cases.push((format!("{MIN}[env.{name}]\n"), "ok".to_owned()));
+    }
+    for (hook, expected) in hook_cases() {
+        cases.push((format!("{MIN}{hook}"), expected));
+    }
+    for (text, expected) in cases {
+        assert_eq!(outcome(&text), expected, "{text}");
+    }
+    Ok(())
+}
+
+#[test]
+fn manifest_syntax_errors_never_echo_a_pasted_secret() -> TestResult {
+    let sentinel = "Zq7#Xv9!Lm2@Hk4wP";
+    let chars: Vec<char> = sentinel.chars().collect();
+    let error = RoleManifest::parse(&format!("schema = {sentinel}"))
+        .err()
+        .ok_or("syntax")?;
+    assert!(matches!(error, ManifestError::Syntax { .. }));
+    for shown in [error.to_string(), format!("{error:?}")] {
+        for window in chars.windows(3) {
+            let window: String = window.iter().collect();
+            assert!(!shown.contains(&window), "{window} in {shown}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn manifest_optional_sections_default_and_env_entries_keep_default_and_prompt_distinct()
+-> TestResult {
+    let min = RoleManifest::parse(MIN)?;
+    assert!(min.codex.model.is_none());
+    assert!(!min.docker.enabled);
+    assert!(min.hook(HookKind::Setup).is_none() && min.hook(HookKind::Preflight).is_none());
+    assert!(min.env.is_empty());
+    assert!(
+        RoleManifest::parse(&format!("{MIN}[docker]\nenabled = true\n"))?
+            .docker
+            .enabled
+    );
+    let text = format!(
+        "{MIN}[env.A]\ndefault = \"d\"\n[env.B]\nprompt = \"p\"\n[env.C]\ndefault = \"d\"\nprompt = \"p\"\n[env.D]\n[env.E]\ndefault = \"\"\n"
+    );
+    let manifest = RoleManifest::parse(&text)?;
+    let entry = |name: &str| -> Fallible<(Option<String>, Option<String>)> {
+        let spec = manifest.env.get(&env_name(name)?).ok_or(name.to_owned())?;
+        Ok((spec.default.clone(), spec.prompt.clone()))
+    };
+    assert_eq!(entry("A")?, (Some("d".to_owned()), None));
+    assert_eq!(entry("B")?, (None, Some("p".to_owned())));
+    assert_eq!(entry("C")?, (Some("d".to_owned()), Some("p".to_owned())));
+    assert_eq!(entry("D")?, (None, None));
+    assert_eq!(entry("E")?, (Some(String::new()), None));
+    assert_eq!(RoleManifest::parse(&manifest.render())?, manifest);
+    Ok(())
+}
+
+#[test]
+fn manifest_findings_report_every_problem_in_one_pass() -> TestResult {
+    let text = "schema = 1\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"/abs/policy.yaml\"\n[codex]\nmodel = \"bad model\"\n[docker]\nenabled = \"yes\"\n[hooks]\nsetpu = \"a.sh\"\nprefight = \"b.sh\"\n[env.JACKIN_X]\n";
+    let mut found: Vec<String> = RoleManifest::findings(text).iter().map(label).collect();
+    found.sort();
+    assert_eq!(
+        found,
+        [
+            "invalid:codex.model",
+            "invalid:docker.enabled",
+            "invalid:role.policy",
+            "reserved:JACKIN_X",
+            "unknown:hooks.prefight",
+            "unknown:hooks.setpu",
+        ]
+    );
+    assert_eq!(
+        label(&RoleManifest::parse(text).err().ok_or("parse")?),
+        "invalid:role.policy"
+    );
+    assert!(RoleManifest::findings(FULL).is_empty());
+    let syntax = RoleManifest::findings("schema =");
+    assert_eq!(syntax.len(), 1);
+    assert!(matches!(syntax[0], ManifestError::Syntax { .. }));
+    Ok(())
+}
+
+#[derive(Debug)]
+struct CrashFs {
+    inner: StdFileSystem,
+    fired: AtomicBool,
+}
+
+impl CrashFs {
+    fn gate(&self, path: &HostPath) -> Result<(), FsError> {
+        if self.fired.load(Ordering::SeqCst) {
+            return Err(FsError::Io {
+                path: path.clone(),
+                kind: ErrorKind::StorageFull,
+                message: "injected".to_owned(),
+            });
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl FileSystem for CrashFs {
+    async fn read(&self, p: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
+        self.inner.read(p).await
+    }
+    async fn stat(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.inner.stat(p).await
+    }
+    async fn list(&self, d: &HostPath) -> Result<Vec<DirEntry>, FsError> {
+        self.inner.list(d).await
+    }
+    async fn create_dir_all(&self, d: &HostPath) -> Result<(), FsError> {
+        self.inner.create_dir_all(d).await
+    }
+    async fn remove_file(&self, p: &HostPath) -> Result<(), FsError> {
+        self.gate(p)?;
+        self.inner.remove_file(p).await
+    }
+    async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
+        self.inner.lock(p).await
+    }
+    async fn write_new(&self, p: &HostPath, b: &[u8], m: FileMode) -> Result<(), FsError> {
+        self.inner.write_new(p, &b[..b.len() / 2], m).await?;
+        self.fired.store(true, Ordering::SeqCst);
+        self.gate(p)
+    }
+    async fn rename(&self, f: &HostPath, t: &HostPath) -> Result<(), FsError> {
+        self.inner.rename(f, t).await
+    }
+    async fn sync_dir(&self, d: &HostPath) -> Result<(), FsError> {
+        self.inner.sync_dir(d).await
+    }
+}
+
+#[tokio::test]
+async fn manifest_write_replaces_the_file_atomically() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = HostPath::parse(&dir.path().join("jackin.role.toml"))?;
+    let fs = StdFileSystem::default();
+    let long = RoleManifest::parse(FULL)?;
+    long.write(&fs, &path).await?;
+    assert_eq!(std::fs::read(path.as_path())?, long.render().as_bytes());
+    assert_eq!(
+        RoleManifest::parse(&std::fs::read_to_string(path.as_path())?)?,
+        long
+    );
+    let short = RoleManifest::parse(MIN)?;
+    short.write(&fs, &path).await?;
+    assert_eq!(std::fs::read(path.as_path())?, short.render().as_bytes());
+    let before = std::fs::read(path.as_path())?;
+    let crashing = CrashFs {
+        inner: StdFileSystem::default(),
+        fired: AtomicBool::new(false),
+    };
+    let error = long.write(&crashing, &path).await.err().ok_or("crash")?;
+    assert!(matches!(
+        error,
+        ManifestError::Fs(FsError::Io {
+            kind: ErrorKind::StorageFull,
+            ..
+        })
+    ));
+    assert_eq!(std::fs::read(path.as_path())?, before);
+    assert!(Path::new(dir.path()).exists());
+    Ok(())
+}
