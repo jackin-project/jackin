@@ -171,6 +171,7 @@ async fn run_host(ctx: ExecCtx, root: PathBuf, abort_after_chunks: Option<usize>
             };
             chunks += 1;
             if abort_after_chunks.is_some_and(|limit| chunks > limit) {
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
                 drop(abort_events.send(Err(Status::unavailable("aborted"))).await);
                 let _sent = abort_tx.send(());
                 return;

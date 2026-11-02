@@ -413,7 +413,10 @@ async fn shell_failure_refusal_and_drop() {
             .iter()
             .any(|event| matches!(event, TerminalEvent::Exited(_)))
     );
-    assert!(matches!(events.last(), Some(TerminalEvent::Ended(_))));
+    assert!(matches!(
+        events.last(),
+        Some(TerminalEvent::Ended(EndReason::Failed(_)))
+    ));
     wait_until(|| env.server.state().observed.request_stream_ended).await;
 
     add_sandbox(
