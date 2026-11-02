@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderName, HeaderValue, RETRY_AFTER};
@@ -12,28 +13,45 @@ use crate::error::ProviderError;
 
 const AGENT: &str = concat!("jackin/", env!("CARGO_PKG_VERSION"));
 
+static SECURE: OnceLock<Option<Client>> = OnceLock::new();
+static PLAIN: OnceLock<Option<Client>> = OnceLock::new();
+
 #[derive(Clone, Debug)]
 pub struct Http {
-    client: Client,
+    timeout: Duration,
     base: Option<Url>,
 }
 
+fn build(roots: bool) -> Option<Client> {
+    install_crypto_provider();
+    Client::builder()
+        .redirect(Policy::none())
+        .tls_built_in_root_certs(roots)
+        .build()
+        .ok()
+}
+
+fn client_for(url: &Url) -> Result<&'static Client, ProviderError> {
+    let secure = url.scheme() == "https";
+    let cell = if secure { &SECURE } else { &PLAIN };
+    cell.get_or_init(|| build(secure))
+        .as_ref()
+        .ok_or(ProviderError::Network("the HTTP client could not be built"))
+}
+
 impl Http {
-    pub fn new(timeout: Duration) -> Result<Http, ProviderError> {
-        install_crypto_provider();
-        let client = Client::builder()
-            .timeout(timeout)
-            .redirect(Policy::none())
-            .build()
-            .map_err(|_| ProviderError::Network("the HTTP client could not be built"))?;
-        Ok(Http { client, base: None })
+    pub fn new(timeout: Duration) -> Http {
+        Http {
+            timeout,
+            base: None,
+        }
     }
 
     pub fn with_base(&self, base: &str) -> Result<Http, ProviderError> {
         let parsed =
             Url::parse(base).map_err(|_| ProviderError::Network("the base URL is not valid"))?;
         Ok(Http {
-            client: self.client.clone(),
+            timeout: self.timeout,
             base: Some(parsed),
         })
     }
@@ -67,9 +85,9 @@ impl Http {
         body: Option<&Value>,
     ) -> Result<Value, ProviderError> {
         let target = self.target(url)?;
-        let mut request = self
-            .client
+        let mut request = client_for(&target)?
             .request(method, target)
+            .timeout(self.timeout)
             .header(ACCEPT, "application/json")
             .header(reqwest::header::USER_AGENT, AGENT);
         request = with_authorization(request, token)?;

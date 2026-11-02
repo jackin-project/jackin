@@ -4,7 +4,7 @@
 use futures::StreamExt;
 use futures::stream;
 use jackin_core::{Provider, Timestamp};
-use jackin_usage_provider_core::{Http, ProviderError};
+use jackin_usage_provider_core::Http;
 use tokio_util::sync::CancellationToken;
 
 use crate::cache::{Cache, Entry, Good, fingerprint};
@@ -24,7 +24,7 @@ const CLAUDE_TTL_SECONDS: i64 = 300;
 #[derive(Debug)]
 pub struct HostUsage {
     deps: UsageDeps,
-    http: Result<Http, ProviderError>,
+    http: Http,
 }
 
 struct Settled {
@@ -125,15 +125,12 @@ impl HostUsage {
         cancel: &CancellationToken,
         now: i64,
     ) -> Result<Vec<LimitWindow>, UnavailableReason> {
-        let http = match &self.http {
-            Ok(http) => http,
-            Err(error) => return Err(UnavailableReason::Network(error.to_string())),
-        };
         let http = match self.deps.endpoints.base(account.provider) {
-            Some(base) => &http
+            Some(base) => &self
+                .http
                 .with_base(base)
                 .map_err(|error| UnavailableReason::Network(error.to_string()))?,
-            None => http,
+            None => &self.http,
         };
         let call = Call {
             deps: &self.deps,
