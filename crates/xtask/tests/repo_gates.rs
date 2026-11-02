@@ -1099,7 +1099,7 @@ mod containers {
     }
 
     #[test]
-    fn non_literal_command_new_is_allowed_in_xtask_the_session_host_file_and_the_jackin_process_tests_only()
+    fn non_literal_command_new_is_allowed_in_xtask_the_session_host_file_and_the_jackin_process_main_file_only()
     -> TestResult {
         let tool = text(&[
             "fn a() {",
@@ -1127,6 +1127,7 @@ mod containers {
             ("crates/jackin-session/src/host.rs", &host),
             ("crates/jackin-session/src/launch.rs", session),
             ("crates/jackin/tests/process/main.rs", tests),
+            ("crates/jackin/tests/process/other.rs", tests),
             ("crates/jackin/tests/cli/main.rs", tests),
         ])?;
         assert_eq!(
@@ -1137,6 +1138,11 @@ mod containers {
                 at(CiStep::Containers, "crates/jackin-session/src/launch.rs", 2),
                 at(CiStep::Containers, "crates/jackin-session/src/y.rs", 2),
                 at(CiStep::Containers, "crates/jackin/tests/cli/main.rs", 2),
+                at(
+                    CiStep::Containers,
+                    "crates/jackin/tests/process/other.rs",
+                    2
+                ),
                 at(CiStep::Containers, "crates/xtask/src/tool.rs", 4),
                 at(CiStep::Containers, "crates/xtask/src/tool.rs", 5),
             ]

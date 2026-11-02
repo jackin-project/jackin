@@ -18,7 +18,7 @@ pub const DOCKER_CRATE_DIRS: &[&str] = &[
 pub const COMPUTED_COMMAND_DIRS: &[&str] = &[
     "crates/xtask",
     "crates/jackin-session/src/host.rs",
-    "crates/jackin/tests/process",
+    "crates/jackin/tests/process/main.rs",
 ];
 
 #[derive(Clone, Copy, Debug, Default)]
