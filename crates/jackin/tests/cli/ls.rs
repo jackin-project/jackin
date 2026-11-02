@@ -3,7 +3,8 @@
 
 use jackin::ExitClass;
 use jackin_core::{Labels, LsOutput, Phase, SandboxLabels, SandboxName, SandboxSummary};
-use jackin_testkit::{Rig, SandboxHandle, TestResult, World, guard};
+use jackin_openshell::{GatewayError, GatewayOp};
+use jackin_testkit::{Fault, Rig, SandboxHandle, TestResult, World, guard};
 
 use super::support::{Failure, FixedConnector, GATEWAY_CONFIG, Harness, keys, names};
 
@@ -131,6 +132,27 @@ async fn an_empty_gateway_prints_no_sandboxes_in_human_output_only() -> TestResu
             ran.stderr,
             "warning: sandbox jackin-broken-0002 has unreadable labels and is not listed: missing label jackin.dev/agent\nno sandboxes\n"
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_gateway_message_with_control_characters_reaches_the_user_escaped() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        harness.write_config(GATEWAY_CONFIG)?;
+        world.gateway.inject(Fault::FailNext {
+            op: GatewayOp::Find,
+            error: GatewayError::Protocol {
+                message: "boom\u{1b}[2J\nnext".to_owned(),
+            },
+        });
+        let ran = harness.run(&["ls"]).await?;
+        assert_eq!(ran.exit, ExitClass::Failure);
+        assert!(ran.stdout.is_empty(), "{}", ran.stdout);
+        assert_eq!(ran.stderr, "error: protocol error: boom\\u{1b}[2J\\nnext\n");
         Ok(())
     })
     .await

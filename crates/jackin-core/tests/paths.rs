@@ -203,6 +203,11 @@ fn path_newtypes_print_their_value_as_plain_text() -> TestResult {
         "/sandbox/project"
     );
     assert_eq!(RepoPath::parse("src/a.rs")?.to_string(), "src/a.rs");
+    assert_eq!(
+        SandboxPath::parse("/a\nb\u{1b}c")?.to_string(),
+        "/a\\nb\\u{1b}c"
+    );
+    assert_eq!(RepoPath::parse("a\nb\u{1b}c")?.to_string(), "a\\nb\\u{1b}c");
     Ok(())
 }
 

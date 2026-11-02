@@ -1438,10 +1438,10 @@ mod errors {
         ]);
         let violations = run(&[
             (LIB, &source),
-            ("crates/jackin-core/notes.md", "#[error(\"{x:?}\")]\n"),
+            ("crates/jackin-core/notes.toml", "#[error(\"{x:?}\")]\n"),
             (
-                "crates/jackin-core/extra.toml",
-                "a = \"#[error(\\\"{x:?}\\\")]\"\n",
+                "crates/jackin-core/run.sh",
+                "#!/bin/sh\n#[error(\"{x:?}\")]\n",
             ),
         ])?;
         assert_eq!(summary(&violations), []);
@@ -1552,12 +1552,19 @@ mod error_source {
             "    I { map: HashMap<String, u8>, #[source] cause: Box<dyn Error + Send + Sync> },",
             "    #[error(\"launch {id} t_wrapped {}\", .error)]",
             "    J { id: String, #[source] error: Box<M> },",
+            "    #[error(\"x t_nested {} {}\", list(a), .0)]",
+            "    L(#[source] M),",
+            "    #[error(\"t_attr {0}\")]",
+            "    #[cfg(unix)]",
+            "    N(#[from] M),",
             "}",
             "#[derive(Debug, Error)]",
             "#[error(\"launch {launch_id} failed t_struct: {error}\")]",
             "pub struct S { pub launch_id: L, #[source] pub error: Box<M> }",
             "#[error(\"tuple t_tuple {0}\")]",
             "pub struct T(#[from] M);",
+            "#[error(\"t_gstruct {e}\")]",
+            "pub struct G<T> { #[source] e: T }",
         ]);
         let violations = run(&source)?;
         let tags = [
@@ -1567,8 +1574,11 @@ mod error_source {
             "t_index",
             "t_generic",
             "t_wrapped",
+            "t_nested",
+            "t_attr",
             "t_struct",
             "t_tuple",
+            "t_gstruct",
         ];
         assert_eq!(
             summary(&violations),
@@ -1597,6 +1607,14 @@ mod error_source {
             "    G { n: usize, #[from] inner: M },",
             "    #[error(\"member {}\", .inner.error)]",
             "    K { inner: Wrapper, #[source] error: M },",
+            "    #[error(\"n {}\", .0.source)]",
+            "    L(Wrapper),",
+            "    #[error(\"c {}\", f(a).source)]",
+            "    M2 { source: M },",
+            "    #[error(\"i {}\", a[0].source)]",
+            "    N2 { source: M },",
+            "    #[error(\"s {}\", \"text\".source)]",
+            "    O { source: M },",
             "}",
             "#[error(\"launch {launch_id} failed\")]",
             "pub struct S { pub launch_id: L, #[source] pub error: Box<M> }",
@@ -1873,12 +1891,11 @@ mod ci_run {
     fn only_runs_the_named_steps_in_plan_order() -> TestResult {
         let spy = Spy::new()?;
         let fixture = green()?;
-        let cases: [(&str, &[&str]); 5] = [
+        let cases: [(&str, &[&str]); 4] = [
             ("reuse,fmt", &[FULL[0], FULL[5]]),
             ("docs", &FULL[6..]),
             ("deny,deny", &[FULL[3]]),
-            ("comments,layers,pins,containers,errors", &[]),
-            ("errors", &[]),
+            ("comments,layers,pins,containers", &[]),
         ];
         for (selection, expected) in cases {
             let outcome = spy.run(&fixture, &["--only", selection], "")?;

@@ -119,6 +119,10 @@ fn registry_and_policy_errors_name_gateways_paths_and_violations_plainly() {
         rule: rule("r2"),
         host: "bad host!".to_owned(),
     };
+    let hostile = ClosureViolation::UnparsableHost {
+        rule: rule("r4"),
+        host: "bad\u{1b}[2J\nhost".to_owned(),
+    };
     let port = ClosureViolation::InvalidPort {
         rule: rule("r3"),
         port: 0,
@@ -170,6 +174,14 @@ fn registry_and_policy_errors_name_gateways_paths_and_violations_plainly() {
             ),
         ),
         (
+            hostile.to_string(),
+            "rule r4: the host bad\\u{1b}[2J\\nhost cannot be read".to_owned(),
+        ),
+        (
+            ClosedPolicyError::Violations(vec![hostile]).to_string(),
+            "the policy overlaps provider hosts: rule r4: the host bad\\u{1b}[2J\\nhost cannot be read".to_owned(),
+        ),
+        (
             ClosedPolicyError::Violations(vec![overlap, unparsable, port]).to_string(),
             "the policy overlaps provider hosts: rule r1: ** overlaps the provider host api.openai.com, rule r2: the host bad host! cannot be read, rule r3: the port 0 is invalid".to_owned(),
         ),
@@ -212,4 +224,60 @@ async fn an_authentication_read_from_the_registry_is_shown_without_control_chara
         resolve("a\\u202eb").await,
         format!("gateway {GATEWAY} uses the authentication a\\u{{202e}}b; only mtls is accepted")
     );
+}
+
+#[test]
+fn text_supplied_by_the_gateway_is_shown_without_control_characters() {
+    let hostile = || "x\u{1b}[2J\ny".to_owned();
+    let sandbox = SandboxName::parse("jackin-work-0001").unwrap();
+    let rows = [
+        (
+            GatewayError::Unreachable {
+                endpoint: "https://h\u{1b}".to_owned(),
+                message: hostile(),
+            },
+            "gateway https://h\\u{1b} is unreachable: x\\u{1b}[2J\\ny",
+        ),
+        (
+            GatewayError::SandboxUnreachable {
+                sandbox,
+                message: hostile(),
+            },
+            "the supervisor of jackin-work-0001 is unreachable: x\\u{1b}[2J\\ny",
+        ),
+        (
+            GatewayError::Tls { message: hostile() },
+            "TLS error: x\\u{1b}[2J\\ny",
+        ),
+        (
+            GatewayError::PermissionDenied { what: hostile() },
+            "permission denied: x\\u{1b}[2J\\ny",
+        ),
+        (
+            GatewayError::FailedPrecondition { message: hostile() },
+            "failed precondition: x\\u{1b}[2J\\ny",
+        ),
+        (
+            GatewayError::ResourceExhausted { what: hostile() },
+            "resource exhausted: x\\u{1b}[2J\\ny",
+        ),
+        (
+            GatewayError::InvalidArgument {
+                field: "f\u{1b}".to_owned(),
+                message: hostile(),
+            },
+            "invalid argument f\\u{1b}: x\\u{1b}[2J\\ny",
+        ),
+        (
+            GatewayError::TerminalRefused { reason: hostile() },
+            "the terminal was refused: x\\u{1b}[2J\\ny",
+        ),
+        (
+            GatewayError::Protocol { message: hostile() },
+            "protocol error: x\\u{1b}[2J\\ny",
+        ),
+    ];
+    for (error, expected) in rows {
+        assert_eq!(error.to_string(), expected);
+    }
 }

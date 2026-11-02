@@ -15,18 +15,18 @@ use crate::policy::{ClosureViolation, RuleKey};
 
 #[derive(Debug, Error)]
 pub enum GatewayError {
-    #[error("gateway {endpoint} is unreachable: {message}")]
+    #[error("gateway {} is unreachable: {}", plain(.endpoint), plain(.message))]
     Unreachable { endpoint: String, message: String },
-    #[error("the supervisor of {sandbox} is unreachable: {message}")]
+    #[error("the supervisor of {sandbox} is unreachable: {}", plain(.message))]
     SandboxUnreachable {
         sandbox: SandboxName,
         message: String,
     },
-    #[error("TLS error: {message}")]
+    #[error("TLS error: {}", plain(.message))]
     Tls { message: String },
     #[error("the gateway rejected the credentials")]
     Unauthenticated,
-    #[error("permission denied: {what}")]
+    #[error("permission denied: {}", plain(.what))]
     PermissionDenied { what: String },
     #[error("not found: {what}")]
     NotFound { what: Missing },
@@ -36,11 +36,11 @@ pub enum GatewayError {
     NotReady { phase: Phase },
     #[error("the main process of {sandbox} has ended")]
     MainProcessFailed { sandbox: SandboxName },
-    #[error("failed precondition: {message}")]
+    #[error("failed precondition: {}", plain(.message))]
     FailedPrecondition { message: String },
-    #[error("resource exhausted: {what}")]
+    #[error("resource exhausted: {}", plain(.what))]
     ResourceExhausted { what: String },
-    #[error("invalid argument {field}: {message}")]
+    #[error("invalid argument {}: {}", plain(.field), plain(.message))]
     InvalidArgument { field: String, message: String },
     #[error("{op} timed out after {}", plain_duration(.after))]
     Timeout { op: GatewayOp, after: Duration },
@@ -64,9 +64,9 @@ pub enum GatewayError {
     },
     #[error("the SSH host key does not match the gateway response")]
     HostKeyMismatch,
-    #[error("the terminal was refused: {reason}")]
+    #[error("the terminal was refused: {}", plain(.reason))]
     TerminalRefused { reason: String },
-    #[error("protocol error: {message}")]
+    #[error("protocol error: {}", plain(.message))]
     Protocol { message: String },
 }
 

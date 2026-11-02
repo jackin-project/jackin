@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use jackin_core::{
     CodexAuthMode, DockerSource, DockerSubcommand, FsError, HookKind, HostPath, OutputStream,
-    PathError, Platform, ProcessError, ProcessStatus, Program, plain, plain_duration, plain_list,
+    PathError, Platform, ProcessError, ProcessStatus, Program, SupervisorReading, SupervisorState,
+    plain, plain_duration, plain_list,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -147,4 +148,13 @@ fn file_and_process_errors_name_paths_programs_and_streams_plainly() -> TestResu
         assert_eq!(shown, expected);
     }
     Ok(())
+}
+
+#[test]
+fn supervisor_readings_print_words_and_escape_the_text_the_sandbox_wrote() {
+    let reported = SupervisorReading::Reported(SupervisorState::Waiting);
+    assert_eq!(SupervisorReading::Unreadable.to_string(), "unreadable");
+    assert_eq!(reported.to_string(), "waiting");
+    let invalid = SupervisorReading::Invalid("bad\u{1b}[2J\nnext".to_owned());
+    assert_eq!(invalid.to_string(), "invalid (bad\\u{1b}[2J\\nnext)");
 }
