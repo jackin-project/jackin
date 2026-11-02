@@ -1,15 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
-use jackin_core::{FileKind, FileSystem, HostPath, RepoPath};
+use jackin_core::{
+    FileKind, FileSystem, HostPath, ProcessStatus, ProcessStdin, RepoPath, SecretBytes,
+};
 
 use crate::launch::LaunchError;
-use crate::project::git::{HostGit, Pace, words};
+use crate::project::git::{HostGit, Pace, failure, words};
 use crate::project::listing::Listing as UploadListing;
 use crate::project::{ProjectStep, UnsupportedProject};
 
@@ -138,4 +140,77 @@ pub(super) async fn symlinked_parents(
     } else {
         Err(UnsupportedProject::SymlinkedPath(found).into())
     }
+}
+
+fn local_drivers(config: &[u8]) -> BTreeSet<String> {
+    let mut drivers = BTreeSet::new();
+    let fields: Vec<&[u8]> = config.split(|byte| *byte == 0).collect();
+    for pair in fields.as_chunks::<2>().0 {
+        if pair[0] != b"local" && pair[0] != b"worktree" {
+            continue;
+        }
+        let key = pair[1]
+            .split(|byte| *byte == b'\n')
+            .next()
+            .unwrap_or_default();
+        let key = String::from_utf8_lossy(key);
+        if let Some(inner) = key.strip_prefix("filter.") {
+            for variable in ["clean", "smudge", "process"] {
+                if let Some(name) = inner.strip_suffix(&format!(".{variable}")) {
+                    drivers.insert(name.to_owned());
+                }
+            }
+        }
+    }
+    drivers
+}
+
+pub(super) async fn filters(git: &HostGit<'_>, listing: &UploadListing) -> Result<(), LaunchError> {
+    let config = git
+        .require(
+            ProjectStep::Listing,
+            Pace::Quick,
+            words(&["config", "--show-scope", "-z", "--list"]),
+            Vec::new(),
+        )
+        .await?;
+    let drivers = local_drivers(&config);
+    if drivers.is_empty() {
+        return Ok(());
+    }
+    let stdin = ProcessStdin::Bytes(SecretBytes::new(listing.as_bytes().to_vec()));
+    let output = git
+        .capture_from(
+            Pace::Long,
+            words(&["check-attr", "-z", "--stdin", "filter"]),
+            Vec::new(),
+            stdin,
+        )
+        .await?;
+    if output.status != ProcessStatus::Exited(0) {
+        return Err(failure(ProjectStep::Listing, &output));
+    }
+    let mut selected: BTreeMap<String, Vec<RepoPath>> = BTreeMap::new();
+    let fields: Vec<&[u8]> = output.stdout.split(|byte| *byte == 0).collect();
+    for triple in fields.as_chunks::<3>().0 {
+        let value = String::from_utf8_lossy(triple[2]).into_owned();
+        if drivers.contains(&value) {
+            selected.entry(value).or_default().push(
+                RepoPath::parse(&String::from_utf8_lossy(triple[0]))
+                    .map_err(|error| malformed(&error.to_string()))?,
+            );
+        }
+    }
+    if selected.is_empty() {
+        return Ok(());
+    }
+    let names = selected.keys().cloned().collect();
+    let mut paths: Vec<RepoPath> = selected.into_values().flatten().collect();
+    paths.sort();
+    paths.dedup();
+    Err(UnsupportedProject::RepositoryFilter {
+        drivers: names,
+        paths,
+    }
+    .into())
 }

@@ -110,20 +110,20 @@ impl Trap {
         })
     }
 
-    fn path(&self, name: &str) -> String {
+    pub(crate) fn program(&self, name: &str) -> String {
         self.root.join(name).display().to_string()
     }
 
     pub(crate) async fn arm_hostile(&self, repo: &Path) -> Result<(), Box<dyn Error>> {
-        let ext = format!("ext::{} %s #", self.path("ext"));
+        let ext = format!("ext::{} %s #", self.program("ext"));
         for (key, value) in [
-            ("core.fsmonitor", self.path("fsmonitor")),
-            ("core.hooksPath", self.path("hooks")),
-            ("filter.evilclean.clean", self.path("clean")),
-            ("filter.evilproc.process", self.path("process")),
-            ("core.sshCommand", self.path("ssh")),
-            ("core.alternateRefsCommand", self.path("altrefs")),
-            ("credential.helper", self.path("credential")),
+            ("core.fsmonitor", self.program("fsmonitor")),
+            ("core.hooksPath", self.program("hooks")),
+            ("filter.evilclean.clean", self.program("clean")),
+            ("filter.evilproc.process", self.program("process")),
+            ("core.sshCommand", self.program("ssh")),
+            ("core.alternateRefsCommand", self.program("altrefs")),
+            ("credential.helper", self.program("credential")),
             ("protocol.ext.allow", "always".to_owned()),
         ] {
             git(repo, &["config", key, &value]).await?;
@@ -133,7 +133,7 @@ impl Trap {
         tokio::fs::create_dir_all(repo.join(".git/objects/info")).await?;
         tokio::fs::write(
             alternates,
-            format!("{}\n", self.path("alternate.git/objects")),
+            format!("{}\n", self.program("alternate.git/objects")),
         )
         .await?;
         Ok(())

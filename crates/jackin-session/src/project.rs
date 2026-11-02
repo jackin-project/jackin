@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use jackin_core::{
     FileLock, FileMode, HostPath, IdError, LaunchId, ProjectRoot, RepoPath, SandboxName,
-    SandboxPath, TerminalText, plain_list, sandbox_layout,
+    SandboxPath, TerminalText, plain, plain_list, sandbox_layout,
 };
 use jackin_openshell::{GatewayError, GatewayOp};
 use thiserror::Error;
@@ -96,6 +96,15 @@ pub enum UnsupportedProject {
         sample("paths", .0)
     )]
     SymlinkedPath(Vec<RepoPath>),
+    #[error(
+        "listed paths use the filter {}, which the repository's own configuration defines{}; the sandbox cannot reproduce it, so define the filter in the global configuration instead",
+        plain_list(.drivers),
+        sample("paths", .paths)
+    )]
+    RepositoryFilter {
+        drivers: Vec<String>,
+        paths: Vec<RepoPath>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -141,11 +150,7 @@ fn sample(label: &str, paths: &[RepoPath]) -> String {
     if paths.is_empty() {
         return String::new();
     }
-    let shown: Vec<&str> = paths
-        .iter()
-        .take(LISTED_PATHS)
-        .map(RepoPath::as_str)
-        .collect();
+    let shown: Vec<String> = paths.iter().take(LISTED_PATHS).map(plain).collect();
     let more = paths.len().saturating_sub(LISTED_PATHS);
     let tail = if more > 0 {
         format!(" and {more} more")
@@ -247,6 +252,7 @@ pub(crate) async fn stage(
     let facts = facts::read(&git, fs).await?;
     let listing = listing::read(&git).await?;
     refuse::symlinked_parents(fs, project.path(), &listing).await?;
+    refuse::filters(&git, &listing).await?;
     fs.create_private_dir_all(dir).await?;
     let file = HostPath::resolve(Path::new("upload.bundle"), dir)?;
     let bundle = bundle::create(&git, &facts.head, &file).await?;
