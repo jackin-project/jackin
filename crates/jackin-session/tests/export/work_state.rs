@@ -21,6 +21,7 @@ fn unexported(
         uncommitted,
         branches,
         detached: None,
+        worktrees: Vec::new(),
         unusable: Vec::new(),
     }))
 }
@@ -182,6 +183,43 @@ async fn a_host_ref_deleted_or_a_branch_advanced_after_the_export_lists_the_bran
 
         handle.commit_in_project("b.txt", b"b", "two").await?;
         assert_eq!(state(&rig, &name).await, unexported(false, &["main"])?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_corrupt_sandbox_index_still_exports_the_branches_but_the_work_state_is_unknown()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let tip = handle.commit_in_project("a.txt", b"a", "work").await?;
+        std::fs::write(handle.root().join("project/.git/index"), b"not an index")?;
+
+        export(&rig, &name).await?;
+
+        let landed = rig.repo.git(&["rev-parse", &ref_of(&name, "main")]).await?;
+        assert_eq!(landed.trim(), tip.as_str());
+        assert_eq!(
+            state(&rig, &name).await,
+            WorkState::Unknown(UnknownReason::InspectionFailed)
+        );
+        let purge = rig
+            .world
+            .session
+            .purge(&rig.config, &name, jackin_session::PurgeMode::Guarded)
+            .await;
+        assert!(
+            matches!(
+                purge,
+                Err(jackin_session::PurgeError::WorkNotExported { .. })
+            ),
+            "{purge:?}"
+        );
+        assert!(rig.world.gateway.sandbox(&name).is_some());
         Ok(())
     })
     .await

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::time::Duration;
 
 use jackin_core::{
@@ -13,6 +14,7 @@ use tokio_util::sync::CancellationToken;
 const HEADS: &str = "refs/heads/";
 const STASH: &str = "refs/stash";
 const NOT_A_REPOSITORY: &str = "not a git repository";
+const CLEANUP: Duration = Duration::from_secs(10);
 static MKDIR: SandboxPath = SandboxPath::from_static("/usr/bin/mkdir");
 static RM: SandboxPath = SandboxPath::from_static("/usr/bin/rm");
 
@@ -24,7 +26,7 @@ pub(super) enum RemoteError {
         exit_code: i32,
         output: TerminalText,
     },
-    Malformed,
+    Malformed(&'static str),
 }
 
 impl From<GatewayError> for RemoteError {
@@ -34,11 +36,26 @@ impl From<GatewayError> for RemoteError {
 }
 
 #[derive(Debug)]
+pub(super) struct LinkedHead {
+    pub(super) name: BranchName,
+    pub(super) tip: CommitId,
+}
+
+#[derive(Debug)]
 pub(super) struct Repository {
     pub(super) branches: BTreeMap<BranchName, CommitId>,
-    pub(super) unusable: Vec<String>,
+    pub(super) unusable: Vec<TerminalText>,
     pub(super) detached: Option<CommitId>,
-    pub(super) uncommitted: bool,
+    pub(super) linked: Vec<LinkedHead>,
+    checkouts: Vec<String>,
+}
+
+#[derive(Debug)]
+struct Checkout {
+    path: String,
+    head: Option<CommitId>,
+    detached: bool,
+    prunable: bool,
 }
 
 pub(super) struct Remote<'a> {
@@ -60,9 +77,59 @@ fn failure(outcome: &ProgramOutcome) -> RemoteError {
     }
 }
 
+fn checkouts(listed: &[u8]) -> Result<Vec<Checkout>, RemoteError> {
+    const MALFORMED: RemoteError =
+        RemoteError::Malformed("git worktree list printed unreadable output");
+    let mut found: Vec<Checkout> = Vec::new();
+    for field in listed.split(|byte| *byte == 0) {
+        if field.is_empty() {
+            continue;
+        }
+        let text = std::str::from_utf8(field).map_err(|_| MALFORMED)?;
+        if let Some(path) = text.strip_prefix("worktree ") {
+            found.push(Checkout {
+                path: path.to_owned(),
+                head: None,
+                detached: false,
+                prunable: false,
+            });
+            continue;
+        }
+        let current = found.last_mut().ok_or(MALFORMED)?;
+        if let Some(head) = text.strip_prefix("HEAD ") {
+            current.head = CommitId::parse(head).ok();
+        } else if text == "detached" {
+            current.detached = true;
+        } else if text == "prunable" || text.starts_with("prunable ") {
+            current.prunable = true;
+        }
+    }
+    if found.is_empty() {
+        return Err(MALFORMED);
+    }
+    Ok(found)
+}
+
+fn worktree_id(git_dir: &[u8]) -> Result<BranchName, RemoteError> {
+    const MALFORMED: RemoteError =
+        RemoteError::Malformed("git printed an unreadable worktree directory");
+    let text = std::str::from_utf8(git_dir).map_err(|_| MALFORMED)?;
+    let dir = Path::new(text.trim_end());
+    let id = dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or(MALFORMED)?;
+    let parent = dir.parent().and_then(Path::file_name);
+    if parent != Some("worktrees".as_ref()) {
+        return Err(MALFORMED);
+    }
+    BranchName::parse(id).map_err(|_| MALFORMED)
+}
+
 impl Remote<'_> {
-    async fn exec(
+    async fn exec_within(
         &self,
+        timeout: Duration,
         program: &SandboxPath,
         args: Vec<String>,
     ) -> Result<ProgramOutcome, GatewayError> {
@@ -79,11 +146,19 @@ impl Remote<'_> {
                     env,
                     stdin: ProgramStdin::Closed,
                     touch_on_success: None,
-                    timeout: self.timeout,
+                    timeout,
                 },
                 self.cancel,
             )
             .await
+    }
+
+    async fn exec(
+        &self,
+        program: &SandboxPath,
+        args: Vec<String>,
+    ) -> Result<ProgramOutcome, GatewayError> {
+        self.exec_within(self.timeout, program, args).await
     }
 
     async fn git(&self, args: &[&str]) -> Result<ProgramOutcome, GatewayError> {
@@ -115,63 +190,97 @@ impl Remote<'_> {
         }
     }
 
-    async fn detached(&self) -> Result<Option<CommitId>, RemoteError> {
-        let symbolic = self.git(&["symbolic-ref", "-q", "HEAD"]).await?;
-        match symbolic.exit_code {
-            0 => return Ok(None),
-            1 => {}
-            _ => return Err(failure(&symbolic)),
-        }
-        let resolved = self.git(&["rev-parse", "-q", "--verify", "HEAD"]).await?;
-        match resolved.exit_code {
-            0 => CommitId::parse(String::from_utf8_lossy(&resolved.stdout).trim())
-                .map(Some)
-                .map_err(|_| RemoteError::Malformed),
-            1 => Ok(None),
-            _ => Err(failure(&resolved)),
-        }
-    }
-
     pub(super) async fn repository(&self) -> Result<Repository, RemoteError> {
         self.require_repository().await?;
+        let listed = self
+            .require(&["worktree", "list", "--porcelain", "-z"])
+            .await?;
+        let mut repository = Repository {
+            branches: BTreeMap::new(),
+            unusable: Vec::new(),
+            detached: None,
+            linked: Vec::new(),
+            checkouts: Vec::new(),
+        };
+        for (index, checkout) in checkouts(&listed)?.into_iter().enumerate() {
+            if checkout.prunable {
+                continue;
+            }
+            repository.checkouts.push(checkout.path.clone());
+            if !checkout.detached {
+                continue;
+            }
+            let tip = checkout.head.ok_or(RemoteError::Malformed(
+                "git worktree list printed a detached worktree without a commit",
+            ))?;
+            if index == 0 {
+                repository.detached = Some(tip);
+                continue;
+            }
+            let git_dir = self
+                .require(&["-C", &checkout.path, "rev-parse", "--absolute-git-dir"])
+                .await?;
+            match worktree_id(&git_dir) {
+                Ok(name) => repository.linked.push(LinkedHead { name, tip }),
+                Err(_) => repository.unusable.push(TerminalText::sanitize(
+                    format!("worktree at {}", checkout.path).as_bytes(),
+                )),
+            }
+        }
+        repository
+            .linked
+            .sort_by(|left, right| left.name.cmp(&right.name));
         let listed = self
             .require(&[
                 "for-each-ref",
                 "--format=%(refname)%00%(objectname)",
                 "refs/heads",
-                STASH,
             ])
             .await?;
-        let mut repository = Repository {
-            branches: BTreeMap::new(),
-            unusable: Vec::new(),
-            detached: self.detached().await?,
-            uncommitted: false,
-        };
         for line in String::from_utf8_lossy(&listed).lines() {
-            let (name, oid) = line.split_once('\0').ok_or(RemoteError::Malformed)?;
-            if name == STASH {
-                repository.uncommitted = true;
-            } else if let Some(branch) = name.strip_prefix(HEADS) {
-                let tip = CommitId::parse(oid).map_err(|_| RemoteError::Malformed)?;
-                match BranchName::parse(branch) {
-                    Ok(branch) => {
-                        repository.branches.insert(branch, tip);
-                    }
-                    Err(_) => repository.unusable.push(branch.to_owned()),
+            let (name, oid) = line.split_once('\0').ok_or(RemoteError::Malformed(
+                "git for-each-ref printed a line without an object name",
+            ))?;
+            let Some(branch) = name.strip_prefix(HEADS) else {
+                continue;
+            };
+            let tip = CommitId::parse(oid).map_err(|_| {
+                RemoteError::Malformed("git for-each-ref printed an unreadable object name")
+            })?;
+            match BranchName::parse(branch) {
+                Ok(branch) => {
+                    repository.branches.insert(branch, tip);
                 }
+                Err(_) => repository
+                    .unusable
+                    .push(TerminalText::sanitize(branch.as_bytes())),
             }
         }
-        let status = self
-            .require(&["--no-optional-locks", "status", "--porcelain"])
-            .await?;
-        repository.uncommitted |= !status.is_empty();
         Ok(repository)
+    }
+
+    pub(super) async fn uncommitted(&self, repository: &Repository) -> Result<bool, RemoteError> {
+        let stash = self
+            .require(&["for-each-ref", "--format=%(refname)", STASH])
+            .await?;
+        if !stash.is_empty() {
+            return Ok(true);
+        }
+        for path in &repository.checkouts {
+            let status = self
+                .require(&["-C", path, "--no-optional-locks", "status", "--porcelain"])
+                .await?;
+            if !status.is_empty() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub(super) async fn discard(&self, target: &SandboxPath) {
         drop(
-            self.exec(
+            self.exec_within(
+                CLEANUP,
                 &RM,
                 vec!["-f".to_owned(), "--".to_owned(), target.as_str().to_owned()],
             )

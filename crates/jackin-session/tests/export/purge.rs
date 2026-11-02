@@ -30,7 +30,7 @@ async fn refused(rig: &Rig, config: &Config, name: &SandboxName, case: &str) -> 
     let Err(PurgeError::WorkNotExported { sandbox, state }) = result else {
         return Err(format!("{case}: expected a refusal, saw {result:?}").into());
     };
-    assert_eq!((&sandbox, &state), (name, &shown));
+    assert_eq!((&sandbox, &*state), (name, &shown));
     assert!(rig.world.gateway.sandbox(name).is_some());
     assert_eq!(digests(&handle), files);
     assert_eq!(digests(&other), other_files);
@@ -87,11 +87,9 @@ async fn a_guarded_purge_refuses_every_state_that_is_not_exported_and_changes_no
             .await;
         assert!(
             matches!(
-                blind,
-                Err(PurgeError::WorkNotExported {
-                    state: WorkState::Unknown(UnknownReason::InspectionFailed),
-                    ..
-                })
+                &blind,
+                Err(PurgeError::WorkNotExported { state, .. })
+                    if **state == WorkState::Unknown(UnknownReason::InspectionFailed)
             ),
             "{blind:?}"
         );

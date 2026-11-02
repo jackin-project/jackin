@@ -4,7 +4,7 @@
 mod host;
 mod sandbox;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use jackin_core::{
@@ -18,6 +18,8 @@ use tokio_util::sync::CancellationToken;
 
 use self::host::{HEAD, Host, HostRefs, exported_prefix};
 use self::sandbox::{Remote, RemoteError, Repository};
+
+const MAX_HEADS: usize = 1024;
 use crate::project::host_git;
 use crate::service::Session;
 
@@ -35,11 +37,19 @@ pub struct ExportedDetached {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportedWorktree {
+    pub worktree: BranchName,
+    pub tip: CommitId,
+    pub host_ref: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExportReport {
     pub sandbox: SandboxName,
     pub bundle: Option<Sha256>,
     pub branches: Vec<ExportedBranch>,
     pub detached: Option<ExportedDetached>,
+    pub worktrees: Vec<ExportedWorktree>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,7 +65,8 @@ pub struct Unexported {
     pub uncommitted: bool,
     pub branches: Vec<BranchName>,
     pub detached: Option<CommitId>,
-    pub unusable: Vec<String>,
+    pub worktrees: Vec<BranchName>,
+    pub unusable: Vec<TerminalText>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,6 +99,13 @@ pub enum ExportError {
     Project(#[from] PathError),
     #[error(transparent)]
     Entropy(#[from] EntropyError),
+    #[error("sandbox {sandbox:?} has no project repository")]
+    NoRepository { sandbox: SandboxName },
+    #[error("git in {sandbox:?} printed unusable output: {what}")]
+    SandboxOutput {
+        sandbox: SandboxName,
+        what: &'static str,
+    },
     #[error("git in the sandbox exited with {exit_code}: {output:?}")]
     SandboxGit {
         exit_code: i32,
@@ -111,7 +129,14 @@ pub enum ExportError {
         worktree: HostPath,
     },
     #[error("the sandbox branch {branch:?} cannot be exported")]
-    UnusableBranch { branch: String },
+    UnusableBranch { branch: TerminalText },
+    #[error("the bundle heads differ from the requested set: extra {extra:?}, missing {missing:?}")]
+    BundleHeads {
+        extra: Vec<TerminalText>,
+        missing: Vec<String>,
+    },
+    #[error("{count} heads need export and the limit is {limit}")]
+    TooManyHeads { count: usize, limit: usize },
     #[error("{host_ref} expected tip {expected:?} but found {found:?}")]
     TipMismatch {
         host_ref: String,
@@ -140,18 +165,17 @@ impl From<ProcessError> for ExportError {
     }
 }
 
-impl From<RemoteError> for ExportError {
-    fn from(error: RemoteError) -> ExportError {
+impl ExportError {
+    fn remote(sandbox: &SandboxName, error: RemoteError) -> ExportError {
         match error {
             RemoteError::Gateway(error) => error.into(),
-            RemoteError::NoRepository => ExportError::SandboxGit {
-                exit_code: 128,
-                output: TerminalText::sanitize(b"the sandbox has no project repository"),
+            RemoteError::NoRepository => ExportError::NoRepository {
+                sandbox: sandbox.clone(),
             },
             RemoteError::Git { exit_code, output } => ExportError::SandboxGit { exit_code, output },
-            RemoteError::Malformed => ExportError::SandboxGit {
-                exit_code: 0,
-                output: TerminalText::sanitize(b"git printed output that jackin cannot read"),
+            RemoteError::Malformed(what) => ExportError::SandboxOutput {
+                sandbox: sandbox.clone(),
+                what,
             },
         }
     }
@@ -161,6 +185,7 @@ impl From<RemoteError> for ExportError {
 enum Wanted {
     Branch(BranchName),
     Head,
+    Worktree(BranchName),
 }
 
 impl Wanted {
@@ -168,13 +193,15 @@ impl Wanted {
         match self {
             Wanted::Branch(branch) => format!("refs/heads/{}", branch.as_str()),
             Wanted::Head => HEAD.to_owned(),
+            Wanted::Worktree(name) => format!("worktrees/{}/HEAD", name.as_str()),
         }
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> String {
         match self {
-            Wanted::Branch(branch) => branch.as_str(),
-            Wanted::Head => HEAD,
+            Wanted::Branch(branch) => branch.as_str().to_owned(),
+            Wanted::Head => HEAD.to_owned(),
+            Wanted::Worktree(name) => format!("worktree/{}", name.as_str()),
         }
     }
 
@@ -183,48 +210,68 @@ impl Wanted {
     }
 }
 
-fn changed(repository: &Repository, refs: &HostRefs) -> Vec<Wanted> {
-    let mut wanted: Vec<Wanted> = repository
+fn heads(repository: &Repository) -> Vec<(Wanted, CommitId)> {
+    let mut heads: Vec<(Wanted, CommitId)> = repository
         .branches
         .iter()
-        .filter(|(branch, tip)| refs.branches.get(branch.as_str()) != Some(*tip))
-        .map(|(branch, _)| Wanted::Branch(branch.clone()))
+        .map(|(branch, tip)| (Wanted::Branch(branch.clone()), tip.clone()))
         .collect();
-    if repository
-        .detached
-        .as_ref()
-        .is_some_and(|commit| refs.head.as_ref() != Some(commit))
-    {
-        wanted.push(Wanted::Head);
+    if let Some(tip) = &repository.detached {
+        heads.push((Wanted::Head, tip.clone()));
     }
-    wanted
+    heads.extend(
+        repository
+            .linked
+            .iter()
+            .map(|linked| (Wanted::Worktree(linked.name.clone()), linked.tip.clone())),
+    );
+    heads
 }
 
-fn classify(repository: &Repository, refs: &HostRefs) -> WorkState {
-    let safe = |name: &str, tip: &CommitId| {
-        refs.branches.get(name) == Some(tip) || refs.exported.get(name) == Some(tip)
+fn on_host(wanted: &Wanted, tip: &CommitId, refs: &HostRefs) -> bool {
+    let host = match wanted {
+        Wanted::Branch(branch) => refs.branches.get(branch.as_str()),
+        Wanted::Head | Wanted::Worktree(_) => refs.head.as_ref(),
     };
-    let branches: Vec<BranchName> = repository
-        .branches
-        .iter()
-        .filter(|(branch, tip)| !safe(branch.as_str(), tip))
-        .map(|(branch, _)| branch.clone())
-        .collect();
-    let detached = repository
-        .detached
-        .clone()
-        .filter(|commit| refs.head.as_ref() != Some(commit) && !safe(HEAD, commit));
-    if repository.uncommitted
-        || !branches.is_empty()
-        || detached.is_some()
-        || !repository.unusable.is_empty()
+    host == Some(tip)
+}
+
+fn changed(repository: &Repository, refs: &HostRefs) -> Vec<(Wanted, CommitId)> {
+    heads(repository)
+        .into_iter()
+        .filter(|(wanted, tip)| !on_host(wanted, tip, refs))
+        .collect()
+}
+
+fn pending(repository: &Repository, refs: &HostRefs) -> Vec<(Wanted, CommitId)> {
+    changed(repository, refs)
+        .into_iter()
+        .filter(|(wanted, tip)| refs.exported.get(&wanted.name()) != Some(tip))
+        .collect()
+}
+
+fn classify(repository: &Repository, uncommitted: bool, refs: &HostRefs) -> WorkState {
+    let mut state = Unexported {
+        uncommitted,
+        branches: Vec::new(),
+        detached: None,
+        worktrees: Vec::new(),
+        unusable: repository.unusable.clone(),
+    };
+    for (wanted, tip) in pending(repository, refs) {
+        match wanted {
+            Wanted::Branch(branch) => state.branches.push(branch),
+            Wanted::Head => state.detached = Some(tip),
+            Wanted::Worktree(name) => state.worktrees.push(name),
+        }
+    }
+    if state.uncommitted
+        || !state.branches.is_empty()
+        || state.detached.is_some()
+        || !state.worktrees.is_empty()
+        || !state.unusable.is_empty()
     {
-        WorkState::Unexported(Unexported {
-            uncommitted: repository.uncommitted,
-            branches,
-            detached,
-            unusable: repository.unusable.clone(),
-        })
+        WorkState::Unexported(state)
     } else {
         WorkState::Exported
     }
@@ -234,14 +281,35 @@ fn nested(target: &str, other: &str) -> bool {
     target.starts_with(&format!("{other}/")) || other.starts_with(&format!("{target}/"))
 }
 
+fn clash(target: &str, other: &str) -> ExportError {
+    ExportError::RefConflict {
+        host_ref: target.to_owned(),
+        output: TerminalText::sanitize(format!("{target} conflicts with {other}").as_bytes()),
+    }
+}
+
 fn conflict(target: &str, existing: &[String]) -> Option<ExportError> {
     existing
         .iter()
         .find(|other| nested(target, other))
-        .map(|other| ExportError::RefConflict {
-            host_ref: target.to_owned(),
-            output: TerminalText::sanitize(format!("{target} conflicts with {other}").as_bytes()),
-        })
+        .map(|other| clash(target, other))
+}
+
+fn collision(
+    sandbox: &SandboxName,
+    repository: &Repository,
+    wanted: &[(Wanted, CommitId)],
+) -> Option<ExportError> {
+    let every: Vec<(Wanted, CommitId)> = heads(repository);
+    wanted.iter().find_map(|(item, _)| {
+        let target = item.target(sandbox);
+        every
+            .iter()
+            .filter(|(other, _)| other != item)
+            .map(|(other, _)| other.target(sandbox))
+            .find(|other| *other == target || nested(&target, other))
+            .map(|other| clash(&target, &other))
+    })
 }
 
 struct Staging {
@@ -296,7 +364,11 @@ impl Session {
                 source,
             })?;
         let project = self.resolve_project(config, &labels).await?;
-        let repository = self.remote(sandbox, &cancel).repository().await?;
+        let repository = self
+            .remote(sandbox, &cancel)
+            .repository()
+            .await
+            .map_err(|error| ExportError::remote(sandbox, error))?;
         if let Some(branch) = repository.unusable.first() {
             return Err(ExportError::UnusableBranch {
                 branch: branch.clone(),
@@ -313,15 +385,25 @@ impl Session {
                 bundle: None,
                 branches: Vec::new(),
                 detached: None,
+                worktrees: Vec::new(),
             });
         }
-        let targets: Vec<String> = wanted.iter().map(|item| item.target(sandbox)).collect();
+        if wanted.len() > MAX_HEADS {
+            return Err(ExportError::TooManyHeads {
+                count: wanted.len(),
+                limit: MAX_HEADS,
+            });
+        }
+        if let Some(error) = collision(sandbox, &repository, &wanted) {
+            return Err(error);
+        }
+        let items: Vec<Wanted> = wanted.into_iter().map(|(item, _)| item).collect();
+        let targets: Vec<String> = items.iter().map(|item| item.target(sandbox)).collect();
         guard(&host, &refs, &targets).await?;
-        let sources: Vec<String> = wanted.iter().map(Wanted::source).collect();
         let unique = LaunchId::generate()?;
         let remote_bundle = sandbox_layout::BUNDLE_DIR.join(&format!("export-{unique}.bundle"))?;
         let result = self
-            .ship(&host, sandbox, &unique, &remote_bundle, &sources, &cancel)
+            .ship(&host, sandbox, &unique, &remote_bundle, &items, &cancel)
             .await;
         self.remote(sandbox, &CancellationToken::new())
             .discard(&remote_bundle)
@@ -335,15 +417,17 @@ impl Session {
         sandbox: &SandboxName,
         unique: &LaunchId,
         remote_bundle: &SandboxPath,
-        sources: &[String],
+        items: &[Wanted],
         cancel: &CancellationToken,
     ) -> Result<ExportReport, ExportError> {
+        let sources: Vec<String> = items.iter().map(Wanted::source).collect();
         self.remote(sandbox, cancel)
-            .bundle(remote_bundle, sources)
-            .await?;
+            .bundle(remote_bundle, &sources)
+            .await
+            .map_err(|error| ExportError::remote(sandbox, error))?;
         let staging = self.stage(sandbox, unique).await?;
         let result = self
-            .fetch_exported(host, sandbox, remote_bundle, &staging, cancel)
+            .fetch_exported(host, sandbox, remote_bundle, &staging, items, cancel)
             .await;
         drop(self.deps.host.fs.remove_dir_all(&staging.dir).await);
         result
@@ -367,6 +451,7 @@ impl Session {
         sandbox: &SandboxName,
         remote_bundle: &SandboxPath,
         staging: &Staging,
+        items: &[Wanted],
         cancel: &CancellationToken,
     ) -> Result<ExportReport, ExportError> {
         let digest = self
@@ -376,17 +461,33 @@ impl Session {
             .await?;
         host.verify(&staging.bundle).await?;
         let heads = host.heads(&staging.bundle).await?;
-        let prefix = exported_prefix(sandbox);
-        let refspecs: Vec<String> = heads
-            .keys()
-            .map(|source| {
-                let name = source.strip_prefix("refs/heads/").unwrap_or(source);
-                format!("+{source}:{prefix}{name}")
-            })
+        require_heads(&heads, items)?;
+        let refspecs: Vec<String> = items
+            .iter()
+            .map(|item| format!("+{}:{}", item.source(), item.target(sandbox)))
             .collect();
         host.fetch(&staging.bundle, &refspecs).await?;
         let landed = host.refs(sandbox).await?;
-        report(sandbox, digest, &heads, &landed)
+        report(sandbox, digest, items, &heads, &landed)
+    }
+}
+
+fn require_heads(heads: &BTreeMap<String, CommitId>, items: &[Wanted]) -> Result<(), ExportError> {
+    let wanted: BTreeSet<String> = items.iter().map(Wanted::source).collect();
+    let extra: Vec<TerminalText> = heads
+        .keys()
+        .filter(|name| !wanted.contains(*name))
+        .map(|name| TerminalText::sanitize(name.as_bytes()))
+        .collect();
+    let missing: Vec<String> = wanted
+        .iter()
+        .filter(|name| !heads.contains_key(*name))
+        .cloned()
+        .collect();
+    if extra.is_empty() && missing.is_empty() {
+        Ok(())
+    } else {
+        Err(ExportError::BundleHeads { extra, missing })
     }
 }
 
@@ -415,16 +516,26 @@ async fn guard(host: &Host<'_>, refs: &HostRefs, targets: &[String]) -> Result<(
 fn report(
     sandbox: &SandboxName,
     digest: Sha256,
+    items: &[Wanted],
     heads: &BTreeMap<String, CommitId>,
     landed: &HostRefs,
 ) -> Result<ExportReport, ExportError> {
-    let prefix = exported_prefix(sandbox);
-    let mut branches = Vec::new();
-    let mut detached = None;
-    for (source, expected) in heads {
-        let name = source.strip_prefix("refs/heads/").unwrap_or(source);
-        let host_ref = format!("{prefix}{name}");
-        let found = landed.exported.get(name).cloned();
+    let mut report = ExportReport {
+        sandbox: sandbox.clone(),
+        bundle: Some(digest),
+        branches: Vec::new(),
+        detached: None,
+        worktrees: Vec::new(),
+    };
+    for item in items {
+        let host_ref = item.target(sandbox);
+        let expected = heads
+            .get(&item.source())
+            .ok_or_else(|| ExportError::BundleHeads {
+                extra: Vec::new(),
+                missing: vec![item.source()],
+            })?;
+        let found = landed.exported.get(&item.name()).cloned();
         if found.as_ref() != Some(expected) {
             return Err(ExportError::TipMismatch {
                 host_ref,
@@ -432,28 +543,22 @@ fn report(
                 found,
             });
         }
-        if source == HEAD {
-            detached = Some(ExportedDetached {
-                tip: expected.clone(),
+        let tip = expected.clone();
+        match item {
+            Wanted::Branch(branch) => report.branches.push(ExportedBranch {
+                branch: branch.clone(),
+                tip,
                 host_ref,
-            });
-        } else {
-            let branch = BranchName::parse(name).map_err(|_| ExportError::UnusableBranch {
-                branch: name.to_owned(),
-            })?;
-            branches.push(ExportedBranch {
-                branch,
-                tip: expected.clone(),
+            }),
+            Wanted::Head => report.detached = Some(ExportedDetached { tip, host_ref }),
+            Wanted::Worktree(name) => report.worktrees.push(ExportedWorktree {
+                worktree: name.clone(),
+                tip,
                 host_ref,
-            });
+            }),
         }
     }
-    Ok(ExportReport {
-        sandbox: sandbox.clone(),
-        bundle: Some(digest),
-        branches,
-        detached,
-    })
+    Ok(report)
 }
 
 impl Session {
@@ -497,11 +602,16 @@ impl Session {
             .workspace(workspace)
             .ok_or_else(|| UnknownReason::WorkspaceUnknown(workspace.clone()))?;
         let cancel = CancellationToken::new();
-        let repository = match self.remote(sandbox, &cancel).repository().await {
+        let remote = self.remote(sandbox, &cancel);
+        let repository = match remote.repository().await {
             Ok(repository) => repository,
             Err(RemoteError::NoRepository) => return Err(UnknownReason::NoRepository),
             Err(_) => return Err(UnknownReason::InspectionFailed),
         };
+        let uncommitted = remote
+            .uncommitted(&repository)
+            .await
+            .map_err(|_| UnknownReason::InspectionFailed)?;
         let project = ProjectRoot::open(self.deps.host.fs.as_ref(), &entry.path)
             .await
             .map_err(|_| UnknownReason::InspectionFailed)?;
@@ -512,6 +622,6 @@ impl Session {
             .refs(sandbox)
             .await
             .map_err(|_| UnknownReason::InspectionFailed)?;
-        Ok(classify(&repository, &refs))
+        Ok(classify(&repository, uncommitted, &refs))
     }
 }

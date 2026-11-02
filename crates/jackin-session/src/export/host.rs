@@ -13,6 +13,18 @@ use crate::project::git::{HostGit, Pace, words};
 
 const HEADS: &str = "refs/heads/";
 const JACKIN: &str = "jackin/";
+const BOUNDS: [&str; 4] = [
+    "-c",
+    "pack.windowMemory=256m",
+    "-c",
+    "core.bigFileThreshold=64m",
+];
+const STRICT: [&str; 4] = [
+    "-c",
+    "fetch.fsckObjects=true",
+    "-c",
+    "transfer.fsckObjects=true",
+];
 
 pub(super) const HEAD: &str = "HEAD";
 
@@ -157,7 +169,8 @@ impl Host<'_> {
     }
 
     pub(super) async fn verify(&self, bundle: &HostPath) -> Result<(), ExportError> {
-        let mut args = words(&["bundle", "verify", "--quiet"]);
+        let mut args = words(&BOUNDS);
+        args.extend(words(&["bundle", "verify", "--quiet"]));
         args.push(bundle.as_path().display().to_string());
         self.run(Pace::Long, args).await.map(drop)
     }
@@ -166,7 +179,8 @@ impl Host<'_> {
         &self,
         bundle: &HostPath,
     ) -> Result<BTreeMap<String, CommitId>, ExportError> {
-        let mut args = words(&["bundle", "list-heads"]);
+        let mut args = words(&BOUNDS);
+        args.extend(words(&["bundle", "list-heads"]));
         args.push(bundle.as_path().display().to_string());
         let listed = self.run(Pace::Long, args).await?;
         let mut heads = BTreeMap::new();
@@ -184,7 +198,9 @@ impl Host<'_> {
         bundle: &HostPath,
         refspecs: &[String],
     ) -> Result<(), ExportError> {
-        let mut args = words(&[
+        let mut args = words(&BOUNDS);
+        args.extend(words(&STRICT));
+        args.extend(words(&[
             "-c",
             "gc.auto=0",
             "-c",
@@ -196,7 +212,7 @@ impl Host<'_> {
             "--no-prune",
             "--no-write-fetch-head",
             "--no-recurse-submodules",
-        ]);
+        ]));
         args.push(bundle.as_path().display().to_string());
         args.extend_from_slice(refspecs);
         self.run(Pace::Long, args).await.map(drop)

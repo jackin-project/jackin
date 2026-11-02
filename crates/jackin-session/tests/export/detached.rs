@@ -29,6 +29,7 @@ async fn a_detached_head_commit_is_unexported_until_it_is_exported_as_the_head_r
                 uncommitted: false,
                 branches: Vec::new(),
                 detached: Some(commit.clone()),
+                worktrees: Vec::new(),
                 unusable: Vec::new(),
             })
         );

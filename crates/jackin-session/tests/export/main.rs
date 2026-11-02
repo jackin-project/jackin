@@ -6,7 +6,9 @@ mod concurrent;
 mod detached;
 mod empty;
 mod foreign;
+mod fsck;
 mod git;
+mod heads;
 mod nesting;
 mod purge;
 mod refs;
@@ -15,3 +17,8 @@ mod support;
 mod unusable;
 mod work_state;
 mod worktree;
+mod worktrees;
+
+#[expect(dead_code, reason = "each test binary uses part of the shared tap")]
+#[path = "../common/tap.rs"]
+mod tap;

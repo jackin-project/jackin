@@ -50,7 +50,7 @@ pub enum PurgeError {
     #[error("the work in {sandbox:?} is not exported: {state:?}")]
     WorkNotExported {
         sandbox: SandboxName,
-        state: WorkState,
+        state: Box<WorkState>,
     },
     #[error(transparent)]
     Gateway(#[from] GatewayError),
@@ -139,7 +139,7 @@ impl Session {
         if mode == PurgeMode::Guarded && was != WorkState::Exported {
             return Err(PurgeError::WorkNotExported {
                 sandbox: sandbox.clone(),
-                state: was,
+                state: Box::new(was),
             });
         }
         self.deps.gateway.delete_sandbox(sandbox).await?;

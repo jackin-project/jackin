@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::HostPath;
-use jackin_session::{ExportError, Unexported, WorkState};
+use jackin_core::{HostPath, TerminalText};
+use jackin_session::{ExportError, PurgeError, PurgeMode, Unexported, WorkState};
 use jackin_testkit::{Rig, TestResult, guard};
 
-use super::support::{branch_with_commit, export, exports, ref_of, snapshot};
+use super::support::{branch_with_commit, export, exports, ref_of, snapshot, state};
 
 #[tokio::test]
 async fn a_sandbox_branch_under_jackin_fails_the_export_and_is_never_exported() -> TestResult {
@@ -24,7 +24,7 @@ async fn a_sandbox_branch_under_jackin_fails_the_export_and_is_never_exported() 
         assert!(
             matches!(
                 &refused,
-                Err(ExportError::UnusableBranch { branch }) if branch == "jackin/evil"
+                Err(ExportError::UnusableBranch { branch }) if branch.as_str() == "jackin/evil"
             ),
             "{refused:?}"
         );
@@ -38,7 +38,8 @@ async fn a_sandbox_branch_under_jackin_fails_the_export_and_is_never_exported() 
                 uncommitted: false,
                 branches: vec![jackin_core::BranchName::parse("good")?],
                 detached: None,
-                unusable: vec!["jackin/evil".to_owned()],
+                worktrees: Vec::new(),
+                unusable: vec![TerminalText::sanitize(b"jackin/evil")],
             })
         );
         Ok(())
@@ -111,6 +112,64 @@ async fn a_target_ref_checked_out_in_any_host_worktree_is_refused_with_no_ref_ch
                 .map(String::as_str),
             Some(second.as_str())
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_branch_name_with_a_control_or_format_character_is_unusable_and_plain_unicode_still_exports()
+-> TestResult {
+    guard(async {
+        for name in ["feat\u{9b}2J", "ok\u{202e}gnp", "a\u{85}b", "x\u{200b}y"] {
+            let rig = Rig::new().await?;
+            rig.launch(1).await?;
+            let handle = rig.handle(1).await?;
+            let sandbox = handle.name();
+            handle.git(&["branch", name]).await?;
+            handle.git(&["check-ref-format", "--branch", name]).await?;
+            let before = snapshot(&rig).await?;
+            let shown = TerminalText::sanitize(name.as_bytes());
+
+            let refused = export(&rig, &sandbox).await;
+
+            assert!(
+                matches!(&refused, Err(ExportError::UnusableBranch { branch }) if *branch == shown),
+                "{name:?}: {refused:?}"
+            );
+            let after = snapshot(&rig).await?;
+            assert!(exports(&after).is_empty(), "{name:?}");
+            assert_eq!(after.rest, before.rest, "{name:?}");
+            let expected = WorkState::Unexported(Unexported {
+                uncommitted: false,
+                branches: Vec::new(),
+                detached: None,
+                worktrees: Vec::new(),
+                unusable: vec![shown],
+            });
+            assert_eq!(state(&rig, &sandbox).await, expected, "{name:?}");
+            let purge = rig
+                .world
+                .session
+                .purge(&rig.config, &sandbox, PurgeMode::Guarded)
+                .await;
+            assert!(
+                matches!(purge, Err(PurgeError::WorkNotExported { .. })),
+                "{name:?}: {purge:?}"
+            );
+            assert!(rig.world.gateway.sandbox(&sandbox).is_some());
+        }
+
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let sandbox = handle.name();
+        branch_with_commit(&handle, "caf\u{e9}", "a.txt").await?;
+        branch_with_commit(&handle, "\u{65e5}\u{672c}\u{8a9e}/x", "b.txt").await?;
+        export(&rig, &sandbox).await?;
+        let landed = exports(&snapshot(&rig).await?);
+        assert!(landed.contains_key(&ref_of(&sandbox, "caf\u{e9}")));
+        assert!(landed.contains_key(&ref_of(&sandbox, "\u{65e5}\u{672c}\u{8a9e}/x")));
         Ok(())
     })
     .await

@@ -1,15 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_core::sandbox_layout;
 use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_session::ExportError;
-use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard};
+use jackin_testkit::{Fault, ProgramScript, Rig, TestResult, Trigger, guard};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{branch_with_commit, export, exports, ref_of, snapshot, tip};
 
 #[tokio::test]
-async fn a_sandbox_without_a_repository_is_a_sandbox_git_error_and_changes_nothing() -> TestResult {
+async fn sandbox_git_failures_are_typed_without_invented_exit_codes_and_change_nothing()
+-> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.world.gateway.inject(Fault::FailAt {
@@ -21,15 +23,48 @@ async fn a_sandbox_without_a_repository_is_a_sandbox_git_error_and_changes_nothi
         let launched = rig.launch_with(1, CancellationToken::new()).await?;
         assert!(launched.is_err(), "{launched:?}");
         let before = snapshot(&rig).await?;
+        let bare = rig.sandbox_name(1)?;
 
-        let refused = export(&rig, &rig.sandbox_name(1)?).await;
+        let refused = export(&rig, &bare).await;
 
         assert!(
-            matches!(
-                refused,
-                Err(ExportError::SandboxGit { exit_code, .. }) if exit_code != 0
-            ),
+            matches!(&refused, Err(ExportError::NoRepository { sandbox }) if *sandbox == bare),
             "{refused:?}"
+        );
+        assert_eq!(snapshot(&rig).await?.rest, before.rest);
+
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        handle.commit_in_project("a.txt", b"a", "work").await?;
+        let before = snapshot(&rig).await?;
+        rig.world.gateway.script_program(
+            &sandbox_layout::GIT,
+            ProgramScript {
+                exit_code: 0,
+                stdout: b".git\n".to_vec(),
+                stderr: Vec::new(),
+            },
+        );
+        let garbled = export(&rig, &name).await;
+        assert!(
+            matches!(&garbled, Err(ExportError::SandboxOutput { sandbox, .. }) if *sandbox == name),
+            "{garbled:?}"
+        );
+        assert_eq!(snapshot(&rig).await?.rest, before.rest);
+
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        handle.commit_in_project("a.txt", b"a", "work").await?;
+        let before = snapshot(&rig).await?;
+        std::fs::write(handle.root().join("project/.git/packed-refs"), b"garbage\n")?;
+        let failed = export(&rig, &name).await;
+        assert!(
+            matches!(failed, Err(ExportError::SandboxGit { exit_code: 128, .. })),
+            "{failed:?}"
         );
         assert_eq!(snapshot(&rig).await?.rest, before.rest);
         Ok(())

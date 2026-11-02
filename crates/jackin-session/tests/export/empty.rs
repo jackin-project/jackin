@@ -31,6 +31,7 @@ async fn a_repository_with_no_commits_exports_a_sandbox_branch_into_a_missing_bu
                 uncommitted: false,
                 branches: vec![jackin_core::BranchName::parse("main")?],
                 detached: None,
+                worktrees: Vec::new(),
                 unusable: Vec::new(),
             })
         );
