@@ -124,3 +124,29 @@ async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_
     })
     .await
 }
+
+#[tokio::test]
+async fn a_shell_on_a_sandbox_whose_main_process_ended_is_main_process_ended() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        for ended in [
+            Phase::Completed { exit_code: 0 },
+            Phase::Error { exit_code: Some(7) },
+            Phase::Error { exit_code: None },
+        ] {
+            rig.world.gateway.force_phase(&name, ended);
+            let refused = rig.world.session.open_shell(request(&name)?).await;
+            match refused {
+                Err(AttachError::MainProcessEnded { sandbox, phase }) => {
+                    assert_eq!((sandbox, phase), (name.clone(), ended));
+                }
+                other => return Err(format!("{ended:?}: saw {other:?}").into()),
+            }
+        }
+        Ok(())
+    })
+    .await
+}

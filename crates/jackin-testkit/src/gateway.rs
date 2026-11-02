@@ -257,6 +257,10 @@ impl FakeGateway {
         self.registry().engine = Some(engine);
     }
 
+    pub fn set_serving(&self, serving: bool) {
+        self.registry().serving = serving;
+    }
+
     pub fn set_supervisor(&self, model: SupervisorModel) {
         self.registry().supervisor = model;
     }
@@ -453,7 +457,7 @@ impl Gateway for FakeGateway {
         self.registry().strike(GatewayOp::Health)?;
         Ok(GatewayHealth {
             version: "0.1.6".to_owned(),
-            serving: true,
+            serving: self.registry().serving,
         })
     }
 

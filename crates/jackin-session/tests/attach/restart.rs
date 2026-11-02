@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{AttemptId, HookKind, SupervisorState, sandbox_layout};
+use std::collections::BTreeMap;
+
+use jackin_core::{AttemptId, EnvName, HookKind, Phase, SupervisorState, sandbox_layout};
 use jackin_session::{
     LaunchEvent, LaunchStep, LineDelivery, RestartError, StepResult, launch_events,
 };
@@ -17,7 +19,8 @@ async fn restart_refuses_a_running_agent_and_otherwise_runs_preflight_and_reques
 -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
-        rig.launch(1).await?;
+        let env = BTreeMap::from([(EnvName::parse("GREETING")?, "from-launch".to_owned())]);
+        rig.launch_with_env(1, env.clone()).await?;
         let handle = rig.handle(1).await?;
         let name = handle.name();
         let session = &rig.world.session;
@@ -50,7 +53,9 @@ async fn restart_refuses_a_running_agent_and_otherwise_runs_preflight_and_reques
             }
         );
         assert_eq!(handle.file(&sandbox_layout::RUN_START), Some(b"2".to_vec()));
-        assert_eq!(handle.runs(&preflight).len(), runs + 1);
+        let after = handle.runs(&preflight);
+        assert_eq!(after.len(), runs + 1);
+        assert_eq!(after.last().map(|run| &run.env), Some(&env));
         let mut seen = Vec::new();
         while let Some(event) = feed.recv().await {
             seen.push(event);
@@ -116,6 +121,43 @@ async fn a_failing_preflight_stops_the_restart_before_any_request_is_written() -
                 code: 3
             })
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_restart_on_a_sandbox_whose_main_process_ended_is_main_process_ended_and_writes_nothing()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        handle.exit_codex(3);
+        let preflight = sandbox_layout::hook_path(HookKind::Preflight);
+        let runs = handle.runs(&preflight).len();
+        for ended in [
+            Phase::Completed { exit_code: 0 },
+            Phase::Error { exit_code: Some(7) },
+            Phase::Error { exit_code: None },
+        ] {
+            rig.world.gateway.force_phase(&name, ended);
+            let (events, _feed) = launch_events(LineDelivery::Reliable);
+            let refused = rig
+                .world
+                .session
+                .restart_agent(&name, events, CancellationToken::new())
+                .await;
+            match refused {
+                Err(RestartError::MainProcessEnded { sandbox, phase }) => {
+                    assert_eq!((sandbox, phase), (name.clone(), ended));
+                }
+                other => return Err(format!("{ended:?}: saw {other:?}").into()),
+            }
+        }
+        assert_eq!(handle.file(&sandbox_layout::RUN_START), Some(b"1".to_vec()));
+        assert_eq!(handle.runs(&preflight).len(), runs);
         Ok(())
     })
     .await

@@ -25,6 +25,12 @@ pub(crate) enum Access {
     Failed(GatewayError),
 }
 
+pub(crate) enum Health {
+    Serving,
+    NotServing,
+    Fails,
+}
+
 pub(crate) struct Setup {
     pub(crate) openshell: ProcessReply,
     pub(crate) ssh: ProcessReply,
@@ -33,7 +39,7 @@ pub(crate) struct Setup {
     pub(crate) access: Access,
     pub(crate) pinned: String,
     pub(crate) socket: bool,
-    pub(crate) unhealthy: bool,
+    pub(crate) health: Health,
 }
 
 impl Setup {
@@ -46,7 +52,7 @@ impl Setup {
             access: Access::Connected,
             pinned: "0.1.6".to_owned(),
             socket: true,
-            unhealthy: false,
+            health: Health::Serving,
         }
     }
 }
@@ -62,7 +68,7 @@ pub(crate) async fn run(setup: Setup) -> Result<Run, Box<dyn Error>> {
     scripted.expect(ScriptedProgram::Openshell, &["--version"], setup.openshell);
     scripted.expect(ScriptedProgram::Ssh, &["-V"], setup.ssh);
     scripted.expect_git(&["--version"], setup.git);
-    if setup.unhealthy {
+    if matches!(setup.health, Health::Fails) {
         world.gateway.inject(Fault::FailNext {
             op: GatewayOp::Health,
             error: GatewayError::Protocol {
@@ -70,6 +76,9 @@ pub(crate) async fn run(setup: Setup) -> Result<Run, Box<dyn Error>> {
             },
         });
     }
+    world
+        .gateway
+        .set_serving(!matches!(setup.health, Health::NotServing));
     let name = world.gateway.name().to_string();
     let list = if setup.listed {
         format!(

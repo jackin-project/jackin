@@ -79,7 +79,10 @@ async fn stop_and_start_keep_the_files_and_reset_the_supervisor_and_a_stuck_star
             return Err(format!("expected a timeout, saw {stuck:?}").into());
         };
         assert_eq!((sandbox, wanted), (name.clone(), Phase::Ready));
-        assert!(after >= READY_LIMIT, "{after:?}");
+        assert!(
+            (READY_LIMIT..=READY_LIMIT + Duration::from_secs(1)).contains(&after),
+            "{after:?}"
+        );
         let slept: Duration = rig
             .world
             .clock

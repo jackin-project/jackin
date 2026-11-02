@@ -33,6 +33,10 @@ async fn a_fresh_launch_is_exported_and_only_real_changes_make_it_unexported() -
         rig.launch(1).await?;
         let first = rig.sandbox_name(1)?;
         assert_eq!(state(&rig, &first).await, WorkState::Exported);
+        let ignored = rig.handle(1).await?.root().join("project/target/x");
+        tokio::fs::create_dir_all(ignored.parent().ok_or("no parent")?).await?;
+        tokio::fs::write(&ignored, b"built\n").await?;
+        assert_eq!(state(&rig, &first).await, WorkState::Exported);
 
         rig.repo.file("README.md", b"edited\n").await?;
         rig.repo.file("notes.txt", b"untracked\n").await?;

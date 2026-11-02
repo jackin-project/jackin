@@ -78,6 +78,7 @@ pub(super) struct Registry {
     pub(super) supervisor: SupervisorModel,
     pub(super) hidden_until_conflict: bool,
     pub(super) start_ignored: bool,
+    pub(super) serving: bool,
     pub(super) host_home: Option<PathBuf>,
     pub(super) host_edits: Vec<(UploadKind, HostEdit)>,
 }
@@ -102,6 +103,7 @@ impl Registry {
             supervisor: SupervisorModel::Cooperative,
             hidden_until_conflict: false,
             start_ignored: false,
+            serving: true,
             host_home: None,
             host_edits: Vec::new(),
         }

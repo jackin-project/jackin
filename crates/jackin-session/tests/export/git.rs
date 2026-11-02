@@ -97,3 +97,45 @@ async fn a_ref_name_collision_is_a_ref_conflict_and_the_fetch_is_all_or_nothing(
     })
     .await
 }
+
+#[tokio::test]
+async fn a_stale_lock_on_one_target_ref_fails_the_fetch_as_a_host_git_error_and_exports_no_ref()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        branch_with_commit(&handle, "a", "a.txt").await?;
+        branch_with_commit(&handle, "b", "b.txt").await?;
+        let target = rig
+            .repo
+            .root()
+            .as_path()
+            .join(".git")
+            .join(ref_of(&name, "b"));
+        tokio::fs::create_dir_all(target.parent().ok_or("no parent")?).await?;
+        let lock = target.with_extension("lock");
+        tokio::fs::write(&lock, b"").await?;
+        let before = snapshot(&rig).await?;
+
+        let failed = export(&rig, &name).await;
+
+        assert!(
+            matches!(failed, Err(ExportError::HostGit { .. })),
+            "{failed:?}"
+        );
+        let after = snapshot(&rig).await?;
+        assert!(exports(&after).is_empty(), "{:?}", exports(&after));
+        assert_eq!(after.rest, before.rest);
+
+        tokio::fs::remove_file(&lock).await?;
+        export(&rig, &name).await?;
+        let healed = exports(&snapshot(&rig).await?);
+        assert!(
+            healed.contains_key(&ref_of(&name, "a")) && healed.contains_key(&ref_of(&name, "b"))
+        );
+        Ok(())
+    })
+    .await
+}

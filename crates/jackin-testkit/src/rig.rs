@@ -51,6 +51,7 @@ pub struct Rig {
     pub project: ProjectRoot,
     pub loaded: LoadedRole,
     pub home: HostPath,
+    limits: LaunchLimits,
     _role: RoleFixture,
     _home: TempDir,
 }
@@ -199,11 +200,18 @@ impl Rig {
     }
 
     pub fn session_with(&self, limits: LaunchLimits) -> Session {
+        self.session_of(limits, Arc::<TestRunner>::clone(&self.world.runner))
+    }
+
+    pub fn session_over(&self, runner: Arc<dyn ProcessRunner>) -> Session {
+        self.session_of(self.limits, runner)
+    }
+
+    fn session_of(&self, limits: LaunchLimits, runner: Arc<dyn ProcessRunner>) -> Session {
         let world = &self.world;
         let gateway: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&world.gateway);
         let engine: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&world.engine);
         let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
-        let runner: Arc<dyn ProcessRunner> = Arc::<TestRunner>::clone(&world.runner);
         let fs: Arc<dyn FileSystem> = Arc::clone(&world.fs);
         Session::new(SessionDeps {
             gateway,
@@ -302,7 +310,8 @@ impl RigBuilder {
     }
 
     pub async fn build(self) -> Result<Rig, FixtureError> {
-        let world = World::builder().limits(self.limits).build()?;
+        let limits = self.limits;
+        let world = World::builder().limits(limits).build()?;
         let repo = match self.repo {
             Some(repo) => repo,
             None => committed_repo().await?,
@@ -347,6 +356,7 @@ impl RigBuilder {
             project,
             loaded,
             home,
+            limits,
             _role: role,
             _home: home_dir,
         })

@@ -3,11 +3,56 @@
 
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::sync::Arc;
 
-use jackin_core::{CommitId, SandboxName, sandbox_layout};
+use async_trait::async_trait;
+use jackin_core::{
+    CommitId, LineSink, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, SandboxName,
+    SecretOutput, sandbox_layout,
+};
 use jackin_session::{ExportError, ExportReport};
-use jackin_testkit::{HostSnapshot, Rig, SandboxHandle};
+use jackin_testkit::{HostSnapshot, Rig, SandboxHandle, TestRunner};
 use tokio_util::sync::CancellationToken;
+
+#[derive(Debug)]
+pub(crate) struct CancelsOn {
+    inner: Arc<TestRunner>,
+    word: &'static str,
+    token: CancellationToken,
+}
+
+impl CancelsOn {
+    pub(crate) fn new(rig: &Rig, word: &'static str, token: &CancellationToken) -> CancelsOn {
+        CancelsOn {
+            inner: Arc::clone(&rig.world.runner),
+            word,
+            token: token.clone(),
+        }
+    }
+}
+
+#[async_trait]
+impl ProcessRunner for CancelsOn {
+    async fn run(
+        &self,
+        spec: &ProcessSpec,
+        lines: Option<&LineSink>,
+        cancel: &CancellationToken,
+    ) -> Result<ProcessOutput, ProcessError> {
+        if spec.args.iter().any(|arg| arg == self.word) {
+            self.token.cancel();
+        }
+        self.inner.run(spec, lines, cancel).await
+    }
+
+    async fn run_secret(
+        &self,
+        spec: &ProcessSpec,
+        cancel: &CancellationToken,
+    ) -> Result<SecretOutput, ProcessError> {
+        self.inner.run_secret(spec, cancel).await
+    }
+}
 
 pub(crate) async fn export(rig: &Rig, name: &SandboxName) -> Result<ExportReport, ExportError> {
     rig.world

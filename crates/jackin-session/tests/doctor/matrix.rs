@@ -5,7 +5,7 @@ use jackin_openshell::GatewayError;
 use jackin_session::CheckStatus::{Fail, Pass, Skip, Warn};
 use jackin_testkit::{ProcessReply, TestResult, guard};
 
-use super::support::{Access, Setup, expected, run, statuses};
+use super::support::{Access, Health, Setup, expected, run, statuses};
 
 #[tokio::test]
 async fn healthy_fakes_pass_every_check_in_order() -> TestResult {
@@ -78,10 +78,34 @@ async fn each_problem_flips_only_its_own_check_and_nothing_is_repaired() -> Test
             (
                 "unhealthy",
                 Setup {
-                    unhealthy: true,
+                    health: Health::Fails,
                     ..Setup::healthy()
                 },
                 [Pass, Pass, Pass, Pass, Fail, Skip, Pass],
+            ),
+            (
+                "not serving",
+                Setup {
+                    health: Health::NotServing,
+                    ..Setup::healthy()
+                },
+                [Pass, Pass, Pass, Pass, Fail, Pass, Pass],
+            ),
+            (
+                "openshell exits non-zero",
+                Setup {
+                    openshell: ProcessReply::exited(1, b"", b"broken\n"),
+                    ..Setup::healthy()
+                },
+                [Fail, Pass, Pass, Pass, Pass, Pass, Pass],
+            ),
+            (
+                "ssh exits non-zero",
+                Setup {
+                    ssh: ProcessReply::exited(255, b"", b"broken\n"),
+                    ..Setup::healthy()
+                },
+                [Pass, Fail, Pass, Pass, Pass, Pass, Pass],
             ),
             (
                 "wrong version",
