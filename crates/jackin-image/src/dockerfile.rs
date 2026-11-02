@@ -115,8 +115,13 @@ fn is_flag(word: &str) -> bool {
         .is_some_and(|(name, value)| !name.is_empty() && !value.is_empty())
 }
 
+fn trim_leading(line: &str) -> &str {
+    line.trim_start_matches(char::is_whitespace)
+}
+
 fn directive(line: &str) -> Option<(&str, &str)> {
-    let (key, value) = line.strip_prefix('#')?.split_once('=')?;
+    let comment = trim_leading(line).strip_prefix('#')?;
+    let (key, value) = trim_leading(comment).split_once('=')?;
     let key = key.trim_matches(is_blank);
     let value = value.trim_matches(is_blank);
     let valid_key = key.starts_with(|c: char| c.is_ascii_alphabetic())
@@ -146,16 +151,19 @@ fn escape_character(lines: &[&str]) -> char {
 }
 
 fn skippable(line: &str) -> bool {
-    let trimmed = line.trim_start_matches(is_blank);
+    let trimmed = trim_leading(line);
     trimmed.is_empty() || trimmed.starts_with('#')
 }
 
 impl<'a> Reader<'a> {
     fn new(text: &'a str) -> Reader<'a> {
-        let lines: Vec<&str> = text
+        let mut lines: Vec<&str> = text
             .split('\n')
             .map(|line| line.strip_suffix('\r').unwrap_or(line))
             .collect();
+        if let Some(first) = lines.first_mut() {
+            *first = first.strip_prefix('\u{feff}').unwrap_or(first);
+        }
         let escape = escape_character(&lines);
         Reader {
             lines,
@@ -181,8 +189,14 @@ impl<'a> Reader<'a> {
         }
         let line = self.next + 1;
         let mut text = String::new();
+        let mut leading = true;
         while let Some(physical) = self.lines.get(self.next) {
             self.next += 1;
+            let physical = if std::mem::take(&mut leading) {
+                trim_leading(physical)
+            } else {
+                physical
+            };
             let Some(body) = physical
                 .trim_end_matches(is_blank)
                 .strip_suffix(self.escape)

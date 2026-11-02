@@ -1,19 +1,19 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::fmt;
+
 use jackin_core::{
-    Agent, FileMode, HookKind, HostPath, ImageId, ImageTag, InstallTarget, Platform, SandboxPath,
-    Sha256, sandbox_layout,
+    FileMode, HookKind, HostPath, ImageId, ImageTag, RepoPath, SandboxPath, Sha256, sandbox_layout,
 };
 
 use crate::assets::{CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE, JACKIN_START};
 use crate::dockerfile::{DockerfileError, validate_dockerfile};
 use crate::error::ImageError;
-use crate::key::{Fields, ImageKey, install_target};
+use crate::key::{Fields, ImageKey, derived_arguments};
 use crate::request::{ImageRequest, Rebuild, SourceFile};
 
 const CONTEXT_MODE: FileMode = FileMode(0o644);
-const PLATFORMS: [Platform; 2] = [Platform::LinuxArm64, Platform::LinuxAmd64];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BuildStage {
@@ -22,17 +22,31 @@ pub enum BuildStage {
     Derived,
 }
 
+impl fmt::Display for BuildStage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            BuildStage::Construct => "construct",
+            BuildStage::Role => "role",
+            BuildStage::Derived => "derived",
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlannedBuild {
     pub stage: BuildStage,
     pub tag: ImageTag,
     pub args: Vec<String>,
     pub context: ContextSource,
+    pub stdin: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ContextSource {
-    RoleRepository(HostPath),
+    Listed {
+        root: HostPath,
+        files: Vec<RepoPath>,
+    },
     Materialized(Vec<MaterializedFile>),
 }
 
@@ -53,7 +67,6 @@ pub struct FinalBuilds {
 #[derive(Clone, Debug)]
 pub struct ImagePlan {
     request: ImageRequest,
-    target: &'static InstallTarget,
     construct: PlannedBuild,
     derived_args: Vec<String>,
 }
@@ -63,10 +76,8 @@ impl ImagePlan {
         let text =
             std::str::from_utf8(&request.dockerfile.bytes).map_err(|_| DockerfileError::NotUtf8)?;
         validate_dockerfile(text)?;
-        let target = install_target(request.agent, request.platform)?;
         Ok(ImagePlan {
             request: request.clone(),
-            target,
             construct: construct_build(request),
             derived_args: derived_arguments(request.agent)?,
         })
@@ -86,14 +97,7 @@ impl ImagePlan {
         let role_tag = ImageTag::for_role_stage(&request.role, key.sha256());
         let derived_tag = ImageTag::for_role(&request.role, key.sha256());
         let mut role_args = common_arguments(request, &role_tag);
-        role_args.push(format!(
-            "--file={}",
-            request
-                .context
-                .as_path()
-                .join(request.dockerfile.path.as_str())
-                .display()
-        ));
+        role_args.push("--file=-".to_owned());
         role_args.push(format!(
             "--build-context=construct=docker-image://{}",
             self.construct.tag
@@ -107,19 +111,21 @@ impl ImagePlan {
                 stage: BuildStage::Role,
                 tag: role_tag,
                 args: role_args,
-                context: ContextSource::RoleRepository(request.context.clone()),
+                context: listed_context(request),
+                stdin: Some(request.dockerfile.bytes.clone()),
             },
             derived: PlannedBuild {
                 stage: BuildStage::Derived,
                 tag: derived_tag,
                 args: derived_args,
                 context: ContextSource::Materialized(derived_context(request)),
+                stdin: None,
             },
         }
     }
 
     fn key(&self, construct: &ImageId) -> ImageKey {
-        ImageKey::compute(&self.request, self.target, construct)
+        ImageKey::compute(&self.request, &self.derived_args, construct)
     }
 }
 
@@ -157,6 +163,7 @@ fn construct_build(request: &ImageRequest) -> PlannedBuild {
         args: common_arguments(request, &tag),
         tag,
         context: ContextSource::Materialized(vec![file("Dockerfile", CONSTRUCT_DOCKERFILE)]),
+        stdin: None,
     }
 }
 
@@ -166,32 +173,14 @@ fn last_segment(path: &SandboxPath) -> &str {
         .map_or(path.as_str(), |(_, name)| name)
 }
 
-fn parent_directory(path: &SandboxPath) -> &str {
-    match path.as_str().rsplit_once('/') {
-        Some(("", _)) | None => "/",
-        Some((directory, _)) => directory,
+fn listed_context(request: &ImageRequest) -> ContextSource {
+    let mut files = request.context_files.clone();
+    files.sort();
+    files.dedup();
+    ContextSource::Listed {
+        root: request.context.clone(),
+        files,
     }
-}
-
-fn build_arg(name: &str, value: &str) -> String {
-    format!("--build-arg={name}={value}")
-}
-
-fn derived_arguments(agent: Agent) -> Result<Vec<String>, ImageError> {
-    let spec = agent.spec();
-    let mut args = vec![
-        build_arg("CODEX_VERSION", spec.install.version),
-        build_arg("CODEX_BIN_DIR", parent_directory(&spec.binary)),
-    ];
-    for platform in PLATFORMS {
-        let target = install_target(agent, platform)?;
-        let name = format!(
-            "CODEX_SHA256_{}",
-            platform.target_arch().to_ascii_uppercase()
-        );
-        args.push(build_arg(&name, target.sha256));
-    }
-    Ok(args)
 }
 
 fn hook_file(kind: HookKind, source: Option<&SourceFile>) -> MaterializedFile {

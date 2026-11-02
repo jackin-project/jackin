@@ -14,7 +14,7 @@ This directory holds the program that rebuilds jackin around NVIDIA OpenShell. I
 | [evidence/](evidence/) | Evidence | The raw output of live tests. |
 | [blockers/](blockers/) | Record | One report for each missing OpenShell capability. |
 | `API.md` | Reference | The crate APIs from task P2.1. |
-| `drafts/` | Input | Dockerfiles, `jackin-start`, OpenShell provider profiles, and the Codex `AgentSpec` values from P0 and P7. |
+| `drafts/` | Input | The role Dockerfile, the Docker lane drafts, the gateway how-to, and the Codex `AgentSpec` values from P0 and P7. The construct and derived Dockerfiles, `jackin-start`, and the Codex provider profile live in `crates/jackin-image/images/` and `crates/jackin-core/src/assets/`. |
 | `probe-schema.json` | Reference | The output contract of `jackin-sentinel-probe` from task P7.2. |
 
 ## Start the program

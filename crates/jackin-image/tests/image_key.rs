@@ -50,6 +50,7 @@ fn base() -> Result<ImageRequest, Box<dyn Error>> {
     Ok(ImageRequest {
         role: RoleName::parse("sentinel")?,
         context: HostPath::parse(Path::new("/work/role"))?,
+        context_files: vec![RepoPath::parse("Dockerfile")?],
         dockerfile: source("Dockerfile", DOCKERFILE)?,
         hooks: HookFiles {
             setup: Some(source("hooks/setup.sh", SETUP)?),
@@ -177,6 +178,13 @@ fn equal_rows() -> Vec<(&'static str, Mutation)> {
             r.rebuild = Rebuild::Yes;
             Ok(())
         }),
+        ("context files", |r| {
+            r.context_files = vec![
+                RepoPath::parse("src/other.rs")?,
+                RepoPath::parse("src/more.rs")?,
+            ];
+            Ok(())
+        }),
         ("dockerfile path", |r| {
             r.dockerfile.path = RepoPath::parse("docker/Dockerfile")?;
             Ok(())
@@ -228,19 +236,13 @@ struct Expect<'a> {
     revision: (&'a str, &'a str, &'a str),
     dockerfile: &'a [u8],
     construct: &'a str,
+    build_args: &'a [String],
     platform: Platform,
     docker: &'a str,
     hooks: [Option<(&'a str, &'a [u8])>; 2],
 }
 
-fn expected_key(expect: &Expect<'_>) -> Result<String, Box<dyn Error>> {
-    let spec = Agent::Codex.spec();
-    let target = spec
-        .install
-        .targets
-        .iter()
-        .find(|target| target.platform == expect.platform)
-        .ok_or("no target")?;
+fn expected_key(expect: &Expect<'_>) -> String {
     let mut out = Vec::new();
     field(&mut out, expect.role.as_bytes());
     field(&mut out, b"codex");
@@ -249,8 +251,10 @@ fn expected_key(expect: &Expect<'_>) -> Result<String, Box<dyn Error>> {
     field(&mut out, expect.revision.2.as_bytes());
     field(&mut out, hex(expect.dockerfile).as_bytes());
     field(&mut out, expect.construct.as_bytes());
-    field(&mut out, spec.install.version.as_bytes());
-    field(&mut out, target.sha256.as_bytes());
+    field(&mut out, expect.build_args.len().to_string().as_bytes());
+    for arg in expect.build_args {
+        field(&mut out, arg.as_bytes());
+    }
     field(&mut out, expect.platform.docker_arg().as_bytes());
     field(&mut out, expect.docker.as_bytes());
     field(&mut out, hex(JACKIN_START).as_bytes());
@@ -268,7 +272,17 @@ fn expected_key(expect: &Expect<'_>) -> Result<String, Box<dyn Error>> {
             .as_bytes(),
         );
     }
-    Ok(hex(&out))
+    hex(&out)
+}
+
+fn planned_build_args(request: &ImageRequest) -> Result<Vec<String>, Box<dyn Error>> {
+    let built = ImagePlan::new(request)?.final_builds(&ImageId::parse(&c1())?);
+    Ok(built
+        .derived
+        .args
+        .into_iter()
+        .filter(|arg| arg.starts_with("--build-arg="))
+        .collect())
 }
 
 fn second_request() -> Result<ImageRequest, Box<dyn Error>> {
@@ -302,26 +316,31 @@ fn check_tags(request: &ImageRequest, construct: &str, key: &str, repo: &str) ->
 
 #[test]
 fn key_is_the_documented_sha256_encoding_including_the_embedded_digests() -> TestResult {
+    let first_args = planned_build_args(&base()?)?;
+    assert_eq!(first_args.len(), 4, "derived build args");
     let first = Expect {
         role: "sentinel",
         revision: ("clean", &"1".repeat(40), ""),
         dockerfile: DOCKERFILE,
         construct: &c1(),
+        build_args: &first_args,
         platform: Platform::LinuxArm64,
         docker: "absent",
         hooks: [Some(("hooks/setup.sh", SETUP)), None],
     };
-    let expected = expected_key(&first)?;
+    let expected = expected_key(&first);
     assert_eq!(derive(&base()?, &c1())?.sha256().as_str(), expected);
     check_tags(&base()?, &c1(), &expected, "sentinel")?;
 
     let construct = format!("sha256:{}", "3".repeat(64));
     let dirty = Sha256::of(b"dirty").to_string();
+    let second_args = planned_build_args(&second_request()?)?;
     let second = Expect {
         role: "Agent-Smith",
         revision: ("dirty", &"2".repeat(40), &dirty),
         dockerfile: DOCKERFILE,
         construct: &construct,
+        build_args: &second_args,
         platform: Platform::LinuxAmd64,
         docker: "client",
         hooks: [
@@ -329,7 +348,7 @@ fn key_is_the_documented_sha256_encoding_including_the_embedded_digests() -> Tes
             Some(("hooks/b.sh", b"preflight bytes")),
         ],
     };
-    let expected = expected_key(&second)?;
+    let expected = expected_key(&second);
     assert_eq!(
         derive(&second_request()?, &construct)?.sha256().as_str(),
         expected

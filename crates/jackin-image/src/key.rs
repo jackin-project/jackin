@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Agent, DockerLayer, ImageId, InstallTarget, Platform, Sha256};
+use jackin_core::{Agent, DockerLayer, ImageId, InstallTarget, Platform, SandboxPath, Sha256};
 
 use crate::assets::{DERIVED_DOCKERFILE, JACKIN_START};
 use crate::error::ImageError;
@@ -25,6 +25,8 @@ impl Fields {
     }
 }
 
+const PLATFORMS: [Platform; 2] = [Platform::LinuxArm64, Platform::LinuxAmd64];
+
 pub(crate) fn install_target(
     agent: Agent,
     platform: Platform,
@@ -35,10 +37,38 @@ pub(crate) fn install_target(
         .ok_or(ImageError::MissingInstallTarget { platform })
 }
 
+fn parent_directory(path: &SandboxPath) -> &str {
+    match path.as_str().rsplit_once('/') {
+        Some(("", _)) | None => "/",
+        Some((directory, _)) => directory,
+    }
+}
+
+fn build_arg(name: &str, value: &str) -> String {
+    format!("--build-arg={name}={value}")
+}
+
+pub(crate) fn derived_arguments(agent: Agent) -> Result<Vec<String>, ImageError> {
+    let spec = agent.spec();
+    let mut args = vec![
+        build_arg("CODEX_VERSION", spec.install.version),
+        build_arg("CODEX_BIN_DIR", parent_directory(&spec.binary)),
+    ];
+    for platform in PLATFORMS {
+        let target = install_target(agent, platform)?;
+        let name = format!(
+            "CODEX_SHA256_{}",
+            platform.target_arch().to_ascii_uppercase()
+        );
+        args.push(build_arg(&name, target.sha256));
+    }
+    Ok(args)
+}
+
 impl ImageKey {
     pub fn derive(request: &ImageRequest, construct: &ImageId) -> Result<ImageKey, ImageError> {
-        let target = install_target(request.agent, request.platform)?;
-        Ok(ImageKey::compute(request, target, construct))
+        let derived_args = derived_arguments(request.agent)?;
+        Ok(ImageKey::compute(request, &derived_args, construct))
     }
 
     pub fn sha256(&self) -> &Sha256 {
@@ -47,12 +77,13 @@ impl ImageKey {
 
     pub(crate) fn compute(
         request: &ImageRequest,
-        target: &InstallTarget,
+        derived_args: &[String],
         construct: &ImageId,
     ) -> ImageKey {
         let ImageRequest {
             role,
             context: _,
+            context_files: _,
             dockerfile,
             hooks,
             revision,
@@ -84,8 +115,10 @@ impl ImageKey {
         }
         fields.push(Sha256::of(dockerfile_bytes).as_str());
         fields.push(construct.to_string());
-        fields.push(agent.spec().install.version);
-        fields.push(target.sha256);
+        fields.push(derived_args.len().to_string());
+        for arg in derived_args {
+            fields.push(arg);
+        }
         fields.push(platform.docker_arg());
         fields.push(match docker {
             DockerLayer::Absent => "absent",

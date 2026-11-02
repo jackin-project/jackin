@@ -29,6 +29,7 @@ fn request(role: &str) -> Result<ImageRequest, Box<dyn Error>> {
     Ok(ImageRequest {
         role: RoleName::parse(role)?,
         context: HostPath::parse(Path::new("/work/role"))?,
+        context_files: vec![RepoPath::parse("Dockerfile")?],
         dockerfile: SourceFile {
             path: RepoPath::parse("Dockerfile")?,
             bytes: b"FROM construct AS role\n".to_vec(),

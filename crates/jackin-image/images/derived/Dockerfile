@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.28.0@sha256:bb22d9815c728170f72750f4e5b0d672e06176142e1d602c7e66c050100b7e5b
 
 ARG CODEX_VERSION
 ARG CODEX_BIN_DIR
@@ -34,5 +34,11 @@ RUN --mount=type=bind,from=codex-archive,source=/,target=/archive \
     && rm -rf "$work"
 COPY --chown=root:root --chmod=0755 jackin-start /usr/local/bin/jackin-start
 COPY --chown=root:root --chmod=0755 hooks/setup hooks/preflight /usr/local/lib/jackin/hooks/
+RUN chown root:root /usr/local/bin /usr/local/lib/jackin /usr/local/lib/jackin/hooks \
+    && chmod 0755 /usr/local/bin /usr/local/lib/jackin /usr/local/lib/jackin/hooks \
+    && for tool in sudo doas su-exec gosu docker podman iptables nft; do \
+        if command -v "$tool" >/dev/null; then echo "forbidden tool in role image: $tool" >&2; exit 1; fi; \
+    done \
+    && test -z "$(find / -xdev -type f -perm /6000 -print)"
 USER sandbox
 WORKDIR /sandbox

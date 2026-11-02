@@ -275,10 +275,67 @@ fn parser_noise_never_changes_the_verdict() -> TestResult {
     Ok(())
 }
 
+fn directive_rows() -> Vec<Row> {
+    let bypass = |label, text: &str| row(label, text, not_construct(2, "ubuntu"));
+    let ok = |label, text: &str| row(label, text, Verdict::Accepted);
+    vec![
+        bypass(
+            "indented escape bypass",
+            "  # escape=`\nFROM ubuntu\nRUN echo hi `\nFROM construct\n",
+        ),
+        bypass(
+            "tab-indented",
+            "\t# escape=`\nFROM ubuntu\nRUN echo hi `\nFROM construct\n",
+        ),
+        bypass(
+            "mixed indent",
+            " \t # escape=`\nFROM ubuntu\nRUN echo hi `\nFROM construct\n",
+        ),
+        bypass(
+            "NBSP-indented",
+            "\u{a0}# escape=`\nFROM ubuntu\nRUN echo hi `\nFROM construct\n",
+        ),
+        ok(
+            "indented, valid join",
+            "  # escape=`\nFROM construct `\n AS role\n",
+        ),
+        ok("BOM only", "\u{feff}FROM construct\n"),
+        ok(
+            "BOM then directive",
+            "\u{feff}# escape=`\nFROM construct `\n AS role\n",
+        ),
+        bypass(
+            "BOM bypass",
+            "\u{feff}# escape=`\nFROM ubuntu\nRUN echo hi `\nFROM construct\n",
+        ),
+        row(
+            "BOM on line 2 is data",
+            "# syntax=x\n\u{feff}FROM construct\n",
+            Verdict::NoStages,
+        ),
+        ok(
+            "blank first line ends the block",
+            "\n# escape=`\nFROM ubuntu\nRUN echo hi `\nFROM construct\n",
+        ),
+        row(
+            "NBSP-indented FROM is an instruction",
+            "FROM construct\n\u{a0}FROM ubuntu\n",
+            not_construct(2, "ubuntu"),
+        ),
+    ]
+}
+
+#[test]
+fn directive_parsing_follows_buildkit_whitespace_and_bom_rules() -> TestResult {
+    check(&directive_rows());
+    Ok(())
+}
+
 fn request(dockerfile: &[u8]) -> Result<ImageRequest, Box<dyn Error>> {
     Ok(ImageRequest {
         role: RoleName::parse("sentinel")?,
         context: HostPath::parse(Path::new("/work/role"))?,
+        context_files: vec![RepoPath::parse("Dockerfile")?],
         dockerfile: SourceFile {
             path: RepoPath::parse("Dockerfile")?,
             bytes: dockerfile.to_vec(),

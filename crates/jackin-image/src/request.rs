@@ -39,6 +39,7 @@ impl From<bool> for Rebuild {
 pub struct ImageRequest {
     pub role: RoleName,
     pub context: HostPath,
+    pub context_files: Vec<RepoPath>,
     pub dockerfile: SourceFile,
     pub hooks: HookFiles,
     pub revision: RoleRevision,

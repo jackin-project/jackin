@@ -3,7 +3,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use jackin_core::{
     Agent, AttemptId, BuilderName, CommitId, DockerLayer, HookKind, HostPath, ImageId, Platform,
@@ -59,6 +61,7 @@ fn base() -> Result<ImageRequest, Box<dyn Error>> {
     Ok(ImageRequest {
         role: RoleName::parse("sentinel")?,
         context: HostPath::parse(Path::new("/work/role"))?,
+        context_files: vec![RepoPath::parse("Dockerfile")?],
         dockerfile: source("Dockerfile", b"FROM construct AS role\n")?,
         hooks: HookFiles {
             setup: Some(source("hooks/setup.sh", b"#!/bin/sh\necho setup\n")?),
@@ -138,11 +141,7 @@ fn check_stages(request: &ImageRequest) -> TestResult {
         "construct {label}"
     );
     let mut role = common(request, &built.role);
-    role.push(format!(
-        "--file={}/{}",
-        request.context.as_path().display(),
-        request.dockerfile.path.as_str()
-    ));
+    role.push("--file=-".to_owned());
     role.push(format!(
         "--build-context=construct=docker-image://{}",
         construct.tag
@@ -189,12 +188,35 @@ fn buildx_arguments_are_explicit_single_tokens_for_all_three_stages() -> TestRes
     let mut nested = base()?;
     nested.dockerfile.path = RepoPath::parse("docker/Role.Dockerfile")?;
     let built = ImagePlan::new(&nested)?.final_builds(&construct_id()?);
-    assert!(
+    let plan = ImagePlan::new(&nested)?;
+    let file_args = |args: &[String]| args.iter().filter(|a| a.starts_with("--file=")).count();
+    assert_eq!(
         built
             .role
             .args
-            .contains(&"--file=/work/role/docker/Role.Dockerfile".to_owned())
+            .iter()
+            .filter(|arg| arg.as_str() == "--file=-")
+            .count(),
+        1,
+        "role args carry one --file=-"
     );
+    assert_eq!(file_args(&built.role.args), 1, "role --file= count");
+    assert_eq!(
+        file_args(&plan.construct_build().args),
+        0,
+        "construct --file="
+    );
+    assert_eq!(file_args(&built.derived.args), 0, "derived --file=");
+    for args in [
+        &plan.construct_build().args,
+        &built.role.args,
+        &built.derived.args,
+    ] {
+        assert!(
+            args.iter().all(|arg| !arg.contains("Role.Dockerfile")),
+            "{args:?}"
+        );
+    }
     for builder in ["--help", "-evil"] {
         let mut request = base()?;
         request.builder = BuilderName::parse(builder)?;
@@ -218,7 +240,7 @@ fn buildx_arguments_are_explicit_single_tokens_for_all_three_stages() -> TestRes
 fn materialized(build: &PlannedBuild) -> Result<&[MaterializedFile], Box<dyn Error>> {
     match &build.context {
         ContextSource::Materialized(files) => Ok(files),
-        ContextSource::RoleRepository(path) => Err(format!("repository context {path:?}").into()),
+        ContextSource::Listed { root, .. } => Err(format!("listed context {root:?}").into()),
     }
 }
 
@@ -255,6 +277,10 @@ fn build_contexts_hold_exactly_the_documented_files() -> TestResult {
         request.hooks.preflight = declared_preflight
             .map(|b| source("hooks/p.sh", b))
             .transpose()?;
+        request.context_files = ["src/b.rs", "Dockerfile", "src/a.rs", "src/a.rs"]
+            .into_iter()
+            .map(RepoPath::parse)
+            .collect::<Result<_, _>>()?;
         let plan = ImagePlan::new(&request)?;
         let label = format!("{declared_setup:?} {declared_preflight:?}");
 
@@ -264,10 +290,18 @@ fn build_contexts_hold_exactly_the_documented_files() -> TestResult {
         assert_eq!(construct[0].bytes, CONSTRUCT_DOCKERFILE, "{label}");
 
         let built = plan.final_builds(&construct_id()?);
-        assert_eq!(
-            built.role.context,
-            ContextSource::RoleRepository(request.context.clone())
-        );
+        let ContextSource::Listed {
+            root,
+            files: listed,
+        } = &built.role.context
+        else {
+            return Err(format!("role context {:?}", built.role.context).into());
+        };
+        assert_eq!(root, &request.context, "role context root {label}");
+        let listed_set: BTreeSet<&RepoPath> = listed.iter().collect();
+        assert_eq!(listed_set.len(), listed.len(), "duplicate file {label}");
+        let wanted_set: BTreeSet<&RepoPath> = request.context_files.iter().collect();
+        assert_eq!(listed_set, wanted_set, "role context files {label}");
 
         let files = materialized(&built.derived)?;
         let names: BTreeSet<&str> = files.iter().map(|f| f.name.as_str()).collect();
@@ -426,7 +460,7 @@ fn derived_dockerfile_installs_what_the_codex_row_describes() -> TestResult {
     let text = derived_text()?;
     let lines = instructions(text);
     let wanted: BTreeSet<String> = ARG_NAMES.iter().map(|name| (*name).to_owned()).collect();
-    assert_eq!(declared_args(&lines), wanted);
+    assert_eq!(declared_args(&lines), wanted, "declared ARG names");
     let adds = archive_stage_adds(&lines);
     for target in spec.install.targets {
         let arch = target.platform.target_arch();
@@ -450,22 +484,39 @@ fn derived_dockerfile_installs_what_the_codex_row_describes() -> TestResult {
     let words: BTreeSet<&str> = unquoted.split_whitespace().collect();
     for path in [&spec.binary, &spec.code_mode_host] {
         let want = format!("${{CODEX_BIN_DIR}}/{}", last_segment(path.as_str()));
-        assert!(words.contains(want.as_str()), "{want}");
+        assert!(words.contains(want.as_str()), "install path {want}");
     }
-    for member in spec.install.archive_members {
-        assert!(text.contains(member), "{member}");
-    }
-    assert!(text.contains(spec.install.system_config.as_str()));
+    let extraction = lines
+        .iter()
+        .flat_map(|line| line.split(" && "))
+        .map(str::trim)
+        .find(|command| command.split_whitespace().next() == Some("tar"))
+        .ok_or("no tar command")?;
+    let mut extracted: Vec<&str> = extraction
+        .split_whitespace()
+        .filter(|word| word.starts_with("bin/"))
+        .collect();
+    extracted.sort_unstable();
+    let mut members = spec.install.archive_members.to_vec();
+    members.sort_unstable();
+    assert_eq!(extracted, members, "tar members {extraction}");
+    assert!(
+        text.contains(spec.install.system_config.as_str()),
+        "system config path"
+    );
     let printf = format!(
         "printf '{}'",
         spec.install.system_config_content.replace('\n', "\\n")
     );
-    assert!(text.contains(&printf), "{printf}");
+    assert!(text.contains(&printf), "system config content {printf}");
     let version_output = spec
         .install
         .version_output
         .replace("{version}", "${CODEX_VERSION}");
-    assert!(text.contains(&version_output), "{version_output}");
+    assert!(
+        text.contains(&version_output),
+        "version output {version_output}"
+    );
     assert!(!text.contains(spec.install.version), "literal version");
     for target in spec.install.targets {
         assert!(!text.contains(target.sha256), "literal checksum");
@@ -481,13 +532,17 @@ fn derived_dockerfile_installs_jackin_start_and_hooks_at_the_layout_paths() -> T
         .rev()
         .find_map(|line| line.strip_prefix("FROM "))
         .ok_or("no FROM")?;
-    assert_eq!(last_from.split_whitespace().next(), Some("role"));
+    assert_eq!(
+        last_from.split_whitespace().next(),
+        Some("role"),
+        "last_from"
+    );
     let last_user = lines
         .iter()
         .rev()
         .find_map(|line| line.strip_prefix("USER "))
         .ok_or("no USER")?;
-    assert_eq!(last_user, "sandbox");
+    assert_eq!(last_user, "sandbox", "last_user");
     let copies: Vec<&str> = lines
         .iter()
         .filter_map(|l| l.strip_prefix("COPY "))
@@ -496,7 +551,7 @@ fn derived_dockerfile_installs_jackin_start_and_hooks_at_the_layout_paths() -> T
     assert_eq!(
         copies.iter().filter(|c| **c == start).count(),
         1,
-        "{copies:?}"
+        "jackin-start copy in {copies:?}"
     );
     let hooks = format!(
         "--chown=root:root --chmod=0755 {} {} {}/",
@@ -507,7 +562,7 @@ fn derived_dockerfile_installs_jackin_start_and_hooks_at_the_layout_paths() -> T
     assert_eq!(
         copies.iter().filter(|c| **c == hooks).count(),
         1,
-        "{copies:?}"
+        "hooks copy in {copies:?}"
     );
     Ok(())
 }
@@ -525,45 +580,423 @@ fn assignment<'a>(script: &'a str, name: &str) -> Result<&'a str, Box<dyn Error>
 }
 
 #[test]
+fn role_build_is_planned_with_the_dockerfile_on_stdin_and_the_listed_context() -> TestResult {
+    let dockerfile = b"FROM construct AS role\n# marker 9f3a\n";
+    let mut request = base()?;
+    request.dockerfile = source("docker/Role.Dockerfile", dockerfile)?;
+    request.context_files = ["src/b.rs", "docker/Role.Dockerfile", "src/a.rs", "src/a.rs"]
+        .into_iter()
+        .map(RepoPath::parse)
+        .collect::<Result<_, _>>()?;
+    let plan = ImagePlan::new(&request)?;
+    let built = plan.final_builds(&construct_id()?);
+    assert_eq!(
+        built.role.stdin.as_deref(),
+        Some(dockerfile.as_slice()),
+        "role stdin"
+    );
+    assert_eq!(plan.construct_build().stdin, None, "construct stdin");
+    assert_eq!(built.derived.stdin, None, "derived stdin");
+    let ContextSource::Listed { root, files } = &built.role.context else {
+        return Err(format!("role context {:?}", built.role.context).into());
+    };
+    assert_eq!(root, &request.context, "role context root");
+    let listed: BTreeSet<&RepoPath> = files.iter().collect();
+    let wanted: BTreeSet<&RepoPath> = request.context_files.iter().collect();
+    assert_eq!(listed.len(), files.len(), "duplicate file in {files:?}");
+    assert_eq!(listed, wanted, "role context files");
+    assert_eq!(
+        built
+            .role
+            .args
+            .iter()
+            .filter(|arg| *arg == "--file=-")
+            .count(),
+        1,
+        "--file=- count"
+    );
+    for args in [
+        &plan.construct_build().args,
+        &built.role.args,
+        &built.derived.args,
+    ] {
+        assert!(
+            args.iter()
+                .all(|arg| !arg.contains("/work/role") && !arg.contains("Role.Dockerfile")),
+            "{args:?}"
+        );
+    }
+    Ok(())
+}
+
+fn text_of(bytes: &'static [u8]) -> Result<&'static str, Box<dyn Error>> {
+    Ok(std::str::from_utf8(bytes)?)
+}
+
+fn run_after_last_copy(lines: &[String]) -> Result<&String, Box<dyn Error>> {
+    let last_copy = lines
+        .iter()
+        .rposition(|line| line.starts_with("COPY "))
+        .ok_or("no COPY")?;
+    let last_user = lines
+        .iter()
+        .rposition(|line| line.starts_with("USER "))
+        .ok_or("no USER")?;
+    let between: Vec<&String> = lines[last_copy + 1..last_user]
+        .iter()
+        .filter(|line| line.starts_with("RUN "))
+        .collect();
+    match between.as_slice() {
+        [run] => Ok(run),
+        other => Err(format!("RUN lines after the last COPY: {other:?}").into()),
+    }
+}
+
+fn operands<'a>(commands: &[&'a str], name: &str) -> Result<Vec<&'a str>, Box<dyn Error>> {
+    let command = commands
+        .iter()
+        .find(|command| command.split_whitespace().next() == Some(name))
+        .ok_or_else(|| format!("no {name} command"))?;
+    Ok(command
+        .split_whitespace()
+        .skip(1)
+        .filter(|word| !word.starts_with('-'))
+        .collect())
+}
+
+#[test]
+fn derived_dockerfile_re_asserts_root_ownership_and_forbidden_tools_after_the_role_layer()
+-> TestResult {
+    let lines = instructions(derived_text()?);
+    let run = run_after_last_copy(&lines)?;
+    let body = run.strip_prefix("RUN ").ok_or("not a RUN")?;
+    let commands: Vec<&str> = body.split(" && ").map(str::trim).collect();
+    let directories = [
+        "/usr/local/bin",
+        "/usr/local/lib/jackin",
+        sandbox_layout::HOOKS_DIR.as_str(),
+    ];
+    let chown = operands(&commands, "chown")?;
+    assert_eq!(chown.first(), Some(&"root:root"), "chown owner {chown:?}");
+    assert_eq!(&chown[1..], directories, "chown paths");
+    let chmod = operands(&commands, "chmod")?;
+    assert_eq!(chmod.first(), Some(&"0755"), "chmod mode {chmod:?}");
+    assert_eq!(&chmod[1..], directories, "chmod paths");
+    let scan = commands
+        .iter()
+        .find(|command| command.starts_with("for tool in "))
+        .ok_or("no forbidden-tool loop")?;
+    let listed: BTreeSet<&str> = scan
+        .strip_prefix("for tool in ")
+        .and_then(|rest| rest.split_once(';'))
+        .map(|(tools, _)| tools.split_whitespace().collect())
+        .ok_or("unreadable tool list")?;
+    let wanted: BTreeSet<&str> = [
+        "sudo", "doas", "su-exec", "gosu", "docker", "podman", "iptables", "nft",
+    ]
+    .into();
+    assert_eq!(listed, wanted, "forbidden tools");
+    assert!(scan.contains("command -v"), "tool lookup in {scan}");
+    assert!(
+        scan.contains("exit 1"),
+        "tool hit fails the build in {scan}"
+    );
+    assert!(
+        commands
+            .iter()
+            .any(|command| command.starts_with("test -z ")
+                && command.contains("find / -xdev -type f -perm /6000")),
+        "setuid scan in {commands:?}"
+    );
+    let last_user = lines
+        .iter()
+        .rev()
+        .find_map(|line| line.strip_prefix("USER "))
+        .ok_or("no USER")?;
+    assert_eq!(last_user, "sandbox", "last_user");
+    Ok(())
+}
+
+#[test]
+fn construct_dockerfile_removes_setuid_and_rejects_file_capabilities() -> TestResult {
+    let lines = instructions(text_of(CONSTRUCT_DOCKERFILE)?);
+    let position = |needle: &str| {
+        lines
+            .iter()
+            .position(|line| line.contains(needle))
+            .ok_or_else(|| format!("no instruction contains {needle:?}"))
+    };
+    let install = &lines[position("apt-get install")?];
+    let packages: BTreeSet<&str> = install.split_whitespace().collect();
+    assert!(packages.contains("libcap2-bin"), "libcap2-bin in {install}");
+    let users = position("useradd")?;
+    let strip = &lines[position("-exec chmod a-s")?];
+    assert!(
+        strip.contains("find / -xdev -type f -perm /6000 -print -exec chmod a-s {} +"),
+        "setuid strip in {strip}"
+    );
+    let capability = position("getcap -r /")?;
+    let user = lines
+        .iter()
+        .rposition(|line| line == "USER sandbox")
+        .ok_or("no USER sandbox")?;
+    assert!(users < capability, "getcap after the user creation");
+    assert!(capability < user, "getcap before USER sandbox");
+    let check = lines[capability]
+        .split(" && ")
+        .map(str::trim)
+        .find(|command| command.contains("getcap -r /"))
+        .ok_or("no getcap command")?;
+    assert!(check.starts_with("test -z "), "getcap check {check}");
+    let scan = lines[capability]
+        .strip_prefix("RUN for tool in ")
+        .and_then(|rest| rest.split_once(';'))
+        .map(|(tools, _)| tools.split_whitespace().collect::<BTreeSet<_>>())
+        .ok_or("the getcap check is not in the forbidden-tool RUN")?;
+    let wanted: BTreeSet<&str> = [
+        "sudo",
+        "su-exec",
+        "gosu",
+        "doas",
+        "iptables",
+        "ip6tables",
+        "nft",
+        "ufw",
+        "docker",
+        "podman",
+        "nerdctl",
+        "containerd",
+        "runc",
+    ]
+    .into();
+    assert_eq!(scan, wanted, "forbidden tools");
+    Ok(())
+}
+
+#[test]
+fn both_dockerfiles_pin_the_buildkit_frontend_by_the_same_digest() -> TestResult {
+    let pattern =
+        regex::Regex::new(r"^# syntax=docker/dockerfile:1(\.\d+){1,2}@sha256:[0-9a-f]{64}$")?;
+    let first_lines: Vec<&str> = [CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE]
+        .into_iter()
+        .map(|bytes| Ok(text_of(bytes)?.lines().next().unwrap_or("")))
+        .collect::<Result<_, Box<dyn Error>>>()?;
+    for (name, line) in ["construct", "derived"].iter().zip(&first_lines) {
+        assert!(pattern.is_match(line), "{name} syntax line {line:?}");
+    }
+    assert_eq!(first_lines[0], first_lines[1], "the two syntax lines");
+    Ok(())
+}
+
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new(label: &str) -> Result<Scratch, Box<dyn Error>> {
+        let path =
+            std::env::temp_dir().join(format!("jackin-image-{label}-{}", std::process::id()));
+        fs::create_dir_all(&path)?;
+        Ok(Scratch(path))
+    }
+
+    fn fresh(&self, name: &str) -> Result<PathBuf, Box<dyn Error>> {
+        let path = self.0.join(name);
+        fs::create_dir(&path)?;
+        Ok(path)
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        match fs::remove_dir_all(&self.0) {
+            Ok(()) | Err(_) => {}
+        }
+    }
+}
+
+fn run_sh(dir: &Path, body: &str, args: &[&str]) -> Result<std::process::Output, Box<dyn Error>> {
+    let child = Command::new("sh")
+        .arg("-c")
+        .arg(body)
+        .arg("sh")
+        .args(args)
+        .current_dir(dir)
+        .env("LC_ALL", "C")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    Ok(child.wait_with_output()?)
+}
+
+fn segment<'a>(script: &'a str, first: &str, last: &str) -> Result<Vec<&'a str>, Box<dyn Error>> {
+    let lines: Vec<&str> = script.lines().collect();
+    let begin = lines
+        .iter()
+        .position(|line| line.trim() == first)
+        .ok_or_else(|| format!("no {first:?} line"))?;
+    let end = lines[begin..]
+        .iter()
+        .position(|line| line.trim() == last)
+        .ok_or_else(|| format!("no {last:?} line after {first:?}"))?;
+    Ok(lines[begin..=begin + end].to_vec())
+}
+
+fn publish_all(scratch: &Scratch, name: &str, states: &[&str]) -> Result<PathBuf, Box<dyn Error>> {
+    let function = segment(script()?, "publish() {", "}")?.join("\n");
+    let calls: Vec<String> = (0..states.len())
+        .map(|index| format!("publish \"${}\"", index + 2))
+        .collect();
+    let body = format!("set -u; run=$1; {function}\n{}", calls.join("; "));
+    let dir = scratch.fresh(name)?;
+    let dir_text = dir.to_str().ok_or("temp dir is not UTF-8")?;
+    let mut args = vec![dir_text];
+    args.extend_from_slice(states);
+    let output = run_sh(&dir, &body, &args)?;
+    assert!(
+        output.status.success(),
+        "publish {states:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(dir)
+}
+
+#[test]
 fn embedded_jackin_start_publishes_what_the_supervisor_parser_accepts() -> TestResult {
     let script = script()?;
     let state = sandbox_layout::RUN_STATE.as_str();
     let start = sandbox_layout::RUN_START.as_str();
     let run = assignment(script, "run")?;
-    assert_eq!(run, parent(state));
-    assert_eq!(run, parent(start));
-    assert_eq!(last_segment(state), "state");
-    assert_eq!(last_segment(start), "start");
-    assert!(script.contains("\"$run/state\""));
-    assert!(script.contains("\"$run/start\""));
+    assert_eq!(run, parent(state), "run directory against RUN_STATE");
+    assert_eq!(run, parent(start), "run directory against RUN_START");
+    assert_eq!(last_segment(state), "state", "state file name");
+    assert_eq!(last_segment(start), "start", "start file name");
+    assert!(
+        script.contains("\"$run/state\""),
+        "state path in the script"
+    );
+    assert!(
+        script.contains("\"$run/start\""),
+        "start path in the script"
+    );
     let project = assignment(script, "project")?;
-    assert_eq!(project, sandbox_layout::PROJECT.as_str());
-    assert_eq!(project, Agent::Codex.spec().workdir.as_str());
+    assert_eq!(project, sandbox_layout::PROJECT.as_str(), "project path");
+    assert_eq!(
+        project,
+        Agent::Codex.spec().workdir.as_str(),
+        "project against the agent workdir"
+    );
 
-    let published: Vec<String> = script
-        .lines()
-        .filter_map(|line| line.trim().strip_prefix("publish "))
-        .map(|args| {
-            args.replace('"', "")
-                .replace("$attempt", "3")
-                .replace("$rc", "7")
-        })
-        .collect();
-    assert_eq!(published, ["waiting", "running 3", "exited 3 7"]);
-    for text in &published {
-        let parsed = SupervisorState::parse(text)?;
-        assert_eq!(&parsed.render(), text);
+    let scratch = Scratch::new("publish")?;
+    for (index, text) in ["waiting", "running 3", "exited 3 7"]
+        .into_iter()
+        .enumerate()
+    {
+        let dir = publish_all(&scratch, &format!("single-{index}"), &[text])?;
+        let contents = fs::read_to_string(dir.join("state"))?;
+        assert_eq!(contents, format!("{text}\n"), "state file after {text:?}");
+        assert!(
+            !dir.join("state.tmp").exists(),
+            "temp file left after {text:?}"
+        );
+        let parsed = SupervisorState::parse(&contents)?;
+        assert_eq!(parsed.render(), text, "render after {text:?}");
     }
+    let dir = publish_all(&scratch, "twice", &["waiting", "running 3"])?;
+    assert_eq!(
+        fs::read_to_string(dir.join("state"))?,
+        "running 3\n",
+        "the second publish wins"
+    );
+    assert!(
+        !dir.join("state.tmp").exists(),
+        "temp file after two publishes"
+    );
+    Ok(())
+}
 
-    let patterns: Vec<&str> = script
-        .split(|c: char| c.is_whitespace() || c == '|' || c == ')')
-        .filter(|word| word.starts_with('?'))
-        .collect();
-    assert_eq!(patterns.len(), 1, "{patterns:?}");
-    assert_eq!(patterns[0], format!("{}*", "?".repeat(19)));
-    AttemptId::parse(&"9".repeat(18))?;
-    AttemptId::parse(&"9".repeat(19))
-        .err()
-        .ok_or("19 digits were accepted")?;
+fn read_attempt(
+    scratch: &Scratch,
+    name: &str,
+    content: Option<&[u8]>,
+) -> Result<(String, bool), Box<dyn Error>> {
+    let segment = segment(script()?, "attempt=", "esac")?.join("\n");
+    let body = format!("set -u; run=$1\n{segment}\nprintf %s \"$attempt\"");
+    let dir = scratch.fresh(name)?;
+    if let Some(bytes) = content {
+        fs::write(dir.join("start"), bytes)?;
+    }
+    let dir_text = dir.to_str().ok_or("temp dir is not UTF-8")?;
+    let output = run_sh(&dir, &body, &[dir_text])?;
+    assert!(
+        output.status.success(),
+        "{name}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let created: Vec<String> = fs::read_dir(&dir)?
+        .map(|entry| entry.map(|e| e.file_name().to_string_lossy().into_owned()))
+        .collect::<Result<_, _>>()?;
+    let injected = created.iter().any(|file| file == "pwned");
+    Ok((String::from_utf8(output.stdout)?, injected))
+}
+
+#[test]
+fn embedded_jackin_start_reads_start_requests_exactly_as_attempt_id_parses() -> TestResult {
+    let nines18 = "9".repeat(18);
+    let nines19 = "9".repeat(19);
+    let corpus: Vec<(String, Option<Vec<u8>>, bool)> = [
+        ("1\n", true),
+        ("9\n", true),
+        ("10\n", true),
+        (&format!("{nines18}\n"), true),
+        (&nines18, true),
+        (&format!("{nines19}\n"), false),
+        (&nines19, false),
+        ("0", false),
+        ("00", false),
+        ("01", false),
+        ("-1", false),
+        ("+1", false),
+        ("1 ", false),
+        (" 1", false),
+        ("a1", false),
+        ("1;touch pwned", false),
+        ("$(touch pwned)", false),
+        ("", false),
+        ("\n", false),
+        ("12\n34\n", true),
+        ("\u{661}\u{662}\u{663}", false),
+        ("1\r\n", false),
+    ]
+    .into_iter()
+    .map(|(content, accepted)| {
+        (
+            content.to_owned(),
+            Some(content.as_bytes().to_vec()),
+            accepted,
+        )
+    })
+    .chain([("<no start file>".to_owned(), None, false)])
+    .collect();
+    let scratch = Scratch::new("start")?;
+    for (index, (label, content, accepted)) in corpus.iter().enumerate() {
+        let (attempt, injected) =
+            read_attempt(&scratch, &format!("row-{index}"), content.as_deref())?;
+        assert!(!injected, "{label:?} ran a command");
+        let first_line = content
+            .as_deref()
+            .map(String::from_utf8_lossy)
+            .map_or_else(String::new, |text| {
+                text.split('\n').next().unwrap_or("").to_owned()
+            });
+        let expected = if *accepted { first_line.as_str() } else { "" };
+        assert_eq!(attempt, expected, "shell result for {label:?}");
+        if content.is_some() {
+            assert_eq!(
+                *accepted,
+                AttemptId::parse(&first_line).is_ok(),
+                "AttemptId verdict for {label:?}"
+            );
+        }
+    }
     Ok(())
 }

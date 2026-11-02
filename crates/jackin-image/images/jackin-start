@@ -45,7 +45,7 @@ publish waiting
 last=0
 while :; do
     attempt=
-    [ -f "$run/start" ] && read -r attempt 2>/dev/null <"$run/start"
+    [ -f "$run/start" ] && IFS= read -r attempt 2>/dev/null <"$run/start"
     case $attempt in
         '' | 0* | *[!0-9]* | ???????????????????*) attempt= ;;
     esac

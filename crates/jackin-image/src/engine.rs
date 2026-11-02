@@ -28,22 +28,29 @@ pub trait ImageEngine: Send + Sync + Debug {
 #[derive(Clone, Debug)]
 pub struct BuildxEngine {}
 
+fn describe(status: ProcessStatus) -> String {
+    match status {
+        ProcessStatus::Exited(code) => format!("exit code {code}"),
+        ProcessStatus::Signaled(signal) => format!("signal {signal}"),
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum EngineError {
-    #[error("builder {builder:?} does not exist")]
+    #[error("builder {builder} does not exist")]
     BuilderMissing { builder: BuilderName },
-    #[error("builder {builder:?} uses the {driver} driver; the docker driver is required")]
+    #[error("builder {builder} uses the {driver} driver; the docker driver is required")]
     BuilderDriver {
         builder: BuilderName,
         driver: String,
     },
-    #[error("the {stage:?} build failed with {status:?}: {tail:?}")]
+    #[error("the {stage} build failed with {}:\n{}", describe(*.status), .tail.as_str())]
     BuildFailed {
         stage: BuildStage,
         status: ProcessStatus,
         tail: TerminalText,
     },
-    #[error("cannot read the image ID of {tag:?}: {output:?}")]
+    #[error("cannot read the image ID of {tag}:\n{}", .output.as_str())]
     DigestUnreadable { tag: ImageTag, output: TerminalText },
     #[error(transparent)]
     Process(#[from] ProcessError),

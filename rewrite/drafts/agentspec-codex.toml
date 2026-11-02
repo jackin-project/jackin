@@ -31,7 +31,7 @@ sha256 = "1d44b28bc4ac9937d7d3532264baa68a507ce364956a0d4ebb856f331cdee254"
 
 [openshell_provider]
 profile_id = "codex"
-profile_file = "rewrite/drafts/codex-provider.yaml"
+profile_file = "crates/jackin-core/src/assets/codex-provider.yaml"
 name_template = "jackin-{account}-codex"
 credential_keys = ["CODEX_AUTH_ACCESS_TOKEN"]
 refresh_token_key = "CODEX_AUTH_REFRESH_TOKEN"
