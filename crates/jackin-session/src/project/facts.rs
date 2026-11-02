@@ -5,7 +5,7 @@ use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 
-use jackin_core::{CommitId, FileSystem, HostPath, ProcessStatus};
+use jackin_core::{CommitId, FileSystem, HostPath, ProcessStatus, RepoPath};
 
 use crate::launch::LaunchError;
 use crate::project::ProjectStep;
@@ -141,6 +141,19 @@ async fn identity_key(git: &HostGit<'_>, key: &str) -> Result<Option<String>, La
     }
 }
 
+async fn regular_exclude(
+    fs: &dyn FileSystem,
+    git_dir: &HostPath,
+) -> Result<Option<Vec<u8>>, LaunchError> {
+    let relative = RepoPath::parse("info/exclude")
+        .map_err(|error| malformed(ProjectStep::Describe, &error.to_string()))?;
+    Ok(fs
+        .read_regular(git_dir, &relative)
+        .await?
+        .ok()
+        .map(|file| file.bytes))
+}
+
 pub(super) async fn read(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Facts, LaunchError> {
     let described = git
         .require(
@@ -153,8 +166,7 @@ pub(super) async fn read(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Facts
                 "--is-shallow-repository",
                 "--git-path",
                 "objects",
-                "--git-path",
-                "info/exclude",
+                "--git-common-dir",
                 "--git-path",
                 "shallow",
             ]),
@@ -162,7 +174,7 @@ pub(super) async fn read(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Facts
         )
         .await?;
     let lines: Vec<&[u8]> = described.split(|byte| *byte == b'\n').collect();
-    let [format, shallow, objects, exclude, shallow_file, ..] = lines.as_slice() else {
+    let [format, shallow, objects, git_dir, shallow_file, ..] = lines.as_slice() else {
         return Err(malformed(
             ProjectStep::Describe,
             "rev-parse printed too few lines",
@@ -176,7 +188,7 @@ pub(super) async fn read(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Facts
     } else {
         None
     };
-    let exclude = fs.read(&host_path(ProjectStep::Describe, exclude)?).await?;
+    let exclude = regular_exclude(fs, &host_path(ProjectStep::Describe, git_dir)?).await?;
     Ok(Facts {
         head: head(git).await?,
         format,
