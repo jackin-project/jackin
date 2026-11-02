@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::error::Error;
-use std::fs;
-use std::io::Write;
+use std::fs::{self, DirBuilder};
+use std::io::{ErrorKind, Write};
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,7 +15,7 @@ use jackin_core::{
 };
 use jackin_image::{
     BuildxEngine, HookFiles, ImageEvent, ImageRequest, Rebuild, RoleRevision, SourceFile,
-    ensure_image,
+    ensure_image, read_regular_file,
 };
 use jackin_session::TokioProcessRunner;
 use tokio::sync::mpsc;
@@ -29,12 +30,42 @@ struct Options {
     calls: usize,
 }
 
+fn state_work_dir() -> Result<PathBuf, Box<dyn Error>> {
+    let state = match std::env::var_os("XDG_STATE_HOME") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        _ => PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?)
+            .join(".local")
+            .join("state"),
+    };
+    Ok(state.join("jackin").join("build-images"))
+}
+
+fn private_dir(dir: &Path) -> Result<(), Box<dyn Error>> {
+    match fs::symlink_metadata(dir) {
+        Ok(meta) if meta.is_dir() && meta.permissions().mode() & 0o777 == 0o700 => Ok(()),
+        Ok(meta) => Err(format!(
+            "{} must be a directory with mode 0700, found mode {:o}",
+            dir.display(),
+            meta.permissions().mode() & 0o7777
+        )
+        .into()),
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            if let Some(parent) = dir.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            DirBuilder::new().mode(0o700).create(dir)?;
+            Ok(())
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
 fn options() -> Result<Options, Box<dyn Error>> {
     let mut options = Options {
         role_dir: None,
         role_name: None,
         builder: "orbstack".to_owned(),
-        work_dir: std::env::temp_dir().join("jackin-build-images"),
+        work_dir: state_work_dir()?,
         rebuild: Rebuild::No,
         calls: 2,
     };
@@ -42,7 +73,6 @@ fn options() -> Result<Options, Box<dyn Error>> {
     while let Some(flag) = args.next() {
         let mut value = |name: &str| args.next().ok_or_else(|| format!("{name} needs a value"));
         match flag.as_str() {
-            "--minimal" => {}
             "--role-dir" => options.role_dir = Some(PathBuf::from(value("--role-dir")?)),
             "--role-name" => options.role_name = Some(value("--role-name")?),
             "--builder" => options.builder = value("--builder")?,
@@ -84,7 +114,7 @@ async fn minimal_role(
     let dir = work_dir.join("minimal-role");
     match fs::remove_dir_all(&dir) {
         Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
     }
     fs::create_dir_all(&dir)?;
@@ -112,6 +142,20 @@ async fn request(
     dir: &Path,
     options: &Options,
 ) -> Result<ImageRequest, Box<dyn Error>> {
+    let changes = git(
+        runner,
+        dir,
+        &["status", "--porcelain", "-z", "--untracked-files=all"],
+    )
+    .await?;
+    if !changes.is_empty() {
+        return Err(format!(
+            "{} has uncommitted or untracked files; commit them first:\n{}",
+            dir.display(),
+            String::from_utf8_lossy(&changes).replace('\0', "\n")
+        )
+        .into());
+    }
     let listing = git(
         runner,
         dir,
@@ -124,6 +168,11 @@ async fn request(
         .map(RepoPath::parse)
         .collect::<Result<Vec<_>, _>>()?;
     let head = String::from_utf8(git(runner, dir, &["rev-parse", "HEAD"]).await?)?;
+    let root = HostPath::parse(dir)?;
+    let dockerfile = RepoPath::parse("Dockerfile")?;
+    let bytes = read_regular_file(&StdFileSystem::default(), &root, &dockerfile)
+        .await?
+        .bytes;
     let name = match &options.role_name {
         Some(name) => name.clone(),
         None => dir
@@ -134,11 +183,11 @@ async fn request(
     };
     Ok(ImageRequest {
         role: RoleName::parse(&name)?,
-        context: HostPath::parse(dir)?,
+        context: root,
         context_files: files,
         dockerfile: SourceFile {
-            path: RepoPath::parse("Dockerfile")?,
-            bytes: fs::read(dir.join("Dockerfile"))?,
+            path: dockerfile,
+            bytes,
         },
         hooks: HookFiles {
             setup: None,
@@ -167,7 +216,7 @@ fn show(event: &ImageEvent) -> Result<(), Box<dyn Error>> {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn Error>> {
     let options = options()?;
-    fs::create_dir_all(&options.work_dir)?;
+    private_dir(&options.work_dir)?;
     let work = options.work_dir.canonicalize()?;
     let runner = Arc::new(TokioProcessRunner);
     let role_dir = match &options.role_dir {
