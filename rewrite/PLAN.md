@@ -320,7 +320,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
   5. Build the terminal sessions from `evidence/P0.6-panes.md`: the main-process attach (`CreateSshSession`, `ForwardTcp`, `russh`) and `ExecSandboxInteractive` with and without a PTY. Expose one session handle with the commands `Input`, `Resize`, and `Detach` and the events `Output`, `Exited`, and `Ended`. Do not leak tonic or russh types.
   6. Resolve the gateway endpoint through `openshell gateway list -o json` (D03).
 - **Proof:** G-FAST passes. Tests show the status mapping against an in-process tonic server. Tests show that each argument list names the gateway.
-- [ ] P4.1 done
+- [x] P4.1 done — 804a4147, G-FAST exit 0 (`217 tests run: 217 passed`); test-reviewer KEEP twice; openshell-specialist review CHANGES REQUIRED, fixed, live re-check PASS (Core 13/13, Transfer 2/2, Terminal 5/5), evidence/P4.1-live.md and P4.1-adapter-live.md
 
 ### P4.2 Build the fake gateway
 
