@@ -134,6 +134,35 @@ fn say(text: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+async fn host_read(
+    runner: &dyn ProcessRunner,
+    root: &HostPath,
+    args: &[&str],
+) -> Result<String, Box<dyn Error>> {
+    let mut full = vec!["--no-optional-locks"];
+    full.extend_from_slice(args);
+    host_git(runner, root, &full).await
+}
+
+#[derive(PartialEq, Eq)]
+struct HostState {
+    status: String,
+    head: String,
+    index: String,
+    refs: String,
+}
+
+impl HostState {
+    fn compare(&self, other: &Self) -> [(&'static str, bool); 4] {
+        [
+            ("status", self.status == other.status),
+            ("HEAD", self.head == other.head),
+            ("index digest", self.index == other.index),
+            ("non-jackin refs", self.refs == other.refs),
+        ]
+    }
+}
+
 struct Live {
     gateway: Arc<GrpcGateway>,
     session: Session,
@@ -288,42 +317,49 @@ impl Live {
         ))
     }
 
-    async fn host_state(&self) -> Result<(String, String, String, String), Box<dyn Error>> {
+    async fn host_state(&self) -> Result<HostState, Box<dyn Error>> {
         let root = self.project.path();
         let runner = self.runner.as_ref();
-        let index = host_git(
+        let index = host_read(
             runner,
             root,
             &["rev-parse", "--path-format=absolute", "--git-path", "index"],
         )
         .await?;
-        let digest = std::fs::read(index.trim()).map_or_else(
+        let index = std::fs::read(index.trim()).map_or_else(
             |_| "no index".to_owned(),
             |bytes| jackin_core::Sha256::of(&bytes).to_string(),
         );
-        Ok((
-            host_git(
-                runner,
-                root,
-                &["status", "--porcelain", "-z", "--untracked-files=all"],
-            )
-            .await?,
-            host_git(runner, root, &["rev-parse", "HEAD"])
-                .await
-                .unwrap_or_default(),
-            digest,
-            host_git(
-                runner,
-                root,
-                &[
-                    "for-each-ref",
-                    "--format=%(refname) %(objectname)",
-                    "refs/heads",
-                    "refs/tags",
-                ],
-            )
-            .await?,
-        ))
+        let status = host_read(
+            runner,
+            root,
+            &["status", "--porcelain", "-z", "--untracked-files=all"],
+        )
+        .await?;
+        let head = host_read(runner, root, &["rev-parse", "HEAD"])
+            .await
+            .unwrap_or_default();
+        let refs = host_read(
+            runner,
+            root,
+            &[
+                "for-each-ref",
+                "--format=%(refname) %(objectname)",
+                "refs/heads",
+                "refs/tags",
+            ],
+        )
+        .await?
+        .lines()
+        .filter(|line| !line.starts_with("refs/heads/jackin/"))
+        .collect::<Vec<_>>()
+        .join("\n");
+        Ok(HostState {
+            status,
+            head,
+            index,
+            refs,
+        })
     }
 
     async fn exported_refs(&self) -> Result<String, Box<dyn Error>> {
@@ -366,11 +402,11 @@ impl Live {
         let after = self.host_state().await?;
         say(&format!(
             "host index, HEAD, status and non-jackin refs unchanged: {}",
-            before.0 == after.0
-                && before.1 == after.1
-                && before.2 == after.2
-                && before.3 == after.3
+            before == after
         ))?;
+        for (name, same) in before.compare(&after) {
+            say(&format!("  {name} unchanged: {same}"))?;
+        }
         say(&format!(
             "host refs/heads/jackin/*:\n{}",
             self.exported_refs().await?.trim_end()
