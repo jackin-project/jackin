@@ -103,6 +103,10 @@ impl Rig {
         })
     }
 
+    pub(crate) fn project(&self) -> &ProjectRoot {
+        &self.project
+    }
+
     pub(crate) fn request(&self, id: u8) -> Result<LaunchRequest, Box<dyn Error>> {
         Ok(LaunchRequest::new(
             self.world.gateway.name().clone(),

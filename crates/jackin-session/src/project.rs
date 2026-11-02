@@ -27,7 +27,7 @@ use crate::project::facts::Facts;
 use crate::project::gate::HostGate;
 use crate::project::git::HostGit;
 use crate::project::sandbox::Sandbox;
-use crate::service::SessionDeps;
+use crate::service::{Session, SessionDeps};
 
 pub use version::{GitVersion, HostGitError, MINIMUM_GIT, check_git};
 
@@ -293,5 +293,27 @@ impl Staged {
             (sandbox_tree, &sandbox_entries),
             autocrlf,
         ))))
+    }
+}
+
+impl Session {
+    pub async fn upload_project(
+        &self,
+        project: &ProjectRoot,
+        sandbox: &SandboxName,
+        launch: &LaunchId,
+        cancel: &CancellationToken,
+    ) -> Result<(), LaunchError> {
+        let staged = prepare(&self.deps, project, launch, cancel).await?;
+        let result = match hold(&self.deps, launch, cancel).await {
+            Ok(_held) => {
+                staged
+                    .upload(&self.deps, project, sandbox, launch, cancel)
+                    .await
+            }
+            Err(error) => Err(error),
+        };
+        staged.release(&self.deps).await;
+        result
     }
 }

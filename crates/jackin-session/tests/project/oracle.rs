@@ -53,9 +53,11 @@ fn refs(dir: &Path) -> Result<BTreeSet<String>, Box<dyn Error>> {
             "refs/remotes",
         ],
     )?;
-    Ok(lines(&listed)
-        .into_iter()
-        .filter(|line| !line.starts_with("refs/heads/jackin/") && line.matches(' ').count() == 1)
+    Ok(listed
+        .lines()
+        .filter(|line| !line.starts_with("refs/heads/jackin/"))
+        .filter_map(|line| line.strip_suffix(' '))
+        .map(str::to_owned)
         .collect())
 }
 

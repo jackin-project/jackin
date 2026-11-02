@@ -164,3 +164,36 @@ async fn a_detached_head_arrives_detached_at_the_same_commit_with_the_branches()
     })
     .await
 }
+
+#[tokio::test]
+async fn the_public_upload_entry_rebuilds_the_repository_in_an_existing_sandbox() -> TestResult {
+    guard(async {
+        let repo = base().await?;
+        let rig = Rig::new(repo).await?;
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
+        rig.repo.file("a.txt", b"edited after the launch\n").await?;
+        rig.repo.file("late.txt", b"late\n").await?;
+        rig.world
+            .session
+            .upload_project(
+                rig.project(),
+                &handle.name(),
+                &super::support::launch_id(2),
+                &tokio_util::sync::CancellationToken::new(),
+            )
+            .await?;
+        arrived(
+            rig.repo.root().as_path(),
+            &handle.root(),
+            &[" M a.txt", "?? late.txt"],
+        )?;
+        let left = super::support::tree_of(rig.world.cache_dir().as_path())?;
+        assert!(
+            left.iter().all(|name| !name.contains(".bundle")),
+            "{left:?}"
+        );
+        Ok(())
+    })
+    .await
+}

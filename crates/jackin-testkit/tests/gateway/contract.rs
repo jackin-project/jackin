@@ -98,6 +98,14 @@ async fn a_faulted_fake_fails_exactly_the_matching_check_and_still_runs_the_rest
         assert_eq!(failed.len(), 1, "{failed:?}");
         assert_eq!(failed[0].0, "download_with_digest");
 
+        let upload = fake()?;
+        upload.inject(Fault::CorruptUpload);
+        let report = run_group(&upload, ContractGroup::Transfer).await?;
+        assert_eq!(names(&report), TRANSFER_CHECKS);
+        let failed = failures(&report);
+        assert_eq!(failed.len(), 1, "{failed:?}");
+        assert_eq!(failed[0].0, "upload_file_with_digest");
+
         let terminal = fake()?;
         terminal.inject(Fault::FailNext {
             op: GatewayOp::Terminal,
