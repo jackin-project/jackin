@@ -122,7 +122,7 @@ Evidence: `evidence/P0.2-gateway.md`, `evidence/P0.3-codex.md`, `evidence/P7.1-i
   - a sparse checkout or any skip-worktree entry (`git ls-files -v` shows an `S` entry);
   - an entry of the upload listing (`git ls-files -co --exclude-standard`) that is a directory with a `.git` inside, such as a populated submodule or an untracked nested repository; the error names `git submodule deinit --all` for submodules;
   - a partial clone, detected when `git --no-lazy-fetch bundle create` fails; the error keeps the git output. `GIT_NO_LAZY_FETCH=1` is also set. `jackin doctor` checks that the host `git` supports `--no-lazy-fetch`.
-- Jackin writes the bundle into its cache with `git --no-lazy-fetch bundle create <file> [HEAD] --branches --tags --remotes --exclude='refs/heads/jackin/*'`. `HEAD` is omitted when HEAD is unborn. A project with no refs has no bundle.
+- Jackin writes the bundle into its cache with `git --no-lazy-fetch bundle create <file> [HEAD] --exclude='jackin/*' --branches --tags --remotes` (the exclude pattern comes before `--branches` and has no `refs/heads/` prefix, or git keeps a jackin ref that points at the same commit as an included ref). `HEAD` is omitted when HEAD is unborn. A project with no refs outside `refs/heads/jackin/**` has no bundle.
 - Jackin first empties `/sandbox/project` through exec, so a retry starts clean. Then it uploads with two CLI calls:
   1. `openshell sandbox upload <sandbox> . /sandbox/project`, with the project root as the working directory. It respects `.gitignore`, uploads untracked files that are not ignored, and omits `.git`.
   2. `openshell sandbox upload <sandbox> <bundle> /sandbox/.jackin/bundle/upload-<launch-id>.bundle --no-git-ignore`. Jackin compares the sha256 digests.
