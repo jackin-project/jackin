@@ -116,6 +116,8 @@ pub enum Fault {
         trigger: Trigger,
         token: CancellationToken,
     },
+    HideUntilCreateConflict,
+    StartIgnored,
 }
 
 fn protocol(message: impl ToString) -> GatewayError {
@@ -155,6 +157,8 @@ impl FakeGateway {
             Fault::CancelAt { trigger, token } => registry
                 .triggers
                 .push(ArmedTrigger::new(trigger, Action::Cancel(token))),
+            Fault::HideUntilCreateConflict => registry.hidden_until_conflict = true,
+            Fault::StartIgnored => registry.start_ignored = true,
         }
     }
 
@@ -315,6 +319,7 @@ impl Gateway for FakeGateway {
     }
 
     async fn health(&self) -> Result<GatewayHealth, GatewayError> {
+        tokio::task::yield_now().await;
         self.registry().strike(GatewayOp::Health)?;
         Ok(GatewayHealth {
             version: "0.1.6".to_owned(),
@@ -323,6 +328,7 @@ impl Gateway for FakeGateway {
     }
 
     async fn ensure_profile(&self, profile: &ProviderProfile) -> Result<ProfileSync, GatewayError> {
+        tokio::task::yield_now().await;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Profile)?;
         let sync = match registry.profiles.get(&profile.id) {
@@ -339,6 +345,7 @@ impl Gateway for FakeGateway {
     }
 
     async fn delete_profile(&self, id: &ProfileId) -> Result<(), GatewayError> {
+        tokio::task::yield_now().await;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Profile)?;
         if registry.providers.values().any(|used| used.profile == *id) {
@@ -351,6 +358,7 @@ impl Gateway for FakeGateway {
     }
 
     async fn provider_state(&self, name: &ProviderName) -> Result<ProviderState, GatewayError> {
+        tokio::task::yield_now().await;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Provider)?;
         Ok(if registry.providers.contains_key(name) {
@@ -361,6 +369,7 @@ impl Gateway for FakeGateway {
     }
 
     async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
+        tokio::task::yield_now().await;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Provider)?;
         if !registry.profiles.contains_key(&spec.profile) {
@@ -390,6 +399,7 @@ impl Gateway for FakeGateway {
     }
 
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {
+        tokio::task::yield_now().await;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Provider)?;
         registry.providers.remove(name);
@@ -397,9 +407,11 @@ impl Gateway for FakeGateway {
     }
 
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError> {
+        tokio::task::yield_now().await;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Create)?;
         if registry.sandboxes.contains_key(spec.name()) {
+            registry.hidden_until_conflict = false;
             return Err(GatewayError::AlreadyExists {
                 what: Missing::Sandbox(spec.name().clone()),
             });
@@ -453,6 +465,7 @@ impl Gateway for FakeGateway {
     }
 
     async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError> {
+        tokio::task::yield_now().await;
         let cells: Vec<Arc<Cell>> = {
             let mut registry = self.registry();
             registry.strike(GatewayOp::Find)?;
@@ -460,6 +473,7 @@ impl Gateway for FakeGateway {
                 SandboxQuery::Name(name) => {
                     registry.sandboxes.get(name).cloned().into_iter().collect()
                 }
+                SandboxQuery::Labels(_) if registry.hidden_until_conflict => Vec::new(),
                 SandboxQuery::Labels(selector) => {
                     let wanted = selector_pairs(&selector.render());
                     registry
@@ -482,6 +496,7 @@ impl Gateway for FakeGateway {
     }
 
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
+        tokio::task::yield_now().await;
         let cell = self.cell(GatewayOp::Detail, name)?;
         let view = observed(&cell);
         let (spec, ready) = {
@@ -518,8 +533,12 @@ impl Gateway for FakeGateway {
         name: &SandboxName,
         action: PowerAction,
     ) -> Result<SandboxView, GatewayError> {
+        tokio::task::yield_now().await;
         let cell = self.cell(GatewayOp::Power, name)?;
-        let stale = self.registry().stale_observations;
+        let (stale, start_ignored) = {
+            let registry = self.registry();
+            (registry.stale_observations, registry.start_ignored)
+        };
         let mut state = cell.state();
         match (action, state.phase) {
             (PowerAction::Stop, Phase::Ready) => {
@@ -541,6 +560,7 @@ impl Gateway for FakeGateway {
                     ),
                 });
             }
+            (PowerAction::Start, Phase::Stopped) if start_ignored => {}
             (PowerAction::Start, Phase::Stopped) => {
                 state.phase = Phase::Starting;
                 state.settling = Settling::Restarting { stale };
@@ -556,6 +576,7 @@ impl Gateway for FakeGateway {
     }
 
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
+        tokio::task::yield_now().await;
         let removed = {
             let mut registry = self.registry();
             registry.strike(GatewayOp::Delete)?;
@@ -573,6 +594,7 @@ impl Gateway for FakeGateway {
         run: &ProgramRun,
         cancel: &CancellationToken,
     ) -> Result<ProgramOutcome, GatewayError> {
+        tokio::task::yield_now().await;
         let trigger = Trigger::Program(run.program.clone());
         let cell = self.exec_cell_at(GatewayOp::Program, Some(&trigger), &run.sandbox)?;
         let (script, stalled) = {
@@ -590,6 +612,7 @@ impl Gateway for FakeGateway {
         sandbox: &SandboxName,
         paths: &[SandboxPath],
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
+        tokio::task::yield_now().await;
         let cell = self.exec_cell(GatewayOp::ReadFiles, sandbox)?;
         let installed = self.registry().installed.clone();
         Ok(files::read_files(&cell.root(), &installed, paths).await)
@@ -600,6 +623,7 @@ impl Gateway for FakeGateway {
         sandbox: &SandboxName,
         file: &SandboxFile,
     ) -> Result<(), GatewayError> {
+        tokio::task::yield_now().await;
         let trigger = Trigger::Write(file.path.clone());
         let cell = self.exec_cell_at(GatewayOp::WriteFile, Some(&trigger), sandbox)?;
         files::write_file(&cell, file).await
@@ -611,6 +635,7 @@ impl Gateway for FakeGateway {
         upload: &ProjectUpload,
         cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
+        tokio::task::yield_now().await;
         let cell = self.exec_cell(GatewayOp::Upload, sandbox)?;
         files::upload_project(&cell.root(), upload, cancel).await
     }
@@ -622,6 +647,7 @@ impl Gateway for FakeGateway {
         local: &HostPath,
         _cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
+        tokio::task::yield_now().await;
         let cell = self.exec_cell(GatewayOp::Download, sandbox)?;
         let corrupt = std::mem::take(&mut self.registry().corrupt_download);
         files::download_file(&cell.root(), remote, local, corrupt).await
@@ -631,6 +657,7 @@ impl Gateway for FakeGateway {
         &self,
         request: &TerminalRequest,
     ) -> Result<TerminalSession, GatewayError> {
+        tokio::task::yield_now().await;
         let cell = self.exec_cell(GatewayOp::Terminal, &request.sandbox)?;
         match &request.kind {
             TerminalKind::MainProcess { input, .. } => Ok(terminal::attach_main(

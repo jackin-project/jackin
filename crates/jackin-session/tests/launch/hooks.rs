@@ -172,3 +172,60 @@ async fn hooks_run_with_the_env_file_values_and_a_retry_replaces_them() -> TestR
     })
     .await
 }
+
+#[tokio::test]
+async fn an_installed_hook_with_no_bytes_is_absent_and_never_runs() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.gateway()
+            .install_file(&sandbox_layout::hook_path(HookKind::Setup), Vec::new());
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
+        assert!(
+            handle
+                .runs(&sandbox_layout::hook_path(HookKind::Setup))
+                .is_empty()
+        );
+        assert!(!has_file(
+            &handle,
+            &sandbox_layout::setup_done_marker(&launch_id(1))
+        ));
+        assert_eq!(
+            handle
+                .runs(&sandbox_layout::hook_path(HookKind::Preflight))
+                .len(),
+            1
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_role_with_only_a_preflight_hook_never_writes_the_setup_marker() -> TestResult {
+    guard(async {
+        let mut spec = Spec::new()?;
+        spec.role =
+            jackin_testkit::RoleFixture::new("sentinel")?.hook(HookKind::Preflight, b"#!/bin/sh\n");
+        let rig = spec.rig().await?;
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
+        assert_eq!(
+            handle
+                .runs(&sandbox_layout::hook_path(HookKind::Preflight))
+                .len(),
+            1
+        );
+        assert!(
+            handle
+                .runs(&sandbox_layout::hook_path(HookKind::Setup))
+                .is_empty()
+        );
+        assert!(!has_file(
+            &handle,
+            &sandbox_layout::setup_done_marker(&launch_id(1))
+        ));
+        Ok(())
+    })
+    .await
+}

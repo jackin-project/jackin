@@ -70,6 +70,8 @@ pub(super) struct Registry {
     pub(super) provision_polls: u32,
     pub(super) failing_creates: u32,
     pub(super) supervisor: SupervisorModel,
+    pub(super) hidden_until_conflict: bool,
+    pub(super) start_ignored: bool,
 }
 
 impl Registry {
@@ -90,6 +92,8 @@ impl Registry {
             provision_polls: 0,
             failing_creates: 0,
             supervisor: SupervisorModel::Cooperative,
+            hidden_until_conflict: false,
+            start_ignored: false,
         }
     }
 

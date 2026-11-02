@@ -186,7 +186,7 @@ pub enum LaunchError {
         attempts: u8,
         message: TerminalText,
     },
-    #[error("all create attempts for {sandbox:?} are used")]
+    #[error("the attempt IDs of {sandbox:?} are exhausted")]
     AttemptsExhausted { sandbox: SandboxName },
     #[error("sandbox {sandbox:?} was {phase:?} after {after:?}")]
     ReadyTimeout {

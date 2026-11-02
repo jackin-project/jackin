@@ -178,6 +178,7 @@ fn settling(view: &SandboxView, done: &Done, limits: &LaunchLimits) -> Decision 
         | Phase::Stopping
         | Phase::Suspending
         | Phase::Unknown => wait_ready(view.phase),
+        Phase::Stopped if done.boot == Boot::Powered => wait_ready(Phase::Stopped),
         Phase::Stopped => Decision::Run(Act::Power(sandbox.clone())),
         Phase::Suspended => Decision::Fail(
             LaunchStep::Ready,

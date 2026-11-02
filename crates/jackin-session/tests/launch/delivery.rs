@@ -4,8 +4,7 @@
 use jackin_core::{SandboxName, TerminalText};
 use jackin_image::{BuildStage, ImageEvent};
 use jackin_session::{
-    LAUNCH_EVENT_CAPACITY, LaunchEvent, LaunchEvents, LaunchStep, LineDelivery, SkipReason,
-    StepResult, launch_events,
+    LAUNCH_EVENT_CAPACITY, LaunchEvent, LaunchEvents, LaunchStep, LineDelivery, launch_events,
 };
 
 use super::support::{Rig, TestResult, guard, ready};
@@ -237,8 +236,6 @@ async fn build_lines_reach_the_feed_through_launch_by_the_chosen_delivery() -> T
             .map(|text| text.trim_start_matches("step ").parse::<usize>())
             .collect::<Result<_, _>>()?;
         assert!(indexes.windows(2).all(|pair| pair[0] < pair[1]));
-        let skipped = StepResult::Skipped(SkipReason::ImageCached);
-        assert_ne!(skipped, StepResult::Done);
         Ok(())
     })
     .await

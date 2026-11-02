@@ -144,6 +144,14 @@ async fn a_program_run_with_a_cancelled_token_ends_cancelled_and_records_nothing
     guard(async {
         let fake = fake()?;
         let handle = ready(&fake, sh("sleep 3600")?).await?;
+        fake.script_program(
+            &path("/bin/sh")?,
+            ProgramScript {
+                exit_code: 0,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            },
+        );
         let cancelled = CancellationToken::new();
         cancelled.cancel();
         let request = program_run(&handle.name(), "/bin/sh", &["-c", "true"])?;

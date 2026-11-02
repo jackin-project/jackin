@@ -150,3 +150,20 @@ async fn two_concurrent_launches_with_one_id_end_with_one_sandbox_and_one_start(
     })
     .await
 }
+
+#[tokio::test]
+async fn a_run_that_loses_the_create_race_joins_the_sandbox_of_its_own_launch() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let first = ready(rig.launch(1).await?)?;
+        rig.gateway().inject(Fault::HideUntilCreateConflict);
+        let second = ready(rig.launch(1).await?)?;
+        assert_eq!(second.sandbox, first.sandbox);
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
+        let handle = rig.handle(1).await?;
+        assert_eq!(handle.supervisor(), Some(running(1)?));
+        converged(&rig, &handle, 1)?;
+        Ok(())
+    })
+    .await
+}

@@ -29,10 +29,18 @@ process:
   run_as_group: sandbox
 ";
 
+fn rules(rows: &[(&str, &str, u16, &str)]) -> String {
+    let mut text = format!("{HEADER}network_policies:\n");
+    for (key, host, port, binary) in rows {
+        text.push_str(&format!(
+            "  {key}:\n    name: {key}\n    endpoints:\n      - host: \"{host}\"\n        port: {port}\n    binaries:\n      - path: {binary}\n"
+        ));
+    }
+    text
+}
+
 fn policy(key: &str, host: &str, port: u16, binary: &str) -> String {
-    format!(
-        "{HEADER}network_policies:\n  {key}:\n    name: {key}\n    endpoints:\n      - host: \"{host}\"\n        port: {port}\n    binaries:\n      - path: {binary}\n"
-    )
+    rules(&[(key, host, port, binary)])
 }
 
 fn manifest(dockerfile: &str, policy: &str, hooks: &[(&str, &str)]) -> String {
@@ -416,7 +424,10 @@ async fn role_findings_come_in_one_pass_and_load_path_returns_the_first() -> Tes
 
         let role = symlinked(manifest("Dockerfile", "policy.yaml", &[("setup", "hooks/setup.sh"), ("preflight", "hooks/pre.sh")]))?
             .dockerfile("FROM ubuntu\n")
-            .policy_yaml(&policy("openai", "api.openai.com", 443, "/usr/bin/curl"));
+            .policy_yaml(&rules(&[
+                ("openai", "api.openai.com", 443, "/usr/bin/curl"),
+                ("chat", "chatgpt.com", 443, "/usr/bin/curl"),
+            ]));
         role.symlink("hooks/pre.sh", &outside.file()).await?;
         role.commit().await?;
         let findings = scope.catalog.findings(role.root()).await;
@@ -430,7 +441,8 @@ async fn role_findings_come_in_one_pass_and_load_path_returns_the_first() -> Tes
                     RoleError::ProviderHostClosure(violations),
                 ] if missing.as_str() == "hooks/setup.sh"
                     && escaping.as_str() == "hooks/pre.sh"
-                    && violations.iter().any(|v| matches!(v, ClosureViolation::Overlap { host, .. } if host.as_str() == "api.openai.com"))
+                    && violations.len() >= 2
+                    && ["api.openai.com", "chatgpt.com"].iter().all(|wanted| violations.iter().any(|v| matches!(v, ClosureViolation::Overlap { host, .. } if host.as_str() == *wanted)))
             ),
             "{findings:?}"
         );

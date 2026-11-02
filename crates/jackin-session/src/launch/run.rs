@@ -76,9 +76,6 @@ impl Session {
 impl Run<'_> {
     async fn execute(mut self) -> Result<LaunchOutcome, LaunchFailure> {
         loop {
-            if self.cancel.is_cancelled() {
-                return Ok(self.cancelled().await);
-            }
             let observed = match self.observe().await {
                 Ok(observed) => observed,
                 Err(stop) => return self.stopped(stop).await,

@@ -9,7 +9,6 @@ use crate::launch::{LaunchEvent, LaunchEvents, LaunchStep, SkipReason, StepResul
 pub(super) struct Tracker {
     next: usize,
     open: Option<(LaunchStep, StepResult)>,
-    known_sent: bool,
 }
 
 fn implied(step: LaunchStep, running: bool) -> StepResult {
@@ -34,7 +33,6 @@ impl Tracker {
         Tracker {
             next: 0,
             open: None,
-            known_sent: false,
         }
     }
 
@@ -109,10 +107,8 @@ impl Tracker {
             .emit(LaunchEvent::StepFinished { step, result })
             .await;
         if step == LaunchStep::Sandbox
-            && !self.known_sent
             && let Some(name) = known
         {
-            self.known_sent = true;
             events.emit(LaunchEvent::SandboxKnown(name.clone())).await;
         }
     }

@@ -184,3 +184,30 @@ async fn providers_profiles_and_detail_follow_the_gateway_contract() -> TestResu
     })
     .await
 }
+
+fn pending_once<F: Future>(call: F) -> bool {
+    let mut call = std::pin::pin!(call);
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    call.as_mut().poll(&mut cx).is_pending()
+}
+
+#[tokio::test]
+async fn every_gateway_call_yields_to_the_scheduler_before_it_acts() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let sandbox = spec_with(&LaunchId::generate()?, IMAGE, Vec::new(), sh("sleep 3600")?)?;
+        let selector =
+            SandboxQuery::Labels(LabelSelector::launch(&sandbox.labels().planned.launch));
+        assert!(pending_once(fake.find_sandboxes(&selector)));
+        assert!(pending_once(fake.create_sandbox(&sandbox)));
+        assert!(fake.sandboxes().is_empty());
+        fake.create_sandbox(&sandbox).await?;
+        let name = observe(&fake, sandbox.name()).await?.name;
+        assert!(pending_once(fake.read_files(&name, &[])));
+        assert!(pending_once(
+            fake.provider_state(&ProviderName::parse("p")?)
+        ));
+        Ok(())
+    })
+    .await
+}

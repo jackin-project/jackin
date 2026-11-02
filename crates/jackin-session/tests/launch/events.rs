@@ -189,3 +189,40 @@ async fn a_failed_or_cancelled_run_ends_its_events_at_the_failing_step() -> Test
     })
     .await
 }
+
+#[tokio::test]
+async fn a_recreated_sandbox_keeps_the_events_forward_only() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.gateway().inject(Fault::ProvisionFails { creates: 2 });
+        let run = rig.launch(1).await?;
+        checked(&run.events)?;
+        ready(run)?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_ended_sandbox_enters_the_ready_step_before_the_run_fails() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        ready(rig.launch(1).await?)?;
+        rig.handle(1).await?.exit_main(3);
+        let run = rig.launch(1).await?;
+        assert!(matches!(&run.result, Err(failure) if failure.step == LaunchStep::Ready));
+        assert_eq!(
+            last(&run),
+            Some(&LaunchEvent::StepStarted(LaunchStep::Ready))
+        );
+        assert!(!run.events.iter().any(|event| matches!(
+            event,
+            LaunchEvent::StepFinished {
+                step: LaunchStep::Ready,
+                ..
+            }
+        )));
+        Ok(())
+    })
+    .await
+}

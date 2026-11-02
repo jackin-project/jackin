@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use jackin_core::{HostPath, LaunchId, Phase};
+use jackin_core::{HostPath, LabelSelector, LaunchId, Phase};
 use jackin_openshell::{
     Gateway, GatewayError, GatewayOp, InputMode, Missing, PowerAction, Provisioning, SandboxQuery,
     SandboxView, TransferOp,
@@ -12,8 +12,8 @@ use jackin_testkit::{Fault, ProgramScript};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    TestResult, attach, fake, guard, observe, path, program_run, read, ready, run, sh, spec,
-    spec_with, write,
+    IMAGE, TestResult, attach, fake, guard, observe, path, program_run, read, ready, run, sh, spec,
+    spec_with, supervised, write,
 };
 
 fn unreachable() -> GatewayError {
@@ -263,6 +263,51 @@ async fn corrupt_download_fails_with_a_digest_transfer_error() -> TestResult {
         fake.download_file(&handle.name(), &remote, &local, &cancel)
             .await?;
         assert_eq!(tokio::fs::read(local.as_path()).await?, b"bundle-bytes");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn hide_until_create_conflict_hides_label_finds_until_a_create_meets_the_existing_name()
+-> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let launch = LaunchId::generate()?;
+        let sandbox = spec_with(&launch, IMAGE, Vec::new(), sh("sleep 3600")?)?;
+        fake.create_sandbox(&sandbox).await?;
+        let selector = SandboxQuery::Labels(LabelSelector::launch(&launch));
+        assert_eq!(fake.find_sandboxes(&selector).await?.len(), 1);
+        fake.inject(Fault::HideUntilCreateConflict);
+        for _ in 0..3 {
+            assert!(fake.find_sandboxes(&selector).await?.is_empty());
+        }
+        assert_eq!(observe(&fake, sandbox.name()).await?.name, *sandbox.name());
+        let conflict = fake.create_sandbox(&sandbox).await;
+        assert!(
+            matches!(conflict, Err(GatewayError::AlreadyExists { what: Missing::Sandbox(ref found) }) if found == sandbox.name()),
+            "{conflict:?}"
+        );
+        assert_eq!(fake.find_sandboxes(&selector).await?.len(), 1);
+        assert_eq!(fake.sandboxes().len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn start_ignored_accepts_the_start_and_leaves_the_sandbox_stopped() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let handle = ready(&fake, supervised()?).await?;
+        let name = handle.name();
+        fake.set_power(&name, PowerAction::Stop).await?;
+        fake.inject(Fault::StartIgnored);
+        for _ in 0..3 {
+            fake.set_power(&name, PowerAction::Start).await?;
+            assert_eq!(observe(&fake, &name).await?.phase, Phase::Stopped);
+        }
+        assert_eq!(handle.phase(), Phase::Stopped);
         Ok(())
     })
     .await

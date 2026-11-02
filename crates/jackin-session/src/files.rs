@@ -8,29 +8,14 @@ const ID_TOKEN: &str = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJpc3MiOiJodHRwczov
 const AUTH_MODE: &str = "chatgptAuthTokens";
 const SECONDS_PER_DAY: i64 = 86_400;
 
-fn quote(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() + 2);
-    out.push('"');
-    for c in text.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            c if c.is_control() => out.push_str(&format!("\\u{:04X}", u32::from(c))),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
 pub(crate) fn render_codex_config(model: Option<&ModelName>, workdir: &SandboxPath) -> String {
     let mut text = String::new();
     if let Some(model) = model {
-        text.push_str(&format!("model = {}\n\n", quote(model.as_str())));
+        text.push_str(&format!("model = \"{}\"\n\n", model.as_str()));
     }
     text.push_str(&format!(
-        "[projects.{}]\ntrust_level = \"trusted\"\n",
-        quote(workdir.as_str())
+        "[projects.\"{}\"]\ntrust_level = \"trusted\"\n",
+        workdir.as_str()
     ));
     text
 }

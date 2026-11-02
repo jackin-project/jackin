@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use jackin_core::{HookKind, Phase, sandbox_layout};
+use jackin_core::{AttemptId, HookKind, Phase, SupervisorState, sandbox_layout};
 use jackin_openshell::{Gateway, PowerAction, Provisioning};
 use jackin_session::{LaunchError, LaunchStep};
 use jackin_testkit::Fault;
@@ -189,6 +189,63 @@ async fn a_transient_provisioning_failure_is_deleted_and_recreated_up_to_create_
             .find_sandboxes(&jackin_openshell::SandboxQuery::Name(name))
             .await?;
         assert!(matches!(view[0].provisioning, Provisioning::Failed { .. }));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_start_the_gateway_ignores_is_waited_out_on_the_clock_to_a_ready_timeout() -> TestResult {
+    guard(async {
+        let mut spec = Spec::new()?;
+        spec.limits = limits(5, 20);
+        let rig = spec.rig().await?;
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
+        rig.gateway()
+            .set_power(&handle.name(), PowerAction::Stop)
+            .await?;
+        rig.gateway().inject(Fault::StartIgnored);
+        let failed = failure(rig.launch(1).await?)?;
+        assert_eq!(failed.step, LaunchStep::Ready);
+        assert!(
+            matches!(&*failed.error, LaunchError::ReadyTimeout { phase: Phase::Stopped, after, .. } if *after >= Duration::from_secs(5)),
+            "{:?}",
+            failed.error
+        );
+        assert!(rig.world.clock.slept().iter().sum::<Duration>() >= Duration::from_secs(5));
+        assert_eq!(handle.phase(), Phase::Stopped);
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_stale_exited_state_after_power_start_is_waited_out_and_attempt_one_starts() -> TestResult
+{
+    guard(async {
+        let rig = Rig::new().await?;
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
+        handle.exit_codex(3);
+        assert_eq!(
+            handle.supervisor(),
+            Some(SupervisorState::Exited {
+                attempt: AttemptId::FIRST,
+                code: 3
+            })
+        );
+        rig.gateway()
+            .set_power(&handle.name(), PowerAction::Stop)
+            .await?;
+        rig.gateway()
+            .inject(Fault::StaleSupervisor { observations: 3 });
+        let target = ready(rig.launch(1).await?)?;
+        assert_eq!(target.state, running(1)?);
+        assert_eq!(handle.supervisor(), Some(running(1)?));
+        assert_eq!(handle.file(&sandbox_layout::RUN_START), Some(b"1".to_vec()));
+        assert_eq!(handle.runs(&preflight()).len(), 2);
         Ok(())
     })
     .await

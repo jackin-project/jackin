@@ -35,6 +35,19 @@ async fn plan_errors_are_typed_for_unsupported_modes_unknown_gateways_and_unregi
             result.err()
         );
 
+        let mismatched = LaunchRequest::new(
+            setup.gateway.clone(),
+            setup.project.clone(),
+            RoleName::parse("other")?,
+            launch_id(1),
+        );
+        let result = plan_launch(&setup.config, &setup.role, mismatched);
+        assert!(
+            matches!(&result, Err(PlanError::RoleMismatch { requested, loaded }) if requested.as_str() == "other" && loaded.as_str() == "sentinel"),
+            "{:?}",
+            result.err()
+        );
+
         let stranger = RepoFixture::new().await?;
         let request = LaunchRequest::new(
             setup.gateway.clone(),
