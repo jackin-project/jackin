@@ -125,9 +125,10 @@ async fn the_project_directory_is_emptied_but_nothing_outside_it() -> TestResult
     .await
 }
 
+const PROGRAM_RUNS: usize = 13;
+
 #[tokio::test]
-async fn a_failure_at_every_sandbox_program_run_retries_to_the_state_of_a_clean_run() -> TestResult
-{
+async fn the_cuts_cover_every_sandbox_program_run_of_a_clean_launch() -> TestResult {
     guard(async {
         let clean = Rig::new(base().await?).await?;
         ready(clean.launch(1).await?)?;
@@ -148,25 +149,54 @@ async fn a_failure_at_every_sandbox_program_run_retries_to_the_state_of_a_clean_
             .iter()
             .map(|program| handle.runs(program).len())
             .sum();
-        assert!(total >= 12, "{total}");
-        arrived(clean.repo.root().as_path(), &handle.root(), &["?? u.txt"])?;
-
-        for cut in 0..total {
-            let rig = Rig::new(base().await?).await?;
-            rig.world.gateway.inject(Fault::FailAfter {
-                op: GatewayOp::Program,
-                calls: u32::try_from(cut)?,
-                error: injected(),
-            });
-            failure(rig.launch(1).await?)?;
-            ready(rig.launch(1).await?)?;
-            let handle = rig.handle(1).await?;
-            assert!(handle.file(&marker()).is_some(), "cut {cut}");
-            arrived(rig.repo.root().as_path(), &handle.root(), &["?? u.txt"])?;
-        }
-        Ok(())
+        assert_eq!(total, PROGRAM_RUNS);
+        arrived(clean.repo.root().as_path(), &handle.root(), &["?? u.txt"])
     })
     .await
+}
+
+async fn retries_after_a_cut_to_the_state_of_a_clean_run(cut: u32) -> TestResult {
+    guard(async {
+        let rig = Rig::new(base().await?).await?;
+        rig.world.gateway.inject(Fault::FailAfter {
+            op: GatewayOp::Program,
+            calls: cut,
+            error: injected(),
+        });
+        failure(rig.launch(1).await?)?;
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
+        assert!(handle.file(&marker()).is_some(), "cut {cut}");
+        arrived(rig.repo.root().as_path(), &handle.root(), &["?? u.txt"])
+    })
+    .await
+}
+
+macro_rules! cut_tests {
+    ($($name:ident: $cut:literal,)+) => {
+        $(
+            #[tokio::test]
+            async fn $name() -> TestResult {
+                retries_after_a_cut_to_the_state_of_a_clean_run($cut).await
+            }
+        )+
+    };
+}
+
+cut_tests! {
+    a_failure_after_0_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 0,
+    a_failure_after_1_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 1,
+    a_failure_after_2_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 2,
+    a_failure_after_3_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 3,
+    a_failure_after_4_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 4,
+    a_failure_after_5_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 5,
+    a_failure_after_6_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 6,
+    a_failure_after_7_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 7,
+    a_failure_after_8_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 8,
+    a_failure_after_9_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 9,
+    a_failure_after_10_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 10,
+    a_failure_after_11_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 11,
+    a_failure_after_12_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 12,
 }
 
 #[tokio::test]
