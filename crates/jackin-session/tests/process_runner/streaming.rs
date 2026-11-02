@@ -51,9 +51,10 @@ async fn lines_reach_the_sink_in_arrival_order_while_the_child_is_still_running(
         let run = TokioProcessRunner.run(&spec, Some(&tx), &cancel);
         let driver = release_gates(&mut rx, scratch.root());
         let (output, seen) = tokio::join!(run, driver);
+        let seen = seen?;
         let output = output?;
         assert_eq!(
-            seen?,
+            seen,
             [
                 (OutputStream::Stdout, "out-1".to_owned()),
                 (OutputStream::Stderr, "err-1".to_owned()),
