@@ -10,11 +10,11 @@ use jackin_core::{
 };
 use jackin_openshell::{ClosedPolicy, Gateway, MainProcess, SandboxCreate, SandboxQuery};
 use jackin_session::{LaunchError, LaunchStep};
-use jackin_testkit::SandboxHandle;
 
 use super::support::{
-    Rig, TestResult, failure, guard, has_file, launch_id, path, ready, running, sandbox_name,
+    TestResult, failure, guard, has_file, launch_id, launch_rig, path, ready, running,
 };
+use jackin_testkit::{Rig, SandboxHandle};
 
 type Snapshot = (
     BTreeMap<SandboxPath, Vec<u8>>,
@@ -36,15 +36,15 @@ fn snapshot(handle: &SandboxHandle) -> Snapshot {
 async fn a_new_launch_id_makes_a_new_sandbox_and_leaves_the_live_one_untouched() -> TestResult {
     guard(async {
         for exited in [false, true] {
-            let rig = Rig::new().await?;
-            ready(rig.launch(1).await?)?;
+            let rig = launch_rig().await?;
+            ready(rig.launch_observed(1).await?)?;
             let first = rig.handle(1).await?;
             if exited {
                 first.exit_codex(0);
             }
             let before = snapshot(&first);
-            let second = ready(rig.launch(2).await?)?;
-            assert_eq!(second.sandbox, sandbox_name(2, &rig)?);
+            let second = ready(rig.launch_observed(2).await?)?;
+            assert_eq!(second.sandbox, rig.sandbox_name(2)?);
             assert_eq!(rig.gateway().sandboxes().len(), 2);
             assert_eq!(first.name().as_str(), "jackin-platfor-ij4f");
             assert_eq!(second.sandbox.as_str(), "jackin-platfor-uxe1");
@@ -116,12 +116,12 @@ async fn foreign(
 async fn a_name_collision_or_an_ambiguous_label_is_a_typed_stop_that_changes_nothing() -> TestResult
 {
     guard(async {
-        let rig = Rig::new().await?;
-        ready(rig.launch(9).await?)?;
-        let name = sandbox_name(1, &rig)?;
+        let rig = launch_rig().await?;
+        ready(rig.launch_observed(9).await?)?;
+        let name = rig.sandbox_name(1)?;
         let other = foreign(&rig, name.clone(), 3).await?;
         let before = snapshot(&other);
-        let failed = failure(rig.launch(1).await?)?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Sandbox);
         assert!(
             matches!(&*failed.error, LaunchError::NameCollision { name: found, other: Some(launch) } if *found == name && *launch == launch_id(3)),
@@ -131,8 +131,8 @@ async fn a_name_collision_or_an_ambiguous_label_is_a_typed_stop_that_changes_not
         assert_eq!(rig.gateway().sandboxes().len(), 2);
         assert_eq!(snapshot(&other), before);
 
-        let rig = Rig::new().await?;
-        ready(rig.launch(9).await?)?;
+        let rig = launch_rig().await?;
+        ready(rig.launch_observed(9).await?)?;
         let make = |suffix: &str| -> Result<SandboxName, Box<dyn Error>> {
             Ok(SandboxName::new(&SandboxSlug::parse("dup")?, &NameSuffix::parse(suffix)?))
         };
@@ -140,7 +140,7 @@ async fn a_name_collision_or_an_ambiguous_label_is_a_typed_stop_that_changes_not
         let first = foreign(&rig, a.clone(), 1).await?;
         let second = foreign(&rig, b.clone(), 1).await?;
         let (before_a, before_b) = (snapshot(&first), snapshot(&second));
-        let failed = failure(rig.launch(1).await?)?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Sandbox);
         assert!(
             matches!(&*failed.error, LaunchError::AmbiguousLaunch { launch, sandboxes } if *launch == launch_id(1) && *sandboxes == [a, b]),

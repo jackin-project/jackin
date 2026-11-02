@@ -4,12 +4,12 @@
 use jackin_core::{EnvName, HookKind, Phase, SupervisorState, sandbox_layout};
 use jackin_openshell::{Gateway, ProgramRun, ProgramStdin};
 use jackin_session::{LaunchError, LaunchStep};
-use jackin_testkit::ProgramScript;
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    Rig, Spec, TestResult, converged, failure, guard, has_file, launch_id, path, ready,
+    TestResult, builder, converged, failure, guard, has_file, launch_id, launch_rig, path, ready,
 };
+use jackin_testkit::{ProgramScript, Rig, RoleFixture};
 
 fn script(rig: &Rig, kind: HookKind, exit_code: i32, stdout: &[u8], stderr: &[u8]) {
     rig.gateway().script_program(
@@ -25,7 +25,7 @@ fn script(rig: &Rig, kind: HookKind, exit_code: i32, stdout: &[u8], stderr: &[u8
 #[tokio::test]
 async fn a_failing_hook_stops_the_launch_with_name_code_and_sanitized_output() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         script(
             &rig,
             HookKind::Preflight,
@@ -33,7 +33,7 @@ async fn a_failing_hook_stops_the_launch_with_name_code_and_sanitized_output() -
             b"checking\x1b[31m red \x1b]0;title\x07done\n",
             b"boom\n",
         );
-        let failed = failure(rig.launch(1).await?)?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Hooks);
         assert!(failed.sandbox.is_some());
         let LaunchError::HookFailed {
@@ -83,9 +83,9 @@ async fn a_failing_hook_stops_the_launch_with_name_code_and_sanitized_output() -
             &sandbox_layout::setup_done_marker(&launch_id(1))
         ));
 
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         script(&rig, HookKind::Setup, 3, b"", b"setup broke\n");
-        let failed = failure(rig.launch(1).await?)?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         assert!(
             matches!(
                 &*failed.error,
@@ -109,13 +109,15 @@ async fn a_failing_hook_stops_the_launch_with_name_code_and_sanitized_output() -
                 .is_empty()
         );
         script(&rig, HookKind::Setup, 0, b"", b"");
-        ready(rig.launch(1).await?)?;
+        ready(rig.launch_observed(1).await?)?;
         converged(&rig, &rig.handle(1).await?, 1)?;
 
-        let mut spec = Spec::new()?;
-        spec.role = jackin_testkit::RoleFixture::new("sentinel")?;
-        let rig = spec.rig().await?;
-        ready(rig.launch(1).await?)?;
+        let rig = builder()
+            .await?
+            .role(RoleFixture::new("sentinel")?)
+            .build()
+            .await?;
+        ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         for kind in [HookKind::Setup, HookKind::Preflight] {
             assert!(handle.runs(&sandbox_layout::hook_path(kind)).is_empty());
@@ -128,7 +130,7 @@ async fn a_failing_hook_stops_the_launch_with_name_code_and_sanitized_output() -
 #[tokio::test]
 async fn hooks_run_with_the_env_file_values_and_a_retry_replaces_them() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         let env = |value: &str| -> Result<_, Box<dyn std::error::Error>> {
             Ok(std::collections::BTreeMap::from([(
                 EnvName::parse("GREETING")?,
@@ -176,10 +178,10 @@ async fn hooks_run_with_the_env_file_values_and_a_retry_replaces_them() -> TestR
 #[tokio::test]
 async fn an_installed_hook_with_no_bytes_is_absent_and_never_runs() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         rig.gateway()
             .install_file(&sandbox_layout::hook_path(HookKind::Setup), Vec::new());
-        ready(rig.launch(1).await?)?;
+        ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         assert!(
             handle
@@ -204,11 +206,12 @@ async fn an_installed_hook_with_no_bytes_is_absent_and_never_runs() -> TestResul
 #[tokio::test]
 async fn a_role_with_only_a_preflight_hook_never_writes_the_setup_marker() -> TestResult {
     guard(async {
-        let mut spec = Spec::new()?;
-        spec.role =
-            jackin_testkit::RoleFixture::new("sentinel")?.hook(HookKind::Preflight, b"#!/bin/sh\n");
-        let rig = spec.rig().await?;
-        ready(rig.launch(1).await?)?;
+        let rig = builder()
+            .await?
+            .role(RoleFixture::new("sentinel")?.hook(HookKind::Preflight, b"#!/bin/sh\n"))
+            .build()
+            .await?;
+        ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         assert_eq!(
             handle

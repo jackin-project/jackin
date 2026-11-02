@@ -4,10 +4,12 @@
 use jackin_core::{Agent, HookKind, sandbox_layout};
 use jackin_openshell::GatewayOp;
 use jackin_session::{LaunchOutcome, RestoreCandidate};
-use jackin_testkit::{Fault, ProgramScript, Trigger};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Rig, TestResult, converged, guard, has_file, launch_id, ready, running};
+use super::support::{
+    TestResult, converged, guard, has_file, launch_id, launch_rig, ready, running,
+};
+use jackin_testkit::{Fault, ProgramScript, Rig, Trigger};
 
 #[derive(Clone, Copy, Debug)]
 enum Point {
@@ -45,7 +47,7 @@ fn assert_nothing_before_sandbox(rig: &Rig, point: Point) {
 
 async fn cancel_at(point: Point) -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         let token = CancellationToken::new();
         match trigger(point) {
             Some(trigger) => rig.gateway().inject(Fault::CancelAt {
@@ -104,7 +106,7 @@ async fn cancel_at(point: Point) -> TestResult {
             }
             (point, None) => return Err(format!("{point:?}: no sandbox").into()),
         }
-        ready(rig.launch(1).await?)?;
+        ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         converged(&rig, &handle, 1)?;
         assert_eq!(handle.runs(&setup).len(), 1);
@@ -169,7 +171,7 @@ async fn a_cancel_at_the_start_leaves_a_restore_candidate_and_a_retry_completes(
 #[tokio::test]
 async fn a_cancel_stops_a_running_hook_and_the_retry_runs_it_once() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         let setup = sandbox_layout::hook_path(HookKind::Setup);
         let token = CancellationToken::new();
         rig.gateway().inject(Fault::StallProgram {
@@ -202,7 +204,7 @@ async fn a_cancel_stops_a_running_hook_and_the_retry_runs_it_once() -> TestResul
                 stderr: Vec::new(),
             },
         );
-        ready(rig.launch(1).await?)?;
+        ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         assert_eq!(handle.runs(&setup).len(), 1);
         converged(&rig, &handle, 1)?;

@@ -7,7 +7,8 @@ use jackin_session::{
     LAUNCH_EVENT_CAPACITY, LaunchEvent, LaunchEvents, LaunchStep, LineDelivery, launch_events,
 };
 
-use super::support::{Rig, TestResult, guard, ready};
+use super::support::{TestResult, guard, launch_rig, ready};
+use jackin_testkit::Outcome;
 
 const CAP: usize = LAUNCH_EVENT_CAPACITY;
 
@@ -124,7 +125,7 @@ async fn slow_launch(
     delivery: LineDelivery,
     lines: &[String],
 ) -> Result<Vec<LaunchEvent>, Box<dyn std::error::Error>> {
-    let rig = Rig::new().await?;
+    let rig = launch_rig().await?;
     rig.world
         .engine
         .script_lines(BuildStage::Role, lines.to_vec());
@@ -146,7 +147,7 @@ async fn slow_launch(
             .launch(plan, events, tokio_util::sync::CancellationToken::new()),
         consume
     );
-    ready(super::support::Outcome {
+    ready(Outcome {
         result,
         events: Vec::new(),
     })?;

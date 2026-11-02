@@ -6,12 +6,12 @@ use std::time::Duration;
 use jackin_core::{AttemptId, HookKind, Phase, SupervisorState, sandbox_layout};
 use jackin_openshell::{Gateway, PowerAction, Provisioning};
 use jackin_session::{LaunchError, LaunchStep};
-use jackin_testkit::Fault;
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    Rig, Spec, TestResult, converged, failure, guard, has_file, limits, ready, running,
+    TestResult, builder, converged, failure, guard, has_file, launch_rig, limits, ready, running,
 };
+use jackin_testkit::Fault;
 
 fn preflight() -> jackin_core::SandboxPath {
     sandbox_layout::hook_path(HookKind::Preflight)
@@ -31,8 +31,8 @@ async fn an_ended_suspended_or_deleting_sandbox_stops_the_launch_and_stays() -> 
             (3, Phase::Deleting),
         ];
         for (row, phase) in rows {
-            let rig = Rig::new().await?;
-            ready(rig.launch(1).await?)?;
+            let rig = launch_rig().await?;
+            ready(rig.launch_observed(1).await?)?;
             let handle = rig.handle(1).await?;
             match row {
                 0 => handle.exit_main(0),
@@ -40,7 +40,7 @@ async fn an_ended_suspended_or_deleting_sandbox_stops_the_launch_and_stays() -> 
                 _ => rig.gateway().force_phase(&handle.name(), phase),
             }
             let before = (handle.files(), format!("{:?}", handle.labels()));
-            let failed = failure(rig.launch(1).await?)?;
+            let failed = failure(rig.launch_observed(1).await?)?;
             assert_eq!(failed.step, LaunchStep::Ready);
             assert_eq!(failed.sandbox, Some(handle.name()));
             match (&*failed.error, row) {
@@ -66,9 +66,9 @@ async fn an_ended_suspended_or_deleting_sandbox_stops_the_launch_and_stays() -> 
 #[tokio::test]
 async fn a_settling_sandbox_is_waited_for_on_the_clock_until_ready() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         rig.gateway().inject(Fault::ProvisionFor { polls: 5 });
-        ready(rig.launch(1).await?)?;
+        ready(rig.launch_observed(1).await?)?;
         let slept: Duration = rig.world.clock.slept().iter().sum();
         assert!(!rig.world.clock.slept().is_empty());
         assert!(slept < Duration::from_secs(30), "{slept:?}");
@@ -81,11 +81,9 @@ async fn a_settling_sandbox_is_waited_for_on_the_clock_until_ready() -> TestResu
 async fn a_sandbox_that_settles_too_slowly_times_out_on_the_clock_and_a_patient_launch_joins_it()
 -> TestResult {
     guard(async {
-        let mut spec = Spec::new()?;
-        spec.limits = limits(5, 20);
-        let rig = spec.rig().await?;
+        let rig = builder().await?.limits(limits(5, 20)).build().await?;
         rig.gateway().inject(Fault::ProvisionFor { polls: 40 });
-        let failed = failure(rig.launch(1).await?)?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Ready);
         assert!(
             matches!(&*failed.error, LaunchError::ReadyTimeout { phase: Phase::Provisioning, after, .. } if *after >= Duration::from_secs(5)),
@@ -106,13 +104,11 @@ async fn a_sandbox_that_settles_too_slowly_times_out_on_the_clock_and_a_patient_
 #[tokio::test]
 async fn a_sandbox_in_an_unknown_phase_times_out_on_the_clock_and_stays() -> TestResult {
     guard(async {
-        let mut spec = Spec::new()?;
-        spec.limits = limits(5, 20);
-        let rig = spec.rig().await?;
-        ready(rig.launch(1).await?)?;
+        let rig = builder().await?.limits(limits(5, 20)).build().await?;
+        ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         rig.gateway().force_phase(&handle.name(), Phase::Unknown);
-        let failed = failure(rig.launch(1).await?)?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         assert!(
             matches!(
                 &*failed.error,
@@ -133,14 +129,14 @@ async fn a_sandbox_in_an_unknown_phase_times_out_on_the_clock_and_stays() -> Tes
 #[tokio::test]
 async fn a_stopped_sandbox_is_started_and_restarts_at_attempt_one() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
-        ready(rig.launch(1).await?)?;
+        let rig = launch_rig().await?;
+        ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         rig.gateway()
             .set_power(&handle.name(), PowerAction::Stop)
             .await?;
         rig.repo.file("late.txt", b"late\n").await?;
-        let target = ready(rig.launch(1).await?)?;
+        let target = ready(rig.launch_observed(1).await?)?;
         assert_eq!(target.state, running(1)?);
         assert_eq!(handle.phase(), Phase::Ready);
         assert_eq!(rig.gateway().sandboxes().len(), 1);
@@ -160,15 +156,15 @@ async fn a_stopped_sandbox_is_started_and_restarts_at_attempt_one() -> TestResul
 #[tokio::test]
 async fn a_stale_running_state_after_power_start_is_not_accepted() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
-        ready(rig.launch(1).await?)?;
+        let rig = launch_rig().await?;
+        ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         rig.gateway()
             .set_power(&handle.name(), PowerAction::Stop)
             .await?;
         rig.gateway()
             .inject(Fault::StaleSupervisor { observations: 3 });
-        let target = ready(rig.launch(1).await?)?;
+        let target = ready(rig.launch_observed(1).await?)?;
         assert_eq!(target.state, running(1)?);
         assert_eq!(handle.runs(&preflight()).len(), 2);
         assert_eq!(handle.supervisor(), Some(running(1)?));
@@ -182,16 +178,16 @@ async fn a_stale_running_state_after_power_start_is_not_accepted() -> TestResult
 async fn a_transient_provisioning_failure_is_deleted_and_recreated_up_to_create_attempts()
 -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         rig.gateway().inject(Fault::ProvisionFails { creates: 2 });
-        let target = ready(rig.launch(1).await?)?;
+        let target = ready(rig.launch_observed(1).await?)?;
         assert_eq!(target.sandbox, rig.plan(1)?.sandbox_name().clone());
         assert_eq!(rig.gateway().sandboxes().len(), 1);
         assert_eq!(rig.handle(1).await?.phase(), Phase::Ready);
 
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         rig.gateway().inject(Fault::ProvisionFails { creates: 5 });
-        let failed = failure(rig.launch(1).await?)?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Sandbox);
         let name = rig.plan(1)?.sandbox_name().clone();
         assert!(
@@ -201,7 +197,7 @@ async fn a_transient_provisioning_failure_is_deleted_and_recreated_up_to_create_
         );
         let handle = rig.handle(1).await?;
         assert_eq!(handle.phase(), Phase::Error { exit_code: None });
-        let again = failure(rig.launch(1).await?)?;
+        let again = failure(rig.launch_observed(1).await?)?;
         assert!(
             matches!(&*again.error, LaunchError::MainProcessEnded { phase: Phase::Error { exit_code: None }, .. }),
             "{:?}",
@@ -222,16 +218,14 @@ async fn a_transient_provisioning_failure_is_deleted_and_recreated_up_to_create_
 #[tokio::test]
 async fn a_start_the_gateway_ignores_is_waited_out_on_the_clock_to_a_ready_timeout() -> TestResult {
     guard(async {
-        let mut spec = Spec::new()?;
-        spec.limits = limits(5, 20);
-        let rig = spec.rig().await?;
-        ready(rig.launch(1).await?)?;
+        let rig = builder().await?.limits(limits(5, 20)).build().await?;
+        ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         rig.gateway()
             .set_power(&handle.name(), PowerAction::Stop)
             .await?;
         rig.gateway().inject(Fault::StartIgnored);
-        let failed = failure(rig.launch(1).await?)?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Ready);
         assert!(
             matches!(&*failed.error, LaunchError::ReadyTimeout { phase: Phase::Stopped, after, .. } if *after >= Duration::from_secs(5)),
@@ -250,8 +244,8 @@ async fn a_start_the_gateway_ignores_is_waited_out_on_the_clock_to_a_ready_timeo
 async fn a_stale_exited_state_after_power_start_is_waited_out_and_attempt_one_starts() -> TestResult
 {
     guard(async {
-        let rig = Rig::new().await?;
-        ready(rig.launch(1).await?)?;
+        let rig = launch_rig().await?;
+        ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         handle.exit_codex(3);
         assert_eq!(
@@ -266,7 +260,7 @@ async fn a_stale_exited_state_after_power_start_is_waited_out_and_attempt_one_st
             .await?;
         rig.gateway()
             .inject(Fault::StaleSupervisor { observations: 3 });
-        let target = ready(rig.launch(1).await?)?;
+        let target = ready(rig.launch_observed(1).await?)?;
         assert_eq!(target.state, running(1)?);
         assert_eq!(handle.supervisor(), Some(running(1)?));
         assert_eq!(handle.file(&sandbox_layout::RUN_START), Some(b"1".to_vec()));

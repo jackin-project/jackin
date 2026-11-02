@@ -4,10 +4,10 @@
 use jackin_image::{BuildStage, ImageEvent};
 use jackin_openshell::GatewayOp;
 use jackin_session::{LaunchEvent, LaunchOutcome, LaunchStep, SkipReason, StepResult};
-use jackin_testkit::{Fault, Trigger};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Outcome, Rig, TestResult, guard, ready, unreachable};
+use super::support::{TestResult, guard, launch_rig, ready, unreachable};
+use jackin_testkit::{Fault, Outcome, Trigger};
 
 fn checked(events: &[LaunchEvent]) -> Result<Vec<(LaunchStep, StepResult)>, String> {
     let mut results = Vec::new();
@@ -66,8 +66,8 @@ fn images(events: &[LaunchEvent]) -> Vec<ImageEvent> {
 #[tokio::test]
 async fn events_come_in_step_order_with_skips_named() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
-        let first = rig.launch(1).await?;
+        let rig = launch_rig().await?;
+        let first = rig.launch_observed(1).await?;
         let results = checked(&first.events)?;
         assert!(
             results
@@ -91,7 +91,7 @@ async fn events_come_in_step_order_with_skips_named() -> TestResult {
         )));
         ready(first)?;
 
-        let second = rig.launch(1).await?;
+        let second = rig.launch_observed(1).await?;
         let results = checked(&second.events)?;
         let skipped = |reason| StepResult::Skipped(reason);
         assert_eq!(
@@ -127,7 +127,7 @@ fn last(outcome: &Outcome) -> Option<&LaunchEvent> {
 #[tokio::test]
 async fn a_failed_or_cancelled_run_ends_its_events_at_the_failing_step() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         rig.gateway().script_program(
             &jackin_core::sandbox_layout::hook_path(jackin_core::HookKind::Preflight),
             jackin_testkit::ProgramScript {
@@ -136,14 +136,14 @@ async fn a_failed_or_cancelled_run_ends_its_events_at_the_failing_step() -> Test
                 stderr: Vec::new(),
             },
         );
-        let failed = rig.launch(1).await?;
+        let failed = rig.launch_observed(1).await?;
         assert!(matches!(&failed.result, Err(failure) if failure.step == LaunchStep::Hooks));
         assert_eq!(
             last(&failed),
             Some(&LaunchEvent::StepStarted(LaunchStep::Hooks))
         );
 
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         let token = CancellationToken::new();
         rig.gateway().inject(Fault::CancelAt {
             trigger: Trigger::Op(GatewayOp::UploadTree),
@@ -156,12 +156,12 @@ async fn a_failed_or_cancelled_run_ends_its_events_at_the_failing_step() -> Test
             Some(&LaunchEvent::StepStarted(LaunchStep::Upload))
         );
 
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         rig.gateway().inject(Fault::FailAt {
             trigger: Trigger::Op(GatewayOp::Create),
             error: unreachable(),
         });
-        let refused = rig.launch(1).await?;
+        let refused = rig.launch_observed(1).await?;
         assert_eq!(
             last(&refused),
             Some(&LaunchEvent::StepStarted(LaunchStep::Sandbox))
@@ -193,9 +193,9 @@ async fn a_failed_or_cancelled_run_ends_its_events_at_the_failing_step() -> Test
 #[tokio::test]
 async fn a_recreated_sandbox_keeps_the_events_forward_only() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         rig.gateway().inject(Fault::ProvisionFails { creates: 2 });
-        let run = rig.launch(1).await?;
+        let run = rig.launch_observed(1).await?;
         checked(&run.events)?;
         ready(run)?;
         Ok(())
@@ -206,10 +206,10 @@ async fn a_recreated_sandbox_keeps_the_events_forward_only() -> TestResult {
 #[tokio::test]
 async fn an_ended_sandbox_enters_the_ready_step_before_the_run_fails() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
-        ready(rig.launch(1).await?)?;
+        let rig = launch_rig().await?;
+        ready(rig.launch_observed(1).await?)?;
         rig.handle(1).await?.exit_main(3);
-        let run = rig.launch(1).await?;
+        let run = rig.launch_observed(1).await?;
         assert!(matches!(&run.result, Err(failure) if failure.step == LaunchStep::Ready));
         assert_eq!(
             last(&run),

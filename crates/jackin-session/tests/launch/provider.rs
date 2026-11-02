@@ -4,23 +4,21 @@
 use jackin_core::{ProfileId, ProviderName};
 use jackin_session::{AccountError, CredentialError, LaunchError, LaunchStep};
 
-use super::support::{Rig, Spec, TestResult, failure, guard, ready};
+use super::support::{TestResult, builder, failure, guard, launch_rig, ready};
 
 #[tokio::test]
 async fn the_provider_is_synced_once_and_a_missing_login_stops_before_the_sandbox() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
-        ready(rig.launch(1).await?)?;
+        let rig = launch_rig().await?;
+        ready(rig.launch_observed(1).await?)?;
         tokio::fs::remove_file(rig.home.as_path().join("auth.json")).await?;
-        ready(rig.launch(2).await?)?;
+        ready(rig.launch_observed(2).await?)?;
         assert_eq!(rig.gateway().providers(), [ProviderName::parse("jackin-work-codex")?]);
         assert_eq!(rig.gateway().profiles(), [ProfileId::parse("codex")?]);
         assert_eq!(rig.gateway().sandboxes().len(), 2);
 
-        let mut spec = Spec::new()?;
-        spec.login = false;
-        let rig = spec.rig().await?;
-        let failed = failure(rig.launch(1).await?)?;
+        let rig = builder().await?.login(false).build().await?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Provider);
         assert_eq!(failed.sandbox, None);
         assert!(

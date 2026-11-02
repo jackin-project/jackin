@@ -2,22 +2,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    Config, EnvName, HookKind, HostPath, LabelSelector, LaunchId, ProjectRoot, RoleName,
-    SandboxName, sandbox_layout,
+    Clock, Config, EnvName, FileSystem, HookKind, HostPath, LabelSelector, LaunchId, ProcessRunner,
+    ProjectRoot, RoleName, SandboxName, sandbox_layout,
 };
+use jackin_image::{BuildStage, BuiltImage, ImageEngine, ImageSource};
 use jackin_openshell::{Gateway, SandboxQuery};
 use jackin_session::{
-    LaunchFailure, LaunchLimits, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery,
-    LoadedRole, launch_events, plan_launch,
+    HostPorts, LaunchEvent, LaunchFailure, LaunchLimits, LaunchOutcome, LaunchPlan, LaunchRequest,
+    LineDelivery, LoadedRole, Session, SessionDeps, launch_events, plan_launch,
 };
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
+use crate::engine::FakeEngine;
 use crate::fixtures::{FixtureError, RepoFixture, RoleFixture};
-use crate::gateway::{ProgramScript, SandboxHandle};
+use crate::gateway::{FakeGateway, ProgramScript, SandboxHandle};
+use crate::host::{FakeClock, TestRunner};
 use crate::world::{World, default_limits};
 
 pub type TestResult = Result<(), FixtureError>;
@@ -25,13 +29,19 @@ pub type TestResult = Result<(), FixtureError>;
 const GUARD: Duration = Duration::from_secs(10);
 
 pub async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
-    tokio::time::timeout(GUARD, work)
-        .await
-        .map_err(|_| "the test hung for 10 s")?
+    guard_within(GUARD, work).await
 }
 
-const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
-const PLACEHOLDER: &str = "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN";
+pub async fn guard_within(limit: Duration, work: impl Future<Output = TestResult>) -> TestResult {
+    tokio::time::timeout(limit, work)
+        .await
+        .map_err(|_| format!("the test hung for {} s", limit.as_secs()))?
+}
+
+pub const ACCESS: &str = "ACCESS-SECRET-7f3a91";
+pub const REFRESH: &str = "REFRESH-SECRET-c20e44";
+pub const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
+pub const PLACEHOLDER: &str = "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN";
 
 #[derive(Debug)]
 pub struct Rig {
@@ -39,15 +49,24 @@ pub struct Rig {
     pub repo: RepoFixture,
     pub config: Config,
     pub project: ProjectRoot,
-    loaded: LoadedRole,
+    pub loaded: LoadedRole,
+    pub home: HostPath,
     _role: RoleFixture,
     _home: TempDir,
+}
+
+#[derive(Debug)]
+pub struct Outcome {
+    pub result: Result<LaunchOutcome, LaunchFailure>,
+    pub events: Vec<LaunchEvent>,
 }
 
 #[derive(Debug)]
 pub struct RigBuilder {
     limits: LaunchLimits,
     repo: Option<RepoFixture>,
+    role: Option<RoleFixture>,
+    login: bool,
     printenv_exit: i32,
     preflight_exit: i32,
 }
@@ -66,8 +85,15 @@ fn script(exit_code: i32, stdout: &[u8]) -> ProgramScript {
 
 fn login_text() -> String {
     format!(
-        "{{\"auth_mode\":\"chatgpt\",\"OPENAI_API_KEY\":null,\"tokens\":{{\"id_token\":\"header.payload.signature\",\"access_token\":\"ACCESS-SECRET-7f3a91\",\"refresh_token\":\"REFRESH-SECRET-c20e44\",\"oauth_provenance\":{{\"issuer\":\"https://auth.openai.com\",\"client_id\":\"app_EMoamEEZ73f0CkXaXp7hrann\"}},\"login_owner_id\":\"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG\",\"account_id\":\"{ACCOUNT_ID}\"}},\"last_refresh\":\"2026-11-02T10:11:12.123456789Z\"}}"
+        "{{\"auth_mode\":\"chatgpt\",\"OPENAI_API_KEY\":null,\"tokens\":{{\"id_token\":\"header.payload.signature\",\"access_token\":\"{ACCESS}\",\"refresh_token\":\"{REFRESH}\",\"oauth_provenance\":{{\"issuer\":\"https://auth.openai.com\",\"client_id\":\"app_EMoamEEZ73f0CkXaXp7hrann\"}},\"login_owner_id\":\"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG\",\"account_id\":\"{ACCOUNT_ID}\"}},\"last_refresh\":\"2026-11-02T10:11:12.123456789Z\"}}"
     )
+}
+
+fn default_role() -> Result<RoleFixture, FixtureError> {
+    Ok(RoleFixture::new("sentinel")?
+        .env("GREETING", Some("hello"), Some("Greeting"))
+        .hook(HookKind::Setup, b"#!/bin/sh\n")
+        .hook(HookKind::Preflight, b"#!/bin/sh\n"))
 }
 
 async fn committed_repo() -> Result<RepoFixture, FixtureError> {
@@ -84,6 +110,8 @@ impl Rig {
         RigBuilder {
             limits: default_limits(),
             repo: None,
+            role: None,
+            login: true,
             printenv_exit: 0,
             preflight_exit: 0,
         }
@@ -91,6 +119,10 @@ impl Rig {
 
     pub async fn new() -> Result<Rig, FixtureError> {
         Rig::builder().build().await
+    }
+
+    pub fn gateway(&self) -> &Arc<FakeGateway> {
+        &self.world.gateway
     }
 
     pub fn request(&self, id: u8) -> Result<LaunchRequest, FixtureError> {
@@ -121,7 +153,7 @@ impl Rig {
         id: u8,
         cancel: CancellationToken,
     ) -> Result<Result<LaunchOutcome, LaunchFailure>, FixtureError> {
-        self.run(self.request(id)?, cancel).await
+        Ok(self.run(self.request(id)?, cancel).await?.result)
     }
 
     pub async fn launch_with_env(
@@ -131,31 +163,104 @@ impl Rig {
     ) -> Result<LaunchOutcome, FixtureError> {
         self.run(self.request(id)?.env(env), CancellationToken::new())
             .await?
+            .result
             .map_err(|failure| format!("the launch failed: {failure:?}").into())
     }
 
-    async fn run(
+    pub async fn launch_observed(&self, id: u8) -> Result<Outcome, FixtureError> {
+        self.run(self.request(id)?, CancellationToken::new()).await
+    }
+
+    pub async fn run(
         &self,
         request: LaunchRequest,
         cancel: CancellationToken,
-    ) -> Result<Result<LaunchOutcome, LaunchFailure>, FixtureError> {
-        let plan = plan_launch(&self.config, &self.loaded, request)?;
-        let (events, mut feed) = launch_events(LineDelivery::Reliable);
-        let drain = async { while feed.recv().await.is_some() {} };
-        let (result, ()) = tokio::join!(self.world.session.launch(plan, events, cancel), drain);
-        Ok(result)
+    ) -> Result<Outcome, FixtureError> {
+        self.run_on(&self.world.session, request, cancel).await
     }
 
-    pub async fn handle(&self, id: u8) -> Result<SandboxHandle, FixtureError> {
+    pub async fn run_on(
+        &self,
+        session: &Session,
+        request: LaunchRequest,
+        cancel: CancellationToken,
+    ) -> Result<Outcome, FixtureError> {
+        let plan = plan_launch(&self.config, &self.loaded, request)?;
+        let (events, mut feed) = launch_events(LineDelivery::Reliable);
+        let collect = async {
+            let mut seen = Vec::new();
+            while let Some(event) = feed.recv().await {
+                seen.push(event);
+            }
+            seen
+        };
+        let (result, events) = tokio::join!(session.launch(plan, events, cancel), collect);
+        Ok(Outcome { result, events })
+    }
+
+    pub fn session_with(&self, limits: LaunchLimits) -> Session {
+        let world = &self.world;
+        let gateway: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&world.gateway);
+        let engine: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&world.engine);
+        let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
+        let runner: Arc<dyn ProcessRunner> = Arc::<TestRunner>::clone(&world.runner);
+        let fs: Arc<dyn FileSystem> = Arc::clone(&world.fs);
+        Session::new(SessionDeps {
+            gateway,
+            engine,
+            host: HostPorts { clock, fs, runner },
+            cache_dir: world.cache_dir().clone(),
+            limits,
+        })
+    }
+
+    pub async fn sandbox(&self, id: u8) -> Result<Option<SandboxHandle>, FixtureError> {
         let found = self
             .world
             .gateway
             .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&launch_id(id))))
             .await?;
-        found
+        Ok(found
             .first()
-            .and_then(|view| self.world.gateway.sandbox(&view.name))
+            .and_then(|view| self.world.gateway.sandbox(&view.name)))
+    }
+
+    pub async fn handle(&self, id: u8) -> Result<SandboxHandle, FixtureError> {
+        self.sandbox(id)
+            .await?
             .ok_or_else(|| "the launch has no sandbox".into())
+    }
+
+    pub fn stages(&self) -> Vec<BuildStage> {
+        self.world
+            .engine
+            .builds()
+            .iter()
+            .map(|build| build.stage)
+            .collect()
+    }
+
+    pub fn final_image(&self) -> Result<BuiltImage, FixtureError> {
+        let build = self
+            .world
+            .engine
+            .builds()
+            .into_iter()
+            .rev()
+            .find(|build| build.stage == BuildStage::Derived)
+            .ok_or("no final image was built")?;
+        let id = self
+            .world
+            .engine
+            .images()
+            .get(&build.tag)
+            .cloned()
+            .ok_or("the final image is not stored")?;
+        Ok(BuiltImage {
+            tag: build.tag,
+            id,
+            source: ImageSource::Built,
+        })
     }
 }
 
@@ -169,6 +274,18 @@ impl RigBuilder {
     #[must_use]
     pub fn repo(mut self, repo: RepoFixture) -> RigBuilder {
         self.repo = Some(repo);
+        self
+    }
+
+    #[must_use]
+    pub fn role(mut self, role: RoleFixture) -> RigBuilder {
+        self.role = Some(role);
+        self
+    }
+
+    #[must_use]
+    pub fn login(mut self, login: bool) -> RigBuilder {
+        self.login = login;
         self
     }
 
@@ -190,15 +307,17 @@ impl RigBuilder {
             Some(repo) => repo,
             None => committed_repo().await?,
         };
-        let role = RoleFixture::new("sentinel")?
-            .env("GREETING", Some("hello"), Some("Greeting"))
-            .hook(HookKind::Setup, b"#!/bin/sh\n")
-            .hook(HookKind::Preflight, b"#!/bin/sh\n");
+        let role = match self.role {
+            Some(role) => role,
+            None => default_role()?,
+        };
         role.commit().await?;
         let loaded = world.roles.load_path(role.root()).await?;
         let home_dir = tempfile::tempdir()?;
         let home = HostPath::parse(&std::fs::canonicalize(home_dir.path())?)?;
-        tokio::fs::write(home.as_path().join("auth.json"), login_text()).await?;
+        if self.login {
+            tokio::fs::write(home.as_path().join("auth.json"), login_text()).await?;
+        }
         let config = Config::parse(&format!(
             "default_gateway = \"fake-gateway\"\n\n[gateways.fake-gateway]\nopenshell_workspace = \"default\"\nbuilder = \"jackin-builder\"\nplatform = \"linux/arm64\"\n\n[accounts.work]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{ACCOUNT_ID}\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.platform-backend]\npath = \"{}\"\n",
             home.as_path().display(),
@@ -216,8 +335,10 @@ impl RigBuilder {
             (HookKind::Preflight, self.preflight_exit),
         ] {
             let hook = sandbox_layout::hook_path(kind);
-            gateway.install_file(&hook, b"#!/bin/sh\n".to_vec());
-            gateway.script_program(&hook, script(exit, b""));
+            if loaded.manifest().hook(kind).is_some() {
+                gateway.install_file(&hook, b"#!/bin/sh\n".to_vec());
+                gateway.script_program(&hook, script(exit, b""));
+            }
         }
         Ok(Rig {
             world,
@@ -225,6 +346,7 @@ impl RigBuilder {
             config,
             project,
             loaded,
+            home,
             _role: role,
             _home: home_dir,
         })

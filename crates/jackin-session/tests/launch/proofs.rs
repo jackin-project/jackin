@@ -5,21 +5,21 @@ use jackin_core::{ProfileId, ProviderName, SandboxLabels, SupervisorState, sandb
 use jackin_image::BuildStage;
 use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_session::{LaunchError, LaunchOutcome, LaunchStep};
-use jackin_testkit::{Fault, Trigger};
 
 use super::support::{
-    Rig, TestResult, converged, failure, guard, has_file, launch_id, path, ready, running,
+    TestResult, converged, failure, guard, has_file, launch_id, launch_rig, path, ready, running,
     under_project, unreachable, write,
 };
+use jackin_testkit::{Fault, Trigger};
 
 #[tokio::test]
 async fn two_runs_with_one_launch_id_give_one_build_one_sandbox_one_upload_one_setup() -> TestResult
 {
     guard(async {
-        let rig = Rig::new().await?;
-        let first = ready(rig.launch(1).await?)?;
+        let rig = launch_rig().await?;
+        let first = ready(rig.launch_observed(1).await?)?;
         rig.repo.file("late.txt", b"late\n").await?;
-        let second = ready(rig.launch(1).await?)?;
+        let second = ready(rig.launch_observed(1).await?)?;
         let name = rig.plan(1)?.sandbox_name().clone();
         assert_eq!(name.as_str(), "jackin-platfor-ij4f");
         for target in [first, second] {
@@ -82,13 +82,13 @@ fn running_attempt() -> jackin_core::AttemptId {
 #[tokio::test]
 async fn a_failure_after_create_leaves_the_sandbox_and_a_retry_continues_it() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         let auth = jackin_core::Agent::Codex.spec().auth_file.path.clone();
         rig.gateway().inject(Fault::FailAt {
             trigger: Trigger::Write(auth.clone()),
             error: unreachable(),
         });
-        let failed = failure(rig.launch(1).await?)?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         let name = rig.plan(1)?.sandbox_name().clone();
         assert_eq!(failed.launch_id, launch_id(1));
         assert_eq!(failed.step, LaunchStep::Credentials);
@@ -120,7 +120,7 @@ async fn a_failure_after_create_leaves_the_sandbox_and_a_retry_continues_it() ->
         );
 
         write(&rig, &name, &path("/sandbox/sentinel.txt")?, "s").await?;
-        let retried = rig.launch(1).await?;
+        let retried = rig.launch_observed(1).await?;
         assert!(matches!(retried.result, Ok(LaunchOutcome::Ready(_))));
         assert_eq!(rig.gateway().sandboxes().len(), 1);
         let handle = rig.handle(1).await?;
@@ -140,13 +140,13 @@ const FINDS_BEFORE_CREATE: u32 = 3;
 #[tokio::test]
 async fn a_failure_right_after_create_still_reports_the_created_sandbox() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         rig.gateway().inject(Fault::FailAfter {
             op: GatewayOp::Find,
             calls: FINDS_BEFORE_CREATE,
             error: unreachable(),
         });
-        let failed = failure(rig.launch(1).await?)?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         let name = rig.plan(1)?.sandbox_name().clone();
         assert_eq!(failed.step, LaunchStep::Sandbox);
         assert_eq!(failed.sandbox, Some(name));
@@ -163,15 +163,15 @@ async fn a_failure_right_after_create_still_reports_the_created_sandbox() -> Tes
 #[tokio::test]
 async fn a_failure_right_after_a_join_still_reports_the_joined_sandbox() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
-        let first = ready(rig.launch(1).await?)?;
+        let rig = launch_rig().await?;
+        let first = ready(rig.launch_observed(1).await?)?;
         rig.gateway().inject(Fault::HideUntilCreateConflict);
         rig.gateway().inject(Fault::FailAfter {
             op: GatewayOp::Find,
             calls: FINDS_BEFORE_CREATE + 1,
             error: unreachable(),
         });
-        let failed = failure(rig.launch(1).await?)?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Sandbox);
         assert_eq!(failed.sandbox, Some(first.sandbox));
         assert!(matches!(
@@ -187,8 +187,8 @@ async fn a_failure_right_after_a_join_still_reports_the_joined_sandbox() -> Test
 #[tokio::test]
 async fn two_concurrent_launches_with_one_id_end_with_one_sandbox_and_one_start() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
-        let (first, second) = tokio::join!(rig.launch(1), rig.launch(1));
+        let rig = launch_rig().await?;
+        let (first, second) = tokio::join!(rig.launch_observed(1), rig.launch_observed(1));
         let (first, second) = (ready(first?)?, ready(second?)?);
         assert_eq!(first.sandbox, second.sandbox);
         assert_eq!(rig.gateway().sandboxes().len(), 1);
@@ -203,10 +203,10 @@ async fn two_concurrent_launches_with_one_id_end_with_one_sandbox_and_one_start(
 #[tokio::test]
 async fn a_run_that_loses_the_create_race_joins_the_sandbox_of_its_own_launch() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
-        let first = ready(rig.launch(1).await?)?;
+        let rig = launch_rig().await?;
+        let first = ready(rig.launch_observed(1).await?)?;
         rig.gateway().inject(Fault::HideUntilCreateConflict);
-        let second = ready(rig.launch(1).await?)?;
+        let second = ready(rig.launch_observed(1).await?)?;
         assert_eq!(second.sandbox, first.sandbox);
         assert_eq!(rig.gateway().sandboxes().len(), 1);
         let handle = rig.handle(1).await?;

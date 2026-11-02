@@ -5,12 +5,12 @@ use jackin_core::{Agent, HookKind, SandboxPath, sandbox_layout};
 use jackin_image::{BuildStage, EngineError, ImageError};
 use jackin_openshell::GatewayOp;
 use jackin_session::{LaunchError, LaunchStep};
-use jackin_testkit::{Fault, Trigger};
 
 use super::support::{
-    Rig, TestResult, converged, failure, guard, has_file, launch_id, path, ready, under_project,
-    unreachable,
+    TestResult, converged, failure, guard, has_file, launch_id, launch_rig, path, ready,
+    under_project, unreachable,
 };
+use jackin_testkit::{Fault, Trigger};
 
 fn setup() -> SandboxPath {
     sandbox_layout::hook_path(HookKind::Setup)
@@ -23,9 +23,9 @@ fn preflight() -> SandboxPath {
 #[tokio::test]
 async fn a_failure_before_the_sandbox_exists_builds_and_creates_nothing_twice() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         rig.world.engine.fail_next(BuildStage::Derived);
-        let failed = failure(rig.launch(1).await?)?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Image);
         assert!(matches!(
             *failed.error,
@@ -38,7 +38,7 @@ async fn a_failure_before_the_sandbox_exists_builds_and_creates_nothing_twice() 
         assert!(rig.gateway().sandboxes().is_empty());
         assert!(rig.gateway().providers().is_empty());
         assert_eq!(rig.stages(), [BuildStage::Construct, BuildStage::Role]);
-        ready(rig.launch(1).await?)?;
+        ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         converged(&rig, &handle, 1)?;
         let stages = rig.stages();
@@ -55,18 +55,18 @@ async fn a_failure_before_the_sandbox_exists_builds_and_creates_nothing_twice() 
             (GatewayOp::Provider, LaunchStep::Provider, 0),
             (GatewayOp::Create, LaunchStep::Sandbox, 1),
         ] {
-            let rig = Rig::new().await?;
+            let rig = launch_rig().await?;
             rig.gateway().inject(Fault::FailAt {
                 trigger: Trigger::Op(op),
                 error: unreachable(),
             });
-            let failed = failure(rig.launch(1).await?)?;
+            let failed = failure(rig.launch_observed(1).await?)?;
             assert_eq!(failed.step, step);
             assert_eq!(failed.sandbox, None);
             assert!(rig.gateway().sandboxes().is_empty());
             assert_eq!(rig.gateway().providers().len(), providers);
             assert_eq!(rig.stages().len(), 3);
-            ready(rig.launch(1).await?)?;
+            ready(rig.launch_observed(1).await?)?;
             converged(&rig, &rig.handle(1).await?, 1)?;
             assert_eq!(rig.stages().len(), 3);
         }
@@ -87,12 +87,12 @@ async fn a_failure_in_credentials_or_upload_resumes_without_repeating_finished_s
             (Trigger::Write(marker.clone()), LaunchStep::Upload),
         ];
         for (index, (trigger, step)) in rows.into_iter().enumerate() {
-            let rig = Rig::new().await?;
+            let rig = launch_rig().await?;
             rig.gateway().inject(Fault::FailAt {
                 trigger,
                 error: unreachable(),
             });
-            let failed = failure(rig.launch(1).await?)?;
+            let failed = failure(rig.launch_observed(1).await?)?;
             assert_eq!(failed.step, step);
             assert!(failed.sandbox.is_some());
             let handle = rig.handle(1).await?;
@@ -120,7 +120,7 @@ async fn a_failure_in_credentials_or_upload_resumes_without_repeating_finished_s
                     rig.repo.file("late.txt", b"late\n").await?;
                 }
             }
-            ready(rig.launch(1).await?)?;
+            ready(rig.launch_observed(1).await?)?;
             let handle = rig.handle(1).await?;
             converged(&rig, &handle, 1)?;
             let plan = rig.plan(1)?;
@@ -148,12 +148,12 @@ async fn a_failure_in_hooks_or_start_resumes_without_repeating_setup() -> TestRe
             (Trigger::Write(sandbox_layout::RUN_START.clone()), 2),
         ];
         for (trigger, index) in rows {
-            let rig = Rig::new().await?;
+            let rig = launch_rig().await?;
             rig.gateway().inject(Fault::FailAt {
                 trigger,
                 error: unreachable(),
             });
-            let failed = failure(rig.launch(1).await?)?;
+            let failed = failure(rig.launch_observed(1).await?)?;
             let handle = rig.handle(1).await?;
             let marker = sandbox_layout::setup_done_marker(&launch_id(1));
             assert_eq!(
@@ -172,7 +172,7 @@ async fn a_failure_in_hooks_or_start_resumes_without_repeating_setup() -> TestRe
             assert!(!has_file(&handle, &sandbox_layout::RUN_START));
             assert_eq!(handle.runs(&setup()).len(), usize::from(index != 0));
             assert_eq!(handle.runs(&preflight()).len(), usize::from(index == 2));
-            ready(rig.launch(1).await?)?;
+            ready(rig.launch_observed(1).await?)?;
             let handle = rig.handle(1).await?;
             converged(&rig, &handle, 1)?;
             assert_eq!(handle.runs(&setup()).len(), 1);

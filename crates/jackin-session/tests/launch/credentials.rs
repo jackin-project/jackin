@@ -6,13 +6,13 @@ use std::time::Duration;
 use jackin_core::{Agent, FileMode, HookKind, sandbox_layout};
 use jackin_openshell::GatewayOp;
 use jackin_session::{LaunchError, LaunchStep};
-use jackin_testkit::{Fault, ProgramScript, RoleFixture, Trigger};
 use serde_json::Value;
 
 use super::support::{
-    ACCESS, ACCOUNT_ID, Outcome, PLACEHOLDER, REFRESH, Rig, Spec, TestResult, failure, guard,
-    has_file, launch_id, ready, unreachable,
+    ACCESS, ACCOUNT_ID, PLACEHOLDER, REFRESH, TestResult, builder, failure, guard, has_file,
+    launch_id, launch_rig, ready, unreachable,
 };
+use jackin_testkit::{Fault, Outcome, ProgramScript, Rig, RoleFixture, Trigger};
 
 fn base64url(text: &str) -> Vec<u8> {
     let value = |c: u8| match c {
@@ -39,11 +39,11 @@ fn base64url(text: &str) -> Vec<u8> {
 #[tokio::test]
 async fn credentials_files_have_the_documented_content_and_modes() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let rig = launch_rig().await?;
         rig.world
             .clock
             .advance(Duration::from_secs(59 * 86_400 + 3_661));
-        ready(rig.launch(1).await?)?;
+        ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         let plan = rig.plan(1)?;
         let spec = Agent::Codex.spec();
@@ -92,19 +92,19 @@ async fn credentials_files_have_the_documented_content_and_modes() -> TestResult
         let reads = handle.runs(&sandbox_layout::PRINTENV);
         assert_eq!(reads[0].args, ["CODEX_AUTH_ACCESS_TOKEN"]);
 
-        let mut spec_no_env = Spec::new()?;
-        spec_no_env.role = RoleFixture::new("sentinel")?;
-        let bare = spec_no_env.rig().await?;
-        ready(bare.launch(1).await?)?;
+        let bare = builder()
+            .await?
+            .role(RoleFixture::new("sentinel")?)
+            .build()
+            .await?;
+        ready(bare.launch_observed(1).await?)?;
         let handle = bare.handle(1).await?;
         let plan = bare.plan(1)?;
         assert_eq!(plan.files().env.text, "");
         assert_eq!(handle.file(&plan.files().env.path), Some(Vec::new()));
 
-        let mut broken = Spec::new()?;
-        broken.printenv_exit = 1;
-        let rig = broken.rig().await?;
-        let failed = failure(rig.launch(1).await?)?;
+        let rig = builder().await?.printenv_exit(1).build().await?;
+        let failed = failure(rig.launch_observed(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Credentials);
         assert!(
             matches!(&*failed.error, LaunchError::PlaceholderMissing { .. }),
@@ -151,25 +151,23 @@ async fn no_fixture_secret_reaches_a_sandbox_file_an_event_or_an_error() -> Test
     guard(async {
         let mut rigs = Vec::new();
         let mut outcomes = Vec::new();
-        let full = Rig::new().await?;
-        outcomes.push(full.launch(1).await?);
+        let full = launch_rig().await?;
+        outcomes.push(full.launch_observed(1).await?);
         rigs.push(full);
 
-        let provider = Rig::new().await?;
+        let provider = launch_rig().await?;
         provider.gateway().inject(Fault::FailAt {
             trigger: Trigger::Op(GatewayOp::Provider),
             error: unreachable(),
         });
-        outcomes.push(provider.launch(1).await?);
+        outcomes.push(provider.launch_observed(1).await?);
         rigs.push(provider);
 
-        let mut spec = Spec::new()?;
-        spec.login = false;
-        let missing = spec.rig().await?;
-        outcomes.push(missing.launch(1).await?);
+        let missing = builder().await?.login(false).build().await?;
+        outcomes.push(missing.launch_observed(1).await?);
         rigs.push(missing);
 
-        let echo = Rig::new().await?;
+        let echo = launch_rig().await?;
         echo.gateway().script_program(
             &sandbox_layout::hook_path(HookKind::Preflight),
             ProgramScript {
@@ -178,7 +176,7 @@ async fn no_fixture_secret_reaches_a_sandbox_file_an_event_or_an_error() -> Test
                 stderr: Vec::new(),
             },
         );
-        outcomes.push(echo.launch(1).await?);
+        outcomes.push(echo.launch_observed(1).await?);
         rigs.push(echo);
 
         for secret in [ACCESS, REFRESH] {
