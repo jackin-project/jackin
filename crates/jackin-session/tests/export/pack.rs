@@ -3,8 +3,10 @@
 
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::io::Write;
 
-use flate2::{Decompress, FlushDecompress, Status};
+use flate2::write::ZlibEncoder;
+use flate2::{Compression, Decompress, FlushDecompress, Status};
 use sha1::{Digest, Sha1};
 use sha2::Sha256;
 
@@ -119,5 +121,99 @@ pub(crate) fn resign(bundle: &mut [u8], hash: Hash) {
 pub(crate) fn with_header(bundle: &[u8], header: &[u8]) -> Vec<u8> {
     let mut bytes = header.to_vec();
     bytes.extend_from_slice(&bundle[header_len(bundle)..]);
+    bytes
+}
+
+pub(crate) const BLOB: u8 = 3;
+pub(crate) const TREE: u8 = 2;
+pub(crate) const COMMIT: u8 = 1;
+pub(crate) const TAG: u8 = 4;
+
+pub(crate) fn zlib(bytes: &[u8]) -> Vec<u8> {
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    drop(encoder.write_all(bytes));
+    encoder.finish().unwrap_or_default()
+}
+
+pub(crate) fn zeros(count: usize) -> Vec<u8> {
+    vec![0; count]
+}
+
+pub(crate) fn varint(mut value: u64) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    loop {
+        let low = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            bytes.push(low);
+            return bytes;
+        }
+        bytes.push(low | 0x80);
+    }
+}
+
+pub(crate) fn typed_size(kind: u8, size: u64) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut rest = size >> 4;
+    let first = (kind << 4) | (size & 0x0f) as u8;
+    if rest == 0 {
+        bytes.push(first);
+        return bytes;
+    }
+    bytes.push(first | 0x80);
+    loop {
+        let low = (rest & 0x7f) as u8;
+        rest >>= 7;
+        if rest == 0 {
+            bytes.push(low);
+            return bytes;
+        }
+        bytes.push(low | 0x80);
+    }
+}
+
+pub(crate) fn entry(kind: u8, size_field: u64, payload: &[u8]) -> Vec<u8> {
+    let mut bytes = typed_size(kind, size_field);
+    bytes.extend(zlib(payload));
+    bytes
+}
+
+pub(crate) fn blob(payload: &[u8]) -> Vec<u8> {
+    entry(BLOB, payload.len() as u64, payload)
+}
+
+pub(crate) fn ref_delta(hash: Hash, size_field: u64, stream: &[u8]) -> Vec<u8> {
+    let mut bytes = typed_size(REF_DELTA, size_field);
+    bytes.extend(zeros(hash.len()));
+    bytes.extend(zlib(stream));
+    bytes
+}
+
+pub(crate) fn delta_stream(base: u64, result: u64, ops: &[u8]) -> Vec<u8> {
+    let mut stream = varint(base);
+    stream.extend(varint(result));
+    stream.extend_from_slice(ops);
+    stream
+}
+
+pub(crate) fn copies(count: usize) -> Vec<u8> {
+    vec![0x80; count]
+}
+
+pub(crate) fn assemble_open(header: &[u8], entries: &[Vec<u8>], count: u32) -> Vec<u8> {
+    let mut bytes = header.to_vec();
+    bytes.extend_from_slice(b"PACK");
+    bytes.extend_from_slice(&2_u32.to_be_bytes());
+    bytes.extend_from_slice(&count.to_be_bytes());
+    for item in entries {
+        bytes.extend_from_slice(item);
+    }
+    bytes
+}
+
+pub(crate) fn assemble(header: &[u8], entries: &[Vec<u8>], count: u32, hash: Hash) -> Vec<u8> {
+    let mut bytes = assemble_open(header, entries, count);
+    let digest = hash.digest(&bytes[header.len()..]);
+    bytes.extend_from_slice(&digest);
     bytes
 }

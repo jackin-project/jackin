@@ -74,11 +74,21 @@ impl Tap {
         limits: LaunchLimits,
         runner: Arc<dyn ProcessRunner>,
     ) -> Session {
+        let fs: Arc<dyn FileSystem> = Arc::clone(&rig.world.fs);
+        self.session_over_fs(rig, limits, runner, fs)
+    }
+
+    pub(crate) fn session_over_fs(
+        self: &Arc<Tap>,
+        rig: &Rig,
+        limits: LaunchLimits,
+        runner: Arc<dyn ProcessRunner>,
+        fs: Arc<dyn FileSystem>,
+    ) -> Session {
         let world = &rig.world;
         let gateway: Arc<dyn Gateway> = Arc::<Tap>::clone(self);
         let engine: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&world.engine);
         let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
-        let fs: Arc<dyn FileSystem> = Arc::clone(&world.fs);
         Session::new(SessionDeps {
             gateway,
             engine,

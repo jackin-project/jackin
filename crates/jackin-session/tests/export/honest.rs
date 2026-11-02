@@ -3,9 +3,10 @@
 
 use std::error::Error;
 
-use jackin_testkit::{RepoFixture, Rig, TestResult, guard};
+use jackin_session::{BundleRefusal, EntryKind, ExportError, LaunchLimits};
+use jackin_testkit::{RepoFixture, Rig, TestResult, default_limits, guard};
 
-use super::lab::Lab;
+use super::lab::{Check, Lab, refusal};
 use super::pack::{Hash, OFS_DELTA, REF_DELTA, kinds};
 use super::support::{exports, ref_of, snapshot};
 
@@ -136,6 +137,73 @@ async fn a_v3_header_naming_the_sha1_format_is_exported() -> TestResult {
         changed.extend_from_slice(&bundle[first..]);
         lab.tap.replace_next_download(changed);
         lands(&lab, "v3 sha1 header").await
+    })
+    .await
+}
+
+fn noise(count: usize) -> Vec<u8> {
+    (0..count)
+        .map(|index| ((index as u64).wrapping_mul(2_654_435_761) >> 13) as u8)
+        .collect()
+}
+
+#[tokio::test]
+async fn each_limit_at_its_exact_value_lands_and_one_under_is_refused_with_its_variant()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::armed().await?;
+        lab.handle
+            .commit_in_project("data.bin", &noise(4000), "data")
+            .await?;
+        let listed = lab.handle.git(&["rev-list", "--objects", "work"]).await?;
+        let ids: Vec<&str> = listed.lines().filter_map(|line| line.split(' ').next()).collect();
+        let mut sizes = Vec::new();
+        for id in &ids {
+            sizes.push(lab.handle.git(&["cat-file", "-s", id]).await?.trim().parse::<u64>()?);
+        }
+        let largest = *sizes.iter().max().ok_or("no objects")?;
+        let at = sizes.iter().position(|size| *size == largest).ok_or("no objects")?;
+        let kind = lab.handle.git(&["cat-file", "-t", ids[at]]).await?;
+        assert_eq!(kind.trim(), "blob");
+        let count = u32::try_from(ids.len())?;
+        let sum: u64 = sizes.iter().sum();
+        let with = |entry, objects, total| LaunchLimits {
+            export_entry_bytes: entry,
+            export_objects: objects,
+            export_total_bytes: total,
+            ..default_limits()
+        };
+        let defaults = default_limits();
+        let exact = [
+            ("entry", with(largest, defaults.export_objects, defaults.export_total_bytes)),
+            ("objects", with(defaults.export_entry_bytes, count, defaults.export_total_bytes)),
+            ("total", with(defaults.export_entry_bytes, defaults.export_objects, sum)),
+        ];
+        for (label, limits) in exact {
+            lab.limits(limits);
+            lands(&lab, &format!("{label} at its exact value")).await?;
+            lab.forget_export().await?;
+        }
+        let entry: Check = refusal(BundleRefusal::EntryTooLarge {
+            kind: EntryKind::Blob,
+            size: largest,
+            limit: largest - 1,
+        });
+        let objects: Check = refusal(BundleRefusal::ObjectCount { count, limit: count - 1 });
+        let total: Check = Box::new(move |error| {
+            matches!(error, ExportError::BundleRefused(BundleRefusal::TooMuchContent { limit, .. }) if *limit == sum - 1)
+        });
+        let under = [
+            ("entry", with(largest - 1, defaults.export_objects, defaults.export_total_bytes), entry),
+            ("objects", with(defaults.export_entry_bytes, count - 1, defaults.export_total_bytes), objects),
+            ("total", with(defaults.export_entry_bytes, defaults.export_objects, sum - 1), total),
+        ];
+        for (label, limits, wanted) in &under {
+            lab.limits(*limits);
+            let bytes = lab.honest().await?;
+            lab.refuses(&format!("{label} one under"), bytes, wanted).await?;
+        }
+        Ok(())
     })
     .await
 }

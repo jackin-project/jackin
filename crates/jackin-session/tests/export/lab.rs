@@ -11,6 +11,7 @@ use jackin_testkit::{Rig, SandboxHandle, TestResult, default_limits, object_stor
 use tokio_util::sync::CancellationToken;
 
 use super::heads::crafted;
+use super::pack::header_len;
 use super::support::{
     Sees, branch_with_commit, bundles_left, exports, ref_of, snapshot, staging_left,
 };
@@ -49,6 +50,7 @@ pub(crate) struct Lab {
     pub(crate) sees: Arc<Sees>,
     pub(crate) tap: Arc<Tap>,
     pub(crate) session: Session,
+    default_session: Session,
     allowed: BTreeSet<String>,
 }
 
@@ -61,7 +63,8 @@ impl Lab {
         let tap = Tap::new(&rig);
         let sees = Arc::new(Sees::new(&rig));
         let runner: Arc<dyn ProcessRunner> = Arc::<Sees>::clone(&sees);
-        let session = tap.session_over(&rig, default_limits(), runner);
+        let session = tap.session_over(&rig, default_limits(), Arc::clone(&runner));
+        let default_session = tap.session_over(&rig, default_limits(), runner);
         Ok(Lab {
             rig,
             handle,
@@ -70,6 +73,7 @@ impl Lab {
             sees,
             tap,
             session,
+            default_session,
             allowed: BTreeSet::new(),
         })
     }
@@ -91,6 +95,14 @@ impl Lab {
     pub(crate) fn limits(&mut self, limits: LaunchLimits) {
         let runner: Arc<dyn ProcessRunner> = Arc::<Sees>::clone(&self.sees);
         self.session = self.tap.session_over(&self.rig, limits, runner);
+    }
+
+    pub(crate) async fn advance(&mut self) -> TestResult {
+        self.tip = self
+            .handle
+            .commit_in_project("advance.txt", self.tip.as_str().as_bytes(), "advance")
+            .await?;
+        Ok(())
     }
 
     pub(crate) async fn honest(&self) -> Result<Vec<u8>, Box<dyn Error>> {
@@ -123,11 +135,30 @@ impl Lab {
         self.forget_export().await
     }
 
-    async fn forget_export(&self) -> TestResult {
+    pub(crate) async fn forget_export(&self) -> TestResult {
         self.rig
             .repo
             .git(&["update-ref", "-d", &ref_of(&self.name, "work")])
             .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn passes_the_walker(
+        &mut self,
+        label: &str,
+        build: impl FnOnce(&[u8]) -> Vec<u8>,
+    ) -> TestResult {
+        self.advance().await?;
+        let honest = self.honest().await?;
+        self.tap
+            .replace_next_download(build(&honest[..header_len(&honest)]));
+        let result = self.export().await;
+        assert!(
+            matches!(result, Err(ExportError::HostGit { .. })),
+            "{label}: {result:?}"
+        );
+        let after = snapshot(&self.rig).await?;
+        assert!(exports(&after).is_empty(), "{label}: a ref was written");
         Ok(())
     }
 
@@ -167,7 +198,8 @@ impl Lab {
         assert_eq!(staging_left(&self.rig)?, Vec::<String>::new(), "{label}");
         assert_eq!(bundles_left(&self.handle), Vec::<String>::new(), "{label}");
         let landed = self
-            .export()
+            .default_session
+            .export(&self.rig.config, &self.name, CancellationToken::new())
             .await
             .map_err(|error| format!("{label}: {error:?}"))?;
         assert_eq!(landed.branches.len(), 1, "{label}");

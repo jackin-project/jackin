@@ -18,8 +18,8 @@ use jackin_openshell::GatewayError;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
-pub use self::bundle::BundleRefusal;
-use self::bundle::MAX_HEADS;
+pub use self::bundle::{BundleRefusal, EntryKind};
+use self::bundle::{Limits, MAX_HEADS};
 use self::host::{HEAD, Host, HostRefs, exported_prefix};
 use self::sandbox::{Remote, RemoteError, Repository};
 use crate::project::host_git;
@@ -528,6 +528,11 @@ impl Session {
             &staging.bundle,
             header.pack_offset,
             format,
+            Limits {
+                entry: self.deps.limits.export_entry_bytes,
+                objects: self.deps.limits.export_objects,
+                total: self.deps.limits.export_total_bytes,
+            },
             cancel,
         )
         .await?;

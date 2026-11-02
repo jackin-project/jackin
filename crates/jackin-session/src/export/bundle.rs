@@ -21,6 +21,7 @@ const VERSION: u32 = 2;
 const OFS_DELTA: u8 = 6;
 const REF_DELTA: u8 = 7;
 const MORE: u8 = 0x80;
+const DELTA_PREFIX: usize = 20;
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum BundleRefusal {
@@ -39,6 +40,8 @@ pub enum BundleRefusal {
     PackMagic,
     #[error("the pack version is {0} and only version 2 is accepted")]
     PackVersion(u32),
+    #[error("the pack declares {count} objects and the limit is {limit}")]
+    ObjectCount { count: u32, limit: u32 },
     #[error("the pack ends before its declared content")]
     Truncated,
     #[error("a pack entry has the invalid type {0}")]
@@ -47,10 +50,36 @@ pub enum BundleRefusal {
     Inflate,
     #[error("a pack entry declares {declared} bytes and inflates to at least {inflated}")]
     SizeMismatch { declared: u64, inflated: u64 },
+    #[error("a {kind:?} entry declares {size} bytes and the limit is {limit}")]
+    EntryTooLarge {
+        kind: EntryKind,
+        size: u64,
+        limit: u64,
+    },
+    #[error("the pack declares {total} bytes of content and the limit is {limit}")]
+    TooMuchContent { total: u64, limit: u64 },
     #[error("the pack trailer is not the hash of the pack")]
     Trailer,
     #[error("bytes follow the pack trailer")]
     TrailingBytes,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntryKind {
+    Blob,
+    Tree,
+    Commit,
+    Tag,
+    DeltaStream,
+    DeltaBase,
+    DeltaResult,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Limits {
+    pub(super) entry: u64,
+    pub(super) objects: u32,
+    pub(super) total: u64,
 }
 
 #[derive(Debug)]
@@ -219,9 +248,87 @@ struct Pack<'a> {
     next: u64,
     hasher: Hasher,
     scratch: Vec<u8>,
+    limits: Limits,
+    total: u64,
+}
+
+fn delta_sizes(prefix: &[u8]) -> Option<(u64, u64)> {
+    let mut at = 0;
+    let mut sizes = [0_u64; 2];
+    for size in &mut sizes {
+        let mut shift = 0_u32;
+        loop {
+            let byte = *prefix.get(at)?;
+            at += 1;
+            if shift < 64 {
+                *size |= u64::from(byte & 0x7f) << shift;
+            } else if byte & 0x7f != 0 {
+                *size = u64::MAX;
+            }
+            shift = shift.saturating_add(7);
+            if byte & MORE == 0 {
+                break;
+            }
+        }
+        if shift > 63 + 7 {
+            *size = u64::MAX;
+        }
+    }
+    Some((sizes[0], sizes[1]))
 }
 
 impl Pack<'_> {
+    fn add_content(&mut self, size: u64) -> Result<(), ExportError> {
+        let limit = self.limits.total;
+        match self.total.checked_add(size) {
+            Some(total) if total <= limit => {
+                self.total = total;
+                Ok(())
+            }
+            Some(total) => Err(refused(BundleRefusal::TooMuchContent { total, limit })),
+            None => Err(refused(BundleRefusal::TooMuchContent {
+                total: u64::MAX,
+                limit,
+            })),
+        }
+    }
+
+    fn within_entry(&self, kind: EntryKind, size: u64) -> Result<(), ExportError> {
+        let limit = self.limits.entry;
+        if size > limit {
+            Err(refused(BundleRefusal::EntryTooLarge { kind, size, limit }))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn watch_delta(
+        &mut self,
+        prefix: &mut Vec<u8>,
+        produced: usize,
+        parsed: &mut bool,
+    ) -> Result<(), ExportError> {
+        if *parsed {
+            return Ok(());
+        }
+        let room = DELTA_PREFIX - prefix.len();
+        prefix.extend_from_slice(&self.scratch[..produced.min(room)]);
+        match delta_sizes(prefix) {
+            Some((base, result)) => {
+                *parsed = true;
+                self.within_entry(EntryKind::DeltaBase, base)?;
+                self.within_entry(EntryKind::DeltaResult, result)?;
+                self.add_content(result)
+            }
+            None if prefix.len() >= DELTA_PREFIX => Err(refused(BundleRefusal::EntryTooLarge {
+                kind: EntryKind::DeltaBase,
+                size: u64::MAX,
+                limit: self.limits.entry,
+            })),
+            None => Ok(()),
+        }
+    }
+
     async fn refill(&mut self) -> Result<bool, ExportError> {
         if self.at < self.buffer.len() {
             return Ok(true);
@@ -297,9 +404,11 @@ impl Pack<'_> {
         }
     }
 
-    async fn inflate(&mut self, declared: u64) -> Result<(), ExportError> {
+    async fn inflate(&mut self, declared: u64, delta: bool) -> Result<(), ExportError> {
         let mut stream = Decompress::new(true);
         let mut inflated: u64 = 0;
+        let mut prefix: Vec<u8> = Vec::new();
+        let mut parsed = !delta;
         loop {
             if !self.refill().await? {
                 return Err(refused(BundleRefusal::Truncated));
@@ -317,6 +426,11 @@ impl Pack<'_> {
             if inflated > declared {
                 return Err(refused(BundleRefusal::SizeMismatch { declared, inflated }));
             }
+            self.watch_delta(
+                &mut prefix,
+                usize::try_from(produced).unwrap_or(usize::MAX),
+                &mut parsed,
+            )?;
             if status == Status::StreamEnd {
                 break;
             }
@@ -328,10 +442,13 @@ impl Pack<'_> {
             }
             tokio::task::yield_now().await;
         }
-        if inflated == declared {
+        if inflated != declared {
+            return Err(refused(BundleRefusal::SizeMismatch { declared, inflated }));
+        }
+        if parsed {
             Ok(())
         } else {
-            Err(refused(BundleRefusal::SizeMismatch { declared, inflated }))
+            Err(refused(BundleRefusal::Inflate))
         }
     }
 
@@ -339,16 +456,32 @@ impl Pack<'_> {
         let first = self.byte().await?;
         let kind = (first >> 4) & 0x07;
         let declared = self.entry_size(first).await?;
-        match kind {
-            1..=4 => {}
-            OFS_DELTA => self.skip_offset().await?,
+        let delta = match kind {
+            1..=4 => {
+                let named = match kind {
+                    1 => EntryKind::Commit,
+                    2 => EntryKind::Tree,
+                    3 => EntryKind::Blob,
+                    _ => EntryKind::Tag,
+                };
+                self.within_entry(named, declared)?;
+                self.add_content(declared)?;
+                false
+            }
+            OFS_DELTA => {
+                self.within_entry(EntryKind::DeltaStream, declared)?;
+                self.skip_offset().await?;
+                true
+            }
             REF_DELTA => {
+                self.within_entry(EntryKind::DeltaStream, declared)?;
                 let width = hash_len(self.format);
                 self.take(width).await?;
+                true
             }
             other => return Err(refused(BundleRefusal::EntryType(other))),
-        }
-        self.inflate(declared).await
+        };
+        self.inflate(declared, delta).await
     }
 }
 
@@ -357,6 +490,7 @@ pub(super) async fn walk(
     path: &HostPath,
     pack_offset: u64,
     format: ObjectFormat,
+    limits: Limits,
     cancel: &CancellationToken,
 ) -> Result<(), ExportError> {
     let mut pack = Pack {
@@ -369,6 +503,8 @@ pub(super) async fn walk(
         next: pack_offset,
         hasher: Hasher::new(format),
         scratch: vec![0; CHUNK],
+        limits,
+        total: 0,
     };
     let mut magic = [0_u8; 4];
     for slot in &mut magic {
@@ -382,6 +518,12 @@ pub(super) async fn walk(
         return Err(refused(BundleRefusal::PackVersion(version)));
     }
     let count = pack.word().await?;
+    if count > limits.objects {
+        return Err(refused(BundleRefusal::ObjectCount {
+            count,
+            limit: limits.objects,
+        }));
+    }
     for _ in 0..count {
         pack.entry().await?;
     }

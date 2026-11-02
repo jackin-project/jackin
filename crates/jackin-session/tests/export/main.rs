@@ -3,6 +3,7 @@
 
 mod abort;
 mod bundle_limits;
+mod cancel;
 mod concurrent;
 mod detached;
 mod empty;
@@ -22,6 +23,7 @@ mod support;
 mod unusable;
 mod walker_frame;
 mod walker_header;
+mod walker_limits;
 mod work_state;
 mod worktree;
 mod worktrees;
