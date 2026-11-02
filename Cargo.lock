@@ -2106,6 +2106,7 @@ dependencies = [
  "jackin-usage-provider-claude",
  "jackin-usage-provider-codex",
  "jackin-usage-provider-core",
+ "jackin-usage-provider-kimi",
  "jackin-usage-provider-openrouter",
  "serde",
  "serde_json",
@@ -2140,6 +2141,14 @@ dependencies = [
  "rustls",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "jackin-usage-provider-kimi"
+version = "0.1.0"
+dependencies = [
+ "jackin-usage-provider-core",
+ "serde_json",
 ]
 
 [[package]]
