@@ -744,6 +744,14 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
         }
     }
     assert_eq!(stage_named(&all, "codex")?.from, "construct", "codex stage");
+    let config = spec.install.system_config.as_str();
+    assert!(
+        assembled.lines.contains(&format!(
+            "COPY --from=codex --chown=root:root --chmod=u=rwX,go=rX {config} {config}"
+        )),
+        "the config copy must leave the created directory searchable: {:?}",
+        assembled.lines
+    );
     let last = all.last().ok_or("no stage")?;
     assert_eq!(last.from, "assembled", "final stage base");
     assert!(

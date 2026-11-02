@@ -38,7 +38,7 @@ ARG CODEX_BIN_DIR
 
 USER root
 COPY --from=codex --chown=root:root --chmod=0755 ${CODEX_BIN_DIR}/codex ${CODEX_BIN_DIR}/codex-code-mode-host ${CODEX_BIN_DIR}/
-COPY --from=codex --chown=root:root --chmod=0644 /etc/codex/config.toml /etc/codex/config.toml
+COPY --from=codex --chown=root:root --chmod=u=rwX,go=rX /etc/codex/config.toml /etc/codex/config.toml
 COPY --chown=root:root --chmod=0755 jackin-start /usr/local/bin/jackin-start
 COPY --chown=root:root --chmod=0755 hooks/setup hooks/preflight /usr/local/lib/jackin/hooks/
 RUN chown root:root /usr/local/bin /usr/local/lib/jackin /usr/local/lib/jackin/hooks \
