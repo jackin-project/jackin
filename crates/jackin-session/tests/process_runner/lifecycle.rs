@@ -11,8 +11,8 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::support::{
-    LOOP_DETACHED, LOOP_HOLDING, Scratch, TestResult, assert_no_leftover, guarded, next_line,
-    wait_for_beat,
+    LOOP_DETACHED, LOOP_HOLDING, Scratch, TestResult, WAIT_FOR, assert_no_leftover, guarded,
+    next_line, wait_for_beat,
 };
 
 #[tokio::test]
@@ -129,6 +129,35 @@ async fn cancel_kills_the_child_and_every_descendant_and_reports_cancelled() -> 
             ready = ready => ready?,
         }
         assert_no_leftover(dropped.root()).await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_clean_exit_kills_a_descendant_that_closed_its_pipes() -> TestResult {
+    guarded(async {
+        let body = format!("{WAIT_FOR}{LOOP_DETACHED}wait_for \"$d/beat\"\nsleep 0.2\nexit 0\n");
+        let plain = Scratch::new()?;
+        let output = TokioProcessRunner
+            .run(&plain.spec(&body, &[])?, None, &CancellationToken::new())
+            .await?;
+        assert_eq!(output.status, ProcessStatus::Exited(0));
+        assert_no_leftover(plain.root()).await?;
+
+        let secret = Scratch::new()?;
+        let output = TokioProcessRunner
+            .run_secret(&secret.spec(&body, &[])?, &CancellationToken::new())
+            .await?;
+        assert_eq!(output.status, ProcessStatus::Exited(0));
+        assert_no_leftover(secret.root()).await?;
+
+        let failing = Scratch::new()?;
+        let body = body.replace("exit 0", "exit 7");
+        let output = TokioProcessRunner
+            .run(&failing.spec(&body, &[])?, None, &CancellationToken::new())
+            .await?;
+        assert_eq!(output.status, ProcessStatus::Exited(7));
+        assert_no_leftover(failing.root()).await
     })
     .await
 }

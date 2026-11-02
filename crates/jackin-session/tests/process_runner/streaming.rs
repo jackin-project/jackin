@@ -4,13 +4,26 @@
 use std::error::Error;
 use std::fs;
 use std::path::Path;
+use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
-use jackin_core::{OutputLine, OutputStream, ProcessRunner, ProcessStatus};
+use jackin_core::{
+    OutputLine, OutputStream, ProcessError, ProcessRunner, ProcessSpec, ProcessStatus,
+};
 use jackin_session::TokioProcessRunner;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::support::{Scratch, TestResult, guarded, next_line, same_bytes};
+use crate::support::{
+    LOOP_DETACHED, Scratch, TestResult, WAIT_FOR, assert_no_leftover, guarded, next_line,
+    same_bytes,
+};
+
+const MARK: &str = " [truncated]";
+const LINE_LIMIT: usize = 65536;
+const WHOLE_LIMIT: usize = 16_777_216;
 
 fn numbers(last: u32) -> String {
     let mut text = String::new();
@@ -42,8 +55,7 @@ async fn lines_reach_the_sink_in_arrival_order_while_the_child_is_still_running(
     guarded(async {
         let scratch = Scratch::new()?;
         let body = format!(
-            "{}echo out-1\nwait_for \"$1/g1\"\necho err-1 >&2\nwait_for \"$1/g2\"\necho out-2\nprintf tail\n",
-            crate::support::WAIT_FOR
+            "{WAIT_FOR}echo out-1\nwait_for \"$1/g1\"\necho err-1 >&2\nwait_for \"$1/g2\"\necho out-2\nprintf tail\n"
         );
         let spec = scratch.spec(&body, &[])?;
         let (tx, mut rx) = mpsc::channel::<OutputLine>(8);
@@ -160,6 +172,227 @@ async fn a_gone_line_receiver_never_fails_or_stalls_the_run() -> TestResult {
             assert!(!bytes.is_empty(), "{label} tail is empty");
             assert!(bytes.ends_with(b"50000\n"), "{label} tail end");
         }
+        Ok(())
+    })
+    .await
+}
+
+async fn streamed(
+    spec: &ProcessSpec,
+) -> Result<(jackin_core::ProcessOutput, Vec<OutputLine>), Box<dyn Error>> {
+    let (tx, mut rx) = mpsc::channel::<OutputLine>(4);
+    let cancel = CancellationToken::new();
+    let run = async {
+        let result = TokioProcessRunner.run(spec, Some(&tx), &cancel).await;
+        drop(tx);
+        result
+    };
+    let collect = async {
+        let mut lines = Vec::new();
+        while let Some(line) = rx.recv().await {
+            lines.push(line);
+        }
+        lines
+    };
+    let (output, lines) = tokio::join!(run, collect);
+    Ok((output?, lines))
+}
+
+fn texts(lines: &[OutputLine], stream: OutputStream) -> Vec<&str> {
+    lines
+        .iter()
+        .filter(|line| line.stream == stream)
+        .map(|line| line.text.as_str())
+        .collect()
+}
+
+#[tokio::test]
+async fn a_single_output_line_is_cut_at_64_kib_with_a_mark_and_the_next_line_arrives_intact()
+-> TestResult {
+    guarded(async {
+        let scratch = Scratch::new()?;
+        let body = "for n in 65535 65536 65537; do head -c $n /dev/zero | tr '\\0' a; echo; done\necho next\nprintf last\nhead -c 1048576 /dev/zero | tr '\\0' e >&2\necho >&2\necho after-err >&2\n";
+        let (output, lines) = streamed(&scratch.spec(body, &[])?).await?;
+        assert_eq!(output.status, ProcessStatus::Exited(0));
+        let full = "a".repeat(LINE_LIMIT);
+        let cut = format!("{full}{MARK}");
+        let short = "a".repeat(LINE_LIMIT - 1);
+        assert_eq!(
+            texts(&lines, OutputStream::Stdout),
+            [short.as_str(), full.as_str(), cut.as_str(), "next", "last"]
+        );
+        let err_cut = format!("{}{MARK}", "e".repeat(LINE_LIMIT));
+        assert_eq!(
+            texts(&lines, OutputStream::Stderr),
+            [err_cut.as_str(), "after-err"]
+        );
+        let mut raw_out = Vec::new();
+        for n in [LINE_LIMIT - 1, LINE_LIMIT, LINE_LIMIT + 1] {
+            raw_out.extend(std::iter::repeat_n(b'a', n));
+            raw_out.push(b'\n');
+        }
+        raw_out.extend_from_slice(b"next\nlast");
+        assert_eq!(output.stdout.len(), LINE_LIMIT, "stdout tail length");
+        assert!(raw_out.ends_with(&output.stdout), "stdout tail is a raw suffix");
+        assert_eq!(output.stderr.len(), LINE_LIMIT, "stderr tail length");
+        assert!(output.stderr.ends_with(b"\nafter-err\n"));
+
+        let multibyte = Scratch::new()?;
+        let body = "head -c 65535 /dev/zero | tr '\\0' a\nprintf '\\303\\251\\n'\n";
+        let (_, lines) = streamed(&multibyte.spec(body, &[])?).await?;
+        let expected = format!("{}\u{FFFD}{MARK}", "a".repeat(LINE_LIMIT - 1));
+        assert_eq!(texts(&lines, OutputStream::Stdout), [expected.as_str()]);
+        Ok(())
+    })
+    .await
+}
+
+async fn resident_kib() -> Result<u64, Box<dyn Error + Send + Sync>> {
+    let pid = std::process::id().to_string();
+    let output = tokio::task::spawn_blocking(move || {
+        Command::new("ps")
+            .args(["-o", "rss=", "-p", &pid])
+            .stdout(Stdio::piped())
+            .spawn()?
+            .wait_with_output()
+    })
+    .await??;
+    Ok(String::from_utf8(output.stdout)?.trim().parse()?)
+}
+
+#[tokio::test]
+async fn a_128_mib_line_does_not_grow_process_memory() -> TestResult {
+    guarded(async {
+        let scratch = Scratch::new()?;
+        let spec = scratch.spec("head -c 134217728 /dev/zero | tr '\\0' a\n", &[])?;
+        let baseline = resident_kib().await.map_err(|error| error.to_string())?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let watching = Arc::clone(&stop);
+        let sampler = tokio::spawn(async move {
+            let mut peak = 0;
+            while !watching.load(Ordering::SeqCst) {
+                peak = peak.max(resident_kib().await?);
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            Ok::<u64, Box<dyn Error + Send + Sync>>(peak)
+        });
+        let (output, lines) = streamed(&spec).await?;
+        stop.store(true, Ordering::SeqCst);
+        let peak = sampler.await?.map_err(|error| error.to_string())?;
+        assert_eq!(output.status, ProcessStatus::Exited(0));
+        assert_eq!(lines.len(), 1, "one cut line");
+        let limit = baseline + 48 * 1024;
+        assert!(
+            peak <= limit,
+            "peak {peak} KiB exceeds baseline {baseline} KiB plus 48 MiB"
+        );
+        Ok(())
+    })
+    .await
+}
+
+fn flood(stream: OutputStream, bytes: usize, other: &str) -> String {
+    let big = format!("head -c {bytes} /dev/zero");
+    match stream {
+        OutputStream::Stdout => format!("{other}{big}\n"),
+        OutputStream::Stderr => format!("{other}{big} >&2\n"),
+    }
+}
+
+async fn too_large(
+    scratch: &Scratch,
+    body: &str,
+    secret: bool,
+) -> Result<ProcessError, Box<dyn Error>> {
+    let spec = scratch.spec(body, &[])?;
+    let cancel = CancellationToken::new();
+    let result = if secret {
+        TokioProcessRunner
+            .run_secret(&spec, &cancel)
+            .await
+            .map(|_| ())
+    } else {
+        TokioProcessRunner
+            .run(&spec, None, &cancel)
+            .await
+            .map(|_| ())
+    };
+    match result {
+        Err(error) => Ok(error),
+        Ok(()) => Err("the run succeeded".into()),
+    }
+}
+
+fn names(error: &ProcessError, expected: OutputStream) -> TestResult {
+    match error {
+        ProcessError::OutputTooLarge { stream, limit, .. } => {
+            assert_eq!(*stream, expected);
+            assert_eq!(*limit, WHOLE_LIMIT);
+            Ok(())
+        }
+        other => Err(format!("expected OutputTooLarge, got {other:?}").into()),
+    }
+}
+
+#[tokio::test]
+async fn unstreamed_output_beyond_16_mib_per_stream_fails_with_output_too_large_and_stops_the_child()
+-> TestResult {
+    guarded(async {
+        let exact = Scratch::new()?;
+        let spec = exact.spec(&flood(OutputStream::Stdout, WHOLE_LIMIT, ""), &[])?;
+        let output = TokioProcessRunner
+            .run(&spec, None, &CancellationToken::new())
+            .await?;
+        assert_eq!(output.stdout.len(), WHOLE_LIMIT);
+        assert!(output.stdout.iter().all(|byte| *byte == 0));
+
+        let rows = [
+            (
+                OutputStream::Stdout,
+                flood(OutputStream::Stdout, WHOLE_LIMIT + 1, ""),
+                false,
+            ),
+            (
+                OutputStream::Stderr,
+                flood(OutputStream::Stderr, WHOLE_LIMIT + 1, "echo small\n"),
+                false,
+            ),
+            (
+                OutputStream::Stderr,
+                flood(OutputStream::Stderr, WHOLE_LIMIT + 1, ""),
+                true,
+            ),
+            (
+                OutputStream::Stdout,
+                flood(OutputStream::Stdout, WHOLE_LIMIT + 1, ""),
+                true,
+            ),
+        ];
+        for (stream, body, secret) in rows {
+            let scratch = Scratch::new()?;
+            names(&too_large(&scratch, &body, secret).await?, stream)?;
+        }
+
+        let endless = Scratch::new()?;
+        let body = format!("{LOOP_DETACHED}{WAIT_FOR}wait_for \"$d/beat\"\nyes\n");
+        let mut spec = endless.spec(&body, &[])?;
+        spec.timeout = Duration::from_secs(10);
+        match TokioProcessRunner
+            .run(&spec, None, &CancellationToken::new())
+            .await
+        {
+            Err(error) => names(&error, OutputStream::Stdout)?,
+            Ok(output) => return Err(format!("yes ended with {:?}", output.status).into()),
+        }
+        assert_no_leftover(endless.root()).await?;
+
+        let sinked = Scratch::new()?;
+        let body = "yes \"$(printf '%0999d' 0)\" | head -c 20971000\n";
+        let (output, lines) = streamed(&sinked.spec(body, &[])?).await?;
+        assert_eq!(output.status, ProcessStatus::Exited(0));
+        assert_eq!(lines.len(), 20971);
+        assert!(lines.iter().all(|line| line.text.len() == 999));
+        assert_eq!(output.stdout.len(), LINE_LIMIT);
         Ok(())
     })
     .await

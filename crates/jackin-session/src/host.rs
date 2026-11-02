@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::VecDeque;
-use std::future::pending;
 use std::io;
 use std::os::unix::process::ExitStatusExt;
-use std::pin::{Pin, pin};
+use std::pin::pin;
 use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
 
@@ -17,13 +16,16 @@ use jackin_core::{
 use rustix::process::{Pid, Signal, kill_process_group};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
-use tokio::time::{Sleep, sleep};
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 const TAIL_LIMIT: usize = 65536;
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
 const READ_CHUNK: usize = 8192;
+const LINE_LIMIT: usize = 65536;
+const WHOLE_LIMIT: usize = 16 * 1024 * 1024;
+const LINE_CUT_MARK: &str = " [truncated]";
 
 #[derive(Clone, Copy, Debug)]
 pub struct SystemClock;
@@ -34,13 +36,28 @@ pub struct TokioProcessRunner;
 enum Buffer {
     Whole(Vec<u8>),
     Tail(VecDeque<u8>),
-    Secret(Vec<u8>),
+    Secret(Zeroizing<Vec<u8>>),
+}
+
+enum StreamFault {
+    Read(io::Error),
+    TooLarge,
+}
+
+enum DriveFault {
+    Wait(io::Error),
+    Stream(OutputStream, StreamFault),
 }
 
 impl Buffer {
-    fn push(&mut self, chunk: &[u8]) {
+    fn push(&mut self, chunk: &[u8]) -> Result<(), StreamFault> {
         match self {
-            Buffer::Whole(bytes) => bytes.extend_from_slice(chunk),
+            Buffer::Whole(bytes) => {
+                if bytes.len() + chunk.len() > WHOLE_LIMIT {
+                    return Err(StreamFault::TooLarge);
+                }
+                bytes.extend_from_slice(chunk);
+            }
             Buffer::Tail(bytes) => {
                 bytes.extend(chunk);
                 let excess = bytes.len().saturating_sub(TAIL_LIMIT);
@@ -49,25 +66,50 @@ impl Buffer {
                 }
             }
             Buffer::Secret(bytes) => {
+                if bytes.len() + chunk.len() > WHOLE_LIMIT {
+                    return Err(StreamFault::TooLarge);
+                }
                 if bytes.capacity() - bytes.len() < chunk.len() {
                     let wanted = (bytes.len() + chunk.len())
                         .max(bytes.capacity() * 2)
                         .max(READ_CHUNK);
-                    let mut grown = Vec::with_capacity(wanted);
+                    let mut grown = Zeroizing::new(Vec::with_capacity(wanted));
                     grown.extend_from_slice(bytes);
-                    bytes.zeroize();
                     *bytes = grown;
                 }
                 bytes.extend_from_slice(chunk);
             }
         }
+        Ok(())
     }
 
     fn into_bytes(self) -> Vec<u8> {
         match self {
-            Buffer::Whole(bytes) | Buffer::Secret(bytes) => bytes,
+            Buffer::Whole(bytes) => bytes,
+            Buffer::Secret(mut bytes) => std::mem::take(&mut *bytes),
             Buffer::Tail(bytes) => Vec::from(bytes),
         }
+    }
+}
+
+#[derive(Default)]
+struct Line {
+    bytes: Zeroizing<Vec<u8>>,
+    truncated: bool,
+}
+
+impl Line {
+    fn extend(&mut self, piece: &[u8]) {
+        let room = LINE_LIMIT - self.bytes.len();
+        let kept = piece.len().min(room);
+        self.bytes.extend_from_slice(&piece[..kept]);
+        if kept < piece.len() {
+            self.truncated = true;
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
     }
 }
 
@@ -78,10 +120,6 @@ struct GroupGuard {
 impl GroupGuard {
     fn fire(&mut self) {
         kill_group(self.group.take());
-    }
-
-    fn disarm(&mut self) {
-        self.group = None;
     }
 }
 
@@ -139,50 +177,62 @@ fn command_for(spec: &ProcessSpec) -> Command {
     command
 }
 
-async fn deliver(sink: &LineSink, stream: OutputStream, pending: &mut Vec<u8>) -> bool {
-    let text = String::from_utf8_lossy(pending).into_owned();
-    pending.clear();
+async fn deliver(sink: &LineSink, stream: OutputStream, line: &mut Line) -> bool {
+    let mut text = String::from_utf8_lossy(&line.bytes).into_owned();
+    if line.truncated {
+        text.push_str(LINE_CUT_MARK);
+    }
+    *line = Line::default();
     sink.send(OutputLine { stream, text }).await.is_ok()
 }
 
-async fn pump<R>(mut pipe: R, buffer: &mut Buffer, lines: Option<(&LineSink, OutputStream)>)
+async fn idle(exited: &CancellationToken) {
+    exited.cancelled().await;
+    sleep(DRAIN_GRACE).await;
+}
+
+async fn pump<R>(
+    mut pipe: R,
+    buffer: &mut Buffer,
+    lines: Option<(&LineSink, OutputStream)>,
+    exited: &CancellationToken,
+) -> Result<(), StreamFault>
 where
     R: AsyncRead + Unpin,
 {
-    let mut chunk = [0_u8; READ_CHUNK];
-    let mut line = Vec::new();
+    let mut chunk = Zeroizing::new([0_u8; READ_CHUNK]);
+    let mut line = Line::default();
     let mut open = lines.is_some();
-    while let Ok(count @ 1..) = pipe.read(&mut chunk).await {
+    loop {
+        let count = tokio::select! {
+            result = pipe.read(&mut *chunk) => result.map_err(StreamFault::Read)?,
+            () = idle(exited) => 0,
+        };
+        if count == 0 {
+            break;
+        }
         let data = &chunk[..count];
-        buffer.push(data);
+        buffer.push(data)?;
         if let (true, Some((sink, stream))) = (open, lines) {
             let mut rest = data;
             while let Some(end) = rest.iter().position(|byte| *byte == b'\n') {
-                line.extend_from_slice(&rest[..end]);
+                line.extend(&rest[..end]);
                 open = deliver(sink, stream, &mut line).await;
                 rest = &rest[end + 1..];
             }
-            line.extend_from_slice(rest);
+            line.extend(rest);
         }
     }
     if let (true, false, Some((sink, stream))) = (open, line.is_empty(), lines) {
         deliver(sink, stream, &mut line).await;
     }
-    chunk.zeroize();
-    line.zeroize();
+    Ok(())
 }
 
 async fn feed(stdin: Option<ChildStdin>, bytes: &[u8]) {
     if let Some(mut pipe) = stdin {
         drop(pipe.write_all(bytes).await);
         drop(pipe.shutdown().await);
-    }
-}
-
-async fn expire(grace: &mut Option<Pin<Box<Sleep>>>) {
-    match grace {
-        Some(timer) => timer.as_mut().await,
-        None => pending().await,
     }
 }
 
@@ -194,10 +244,9 @@ struct Pipes<'a> {
     out: &'a mut Buffer,
     err: &'a mut Buffer,
     lines: Option<&'a LineSink>,
-    group: Option<Pid>,
 }
 
-async fn drive(child: &mut Child, pipes: Pipes<'_>) -> io::Result<ExitStatus> {
+async fn drive(child: &mut Child, pipes: Pipes<'_>) -> Result<ExitStatus, DriveFault> {
     let Pipes {
         stdin,
         stdout,
@@ -206,22 +255,23 @@ async fn drive(child: &mut Child, pipes: Pipes<'_>) -> io::Result<ExitStatus> {
         out,
         err,
         lines,
-        group,
     } = pipes;
+    let exited = CancellationToken::new();
     let mut feeding = pin!(feed(stdin, input));
     let mut reading_out = pin!(pump(
         stdout,
         out,
-        lines.map(|sink| (sink, OutputStream::Stdout))
+        lines.map(|sink| (sink, OutputStream::Stdout)),
+        &exited
     ));
     let mut reading_err = pin!(pump(
         stderr,
         err,
-        lines.map(|sink| (sink, OutputStream::Stderr))
+        lines.map(|sink| (sink, OutputStream::Stderr)),
+        &exited
     ));
     let mut waiting = pin!(child.wait());
     let mut status = None;
-    let mut grace = None;
     let (mut fed, mut out_done, mut err_done) = (false, false, false);
     loop {
         if let Some(status) = status
@@ -232,18 +282,18 @@ async fn drive(child: &mut Child, pipes: Pipes<'_>) -> io::Result<ExitStatus> {
         }
         tokio::select! {
             result = &mut waiting, if status.is_none() => {
-                status = Some(result?);
-                grace = Some(Box::pin(sleep(DRAIN_GRACE)));
+                status = Some(result.map_err(DriveFault::Wait)?);
+                exited.cancel();
             }
-            () = &mut reading_out, if !out_done => out_done = true,
-            () = &mut reading_err, if !err_done => err_done = true,
+            result = &mut reading_out, if !out_done => {
+                result.map_err(|fault| DriveFault::Stream(OutputStream::Stdout, fault))?;
+                out_done = true;
+            }
+            result = &mut reading_err, if !err_done => {
+                result.map_err(|fault| DriveFault::Stream(OutputStream::Stderr, fault))?;
+                err_done = true;
+            }
             () = &mut feeding, if !fed => fed = true,
-            () = expire(&mut grace), if status.is_some() => {
-                kill_group(group);
-                if let Some(done) = status {
-                    return Ok(done);
-                }
-            }
         }
     }
 }
@@ -285,17 +335,28 @@ async fn execute(
         out: &mut out,
         err: &mut err,
         lines,
-        group: guard.group,
     };
     let outcome = tokio::select! {
         biased;
         () = cancel.cancelled() => Err(ProcessError::Cancelled { program }),
         () = timer => Err(ProcessError::Timeout { program, after: spec.timeout }),
-        result = drive(&mut child, pipes) => result.map_err(|error| spawn_error(error.to_string())),
+        result = drive(&mut child, pipes) => result.map_err(|fault| match fault {
+            DriveFault::Wait(error) => spawn_error(error.to_string()),
+            DriveFault::Stream(stream, StreamFault::Read(error)) => ProcessError::Read {
+                program,
+                stream,
+                message: error.to_string(),
+            },
+            DriveFault::Stream(stream, StreamFault::TooLarge) => ProcessError::OutputTooLarge {
+                program,
+                stream,
+                limit: WHOLE_LIMIT,
+            },
+        }),
     };
     match outcome {
         Ok(status) => {
-            guard.disarm();
+            guard.fire();
             Ok((status_of(status), out, err))
         }
         Err(error) => {
@@ -334,7 +395,7 @@ impl ProcessRunner for TokioProcessRunner {
         let (status, out, err) = execute(
             spec,
             None,
-            Buffer::Secret(Vec::new()),
+            Buffer::Secret(Zeroizing::default()),
             Buffer::Whole(Vec::new()),
             cancel,
         )
