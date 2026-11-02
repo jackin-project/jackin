@@ -15,6 +15,8 @@ use tokio_util::sync::CancellationToken;
 use crate::cli::inherited_env_prefixes;
 use crate::error::DiscoveryError;
 
+const HTTPS: &str = "https://";
+const SCHEME_MAX: usize = 16;
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const TAIL_BYTES: usize = 4096;
 
@@ -174,6 +176,32 @@ async fn read_material(
         .ok_or(DiscoveryError::MissingCertificate { path })
 }
 
+fn scheme_of(endpoint: &str) -> Option<String> {
+    let (scheme, _) = endpoint.split_once("://")?;
+    let plain = !scheme.is_empty()
+        && scheme.len() <= SCHEME_MAX
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+    plain.then(|| scheme.to_owned())
+}
+
+fn require_secure(entry: &RegisteredGateway) -> Result<(), DiscoveryError> {
+    if !entry.endpoint.starts_with(HTTPS) {
+        return Err(DiscoveryError::InsecureEndpoint {
+            name: entry.name.clone(),
+            scheme: scheme_of(&entry.endpoint),
+        });
+    }
+    match &entry.auth {
+        GatewayAuth::Mtls => Ok(()),
+        GatewayAuth::Other(auth) => Err(DiscoveryError::UnsupportedAuth {
+            name: entry.name.clone(),
+            auth: auth.clone(),
+        }),
+    }
+}
+
 pub async fn resolve_gateway(
     runner: &dyn ProcessRunner,
     fs: &dyn FileSystem,
@@ -186,6 +214,7 @@ pub async fn resolve_gateway(
         .into_iter()
         .find(|entry| &entry.name == name)
         .ok_or_else(|| DiscoveryError::UnknownGateway(name.clone()))?;
+    require_secure(&entry)?;
     let home = openshell_config_home;
     let ca = read_material(fs, home, name, "ca.crt").await?;
     let certificate = read_material(fs, home, name, "tls.crt").await?;

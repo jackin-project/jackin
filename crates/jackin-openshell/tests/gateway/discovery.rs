@@ -191,3 +191,87 @@ async fn resolve_gateway_selects_by_name_reads_exactly_three_files_and_writes_no
         .unwrap_err();
     assert!(matches!(error, DiscoveryError::Fs(_)));
 }
+
+fn single(endpoint: &str, auth: &str) -> String {
+    format!(r#"[{{"name": "{GATEWAY}", "endpoint": "{endpoint}", "auth": "{auth}"}}]"#)
+}
+
+#[tokio::test]
+async fn resolve_gateway_refuses_a_plaintext_or_non_mtls_entry() {
+    let cancel = CancellationToken::new();
+    let home = host("/home/test/.config/openshell");
+    let fs = RegistryFs::default();
+    for file in ["ca.crt", "tls.crt", "tls.key"] {
+        fs.put(
+            &host(&format!(
+                "/home/test/.config/openshell/gateways/{GATEWAY}/mtls/{file}"
+            )),
+            file.as_bytes(),
+        );
+    }
+    let resolve = |listing: String| {
+        let runner = ScriptedRunner::always(exited(0, listing.as_bytes(), b""));
+        let (fs, home, cancel) = (&fs, &home, &cancel);
+        async move { resolve_gateway(&runner, fs, home, &name(GATEWAY), cancel).await }
+    };
+
+    let resolved = resolve(single("https://localhost:17670", "mtls"))
+        .await
+        .unwrap();
+    assert_eq!(resolved.endpoint(), "https://localhost:17670");
+
+    for (endpoint, scheme) in [
+        ("http://localhost:17670", Some("http")),
+        ("ftp://localhost:17670", Some("ftp")),
+        ("HTTPS://localhost:17670", Some("HTTPS")),
+        ("localhost:17670", None),
+        ("http://admin:hunter2@h:1", Some("http")),
+        ("admin:hunter2@h:1", None),
+    ] {
+        let error = resolve(single(endpoint, "mtls")).await.unwrap_err();
+        match &error {
+            DiscoveryError::InsecureEndpoint {
+                name: named,
+                scheme: found,
+            } => {
+                assert_eq!(named.as_str(), GATEWAY);
+                assert_eq!(found.as_deref(), scheme, "{endpoint}");
+            }
+            other => panic!("{endpoint}: {other:?}"),
+        }
+        let shown = format!("{error} {error:?}");
+        assert!(
+            !shown.contains("hunter2") && !shown.contains("localhost"),
+            "{shown}"
+        );
+    }
+
+    for auth in ["oidc", "edge", "MTLS", ""] {
+        let error = resolve(single("https://localhost:17670", auth))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                DiscoveryError::UnsupportedAuth { ref name, auth: ref found }
+                    if name.as_str() == GATEWAY && found == auth
+            ),
+            "{auth}: {error:?}"
+        );
+    }
+
+    let runner = ScriptedRunner::always(exited(
+        0,
+        single("http://localhost:17670", "oidc").as_bytes(),
+        b"",
+    ));
+    let listed = registered_gateways(&runner, &cancel).await.unwrap();
+    assert_eq!(
+        listed,
+        vec![entry(
+            GATEWAY,
+            "http://localhost:17670",
+            GatewayAuth::Other("oidc".to_owned())
+        )]
+    );
+}

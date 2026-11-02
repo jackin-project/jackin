@@ -109,6 +109,13 @@ pub enum DiscoveryError {
     ListUnparsable { message: String },
     #[error("gateway {0:?} is not registered")]
     UnknownGateway(GatewayName),
+    #[error("gateway {name:?} has the endpoint scheme {scheme:?}; only https is accepted")]
+    InsecureEndpoint {
+        name: GatewayName,
+        scheme: Option<String>,
+    },
+    #[error("gateway {name:?} uses the authentication {auth:?}; only mtls is accepted")]
+    UnsupportedAuth { name: GatewayName, auth: String },
     #[error("missing certificate {path:?}")]
     MissingCertificate { path: HostPath },
     #[error(transparent)]
