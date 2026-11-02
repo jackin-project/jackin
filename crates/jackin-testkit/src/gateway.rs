@@ -13,15 +13,16 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use jackin_core::{
-    ChatgptAccountId, EnvName, FileMode, GatewayName, HostPath, ImageTag, OpenShellWorkspace,
-    Phase, ProfileId, ProjectRoot, ProviderName, SandboxName, SandboxPath,
+    AccountName, Agent, ChatgptAccountId, EnvName, FileMode, GatewayName, HostPath, ImageId,
+    ImageTag, Labels, LaunchId, OpenShellWorkspace, Phase, PlannedLabels, ProfileId, ProjectRoot,
+    ProviderName, RoleName, SandboxName, SandboxPath, WorkspaceName,
 };
 use jackin_openshell::{
-    EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, Missing, NetworkRule,
-    PolicyReport, PowerAction, ProfileSync, ProgramOutcome, ProgramRun, ProviderMaterial,
-    ProviderProfile, ProviderSpec, ProviderState, RuleEndpoint, RuleKey, SandboxCreate,
-    SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TerminalKind, TerminalRequest,
-    TerminalSession, TlsMode, TransferOp,
+    ClosedPolicy, EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, MainProcess,
+    Missing, NetworkRule, PolicyReport, PowerAction, ProfileSync, ProgramOutcome, ProgramRun,
+    ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState, RuleEndpoint, RuleKey,
+    SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TerminalKind,
+    TerminalRequest, TerminalSession, TlsMode, TransferOp,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -193,6 +194,35 @@ impl FakeGateway {
         }
     }
 
+    pub fn insert_unmanaged(
+        &self,
+        name: &SandboxName,
+        labels: Labels,
+        phase: Phase,
+    ) -> Result<(), GatewayError> {
+        let spec = foreign_spec(name)?;
+        let plan = MainPlan::parse(spec.main())?;
+        let mut sandbox = Sandbox::new(spec, plan, 0, None, SupervisorModel::Cooperative);
+        sandbox.shown = Some(labels);
+        sandbox.phase = phase;
+        sandbox.settling = Settling::Done;
+        let dir = tempfile::Builder::new()
+            .prefix("jackin-fake-sandbox-")
+            .tempdir()
+            .map_err(protocol)?;
+        std::fs::create_dir(dir.path().join("sandbox")).map_err(protocol)?;
+        self.registry().sandboxes.insert(
+            name.clone(),
+            Arc::new(Cell {
+                name: name.clone(),
+                dir,
+                closed: CancellationToken::new(),
+                inner: Mutex::new(sandbox),
+            }),
+        );
+        Ok(())
+    }
+
     pub fn install_file(&self, path: &SandboxPath, bytes: Vec<u8>) {
         self.registry().installed.insert(path.clone(), bytes);
     }
@@ -337,6 +367,42 @@ impl FakeGateway {
             })
             .collect()
     }
+}
+
+const FOREIGN_POLICY: &str = "version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+  read_write:
+    - /sandbox
+landlock:
+  compatibility: best_effort
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+";
+
+fn foreign_spec(name: &SandboxName) -> Result<SandboxCreate, GatewayError> {
+    let planned = PlannedLabels {
+        workspace: WorkspaceName::parse("foreign").map_err(protocol)?,
+        role: RoleName::parse("foreign").map_err(protocol)?,
+        agent: Agent::Codex,
+        account: AccountName::parse("foreign").map_err(protocol)?,
+        launch: LaunchId::from_entropy(&[0; 26]),
+    };
+    let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64))).map_err(protocol)?;
+    Ok(SandboxCreate::new(
+        name.clone(),
+        ImageTag::parse("jackin.invalid/foreign:0000000000000000").map_err(protocol)?,
+        planned.complete(&image_id),
+        Vec::new(),
+        ClosedPolicy::parse(FOREIGN_POLICY).map_err(protocol)?,
+        MainProcess {
+            program: SandboxPath::parse("/bin/sh").map_err(protocol)?,
+            args: vec!["-c".to_owned(), "sleep 3600".to_owned()],
+        },
+    ))
 }
 
 fn observed(cell: &Cell) -> SandboxView {
@@ -552,7 +618,7 @@ impl Gateway for FakeGateway {
                         .sandboxes
                         .values()
                         .filter(|cell| {
-                            let labels = cell.state().labels().to_labels();
+                            let labels = cell.state().all_labels();
                             wanted.iter().all(|(key, value)| {
                                 labels
                                     .iter()

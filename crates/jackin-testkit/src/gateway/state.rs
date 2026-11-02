@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use jackin_core::{
-    ImageTag, Phase, ProfileId, ProviderName, SandboxLabels, SandboxName, SandboxPath, TerminalText,
+    ImageTag, Labels, Phase, ProfileId, ProviderName, SandboxName, SandboxPath, TerminalText,
 };
 use jackin_openshell::{
     GatewayError, GatewayOp, ProviderProfile, Provisioning, SandboxCreate, SandboxView,
@@ -168,6 +168,7 @@ pub(super) struct Sandbox {
     pub(super) generation: u64,
     pub(super) supervisor: Option<Supervisor>,
     pub(super) runs: Vec<(SandboxPath, RunRecord)>,
+    pub(super) shown: Option<Labels>,
 }
 
 impl Cell {
@@ -206,18 +207,21 @@ impl Sandbox {
             plan,
             supervisor,
             runs: Vec::new(),
+            shown: None,
         }
     }
 
-    pub(super) fn labels(&self) -> &SandboxLabels {
-        self.spec.labels()
+    pub(super) fn all_labels(&self) -> Labels {
+        self.shown
+            .clone()
+            .unwrap_or_else(|| self.spec.labels().to_labels())
     }
 
     pub(super) fn view(&self) -> SandboxView {
         SandboxView {
             name: self.spec.name().clone(),
             phase: self.phase,
-            labels: self.labels().to_labels(),
+            labels: self.all_labels(),
             provisioning: self.provisioning.clone(),
         }
     }

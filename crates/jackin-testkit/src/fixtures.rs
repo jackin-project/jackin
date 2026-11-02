@@ -72,7 +72,7 @@ pub struct RepoFixture {
     keep: Vec<Arc<TempDir>>,
 }
 
-async fn git(dir: &Path, args: &[&str]) -> Result<Vec<u8>, FixtureError> {
+pub(crate) async fn git(dir: &Path, args: &[&str]) -> Result<Vec<u8>, FixtureError> {
     let output = Command::new("git")
         .args(["-c", "user.name=jackin-test"])
         .args(["-c", "user.email=test@example.invalid"])

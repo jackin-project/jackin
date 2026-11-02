@@ -27,9 +27,8 @@ use crate::launch::{
 };
 use crate::plan::LaunchPlan;
 use crate::project::{self, Staged};
-use crate::service::Session;
+use crate::service::{POLL, Session};
 
-const POLL: Duration = Duration::from_millis(500);
 const EXEC_TIMEOUT: Duration = Duration::from_secs(30);
 const IMAGE_PROGRESS: usize = 64;
 const MARKER_MODE: FileMode = FileMode(0o600);

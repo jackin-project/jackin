@@ -7,13 +7,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use jackin_core::{
-    EnvName, FileMode, Labels, Phase, SandboxName, SandboxPath, SupervisorState, sandbox_layout,
+    CommitId, EnvName, FileMode, Labels, Phase, SandboxName, SandboxPath, SupervisorState,
+    sandbox_layout,
 };
 use jackin_openshell::TermSize;
 
 use super::RunRecord;
 use super::exec::host_path;
 use super::state::Cell;
+use crate::fixtures::{FixtureError, git};
 
 #[derive(Clone, Debug)]
 pub struct SandboxHandle {
@@ -38,7 +40,7 @@ impl SandboxHandle {
     }
 
     pub fn labels(&self) -> Labels {
-        self.cell.state().labels().to_labels()
+        self.cell.state().all_labels()
     }
 
     pub fn environment(&self) -> BTreeMap<EnvName, String> {
@@ -89,6 +91,29 @@ impl SandboxHandle {
             .filter(|(path, _)| path == program)
             .map(|(_, record)| record.clone())
             .collect()
+    }
+
+    pub async fn git(&self, args: &[&str]) -> Result<String, FixtureError> {
+        let project = self.root().join("project");
+        Ok(String::from_utf8(git(&project, args).await?)?)
+    }
+
+    pub async fn commit_in_project(
+        &self,
+        file: &str,
+        content: &[u8],
+        message: &str,
+    ) -> Result<CommitId, FixtureError> {
+        let target = self.root().join("project").join(file);
+        if let Some(parent) = target.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::write(&target, content).await?;
+        self.git(&["add", "-A"]).await?;
+        self.git(&["commit", "-q", "-m", message]).await?;
+        Ok(CommitId::parse(
+            self.git(&["rev-parse", "HEAD"]).await?.trim(),
+        )?)
     }
 
     pub fn exit_codex(&self, code: i32) {
