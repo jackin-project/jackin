@@ -39,38 +39,53 @@ async fn no_secret_reaches_any_output_json_config_or_debug_text() -> TestResult 
         let home = rig.home.as_path().display().to_string();
         let id = launch_id(1).to_string();
         let sandbox = rig.sandbox_name(1)?;
-        let runs: [&[&str]; 8] = [
-            &[
-                "account",
-                "add",
-                "codex",
-                "--name",
-                "second",
-                "--chatgpt-from",
-                &home,
-            ],
-            &[
-                "account",
-                "add",
-                "claude",
-                "--name",
-                "c",
-                "--credential",
-                "env:CLAUDE_KEY",
-            ],
-            &["load", "--launch-id", &id],
-            &["ls", "--json"],
-            &["inspect", sandbox.as_str(), "--json"],
-            &["account", "ls", "--json"],
-            &["account", "ls"],
-            &["doctor"],
+        let runs: [(&[&str], bool); 8] = [
+            (
+                &[
+                    "account",
+                    "add",
+                    "codex",
+                    "--name",
+                    "second",
+                    "--chatgpt-from",
+                    &home,
+                ],
+                true,
+            ),
+            (
+                &[
+                    "account",
+                    "add",
+                    "claude",
+                    "--name",
+                    "c",
+                    "--credential",
+                    "env:CLAUDE_KEY",
+                ],
+                true,
+            ),
+            (&["load", "--account", "work", "--launch-id", &id], true),
+            (&["ls", "--json"], true),
+            (&["inspect", sandbox.as_str(), "--json"], true),
+            (&["account", "ls", "--json"], true),
+            (&["account", "ls"], true),
+            (&["doctor"], false),
         ];
         let mut haystack = Vec::new();
-        for args in runs {
+        let mut outputs = Vec::new();
+        for (args, succeeds) in runs {
             let ran = harness.run(args).await?;
-            haystack.push(ran.stdout);
-            haystack.push(ran.stderr);
+            if succeeds {
+                ran.ok()?;
+            }
+            haystack.push(ran.stdout.clone());
+            haystack.push(ran.stderr.clone());
+            outputs.push(ran.stdout);
         }
+        for shown in [&outputs[2], &outputs[3], &outputs[4]] {
+            assert!(shown.contains(sandbox.as_str()), "{shown}");
+        }
+        assert!(outputs[2].contains(&id), "{}", outputs[2]);
         std::fs::write(
             rig.home.as_path().join("auth.json"),
             format!("not json {ACCESS} {REFRESH}"),

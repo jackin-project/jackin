@@ -7,7 +7,7 @@ use jackin_openshell::{GatewayError, GatewayOp, Missing};
 use jackin_testkit::{Fault, Rig, TestResult, World, guard};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Failure, Harness, failed, keys, names};
+use super::support::{Failure, Harness, failed};
 
 const CONFIG: &str = "[defaults.accounts]
 codex = \"one\"
@@ -23,6 +23,10 @@ credential = { source = \"op\", reference = \"op://vault-name/item-name/field\" 
 [accounts.three]
 provider = \"claude\"
 credential = { source = \"file\", path = \"/secret/dir/key.txt\" }
+
+[accounts.four]
+provider = \"codex\"
+credential = { source = \"codex-login\", home = \"/login/home\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\" }
 
 [roles.sentinel]
 source = { path = \"/roles/sentinel\" }
@@ -106,6 +110,24 @@ async fn default_and_bind_change_exactly_the_named_entry() -> TestResult {
             .role(&RoleName::parse("sentinel")?)
             .ok_or("no role")?;
         assert_eq!(role.bindings.len(), 1);
+
+        let roles = harness.run(&["role", "ls", "--json"]).await?;
+        assert_eq!(
+            roles.stdout,
+            concat!(
+                "{\"schema\":1,\"roles\":[{\"name\":\"sentinel\",",
+                "\"source\":{\"kind\":\"path\",\"path\":\"/roles/sentinel\"},",
+                "\"bindings\":{\"codex\":\"two\"}}]}\n"
+            )
+        );
+        let workspaces = harness.run(&["workspace", "ls", "--json"]).await?;
+        assert_eq!(
+            workspaces.stdout,
+            concat!(
+                "{\"schema\":1,\"workspaces\":[{\"name\":\"alpha\",\"path\":\"/work/alpha\",",
+                "\"docker\":false,\"default_role\":null,\"bindings\":{\"claude\":\"three\"}}]}\n"
+            )
+        );
         Ok(())
     })
     .await
@@ -118,26 +140,19 @@ async fn account_ls_json_has_a_pinned_shape_and_no_credential_material() -> Test
         let harness = seeded(&world)?;
         let ran = harness.run(&["account", "ls", "--json"]).await?;
         ran.ok()?;
-        let value = ran.value()?;
-        assert_eq!(keys(&value)?, names(&["schema", "accounts"]));
-        assert_eq!(value["schema"], 1);
-        let rows = value["accounts"].as_array().ok_or("no rows")?;
-        assert_eq!(rows.len(), 3);
-        for row in rows {
-            assert_eq!(
-                keys(row)?,
-                names(&["name", "provider", "credential", "default"])
-            );
-        }
+        assert_eq!(
+            ran.stdout,
+            concat!(
+                "{\"schema\":1,\"accounts\":[",
+                "{\"name\":\"four\",\"provider\":\"codex\",\"credential\":\"codex-login\",\"default\":false},",
+                "{\"name\":\"one\",\"provider\":\"codex\",\"credential\":\"env\",\"default\":true},",
+                "{\"name\":\"three\",\"provider\":\"claude\",\"credential\":\"file\",\"default\":false},",
+                "{\"name\":\"two\",\"provider\":\"codex\",\"credential\":\"op\",\"default\":false}]}\n"
+            )
+        );
         let typed: AccountLs = ran.json()?;
-        let kinds: Vec<&str> = typed
-            .accounts
-            .iter()
-            .map(|row| row.credential.as_str())
-            .collect();
-        assert_eq!(kinds, ["env", "file", "op"]);
-        assert!(typed.accounts[0].default && !typed.accounts[2].default);
-        for secret in ["HOST_SECRET_VAR", "vault-name", "/secret/dir"] {
+        assert_eq!(typed.accounts.len(), 4);
+        for secret in ["HOST_SECRET_VAR", "vault-name", "/secret/dir", "/login/home"] {
             assert!(!ran.stdout.contains(secret), "{secret}");
         }
         Ok(())

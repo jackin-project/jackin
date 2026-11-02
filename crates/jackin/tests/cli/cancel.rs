@@ -35,8 +35,13 @@ async fn a_cancelled_load_keeps_the_sandbox_names_it_and_a_rerun_completes() -> 
         assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
         assert!(ran.stdout.is_empty());
         let name = rig.sandbox_name(1)?;
+        let message = ran
+            .stderr
+            .lines()
+            .find(|line| line.starts_with("cancelled"))
+            .ok_or("no cancelled line")?;
         assert!(
-            ran.stderr.contains(name.as_str()) && ran.stderr.contains(&id),
+            message.contains(name.as_str()) && message.contains(&id),
             "{}",
             ran.stderr
         );

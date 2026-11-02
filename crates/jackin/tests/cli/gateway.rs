@@ -5,7 +5,7 @@ use jackin::{ExitClass, GatewayLs};
 use jackin_core::{GatewayName, OpenShellWorkspace, Platform};
 use jackin_testkit::{TestResult, World, guard};
 
-use super::support::{Failure, Harness, failed, keys, names};
+use super::support::{Failure, Harness, failed};
 
 fn gateway(name: &str) -> Result<GatewayName, Failure> {
     Ok(GatewayName::parse(name)?)
@@ -80,6 +80,12 @@ async fn gateway_ls_json_has_a_pinned_shape_and_an_empty_list_is_a_literal() -> 
                 "gateway",
                 "add",
                 "alpha",
+                "--workspace",
+                "ws1",
+                "--builder",
+                "bld",
+                "--platform",
+                "linux/amd64",
                 "--engine-port",
                 "2376",
                 "--engine-certs",
@@ -88,36 +94,24 @@ async fn gateway_ls_json_has_a_pinned_shape_and_an_empty_list_is_a_literal() -> 
             ])
             .await?
             .ok()?;
-        harness.run(&["gateway", "add", "beta"]).await?.ok()?;
+        harness
+            .run(&["gateway", "add", "beta", "--platform", "linux/arm64"])
+            .await?
+            .ok()?;
         let ran = harness.run(&["gateway", "ls", "--json"]).await?;
         ran.ok()?;
-        let value = ran.value()?;
-        assert_eq!(keys(&value)?, names(&["schema", "gateways"]));
-        assert_eq!(value["schema"], 1);
-        let rows = value["gateways"].as_array().ok_or("no rows")?;
-        for row in rows {
-            assert_eq!(
-                keys(row)?,
-                names(&[
-                    "name",
-                    "default",
-                    "workspace",
-                    "builder",
-                    "platform",
-                    "engine"
-                ])
-            );
-        }
-        assert_eq!(keys(&rows[0]["engine"])?, names(&["port", "certs"]));
-        assert!(rows[1]["engine"].is_null());
-        let typed: GatewayLs = ran.json()?;
-        assert_eq!(typed.gateways[0].name.as_str(), "alpha");
-        assert!(typed.gateways[0].default);
-        assert!(!typed.gateways[1].default);
         assert_eq!(
-            typed.gateways[0].engine.as_ref().map(|e| e.port),
-            Some(2376)
+            ran.stdout,
+            concat!(
+                "{\"schema\":1,\"gateways\":[",
+                "{\"name\":\"alpha\",\"default\":true,\"workspace\":\"ws1\",\"builder\":\"bld\",",
+                "\"platform\":\"linux/amd64\",\"engine\":{\"port\":2376,\"certs\":\"/certs\"}},",
+                "{\"name\":\"beta\",\"default\":false,\"workspace\":\"default\",\"builder\":\"default\",",
+                "\"platform\":\"linux/arm64\",\"engine\":null}]}\n"
+            )
         );
+        let typed: GatewayLs = ran.json()?;
+        assert_eq!(typed.gateways.len(), 2);
         Ok(())
     })
     .await

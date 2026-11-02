@@ -5,7 +5,7 @@ use jackin::{ExitClass, RoleLs, WorkspaceLs};
 use jackin_core::{HostPath, RoleName, RoleRev, RoleSource, WorkspaceName};
 use jackin_testkit::{TestResult, World, guard};
 
-use super::support::{Failure, Harness, failed, keys, names};
+use super::support::{Failure, Harness, failed};
 
 const URL: &str = "https://example.com/org/role.git";
 
@@ -31,6 +31,7 @@ async fn role_add_stores_a_path_or_a_git_source_and_ls_pins_both_shapes() -> Tes
             .run(&["role", "add", "remote", URL, "--rev", "v1.2"])
             .await?
             .ok()?;
+        harness.run(&["role", "add", "bare", URL]).await?.ok()?;
 
         let config = harness.stored().await?;
         let local = config.role(&role("local")?).ok_or("no local")?;
@@ -47,14 +48,22 @@ async fn role_add_stores_a_path_or_a_git_source_and_ls_pins_both_shapes() -> Tes
 
         let ran = harness.run(&["role", "ls", "--json"]).await?;
         ran.ok()?;
-        let value = ran.value()?;
-        assert_eq!(keys(&value)?, names(&["schema", "roles"]));
-        let rows = value["roles"].as_array().ok_or("no rows")?;
-        assert_eq!(keys(&rows[0])?, names(&["name", "source", "bindings"]));
-        assert_eq!(keys(&rows[0]["source"])?, names(&["kind", "path"]));
-        assert_eq!(keys(&rows[1]["source"])?, names(&["kind", "url", "rev"]));
+        let local_path = world.home().as_path().join("local-role");
+        assert_eq!(
+            ran.stdout,
+            format!(
+                concat!(
+                    "{{\"schema\":1,\"roles\":[",
+                    "{{\"name\":\"bare\",\"source\":{{\"kind\":\"git\",\"url\":\"{url}\",\"rev\":null}},\"bindings\":{{}}}},",
+                    "{{\"name\":\"local\",\"source\":{{\"kind\":\"path\",\"path\":\"{path}\"}},\"bindings\":{{}}}},",
+                    "{{\"name\":\"remote\",\"source\":{{\"kind\":\"git\",\"url\":\"{url}\",\"rev\":\"v1.2\"}},\"bindings\":{{}}}}]}}\n"
+                ),
+                url = URL,
+                path = local_path.display()
+            )
+        );
         let typed: RoleLs = ran.json()?;
-        assert_eq!(typed.roles.len(), 2);
+        assert_eq!(typed.roles.len(), 3);
 
         harness.run(&["role", "rm", "local"]).await?.ok()?;
         assert!(harness.stored().await?.role(&role("local")?).is_none());
@@ -99,12 +108,18 @@ async fn workspace_add_stores_the_docker_flag_and_an_absolute_path_and_ls_pins_t
 
         let ran = harness.run(&["workspace", "ls", "--json"]).await?;
         ran.ok()?;
-        let value = ran.value()?;
-        assert_eq!(keys(&value)?, names(&["schema", "workspaces"]));
-        let rows = value["workspaces"].as_array().ok_or("no rows")?;
+        let two = world.home().as_path().parent().ok_or("no parent")?.join("two");
         assert_eq!(
-            keys(&rows[0])?,
-            names(&["name", "path", "docker", "default_role", "bindings"])
+            ran.stdout,
+            format!(
+                concat!(
+                    "{{\"schema\":1,\"workspaces\":[",
+                    "{{\"name\":\"boxed\",\"path\":\"{two}\",\"docker\":true,\"default_role\":null,\"bindings\":{{}}}},",
+                    "{{\"name\":\"plain\",\"path\":\"{one}\",\"docker\":false,\"default_role\":null,\"bindings\":{{}}}}]}}\n"
+                ),
+                two = two.display(),
+                one = world.home().as_path().join("proj/one").display()
+            )
         );
         let typed: WorkspaceLs = ran.json()?;
         assert_eq!(typed.workspaces.len(), 2);
@@ -141,6 +156,14 @@ async fn duplicates_shared_paths_and_roles_in_use_fail_and_leave_the_config_byte
         );
         harness.write_config(&text)?;
         let before = harness.config_bytes()?;
+        let listed = harness.run(&["workspace", "ls", "--json"]).await?;
+        assert_eq!(
+            listed.stdout,
+            format!(
+                "{{\"schema\":1,\"workspaces\":[{{\"name\":\"one\",\"path\":\"{}\",\"docker\":false,\"default_role\":\"remote\",\"bindings\":{{}}}}]}}\n",
+                world.home().as_path().join("proj").display()
+            )
+        );
 
         let cases: [(&[&str], &str); 4] = [
             (&["role", "add", "remote", URL], "remote"),

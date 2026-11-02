@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{EnvFile, sandbox_layout};
+use jackin_core::{DockerRisk, EnvFile, sandbox_layout};
 use jackin_testkit::{Rig, TestResult, guard, launch_id};
 
 use super::support::{Failure, Harness};
@@ -73,6 +73,17 @@ async fn a_docker_workspace_gets_the_engine_variables_and_one_warning_and_a_plai
             .await?;
         ran.ok()?;
         assert_eq!(ran.stderr.matches(WARNING).count(), 1, "{}", ran.stderr);
+        let after: Vec<&str> = ran
+            .stderr
+            .lines()
+            .skip_while(|line| !line.starts_with(WARNING))
+            .skip(1)
+            .collect();
+        let risks = after
+            .iter()
+            .take_while(|line| line.starts_with("  "))
+            .count();
+        assert_eq!(risks, DockerRisk::ALL.len(), "{}", ran.stderr);
         let names = env_names(&rig, 1).await?;
         for wanted in ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"] {
             assert!(

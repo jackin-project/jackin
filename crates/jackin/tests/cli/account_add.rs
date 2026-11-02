@@ -3,7 +3,7 @@
 
 use jackin::ExitClass;
 use jackin_core::{AccountName, Agent, CredentialSource, ProfileId, ProviderName};
-use jackin_testkit::{ACCOUNT_ID, Rig, TestResult, guard};
+use jackin_testkit::{ACCESS, ACCOUNT_ID, Rig, TestResult, guard};
 
 use super::support::{FixedConnector, Harness, failed};
 
@@ -178,7 +178,12 @@ async fn adding_the_same_account_twice_fails_before_the_gateway_is_touched() -> 
         ];
         harness.run(&args).await?.ok()?;
         let record = rig.gateway().provider(&provider("work")?);
+        assert!(record.is_some());
         let before = harness.config_bytes()?;
+        let auth = rig.home.as_path().join("auth.json");
+        let rotated = std::fs::read_to_string(&auth)?.replace(ACCESS, "ACCESS-ROTATED-0001");
+        assert!(rotated.contains("ACCESS-ROTATED-0001"));
+        std::fs::write(&auth, rotated)?;
         failed(&harness.run(&args).await?, ExitClass::Failure, &["work"])?;
         assert_eq!(harness.config_bytes()?, before);
         assert_eq!(rig.gateway().provider(&provider("work")?), record);

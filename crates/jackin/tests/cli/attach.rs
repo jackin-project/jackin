@@ -11,6 +11,7 @@ use super::support::{
 };
 
 const DETACH: &[u8] = b"\x10\x11";
+const CTRL_D: &[u8] = b"\x04";
 
 async fn running() -> Result<(Rig, Harness, SandboxHandle), Failure> {
     let rig = Rig::new().await?;
@@ -53,6 +54,23 @@ async fn attach_pumps_input_output_and_resizes_and_a_detach_leaves_codex_running
                 attempt: AttemptId::FIRST
             })
         );
+        assert!(!raw.raw());
+
+        let (terminal, raw) = script(vec![
+            Step::Bytes(b"more".to_vec()),
+            Step::Bytes(CTRL_D.to_vec()),
+            Step::Bytes(b"after".to_vec()),
+            Step::Close,
+        ])?;
+        harness
+            .command(&["attach", name.as_str()])
+            .terminal(terminal)
+            .run()
+            .await?
+            .ok()?;
+        until(|| handle.attachments() == 0).await?;
+        assert_eq!(handle.main_input(), b"typedmore");
+        assert_eq!(handle.phase(), Phase::Ready);
         assert!(!raw.raw());
         Ok(())
     })
@@ -141,14 +159,16 @@ async fn a_completed_unknown_or_unmanaged_sandbox_cannot_be_attached() -> TestRe
         let (_rig, harness, handle) = running().await?;
         let name = handle.name();
         handle.exit_main(5);
-        for target in [name.as_str(), "jackin-absent-0009"] {
+        for (target, code) in [(name.as_str(), Some("5")), ("jackin-absent-0009", None)] {
             let (terminal, raw) = script(vec![Step::Bytes(DETACH.to_vec())])?;
             let ran = harness
                 .command(&["attach", target])
                 .terminal(terminal)
                 .run()
                 .await?;
-            failed(&ran, ExitClass::Failure, &[target])?;
+            let mut wanted = vec![target];
+            wanted.extend(code);
+            failed(&ran, ExitClass::Failure, &wanted)?;
             assert!(!raw.raw());
         }
         let completed = harness.run(&["inspect", name.as_str(), "--json"]).await?;
