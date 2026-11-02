@@ -362,10 +362,18 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
   - Jackin never reuses a live sandbox as a new launch (ADR-008).
 - [x] P5.1 done — cafccc7c, G-FAST exit 0 (394 tests run: 394 passed), red/green CHANGES (217 mutations, 15 survivors) then KEEP on the fix round and the rebase rows; the PLAN proofs are tests/launch proofs.rs (one launch ID: one build, one sandbox, one upload, one setup run), crash.rs (failure after create keeps the sandbox, a retry continues), cancel.rs (cancel leaves a restore candidate), adr008.rs (no reuse of a live sandbox)
 
+### P5.1b Upload the project as a working tree and a git bundle
+
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P5.1, P4.4.
+- **Scope:** `crates/jackin-openshell` (replace `upload_project` with a tree upload and a single-file upload; delete the `.git` copy, `git_config.rs`, the sanitizer and `UnsupportedGitDirectory`), a new project module in `crates/jackin-session`, the launch upload step, the testkit fake, `jackin doctor`'s git check.
+- **Steps:** Build D08 as written: host checks and refusals, the bundle, the emptied project directory, the two uploads with the digest check, the sandbox repository, the tree-id gate, the marker last. Delete the superseded code in the same change.
+- **Proof:** G-FAST passes. Tests with real host git show a normal repository, a linked worktree, a submodule checkout as the root, a SHA-256 repository, a shallow clone, an unborn branch with other branches, and a detached HEAD each arrive with the same HEAD and tree. Tests show each refusal before any gateway call, a host edit during the upload fails with `ProjectMismatch`, a retry after a host deletion succeeds, and no `refs/heads/jackin/*` ref and no host credential reach the sandbox. `evidence/P5.1b-upload.md` shows the live upload from a linked worktree, the bundle digest, and an export back.
+- [ ] P5.1b done
+
 ### P5.2 Build attach, shell, export, list, stop, start, and purge
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P5.1.
-- **Scope:** `crates/jackin-session/src/{attach,export,lifecycle,host}.rs`.
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P5.1b.
+- **Scope:** `crates/jackin-session/src/{attach,export,lifecycle}.rs` (the host runner landed in P4.3).
 - **Steps:** Build each operation from DESIGN.md. Build the host process runner. `purge` refuses unexported work without `--force` (ADR-010).
 - **Proof:** G-FAST passes. Tests show that an export writes only `refs/heads/jackin/<sandbox>` and never the working tree. Tests show that purge refuses unexported work. Tests show that list finds sandboxes by label only.
 - [ ] P5.2 done

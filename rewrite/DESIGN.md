@@ -114,20 +114,26 @@ Evidence: `evidence/P0.2-gateway.md`, `evidence/P0.3-codex.md`, `evidence/P7.1-i
 - Jackin keeps no local instance index and no database. To find sandboxes, jackin lists them by label.
 - A retry with the same launch ID finds the existing sandbox and continues from its observed state. It does not create a second sandbox.
 
-### D08. Upload the project and export work as a git bundle
+### D08. Upload the project as a working tree and a git bundle, and export work as a git bundle
 
-- Jackin uploads the project with two CLI calls, with the project root as the working directory:
-  1. `openshell sandbox upload <sandbox> . /sandbox/project`. It respects `.gitignore`, uploads untracked files that are not ignored, and omits `.git`.
-  2. `openshell sandbox upload <sandbox> .git /sandbox/project --no-git-ignore`. It adds `.git`.
-  3. Jackin replaces `/sandbox/project/.git/config` with a copy that has no user information in a URL, no `http.*.extraheader`, no `credential` section, and no `include` or `includeIf`. Codex has not started yet, so it never sees a credential from the host configuration (D10).
-- Jackin removes every `GIT_` variable from the environment of these calls, so the host `git` lists the project it uploads.
-- A path other than `.` lands in `/sandbox/project/<basename>`. The first call needs `git` and a work tree on the host.
-- To retrieve work, `jackin export` runs `git bundle create` in `/sandbox/project` through exec, downloads the bundle from `/sandbox/.jackin/`, compares the sha256 digests, and fetches each branch into the host repository as `refs/heads/jackin/<sandbox-name>/<branch>`.
+- The host `.git` never reaches the sandbox. Jackin uploads the working tree and the history separately, and makes a new repository in the sandbox. A normal repository, a linked worktree, and a submodule checkout as the project root take the same path.
+- Every host `git` call and every CLI call runs with the user's own git configuration and with every `GIT_` variable removed, so jackin lists and filters the project exactly as the upload does.
+- Before anything leaves the host, jackin reads the project: the HEAD (a branch and its commit, a detached commit, or an unborn branch), the object format, the shallow commits, `user.name` and `user.email`, and `.git/info/exclude`. Jackin refuses, with a typed error and before any upload:
+  - a sparse checkout or any skip-worktree entry (`git ls-files -v` shows an `S` entry);
+  - an entry of the upload listing (`git ls-files -co --exclude-standard`) that is a directory with a `.git` inside, such as a populated submodule or an untracked nested repository; the error names `git submodule deinit --all` for submodules;
+  - a partial clone, detected when `git --no-lazy-fetch bundle create` fails; the error keeps the git output. `GIT_NO_LAZY_FETCH=1` is also set. `jackin doctor` checks that the host `git` supports `--no-lazy-fetch`.
+- Jackin writes the bundle into its cache with `git --no-lazy-fetch bundle create <file> [HEAD] --branches --tags --remotes --exclude='refs/heads/jackin/*'`. `HEAD` is omitted when HEAD is unborn. A project with no refs has no bundle.
+- Jackin first empties `/sandbox/project` through exec, so a retry starts clean. Then it uploads with two CLI calls:
+  1. `openshell sandbox upload <sandbox> . /sandbox/project`, with the project root as the working directory. It respects `.gitignore`, uploads untracked files that are not ignored, and omits `.git`.
+  2. `openshell sandbox upload <sandbox> <bundle> /sandbox/.jackin/bundle/upload-<launch-id>.bundle --no-git-ignore`. Jackin compares the sha256 digests.
+- In `/sandbox/project`, through exec, jackin runs `git init --object-format=<format>`, writes `.git/shallow` when the host repository is shallow, and runs `git fetch --update-head-ok --no-tags <bundle> '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*' '+refs/remotes/*:refs/remotes/*' '^refs/heads/jackin/*'`. It points HEAD at the host branch with `git symbolic-ref`, or at the commit with `git update-ref --no-deref`. It runs `git reset -q`, so the index equals HEAD. It sets `user.name` and `user.email` in the new repository when the host has them, writes `.git/info/exclude` with the host bytes, and deletes the bundle. Each step is idempotent.
+- Jackin then requires that the tree of the uploaded working tree equals the tree of the host working tree. On each side it runs `git add -A` and `git write-tree` with an empty temporary index and a temporary object directory, so neither repository changes. A difference fails the launch with `ProjectMismatch` and both tree ids. This catches a clean or smudge filter such as Git LFS, an end-of-line conversion, and a host edit during the upload. Only after this check does jackin write the upload marker.
+- No host git configuration other than `user.name` and `user.email`, no hook, index, stash, reflog, or nested `.git` reaches the sandbox, so no credential from the host repository reaches Codex (D10). Staged host changes arrive as unstaged changes.
+- To retrieve work, `jackin export` runs `git bundle create` in `/sandbox/project` through exec, downloads the bundle from `/sandbox/.jackin/`, compares the sha256 digests, and fetches each branch into the host repository as `refs/heads/jackin/<sandbox-name>/<branch>`. In a linked worktree these refs are in the shared repository.
 - Work is exported when the sandbox has no uncommitted change and each branch tip exists under `refs/heads/jackin/<sandbox-name>/` on the host. A sandbox that jackin cannot inspect counts as not exported.
-- Jackin never writes to the host working tree.
-- Jackin has no bind mounts and no sync daemon.
+- Jackin never writes to the host working tree or index. Jackin has no bind mounts and no sync daemon.
 
-Evidence: `evidence/P0.2-gateway.md` step 4.
+Evidence: `evidence/P0.2-gateway.md` step 4, and `evidence/P5.1b-upload.md` (to be captured in task P5.1b).
 
 ### D09. jackin-start supervises Codex and never exits by itself
 
