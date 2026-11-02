@@ -3888,6 +3888,7 @@ This file records the decisions and the preconditions for batch F2 (`jackin-test
 - The held byte is not echoed and not counted in `main_input` until it is released.
 - This supersedes API.md section 7 (U6) G6 ("Ctrl-P Ctrl-Q not modelled").
 - Recorded fake limits, with no change: `Notice` events are not produced by the fake main; the main PTY echo exists only for the `exec cat` main; the phases `Stopping`, `Deleting`, `Suspended` and `Unknown` are P5.1 TK rows.
+- Recorded fake limits (P4.2 confirmation, b94d8dbc): `write_file` outside `/sandbox` gives `PermissionDenied` where live p.7 gives `Protocol("writing ... failed")`, and `read_files` outside `/sandbox` gives `None` unless `install_file` was used; supervisor transitions happen inside `write_file` where the real `jackin-start` polls every 0.5 s, so a caller must poll, never read once after writing `run/start`; the fake writes no `jackin-start: codex exited with code N` line into the main PTY. Scheduled for P5.2 (export consumes them): `download_file` honours its cancel token, and a missing remote file gives the adapter's `Transfer { op: Size }`, each pinned by a new shared contract check with a live run.
 
 ## Clock and process fakes
 

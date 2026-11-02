@@ -328,7 +328,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 - **Scope:** `crates/jackin-testkit/`.
 - **Steps:** Build an in-process fake that implements `Gateway` with sandboxes, labels, OpenShell providers, and injectable failures.
 - **Proof:** G-FAST passes. The `code-reviewer` of phase P4 confirms that the fake obeys the same contract as `GrpcGateway`.
-- [ ] P4.2 done
+- [x] P4.2 done — 561d0644 and e1f9f07f, fixed in P4.4 batch F2 (deae699e, b94d8dbc); G-FAST exit 0; code-reviewer confirmation CONFIRMED on b94d8dbc: all 11 phase P4 testkit findings closed, the shared contract suite (24 checks) passes on FakeGateway and live on jackin-local; remaining divergences recorded as fake limits in API.md, download cancel and missing-file class scheduled in P5.2
 
 ### P4.3 Build the image builder and the delivery
 
