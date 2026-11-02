@@ -305,11 +305,11 @@ fn check_tags(request: &ImageRequest, construct: &str, key: &str, repo: &str) ->
     assert_eq!(built.key.sha256().as_str(), key);
     assert_eq!(
         built.derived.tag.to_string(),
-        format!("jackin/{repo}:{hex16}")
+        format!("jackin.invalid/{repo}:{hex16}")
     );
     assert_eq!(
         built.role.tag.to_string(),
-        format!("jackin/role/{repo}:{hex16}")
+        format!("jackin.invalid/role/{repo}:{hex16}")
     );
     Ok(())
 }
@@ -373,14 +373,20 @@ fn construct_tag_depends_on_the_platform_only() -> TestResult {
     let arm = construct_tag(&request)?;
     assert_eq!(
         arm,
-        format!("jackin/construct:{}", construct_hex(Platform::LinuxArm64))
+        format!(
+            "jackin.invalid/construct:{}",
+            construct_hex(Platform::LinuxArm64)
+        )
     );
     let mut amd_request = request.clone();
     amd_request.platform = Platform::LinuxAmd64;
     let amd = construct_tag(&amd_request)?;
     assert_eq!(
         amd,
-        format!("jackin/construct:{}", construct_hex(Platform::LinuxAmd64))
+        format!(
+            "jackin.invalid/construct:{}",
+            construct_hex(Platform::LinuxAmd64)
+        )
     );
     assert_ne!(arm, amd);
     let unchanged: [(&str, Mutation); 7] = [

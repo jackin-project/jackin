@@ -100,7 +100,7 @@ pub(crate) fn labels_for(launch: &str) -> SandboxLabels {
 pub(crate) fn create_spec(name: &str, launch: &str) -> SandboxCreate {
     SandboxCreate::new(
         sandbox_name(name),
-        ImageTag::parse("jackin/backend:0123456789abcdef").unwrap(),
+        ImageTag::parse("jackin.invalid/backend:0123456789abcdef").unwrap(),
         labels_for(launch),
         vec![ProviderName::parse("jackin-work-codex").unwrap()],
         PolicyDocument::parse_authored(POLICY).unwrap(),

@@ -17,6 +17,7 @@ struct EngineState {
     pinned: BTreeMap<ImageTag, ImageId>,
     builds: Vec<BuildRecord>,
     failures: Vec<BuildStage>,
+    script: Vec<(EngineMoment, EngineEffect)>,
 }
 
 #[derive(Debug, Default)]
@@ -28,6 +29,41 @@ pub struct FakeEngine {
 pub struct BuildRecord {
     pub stage: BuildStage,
     pub tag: ImageTag,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EngineMoment {
+    AfterFind(ImageTag),
+    BuildFinished(BuildStage),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EngineEffect {
+    Retag { tag: ImageTag, to: Option<ImageId> },
+    Cancel,
+}
+
+impl EngineState {
+    fn take(&mut self, moment: &EngineMoment) -> Option<EngineEffect> {
+        let index = self.script.iter().position(|(due, _)| due == moment)?;
+        Some(self.script.remove(index).1)
+    }
+
+    fn apply(&mut self, effect: EngineEffect, cancel: Option<&CancellationToken>) {
+        match effect {
+            EngineEffect::Retag { tag, to: Some(id) } => {
+                self.images.insert(tag, id);
+            }
+            EngineEffect::Retag { tag, to: None } => {
+                self.images.remove(&tag);
+            }
+            EngineEffect::Cancel => {
+                if let Some(token) = cancel {
+                    token.cancel();
+                }
+            }
+        }
+    }
 }
 
 impl FakeEngine {
@@ -52,6 +88,10 @@ impl FakeEngine {
     pub fn fail_next(&self, stage: BuildStage) {
         locked(&self.state).failures.push(stage);
     }
+
+    pub fn at(&self, moment: EngineMoment, effect: EngineEffect) {
+        locked(&self.state).script.push((moment, effect));
+    }
 }
 
 fn id_of(tag: &ImageTag) -> Result<ImageId, EngineError> {
@@ -67,7 +107,12 @@ fn id_of(tag: &ImageTag) -> Result<ImageId, EngineError> {
 #[async_trait]
 impl ImageEngine for FakeEngine {
     async fn find(&self, tag: &ImageTag) -> Result<Option<ImageId>, EngineError> {
-        Ok(locked(&self.state).images.get(tag).cloned())
+        let mut state = locked(&self.state);
+        let answer = state.images.get(tag).cloned();
+        if let Some(effect) = state.take(&EngineMoment::AfterFind(tag.clone())) {
+            state.apply(effect, None);
+        }
+        Ok(answer)
     }
 
     async fn check_builder(&self, _builder: &BuilderName) -> Result<(), EngineError> {
@@ -78,7 +123,7 @@ impl ImageEngine for FakeEngine {
         &self,
         build: &PlannedBuild,
         _progress: &ProgressSink,
-        _cancel: &CancellationToken,
+        cancel: &CancellationToken,
     ) -> Result<ImageId, EngineError> {
         let mut state = locked(&self.state);
         if let Some(index) = state
@@ -102,6 +147,9 @@ impl ImageEngine for FakeEngine {
             stage: build.stage,
             tag: build.tag.clone(),
         });
+        if let Some(effect) = state.take(&EngineMoment::BuildFinished(build.stage)) {
+            state.apply(effect, Some(cancel));
+        }
         Ok(id)
     }
 }

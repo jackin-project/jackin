@@ -72,7 +72,7 @@ fn corpus() -> Vec<String> {
 fn check_tag(tag: &ImageTag, role: &str) -> TestResult {
     let text = tag.to_string();
     assert!(oracle(&text)?, "{role}: {text} is not a Docker reference");
-    assert!(text.starts_with("jackin/"), "{role}: {text}");
+    assert!(text.starts_with("jackin.invalid/"), "{role}: {text}");
     assert_eq!(&ImageTag::parse(&text)?, tag, "{role}: {text}");
     Ok(())
 }
@@ -141,18 +141,18 @@ fn role_names_map_to_documented_repositories() -> TestResult {
         let role_name = RoleName::parse(role)?;
         assert_eq!(
             ImageTag::for_role(&role_name, &key).to_string(),
-            format!("jackin/{repo}:ba7816bf8f01cfea"),
+            format!("jackin.invalid/{repo}:ba7816bf8f01cfea"),
             "{role}"
         );
         assert_eq!(
             ImageTag::for_role_stage(&role_name, &key).to_string(),
-            format!("jackin/role/{repo}:ba7816bf8f01cfea"),
+            format!("jackin.invalid/role/{repo}:ba7816bf8f01cfea"),
             "{role}"
         );
     }
     assert_eq!(
         ImageTag::for_construct(&key).to_string(),
-        "jackin/construct:ba7816bf8f01cfea"
+        "jackin.invalid/construct:ba7816bf8f01cfea"
     );
     assert_eq!(
         ImageTag::for_role(&RoleName::parse("Foo")?, &key),
@@ -163,33 +163,33 @@ fn role_names_map_to_documented_repositories() -> TestResult {
 
 #[test]
 fn image_tag_parse_enforces_the_docker_reference_grammar() -> TestResult {
-    let longest = format!("jackin/{}", "a".repeat(248));
-    let too_long = format!("jackin/{}", "a".repeat(249));
+    let longest = format!("jackin.invalid/{}", "a".repeat(240));
+    let too_long = format!("jackin.invalid/{}", "a".repeat(241));
     let accept = [
-        "jackin/a",
-        "jackin/a-b",
-        "jackin/a.b",
-        "jackin/a_b",
-        "jackin/a__b",
-        "jackin/a---b",
-        "jackin/role/a",
-        "jackin/construct",
+        "jackin.invalid/a",
+        "jackin.invalid/a-b",
+        "jackin.invalid/a.b",
+        "jackin.invalid/a_b",
+        "jackin.invalid/a__b",
+        "jackin.invalid/a---b",
+        "jackin.invalid/role/a",
+        "jackin.invalid/construct",
         longest.as_str(),
     ];
     let reject = [
-        "jackin/Sentinel",
-        "jackin/a..b",
-        "jackin/a._b",
-        "jackin/a-.b",
-        "jackin/a___b",
-        "jackin/-a",
-        "jackin/a-",
-        "jackin/.a",
-        "jackin//a",
-        "jackin/a/",
-        "jackin/a b",
-        "jackin/é",
-        "jackin/a/B",
+        "jackin.invalid/Sentinel",
+        "jackin.invalid/a..b",
+        "jackin.invalid/a._b",
+        "jackin.invalid/a-.b",
+        "jackin.invalid/a___b",
+        "jackin.invalid/-a",
+        "jackin.invalid/a-",
+        "jackin.invalid/.a",
+        "jackin.invalid//a",
+        "jackin.invalid/a/",
+        "jackin.invalid/a b",
+        "jackin.invalid/é",
+        "jackin.invalid/a/B",
         too_long.as_str(),
     ];
     assert_eq!(longest.len(), 255);

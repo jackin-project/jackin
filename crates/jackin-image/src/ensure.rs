@@ -72,7 +72,24 @@ impl Pipeline<'_> {
         self.engine.find(tag).await.map_err(from_engine)
     }
 
-    async fn build(&mut self, build: &PlannedBuild) -> Result<ImageId, ImageError> {
+    async fn require(&self, tag: &ImageTag, expected: &ImageId) -> Result<(), ImageError> {
+        let found = self.find(tag).await?;
+        if found.as_ref() == Some(expected) {
+            Ok(())
+        } else {
+            Err(ImageError::SourceMoved {
+                tag: tag.clone(),
+                expected: expected.clone(),
+                found,
+            })
+        }
+    }
+
+    async fn build(
+        &mut self,
+        build: &PlannedBuild,
+        source: Option<(&ImageTag, &ImageId)>,
+    ) -> Result<ImageId, ImageError> {
         self.live()?;
         if !self.builder_checked {
             self.engine
@@ -81,12 +98,18 @@ impl Pipeline<'_> {
                 .map_err(from_engine)?;
             self.builder_checked = true;
         }
+        if let Some((tag, expected)) = source {
+            self.require(tag, expected).await?;
+        }
         self.emit(ImageEvent::StageStarted(build.stage)).await;
         let id = self
             .engine
             .build(build, self.progress, self.cancel)
             .await
             .map_err(from_engine)?;
+        if let Some((tag, expected)) = source {
+            self.require(tag, expected).await?;
+        }
         self.emit(ImageEvent::StageFinished(build.stage)).await;
         Ok(id)
     }
@@ -117,7 +140,7 @@ pub async fn ensure_image(
             .await;
         id
     } else {
-        pipeline.build(construct).await?
+        pipeline.build(construct, None).await?
     };
     if request.rebuild == Rebuild::No {
         let tag = plan.final_tag(&construct_id);
@@ -133,8 +156,12 @@ pub async fn ensure_image(
         }
     }
     let builds = plan.final_builds(&construct_id);
-    pipeline.build(&builds.role).await?;
-    let built = pipeline.build(&builds.derived).await?;
+    let role = pipeline
+        .build(&builds.role, Some((&construct.tag, &construct_id)))
+        .await?;
+    let built = pipeline
+        .build(&builds.derived, Some((&builds.role.tag, &role)))
+        .await?;
     let found = pipeline.find(&builds.derived.tag).await?;
     if found.as_ref() != Some(&built) {
         return Err(ImageError::NotDelivered {

@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -704,8 +705,7 @@ fn derived_dockerfile_re_asserts_root_ownership_and_forbidden_tools_after_the_ro
     assert!(
         commands
             .iter()
-            .any(|command| command.starts_with("test -z ")
-                && command.contains("find / -xdev -type f -perm /6000")),
+            .any(|command| command.contains("find / -xdev -type f -perm /6000")),
         "setuid scan in {commands:?}"
     );
     let last_user = lines
@@ -714,6 +714,101 @@ fn derived_dockerfile_re_asserts_root_ownership_and_forbidden_tools_after_the_ro
         .find_map(|line| line.strip_prefix("USER "))
         .ok_or("no USER")?;
     assert_eq!(last_user, "sandbox", "last_user");
+    Ok(())
+}
+
+fn derived_segments(needle: &str) -> Result<String, Box<dyn Error>> {
+    let lines = instructions(derived_text()?);
+    let run = run_after_last_copy(&lines)?;
+    let body = run.strip_prefix("RUN ").ok_or("not a RUN")?;
+    let segments: Vec<&str> = body
+        .split(" && ")
+        .map(str::trim)
+        .filter(|command| command.contains(needle))
+        .collect();
+    assert!(!segments.is_empty(), "no segment contains {needle:?}");
+    Ok(segments.join(" && "))
+}
+
+fn run_clause(dir: &Path, body: &str, path: &str) -> Result<(bool, String), Box<dyn Error>> {
+    let child = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(body)
+        .current_dir(dir)
+        .env_clear()
+        .env("PATH", path)
+        .env("LC_ALL", "C")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let output = child.wait_with_output()?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok((output.status.success(), text))
+}
+
+fn stub(bin: &Path, name: &str, body: &str) -> TestResult {
+    let path = bin.join(name);
+    fs::write(&path, format!("#!/bin/sh\n{body}"))?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))?;
+    Ok(())
+}
+
+#[test]
+fn derived_dockerfile_checks_fail_on_file_capabilities_and_setuid_files() -> TestResult {
+    let scratch = Scratch::new("derived-checks")?;
+    let capability_clause = derived_segments("getcap")?;
+    let setuid_clause = derived_segments("perm /6000")?;
+
+    let quiet = scratch.fresh("quiet")?;
+    stub(&quiet, "getcap", "exit 0\n")?;
+    let quiet_path = quiet.to_str().ok_or("path is not UTF-8")?;
+    let (ok, text) = run_clause(&quiet, &capability_clause, quiet_path)?;
+    assert!(ok, "a clean tree must pass the capability clause: {text}");
+
+    let hostile = scratch.fresh("hostile")?;
+    stub(
+        &hostile,
+        "getcap",
+        "if [ \"$*\" = \"-r /\" ]; then printf '%s\\n' '/usr/bin/ping cap_net_raw=ep'; fi\n",
+    )?;
+    let hostile_path = hostile.to_str().ok_or("path is not UTF-8")?;
+    let (ok, text) = run_clause(&hostile, &capability_clause, hostile_path)?;
+    assert!(!ok, "a file capability must fail the build: {text}");
+
+    let bare = scratch.fresh("bare")?;
+    let bare_path = bare.to_str().ok_or("path is not UTF-8")?;
+    let (ok, text) = run_clause(&bare, &capability_clause, bare_path)?;
+    assert!(!ok, "a missing getcap must fail the build: {text}");
+
+    let offending = scratch.fresh("offending")?;
+    stub(
+        &offending,
+        "find",
+        "if [ \"$1 $2 $3 $4 $5 $6\" = \"/ -xdev -type f -perm /6000\" ]; then printf '%s\\n' /usr/bin/su /usr/bin/passwd; fi\n",
+    )?;
+    let offending_path = format!(
+        "{}:/usr/bin:/bin",
+        offending.to_str().ok_or("path is not UTF-8")?
+    );
+    let (ok, text) = run_clause(&offending, &setuid_clause, &offending_path)?;
+    assert!(!ok, "setuid files must fail the build: {text}");
+    for path in ["/usr/bin/su", "/usr/bin/passwd"] {
+        assert!(text.contains(path), "{path} missing from {text:?}");
+    }
+
+    let clean = scratch.fresh("clean")?;
+    stub(&clean, "find", "exit 0\n")?;
+    let clean_path = format!(
+        "{}:/usr/bin:/bin",
+        clean.to_str().ok_or("path is not UTF-8")?
+    );
+    let (ok, text) = run_clause(&clean, &setuid_clause, &clean_path)?;
+    assert!(ok, "a tree without setuid files must pass: {text}");
     Ok(())
 }
 

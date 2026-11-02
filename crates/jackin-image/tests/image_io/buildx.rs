@@ -626,7 +626,7 @@ fn only_call(
 #[tokio::test]
 async fn buildx_find_reads_the_image_id_and_never_mistakes_a_failure_for_absence() -> TestResult {
     guarded(async {
-        let tag = ImageTag::parse("jackin/sentinel:0123456789abcdef")?;
+        let tag = ImageTag::parse("jackin.invalid/sentinel:0123456789abcdef")?;
         let id = format!("sha256:{}", "a".repeat(64));
         let sub = DockerSubcommand::ImageInspect;
         let rows: Vec<(&str, ProcessReply)> = vec![

@@ -68,6 +68,7 @@ fn plan_verdict(result: Result<ImagePlan, ImageError>) -> Verdict {
             ImageError::MissingInstallTarget { .. }
             | ImageError::Engine(_)
             | ImageError::NotDelivered { .. }
+            | ImageError::SourceMoved { .. }
             | ImageError::Cancelled,
         ) => Verdict::Other,
     }

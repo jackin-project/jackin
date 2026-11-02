@@ -392,14 +392,40 @@ fn other_ids_reject_one_input_of_each_violated_class() -> TestResult {
             rej("a\"\nmodel_provider=\"x", Want::Char('"')),
         ],
     )?);
-    let good_tag = format!("jackin/my-role:{tag}");
+    let good_tag = format!("jackin.invalid/my-role:{tag}");
+    let nested_tag = format!("jackin.invalid/role/my-role:{tag}");
+    let construct_tag = format!("jackin.invalid/construct:{tag}");
     kinds.push(grammar::<ImageTag>(
-        &[good_tag.as_str()],
+        &[
+            good_tag.as_str(),
+            nested_tag.as_str(),
+            construct_tag.as_str(),
+        ],
         &[
             rej("", Want::Empty),
             rej(format!("other/my-role:{tag}"), Want::Format),
-            rej(format!("jackin/my-role:{}", &tag[..15]), Want::Format),
-            rej(format!("jackin/my-role:{}g", &tag[..15]), Want::Char('g')),
+            rej(format!("jackin/my-role:{tag}"), Want::Format),
+            rej(format!("docker.io/jackin/my-role:{tag}"), Want::Format),
+            rej(
+                format!("jackin.invalid.example/my-role:{tag}"),
+                Want::Format,
+            ),
+            rej(format!("jackin.invalidx/my-role:{tag}"), Want::Format),
+            rej(format!("xjackin.invalid/my-role:{tag}"), Want::Format),
+            rej(format!("localhost/my-role:{tag}"), Want::Format),
+            rej(
+                format!("reg.example/jackin.invalid/my-role:{tag}"),
+                Want::Format,
+            ),
+            rej(format!("jackin.invalid:{tag}"), Want::Format),
+            rej(
+                format!("jackin.invalid/my-role:{}", &tag[..15]),
+                Want::Format,
+            ),
+            rej(
+                format!("jackin.invalid/my-role:{}g", &tag[..15]),
+                Want::Char('g'),
+            ),
         ],
     )?);
     let good_id = format!("sha256:{hex64}");
@@ -544,7 +570,7 @@ fn sha256_image_tag_and_image_label_match_known_vectors() -> TestResult {
     );
     assert_eq!(
         ImageTag::for_role(&RoleName::parse("backend")?, &Sha256::of(b"abc")).to_string(),
-        "jackin/backend:ba7816bf8f01cfea"
+        "jackin.invalid/backend:ba7816bf8f01cfea"
     );
     let input = format!("sha256:{abc}");
     let image = ImageId::parse(&input)?;

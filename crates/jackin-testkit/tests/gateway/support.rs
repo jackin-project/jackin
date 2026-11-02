@@ -25,7 +25,7 @@ use tokio_util::sync::CancellationToken;
 
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
-pub(crate) const IMAGE: &str = "jackin/contract-base:0123456789abcdef";
+pub(crate) const IMAGE: &str = "jackin.invalid/contract-base:0123456789abcdef";
 pub(crate) const POLICY: &str = "version: 1
 filesystem_policy:
   include_workdir: true

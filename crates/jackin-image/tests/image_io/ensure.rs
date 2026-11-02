@@ -3,18 +3,18 @@
 
 use std::error::Error;
 
-use jackin_core::{DockerSubcommand, ImageId, OutputStream, ProcessStatus};
+use jackin_core::{DockerSubcommand, ImageId, ImageTag, OutputStream, ProcessStatus};
 use jackin_image::{
     BuildStage, BuiltImage, DockerfileError, EngineError, ImageEngine, ImageError, ImageEvent,
     ImagePlan, ImageRequest, ImageSource, Rebuild, ensure_image,
 };
-use jackin_testkit::FakeEngine;
+use jackin_testkit::{EngineEffect, EngineMoment, FakeEngine};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::support::{
-    Delivery, Fixture, Outcome, Script, Stack, TestResult, assert_local_only, drain, guarded,
-    source, tag_id,
+    AfterBuild, Delivery, Fixture, Outcome, Script, Stack, TestResult, assert_local_only, drain,
+    guarded, source, tag_id,
 };
 
 async fn ensure(
@@ -472,6 +472,365 @@ async fn a_built_image_must_be_present_in_the_engine_under_its_final_tag() -> Te
                 (_, other) => return Err(format!("{label}: got {other:?}").into()),
             }
         }
+        Ok(())
+    })
+    .await
+}
+
+fn id_of(tag: &ImageTag) -> Result<ImageId, Box<dyn Error>> {
+    Ok(ImageId::parse(&tag_id(tag.as_str()))?)
+}
+
+struct Tags {
+    construct: ImageTag,
+    role: ImageTag,
+    derived: ImageTag,
+    construct_id: ImageId,
+    role_id: ImageId,
+    derived_id: ImageId,
+}
+
+impl Tags {
+    fn of(request: &ImageRequest) -> Result<Tags, Box<dyn Error>> {
+        let plan = ImagePlan::new(request)?;
+        let construct = plan.construct_build().tag.clone();
+        let construct_id = id_of(&construct)?;
+        let finals = plan.final_builds(&construct_id);
+        Ok(Tags {
+            role_id: id_of(&finals.role.tag)?,
+            derived_id: id_of(&finals.derived.tag)?,
+            role: finals.role.tag,
+            derived: finals.derived.tag,
+            construct,
+            construct_id,
+        })
+    }
+}
+
+fn moved(
+    result: Result<BuiltImage, ImageError>,
+) -> Result<(ImageTag, ImageId, Option<ImageId>), Box<dyn Error>> {
+    match result {
+        Err(ImageError::SourceMoved {
+            tag,
+            expected,
+            found,
+        }) => Ok((tag, expected, found)),
+        other => Err(format!("expected SourceMoved, got {other:?}").into()),
+    }
+}
+
+fn retag(tag: &ImageTag, to: Option<ImageId>) -> EngineEffect {
+    EngineEffect::Retag {
+        tag: tag.clone(),
+        to,
+    }
+}
+
+fn built_stages(engine: &FakeEngine) -> Vec<BuildStage> {
+    stages(engine, 0)
+}
+
+#[tokio::test]
+async fn a_source_tag_that_moved_before_a_dependent_build_stops_the_pipeline_before_that_build_starts()
+-> TestResult {
+    guarded(async {
+        let other = ImageId::parse(&tag_id("someone else"))?;
+
+        let mut request = Fixture::new()?.request()?;
+        let tags = Tags::of(&request)?;
+        let engine = FakeEngine::new();
+        engine.at(
+            EngineMoment::AfterFind(tags.derived.clone()),
+            retag(&tags.construct, Some(other.clone())),
+        );
+        let (result, events) = ensure(&engine, &request).await?;
+        assert_eq!(
+            moved(result)?,
+            (
+                tags.construct.clone(),
+                tags.construct_id.clone(),
+                Some(other.clone())
+            ),
+            "cold construct"
+        );
+        assert_eq!(built_stages(&engine), [BuildStage::Construct]);
+        assert!(
+            !events.contains(&ImageEvent::StageStarted(BuildStage::Role)),
+            "{events:?}"
+        );
+        assert!(!engine.images().contains_key(&tags.role), "role tag stored");
+
+        let warm = FakeEngine::new();
+        let (first, _) = ensure(&warm, &request).await?;
+        first?;
+        let hook = request.hooks.setup.as_mut().ok_or("no setup hook")?;
+        hook.bytes = b"#!/bin/sh\necho changed\n".to_vec();
+        let changed = Tags::of(&request)?;
+        assert_ne!(changed.derived, tags.derived, "the final tag must miss");
+        warm.at(
+            EngineMoment::AfterFind(changed.derived.clone()),
+            retag(&tags.construct, None),
+        );
+        let (result, events) = ensure(&warm, &request).await?;
+        assert_eq!(
+            moved(result)?,
+            (tags.construct.clone(), tags.construct_id.clone(), None),
+            "cached construct"
+        );
+        assert_eq!(built_stages(&warm).len(), 3, "no new build");
+        assert!(
+            !events.contains(&ImageEvent::StageStarted(BuildStage::Role)),
+            "{events:?}"
+        );
+        assert!(
+            !warm.images().contains_key(&changed.role),
+            "role tag stored"
+        );
+
+        let request = Fixture::new()?.request()?;
+        let engine = FakeEngine::new();
+        engine.at(
+            EngineMoment::BuildFinished(BuildStage::Role),
+            retag(&tags.role, Some(other.clone())),
+        );
+        let (result, events) = ensure(&engine, &request).await?;
+        assert_eq!(
+            moved(result)?,
+            (tags.role.clone(), tags.role_id.clone(), Some(other)),
+            "role stage"
+        );
+        assert_eq!(
+            built_stages(&engine),
+            [BuildStage::Construct, BuildStage::Role]
+        );
+        assert!(
+            events.contains(&ImageEvent::StageFinished(BuildStage::Role)),
+            "{events:?}"
+        );
+        assert!(
+            !events.contains(&ImageEvent::StageStarted(BuildStage::Derived)),
+            "{events:?}"
+        );
+        assert!(
+            !engine.images().contains_key(&tags.derived),
+            "derived tag stored"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_source_tag_that_moved_during_a_dependent_build_fails_that_stage_and_starts_nothing_after_it()
+-> TestResult {
+    guarded(async {
+        let other = ImageId::parse(&tag_id("someone else"))?;
+        let request = Fixture::new()?.request()?;
+        let tags = Tags::of(&request)?;
+
+        let engine = FakeEngine::new();
+        engine.at(
+            EngineMoment::BuildFinished(BuildStage::Role),
+            retag(&tags.construct, Some(other.clone())),
+        );
+        let (result, events) = ensure(&engine, &request).await?;
+        assert_eq!(
+            moved(result)?,
+            (
+                tags.construct.clone(),
+                tags.construct_id.clone(),
+                Some(other.clone())
+            ),
+            "role build"
+        );
+        assert_eq!(
+            built_stages(&engine),
+            [BuildStage::Construct, BuildStage::Role]
+        );
+        assert!(
+            events.contains(&ImageEvent::StageStarted(BuildStage::Role)),
+            "{events:?}"
+        );
+        assert!(
+            !events.contains(&ImageEvent::StageFinished(BuildStage::Role)),
+            "{events:?}"
+        );
+        assert!(
+            events
+                .iter()
+                .all(|event| !matches!(event, ImageEvent::StageStarted(BuildStage::Derived))),
+            "{events:?}"
+        );
+
+        let engine = FakeEngine::new();
+        engine.at(
+            EngineMoment::BuildFinished(BuildStage::Derived),
+            retag(&tags.role, None),
+        );
+        let (result, events) = ensure(&engine, &request).await?;
+        assert_eq!(
+            moved(result)?,
+            (tags.role.clone(), tags.role_id.clone(), None),
+            "derived build"
+        );
+        assert_eq!(engine.images().get(&tags.derived), Some(&tags.derived_id));
+        assert!(
+            events.contains(&ImageEvent::StageStarted(BuildStage::Derived)),
+            "{events:?}"
+        );
+        assert!(
+            !events.contains(&ImageEvent::StageFinished(BuildStage::Derived)),
+            "{events:?}"
+        );
+
+        let engine = FakeEngine::new();
+        engine.at(
+            EngineMoment::BuildFinished(BuildStage::Derived),
+            retag(&tags.construct, Some(other.clone())),
+        );
+        let (result, events) = ensure(&engine, &request).await?;
+        let image = result?;
+        assert_eq!(
+            (image.tag, image.id, image.source),
+            (
+                tags.derived.clone(),
+                tags.derived_id.clone(),
+                ImageSource::Built
+            )
+        );
+        assert_eq!(
+            engine.images().get(&tags.construct),
+            Some(&other),
+            "the retag ran"
+        );
+        assert!(
+            events.contains(&ImageEvent::StageFinished(BuildStage::Derived)),
+            "{events:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn source_checks_read_image_inspect_and_fail_closed() -> TestResult {
+    guarded(async {
+        let other = tag_id("someone else");
+
+        let stack = Stack::new()?;
+        let request = stack.fixture.request()?;
+        let tags = Tags::of(&request)?;
+        stack.model.after_build(
+            BuildStage::Role,
+            AfterBuild::Retag {
+                tag: tags.construct.to_string(),
+                id: other.clone(),
+            },
+        );
+        let (result, _) = ensure(&stack.engine, &request).await?;
+        assert_eq!(
+            moved(result)?,
+            (
+                tags.construct.clone(),
+                tags.construct_id.clone(),
+                Some(ImageId::parse(&other)?)
+            ),
+            "retagged construct"
+        );
+        let derived = tags.derived.to_string();
+        assert!(
+            !stack.built_tags().contains(&derived),
+            "the derived build ran"
+        );
+        assert!(
+            stack.fixture.work_entries().is_empty(),
+            "directory left behind"
+        );
+        assert_local_only(&stack.runner)?;
+
+        let stack = Stack::new()?;
+        stack.model.after_build(
+            BuildStage::Construct,
+            AfterBuild::FailInspect {
+                tag: tags.construct.to_string(),
+            },
+        );
+        let (result, _) = ensure(&stack.engine, &request).await?;
+        match result {
+            Err(ImageError::Engine(EngineError::DigestUnreadable { tag, output })) => {
+                assert_eq!(tag, tags.construct);
+                assert!(
+                    format!("{output:?}").contains("Cannot connect to the Docker daemon"),
+                    "{output:?}"
+                );
+            }
+            other => return Err(format!("expected DigestUnreadable, got {other:?}").into()),
+        }
+        assert_eq!(stack.built_tags(), [tags.construct.to_string()]);
+        assert!(
+            stack.fixture.work_entries().is_empty(),
+            "directory left behind"
+        );
+        assert_local_only(&stack.runner)
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancelled_token_stops_ensure_image_before_any_engine_work_and_between_stages()
+-> TestResult {
+    guarded(async {
+        let mut request = Fixture::new()?.request()?;
+        for rebuild in [Rebuild::No, Rebuild::Yes] {
+            request.rebuild = rebuild;
+            let engine = FakeEngine::new();
+            let (tx, mut rx) = mpsc::channel(256);
+            let cancel = CancellationToken::new();
+            cancel.cancel();
+            let result = ensure_image(&engine, &request, &tx, &cancel).await;
+            assert!(
+                matches!(result, Err(ImageError::Cancelled)),
+                "{rebuild:?}: {result:?}"
+            );
+            assert!(engine.builds().is_empty(), "{rebuild:?}: builds");
+            assert!(engine.images().is_empty(), "{rebuild:?}: images");
+            assert!(drain(&mut rx).is_empty(), "{rebuild:?}: events");
+            let (control, _) = ensure(&engine, &request).await?;
+            assert_eq!(control?.source, ImageSource::Built, "{rebuild:?}: control");
+            assert_eq!(engine.builds().len(), 3, "{rebuild:?}: control builds");
+        }
+
+        request.rebuild = Rebuild::No;
+        let tags = Tags::of(&request)?;
+        let engine = FakeEngine::new();
+        engine.at(
+            EngineMoment::BuildFinished(BuildStage::Construct),
+            EngineEffect::Cancel,
+        );
+        let (tx, mut rx) = mpsc::channel(256);
+        let result = ensure_image(&engine, &request, &tx, &CancellationToken::new()).await;
+        assert!(matches!(result, Err(ImageError::Cancelled)), "{result:?}");
+        assert_eq!(built_stages(&engine), [BuildStage::Construct]);
+        assert!(!engine.images().contains_key(&tags.role), "role tag stored");
+        assert!(
+            !engine.images().contains_key(&tags.derived),
+            "derived tag stored"
+        );
+        let events = drain(&mut rx);
+        assert!(
+            events.iter().all(|event| matches!(
+                event,
+                ImageEvent::StageStarted(BuildStage::Construct)
+                    | ImageEvent::StageCached(BuildStage::Construct)
+                    | ImageEvent::StageFinished(BuildStage::Construct)
+                    | ImageEvent::Line {
+                        stage: BuildStage::Construct,
+                        ..
+                    }
+            )),
+            "{events:?}"
+        );
         Ok(())
     })
     .await

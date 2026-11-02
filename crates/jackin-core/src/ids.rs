@@ -37,7 +37,7 @@ const ATTEMPT_MAX: u64 = 999_999_999_999_999_999;
 const ATTEMPT_MAX_DIGITS: usize = 18;
 const SANDBOX_PREFIX: &str = "jackin-";
 const IMAGE_ID_PREFIX: &str = "sha256:";
-const IMAGE_TAG_PREFIX: &str = "jackin/";
+const IMAGE_TAG_PREFIX: &str = "jackin.invalid/";
 const OP_PREFIX: &str = "op://";
 const IMAGE_TAG_HEX_LEN: usize = 16;
 const IMAGE_NAME_MAX: usize = 255;
@@ -432,7 +432,7 @@ fn check_image_tag(kind: &'static str, text: &str) -> Result<(), IdError> {
     non_empty(kind, text)?;
     let bad = IdError::BadFormat {
         kind,
-        expected: "jackin/<name>:<16 lowercase hex digits>",
+        expected: "jackin.invalid/<name>:<16 lowercase hex digits>",
     };
     let Some((name, tag)) = text.rsplit_once(':') else {
         return Err(bad);

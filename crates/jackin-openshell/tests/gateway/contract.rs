@@ -16,7 +16,7 @@ use super::exec_rpc::{exit_event, host_shell};
 use super::harness::{Env, WORKSPACE, connect, env};
 use super::server::{ExecBackend, ExecCtx, Fault};
 
-const IMAGE: &str = "jackin/contract:0123456789abcdef";
+const IMAGE: &str = "jackin.invalid/contract:0123456789abcdef";
 
 async fn fixture() -> (TempDir, ContractFixture) {
     let dir = TempDir::new().unwrap();

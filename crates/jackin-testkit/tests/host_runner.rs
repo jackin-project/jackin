@@ -39,8 +39,8 @@ async fn docker_programs_run_the_docker_binary_with_their_subcommand_words_first
         let rows: [(DockerSubcommand, &[&str], &[&str]); 2] = [
             (
                 DockerSubcommand::BuildxBuild,
-                &["--tag=jackin/x", "ctx"],
-                &["buildx", "build", "--tag=jackin/x", "ctx"],
+                &["--tag=jackin.invalid/x", "ctx"],
+                &["buildx", "build", "--tag=jackin.invalid/x", "ctx"],
             ),
             (
                 DockerSubcommand::ImageInspect,

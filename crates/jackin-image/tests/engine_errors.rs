@@ -58,6 +58,18 @@ fn engine_failure_messages_show_names_and_build_output_as_plain_text() -> TestRe
         found: Some(found.clone()),
     }
     .to_string();
+    let source_gone = ImageError::SourceMoved {
+        tag: tag.clone(),
+        expected: built.clone(),
+        found: None,
+    }
+    .to_string();
+    let source_moved = ImageError::SourceMoved {
+        tag: tag.clone(),
+        expected: built.clone(),
+        found: Some(found.clone()),
+    }
+    .to_string();
 
     for (label, message) in [
         ("missing", &missing),
@@ -68,6 +80,8 @@ fn engine_failure_messages_show_names_and_build_output_as_plain_text() -> TestRe
         ("builder unreadable", &builder_unreadable),
         ("not delivered, absent", &absent),
         ("not delivered, moved", &moved),
+        ("source moved, absent", &source_gone),
+        ("source moved, retagged", &source_moved),
     ] {
         assert!(!message.contains("BuilderName"), "{label}: {message:?}");
         assert!(!message.contains("ImageTag("), "{label}: {message:?}");
@@ -106,5 +120,14 @@ fn engine_failure_messages_show_names_and_build_output_as_plain_text() -> TestRe
     }
     assert!(moved.contains(&found.to_string()), "{moved:?}");
     assert!(!absent.contains(&found.to_string()), "{absent:?}");
+    for message in [&source_gone, &source_moved] {
+        assert!(message.contains(&tag.to_string()), "{message:?}");
+        assert!(message.contains(&built.to_string()), "{message:?}");
+    }
+    assert!(
+        source_moved.contains(&found.to_string()),
+        "{source_moved:?}"
+    );
+    assert!(!source_gone.contains(&found.to_string()), "{source_gone:?}");
     Ok(())
 }

@@ -3,10 +3,11 @@
 
 use std::time::{Duration, Instant};
 
-use jackin_core::{OutputLine, OutputStream, ProcessError, ProcessRunner, ProcessStatus, Program};
+use jackin_core::{
+    HostPath, OutputLine, OutputStream, ProcessError, ProcessRunner, ProcessStatus, Program,
+};
 use jackin_session::TokioProcessRunner;
 use tokio::sync::mpsc;
-use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 use crate::support::{
@@ -98,18 +99,21 @@ async fn cancel_kills_the_child_and_every_descendant_and_reports_cancelled() -> 
         assert_no_leftover(scratch.root()).await?;
 
         let before = Scratch::new()?;
-        let spec = before.spec(&format!("{LOOP_DETACHED}wait\n"), &[])?;
+        let mut spec = before.spec("echo unreachable\n", &[])?;
+        spec.cwd = Some(HostPath::parse(&before.root().join("no-such-dir"))?);
         let cancelled = CancellationToken::new();
         cancelled.cancel();
         match TokioProcessRunner.run(&spec, None, &cancelled).await {
             Err(ProcessError::Cancelled { program }) => assert_eq!(program, Program::Git),
             other => return Err(format!("expected Cancelled, got {other:?}").into()),
         }
-        sleep(Duration::from_millis(300)).await;
-        assert!(
-            !before.root().join("beat").exists(),
-            "a child ran for a token that was cancelled before the call"
-        );
+        match TokioProcessRunner
+            .run(&spec, None, &CancellationToken::new())
+            .await
+        {
+            Err(ProcessError::Spawn { program, .. }) => assert_eq!(program, Program::Git),
+            other => return Err(format!("expected Spawn, got {other:?}").into()),
+        }
 
         let dropped = Scratch::new()?;
         let spec = dropped.spec(&format!("{LOOP_HOLDING}echo ready\nwait\n"), &[])?;

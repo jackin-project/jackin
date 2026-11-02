@@ -134,6 +134,12 @@ pub(crate) enum Delivery {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) enum AfterBuild {
+    Retag { tag: String, id: String },
+    FailInspect { tag: String },
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct Script {
     pub(crate) lines: Vec<(OutputStream, String)>,
     pub(crate) outcome: Outcome,
@@ -156,6 +162,8 @@ struct ModelState {
     driver: String,
     scripts: HashMap<BuildStage, Script>,
     delivery: Delivery,
+    after: Vec<(BuildStage, AfterBuild)>,
+    broken: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -168,9 +176,9 @@ fn locked(state: &Mutex<ModelState>) -> MutexGuard<'_, ModelState> {
 }
 
 fn stage_of(tag: &str) -> BuildStage {
-    if tag.starts_with("jackin/construct:") {
+    if tag.starts_with("jackin.invalid/construct:") {
         BuildStage::Construct
-    } else if tag.starts_with("jackin/role/") {
+    } else if tag.starts_with("jackin.invalid/role/") {
         BuildStage::Role
     } else {
         BuildStage::Derived
@@ -189,6 +197,8 @@ impl DockerModel {
                 driver: "docker".to_owned(),
                 scripts: HashMap::new(),
                 delivery: Delivery::Normal,
+                after: Vec::new(),
+                broken: Vec::new(),
             })),
         }
     }
@@ -203,6 +213,10 @@ impl DockerModel {
 
     pub(crate) fn delivery(&self, delivery: Delivery) {
         locked(&self.state).delivery = delivery;
+    }
+
+    pub(crate) fn after_build(&self, stage: BuildStage, action: AfterBuild) {
+        locked(&self.state).after.push((stage, action));
     }
 
     pub(crate) fn preload(&self, tag: &str) -> String {
@@ -247,6 +261,20 @@ impl DockerModel {
             if let Some(stored) = stored {
                 state.images.insert(tag.to_owned(), stored);
             }
+            let actions: Vec<AfterBuild> = state
+                .after
+                .iter()
+                .filter(|(due, _)| *due == stage)
+                .map(|(_, action)| action.clone())
+                .collect();
+            for action in actions {
+                match action {
+                    AfterBuild::Retag { tag, id } => {
+                        state.images.insert(tag, id);
+                    }
+                    AfterBuild::FailInspect { tag } => state.broken.push(tag),
+                }
+            }
         }
         let mut reply = match script.outcome {
             Outcome::Exit(status) => ProcessReply::lines(status, script.lines),
@@ -269,7 +297,15 @@ impl DockerModel {
 
     fn inspect(&self, call: &SeenCall) -> ProcessReply {
         let tag = call.args.last().map_or("", String::as_str);
-        match locked(&self.state).images.get(tag) {
+        let state = locked(&self.state);
+        if state.broken.iter().any(|broken| broken == tag) {
+            return ProcessReply::exited(
+                1,
+                b"",
+                b"Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?\n",
+            );
+        }
+        match state.images.get(tag) {
             Some(id) => ProcessReply::exited(0, format!("{id}\n").as_bytes(), b""),
             None => ProcessReply::exited(
                 1,
@@ -361,9 +397,9 @@ pub(crate) fn assert_local_only(runner: &ScriptedProcessRunner) -> TestResult {
                 return Err(format!("a registry argument: {arg}").into());
             }
             if let Some(tag) = arg.strip_prefix("--tag=")
-                && !tag.starts_with("jackin/")
+                && !tag.starts_with("jackin.invalid/")
             {
-                return Err(format!("a tag outside jackin/: {tag}").into());
+                return Err(format!("a tag outside jackin.invalid/: {tag}").into());
             }
         }
         if call.env.iter().any(|(_, value)| *value == SeenEnv::Secret) {

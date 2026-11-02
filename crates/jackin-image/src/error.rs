@@ -21,6 +21,12 @@ pub enum ImageError {
         built: ImageId,
         found: Option<ImageId>,
     },
+    #[error("the tag {tag} was expected to hold {expected} but holds {}", found_text(.found.as_ref()))]
+    SourceMoved {
+        tag: ImageTag,
+        expected: ImageId,
+        found: Option<ImageId>,
+    },
     #[error("cancelled")]
     Cancelled,
 }

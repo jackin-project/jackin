@@ -39,6 +39,8 @@ RUN chown root:root /usr/local/bin /usr/local/lib/jackin /usr/local/lib/jackin/h
     && for tool in sudo doas su-exec gosu docker podman iptables nft; do \
         if command -v "$tool" >/dev/null; then echo "forbidden tool in role image: $tool" >&2; exit 1; fi; \
     done \
-    && test -z "$(find / -xdev -type f -perm /6000 -print)"
+    && command -v getcap >/dev/null \
+    && test -z "$(getcap -r / 2>/dev/null)" \
+    && { found="$(find / -xdev -type f -perm /6000)"; test -z "$found" || { printf '%s\n' "$found" | sed 's/^/setuid or setgid file in role image: /' >&2; exit 1; }; }
 USER sandbox
 WORKDIR /sandbox

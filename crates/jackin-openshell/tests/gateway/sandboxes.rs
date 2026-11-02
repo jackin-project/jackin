@@ -37,7 +37,7 @@ async fn create_then_find_by_launch_label_round_trips_the_server_state() {
         let stored = sandbox.spec.as_ref().unwrap();
         assert_eq!(
             stored.template.as_ref().unwrap().image,
-            "jackin/backend:0123456789abcdef"
+            "jackin.invalid/backend:0123456789abcdef"
         );
         let labels: BTreeMap<_, _> = sandbox
             .metadata

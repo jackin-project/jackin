@@ -66,7 +66,7 @@ async fn provision_fails_ends_the_first_n_creates_in_error_with_a_failed_conditi
 
         let unknown = spec_with(
             &LaunchId::generate()?,
-            "jackin/unregistered:0123456789abcdef",
+            "jackin.invalid/unregistered:0123456789abcdef",
             Vec::new(),
             sh("sleep 3600")?,
         )?;
