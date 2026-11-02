@@ -16,6 +16,7 @@ members = [
   "crates/usage/jackin-usage-provider-core",
   "crates/usage/jackin-usage-provider-cursor",
   "crates/usage/jackin-usage-provider-gemini",
+  "crates/usage/jackin-usage-provider-grok",
   "crates/usage/jackin-usage-provider-kimi",
   "crates/usage/jackin-usage-provider-minimax",
   "crates/usage/jackin-usage-provider-opencode",
@@ -46,6 +47,7 @@ jackin-usage-provider-codex = { path = "crates/usage/jackin-usage-provider-codex
 jackin-usage-provider-core = { path = "crates/usage/jackin-usage-provider-core", version = "0.1.0" }
 jackin-usage-provider-cursor = { path = "crates/usage/jackin-usage-provider-cursor", version = "0.1.0" }
 jackin-usage-provider-gemini = { path = "crates/usage/jackin-usage-provider-gemini", version = "0.1.0" }
+jackin-usage-provider-grok = { path = "crates/usage/jackin-usage-provider-grok", version = "0.1.0" }
 jackin-usage-provider-kimi = { path = "crates/usage/jackin-usage-provider-kimi", version = "0.1.0" }
 jackin-usage-provider-minimax = { path = "crates/usage/jackin-usage-provider-minimax", version = "0.1.0" }
 jackin-usage-provider-opencode = { path = "crates/usage/jackin-usage-provider-opencode", version = "0.1.0" }

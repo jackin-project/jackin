@@ -12,6 +12,7 @@ use crate::support::{
 mod claude;
 mod cursor;
 mod gemini;
+mod grok;
 mod kimi;
 mod minimax;
 mod opencode;
@@ -34,6 +35,7 @@ async fn cases() -> Result<Vec<Case>, Box<dyn std::error::Error>> {
         claude::case().await?,
         cursor::case().await?,
         gemini::case().await?,
+        grok::case().await?,
         kimi::case().await?,
         minimax::case().await?,
         opencode::case().await?,

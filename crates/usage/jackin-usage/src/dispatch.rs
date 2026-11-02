@@ -7,6 +7,7 @@ use jackin_usage_provider_codex as codex;
 use jackin_usage_provider_core::{Bucket, Http, ProviderError};
 use jackin_usage_provider_cursor as cursor;
 use jackin_usage_provider_gemini as gemini;
+use jackin_usage_provider_grok as grok;
 use jackin_usage_provider_kimi as kimi;
 use jackin_usage_provider_minimax as minimax;
 use jackin_usage_provider_opencode as opencode;
@@ -35,16 +36,15 @@ pub(crate) async fn collect(call: &Call<'_>) -> Collected {
         Provider::Codex => codex_usage(call).await,
         Provider::Cursor => cursor_usage(call).await,
         Provider::Gemini => gemini_usage(call).await,
+        Provider::Grok => grok_usage(call).await,
         Provider::Kimi => kimi_usage(call).await,
         Provider::Minimax => minimax_usage(call).await,
         Provider::Opencode => opencode_usage(call).await,
         Provider::Openrouter => openrouter_usage(call).await,
         Provider::Zai => zai_usage(call).await,
-        Provider::Amp
-        | Provider::Antigravity
-        | Provider::Grok
-        | Provider::Hermes
-        | Provider::Muse => Err(unsupported(None)),
+        Provider::Amp | Provider::Antigravity | Provider::Hermes | Provider::Muse => {
+            Err(unsupported(None))
+        }
     }
 }
 
@@ -88,6 +88,13 @@ async fn cursor_usage(call: &Call<'_>) -> Collected {
 async fn gemini_usage(call: &Call<'_>) -> Collected {
     let material = call.material().await?;
     gemini::fetch(call.http, material.credential(), call.now)
+        .await
+        .map_err(|error| reason(error, call.now))
+}
+
+async fn grok_usage(call: &Call<'_>) -> Collected {
+    let material = call.material().await?;
+    grok::fetch(call.http, material.credential(), call.now)
         .await
         .map_err(|error| reason(error, call.now))
 }

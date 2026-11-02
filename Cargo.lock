@@ -2108,6 +2108,7 @@ dependencies = [
  "jackin-usage-provider-core",
  "jackin-usage-provider-cursor",
  "jackin-usage-provider-gemini",
+ "jackin-usage-provider-grok",
  "jackin-usage-provider-kimi",
  "jackin-usage-provider-minimax",
  "jackin-usage-provider-opencode",
@@ -2158,6 +2159,14 @@ dependencies = [
 
 [[package]]
 name = "jackin-usage-provider-gemini"
+version = "0.1.0"
+dependencies = [
+ "jackin-usage-provider-core",
+ "serde_json",
+]
+
+[[package]]
+name = "jackin-usage-provider-grok"
 version = "0.1.0"
 dependencies = [
  "jackin-usage-provider-core",

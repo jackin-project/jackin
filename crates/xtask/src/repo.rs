@@ -11,7 +11,7 @@ use serde::Deserialize;
 
 use crate::ci::CiError;
 
-pub const PENDING_PORT_PATHS: &[&str] = &["crates/usage/jackin-usage-provider-grok/"];
+pub const PENDING_PORT_PATHS: &[&str] = &[];
 
 const BUILD_OUTPUT_PATHS: &[&str] = &["target/", ".git/"];
 
