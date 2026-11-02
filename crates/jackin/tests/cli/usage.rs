@@ -120,11 +120,18 @@ async fn usage_needs_no_gateway_while_ls_fails_without_one() -> TestResult {
 async fn usage_shows_decimals_money_left_and_a_dash_for_no_reset() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
-        let config = env_account("router", "openrouter", "ROUTER_KEY");
+        let config = [
+            env_account("router", "openrouter", "ROUTER_KEY"),
+            env_account("gem", "gemini", "GEM_KEY"),
+        ]
+        .join("\n");
         let mut harness = started(&config, &world).await?;
         harness
             .env
             .push(("ROUTER_KEY".to_owned(), "SECRET_TOKEN_ROUTER".to_owned()));
+        harness
+            .env
+            .push(("GEM_KEY".to_owned(), "AIzaSECRET_TOKEN_GEM".to_owned()));
         let server = world.usage.get().await?;
         let bearer = "Bearer SECRET_TOKEN_ROUTER";
         server.serve(
@@ -143,7 +150,7 @@ async fn usage_shows_decimals_money_left_and_a_dash_for_no_reset() -> TestResult
         ran.ok()?;
         assert_eq!(
             ran.stdout,
-            "router\topenrouter\tKey limit\t24.68% used\t37.66 USD left\t-\n"
+            "gem\tgemini\tunavailable\tnot supported: Gemini API keys have no quota method\nrouter\topenrouter\tKey limit\t24.68% used\t37.66 USD left\t-\n"
         );
         Ok(())
     })

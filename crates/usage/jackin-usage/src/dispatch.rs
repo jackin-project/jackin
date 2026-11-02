@@ -5,6 +5,7 @@ use jackin_core::{CredentialSource, Provider, Timestamp};
 use jackin_usage_provider_claude as claude;
 use jackin_usage_provider_codex as codex;
 use jackin_usage_provider_core::{Bucket, Http, ProviderError};
+use jackin_usage_provider_gemini as gemini;
 use jackin_usage_provider_kimi as kimi;
 use jackin_usage_provider_minimax as minimax;
 use jackin_usage_provider_openrouter as openrouter;
@@ -30,6 +31,7 @@ pub(crate) async fn collect(call: &Call<'_>) -> Collected {
     match call.account.provider {
         Provider::Claude => claude_usage(call).await,
         Provider::Codex => codex_usage(call).await,
+        Provider::Gemini => gemini_usage(call).await,
         Provider::Kimi => kimi_usage(call).await,
         Provider::Minimax => minimax_usage(call).await,
         Provider::Openrouter => openrouter_usage(call).await,
@@ -37,7 +39,6 @@ pub(crate) async fn collect(call: &Call<'_>) -> Collected {
         Provider::Amp
         | Provider::Antigravity
         | Provider::Cursor
-        | Provider::Gemini
         | Provider::Grok
         | Provider::Hermes
         | Provider::Muse
@@ -71,6 +72,13 @@ async fn codex_usage(call: &Call<'_>) -> Collected {
 async fn claude_usage(call: &Call<'_>) -> Collected {
     let material = call.material().await?;
     claude::fetch(call.http, material.credential())
+        .await
+        .map_err(|error| reason(error, call.now))
+}
+
+async fn gemini_usage(call: &Call<'_>) -> Collected {
+    let material = call.material().await?;
+    gemini::fetch(call.http, material.credential(), call.now)
         .await
         .map_err(|error| reason(error, call.now))
 }

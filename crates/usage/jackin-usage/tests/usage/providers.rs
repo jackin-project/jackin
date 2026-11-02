@@ -10,6 +10,7 @@ use crate::support::{
 };
 
 mod claude;
+mod gemini;
 mod kimi;
 mod minimax;
 mod openrouter;
@@ -29,6 +30,7 @@ pub(crate) struct Case {
 async fn cases() -> Result<Vec<Case>, Box<dyn std::error::Error>> {
     Ok(vec![
         claude::case().await?,
+        gemini::case().await?,
         kimi::case().await?,
         minimax::case().await?,
         openrouter::case().await?,

@@ -17,6 +17,7 @@ jackin-core = { workspace = true }
 jackin-usage-provider-claude = { workspace = true }
 jackin-usage-provider-codex = { workspace = true }
 jackin-usage-provider-core = { workspace = true }
+jackin-usage-provider-gemini = { workspace = true }
 jackin-usage-provider-kimi = { workspace = true }
 jackin-usage-provider-minimax = { workspace = true }
 jackin-usage-provider-openrouter = { workspace = true }
