@@ -304,7 +304,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 - **Scope:** `crates/jackin-image/src/plan/`.
 - **Steps:** Build the pure part of D05 and D06: the `Dockerfile` validation, the derived layer from the Codex `AgentSpec` row, the cache key, and the buildx argument list with an explicit builder and the named context `construct`.
 - **Proof:** G-FAST passes. Tests show that the code rejects a final stage without `FROM construct`. Tests show that each cache key input changes the key. Tests show that the derived layer uses the `AgentSpec` binary path.
-- [ ] P3.3 done
+- [x] P3.3 done — 7f985da7, G-FAST exit 0 (`132 tests run: 132 passed`); test-reviewer KEEP (16 tests + I9 and views)
 
 ## Phase P4. Build the OpenShell adapter
 
