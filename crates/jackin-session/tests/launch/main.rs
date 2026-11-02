@@ -8,8 +8,12 @@ mod credentials;
 mod delivery;
 mod events;
 mod hooks;
+mod hostile_git;
 mod phases;
 mod proofs;
 mod provider;
 mod supervisor;
 mod support;
+
+#[path = "../support/trap.rs"]
+mod trap;

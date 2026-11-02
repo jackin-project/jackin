@@ -3,21 +3,20 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 
 use jackin_core::{
     Agent, CommitId, Config, FileKind, FileSystem, FsError, HookKind, HostPath, ManifestError,
-    PathError, ProcessError, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program,
-    RepoPath, RoleManifest, RoleName, RoleRev, RoleSource, RoleUrl, Sha256, TerminalText,
-    Workspace,
+    PathError, ProcessError, ProcessOutput, ProcessRunner, ProcessStatus, RepoPath, RoleManifest,
+    RoleName, RoleRev, RoleSource, RoleUrl, Sha256, TerminalText, Workspace,
 };
 use jackin_image::{DockerfileError, HookFiles, RoleRevision, SourceFile, validate_dockerfile};
 use jackin_openshell::{ClosureViolation, PolicyDocument, PolicyError, ProviderProfile};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
+use crate::project::git::{HostGit, Pace, words};
+
 const MANIFEST_FILE: &str = "jackin.role.toml";
-const GIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Clone, Debug)]
 pub struct RoleCatalog {
@@ -354,25 +353,30 @@ impl RoleCatalog {
         Ok(current)
     }
 
-    async fn git(&self, root: &HostPath, args: &[&str]) -> Result<Vec<u8>, RoleError> {
-        let spec = ProcessSpec {
-            program: Program::Git,
-            args: args.iter().map(|arg| (*arg).to_owned()).collect(),
-            cwd: Some(root.clone()),
-            env: Vec::new(),
-            env_remove_prefixes: vec!["GIT_".to_owned()],
-            stdin: ProcessStdin::Null,
-            timeout: GIT_TIMEOUT,
+    async fn capture(&self, root: &HostPath, args: &[&str]) -> Result<ProcessOutput, RoleError> {
+        let cancel = CancellationToken::new();
+        let git = HostGit {
+            runner: self.runner.as_ref(),
+            root,
+            cancel: &cancel,
         };
-        let output = self
-            .runner
-            .run(&spec, None, &CancellationToken::new())
-            .await?;
+        Ok(git.capture(Pace::Quick, words(args), Vec::new()).await?)
+    }
+
+    async fn git(&self, root: &HostPath, args: &[&str]) -> Result<Vec<u8>, RoleError> {
+        let output = self.capture(root, args).await?;
         if output.status == ProcessStatus::Exited(0) {
             Ok(output.stdout)
         } else {
             Err(git_failure(output.status, &output.stderr))
         }
+    }
+
+    async fn resolves(&self, root: &HostPath, reference: &str) -> Result<bool, RoleError> {
+        let output = self
+            .capture(root, &["rev-parse", "--verify", "--quiet", reference])
+            .await?;
+        Ok(output.status == ProcessStatus::Exited(0))
     }
 
     async fn revision(&self, root: &HostPath) -> Result<(RoleRevision, Vec<RepoPath>), RoleError> {
@@ -436,10 +440,21 @@ impl RoleCatalog {
             )
             .await?;
         } else {
-            self.git(&dir, &["fetch", "--quiet", "origin"]).await?;
+            self.git(&dir, &["fetch", "--quiet", "--tags", "--force", "origin"])
+                .await?;
         }
-        let target = rev.map_or("origin/HEAD", RoleRev::as_str);
-        self.git(&dir, &["checkout", "--quiet", "--detach", target])
+        let target = match rev {
+            None => "origin/HEAD".to_owned(),
+            Some(rev) => {
+                let branch = format!("origin/{}^{{commit}}", rev.as_str());
+                if self.resolves(&dir, &branch).await? {
+                    format!("origin/{}", rev.as_str())
+                } else {
+                    format!("{}^{{commit}}", rev.as_str())
+                }
+            }
+        };
+        self.git(&dir, &["checkout", "--quiet", "--detach", &target])
             .await?;
         Ok(dir)
     }

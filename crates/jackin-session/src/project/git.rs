@@ -14,6 +14,12 @@ use crate::project::ProjectStep;
 
 const QUICK: Duration = Duration::from_mins(2);
 const LONG: Duration = Duration::from_mins(30);
+const HARDENING: [&str; 4] = [
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.hooksPath=/dev/null",
+];
 
 pub(crate) fn words(list: &[&str]) -> Vec<String> {
     list.iter().map(|word| (*word).to_owned()).collect()
@@ -64,9 +70,11 @@ impl HostGit<'_> {
         mut env: Vec<(String, EnvValue)>,
     ) -> Result<ProcessOutput, ProcessError> {
         env.push(plain("GIT_OPTIONAL_LOCKS", "0"));
+        let mut hardened = words(&HARDENING);
+        hardened.extend(args);
         let spec = ProcessSpec {
             program: Program::Git,
-            args,
+            args: hardened,
             cwd: Some(self.root.clone()),
             env,
             env_remove_prefixes: vec!["GIT_".to_owned()],
