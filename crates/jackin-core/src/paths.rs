@@ -180,8 +180,9 @@ pub mod sandbox_layout {
     pub static GIT: SandboxPath = SandboxPath::from_static("/usr/bin/git");
     pub static PRINTENV: SandboxPath = SandboxPath::from_static("/usr/bin/printenv");
     pub static SHA256SUM: SandboxPath = SandboxPath::from_static("/usr/bin/sha256sum");
+    pub static STAT: SandboxPath = SandboxPath::from_static("/usr/bin/stat");
 
-    pub fn fixed() -> [&'static SandboxPath; 10] {
+    pub fn fixed() -> [&'static SandboxPath; 11] {
         [
             &PROJECT,
             &JACKIN_DIR,
@@ -193,6 +194,7 @@ pub mod sandbox_layout {
             &GIT,
             &PRINTENV,
             &SHA256SUM,
+            &STAT,
         ]
     }
 

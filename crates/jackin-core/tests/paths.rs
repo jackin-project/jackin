@@ -126,6 +126,7 @@ fn sandbox_layout_matches_the_documented_literals() -> TestResult {
     assert_eq!(sandbox_layout::GIT.as_str(), "/usr/bin/git");
     assert_eq!(sandbox_layout::PRINTENV.as_str(), "/usr/bin/printenv");
     assert_eq!(sandbox_layout::SHA256SUM.as_str(), "/usr/bin/sha256sum");
+    assert_eq!(sandbox_layout::STAT.as_str(), "/usr/bin/stat");
     let launch = LaunchId::parse("L")?;
     assert_eq!(
         sandbox_layout::env_file(&launch).as_str(),
@@ -148,9 +149,9 @@ fn sandbox_layout_matches_the_documented_literals() -> TestResult {
         "/usr/local/lib/jackin/hooks/preflight"
     );
     let fixed = sandbox_layout::fixed();
-    assert_eq!(fixed.len(), 10);
+    assert_eq!(fixed.len(), 11);
     let distinct: HashSet<&str> = fixed.iter().map(|path| path.as_str()).collect();
-    assert_eq!(distinct.len(), 10);
+    assert_eq!(distinct.len(), 11);
     for entry in fixed {
         assert_eq!(&SandboxPath::parse(entry.as_str())?, entry);
     }

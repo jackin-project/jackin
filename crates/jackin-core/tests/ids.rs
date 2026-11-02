@@ -335,7 +335,7 @@ fn other_ids_reject_one_input_of_each_violated_class() -> TestResult {
         &[rej("co_dex", Want::CharAt('_', 2)), rej("", Want::Empty)],
     )?);
     kinds.push(grammar::<GatewayName>(
-        &["jackin-local", "My.Gw_1", "a-b"],
+        &["jackin-local", "My.Gw_1", "a-b", "a-", "a."],
         &[
             rej("", Want::Empty),
             rej(rep('a', 65), Want::TooLong(64, 65)),
@@ -347,7 +347,7 @@ fn other_ids_reject_one_input_of_each_violated_class() -> TestResult {
         ],
     )?);
     kinds.push(grammar::<BuilderName>(
-        &["orbstack", "a-b"],
+        &["orbstack", "a-b", "a-", "a."],
         &[
             rej("a/b", Want::CharAt('/', 1)),
             rej("-x", Want::Edge),

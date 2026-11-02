@@ -227,6 +227,7 @@ async fn resolve_gateway_refuses_a_plaintext_or_non_mtls_entry() {
         ("localhost:17670", None),
         ("http://admin:hunter2@h:1", Some("http")),
         ("admin:hunter2@h:1", None),
+        ("admin:hunter2@h://x", None),
     ] {
         let error = resolve(single(endpoint, "mtls")).await.unwrap_err();
         match &error {

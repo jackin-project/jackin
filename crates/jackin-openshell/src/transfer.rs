@@ -26,7 +26,6 @@ const DOWNLOAD_LIMIT: u64 = 4 * 1024 * 1024 * 1024;
 const GIT_LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const GIT_CONFIG_MODE: FileMode = FileMode(0o644);
 const LINE_CAPACITY: usize = 16;
-static STAT: SandboxPath = SandboxPath::from_static("/usr/bin/stat");
 
 const HEX: &[u8; 16] = b"0123456789abcdef";
 const UPLOAD_STEPS: [(TransferOp, &str, bool); 2] = [
@@ -268,7 +267,7 @@ async fn remote_size(
 ) -> Result<u64, GatewayError> {
     let run = ProgramRun {
         sandbox: sandbox.clone(),
-        program: STAT.clone(),
+        program: sandbox_layout::STAT.clone(),
         args: ["-c", "%s", "--", remote.as_str()]
             .map(str::to_owned)
             .to_vec(),

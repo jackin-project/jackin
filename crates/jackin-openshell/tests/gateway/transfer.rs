@@ -518,24 +518,72 @@ async fn upload_fails_when_the_sanitized_write_fails_and_when_git_is_not_a_direc
     assert_eq!(runner.calls().len(), 2);
     env.server.state().faults.clear();
 
-    let linked = TempDir::new().unwrap();
+    for kind in [
+        "a linked worktree file",
+        "a symbolic link",
+        "a missing entry",
+    ] {
+        let linked = TempDir::new().unwrap();
+        let elsewhere = TempDir::new().unwrap();
+        let git = linked.path().join(".git");
+        std::fs::create_dir(&git).unwrap();
+        let linked_root = ProjectRoot::open(
+            &StdFileSystem::default(),
+            &HostPath::parse(linked.path()).unwrap(),
+        )
+        .await
+        .unwrap();
+        std::fs::remove_dir(&git).unwrap();
+        match kind {
+            "a linked worktree file" => {
+                std::fs::write(&git, "gitdir: /elsewhere/.git/worktrees/w\n").unwrap();
+            }
+            "a symbolic link" => {
+                std::fs::write(elsewhere.path().join("config"), "[core]\n\tbare = false\n")
+                    .unwrap();
+                std::os::unix::fs::symlink(elsewhere.path(), &git).unwrap();
+            }
+            _ => {}
+        }
+        let runner = ScriptedRunner::always(exited(0, b"", b""));
+        let gateway = gateway_with(&env, runner.clone()).await;
+        let error = guard(gateway.upload_project(
+            &name,
+            &ProjectUpload {
+                source: linked_root,
+                dest: SandboxPath::parse("/sandbox/project").unwrap(),
+            },
+            &CancellationToken::new(),
+        ))
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(error, GatewayError::UnsupportedGitDirectory { ref path } if path.as_path() == git),
+            "{kind}: {error:?}"
+        );
+        assert!(
+            runner.calls().is_empty() && runner.git_calls().is_empty(),
+            "{kind}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn upload_with_an_unparsable_git_config_fails_before_anything_leaves_the_host() {
+    let env = env().await;
+    let sandbox_root = ready_sandbox(&env);
+    let (dir, root) = project().await;
     std::fs::write(
-        linked.path().join(".git"),
-        "gitdir: /elsewhere/.git/worktrees/w\n",
+        dir.path().join(".git/config"),
+        "[remote \"o]\n\turl = SECRET-16\n",
     )
     .unwrap();
-    let linked_root = ProjectRoot::open(
-        &StdFileSystem::default(),
-        &HostPath::parse(linked.path()).unwrap(),
-    )
-    .await
-    .unwrap();
-    let runner = ScriptedRunner::always(exited(0, b"", b""));
+    let runner = copy_git_into_sandbox(sandbox_root.path().to_path_buf());
     let gateway = gateway_with(&env, runner.clone()).await;
     let error = guard(gateway.upload_project(
-        &name,
+        &sandbox_name(TRANSFER_SANDBOX),
         &ProjectUpload {
-            source: linked_root,
+            source: root,
             dest: SandboxPath::parse("/sandbox/project").unwrap(),
         },
         &CancellationToken::new(),
@@ -543,10 +591,17 @@ async fn upload_fails_when_the_sanitized_write_fails_and_when_git_is_not_a_direc
     .await
     .unwrap_err();
     assert!(
-        matches!(error, GatewayError::UnsupportedGitDirectory { ref path } if path.as_path() == linked.path().join(".git")),
+        matches!(
+            error,
+            GatewayError::Transfer {
+                op: TransferOp::GitConfig,
+                ..
+            }
+        ),
         "{error:?}"
     );
-    assert!(runner.calls().is_empty() && runner.git_calls().is_empty());
+    assert!(runner.calls().is_empty());
+    assert!(tree(sandbox_root.path()).is_empty());
 }
 
 struct Download {

@@ -179,6 +179,7 @@ async fn the_host_key_pin_accepts_the_advertised_key_and_refuses_every_other() {
             .await
             .unwrap_err();
         assert!(matches!(error, GatewayError::HostKeyMismatch), "{error:?}");
+        tokio::time::sleep(Duration::from_millis(150)).await;
         let log = refused.model.log();
         assert!(log.auth_users.is_empty() && log.steps.is_empty() && log.data.is_empty());
         assert_eq!(log.channels_opened, 0);
@@ -312,19 +313,37 @@ async fn the_detach_keys_end_the_session_without_an_exit_status() {
         );
     }
 
-    for (label, chunks) in [
-        ("ctrl-p then x", vec![vec![0x10], b"x".to_vec()]),
-        ("ctrl-c under an owner lease", vec![vec![0x03]]),
-    ] {
-        let attached = good(detach_script()).await;
+    let not_a_detach = [
+        ("ctrl-p then x", vec![vec![0x10], b"x".to_vec()], &b"x"[..]),
+        (
+            "ctrl-p x ctrl-q",
+            vec![vec![0x10], b"x".to_vec(), vec![0x11]],
+            &[0x11][..],
+        ),
+        ("ctrl-c under an owner lease", vec![vec![0x03]], &[0x03][..]),
+    ];
+    for (label, chunks, trigger) in not_a_detach {
+        let attached = good(Script {
+            reactions: vec![reaction(trigger, then_end(0))],
+            ..Script::default()
+        })
+        .await;
         let mut session = attached.open(InputMode::Owner).await;
         let sent: Vec<u8> = chunks.concat();
         for chunk in chunks {
             session.input(chunk).await.unwrap();
         }
-        eventually(label, || attached.model.log().data == sent).await;
-        take(&mut session, 2).await;
-        quiet(&mut session).await;
+        assert_eq!(
+            drain(&mut session).await,
+            vec![
+                TerminalEvent::Attached,
+                TerminalEvent::Lease(InputLease::Owner),
+                TerminalEvent::Exited(Some(0)),
+                TerminalEvent::Ended(EndReason::StreamClosed),
+            ],
+            "{label}"
+        );
+        assert_eq!(attached.model.log().data, sent, "{label}");
     }
 }
 
@@ -452,7 +471,11 @@ async fn the_session_token_is_revoked_once_on_every_way_a_session_ends() {
                 drain(&mut session).await;
             }
         }
-        eventually(how, || !attached.model.revoked().is_empty()).await;
+        eventually(
+            &format!("{how}: the session token was never revoked"),
+            || !attached.model.revoked().is_empty(),
+        )
+        .await;
         tokio::time::sleep(Duration::from_millis(150)).await;
         assert_eq!(attached.model.created().len(), 1, "{how}");
         assert_eq!(attached.model.revoked(), attached.model.created(), "{how}");

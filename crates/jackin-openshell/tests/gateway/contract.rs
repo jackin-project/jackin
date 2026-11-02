@@ -269,6 +269,6 @@ async fn shell_exit_code_cannot_hang_the_run() {
         .iter()
         .find(|check| check.name == "shell_exit_code")
         .unwrap();
-    assert!(check.outcome.is_err(), "{:?}", check.outcome);
+    assert_eq!(check.outcome, Err("the shell never ended".to_owned()));
     assert!(env.server.state().sandboxes.is_empty());
 }

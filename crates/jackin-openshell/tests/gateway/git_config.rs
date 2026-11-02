@@ -158,6 +158,11 @@ fn cases() -> Vec<Case> {
             ],
         },
         Case {
+            name: "an at sign inside the password",
+            input: "[remote \"o\"]\n\turl = https://SECRET-15:p@ss@h.example/x\n",
+            kept: vec![("remote.o.url", Some("https://h.example/x"))],
+        },
+        Case {
             name: "a URL inside a longer value",
             input: "[alias]\n\tfetchit = !curl -s https://SECRET-13:pw@h.example/x -o out\n",
             kept: vec![("alias.fetchit", Some("!curl -s https://h.example/x -o out"))],
