@@ -5,7 +5,7 @@ use jackin::ExitClass;
 use jackin_testkit::{ProcessReply, ScriptedProgram, TestResult, World, guard};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Failure, FixedConnector, Harness, failed};
+use super::support::{Failure, FixedConnector, Harness, Ran};
 
 const IDS: [&str; 7] = [
     "openshell-binary",
@@ -24,6 +24,31 @@ openshell_workspace = \"default\"
 builder = \"b\"
 platform = \"linux/arm64\"
 ";
+
+fn reported(ran: &Ran, class: ExitClass, ids: &[&str], stderr: &[&str]) -> Result<(), Failure> {
+    if ran.exit != class {
+        return Err(format!(
+            "exit {:?}, wanted {class:?}; stderr: {}",
+            ran.exit, ran.stderr
+        )
+        .into());
+    }
+    for id in ids {
+        if ran.stdout.matches(id).count() != 1 || ran.stderr.contains(id) {
+            return Err(format!(
+                "{id} is not one stdout line: {} / {}",
+                ran.stdout, ran.stderr
+            )
+            .into());
+        }
+    }
+    for text in stderr {
+        if !ran.stderr.contains(text) {
+            return Err(format!("stderr lacks {text}: {}", ran.stderr).into());
+        }
+    }
+    Ok(())
+}
 
 struct Fixture {
     world: World,
@@ -71,7 +96,7 @@ fn healthy() -> Result<Fixture, Failure> {
 }
 
 #[tokio::test]
-async fn healthy_fakes_exit_ok_and_print_one_line_per_check_id_on_stderr_only() -> TestResult {
+async fn healthy_fakes_exit_ok_and_print_one_line_per_check_id_on_stdout_only() -> TestResult {
     guard(async {
         let Fixture {
             harness,
@@ -79,11 +104,8 @@ async fn healthy_fakes_exit_ok_and_print_one_line_per_check_id_on_stderr_only() 
         } = healthy()?;
         let ran = harness.run(&["doctor"]).await?;
         ran.ok()?;
-        assert!(ran.stdout.is_empty());
-        for id in IDS {
-            assert_eq!(ran.stderr.matches(id).count(), 1, "{id}: {}", ran.stderr);
-        }
-        Ok(())
+        assert!(ran.stderr.is_empty(), "{}", ran.stderr);
+        reported(&ran, ExitClass::Ok, &IDS, &[])
     })
     .await
 }
@@ -97,9 +119,9 @@ async fn a_missing_engine_socket_is_only_a_warning() -> TestResult {
         } = fixture(false, ProcessReply::exited(0, b"openshell 0.1.6\n", b""))?;
         let ran = harness.run(&["doctor"]).await?;
         ran.ok()?;
-        assert!(ran.stderr.contains("warn"), "{}", ran.stderr);
-        assert!(ran.stderr.contains("engine-socket"));
-        Ok(())
+        assert!(ran.stderr.is_empty(), "{}", ran.stderr);
+        assert!(ran.stdout.contains("warn"), "{}", ran.stdout);
+        reported(&ran, ExitClass::Ok, &IDS, &[])
     })
     .await
 }
@@ -110,7 +132,7 @@ async fn a_failed_check_fails_the_run_names_its_id_and_never_hides_the_others() 
         let Fixture { world, harness } = healthy()?;
         world.gateway.set_serving(false);
         let ran = harness.run(&["doctor"]).await?;
-        failed(&ran, ExitClass::Failure, &IDS)?;
+        reported(&ran, ExitClass::Failure, &IDS, &["error:"])?;
 
         let Fixture {
             mut harness,
@@ -118,18 +140,19 @@ async fn a_failed_check_fails_the_run_names_its_id_and_never_hides_the_others() 
         } = healthy()?;
         harness.connector = FixedConnector::empty();
         let ran = harness.run(&["doctor"]).await?;
-        failed(&ran, ExitClass::Failure, &IDS)?;
-        assert!(ran.stderr.contains("fail"));
+        reported(&ran, ExitClass::Failure, &IDS, &["error:"])?;
+        assert!(ran.stdout.contains("fail"), "{}", ran.stdout);
 
         let Fixture {
             harness,
             world: _world,
         } = fixture(true, ProcessReply::spawn("not found"))?;
         let ran = harness.run(&["doctor"]).await?;
-        failed(
+        reported(
             &ran,
             ExitClass::Failure,
             &["openshell-binary", "ssh-binary", "engine-socket"],
+            &["error:"],
         )?;
         Ok(())
     })
@@ -145,10 +168,11 @@ async fn doctor_without_a_gateway_fails_and_names_the_command_that_adds_one() ->
         } = healthy()?;
         harness.write_config("")?;
         let ran = harness.run(&["doctor"]).await?;
-        failed(
+        reported(
             &ran,
             ExitClass::Failure,
-            &["jackin gateway add", "openshell-binary", "git-binary"],
+            &["openshell-binary", "git-binary"],
+            &["jackin gateway add"],
         )?;
         Ok(())
     })
@@ -166,7 +190,7 @@ async fn doctor_under_a_cancel_exits_cancelled_and_prints_no_report() -> TestRes
         token.cancel();
         let ran = harness.command(&["doctor"]).cancel(token).run().await?;
         assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
-        assert!(ran.stdout.is_empty());
+        assert!(ran.stdout.is_empty(), "{}", ran.stdout);
         for id in IDS {
             assert!(!ran.stderr.contains(id), "{id}: {}", ran.stderr);
         }

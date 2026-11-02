@@ -84,11 +84,11 @@ pub(crate) async fn run(app: &mut App) -> Result<(), CommandError> {
     }
     for check in &report.checks {
         let detail = check.detail.replace('\n', " ");
-        app.io.note(&format!(
+        app.io.line(&format!(
             "{:<4} {:<18} {detail}",
             status_name(check.status),
             check_name(check.id)
-        ));
+        ))?;
     }
     if let Some(error) = unchosen {
         return Err(CommandError::Config(error));
