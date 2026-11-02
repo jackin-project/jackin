@@ -70,10 +70,6 @@ impl Money {
         &self.unit
     }
 
-    pub fn exponent(&self) -> u32 {
-        self.exponent
-    }
-
     #[must_use]
     pub fn magnitude(&self) -> Money {
         Money::new(self.minor.abs(), self.exponent, self.unit.clone())
@@ -106,7 +102,7 @@ impl Money {
     }
 }
 
-pub fn kind_from_seconds(seconds: i64) -> Option<BucketKind> {
+fn kind_from_seconds(seconds: i64) -> Option<BucketKind> {
     match seconds {
         FIVE_HOUR_SECONDS => Some(BucketKind::FiveHour),
         WEEK_SECONDS => Some(BucketKind::Weekly),
@@ -115,7 +111,7 @@ pub fn kind_from_seconds(seconds: i64) -> Option<BucketKind> {
     }
 }
 
-pub fn seconds_label(seconds: i64) -> Option<String> {
+fn seconds_label(seconds: i64) -> Option<String> {
     if seconds <= 0 {
         return None;
     }
