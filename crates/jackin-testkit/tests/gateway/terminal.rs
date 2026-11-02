@@ -264,6 +264,7 @@ async fn flood(session: &TerminalSession) -> TestResult {
         if sent.is_err() {
             return Ok(());
         }
+        tokio::task::yield_now().await;
     }
     Err("the session never filled".into())
 }

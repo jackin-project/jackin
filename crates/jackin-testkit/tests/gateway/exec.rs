@@ -137,7 +137,10 @@ async fn shell_scripts_map_every_sandbox_path_at_a_path_boundary_and_leave_look_
             )?,
         )
         .await?;
-        assert_eq!(alike.stdout, b"/sandbox2/x /opt/sandbox/y /sandboxed\n");
+        assert_eq!(
+            String::from_utf8_lossy(&alike.stdout),
+            "/sandbox2/x /opt/sandbox/y /sandboxed\n"
+        );
         Ok(())
     })
     .await

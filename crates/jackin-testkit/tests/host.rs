@@ -780,6 +780,50 @@ async fn test_runner_starts_git_with_a_cleared_environment_plus_the_spec_env() -
 }
 
 #[tokio::test]
+async fn a_pre_cancelled_git_call_is_cancelled_before_git_is_started() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let runner = TestRunner::new();
+    let mut run = spec(Program::Git, &["--version"]);
+    run.cwd = Some(HostPath::parse(&dir.path().join("absent"))?);
+
+    let started = runner.run(&run, None, &CancellationToken::new()).await;
+    assert!(
+        matches!(
+            started,
+            Err(ProcessError::Spawn {
+                program: Program::Git,
+                ..
+            })
+        ),
+        "{started:?}"
+    );
+
+    let cancelled = CancellationToken::new();
+    cancelled.cancel();
+    let plain = runner.run(&run, None, &cancelled).await;
+    assert!(
+        matches!(
+            plain,
+            Err(ProcessError::Cancelled {
+                program: Program::Git
+            })
+        ),
+        "{plain:?}"
+    );
+    let secret = runner.run_secret(&run, &cancelled).await;
+    assert!(
+        matches!(
+            secret,
+            Err(ProcessError::Cancelled {
+                program: Program::Git
+            })
+        ),
+        "{secret:?}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_pre_cancelled_call_is_cancelled_before_any_reply_is_chosen_or_any_effect_runs()
 -> TestResult {
     let dir = tempfile::tempdir()?;

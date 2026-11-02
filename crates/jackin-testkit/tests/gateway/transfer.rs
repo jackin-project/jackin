@@ -1,9 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
+
 use jackin_core::{HostPath, LaunchId};
 use jackin_openshell::{Gateway, GatewayError, PowerAction, ProjectUpload, TransferOp};
 use jackin_testkit::Fault;
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use super::support::{TestResult, fake, git, guard, path, project, ready, sh, spec, write};
@@ -98,6 +101,51 @@ async fn a_failed_download_leaves_no_local_file_and_a_good_one_writes_it() -> Te
         let absent = fake.download_file(&name, &missing, &local, &cancel).await;
         assert!(absent.is_err(), "{absent:?}");
         assert!(!tokio::fs::try_exists(local.as_path()).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn concurrent_uploads_of_one_project_to_one_sandbox_all_succeed_and_leave_the_project()
+-> TestResult {
+    guard(async {
+        let fake = Arc::new(fake()?);
+        let (dir, root) = project().await?;
+        for index in 0..40 {
+            tokio::fs::write(
+                dir.path().join(format!("file-{index}.txt")),
+                format!("{index}\n"),
+            )
+            .await?;
+        }
+        git(dir.path(), &["add", "."]).await?;
+        git(dir.path(), &["commit", "-q", "-m", "more"]).await?;
+        let upload = ProjectUpload {
+            source: root,
+            dest: path("/sandbox/project")?,
+        };
+        let handle = ready(&fake, sh("sleep 3600")?).await?;
+        let name = handle.name();
+
+        let mut uploads = JoinSet::new();
+        for _ in 0..8 {
+            let fake = Arc::clone(&fake);
+            let name = name.clone();
+            let upload = upload.clone();
+            uploads.spawn(async move {
+                fake.upload_project(&name, &upload, &CancellationToken::new())
+                    .await
+            });
+        }
+        while let Some(joined) = uploads.join_next().await {
+            joined??;
+        }
+        assert_eq!(
+            handle.file(&path("/sandbox/project/file-39.txt")?),
+            Some(b"39\n".to_vec())
+        );
+        assert!(handle.file(&path("/sandbox/project/.git/HEAD")?).is_some());
         Ok(())
     })
     .await

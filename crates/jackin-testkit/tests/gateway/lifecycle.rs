@@ -9,10 +9,10 @@ use jackin_core::{
     ProviderName, SandboxLabels, Secret,
 };
 use jackin_openshell::{
-    Gateway, GatewayError, Missing, ProfileSync, ProviderMaterial, ProviderProfile, ProviderSpec,
-    ProviderState, Provisioning, SandboxQuery,
+    Gateway, GatewayError, GatewayOp, Missing, ProfileSync, ProviderMaterial, ProviderProfile,
+    ProviderSpec, ProviderState, Provisioning, SandboxQuery,
 };
-use jackin_testkit::FakeGateway;
+use jackin_testkit::{FakeGateway, Fault};
 
 use super::support::{IMAGE, TestResult, fake, guard, observe, sh, spec_with};
 
@@ -214,6 +214,46 @@ async fn every_gateway_call_yields_to_the_scheduler_before_it_acts() -> TestResu
         assert!(pending_once(
             fake.provider_state(&ProviderName::parse("p")?)
         ));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_provider_fault_is_struck_before_the_attached_check_and_clears() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let profile = ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile)?;
+        let attached = ProviderName::for_account(&AccountName::parse("work")?, Agent::Codex);
+        fake.ensure_profile(&profile).await?;
+        fake.put_provider(&login(&profile.id, &attached)?).await?;
+        let spec = spec_with(
+            &LaunchId::generate()?,
+            IMAGE,
+            vec![attached.clone()],
+            sh("sleep 3600")?,
+        )?;
+        fake.create_sandbox(&spec).await?;
+
+        fake.inject(Fault::FailNext {
+            op: GatewayOp::Provider,
+            error: GatewayError::Protocol {
+                message: "injected".to_owned(),
+            },
+        });
+        let struck = fake.delete_provider(&attached).await;
+        assert!(
+            matches!(&struck, Err(GatewayError::Protocol { message }) if message == "injected"),
+            "{struck:?}"
+        );
+        assert!(fake.providers().contains(&attached));
+
+        let refused = fake.delete_provider(&attached).await;
+        assert!(
+            matches!(refused, Err(GatewayError::FailedPrecondition { .. })),
+            "{refused:?}"
+        );
+        assert!(fake.providers().contains(&attached));
         Ok(())
     })
     .await

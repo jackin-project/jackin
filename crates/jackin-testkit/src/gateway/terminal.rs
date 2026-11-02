@@ -59,6 +59,7 @@ async fn pump_main(
     } = driver;
     loop {
         tokio::select! {
+            biased;
             command = commands.recv() => match command {
                 Some(command) => cell.state().main.command(seat, command),
                 None => break,
