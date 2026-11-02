@@ -169,7 +169,7 @@
               }
             }
           ],
-          "description": "Credential. SKIP when the sandbox holds no credential. PASS when every credential variable and every token in auth.json is a placeholder or empty and the file scan finds no token-shaped string."
+          "description": "Credential. SKIP when the sandbox holds no credential. PASS when every credential variable the probe could read and every token in auth.json is a placeholder or empty and the file scan finds no token-shaped string. The check detail names what was read and what was unreadable; facts.agent_environment records whether the main process and Codex environments were readable. A denied environment is not evidence that it is clean."
         },
         "J09": {
           "allOf": [
@@ -454,7 +454,7 @@
         "pid",
         "ppid",
         "sid",
-        "exe",
+        "comm",
         "args",
         "start_ticks",
         "tty"
@@ -472,11 +472,9 @@
           "type": "integer",
           "minimum": 0
         },
-        "exe": {
-          "type": [
-            "string",
-            "null"
-          ]
+        "comm": {
+          "type": "string",
+          "description": "The executable name from /proc/PID/stat. /proc/PID/exe is not readable for a process outside the caller's own tree, so the probe reads only stat and cmdline."
         },
         "args": {
           "type": "string"
@@ -489,7 +487,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "The controlling terminal from the tty_nr field of /proc/PID/stat: /dev/pts/N, /dev/hvcN or tty:MAJOR:MINOR. null when the process has none."
         }
       }
     },
@@ -531,7 +530,7 @@
           "items": {
             "$ref": "#/$defs/ProcessInfo"
           },
-          "description": "The children of main whose exe is /usr/local/bin/codex."
+          "description": "The children of main whose comm is codex."
         },
         "self": {
           "$ref": "#/$defs/ProcessInfo"
@@ -802,11 +801,20 @@
         }
       }
     },
+    "EnvironRead": {
+      "enum": [
+        "read",
+        "denied",
+        "absent"
+      ],
+      "description": "read: the environment was read and classified. denied: /proc/PID/environ could not be opened. absent: there is no such process."
+    },
     "FactsJ08": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "environment",
+        "agent_environment",
         "auth_file",
         "leaks"
       ],
@@ -818,7 +826,8 @@
             "additionalProperties": false,
             "required": [
               "name",
-              "kind"
+              "kind",
+              "source"
             ],
             "properties": {
               "name": {
@@ -830,10 +839,36 @@
                   "empty",
                   "other"
                 ]
+              },
+              "source": {
+                "enum": [
+                  "probe",
+                  "launch_env",
+                  "main",
+                  "codex"
+                ],
+                "description": "probe is the environment of the probe process. launch_env is an export file /sandbox/.jackin/env-*, which jackin-start sources before it starts Codex. main and codex are the environment of that process."
               }
             }
           },
-          "description": "The variables of the probe whose name holds KEY, TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL or AUTH as a whole word, and the same variables of the main process."
+          "description": "The variables whose name holds KEY, TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL or AUTH as a whole word, in each source the probe could read."
+        },
+        "agent_environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "main",
+            "codex"
+          ],
+          "properties": {
+            "main": {
+              "$ref": "#/$defs/EnvironRead"
+            },
+            "codex": {
+              "$ref": "#/$defs/EnvironRead"
+            }
+          },
+          "description": "Whether the probe could read /proc/PID/environ of the main process and of Codex. denied means the open failed; the variables of that process are then unknown, never clean."
         },
         "auth_file": {
           "anyOf": [
