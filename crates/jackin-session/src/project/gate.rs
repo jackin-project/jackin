@@ -15,6 +15,7 @@ pub(super) struct HostGate<'a> {
     pub(super) git: HostGit<'a>,
     pub(super) index: HostPath,
     pub(super) objects: HostPath,
+    pub(super) paths: HostPath,
     pub(super) alternates: &'a HostPath,
 }
 
@@ -33,14 +34,18 @@ impl HostGate<'_> {
         ]
     }
 
+    fn add(&self) -> Vec<String> {
+        let mut args = words(&["--literal-pathspecs", "add", "-f", "--pathspec-file-nul"]);
+        args.push(format!(
+            "--pathspec-from-file={}",
+            self.paths.as_path().display()
+        ));
+        args
+    }
+
     pub(super) async fn tree(&self) -> Result<TreeId, LaunchError> {
         self.git
-            .require(
-                ProjectStep::HostTree,
-                Pace::Long,
-                words(&["add", "-A"]),
-                self.env(),
-            )
+            .require(ProjectStep::HostTree, Pace::Long, self.add(), self.env())
             .await?;
         let written = self
             .git

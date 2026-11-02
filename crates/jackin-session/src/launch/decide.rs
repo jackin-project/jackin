@@ -96,6 +96,12 @@ impl Done {
         }
     }
 
+    pub(super) fn forget_sandbox(&mut self) {
+        self.steps.retain(|step| *step == LaunchStep::Provider);
+        self.boot = Boot::Observed;
+        self.started = None;
+    }
+
     pub(super) fn absorb(&mut self, observed: &Observed) {
         if let Observed::Ready(_, probe) = observed {
             self.steps.insert(LaunchStep::Ready);

@@ -5,17 +5,18 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use jackin_core::{
-    Agent, FileMode, HookKind, LabelSelector, SandboxLabels, SandboxName, SandboxPath, SecretBytes,
-    StartRequest, sandbox_layout,
+    Agent, FileMode, HookKind, HostPath, LabelSelector, SandboxLabels, SandboxName, SandboxPath,
+    SecretBytes, StartRequest, sandbox_layout,
 };
 use jackin_image::{BuiltImage, ImageSource, ensure_image};
 use jackin_openshell::{
-    GatewayError, GatewayOp, PowerAction, ProgramRun, ProgramStdin, SandboxFile, SandboxQuery,
-    SandboxView,
+    GatewayError, GatewayOp, Missing, PowerAction, ProgramRun, ProgramStdin, ProviderState,
+    SandboxFile, SandboxQuery, SandboxView,
 };
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::accounts::AccountError;
 use crate::files::render_auth_json;
 use crate::launch::decide::{Act, Boot, Decision, Done, Finish, HookPlan, Observed, Wait, decide};
 use crate::launch::hooks::{self, HookRun};
@@ -25,8 +26,9 @@ use crate::launch::{
     LaunchError, LaunchEvent, LaunchEvents, LaunchFailure, LaunchOutcome, LaunchStep,
     RestoreCandidate, SkipReason,
 };
+use crate::lock::LockError;
 use crate::plan::LaunchPlan;
-use crate::project::{self, Staged};
+use crate::project;
 use crate::service::{POLL, Session};
 
 const EXEC_TIMEOUT: Duration = Duration::from_secs(30);
@@ -84,15 +86,15 @@ impl Run<'_> {
             return Ok(self.cancelled().await);
         }
         let deps = &self.session.deps;
-        let prepared = project::prepare(
+        match project::precheck(
             deps,
             self.plan.project(),
             self.plan.launch_id(),
             self.cancel,
         )
-        .await;
-        let staged = match prepared {
-            Ok(staged) => staged,
+        .await
+        {
+            Ok(()) => {}
             Err(_) if self.cancel.is_cancelled() => return Ok(self.cancelled().await),
             Err(error) => {
                 return Err(LaunchFailure {
@@ -102,13 +104,11 @@ impl Run<'_> {
                     error: Box::new(error),
                 });
             }
-        };
-        let outcome = self.drive(&staged).await;
-        staged.release(&self.session.deps).await;
-        outcome
+        }
+        self.drive().await
     }
 
-    async fn drive(&mut self, staged: &Staged) -> Result<LaunchOutcome, LaunchFailure> {
+    async fn drive(&mut self) -> Result<LaunchOutcome, LaunchFailure> {
         loop {
             let observed = match self.observe().await {
                 Ok(observed) => observed,
@@ -125,7 +125,7 @@ impl Run<'_> {
                     return self.stopped(Stop::Failed(step, error)).await;
                 }
                 Decision::Run(act) => {
-                    if let Err(stop) = self.act(act, staged).await {
+                    if let Err(stop) = self.act(act).await {
                         return self.stopped(stop).await;
                     }
                 }
@@ -161,7 +161,8 @@ impl Run<'_> {
             .await;
         let sandbox = match found {
             Ok(views) if views.len() == 1 => views.first().map(|view| view.name.clone()),
-            Ok(_) | Err(_) => None,
+            Ok(_) => None,
+            Err(_) => self.known.clone(),
         };
         LaunchOutcome::Cancelled(RestoreCandidate {
             launch_id: self.plan.launch_id().clone(),
@@ -200,14 +201,14 @@ impl Run<'_> {
             .await
             .map_err(|error| failed(hint, error))?;
         match views.len() {
-            0 => {
-                self.known = None;
-                Ok(Observed::Absent)
-            }
+            0 => Ok(self.vanished_sandbox()),
             1 => {
                 let view = views.remove(0);
                 self.known = Some(view.name.clone());
-                self.settled(view, hint).await
+                match self.settled(view, hint).await? {
+                    Observed::Absent => Ok(self.vanished_sandbox()),
+                    observed => Ok(observed),
+                }
             }
             _ => {
                 self.known = None;
@@ -216,6 +217,13 @@ impl Run<'_> {
                 ))
             }
         }
+    }
+
+    fn vanished_sandbox(&mut self) -> Observed {
+        if self.known.take().is_some() {
+            self.done.forget_sandbox();
+        }
+        Observed::Absent
     }
 
     async fn settled(&self, view: SandboxView, hint: LaunchStep) -> Result<Observed, Stop> {
@@ -227,12 +235,17 @@ impl Run<'_> {
             &view.name,
             self.plan.launch_id(),
         )
-        .await
-        .map_err(|error| failed(hint, error))?;
-        Ok(Observed::Ready(view, probe))
+        .await;
+        match probe {
+            Ok(probe) => Ok(Observed::Ready(view, probe)),
+            Err(LaunchError::Gateway(GatewayError::NotFound {
+                what: Missing::Sandbox(gone),
+            })) if gone == view.name => Ok(Observed::Absent),
+            Err(error) => Err(failed(hint, error)),
+        }
     }
 
-    async fn act(&mut self, act: Act, staged: &Staged) -> Result<(), Stop> {
+    async fn act(&mut self, act: Act) -> Result<(), Stop> {
         match act {
             Act::Image => self.image().await,
             Act::Provider => self.provider().await,
@@ -241,7 +254,7 @@ impl Run<'_> {
             Act::Power(sandbox) => self.power(&sandbox).await,
             Act::Wait(kind) => self.wait(kind).await,
             Act::Credentials(sandbox) => self.credentials(&sandbox).await,
-            Act::Upload(sandbox) => self.upload(&sandbox, staged).await,
+            Act::Upload(sandbox) => self.upload(&sandbox).await,
             Act::Hooks(sandbox, plan) => self.hooks(&sandbox, plan).await,
             Act::Start(sandbox, attempt) => self.start(&sandbox, attempt).await,
         }
@@ -273,27 +286,34 @@ impl Run<'_> {
 
     async fn provider(&mut self) -> Result<(), Stop> {
         self.enter(LaunchStep::Provider).await;
-        let gateway = self.session.deps.gateway.as_ref();
-        let name = self.plan.draft().providers().first();
-        let present = match name {
-            Some(name) => gateway
-                .provider_state(name)
-                .await
-                .map_err(|error| failed(LaunchStep::Provider, error))?,
-            None => jackin_openshell::ProviderState::Present,
-        };
+        let name = self.plan.draft().provider();
+        let state = self
+            .session
+            .deps
+            .gateway
+            .provider_state(name)
+            .await
+            .map_err(|error| failed(LaunchStep::Provider, error))?;
         self.live()?;
-        if present == jackin_openshell::ProviderState::Absent {
+        if state == ProviderState::Absent {
             let account = self.plan.account_entry();
-            self.session.sync_account(account).await.map_err(|source| {
-                failed(
-                    LaunchStep::Provider,
-                    LaunchError::ProviderUnavailable {
-                        account: account.name().clone(),
-                        source: Box::new(source),
-                    },
-                )
-            })?;
+            let synced = self
+                .session
+                .sync_if_absent(account, name, self.cancel)
+                .await
+                .map_err(|source| match source {
+                    AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
+                    other => failed(
+                        LaunchStep::Provider,
+                        LaunchError::ProviderUnavailable {
+                            account: account.name().clone(),
+                            source: Box::new(other),
+                        },
+                    ),
+                })?;
+            if !synced {
+                self.tracker.skip(SkipReason::ProviderPresent);
+            }
         } else {
             self.tracker.skip(SkipReason::ProviderPresent);
         }
@@ -324,7 +344,7 @@ impl Run<'_> {
             .await
             .map_err(|error| failed(LaunchStep::Sandbox, error))?;
         let Some(view) = found.first() else {
-            return Ok(());
+            return self.vanished(name).await;
         };
         let other = SandboxLabels::from_labels(&view.labels)
             .ok()
@@ -340,6 +360,24 @@ impl Run<'_> {
                     other,
                 },
             ))
+        }
+    }
+
+    async fn vanished(&mut self, name: &SandboxName) -> Result<(), Stop> {
+        self.done.created = self.done.created.saturating_add(1);
+        if self.done.created >= self.session.deps.limits.create_attempts.get() {
+            return Err(failed(
+                LaunchStep::Sandbox,
+                LaunchError::NameCollision {
+                    name: name.clone(),
+                    other: None,
+                },
+            ));
+        }
+        tokio::select! {
+            biased;
+            () = self.cancel.cancelled() => Err(Stop::Cancelled),
+            () = self.session.deps.host.clock.sleep(POLL) => Ok(()),
         }
     }
 
@@ -470,11 +508,19 @@ impl Run<'_> {
         Ok(())
     }
 
-    async fn upload(&mut self, sandbox: &SandboxName, staged: &Staged) -> Result<(), Stop> {
+    async fn upload(&mut self, sandbox: &SandboxName) -> Result<(), Stop> {
         const STEP: LaunchStep = LaunchStep::Upload;
         self.enter(STEP).await;
-        let limit = self.session.deps.limits.upload;
-        match tokio::time::timeout(limit, self.upload_once(sandbox, staged)).await {
+        let deps = &self.session.deps;
+        let launch = self.plan.launch_id();
+        let _held = project::hold(deps, launch, self.cancel)
+            .await
+            .map_err(|error| failed(STEP, error))?;
+        let dir = project::staging_dir(deps, launch).map_err(|error| failed(STEP, error))?;
+        let limit = deps.limits.upload;
+        let timed = tokio::time::timeout(limit, self.upload_once(sandbox, &dir)).await;
+        project::release(deps, &dir).await;
+        match timed {
             Ok(Ok(Uploaded::Done)) => Ok(()),
             Ok(Ok(Uploaded::ByPeer)) => {
                 self.tracker.skip(SkipReason::AlreadyUploaded);
@@ -491,13 +537,10 @@ impl Run<'_> {
         }
     }
 
-    async fn upload_once(&self, sandbox: &SandboxName, staged: &Staged) -> Result<Uploaded, Stop> {
+    async fn upload_once(&self, sandbox: &SandboxName, dir: &HostPath) -> Result<Uploaded, Stop> {
         const STEP: LaunchStep = LaunchStep::Upload;
         let deps = &self.session.deps;
         let launch = self.plan.launch_id();
-        let _held = project::hold(deps, launch, self.cancel)
-            .await
-            .map_err(|error| failed(STEP, error))?;
         let marker = sandbox_layout::uploaded_marker(launch);
         let found = deps
             .gateway
@@ -507,6 +550,9 @@ impl Run<'_> {
         if found.first().is_some_and(Option::is_some) {
             return Ok(Uploaded::ByPeer);
         }
+        let staged = project::stage(deps, self.plan.project(), dir, self.cancel)
+            .await
+            .map_err(|error| failed(STEP, error))?;
         staged
             .upload(deps, self.plan.project(), sandbox, launch, self.cancel)
             .await

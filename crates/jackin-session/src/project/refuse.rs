@@ -5,7 +5,7 @@ use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
-use jackin_core::{FileSystem, HostPath, RepoPath};
+use jackin_core::{FileKind, FileSystem, HostPath, RepoPath};
 
 use crate::launch::LaunchError;
 use crate::project::git::{HostGit, Pace, words};
@@ -55,9 +55,7 @@ async fn populated(
         let relative = Path::new(OsStr::from_bytes(name));
         let dir =
             HostPath::resolve(relative, root).map_err(|error| malformed(&error.to_string()))?;
-        let marker = HostPath::resolve(Path::new(".git"), &dir)
-            .map_err(|error| malformed(&error.to_string()))?;
-        if fs.stat(&marker).await?.is_some() {
+        if fs.stat(&dir).await? == Some(FileKind::Dir) && !fs.list(&dir).await?.is_empty() {
             found.push(
                 RepoPath::parse(&String::from_utf8_lossy(name))
                     .map_err(|error| malformed(&error.to_string()))?,

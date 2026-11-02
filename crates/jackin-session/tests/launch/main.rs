@@ -7,13 +7,17 @@ mod crash;
 mod credentials;
 mod delivery;
 mod events;
+mod exists;
 mod hooks;
 mod hostile_git;
+mod modes;
 mod phases;
 mod proofs;
 mod provider;
+mod recreate;
 mod supervisor;
 mod support;
+mod upload_timeout;
 
 #[path = "../support/trap.rs"]
 mod trap;

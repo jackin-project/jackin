@@ -6,6 +6,7 @@ use std::path::Path;
 use jackin_core::{ChatgptAccountId, FileSystem, FsError, HostPath, Secret};
 use serde_json::Value;
 use thiserror::Error;
+use zeroize::{Zeroize, Zeroizing};
 
 const AUTH_FILE: &str = "auth.json";
 const CHATGPT_MODE: &str = "chatgpt";
@@ -28,6 +29,23 @@ pub enum CredentialError {
     NotAChatgptLogin,
     #[error(transparent)]
     Fs(#[from] FsError),
+}
+
+struct Document(Value);
+
+impl Drop for Document {
+    fn drop(&mut self) {
+        wipe(&mut self.0);
+    }
+}
+
+fn wipe(value: &mut Value) {
+    match value {
+        Value::String(text) => text.zeroize(),
+        Value::Array(items) => items.iter_mut().for_each(wipe),
+        Value::Object(fields) => fields.values_mut().for_each(wipe),
+        Value::Null | Value::Bool(_) | Value::Number(_) => {}
+    }
 }
 
 fn invalid(key: &str) -> CredentialError {
@@ -53,15 +71,17 @@ pub async fn read_chatgpt_login(
 ) -> Result<ChatgptLogin, CredentialError> {
     let path = HostPath::resolve(Path::new(AUTH_FILE), home)
         .map_err(|_| CredentialError::LoginUnreadable { path: home.clone() })?;
-    let bytes = fs
-        .read(&path)
-        .await?
-        .ok_or(CredentialError::LoginUnreadable { path })?;
-    let root: Value = serde_json::from_slice(&bytes).map_err(|_| invalid(AUTH_FILE))?;
-    if text(&root, "auth_mode", "auth_mode")? != CHATGPT_MODE {
+    let bytes = Zeroizing::new(
+        fs.read(&path)
+            .await?
+            .ok_or(CredentialError::LoginUnreadable { path })?,
+    );
+    let document = Document(serde_json::from_slice(&bytes).map_err(|_| invalid(AUTH_FILE))?);
+    let root = &document.0;
+    if text(root, "auth_mode", "auth_mode")? != CHATGPT_MODE {
         return Err(CredentialError::NotAChatgptLogin);
     }
-    let tokens = field(&root, "tokens", "tokens")?;
+    let tokens = field(root, "tokens", "tokens")?;
     if !tokens.is_object() {
         return Err(invalid("tokens"));
     }

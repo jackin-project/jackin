@@ -94,7 +94,7 @@ pub struct LaunchPlan {
 pub struct SandboxDraft {
     name: SandboxName,
     labels: PlannedLabels,
-    providers: Vec<ProviderName>,
+    provider: ProviderName,
     policy: ClosedPolicy,
     main: MainProcess,
 }
@@ -126,6 +126,8 @@ pub enum PlanError {
         account: AccountName,
         mode: CodexAuthMode,
     },
+    #[error(transparent)]
+    CodexConfig(#[from] toml::ser::Error),
     #[error("the request names role {requested} but the loaded role is {loaded}")]
     RoleMismatch {
         requested: RoleName,
@@ -330,7 +332,7 @@ pub fn plan_launch(
         codex_config: PlannedFile {
             path: spec.user_config.path.clone(),
             mode: spec.user_config.mode,
-            text: render_codex_config(role.manifest().codex.model.as_ref(), &spec.workdir),
+            text: render_codex_config(role.manifest().codex.model.as_ref(), &spec.workdir)?,
         },
         env: PlannedFile {
             path: sandbox_layout::env_file(&request.launch),
@@ -352,7 +354,7 @@ pub fn plan_launch(
             account: selection.account.clone(),
             launch: request.launch.clone(),
         },
-        providers: vec![ProviderName::for_account(&selection.account, agent)],
+        provider: ProviderName::for_account(&selection.account, agent),
         policy,
         main: MainProcess {
             program: JACKIN_START,
@@ -443,8 +445,8 @@ impl SandboxDraft {
         &self.labels
     }
 
-    pub fn providers(&self) -> &[ProviderName] {
-        &self.providers
+    pub fn provider(&self) -> &ProviderName {
+        &self.provider
     }
 
     pub fn complete(&self, image: &jackin_image::BuiltImage) -> SandboxCreate {
@@ -452,7 +454,7 @@ impl SandboxDraft {
             self.name.clone(),
             image.tag.clone(),
             self.labels.clone().complete(&image.id),
-            self.providers.clone(),
+            vec![self.provider.clone()],
             self.policy.clone(),
             self.main.clone(),
         )

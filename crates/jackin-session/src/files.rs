@@ -3,21 +3,29 @@
 
 use jackin_core::{ChatgptAccountId, ModelName, SandboxPath, Timestamp};
 use serde_json::json;
+use toml::{Table, Value};
 
 const ID_TOKEN: &str = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJpc3MiOiJodHRwczovL2F1dGgub3BlbmFpLmNvbSIsImF1ZCI6ImNvZGV4Iiwic3ViIjoib3BlbnNoZWxsLWFwcC1zZXJ2ZXIifQ.placeholder";
 const AUTH_MODE: &str = "chatgptAuthTokens";
 const SECONDS_PER_DAY: i64 = 86_400;
 
-pub(crate) fn render_codex_config(model: Option<&ModelName>, workdir: &SandboxPath) -> String {
-    let mut text = String::new();
+pub(crate) fn render_codex_config(
+    model: Option<&ModelName>,
+    workdir: &SandboxPath,
+) -> Result<String, toml::ser::Error> {
+    let mut config = Table::new();
     if let Some(model) = model {
-        text.push_str(&format!("model = \"{}\"\n\n", model.as_str()));
+        config.insert("model".to_owned(), Value::String(model.as_str().to_owned()));
     }
-    text.push_str(&format!(
-        "[projects.\"{}\"]\ntrust_level = \"trusted\"\n",
-        workdir.as_str()
-    ));
-    text
+    let mut trusted = Table::new();
+    trusted.insert(
+        "trust_level".to_owned(),
+        Value::String("trusted".to_owned()),
+    );
+    let mut projects = Table::new();
+    projects.insert(workdir.as_str().to_owned(), Value::Table(trusted));
+    config.insert("projects".to_owned(), Value::Table(projects));
+    toml::to_string(&config)
 }
 
 pub(crate) fn render_auth_json(

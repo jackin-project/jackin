@@ -2,14 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    Account, AccountName, Agent, CodexAuthMode, CredentialSource, Provider, ProviderName,
+    Account, AccountName, Agent, CodexAuthMode, CredentialSource, FileLock, Provider, ProviderName,
 };
 use jackin_openshell::{
     GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile, ProviderSpec,
+    ProviderState,
 };
 use thiserror::Error;
+use tokio_util::sync::CancellationToken;
 
 use crate::credentials::{CredentialError, read_chatgpt_login};
+use crate::lock::{self, LockError};
 use crate::service::Session;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,6 +32,8 @@ pub enum AccountError {
     Gateway(#[from] GatewayError),
     #[error(transparent)]
     Policy(#[from] PolicyError),
+    #[error(transparent)]
+    Lock(#[from] LockError),
     #[error("account {account:?} uses {mode:?}, which is not supported yet")]
     Unsupported {
         account: AccountName,
@@ -39,7 +44,43 @@ pub enum AccountError {
 }
 
 impl Session {
-    pub async fn sync_account(&self, account: &Account) -> Result<AccountSync, AccountError> {
+    pub async fn sync_account(
+        &self,
+        account: &Account,
+        cancel: &CancellationToken,
+    ) -> Result<AccountSync, AccountError> {
+        let _held = self.hold_account(account, cancel).await?;
+        self.sync_locked(account).await
+    }
+
+    pub(crate) async fn sync_if_absent(
+        &self,
+        account: &Account,
+        provider: &ProviderName,
+        cancel: &CancellationToken,
+    ) -> Result<bool, AccountError> {
+        let _held = self.hold_account(account, cancel).await?;
+        if self.deps.gateway.provider_state(provider).await? == ProviderState::Present {
+            return Ok(false);
+        }
+        self.sync_locked(account).await?;
+        Ok(true)
+    }
+
+    async fn hold_account(
+        &self,
+        account: &Account,
+        cancel: &CancellationToken,
+    ) -> Result<FileLock, AccountError> {
+        Ok(lock::hold(
+            &self.deps,
+            &format!("account-{}.lock", account.name()),
+            cancel,
+        )
+        .await?)
+    }
+
+    async fn sync_locked(&self, account: &Account) -> Result<AccountSync, AccountError> {
         if account.provider() != Provider::Codex {
             return Ok(AccountSync::HostOnly);
         }

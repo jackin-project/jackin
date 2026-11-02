@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 use crate::launch::LaunchError;
 use crate::project::facts::{Facts, Head};
 use crate::project::git::words;
+use crate::project::listing::Listing;
 use crate::project::{ProjectStep, TreeId};
 
 static FIND: SandboxPath = SandboxPath::from_static("/usr/bin/find");
@@ -22,6 +23,9 @@ static SHALLOW: SandboxPath = SandboxPath::from_static("/sandbox/project/.git/sh
 static EXCLUDE: SandboxPath = SandboxPath::from_static("/sandbox/project/.git/info/exclude");
 static OBJECTS: SandboxPath = SandboxPath::from_static("/sandbox/project/.git/objects");
 const FILE_MODE: FileMode = FileMode(0o644);
+const GATE_INDEX: &str = "GIT_INDEX_FILE";
+const GATE_OBJECTS: &str = "GIT_OBJECT_DIRECTORY";
+const GATE_ALTERNATES: &str = "GIT_ALTERNATE_OBJECT_DIRECTORIES";
 
 const REFSPECS: [&str; 4] = [
     "+refs/heads/*:refs/heads/*",
@@ -217,9 +221,9 @@ impl Sandbox<'_> {
 
     fn gate_env(gate: &SandboxPath) -> Result<BTreeMap<EnvName, String>, LaunchError> {
         let pairs = [
-            ("GIT_INDEX_FILE", path_arg(&gate.join("index")?)),
-            ("GIT_OBJECT_DIRECTORY", path_arg(&gate.join("objects")?)),
-            ("GIT_ALTERNATE_OBJECT_DIRECTORIES", path_arg(&OBJECTS)),
+            (GATE_INDEX, path_arg(&gate.join("index")?)),
+            (GATE_OBJECTS, path_arg(&gate.join("objects")?)),
+            (GATE_ALTERNATES, path_arg(&OBJECTS)),
         ];
         pairs
             .into_iter()
@@ -233,7 +237,11 @@ impl Sandbox<'_> {
             .collect()
     }
 
-    pub(super) async fn tree(&self, gate: &SandboxPath) -> Result<TreeId, LaunchError> {
+    pub(super) async fn tree(
+        &self,
+        gate: &SandboxPath,
+        listing: &Listing,
+    ) -> Result<TreeId, LaunchError> {
         self.clear(gate).await?;
         self.exec(
             ProjectStep::SandboxTree,
@@ -247,8 +255,13 @@ impl Sandbox<'_> {
             false,
         )
         .await?;
+        let paths = gate.join("paths")?;
+        self.write(&paths, listing.as_bytes()).await?;
         let env = Self::gate_env(gate)?;
-        self.git(ProjectStep::SandboxTree, &["add", "-A"], env.clone())
+        let mut add = words(&["--literal-pathspecs", "add", "-f", "--pathspec-file-nul"]);
+        add.push(format!("--pathspec-from-file={}", path_arg(&paths)));
+        let add: Vec<&str> = add.iter().map(String::as_str).collect();
+        self.git(ProjectStep::SandboxTree, &add, env.clone())
             .await?;
         let written = self
             .git(ProjectStep::SandboxTree, &["write-tree"], env)

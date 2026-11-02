@@ -9,6 +9,7 @@ use jackin_openshell::{GatewayError, GatewayOp, Missing, ProfileSync};
 use jackin_session::{AccountError, AccountSync};
 use jackin_testkit::{Fault, World};
 use serde_json::json;
+use tokio_util::sync::CancellationToken;
 
 use super::support::{
     ACCESS, ACCOUNT_ID, CLIENT, Home, REFRESH, SECRETS, TestResult, codex_account, guard,
@@ -34,7 +35,10 @@ async fn a_chatgpt_login_account_creates_the_profile_and_provider_once_with_the_
         let account = codex_account(&home.path, ACCOUNT_ID)?;
         let name = provider()?;
 
-        let first = world.session.sync_account(&account).await?;
+        let first = world
+            .session
+            .sync_account(&account, &CancellationToken::new())
+            .await?;
         assert_eq!(
             first,
             AccountSync::ProviderReady {
@@ -53,7 +57,10 @@ async fn a_chatgpt_login_account_creates_the_profile_and_provider_once_with_the_
         assert_eq!(record.client_id, CLIENT);
         assert_eq!(record.chatgpt_account_id.as_str(), ACCOUNT_ID);
 
-        let second = world.session.sync_account(&account).await?;
+        let second = world
+            .session
+            .sync_account(&account, &CancellationToken::new())
+            .await?;
         assert_eq!(
             second,
             AccountSync::ProviderReady {
@@ -69,7 +76,10 @@ async fn a_chatgpt_login_account_creates_the_profile_and_provider_once_with_the_
         changed["tokens"]["access_token"] = json!("ACCESS-SECRET-2");
         changed["tokens"]["refresh_token"] = json!("REFRESH-SECRET-2");
         home.write(&changed).await?;
-        world.session.sync_account(&account).await?;
+        world
+            .session
+            .sync_account(&account, &CancellationToken::new())
+            .await?;
         let replaced = world.gateway.provider(&name).ok_or("no provider record")?;
         assert_eq!(replaced.access_token, "ACCESS-SECRET-2");
         assert_eq!(replaced.refresh_token, "REFRESH-SECRET-2");
@@ -95,7 +105,7 @@ async fn a_login_of_another_chatgpt_account_is_refused_and_writes_nothing() -> T
         let world = World::builder().build()?;
         let home = Home::new(&login_json()).await?;
         let account = codex_account(&home.path, "00000000-0000-4000-8000-000000000000")?;
-        let result = world.session.sync_account(&account).await;
+        let result = world.session.sync_account(&account, &CancellationToken::new()).await;
         assert!(
             matches!(&result, Err(AccountError::AccountIdMismatch { account }) if account.as_str() == "work"),
             "{result:?}"
@@ -132,7 +142,10 @@ async fn a_failed_sync_stops_at_the_failing_call_and_a_retry_converges() -> Test
             let home = Home::new(&login_json()).await?;
             let account = codex_account(&home.path, ACCOUNT_ID)?;
             world.gateway.inject(Fault::FailNext { op, error });
-            let result = world.session.sync_account(&account).await;
+            let result = world
+                .session
+                .sync_account(&account, &CancellationToken::new())
+                .await;
             assert!(
                 matches!(&result, Err(AccountError::Gateway(_))),
                 "{result:?}"
@@ -152,7 +165,10 @@ async fn a_failed_sync_stops_at_the_failing_call_and_a_retry_converges() -> Test
                 ));
             }
 
-            world.session.sync_account(&account).await?;
+            world
+                .session
+                .sync_account(&account, &CancellationToken::new())
+                .await?;
             assert_eq!(world.gateway.providers(), [provider()?]);
             let record = world.gateway.provider(&provider()?).ok_or("no record")?;
             assert_eq!(record.access_token, ACCESS);
@@ -193,7 +209,7 @@ async fn mode_a_is_unsupported_and_other_providers_are_host_only_and_neither_tou
         }
         let home = super::support::host("/home/nobody/.codex")?;
         for account in accounts(&home)? {
-            let result = world.session.sync_account(&account).await;
+            let result = world.session.sync_account(&account, &CancellationToken::new()).await;
             assert!(
                 matches!(&result, Err(AccountError::Unsupported { account, mode: CodexAuthMode::ApiKey }) if account.as_str() == "work"),
                 "{result:?}"
@@ -204,7 +220,7 @@ async fn mode_a_is_unsupported_and_other_providers_are_host_only_and_neither_tou
             Provider::Claude,
             CredentialSource::Env { var: EnvName::parse("ANTHROPIC_API_KEY")? },
         )?;
-        assert_eq!(world.session.sync_account(&claude).await?, AccountSync::HostOnly);
+        assert_eq!(world.session.sync_account(&claude, &CancellationToken::new()).await?, AccountSync::HostOnly);
         assert!(world.gateway.profiles().is_empty());
         assert!(world.gateway.providers().is_empty());
         Ok(())

@@ -5,6 +5,7 @@ mod bundle;
 mod facts;
 mod gate;
 pub(crate) mod git;
+mod listing;
 mod refuse;
 mod sandbox;
 mod version;
@@ -12,10 +13,9 @@ mod version;
 use std::fmt;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
 
 use jackin_core::{
-    FileLock, FsError, HostPath, IdError, LaunchId, ProjectRoot, RepoPath, SandboxName,
+    FileLock, FileMode, HostPath, IdError, LaunchId, ProjectRoot, RepoPath, SandboxName,
     SandboxPath, TerminalText, sandbox_layout,
 };
 use jackin_openshell::{GatewayError, GatewayOp};
@@ -23,16 +23,17 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::launch::LaunchError;
+use crate::lock::{self, LockError};
 use crate::project::facts::Facts;
 use crate::project::gate::HostGate;
 use crate::project::git::HostGit;
+use crate::project::listing::Listing;
 use crate::project::sandbox::Sandbox;
 use crate::service::{Session, SessionDeps};
 
 pub use version::{GitVersion, HostGitError, check_git};
 
 const LISTED_PATHS: usize = 5;
-const LOCK_POLL: Duration = Duration::from_millis(100);
 
 static STAGINGS: AtomicU64 = AtomicU64::new(0);
 
@@ -152,6 +153,7 @@ pub(crate) struct Staged {
     dir: HostPath,
     bundle: Option<HostPath>,
     facts: Facts,
+    listing: Listing,
 }
 
 pub(crate) fn host_git<'a>(
@@ -171,57 +173,67 @@ pub(crate) async fn hold(
     launch: &LaunchId,
     cancel: &CancellationToken,
 ) -> Result<FileLock, LaunchError> {
-    let path = HostPath::resolve(Path::new(&format!("upload-{launch}.lock")), &deps.cache_dir)?;
-    loop {
-        match deps.host.fs.lock(&path).await {
-            Ok(lock) => return Ok(lock),
-            Err(FsError::LockHeld(_)) => {
-                tokio::select! {
-                    biased;
-                    () = cancel.cancelled() => {
-                        return Err(GatewayError::Cancelled { op: GatewayOp::UploadTree }.into());
-                    }
-                    () = deps.host.clock.sleep(LOCK_POLL) => {}
-                }
+    lock::hold(deps, &format!("upload-{launch}.lock"), cancel)
+        .await
+        .map_err(|error| match error {
+            LockError::Cancelled => GatewayError::Cancelled {
+                op: GatewayOp::UploadTree,
             }
-            Err(error) => return Err(error.into()),
-        }
-    }
+            .into(),
+            LockError::Fs(error) => LaunchError::Fs(error),
+            LockError::Path(error) => LaunchError::Path(error),
+        })
 }
 
-pub(crate) async fn prepare(
+pub(crate) async fn precheck(
     deps: &SessionDeps,
     project: &ProjectRoot,
     launch: &LaunchId,
     cancel: &CancellationToken,
-) -> Result<Staged, LaunchError> {
+) -> Result<(), LaunchError> {
     check_git(deps.host.runner.as_ref(), cancel).await?;
-    let git = host_git(deps, project.path(), cancel);
-    let fs = deps.host.fs.as_ref();
-    refuse::check(&git, fs).await?;
-    let facts = facts::read(&git, fs).await?;
+    let dir = staging_dir(deps, launch)?;
+    let staged = stage(deps, project, &dir, cancel).await;
+    release(deps, &dir).await;
+    staged.map(drop)
+}
+
+pub(crate) fn staging_dir(deps: &SessionDeps, launch: &LaunchId) -> Result<HostPath, LaunchError> {
     let name = format!(
         "upload-{launch}-{}-{}",
         std::process::id(),
         STAGINGS.fetch_add(1, Ordering::Relaxed)
     );
-    let dir = HostPath::resolve(Path::new(&name), &deps.cache_dir)?;
-    fs.create_dir_all(&dir).await?;
-    let file = HostPath::resolve(Path::new("upload.bundle"), &dir)?;
-    match bundle::create(&git, &facts.head, &file).await {
-        Ok(bundle) => Ok(Staged { dir, bundle, facts }),
-        Err(error) => {
-            drop(fs.remove_dir_all(&dir).await);
-            Err(error)
-        }
-    }
+    Ok(HostPath::resolve(Path::new(&name), &deps.cache_dir)?)
+}
+
+pub(crate) async fn stage(
+    deps: &SessionDeps,
+    project: &ProjectRoot,
+    dir: &HostPath,
+    cancel: &CancellationToken,
+) -> Result<Staged, LaunchError> {
+    let git = host_git(deps, project.path(), cancel);
+    let fs = deps.host.fs.as_ref();
+    refuse::check(&git, fs).await?;
+    let facts = facts::read(&git, fs).await?;
+    let listing = listing::read(&git).await?;
+    fs.create_private_dir_all(dir).await?;
+    let file = HostPath::resolve(Path::new("upload.bundle"), dir)?;
+    let bundle = bundle::create(&git, &facts.head, &file).await?;
+    Ok(Staged {
+        dir: dir.clone(),
+        bundle,
+        facts,
+        listing,
+    })
+}
+
+pub(crate) async fn release(deps: &SessionDeps, dir: &HostPath) {
+    drop(deps.host.fs.remove_dir_all(dir).await);
 }
 
 impl Staged {
-    pub(crate) async fn release(self, deps: &SessionDeps) {
-        drop(deps.host.fs.remove_dir_all(&self.dir).await);
-    }
-
     pub(crate) async fn upload(
         &self,
         deps: &SessionDeps,
@@ -271,13 +283,19 @@ impl Staged {
         cancel: &CancellationToken,
     ) -> Result<(), LaunchError> {
         let gate = sandbox_layout::JACKIN_DIR.join(&format!("gate-{launch}"))?;
-        let sandbox_tree = remote.tree(&gate).await?;
+        let sandbox_tree = remote.tree(&gate, &self.listing).await?;
         let objects = HostPath::resolve(Path::new("gate-objects"), &self.dir)?;
-        deps.host.fs.create_dir_all(&objects).await?;
+        deps.host.fs.create_private_dir_all(&objects).await?;
+        let paths = HostPath::resolve(Path::new("gate-paths"), &self.dir)?;
+        deps.host
+            .fs
+            .write_new(&paths, self.listing.as_bytes(), FileMode(0o600))
+            .await?;
         let host = HostGate {
             git: host_git(deps, project.path(), cancel),
             index: HostPath::resolve(Path::new("gate-index"), &self.dir)?,
             objects,
+            paths,
             alternates: &self.facts.objects,
         };
         let host_tree = host.tree().await?;
@@ -304,16 +322,18 @@ impl Session {
         launch: &LaunchId,
         cancel: &CancellationToken,
     ) -> Result<(), LaunchError> {
-        let staged = prepare(&self.deps, project, launch, cancel).await?;
-        let result = match hold(&self.deps, launch, cancel).await {
-            Ok(_held) => {
+        check_git(self.deps.host.runner.as_ref(), cancel).await?;
+        let _held = hold(&self.deps, launch, cancel).await?;
+        let dir = staging_dir(&self.deps, launch)?;
+        let result = match stage(&self.deps, project, &dir, cancel).await {
+            Ok(staged) => {
                 staged
                     .upload(&self.deps, project, sandbox, launch, cancel)
                     .await
             }
             Err(error) => Err(error),
         };
-        staged.release(&self.deps).await;
+        release(&self.deps, &dir).await;
         result
     }
 }
