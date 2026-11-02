@@ -4,9 +4,14 @@
 use jackin_core::{GatewayName, OpenShellWorkspace, SandboxName, SandboxPath};
 
 const INHERITED_ENV_PREFIX: &str = "OPENSHELL_";
+const GIT_ENV_PREFIX: &str = "GIT_";
 
 pub(crate) fn inherited_env_prefixes() -> Vec<String> {
     vec![INHERITED_ENV_PREFIX.to_owned()]
+}
+
+pub(crate) fn upload_env_prefixes() -> Vec<String> {
+    vec![INHERITED_ENV_PREFIX.to_owned(), GIT_ENV_PREFIX.to_owned()]
 }
 
 pub(crate) struct Scope<'a> {

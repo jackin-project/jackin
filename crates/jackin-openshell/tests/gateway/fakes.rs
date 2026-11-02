@@ -138,6 +138,7 @@ pub(crate) struct Recorded {
     pub(crate) env: Vec<(String, String)>,
     pub(crate) env_remove_prefixes: Vec<String>,
     pub(crate) stdin_null: bool,
+    pub(crate) has_sink: bool,
     pub(crate) timeout: Duration,
 }
 
@@ -146,6 +147,13 @@ impl Recorded {
         self.env_remove_prefixes
             .iter()
             .any(|prefix| name.starts_with(prefix.as_str()))
+    }
+
+    pub(crate) fn assert_git_env_isolated(&self) {
+        self.assert_openshell_env_isolated();
+        for inherited in ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"] {
+            assert!(self.removes(inherited), "{inherited} is inherited");
+        }
     }
 
     pub(crate) fn assert_openshell_env_isolated(&self) {
@@ -177,6 +185,7 @@ pub(crate) type Reply = Arc<dyn Fn(&Recorded) -> Result<ProcessOutput, ProcessEr
 pub(crate) struct ScriptedRunner {
     reply: Reply,
     calls: Arc<Mutex<Vec<Recorded>>>,
+    git_calls: Arc<Mutex<Vec<Recorded>>>,
 }
 
 impl std::fmt::Debug for ScriptedRunner {
@@ -200,6 +209,7 @@ impl ScriptedRunner {
         ScriptedRunner {
             reply: Arc::new(reply),
             calls: Arc::new(Mutex::new(Vec::new())),
+            git_calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -210,6 +220,10 @@ impl ScriptedRunner {
     pub(crate) fn calls(&self) -> Vec<Recorded> {
         self.calls.lock().unwrap().clone()
     }
+
+    pub(crate) fn git_calls(&self) -> Vec<Recorded> {
+        self.git_calls.lock().unwrap().clone()
+    }
 }
 
 #[async_trait]
@@ -217,7 +231,7 @@ impl ProcessRunner for ScriptedRunner {
     async fn run(
         &self,
         spec: &ProcessSpec,
-        _lines: Option<&LineSink>,
+        lines: Option<&LineSink>,
         _cancel: &CancellationToken,
     ) -> Result<ProcessOutput, ProcessError> {
         let recorded = Recorded {
@@ -237,16 +251,23 @@ impl ProcessRunner for ScriptedRunner {
                 .collect(),
             env_remove_prefixes: spec.env_remove_prefixes.clone(),
             stdin_null: matches!(spec.stdin, ProcessStdin::Null),
+            has_sink: lines.is_some(),
             timeout: spec.timeout,
         };
-        self.calls.lock().unwrap().push(recorded.clone());
-        if spec.program != Program::Openshell {
-            return Err(ProcessError::Spawn {
-                program: spec.program,
-                message: "only openshell is scripted".to_owned(),
-            });
+        match spec.program {
+            Program::Openshell => {
+                self.calls.lock().unwrap().push(recorded.clone());
+                (self.reply)(&recorded)
+            }
+            Program::Git => {
+                self.git_calls.lock().unwrap().push(recorded);
+                run_real_git(spec).await
+            }
+            other => Err(ProcessError::Spawn {
+                program: other,
+                message: "only openshell and git are available".to_owned(),
+            }),
         }
-        (self.reply)(&recorded)
     }
 
     async fn run_secret(
@@ -259,4 +280,37 @@ impl ProcessRunner for ScriptedRunner {
             message: "secret runs are not scripted".to_owned(),
         })
     }
+}
+
+pub(crate) async fn run_real_git(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessError> {
+    let mut command = tokio::process::Command::new("git");
+    command.args(&spec.args);
+    for (name, _) in std::env::vars_os() {
+        let matches = name.to_str().is_some_and(|name| {
+            spec.env_remove_prefixes
+                .iter()
+                .any(|prefix| name.starts_with(prefix.as_str()))
+        });
+        if matches {
+            command.env_remove(name);
+        }
+    }
+    for (name, value) in &spec.env {
+        if let EnvValue::Plain(text) = value {
+            command.env(name, text);
+        }
+    }
+    command.stdin(std::process::Stdio::null());
+    let output = command
+        .output()
+        .await
+        .map_err(|error| ProcessError::Spawn {
+            program: spec.program,
+            message: error.to_string(),
+        })?;
+    Ok(ProcessOutput {
+        status: ProcessStatus::Exited(output.status.code().unwrap_or(-1)),
+        stdout: output.stdout,
+        stderr: output.stderr,
+    })
 }
