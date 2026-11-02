@@ -231,7 +231,7 @@ The design does not read `/sandbox/.jackin/run/state` for any decision about exp
 | `LAYERS` table where a member without a row fails | "xtask" (line 2766) | layer table above, section 9 |
 | `registered_gateways`, `GatewayAuth`, doctor without a gateway | "GrpcGateway" (line 1553), "jackin" (line 2418) | section 3 discovery, section 4 doctor |
 | Tests as integration tests in `crates/*/tests/` | "Test plan outline (jackin-openshell)" (line 1604) and (line 1032) | every test plan |
-| Open questions Q3, Q4, Q5, Q7 | candidate 2 open table | decided: `Provider` enum in core; `jackin gateway add\|ls\|rm`; the CLI errors without a workspace and the console creates one; the fake `SupervisorModel` follows the `SupervisorState` grammar in core, `agent-sandbox-engineer` reviews each `jackin-start` change against it, and J06 and J07 prove the real script |
+| Open questions Q3, Q4, Q5, Q7 | candidate 2 open table | decided: `Provider` enum in core; `jackin gateway add\|ls\|rm`; the CLI errors without a workspace and the console creates one; the fake `SupervisorModel` follows the `SupervisorState` grammar in core, `tailrocks-sandbox-engineer` reviews each `jackin-start` change against it, and J06 and J07 prove the real script |
 
 **Orchestrator decisions 1 to 15** were taken while this file was synthesized. `decisions.tsv` has no row for them yet, so this table is their record until the orchestrator adds one (open question 7). DESIGN.md carries these: 1 and 2 in D07, 3 and 4 in D05, 5 and 14 in D10, 6 in the P2.3 step list, 7 in the CLI table, 11 in D03 and D14, and 13 in D11 as the env file. D14 also carries the `jackin-usage` facade rule and the lib targets of `jackin` and `xtask`. This file applies them as follows.
 
@@ -316,16 +316,16 @@ Per-crate choices that lost are named where they arise: the `docker-container` b
 
 Each names the agent that resolves it. None blocks P2.2.
 
-1. **`jackin-start` must source the env file.** D11 makes `/sandbox/.jackin/env-<launch-id>` the one source of the role environment, and `jackin-start` reads it before each attempt. The P7.4 draft (`drafts/jackin-start`) does not, and still only validates `JACKIN_LAUNCH_ID` (P7.4 F9). The file is `export NAME='value'` lines (`EnvFile::render`), so `. "$file"` before each attempt is enough. Resolver: the orchestrator assigns it to `agent-sandbox-engineer`, folded into P4.3 where the script moves into `jackin-image`, with a live check.
-2. **`stop` and `start` on a `Completed` sandbox are unobserved.** The evidence covers `Error` only (P7.1 F3). `FakeGateway` models `Completed` like `Error`, and `Session::power` refuses both before it calls the gateway. Resolver: `openshell-specialist`, live in P4.1, recorded in `evidence/`.
-3. **The provider-name grammar on the gateway is partly read.** The name rule was not read. `AccountName` is capped at 32 characters so `jackin-<account>-codex` stays short. Resolver: `openshell-specialist` in P4.1.
-4. **The replay repaint on a real Codex pane is unproven** (P0.6 "Not verified"). `RepaintPolicy` lets the policy change without an API change. Resolver: `rust-cli-tui-engineer` in P9.3.
-5. **A hook failure leaves the sandbox `Ready` only because `jackin-start` never exits** (D09). If P7.4 changes `jackin-start` to exit, launch recovery changes (P7.1 F3). Resolver: `agent-sandbox-engineer` in P7.4.
-6. **The baseline data interfaces do not exist until P9.1.** Section 6 names pages, messages, and the screen-to-data table, not the baseline trait names. Resolver: `rust-cli-tui-engineer` in P9.1 and P9.3.
+1. **`jackin-start` must source the env file.** D11 makes `/sandbox/.jackin/env-<launch-id>` the one source of the role environment, and `jackin-start` reads it before each attempt. The P7.4 draft (`drafts/jackin-start`) does not, and still only validates `JACKIN_LAUNCH_ID` (P7.4 F9). The file is `export NAME='value'` lines (`EnvFile::render`), so `. "$file"` before each attempt is enough. Resolver: the orchestrator assigns it to `tailrocks-sandbox-engineer`, folded into P4.3 where the script moves into `jackin-image`, with a live check.
+2. **`stop` and `start` on a `Completed` sandbox are unobserved.** The evidence covers `Error` only (P7.1 F3). `FakeGateway` models `Completed` like `Error`, and `Session::power` refuses both before it calls the gateway. Resolver: `tailrocks-docs-researcher`, live in P4.1, recorded in `evidence/`.
+3. **The provider-name grammar on the gateway is partly read.** The name rule was not read. `AccountName` is capped at 32 characters so `jackin-<account>-codex` stays short. Resolver: `tailrocks-docs-researcher` in P4.1.
+4. **The replay repaint on a real Codex pane is unproven** (P0.6 "Not verified"). `RepaintPolicy` lets the policy change without an API change. Resolver: `tailrocks-systems-engineer` in P9.3.
+5. **A hook failure leaves the sandbox `Ready` only because `jackin-start` never exits** (D09). If P7.4 changes `jackin-start` to exit, launch recovery changes (P7.1 F3). Resolver: `tailrocks-sandbox-engineer` in P7.4.
+6. **The baseline data interfaces do not exist until P9.1.** Section 6 names pages, messages, and the screen-to-data table, not the baseline trait names. Resolver: `tailrocks-systems-engineer` in P9.1 and P9.3.
 7. **CLI wording and decision records beyond DESIGN.** DESIGN now carries `account add --name/--credential`, `workspace add <name> <path> [--docker]`, `build --json`, and the lib targets. Still beyond it: `--credential` also takes `env:NAME` and `file:PATH` (the table names an op reference), `gateway add` takes the entry fields, and `inspect` and `account ls` take `--json`. `decisions.tsv` has no rows for orchestrator decisions 1 to 15. Resolver: orchestrator.
-8. **The shape of a failed provisioning, and `Suspended`.** P7.4 F8 saw `ProvisioningFailed: wait for image preparation: Operation not permitted` on parallel creates from a new image. This file assumes that the sandbox ends in `Error` with no exit code and a status condition with the reason `ProvisioningFailed` (written by `openshell-driver-vm`, `driver.rs:1360`), and that delete then create works. The `Suspending` and `Suspended` phases are also unobserved. Resolver: `openshell-specialist`, live in P4.1.
+8. **The shape of a failed provisioning, and `Suspended`.** P7.4 F8 saw `ProvisioningFailed: wait for image preparation: Operation not permitted` on parallel creates from a new image. This file assumes that the sandbox ends in `Error` with no exit code and a status condition with the reason `ProvisioningFailed` (written by `openshell-driver-vm`, `driver.rs:1360`), and that delete then create works. The `Suspending` and `Suspended` phases are also unobserved. Resolver: `tailrocks-docs-researcher`, live in P4.1.
 9. **Profile update on drift.** `ensure_profile` replaces a differing profile through `UpdateProviderProfiles`, which needs the resource version. D10 says jackin imports the profile only when it is absent. The `codex` profile is jackin's embedded asset, so a difference means a newer jackin. Resolver: orchestrator confirms and amends D10.
-10. **The `AgentSpec` draft lacks two fields.** `drafts/agentspec-codex.toml` has no `user_config` (`/sandbox/.codex/config.toml`, mode 0600) and no `reserved_env` (`CODEX_HOME`). Resolver: the orchestrator updates the draft, and `rust-engineer` builds both into the table in P3.1.
+10. **The `AgentSpec` draft lacks two fields.** `drafts/agentspec-codex.toml` has no `user_config` (`/sandbox/.codex/config.toml`, mode 0600) and no `reserved_env` (`CODEX_HOME`). Resolver: the orchestrator updates the draft, and `tailrocks-systems-engineer` builds both into the table in P3.1.
 
 ## Next implementation step
 
@@ -1104,7 +1104,7 @@ pub enum PollError<E> { Timeout { after: Duration }, Cancelled, Probe(E) }
 
 All of these derive `Debug` and `thiserror::Error`. No variant holds a `Secret`. Errors that carry process or hook text hold `TerminalText` that already passed a `Redactor`. The `Display` of `ConfigError::NoWorkspaceForPath` names `jackin workspace add` (decision 8).
 
-### Test plan outline (mark for `test-reviewer`)
+### Test plan outline (mark for `tailrocks-test-reviewer`)
 
 Location: `crates/jackin-core/tests/*.rs`, integration tests through the public API, using `MemFs` and `FakeClock` from `jackin-testkit`. Boundaries faked: filesystem and clock. Nothing else is needed: this crate has no gateway or network.
 
@@ -1260,7 +1260,7 @@ pub enum EngineError {
 pub enum ImageError { Dockerfile(DockerfileError), MissingInstallTarget { platform: Platform }, Engine(EngineError), Cancelled }
 ```
 
-### Test plan outline (mark for `test-reviewer`)
+### Test plan outline (mark for `tailrocks-test-reviewer`)
 
 Location: `crates/jackin-image/tests/*.rs`. Boundary faked: the image engine, through `FakeEngine` from `jackin-testkit` (an in-memory image store). `BuildxEngine` argument tests fake the `docker` program only, through `ScriptedProcessRunner`. Pure tests need no fake. Real `ensure_image`, `ImagePlan`, and `ImageKey` code runs in every test.
 
@@ -1620,7 +1620,7 @@ impl GatewayError {
 
 Status mapping (one function and one table in `grpc/sandbox.rs`): `NotFound` to `NotFound`; `AlreadyExists` to `AlreadyExists`; `FailedPrecondition` on program or terminal use of a sandbox that does not accept exec to `NotReady`; `FailedPrecondition` on stop of an `Error` sandbox to `MainProcessFailed`; other `FailedPrecondition` to `FailedPrecondition`; `Unauthenticated`; `PermissionDenied`; `ResourceExhausted` (stream or token limit); `InvalidArgument`; `DeadlineExceeded` to `Timeout`; `Unavailable` and connect errors to `Unreachable`; anything else to `Protocol`. `is_retryable` is true for `Unreachable`, `Timeout`, and `ResourceExhausted`; the session decides whether to retry (bounded, with the clock).
 
-### Test plan outline (mark for `test-reviewer`)
+### Test plan outline (mark for `tailrocks-test-reviewer`)
 
 Location: `crates/jackin-openshell/tests/*.rs`. Boundaries faked: the gateway network, as an in-process tonic server that implements the subset of the OpenShell service these tests need (it lives in this crate's test target, because only this crate may import tonic); the `openshell` program, through `ScriptedProcessRunner`; the filesystem (`MemFs`); the clock (`FakeClock`, and `tokio::time::pause` for transport timers). The public interfaces under test are `Gateway`, `registered_gateways`, `resolve_gateway`, `TerminalSession`, and `PolicyDocument`.
 
@@ -2111,7 +2111,7 @@ pub enum AccountError {
 
 All error enums derive `Debug` and `thiserror::Error`, and none holds a secret.
 
-### Test plan outline (mark for `test-reviewer`)
+### Test plan outline (mark for `tailrocks-test-reviewer`)
 
 Location: `crates/jackin-session/tests/*.rs`. Boundaries faked: the gateway (`FakeGateway`), the image engine (`FakeEngine`), the clock (`FakeClock`), and the filesystem. Host `git` runs for real on temporary repositories, so those tests use `StdFileSystem` on a temporary directory; the rest use `MemFs`. Tests call `plan_launch` and `Session` methods through `World` from `jackin-testkit` and assert the resulting fake gateway state, the host repository refs, and returned values. They never assert the order of gateway calls. They pass the launch ID, and they read the attempt ID from the fake sandbox file `run/start`, where it equals `next_attempt()` of the state they saw.
 
@@ -2226,7 +2226,7 @@ Rules.
 - Credentials are read inside the usage crates from the account's `CredentialSource`: an environment variable from the snapshot, `op read` through the runner, a file, or the Codex home `auth.json`. They are never returned in a report and never logged.
 - `ProviderEndpoints::with` is the network fake point. Production uses `real()`. The layer rules for this subtree are rows of the layer table in the Shape section.
 
-### Test plan outline (mark for `test-reviewer`; written in P6.3)
+### Test plan outline (mark for `tailrocks-test-reviewer`; written in P6.3)
 
 Location: `crates/usage/jackin-usage/tests/*.rs`. Boundaries faked: the network (`UsageServer`, a local HTTP server from `jackin-testkit`, reached through `ProviderEndpoints::with`), the filesystem (`MemFs`), the clock, and the `op` program (`ScriptedProcessRunner`).
 
@@ -2366,7 +2366,7 @@ Screen to data to edit (D27, D28):
 
 The D24 warning is rendered from `DockerRisk::ALL` in the launch picker before the launch starts and in the cockpit. The stage rail is rendered from `LaunchStep::ALL` with one `match` per label, so a new step is a compile error until it has a label. The console creates a workspace for a launch from an unknown directory (decision 8). The 1Password flow edits `CredentialSource::OnePassword`; the usage crates resolve it on the host.
 
-### Test plan outline (mark for `test-reviewer`; P9.3 and P9.4)
+### Test plan outline (mark for `tailrocks-test-reviewer`; P9.3 and P9.4)
 
 Location: `crates/jackin-tui/tests/*.rs`. Boundaries faked: the gateway (`FakeGateway`), the image engine, the clock, the filesystem (`MemFs` behind `ConfigStore`), and the network for usage (`UsageServer`). Tests build a `World` from `jackin-testkit`, construct `Console`, feed `Input::Key` values, call `render` into a buffer, and assert the config in the store, the fake gateway state, and the rendered text. `jackin-tui` dev-depends on `jackin-testkit`, which depends on `jackin-tui`; integration tests link one copy of the crate.
 
@@ -2381,7 +2381,7 @@ Location: `crates/jackin-tui/tests/*.rs`. Boundaries faked: the gateway (`FakeGa
 | Panes (D28) | open a Codex pane, then a shell pane: two sessions, the main process unchanged; resize sends the inner size once; detach keeps the process; re-attach builds a fresh screen and the nudge arrives | a second open of the Codex pane for the same sandbox focuses the existing one (the fake shows one main attachment); Ctrl-D is never delivered to the fake main process; a stale-generation event is ignored |
 | Failed gateway | a gateway in `Failed` state shows its error in the doctor panel and the console still opens | a launch against it shows the unavailable dialog and creates nothing |
 | Purge dialog (ADR-010) | purging an exported sandbox deletes it | purging an unexported sandbox shows the refusal and keeps it; the force path needs the explicit confirm |
-| Identity gate (P9.4) | the `console-fixture` binary of `jackin-testkit` runs the console on fixture data in a PTY; every demo key sequence matches its baseline | a one-cell color change in a baseline file fails the gate (red run recorded by `test-reviewer`) |
+| Identity gate (P9.4) | the `console-fixture` binary of `jackin-testkit` runs the console on fixture data in a PTY; every demo key sequence matches its baseline | a one-cell color change in a baseline file fails the gate (red run recorded by `tailrocks-test-reviewer`) |
 
 ---
 
@@ -2537,13 +2537,13 @@ Semantics the fakes must match (each is also a contract-suite case or a journey 
 - `UsageServer` (from U13) serves canned HTTP bodies per provider on a local port, and `endpoints()` returns the override that points `HostUsage` at it.
 - The testkit defines no error enum. Fakes return the real error types of the trait they implement (`GatewayError`, `EngineError`, `FsError`, `ProcessError`), so a test sees what production code sees.
 
-### Test plan outline (mark for `test-reviewer`)
+### Test plan outline (mark for `tailrocks-test-reviewer`)
 
 Location: `crates/jackin-testkit/tests/*.rs`. The fakes are code jackin owns, and AGENTS.md says not to fake code we own. They stand in for external systems only, so the testkit is tested through the contract suite and a few behaviors, not line by line.
 
 | Behavior | Positive | Negative |
 |---|---|---|
-| Gateway parity | `contract::run(&FakeGateway, .., group)` passes in nextest for `Core`, `Transfer`, and `Terminal` | a fake variant that drops labels, or lets a read-only attachment write, fails the suite (kept as a mutation test with `test-reviewer`) |
+| Gateway parity | `contract::run(&FakeGateway, .., group)` passes in nextest for `Core`, `Transfer`, and `Terminal` | a fake variant that drops labels, or lets a read-only attachment write, fails the suite (kept as a mutation test with `tailrocks-test-reviewer`) |
 | Ended main process (fix 4) | after `exit_main(3)` the phase is `Error { exit_code: Some(3) }`, `Stop` gives `MainProcessFailed`, `Start` leaves `Starting` | none |
 | Supervisor model | `Cooperative` goes `waiting`, `running 1`, then ignores a stale `0` and a repeated `1`; `ExitsOnStart(3)` ends `exited 1 3`; after `power(Stop)` and `power(Start)` the state is `waiting` and `1` starts again | a request `0` or a repeated ID starts nothing |
 | Fault injection | `FailAfter` triggers on exactly the n-th call; `ProvisionFor` keeps `Provisioning` for n polls | with no fault all calls pass |
@@ -2776,7 +2776,7 @@ Every field of the argument structs has `#[arg(help = ...)]` text and no doc com
 
 `output.rs` writes through the `AppEnv` writers (`print_stdout` is denied). `ls --json` writes `LsOutput`, `inspect --json` writes `InspectView`, `build --json` writes `BuildOutput`, and `usage --json` writes `UsageReport`. `build` without `--json` prints the final image ID on one line. Human output derives from the same values. `term.rs` implements the CLI hand-off for `attach` and `shell`: enter raw mode, pump stdin bytes to `TerminalSession::input`, host SIGWINCH to `resize`, `Output` bytes to stdout, restore the terminal on every exit path, and print the exit or detach line. It forwards Ctrl-D and Ctrl-P Ctrl-Q unchanged because the supervisor detaches on them (D09), and it sends every input chunk through `AttachedTerminal::input`, so the reply filter applies. It never calls `openshell` (D03).
 
-### Test plan outline (mark for `test-reviewer`; P6.1)
+### Test plan outline (mark for `tailrocks-test-reviewer`; P6.1)
 
 Location: `crates/jackin/tests/*.rs`. Boundaries faked: the gateway through `GatewayConnector` returning `FakeGateway`, the image engine, the clock, the filesystem, the network for usage, and the host programs `docker`, `openshell`, `ssh`, and `op`. Tests call `run(AppEnv, Deps)` with captured writers and assert the exit class, stdout, stderr, the stored config, and the fake gateway state.
 
@@ -2934,7 +2934,7 @@ Rules.
 - `ProbeReport` is a serde type. A test generates its JSON schema and requires equality with `rewrite/probe-schema.json`, so the sentinel probe and xtask cannot drift.
 - `xtask e2e` runs outside nextest and never in `ci` (D18).
 
-### Test plan outline (mark for `test-reviewer`; P2.3, P8.1)
+### Test plan outline (mark for `tailrocks-test-reviewer`; P2.3, P8.1)
 
 Location: `crates/xtask/tests/*.rs`, through the lib target. Boundary faked: the filesystem (fixture repositories in a temporary directory). The checks run for real over fixtures. The live journey is not a unit test. Tests of the journey items are `#![cfg(feature = "e2e")]` and run under `--all-features`.
 
@@ -2953,12 +2953,12 @@ Location: `crates/xtask/tests/*.rs`, through the lib target. Boundary faked: the
 
 ## 10. Sequencing
 
-Gates are the PLAN gates. G0 is `mise exec -- mbx +1.99.1 check --workspace --locked` and applies only before `xtask` exists. After P2.3 the gate is G-FAST, `mise exec -- mbx +1.99.1 xtask ci --fast`. Each unit ends with its gate green and its tests proven red then green by `test-reviewer` (AGENTS.md). Test plans in this file are approved by `test-reviewer` before any test is written. Every unit that changes the public API of an earlier unit stops and updates this file first.
+Gates are the PLAN gates. G0 is `mise exec -- mbx +1.99.1 check --workspace --locked` and applies only before `xtask` exists. After P2.3 the gate is G-FAST, `mise exec -- mbx +1.99.1 xtask ci --fast`. Each unit ends with its gate green and its tests proven red then green by `tailrocks-test-reviewer` (AGENTS.md). Test plans in this file are approved by `tailrocks-test-reviewer` before any test is written. Every unit that changes the public API of an earlier unit stops and updates this file first.
 
 | Unit | PLAN task | Content | Gate |
 |---|---|---|---|
 | U0 | P2.2 | Eight crates with the module maps above and every `struct`, `enum`, `trait`, and error definition whose dependencies exist today (the table below lists what waits). Bodies are not written, because `todo` and `unimplemented` are denied lints: inherent methods and free functions arrive with the unit that implements them and their tests. Workspace lints, `deny.toml`, SDK and `openshell-policy` git dependencies under `jackin-openshell` only | G0 |
-| U1 | P2.3 | `xtask`: comments, layers (`LAYERS` with the import rules, the `optional` rule, and the missing-row failure), containers, `CiProfile`, `run_ci`. No product dependency. Red and green fixtures recorded | G-FAST, and a `test-reviewer` red and green run for the three steps and for the stop at the first failure |
+| U1 | P2.3 | `xtask`: comments, layers (`LAYERS` with the import rules, the `optional` rule, and the missing-row failure), containers, `CiProfile`, `run_ci`. No product dependency. Red and green fixtures recorded | G-FAST, and a `tailrocks-test-reviewer` red and green run for the three steps and for the stop at the first failure |
 | U2 | P3.1 | core: ids, paths, secrets, platform, provider, agent table (Codex row from `agentspec-codex.toml` plus `user_config` and `reserved_env`), labels, phase, supervisor state, `EnvFile`, boundary traits, `StdFileSystem`, `write_atomic`, `poll_until`, `EnvSnapshot` | G-FAST |
 | U3 | P3.2 | core: config model with `apply`, `ConfigStore`, account selection, role manifest, Docker capability, views, `Compatibility` | G-FAST |
 | U4 | P3.3 | image: Dockerfile validation, request, key, `ImagePlan`, embedded Dockerfiles and the `jackin-start` copy | G-FAST |
