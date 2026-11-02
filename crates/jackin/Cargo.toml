@@ -12,13 +12,23 @@ publish.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+clap = { workspace = true }
 jackin-core = { workspace = true }
 jackin-image = { workspace = true }
 jackin-openshell = { workspace = true }
 jackin-session = { workspace = true }
 jackin-tui = { workspace = true }
+rustix = { workspace = true, features = ["termios"] }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "macros", "rt", "signal", "sync", "time"] }
 tokio-util = { workspace = true }
+
+[dev-dependencies]
+jackin-testkit = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "process", "rt", "time"] }
 
 [lints]
 workspace = true

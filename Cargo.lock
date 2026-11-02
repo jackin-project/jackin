@@ -1948,12 +1948,18 @@ name = "jackin"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "clap",
  "jackin-core",
  "jackin-image",
  "jackin-openshell",
  "jackin-session",
+ "jackin-testkit",
  "jackin-tui",
+ "rustix",
+ "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
+ "tokio",
  "tokio-util",
 ]
 

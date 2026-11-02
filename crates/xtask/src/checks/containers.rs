@@ -15,7 +15,11 @@ pub const DOCKER_CRATE_DIRS: &[&str] = &[
     "crates/jackin-testkit",
 ];
 
-pub const COMPUTED_COMMAND_DIRS: &[&str] = &["crates/xtask", "crates/jackin-session/src/host.rs"];
+pub const COMPUTED_COMMAND_DIRS: &[&str] = &[
+    "crates/xtask",
+    "crates/jackin-session/src/host.rs",
+    "crates/jackin/tests/process",
+];
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ContainersCheck;
