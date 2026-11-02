@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use jackin_core::{
-    LabelError, LabelSelector, Labels, Phase, SandboxLabels, SandboxName, SandboxSummary,
+    Config, LabelError, LabelSelector, Labels, Phase, SandboxLabels, SandboxName, SandboxSummary,
 };
 use jackin_openshell::{GatewayError, PowerAction, SandboxQuery, SandboxView};
 use thiserror::Error;
@@ -89,6 +89,34 @@ fn labelled(name: &SandboxName, labels: &Labels) -> Result<SandboxLabels, Lifecy
 }
 
 impl Session {
+    pub async fn purge(
+        &self,
+        config: &Config,
+        sandbox: &SandboxName,
+        mode: PurgeMode,
+    ) -> Result<PurgeOutcome, PurgeError> {
+        let found = self.find_managed(sandbox).await?;
+        let Some(view) = found.filter(|view| view.phase != Phase::Deleting) else {
+            return Ok(PurgeOutcome::AlreadyGone {
+                sandbox: sandbox.clone(),
+            });
+        };
+        let was = self
+            .work_state_of(config, sandbox, view.phase, &view.labels)
+            .await;
+        if mode == PurgeMode::Guarded && was != WorkState::Exported {
+            return Err(PurgeError::WorkNotExported {
+                sandbox: sandbox.clone(),
+                state: was,
+            });
+        }
+        self.deps.gateway.delete_sandbox(sandbox).await?;
+        Ok(PurgeOutcome::Deleted {
+            sandbox: sandbox.clone(),
+            was,
+        })
+    }
+
     pub async fn list(&self) -> Result<SandboxListing, LifecycleError> {
         let views = self
             .deps

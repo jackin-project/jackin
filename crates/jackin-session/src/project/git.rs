@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use jackin_core::{
-    EnvValue, HostPath, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin,
-    Program, TerminalText,
+    EnvValue, HostPath, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus,
+    ProcessStdin, Program, TerminalText,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -15,22 +15,22 @@ use crate::project::ProjectStep;
 const QUICK: Duration = Duration::from_mins(2);
 const LONG: Duration = Duration::from_mins(30);
 
-pub(super) fn words(list: &[&str]) -> Vec<String> {
+pub(crate) fn words(list: &[&str]) -> Vec<String> {
     list.iter().map(|word| (*word).to_owned()).collect()
 }
 
-pub(super) fn plain(name: &str, value: impl Into<String>) -> (String, EnvValue) {
+pub(crate) fn plain(name: &str, value: impl Into<String>) -> (String, EnvValue) {
     (name.to_owned(), EnvValue::Plain(value.into()))
 }
 
-pub(super) fn exit_code(status: ProcessStatus) -> i32 {
+pub(crate) fn exit_code(status: ProcessStatus) -> i32 {
     match status {
         ProcessStatus::Exited(code) => code,
         ProcessStatus::Signaled(signal) => 128 + signal,
     }
 }
 
-pub(super) fn failure(step: ProjectStep, output: &ProcessOutput) -> LaunchError {
+pub(crate) fn failure(step: ProjectStep, output: &ProcessOutput) -> LaunchError {
     let text = if output.stderr.is_empty() {
         &output.stdout
     } else {
@@ -44,25 +44,25 @@ pub(super) fn failure(step: ProjectStep, output: &ProcessOutput) -> LaunchError 
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Pace {
+pub(crate) enum Pace {
     Quick,
     Long,
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct HostGit<'a> {
-    pub(super) runner: &'a dyn ProcessRunner,
-    pub(super) root: &'a HostPath,
-    pub(super) cancel: &'a CancellationToken,
+pub(crate) struct HostGit<'a> {
+    pub(crate) runner: &'a dyn ProcessRunner,
+    pub(crate) root: &'a HostPath,
+    pub(crate) cancel: &'a CancellationToken,
 }
 
 impl HostGit<'_> {
-    pub(super) async fn capture(
+    pub(crate) async fn capture(
         &self,
         pace: Pace,
         args: Vec<String>,
         mut env: Vec<(String, EnvValue)>,
-    ) -> Result<ProcessOutput, LaunchError> {
+    ) -> Result<ProcessOutput, ProcessError> {
         env.push(plain("GIT_OPTIONAL_LOCKS", "0"));
         let spec = ProcessSpec {
             program: Program::Git,
@@ -76,10 +76,10 @@ impl HostGit<'_> {
                 Pace::Long => LONG,
             },
         };
-        Ok(self.runner.run(&spec, None, self.cancel).await?)
+        self.runner.run(&spec, None, self.cancel).await
     }
 
-    pub(super) async fn require(
+    pub(crate) async fn require(
         &self,
         step: ProjectStep,
         pace: Pace,

@@ -4,7 +4,7 @@
 mod bundle;
 mod facts;
 mod gate;
-mod git;
+pub(crate) mod git;
 mod refuse;
 mod sandbox;
 mod version;
@@ -154,7 +154,7 @@ pub(crate) struct Staged {
     facts: Facts,
 }
 
-fn host_git<'a>(
+pub(crate) fn host_git<'a>(
     deps: &'a SessionDeps,
     root: &'a HostPath,
     cancel: &'a CancellationToken,
