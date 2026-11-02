@@ -542,6 +542,48 @@ async fn an_upload_to_a_stopped_sandbox_passes_the_check_only_when_the_cli_refus
     }
 }
 
+#[tokio::test]
+async fn an_upload_through_a_symlinked_parent_passes_the_check_only_when_the_cli_exits_1_with_the_tar_text()
+ {
+    const CHECK: &str = "upload_through_a_symlinked_parent_is_a_transfer_error";
+    const TAR: &[u8] = b"Error: sandbox upload failed: extraction exited with status 2: tar: d/f.txt: Cannot open: Not a directory\ntar: Exiting with failure status due to previous errors";
+    let failing = ScriptedRunner::always(exited(1, b"", TAR));
+    let (env, report) = transfer_report(failing).await;
+    let names: Vec<&str> = report.checks.iter().map(|check| check.name).collect();
+    assert_eq!(names, TRANSFER_CHECKS.to_vec());
+    assert_eq!(outcome(&report, CHECK), &Ok(()));
+    assert_no_sandboxes(&env, "a failing CLI on a symlinked parent");
+
+    for (label, runner) in [
+        (
+            "the CLI copies the file behind the link and exits 0",
+            ScriptedRunner::always(exited(0, b"", b"")),
+        ),
+        (
+            "the CLI exits 2 with the tar text",
+            ScriptedRunner::always(exited(2, b"", TAR)),
+        ),
+        (
+            "the CLI exits 1 without the tar text",
+            ScriptedRunner::always(exited(1, b"", b"Error: boom")),
+        ),
+        (
+            "the CLI refuses as not ready",
+            ScriptedRunner::always(exited(1, b"", b"Error: sandbox is not ready")),
+        ),
+    ] {
+        let (env, report) = transfer_report(runner).await;
+        let failed = outcome(&report, CHECK);
+        assert!(
+            failed
+                .as_ref()
+                .is_err_and(|message| message.contains("a symlinked parent")),
+            "{label}: {failed:?}"
+        );
+        assert_no_sandboxes(&env, label);
+    }
+}
+
 fn sandbox_download(root: std::path::PathBuf) -> ScriptedRunner {
     ScriptedRunner::new(move |call: &Recorded| {
         let Some(at) = call.args.iter().position(|arg| arg == "download") else {

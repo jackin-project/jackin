@@ -195,6 +195,17 @@ fn copy_tree(from: &Path, to: &Path) -> Result<(), CopyFailure> {
     Ok(())
 }
 
+fn through_a_symlink(dest: &Path, relative: &Path) -> bool {
+    relative
+        .ancestors()
+        .skip(1)
+        .filter(|ancestor| !ancestor.as_os_str().is_empty())
+        .any(|ancestor| {
+            std::fs::symlink_metadata(dest.join(ancestor))
+                .is_ok_and(|meta| meta.file_type().is_symlink())
+        })
+}
+
 fn upload_failure(note: &str) -> GatewayError {
     GatewayError::Transfer {
         op: TransferOp::UploadFiltered,
@@ -236,10 +247,18 @@ pub(super) async fn upload_tree(
         for relative in &present {
             require_supported(&source.join(relative))?;
         }
+        let mut refused = Vec::new();
         for relative in &present {
-            copy_entry(&source.join(relative), &dest.join(relative))?;
+            if through_a_symlink(&dest, relative) {
+                refused.push(format!(
+                    "tar: {}: Cannot open: Not a directory",
+                    relative.display()
+                ));
+            } else {
+                copy_entry(&source.join(relative), &dest.join(relative))?;
+            }
         }
-        Ok::<(), CopyFailure>(())
+        Ok::<Vec<String>, CopyFailure>(refused)
     })
     .await
     .map_err(protocol)?
@@ -249,6 +268,16 @@ pub(super) async fn upload_tree(
             path.display()
         )),
         CopyFailure::Io(error) => protocol(error),
+    })
+    .and_then(|refused| {
+        if refused.is_empty() {
+            Ok(())
+        } else {
+            Err(upload_failure(&format!(
+                "sandbox upload failed: extraction exited with status 2: {}\ntar: Exiting with failure status due to previous errors",
+                refused.join("\n")
+            )))
+        }
     })
 }
 

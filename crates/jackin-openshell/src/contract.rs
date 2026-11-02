@@ -43,7 +43,7 @@ pub const CORE_CHECKS: [&str; 15] = [
     "delete_sandbox",
 ];
 
-pub const TRANSFER_CHECKS: [&str; 7] = [
+pub const TRANSFER_CHECKS: [&str; 8] = [
     "upload_tree",
     "upload_file_with_digest",
     "download_with_digest",
@@ -51,6 +51,7 @@ pub const TRANSFER_CHECKS: [&str; 7] = [
     "download_pre_cancelled_is_cancelled",
     "upload_absent_sandbox_is_a_transfer_error",
     "upload_stopped_sandbox_is_a_transfer_error",
+    "upload_through_a_symlinked_parent_is_a_transfer_error",
 ];
 
 pub const TERMINAL_CHECKS: [&str; 6] = [
@@ -1175,6 +1176,75 @@ async fn upload_stopped_sandbox_is_a_transfer_error(ctx: &Ctx<'_>) -> Outcome<()
     result
 }
 
+async fn symlinked_parent_project(dir: &Path) -> Outcome<ProjectRoot> {
+    let project = dir.join("project");
+    let outside = dir.join("outside");
+    for place in [project.join("d"), outside.clone()] {
+        tokio::fs::create_dir_all(place).await.map_err(text)?;
+    }
+    tokio::fs::write(project.join("d/f.txt"), "inside\n")
+        .await
+        .map_err(text)?;
+    tokio::fs::write(outside.join("f.txt"), "outside\n")
+        .await
+        .map_err(text)?;
+    host_git(&project, &["init", "-q"]).await?;
+    host_git(&project, &["add", "d/f.txt"]).await?;
+    tokio::fs::remove_dir_all(project.join("d"))
+        .await
+        .map_err(text)?;
+    tokio::fs::symlink(&outside, project.join("d"))
+        .await
+        .map_err(text)?;
+    ProjectRoot::open(
+        &StdFileSystem::default(),
+        &HostPath::parse(&project).map_err(text)?,
+    )
+    .await
+    .map_err(text)
+}
+
+async fn upload_through_a_symlinked_parent_is_a_transfer_error(ctx: &Ctx<'_>) -> Outcome<()> {
+    let sandbox = ctx.sleeper().await?;
+    let dir = scratch_dir("symlinked-parent")?;
+    let result = async {
+        let project = symlinked_parent_project(&dir).await?;
+        let uploaded = ctx
+            .gateway
+            .upload_tree(
+                &sandbox,
+                &project,
+                &path("/sandbox/project")?,
+                &CancellationToken::new(),
+            )
+            .await;
+        refused_upload(
+            &uploaded,
+            TransferOp::UploadFiltered,
+            "tar",
+            "ready",
+            "a tree upload through a symlinked parent",
+        )?;
+        let listing = ctx
+            .exec(
+                &sandbox,
+                "find \"$1\" -type f -name f.txt 2>/dev/null",
+                &["/sandbox/project"],
+                ProgramStdin::Closed,
+                None,
+            )
+            .await?;
+        expect(
+            !String::from_utf8_lossy(&listing.stdout).contains("/d/f.txt"),
+            "the file behind the symlinked parent landed in the sandbox",
+        )
+    }
+    .await;
+    drop(tokio::fs::remove_dir_all(&dir).await);
+    ctx.cleanup(&sandbox).await;
+    result
+}
+
 fn scratch_download() -> Outcome<HostPath> {
     let local = std::env::temp_dir().join(format!("jackin-contract-{}.bin", fresh_launch()?));
     HostPath::parse(&local).map_err(text)
@@ -1732,6 +1802,12 @@ pub async fn run(
                 ctx,
                 "upload_stopped_sandbox_is_a_transfer_error",
                 upload_stopped_sandbox_is_a_transfer_error
+            );
+            check!(
+                checks,
+                ctx,
+                "upload_through_a_symlinked_parent_is_a_transfer_error",
+                upload_through_a_symlinked_parent_is_a_transfer_error
             );
         }
         ContractGroup::Terminal => {
