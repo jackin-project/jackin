@@ -10,8 +10,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use jackin_core::{
-    Agent, BuilderName, CommitId, DockerLayer, DockerSubcommand, HostPath, OutputStream, Platform,
-    ProcessRunner, ProcessStatus, Program, RepoPath, RoleName, Sha256, StdFileSystem,
+    Agent, BuilderName, CommitId, DockerLayer, DockerSubcommand, FileSystem, HostPath,
+    OutputStream, Platform, ProcessRunner, ProcessStatus, Program, RepoPath, RoleName, Sha256,
+    StdFileSystem,
 };
 use jackin_image::{
     BuildStage, BuildxEngine, BuiltImage, HookFiles, ImageError, ImageEvent, ImageRequest, Rebuild,
@@ -350,16 +351,16 @@ pub(crate) struct Stack {
 
 impl Stack {
     pub(crate) fn new() -> Result<Stack, Box<dyn Error>> {
+        Stack::with_fs(Arc::new(StdFileSystem::default()))
+    }
+
+    pub(crate) fn with_fs(fs: Arc<dyn FileSystem>) -> Result<Stack, Box<dyn Error>> {
         let fixture = Fixture::new()?;
         let runner = Arc::new(ScriptedProcessRunner::new());
         let model = DockerModel::new();
         model.install(&runner);
         let shared: Arc<dyn ProcessRunner> = Arc::<ScriptedProcessRunner>::clone(&runner);
-        let engine = BuildxEngine::new(
-            shared,
-            Arc::new(StdFileSystem::default()),
-            fixture.work.clone(),
-        );
+        let engine = BuildxEngine::new(shared, fs, fixture.work.clone());
         Ok(Stack {
             fixture,
             runner,

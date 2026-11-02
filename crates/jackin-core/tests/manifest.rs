@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use async_trait::async_trait;
 use jackin_core::{
     DirEntry, EnvFile, EnvName, EnvSpec, FileKind, FileLock, FileMode, FileSystem, FsError,
-    HookKind, HostPath, ManifestError, RegularFile, RegularFileProblem, RepoPath, RoleManifest,
-    StdFileSystem,
+    HookKind, HostPath, LinkProblem, ManifestError, RegularFile, RegularFileProblem, RepoPath,
+    RoleManifest, StdFileSystem,
 };
 
 type Fallible<T> = Result<T, Box<dyn std::error::Error>>;
@@ -482,6 +482,16 @@ impl FileSystem for CrashFs {
     }
     async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
         self.inner.read_at(p, offset, len).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
     }
     async fn read_regular(
         &self,

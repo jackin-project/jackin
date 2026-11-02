@@ -8,8 +8,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use jackin_core::{
     DirEntry, EnvValue, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LineSink,
-    ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program,
-    RegularFile, RegularFileProblem, RepoPath, SecretOutput,
+    LinkProblem, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus,
+    ProcessStdin, Program, RegularFile, RegularFileProblem, RepoPath, SecretOutput,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -140,6 +140,26 @@ impl FileSystem for RegistryFs {
             path: path.clone(),
             kind: std::io::ErrorKind::Unsupported,
             message: "read_at is unsupported by RegistryFs".to_owned(),
+        })
+    }
+
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        _file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        Err(FsError::Io {
+            path: root.clone(),
+            kind: std::io::ErrorKind::Unsupported,
+            message: "read_link is unsupported by RegistryFs".to_owned(),
+        })
+    }
+
+    async fn write_symlink(&self, path: &HostPath, _target: &str) -> Result<(), FsError> {
+        Err(FsError::Io {
+            path: path.clone(),
+            kind: std::io::ErrorKind::Unsupported,
+            message: "write_symlink is unsupported by RegistryFs".to_owned(),
         })
     }
 

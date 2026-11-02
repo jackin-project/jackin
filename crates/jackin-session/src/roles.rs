@@ -5,9 +5,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use jackin_core::{
-    Agent, CommitId, Config, FileKind, FileSystem, FsError, HookKind, HostPath, ManifestError,
-    PathError, ProcessError, ProcessOutput, ProcessRunner, ProcessStatus, RepoPath, RoleManifest,
-    RoleName, RoleRev, RoleSource, RoleUrl, Sha256, TerminalText, Workspace, plain_list,
+    Agent, CommitId, Config, FileKind, FileSystem, FsError, HookKind, HostPath, LinkProblem,
+    ManifestError, PathError, ProcessError, ProcessOutput, ProcessRunner, ProcessStatus, RepoPath,
+    RoleManifest, RoleName, RoleRev, RoleSource, RoleUrl, Sha256, TerminalText, Workspace,
+    plain_list,
 };
 use jackin_image::{DockerfileError, HookFiles, RoleRevision, SourceFile, validate_dockerfile};
 use jackin_openshell::{ClosureViolation, PolicyDocument, PolicyError, ProviderProfile};
@@ -17,6 +18,9 @@ use tokio_util::sync::CancellationToken;
 use crate::project::git::{HostGit, Pace, words};
 
 const MANIFEST_FILE: &str = "jackin.role.toml";
+const KIND_FILE: u8 = b'f';
+const KIND_LINK: u8 = b'l';
+const KIND_OTHER: u8 = b'o';
 
 #[derive(Clone, Debug)]
 pub struct RoleCatalog {
@@ -418,12 +422,25 @@ impl RoleCatalog {
             let text = String::from_utf8_lossy(name).into_owned();
             let path = RepoPath::parse(&text)?;
             let host = join_repo(root, &path)?;
-            let (content, listed) = match self.fs.stat(&host).await? {
+            let (kind, exec, content, listed) = match self.fs.stat(&host).await? {
                 None => continue,
-                Some(FileKind::File) => (self.fs.read(&host).await?.unwrap_or_default(), true),
-                Some(FileKind::Symlink) => (Vec::new(), true),
-                Some(FileKind::Dir | FileKind::Socket) => (Vec::new(), false),
+                Some(FileKind::File) => {
+                    let Some(mode) = self.fs.mode(&host).await? else {
+                        continue;
+                    };
+                    let bytes = self.fs.read(&host).await?.unwrap_or_default();
+                    (KIND_FILE, u8::from(mode.0 & 0o111 != 0), bytes, true)
+                }
+                Some(FileKind::Symlink) => match self.fs.read_link(root, &path).await? {
+                    Ok(target) => (KIND_LINK, 0, target.into_bytes(), true),
+                    Err(LinkProblem::Missing | LinkProblem::NotALink) => continue,
+                    Err(LinkProblem::Symlink | LinkProblem::NonUtf8) => {
+                        (KIND_LINK, 0, Vec::new(), true)
+                    }
+                },
+                Some(FileKind::Dir | FileKind::Socket) => (KIND_OTHER, 0, Vec::new(), false),
             };
+            digest_input.extend([kind, exec]);
             digest_input.extend((name.len() as u64).to_be_bytes());
             digest_input.extend(name);
             digest_input.extend((content.len() as u64).to_be_bytes());

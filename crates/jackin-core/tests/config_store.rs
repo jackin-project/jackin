@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use jackin_core::{
     Account, AccountName, Clock, Config, ConfigEdit, ConfigError, ConfigStore, CredentialSource,
     DirEntry, EnvName, FileKind, FileLock, FileMode, FileSystem, FsError, GatewayEntry,
-    GatewayName, HostPath, Platform, Provider, RegularFile, RegularFileProblem, RepoPath, RoleName,
-    RoleSource, StdFileSystem, Timestamp,
+    GatewayName, HostPath, LinkProblem, Platform, Provider, RegularFile, RegularFileProblem,
+    RepoPath, RoleName, RoleSource, StdFileSystem, Timestamp,
 };
 use tokio::sync::{Semaphore, oneshot};
 
@@ -296,6 +296,16 @@ impl FileSystem for CrashFs {
     async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
         self.inner.read_at(p, offset, len).await
     }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
+    }
     async fn read_regular(
         &self,
         r: &HostPath,
@@ -437,6 +447,16 @@ impl FileSystem for GateFs {
     }
     async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
         self.inner.read_at(p, offset, len).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
     }
     async fn read_regular(
         &self,

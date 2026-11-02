@@ -5,15 +5,16 @@ use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File, OpenOptions, TryLockError};
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::os::fd::OwnedFd;
-use std::os::unix::fs::{DirBuilderExt, FileTypeExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, FileTypeExt, OpenOptionsExt, PermissionsExt, symlink};
 use std::path::Path;
 
 use async_trait::async_trait;
-use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, statat};
+use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, readlinkat, statat};
 use rustix::io::Errno;
 
 use crate::boundary::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, RegularFile, RegularFileProblem,
+    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, LinkProblem, RegularFile,
+    RegularFileProblem,
 };
 use crate::paths::{HostPath, RepoPath};
 
@@ -149,7 +150,10 @@ fn open_below(
     }
 }
 
-fn read_below(root: &Path, file: &RepoPath) -> io::Result<Result<RegularFile, RegularFileProblem>> {
+fn open_parent<'a>(
+    root: &Path,
+    file: &'a RepoPath,
+) -> io::Result<Result<(OwnedFd, &'a str), RegularFileProblem>> {
     let mut dir = open(
         root,
         OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
@@ -157,30 +161,53 @@ fn read_below(root: &Path, file: &RepoPath) -> io::Result<Result<RegularFile, Re
     )?;
     let mut names = file.as_str().split('/').peekable();
     while let Some(name) = names.next() {
-        if names.peek().is_some() {
-            match open_below(&dir, name, OFlags::DIRECTORY, false)? {
-                Ok(next) => dir = next,
-                Err(problem) => return Ok(Err(problem)),
-            }
-            continue;
+        if names.peek().is_none() {
+            return Ok(Ok((dir, name)));
         }
-        let leaf = match open_below(&dir, name, OFlags::NONBLOCK, true)? {
-            Ok(leaf) => leaf,
+        match open_below(&dir, name, OFlags::DIRECTORY, false)? {
+            Ok(next) => dir = next,
             Err(problem) => return Ok(Err(problem)),
-        };
-        let mut opened = File::from(leaf);
-        let meta = opened.metadata()?;
-        if !meta.is_file() {
-            return Ok(Err(RegularFileProblem::NotARegularFile));
         }
-        let mut bytes = Vec::new();
-        opened.read_to_end(&mut bytes)?;
-        return Ok(Ok(RegularFile {
-            bytes,
-            mode: FileMode(meta.permissions().mode() & 0o7777),
-        }));
     }
     Ok(Err(RegularFileProblem::Missing))
+}
+
+fn read_below(root: &Path, file: &RepoPath) -> io::Result<Result<RegularFile, RegularFileProblem>> {
+    let (dir, name) = match open_parent(root, file)? {
+        Ok(parent) => parent,
+        Err(problem) => return Ok(Err(problem)),
+    };
+    let leaf = match open_below(&dir, name, OFlags::NONBLOCK, true)? {
+        Ok(leaf) => leaf,
+        Err(problem) => return Ok(Err(problem)),
+    };
+    let mut opened = File::from(leaf);
+    let meta = opened.metadata()?;
+    if !meta.is_file() {
+        return Ok(Err(RegularFileProblem::NotARegularFile));
+    }
+    let mut bytes = Vec::new();
+    opened.read_to_end(&mut bytes)?;
+    Ok(Ok(RegularFile {
+        bytes,
+        mode: FileMode(meta.permissions().mode() & 0o7777),
+    }))
+}
+
+fn read_link_below(root: &Path, file: &RepoPath) -> io::Result<Result<String, LinkProblem>> {
+    let (dir, name) = match open_parent(root, file)? {
+        Ok(parent) => parent,
+        Err(RegularFileProblem::Symlink) => return Ok(Err(LinkProblem::Symlink)),
+        Err(RegularFileProblem::Missing | RegularFileProblem::NotARegularFile) => {
+            return Ok(Err(LinkProblem::Missing));
+        }
+    };
+    match readlinkat(&dir, name, Vec::new()) {
+        Ok(target) => Ok(target.into_string().map_err(|_| LinkProblem::NonUtf8)),
+        Err(Errno::NOENT) => Ok(Err(LinkProblem::Missing)),
+        Err(Errno::INVAL) => Ok(Err(LinkProblem::NotALink)),
+        Err(other) => Err(other.into()),
+    }
 }
 
 #[async_trait]
@@ -302,6 +329,29 @@ impl FileSystem for StdFileSystem {
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
         let file = file.clone();
         blocking(root, move |p| read_below(p, &file)).await
+    }
+
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        let file = file.clone();
+        blocking(root, move |p| read_link_below(p, &file)).await
+    }
+
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        let target = target.to_owned();
+        blocking(path, move |p| symlink(&target, p))
+            .await
+            .map_err(|error| match error {
+                FsError::Io {
+                    path,
+                    kind: ErrorKind::AlreadyExists,
+                    ..
+                } => FsError::AlreadyExists(path),
+                other => other,
+            })
     }
 
     async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {

@@ -18,7 +18,7 @@ use jackin_image::{
     BuildStage, BuildxEngine, ContextProblem, ContextSource, EngineError, ImageEngine, ImageEvent,
     ImagePlan, MaterializedFile, PlannedBuild,
 };
-use jackin_testkit::{ProcessReply, ScriptedProcessRunner, SeenCall, SeenStdin};
+use jackin_testkit::{CapturedFile, ProcessReply, ScriptedProcessRunner, SeenCall, SeenStdin};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -174,16 +174,20 @@ async fn buildx_context_holds_exactly_the_planned_files_with_normalized_modes() 
         let construct: Vec<_> = captured[0].files.iter().collect();
         assert_eq!(construct.len(), 1, "construct files");
         assert_eq!(construct[0].0, "Dockerfile");
-        assert_eq!(construct[0].1.bytes, CONSTRUCT_DOCKERFILE);
-        assert_eq!(construct[0].1.mode, FileMode(0o644));
+        assert_eq!(
+            *construct[0].1,
+            CapturedFile::file(CONSTRUCT_DOCKERFILE, 0o644)
+        );
 
         let listed: BTreeSet<&str> = modes.iter().map(|(name, _, _)| *name).collect();
         let found: BTreeSet<&str> = captured[1].files.keys().map(String::as_str).collect();
         assert_eq!(found, listed, "role context file set");
         for (name, _, expected) in modes {
-            let file = &captured[1].files[name];
-            assert_eq!(file.bytes, fs::read(role.join(name))?, "{name} bytes");
-            assert_eq!(file.mode, FileMode(expected), "{name} mode");
+            assert_eq!(
+                captured[1].files[name],
+                CapturedFile::file(&fs::read(role.join(name))?, expected),
+                "{name}"
+            );
         }
 
         let derived = &captured[2].files;
@@ -197,16 +201,15 @@ async fn buildx_context_holds_exactly_the_planned_files_with_normalized_modes() 
         ]
         .into();
         assert_eq!(names, expected, "derived context file set");
-        assert_eq!(derived["Dockerfile"].bytes, DERIVED_DOCKERFILE);
-        assert_eq!(derived["jackin-start"].bytes, JACKIN_START);
-        assert_eq!(derived["scan"].bytes, SCAN);
-        assert_eq!(derived["hooks/setup"].bytes, b"#!/bin/sh\necho setup\n");
-        assert!(
-            derived["hooks/preflight"].bytes.is_empty(),
-            "preflight bytes"
-        );
-        for (name, file) in derived {
-            assert_eq!(file.mode, FileMode(0o644), "{name} mode");
+        let wanted: [(&str, &[u8]); 5] = [
+            ("Dockerfile", DERIVED_DOCKERFILE),
+            ("jackin-start", JACKIN_START),
+            ("scan", SCAN),
+            ("hooks/setup", b"#!/bin/sh\necho setup\n"),
+            ("hooks/preflight", b""),
+        ];
+        for (name, bytes) in wanted {
+            assert_eq!(derived[name], CapturedFile::file(bytes, 0o644), "{name}");
         }
         Ok(())
     })
@@ -253,7 +256,6 @@ async fn buildx_refuses_unsafe_context_entries_before_docker_runs() -> TestResul
         fs::write(role.join("real.txt"), b"real")?;
         fs::create_dir(role.join("d"))?;
         symlink("/etc/hosts", role.join("link"))?;
-        symlink("real.txt", role.join("inner"))?;
         symlink(outside.path(), role.join("dir"))?;
         let before = outside_listing(outside.path())?;
         let base_names: Vec<String> = fs::read_dir(stack.fixture.dir.path())?
@@ -268,8 +270,7 @@ async fn buildx_refuses_unsafe_context_entries_before_docker_runs() -> TestResul
             })
         };
         let rows: Vec<(String, ContextSource, ContextProblem)> = vec![
-            ("link".into(), listed("link")?, ContextProblem::Symlink),
-            ("inner".into(), listed("inner")?, ContextProblem::Symlink),
+            ("link".into(), listed("link")?, ContextProblem::Escapes),
             ("dir/x".into(), listed("dir/x")?, ContextProblem::Symlink),
             ("d".into(), listed("d")?, ContextProblem::NotARegularFile),
             ("gone".into(), listed("gone")?, ContextProblem::Missing),

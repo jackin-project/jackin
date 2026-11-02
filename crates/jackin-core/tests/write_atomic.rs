@@ -5,8 +5,8 @@ use std::io::ErrorKind;
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, RegularFile,
-    RegularFileProblem, RepoPath, StdFileSystem, write_atomic,
+    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LinkProblem,
+    RegularFile, RegularFileProblem, RepoPath, StdFileSystem, write_atomic,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -68,6 +68,16 @@ impl FileSystem for FaultFs {
     }
     async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
         self.inner.read_at(p, offset, len).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
     }
     async fn read_regular(
         &self,

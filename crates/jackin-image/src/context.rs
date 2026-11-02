@@ -3,7 +3,9 @@
 
 use std::path::Path;
 
-use jackin_core::{FileMode, FileSystem, HostPath, RegularFile, RegularFileProblem, RepoPath};
+use jackin_core::{
+    FileMode, FileSystem, HostPath, LinkProblem, RegularFile, RegularFileProblem, RepoPath,
+};
 
 use crate::engine::{ContextProblem, EngineError};
 use crate::plan::{ContextSource, MaterializedFile};
@@ -30,6 +32,18 @@ fn valid_name(name: &str) -> bool {
             .all(|segment| !matches!(segment, "" | "." | ".."))
 }
 
+async fn place(
+    fs: &dyn FileSystem,
+    target: &HostPath,
+    shown: &str,
+) -> Result<HostPath, EngineError> {
+    let file = host(&target.as_path().join(shown), shown)?;
+    if let Some(parent) = file.as_path().parent() {
+        fs.create_dir_all(&host(parent, shown)?).await?;
+    }
+    Ok(file)
+}
+
 async fn put(
     fs: &dyn FileSystem,
     target: &HostPath,
@@ -37,12 +51,52 @@ async fn put(
     bytes: &[u8],
     mode: FileMode,
 ) -> Result<(), EngineError> {
-    let file = host(&target.as_path().join(shown), shown)?;
-    if let Some(parent) = file.as_path().parent() {
-        fs.create_dir_all(&host(parent, shown)?).await?;
-    }
+    let file = place(fs, target, shown).await?;
     fs.write_new(&file, bytes, mode).await?;
     Ok(())
+}
+
+fn regular_problem(problem: RegularFileProblem) -> ContextProblem {
+    match problem {
+        RegularFileProblem::Symlink => ContextProblem::Symlink,
+        RegularFileProblem::NotARegularFile => ContextProblem::NotARegularFile,
+        RegularFileProblem::Missing => ContextProblem::Missing,
+    }
+}
+
+fn link_problem(problem: LinkProblem) -> ContextProblem {
+    match problem {
+        LinkProblem::Symlink => ContextProblem::Symlink,
+        LinkProblem::NotALink => ContextProblem::NotARegularFile,
+        LinkProblem::Missing => ContextProblem::Missing,
+        LinkProblem::NonUtf8 => ContextProblem::Escapes,
+    }
+}
+
+fn stays_in_root(target: &str, depth: usize) -> bool {
+    let mut segments = target.split('/').peekable();
+    let mut ups = 0;
+    while segments.next_if_eq(&"..").is_some() {
+        ups += 1;
+    }
+    let plain: Vec<&str> = segments.collect();
+    ups <= depth
+        && !plain.is_empty()
+        && plain
+            .iter()
+            .all(|segment| !matches!(*segment, "" | "." | ".."))
+}
+
+fn staged_mode(regular: RegularFile) -> RegularFile {
+    let mode = if regular.mode.0 & 0o111 == 0 {
+        PLAIN
+    } else {
+        EXECUTABLE
+    };
+    RegularFile {
+        bytes: regular.bytes,
+        mode,
+    }
 }
 
 pub async fn read_regular_file(
@@ -50,24 +104,30 @@ pub async fn read_regular_file(
     root: &HostPath,
     file: &RepoPath,
 ) -> Result<RegularFile, EngineError> {
+    match fs.read_regular(root, file).await? {
+        Ok(regular) => Ok(staged_mode(regular)),
+        Err(problem) => Err(refuse(file.as_str(), regular_problem(problem))),
+    }
+}
+
+async fn stage_link(
+    fs: &dyn FileSystem,
+    root: &HostPath,
+    file: &RepoPath,
+    target: &HostPath,
+) -> Result<(), EngineError> {
     let shown = file.as_str();
-    let problem = match fs.read_regular(root, file).await? {
-        Ok(regular) => {
-            let mode = if regular.mode.0 & 0o111 == 0 {
-                PLAIN
-            } else {
-                EXECUTABLE
-            };
-            return Ok(RegularFile {
-                bytes: regular.bytes,
-                mode,
-            });
-        }
-        Err(RegularFileProblem::Symlink) => ContextProblem::Symlink,
-        Err(RegularFileProblem::NotARegularFile) => ContextProblem::NotARegularFile,
-        Err(RegularFileProblem::Missing) => ContextProblem::Missing,
-    };
-    Err(refuse(shown, problem))
+    let text = fs
+        .read_link(root, file)
+        .await?
+        .map_err(|problem| refuse(shown, link_problem(problem)))?;
+    let depth = shown.matches('/').count();
+    if !stays_in_root(&text, depth) {
+        return Err(refuse(shown, ContextProblem::Escapes));
+    }
+    let link = place(fs, target, shown).await?;
+    fs.write_symlink(&link, &text).await?;
+    Ok(())
 }
 
 async fn stage_listed(
@@ -77,8 +137,14 @@ async fn stage_listed(
     target: &HostPath,
 ) -> Result<(), EngineError> {
     for file in files {
-        let regular = read_regular_file(fs, root, file).await?;
-        put(fs, target, file.as_str(), &regular.bytes, regular.mode).await?;
+        match fs.read_regular(root, file).await? {
+            Ok(regular) => {
+                let regular = staged_mode(regular);
+                put(fs, target, file.as_str(), &regular.bytes, regular.mode).await?;
+            }
+            Err(RegularFileProblem::Symlink) => stage_link(fs, root, file, target).await?,
+            Err(problem) => return Err(refuse(file.as_str(), regular_problem(problem))),
+        }
     }
     Ok(())
 }

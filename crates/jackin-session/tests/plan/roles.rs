@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::error::Error;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::sync::Arc;
 
 use jackin_core::{HookKind, HostPath, ManifestError, ModelName, RepoPath, RoleManifest, Sha256};
@@ -288,6 +290,100 @@ async fn a_dirty_role_tree_hashes_tracked_and_untracked_files_but_not_ignored_on
         }
         assert_eq!(deleted[0], deleted[1]);
         assert_ne!(deleted[0], d1);
+        Ok(())
+    })
+    .await
+}
+
+async fn digest_of(scope: &Scope, role: &RoleFixture) -> Result<Sha256, Box<dyn Error>> {
+    digest(&scope.catalog.load_path(role.root()).await?)
+}
+
+async fn relink(role: &RoleFixture, name: &str, target: &str) -> Result<(), Box<dyn Error>> {
+    role.remove(name).await?;
+    role.symlink(name, Path::new(target)).await?;
+    Ok(())
+}
+
+fn chmod(role: &RoleFixture, name: &str, mode: u32) -> Result<(), Box<dyn Error>> {
+    let path = role.root().as_path().join(name);
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_dirty_role_digest_follows_the_target_text_of_a_link() -> TestResult {
+    guard(async {
+        let scope = scope()?;
+        let role = tracked("").await?;
+        role.commit().await?;
+        role.symlink("CLAUDE.md", Path::new("AGENTS.md")).await?;
+        let first = digest_of(&scope, &role).await?;
+        relink(&role, "CLAUDE.md", "AGENT2.md").await?;
+        let other = digest_of(&scope, &role).await?;
+        assert_ne!(other, first);
+        relink(&role, "CLAUDE.md", "AGENTS.md").await?;
+        assert_eq!(digest_of(&scope, &role).await?, first);
+
+        let twin = tracked("").await?;
+        twin.commit().await?;
+        twin.symlink("CLAUDE.md", Path::new("AGENTS.md")).await?;
+        assert_eq!(digest_of(&scope, &twin).await?, first);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_dirty_role_digest_tells_a_link_from_a_file_with_the_same_bytes() -> TestResult {
+    guard(async {
+        let scope = scope()?;
+        let role = tracked("").await?;
+        role.commit().await?;
+        role.file("CLAUDE.md", b"AGENTS.md").await?;
+        let file = digest_of(&scope, &role).await?;
+        relink(&role, "CLAUDE.md", "AGENTS.md").await?;
+        assert_ne!(digest_of(&scope, &role).await?, file);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_dirty_role_digest_follows_the_executable_bit_and_no_other_mode_bit() -> TestResult {
+    guard(async {
+        let scope = scope()?;
+        let untracked = tracked("").await?;
+        untracked.commit().await?;
+        untracked.file("run.sh", b"#!/bin/sh\n").await?;
+        chmod(&untracked, "run.sh", 0o644)?;
+        let plain = digest_of(&scope, &untracked).await?;
+        chmod(&untracked, "run.sh", 0o755)?;
+        let exec = digest_of(&scope, &untracked).await?;
+        assert_ne!(exec, plain);
+        chmod(&untracked, "run.sh", 0o644)?;
+        assert_eq!(digest_of(&scope, &untracked).await?, plain);
+
+        let committed = tracked("").await?;
+        committed.file("run.sh", b"#!/bin/sh\n").await?;
+        chmod(&committed, "run.sh", 0o644)?;
+        committed.commit().await?;
+        committed.file("README.md", b"changed\n").await?;
+        let before = digest_of(&scope, &committed).await?;
+        chmod(&committed, "run.sh", 0o755)?;
+        assert_ne!(digest_of(&scope, &committed).await?, before);
+
+        chmod(&untracked, "run.sh", 0o600)?;
+        assert_eq!(digest_of(&scope, &untracked).await?, plain);
+        chmod(&untracked, "run.sh", 0o755)?;
+        chmod(&untracked, "run.sh", 0o775)?;
+        assert_eq!(digest_of(&scope, &untracked).await?, exec);
+
+        let twin = tracked("").await?;
+        twin.commit().await?;
+        twin.file("run.sh", b"#!/bin/sh\n").await?;
+        chmod(&twin, "run.sh", 0o755)?;
+        assert_eq!(digest_of(&scope, &twin).await?, exec);
         Ok(())
     })
     .await

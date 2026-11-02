@@ -57,6 +57,12 @@ pub trait FileSystem: Send + Sync + Debug {
         root: &HostPath,
         file: &RepoPath,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError>;
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError>;
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError>;
     async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError>;
 }
 
@@ -80,6 +86,14 @@ pub enum RegularFileProblem {
     Symlink,
     NotARegularFile,
     Missing,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LinkProblem {
+    Symlink,
+    NotALink,
+    Missing,
+    NonUtf8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

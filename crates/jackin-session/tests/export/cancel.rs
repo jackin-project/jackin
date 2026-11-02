@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, ProcessRunner,
-    RegularFile, RegularFileProblem, RepoPath,
+    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LinkProblem,
+    ProcessRunner, RegularFile, RegularFileProblem, RepoPath,
 };
 use jackin_session::ExportError;
 use jackin_testkit::{TestResult, default_limits, guard};
@@ -69,6 +69,16 @@ impl FileSystem for CancelsOnRead {
     }
     async fn lock(&self, path: &HostPath) -> Result<FileLock, FsError> {
         self.inner.lock(path).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
     }
     async fn read_regular(
         &self,

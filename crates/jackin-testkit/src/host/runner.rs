@@ -11,7 +11,8 @@ use async_trait::async_trait;
 use jackin_core::{
     DockerSubcommand, EnvValue, FileKind, FileMode, FileSystem, FsError, HostPath, LineSink,
     OutputLine, OutputStream, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec,
-    ProcessStatus, ProcessStdin, Program, SecretBytes, SecretOutput, StdFileSystem, write_atomic,
+    ProcessStatus, ProcessStdin, Program, RepoPath, SecretBytes, SecretOutput, StdFileSystem,
+    write_atomic,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -197,9 +198,24 @@ impl SeenCall {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CapturedFile {
-    pub bytes: Vec<u8>,
-    pub mode: FileMode,
+pub enum CapturedFile {
+    File { bytes: Vec<u8>, mode: FileMode },
+    Link { target: String },
+}
+
+impl CapturedFile {
+    pub fn file(bytes: &[u8], mode: u32) -> CapturedFile {
+        CapturedFile::File {
+            bytes: bytes.to_vec(),
+            mode: FileMode(mode),
+        }
+    }
+
+    pub fn link(target: &str) -> CapturedFile {
+        CapturedFile::Link {
+            target: target.to_owned(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -472,6 +488,18 @@ impl ScriptedProcessRunner {
     }
 }
 
+async fn read_link(fs: &StdFileSystem, root: &HostPath, relative: &str) -> Result<String, FsError> {
+    let invalid = |message: String| FsError::Io {
+        path: root.clone(),
+        kind: std::io::ErrorKind::InvalidInput,
+        message,
+    };
+    let file = RepoPath::parse(relative).map_err(|error| invalid(error.to_string()))?;
+    fs.read_link(root, &file)
+        .await?
+        .map_err(|problem| invalid(format!("{relative}: {problem:?}")))
+}
+
 async fn snapshot(
     fs: &StdFileSystem,
     root: &HostPath,
@@ -492,9 +520,13 @@ async fn snapshot(
                 FileKind::File => {
                     let bytes = fs.read(&path).await?.unwrap_or_default();
                     let mode = fs.mode(&path).await?.unwrap_or(FileMode(0));
-                    files.insert(relative, CapturedFile { bytes, mode });
+                    files.insert(relative, CapturedFile::File { bytes, mode });
                 }
-                FileKind::Symlink | FileKind::Socket => {}
+                FileKind::Symlink => {
+                    let target = read_link(fs, root, &relative).await?;
+                    files.insert(relative, CapturedFile::Link { target });
+                }
+                FileKind::Socket => {}
             }
         }
     }

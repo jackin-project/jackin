@@ -8,9 +8,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use jackin_core::{
     CommitId, DirEntry, DockerSubcommand, FileKind, FileLock, FileMode, FileSystem, FsError,
-    HostPath, LineSink, OutputStream, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec,
-    ProcessStatus, Program, RegularFile, RegularFileProblem, RepoPath, RoleName, SecretOutput,
-    StdFileSystem,
+    HostPath, LineSink, LinkProblem, OutputStream, ProcessError, ProcessOutput, ProcessRunner,
+    ProcessSpec, ProcessStatus, Program, RegularFile, RegularFileProblem, RepoPath, RoleName,
+    SecretOutput, StdFileSystem,
 };
 use jackin_image::{
     BuildStage, BuildxEngine, BuiltImage, ImageEngine, ImageError, ImageEvent, ImagePlan,
@@ -140,6 +140,16 @@ impl FileSystem for SignalFs {
     }
     async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
         self.inner.read_at(p, offset, len).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
     }
     async fn read_regular(
         &self,

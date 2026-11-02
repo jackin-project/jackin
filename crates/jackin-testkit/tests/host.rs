@@ -674,6 +674,46 @@ fn lines(items: &[(OutputStream, &str)]) -> Vec<(OutputStream, String)> {
 }
 
 #[tokio::test]
+async fn the_captured_context_records_links_as_links_and_never_follows_them() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let context = dir.path().join("ctx");
+    tokio::fs::create_dir_all(context.join("real")).await?;
+    tokio::fs::write(context.join("file.txt"), b"alpha").await?;
+    tokio::fs::write(context.join("real/f.txt"), b"inside").await?;
+    for (name, target) in [
+        ("to_file", "file.txt"),
+        ("dangling", "nowhere.txt"),
+        ("ldir", "real"),
+    ] {
+        tokio::fs::symlink(target, context.join(name)).await?;
+    }
+    let runner = ScriptedProcessRunner::new();
+    runner.expect(
+        ScriptedProgram::Docker,
+        &["build"],
+        ProcessReply::exited(0, b"", b"").with_effect(ProcessEffect::CaptureContext),
+    );
+    let build = spec(
+        Program::Docker(DockerSubcommand::BuildxBuild),
+        &["build", &context.display().to_string()],
+    );
+    runner.run(&build, None, &CancellationToken::new()).await?;
+    let captured = runner.captured_contexts();
+    assert_eq!(captured.len(), 1);
+    let mut expected = std::collections::BTreeMap::new();
+    expected.insert("file.txt".to_owned(), CapturedFile::file(b"alpha", 0o644));
+    expected.insert(
+        "real/f.txt".to_owned(),
+        CapturedFile::file(b"inside", 0o644),
+    );
+    expected.insert("to_file".to_owned(), CapturedFile::link("file.txt"));
+    expected.insert("dangling".to_owned(), CapturedFile::link("nowhere.txt"));
+    expected.insert("ldir".to_owned(), CapturedFile::link("real"));
+    assert_eq!(captured[0].files, expected);
+    Ok(())
+}
+
+#[tokio::test]
 async fn scripted_runner_streams_lines_applies_effects_and_holds_until_cancel() -> TestResult {
     let dir = tempfile::tempdir()?;
     let context = dir.path().join("ctx");
@@ -743,14 +783,17 @@ async fn scripted_runner_streams_lines_applies_effects_and_holds_until_cancel() 
     assert_eq!(tokio::fs::read(&iidfile).await?, b"sha256:abc\n");
     let captured = runner.captured_contexts();
     assert_eq!(captured.len(), 1);
-    assert_eq!(
-        captured[0].files["a.txt"],
-        CapturedFile {
-            bytes: b"alpha".to_vec(),
-            mode: captured[0].files["a.txt"].mode
+    assert!(matches!(
+        &captured[0].files["a.txt"],
+        CapturedFile::File { bytes, .. } if bytes == b"alpha"
+    ));
+    assert!(matches!(
+        &captured[0].files["nested/run.sh"],
+        CapturedFile::File {
+            mode: FileMode(0o755),
+            ..
         }
-    );
-    assert_eq!(captured[0].files["nested/run.sh"].mode, FileMode(0o755));
+    ));
     assert_eq!(captured[0].files.len(), 2);
     let seen = runner.seen();
     assert_eq!(seen[0].stdin, SeenStdin::Bytes(b"FROM scratch\n".to_vec()));

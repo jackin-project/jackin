@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, RegularFile,
-    RegularFileProblem, RepoPath,
+    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LinkProblem,
+    RegularFile, RegularFileProblem, RepoPath,
 };
 
 use crate::sync::locked;
@@ -368,6 +368,26 @@ impl FileSystem for MemFs {
             .get(start..end)
             .map(<[u8]>::to_vec)
             .unwrap_or_default())
+    }
+
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        _file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        Err(FsError::Io {
+            path: root.clone(),
+            kind: ErrorKind::Unsupported,
+            message: "read_link is unsupported by MemFs".to_owned(),
+        })
+    }
+
+    async fn write_symlink(&self, path: &HostPath, _target: &str) -> Result<(), FsError> {
+        Err(FsError::Io {
+            path: path.clone(),
+            kind: ErrorKind::Unsupported,
+            message: "write_symlink is unsupported by MemFs".to_owned(),
+        })
     }
 
     async fn read_regular(

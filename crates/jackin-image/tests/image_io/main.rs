@@ -4,6 +4,7 @@
 mod buildx;
 mod ensure;
 mod env_file;
+mod links;
 mod lock;
 mod regular_file;
 mod support;
