@@ -90,6 +90,11 @@ pub enum UnsupportedProject {
     NestedRepositories(Vec<RepoPath>),
     #[error("the project is a partial clone: {output}")]
     PartialClone { output: TerminalText },
+    #[error(
+        "listed paths lie below a symlinked directory{}; the upload would copy files from outside the project or fail, so replace the symlink with a real directory or remove the paths",
+        sample("paths", .0)
+    )]
+    SymlinkedPath(Vec<RepoPath>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -240,6 +245,7 @@ pub(crate) async fn stage(
     refuse::check(&git, fs).await?;
     let facts = facts::read(&git, fs).await?;
     let listing = listing::read(&git).await?;
+    refuse::symlinked_parents(fs, project.path(), &listing).await?;
     fs.create_private_dir_all(dir).await?;
     let file = HostPath::resolve(Path::new("upload.bundle"), dir)?;
     let bundle = bundle::create(&git, &facts.head, &file).await?;

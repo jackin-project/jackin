@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
@@ -9,6 +10,7 @@ use jackin_core::{FileKind, FileSystem, HostPath, RepoPath};
 
 use crate::launch::LaunchError;
 use crate::project::git::{HostGit, Pace, words};
+use crate::project::listing::Listing as UploadListing;
 use crate::project::{ProjectStep, UnsupportedProject};
 
 const GITLINK_MODE: &[u8] = b"160000";
@@ -94,5 +96,46 @@ pub(super) async fn check(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<(), 
         Ok(())
     } else {
         Err(UnsupportedProject::NestedRepositories(nested).into())
+    }
+}
+
+pub(super) async fn symlinked_parents(
+    fs: &dyn FileSystem,
+    root: &HostPath,
+    listing: &UploadListing,
+) -> Result<(), LaunchError> {
+    let mut real: BTreeSet<&[u8]> = BTreeSet::new();
+    let mut linked: BTreeSet<&[u8]> = BTreeSet::new();
+    let mut found = Vec::new();
+    for name in listing.paths() {
+        for (index, byte) in name.iter().enumerate() {
+            if *byte != b'/' {
+                continue;
+            }
+            let parent = &name[..index];
+            if real.contains(parent) {
+                continue;
+            }
+            if !linked.contains(parent) {
+                let dir = HostPath::resolve(Path::new(OsStr::from_bytes(parent)), root)
+                    .map_err(|error| malformed(&error.to_string()))?;
+                if fs.stat(&dir).await? == Some(FileKind::Symlink) {
+                    linked.insert(parent);
+                } else {
+                    real.insert(parent);
+                    continue;
+                }
+            }
+            found.push(
+                RepoPath::parse(&String::from_utf8_lossy(name))
+                    .map_err(|error| malformed(&error.to_string()))?,
+            );
+            break;
+        }
+    }
+    if found.is_empty() {
+        Ok(())
+    } else {
+        Err(UnsupportedProject::SymlinkedPath(found).into())
     }
 }

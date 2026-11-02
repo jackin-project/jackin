@@ -5,7 +5,7 @@ use std::error::Error;
 use std::path::Path;
 use std::time::Duration;
 
-use jackin_core::{HostPath, sandbox_layout};
+use jackin_core::{HostPath, RepoPath, sandbox_layout};
 use jackin_session::{LaunchError, LaunchStep, UnsupportedProject};
 use jackin_testkit::RepoFixture;
 
@@ -17,6 +17,7 @@ enum Change {
     Nothing,
     NestedRepository,
     Commit,
+    SymlinkParent,
 }
 
 async fn base() -> Result<RepoFixture, Box<dyn Error>> {
@@ -51,6 +52,11 @@ async fn during_the_lock_wait(rig: &Rig, change: Change) -> Result<Outcome, Box<
             Change::Commit => {
                 rig.repo.file("b.txt", b"beta\n").await?;
                 rig.repo.commit().await?;
+            }
+            Change::SymlinkParent => {
+                let root = rig.repo.root().as_path();
+                std::fs::remove_dir_all(root.join("d"))?;
+                std::os::unix::fs::symlink(root.join("real"), root.join("d"))?;
             }
         }
         drop(held);
@@ -113,6 +119,40 @@ async fn a_commit_made_after_the_early_check_is_the_head_that_arrives() -> TestR
 
         let control = Rig::new(base().await?).await?;
         ready(during_the_lock_wait(&control, Change::Nothing).await?)?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_directory_replaced_by_a_symlink_after_the_early_check_is_refused_at_the_upload()
+-> TestResult {
+    guard(async {
+        let repo = base().await?;
+        repo.file("d/f.txt", b"inside\n").await?;
+        repo.file("real/f.txt", b"other\n").await?;
+        repo.commit().await?;
+        let rig = Rig::new(repo).await?;
+        let outcome = during_the_lock_wait(&rig, Change::SymlinkParent).await?;
+        let failed = failure(outcome)?;
+        assert_eq!(failed.step, LaunchStep::Upload);
+        assert!(
+            matches!(
+                &*failed.error,
+                LaunchError::Unsupported(UnsupportedProject::SymlinkedPath(paths))
+                    if paths.iter().map(RepoPath::as_str).collect::<Vec<_>>() == ["d/f.txt"]
+            ),
+            "{:?}",
+            failed.error
+        );
+        let handle = rig.handle(1).await?;
+        assert!(
+            handle
+                .files()
+                .keys()
+                .all(|path| !path.as_str().starts_with("/sandbox/project"))
+        );
+        assert!(!handle.root().join("project/d").exists());
         Ok(())
     })
     .await

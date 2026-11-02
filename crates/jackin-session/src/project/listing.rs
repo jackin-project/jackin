@@ -14,6 +14,10 @@ impl Listing {
     pub(super) fn as_bytes(&self) -> &[u8] {
         &self.0
     }
+
+    pub(super) fn paths(&self) -> impl Iterator<Item = &[u8]> {
+        names(&self.0)
+    }
 }
 
 fn names(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {

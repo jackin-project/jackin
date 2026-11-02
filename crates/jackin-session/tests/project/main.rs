@@ -13,6 +13,7 @@ mod late_change;
 mod oracle;
 mod refuse;
 mod refuse_deep;
+mod refuse_symlink;
 mod retry;
 mod secrets;
 mod support;
