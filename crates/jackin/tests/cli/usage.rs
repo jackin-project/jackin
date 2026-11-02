@@ -237,3 +237,39 @@ async fn an_unusable_cache_location_fails_the_command_and_names_the_path() -> Te
     })
     .await
 }
+
+#[tokio::test]
+async fn usage_reads_the_cache_inside_the_ttl_and_fetches_again_after_it() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let config = login_account(&world, "work", "acct-work")?;
+        let harness = started(&config, &world).await?;
+        let server = world.usage.get().await?;
+        server.serve(
+            Provider::Codex,
+            Method::Get,
+            WHAM,
+            codex_route(ONE, "acct-work"),
+        );
+        let first = harness.run(&["usage"]).await?;
+        first.ok()?;
+        assert!(first.stdout.contains("42% used"), "{}", first.stdout);
+        server.replace(
+            Provider::Codex,
+            Method::Get,
+            WHAM,
+            codex_route(CACHED, "acct-work"),
+        );
+        world.clock.advance(Duration::from_secs(60));
+        let inside = harness.run(&["usage"]).await?;
+        inside.ok()?;
+        assert!(inside.stdout.contains("42% used"), "{}", inside.stdout);
+        assert!(!inside.stdout.contains("80% used"), "{}", inside.stdout);
+        world.clock.advance(Duration::from_secs(70));
+        let after = harness.run(&["usage"]).await?;
+        after.ok()?;
+        assert!(after.stdout.contains("80% used"), "{}", after.stdout);
+        Ok(())
+    })
+    .await
+}

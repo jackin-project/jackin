@@ -65,6 +65,10 @@ impl Cache {
         self.file.entries.insert(key, entry);
     }
 
+    pub(crate) fn remove(&mut self, account: &UsageAccount) {
+        self.file.entries.remove(account.name.as_str());
+    }
+
     pub(crate) async fn save(&self, deps: &UsageDeps) -> Result<(), UsageError> {
         let bytes = serde_json::to_vec(&self.file)
             .map_err(|error| UsageError::Internal(error.to_string()))?;

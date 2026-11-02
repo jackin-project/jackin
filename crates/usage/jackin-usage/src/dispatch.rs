@@ -28,7 +28,21 @@ pub(crate) struct Call<'a> {
     pub(crate) now: i64,
 }
 
-type Collected = Result<Vec<Bucket>, UnavailableReason>;
+pub(crate) struct Failure {
+    pub(crate) reason: UnavailableReason,
+    pub(crate) transient: bool,
+}
+
+impl From<UnavailableReason> for Failure {
+    fn from(reason: UnavailableReason) -> Failure {
+        Failure {
+            reason,
+            transient: false,
+        }
+    }
+}
+
+type Collected = Result<Vec<Bucket>, Failure>;
 
 pub(crate) async fn collect(call: &Call<'_>) -> Collected {
     match call.account.provider {
@@ -43,7 +57,7 @@ pub(crate) async fn collect(call: &Call<'_>) -> Collected {
         Provider::Openrouter => openrouter_usage(call).await,
         Provider::Zai => zai_usage(call).await,
         Provider::Amp | Provider::Antigravity | Provider::Hermes | Provider::Muse => {
-            Err(unsupported(None))
+            Err(unsupported(None).into())
         }
     }
 }
@@ -53,13 +67,13 @@ async fn codex_usage(call: &Call<'_>) -> Collected {
         chatgpt_account_id, ..
     } = &call.account.credential
     else {
-        return Err(unsupported(Some(codex::API_KEY_REASON)));
+        return Err(unsupported(Some(codex::API_KEY_REASON)).into());
     };
     let login = call.material().await?;
     if login.shape != Shape::Login {
-        return Err(UnavailableReason::Provider(
-            "the Codex login is not a login file".to_owned(),
-        ));
+        return Err(
+            UnavailableReason::Provider("the Codex login is not a login file".to_owned()).into(),
+        );
     }
     codex::fetch(
         call.http,
@@ -68,70 +82,70 @@ async fn codex_usage(call: &Call<'_>) -> Collected {
         call.now,
     )
     .await
-    .map_err(|error| reason(error, call.now))
+    .map_err(|error| failure(error, call.now))
 }
 
 async fn claude_usage(call: &Call<'_>) -> Collected {
     let material = call.material().await?;
     claude::fetch(call.http, material.credential())
         .await
-        .map_err(|error| reason(error, call.now))
+        .map_err(|error| failure(error, call.now))
 }
 
 async fn cursor_usage(call: &Call<'_>) -> Collected {
     let material = call.material().await?;
     cursor::fetch(call.http, material.credential())
         .await
-        .map_err(|error| reason(error, call.now))
+        .map_err(|error| failure(error, call.now))
 }
 
 async fn gemini_usage(call: &Call<'_>) -> Collected {
     let material = call.material().await?;
     gemini::fetch(call.http, material.credential(), call.now)
         .await
-        .map_err(|error| reason(error, call.now))
+        .map_err(|error| failure(error, call.now))
 }
 
 async fn grok_usage(call: &Call<'_>) -> Collected {
     let material = call.material().await?;
     grok::fetch(call.http, material.credential(), call.now)
         .await
-        .map_err(|error| reason(error, call.now))
+        .map_err(|error| failure(error, call.now))
 }
 
 async fn kimi_usage(call: &Call<'_>) -> Collected {
     let material = call.material().await?;
     kimi::fetch(call.http, material.credential(), call.now)
         .await
-        .map_err(|error| reason(error, call.now))
+        .map_err(|error| failure(error, call.now))
 }
 
 async fn zai_usage(call: &Call<'_>) -> Collected {
     let key = call.token().await?;
     zai::fetch(call.http, key.secret.expose())
         .await
-        .map_err(|error| reason(error, call.now))
+        .map_err(|error| failure(error, call.now))
 }
 
 async fn minimax_usage(call: &Call<'_>) -> Collected {
     let key = call.token().await?;
     minimax::fetch(call.http, key.secret.expose(), call.now)
         .await
-        .map_err(|error| reason(error, call.now))
+        .map_err(|error| failure(error, call.now))
 }
 
 async fn opencode_usage(call: &Call<'_>) -> Collected {
     let material = call.material().await?;
     opencode::fetch(call.http, material.credential())
         .await
-        .map_err(|error| reason(error, call.now))
+        .map_err(|error| failure(error, call.now))
 }
 
 async fn openrouter_usage(call: &Call<'_>) -> Collected {
     let key = call.token().await?;
     openrouter::fetch(call.http, key.secret.expose())
         .await
-        .map_err(|error| reason(error, call.now))
+        .map_err(|error| failure(error, call.now))
 }
 
 impl Call<'_> {
@@ -158,6 +172,19 @@ impl Call<'_> {
 fn unsupported(detail: Option<&str>) -> UnavailableReason {
     UnavailableReason::Unsupported {
         detail: detail.map(str::to_owned),
+    }
+}
+
+fn failure(error: ProviderError, now: i64) -> Failure {
+    let transient = matches!(
+        error,
+        ProviderError::RateLimited { .. }
+            | ProviderError::Network(_)
+            | ProviderError::Status(500..=599)
+    );
+    Failure {
+        reason: reason(error, now),
+        transient,
     }
 }
 

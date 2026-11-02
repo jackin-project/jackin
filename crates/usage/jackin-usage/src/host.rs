@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::cache::{Cache, Entry, Good, fingerprint};
 use crate::deps::UsageDeps;
-use crate::dispatch::{Call, collect};
+use crate::dispatch::{Call, Failure, collect};
 use crate::model::{
     AccountUsage, Freshness, LimitWindow, SCHEMA, UnavailableReason, UsageError, UsageOutcome,
     UsageReport,
@@ -27,9 +27,15 @@ pub struct HostUsage {
     http: Http,
 }
 
+enum Update {
+    Keep,
+    Set(Entry),
+    Remove,
+}
+
 struct Settled {
     usage: AccountUsage,
-    entry: Option<Entry>,
+    update: Update,
 }
 
 impl HostUsage {
@@ -61,8 +67,10 @@ impl HostUsage {
         };
         let mut accounts = Vec::with_capacity(settled.len());
         for (account, done) in request.accounts.iter().zip(settled) {
-            if let Some(entry) = done.entry {
-                cache.put(account, entry);
+            match done.update {
+                Update::Keep => {}
+                Update::Set(entry) => cache.put(account, entry),
+                Update::Remove => cache.remove(account),
             }
             accounts.push(done.usage);
         }
@@ -85,7 +93,7 @@ impl HostUsage {
         let print = fingerprint(account);
         let entry = entry.filter(|entry| entry.fingerprint == print);
         if let Some(held) = entry.as_ref().and_then(|entry| held(entry, now)) {
-            return settled(account, held.0, held.1, None);
+            return settled(account, held.0, held.1, Update::Keep);
         }
         if let (Refresh::Cached, Some(good)) =
             (refresh, entry.as_ref().and_then(|e| e.good.as_ref()))
@@ -95,7 +103,7 @@ impl HostUsage {
                 account,
                 Freshness::Fresh,
                 UsageOutcome::Windows(good.windows.clone()),
-                None,
+                Update::Keep,
             );
         }
         match self.fetch(account, cancel, now).await {
@@ -112,10 +120,10 @@ impl HostUsage {
                     account,
                     Freshness::Fresh,
                     UsageOutcome::Windows(found),
-                    Some(next),
+                    Update::Set(next),
                 )
             }
-            Err(reason) => failed(account, reason, entry, print),
+            Err(failure) => failed(account, failure, entry, print),
         }
     }
 
@@ -124,7 +132,7 @@ impl HostUsage {
         account: &UsageAccount,
         cancel: &CancellationToken,
         now: i64,
-    ) -> Result<Vec<LimitWindow>, UnavailableReason> {
+    ) -> Result<Vec<LimitWindow>, Failure> {
         let http = match self.deps.endpoints.base(account.provider) {
             Some(base) => &self
                 .http
@@ -139,7 +147,7 @@ impl HostUsage {
             http,
             now,
         };
-        windows(collect(&call).await?)
+        Ok(windows(collect(&call).await?)?)
     }
 }
 
@@ -172,7 +180,7 @@ fn settled(
     account: &UsageAccount,
     freshness: Freshness,
     outcome: UsageOutcome,
-    entry: Option<Entry>,
+    update: Update,
 ) -> Settled {
     Settled {
         usage: AccountUsage {
@@ -181,28 +189,23 @@ fn settled(
             freshness,
             outcome,
         },
-        entry,
+        update,
     }
 }
 
 fn failed(
     account: &UsageAccount,
-    reason: UnavailableReason,
+    failure: Failure,
     entry: Option<Entry>,
     print: String,
 ) -> Settled {
-    let transient = matches!(
-        reason,
-        UnavailableReason::RateLimited { .. }
-            | UnavailableReason::Network(_)
-            | UnavailableReason::Provider(_)
-    );
+    let Failure { reason, transient } = failure;
     if !transient {
         return settled(
             account,
             Freshness::Fresh,
             UsageOutcome::Unavailable(reason),
-            None,
+            Update::Remove,
         );
     }
     let retry_at = match &reason {
@@ -224,14 +227,18 @@ fn failed(
                 since: Timestamp(good.fetched_at),
             },
             UsageOutcome::Windows(good.windows),
-            Some(next),
+            Update::Set(next),
         );
     }
-    let keep = next.retry_at.is_some().then_some(next);
+    let update = if next.retry_at.is_some() {
+        Update::Set(next)
+    } else {
+        Update::Keep
+    };
     settled(
         account,
         Freshness::Fresh,
         UsageOutcome::Unavailable(reason),
-        keep,
+        update,
     )
 }

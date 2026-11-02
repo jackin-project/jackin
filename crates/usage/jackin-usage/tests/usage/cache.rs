@@ -194,10 +194,80 @@ async fn a_refused_connection_after_a_good_report_returns_the_old_windows_as_sta
 }
 
 #[tokio::test]
-async fn a_malformed_body_after_a_good_report_returns_the_old_windows_as_stale() -> TestResult {
+async fn a_malformed_body_after_a_good_report_replaces_the_old_windows() -> TestResult {
     guard(async {
-        let (_, _, usage) = stale_after(Route::json(200, "not json")).await?;
-        assert_stale(&usage);
+        let (harness, account, usage) = stale_after(Route::json(200, "not json")).await?;
+        assert!(matches!(
+            unavailable(&usage.outcome),
+            UnavailableReason::Provider(_)
+        ));
+        serve(&harness, codex_route(&codex_body(90)));
+        harness.advance(5);
+        let again = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!((again.freshness, used_of(&again)), (Freshness::Fresh, 90.0));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_forced_401_replaces_the_old_windows_and_a_later_cached_report_fetches() -> TestResult {
+    guard(async {
+        let (harness, account) = start(10).await?;
+        harness.one(&account, Refresh::Cached).await?;
+        harness.advance(10);
+        serve(&harness, Route::status(401));
+        let forced = harness.one(&account, Refresh::Force).await?;
+        assert_eq!(
+            unavailable(&forced.outcome),
+            &UnavailableReason::ExpiredLogin
+        );
+        serve(&harness, codex_route(&codex_body(90)));
+        harness.advance(5);
+        let later = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!((later.freshness, used_of(&later)), (Freshness::Fresh, 90.0));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_forced_report_without_a_credential_replaces_the_old_windows() -> TestResult {
+    guard(async {
+        let (harness, account) = start(10).await?;
+        harness.one(&account, Refresh::Cached).await?;
+        let auth = host_path("/home/work/.codex/auth.json");
+        harness.fs.remove_file(&auth).await?;
+        harness.advance(10);
+        let forced = harness.one(&account, Refresh::Force).await?;
+        assert_eq!(
+            unavailable(&forced.outcome),
+            &UnavailableReason::NoCredentials
+        );
+        harness
+            .put(
+                "/home/work/.codex/auth.json",
+                include_str!("fixtures/codex/auth_chatgpt.json"),
+            )
+            .await?;
+        serve(&harness, codex_route(&codex_body(90)));
+        harness.advance(5);
+        let later = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!(used_of(&later), 90.0);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_forced_500_keeps_the_old_windows_as_stale() -> TestResult {
+    guard(async {
+        let (harness, account) = start(10).await?;
+        harness.one(&account, Refresh::Cached).await?;
+        harness.advance(10);
+        serve(&harness, Route::status(500));
+        let forced = harness.one(&account, Refresh::Force).await?;
+        assert_stale(&forced);
         Ok(())
     })
     .await
@@ -404,6 +474,53 @@ async fn a_cache_read_error_is_a_store_error_naming_the_path() -> TestResult {
             }
             other => panic!("expected a store error, found {other:?}"),
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_same_account_name_with_another_chatgpt_account_id_is_fetched_again() -> TestResult {
+    guard(async {
+        let (harness, account) = start(10).await?;
+        harness.one(&account, Refresh::Cached).await?;
+        harness.server.serve(
+            Provider::Codex,
+            Method::Get,
+            CODEX_PATH,
+            Route::json(200, &codex_body(90))
+                .requires_header("authorization", "Bearer SECRET_TOKEN_CODEX")
+                .requires_header("chatgpt-account-id", "acct-2"),
+        );
+        harness.advance(10);
+        let other = codex_login("work", "/home/work/.codex", "acct-2");
+        let usage = harness.one(&other, Refresh::Cached).await?;
+        assert_eq!(used_of(&usage), 90.0);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_same_account_name_under_another_provider_is_fetched_again() -> TestResult {
+    guard(async {
+        let (harness, router) = crate::providers::openrouter_started().await?;
+        let first = harness.one(&router, Refresh::Cached).await?;
+        assert_eq!(windows_of(&first.outcome).len(), 2);
+        harness.server.serve(
+            Provider::Kimi,
+            Method::Get,
+            "/coding/v1/usages",
+            Route::json(200, "{\"usage\":{\"limit\":100,\"used\":30}}"),
+        );
+        harness.advance(10);
+        let kimi = crate::support::account(
+            "router",
+            Provider::Kimi,
+            crate::support::env_source("OPENROUTER_TEST_KEY"),
+        );
+        let usage = harness.one(&kimi, Refresh::Cached).await?;
+        assert_eq!(windows_of(&usage.outcome).len(), 1);
         Ok(())
     })
     .await
