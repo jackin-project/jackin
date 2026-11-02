@@ -1,14 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{
-    CompatibilityError, ConfigError, EntropyError, FsError, HostPath, PathError, ProcessError,
-};
+use jackin_core::{CompatibilityError, ConfigError, EntropyError, FsError, HostPath, PathError};
 use jackin_image::ImageError;
 use jackin_openshell::{DiscoveryError, GatewayError};
 use jackin_session::{
-    AccountError, AttachError, CredentialError, ExportError, LaunchError, LaunchFailure,
-    LifecycleError, PlanError, PurgeError, RestartError, RoleError,
+    AccountError, AttachError, CredentialError, ExportError, LaunchFailure, LifecycleError,
+    PlanError, PurgeError, RestartError, RoleError,
 };
 use jackin_tui::ConsoleError;
 use thiserror::Error;
@@ -66,7 +64,7 @@ pub enum CommandError {
     Purge(#[from] PurgeError),
     #[error(transparent)]
     Account(#[from] AccountError),
-    #[error("cannot import the ChatGPT login from {home:?}: {source}")]
+    #[error("cannot import the ChatGPT login from {}", .home.as_path().display())]
     Login {
         home: HostPath,
         source: CredentialError,
@@ -99,20 +97,6 @@ pub enum CommandError {
     Unhealthy,
 }
 
-fn gateway_cancelled(error: &GatewayError) -> bool {
-    matches!(error, GatewayError::Cancelled { .. })
-        || matches!(error, GatewayError::Process(ProcessError::Cancelled { .. }))
-}
-
-fn launch_cancelled(error: &LaunchError) -> bool {
-    match error {
-        LaunchError::Image(ImageError::Cancelled) => true,
-        LaunchError::Gateway(error) => gateway_cancelled(error),
-        LaunchError::Process(ProcessError::Cancelled { .. }) => true,
-        _ => false,
-    }
-}
-
 impl CommandError {
     pub fn class(&self) -> ExitClass {
         match self {
@@ -122,16 +106,8 @@ impl CommandError {
             | CommandError::Purge(PurgeError::WorkNotExported { .. }) => ExitClass::Refused,
             CommandError::Cancelled(_)
             | CommandError::Image(ImageError::Cancelled)
-            | CommandError::Export(ExportError::Cancelled) => ExitClass::Cancelled,
-            CommandError::Gateway(error)
-            | CommandError::Export(ExportError::Gateway(error))
-            | CommandError::Restart(RestartError::Gateway(error))
-            | CommandError::Account(AccountError::Gateway(error))
-                if gateway_cancelled(error) =>
-            {
-                ExitClass::Cancelled
-            }
-            CommandError::Launch(failure) if launch_cancelled(&failure.error) => {
+            | CommandError::Export(ExportError::Cancelled)
+            | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. })) => {
                 ExitClass::Cancelled
             }
             CommandError::Config(_)

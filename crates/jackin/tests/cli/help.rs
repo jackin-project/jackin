@@ -5,7 +5,7 @@ use clap::CommandFactory;
 use jackin::{Cli, ExitClass};
 use jackin_testkit::{TestResult, World, guard};
 
-use super::support::{Failure, Harness};
+use super::support::{Failure, Harness, ScriptedTerminal};
 
 const COMMANDS: &[&str] = &[
     "gateway",
@@ -86,6 +86,27 @@ fn every_command_and_argument_has_attribute_help_and_the_command_set_is_the_docu
     wanted.sort();
     assert_eq!(seen, wanted);
     Ok(())
+}
+
+#[test]
+fn the_clap_definition_is_consistent() {
+    Cli::command().debug_assert();
+}
+
+#[tokio::test]
+async fn a_bare_invocation_prints_help_on_a_terminal_too() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        let (terminal, _) = ScriptedTerminal::new(Vec::new())?;
+        let on_terminal = harness.command(&[]).terminal(terminal).run().await?;
+        let plain = harness.run(&["--help"]).await?;
+        assert_eq!(on_terminal.exit, ExitClass::Ok);
+        assert_eq!(on_terminal.stdout, plain.stdout);
+        assert!(on_terminal.stderr.is_empty());
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]

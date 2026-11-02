@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::{Output, Stdio};
 use std::time::Duration;
 
-use jackin_testkit::{RoleFixture, TestResult, guard_within};
+use jackin_testkit::{RepoFixture, RoleFixture, TestResult, guard_within};
 use tempfile::TempDir;
 use tokio::process::Command;
 
@@ -70,6 +70,79 @@ async fn role_check_through_the_binary_passes_a_valid_role_and_fails_an_invalid_
         let failed = jackin(home.path(), broken.root().as_path(), &["role", "check", "."]).await?;
         assert_eq!(code(&failed), Some(1));
         assert!(String::from_utf8_lossy(&failed.stderr).contains("mystery_field"));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_binary_keeps_its_config_under_the_home_and_honors_the_xdg_override() -> TestResult {
+    guard_within(LIMIT, async {
+        let home = TempDir::new()?;
+        let project = TempDir::new()?;
+        let path = project.path().display().to_string();
+        let added = jackin(home.path(), home.path(), &["workspace", "add", "w", &path]).await?;
+        assert_eq!(
+            code(&added),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&added.stderr)
+        );
+        assert!(home.path().join(".config/jackin/config.toml").is_file());
+
+        let listed = jackin(home.path(), home.path(), &["workspace", "ls", "--json"]).await?;
+        assert_eq!(code(&listed), Some(0));
+        let text = String::from_utf8(listed.stdout)?;
+        assert!(
+            text.starts_with("{\"schema\":1,\"workspaces\":[{\"name\":\"w\""),
+            "{text}"
+        );
+
+        let xdg = TempDir::new()?;
+        let child = Command::new(env!("CARGO_BIN_EXE_jackin"))
+            .args(["workspace", "add", "x", &path])
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", xdg.path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()?;
+        let moved = child.wait_with_output().await?;
+        assert_eq!(code(&moved), Some(0));
+        assert!(xdg.path().join("jackin/config.toml").is_file());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_load_that_needs_a_missing_env_value_exits_with_the_refused_code_before_any_gateway()
+-> TestResult {
+    guard_within(LIMIT, async {
+        let home = TempDir::new()?;
+        let role = RoleFixture::new("sentinel")?.env("TOKENISH", None, None);
+        role.commit().await?;
+        let repo = RepoFixture::new().await?;
+        repo.file("README.md", b"readme\n").await?;
+        repo.commit().await?;
+        let config_dir = home.path().join(".config/jackin");
+        std::fs::create_dir_all(&config_dir)?;
+        std::fs::write(
+            config_dir.join("config.toml"),
+            format!(
+                "default_gateway = \"nowhere\"\n\n[gateways.nowhere]\nopenshell_workspace = \"default\"\nbuilder = \"b\"\nplatform = \"linux/arm64\"\n\n[accounts.work]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.proj]\npath = \"{}\"\n",
+                home.path().display(),
+                role.root().as_path().display(),
+                repo.root().as_path().display(),
+            ),
+        )?;
+        let refused = jackin(home.path(), repo.root().as_path(), &["load"]).await?;
+        assert_eq!(code(&refused), Some(3), "{}", String::from_utf8_lossy(&refused.stderr));
+        assert!(refused.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&refused.stderr).contains("TOKENISH"));
         Ok(())
     })
     .await

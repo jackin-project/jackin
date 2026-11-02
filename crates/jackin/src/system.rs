@@ -137,7 +137,7 @@ impl GatewayConnector for GrpcConnector {
         )
         .await
         .map_err(|error| GatewayError::Unreachable {
-            endpoint: format!("gateway {name}"),
+            endpoint: name.to_string(),
             message: error.to_string(),
         })?;
         let gateway = GrpcGateway::connect(GrpcGatewayConfig {

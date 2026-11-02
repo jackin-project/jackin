@@ -19,6 +19,16 @@ fn fail(message: &str) -> ExitCode {
     ExitCode::from(ExitClass::Failure.code())
 }
 
+async fn interrupted(cancel: &CancellationToken) {
+    if tokio::signal::ctrl_c().await.is_ok() {
+        cancel.cancel();
+        if tokio::signal::ctrl_c().await.is_ok() {
+            return;
+        }
+    }
+    std::future::pending::<()>().await;
+}
+
 fn main() -> ExitCode {
     match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -51,12 +61,6 @@ async fn start() -> ExitCode {
         Err(error) => return fail(&error.to_string()),
     };
     let cancel = CancellationToken::new();
-    let interrupt = cancel.clone();
-    tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            interrupt.cancel();
-        }
-    });
     let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
     let runner: Arc<dyn ProcessRunner> = Arc::new(TokioProcessRunner);
     let build_dir = match HostPath::resolve(std::path::Path::new("build"), &places.cache_dir) {
@@ -77,7 +81,7 @@ async fn start() -> ExitCode {
         connect: Arc::new(GrpcConnector::new(runner, fs, places.openshell_config)),
         limits: launch_limits(),
     };
-    let class = jackin::run(
+    let run = jackin::run(
         AppEnv {
             args: std::env::args_os().collect(),
             stdout: Box::new(std::io::stdout()),
@@ -87,10 +91,13 @@ async fn start() -> ExitCode {
             config_path: places.config_path,
             cache_dir: places.cache_dir,
             env,
-            cancel,
+            cancel: cancel.clone(),
         },
         deps,
-    )
-    .await;
+    );
+    let class = tokio::select! {
+        class = run => class,
+        () = interrupted(&cancel) => ExitClass::Cancelled,
+    };
     ExitCode::from(class.code())
 }
