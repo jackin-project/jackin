@@ -8,7 +8,7 @@ use std::str::FromStr;
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use jackin_core::{
     AccountName, BuilderName, EnvName, GatewayName, OpReference, OpenShellWorkspace, Platform,
-    Provider, RoleName, RoleRev, WorkspaceName,
+    Provider, RoleName, RoleRev, SandboxName, WorkspaceName,
 };
 
 use crate::error::CommandError;
@@ -28,8 +28,14 @@ pub enum Command {
     Gateway(GatewayCommand),
     #[command(subcommand, about = "Manage accounts and their bindings")]
     Account(AccountCommand),
+    #[command(about = "Check the host tools, the gateway, and the engine socket")]
+    Doctor,
     #[command(about = "Build the role image and print its image ID")]
     Build(BuildArgs),
+    #[command(about = "List the jackin sandboxes")]
+    Ls(JsonArg),
+    #[command(about = "Show a sandbox, its labels, providers, and policy status")]
+    Inspect(InspectArgs),
     #[command(subcommand, about = "Manage role sources")]
     Role(RoleCommand),
     #[command(subcommand, about = "Manage workspaces")]
@@ -220,6 +226,20 @@ pub struct WorkspaceAddArgs {
     pub path: PathBuf,
     #[arg(long, help = "Enable the Docker capability for this workspace")]
     pub docker: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SandboxArg {
+    #[arg(help = "Sandbox name")]
+    pub sandbox: SandboxName,
+}
+
+#[derive(Debug, Args)]
+pub struct InspectArgs {
+    #[arg(help = "Sandbox name")]
+    pub sandbox: SandboxName,
+    #[arg(long, help = "Print JSON")]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]

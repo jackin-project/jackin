@@ -58,7 +58,7 @@ fn below(base: &HostPath, relative: &str) -> Result<HostPath, CommandError> {
     Ok(HostPath::resolve(Path::new(relative), base)?)
 }
 
-fn engine_socket(env: &EnvSnapshot) -> Result<HostPath, CommandError> {
+pub(crate) fn engine_socket(env: &EnvSnapshot) -> Result<HostPath, CommandError> {
     let socket = variable(env, "DOCKER_HOST")
         .and_then(|host| host.strip_prefix(UNIX_SCHEME).map(str::to_owned))
         .unwrap_or_else(|| DOCKER_SOCKET.to_owned());

@@ -66,6 +66,7 @@ pub(crate) struct App {
     pub(crate) store: ConfigStore,
     pub(crate) cwd: HostPath,
     pub(crate) cache_dir: HostPath,
+    pub(crate) env: EnvSnapshot,
     pub(crate) cancel: CancellationToken,
     pub(crate) gateway: Option<GatewayName>,
 }

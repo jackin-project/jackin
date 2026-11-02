@@ -145,6 +145,13 @@ const CASES: &[(&[&str], &[&str])] = &[
         ],
     ),
     (&["build", "--nope"], &["build", "--json"]),
+    (&["doctor", "extra"], &["doctor"]),
+    (&["ls", "extra"], &["ls", "--json"]),
+    (&["inspect"], &["inspect", "jackin-x-0001"]),
+    (
+        &["inspect", "Bad Name"],
+        &["inspect", "jackin-x-0002", "--json"],
+    ),
     (&["build", "a", "b"], &["build", "a"]),
     (
         &["account", "bind", "a"],

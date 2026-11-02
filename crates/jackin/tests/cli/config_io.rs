@@ -43,7 +43,7 @@ async fn a_bad_config_fails_every_reader_naming_the_key_and_is_never_repaired() 
         let harness = Harness::new(&world);
         harness.write_config("mystery_key = 1\n")?;
         let before = harness.config_bytes()?;
-        for args in LISTS {
+        for args in LISTS.iter().chain([&["ls"][..]].iter()) {
             failed(
                 &harness.run(args).await?,
                 ExitClass::Failure,
@@ -53,7 +53,7 @@ async fn a_bad_config_fails_every_reader_naming_the_key_and_is_never_repaired() 
         }
         harness.write_config("[gateways\n")?;
         let before = harness.config_bytes()?;
-        for args in LISTS {
+        for args in LISTS.iter().chain([&["ls"][..]].iter()) {
             let ran = harness.run(args).await?;
             failed(&ran, ExitClass::Failure, &["syntax"])?;
             assert_eq!(harness.config_bytes()?, before, "{args:?}");

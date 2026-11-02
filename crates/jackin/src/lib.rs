@@ -35,6 +35,7 @@ pub async fn run(env: AppEnv, deps: Deps) -> ExitClass {
         cwd,
         config_path,
         cache_dir,
+        env,
         cancel,
         ..
     } = env;
@@ -54,6 +55,7 @@ pub async fn run(env: AppEnv, deps: Deps) -> ExitClass {
         store,
         cwd,
         cache_dir,
+        env,
         cancel,
         gateway: cli.gateway,
     };
