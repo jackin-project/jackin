@@ -300,7 +300,7 @@ async fn colliding_branch_and_worktree(branch: &str) -> TestResult {
 }
 
 #[tokio::test]
-async fn targets_that_collide_or_nest_are_refused_before_any_fetch_and_a_retry_exports_all()
+async fn targets_that_collide_or_nest_are_refused_before_any_import_and_a_retry_exports_all()
 -> TestResult {
     guard(async {
         colliding_branch_and_worktree("worktree/w2").await?;

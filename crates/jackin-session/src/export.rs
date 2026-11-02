@@ -481,7 +481,7 @@ impl Session {
             .map_err(|error| ExportError::remote(sandbox, error))?;
         let staging = self.stage(sandbox, unique).await?;
         let result = self
-            .fetch_exported(host, sandbox, remote_bundle, &staging, items, cancel)
+            .import_exported(host, sandbox, remote_bundle, &staging, items, cancel)
             .await;
         drop(self.deps.host.fs.remove_dir_all(&staging.dir).await);
         result
@@ -499,7 +499,7 @@ impl Session {
         Ok(Staging { dir, bundle })
     }
 
-    async fn fetch_exported(
+    async fn import_exported(
         &self,
         host: &Host<'_>,
         sandbox: &SandboxName,
@@ -536,11 +536,19 @@ impl Session {
             cancel,
         )
         .await?;
-        let refspecs: Vec<String> = items
-            .iter()
-            .map(|item| format!("+{}:{}", item.source(), item.target(sandbox)))
-            .collect();
-        host.fetch(&staging.bundle, &refspecs).await?;
+        host.import(&staging.bundle, header.pack_offset).await?;
+        let mut updates = Vec::new();
+        for item in items {
+            let tip = header
+                .heads
+                .get(&item.source())
+                .ok_or_else(|| ExportError::BundleHeads {
+                    extra: Vec::new(),
+                    missing: vec![item.source()],
+                })?;
+            updates.push((item.target(sandbox), tip.clone()));
+        }
+        host.publish(&updates).await?;
         let landed = host.refs(sandbox).await?;
         report(sandbox, digest, items, &header.heads, &landed)
     }

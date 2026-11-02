@@ -67,9 +67,20 @@ impl HostGit<'_> {
         &self,
         pace: Pace,
         args: Vec<String>,
+        env: Vec<(String, EnvValue)>,
+    ) -> Result<ProcessOutput, ProcessError> {
+        self.capture_from(pace, args, env, ProcessStdin::Null).await
+    }
+
+    pub(crate) async fn capture_from(
+        &self,
+        pace: Pace,
+        args: Vec<String>,
         mut env: Vec<(String, EnvValue)>,
+        stdin: ProcessStdin,
     ) -> Result<ProcessOutput, ProcessError> {
         env.push(plain("GIT_OPTIONAL_LOCKS", "0"));
+        env.push(plain("GIT_NO_LAZY_FETCH", "1"));
         let mut hardened = words(&HARDENING);
         hardened.extend(args);
         let spec = ProcessSpec {
@@ -78,7 +89,7 @@ impl HostGit<'_> {
             cwd: Some(self.root.clone()),
             env,
             env_remove_prefixes: vec!["GIT_".to_owned()],
-            stdin: ProcessStdin::Null,
+            stdin,
             timeout: match pace {
                 Pace::Quick => QUICK,
                 Pace::Long => LONG,

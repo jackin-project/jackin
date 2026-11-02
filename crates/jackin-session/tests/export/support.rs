@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use jackin_core::{
-    CommitId, LineSink, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, SandboxName,
-    SecretOutput, sandbox_layout,
+    CommitId, EnvValue, LineSink, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, Program,
+    SandboxName, SecretOutput, sandbox_layout,
 };
 use jackin_session::{ExportError, ExportReport};
 use jackin_testkit::{HostSnapshot, Rig, SandboxHandle, TestRunner};
@@ -56,7 +56,9 @@ impl ProcessRunner for CancelsOn {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Call {
+    pub(crate) program: Program,
     pub(crate) args: Vec<String>,
+    pub(crate) env: Vec<(String, String)>,
 }
 
 impl Call {
@@ -123,7 +125,16 @@ impl ProcessRunner for Sees {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(Call {
+                program: spec.program,
                 args: spec.args.clone(),
+                env: spec
+                    .env
+                    .iter()
+                    .map(|(name, value)| match value {
+                        EnvValue::Plain(text) => (name.clone(), text.clone()),
+                        EnvValue::Secret(_) => (name.clone(), String::new()),
+                    })
+                    .collect(),
             });
         self.inner.run(spec, lines, cancel).await
     }

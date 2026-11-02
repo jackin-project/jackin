@@ -15,7 +15,11 @@ fn raw_id(hex: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         .collect()
 }
 
-async fn evil_branch(handle: &SandboxHandle, entries: &[&str]) -> Result<(), Box<dyn Error>> {
+async fn evil_branch(
+    handle: &SandboxHandle,
+    entries: &[&str],
+    mode: &str,
+) -> Result<(), Box<dyn Error>> {
     let format = handle.git(&["rev-parse", "--show-object-format"]).await?;
     assert_eq!(format.trim(), "sha1");
     let blob = handle.root().join("blob.txt");
@@ -28,7 +32,7 @@ async fn evil_branch(handle: &SandboxHandle, entries: &[&str]) -> Result<(), Box
     )?;
     let mut tree = Vec::new();
     for entry in entries {
-        tree.extend_from_slice(format!("100644 {entry}\0").as_bytes());
+        tree.extend_from_slice(format!("{mode} {entry}\0").as_bytes());
         tree.extend_from_slice(&id);
     }
     let path = handle.root().join("tree.bin");
@@ -91,7 +95,8 @@ async fn plain_fetch_accepts_it(handle: &SandboxHandle) -> TestResult {
 }
 
 #[tokio::test]
-async fn a_bundle_with_a_malformed_tree_is_refused_by_the_fetch_and_writes_no_ref() -> TestResult {
+async fn a_bundle_with_a_malformed_tree_is_refused_by_the_strict_import_and_writes_no_ref()
+-> TestResult {
     guard(async {
         for (label, entries) in [
             ("a .git entry", vec![".git"]),
@@ -101,7 +106,7 @@ async fn a_bundle_with_a_malformed_tree_is_refused_by_the_fetch_and_writes_no_re
             rig.launch(1).await?;
             let handle = rig.handle(1).await?;
             let name = handle.name();
-            evil_branch(&handle, &entries).await?;
+            evil_branch(&handle, &entries, "100644").await?;
             plain_fetch_accepts_it(&handle).await?;
             let before = snapshot(&rig).await?;
 
@@ -123,6 +128,64 @@ async fn a_bundle_with_a_malformed_tree_is_refused_by_the_fetch_and_writes_no_re
             export(&rig, &name).await?;
             assert!(exports(&snapshot(&rig).await?).contains_key(&ref_of(&name, "clean")));
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn repository_config_cannot_weaken_the_strict_import() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        for key in [
+            "fsck.gitmodulesSymlink",
+            "fetch.fsck.gitmodulesSymlink",
+            "transfer.fsck.gitmodulesSymlink",
+        ] {
+            rig.repo.git(&["config", key, "ignore"]).await?;
+        }
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        evil_branch(&handle, &[".gitmodules"], "120000").await?;
+        plain_fetch_accepts_it(&handle).await?;
+        let bundle = handle.root().join("evil.bundle").display().to_string();
+        let scratch = tempfile::tempdir()?;
+        let scratch_text = scratch.path().display().to_string();
+        handle.git(&["init", "-q", &scratch_text]).await?;
+        handle
+            .git(&[
+                "-C",
+                &scratch_text,
+                "-c",
+                "fetch.fsckObjects=true",
+                "-c",
+                "fetch.fsck.gitmodulesSymlink=ignore",
+                "fetch",
+                "-q",
+                &bundle,
+                "refs/heads/evil1:refs/heads/probe",
+            ])
+            .await?;
+        let before = snapshot(&rig).await?;
+
+        let refused = export(&rig, &name).await;
+
+        let Err(ExportError::HostGit { output, .. }) = refused else {
+            return Err(format!("expected a host git refusal, saw {refused:?}").into());
+        };
+        assert!(output.as_str().contains("gitmodulesSymlink"), "{output:?}");
+        let after = snapshot(&rig).await?;
+        assert!(exports(&after).is_empty());
+        assert_eq!(after.rest, before.rest);
+
+        handle.git(&["branch", "-q", "-D", "evil1"]).await?;
+        handle.git(&["checkout", "-q", "-b", "plain"]).await?;
+        handle
+            .commit_in_project(".gitmodules", b"", "regular")
+            .await?;
+        export(&rig, &name).await?;
+        assert!(exports(&snapshot(&rig).await?).contains_key(&ref_of(&name, "plain")));
         Ok(())
     })
     .await

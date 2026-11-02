@@ -183,8 +183,12 @@ pub(crate) fn blob(payload: &[u8]) -> Vec<u8> {
 }
 
 pub(crate) fn ref_delta(hash: Hash, size_field: u64, stream: &[u8]) -> Vec<u8> {
+    ref_delta_on(&zeros(hash.len()), size_field, stream)
+}
+
+pub(crate) fn ref_delta_on(base: &[u8], size_field: u64, stream: &[u8]) -> Vec<u8> {
     let mut bytes = typed_size(REF_DELTA, size_field);
-    bytes.extend(zeros(hash.len()));
+    bytes.extend_from_slice(base);
     bytes.extend(zlib(stream));
     bytes
 }

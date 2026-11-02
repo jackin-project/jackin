@@ -6,7 +6,9 @@ use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 
-use jackin_core::{CommitId, EnvValue, HostPath, ProcessStatus, SandboxName, TerminalText};
+use jackin_core::{
+    CommitId, HostPath, ProcessStatus, ProcessStdin, SandboxName, SecretBytes, TerminalText,
+};
 
 use super::ExportError;
 use crate::project::ObjectFormat;
@@ -14,17 +16,11 @@ use crate::project::git::{HostGit, Pace, words};
 
 const HEADS: &str = "refs/heads/";
 const JACKIN: &str = "jackin/";
-const BOUNDS: [&str; 4] = [
-    "-c",
-    "pack.windowMemory=256m",
+const PINS: [&str; 4] = [
     "-c",
     "core.bigFileThreshold=64m",
-];
-const STRICT: [&str; 4] = [
     "-c",
-    "fetch.fsckObjects=true",
-    "-c",
-    "transfer.fsckObjects=true",
+    "core.deltaBaseCacheLimit=96m",
 ];
 
 pub(super) const HEAD: &str = "HEAD";
@@ -59,16 +55,16 @@ fn commit(text: &str) -> Result<CommitId, ExportError> {
 
 impl Host<'_> {
     async fn run(&self, pace: Pace, args: Vec<String>) -> Result<Vec<u8>, ExportError> {
-        self.run_with(pace, args, Vec::new()).await
+        self.run_from(pace, args, ProcessStdin::Null).await
     }
 
-    async fn run_with(
+    async fn run_from(
         &self,
         pace: Pace,
         args: Vec<String>,
-        env: Vec<(String, EnvValue)>,
+        stdin: ProcessStdin,
     ) -> Result<Vec<u8>, ExportError> {
-        let output = self.git.capture(pace, args, env).await?;
+        let output = self.git.capture_from(pace, args, Vec::new(), stdin).await?;
         if output.status == ProcessStatus::Exited(0) {
             return Ok(output.stdout);
         }
@@ -180,28 +176,28 @@ impl Host<'_> {
         )
     }
 
-    pub(super) async fn fetch(
+    pub(super) async fn import(
         &self,
         bundle: &HostPath,
-        refspecs: &[String],
+        pack_offset: u64,
     ) -> Result<(), ExportError> {
-        let mut args = words(&BOUNDS);
-        args.extend(words(&STRICT));
-        args.extend(words(&[
-            "-c",
-            "gc.auto=0",
-            "-c",
-            "maintenance.auto=false",
-            "fetch",
-            "--quiet",
-            "--atomic",
-            "--no-tags",
-            "--no-prune",
-            "--no-write-fetch-head",
-            "--no-recurse-submodules",
-        ]));
-        args.push(bundle.as_path().display().to_string());
-        args.extend_from_slice(refspecs);
-        self.run(Pace::Long, args).await.map(drop)
+        let mut args = words(&PINS);
+        args.extend(words(&["index-pack", "--stdin", "--strict", "--threads=1"]));
+        let stdin = ProcessStdin::File {
+            path: bundle.clone(),
+            offset: pack_offset,
+        };
+        self.run_from(Pace::Long, args, stdin).await.map(drop)
+    }
+
+    pub(super) async fn publish(&self, updates: &[(String, CommitId)]) -> Result<(), ExportError> {
+        let mut commands = String::new();
+        for (target, tip) in updates {
+            commands.push_str(&format!("option no-deref\nupdate {target} {tip}\n"));
+        }
+        let stdin = ProcessStdin::Bytes(SecretBytes::new(commands.into_bytes()));
+        self.run_from(Pace::Long, words(&["update-ref", "--stdin"]), stdin)
+            .await
+            .map(drop)
     }
 }

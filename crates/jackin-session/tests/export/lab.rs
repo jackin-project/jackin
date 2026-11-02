@@ -17,7 +17,7 @@ use super::support::{
 };
 use super::tap::Tap;
 
-pub(crate) const IMPORT: [&str; 1] = ["fetch"];
+pub(crate) const IMPORT: [&str; 2] = ["index-pack", "update-ref"];
 const BANNED: [&str; 7] = [
     "index-pack",
     "update-ref",

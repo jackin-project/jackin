@@ -73,7 +73,7 @@ async fn sandbox_git_failures_are_typed_without_invented_exit_codes_and_change_n
 }
 
 #[tokio::test]
-async fn a_ref_name_collision_is_a_ref_conflict_and_the_fetch_is_all_or_nothing() -> TestResult {
+async fn a_ref_name_collision_is_a_ref_conflict_and_the_update_is_all_or_nothing() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
@@ -134,7 +134,7 @@ async fn a_ref_name_collision_is_a_ref_conflict_and_the_fetch_is_all_or_nothing(
 }
 
 #[tokio::test]
-async fn a_stale_lock_on_one_target_ref_fails_the_fetch_as_a_host_git_error_and_exports_no_ref()
+async fn a_stale_lock_on_one_target_ref_fails_the_update_as_a_host_git_error_and_exports_no_ref()
 -> TestResult {
     guard(async {
         let rig = Rig::new().await?;

@@ -53,7 +53,10 @@ async fn lands(lab: &Lab, label: &str) -> TestResult {
         .repo
         .git(&["rev-list", "--objects", &host_ref])
         .await?;
-    assert!(lab.sees.ran("fetch"), "{label}: the host imported nothing");
+    assert!(
+        lab.sees.ran("index-pack"),
+        "{label}: the host imported nothing"
+    );
     Ok(())
 }
 
