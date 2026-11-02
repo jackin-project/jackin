@@ -360,7 +360,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
   - A failure after create leaves the sandbox, and a retry continues it.
   - A cancel leaves the sandbox as a restore candidate.
   - Jackin never reuses a live sandbox as a new launch (ADR-008).
-- [ ] P5.1 done
+- [x] P5.1 done — cafccc7c, G-FAST exit 0 (394 tests run: 394 passed), red/green CHANGES (217 mutations, 15 survivors) then KEEP on the fix round and the rebase rows; the PLAN proofs are tests/launch proofs.rs (one launch ID: one build, one sandbox, one upload, one setup run), crash.rs (failure after create keeps the sandbox, a retry continues), cancel.rs (cancel leaves a restore candidate), adr008.rs (no reuse of a live sandbox)
 
 ### P5.2 Build attach, shell, export, list, stop, start, and purge
 
