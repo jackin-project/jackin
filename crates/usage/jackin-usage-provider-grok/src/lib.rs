@@ -24,10 +24,7 @@ pub async fn fetch(
     let body = http
         .get(BILLING_URL, &token, &[("X-XAI-Token-Auth", "xai-grok-cli")])
         .await?;
-    let config = body
-        .get("config")
-        .filter(|config| config.is_object())
-        .ok_or(ProviderError::Decode("the billing response has no config"))?;
+    let config = body.get("config").unwrap_or(&Value::Null);
     let on_demand = body.get("on_demand_enabled").and_then(Value::as_bool) != Some(false);
     let mut out = Vec::new();
     out.extend(period_window(config));

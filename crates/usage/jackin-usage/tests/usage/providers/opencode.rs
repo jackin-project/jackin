@@ -18,6 +18,7 @@ const NO_MONTHLY: &str = include_str!("../fixtures/opencode/usage_missing_monthl
 const LIMITED: &str = include_str!("../fixtures/opencode/usage_rate_limited.json");
 const BAD_PERCENT: &str = include_str!("../fixtures/opencode/usage_bad_percent.json");
 const AUTH: &str = include_str!("../fixtures/opencode/auth.json");
+const AUTH_OAUTH: &str = include_str!("../fixtures/opencode/auth_go_oauth.json");
 const AUTH_NO_GO: &str = include_str!("../fixtures/opencode/auth_no_go.json");
 const AUTH_PATH: &str = "/home/work/.local/share/opencode/auth.json";
 
@@ -188,6 +189,25 @@ async fn an_auth_file_without_the_opencode_go_entry_is_a_provider_error_port_fid
         match unavailable(&usage.outcome) {
             UnavailableReason::Provider(message) => {
                 assert!(!message.contains("SECRET_TOKEN_OTHER"));
+            }
+            other => panic!("expected a provider reason, found {other:?}"),
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_opencode_go_entry_that_is_not_an_api_key_is_a_provider_error_port_fidelity()
+-> TestResult {
+    guard(async {
+        let (harness, _) = started(USAGE).await?;
+        harness.put(AUTH_PATH, AUTH_OAUTH).await?;
+        let login = account("opencode", Provider::Opencode, file_source(AUTH_PATH));
+        let usage = harness.one(&login, Refresh::Cached).await?;
+        match unavailable(&usage.outcome) {
+            UnavailableReason::Provider(message) => {
+                assert!(!message.contains("SECRET_TEXT_OPENCODE"));
             }
             other => panic!("expected a provider reason, found {other:?}"),
         }

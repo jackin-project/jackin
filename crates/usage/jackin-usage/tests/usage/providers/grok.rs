@@ -15,6 +15,8 @@ const TOKEN: &str = "SECRET_TOKEN_GROK";
 const PATH: &str = "/v1/billing?format=credits";
 const CREDITS: &str = include_str!("../fixtures/grok/billing_credits.json");
 const ON_DEMAND_OFF: &str = include_str!("../fixtures/grok/billing_credits_on_demand_off.json");
+const NEGATIVE_CENT: &str = include_str!("../fixtures/grok/billing_negative_cent.json");
+const ZERO_CAP: &str = include_str!("../fixtures/grok/billing_zero_cap.json");
 const DEPRECATED: &str = include_str!("../fixtures/grok/billing_deprecated.json");
 const INVALID: &str = include_str!("../fixtures/grok/billing_invalid_percent.json");
 const NULL_CONFIG: &str = include_str!("../fixtures/grok/billing_null_config.json");
@@ -135,6 +137,24 @@ async fn the_deprecated_config_gives_a_monthly_window_and_on_demand() -> TestRes
 async fn on_demand_disabled_leaves_no_on_demand_window() -> TestResult {
     guard(async {
         assert_windows(&outcome(ON_DEMAND_OFF).await?, &[WEEK, EXTRA]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_negative_cent_value_is_taken_as_its_magnitude() -> TestResult {
+    guard(async {
+        assert_windows(&outcome(NEGATIVE_CENT).await?, &[WEEK, EXTRA, ON_DEMAND]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_zero_on_demand_cap_leaves_no_on_demand_window() -> TestResult {
+    guard(async {
+        assert_windows(&outcome(ZERO_CAP).await?, &[WEEK, EXTRA]);
         Ok(())
     })
     .await

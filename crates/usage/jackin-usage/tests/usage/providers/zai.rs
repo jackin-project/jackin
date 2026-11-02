@@ -18,6 +18,7 @@ const CREDIT: &str = include_str!("../fixtures/zai/quota_credit_limit.json");
 const REJECTED: &str = include_str!("../fixtures/zai/quota_rejected.json");
 const UNKNOWN_UNIT: &str = include_str!("../fixtures/zai/quota_unknown_unit.json");
 const NEGATIVE: &str = include_str!("../fixtures/zai/quota_negative.json");
+const SUCCESS_FALSE: &str = include_str!("../fixtures/zai/quota_success_false.json");
 const CODE_500: &str = include_str!("../fixtures/zai/quota_code_500.json");
 const NO_LIMITS: &str = include_str!("../fixtures/zai/quota_no_limits.json");
 
@@ -106,6 +107,15 @@ async fn a_credit_limit_in_weeks_gives_a_weekly_window_port_fidelity() -> TestRe
 async fn a_rejected_plan_in_a_200_body_is_a_provider_error_port_fidelity() -> TestResult {
     guard(async {
         assert_provider_without(&outcome(REJECTED).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn success_false_with_code_200_is_a_provider_error_port_fidelity() -> TestResult {
+    guard(async {
+        assert_provider_without(&outcome(SUCCESS_FALSE).await?);
         Ok(())
     })
     .await

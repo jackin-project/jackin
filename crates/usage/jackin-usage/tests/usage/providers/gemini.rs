@@ -21,6 +21,7 @@ const QUOTA: &str = include_str!("../fixtures/gemini/retrieve_user_quota.json");
 const EMPTY_BUCKETS: &str =
     include_str!("../fixtures/gemini/retrieve_user_quota_empty_buckets.json");
 const EMPTY_OBJECT: &str = include_str!("../fixtures/gemini/retrieve_user_quota_empty_object.json");
+const PARTIAL: &str = include_str!("../fixtures/gemini/retrieve_user_quota_partial.json");
 const CREDS: &str = include_str!("../fixtures/gemini/oauth_creds.json");
 const EXPIRED: &str = include_str!("../fixtures/gemini/oauth_creds_expired.json");
 const CREDS_PATH: &str = "/home/work/.gemini/oauth_creds.json";
@@ -206,6 +207,22 @@ async fn a_401_on_the_second_request_is_an_expired_login() -> TestResult {
             unavailable(&usage.outcome),
             &UnavailableReason::ExpiredLogin
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn buckets_without_a_model_or_a_fraction_are_dropped() -> TestResult {
+    guard(async {
+        let kept = want(
+            WindowKind::Other,
+            "gemini-2.5-pro requests",
+            Some(25.0),
+            Left::Percent(75.0),
+            Some(1_761_148_875),
+        );
+        assert_windows(&outcome(LOAD, PARTIAL).await?, &[kept]);
         Ok(())
     })
     .await

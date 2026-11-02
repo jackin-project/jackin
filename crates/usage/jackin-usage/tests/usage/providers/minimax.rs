@@ -18,6 +18,7 @@ const NO_END: &str = include_str!("../fixtures/minimax/token_plan_no_end.json");
 const STATES: &str = include_str!("../fixtures/minimax/token_plan_states.json");
 const ERROR: &str = include_str!("../fixtures/minimax/token_plan_error.json");
 const OVER: &str = include_str!("../fixtures/minimax/token_plan_over.json");
+const OTHER_WEEKLY: &str = include_str!("../fixtures/minimax/token_plan_other_weekly.json");
 
 const FIVE: Want = want(
     WindowKind::FiveHour,
@@ -154,6 +155,22 @@ async fn a_remaining_percent_above_one_hundred_is_clamped_port_fidelity() -> Tes
             Some(1_767_243_600),
         );
         assert_windows(&outcome(OVER).await?, &[clamped]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn only_the_general_model_has_a_weekly_window_port_fidelity() -> TestResult {
+    guard(async {
+        let other = want(
+            WindowKind::Other,
+            "image-01",
+            Some(0.0),
+            Left::Percent(100.0),
+            Some(1_767_312_000),
+        );
+        assert_windows(&outcome(OTHER_WEEKLY).await?, &[FIVE, WEEK, other]);
         Ok(())
     })
     .await

@@ -22,10 +22,7 @@ pub async fn fetch(http: &Http, credential: Credential<'_>) -> Result<Vec<Bucket
             &json!({}),
         )
         .await?;
-    let plan = body
-        .get("planUsage")
-        .filter(|plan| plan.is_object())
-        .ok_or(ProviderError::Decode("the response has no plan usage"))?;
+    let plan = body.get("planUsage").unwrap_or(&Value::Null);
     let start = body.get("billingCycleStart").and_then(seconds);
     let end = body.get("billingCycleEnd").and_then(seconds);
     let length = start.zip(end).map(|(start, end)| end - start);
