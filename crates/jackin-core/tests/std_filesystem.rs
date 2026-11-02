@@ -187,3 +187,38 @@ async fn file_len_reports_the_size_of_a_local_file() -> TestResult {
 fn root(dir: &tempfile::TempDir) -> Result<HostPath, PathError> {
     HostPath::parse(dir.path())
 }
+
+#[tokio::test]
+async fn read_at_returns_the_requested_slice_never_pads_and_refuses_a_missing_file_or_a_directory()
+-> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let file = at(&dir, "range.bin")?;
+    fs.write_new(&file, b"0123456789", FileMode(0o600)).await?;
+    for (offset, len, expected) in [
+        (3, 4, "3456"),
+        (0, 100, "0123456789"),
+        (10, 5, ""),
+        (11, 5, ""),
+        (4, 0, ""),
+        (9, usize::MAX, "9"),
+    ] {
+        assert_eq!(
+            fs.read_at(&file, offset, len).await?,
+            expected.as_bytes(),
+            "read_at({offset}, {len})"
+        );
+    }
+    assert!(matches!(
+        fs.read_at(&at(&dir, "none.bin")?, 0, 1).await,
+        Err(FsError::Io {
+            kind: std::io::ErrorKind::NotFound,
+            ..
+        })
+    ));
+    assert!(matches!(
+        fs.read_at(&HostPath::parse(dir.path())?, 0, 1).await,
+        Err(FsError::Io { .. })
+    ));
+    Ok(())
+}

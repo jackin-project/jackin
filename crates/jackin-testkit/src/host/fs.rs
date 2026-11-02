@@ -30,6 +30,7 @@ pub enum FsOp {
     Mode,
     SyncDir,
     Lock,
+    ReadAt,
 }
 
 #[derive(Debug, Default)]
@@ -348,6 +349,25 @@ impl FileSystem for MemFs {
             state: Arc::clone(&self.state),
             path: path.as_path().to_path_buf(),
         }))
+    }
+
+    async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        let state = self.enter(FsOp::ReadAt)?;
+        if state.is_dir(path.as_path()) {
+            return Err(io_error(path, ErrorKind::IsADirectory, "is a directory"));
+        }
+        let Some(file) = state.files.get(path.as_path()) else {
+            return Err(io_error(path, ErrorKind::NotFound, "no such file"));
+        };
+        let start = usize::try_from(offset)
+            .unwrap_or(usize::MAX)
+            .min(file.bytes.len());
+        let end = start.saturating_add(len).min(file.bytes.len());
+        Ok(file
+            .bytes
+            .get(start..end)
+            .map(<[u8]>::to_vec)
+            .unwrap_or_default())
     }
 
     async fn read_regular(

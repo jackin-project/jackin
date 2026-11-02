@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::VecDeque;
-use std::io;
+use std::io::{self, SeekFrom};
 use std::os::unix::process::ExitStatusExt;
 use std::pin::pin;
 use std::process::{ExitStatus, Stdio};
@@ -15,7 +15,7 @@ use jackin_core::{
     ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, SecretBytes, SecretOutput, Timestamp,
 };
 use rustix::process::{Pid, Signal, kill_process_group};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
@@ -26,6 +26,7 @@ use crate::service::HostPorts;
 const TAIL_LIMIT: usize = 65536;
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
 const READ_CHUNK: usize = 8192;
+const FEED_CHUNK: usize = 64 * 1024;
 const LINE_LIMIT: usize = 65536;
 const WHOLE_LIMIT: usize = 16 * 1024 * 1024;
 const LINE_CUT_MARK: &str = " [truncated]";
@@ -195,7 +196,7 @@ fn command_for(spec: &ProcessSpec) -> Command {
     command
         .stdin(match spec.stdin {
             ProcessStdin::Null => Stdio::null(),
-            ProcessStdin::Bytes(_) => Stdio::piped(),
+            ProcessStdin::Bytes(_) | ProcessStdin::File { .. } => Stdio::piped(),
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -256,18 +257,70 @@ where
     Ok(())
 }
 
-async fn feed(stdin: Option<ChildStdin>, bytes: &[u8]) {
-    if let Some(mut pipe) = stdin {
-        drop(pipe.write_all(bytes).await);
-        drop(pipe.shutdown().await);
+enum Input<'a> {
+    None,
+    Bytes(&'a [u8]),
+    File(tokio::fs::File),
+}
+
+async fn open_input(spec: &ProcessSpec) -> Result<Input<'_>, ProcessError> {
+    let refused = |message: String| ProcessError::Spawn {
+        program: spec.program,
+        message,
+    };
+    match &spec.stdin {
+        ProcessStdin::Null => Ok(Input::None),
+        ProcessStdin::Bytes(bytes) => Ok(Input::Bytes(bytes.expose())),
+        ProcessStdin::File { path, offset } => {
+            let mut file = tokio::fs::File::open(path.as_path())
+                .await
+                .map_err(|error| refused(error.to_string()))?;
+            let meta = file
+                .metadata()
+                .await
+                .map_err(|error| refused(error.to_string()))?;
+            if !meta.is_file() {
+                return Err(refused(format!(
+                    "{} is not a file",
+                    path.as_path().display()
+                )));
+            }
+            file.seek(SeekFrom::Start(*offset))
+                .await
+                .map_err(|error| refused(error.to_string()))?;
+            Ok(Input::File(file))
+        }
     }
+}
+
+async fn feed(stdin: Option<ChildStdin>, input: Input<'_>) {
+    let Some(mut pipe) = stdin else {
+        return;
+    };
+    match input {
+        Input::None => {}
+        Input::Bytes(bytes) => drop(pipe.write_all(bytes).await),
+        Input::File(mut file) => {
+            let mut chunk = vec![0_u8; FEED_CHUNK];
+            loop {
+                let count = match file.read(&mut chunk).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(count) => count,
+                };
+                if pipe.write_all(&chunk[..count]).await.is_err() {
+                    break;
+                }
+            }
+        }
+    }
+    drop(pipe.shutdown().await);
 }
 
 struct Pipes<'a> {
     stdin: Option<ChildStdin>,
     stdout: ChildStdout,
     stderr: ChildStderr,
-    input: &'a [u8],
+    input: Input<'a>,
     out: &'a mut Buffer,
     err: &'a mut Buffer,
     lines: Option<&'a LineSink>,
@@ -337,6 +390,7 @@ async fn execute(
     if cancel.is_cancelled() {
         return Err(ProcessError::Cancelled { program });
     }
+    let input = open_input(spec).await?;
     let mut child = command_for(spec)
         .spawn()
         .map_err(|error| spawn_error(error.to_string()))?;
@@ -355,10 +409,7 @@ async fn execute(
         stdin: child.stdin.take(),
         stdout,
         stderr,
-        input: match &spec.stdin {
-            ProcessStdin::Null => &[],
-            ProcessStdin::Bytes(bytes) => bytes.expose(),
-        },
+        input,
         out: &mut out,
         err: &mut err,
         lines,

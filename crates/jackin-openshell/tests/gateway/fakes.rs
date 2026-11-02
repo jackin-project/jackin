@@ -130,6 +130,19 @@ impl FileSystem for RegistryFs {
         Ok(())
     }
 
+    async fn read_at(
+        &self,
+        path: &HostPath,
+        _offset: u64,
+        _len: usize,
+    ) -> Result<Vec<u8>, FsError> {
+        Err(FsError::Io {
+            path: path.clone(),
+            kind: std::io::ErrorKind::Unsupported,
+            message: "read_at is unsupported by RegistryFs".to_owned(),
+        })
+    }
+
     async fn read_regular(
         &self,
         root: &HostPath,

@@ -117,6 +117,35 @@ async fn fs_boundary_extras(fs: &dyn FileSystem, root: &HostPath) -> TestResult 
     assert_eq!(fs.mode(&private).await?, Some(FileMode(0o700)));
     assert_eq!(fs.mode(&child(root, "priv")?).await?, Some(FileMode(0o700)));
     fs.remove_dir_all(&child(root, "priv")?).await?;
+    let ranged = child(root, "range.bin")?;
+    fs.write_new(&ranged, b"0123456789", FileMode(0o600))
+        .await?;
+    for (offset, len, expected) in [
+        (3, 4, "3456"),
+        (0, 100, "0123456789"),
+        (10, 5, ""),
+        (11, 5, ""),
+        (4, 0, ""),
+        (9, usize::MAX, "9"),
+    ] {
+        assert_eq!(
+            fs.read_at(&ranged, offset, len).await?,
+            expected.as_bytes(),
+            "read_at({offset}, {len})"
+        );
+    }
+    assert!(matches!(
+        fs.read_at(&child(root, "none.bin")?, 0, 1).await,
+        Err(FsError::Io {
+            kind: ErrorKind::NotFound,
+            ..
+        })
+    ));
+    assert!(matches!(
+        fs.read_at(root, 0, 1).await,
+        Err(FsError::Io { .. })
+    ));
+    fs.remove_file(&ranged).await?;
     Ok(())
 }
 
@@ -185,7 +214,7 @@ async fn memfs_read_regular_returns_bytes_and_mode_and_gives_the_typed_refusal_o
     Ok(())
 }
 
-const OPS: [FsOp; 14] = [
+const OPS: [FsOp; 15] = [
     FsOp::Read,
     FsOp::Stat,
     FsOp::StatFollowing,
@@ -200,6 +229,7 @@ const OPS: [FsOp; 14] = [
     FsOp::Mode,
     FsOp::SyncDir,
     FsOp::Lock,
+    FsOp::ReadAt,
 ];
 
 async fn invoke(fs: &MemFs, op: FsOp, root: &HostPath, round: u32) -> Result<(), FsError> {
@@ -238,6 +268,7 @@ async fn invoke(fs: &MemFs, op: FsOp, root: &HostPath, round: u32) -> Result<(),
         FsOp::Mode => fs.mode(&file).await.map(drop),
         FsOp::SyncDir => fs.sync_dir(root).await,
         FsOp::Lock => fs.lock(&file).await.map(drop),
+        FsOp::ReadAt => fs.read_at(&file, 0, 1).await.map(drop),
     }
 }
 
@@ -1047,5 +1078,74 @@ async fn a_host_snapshot_sees_an_added_dangling_link() -> TestResult {
     assert_changed("after the change", &rest(&repo).await?, &base);
     std::fs::remove_file(root.join("dangling"))?;
     assert_same("after the change is reverted", &rest(&repo).await?, &base);
+    Ok(())
+}
+
+#[tokio::test]
+async fn git_reads_a_file_stdin_from_the_offset_and_a_missing_file_never_starts_it() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let runner = TestRunner::new();
+    let file = HostPath::parse(&dir.path().join("payload.bin"))?;
+    std::fs::write(file.as_path(), b"prefix:slice")?;
+    let hash = |stdin: ProcessStdin| {
+        let mut hash = spec(Program::Git, &["hash-object", "--stdin"]);
+        hash.cwd = Some(HostPath::parse(dir.path()).unwrap());
+        hash.stdin = stdin;
+        hash
+    };
+    let cancel = CancellationToken::new();
+    let tail = runner
+        .run(
+            &hash(ProcessStdin::File {
+                path: file,
+                offset: 7,
+            }),
+            None,
+            &cancel,
+        )
+        .await?;
+    let expected = runner
+        .run(
+            &hash(ProcessStdin::Bytes(SecretBytes::new(b"slice".to_vec()))),
+            None,
+            &cancel,
+        )
+        .await?;
+    assert_eq!(tail.status, ProcessStatus::Exited(0));
+    assert_eq!(tail.stdout, expected.stdout);
+    let missing = HostPath::parse(&dir.path().join("gone.bin"))?;
+    let refused = runner
+        .run(
+            &hash(ProcessStdin::File {
+                path: missing,
+                offset: 0,
+            }),
+            None,
+            &cancel,
+        )
+        .await;
+    assert!(
+        matches!(refused, Err(ProcessError::Spawn { .. })),
+        "{refused:?}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_scripted_program_records_a_file_stdin_with_its_path_and_offset() -> TestResult {
+    let runner = ScriptedProcessRunner::new();
+    runner.expect(
+        ScriptedProgram::Openshell,
+        &[],
+        ProcessReply::exited(0, b"", b""),
+    );
+    let path = host("/mem/pack.bin")?;
+    let mut call = spec(Program::Openshell, &["x"]);
+    call.stdin = ProcessStdin::File {
+        path: path.clone(),
+        offset: 12,
+    };
+    runner.run(&call, None, &CancellationToken::new()).await?;
+    assert_eq!(runner.seen()[0].stdin, SeenStdin::File { path, offset: 12 });
     Ok(())
 }

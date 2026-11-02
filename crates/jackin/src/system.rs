@@ -13,7 +13,10 @@ use jackin_core::{
     ProcessRunner,
 };
 use jackin_openshell::{Gateway, GrpcGateway, GrpcGatewayConfig, TermSize, resolve_gateway};
-use jackin_session::{DEFAULT_BUNDLE_BYTES, LaunchLimits};
+use jackin_session::{
+    DEFAULT_BUNDLE_BYTES, DEFAULT_EXPORT_ENTRY_BYTES, DEFAULT_EXPORT_OBJECTS,
+    DEFAULT_EXPORT_TOTAL_BYTES, LaunchLimits,
+};
 use rustix::termios::{self, OptionalActions, Termios};
 use tokio::signal::unix::{Signal, SignalKind, signal};
 use tokio::sync::mpsc;
@@ -95,6 +98,9 @@ pub fn launch_limits() -> LaunchLimits {
         upload: Duration::from_secs(600),
         create_attempts: NonZeroU8::MIN.saturating_add(2),
         bundle_bytes: DEFAULT_BUNDLE_BYTES,
+        export_entry_bytes: DEFAULT_EXPORT_ENTRY_BYTES,
+        export_objects: DEFAULT_EXPORT_OBJECTS,
+        export_total_bytes: DEFAULT_EXPORT_TOTAL_BYTES,
     }
 }
 

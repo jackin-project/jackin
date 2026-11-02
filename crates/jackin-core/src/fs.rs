@@ -3,7 +3,7 @@
 
 use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File, OpenOptions, TryLockError};
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
@@ -96,6 +96,19 @@ fn lock_file(path: &Path) -> io::Result<Result<File, ()>> {
         Err(TryLockError::WouldBlock) => Ok(Err(())),
         Err(TryLockError::Error(source)) => Err(source),
     }
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "runs on the blocking pool through StdFileSystem::read_at"
+)]
+fn read_range(path: &Path, offset: u64, len: usize) -> io::Result<Vec<u8>> {
+    let mut file = File::open(path)?;
+    file.seek(SeekFrom::Start(offset))?;
+    let mut bytes = Vec::new();
+    file.take(u64::try_from(len).unwrap_or(u64::MAX))
+        .read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 fn classify(
@@ -289,6 +302,10 @@ impl FileSystem for StdFileSystem {
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
         let file = file.clone();
         blocking(root, move |p| read_below(p, &file)).await
+    }
+
+    async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        blocking(path, move |p| read_range(p, offset, len)).await
     }
 }
 

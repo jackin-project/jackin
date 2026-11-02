@@ -137,6 +137,7 @@ impl fmt::Debug for SeenEnv {
 pub enum SeenStdin {
     Null,
     Bytes(Vec<u8>),
+    File { path: HostPath, offset: u64 },
 }
 
 impl fmt::Debug for SeenStdin {
@@ -144,6 +145,11 @@ impl fmt::Debug for SeenStdin {
         match self {
             SeenStdin::Null => f.write_str("Null"),
             SeenStdin::Bytes(bytes) => write!(f, "Bytes({} bytes)", bytes.len()),
+            SeenStdin::File { path, offset } => f
+                .debug_struct("File")
+                .field("path", path)
+                .field("offset", offset)
+                .finish(),
         }
     }
 }
@@ -180,6 +186,10 @@ impl SeenCall {
             stdin: match &spec.stdin {
                 ProcessStdin::Null => SeenStdin::Null,
                 ProcessStdin::Bytes(bytes) => SeenStdin::Bytes(bytes.expose().to_vec()),
+                ProcessStdin::File { path, offset } => SeenStdin::File {
+                    path: path.clone(),
+                    offset: *offset,
+                },
             },
             timeout: spec.timeout,
         }
@@ -635,6 +645,15 @@ impl TestRunner {
         let stdin = match &spec.stdin {
             ProcessStdin::Null => None,
             ProcessStdin::Bytes(bytes) => Some(bytes.expose().to_vec()),
+            ProcessStdin::File { path, offset } => Some(
+                StdFileSystem::default()
+                    .read_at(path, *offset, usize::MAX)
+                    .await
+                    .map_err(|error| ProcessError::Spawn {
+                        program: Program::Git,
+                        message: error.to_string(),
+                    })?,
+            ),
         };
         match run_command(command, stdin, spec.timeout, cancel).await {
             Ok(finished) => Ok(ProcessOutput {

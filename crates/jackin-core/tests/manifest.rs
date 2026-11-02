@@ -480,6 +480,9 @@ impl FileSystem for CrashFs {
         self.gate(p)?;
         self.inner.remove_file(p).await
     }
+    async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        self.inner.read_at(p, offset, len).await
+    }
     async fn read_regular(
         &self,
         r: &HostPath,

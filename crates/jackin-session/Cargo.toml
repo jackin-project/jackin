@@ -19,7 +19,7 @@ rustix = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
-tokio = { workspace = true, features = ["io-util", "macros", "process", "rt", "sync", "time"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt", "sync", "time"] }
 tokio-util = { workspace = true }
 zeroize = { workspace = true }
 

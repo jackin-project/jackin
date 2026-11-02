@@ -52,6 +52,9 @@ impl fmt::Display for EnvQuestion {
 }
 
 pub const DEFAULT_BUNDLE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+pub const DEFAULT_EXPORT_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
+pub const DEFAULT_EXPORT_OBJECTS: u32 = 5_000_000;
+pub const DEFAULT_EXPORT_TOTAL_BYTES: u64 = 64 * 1024 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LaunchLimits {
@@ -62,6 +65,9 @@ pub struct LaunchLimits {
     pub upload: Duration,
     pub create_attempts: NonZeroU8,
     pub bundle_bytes: u64,
+    pub export_entry_bytes: u64,
+    pub export_objects: u32,
+    pub export_total_bytes: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

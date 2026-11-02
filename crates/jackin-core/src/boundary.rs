@@ -57,6 +57,7 @@ pub trait FileSystem: Send + Sync + Debug {
         root: &HostPath,
         file: &RepoPath,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError>;
+    async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError>;
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -215,6 +216,7 @@ pub enum EnvValue {
 pub enum ProcessStdin {
     Null,
     Bytes(SecretBytes),
+    File { path: HostPath, offset: u64 },
 }
 
 #[derive(Clone, PartialEq, Eq)]

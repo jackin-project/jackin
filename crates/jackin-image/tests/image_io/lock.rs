@@ -138,6 +138,9 @@ impl FileSystem for SignalFs {
         }
         result
     }
+    async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        self.inner.read_at(p, offset, len).await
+    }
     async fn read_regular(
         &self,
         root: &HostPath,
