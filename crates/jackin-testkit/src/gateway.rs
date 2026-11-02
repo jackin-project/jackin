@@ -13,22 +13,22 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use jackin_core::{
-    ChatgptAccountId, EnvName, GatewayName, HostPath, ImageTag, OpenShellWorkspace, Phase,
-    ProfileId, ProviderName, SandboxName, SandboxPath,
+    ChatgptAccountId, EnvName, FileMode, GatewayName, HostPath, ImageTag, OpenShellWorkspace,
+    Phase, ProfileId, ProjectRoot, ProviderName, SandboxName, SandboxPath,
 };
 use jackin_openshell::{
     EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, Missing, NetworkRule,
     PolicyReport, PowerAction, ProfileSync, ProgramOutcome, ProgramRun, ProjectUpload,
     ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState, RuleEndpoint, RuleKey,
     SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TerminalKind,
-    TerminalRequest, TerminalSession, TlsMode,
+    TerminalRequest, TerminalSession, TlsMode, TransferOp,
 };
 use tokio_util::sync::CancellationToken;
 
 pub use handle::SandboxHandle;
 
 use self::main_process::MainPlan;
-use self::state::{Action, Armed, ArmedTrigger, Cell, Registry, Sandbox, Settling};
+use self::state::{Action, Armed, ArmedTrigger, Cell, Direction, Registry, Sandbox, Settling};
 use crate::engine::FakeEngine;
 use crate::supervisor::SupervisorModel;
 use crate::sync::locked;
@@ -84,6 +84,18 @@ impl std::fmt::Debug for ProviderRecord {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UploadKind {
+    Tree,
+    File,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HostEdit {
+    Write { path: HostPath, bytes: Vec<u8> },
+    Chmod { path: HostPath, mode: FileMode },
+}
+
 #[derive(Debug)]
 pub enum Fault {
     FailNext {
@@ -99,6 +111,11 @@ pub enum Fault {
         program: SandboxPath,
     },
     CorruptDownload,
+    CorruptUpload,
+    EditHostAfter {
+        upload: UploadKind,
+        edit: HostEdit,
+    },
     ProvisionFor {
         polls: u32,
     },
@@ -147,7 +164,13 @@ impl FakeGateway {
                 registry.faults.push(Armed::new(op, calls, error));
             }
             Fault::StallProgram { program } => registry.stalls.push(program),
-            Fault::CorruptDownload => registry.corrupt_download = true,
+            Fault::CorruptDownload => {
+                registry.corrupt.insert(Direction::Download);
+            }
+            Fault::CorruptUpload => {
+                registry.corrupt.insert(Direction::Upload);
+            }
+            Fault::EditHostAfter { upload, edit } => registry.host_edits.push((upload, edit)),
             Fault::ProvisionFor { polls } => registry.provision_polls = polls,
             Fault::ProvisionFails { creates } => registry.failing_creates = creates,
             Fault::StaleSupervisor { observations } => registry.stale_observations = observations,
@@ -188,6 +211,10 @@ impl FakeGateway {
 
     pub fn add_image(&self, tag: &ImageTag) {
         self.registry().images.insert(tag.clone());
+    }
+
+    pub fn use_host_home(&self, home: &HostPath) {
+        self.registry().host_home = Some(home.as_path().to_path_buf());
     }
 
     pub fn link_engine(&self, engine: Arc<FakeEngine>) {
@@ -261,6 +288,21 @@ impl FakeGateway {
         let cell = self.cell_at(op, special, name)?;
         let phase = cell.settle();
         Ok((cell, phase))
+    }
+
+    async fn edit_host(&self, upload: UploadKind) -> Result<(), GatewayError> {
+        let edits: Vec<HostEdit> = {
+            let mut registry = self.registry();
+            let (taken, kept) = std::mem::take(&mut registry.host_edits)
+                .into_iter()
+                .partition(|(kind, _)| *kind == upload);
+            registry.host_edits = kept;
+            taken.into_iter().map(|(_, edit)| edit).collect()
+        };
+        for edit in edits {
+            files::edit_host(&edit).await?;
+        }
+        Ok(())
     }
 
     fn exec_cell(&self, op: GatewayOp, name: &SandboxName) -> Result<Arc<Cell>, GatewayError> {
@@ -682,9 +724,47 @@ impl Gateway for FakeGateway {
             .struck_at(GatewayOp::Upload, None, sandbox)?
             .filter(|cell| cell.settle().accepts_exec());
         let Some(cell) = ready else {
-            return Err(files::upload_refused());
+            return Err(files::upload_refused(TransferOp::UploadFiltered));
         };
         files::upload_project(&cell.root(), upload, cancel).await
+    }
+
+    async fn upload_tree(
+        &self,
+        sandbox: &SandboxName,
+        source: &ProjectRoot,
+        dest: &SandboxPath,
+        cancel: &CancellationToken,
+    ) -> Result<(), GatewayError> {
+        tokio::task::yield_now().await;
+        let ready = self
+            .struck_at(GatewayOp::UploadTree, None, sandbox)?
+            .filter(|cell| cell.settle().accepts_exec());
+        let Some(cell) = ready else {
+            return Err(files::upload_refused(TransferOp::UploadFiltered));
+        };
+        let home = self.registry().host_home.clone();
+        files::upload_tree(&cell.root(), home.as_deref(), source, dest, cancel).await?;
+        self.edit_host(UploadKind::Tree).await
+    }
+
+    async fn upload_file(
+        &self,
+        sandbox: &SandboxName,
+        source: &HostPath,
+        dest: &SandboxPath,
+        cancel: &CancellationToken,
+    ) -> Result<(), GatewayError> {
+        tokio::task::yield_now().await;
+        let ready = self
+            .struck_at(GatewayOp::UploadFile, None, sandbox)?
+            .filter(|cell| cell.settle().accepts_exec());
+        let Some(cell) = ready else {
+            return Err(files::upload_refused(TransferOp::UploadFile));
+        };
+        let corrupt = self.registry().corrupt.remove(&Direction::Upload);
+        files::upload_file(&cell.root(), source, dest, corrupt, cancel).await?;
+        self.edit_host(UploadKind::File).await
     }
 
     async fn download_file(
@@ -697,7 +777,7 @@ impl Gateway for FakeGateway {
         tokio::task::yield_now().await;
         let result = async {
             let cell = self.exec_cell(GatewayOp::Download, sandbox)?;
-            let corrupt = std::mem::take(&mut self.registry().corrupt_download);
+            let corrupt = self.registry().corrupt.remove(&Direction::Download);
             files::download_file(&cell.root(), remote, local, corrupt).await
         }
         .await;

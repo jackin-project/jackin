@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -202,6 +202,7 @@ pub struct CapturedContext {
 enum Selector {
     Program(ScriptedProgram),
     Docker(DockerSubcommand),
+    Git,
 }
 
 impl Selector {
@@ -209,6 +210,7 @@ impl Selector {
         match (self, program) {
             (Selector::Program(wanted), program) => ScriptedProgram::of(program) == Some(wanted),
             (Selector::Docker(wanted), Program::Docker(found)) => wanted == found,
+            (Selector::Git, program) => program == Program::Git,
             (Selector::Docker(_), _) => false,
         }
     }
@@ -277,6 +279,10 @@ impl ScriptedProcessRunner {
         );
     }
 
+    pub fn expect_git(&self, args_prefix: &[&str], reply: ProcessReply) {
+        self.push(Selector::Git, args_prefix, Replier::Fixed(reply));
+    }
+
     pub fn expect_docker(
         &self,
         subcommand: DockerSubcommand,
@@ -288,6 +294,12 @@ impl ScriptedProcessRunner {
             args_prefix,
             Replier::Fixed(reply),
         );
+    }
+
+    fn expects(&self, spec: &ProcessSpec) -> bool {
+        locked(&self.state).expectations.iter().any(|expectation| {
+            expectation.selector.matches(spec.program) && spec.args.starts_with(&expectation.prefix)
+        })
     }
 
     pub fn seen(&self) -> Vec<SeenCall> {
@@ -311,12 +323,6 @@ impl ScriptedProcessRunner {
         let mut state = locked(&self.state);
         let call = SeenCall::of(spec);
         state.seen.push(call.clone());
-        if spec.program == Program::Git {
-            return Err(ProcessError::Spawn {
-                program: Program::Git,
-                message: "git is never scripted; tests run git for real".to_owned(),
-            });
-        }
         let matching: Vec<usize> = state
             .expectations
             .iter()
@@ -569,6 +575,8 @@ impl ProcessRunner for ScriptedProcessRunner {
 #[derive(Debug, Default)]
 pub struct TestRunner {
     scripted: ScriptedProcessRunner,
+    home: Option<PathBuf>,
+    ambient: Mutex<Vec<(String, String)>>,
 }
 
 impl TestRunner {
@@ -576,11 +584,23 @@ impl TestRunner {
         TestRunner::default()
     }
 
+    pub fn with_home(home: &HostPath) -> TestRunner {
+        TestRunner {
+            home: Some(home.as_path().to_path_buf()),
+            ..TestRunner::default()
+        }
+    }
+
+    pub fn set_ambient(&self, name: &str, value: &str) {
+        locked(&self.ambient).push((name.to_owned(), value.to_owned()));
+    }
+
     pub fn scripted(&self) -> &ScriptedProcessRunner {
         &self.scripted
     }
 
     async fn run_git(
+        &self,
         spec: &ProcessSpec,
         cancel: &CancellationToken,
     ) -> Result<ProcessOutput, ProcessError> {
@@ -593,6 +613,18 @@ impl TestRunner {
         command.args(&spec.args);
         if let Some(cwd) = &spec.cwd {
             command.current_dir(cwd.as_path());
+        }
+        if let Some(home) = &self.home {
+            command.env("HOME", home);
+        }
+        for (name, value) in locked(&self.ambient).iter() {
+            let removed = spec
+                .env_remove_prefixes
+                .iter()
+                .any(|prefix| !prefix.is_empty() && name.starts_with(prefix.as_str()));
+            if !removed {
+                command.env(name, value);
+            }
         }
         for (name, value) in &spec.env {
             match value {
@@ -633,8 +665,8 @@ impl ProcessRunner for TestRunner {
         lines: Option<&LineSink>,
         cancel: &CancellationToken,
     ) -> Result<ProcessOutput, ProcessError> {
-        if spec.program == Program::Git {
-            let output = TestRunner::run_git(spec, cancel).await?;
+        if spec.program == Program::Git && !self.scripted.expects(spec) {
+            let output = self.run_git(spec, cancel).await?;
             emit_output(lines, &output).await;
             return Ok(output);
         }
@@ -646,8 +678,8 @@ impl ProcessRunner for TestRunner {
         spec: &ProcessSpec,
         cancel: &CancellationToken,
     ) -> Result<SecretOutput, ProcessError> {
-        if spec.program == Program::Git {
-            let output = TestRunner::run_git(spec, cancel).await?;
+        if spec.program == Program::Git && !self.scripted.expects(spec) {
+            let output = self.run_git(spec, cancel).await?;
             return Ok(SecretOutput {
                 status: output.status,
                 stdout: SecretBytes::new(output.stdout),

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -9,10 +11,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use jackin_core::{
-    HostPath, ProcessStatus, SandboxPath, Sha256, TerminalText, sandbox_layout::RUN_START,
+    HostPath, ProcessStatus, ProjectRoot, SandboxPath, Sha256, TerminalText,
+    sandbox_layout::RUN_START,
 };
 use jackin_openshell::{
-    GatewayError, ProjectUpload, SandboxFile, TransferOp, sanitized_git_config,
+    GatewayError, GatewayOp, ProjectUpload, SandboxFile, TransferOp, sanitized_git_config,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -86,9 +89,15 @@ pub(super) async fn write_file(cell: &Arc<Cell>, file: &SandboxFile) -> Result<(
     Ok(())
 }
 
-async fn tracked_and_untracked(source: &Path) -> Result<Vec<String>, GatewayError> {
-    let output = HostProgram::Git
-        .command()
+async fn tracked_and_untracked(
+    source: &Path,
+    home: Option<&Path>,
+) -> Result<Vec<Vec<u8>>, GatewayError> {
+    let mut command = HostProgram::Git.command();
+    if let Some(home) = home {
+        command.env("HOME", home);
+    }
+    let output = command
         .args(["ls-files", "-z", "-co", "--exclude-standard"])
         .current_dir(source)
         .stdin(Stdio::null())
@@ -106,7 +115,7 @@ async fn tracked_and_untracked(source: &Path) -> Result<Vec<String>, GatewayErro
         .stdout
         .split(|byte| *byte == 0)
         .filter(|name| !name.is_empty())
-        .map(|name| String::from_utf8_lossy(name).into_owned())
+        .map(<[u8]>::to_vec)
         .collect())
 }
 
@@ -156,18 +165,19 @@ pub(super) async fn upload_project(
     }
     let config = HostPath::parse(&git_dir.join("config")).map_err(protocol)?;
     let sanitized = sanitized_git_config(&TestRunner::new(), &config, cancel).await?;
-    let names = tracked_and_untracked(&source).await?;
+    let names = tracked_and_untracked(&source, None).await?;
     if cancel.is_cancelled() {
         return Err(GatewayError::Cancelled {
-            op: jackin_openshell::GatewayOp::Upload,
+            op: GatewayOp::Upload,
         });
     }
     let git_config = dest.join(".git").join("config");
     tokio::task::spawn_blocking(move || {
         for name in names {
-            let from = source.join(&name);
+            let relative = Path::new(OsStr::from_bytes(&name));
+            let from = source.join(relative);
             if from.is_file() {
-                replace_file(&from, &dest.join(&name))?;
+                replace_file(&from, &dest.join(relative))?;
             }
         }
         copy_tree(&git_dir, &dest.join(".git"))
@@ -190,9 +200,103 @@ pub(super) async fn upload_project(
         .map_err(protocol)
 }
 
-pub(super) fn upload_refused() -> GatewayError {
+pub(super) async fn upload_tree(
+    root: &Path,
+    home: Option<&Path>,
+    source: &ProjectRoot,
+    dest: &SandboxPath,
+    cancel: &CancellationToken,
+) -> Result<(), GatewayError> {
+    if cancel.is_cancelled() {
+        return Err(GatewayError::Cancelled {
+            op: GatewayOp::UploadTree,
+        });
+    }
+    let dest = writable(root, dest)?;
+    let source = source.path().as_path().to_path_buf();
+    let names = tracked_and_untracked(&source, home).await?;
+    tokio::task::spawn_blocking(move || {
+        for name in names {
+            let relative = Path::new(OsStr::from_bytes(&name));
+            let from = source.join(relative);
+            if from.is_dir() {
+                copy_tree(&from, &dest.join(relative))?;
+            } else if from.is_file() {
+                replace_file(&from, &dest.join(relative))?;
+            }
+        }
+        Ok::<(), std::io::Error>(())
+    })
+    .await
+    .map_err(protocol)?
+    .map_err(protocol)
+}
+
+pub(super) async fn upload_file(
+    root: &Path,
+    source: &HostPath,
+    dest: &SandboxPath,
+    corrupt: bool,
+    cancel: &CancellationToken,
+) -> Result<(), GatewayError> {
+    if cancel.is_cancelled() {
+        return Err(GatewayError::Cancelled {
+            op: GatewayOp::UploadFile,
+        });
+    }
+    let target = writable(root, dest)?;
+    let sent = tokio::fs::read(source.as_path()).await.map_err(|error| {
+        digest_failure(
+            TransferOp::UploadFile,
+            &format!("the file cannot be read: {error}"),
+        )
+    })?;
+    let from = source.as_path().to_path_buf();
+    let to = target.clone();
+    tokio::task::spawn_blocking(move || replace_file(&from, &to))
+        .await
+        .map_err(protocol)?
+        .map_err(protocol)?;
+    if corrupt {
+        let mut landed = tokio::fs::read(&target).await.map_err(protocol)?;
+        match landed.first_mut() {
+            Some(first) => *first ^= 0xff,
+            None => landed.push(0xff),
+        }
+        tokio::fs::write(&target, landed).await.map_err(protocol)?;
+    }
+    let expected = Sha256::of(&sent);
+    let actual = Sha256::of(&tokio::fs::read(&target).await.map_err(protocol)?);
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(digest_failure(
+            TransferOp::Digest,
+            &format!(
+                "sha256 mismatch: the sandbox has {}, the upload has {}",
+                actual.as_str(),
+                expected.as_str()
+            ),
+        ))
+    }
+}
+
+pub(super) async fn edit_host(edit: &super::HostEdit) -> Result<(), GatewayError> {
+    match edit {
+        super::HostEdit::Write { path, bytes } => tokio::fs::write(path.as_path(), bytes)
+            .await
+            .map_err(protocol),
+        super::HostEdit::Chmod { path, mode } => {
+            tokio::fs::set_permissions(path.as_path(), std::fs::Permissions::from_mode(mode.0))
+                .await
+                .map_err(protocol)
+        }
+    }
+}
+
+pub(super) fn upload_refused(op: TransferOp) -> GatewayError {
     GatewayError::Transfer {
-        op: TransferOp::UploadFiltered,
+        op,
         status: ProcessStatus::Exited(1),
         tail: TerminalText::sanitize(b"sandbox not found"),
     }

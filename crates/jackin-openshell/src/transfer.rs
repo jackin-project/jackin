@@ -4,8 +4,8 @@
 use std::path::Path;
 
 use jackin_core::{
-    HostPath, ProcessError, ProcessSpec, ProcessStatus, ProcessStdin, Program, SandboxName,
-    SandboxPath, Sha256, TerminalText, sandbox_layout,
+    HostPath, ProcessError, ProcessSpec, ProcessStatus, ProcessStdin, Program, ProjectRoot,
+    SandboxName, SandboxPath, Sha256, TerminalText, sandbox_layout,
 };
 use sha2::{Digest, Sha256 as Hasher};
 use tokio::io::AsyncReadExt;
@@ -200,6 +200,68 @@ pub(crate) async fn upload_project(
             },
         )
         .await
+}
+
+pub(crate) async fn upload_tree(
+    inner: &Inner,
+    sandbox: &SandboxName,
+    source: &ProjectRoot,
+    dest: &SandboxPath,
+    cancel: &CancellationToken,
+) -> Result<(), GatewayError> {
+    let args = inner.scope_args().upload(sandbox, ".", dest, false);
+    inner
+        .run_cli(
+            CliCall {
+                args,
+                cwd: Some(source.path().clone()),
+                env_remove_prefixes: upload_env_prefixes(),
+                step: TransferOp::UploadFiltered,
+                op: GatewayOp::UploadTree,
+            },
+            cancel,
+        )
+        .await
+}
+
+pub(crate) async fn upload_file(
+    inner: &Inner,
+    sandbox: &SandboxName,
+    source: &HostPath,
+    dest: &SandboxPath,
+    cancel: &CancellationToken,
+) -> Result<(), GatewayError> {
+    let name = source.as_path().display().to_string();
+    let args = inner.scope_args().upload(sandbox, &name, dest, true);
+    inner
+        .run_cli(
+            CliCall {
+                args,
+                cwd: None,
+                env_remove_prefixes: upload_env_prefixes(),
+                step: TransferOp::UploadFile,
+                op: GatewayOp::UploadFile,
+            },
+            cancel,
+        )
+        .await?;
+    let sent = local_digest(source.as_path()).await.map_err(|error| {
+        transfer_failure(
+            TransferOp::UploadFile,
+            ProcessStatus::Exited(0),
+            &format!("the uploaded file cannot be read: {error}"),
+        )
+    })?;
+    let landed = remote_digest(inner, sandbox, dest, cancel).await?;
+    if sent == landed.as_str() {
+        Ok(())
+    } else {
+        Err(transfer_failure(
+            TransferOp::Digest,
+            ProcessStatus::Exited(0),
+            &format!("sha256 mismatch: the sandbox has {landed}, the upload has {sent}"),
+        ))
+    }
 }
 
 async fn local_digest(path: &Path) -> std::io::Result<String> {

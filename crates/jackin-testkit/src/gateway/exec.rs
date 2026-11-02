@@ -89,7 +89,11 @@ async fn run_host(
     command
         .args(run.args.iter().map(|argument| map_argument(root, argument)))
         .current_dir(workdir)
-        .envs(run.env.iter().map(|(name, value)| (name.as_str(), value)));
+        .envs(
+            run.env
+                .iter()
+                .map(|(name, value)| (name.as_str(), map_argument(root, value))),
+        );
     let stdin = match &run.stdin {
         ProgramStdin::Closed => None,
         ProgramStdin::Data(bytes) => Some(bytes.expose().to_vec()),
@@ -187,6 +191,9 @@ pub(super) async fn run_program(
             "/bin/sh" => run_host(HostProgram::Shell, cell, run, cancel).await?,
             "/usr/bin/git" => run_host(HostProgram::Git, cell, run, cancel).await?,
             "/usr/bin/printenv" => run_host(HostProgram::Printenv, cell, run, cancel).await?,
+            "/usr/bin/find" => run_host(HostProgram::Find, cell, run, cancel).await?,
+            "/usr/bin/mkdir" => run_host(HostProgram::Mkdir, cell, run, cancel).await?,
+            "/usr/bin/rm" => run_host(HostProgram::Rm, cell, run, cancel).await?,
             "/usr/bin/sha256sum" => sha256sum(&root, run).await,
             other => outcome(
                 127,

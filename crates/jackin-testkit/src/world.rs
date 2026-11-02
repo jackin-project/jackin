@@ -30,6 +30,7 @@ pub struct World {
     pub roles: Arc<RoleCatalog>,
     pub config: ConfigStore,
     cache_dir: HostPath,
+    home: HostPath,
     _dir: TempDir,
 }
 
@@ -59,6 +60,10 @@ impl World {
     pub fn cache_dir(&self) -> &HostPath {
         &self.cache_dir
     }
+
+    pub fn home(&self) -> &HostPath {
+        &self.home
+    }
 }
 
 impl WorldBuilder {
@@ -73,14 +78,18 @@ impl WorldBuilder {
         let canonical = std::fs::canonicalize(dir.path())?;
         let cache_dir = HostPath::parse(&canonical.join("cache"))?;
         let config_path = HostPath::parse(&canonical.join("config.toml"))?;
+        let home_path = canonical.join("home");
+        std::fs::create_dir(&home_path)?;
+        let home = HostPath::parse(&home_path)?;
         let gateway = Arc::new(FakeGateway::new(
             GatewayName::parse("fake-gateway")?,
             OpenShellWorkspace::parse("default")?,
         ));
         let engine = Arc::new(FakeEngine::new());
         gateway.link_engine(Arc::clone(&engine));
+        gateway.use_host_home(&home);
         let clock = Arc::new(FakeClock::new());
-        let runner = Arc::new(TestRunner::new());
+        let runner = Arc::new(TestRunner::with_home(&home));
         let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
         let gateway_port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&gateway);
         let engine_port: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&engine);
@@ -111,6 +120,7 @@ impl WorldBuilder {
             runner,
             session,
             cache_dir,
+            home,
             _dir: dir,
         })
     }

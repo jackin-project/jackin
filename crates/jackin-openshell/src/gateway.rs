@@ -61,6 +61,20 @@ pub trait Gateway: Send + Sync + Debug {
         upload: &ProjectUpload,
         cancel: &CancellationToken,
     ) -> Result<(), GatewayError>;
+    async fn upload_tree(
+        &self,
+        sandbox: &SandboxName,
+        source: &ProjectRoot,
+        dest: &SandboxPath,
+        cancel: &CancellationToken,
+    ) -> Result<(), GatewayError>;
+    async fn upload_file(
+        &self,
+        sandbox: &SandboxName,
+        source: &HostPath,
+        dest: &SandboxPath,
+        cancel: &CancellationToken,
+    ) -> Result<(), GatewayError>;
     async fn download_file(
         &self,
         sandbox: &SandboxName,

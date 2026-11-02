@@ -32,6 +32,9 @@ pub(crate) enum HostProgram {
     Shell,
     Git,
     Printenv,
+    Find,
+    Mkdir,
+    Rm,
 }
 
 impl HostProgram {
@@ -40,8 +43,14 @@ impl HostProgram {
             HostProgram::Shell => Command::new("/bin/sh"),
             HostProgram::Git => Command::new("/usr/bin/git"),
             HostProgram::Printenv => Command::new("/usr/bin/printenv"),
+            HostProgram::Find => Command::new("/usr/bin/find"),
+            HostProgram::Mkdir => Command::new("/bin/mkdir"),
+            HostProgram::Rm => Command::new("/bin/rm"),
         };
         command.env_clear().env("PATH", SANDBOX_PATH);
+        if self == HostProgram::Git {
+            command.env("GIT_CONFIG_NOSYSTEM", "1");
+        }
         command
     }
 }

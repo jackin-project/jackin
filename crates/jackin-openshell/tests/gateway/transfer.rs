@@ -102,6 +102,241 @@ fn assert_scoped(call: &Recorded, endpoint: &str, tail: &[String]) {
     call.assert_openshell_env_isolated();
 }
 
+fn bundle_file(bytes: &[u8]) -> (TempDir, HostPath) {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("upload.bundle");
+    std::fs::write(&path, bytes).unwrap();
+    let path = HostPath::parse(&path).unwrap();
+    (dir, path)
+}
+
+fn sums_reply(
+    hex: &Arc<Mutex<String>>,
+    exit: &Arc<AtomicUsize>,
+    seen: &Arc<Mutex<Vec<Vec<String>>>>,
+) -> super::server::ExecBackend {
+    let (hex, exit, seen) = (Arc::clone(hex), Arc::clone(exit), Arc::clone(seen));
+    scripted(move |start, _| {
+        seen.lock().unwrap().push(start.command.clone());
+        if exit.load(Ordering::SeqCst) == 0 {
+            vec![
+                Step::Out(format!("{}  f\n", hex.lock().unwrap()).into_bytes()),
+                Step::Exit(0),
+            ]
+        } else {
+            vec![Step::Err(b"no such file".to_vec()), Step::Exit(1)]
+        }
+    })
+}
+
+#[tokio::test]
+async fn upload_tree_and_upload_file_run_one_scoped_call_each_and_compare_the_file_digest() {
+    let env = env().await;
+    add_sandbox(
+        &mut env.server.state(),
+        TRANSFER_WORKSPACE,
+        TRANSFER_SANDBOX,
+        SandboxPhase::Ready,
+        None,
+        &[],
+    );
+    let bytes = b"bundle bytes".to_vec();
+    let hex = Arc::new(Mutex::new(Sha256::of(&bytes).as_str().to_owned()));
+    let exit = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    env.server.state().exec = Some(sums_reply(&hex, &exit, &seen));
+    let (dir, root) = project().await;
+    let (_file_dir, file) = bundle_file(&bytes);
+    let runner = ScriptedRunner::always(exited(0, b"", b""));
+    let gateway = gateway_with(&env, runner.clone()).await;
+    let name = sandbox_name(TRANSFER_SANDBOX);
+    let cancel = CancellationToken::new();
+    let project_dest = SandboxPath::parse("/sandbox/project").unwrap();
+    let bundle_dest = SandboxPath::parse("/sandbox/.jackin/bundle/upload-ab12.bundle").unwrap();
+
+    guard(gateway.upload_tree(&name, &root, &project_dest, &cancel))
+        .await
+        .unwrap();
+    assert!(seen.lock().unwrap().is_empty());
+    guard(gateway.upload_file(&name, &file, &bundle_dest, &cancel))
+        .await
+        .unwrap();
+
+    let calls = runner.calls();
+    assert_eq!(calls.len(), 2);
+    let endpoint = env.server.endpoint();
+    assert_scoped(
+        &calls[0],
+        &endpoint,
+        &upload_tail(&[".", "/sandbox/project"]),
+    );
+    assert_eq!(calls[0].cwd.as_ref().unwrap().as_path(), dir.path());
+    let file_name = file.as_path().display().to_string();
+    let mut expected = upload_tail(&[]);
+    expected.extend([
+        file_name,
+        "/sandbox/.jackin/bundle/upload-ab12.bundle".to_owned(),
+        "--no-git-ignore".to_owned(),
+    ]);
+    assert_scoped(&calls[1], &endpoint, &expected);
+    assert!(calls[1].cwd.is_none());
+    for call in &calls {
+        assert_eq!(call.program, Program::Openshell);
+        assert!(call.stdin_null && call.has_sink);
+        assert_eq!(call.timeout, Duration::from_secs(123));
+        call.assert_git_env_isolated();
+    }
+    assert_eq!(
+        seen.lock().unwrap().clone(),
+        vec![words(&[SUMS, "/sandbox/.jackin/bundle/upload-ab12.bundle"])]
+    );
+
+    "0".repeat(64).clone_into(&mut hex.lock().unwrap());
+    let error = guard(gateway.upload_file(&name, &file, &bundle_dest, &cancel))
+        .await
+        .unwrap_err();
+    match error {
+        GatewayError::Transfer {
+            op: TransferOp::Digest,
+            status,
+            tail,
+        } => {
+            assert_eq!(status, ProcessStatus::Exited(0));
+            for digest in [Sha256::of(&bytes).to_string(), "0".repeat(64)] {
+                assert!(tail.as_str().contains(&digest), "{tail:?}");
+            }
+        }
+        other => panic!("{other:?}"),
+    }
+
+    exit.store(1, Ordering::SeqCst);
+    let error = guard(gateway.upload_file(&name, &file, &bundle_dest, &cancel))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            GatewayError::Transfer {
+                op: TransferOp::Digest,
+                status: ProcessStatus::Exited(1),
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+}
+
+#[tokio::test]
+async fn failed_tree_and_file_uploads_name_their_own_step_and_never_ask_for_a_digest() {
+    let env = env().await;
+    let hex = Arc::new(Mutex::new(Sha256::of(b"x").as_str().to_owned()));
+    let exit = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    env.server.state().exec = Some(sums_reply(&hex, &exit, &seen));
+    let (_dir, root) = project().await;
+    let (_file_dir, file) = bundle_file(b"x");
+    let name = sandbox_name(TRANSFER_SANDBOX);
+    let cancel = CancellationToken::new();
+    let dest = SandboxPath::parse("/sandbox/project").unwrap();
+
+    let runner = ScriptedRunner::always(exited(1, b"", b"\x1b[31mfatal\x1b[0m"));
+    let gateway = gateway_with(&env, runner.clone()).await;
+    let tree = guard(gateway.upload_tree(&name, &root, &dest, &cancel))
+        .await
+        .unwrap_err();
+    match tree {
+        GatewayError::Transfer { op, status, tail } => {
+            assert_eq!(
+                (op, status),
+                (TransferOp::UploadFiltered, ProcessStatus::Exited(1))
+            );
+            assert!(!tail.as_str().contains('\u{1b}') && tail.as_str().contains("fatal"));
+        }
+        other => panic!("{other:?}"),
+    }
+    let sent = guard(gateway.upload_file(&name, &file, &dest, &cancel))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            sent,
+            GatewayError::Transfer {
+                op: TransferOp::UploadFile,
+                status: ProcessStatus::Exited(1),
+                ..
+            }
+        ),
+        "{sent:?}"
+    );
+    assert!(seen.lock().unwrap().is_empty());
+
+    let after = Duration::from_secs(9);
+    for (reply, check) in [
+        (
+            ProcessError::Timeout {
+                program: Program::Openshell,
+                after,
+            },
+            0_u8,
+        ),
+        (
+            ProcessError::Cancelled {
+                program: Program::Openshell,
+            },
+            1,
+        ),
+        (
+            ProcessError::Spawn {
+                program: Program::Openshell,
+                message: "missing".to_owned(),
+            },
+            2,
+        ),
+    ] {
+        let reply = Arc::new(Mutex::new(Some(reply)));
+        let runner = ScriptedRunner::new(move |_| Err(reply.lock().unwrap().take().unwrap()));
+        let gateway = gateway_with(&env, runner).await;
+        let error = guard(gateway.upload_file(&name, &file, &dest, &cancel))
+            .await
+            .unwrap_err();
+        match (check, error) {
+            (
+                0,
+                GatewayError::Timeout {
+                    op: GatewayOp::UploadFile,
+                    after: got,
+                },
+            ) => assert_eq!(got, after),
+            (
+                1,
+                GatewayError::Cancelled {
+                    op: GatewayOp::UploadFile,
+                },
+            )
+            | (2, GatewayError::Process(ProcessError::Spawn { .. })) => {}
+            (_, other) => panic!("{other:?}"),
+        }
+    }
+    let runner = ScriptedRunner::new(|_| {
+        Err(ProcessError::Cancelled {
+            program: Program::Openshell,
+        })
+    });
+    let gateway = gateway_with(&env, runner).await;
+    let error = guard(gateway.upload_tree(&name, &root, &dest, &cancel))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            GatewayError::Cancelled {
+                op: GatewayOp::UploadTree
+            }
+        ),
+        "{error:?}"
+    );
+}
+
 #[tokio::test]
 async fn upload_runs_two_openshell_calls_naming_gateway_workspace_and_sandbox() {
     let env = env().await;

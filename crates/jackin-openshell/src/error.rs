@@ -92,6 +92,8 @@ pub enum GatewayOp {
     ReadFiles,
     WriteFile,
     Upload,
+    UploadTree,
+    UploadFile,
     Download,
     Terminal,
 }
@@ -99,6 +101,7 @@ pub enum GatewayOp {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TransferOp {
     UploadFiltered,
+    UploadFile,
     UploadGit,
     Download,
     Digest,

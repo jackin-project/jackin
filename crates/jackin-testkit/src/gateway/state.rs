@@ -15,7 +15,7 @@ use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
 use super::main_process::{Main, MainPlan, PlanEnd};
-use super::{ProgramScript, ProviderRecord, RunRecord, Trigger};
+use super::{HostEdit, ProgramScript, ProviderRecord, RunRecord, Trigger, UploadKind};
 use crate::engine::FakeEngine;
 use crate::supervisor::{Supervisor, SupervisorModel};
 use crate::sync::locked;
@@ -53,6 +53,12 @@ impl ArmedTrigger {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Direction {
+    Download,
+    Upload,
+}
+
 #[derive(Debug)]
 pub(super) struct Registry {
     pub(super) sandboxes: BTreeMap<SandboxName, Arc<Cell>>,
@@ -66,12 +72,14 @@ pub(super) struct Registry {
     pub(super) stale_observations: u32,
     pub(super) scripts: BTreeMap<SandboxPath, ProgramScript>,
     pub(super) stalls: Vec<SandboxPath>,
-    pub(super) corrupt_download: bool,
+    pub(super) corrupt: BTreeSet<Direction>,
     pub(super) provision_polls: u32,
     pub(super) failing_creates: u32,
     pub(super) supervisor: SupervisorModel,
     pub(super) hidden_until_conflict: bool,
     pub(super) start_ignored: bool,
+    pub(super) host_home: Option<PathBuf>,
+    pub(super) host_edits: Vec<(UploadKind, HostEdit)>,
 }
 
 impl Registry {
@@ -88,12 +96,14 @@ impl Registry {
             stale_observations: 0,
             scripts: BTreeMap::new(),
             stalls: Vec::new(),
-            corrupt_download: false,
+            corrupt: BTreeSet::new(),
             provision_polls: 0,
             failing_creates: 0,
             supervisor: SupervisorModel::Cooperative,
             hidden_until_conflict: false,
             start_ignored: false,
+            host_home: None,
+            host_edits: Vec::new(),
         }
     }
 

@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    GatewayName, HostPath, OpenShellWorkspace, ProcessRunner, ProfileId, ProviderName, SandboxName,
-    SandboxPath,
+    GatewayName, HostPath, OpenShellWorkspace, ProcessRunner, ProfileId, ProjectRoot, ProviderName,
+    SandboxName, SandboxPath,
 };
 use openshell_sdk::OpenShellClient;
 use openshell_sdk::raw::AuthedGrpcClient;
@@ -178,6 +178,26 @@ impl Gateway for GrpcGateway {
         cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
         crate::transfer::upload_project(&self.inner, sandbox, upload, cancel).await
+    }
+
+    async fn upload_tree(
+        &self,
+        sandbox: &SandboxName,
+        source: &ProjectRoot,
+        dest: &SandboxPath,
+        cancel: &CancellationToken,
+    ) -> Result<(), GatewayError> {
+        crate::transfer::upload_tree(&self.inner, sandbox, source, dest, cancel).await
+    }
+
+    async fn upload_file(
+        &self,
+        sandbox: &SandboxName,
+        source: &HostPath,
+        dest: &SandboxPath,
+        cancel: &CancellationToken,
+    ) -> Result<(), GatewayError> {
+        crate::transfer::upload_file(&self.inner, sandbox, source, dest, cancel).await
     }
 
     async fn download_file(

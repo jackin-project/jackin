@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use jackin_core::{
@@ -27,6 +27,10 @@ impl SandboxHandle {
 
     pub fn name(&self) -> SandboxName {
         self.cell.name.clone()
+    }
+
+    pub fn root(&self) -> PathBuf {
+        self.cell.root()
     }
 
     pub fn phase(&self) -> Phase {
