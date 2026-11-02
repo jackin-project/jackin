@@ -6,7 +6,6 @@ all-features = true
 
 [advisories]
 ignore = [
-    { id = "RUSTSEC-2023-0071", reason = "Marvin timing attack in rsa; reached only through russh's rsa 0.10 release candidate, used for SSH host key verification against the local gateway." },
     { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile is unmaintained; reached only through openshell-core in the pinned OpenShell tag." },
 ]
 yanked = "deny"
