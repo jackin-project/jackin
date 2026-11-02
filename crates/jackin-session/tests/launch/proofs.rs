@@ -3,7 +3,7 @@
 
 use jackin_core::{ProfileId, ProviderName, SandboxLabels, SupervisorState, sandbox_layout};
 use jackin_image::BuildStage;
-use jackin_openshell::GatewayError;
+use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_session::{LaunchError, LaunchOutcome, LaunchStep};
 use jackin_testkit::{Fault, Trigger};
 
@@ -130,6 +130,55 @@ async fn a_failure_after_create_leaves_the_sandbox_and_a_retry_continues_it() ->
         );
         converged(&rig, &handle, 1)?;
         assert_eq!(running(1)?, handle.supervisor().ok_or("no state")?);
+        Ok(())
+    })
+    .await
+}
+
+const FINDS_BEFORE_CREATE: u32 = 3;
+
+#[tokio::test]
+async fn a_failure_right_after_create_still_reports_the_created_sandbox() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.gateway().inject(Fault::FailAfter {
+            op: GatewayOp::Find,
+            calls: FINDS_BEFORE_CREATE,
+            error: unreachable(),
+        });
+        let failed = failure(rig.launch(1).await?)?;
+        let name = rig.plan(1)?.sandbox_name().clone();
+        assert_eq!(failed.step, LaunchStep::Sandbox);
+        assert_eq!(failed.sandbox, Some(name));
+        assert!(matches!(
+            *failed.error,
+            LaunchError::Gateway(GatewayError::Protocol { .. })
+        ));
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_failure_right_after_a_join_still_reports_the_joined_sandbox() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let first = ready(rig.launch(1).await?)?;
+        rig.gateway().inject(Fault::HideUntilCreateConflict);
+        rig.gateway().inject(Fault::FailAfter {
+            op: GatewayOp::Find,
+            calls: FINDS_BEFORE_CREATE + 1,
+            error: unreachable(),
+        });
+        let failed = failure(rig.launch(1).await?)?;
+        assert_eq!(failed.step, LaunchStep::Sandbox);
+        assert_eq!(failed.sandbox, Some(first.sandbox));
+        assert!(matches!(
+            *failed.error,
+            LaunchError::Gateway(GatewayError::Protocol { .. })
+        ));
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
         Ok(())
     })
     .await
