@@ -3,10 +3,9 @@
 
 use std::error::Error;
 
+use jackin_core::ProjectRoot;
 use jackin_core::{Phase, SandboxName, SupervisorState};
-use jackin_openshell::{
-    Gateway, GatewayError, GatewayOp, PowerAction, ProjectUpload, SandboxQuery,
-};
+use jackin_openshell::{Gateway, GatewayError, GatewayOp, PowerAction, SandboxQuery};
 use jackin_testkit::{FakeGateway, Fault, ProgramScript, Trigger};
 use tokio_util::sync::CancellationToken;
 
@@ -27,15 +26,8 @@ fn is_injected<T: std::fmt::Debug>(result: Result<T, GatewayError>) -> bool {
     matches!(result, Err(GatewayError::Protocol { message }) if message == "injected")
 }
 
-async fn upload() -> Result<(tempfile::TempDir, ProjectUpload), Box<dyn Error>> {
-    let (dir, source) = project().await?;
-    Ok((
-        dir,
-        ProjectUpload {
-            source,
-            dest: path("/sandbox/project")?,
-        },
-    ))
+async fn upload() -> Result<(tempfile::TempDir, ProjectRoot), Box<dyn Error>> {
+    project().await
 }
 
 #[tokio::test]
@@ -112,15 +104,20 @@ async fn cancel_triggers_cancel_their_token_and_let_the_matching_call_run() -> T
         let fake = fake()?;
         let handle = ready(&fake, sh("sleep 3600")?).await?;
         let name = handle.name();
-        let (_dir, upload) = upload().await?;
+        let (_dir, source) = upload().await?;
         let token = CancellationToken::new();
         fake.inject(Fault::CancelAt {
-            trigger: Trigger::Op(GatewayOp::Upload),
+            trigger: Trigger::Op(GatewayOp::UploadTree),
             token: token.clone(),
         });
         assert!(!token.is_cancelled());
-        fake.upload_project(&name, &upload, &CancellationToken::new())
-            .await?;
+        fake.upload_tree(
+            &name,
+            &source,
+            &path("/sandbox/project")?,
+            &CancellationToken::new(),
+        )
+        .await?;
         assert!(token.is_cancelled());
         assert!(handle.file(&path("/sandbox/project/README.md")?).is_some());
 

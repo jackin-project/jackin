@@ -18,10 +18,10 @@ use jackin_core::{
 };
 use jackin_openshell::{
     EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, Missing, NetworkRule,
-    PolicyReport, PowerAction, ProfileSync, ProgramOutcome, ProgramRun, ProjectUpload,
-    ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState, RuleEndpoint, RuleKey,
-    SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TerminalKind,
-    TerminalRequest, TerminalSession, TlsMode, TransferOp,
+    PolicyReport, PowerAction, ProfileSync, ProgramOutcome, ProgramRun, ProviderMaterial,
+    ProviderProfile, ProviderSpec, ProviderState, RuleEndpoint, RuleKey, SandboxCreate,
+    SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TerminalKind, TerminalRequest,
+    TerminalSession, TlsMode, TransferOp,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -711,22 +711,6 @@ impl Gateway for FakeGateway {
         let trigger = Trigger::Write(file.path.clone());
         let cell = self.exec_cell_at(GatewayOp::WriteFile, Some(&trigger), sandbox)?;
         files::write_file(&cell, file).await
-    }
-
-    async fn upload_project(
-        &self,
-        sandbox: &SandboxName,
-        upload: &ProjectUpload,
-        cancel: &CancellationToken,
-    ) -> Result<(), GatewayError> {
-        tokio::task::yield_now().await;
-        let ready = self
-            .struck_at(GatewayOp::Upload, None, sandbox)?
-            .filter(|cell| cell.settle().accepts_exec());
-        let Some(cell) = ready else {
-            return Err(files::upload_refused(TransferOp::UploadFiltered));
-        };
-        files::upload_project(&cell.root(), upload, cancel).await
     }
 
     async fn upload_tree(

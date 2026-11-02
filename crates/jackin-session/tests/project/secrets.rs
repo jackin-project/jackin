@@ -121,7 +121,8 @@ fn scan(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
-async fn no_host_credential_reaches_any_sandbox_file_or_the_sandbox_git_config() -> TestResult {
+async fn no_host_credential_reaches_any_sandbox_file_or_the_sandbox_repository_settings()
+-> TestResult {
     guard(async {
         let repo = base().await?;
         repo.git(&[

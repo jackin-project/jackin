@@ -52,8 +52,6 @@ pub enum GatewayError {
         status: ProcessStatus,
         tail: TerminalText,
     },
-    #[error("the project .git at {path:?} is not a directory")]
-    UnsupportedGitDirectory { path: HostPath },
     #[error("the remote file has {size} bytes, more than the limit of {limit}")]
     DownloadTooLarge { size: u64, limit: u64 },
     #[error("the {stream:?} output of {op:?} is larger than {limit} bytes")]
@@ -91,7 +89,6 @@ pub enum GatewayOp {
     Program,
     ReadFiles,
     WriteFile,
-    Upload,
     UploadTree,
     UploadFile,
     Download,
@@ -102,11 +99,9 @@ pub enum GatewayOp {
 pub enum TransferOp {
     UploadFiltered,
     UploadFile,
-    UploadGit,
     Download,
     Digest,
     Size,
-    GitConfig,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
@@ -185,7 +180,6 @@ impl GatewayError {
             | GatewayError::Process(_)
             | GatewayError::Transfer { .. }
             | GatewayError::OutputTooLarge { .. }
-            | GatewayError::UnsupportedGitDirectory { .. }
             | GatewayError::DownloadTooLarge { .. }
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }

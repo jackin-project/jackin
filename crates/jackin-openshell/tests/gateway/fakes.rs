@@ -185,7 +185,6 @@ pub(crate) type Reply = Arc<dyn Fn(&Recorded) -> Result<ProcessOutput, ProcessEr
 pub(crate) struct ScriptedRunner {
     reply: Reply,
     calls: Arc<Mutex<Vec<Recorded>>>,
-    git_calls: Arc<Mutex<Vec<Recorded>>>,
 }
 
 impl std::fmt::Debug for ScriptedRunner {
@@ -209,7 +208,6 @@ impl ScriptedRunner {
         ScriptedRunner {
             reply: Arc::new(reply),
             calls: Arc::new(Mutex::new(Vec::new())),
-            git_calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -219,10 +217,6 @@ impl ScriptedRunner {
 
     pub(crate) fn calls(&self) -> Vec<Recorded> {
         self.calls.lock().unwrap().clone()
-    }
-
-    pub(crate) fn git_calls(&self) -> Vec<Recorded> {
-        self.git_calls.lock().unwrap().clone()
     }
 }
 
@@ -259,13 +253,9 @@ impl ProcessRunner for ScriptedRunner {
                 self.calls.lock().unwrap().push(recorded.clone());
                 (self.reply)(&recorded)
             }
-            Program::Git => {
-                self.git_calls.lock().unwrap().push(recorded);
-                run_real_git(spec).await
-            }
             other => Err(ProcessError::Spawn {
                 program: other,
-                message: "only openshell and git are available".to_owned(),
+                message: "only openshell is available".to_owned(),
             }),
         }
     }
@@ -280,37 +270,4 @@ impl ProcessRunner for ScriptedRunner {
             message: "secret runs are not scripted".to_owned(),
         })
     }
-}
-
-pub(crate) async fn run_real_git(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessError> {
-    let mut command = tokio::process::Command::new("git");
-    command.args(&spec.args);
-    for (name, _) in std::env::vars_os() {
-        let matches = name.to_str().is_some_and(|name| {
-            spec.env_remove_prefixes
-                .iter()
-                .any(|prefix| name.starts_with(prefix.as_str()))
-        });
-        if matches {
-            command.env_remove(name);
-        }
-    }
-    for (name, value) in &spec.env {
-        if let EnvValue::Plain(text) = value {
-            command.env(name, text);
-        }
-    }
-    command.stdin(std::process::Stdio::null());
-    let output = command
-        .output()
-        .await
-        .map_err(|error| ProcessError::Spawn {
-            program: spec.program,
-            message: error.to_string(),
-        })?;
-    Ok(ProcessOutput {
-        status: ProcessStatus::Exited(output.status.code().unwrap_or(-1)),
-        stdout: output.stdout,
-        stderr: output.stderr,
-    })
 }

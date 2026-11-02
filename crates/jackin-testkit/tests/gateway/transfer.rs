@@ -4,64 +4,51 @@
 use std::sync::Arc;
 
 use jackin_core::{HostPath, LaunchId};
-use jackin_openshell::{Gateway, GatewayError, PowerAction, ProjectUpload, TransferOp};
+use jackin_openshell::{Gateway, GatewayError, PowerAction, TransferOp};
 use jackin_testkit::Fault;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
-use super::support::{TestResult, fake, git, guard, path, project, ready, sh, spec, write};
-
-const SECRET: &str = "s3cret-token-value";
-
-fn is_filtered_transfer(result: &Result<(), GatewayError>) -> bool {
-    matches!(
-        result,
-        Err(GatewayError::Transfer {
-            op: TransferOp::UploadFiltered,
-            ..
-        })
-    )
-}
+use super::support::{TestResult, fake, guard, path, project, ready, sh, write};
 
 #[tokio::test]
-async fn upload_copies_the_files_and_a_sanitized_git_dir_and_refuses_an_absent_or_stopped_sandbox_as_a_transfer_error()
+async fn an_upload_to_a_stopped_sandbox_is_a_transfer_error_for_both_calls_and_changes_nothing()
 -> TestResult {
     guard(async {
         let fake = fake()?;
         let (dir, root) = project().await?;
-        let remote = format!("https://user:{SECRET}@example.invalid/x.git");
-        git(dir.path(), &["remote", "add", "origin", remote.as_str()]).await?;
-        let upload = ProjectUpload {
-            source: root,
-            dest: path("/sandbox/project")?,
-        };
         let cancel = CancellationToken::new();
-
         let handle = ready(&fake, sh("sleep 3600")?).await?;
         let name = handle.name();
-        fake.upload_project(&name, &upload, &cancel).await?;
-        assert_eq!(
-            handle.file(&path("/sandbox/project/README.md")?),
-            Some(b"fixture\n".to_vec())
-        );
-        assert!(handle.file(&path("/sandbox/project/.git/HEAD")?).is_some());
-        let config = handle
-            .file(&path("/sandbox/project/.git/config")?)
-            .ok_or("no git config")?;
-        let config = String::from_utf8(config)?;
-        assert!(config.contains("example.invalid"), "{config}");
-        assert!(!config.contains(SECRET), "{config}");
-
-        let other = spec(sh("sleep 3600")?)?;
-        let absent = fake.upload_project(other.name(), &upload, &cancel).await;
-        assert!(is_filtered_transfer(&absent), "{absent:?}");
-        assert!(fake.sandbox(other.name()).is_none());
-        assert_eq!(fake.sandboxes().len(), 1);
+        let project_dest = path("/sandbox/project")?;
+        let file_dest = path("/sandbox/.jackin/bundle/upload.bundle")?;
+        let local = HostPath::parse(&dir.path().join("payload.bin"))?;
+        tokio::fs::write(local.as_path(), b"payload").await?;
 
         fake.set_power(&name, PowerAction::Stop).await?;
         let before = handle.files();
-        let stopped = fake.upload_project(&name, &upload, &cancel).await;
-        assert!(is_filtered_transfer(&stopped), "{stopped:?}");
+        let tree = fake.upload_tree(&name, &root, &project_dest, &cancel).await;
+        let file = fake.upload_file(&name, &local, &file_dest, &cancel).await;
+        assert!(
+            matches!(
+                tree,
+                Err(GatewayError::Transfer {
+                    op: TransferOp::UploadFiltered,
+                    ..
+                })
+            ),
+            "{tree:?}"
+        );
+        assert!(
+            matches!(
+                file,
+                Err(GatewayError::Transfer {
+                    op: TransferOp::UploadFile,
+                    ..
+                })
+            ),
+            "{file:?}"
+        );
         assert_eq!(handle.files(), before);
         Ok(())
     })

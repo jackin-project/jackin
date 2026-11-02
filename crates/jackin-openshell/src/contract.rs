@@ -2,21 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use jackin_core::{
     AccountName, Agent, ChatgptAccountId, CredentialKeys, EnvName, FileMode, HostPath, ImageId,
     ImageTag, LabelSelector, LaunchId, NameSuffix, Phase, PlannedLabels, ProfileAsset, ProfileId,
     ProjectRoot, ProviderName, RoleName, SandboxName, SandboxPath, SandboxSlug, Secret,
-    SecretBytes, WorkspaceName,
+    SecretBytes, StdFileSystem, WorkspaceName,
 };
 use tokio_util::sync::CancellationToken;
 
 use crate::error::{GatewayError, Missing, TransferOp};
 use crate::gateway::{
-    Gateway, MainProcess, PowerAction, ProfileSync, ProgramRun, ProgramStdin, ProjectUpload,
-    ProviderMaterial, ProviderSpec, ProviderState, Provisioning, SandboxCreate, SandboxFile,
-    SandboxQuery, SandboxView,
+    Gateway, MainProcess, PowerAction, ProfileSync, ProgramRun, ProgramStdin, ProviderMaterial,
+    ProviderSpec, ProviderState, Provisioning, SandboxCreate, SandboxFile, SandboxQuery,
+    SandboxView,
 };
 use crate::policy::{ClosedPolicy, ProviderProfile};
 use crate::terminal::{
@@ -42,8 +43,9 @@ pub const CORE_CHECKS: [&str; 15] = [
     "delete_sandbox",
 ];
 
-pub const TRANSFER_CHECKS: [&str; 3] = [
-    "upload_project",
+pub const TRANSFER_CHECKS: [&str; 4] = [
+    "upload_tree",
+    "upload_file_with_digest",
     "download_with_digest",
     "upload_absent_sandbox_is_a_transfer_error",
 ];
@@ -862,39 +864,187 @@ async fn delete_sandbox(ctx: &Ctx<'_>) -> Outcome<()> {
     ctx.gateway.delete_sandbox(&sandbox).await.map_err(text)
 }
 
-async fn upload_project(ctx: &Ctx<'_>) -> Outcome<()> {
-    let sandbox = ctx.sleeper().await?;
-    let upload = ProjectUpload {
-        source: ctx.fixture.project.clone(),
-        dest: path("/sandbox/project")?,
-    };
-    let result = async {
-        let cancel = CancellationToken::new();
-        ctx.gateway
-            .upload_project(&sandbox, &upload, &cancel)
+fn scratch_dir(kind: &str) -> Outcome<PathBuf> {
+    Ok(std::env::temp_dir().join(format!("jackin-contract-{kind}-{}", fresh_launch()?)))
+}
+
+async fn host_git(dir: &Path, args: &[&str]) -> Outcome<()> {
+    let (dir, args) = (
+        dir.to_path_buf(),
+        args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
+    );
+    let status = tokio::task::spawn_blocking(move || {
+        std::process::Command::new("git")
+            .args(&args)
+            .current_dir(&dir)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+    })
+    .await
+    .map_err(text)?
+    .map_err(text)?;
+    expect(
+        status.success(),
+        "the host git failed on the scratch project",
+    )
+}
+
+async fn scratch_project(dir: &Path) -> Outcome<ProjectRoot> {
+    tokio::fs::create_dir_all(dir.join("sub"))
+        .await
+        .map_err(text)?;
+    for (name, content) in [
+        ("tracked.txt", "tracked\n"),
+        ("sub/untracked.txt", "untracked\n"),
+        (".gitignore", "ignored.log\n"),
+        ("ignored.log", "ignored\n"),
+    ] {
+        tokio::fs::write(dir.join(name), content)
             .await
             .map_err(text)?;
-        ctx.gateway
-            .upload_project(&sandbox, &upload, &cancel)
-            .await
-            .map_err(text)?;
-        let listing = ctx
-            .exec(
-                &sandbox,
-                "ls -A \"$1\"",
-                &["/sandbox/project"],
-                ProgramStdin::Closed,
-                None,
-            )
-            .await?;
-        expect(
-            String::from_utf8_lossy(&listing.stdout)
-                .lines()
-                .any(|line| line == ".git"),
-            "the git directory is not in the sandbox",
+    }
+    host_git(dir, &["init", "-q"]).await?;
+    host_git(dir, &["add", "tracked.txt", ".gitignore"]).await?;
+    ProjectRoot::open(
+        &StdFileSystem::default(),
+        &HostPath::parse(dir).map_err(text)?,
+    )
+    .await
+    .map_err(text)
+}
+
+async fn project_files(ctx: &Ctx<'_>, sandbox: &SandboxName) -> Outcome<Vec<String>> {
+    let listing = ctx
+        .exec(
+            sandbox,
+            "cd \"$1\" && find . -type f | sort",
+            &["/sandbox/project"],
+            ProgramStdin::Closed,
+            None,
         )
+        .await?;
+    expect(listing.exit_code == 0, "the project listing failed")?;
+    Ok(String::from_utf8_lossy(&listing.stdout)
+        .lines()
+        .map(str::to_owned)
+        .collect())
+}
+
+async fn upload_tree_checks(
+    ctx: &Ctx<'_>,
+    sandbox: &SandboxName,
+    project: &ProjectRoot,
+) -> Outcome<()> {
+    let cancel = CancellationToken::new();
+    let dest = path("/sandbox/project")?;
+    let expected = ["./.gitignore", "./sub/untracked.txt", "./tracked.txt"];
+    for _ in 0..2 {
+        ctx.gateway
+            .upload_tree(sandbox, project, &dest, &cancel)
+            .await
+            .map_err(text)?;
+        let files = project_files(ctx, sandbox).await?;
+        expect(
+            files == expected,
+            &format!("the uploaded files are {files:?}, not {expected:?}"),
+        )?;
+    }
+    let stale = SandboxFile {
+        path: path("/sandbox/project/stale.txt")?,
+        mode: FileMode(0o600),
+        content: SecretBytes::new(b"stale".to_vec()),
+    };
+    ctx.gateway
+        .write_file(sandbox, &stale)
+        .await
+        .map_err(text)?;
+    ctx.gateway
+        .upload_tree(sandbox, project, &dest, &cancel)
+        .await
+        .map_err(text)?;
+    let files = project_files(ctx, sandbox).await?;
+    expect(
+        files.iter().any(|file| file == "./stale.txt") && files.len() == expected.len() + 1,
+        &format!("a repeated upload changed the stale file set: {files:?}"),
+    )
+}
+
+async fn upload_tree(ctx: &Ctx<'_>) -> Outcome<()> {
+    let sandbox = ctx.sleeper().await?;
+    let dir = scratch_dir("project")?;
+    let result = async {
+        let project = scratch_project(&dir).await?;
+        upload_tree_checks(ctx, &sandbox, &project).await
     }
     .await;
+    drop(tokio::fs::remove_dir_all(&dir).await);
+    ctx.cleanup(&sandbox).await;
+    result
+}
+
+async fn landed(ctx: &Ctx<'_>, sandbox: &SandboxName, file: &str) -> Outcome<()> {
+    let found = ctx
+        .exec(
+            sandbox,
+            "test -f \"$1\"",
+            &[file],
+            ProgramStdin::Closed,
+            None,
+        )
+        .await?;
+    expect(
+        found.exit_code == 0,
+        &format!("{file} is not a file at the exact name"),
+    )
+}
+
+async fn upload_file_checks(ctx: &Ctx<'_>, sandbox: &SandboxName, dir: &Path) -> Outcome<()> {
+    let cancel = CancellationToken::new();
+    let local = HostPath::parse(&dir.join("payload.bin")).map_err(text)?;
+    let big: Vec<u8> = (0..3 * 1024 * 1024_u32)
+        .map(|index| u8::try_from(index % 251).unwrap_or(0))
+        .collect();
+    for (bytes, target) in [
+        (b"first".to_vec(), "/sandbox/.contract-new/small.bin"),
+        (big, "/sandbox/.contract-dot/big.bin"),
+        (b"other".to_vec(), "/sandbox/.contract-new/other.bin"),
+        (b"second".to_vec(), "/sandbox/.contract-new/small.bin"),
+    ] {
+        tokio::fs::write(local.as_path(), &bytes)
+            .await
+            .map_err(text)?;
+        ctx.gateway
+            .upload_file(sandbox, &local, &path(target)?, &cancel)
+            .await
+            .map_err(text)?;
+        landed(ctx, sandbox, target).await?;
+    }
+    let replaced = path("/sandbox/.contract-new/small.bin")?;
+    let read = ctx
+        .gateway
+        .read_files(sandbox, std::slice::from_ref(&replaced))
+        .await
+        .map_err(text)?;
+    expect(
+        read.first().and_then(Option::as_deref) == Some(b"second".as_slice()),
+        "an upload over an existing file does not replace the content",
+    )
+}
+
+async fn upload_file_with_digest(ctx: &Ctx<'_>) -> Outcome<()> {
+    let sandbox = ctx.sleeper().await?;
+    let dir = scratch_dir("file")?;
+    let result = async {
+        tokio::fs::create_dir_all(&dir).await.map_err(text)?;
+        upload_file_checks(ctx, &sandbox, &dir).await
+    }
+    .await;
+    drop(tokio::fs::remove_dir_all(&dir).await);
     ctx.cleanup(&sandbox).await;
     result
 }
@@ -904,23 +1054,51 @@ async fn upload_absent_sandbox_is_a_transfer_error(ctx: &Ctx<'_>) -> Outcome<()>
         &ctx.fixture.name_prefix,
         &NameSuffix::for_launch(&fresh_launch()?),
     );
-    let upload = ProjectUpload {
-        source: ctx.fixture.project.clone(),
-        dest: path("/sandbox/project")?,
-    };
-    let result = ctx
+    let dir = scratch_dir("absent")?;
+    tokio::fs::create_dir_all(&dir).await.map_err(text)?;
+    let local = HostPath::parse(&dir.join("payload.bin")).map_err(text)?;
+    tokio::fs::write(local.as_path(), b"absent")
+        .await
+        .map_err(text)?;
+    let cancel = CancellationToken::new();
+    let tree = ctx
         .gateway
-        .upload_project(&name, &upload, &CancellationToken::new())
+        .upload_tree(
+            &name,
+            &ctx.fixture.project,
+            &path("/sandbox/project")?,
+            &cancel,
+        )
         .await;
+    let file = ctx
+        .gateway
+        .upload_file(
+            &name,
+            &local,
+            &path("/sandbox/.contract/absent.bin")?,
+            &cancel,
+        )
+        .await;
+    drop(tokio::fs::remove_dir_all(&dir).await);
     expect(
         matches!(
-            result,
+            tree,
             Err(GatewayError::Transfer {
                 op: TransferOp::UploadFiltered,
                 ..
             })
         ),
-        &format!("an upload to an absent sandbox is not a Transfer error: {result:?}"),
+        &format!("a tree upload to an absent sandbox is not a Transfer error: {tree:?}"),
+    )?;
+    expect(
+        matches!(
+            file,
+            Err(GatewayError::Transfer {
+                op: TransferOp::UploadFile,
+                ..
+            })
+        ),
+        &format!("a file upload to an absent sandbox is not a Transfer error: {file:?}"),
     )
 }
 
@@ -1318,7 +1496,13 @@ pub async fn run(
             check!(checks, ctx, "delete_sandbox", delete_sandbox);
         }
         ContractGroup::Transfer => {
-            check!(checks, ctx, "upload_project", upload_project);
+            check!(checks, ctx, "upload_tree", upload_tree);
+            check!(
+                checks,
+                ctx,
+                "upload_file_with_digest",
+                upload_file_with_digest
+            );
             check!(checks, ctx, "download_with_digest", download_with_digest);
             check!(
                 checks,

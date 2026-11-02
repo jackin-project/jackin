@@ -88,8 +88,7 @@ async fn a_host_edit_after_the_tree_upload_fails_with_a_mismatch_for_content_and
 const FILTER: &str = "[filter \"demo\"]\n\tclean = tr a-z A-Z\n";
 
 #[tokio::test]
-async fn a_filter_in_the_global_git_config_is_seen_and_a_global_exclude_is_honoured() -> TestResult
-{
+async fn a_filter_in_the_global_settings_is_seen_and_a_global_exclude_is_honoured() -> TestResult {
     guard(async {
         let filtered = RepoFixture::new().await?;
         filtered

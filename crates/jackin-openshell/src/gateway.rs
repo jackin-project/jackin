@@ -55,12 +55,6 @@ pub trait Gateway: Send + Sync + Debug {
         file: &SandboxFile,
     ) -> Result<(), GatewayError>;
 
-    async fn upload_project(
-        &self,
-        sandbox: &SandboxName,
-        upload: &ProjectUpload,
-        cancel: &CancellationToken,
-    ) -> Result<(), GatewayError>;
     async fn upload_tree(
         &self,
         sandbox: &SandboxName,
@@ -266,10 +260,4 @@ pub struct SandboxFile {
     pub path: SandboxPath,
     pub mode: FileMode,
     pub content: SecretBytes,
-}
-
-#[derive(Clone, Debug)]
-pub struct ProjectUpload {
-    pub source: ProjectRoot,
-    pub dest: SandboxPath,
 }

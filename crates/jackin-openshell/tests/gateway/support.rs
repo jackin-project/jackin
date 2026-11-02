@@ -177,7 +177,6 @@ pub(crate) fn kind(error: &GatewayError) -> &'static str {
         GatewayError::Process(_) => "Process",
         GatewayError::Transfer { .. } => "Transfer",
         GatewayError::OutputTooLarge { .. } => "OutputTooLarge",
-        GatewayError::UnsupportedGitDirectory { .. } => "UnsupportedGitDirectory",
         GatewayError::DownloadTooLarge { .. } => "DownloadTooLarge",
         GatewayError::HostKeyMismatch => "HostKeyMismatch",
         GatewayError::TerminalRefused { .. } => "TerminalRefused",

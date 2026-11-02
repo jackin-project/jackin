@@ -14,24 +14,16 @@ use tokio_util::sync::CancellationToken;
 use crate::cli::{Scope, inherited_env_prefixes, upload_env_prefixes};
 use crate::discovery::failure_tail;
 use crate::error::{GatewayError, GatewayOp, TransferOp};
-use crate::gateway::{ProgramRun, ProgramStdin, ProjectUpload, SandboxFile};
-use crate::git_config::{parse_listing, render, sanitize_entries};
+use crate::gateway::{ProgramRun, ProgramStdin};
 use crate::grpc::Inner;
 
-use jackin_core::{EnvValue, FileMode, OutputLine, ProcessRunner, SecretBytes};
-use std::time::Duration;
+use jackin_core::OutputLine;
 use tokio::sync::mpsc;
 
 const DOWNLOAD_LIMIT: u64 = 4 * 1024 * 1024 * 1024;
-const GIT_LIST_TIMEOUT: Duration = Duration::from_secs(30);
-const GIT_CONFIG_MODE: FileMode = FileMode(0o644);
 const LINE_CAPACITY: usize = 16;
 
 const HEX: &[u8; 16] = b"0123456789abcdef";
-const UPLOAD_STEPS: [(TransferOp, &str, bool); 2] = [
-    (TransferOp::UploadFiltered, ".", false),
-    (TransferOp::UploadGit, ".git", true),
-];
 
 fn process_error(error: ProcessError, op: GatewayOp) -> GatewayError {
     match error {
@@ -96,110 +88,6 @@ impl Inner {
             })
         }
     }
-}
-
-pub async fn sanitized_git_config(
-    runner: &dyn ProcessRunner,
-    config: &HostPath,
-    cancel: &CancellationToken,
-) -> Result<String, GatewayError> {
-    let mut args: Vec<String> = ["config", "--no-includes", "-f"]
-        .map(str::to_owned)
-        .to_vec();
-    args.push(config.as_path().display().to_string());
-    args.extend(["--list", "-z"].map(str::to_owned));
-    let spec = ProcessSpec {
-        program: Program::Git,
-        args,
-        cwd: None,
-        env: vec![
-            (
-                "GIT_CONFIG_NOSYSTEM".to_owned(),
-                EnvValue::Plain("1".to_owned()),
-            ),
-            (
-                "GIT_CONFIG_GLOBAL".to_owned(),
-                EnvValue::Plain("/dev/null".to_owned()),
-            ),
-        ],
-        env_remove_prefixes: vec!["GIT_".to_owned()],
-        stdin: ProcessStdin::Null,
-        timeout: GIT_LIST_TIMEOUT,
-    };
-    let output = runner
-        .run(&spec, None, cancel)
-        .await
-        .map_err(|error| process_error(error, GatewayOp::Upload))?;
-    if output.status != ProcessStatus::Exited(0) {
-        return Err(GatewayError::Transfer {
-            op: TransferOp::GitConfig,
-            status: output.status,
-            tail: failure_tail(&output),
-        });
-    }
-    render(&sanitize_entries(parse_listing(&output.stdout)?))
-}
-
-fn project_paths(upload: &ProjectUpload) -> Result<(HostPath, HostPath), GatewayError> {
-    let root = upload.source.path();
-    let unusable = |_| GatewayError::UnsupportedGitDirectory { path: root.clone() };
-    Ok((
-        HostPath::resolve(Path::new(".git"), root).map_err(unusable)?,
-        HostPath::resolve(Path::new(".git/config"), root).map_err(unusable)?,
-    ))
-}
-
-fn sandbox_config_path(dest: &SandboxPath) -> Result<SandboxPath, GatewayError> {
-    dest.join(".git")
-        .and_then(|git| git.join("config"))
-        .map_err(|error| GatewayError::InvalidArgument {
-            field: "dest".to_owned(),
-            message: error.to_string(),
-        })
-}
-
-pub(crate) async fn upload_project(
-    inner: &Inner,
-    sandbox: &SandboxName,
-    upload: &ProjectUpload,
-    cancel: &CancellationToken,
-) -> Result<(), GatewayError> {
-    let (git_dir, config) = project_paths(upload)?;
-    let is_directory = tokio::fs::symlink_metadata(git_dir.as_path())
-        .await
-        .is_ok_and(|metadata| metadata.is_dir());
-    if !is_directory {
-        return Err(GatewayError::UnsupportedGitDirectory { path: git_dir });
-    }
-    let target = sandbox_config_path(&upload.dest)?;
-    let sanitized = sanitized_git_config(inner.runner.as_ref(), &config, cancel).await?;
-    for (step, source, no_git_ignore) in UPLOAD_STEPS {
-        let args = inner
-            .scope_args()
-            .upload(sandbox, source, &upload.dest, no_git_ignore);
-        inner
-            .run_cli(
-                CliCall {
-                    args,
-                    cwd: Some(upload.source.path().clone()),
-                    env_remove_prefixes: upload_env_prefixes(),
-                    step,
-                    op: GatewayOp::Upload,
-                },
-                cancel,
-            )
-            .await?;
-    }
-    inner
-        .write_file(
-            sandbox,
-            &SandboxFile {
-                path: target,
-                mode: GIT_CONFIG_MODE,
-                content: SecretBytes::new(sanitized.into_bytes()),
-            },
-        )
-        .await
 }
 
 pub(crate) async fn upload_tree(

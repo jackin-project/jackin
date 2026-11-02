@@ -14,15 +14,12 @@ use jackin_core::{
     HostPath, ProcessStatus, ProjectRoot, SandboxPath, Sha256, TerminalText,
     sandbox_layout::RUN_START,
 };
-use jackin_openshell::{
-    GatewayError, GatewayOp, ProjectUpload, SandboxFile, TransferOp, sanitized_git_config,
-};
+use jackin_openshell::{GatewayError, GatewayOp, SandboxFile, TransferOp};
 use tokio_util::sync::CancellationToken;
 
 use super::exec::host_path;
 use super::state::Cell;
 use crate::exec::HostProgram;
-use crate::host::TestRunner;
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -145,59 +142,6 @@ fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
-}
-
-pub(super) async fn upload_project(
-    root: &Path,
-    upload: &ProjectUpload,
-    cancel: &CancellationToken,
-) -> Result<(), GatewayError> {
-    let dest = writable(root, &upload.dest)?;
-    let source = upload.source.path().as_path().to_path_buf();
-    let git_dir = source.join(".git");
-    if !tokio::fs::symlink_metadata(&git_dir)
-        .await
-        .is_ok_and(|metadata| metadata.is_dir())
-    {
-        return Err(GatewayError::UnsupportedGitDirectory {
-            path: HostPath::parse(&git_dir).map_err(protocol)?,
-        });
-    }
-    let config = HostPath::parse(&git_dir.join("config")).map_err(protocol)?;
-    let sanitized = sanitized_git_config(&TestRunner::new(), &config, cancel).await?;
-    let names = tracked_and_untracked(&source, None).await?;
-    if cancel.is_cancelled() {
-        return Err(GatewayError::Cancelled {
-            op: GatewayOp::Upload,
-        });
-    }
-    let git_config = dest.join(".git").join("config");
-    tokio::task::spawn_blocking(move || {
-        for name in names {
-            let relative = Path::new(OsStr::from_bytes(&name));
-            let from = source.join(relative);
-            if from.is_file() {
-                replace_file(&from, &dest.join(relative))?;
-            }
-        }
-        copy_tree(&git_dir, &dest.join(".git"))
-    })
-    .await
-    .map_err(protocol)?
-    .map_err(protocol)?;
-    let temp = git_config.with_file_name(format!(
-        ".config.jackin-{:016x}",
-        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    tokio::fs::write(&temp, sanitized.as_bytes())
-        .await
-        .map_err(protocol)?;
-    tokio::fs::set_permissions(&temp, std::fs::Permissions::from_mode(0o644))
-        .await
-        .map_err(protocol)?;
-    tokio::fs::rename(&temp, &git_config)
-        .await
-        .map_err(protocol)
 }
 
 pub(super) async fn upload_tree(

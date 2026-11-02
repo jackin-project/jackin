@@ -3,10 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::{LaunchId, Phase, SandboxName};
+use jackin_core::{LaunchId, Phase, ProjectRoot, SandboxName};
 use jackin_openshell::{
-    Gateway, GatewayError, InputMode, PowerAction, ProjectUpload, Provisioning, TerminalKind,
-    TerminalRequest, TransferOp,
+    Gateway, GatewayError, InputMode, PowerAction, Provisioning, TerminalKind, TerminalRequest,
+    TransferOp,
 };
 use jackin_testkit::{FakeGateway, Fault};
 use tokio_util::sync::CancellationToken;
@@ -170,7 +170,7 @@ const OPS: [Op; 7] = [
 async fn call(
     fake: &FakeGateway,
     name: &SandboxName,
-    upload: &ProjectUpload,
+    source: &ProjectRoot,
     op: Op,
 ) -> Result<Result<(), GatewayError>, Box<dyn std::error::Error>> {
     let outcome = match op {
@@ -194,8 +194,13 @@ async fn call(
             fake.write_file(name, &file).await
         }
         Op::Upload => {
-            fake.upload_project(name, upload, &CancellationToken::new())
-                .await
+            fake.upload_tree(
+                name,
+                source,
+                &path("/sandbox/project")?,
+                &CancellationToken::new(),
+            )
+            .await
         }
         Op::Shell => fake
             .open_terminal(&TerminalRequest {
@@ -241,10 +246,6 @@ async fn every_phase_reading_call_is_one_observation_that_settles_a_provisioning
 -> TestResult {
     guard(async {
         let (_dir, root) = project().await?;
-        let upload = ProjectUpload {
-            source: root,
-            dest: path("/sandbox/project")?,
-        };
         for op in OPS {
             let fake = fake()?;
             fake.inject(Fault::ProvisionFor { polls: 2 });
@@ -252,7 +253,7 @@ async fn every_phase_reading_call_is_one_observation_that_settles_a_provisioning
             let name = spec.name().clone();
             fake.create_sandbox(&spec).await?;
             for number in 1..=2 {
-                let result = call(&fake, &name, &upload, op).await?;
+                let result = call(&fake, &name, &root, op).await?;
                 assert!(
                     result
                         .as_ref()
@@ -260,7 +261,7 @@ async fn every_phase_reading_call_is_one_observation_that_settles_a_provisioning
                     "{op:?} call {number}: {result:?}"
                 );
             }
-            let third = call(&fake, &name, &upload, op).await?;
+            let third = call(&fake, &name, &root, op).await?;
             assert!(third.is_ok(), "{op:?} call 3: {third:?}");
         }
         Ok(())

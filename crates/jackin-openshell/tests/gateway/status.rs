@@ -1,11 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use jackin_core::{FileMode, HostPath, Phase, SandboxPath, SecretBytes};
+use jackin_core::{FileMode, Phase, SandboxPath, SecretBytes};
 use jackin_core::{OutputStream, ProcessError, ProcessStatus, Program, TerminalText};
 use jackin_openshell::{
     Gateway, GatewayError, GatewayOp, Missing, ProgramRun, ProgramStdin, SandboxFile, TransferOp,
@@ -431,9 +430,6 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
             stream: OutputStream::Stdout,
             limit: 0,
         },
-        GatewayError::UnsupportedGitDirectory {
-            path: HostPath::parse(Path::new("/")).unwrap(),
-        },
         GatewayError::DownloadTooLarge { size: 1, limit: 0 },
         GatewayError::HostKeyMismatch,
         GatewayError::TerminalRefused {
@@ -462,7 +458,6 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
             | GatewayError::Process(_)
             | GatewayError::Transfer { .. }
             | GatewayError::OutputTooLarge { .. }
-            | GatewayError::UnsupportedGitDirectory { .. }
             | GatewayError::DownloadTooLarge { .. }
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
@@ -470,5 +465,5 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
         };
         assert_eq!(error.is_retryable(), expected, "{}", kind(error));
     }
-    assert_eq!(errors.len(), 22);
+    assert_eq!(errors.len(), 21);
 }

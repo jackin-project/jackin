@@ -18,9 +18,8 @@ use tokio_util::sync::CancellationToken;
 use crate::discovery::ResolvedGateway;
 use crate::error::{GatewayError, GatewayOp};
 use crate::gateway::{
-    Gateway, GatewayHealth, PowerAction, ProfileSync, ProgramOutcome, ProgramRun, ProjectUpload,
-    ProviderSpec, ProviderState, SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery,
-    SandboxView,
+    Gateway, GatewayHealth, PowerAction, ProfileSync, ProgramOutcome, ProgramRun, ProviderSpec,
+    ProviderState, SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView,
 };
 use crate::policy::ProviderProfile;
 use crate::terminal::{TerminalRequest, TerminalSession};
@@ -169,15 +168,6 @@ impl Gateway for GrpcGateway {
         file: &SandboxFile,
     ) -> Result<(), GatewayError> {
         self.inner.write_file(sandbox, file).await
-    }
-
-    async fn upload_project(
-        &self,
-        sandbox: &SandboxName,
-        upload: &ProjectUpload,
-        cancel: &CancellationToken,
-    ) -> Result<(), GatewayError> {
-        crate::transfer::upload_project(&self.inner, sandbox, upload, cancel).await
     }
 
     async fn upload_tree(

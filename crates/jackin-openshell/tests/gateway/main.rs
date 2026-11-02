@@ -17,7 +17,6 @@ mod ended;
 mod exec;
 mod exec_rpc;
 mod fakes;
-mod git_config;
 mod harness;
 mod pki;
 mod provider_rpc;
