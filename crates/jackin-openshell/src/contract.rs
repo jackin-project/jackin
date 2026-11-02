@@ -265,9 +265,17 @@ impl Ctx<'_> {
         let launch = fresh_launch()?;
         let spec = self.spec(&launch, &self.fixture.image, main)?;
         self.gateway.create_sandbox(&spec).await.map_err(text)?;
-        self.wait_for(spec.name(), "Ready", |view| view.phase == Phase::Ready)
-            .await?;
-        Ok(spec.name().clone())
+        let name = spec.name().clone();
+        match self
+            .wait_for(&name, "Ready", |view| view.phase == Phase::Ready)
+            .await
+        {
+            Ok(_) => Ok(name),
+            Err(error) => {
+                self.cleanup(&name).await;
+                Err(error)
+            }
+        }
     }
 
     async fn sleeper(&self) -> Outcome<SandboxName> {
@@ -848,12 +856,17 @@ async fn shell_exit_code(ctx: &Ctx<'_>) -> Outcome<()> {
         };
         let mut session = ctx.gateway.open_terminal(&request).await.map_err(text)?;
         session.input(b"exit 3\n".to_vec()).await.map_err(text)?;
-        let mut exit = None;
-        while let Some(event) = session.next_event().await {
-            if let TerminalEvent::Exited(code) = event {
-                exit = code;
+        let exit = tokio::time::timeout(PROGRAM_TIMEOUT, async {
+            let mut exit = None;
+            while let Some(event) = session.next_event().await {
+                if let TerminalEvent::Exited(code) = event {
+                    exit = code;
+                }
             }
-        }
+            exit
+        })
+        .await
+        .map_err(|_| "the shell never ended".to_owned())?;
         expect(exit == Some(3), "the shell exit code is not 3")
     }
     .await;

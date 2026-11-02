@@ -3,8 +3,10 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use jackin_core::{HostPath, ImageTag, ProjectRoot, SandboxSlug, StdFileSystem};
+use jackin_openshell::GrpcGateway;
 use jackin_openshell::contract::{
     CORE_CHECKS, ContractFixture, ContractGroup, TERMINAL_CHECKS, run,
 };
@@ -13,7 +15,7 @@ use tempfile::TempDir;
 use tonic::Code;
 
 use super::exec_rpc::{exit_event, host_shell};
-use super::harness::{Env, WORKSPACE, connect, env};
+use super::harness::{Env, WORKSPACE, config, connect, env, guard, resolved};
 use super::server::{ExecBackend, ExecCtx, Fault};
 
 const IMAGE: &str = "jackin.invalid/contract:0123456789abcdef";
@@ -191,4 +193,82 @@ async fn a_server_that_drops_labels_fails_the_labels_check_and_runs_the_rest() {
             .is_err_and(|message| !message.is_empty())
     );
     assert_eq!(by_name("read_missing_file").outcome, Ok(()));
+}
+
+#[tokio::test]
+async fn a_sandbox_that_never_reaches_ready_is_deleted_by_the_check() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root);
+    env.server.state().faults.insert(
+        "get_sandbox",
+        Fault::Status(Code::Unavailable, "gateway lost".to_owned()),
+    );
+    let (_project, fixture) = fixture().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let report = run(&gateway, &fixture, ContractGroup::Core).await;
+    for name in ["power_transitions", "touch_on_success", "delete_sandbox"] {
+        let check = report
+            .checks
+            .iter()
+            .find(|check| check.name == name)
+            .unwrap();
+        assert!(check.outcome.is_err(), "{name}: {:?}", check.outcome);
+    }
+    let state = env.server.state();
+    let leaked: Vec<&String> = state.sandboxes.keys().map(|(_, name)| name).collect();
+    assert!(leaked.is_empty(), "the contract run left {leaked:?}");
+}
+
+fn hang_after_exit() -> ExecBackend {
+    Arc::new(|ctx: ExecCtx| {
+        Box::pin(async move {
+            let ExecCtx {
+                mut inputs,
+                events: _held_open,
+                shared,
+                ..
+            } = ctx;
+            let mut stdin = Vec::new();
+            while let Some(payload) = inputs.recv().await {
+                let exec_sandbox_input::Payload::Stdin(bytes) = payload else {
+                    continue;
+                };
+                stdin.extend_from_slice(&bytes);
+                if stdin.windows(6).any(|window| window == b"exit 3") {
+                    shared.lock().observed.child_started = true;
+                    shared.child_started.notify_one();
+                    std::future::pending::<()>().await;
+                }
+            }
+        })
+    })
+}
+
+#[tokio::test]
+async fn shell_exit_code_cannot_hang_the_run() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root);
+    env.server.state().exec = Some(hang_after_exit());
+    let (_project, fixture) = fixture().await;
+    let mut settings = config(&env, resolved(&env).await, WORKSPACE, env.runner.clone());
+    settings.call_timeout = Duration::from_secs(300);
+    let gateway = guard(GrpcGateway::connect(settings)).await.unwrap();
+    let running =
+        tokio::spawn(async move { run(&gateway, &fixture, ContractGroup::Terminal).await });
+    guard(env.server.shared.child_started.notified()).await;
+    tokio::time::pause();
+    let finished = tokio::time::timeout(Duration::from_secs(120), running).await;
+    tokio::time::resume();
+    let report = finished
+        .expect("the shell_exit_code check did not end")
+        .unwrap();
+    let check = report
+        .checks
+        .iter()
+        .find(|check| check.name == "shell_exit_code")
+        .unwrap();
+    assert!(check.outcome.is_err(), "{:?}", check.outcome);
+    assert!(env.server.state().sandboxes.is_empty());
 }

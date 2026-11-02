@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::sync::Arc;
 
 use jackin_core::{FileMode, Phase, SandboxPath, SecretBytes};
-use jackin_core::{ProcessError, ProcessStatus, Program, TerminalText};
+use jackin_core::{OutputStream, ProcessError, ProcessStatus, Program, TerminalText};
 use jackin_openshell::{
     Gateway, GatewayError, GatewayOp, Missing, ProgramRun, ProgramStdin, SandboxFile, TransferOp,
 };
@@ -426,6 +426,11 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
             status: ProcessStatus::Exited(1),
             tail: TerminalText::sanitize(b""),
         },
+        GatewayError::OutputTooLarge {
+            op: GatewayOp::Program,
+            stream: OutputStream::Stdout,
+            limit: 0,
+        },
         GatewayError::HostKeyMismatch,
         GatewayError::TerminalRefused {
             reason: String::new(),
@@ -452,11 +457,12 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
             | GatewayError::Cancelled { .. }
             | GatewayError::Process(_)
             | GatewayError::Transfer { .. }
+            | GatewayError::OutputTooLarge { .. }
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
             | GatewayError::Protocol { .. } => false,
         };
         assert_eq!(error.is_retryable(), expected, "{}", kind(error));
     }
-    assert_eq!(errors.len(), 19);
+    assert_eq!(errors.len(), 20);
 }

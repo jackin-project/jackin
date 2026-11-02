@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::hash::BuildHasher;
 use std::time::Duration;
 
-use jackin_core::{EnvName, SandboxName, SandboxPath, TerminalText};
+use jackin_core::{EnvName, OutputStream, SandboxName, SandboxPath, TerminalText};
 use openshell_sdk::raw::proto::{
     ExecSandboxInput, ExecSandboxRequest, exec_sandbox_event, exec_sandbox_input,
 };
@@ -17,6 +17,7 @@ use crate::error::{GatewayError, GatewayOp, Missing};
 use crate::gateway::{ProgramOutcome, ProgramRun, ProgramStdin, SandboxFile};
 
 const STDIN_CHUNK: usize = 32 * 1024;
+pub(crate) const OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 const SHELL: &str = "/bin/sh";
 const MARKER_SCRIPT: &str = "marker=$1; shift; \"$@\"; code=$?; if [ \"$code\" -eq 0 ]; then touch -- \"$marker\" || exit 1; fi; exit \"$code\"";
 const NAME_MAX: usize = 255;
@@ -91,6 +92,23 @@ fn temp_path(target: &SandboxPath) -> String {
         suffix
     };
     format!("{dir}/{name}")
+}
+
+fn append(
+    buffer: &mut Vec<u8>,
+    chunk: &[u8],
+    op: GatewayOp,
+    stream: OutputStream,
+) -> Result<(), GatewayError> {
+    if buffer.len() + chunk.len() > OUTPUT_LIMIT {
+        return Err(GatewayError::OutputTooLarge {
+            op,
+            stream,
+            limit: OUTPUT_LIMIT,
+        });
+    }
+    buffer.extend_from_slice(chunk);
+    Ok(())
 }
 
 fn protocol(message: impl ToString) -> GatewayError {
@@ -225,10 +243,10 @@ impl Inner {
                 match stream.message().await {
                     Ok(Some(event)) => match event.payload {
                         Some(exec_sandbox_event::Payload::Stdout(chunk)) => {
-                            stdout.extend_from_slice(&chunk.data);
+                            append(&mut stdout, &chunk.data, op, OutputStream::Stdout)?;
                         }
                         Some(exec_sandbox_event::Payload::Stderr(chunk)) => {
-                            stderr.extend_from_slice(&chunk.data);
+                            append(&mut stderr, &chunk.data, op, OutputStream::Stderr)?;
                         }
                         Some(exec_sandbox_event::Payload::Exit(event)) => {
                             exit = Some(event.exit_code);

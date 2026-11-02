@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use jackin_core::{
-    FsError, GatewayName, HostPath, OpenShellWorkspace, Phase, ProcessError, ProcessStatus,
-    ProfileId, ProviderName, SandboxName, TerminalText,
+    FsError, GatewayName, HostPath, OpenShellWorkspace, OutputStream, Phase, ProcessError,
+    ProcessStatus, ProfileId, ProviderName, SandboxName, TerminalText,
 };
 use thiserror::Error;
 
@@ -51,6 +51,12 @@ pub enum GatewayError {
         op: TransferOp,
         status: ProcessStatus,
         tail: TerminalText,
+    },
+    #[error("the {stream:?} output of {op:?} is larger than {limit} bytes")]
+    OutputTooLarge {
+        op: GatewayOp,
+        stream: OutputStream,
+        limit: usize,
     },
     #[error("the SSH host key does not match the gateway response")]
     HostKeyMismatch,
@@ -169,6 +175,7 @@ impl GatewayError {
             | GatewayError::Cancelled { .. }
             | GatewayError::Process(_)
             | GatewayError::Transfer { .. }
+            | GatewayError::OutputTooLarge { .. }
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
             | GatewayError::Protocol { .. } => false,

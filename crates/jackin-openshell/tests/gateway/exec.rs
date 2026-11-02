@@ -6,7 +6,7 @@ use std::num::NonZeroU16;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use jackin_core::{EnvName, FileMode, SandboxName, SandboxPath, SecretBytes};
+use jackin_core::{EnvName, FileMode, OutputStream, SandboxName, SandboxPath, SecretBytes};
 use jackin_openshell::{
     EndReason, Gateway, GatewayError, GatewayOp, ProgramRun, ProgramStdin, SandboxFile, TermSize,
     TerminalEvent, TerminalKind, TerminalRequest,
@@ -542,4 +542,73 @@ async fn shell_failure_refusal_and_drop() {
         .unwrap();
     drop(session);
     wait_until(|| env.server.state().observed.request_stream_ended).await;
+}
+
+const CAP: usize = 16 * 1024 * 1024;
+
+fn emit(stdout: usize, stderr: usize, then: &str) -> ProgramRun {
+    run(
+        "/bin/sh",
+        &[
+            "-c",
+            &format!("head -c {stdout} /dev/zero; head -c {stderr} /dev/zero >&2; {then}"),
+        ],
+    )
+}
+
+#[tokio::test]
+async fn collected_output_is_capped_per_stream() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    ready(&env);
+    let gateway = connect(&env, WORKSPACE).await;
+    let cancel = CancellationToken::new();
+
+    let at_cap = guard(gateway.run_program(&emit(CAP, CAP, "exit 0"), &cancel))
+        .await
+        .unwrap();
+    assert_eq!(
+        (at_cap.exit_code, at_cap.stdout.len(), at_cap.stderr.len()),
+        (0, CAP, CAP)
+    );
+
+    for (stdout, stderr, stream) in [
+        (CAP + 1, 0, OutputStream::Stdout),
+        (0, CAP + 1, OutputStream::Stderr),
+        (CAP, CAP + 1, OutputStream::Stderr),
+    ] {
+        let error = guard(gateway.run_program(&emit(stdout, stderr, "sleep 300"), &cancel))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                GatewayError::OutputTooLarge { op: GatewayOp::Program, stream: found, limit }
+                    if found == stream && limit == CAP
+            ),
+            "{error:?}"
+        );
+        assert!(!error.is_retryable());
+        guard(env.server.shared.child_killed.notified()).await;
+    }
+
+    let big = root.path().join("sandbox/big.bin");
+    tokio::fs::create_dir_all(big.parent().unwrap())
+        .await
+        .unwrap();
+    tokio::fs::write(&big, vec![0_u8; 17 * 1024 * 1024])
+        .await
+        .unwrap();
+    let error = guard(gateway.read_files(&sandbox_name(SANDBOX), &[path("/sandbox/big.bin")]))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            GatewayError::OutputTooLarge { op: GatewayOp::ReadFiles, stream: OutputStream::Stdout, limit }
+                if limit == CAP
+        ),
+        "{error:?}"
+    );
 }

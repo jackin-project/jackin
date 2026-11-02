@@ -176,6 +176,7 @@ pub(crate) fn kind(error: &GatewayError) -> &'static str {
         GatewayError::Cancelled { .. } => "Cancelled",
         GatewayError::Process(_) => "Process",
         GatewayError::Transfer { .. } => "Transfer",
+        GatewayError::OutputTooLarge { .. } => "OutputTooLarge",
         GatewayError::HostKeyMismatch => "HostKeyMismatch",
         GatewayError::TerminalRefused { .. } => "TerminalRefused",
         GatewayError::Protocol { .. } => "Protocol",
