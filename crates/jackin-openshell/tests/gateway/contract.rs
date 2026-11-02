@@ -343,6 +343,27 @@ async fn a_server_that_deletes_an_attached_provider_fails_only_that_check_and_le
     assert_nothing_left(&env);
 }
 
+#[tokio::test]
+async fn a_server_that_deletes_a_provider_while_refusing_the_delete_fails_only_the_presence_assertion()
+ {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root);
+    env.server.state().broken = Some(Broken::DeleteAfterRefusal);
+    let (_project, fixture) = fixture().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let report = run(&gateway, &fixture, ContractGroup::Core).await;
+    let failed = outcome(&report, "delete_provider_while_attached_is_refused");
+    assert!(
+        failed
+            .as_ref()
+            .is_err_and(|message| message.contains("the provider is absent after a refused delete")),
+        "{failed:?}"
+    );
+    assert_others_pass(&report, "delete_provider_while_attached_is_refused");
+    assert_nothing_left(&env);
+}
+
 fn end_with(status: u32) -> Vec<Action> {
     vec![Action::ExitStatus(status), Action::Eof, Action::Close]
 }

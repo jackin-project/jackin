@@ -78,6 +78,7 @@ pub(crate) struct Observed {
 pub(crate) enum Broken {
     StopOnStopped,
     DeleteAttachedProviders,
+    DeleteAfterRefusal,
 }
 
 pub(crate) type ProfileHook = Box<dyn FnMut(&mut State) + Send>;

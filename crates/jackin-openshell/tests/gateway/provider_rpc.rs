@@ -260,20 +260,33 @@ impl Fake {
             })
             .map(|((_, name), _)| name.as_str())
             .collect();
-        if !attached.is_empty() && state.broken != Some(Broken::DeleteAttachedProviders) {
-            return Err(Status::failed_precondition(format!(
+        let refusal = (!attached.is_empty()
+            && state.broken != Some(Broken::DeleteAttachedProviders))
+        .then(|| {
+            Status::failed_precondition(format!(
                 "provider '{}' is attached to sandbox(es): {}",
                 request.name,
                 attached.join(", ")
-            )));
+            ))
+        });
+        let deletes_anyway = state.broken == Some(Broken::DeleteAfterRefusal);
+        match refusal {
+            Some(status) if !deletes_anyway => Err(status),
+            refusal => {
+                state.providers.remove(&key);
+                state.refresh.retain(|(ws, provider, _), _| {
+                    !(*ws == workspace && *provider == request.name)
+                });
+                refusal.map_or_else(
+                    || {
+                        Ok(Response::new(DeleteProviderResponse {
+                            outcome: DeletionOutcome::Completed as i32,
+                        }))
+                    },
+                    Err,
+                )
+            }
         }
-        state.providers.remove(&key);
-        state
-            .refresh
-            .retain(|(ws, provider, _), _| !(*ws == workspace && *provider == request.name));
-        Ok(Response::new(DeleteProviderResponse {
-            outcome: DeletionOutcome::Completed as i32,
-        }))
     }
 
     pub(crate) async fn configure_provider_refresh_impl(
