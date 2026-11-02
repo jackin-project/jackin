@@ -152,6 +152,7 @@ The gateway crates are `openshell-sdk`, `openshell-policy`, `tonic`, and `russh`
 | Launch progress | observed sandbox state (labels, phase, marker files) | the executor keeps one per-run `Done` value |
 | `/sandbox/.jackin/run/start` | jackin (`Session`) | `jackin-start` reads |
 | `/sandbox/.jackin/run/state` | `jackin-start` | jackin reads and treats as advisory (D09) |
+| `/sandbox/.jackin/run/env-kinds` | `jackin-start`, at each start | the sentinel probe reads it for J08; names and kinds only (D09) |
 | `/sandbox/.jackin/env-<launch-id>` | jackin (`Session`, Credentials step) | hooks, `jackin-start`, and shells read it (D11) |
 | Size of one main PTY | the pane or attach task that holds the `TerminalSession` | one pane per main process (D28) |
 | Image cache | the Docker engine (tag = cache key) | `jackin-image` reads with `image inspect` |
@@ -1963,7 +1964,7 @@ Fencing keys: the launch ID label (which sandbox is this launch), the sandbox na
 
 ### Supervisor protocol (D09), jackin side
 
-`/sandbox/.jackin/run/state` is written only by `jackin-start`: absent (not up yet, or clearing old state), `waiting` (ready for an attempt; hooks may run), `running <attempt>` (Codex is a child; attach), `exited <attempt> <code>` (the PTY is alive and shows one line; restart on request). `/sandbox/.jackin/run/start` holds an `AttemptId`, written only by jackin (`write_file`, atomic) and only while the state is `waiting` or `exited`, because a request written while Codex runs takes effect at its exit (P7.4 F5). Jackin picks the ID with `SupervisorState::next_attempt`; `jackin-start` honors an ID only when it is greater than the last one it handled, so a stale or repeated ID does nothing. `jackin-start` also sources `/sandbox/.jackin/env-$JACKIN_LAUNCH_ID` before each attempt (D11; open question 1). `SupervisorState::parse` and `StartRequest::render` in `jackin-core` are the only Rust code that reads or writes these formats; `jackin-start` implements the same grammar in sh (P7.4).
+`/sandbox/.jackin/run/state` is written only by `jackin-start`: absent (not up yet, or clearing old state), `waiting` (ready for an attempt; hooks may run), `running <attempt>` (Codex is a child; attach), `exited <attempt> <code>` (the PTY is alive and shows one line; restart on request). `/sandbox/.jackin/run/start` holds an `AttemptId`, written only by jackin (`write_file`, atomic) and only while the state is `waiting` or `exited`, because a request written while Codex runs takes effect at its exit (P7.4 F5). Jackin picks the ID with `SupervisorState::next_attempt`; `jackin-start` honors an ID only when it is the last one it handled plus one, so a stale, repeated, or forged ID does nothing (P7.3 F6). `jackin-start` also sources `/sandbox/.jackin/env-$JACKIN_LAUNCH_ID` before each attempt (D11; open question 1). `SupervisorState::parse` and `StartRequest::render` in `jackin-core` are the only Rust code that reads or writes these formats; `jackin-start` implements the same grammar in sh (P7.4).
 
 ### Attach, shell, restart
 
