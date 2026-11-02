@@ -1,0 +1,153 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use jackin::{ExitClass, GatewayLs};
+use jackin_core::{GatewayName, OpenShellWorkspace, Platform};
+use jackin_testkit::{TestResult, World, guard};
+
+use super::support::{Failure, Harness, failed, keys, names};
+
+fn gateway(name: &str) -> Result<GatewayName, Failure> {
+    Ok(GatewayName::parse(name)?)
+}
+
+#[tokio::test]
+async fn gateway_add_stores_every_flag_and_the_host_platform_by_default() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        harness
+            .run(&[
+                "gateway",
+                "add",
+                "alpha",
+                "--workspace",
+                "ws1",
+                "--builder",
+                "bld",
+                "--platform",
+                "linux/amd64",
+                "--engine-port",
+                "2376",
+                "--engine-certs",
+                "certs",
+                "--default",
+            ])
+            .await?
+            .ok()?;
+        harness.run(&["gateway", "add", "beta"]).await?.ok()?;
+
+        let config = harness.stored().await?;
+        let alpha = config.gateway(&gateway("alpha")?).ok_or("no alpha")?;
+        assert_eq!(alpha.openshell_workspace, OpenShellWorkspace::parse("ws1")?);
+        assert_eq!(alpha.builder.as_str(), "bld");
+        assert_eq!(alpha.platform, Platform::LinuxAmd64);
+        let engine = alpha.docker_engine.as_ref().ok_or("no engine")?;
+        assert_eq!(engine.port.get(), 2376);
+        assert_eq!(
+            engine.client_certs.as_path(),
+            world.home().as_path().join("certs")
+        );
+        assert_eq!(config.default_gateway(), Some(&gateway("alpha")?));
+
+        let beta = config.gateway(&gateway("beta")?).ok_or("no beta")?;
+        let host = if cfg!(target_arch = "aarch64") {
+            Platform::LinuxArm64
+        } else {
+            Platform::LinuxAmd64
+        };
+        assert_eq!(beta.platform, host);
+        assert_eq!(beta.openshell_workspace.as_str(), "default");
+        assert_eq!(beta.builder.as_str(), "default");
+        assert!(beta.docker_engine.is_none());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn gateway_ls_json_has_a_pinned_shape_and_an_empty_list_is_a_literal() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        let empty = harness.run(&["gateway", "ls", "--json"]).await?;
+        empty.ok()?;
+        assert_eq!(empty.stdout, "{\"schema\":1,\"gateways\":[]}\n");
+        assert_eq!(harness.config_bytes()?, None);
+
+        harness
+            .run(&[
+                "gateway",
+                "add",
+                "alpha",
+                "--engine-port",
+                "2376",
+                "--engine-certs",
+                "/certs",
+                "--default",
+            ])
+            .await?
+            .ok()?;
+        harness.run(&["gateway", "add", "beta"]).await?.ok()?;
+        let ran = harness.run(&["gateway", "ls", "--json"]).await?;
+        ran.ok()?;
+        let value = ran.value()?;
+        assert_eq!(keys(&value)?, names(&["schema", "gateways"]));
+        assert_eq!(value["schema"], 1);
+        let rows = value["gateways"].as_array().ok_or("no rows")?;
+        for row in rows {
+            assert_eq!(
+                keys(row)?,
+                names(&[
+                    "name",
+                    "default",
+                    "workspace",
+                    "builder",
+                    "platform",
+                    "engine"
+                ])
+            );
+        }
+        assert_eq!(keys(&rows[0]["engine"])?, names(&["port", "certs"]));
+        assert!(rows[1]["engine"].is_null());
+        let typed: GatewayLs = ran.json()?;
+        assert_eq!(typed.gateways[0].name.as_str(), "alpha");
+        assert!(typed.gateways[0].default);
+        assert!(!typed.gateways[1].default);
+        assert_eq!(
+            typed.gateways[0].engine.as_ref().map(|e| e.port),
+            Some(2376)
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn gateway_rm_clears_a_default_and_duplicates_and_unknown_names_fail_without_a_write()
+-> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        harness
+            .run(&["gateway", "add", "alpha", "--default"])
+            .await?
+            .ok()?;
+        harness.run(&["gateway", "add", "beta"]).await?.ok()?;
+        let before = harness.config_bytes()?;
+
+        let duplicate = harness.run(&["gateway", "add", "alpha"]).await?;
+        failed(&duplicate, ExitClass::Failure, &["alpha"])?;
+        let unknown = harness.run(&["gateway", "rm", "zeta"]).await?;
+        failed(&unknown, ExitClass::Failure, &["zeta"])?;
+        assert_eq!(harness.config_bytes()?, before);
+
+        harness.run(&["gateway", "rm", "alpha"]).await?.ok()?;
+        let config = harness.stored().await?;
+        assert_eq!(config.default_gateway(), None);
+        assert!(config.gateway(&gateway("alpha")?).is_none());
+        assert!(config.gateway(&gateway("beta")?).is_some());
+        Ok(())
+    })
+    .await
+}

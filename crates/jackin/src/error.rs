@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{ConfigError, EntropyError, HostPath, PathError, ProcessError};
+use jackin_core::{ConfigError, EntropyError, FsError, HostPath, PathError, ProcessError};
 use jackin_image::ImageError;
 use jackin_openshell::{DiscoveryError, GatewayError};
 use jackin_session::{
@@ -40,6 +40,8 @@ pub enum CommandError {
     Config(#[from] ConfigError),
     #[error(transparent)]
     Path(#[from] PathError),
+    #[error(transparent)]
+    Fs(#[from] FsError),
     #[error(transparent)]
     Plan(#[from] PlanError),
     #[error(transparent)]
@@ -128,6 +130,7 @@ impl CommandError {
             }
             CommandError::Config(_)
             | CommandError::Path(_)
+            | CommandError::Fs(_)
             | CommandError::Plan(_)
             | CommandError::Role(_)
             | CommandError::RoleFindings(_)

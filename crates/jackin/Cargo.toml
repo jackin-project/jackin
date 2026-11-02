@@ -19,6 +19,7 @@ jackin-openshell = { workspace = true }
 jackin-session = { workspace = true }
 jackin-tui = { workspace = true }
 rustix = { workspace = true, features = ["termios"] }
+serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "macros", "rt", "signal", "sync", "time"] }

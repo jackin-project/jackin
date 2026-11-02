@@ -11,12 +11,15 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use jackin::{AppEnv, Deps, ExitClass, GatewayConnector};
 use jackin_core::{
-    Clock, ConfigStore, EnvSnapshot, GatewayEntry, GatewayName, HostPath, ProcessRunner,
+    Clock, Config, ConfigStore, EnvSnapshot, FileSystem, GatewayEntry, GatewayName, HostPath,
+    ProcessRunner,
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, GatewayError};
 use jackin_session::HostPorts;
 use jackin_testkit::{World, default_limits};
+use serde::de::DeserializeOwned;
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 pub(crate) type Failure = Box<dyn std::error::Error>;
@@ -55,6 +58,18 @@ pub(crate) struct Ran {
 }
 
 impl Ran {
+    pub(crate) fn value(&self) -> Result<Value, Failure> {
+        let body = self
+            .stdout
+            .strip_suffix('\n')
+            .ok_or("stdout has no newline")?;
+        Ok(serde_json::from_str(body)?)
+    }
+
+    pub(crate) fn json<T: DeserializeOwned>(&self) -> Result<T, Failure> {
+        Ok(serde_json::from_value(self.value()?)?)
+    }
+
     pub(crate) fn ok(&self) -> Result<(), Failure> {
         if self.exit == ExitClass::Ok {
             Ok(())
@@ -81,6 +96,23 @@ pub(crate) fn failed(ran: &Ran, class: ExitClass, names: &[&str]) -> Result<(), 
         }
     }
     Ok(())
+}
+
+pub(crate) fn keys(value: &Value) -> Result<Vec<String>, Failure> {
+    let mut names: Vec<String> = value
+        .as_object()
+        .ok_or("not an object")?
+        .keys()
+        .cloned()
+        .collect();
+    names.sort();
+    Ok(names)
+}
+
+pub(crate) fn names(wanted: &[&str]) -> Vec<String> {
+    let mut names: Vec<String> = wanted.iter().map(|name| (*name).to_owned()).collect();
+    names.sort();
+    names
 }
 
 #[derive(Clone, Debug, Default)]
@@ -155,6 +187,40 @@ impl Harness {
             },
             engine,
         }
+    }
+
+    pub(crate) fn fs(&self, fs: Arc<dyn FileSystem>) -> Harness {
+        Harness {
+            connector: self.connector.clone(),
+            cwd: self.cwd.clone(),
+            config_path: self.config_path.clone(),
+            cache_dir: self.cache_dir.clone(),
+            env: self.env.clone(),
+            host: HostPorts {
+                clock: Arc::clone(&self.host.clock),
+                fs,
+                runner: Arc::clone(&self.host.runner),
+            },
+            engine: Arc::clone(&self.engine),
+        }
+    }
+
+    pub(crate) fn write_config(&self, text: &str) -> Result<(), Failure> {
+        let path = self.config_path.as_path();
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(path, text)?;
+        Ok(())
+    }
+
+    pub(crate) async fn stored(&self) -> Result<Config, Failure> {
+        let store = ConfigStore::new(
+            Arc::clone(&self.host.fs),
+            Arc::clone(&self.host.clock),
+            self.config_path.clone(),
+        );
+        Ok(store.load().await?)
     }
 
     pub(crate) fn config_bytes(&self) -> Result<Option<Vec<u8>>, Failure> {

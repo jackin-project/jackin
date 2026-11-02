@@ -4,6 +4,8 @@
 use std::fmt::{self, Debug};
 use std::io::Write;
 
+use serde::Serialize;
+
 use crate::error::CommandError;
 
 pub(crate) struct Io {
@@ -27,6 +29,16 @@ impl Io {
             .write_all(text.as_bytes())
             .and_then(|()| self.stdout.flush())
             .map_err(CommandError::Output)
+    }
+
+    pub(crate) fn line(&mut self, text: &str) -> Result<(), CommandError> {
+        self.data(&format!("{text}\n"))
+    }
+
+    pub(crate) fn json<T: Serialize>(&mut self, value: &T) -> Result<(), CommandError> {
+        let mut text = serde_json::to_string(value).map_err(CommandError::Json)?;
+        text.push('\n');
+        self.data(&text)
     }
 
     pub(crate) fn note(&mut self, text: &str) {

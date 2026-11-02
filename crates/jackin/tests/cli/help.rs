@@ -7,7 +7,25 @@ use jackin_testkit::{TestResult, World, guard};
 
 use super::support::{Failure, Harness};
 
-const COMMANDS: &[&str] = &["role", "role check"];
+const COMMANDS: &[&str] = &[
+    "gateway",
+    "gateway add",
+    "gateway ls",
+    "gateway rm",
+    "account",
+    "account ls",
+    "account default",
+    "account bind",
+    "role",
+    "role add",
+    "role ls",
+    "role rm",
+    "role check",
+    "workspace",
+    "workspace add",
+    "workspace ls",
+    "workspace rm",
+];
 
 fn walk(command: &clap::Command, path: &str, seen: &mut Vec<String>) -> Result<(), Failure> {
     for arg in command.get_arguments() {

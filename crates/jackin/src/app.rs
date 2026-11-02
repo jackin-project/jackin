@@ -7,7 +7,7 @@ use std::io::Write;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use jackin_core::{EnvSnapshot, GatewayEntry, GatewayName, HostPath};
+use jackin_core::{ConfigStore, EnvSnapshot, GatewayEntry, GatewayName, HostPath};
 use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, GatewayError};
 use jackin_session::{HostPorts, LaunchLimits, RoleCatalog};
@@ -62,6 +62,7 @@ impl Debug for AppEnv {
 pub(crate) struct App {
     pub(crate) io: Io,
     pub(crate) deps: Deps,
+    pub(crate) store: ConfigStore,
     pub(crate) cwd: HostPath,
     pub(crate) cache_dir: HostPath,
 }
