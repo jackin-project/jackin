@@ -376,7 +376,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 - **Scope:** `crates/jackin-session/src/{attach,export,lifecycle,doctor}.rs` (the host runner landed in P4.3), with `restart`, `inspect`, and `doctor` (API.md U10), and the fake download fixes scheduled in P4.2.
 - **Steps:** Build each operation from DESIGN.md. `purge` refuses unexported work without `--force` (ADR-010).
 - **Proof:** G-FAST passes. Tests show that an export writes only `refs/heads/jackin/<sandbox>` and never the working tree. Tests show that purge refuses unexported work. Tests show that list finds sandboxes by label only.
-- [ ] P5.2 done
+- [x] P5.2 done — 20842a9b, G-FAST exit 0 (514 tests run: 514 passed), red/green CHANGES (8 survivors, `--atomic` shown observable; bundle read into memory) then KEEP; tests: export writes only `refs/heads/jackin/<sandbox>/...` and leaves the working tree, index, HEAD and other refs unchanged (tests/export refs.rs, worktree.rs), purge refuses unexported and unknown work without `--force` (purge.rs), list finds sandboxes by label only (tests/lifecycle list.rs, foreign.rs); evidence `evidence/P5.2-export-live.md` (live export from a normal repo and a linked worktree with the host unchanged, guarded and forced purge, contract Core 15, Transfer 6, Terminal 6); bug found: two exports of one sandbox collided on one sandbox bundle path, fixed with one bundle per export
 
 ### P5.3 Review phase P5
 
