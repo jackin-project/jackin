@@ -8,8 +8,8 @@ use noyalib::{Mapping, Value};
 use openshell_sdk::raw::proto::{NetworkTlsMode, SandboxPolicy};
 
 use super::{
-    EndpointProtocol, HostPattern, NetworkRule, PolicyDocument, ProfileEndpoint, ProviderProfile,
-    RuleEndpoint, RuleKey, TlsMode,
+    ClosureViolation, EndpointProtocol, HostPattern, NetworkRule, PolicyDocument, ProfileEndpoint,
+    ProviderProfile, RuleEndpoint, RuleKey, TlsMode,
 };
 use crate::error::PolicyError;
 
@@ -119,14 +119,25 @@ pub(super) fn render(value: &Value) -> String {
     noyalib::to_string(value).unwrap_or_default()
 }
 
-pub(super) fn network_rules(proto: &SandboxPolicy) -> Vec<NetworkRule> {
+pub(super) struct Scanned {
+    pub(super) rule: NetworkRule,
+    pub(super) unreadable: Vec<ClosureViolation>,
+}
+
+pub(super) fn scan(proto: &SandboxPolicy) -> Vec<Scanned> {
     let sorted: BTreeMap<_, _> = proto.network_policies.iter().collect();
     sorted
         .into_iter()
         .map(|(key, rule)| {
+            let key = RuleKey::new(key.clone());
             let mut endpoints = Vec::new();
+            let mut unreadable = Vec::new();
             for endpoint in &rule.endpoints {
                 let Ok(host) = HostPattern::parse(&endpoint.host) else {
+                    unreadable.push(ClosureViolation::UnparsableHost {
+                        rule: key.clone(),
+                        host: endpoint.host.clone(),
+                    });
                     continue;
                 };
                 let ports = if endpoint.ports.is_empty() {
@@ -144,26 +155,31 @@ pub(super) fn network_rules(proto: &SandboxPolicy) -> Vec<NetworkRule> {
                     TlsMode::Default
                 };
                 for port in ports {
-                    if let Ok(port) = u16::try_from(port)
-                        && port != 0
-                    {
-                        endpoints.push(RuleEndpoint {
+                    match u16::try_from(port) {
+                        Ok(valid) if valid != 0 => endpoints.push(RuleEndpoint {
                             host: host.clone(),
-                            port,
+                            port: valid,
                             protocol,
                             tls,
-                        });
+                        }),
+                        _ => unreadable.push(ClosureViolation::InvalidPort {
+                            rule: key.clone(),
+                            port,
+                        }),
                     }
                 }
             }
-            NetworkRule {
-                key: RuleKey::new(key.clone()),
-                endpoints,
-                binaries: rule
-                    .binaries
-                    .iter()
-                    .filter_map(|binary| SandboxPath::parse(&binary.path).ok())
-                    .collect(),
+            Scanned {
+                rule: NetworkRule {
+                    key,
+                    endpoints,
+                    binaries: rule
+                        .binaries
+                        .iter()
+                        .filter_map(|binary| SandboxPath::parse(&binary.path).ok())
+                        .collect(),
+                },
+                unreadable,
             }
         })
         .collect()

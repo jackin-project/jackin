@@ -1,13 +1,18 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
+use std::num::NonZeroU16;
 use std::time::Duration;
 
 use jackin_core::{
     AccountName, Agent, ImageId, ImageTag, LaunchId, PlannedLabels, ProviderName, RoleName,
     SandboxLabels, SandboxName, SandboxPath, WorkspaceName,
 };
-use jackin_openshell::{GatewayError, MainProcess, PolicyDocument, SandboxCreate};
+use jackin_openshell::{
+    GatewayError, InputMode, MainProcess, PolicyDocument, RepaintPolicy, SandboxCreate, TermSize,
+    TerminalKind, TerminalRequest,
+};
 use openshell_sdk::raw::proto::{ObjectMeta, Sandbox, SandboxPhase, SandboxStatus};
 
 use super::sandbox_rpc::condition;
@@ -43,6 +48,35 @@ network_policies:
     binaries:
       - path: /usr/local/bin/docker
 ";
+
+fn size() -> TermSize {
+    TermSize {
+        cols: NonZeroU16::new(100).unwrap(),
+        rows: NonZeroU16::new(30).unwrap(),
+    }
+}
+
+pub(crate) fn main_terminal(name: &str) -> TerminalRequest {
+    TerminalRequest {
+        sandbox: sandbox_name(name),
+        kind: TerminalKind::MainProcess {
+            input: InputMode::Owner,
+            repaint: RepaintPolicy::Never,
+        },
+        size: size(),
+    }
+}
+
+pub(crate) fn shell_terminal(name: &str) -> TerminalRequest {
+    TerminalRequest {
+        sandbox: sandbox_name(name),
+        kind: TerminalKind::Shell {
+            workdir: SandboxPath::parse("/sandbox").unwrap(),
+            env: BTreeMap::new(),
+        },
+        size: size(),
+    }
+}
 
 pub(crate) fn sandbox_name(text: &str) -> SandboxName {
     SandboxName::parse(text).unwrap()
@@ -127,6 +161,7 @@ pub(crate) fn set_conditions(
 pub(crate) fn kind(error: &GatewayError) -> &'static str {
     match error {
         GatewayError::Unreachable { .. } => "Unreachable",
+        GatewayError::SandboxUnreachable { .. } => "SandboxUnreachable",
         GatewayError::Tls { .. } => "Tls",
         GatewayError::Unauthenticated => "Unauthenticated",
         GatewayError::PermissionDenied { .. } => "PermissionDenied",

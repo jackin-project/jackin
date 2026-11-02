@@ -14,7 +14,7 @@ use tonic::Streaming;
 
 use super::Inner;
 use super::program::exec_start;
-use crate::error::{GatewayError, GatewayOp};
+use crate::error::{GatewayError, GatewayOp, Missing};
 use crate::terminal::{
     EndReason, TermSize, TerminalCommand, TerminalDriver, TerminalEvent, TerminalKind,
     TerminalRequest, TerminalSession,
@@ -90,7 +90,8 @@ impl Inner {
                 });
             }
             Ok(Err(status)) => {
-                let error = self.map_status(GatewayOp::Terminal, None, &status);
+                let missing = Some(Missing::Sandbox(request.sandbox.clone()));
+                let error = self.map_status(GatewayOp::Terminal, missing, &status);
                 return Err(self.refine_not_ready(&request.sandbox, error).await);
             }
             Ok(Ok(response)) => response.into_inner(),

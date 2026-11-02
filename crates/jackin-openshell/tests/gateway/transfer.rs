@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -54,22 +55,33 @@ fn words(args: &[&str]) -> Vec<String> {
     args.iter().map(|arg| (*arg).to_owned()).collect()
 }
 
-fn base() -> Vec<&'static str> {
-    vec![
-        "-g",
-        "jackin-local",
-        "--workspace",
-        TRANSFER_WORKSPACE,
-        "sandbox",
-    ]
-}
-
-fn upload_args(tail: &[&'static str]) -> Vec<String> {
-    let mut args = base();
-    args.push("upload");
-    args.push(TRANSFER_SANDBOX);
+fn upload_tail(tail: &[&'static str]) -> Vec<String> {
+    let mut args = vec!["sandbox", "upload", TRANSFER_SANDBOX];
     args.extend_from_slice(tail);
     words(&args)
+}
+
+fn assert_scoped(call: &Recorded, endpoint: &str, tail: &[String]) {
+    let position = call
+        .args
+        .iter()
+        .position(|arg| arg == "sandbox")
+        .expect("a sandbox subcommand");
+    let scope: BTreeSet<(&str, &str)> = call.args[..position]
+        .chunks(2)
+        .map(|pair| (pair[0].as_str(), pair[1].as_str()))
+        .collect();
+    assert_eq!(call.args[..position].len(), 6, "{:?}", call.args);
+    assert_eq!(
+        scope,
+        BTreeSet::from([
+            ("-g", "jackin-local"),
+            ("--gateway-endpoint", endpoint),
+            ("--workspace", TRANSFER_WORKSPACE),
+        ])
+    );
+    assert_eq!(&call.args[position..], tail);
+    call.assert_openshell_env_isolated();
 }
 
 #[tokio::test]
@@ -98,10 +110,16 @@ async fn upload_runs_two_openshell_calls_naming_gateway_workspace_and_sandbox() 
         assert!(call.stdin_null);
         assert_eq!(call.timeout, Duration::from_secs(123));
     }
-    assert_eq!(calls[0].args, upload_args(&[".", "/sandbox/project"]));
-    assert_eq!(
-        calls[1].args,
-        upload_args(&[".git", "/sandbox/project", "--no-git-ignore"])
+    let endpoint = env.server.endpoint();
+    assert_scoped(
+        &calls[0],
+        &endpoint,
+        &upload_tail(&[".", "/sandbox/project"]),
+    );
+    assert_scoped(
+        &calls[1],
+        &endpoint,
+        &upload_tail(&[".git", "/sandbox/project", "--no-git-ignore"]),
     );
 }
 
@@ -258,15 +276,14 @@ async fn download_names_the_targets_and_verifies_the_digest() {
         .await
         .unwrap();
     let call = runner.calls().remove(0);
-    let mut expected = base();
-    expected.extend([
+    let mut expected = words(&[
+        "sandbox",
         "download",
         TRANSFER_SANDBOX,
         "/sandbox/.jackin/export.bundle",
     ]);
-    let mut expected = words(&expected);
     expected.push(destination.display().to_string());
-    assert_eq!(call.args, expected);
+    assert_scoped(&call, &env.server.endpoint(), &expected);
     assert!(call.stdin_null && call.cwd.is_none());
     assert_eq!(call.timeout, Duration::from_secs(123));
 

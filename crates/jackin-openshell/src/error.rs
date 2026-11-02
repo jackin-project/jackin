@@ -15,6 +15,11 @@ use crate::policy::RuleKey;
 pub enum GatewayError {
     #[error("gateway {endpoint} is unreachable: {message}")]
     Unreachable { endpoint: String, message: String },
+    #[error("the supervisor of {sandbox:?} is unreachable: {message}")]
+    SandboxUnreachable {
+        sandbox: SandboxName,
+        message: String,
+    },
     #[error("TLS error: {message}")]
     Tls { message: String },
     #[error("the gateway rejected the credentials")]
@@ -134,6 +139,7 @@ impl GatewayError {
     pub fn is_retryable(&self) -> bool {
         match self {
             GatewayError::Unreachable { .. }
+            | GatewayError::SandboxUnreachable { .. }
             | GatewayError::Timeout { .. }
             | GatewayError::ResourceExhausted { .. } => true,
             GatewayError::Tls { .. }

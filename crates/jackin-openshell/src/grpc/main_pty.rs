@@ -15,10 +15,11 @@ use russh::client::{self, Handle, Msg};
 use russh::keys::HashAlg;
 use russh::{Channel, ChannelMsg, Disconnect};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::Instant;
 use tokio_stream::wrappers::ReceiverStream;
+use tonic::Status;
 
 use super::Inner;
 use super::shell::SESSION_CAPACITY;
@@ -42,6 +43,10 @@ const FRAME_CAPACITY: usize = 16;
 const READ_ONLY_NOTICE: &str = "attached read-only";
 const INPUT_ENABLED_NOTICE: &str = "input enabled";
 const REFUSED_NOTICE: &str = "cannot connect to the canonical main process";
+const CTRL_C: u8 = 0x03;
+const CTRL_D: u8 = 0x04;
+const DETACH_PREFIX: u8 = 0x10;
+const DETACH_KEY: u8 = 0x11;
 
 struct PinnedKey {
     expected: String,
@@ -81,6 +86,10 @@ fn ssh(error: &russh::Error) -> GatewayError {
     }
 }
 
+fn missing(sandbox: &SandboxName) -> Option<Missing> {
+    Some(Missing::Sandbox(sandbox.clone()))
+}
+
 fn dims(size: TermSize) -> (u32, u32) {
     (u32::from(size.cols.get()), u32::from(size.rows.get()))
 }
@@ -113,10 +122,57 @@ fn decide_lease(mode: InputMode, early: &[ChannelMsg]) -> Lease {
     }
 }
 
+struct Watch {
+    lease: InputLease,
+    prefix_pending: bool,
+    closing: Option<EndReason>,
+}
+
+impl Watch {
+    fn new(lease: InputLease) -> Watch {
+        Watch {
+            lease,
+            prefix_pending: false,
+            closing: None,
+        }
+    }
+
+    fn grant(&mut self, lease: InputLease, queue: &mut VecDeque<TerminalEvent>) {
+        if self.lease != lease {
+            self.lease = lease;
+            queue.push_back(TerminalEvent::Lease(lease));
+        }
+    }
+
+    fn sent(&mut self, bytes: &[u8]) {
+        if self.closing.is_some() {
+            return;
+        }
+        if self.lease == InputLease::ReadOnly && bytes.contains(&CTRL_C) {
+            self.closing = Some(EndReason::StreamClosed);
+            return;
+        }
+        for &byte in bytes {
+            if self.prefix_pending {
+                self.prefix_pending = false;
+                if byte == DETACH_KEY {
+                    self.closing = Some(EndReason::Detached);
+                    return;
+                }
+            }
+            if byte == CTRL_D {
+                self.closing = Some(EndReason::Detached);
+                return;
+            }
+            self.prefix_pending = byte == DETACH_PREFIX;
+        }
+    }
+}
+
 fn translate(
     message: Option<ChannelMsg>,
     queue: &mut VecDeque<TerminalEvent>,
-    detached: bool,
+    watch: &mut Watch,
 ) -> bool {
     match message {
         Some(ChannelMsg::Data { data }) => {
@@ -126,11 +182,14 @@ fn translate(
         Some(ChannelMsg::ExtendedData { data, .. }) => {
             let text = notice_text(&data);
             if text.contains(INPUT_ENABLED_NOTICE) {
-                queue.push_back(TerminalEvent::Lease(InputLease::Owner));
+                watch.grant(InputLease::Owner, queue);
+            } else if text.contains(READ_ONLY_NOTICE) {
+                watch.grant(InputLease::ReadOnly, queue);
             }
             queue.push_back(TerminalEvent::Notice(text));
             false
         }
+        Some(ChannelMsg::ExitStatus { exit_status: 0 }) if watch.closing.is_some() => false,
         Some(ChannelMsg::ExitStatus { exit_status }) => {
             queue.push_back(TerminalEvent::Exited(Some(
                 i32::try_from(exit_status).unwrap_or(i32::MAX),
@@ -142,11 +201,9 @@ fn translate(
             false
         }
         Some(ChannelMsg::Close) | None => {
-            queue.push_back(TerminalEvent::Ended(if detached {
-                EndReason::Detached
-            } else {
-                EndReason::StreamClosed
-            }));
+            queue.push_back(TerminalEvent::Ended(
+                watch.closing.take().unwrap_or(EndReason::StreamClosed),
+            ));
             true
         }
         Some(_) => false,
@@ -183,15 +240,17 @@ impl Inner {
         };
         let mut queue = VecDeque::from([TerminalEvent::Attached]);
         let mut ended = false;
+        let mut watch = Watch::new(InputLease::ReadOnly);
         match decide_lease(*input, &early) {
             Lease::Refused(text) => {
                 queue.push_back(TerminalEvent::Ended(EndReason::Refused(text)));
                 ended = true;
             }
             Lease::Granted(lease) => {
+                watch.lease = lease;
                 queue.push_back(TerminalEvent::Lease(lease));
                 for message in early {
-                    if translate(Some(message), &mut queue, false) {
+                    if translate(Some(message), &mut queue, &mut watch) {
                         ended = true;
                         break;
                     }
@@ -205,6 +264,7 @@ impl Inner {
             attach,
             driver,
             queue,
+            watch,
             ended,
             size: request.size,
             repaint: *repaint,
@@ -220,7 +280,7 @@ impl Inner {
         let result = self
             .unary(
                 GatewayOp::Terminal,
-                Some(Missing::Sandbox(sandbox.clone())),
+                missing(sandbox),
                 self.grpc().create_ssh_session(CreateSshSessionRequest {
                     workspace_scope: Some(self.scope()),
                     sandbox: sandbox.to_string(),
@@ -249,9 +309,10 @@ impl Inner {
         mode: InputMode,
     ) -> Result<(Attach, Vec<ChannelMsg>), GatewayError> {
         let mut bridge = JoinSet::new();
-        let stream = self
+        let (stream, mut fault) = self
             .open_relay(&request.sandbox, &session.token, &mut bridge)
             .await?;
+        let sandbox = &request.sandbox;
         let mismatch = Arc::new(AtomicBool::new(false));
         let config = Arc::new(client::Config {
             keepalive_interval: Some(KEEPALIVE),
@@ -268,45 +329,53 @@ impl Inner {
                 return Err(if mismatch.load(Ordering::SeqCst) {
                     GatewayError::HostKeyMismatch
                 } else {
-                    ssh(&error)
+                    self.relay_cause(&mut fault, sandbox, ssh(&error))
                 });
             }
         };
         let auth = handle
             .authenticate_none(SSH_USER)
             .await
-            .map_err(|error| ssh(&error))?;
+            .map_err(|error| self.relay_cause(&mut fault, sandbox, ssh(&error)))?;
         if !auth.success() {
-            return Err(GatewayError::TerminalRefused {
-                reason: "the sandbox SSH server rejected the session".to_owned(),
-            });
+            return Err(self.relay_cause(
+                &mut fault,
+                sandbox,
+                GatewayError::TerminalRefused {
+                    reason: "the sandbox SSH server rejected the session".to_owned(),
+                },
+            ));
         }
         let mut channel = handle
             .channel_open_session()
             .await
-            .map_err(|error| ssh(&error))?;
+            .map_err(|error| self.relay_cause(&mut fault, sandbox, ssh(&error)))?;
         if mode == InputMode::Viewer {
             channel
                 .set_env(false, READ_ONLY_ENV, "1")
                 .await
-                .map_err(|error| ssh(&error))?;
+                .map_err(|error| self.relay_cause(&mut fault, sandbox, ssh(&error)))?;
         }
         let (cols, rows) = dims(request.size);
         channel
             .request_pty(false, SSH_TERM, cols, rows, 0, 0, &[])
             .await
-            .map_err(|error| ssh(&error))?;
+            .map_err(|error| self.relay_cause(&mut fault, sandbox, ssh(&error)))?;
         channel
             .request_subsystem(true, SUBSYSTEM)
             .await
-            .map_err(|error| ssh(&error))?;
+            .map_err(|error| self.relay_cause(&mut fault, sandbox, ssh(&error)))?;
         loop {
             match channel.wait().await {
                 Some(ChannelMsg::Success) => break,
                 Some(ChannelMsg::Failure) | None => {
-                    return Err(GatewayError::TerminalRefused {
-                        reason: "the sandbox refused the main-process subsystem".to_owned(),
-                    });
+                    return Err(self.relay_cause(
+                        &mut fault,
+                        sandbox,
+                        GatewayError::TerminalRefused {
+                            reason: "the sandbox refused the main-process subsystem".to_owned(),
+                        },
+                    ));
                 }
                 Some(_) => {}
             }
@@ -338,7 +407,7 @@ impl Inner {
         sandbox: &SandboxName,
         token: &str,
         bridge: &mut JoinSet<()>,
-    ) -> Result<tokio::io::DuplexStream, GatewayError> {
+    ) -> Result<(tokio::io::DuplexStream, oneshot::Receiver<Status>), GatewayError> {
         let (frame_tx, frame_rx) = mpsc::channel::<TcpForwardFrame>(FRAME_CAPACITY);
         frame_tx
             .send(TcpForwardFrame {
@@ -354,27 +423,56 @@ impl Inner {
             .map_err(|_| GatewayError::Protocol {
                 message: "the forward request channel closed".to_owned(),
             })?;
-        let mut response = self
+        let response = self
             .grpc()
             .forward_tcp(ReceiverStream::new(frame_rx))
             .await
-            .map_err(|status| self.map_status(GatewayOp::Terminal, None, &status))?
+            .map_err(|status| self.map_status(GatewayOp::Terminal, missing(sandbox), &status))?
             .into_inner();
+        let (fault_tx, fault_rx) = oneshot::channel();
         let (near, far) = tokio::io::duplex(DUPLEX_BYTES);
-        let (far_read, mut far_write) = tokio::io::split(far);
+        let (far_read, far_write) = tokio::io::split(far);
         bridge.spawn(forward_up(far_read, frame_tx));
-        bridge.spawn(async move {
-            while let Ok(Some(frame)) = response.message().await {
-                if let Some(tcp_forward_frame::Payload::Data(data)) = frame.payload
-                    && far_write.write_all(&data).await.is_err()
-                {
+        bridge.spawn(forward_down(response, far_write, fault_tx));
+        Ok((near, fault_rx))
+    }
+
+    fn relay_cause(
+        &self,
+        fault: &mut oneshot::Receiver<Status>,
+        sandbox: &SandboxName,
+        otherwise: GatewayError,
+    ) -> GatewayError {
+        match fault.try_recv() {
+            Ok(status) => self.map_status(GatewayOp::Terminal, missing(sandbox), &status),
+            Err(_) => otherwise,
+        }
+    }
+}
+
+async fn forward_down(
+    mut response: tonic::Streaming<TcpForwardFrame>,
+    mut sink: tokio::io::WriteHalf<tokio::io::DuplexStream>,
+    fault: oneshot::Sender<Status>,
+) {
+    loop {
+        match response.message().await {
+            Ok(Some(TcpForwardFrame {
+                payload: Some(tcp_forward_frame::Payload::Data(data)),
+            })) => {
+                if sink.write_all(&data).await.is_err() {
                     break;
                 }
             }
-            drop(far_write.shutdown().await);
-        });
-        Ok(near)
+            Ok(Some(_)) => {}
+            Ok(None) => break,
+            Err(status) => {
+                drop(fault.send(status));
+                break;
+            }
+        }
     }
+    drop(sink.shutdown().await);
 }
 
 async fn forward_up(
@@ -401,6 +499,7 @@ struct Pump {
     attach: Attach,
     driver: TerminalDriver,
     queue: VecDeque<TerminalEvent>,
+    watch: Watch,
     ended: bool,
     size: TermSize,
     repaint: RepaintPolicy,
@@ -414,6 +513,7 @@ impl Pump {
             mut attach,
             driver,
             mut queue,
+            mut watch,
             mut ended,
             mut size,
             repaint,
@@ -422,7 +522,6 @@ impl Pump {
             mut commands,
             events,
         } = driver;
-        let mut detached = false;
         let mut nudge_at = match repaint {
             RepaintPolicy::Never => None,
             RepaintPolicy::NudgeAfter(delay) => Some(Instant::now() + delay),
@@ -444,6 +543,7 @@ impl Pump {
                         break;
                     }
                     Some(TerminalCommand::Input(bytes)) => {
+                        watch.sent(&bytes);
                         if let Err(error) = attach.channel.data_bytes(bytes).await {
                             queue.push_back(TerminalEvent::Ended(EndReason::Failed(error.to_string())));
                             ended = true;
@@ -458,7 +558,6 @@ impl Pump {
                         }
                     }
                     Some(TerminalCommand::Detach) => {
-                        detached = true;
                         close_channel(&attach.channel).await;
                         queue.push_back(TerminalEvent::Ended(EndReason::Detached));
                         ended = true;
@@ -476,7 +575,7 @@ impl Pump {
                     }
                 }
                 message = attach.channel.wait(), if queue.is_empty() && !ended => {
-                    if translate(message, &mut queue, detached) {
+                    if translate(message, &mut queue, &mut watch) {
                         ended = true;
                     }
                 }

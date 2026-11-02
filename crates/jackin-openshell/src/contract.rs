@@ -12,7 +12,7 @@ use jackin_core::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::error::GatewayError;
+use crate::error::{GatewayError, Missing};
 use crate::gateway::{
     Gateway, MainProcess, PowerAction, ProfileSync, ProgramRun, ProgramStdin, ProjectUpload,
     ProviderMaterial, ProviderSpec, ProviderState, Provisioning, SandboxCreate, SandboxFile,
@@ -20,12 +20,14 @@ use crate::gateway::{
 };
 use crate::policy::{PolicyDocument, ProviderProfile};
 use crate::terminal::{
-    InputLease, InputMode, RepaintPolicy, TermSize, TerminalEvent, TerminalKind, TerminalRequest,
+    EndReason, InputLease, InputMode, RepaintPolicy, TermSize, TerminalEvent, TerminalKind,
+    TerminalRequest, TerminalSession,
 };
 
-pub const CORE_CHECKS: [&str; 12] = [
+pub const CORE_CHECKS: [&str; 13] = [
     "create_find_by_label",
     "create_duplicate_name",
+    "absent_sandbox_is_not_found",
     "provisioning_failed_reported",
     "program_exit_code_and_stdin",
     "touch_on_success",
@@ -40,13 +42,23 @@ pub const CORE_CHECKS: [&str; 12] = [
 
 pub const TRANSFER_CHECKS: [&str; 2] = ["upload_project", "download_with_digest"];
 
-pub const TERMINAL_CHECKS: [&str; 2] = ["shell_exit_code", "main_attach_detach_replay"];
+pub const TERMINAL_CHECKS: [&str; 5] = [
+    "shell_exit_code",
+    "main_attach_detach_replay",
+    "main_second_attachment_read_only",
+    "main_viewer_read_only",
+    "main_read_only_takes_lease_after_owner_leaves",
+];
 
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const POLL_ATTEMPTS: usize = 240;
 const PROGRAM_TIMEOUT: Duration = Duration::from_secs(60);
 const MISSING_IMAGE: &str = "jackin/contract-missing:0000000000000000";
 const BANNER: &str = "contract-banner";
+const CTRL_C: u8 = 0x03;
+const CTRL_D: u8 = 0x04;
+const LEASE_RETRY: Duration = Duration::from_millis(500);
+const VIEWER_SETTLE: Duration = Duration::from_millis(500);
 const CONTRACT_POLICY: &str = "version: 1
 filesystem_policy:
   include_workdir: true
@@ -160,6 +172,10 @@ fn expect(condition: bool, message: &str) -> Outcome<()> {
     }
 }
 
+fn fresh_launch() -> Outcome<LaunchId> {
+    LaunchId::generate().map_err(text)
+}
+
 fn path(value: &str) -> Outcome<SandboxPath> {
     SandboxPath::parse(value).map_err(text)
 }
@@ -202,6 +218,21 @@ impl Ctx<'_> {
         })
     }
 
+    fn owner_kind() -> TerminalKind {
+        TerminalKind::MainProcess {
+            input: InputMode::Owner,
+            repaint: RepaintPolicy::Never,
+        }
+    }
+
+    fn terminal(sandbox: &SandboxName, kind: TerminalKind) -> Outcome<TerminalRequest> {
+        Ok(TerminalRequest {
+            sandbox: sandbox.clone(),
+            kind,
+            size: term_size()?,
+        })
+    }
+
     async fn view(&self, name: &SandboxName) -> Outcome<SandboxView> {
         let found = self
             .gateway
@@ -231,7 +262,7 @@ impl Ctx<'_> {
     }
 
     async fn ready(&self, main: MainProcess) -> Outcome<SandboxName> {
-        let launch = LaunchId::generate();
+        let launch = fresh_launch()?;
         let spec = self.spec(&launch, &self.fixture.image, main)?;
         self.gateway.create_sandbox(&spec).await.map_err(text)?;
         self.wait_for(spec.name(), "Ready", |view| view.phase == Phase::Ready)
@@ -276,7 +307,7 @@ impl Ctx<'_> {
 }
 
 async fn create_find_by_label(ctx: &Ctx<'_>) -> Outcome<()> {
-    let launch = LaunchId::generate();
+    let launch = fresh_launch()?;
     let spec = ctx.spec(
         &launch,
         &ctx.fixture.image,
@@ -306,7 +337,7 @@ async fn create_find_by_label(ctx: &Ctx<'_>) -> Outcome<()> {
 }
 
 async fn create_duplicate_name(ctx: &Ctx<'_>) -> Outcome<()> {
-    let launch = LaunchId::generate();
+    let launch = fresh_launch()?;
     let spec = ctx.spec(
         &launch,
         &ctx.fixture.image,
@@ -321,8 +352,76 @@ async fn create_duplicate_name(ctx: &Ctx<'_>) -> Outcome<()> {
     )
 }
 
+async fn absent_sandbox_is_not_found(ctx: &Ctx<'_>) -> Outcome<()> {
+    let launch = fresh_launch()?;
+    let name = SandboxName::new(&ctx.fixture.name_prefix, &NameSuffix::for_launch(&launch));
+    let gateway = ctx.gateway;
+    let run = ProgramRun {
+        sandbox: name.clone(),
+        program: path("/bin/true")?,
+        args: Vec::new(),
+        workdir: None,
+        env: BTreeMap::new(),
+        stdin: ProgramStdin::Closed,
+        touch_on_success: None,
+        timeout: PROGRAM_TIMEOUT,
+    };
+    let target = path("/sandbox/.contract/absent")?;
+    let file = SandboxFile {
+        path: target.clone(),
+        mode: FileMode(0o600),
+        content: SecretBytes::new(b"absent".to_vec()),
+    };
+    let shell = Ctx::terminal(
+        &name,
+        TerminalKind::Shell {
+            workdir: path("/sandbox")?,
+            env: BTreeMap::new(),
+        },
+    )?;
+    let main = Ctx::terminal(&name, Ctx::owner_kind())?;
+    let results = [
+        (
+            "run_program",
+            gateway
+                .run_program(&run, &CancellationToken::new())
+                .await
+                .map(drop),
+        ),
+        (
+            "read_files",
+            gateway
+                .read_files(&name, std::slice::from_ref(&target))
+                .await
+                .map(drop),
+        ),
+        ("write_file", gateway.write_file(&name, &file).await),
+        (
+            "open_terminal(Shell)",
+            gateway.open_terminal(&shell).await.map(drop),
+        ),
+        (
+            "open_terminal(MainProcess)",
+            gateway.open_terminal(&main).await.map(drop),
+        ),
+    ];
+    for (entry, result) in results {
+        match result {
+            Err(GatewayError::NotFound {
+                what: Missing::Sandbox(found),
+            }) if found == name => {}
+            other => {
+                return Err(format!(
+                    "{entry} on an absent sandbox is not NotFound for it: {other:?}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn provisioning_failed_reported(ctx: &Ctx<'_>) -> Outcome<()> {
-    let launch = LaunchId::generate();
+    let launch = fresh_launch()?;
     let missing = ImageTag::parse(MISSING_IMAGE).map_err(text)?;
     let spec = ctx.spec(&launch, &missing, Ctx::main("/bin/sh", &["-c", "exit 0"])?)?;
     ctx.gateway.create_sandbox(&spec).await.map_err(text)?;
@@ -489,75 +588,105 @@ async fn read_missing_file(ctx: &Ctx<'_>) -> Outcome<()> {
     )
 }
 
+fn contract_profile() -> Outcome<ProfileId> {
+    ProfileId::parse("jackin-contract").map_err(text)
+}
+
+fn contract_provider(ctx: &Ctx<'_>) -> Outcome<ProviderName> {
+    ProviderName::parse(&format!("jackin-{}-contract", ctx.fixture.name_prefix)).map_err(text)
+}
+
+async fn clear_contract_profile(ctx: &Ctx<'_>) -> Outcome<()> {
+    ctx.gateway
+        .delete_provider(&contract_provider(ctx)?)
+        .await
+        .map_err(text)?;
+    ctx.gateway
+        .delete_profile(&contract_profile()?)
+        .await
+        .map_err(text)
+}
+
+async fn sync_contract_profile(ctx: &Ctx<'_>, description: &'static str) -> Outcome<ProfileSync> {
+    let yaml: &'static str = Box::leak(profile_yaml(description).into_boxed_str());
+    let asset: &'static ProfileAsset = Box::leak(Box::new(ProfileAsset {
+        id: "jackin-contract",
+        yaml,
+    }));
+    let profile = ProviderProfile::parse(asset).map_err(text)?;
+    ctx.gateway.ensure_profile(&profile).await.map_err(text)
+}
+
+async fn finish_contract_profile(ctx: &Ctx<'_>, result: Outcome<()>) -> Outcome<()> {
+    let cleanup = clear_contract_profile(ctx).await;
+    result.and(cleanup)
+}
+
 async fn profile_import_unchanged_updated(ctx: &Ctx<'_>) -> Outcome<()> {
-    let sync = |description: &'static str| async move {
-        let yaml: &'static str = Box::leak(profile_yaml(description).into_boxed_str());
-        let asset: &'static ProfileAsset = Box::leak(Box::new(ProfileAsset {
-            id: "jackin-contract",
-            yaml,
-        }));
-        let profile = ProviderProfile::parse(asset).map_err(text)?;
-        ctx.gateway.ensure_profile(&profile).await.map_err(text)
-    };
-    let first = sync("first").await?;
-    expect(
-        matches!(
-            first,
-            ProfileSync::Imported | ProfileSync::Updated | ProfileSync::Unchanged
-        ),
-        "the first sync has no outcome",
-    )?;
-    expect(
-        sync("first").await? == ProfileSync::Unchanged,
-        "an equal profile is not Unchanged",
-    )?;
-    expect(
-        sync("second").await? == ProfileSync::Updated,
-        "a changed profile is not Updated",
-    )?;
-    expect(
-        sync("second").await? == ProfileSync::Unchanged,
-        "the updated profile is not Unchanged",
-    )
+    clear_contract_profile(ctx).await?;
+    let result = async {
+        expect(
+            sync_contract_profile(ctx, "first").await? == ProfileSync::Imported,
+            "the first sync is not Imported",
+        )?;
+        expect(
+            sync_contract_profile(ctx, "first").await? == ProfileSync::Unchanged,
+            "an equal profile is not Unchanged",
+        )?;
+        expect(
+            sync_contract_profile(ctx, "second").await? == ProfileSync::Updated,
+            "a changed profile is not Updated",
+        )?;
+        expect(
+            sync_contract_profile(ctx, "second").await? == ProfileSync::Unchanged,
+            "the updated profile is not Unchanged",
+        )
+    }
+    .await;
+    finish_contract_profile(ctx, result).await
 }
 
 async fn provider_put_and_delete(ctx: &Ctx<'_>) -> Outcome<()> {
-    profile_import_unchanged_updated(ctx).await?;
-    let name = ProviderName::parse(&format!("jackin-{}-contract", ctx.fixture.name_prefix))
-        .map_err(text)?;
-    let spec = ProviderSpec {
-        name: name.clone(),
-        profile: ProfileId::parse("jackin-contract").map_err(text)?,
-        keys: CONTRACT_KEYS,
-        material: ProviderMaterial::ChatgptLogin {
-            access_token: Secret::new("contract-access-token".to_owned()),
-            refresh_token: Secret::new("contract-refresh-token".to_owned()),
-            client_id: "contract-client".to_owned(),
-            chatgpt_account_id: ChatgptAccountId::parse("0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9")
-                .map_err(text)?,
-        },
-    };
-    let state = |expected: ProviderState| {
-        let name = name.clone();
-        async move {
-            ctx.gateway
-                .provider_state(&name)
-                .await
-                .map_err(text)
-                .map(|state| state == expected)
-        }
-    };
-    ctx.gateway.put_provider(&spec).await.map_err(text)?;
-    ctx.gateway.put_provider(&spec).await.map_err(text)?;
-    expect(
-        state(ProviderState::Present).await?,
-        "the provider is absent after a put",
-    )?;
-    ctx.gateway.delete_provider(&name).await.map_err(text)?;
-    expect(
-        state(ProviderState::Absent).await?,
-        "the provider is present after a delete",
-    )
+    clear_contract_profile(ctx).await?;
+    let result = async {
+        sync_contract_profile(ctx, "first").await?;
+        let name = contract_provider(ctx)?;
+        let spec = ProviderSpec {
+            name: name.clone(),
+            profile: contract_profile()?,
+            keys: CONTRACT_KEYS,
+            material: ProviderMaterial::ChatgptLogin {
+                access_token: Secret::new("contract-access-token".to_owned()),
+                refresh_token: Secret::new("contract-refresh-token".to_owned()),
+                client_id: "contract-client".to_owned(),
+                chatgpt_account_id: ChatgptAccountId::parse("0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9")
+                    .map_err(text)?,
+            },
+        };
+        let state = |expected: ProviderState| {
+            let name = name.clone();
+            async move {
+                ctx.gateway
+                    .provider_state(&name)
+                    .await
+                    .map_err(text)
+                    .map(|state| state == expected)
+            }
+        };
+        ctx.gateway.put_provider(&spec).await.map_err(text)?;
+        ctx.gateway.put_provider(&spec).await.map_err(text)?;
+        expect(
+            state(ProviderState::Present).await?,
+            "the provider is absent after a put",
+        )?;
+        ctx.gateway.delete_provider(&name).await.map_err(text)?;
+        expect(
+            state(ProviderState::Absent).await?,
+            "the provider is present after a delete",
+        )
+    }
+    .await;
+    finish_contract_profile(ctx, result).await
 }
 
 async fn power_transitions(ctx: &Ctx<'_>) -> Outcome<()> {
@@ -588,7 +717,7 @@ async fn power_transitions(ctx: &Ctx<'_>) -> Outcome<()> {
 }
 
 async fn ended_main_process_stop_start(ctx: &Ctx<'_>) -> Outcome<()> {
-    let launch = LaunchId::generate();
+    let launch = fresh_launch()?;
     let spec = ctx.spec(
         &launch,
         &ctx.fixture.image,
@@ -684,8 +813,7 @@ async fn download_with_digest(ctx: &Ctx<'_>) -> Outcome<()> {
             .write_file(&sandbox, &file)
             .await
             .map_err(text)?;
-        let local =
-            std::env::temp_dir().join(format!("jackin-contract-{}.bin", LaunchId::generate()));
+        let local = std::env::temp_dir().join(format!("jackin-contract-{}.bin", fresh_launch()?));
         let local = HostPath::parse(&local).map_err(text)?;
         ctx.gateway
             .download_file(&sandbox, &remote, &local, &CancellationToken::new())
@@ -733,10 +861,7 @@ async fn shell_exit_code(ctx: &Ctx<'_>) -> Outcome<()> {
     result
 }
 
-async fn read_until(
-    session: &mut crate::terminal::TerminalSession,
-    needle: &str,
-) -> Outcome<InputLease> {
+async fn read_until(session: &mut TerminalSession, needle: &str) -> Outcome<(InputLease, String)> {
     let mut lease = InputLease::ReadOnly;
     let mut seen = String::new();
     tokio::time::timeout(PROGRAM_TIMEOUT, async {
@@ -746,7 +871,7 @@ async fn read_until(
                 TerminalEvent::Output(bytes) => {
                     seen.push_str(&String::from_utf8_lossy(&bytes));
                     if seen.contains(needle) {
-                        return Ok(lease);
+                        return Ok((lease, seen));
                     }
                 }
                 TerminalEvent::Ended(reason) => {
@@ -761,20 +886,89 @@ async fn read_until(
     .map_err(|_| format!("{needle} never arrived"))?
 }
 
+async fn lease_of(session: &mut TerminalSession) -> Outcome<InputLease> {
+    tokio::time::timeout(PROGRAM_TIMEOUT, async {
+        while let Some(event) = session.next_event().await {
+            match event {
+                TerminalEvent::Lease(granted) => return Ok(granted),
+                TerminalEvent::Ended(reason) => {
+                    return Err(format!("the terminal ended: {reason:?}"));
+                }
+                _ => {}
+            }
+        }
+        Err("the terminal closed".to_owned())
+    })
+    .await
+    .map_err(|_| "no lease arrived".to_owned())?
+}
+
+async fn remaining(session: &mut TerminalSession) -> Outcome<Vec<TerminalEvent>> {
+    tokio::time::timeout(PROGRAM_TIMEOUT, async {
+        let mut events = Vec::new();
+        while let Some(event) = session.next_event().await {
+            events.push(event);
+        }
+        events
+    })
+    .await
+    .map_err(|_| "the terminal never closed".to_owned())
+}
+
+fn expect_end_without_exit(events: &[TerminalEvent], reason: &EndReason) -> Outcome<()> {
+    expect(
+        !events
+            .iter()
+            .any(|event| matches!(event, TerminalEvent::Exited(_))),
+        "an ended attachment reported a process exit",
+    )?;
+    expect(
+        events.last() == Some(&TerminalEvent::Ended(reason.clone())),
+        &format!("the attachment did not end with {reason:?}: {events:?}"),
+    )
+}
+
+async fn take_lease(session: &mut TerminalSession) -> Outcome<()> {
+    let deadline = tokio::time::Instant::now() + PROGRAM_TIMEOUT;
+    while tokio::time::Instant::now() < deadline {
+        session
+            .input(b"contract-retry\n".to_vec())
+            .await
+            .map_err(text)?;
+        let window = tokio::time::timeout(LEASE_RETRY, async {
+            while let Some(event) = session.next_event().await {
+                match event {
+                    TerminalEvent::Lease(InputLease::Owner) => return Ok(()),
+                    TerminalEvent::Ended(reason) => {
+                        return Err(format!("the terminal ended: {reason:?}"));
+                    }
+                    _ => {}
+                }
+            }
+            Err("the terminal closed".to_owned())
+        })
+        .await;
+        match window {
+            Ok(Ok(())) => return Ok(()),
+            Ok(Err(error)) => return Err(error),
+            Err(_) => {}
+        }
+    }
+    Err("the read-only attachment never took the lease".to_owned())
+}
+
+fn echo_main() -> Outcome<MainProcess> {
+    let script = format!("echo {BANNER}; exec cat");
+    Ctx::main("/bin/sh", &["-c", &script])
+}
+
 async fn main_attach_detach_replay(ctx: &Ctx<'_>) -> Outcome<()> {
     let script = format!("echo {BANNER}; sleep 3600");
     let sandbox = ctx.ready(Ctx::main("/bin/sh", &["-c", &script])?).await?;
     let result = async {
-        let request = TerminalRequest {
-            sandbox: sandbox.clone(),
-            kind: TerminalKind::MainProcess {
-                input: InputMode::Owner,
-                repaint: RepaintPolicy::Never,
-            },
-            size: term_size()?,
-        };
+        let request = Ctx::terminal(&sandbox, Ctx::owner_kind())?;
         let mut first = ctx.gateway.open_terminal(&request).await.map_err(text)?;
-        let lease = read_until(&mut first, BANNER).await?;
+        let (lease, _) = read_until(&mut first, BANNER).await?;
         expect(
             lease == InputLease::Owner,
             "the first attachment is not the owner",
@@ -783,7 +977,104 @@ async fn main_attach_detach_replay(ctx: &Ctx<'_>) -> Outcome<()> {
         drop(first);
         let mut second = ctx.gateway.open_terminal(&request).await.map_err(text)?;
         read_until(&mut second, BANNER).await?;
-        second.detach().await.map_err(text)?;
+        second.input(vec![CTRL_D]).await.map_err(text)?;
+        let events = remaining(&mut second).await?;
+        expect_end_without_exit(&events, &EndReason::Detached)?;
+        expect(
+            ctx.view(&sandbox).await?.phase == Phase::Ready,
+            "Ctrl-D ended the main process",
+        )
+    }
+    .await;
+    ctx.cleanup(&sandbox).await;
+    result
+}
+
+async fn main_second_attachment_read_only(ctx: &Ctx<'_>) -> Outcome<()> {
+    let sandbox = ctx.ready(echo_main()?).await?;
+    let result = async {
+        let request = Ctx::terminal(&sandbox, Ctx::owner_kind())?;
+        let mut first = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        let (lease, _) = read_until(&mut first, BANNER).await?;
+        expect(
+            lease == InputLease::Owner,
+            "the first attachment is not the owner",
+        )?;
+        let mut second = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        expect(
+            lease_of(&mut second).await? == InputLease::ReadOnly,
+            "a second attachment is not read-only",
+        )
+    }
+    .await;
+    ctx.cleanup(&sandbox).await;
+    result
+}
+
+async fn main_viewer_read_only(ctx: &Ctx<'_>) -> Outcome<()> {
+    let sandbox = ctx.ready(echo_main()?).await?;
+    let result = async {
+        let request = Ctx::terminal(&sandbox, Ctx::owner_kind())?;
+        let mut owner = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        read_until(&mut owner, BANNER).await?;
+        let viewer_request = Ctx::terminal(
+            &sandbox,
+            TerminalKind::MainProcess {
+                input: InputMode::Viewer,
+                repaint: RepaintPolicy::Never,
+            },
+        )?;
+        let mut viewer = ctx
+            .gateway
+            .open_terminal(&viewer_request)
+            .await
+            .map_err(text)?;
+        expect(
+            lease_of(&mut viewer).await? == InputLease::ReadOnly,
+            "a viewer is not read-only",
+        )?;
+        viewer
+            .input(b"contract-viewer\n".to_vec())
+            .await
+            .map_err(text)?;
+        tokio::time::sleep(VIEWER_SETTLE).await;
+        owner
+            .input(b"contract-owner\n".to_vec())
+            .await
+            .map_err(text)?;
+        let (_, seen) = read_until(&mut owner, "contract-owner").await?;
+        expect(
+            !seen.contains("contract-viewer"),
+            "viewer input reached the main process",
+        )?;
+        viewer.input(vec![CTRL_C]).await.map_err(text)?;
+        let events = remaining(&mut viewer).await?;
+        expect_end_without_exit(&events, &EndReason::StreamClosed)
+    }
+    .await;
+    ctx.cleanup(&sandbox).await;
+    result
+}
+
+async fn main_read_only_takes_lease_after_owner_leaves(ctx: &Ctx<'_>) -> Outcome<()> {
+    let sandbox = ctx.ready(echo_main()?).await?;
+    let result = async {
+        let request = Ctx::terminal(&sandbox, Ctx::owner_kind())?;
+        let mut first = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        read_until(&mut first, BANNER).await?;
+        let mut second = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        expect(
+            lease_of(&mut second).await? == InputLease::ReadOnly,
+            "a second attachment is not read-only",
+        )?;
+        first.detach().await.map_err(text)?;
+        remaining(&mut first).await?;
+        take_lease(&mut second).await?;
+        second
+            .input(b"contract-owned\n".to_vec())
+            .await
+            .map_err(text)?;
+        read_until(&mut second, "contract-owned").await?;
         Ok(())
     }
     .await;
@@ -811,6 +1102,12 @@ pub async fn run(
         ContractGroup::Core => {
             check!(checks, ctx, "create_find_by_label", create_find_by_label);
             check!(checks, ctx, "create_duplicate_name", create_duplicate_name);
+            check!(
+                checks,
+                ctx,
+                "absent_sandbox_is_not_found",
+                absent_sandbox_is_not_found
+            );
             check!(
                 checks,
                 ctx,
@@ -863,6 +1160,19 @@ pub async fn run(
                 ctx,
                 "main_attach_detach_replay",
                 main_attach_detach_replay
+            );
+            check!(
+                checks,
+                ctx,
+                "main_second_attachment_read_only",
+                main_second_attachment_read_only
+            );
+            check!(checks, ctx, "main_viewer_read_only", main_viewer_read_only);
+            check!(
+                checks,
+                ctx,
+                "main_read_only_takes_lease_after_owner_leaves",
+                main_read_only_takes_lease_after_owner_leaves
             );
         }
     }

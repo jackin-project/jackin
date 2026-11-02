@@ -8,6 +8,8 @@ use tonic::{Code, Status};
 use super::Inner;
 use crate::error::{GatewayError, GatewayOp, Missing};
 
+const SUPERVISOR_RELAY_FAILURE: &str = "supervisor relay failed";
+
 fn violation_field(status: &Status) -> String {
     SdkError::from_status(status.clone())
         .error_details()
@@ -51,9 +53,16 @@ impl Inner {
                 op,
                 after: self.call_timeout,
             },
-            Code::Unavailable => GatewayError::Unreachable {
-                endpoint: self.endpoint.clone(),
-                message,
+            Code::Unavailable => match missing {
+                Some(Missing::Sandbox(sandbox))
+                    if message.starts_with(SUPERVISOR_RELAY_FAILURE) =>
+                {
+                    GatewayError::SandboxUnreachable { sandbox, message }
+                }
+                _ => GatewayError::Unreachable {
+                    endpoint: self.endpoint.clone(),
+                    message,
+                },
             },
             _ => GatewayError::Protocol { message },
         }

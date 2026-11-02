@@ -3,11 +3,12 @@
 
 use openshell_sdk::raw::proto::{
     ConfigureProviderRefreshRequest, ConfigureProviderRefreshResponse, CreateProviderRequest,
-    DeleteProviderRefreshRequest, DeleteProviderRefreshResponse, DeleteProviderRequest,
-    DeleteProviderResponse, DeletionOutcome, GetProviderProfileRequest, GetProviderRequest,
-    ImportProviderProfilesRequest, ImportProviderProfilesResponse, ProviderProfileDiagnostic,
-    ProviderProfileResponse, ProviderResponse, UpdateProviderProfilesRequest,
-    UpdateProviderProfilesResponse, UpdateProviderRequest,
+    DeleteProviderProfileRequest, DeleteProviderProfileResponse, DeleteProviderRefreshRequest,
+    DeleteProviderRefreshResponse, DeleteProviderRequest, DeleteProviderResponse, DeletionOutcome,
+    GetProviderProfileRequest, GetProviderRequest, ImportProviderProfilesRequest,
+    ImportProviderProfilesResponse, ProviderProfileDiagnostic, ProviderProfileResponse,
+    ProviderResponse, UpdateProviderProfilesRequest, UpdateProviderProfilesResponse,
+    UpdateProviderRequest,
 };
 use tonic::{Request, Response, Status};
 
@@ -68,6 +69,20 @@ impl Fake {
         let request = request.into_inner();
         let workspace = scope_name(request.workspace_scope.as_ref())?;
         let mut state = self.shared.lock();
+        if let Some(mut hook) = state.before_import.take() {
+            hook(&mut state);
+        }
+        if let Some((field, message)) = state.import_rejection.clone() {
+            return Ok(Response::new(ImportProviderProfilesResponse {
+                diagnostics: vec![ProviderProfileDiagnostic {
+                    message,
+                    field,
+                    ..ProviderProfileDiagnostic::default()
+                }],
+                profiles: Vec::new(),
+                imported: false,
+            }));
+        }
         let mut stored = Vec::new();
         for item in request.profiles {
             let mut profile = item.profile.unwrap_or_default();
@@ -137,6 +152,9 @@ impl Fake {
         let provider = request.provider.unwrap_or_default();
         let name = provider_name(&provider);
         let mut state = self.shared.lock();
+        if let Some(mut hook) = state.before_create_provider.take() {
+            hook(&mut state);
+        }
         let profile_key = (provider.profile_workspace.clone(), provider.r#type.clone());
         if !state.profiles.contains_key(&profile_key) {
             return Err(Status::invalid_argument(format!(
@@ -302,6 +320,48 @@ impl Fake {
             .refresh
             .remove(&(workspace, request.provider, request.credential_key));
         Ok(Response::new(DeleteProviderRefreshResponse {
+            outcome: DeletionOutcome::Completed as i32,
+        }))
+    }
+
+    pub(crate) async fn delete_provider_profile_impl(
+        &self,
+        request: Request<DeleteProviderProfileRequest>,
+    ) -> Result<Response<DeleteProviderProfileResponse>, Status> {
+        self.enter("delete_provider_profile").await?;
+        let request = request.into_inner();
+        let workspace = scope_name(request.workspace_scope.as_ref())?;
+        let key = (workspace.clone(), request.id.clone());
+        let mut state = self.shared.lock();
+        if !state.profiles.contains_key(&key) {
+            return if request.allow_missing {
+                Ok(Response::new(DeleteProviderProfileResponse {
+                    outcome: DeletionOutcome::AlreadyAbsent as i32,
+                }))
+            } else {
+                Err(Status::not_found("provider profile not found"))
+            };
+        }
+        let mut blocking: Vec<String> = state
+            .providers
+            .iter()
+            .filter(|((provider_workspace, _), provider)| {
+                *provider_workspace == workspace
+                    && provider.profile_workspace == workspace
+                    && provider.r#type == request.id
+            })
+            .map(|((_, name), _)| name.clone())
+            .collect();
+        blocking.sort();
+        if !blocking.is_empty() {
+            return Err(Status::failed_precondition(format!(
+                "provider profile '{}' is in use by providers: {}",
+                request.id,
+                blocking.join(", ")
+            )));
+        }
+        state.profiles.remove(&key);
+        Ok(Response::new(DeleteProviderProfileResponse {
             outcome: DeletionOutcome::Completed as i32,
         }))
     }

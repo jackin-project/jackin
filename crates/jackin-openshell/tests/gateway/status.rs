@@ -3,18 +3,24 @@
 
 use std::time::Duration;
 
-use jackin_core::{Phase, SandboxPath};
+use std::sync::Arc;
+
+use jackin_core::{FileMode, Phase, SandboxPath, SecretBytes};
 use jackin_core::{ProcessError, ProcessStatus, Program, TerminalText};
 use jackin_openshell::{
-    Gateway, GatewayError, GatewayOp, Missing, ProgramRun, ProgramStdin, TransferOp,
+    Gateway, GatewayError, GatewayOp, Missing, ProgramRun, ProgramStdin, SandboxFile, TransferOp,
 };
 use openshell_sdk::raw::proto::SandboxPhase;
+use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
-use tonic::Code;
+use tonic::{Code, Status};
 
+use super::exec_rpc::host_shell;
 use super::harness::{WORKSPACE, config, connect, env, guard, resolved};
-use super::server::{Fault, invalid_field};
-use super::support::{SANDBOX, SHORT, add_sandbox, create_spec, kind, sandbox_name};
+use super::server::{ExecCtx, Fault, invalid_field};
+use super::support::{
+    SANDBOX, SHORT, add_sandbox, create_spec, kind, main_terminal, sandbox_name, shell_terminal,
+};
 
 const CODE_TABLE: [(Code, &str); 14] = [
     (Code::Cancelled, "Protocol"),
@@ -75,6 +81,174 @@ fn run(name: &str) -> ProgramRun {
         stdin: ProgramStdin::Closed,
         touch_on_success: None,
         timeout: Duration::from_secs(30),
+    }
+}
+
+const GONE: &str = "jackin-ws-gone";
+
+fn not_found_named(error: &GatewayError, name: &str) -> bool {
+    matches!(error, GatewayError::NotFound { what: Missing::Sandbox(missing) } if missing.as_str() == name)
+}
+
+fn file(path: &str) -> SandboxFile {
+    SandboxFile {
+        path: SandboxPath::parse(path).unwrap(),
+        mode: FileMode(0o600),
+        content: SecretBytes::new(b"x".to_vec()),
+    }
+}
+
+#[tokio::test]
+async fn absent_sandbox_is_not_found_on_every_exec_entry_point() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    add_sandbox(
+        &mut env.server.state(),
+        WORKSPACE,
+        SANDBOX,
+        SandboxPhase::Ready,
+        None,
+        &[],
+    );
+    let gateway = connect(&env, WORKSPACE).await;
+    let cancel = CancellationToken::new();
+    let gone = sandbox_name(GONE);
+    let control = sandbox_name(SANDBOX);
+    let probe = SandboxPath::parse("/sandbox/probe").unwrap();
+
+    let error = guard(gateway.run_program(&run(GONE), &cancel))
+        .await
+        .unwrap_err();
+    assert!(not_found_named(&error, GONE), "run_program {error:?}");
+    let error = guard(gateway.read_files(&gone, std::slice::from_ref(&probe)))
+        .await
+        .unwrap_err();
+    assert!(not_found_named(&error, GONE), "read_files {error:?}");
+    let error = guard(gateway.write_file(&gone, &file("/sandbox/probe")))
+        .await
+        .unwrap_err();
+    assert!(not_found_named(&error, GONE), "write_file {error:?}");
+    let error = guard(gateway.open_terminal(&shell_terminal(GONE)))
+        .await
+        .unwrap_err();
+    assert!(not_found_named(&error, GONE), "open_terminal {error:?}");
+
+    let ok = ProgramRun {
+        program: SandboxPath::parse("/bin/sh").unwrap(),
+        args: vec!["-c".to_owned(), "exit 0".to_owned()],
+        ..run(SANDBOX)
+    };
+    assert_eq!(
+        guard(gateway.run_program(&ok, &cancel))
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    assert_eq!(
+        guard(gateway.read_files(&control, std::slice::from_ref(&probe)))
+            .await
+            .unwrap(),
+        vec![None]
+    );
+    guard(gateway.write_file(&control, &file("/sandbox/probe")))
+        .await
+        .unwrap();
+
+    env.server.state().exec = Some(Arc::new(|ctx: ExecCtx| {
+        Box::pin(async move {
+            drop(
+                ctx.events
+                    .send(Err(Status::not_found("sandbox not found")))
+                    .await,
+            );
+        })
+    }));
+    let error = guard(gateway.run_program(&ok, &cancel)).await.unwrap_err();
+    assert!(not_found_named(&error, SANDBOX), "run_program {error:?}");
+    let error = guard(gateway.read_files(&control, std::slice::from_ref(&probe)))
+        .await
+        .unwrap_err();
+    assert!(not_found_named(&error, SANDBOX), "read_files {error:?}");
+    let error = guard(gateway.write_file(&control, &file("/sandbox/probe")))
+        .await
+        .unwrap_err();
+    assert!(not_found_named(&error, SANDBOX), "write_file {error:?}");
+}
+
+#[tokio::test]
+async fn supervisor_relay_failure_names_the_sandbox_and_stays_retryable() {
+    let env = env().await;
+    add_sandbox(
+        &mut env.server.state(),
+        WORKSPACE,
+        SANDBOX,
+        SandboxPhase::Ready,
+        None,
+        &[],
+    );
+    let gateway = connect(&env, WORKSPACE).await;
+    let endpoint = env.server.endpoint();
+    let cancel = CancellationToken::new();
+    for (method, message, named) in [
+        (
+            "exec_sandbox_interactive",
+            "supervisor relay failed: no supervisor session",
+            true,
+        ),
+        (
+            "forward_tcp",
+            "supervisor relay failed: no supervisor session",
+            true,
+        ),
+        (
+            "exec_sandbox_interactive",
+            "transport error: connection reset",
+            false,
+        ),
+        ("forward_tcp", "transport error: connection reset", false),
+    ] {
+        env.server
+            .state()
+            .faults
+            .insert(method, Fault::Status(Code::Unavailable, message.to_owned()));
+        let mut errors = Vec::new();
+        if method == "exec_sandbox_interactive" {
+            errors.push(
+                guard(gateway.run_program(&run(SANDBOX), &cancel))
+                    .await
+                    .unwrap_err(),
+            );
+            errors.push(
+                guard(gateway.open_terminal(&shell_terminal(SANDBOX)))
+                    .await
+                    .unwrap_err(),
+            );
+        } else {
+            errors.push(
+                guard(gateway.open_terminal(&main_terminal(SANDBOX)))
+                    .await
+                    .unwrap_err(),
+            );
+        }
+        env.server.state().faults.clear();
+        for error in errors {
+            assert!(error.is_retryable(), "{method} {error:?}");
+            if named {
+                assert!(
+                    matches!(&error, GatewayError::SandboxUnreachable { sandbox, message: got }
+                        if sandbox.as_str() == SANDBOX && got.contains("no supervisor session")),
+                    "{method} {error:?}"
+                );
+            } else {
+                assert!(
+                    matches!(&error, GatewayError::Unreachable { endpoint: got, message: text }
+                        if *got == endpoint && text.contains("connection reset")),
+                    "{method} {error:?}"
+                );
+            }
+        }
     }
 }
 
@@ -203,6 +377,10 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
             endpoint: String::new(),
             message: String::new(),
         },
+        GatewayError::SandboxUnreachable {
+            sandbox: sandbox_name(SANDBOX),
+            message: String::new(),
+        },
         GatewayError::Tls {
             message: String::new(),
         },
@@ -259,6 +437,7 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
     for error in &errors {
         let expected = match error {
             GatewayError::Unreachable { .. }
+            | GatewayError::SandboxUnreachable { .. }
             | GatewayError::Timeout { .. }
             | GatewayError::ResourceExhausted { .. } => true,
             GatewayError::Tls { .. }
@@ -279,5 +458,5 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
         };
         assert_eq!(error.is_retryable(), expected, "{}", kind(error));
     }
-    assert_eq!(errors.len(), 18);
+    assert_eq!(errors.len(), 19);
 }

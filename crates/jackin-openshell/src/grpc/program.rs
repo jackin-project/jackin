@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::hash_map::RandomState;
 use std::collections::{BTreeMap, HashMap};
+use std::hash::BuildHasher;
 use std::time::Duration;
 
 use jackin_core::{EnvName, SandboxName, SandboxPath, TerminalText};
@@ -11,13 +13,14 @@ use openshell_sdk::raw::proto::{
 use tokio_util::sync::CancellationToken;
 
 use super::Inner;
-use crate::error::{GatewayError, GatewayOp};
+use crate::error::{GatewayError, GatewayOp, Missing};
 use crate::gateway::{ProgramOutcome, ProgramRun, ProgramStdin, SandboxFile};
 
 const STDIN_CHUNK: usize = 32 * 1024;
 const SHELL: &str = "/bin/sh";
 const MARKER_SCRIPT: &str = "marker=$1; shift; \"$@\"; code=$?; if [ \"$code\" -eq 0 ]; then touch -- \"$marker\" || exit 1; fi; exit \"$code\"";
-const WRITE_SCRIPT: &str = "umask 077; target=$1; mode=$2; tmp=\"$target.jackin-tmp\"; trap 'rm -f -- \"$tmp\"' EXIT HUP INT TERM; mkdir -p -- \"$(dirname -- \"$target\")\" || exit 1; cat > \"$tmp\" || exit 1; chmod \"$mode\" \"$tmp\" || exit 1; mv -f -- \"$tmp\" \"$target\" || exit 1";
+const NAME_MAX: usize = 255;
+const WRITE_SCRIPT: &str = "umask 077; target=$1; mode=$2; tmp=$3; trap 'rm -f -- \"$tmp\"' EXIT HUP INT TERM; mkdir -p -- \"$(dirname -- \"$target\")\" || exit 1; cat > \"$tmp\" || exit 1; chmod \"$mode\" \"$tmp\" || exit 1; mv -f -- \"$tmp\" \"$target\" || exit 1";
 const READ_SCRIPT: &str = "[ -f \"$1\" ] || exit 66; exec cat -- \"$1\"";
 const MISSING_FILE: i32 = 66;
 
@@ -72,6 +75,22 @@ fn command(run: &ProgramRun) -> Vec<String> {
     argv.push(run.program.as_str().to_owned());
     argv.extend(run.args.iter().cloned());
     argv
+}
+
+fn temp_path(target: &SandboxPath) -> String {
+    let token = format!("{:016x}", RandomState::new().hash_one(0_u8));
+    let (dir, base) = target
+        .as_str()
+        .rsplit_once('/')
+        .unwrap_or(("", target.as_str()));
+    let suffix = format!(".jackin-{token}");
+    let beside = format!(".{base}{suffix}");
+    let name = if beside.len() <= NAME_MAX {
+        beside
+    } else {
+        suffix
+    };
+    format!("{dir}/{name}")
 }
 
 fn protocol(message: impl ToString) -> GatewayError {
@@ -155,6 +174,7 @@ impl Inner {
             "jackin-write",
             file.path.as_str(),
             &format!("{:o}", file.mode.0),
+            &temp_path(&file.path),
         ]
         .map(str::to_owned)
         .to_vec();
@@ -190,12 +210,13 @@ impl Inner {
         timeout: Duration,
         cancel: &CancellationToken,
     ) -> Result<ProgramOutcome, GatewayError> {
+        let missing = Some(Missing::Sandbox(sandbox.clone()));
         let collect = async {
             let mut grpc = self.grpc();
             let mut stream = grpc
                 .exec_sandbox_interactive(tokio_stream::iter(messages))
                 .await
-                .map_err(|status| self.map_status(op, None, &status))?
+                .map_err(|status| self.map_status(op, missing.clone(), &status))?
                 .into_inner();
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
@@ -215,7 +236,7 @@ impl Inner {
                         None => {}
                     },
                     Ok(None) => break,
-                    Err(status) => return Err(self.map_status(op, None, &status)),
+                    Err(status) => return Err(self.map_status(op, missing.clone(), &status)),
                 }
             }
             exit.map(|exit_code| ProgramOutcome {

@@ -7,8 +7,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LineSink, ProcessError,
-    ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program,
+    DirEntry, EnvValue, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LineSink,
+    ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program,
+    SecretOutput,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -114,8 +115,39 @@ pub(crate) struct Recorded {
     pub(crate) args: Vec<String>,
     pub(crate) cwd: Option<HostPath>,
     pub(crate) env: Vec<(String, String)>,
+    pub(crate) env_remove_prefixes: Vec<String>,
     pub(crate) stdin_null: bool,
     pub(crate) timeout: Duration,
+}
+
+impl Recorded {
+    fn removes(&self, name: &str) -> bool {
+        self.env_remove_prefixes
+            .iter()
+            .any(|prefix| name.starts_with(prefix.as_str()))
+    }
+
+    pub(crate) fn assert_openshell_env_isolated(&self) {
+        assert!(
+            self.env
+                .iter()
+                .all(|(name, _)| !name.starts_with("OPENSHELL_")),
+            "{:?}",
+            self.env
+        );
+        for inherited in [
+            "OPENSHELL_GATEWAY_ENDPOINT",
+            "OPENSHELL_GATEWAY_INSECURE",
+            "OPENSHELL_GATEWAY",
+            "OPENSHELL_WORKSPACE",
+            "OPENSHELL_FUTURE_SETTING",
+        ] {
+            assert!(self.removes(inherited), "{inherited} is inherited");
+        }
+        for kept in ["PATH", "HOME", "HTTPS_PROXY"] {
+            assert!(!self.removes(kept), "{kept} is removed");
+        }
+    }
 }
 
 pub(crate) type Reply = Arc<dyn Fn(&Recorded) -> Result<ProcessOutput, ProcessError> + Send + Sync>;
@@ -171,7 +203,18 @@ impl ProcessRunner for ScriptedRunner {
             program: spec.program,
             args: spec.args.clone(),
             cwd: spec.cwd.clone(),
-            env: spec.env.clone(),
+            env: spec
+                .env
+                .iter()
+                .map(|(name, value)| {
+                    let text = match value {
+                        EnvValue::Plain(text) => text.clone(),
+                        EnvValue::Secret(_) => "<secret>".to_owned(),
+                    };
+                    (name.clone(), text)
+                })
+                .collect(),
+            env_remove_prefixes: spec.env_remove_prefixes.clone(),
             stdin_null: matches!(spec.stdin, ProcessStdin::Null),
             timeout: spec.timeout,
         };
@@ -183,5 +226,16 @@ impl ProcessRunner for ScriptedRunner {
             });
         }
         (self.reply)(&recorded)
+    }
+
+    async fn run_secret(
+        &self,
+        spec: &ProcessSpec,
+        _cancel: &CancellationToken,
+    ) -> Result<SecretOutput, ProcessError> {
+        Err(ProcessError::Spawn {
+            program: spec.program,
+            message: "secret runs are not scripted".to_owned(),
+        })
     }
 }

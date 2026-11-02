@@ -162,9 +162,9 @@ impl OpenShell for Fake {
 
     async fn create_ssh_session(
         &self,
-        _request: Request<openshell_sdk::raw::proto::CreateSshSessionRequest>,
+        request: Request<openshell_sdk::raw::proto::CreateSshSessionRequest>,
     ) -> Result<Response<openshell_sdk::raw::proto::CreateSshSessionResponse>, Status> {
-        Err(Status::unimplemented("create_ssh_session"))
+        self.create_ssh_session_impl(request).await
     }
 
     async fn expose_service(
@@ -197,9 +197,9 @@ impl OpenShell for Fake {
 
     async fn revoke_ssh_session(
         &self,
-        _request: Request<openshell_sdk::raw::proto::RevokeSshSessionRequest>,
+        request: Request<openshell_sdk::raw::proto::RevokeSshSessionRequest>,
     ) -> Result<Response<openshell_sdk::raw::proto::RevokeSshSessionResponse>, Status> {
-        Err(Status::unimplemented("revoke_ssh_session"))
+        self.revoke_ssh_session_impl(request).await
     }
 
     async fn exec_sandbox(
@@ -211,9 +211,9 @@ impl OpenShell for Fake {
 
     async fn forward_tcp(
         &self,
-        _request: Request<Streaming<openshell_sdk::raw::proto::TcpForwardFrame>>,
+        request: Request<Streaming<openshell_sdk::raw::proto::TcpForwardFrame>>,
     ) -> Result<Response<Self::ForwardTcpStream>, Status> {
-        Err(Status::unimplemented("forward_tcp"))
+        self.forward_tcp_impl(request).await
     }
 
     async fn exec_sandbox_interactive(
@@ -330,9 +330,9 @@ impl OpenShell for Fake {
 
     async fn delete_provider_profile(
         &self,
-        _request: Request<openshell_sdk::raw::proto::DeleteProviderProfileRequest>,
+        request: Request<openshell_sdk::raw::proto::DeleteProviderProfileRequest>,
     ) -> Result<Response<openshell_sdk::raw::proto::DeleteProviderProfileResponse>, Status> {
-        Err(Status::unimplemented("delete_provider_profile"))
+        self.delete_provider_profile_impl(request).await
     }
 
     async fn get_sandbox_config(

@@ -6,7 +6,7 @@ use jackin_openshell::{
     Gateway, GatewayError, Missing, ProfileSync, ProviderMaterial, ProviderProfile, ProviderSpec,
     ProviderState,
 };
-use openshell_sdk::raw::proto::ProviderCredentialRefreshStrategy;
+use openshell_sdk::raw::proto::{ObjectMeta, Provider, ProviderCredentialRefreshStrategy};
 use tonic::Code;
 
 use super::harness::{WORKSPACE, connect, env, guard};
@@ -257,4 +257,192 @@ async fn provider_state_delete_and_missing_profile() {
     );
     assert!(env.server.state().providers.is_empty());
     guard(gateway.delete_provider(&name)).await.unwrap();
+}
+
+fn codex_key(workspace: &str) -> (String, String) {
+    (workspace.to_owned(), "codex".to_owned())
+}
+
+#[tokio::test]
+async fn delete_profile_removes_only_the_configured_workspaces_profile_and_is_idempotent() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let other = connect(&env, "default").await;
+    let id = ProfileId::parse("codex").unwrap();
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    guard(other.ensure_profile(&profile())).await.unwrap();
+
+    guard(gateway.delete_profile(&id)).await.unwrap();
+    {
+        let state = env.server.state();
+        assert!(!state.profiles.contains_key(&codex_key(WORKSPACE)));
+        assert!(state.profiles.contains_key(&codex_key("default")));
+    }
+    guard(gateway.delete_profile(&id)).await.unwrap();
+    assert!(
+        env.server
+            .state()
+            .profiles
+            .contains_key(&codex_key("default"))
+    );
+
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap();
+    let error = guard(gateway.delete_profile(&id)).await.unwrap_err();
+    assert!(
+        matches!(error, GatewayError::FailedPrecondition { ref message } if message.contains("in use")),
+        "{error:?}"
+    );
+    assert!(
+        env.server
+            .state()
+            .profiles
+            .contains_key(&codex_key(WORKSPACE))
+    );
+    guard(gateway.delete_provider(&ProviderName::parse(PROVIDER).unwrap()))
+        .await
+        .unwrap();
+    guard(gateway.delete_profile(&id)).await.unwrap();
+    assert!(
+        !env.server
+            .state()
+            .profiles
+            .contains_key(&codex_key(WORKSPACE))
+    );
+}
+
+#[tokio::test]
+async fn ensure_profile_converges_when_a_concurrent_writer_imports_first() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let profile = profile();
+    guard(gateway.ensure_profile(&profile)).await.unwrap();
+    let asset = stored_profile(&env.server.state());
+    env.server.state().profiles.clear();
+
+    let same = asset.clone();
+    env.server.state().before_import = Some(Box::new(move |state: &mut State| {
+        state.profiles.insert(codex_key(WORKSPACE), same.clone());
+    }));
+    assert_eq!(
+        guard(gateway.ensure_profile(&profile)).await.unwrap(),
+        ProfileSync::Unchanged
+    );
+    {
+        let state = env.server.state();
+        assert_eq!(state.profile_updates, 0);
+        assert_eq!(
+            stored_profile(&state).resource_version,
+            asset.resource_version
+        );
+    }
+
+    env.server.state().profiles.clear();
+    let mut different = asset.clone();
+    "operator".clone_into(&mut different.description);
+    env.server.state().before_import = Some(Box::new(move |state: &mut State| {
+        state
+            .profiles
+            .insert(codex_key(WORKSPACE), different.clone());
+    }));
+    assert_eq!(
+        guard(gateway.ensure_profile(&profile)).await.unwrap(),
+        ProfileSync::Updated
+    );
+    {
+        let state = env.server.state();
+        let stored = stored_profile(&state);
+        assert_eq!(normalized(stored.clone()), normalized(asset.clone()));
+        assert!(stored.resource_version > asset.resource_version);
+        assert_eq!(state.profile_updates, 1);
+    }
+
+    {
+        let mut state = env.server.state();
+        state.profiles.clear();
+        state.import_rejection = Some((
+            "endpoints".to_owned(),
+            "the endpoint list is invalid".to_owned(),
+        ));
+    }
+    let error = guard(gateway.ensure_profile(&profile)).await.unwrap_err();
+    assert!(
+        matches!(&error, GatewayError::InvalidArgument { field, message }
+            if field == "endpoints" && message.contains("invalid")),
+        "{error:?}"
+    );
+    assert!(env.server.state().profiles.is_empty());
+}
+
+#[tokio::test]
+async fn put_provider_converges_when_a_concurrent_writer_creates_first() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    let keys = Agent::Codex.spec().openshell.keys;
+    let provider_key = (WORKSPACE.to_owned(), PROVIDER.to_owned());
+    let refresh_key = (
+        WORKSPACE.to_owned(),
+        PROVIDER.to_owned(),
+        keys.access_token.to_owned(),
+    );
+
+    let rival_key = provider_key.clone();
+    env.server.state().before_create_provider = Some(Box::new(move |state: &mut State| {
+        state.providers.insert(
+            rival_key.clone(),
+            Provider {
+                metadata: Some(ObjectMeta {
+                    name: PROVIDER.to_owned(),
+                    ..ObjectMeta::default()
+                }),
+                r#type: "codex".to_owned(),
+                profile_workspace: WORKSPACE.to_owned(),
+                credentials: [
+                    (keys.access_token.to_owned(), "rival-access".to_owned()),
+                    (keys.account_id.to_owned(), "rival-account".to_owned()),
+                ]
+                .into(),
+                ..Provider::default()
+            },
+        );
+    }));
+    guard(gateway.put_provider(&spec("fresh-access-token", "fresh-refresh-token")))
+        .await
+        .unwrap();
+    {
+        let state = env.server.state();
+        assert_eq!(state.providers.len(), 1);
+        let provider = &state.providers[&provider_key];
+        assert_eq!(
+            provider.credentials[keys.access_token],
+            "fresh-access-token"
+        );
+        assert_eq!(provider.credentials[keys.account_id], ACCOUNT_ID);
+        assert_eq!(state.refresh.len(), 1);
+        assert_eq!(
+            state.refresh[&refresh_key].material["refresh_token"],
+            "fresh-refresh-token"
+        );
+    }
+
+    {
+        let mut state = env.server.state();
+        state.providers.clear();
+        state.refresh.clear();
+        state.faults.insert(
+            "create_provider",
+            Fault::Status(Code::AlreadyExists, "provider already exists".to_owned()),
+        );
+    }
+    let error = guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, GatewayError::AlreadyExists { what: Missing::Provider(name) } if name.as_str() == PROVIDER),
+        "{error:?}"
+    );
+    assert!(env.server.state().providers.is_empty());
 }

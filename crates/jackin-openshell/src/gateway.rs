@@ -24,6 +24,7 @@ pub trait Gateway: Send + Sync + Debug {
     async fn health(&self) -> Result<GatewayHealth, GatewayError>;
 
     async fn ensure_profile(&self, profile: &ProviderProfile) -> Result<ProfileSync, GatewayError>;
+    async fn delete_profile(&self, id: &ProfileId) -> Result<(), GatewayError>;
     async fn provider_state(&self, name: &ProviderName) -> Result<ProviderState, GatewayError>;
     async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError>;
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError>;

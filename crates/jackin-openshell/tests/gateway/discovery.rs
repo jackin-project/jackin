@@ -64,6 +64,7 @@ async fn registered_gateways_parses_the_cli_json_without_connecting() {
     );
     assert!(calls[0].stdin_null);
     assert!(calls[0].timeout > Duration::ZERO);
+    calls[0].assert_openshell_env_isolated();
 
     let runner = ScriptedRunner::always(exited(0, THREE.as_bytes(), b""));
     assert_eq!(

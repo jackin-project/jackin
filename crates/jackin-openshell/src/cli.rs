@@ -3,8 +3,15 @@
 
 use jackin_core::{GatewayName, OpenShellWorkspace, SandboxName, SandboxPath};
 
+const INHERITED_ENV_PREFIX: &str = "OPENSHELL_";
+
+pub(crate) fn inherited_env_prefixes() -> Vec<String> {
+    vec![INHERITED_ENV_PREFIX.to_owned()]
+}
+
 pub(crate) struct Scope<'a> {
     pub(crate) gateway: &'a GatewayName,
+    pub(crate) endpoint: &'a str,
     pub(crate) workspace: &'a OpenShellWorkspace,
 }
 
@@ -13,6 +20,8 @@ impl Scope<'_> {
         vec![
             "-g".to_owned(),
             self.gateway.to_string(),
+            "--gateway-endpoint".to_owned(),
+            self.endpoint.to_owned(),
             "--workspace".to_owned(),
             self.workspace.to_string(),
             "sandbox".to_owned(),

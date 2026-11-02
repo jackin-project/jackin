@@ -30,7 +30,7 @@ fn profile() -> ProviderProfile {
 }
 
 fn violation(rule: &str, host: &str, provider: &str) -> ClosureViolation {
-    ClosureViolation {
+    ClosureViolation::Overlap {
         rule: key_of(rule),
         host: HostPattern::parse(host).unwrap(),
         provider_host: HostPattern::parse(provider).unwrap(),
@@ -144,11 +144,10 @@ fn closure_violations_follow_d10_for_hosts_ports_and_binaries() {
     let everything = PolicyDocument::parse_authored(&rule_doc(&[("r3", "**", 443)])).unwrap();
     let violations = everything.closure_violations(&profile, &[]);
     assert_eq!(violations.len(), 4);
-    assert!(
-        violations
-            .iter()
-            .all(|found| found.rule.as_str() == "r3" && found.host.as_str() == "**")
-    );
+    assert!(violations.iter().all(|found| matches!(
+        found,
+        ClosureViolation::Overlap { rule, host, .. } if rule.as_str() == "r3" && host.as_str() == "**"
+    )));
 
     let foreign =
         PolicyDocument::parse(&rule_doc(&[("_provider_other", "api.openai.com", 443)])).unwrap();
@@ -167,6 +166,43 @@ fn closure_violations_follow_d10_for_hosts_ports_and_binaries() {
     ]))
     .unwrap();
     assert!(unrelated.closure_violations(&profile, &[]).is_empty());
+}
+
+#[test]
+fn closure_check_reports_hosts_it_cannot_parse_instead_of_skipping_them() {
+    let profile = profile();
+    let provider = ProviderName::parse("jackin-work-codex").unwrap();
+    let generated = RuleKey::provider_rule(&provider);
+    let generated_name = generated.as_str().to_owned();
+    let document = PolicyDocument::parse(&rule_doc(&[
+        ("r6", "api.openai.com/v1", 443),
+        ("r7", "", 443),
+        ("r8", "example.com", 0),
+        (&generated_name, "bad host!", 443),
+        ("r10", "example.net", 443),
+    ]))
+    .unwrap();
+    let found: BTreeSet<ClosureViolation> = document
+        .closure_violations(&profile, std::slice::from_ref(&generated))
+        .into_iter()
+        .collect();
+    assert_eq!(
+        found,
+        BTreeSet::from([
+            ClosureViolation::UnparsableHost {
+                rule: key_of("r6"),
+                host: "api.openai.com/v1".to_owned(),
+            },
+            ClosureViolation::UnparsableHost {
+                rule: key_of("r7"),
+                host: String::new(),
+            },
+            ClosureViolation::InvalidPort {
+                rule: key_of("r8"),
+                port: 0,
+            },
+        ])
+    );
 }
 
 const BASE: &str = "version: 1

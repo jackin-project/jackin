@@ -92,6 +92,11 @@ pub(crate) struct State {
     pub(crate) next_id: u64,
     pub(crate) exec: Option<ExecBackend>,
     pub(crate) after_get_profile: Option<ProfileHook>,
+    pub(crate) before_import: Option<ProfileHook>,
+    pub(crate) before_create_provider: Option<ProfileHook>,
+    pub(crate) after_ssh_session: Option<ProfileHook>,
+    pub(crate) import_rejection: Option<(String, String)>,
+    pub(crate) forward_error: Option<Status>,
     pub(crate) observed: Observed,
     pub(crate) auto_advance: bool,
 }
@@ -172,6 +177,11 @@ fn fresh_state() -> State {
         next_id: 1,
         exec: None,
         after_get_profile: None,
+        before_import: None,
+        before_create_provider: None,
+        after_ssh_session: None,
+        import_rejection: None,
+        forward_error: None,
         observed: Observed::default(),
         auto_advance: false,
     }

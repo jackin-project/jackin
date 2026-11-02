@@ -4,9 +4,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use jackin_core::{
-    AccountName, Agent, ImageId, LabelSelector, LaunchId, Phase, ProviderName, SandboxLabels,
+    AccountName, Agent, ChatgptAccountId, ImageId, LabelSelector, LaunchId, Phase, ProfileId,
+    ProviderName, SandboxLabels, Secret,
 };
-use jackin_openshell::{Gateway, PolicyDocument, PowerAction, Provisioning, SandboxQuery};
+use jackin_openshell::{
+    Gateway, PolicyDocument, PowerAction, ProviderMaterial, ProviderProfile, ProviderSpec,
+    ProviderState, Provisioning, SandboxQuery,
+};
 use openshell_sdk::raw::proto::{Provider, SandboxPhase, SandboxRestartPolicy};
 
 use super::harness::{WORKSPACE, connect, env, guard};
@@ -532,5 +536,55 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
     let account = AccountName::parse(&"a".repeat(32)).unwrap();
     let provider = ProviderName::for_account(&account, Agent::Codex);
     assert_eq!(provider.as_str().len(), 45);
+    let codex = &Agent::Codex.spec().openshell;
+    guard(gateway.ensure_profile(&ProviderProfile::parse(&codex.chatgpt_profile).unwrap()))
+        .await
+        .unwrap();
+    guard(gateway.put_provider(&ProviderSpec {
+        name: provider.clone(),
+        profile: ProfileId::parse("codex").unwrap(),
+        keys: codex.keys,
+        material: ProviderMaterial::ChatgptLogin {
+            access_token: Secret::new("access-token-value".to_owned()),
+            refresh_token: Secret::new("refresh-token-value".to_owned()),
+            client_id: "app_client".to_owned(),
+            chatgpt_account_id:
+                ChatgptAccountId::parse("0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9").unwrap(),
+        },
+    }))
+    .await
+    .unwrap();
+    {
+        let state = env.server.state();
+        let stored = &state.providers[&(workspace.clone(), provider.to_string())];
+        assert_eq!(stored.metadata.as_ref().unwrap().name, provider.as_str());
+    }
+    let with_provider = jackin_openshell::SandboxCreate::new(
+        name.clone(),
+        base.image().clone(),
+        labels,
+        vec![provider.clone()],
+        base.policy().clone(),
+        base.main().clone(),
+    );
+    guard(gateway.create_sandbox(&with_provider)).await.unwrap();
+    assert_eq!(
+        env.server.state().sandboxes[&(workspace.clone(), name.to_string())]
+            .spec
+            .as_ref()
+            .unwrap()
+            .providers,
+        vec![provider.to_string()]
+    );
+    assert_eq!(
+        guard(gateway.provider_state(&provider)).await.unwrap(),
+        ProviderState::Present
+    );
+    guard(gateway.delete_sandbox(&name)).await.unwrap();
     guard(gateway.delete_provider(&provider)).await.unwrap();
+    assert!(env.server.state().providers.is_empty());
+    assert_eq!(
+        guard(gateway.provider_state(&provider)).await.unwrap(),
+        ProviderState::Absent
+    );
 }

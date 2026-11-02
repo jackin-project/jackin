@@ -11,7 +11,7 @@ use openshell_sdk::raw::proto::{
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
-use tokio::sync::mpsc;
+use tokio::sync::{Barrier, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
 
@@ -109,18 +109,45 @@ async fn pump_output(
     }
 }
 
+const GATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const HOST_SHELL: &str = "/bin/sh";
+const MISSING_PROGRAM: i32 = 127;
+
+#[derive(Clone)]
+enum Hook {
+    Plain,
+    AbortAfter(usize),
+    GateAfter(usize, Arc<Barrier>),
+}
+
 pub(crate) fn host_shell(root: PathBuf) -> ExecBackend {
-    host_shell_aborting(root, None)
+    host_shell_with(root, Hook::Plain)
 }
 
 pub(crate) fn host_shell_aborting(root: PathBuf, abort_after_chunks: Option<usize>) -> ExecBackend {
+    host_shell_with(
+        root,
+        abort_after_chunks.map_or(Hook::Plain, Hook::AbortAfter),
+    )
+}
+
+pub(crate) fn host_shell_gated(
+    root: PathBuf,
+    after_chunks: usize,
+    rendezvous: Arc<Barrier>,
+) -> ExecBackend {
+    host_shell_with(root, Hook::GateAfter(after_chunks, rendezvous))
+}
+
+fn host_shell_with(root: PathBuf, hook: Hook) -> ExecBackend {
     Arc::new(move |ctx: ExecCtx| {
         let root = root.clone();
-        Box::pin(async move { run_host(ctx, root, abort_after_chunks).await })
+        let hook = hook.clone();
+        Box::pin(async move { run_host(ctx, root, hook).await })
     })
 }
 
-async fn run_host(ctx: ExecCtx, root: PathBuf, abort_after_chunks: Option<usize>) {
+async fn run_host(ctx: ExecCtx, root: PathBuf, hook: Hook) {
     let ExecCtx {
         start,
         mut inputs,
@@ -137,8 +164,12 @@ async fn run_host(ctx: ExecCtx, root: PathBuf, abort_after_chunks: Option<usize>
     } else {
         PathBuf::from(rewrite(&root, &start.workdir))
     };
+    if argv.first().map(String::as_str) != Some(HOST_SHELL) {
+        drop(events.send(Ok(exit_event(MISSING_PROGRAM))).await);
+        return;
+    }
     tokio::fs::create_dir_all(&workdir).await.unwrap();
-    let mut command = Command::new(&argv[0]);
+    let mut command = Command::new("/bin/sh");
     command
         .args(&argv[1..])
         .current_dir(&workdir)
@@ -170,7 +201,9 @@ async fn run_host(ctx: ExecCtx, root: PathBuf, abort_after_chunks: Option<usize>
                 continue;
             };
             chunks += 1;
-            if abort_after_chunks.is_some_and(|limit| chunks > limit) {
+            if let Hook::AbortAfter(limit) = hook
+                && chunks > limit
+            {
                 tokio::time::sleep(std::time::Duration::from_millis(300)).await;
                 drop(abort_events.send(Err(Status::unavailable("aborted"))).await);
                 let _sent = abort_tx.send(());
@@ -180,6 +213,11 @@ async fn run_host(ctx: ExecCtx, root: PathBuf, abort_after_chunks: Option<usize>
                 && pipe.write_all(&bytes).await.is_err()
             {
                 break;
+            }
+            if let Hook::GateAfter(limit, rendezvous) = &hook
+                && chunks == *limit
+            {
+                drop(tokio::time::timeout(GATE_TIMEOUT, rendezvous.wait()).await);
             }
         }
         drop(stdin);

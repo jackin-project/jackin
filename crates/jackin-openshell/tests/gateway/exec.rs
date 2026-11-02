@@ -13,9 +13,10 @@ use jackin_openshell::{
 };
 use openshell_sdk::raw::proto::{SandboxPhase, exec_sandbox_input};
 use tempfile::TempDir;
+use tokio::sync::Barrier;
 use tokio_util::sync::CancellationToken;
 
-use super::exec_rpc::{exit_event, host_shell, host_shell_aborting, out_event};
+use super::exec_rpc::{exit_event, host_shell, host_shell_aborting, host_shell_gated, out_event};
 use super::harness::{Env, WORKSPACE, connect, env, guard, wait_until};
 use super::server::ExecCtx;
 use super::support::{SANDBOX, add_sandbox, sandbox_name};
@@ -236,6 +237,84 @@ async fn write_file_applies_mode_and_exact_bytes_and_keeps_content_off_argv() {
     for start in &env.server.state().exec_starts {
         assert_no_sentinel(&format!("{start:?}"));
     }
+}
+
+async fn names_in(directory: &std::path::Path) -> Vec<String> {
+    let mut entries = tokio::fs::read_dir(directory).await.unwrap();
+    let mut names = Vec::new();
+    while let Some(entry) = entries.next_entry().await.unwrap() {
+        names.push(entry.file_name().to_string_lossy().into_owned());
+    }
+    names
+}
+
+#[tokio::test]
+async fn concurrent_writes_to_one_target_each_succeed_and_the_last_rename_wins() {
+    const LEN: usize = 512 * 1024;
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    env.server.state().exec = Some(host_shell_gated(
+        root.path().to_path_buf(),
+        8,
+        Arc::new(Barrier::new(2)),
+    ));
+    ready(&env);
+    let gateway = connect(&env, WORKSPACE).await;
+    let file = |byte: u8| SandboxFile {
+        path: path("/sandbox/.codex/auth.json"),
+        mode: FileMode(0o600),
+        content: SecretBytes::new(vec![byte; LEN]),
+    };
+    let name = sandbox_name(SANDBOX);
+    let (a, b) = (file(0xAA), file(0xBB));
+    let (first, second) =
+        guard(async { tokio::join!(gateway.write_file(&name, &a), gateway.write_file(&name, &b)) })
+            .await;
+    first.unwrap();
+    second.unwrap();
+    let target = root.path().join("sandbox/.codex/auth.json");
+    let stored = tokio::fs::read(&target).await.unwrap();
+    assert!(
+        stored == vec![0xAA; LEN] || stored == vec![0xBB; LEN],
+        "the target is neither writer's content"
+    );
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = tokio::fs::metadata(&target)
+            .await
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+    assert_eq!(
+        names_in(target.parent().unwrap()).await,
+        vec!["auth.json".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn write_file_to_a_name_near_the_filesystem_limit_succeeds() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    ready(&env);
+    let gateway = connect(&env, WORKSPACE).await;
+    let base = "a".repeat(240);
+    let file = SandboxFile {
+        path: path(&format!("/sandbox/{base}")),
+        mode: FileMode(0o600),
+        content: SecretBytes::new(b"near the limit".to_vec()),
+    };
+    guard(gateway.write_file(&sandbox_name(SANDBOX), &file))
+        .await
+        .unwrap();
+    let directory = root.path().join("sandbox");
+    assert_eq!(
+        tokio::fs::read(directory.join(&base)).await.unwrap(),
+        b"near the limit"
+    );
+    assert_eq!(names_in(&directory).await, vec![base]);
 }
 
 #[tokio::test]

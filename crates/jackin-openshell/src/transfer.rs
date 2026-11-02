@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256 as Hasher};
 use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 
-use crate::cli::Scope;
+use crate::cli::{Scope, inherited_env_prefixes};
 use crate::discovery::failure_tail;
 use crate::error::{GatewayError, GatewayOp, TransferOp};
 use crate::gateway::{ProgramRun, ProgramStdin, ProjectUpload};
@@ -43,6 +43,7 @@ impl Inner {
     fn scope_args(&self) -> Scope<'_> {
         Scope {
             gateway: &self.name,
+            endpoint: &self.endpoint,
             workspace: &self.workspace,
         }
     }
@@ -60,6 +61,7 @@ impl Inner {
             args,
             cwd,
             env: Vec::new(),
+            env_remove_prefixes: inherited_env_prefixes(),
             stdin: ProcessStdin::Null,
             timeout: self.transfer_timeout,
         };

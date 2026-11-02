@@ -12,6 +12,7 @@ use jackin_core::{
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
+use crate::cli::inherited_env_prefixes;
 use crate::error::DiscoveryError;
 
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -102,6 +103,7 @@ fn list_spec() -> ProcessSpec {
             .to_vec(),
         cwd: None,
         env: Vec::new(),
+        env_remove_prefixes: inherited_env_prefixes(),
         stdin: ProcessStdin::Null,
         timeout: LIST_TIMEOUT,
     }

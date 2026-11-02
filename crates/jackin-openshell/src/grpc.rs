@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    GatewayName, HostPath, OpenShellWorkspace, ProcessRunner, ProviderName, SandboxName,
+    GatewayName, HostPath, OpenShellWorkspace, ProcessRunner, ProfileId, ProviderName, SandboxName,
     SandboxPath,
 };
 use openshell_sdk::OpenShellClient;
@@ -105,6 +105,10 @@ impl Gateway for GrpcGateway {
 
     async fn ensure_profile(&self, profile: &ProviderProfile) -> Result<ProfileSync, GatewayError> {
         self.inner.ensure_profile(profile).await
+    }
+
+    async fn delete_profile(&self, id: &ProfileId) -> Result<(), GatewayError> {
+        self.inner.delete_profile(id).await
     }
 
     async fn provider_state(&self, name: &ProviderName) -> Result<ProviderState, GatewayError> {

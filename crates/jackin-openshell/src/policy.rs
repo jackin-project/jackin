@@ -66,10 +66,20 @@ pub struct ProfileEndpoint {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ClosureViolation {
-    pub rule: RuleKey,
-    pub host: HostPattern,
-    pub provider_host: HostPattern,
+pub enum ClosureViolation {
+    Overlap {
+        rule: RuleKey,
+        host: HostPattern,
+        provider_host: HostPattern,
+    },
+    UnparsableHost {
+        rule: RuleKey,
+        host: String,
+    },
+    InvalidPort {
+        rule: RuleKey,
+        port: u32,
+    },
 }
 
 impl PolicyDocument {
@@ -82,7 +92,10 @@ impl PolicyDocument {
     }
 
     pub fn network_rules(&self) -> Vec<NetworkRule> {
-        yaml::network_rules(&self.proto)
+        yaml::scan(&self.proto)
+            .into_iter()
+            .map(|scanned| scanned.rule)
+            .collect()
     }
 
     pub fn closure_violations(
@@ -90,25 +103,23 @@ impl PolicyDocument {
         profile: &ProviderProfile,
         generated: &[RuleKey],
     ) -> Vec<ClosureViolation> {
-        let found: BTreeSet<ClosureViolation> = self
-            .network_rules()
+        let found: BTreeSet<ClosureViolation> = yaml::scan(&self.proto)
             .into_iter()
-            .filter(|rule| !generated.contains(&rule.key))
-            .flat_map(|rule| {
-                rule.endpoints
-                    .into_iter()
-                    .flat_map(move |endpoint| {
-                        profile
-                            .endpoints
-                            .iter()
-                            .filter(|provider| endpoint.host.overlaps(&provider.host))
-                            .map(|provider| ClosureViolation {
-                                rule: rule.key.clone(),
-                                host: endpoint.host.clone(),
-                                provider_host: provider.host.clone(),
-                            })
-                            .collect::<Vec<_>>()
-                    })
+            .filter(|scanned| !generated.contains(&scanned.rule.key))
+            .flat_map(|scanned| {
+                let overlaps = scanned.rule.endpoints.iter().flat_map(|endpoint| {
+                    profile
+                        .endpoints
+                        .iter()
+                        .filter(|provider| endpoint.host.overlaps(&provider.host))
+                        .map(|provider| ClosureViolation::Overlap {
+                            rule: scanned.rule.key.clone(),
+                            host: endpoint.host.clone(),
+                            provider_host: provider.host.clone(),
+                        })
+                });
+                overlaps
+                    .chain(scanned.unreadable.iter().cloned())
                     .collect::<Vec<_>>()
             })
             .collect();

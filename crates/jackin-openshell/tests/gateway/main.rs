@@ -7,6 +7,8 @@
     reason = "test helpers fail the test by panicking"
 )]
 
+mod attach;
+mod attach_rpc;
 mod connect;
 mod contract;
 mod discovery;
