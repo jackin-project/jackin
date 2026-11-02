@@ -17,7 +17,7 @@ struct EngineState {
     pinned: BTreeMap<ImageTag, ImageId>,
     builds: Vec<BuildRecord>,
     failures: Vec<BuildStage>,
-    script: Vec<(EngineMoment, EngineEffect)>,
+    script: Vec<EngineMoment>,
     lines: BTreeMap<BuildStageKey, Vec<String>>,
 }
 
@@ -46,35 +46,44 @@ pub struct BuildRecord {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum EngineMoment {
-    AfterFind(ImageTag),
-    BuildFinished(BuildStage),
+pub struct Retag {
+    pub tag: ImageTag,
+    pub to: Option<ImageId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum EngineEffect {
-    Retag { tag: ImageTag, to: Option<ImageId> },
+pub enum BuildEffect {
+    Retag(Retag),
     Cancel,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EngineMoment {
+    AfterFind {
+        tag: ImageTag,
+        retag: Retag,
+    },
+    FindFails(ImageTag),
+    CheckBuilderFails,
+    BuildFinished {
+        stage: BuildStage,
+        effect: BuildEffect,
+    },
+}
+
 impl EngineState {
-    fn take(&mut self, moment: &EngineMoment) -> Option<EngineEffect> {
-        let index = self.script.iter().position(|(due, _)| due == moment)?;
-        Some(self.script.remove(index).1)
+    fn take(&mut self, due: impl Fn(&EngineMoment) -> bool) -> Option<EngineMoment> {
+        let index = self.script.iter().position(due)?;
+        Some(self.script.remove(index))
     }
 
-    fn apply(&mut self, effect: EngineEffect, cancel: Option<&CancellationToken>) {
-        match effect {
-            EngineEffect::Retag { tag, to: Some(id) } => {
-                self.images.insert(tag, id);
+    fn retag(&mut self, retag: Retag) {
+        match retag.to {
+            Some(id) => {
+                self.images.insert(retag.tag, id);
             }
-            EngineEffect::Retag { tag, to: None } => {
-                self.images.remove(&tag);
-            }
-            EngineEffect::Cancel => {
-                if let Some(token) = cancel {
-                    token.cancel();
-                }
+            None => {
+                self.images.remove(&retag.tag);
             }
         }
     }
@@ -103,8 +112,8 @@ impl FakeEngine {
         locked(&self.state).failures.push(stage);
     }
 
-    pub fn at(&self, moment: EngineMoment, effect: EngineEffect) {
-        locked(&self.state).script.push((moment, effect));
+    pub fn at(&self, moment: EngineMoment) {
+        locked(&self.state).script.push(moment);
     }
 
     pub fn script_lines(&self, stage: BuildStage, lines: Vec<String>) {
@@ -161,8 +170,14 @@ impl FakeEngine {
             stage: build.stage,
             tag: build.tag.clone(),
         });
-        if let Some(effect) = state.take(&EngineMoment::BuildFinished(build.stage)) {
-            state.apply(effect, Some(cancel));
+        let due = state.take(|moment| {
+            matches!(moment, EngineMoment::BuildFinished { stage, .. } if *stage == build.stage)
+        });
+        if let Some(EngineMoment::BuildFinished { effect, .. }) = due {
+            match effect {
+                BuildEffect::Retag(retag) => state.retag(retag),
+                BuildEffect::Cancel => cancel.cancel(),
+            }
         }
         Ok(id)
     }
@@ -172,14 +187,38 @@ impl FakeEngine {
 impl ImageEngine for FakeEngine {
     async fn find(&self, tag: &ImageTag) -> Result<Option<ImageId>, EngineError> {
         let mut state = locked(&self.state);
+        let fails = state
+            .take(|moment| matches!(moment, EngineMoment::FindFails(found) if found == tag))
+            .is_some();
+        if fails {
+            return Err(EngineError::DigestUnreadable {
+                tag: tag.clone(),
+                output: TerminalText::sanitize(b"the fake engine was told to fail this find"),
+            });
+        }
         let answer = state.images.get(tag).cloned();
-        if let Some(effect) = state.take(&EngineMoment::AfterFind(tag.clone())) {
-            state.apply(effect, None);
+        let due = state.take(
+            |moment| matches!(moment, EngineMoment::AfterFind { tag: found, .. } if found == tag),
+        );
+        if let Some(EngineMoment::AfterFind { retag, .. }) = due {
+            state.retag(retag);
         }
         Ok(answer)
     }
 
-    async fn check_builder(&self, _builder: &BuilderName) -> Result<(), EngineError> {
+    async fn check_builder(&self, builder: &BuilderName) -> Result<(), EngineError> {
+        let fails = locked(&self.state)
+            .take(|moment| matches!(moment, EngineMoment::CheckBuilderFails))
+            .is_some();
+        if fails {
+            return Err(EngineError::BuilderUnreadable {
+                builder: builder.clone(),
+                status: ProcessStatus::Exited(1),
+                output: TerminalText::sanitize(
+                    b"the fake engine was told to fail the builder check",
+                ),
+            });
+        }
         Ok(())
     }
 
@@ -189,6 +228,9 @@ impl ImageEngine for FakeEngine {
         progress: &ProgressSink,
         cancel: &CancellationToken,
     ) -> Result<ImageId, EngineError> {
+        if cancel.is_cancelled() {
+            return Err(EngineError::Cancelled);
+        }
         for line in self.begin(build)? {
             drop(
                 progress

@@ -10,7 +10,7 @@ use jackin_image::{
     BuildStage, BuiltImage, DockerfileError, EngineError, ImageEngine, ImageError, ImageEvent,
     ImagePlan, ImageRequest, ImageSource, Rebuild, ensure_image,
 };
-use jackin_testkit::{EngineEffect, EngineMoment, FakeEngine};
+use jackin_testkit::{BuildEffect, EngineMoment, FakeEngine, Retag};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -522,8 +522,8 @@ fn moved(
     }
 }
 
-fn retag(tag: &ImageTag, to: Option<ImageId>) -> EngineEffect {
-    EngineEffect::Retag {
+fn retag(tag: &ImageTag, to: Option<ImageId>) -> Retag {
+    Retag {
         tag: tag.clone(),
         to,
     }
@@ -542,10 +542,10 @@ async fn a_source_tag_that_moved_before_a_dependent_build_stops_the_pipeline_bef
         let mut request = Fixture::new()?.request()?;
         let tags = Tags::of(&request)?;
         let engine = FakeEngine::new();
-        engine.at(
-            EngineMoment::AfterFind(tags.derived.clone()),
-            retag(&tags.construct, Some(other.clone())),
-        );
+        engine.at(EngineMoment::AfterFind {
+            tag: tags.derived.clone(),
+            retag: retag(&tags.construct, Some(other.clone())),
+        });
         let (result, events) = ensure(&engine, &request).await?;
         assert_eq!(
             moved(result)?,
@@ -570,10 +570,10 @@ async fn a_source_tag_that_moved_before_a_dependent_build_stops_the_pipeline_bef
         hook.bytes = b"#!/bin/sh\necho changed\n".to_vec();
         let changed = Tags::of(&request)?;
         assert_ne!(changed.derived, tags.derived, "the final tag must miss");
-        warm.at(
-            EngineMoment::AfterFind(changed.derived.clone()),
-            retag(&tags.construct, None),
-        );
+        warm.at(EngineMoment::AfterFind {
+            tag: changed.derived.clone(),
+            retag: retag(&tags.construct, None),
+        });
         let (result, events) = ensure(&warm, &request).await?;
         assert_eq!(
             moved(result)?,
@@ -592,10 +592,10 @@ async fn a_source_tag_that_moved_before_a_dependent_build_stops_the_pipeline_bef
 
         let request = Fixture::new()?.request()?;
         let engine = FakeEngine::new();
-        engine.at(
-            EngineMoment::BuildFinished(BuildStage::Role),
-            retag(&tags.role, Some(other.clone())),
-        );
+        engine.at(EngineMoment::BuildFinished {
+            stage: BuildStage::Role,
+            effect: BuildEffect::Retag(retag(&tags.role, Some(other.clone()))),
+        });
         let (result, events) = ensure(&engine, &request).await?;
         assert_eq!(
             moved(result)?,
@@ -632,10 +632,10 @@ async fn a_source_tag_that_moved_during_a_dependent_build_fails_that_stage_and_s
         let tags = Tags::of(&request)?;
 
         let engine = FakeEngine::new();
-        engine.at(
-            EngineMoment::BuildFinished(BuildStage::Role),
-            retag(&tags.construct, Some(other.clone())),
-        );
+        engine.at(EngineMoment::BuildFinished {
+            stage: BuildStage::Role,
+            effect: BuildEffect::Retag(retag(&tags.construct, Some(other.clone()))),
+        });
         let (result, events) = ensure(&engine, &request).await?;
         assert_eq!(
             moved(result)?,
@@ -666,10 +666,10 @@ async fn a_source_tag_that_moved_during_a_dependent_build_fails_that_stage_and_s
         );
 
         let engine = FakeEngine::new();
-        engine.at(
-            EngineMoment::BuildFinished(BuildStage::Derived),
-            retag(&tags.role, None),
-        );
+        engine.at(EngineMoment::BuildFinished {
+            stage: BuildStage::Derived,
+            effect: BuildEffect::Retag(retag(&tags.role, None)),
+        });
         let (result, events) = ensure(&engine, &request).await?;
         assert_eq!(
             moved(result)?,
@@ -687,10 +687,10 @@ async fn a_source_tag_that_moved_during_a_dependent_build_fails_that_stage_and_s
         );
 
         let engine = FakeEngine::new();
-        engine.at(
-            EngineMoment::BuildFinished(BuildStage::Derived),
-            retag(&tags.construct, Some(other.clone())),
-        );
+        engine.at(EngineMoment::BuildFinished {
+            stage: BuildStage::Derived,
+            effect: BuildEffect::Retag(retag(&tags.construct, Some(other.clone()))),
+        });
         let (result, events) = ensure(&engine, &request).await?;
         let image = result?;
         assert_eq!(
@@ -806,10 +806,10 @@ async fn a_cancelled_token_stops_ensure_image_before_any_engine_work_and_between
         request.rebuild = Rebuild::No;
         let tags = Tags::of(&request)?;
         let engine = FakeEngine::new();
-        engine.at(
-            EngineMoment::BuildFinished(BuildStage::Construct),
-            EngineEffect::Cancel,
-        );
+        engine.at(EngineMoment::BuildFinished {
+            stage: BuildStage::Construct,
+            effect: BuildEffect::Cancel,
+        });
         let (tx, mut rx) = mpsc::channel(256);
         let result = ensure_image(&engine, &request, &tx, &CancellationToken::new()).await;
         assert!(matches!(result, Err(ImageError::Cancelled)), "{result:?}");
