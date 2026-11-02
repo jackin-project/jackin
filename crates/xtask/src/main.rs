@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::error::Error;
 use std::fmt::Display;
 use std::io::{self, Write};
 use std::process::ExitCode;
@@ -36,11 +37,11 @@ fn main() -> ExitCode {
 fn ci(args: CiArgs) -> ExitCode {
     let root = match std::env::current_dir() {
         Ok(root) => root,
-        Err(error) => return fail(error),
+        Err(error) => return fail_chain(&error),
     };
     let repo = match Repo::open(root) {
         Ok(repo) => repo,
-        Err(error) => return fail(error),
+        Err(error) => return fail_chain(&error),
     };
     match run_ci(&args.steps(), &repo) {
         Ok(()) => ExitCode::SUCCESS,
@@ -52,10 +53,21 @@ fn ci(args: CiArgs) -> ExitCode {
                 }
             }
             drop(stderr);
-            fail(format!("{step:?} reported {} violations", violations.len()))
+            fail(format!("{step} reported {} violations", violations.len()))
         }
-        Err(error) => fail(error),
+        Err(error) => fail_chain(&error),
     }
+}
+
+fn fail_chain(error: &dyn Error) -> ExitCode {
+    let mut message = error.to_string();
+    let mut cause = error.source();
+    while let Some(next) = cause {
+        message.push_str(": ");
+        message.push_str(&next.to_string());
+        cause = next.source();
+    }
+    fail(message)
 }
 
 fn fail(message: impl Display) -> ExitCode {

@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::ffi::OsString;
+use std::fmt;
 use std::io::{self, Write};
 use std::process::Command;
 
 use clap::{Args, ValueEnum};
 use thiserror::Error;
 
-use crate::checks::{Check, CommentsCheck, ContainersCheck, LayersCheck, PinsCheck};
+use crate::checks::{Check, CommentsCheck, ContainersCheck, ErrorsCheck, LayersCheck, PinsCheck};
 use crate::repo::{Repo, cargo_program};
 use crate::violation::Violation;
 
@@ -78,12 +79,13 @@ pub enum CiStep {
     Layers,
     Pins,
     Containers,
+    Errors,
     Reuse,
     Docs,
 }
 
 impl CiStep {
-    pub const ALL: [CiStep; 11] = [
+    pub const ALL: [CiStep; 12] = [
         CiStep::Fmt,
         CiStep::Clippy,
         CiStep::Nextest,
@@ -93,6 +95,7 @@ impl CiStep {
         CiStep::Layers,
         CiStep::Pins,
         CiStep::Containers,
+        CiStep::Errors,
         CiStep::Reuse,
         CiStep::Docs,
     ];
@@ -128,12 +131,32 @@ impl CiStep {
             CiStep::Layers => Action::Check(&LayersCheck),
             CiStep::Pins => Action::Check(&PinsCheck),
             CiStep::Containers => Action::Check(&ContainersCheck),
+            CiStep::Errors => Action::Check(&ErrorsCheck),
             CiStep::Reuse => Action::Tools(vec![ToolCall::named("reuse", &["lint"])]),
             CiStep::Docs => Action::Tools(vec![
                 ToolCall::named("bun", &["install", "--frozen-lockfile"]).in_dir("docs"),
                 ToolCall::named("bun", &["run", "build"]).in_dir("docs"),
             ]),
         }
+    }
+}
+
+impl fmt::Display for CiStep {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            CiStep::Fmt => "fmt",
+            CiStep::Clippy => "clippy",
+            CiStep::Nextest => "nextest",
+            CiStep::Deny => "deny",
+            CiStep::Shear => "shear",
+            CiStep::Comments => "comments",
+            CiStep::Layers => "layers",
+            CiStep::Pins => "pins",
+            CiStep::Containers => "containers",
+            CiStep::Errors => "errors",
+            CiStep::Reuse => "reuse",
+            CiStep::Docs => "docs",
+        })
     }
 }
 
@@ -177,7 +200,7 @@ impl ToolCall {
 
 #[derive(Debug, Error)]
 pub enum CiFailure {
-    #[error("{step:?} reported {} violations", violations.len())]
+    #[error("{step} reported {} violations", violations.len())]
     Violations {
         step: CiStep,
         violations: Vec<Violation>,
@@ -188,9 +211,9 @@ pub enum CiFailure {
 
 #[derive(Debug, Error)]
 pub enum CiError {
-    #[error("{step:?} failed with status {status}")]
+    #[error("{step} failed with status {status}")]
     ToolFailed { step: CiStep, status: i32 },
-    #[error("cannot start {program}: {source}")]
+    #[error("cannot start {program}")]
     Spawn { program: String, source: io::Error },
     #[error("cargo metadata failed: {0}")]
     Metadata(String),
@@ -203,7 +226,7 @@ pub enum CiError {
 pub fn run_ci(steps: &[CiStep], repo: &Repo) -> Result<(), CiFailure> {
     let mut stderr = io::stderr().lock();
     for &step in steps {
-        writeln!(stderr, "xtask: {step:?}").map_err(CiError::from)?;
+        writeln!(stderr, "xtask: {step}").map_err(CiError::from)?;
         match step.action() {
             Action::Tools(calls) => {
                 for call in &calls {

@@ -3,11 +3,13 @@
 
 mod comments;
 mod containers;
+mod errors;
 mod layers;
 mod pins;
 
 pub use comments::*;
 pub use containers::*;
+pub use errors::*;
 pub use layers::*;
 pub use pins::*;
 

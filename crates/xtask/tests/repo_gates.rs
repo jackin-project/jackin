@@ -7,7 +7,8 @@ use std::path::Path;
 use std::process::Command;
 
 use jackin_xtask::{
-    Check, CiStep, CommentsCheck, ContainersCheck, LayersCheck, PinsCheck, Repo, Violation,
+    Check, CiStep, CommentsCheck, ContainersCheck, ErrorsCheck, LayersCheck, PinsCheck, Repo,
+    Violation,
 };
 use tempfile::TempDir;
 
@@ -1296,6 +1297,246 @@ mod containers {
     }
 }
 
+mod errors {
+    use super::*;
+
+    const LIB: &str = "crates/jackin-core/src/lib.rs";
+
+    fn run(files: &[(&str, &str)]) -> Result<Vec<Violation>, Box<dyn Error>> {
+        let fixture = Fixture::new(&bare(&["jackin-core", "jackin-testkit", "jackin"]))?;
+        for (path, text) in files {
+            fixture.write(path, text)?;
+        }
+        Ok(ErrorsCheck.run(&fixture.repo()?))
+    }
+
+    fn message_at(violations: &[Violation], line: u32) -> &str {
+        violations
+            .iter()
+            .find(|violation| violation.line == Some(line))
+            .map_or("", |violation| violation.message.as_str())
+    }
+
+    #[test]
+    fn debug_placeholder_forms_are_reported_at_the_literal_line() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"named {what:?}\")]",
+            "    A,",
+            "    #[error(\"positional {0:?}\")]",
+            "    B(String),",
+            "    #[error(\"bare {:?}\", .0)]",
+            "    C(String),",
+            "    #[error(\"alt {x:#?}\")]",
+            "    D,",
+            "    #[error(\"lower {x:x?}\")]",
+            "    E,",
+            "    #[error(\"upper {x:X?}\")]",
+            "    F,",
+            "    #[error(\"wide {x:>8?}\")]",
+            "    G,",
+            "    #[error(\"middle {a} {b:?} {c}\")]",
+            "    H,",
+            "    #[error(",
+            "        \"multi {name:?} line\"",
+            "    )]",
+            "    I,",
+            "    #[error(r#\"raw {y:?}\"#)]",
+            "    J,",
+            "    #[error(\"{}\", format!(\"args {x:?}\"))]",
+            "    K,",
+            "    #[error(\"{{{x:?}}} around\")]",
+            "    L,",
+            "    #[error(\"{{}}{x:?} after\")]",
+            "    M,",
+            "    #[error(\"pair {a:?} and {b:?}\")]",
+            "    N,",
+            "}",
+            "#[error(\"tail {0:?}\")]",
+            "struct S(String);",
+        ]);
+        let violations = run(&[(LIB, &source)])?;
+        let tags = [
+            "named",
+            "positional",
+            "bare",
+            "alt",
+            "lower",
+            "upper",
+            "wide",
+            "middle",
+            "multi",
+            "raw",
+            "args",
+            "around",
+            "after",
+            "pair",
+            "tail",
+        ];
+        assert_eq!(
+            summary(&violations),
+            lines(CiStep::Errors, LIB, &source, &tags)
+        );
+        let middle = message_at(&violations, line_of(&source, "middle"));
+        assert!(middle.contains("{b:?}"), "{middle}");
+        assert!(
+            !middle.contains("{a}") && !middle.contains("{c}"),
+            "{middle}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn the_scan_covers_every_rust_file_under_crates() -> TestResult {
+        let defect = "#[error(\"{0:?}\")]\nstruct S(String);\n";
+        let paths = [
+            "crates/jackin-core/tests/b.rs",
+            "crates/jackin-testkit/src/lib.rs",
+            "crates/jackin/tests/cli/a.rs",
+            "crates/xtask/src/ci.rs",
+        ];
+        let files: Vec<(&str, &str)> = paths.iter().map(|path| (*path, defect)).collect();
+        let expected: Vec<Found> = paths
+            .iter()
+            .map(|path| at(CiStep::Errors, path, 1))
+            .collect();
+        assert_eq!(summary(&run(&files)?), expected);
+        Ok(())
+    }
+
+    #[test]
+    fn display_placeholders_and_debug_outside_error_attributes_are_not_reported() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"{x} {0} {} {x:>8} {x:.3} {x:#x} {x:x}\")]",
+            "    A,",
+            "    #[error(\"{{x:?}}\")]",
+            "    B,",
+            "    #[error(\"fill {x:?>8} {x:?<4} {x:?^5}\")]",
+            "    C,",
+            "    #[error(transparent)]",
+            "    D(Inner),",
+            "    #[error(\"no placeholders\")]",
+            "    E,",
+            "    #[error(\"{} then {}\", list(.0), found_text(.found.as_ref()))]",
+            "    F(Vec<String>),",
+            "}",
+            "#[derive(Debug)]",
+            "#[doc = \"{x:?}\"]",
+            "#[serde(rename = \"{x:?}\")]",
+            "struct T;",
+            "fn f() {",
+            "    println!(\"{x:?}\");",
+            "    let _ = format!(\"{:?}\", y);",
+            "    assert!(ok, \"{e:?}\");",
+            "    tracing::debug!(\"{x:?}\");",
+            "    a.expect(\"{x:?}\");",
+            "}",
+            "const S: &str = \"#[error(\\\"{x:?}\\\")]\";",
+            "const R: &str = r#\"#[error(\"{x:?}\")]\"#;",
+            "// #[error(\"{x:?}\")]",
+        ]);
+        let violations = run(&[
+            (LIB, &source),
+            ("crates/jackin-core/notes.md", "#[error(\"{x:?}\")]\n"),
+            (
+                "crates/jackin-core/extra.toml",
+                "a = \"#[error(\\\"{x:?}\\\")]\"\n",
+            ),
+        ])?;
+        assert_eq!(summary(&violations), []);
+        Ok(())
+    }
+}
+
+mod error_source {
+    use super::*;
+
+    const LIB: &str = "crates/jackin-core/src/lib.rs";
+
+    fn run(source: &str) -> Result<Vec<Violation>, Box<dyn Error>> {
+        let fixture = Fixture::new(&bare(&["jackin-core"]))?;
+        fixture.write(LIB, source)?;
+        Ok(ErrorsCheck.run(&fixture.repo()?))
+    }
+
+    #[test]
+    fn a_source_placeholder_in_an_error_message_is_reported_at_the_literal_line() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"manifest at {path}: {source}\")]",
+            "    A { path: String, source: M },",
+            "    #[error(\"alt {source:#}\")]",
+            "    B { source: M },",
+            "    #[error(\"wide {source:>8}\")]",
+            "    C { source: M },",
+            "    #[error(",
+            "        \"multi {source} line\"",
+            "    )]",
+            "    D { source: M },",
+            "    #[error(r#\"raw {source}\"#)]",
+            "    E { source: M },",
+            "    #[error(\"argform: {}\", .source)]",
+            "    F { source: M },",
+            "    #[error(\"both {path:?} and {source}\")]",
+            "    G { path: String, source: M },",
+            "}",
+            "#[error(\"tail {source}\")]",
+            "struct S { source: M }",
+        ]);
+        let violations = run(&source)?;
+        let tags = [
+            "manifest", "alt", "wide", "multi", "raw", "argform", "both", "tail",
+        ];
+        assert_eq!(
+            summary(&violations),
+            lines(CiStep::Errors, LIB, &source, &tags)
+        );
+        let both = &violations[6].message;
+        assert!(
+            both.contains("{path:?}") && both.contains("{source}"),
+            "{both}"
+        );
+        assert!(violations[0].message.contains("{source}"));
+        Ok(())
+    }
+
+    #[test]
+    fn placeholders_that_only_resemble_source_and_source_outside_error_attributes_pass()
+    -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"cannot discover gateway {gateway}\")]",
+            "    Discovery { gateway: G, source: D },",
+            "    #[error(\"names {source_path} {sources} {resource} {source_moved} {error}\")]",
+            "    A,",
+            "    #[error(\"arg {}\", .source_path)]",
+            "    B,",
+            "    #[error(\"escaped {{source}}\")]",
+            "    C,",
+            "    #[error(transparent)]",
+            "    D(Inner),",
+            "    #[error(\"x\")]",
+            "    F { source: M },",
+            "}",
+            "impl fmt::Display for T {",
+            "    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {",
+            "        write!(f, \"{source}\")",
+            "    }",
+            "}",
+            "fn f() {",
+            "    let _ = format!(\"{source}\");",
+            "    println!(\"{source}\");",
+            "    let _ = run().map_err(|source| wrap(source));",
+            "}",
+            "const S: &str = \"#[error(\\\"{source}\\\")]\";",
+            "// #[error(\"{source}\")]",
+        ]);
+        assert_eq!(summary(&run(&source)?), []);
+        Ok(())
+    }
+}
+
 mod repo {
     use super::*;
 
@@ -1307,6 +1548,10 @@ mod repo {
         fixture.write(
             "crates/jackin/src/c.rs",
             "fn g() {\n    let _ = Command::new(\"podman\");\n}\n",
+        )?;
+        fixture.write(
+            "crates/jackin-core/src/e.rs",
+            "\n#[error(\"{x:?}\")]\nstruct S;\n",
         )?;
         fixture.write("docs/index.md", "# Docs\n")?;
         fixture.prepare()?;
@@ -1328,6 +1573,11 @@ mod repo {
                 summary(&ContainersCheck.run(&repo)),
                 [at(CiStep::Containers, "crates/jackin/src/c.rs", 2)],
                 "containers from {at_path}"
+            );
+            assert_eq!(
+                summary(&ErrorsCheck.run(&repo)),
+                [at(CiStep::Errors, "crates/jackin-core/src/e.rs", 2)],
+                "errors from {at_path}"
             );
         }
         Ok(())
@@ -1552,11 +1802,12 @@ mod ci_run {
     fn only_runs_the_named_steps_in_plan_order() -> TestResult {
         let spy = Spy::new()?;
         let fixture = green()?;
-        let cases: [(&str, &[&str]); 4] = [
+        let cases: [(&str, &[&str]); 5] = [
             ("reuse,fmt", &[FULL[0], FULL[5]]),
             ("docs", &FULL[6..]),
             ("deny,deny", &[FULL[3]]),
-            ("comments,layers,pins,containers", &[]),
+            ("comments,layers,pins,containers,errors", &[]),
+            ("errors", &[]),
         ];
         for (selection, expected) in cases {
             let outcome = spy.run(&fixture, &["--only", selection], "")?;
@@ -1594,11 +1845,14 @@ mod ci_run {
             lib,
             "fn g() { let _ = std::process::Command::new(\"podman\"); }\n",
         )?;
+        let errors = green()?;
+        errors.write(lib, "#[error(\"{x:?}\")]\nstruct S;\n")?;
         let cases = [
             (&comments, "crates/jackin-core/src/lib.rs:1"),
             (&layers, "crates/jackin-core/src/lib.rs:1"),
             (&pins, "rust-toolchain.toml"),
             (&containers, "crates/jackin-core/src/lib.rs:1"),
+            (&errors, "crates/jackin-core/src/lib.rs:1"),
         ];
         for (fixture, needle) in cases {
             let outcome = spy.run(fixture, &[], "")?;
@@ -1619,27 +1873,41 @@ mod ci_run {
             "crates/jackin-core/src/d.rs",
             "fn g() { let _ = std::process::Command::new(\"podman\"); }\n",
         )?;
+        fixture.write(
+            "crates/jackin-core/src/e.rs",
+            "#[error(\"{x:?}\")]\nstruct S;\n",
+        )?;
         let spy = Spy::new()?;
-        let cases: [(&str, &str, &[&str]); 4] = [
+        let cases: [(&str, &str, &[&str]); 6] = [
             (
                 "containers,comments,pins,layers",
                 "a.rs:1",
-                &["b.rs", "d.rs", "rust-toolchain.toml"],
+                &["b.rs", "d.rs", "e.rs", "rust-toolchain.toml"],
             ),
             (
                 "layers,pins,containers",
                 "b.rs:1",
-                &["a.rs", "d.rs", "rust-toolchain.toml"],
+                &["a.rs", "d.rs", "e.rs", "rust-toolchain.toml"],
             ),
             (
                 "pins,containers",
                 "rust-toolchain.toml",
-                &["a.rs", "b.rs", "d.rs"],
+                &["a.rs", "b.rs", "d.rs", "e.rs"],
             ),
             (
                 "containers",
                 "d.rs:1",
-                &["a.rs", "b.rs", "rust-toolchain.toml"],
+                &["a.rs", "b.rs", "e.rs", "rust-toolchain.toml"],
+            ),
+            (
+                "containers,errors",
+                "d.rs:1",
+                &["a.rs", "b.rs", "e.rs", "rust-toolchain.toml"],
+            ),
+            (
+                "errors",
+                "e.rs:1",
+                &["a.rs", "b.rs", "d.rs", "rust-toolchain.toml"],
             ),
         ];
         for (selection, present, absent) in cases {
@@ -1654,6 +1922,27 @@ mod ci_run {
                 );
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn a_tool_that_cannot_start_is_named_with_its_os_cause_once() -> TestResult {
+        let fixture = Fixture::new(&bare(&["jackin-core"]))?;
+        fixture.write_pins(PIN, PIN, PIN, PIN, PIN)?;
+        let outcome = Spy::new()?.run(&fixture, &["--only", "docs"], "")?;
+        assert_eq!(outcome.code, Some(1));
+        assert_eq!(outcome.log, Vec::<String>::new());
+        assert!(
+            outcome.stderr.contains("cannot start bun"),
+            "{}",
+            outcome.stderr
+        );
+        assert_eq!(
+            outcome.stderr.matches("No such file or directory").count(),
+            1,
+            "{}",
+            outcome.stderr
+        );
         Ok(())
     }
 

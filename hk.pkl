@@ -22,7 +22,7 @@ steps {
     check_first = false
   }
   ["xtask_repo_gates"] {
-    check = "mise exec -- mbx +1.99.1 xtask ci --only comments,layers,pins,containers"
+    check = "mise exec -- mbx +1.99.1 xtask ci --only comments,layers,pins,containers,errors"
   }
   ["rumdl"] = (Builtins.rumdl) {
     exclude = List("rewrite/**", "README.md")
