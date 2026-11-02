@@ -290,6 +290,11 @@ async fn a_symlink_to_a_role_directory_is_checked_like_the_directory() -> TestRe
         let ran = check_path(&world, false, &link).await?;
         ran.ok()?;
         assert!(ran.stderr.is_empty(), "{}", ran.stderr);
+        Ok(())
+    })
+    .await
+}
+
 fn policy_text(paths: &str, landlock: &str, host: &str) -> String {
     format!(
         "version: 1\n{paths}{landlock}process:\n  run_as_user: sandbox\n  run_as_group: sandbox\nnetwork_policies:\n  r1:\n    name: r1\n    endpoints:\n      - host: '{host}'\n        port: 443\n    binaries:\n      - path: /usr/bin/curl\n"
@@ -331,15 +336,25 @@ async fn a_role_policy_without_landlock_hard_requirement_fails_naming_the_settin
 async fn a_role_host_the_sandbox_would_match_to_a_provider_host_fails_in_every_dialect()
 -> TestResult {
     guard(async {
-        for host in ["[^x]*hatgpt.com", "*\\.openai.com"] {
+        for host in [
+            "[^x]*hatgpt.com",
+            "[^x]*.chatgpt.com",
+            "[^x]*pi.openai.com",
+            "*\\.openai.com",
+            "a\\p*.openai.com",
+            "[^x]*.openai.com",
+        ] {
             let role = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(PATHS, HARD, host));
             let (ran, _, _) = checked(&role, false).await?;
             failed(&ran, ExitClass::Failure, &[host])?;
             assert!(!ran.stderr.contains("r1"), "{}", ran.stderr);
         }
-        let shape = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(PATHS, HARD, "*.com"));
-        let (ran, _, _) = checked(&shape, false).await?;
-        failed(&ran, ExitClass::Failure, &["*.com"])?;
+        for host in ["*.org", "x.a*.com"] {
+            let shape = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(PATHS, HARD, host));
+            let (ran, _, _) = checked(&shape, false).await?;
+            failed(&ran, ExitClass::Failure, &[host])?;
+            assert!(!ran.stderr.contains("r1"), "{}", ran.stderr);
+        }
 
         let closure =
             RoleFixture::new("sentinel")?.policy_yaml(&policy_text(PATHS, HARD, "*.openai.com"));

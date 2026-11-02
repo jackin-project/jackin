@@ -112,7 +112,7 @@ fn rule(text: &str) -> RuleKey {
 fn registry_and_policy_errors_name_gateways_paths_and_violations_plainly() {
     let overlap = ClosureViolation::Overlap {
         rule: rule("r1"),
-        host: HostPattern::parse("**").unwrap(),
+        host: HostPattern::parse("**.openai.com").unwrap(),
         provider_host: HostPattern::parse("api.openai.com").unwrap(),
     };
     let unparsable = ClosureViolation::UnparsableHost {
@@ -183,7 +183,7 @@ fn registry_and_policy_errors_name_gateways_paths_and_violations_plainly() {
         ),
         (
             ClosedPolicyError::Violations(vec![overlap, unparsable, port]).to_string(),
-            "the policy overlaps provider hosts: rule r1: ** overlaps the provider host api.openai.com, rule r2: the host bad host! cannot be read, rule r3: the port 0 is invalid".to_owned(),
+            "the policy overlaps provider hosts: rule r1: **.openai.com overlaps the provider host api.openai.com, rule r2: the host bad host! cannot be read, rule r3: the port 0 is invalid".to_owned(),
         ),
     ];
     for (shown, expected) in rows {
