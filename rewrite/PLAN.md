@@ -422,7 +422,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ## Phase P7. Write the construct image and the sentinel role
 
-P7.1 can start after P0.3. It runs in parallel with P2 to P6.
+P7.1 can start after P0.3. It runs in parallel with P2 to P6. The image drafts that P7.1 and P7.4 wrote now live in `crates/jackin-image/images/` and `crates/jackin-core/src/assets/` (P3 fix round); the scope lines below are historical.
 
 ### P7.1 Write the construct image and the derived layer
 
