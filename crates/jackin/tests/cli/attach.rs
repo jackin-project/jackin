@@ -173,7 +173,7 @@ async fn attaching_an_error_phase_sandbox_names_its_exit_code_and_an_absent_one_
             assert!(!raw.raw());
         }
         let ended = harness.run(&["inspect", name.as_str(), "--json"]).await?;
-        assert!(ended.stdout.contains(r#""exit_code":5"#));
+        assert!(ended.stdout.contains(r#""exit_code":5}"#));
         Ok(())
     })
     .await
