@@ -129,3 +129,28 @@ pub enum PolicyError {
     #[error("profile {id}: {message}")]
     Profile { id: String, message: String },
 }
+
+impl GatewayError {
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            GatewayError::Unreachable { .. }
+            | GatewayError::Timeout { .. }
+            | GatewayError::ResourceExhausted { .. } => true,
+            GatewayError::Tls { .. }
+            | GatewayError::Unauthenticated
+            | GatewayError::PermissionDenied { .. }
+            | GatewayError::NotFound { .. }
+            | GatewayError::AlreadyExists { .. }
+            | GatewayError::NotReady { .. }
+            | GatewayError::MainProcessFailed { .. }
+            | GatewayError::FailedPrecondition { .. }
+            | GatewayError::InvalidArgument { .. }
+            | GatewayError::Cancelled { .. }
+            | GatewayError::Process(_)
+            | GatewayError::Transfer { .. }
+            | GatewayError::HostKeyMismatch
+            | GatewayError::TerminalRefused { .. }
+            | GatewayError::Protocol { .. } => false,
+        }
+    }
+}

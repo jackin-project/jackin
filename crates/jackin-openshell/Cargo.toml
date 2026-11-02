@@ -10,22 +10,36 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
-[package.metadata.cargo-shear]
-ignored = ["openshell-policy", "openshell-sdk", "russh", "tonic"]
-
 [features]
 contract = []
+
+[[test]]
+name = "gateway"
+path = "tests/gateway/main.rs"
+required-features = ["contract"]
 
 [dependencies]
 async-trait = { workspace = true }
 jackin-core = { workspace = true }
+noyalib = { workspace = true }
 openshell-policy = { workspace = true }
+openshell-providers = { workspace = true }
 openshell-sdk = { workspace = true }
 russh = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
+tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tonic = { workspace = true }
+
+[dev-dependencies]
+futures = { workspace = true }
+rcgen = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "rt", "rt-multi-thread", "sync", "test-util", "time"] }
+tonic-types = { workspace = true }
 
 [lints]
 workspace = true

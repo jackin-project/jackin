@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    ChatgptAccountId, CredentialKeys, EnvName, FileMode, GatewayName, HostPath, LabelSelector,
-    Labels, Phase, ProfileId, ProjectRoot, ProviderName, SandboxName, SandboxPath, Secret,
-    SecretBytes, TerminalText,
+    ChatgptAccountId, CredentialKeys, EnvName, FileMode, GatewayName, HostPath, ImageTag,
+    LabelSelector, Labels, Phase, ProfileId, ProjectRoot, ProviderName, SandboxLabels, SandboxName,
+    SandboxPath, Secret, SecretBytes, TerminalText,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -118,7 +118,67 @@ pub struct MainProcess {
 }
 
 #[derive(Clone, Debug)]
-pub struct SandboxCreate {}
+pub struct SandboxCreate {
+    name: SandboxName,
+    image: ImageTag,
+    labels: SandboxLabels,
+    providers: Vec<ProviderName>,
+    policy: PolicyDocument,
+    main: MainProcess,
+}
+
+const LAUNCH_ENV: &str = "JACKIN_LAUNCH_ID";
+
+impl SandboxCreate {
+    pub fn new(
+        name: SandboxName,
+        image: ImageTag,
+        labels: SandboxLabels,
+        providers: Vec<ProviderName>,
+        policy: PolicyDocument,
+        main: MainProcess,
+    ) -> SandboxCreate {
+        SandboxCreate {
+            name,
+            image,
+            labels,
+            providers,
+            policy,
+            main,
+        }
+    }
+
+    pub fn name(&self) -> &SandboxName {
+        &self.name
+    }
+
+    pub fn image(&self) -> &ImageTag {
+        &self.image
+    }
+
+    pub fn labels(&self) -> &SandboxLabels {
+        &self.labels
+    }
+
+    pub fn providers(&self) -> &[ProviderName] {
+        &self.providers
+    }
+
+    pub fn policy(&self) -> &PolicyDocument {
+        &self.policy
+    }
+
+    pub fn main(&self) -> &MainProcess {
+        &self.main
+    }
+
+    pub fn environment(&self) -> BTreeMap<EnvName, String> {
+        EnvName::parse(LAUNCH_ENV)
+            .map(|name| (name, self.labels.planned.launch.to_string()))
+            .into_iter()
+            .collect()
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct SandboxView {

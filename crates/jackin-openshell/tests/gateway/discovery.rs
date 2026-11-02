@@ -1,0 +1,192 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::time::Duration;
+
+use jackin_core::{FsError, ProcessError, ProcessStatus, Program};
+use jackin_openshell::{
+    DiscoveryError, GatewayAuth, RegisteredGateway, registered_gateways, resolve_gateway,
+};
+use tokio_util::sync::CancellationToken;
+
+use super::fakes::{RegistryFs, ScriptedRunner, exited};
+use super::harness::{GATEWAY, host, name};
+
+const ONE: &str = r#"[
+  {
+    "active": true,
+    "auth": "mtls",
+    "endpoint": "https://localhost:17670",
+    "is_remote": false,
+    "name": "jackin-local",
+    "remote_host": null,
+    "resolved_host": null,
+    "source": "user",
+    "type": "local"
+  }
+]"#;
+
+const THREE: &str = r#"[
+  {"name": "jackin-local", "endpoint": "https://localhost:17670", "auth": "mtls", "extra": {"nested": 1}},
+  {"name": "cloud", "endpoint": "https://gw.example.com", "auth": "oidc", "future_field": true},
+  {"name": "other", "endpoint": "https://other.example.com:8443", "auth": "mtls"}
+]"#;
+
+fn entry(name_text: &str, endpoint: &str, auth: GatewayAuth) -> RegisteredGateway {
+    RegisteredGateway {
+        name: name(name_text),
+        endpoint: endpoint.to_owned(),
+        auth,
+    }
+}
+
+#[tokio::test]
+async fn registered_gateways_parses_the_cli_json_without_connecting() {
+    let cancel = CancellationToken::new();
+    let runner = ScriptedRunner::always(exited(0, ONE.as_bytes(), b""));
+    let gateways = registered_gateways(&runner, &cancel).await.unwrap();
+    assert_eq!(
+        gateways,
+        vec![entry(
+            "jackin-local",
+            "https://localhost:17670",
+            GatewayAuth::Mtls
+        )]
+    );
+    let calls = runner.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].program, Program::Openshell);
+    assert_eq!(
+        calls[0].args,
+        ["gateway", "list", "-o", "json"]
+            .map(str::to_owned)
+            .to_vec()
+    );
+    assert!(calls[0].stdin_null);
+    assert!(calls[0].timeout > Duration::ZERO);
+
+    let runner = ScriptedRunner::always(exited(0, THREE.as_bytes(), b""));
+    assert_eq!(
+        registered_gateways(&runner, &cancel).await.unwrap(),
+        vec![
+            entry("jackin-local", "https://localhost:17670", GatewayAuth::Mtls),
+            entry(
+                "cloud",
+                "https://gw.example.com",
+                GatewayAuth::Other("oidc".to_owned())
+            ),
+            entry("other", "https://other.example.com:8443", GatewayAuth::Mtls),
+        ]
+    );
+    let runner = ScriptedRunner::always(exited(0, b"[]", b""));
+    assert!(
+        registered_gateways(&runner, &cancel)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn registered_gateways_failure_modes() {
+    let cancel = CancellationToken::new();
+    let runner = ScriptedRunner::always(exited(1, b"", b"\x1b[31mno registry\x1b[0m"));
+    match registered_gateways(&runner, &cancel).await.unwrap_err() {
+        DiscoveryError::ListFailed { status, tail } => {
+            assert_eq!(status, ProcessStatus::Exited(1));
+            assert!(!tail.as_str().contains('\u{1b}') && tail.as_str().contains("no registry"));
+        }
+        other => panic!("{other:?}"),
+    }
+    for body in [&b"not json"[..], &b"{}"[..]] {
+        let runner = ScriptedRunner::always(exited(0, body, b""));
+        let error = registered_gateways(&runner, &cancel).await.unwrap_err();
+        assert!(
+            matches!(error, DiscoveryError::ListUnparsable { .. }),
+            "{error:?}"
+        );
+    }
+    for failure in [
+        ProcessError::Spawn {
+            program: Program::Openshell,
+            message: "gone".to_owned(),
+        },
+        ProcessError::Timeout {
+            program: Program::Openshell,
+            after: Duration::from_secs(1),
+        },
+    ] {
+        let failure = std::sync::Mutex::new(Some(failure));
+        let runner = ScriptedRunner::new(move |_| Err(failure.lock().unwrap().take().unwrap()));
+        let error = registered_gateways(&runner, &cancel).await.unwrap_err();
+        assert!(matches!(error, DiscoveryError::Process(_)), "{error:?}");
+    }
+}
+
+#[tokio::test]
+async fn resolve_gateway_selects_by_name_reads_exactly_three_files_and_writes_nothing() {
+    let cancel = CancellationToken::new();
+    let home = host("/home/test/.config/openshell");
+    let fs = RegistryFs::default();
+    let mtls = |gateway: &str, file: &str| {
+        host(&format!(
+            "/home/test/.config/openshell/gateways/{gateway}/mtls/{file}"
+        ))
+    };
+    for (gateway, tag) in [(GATEWAY, "A"), ("other", "B")] {
+        for file in ["ca.crt", "tls.crt", "tls.key"] {
+            fs.put(&mtls(gateway, file), format!("{tag}-{file}").as_bytes());
+        }
+    }
+    let runner = ScriptedRunner::always(exited(0, THREE.as_bytes(), b""));
+    let resolved = resolve_gateway(&runner, &fs, &home, &name(GATEWAY), &cancel)
+        .await
+        .unwrap();
+    assert_eq!(resolved.name().as_str(), GATEWAY);
+    assert_eq!(resolved.endpoint(), "https://localhost:17670");
+    assert_eq!(
+        fs.reads(),
+        vec![
+            mtls(GATEWAY, "ca.crt"),
+            mtls(GATEWAY, "tls.crt"),
+            mtls(GATEWAY, "tls.key")
+        ]
+    );
+    assert!(fs.mutations().is_empty());
+    let debug = format!("{resolved:?}");
+    assert!(!debug.contains("A-tls.key") && !debug.contains("A-ca.crt"));
+
+    let before = fs.reads().len();
+    let error = resolve_gateway(&runner, &fs, &home, &name("absent"), &cancel)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, DiscoveryError::UnknownGateway(ref missing) if missing.as_str() == "absent")
+    );
+    assert_eq!(fs.reads().len(), before);
+
+    for file in ["ca.crt", "tls.crt", "tls.key"] {
+        let path = mtls(GATEWAY, file);
+        let saved = format!("A-{file}");
+        fs.remove(&path);
+        let error = resolve_gateway(&runner, &fs, &home, &name(GATEWAY), &cancel)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, DiscoveryError::MissingCertificate { path: ref named } if *named == path),
+            "{file}"
+        );
+        fs.put(&path, saved.as_bytes());
+    }
+
+    let failing = ScriptedRunner::always(exited(1, b"", b"down"));
+    let error = resolve_gateway(&failing, &fs, &home, &name(GATEWAY), &cancel)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, DiscoveryError::ListFailed { .. }));
+    fs.fail_next_read(FsError::AlreadyExists(mtls(GATEWAY, "ca.crt")));
+    let error = resolve_gateway(&runner, &fs, &home, &name(GATEWAY), &cancel)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, DiscoveryError::Fs(_)));
+}

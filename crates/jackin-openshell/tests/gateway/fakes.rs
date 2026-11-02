@@ -1,0 +1,187 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use async_trait::async_trait;
+use jackin_core::{
+    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LineSink, ProcessError,
+    ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program,
+};
+use tokio_util::sync::CancellationToken;
+
+#[derive(Debug, Default)]
+pub(crate) struct RegistryFs {
+    files: Mutex<BTreeMap<HostPath, Vec<u8>>>,
+    reads: Mutex<Vec<HostPath>>,
+    mutations: Mutex<Vec<String>>,
+    fail_with: Mutex<Option<FsError>>,
+}
+
+impl RegistryFs {
+    pub(crate) fn put(&self, path: &HostPath, bytes: &[u8]) {
+        self.files
+            .lock()
+            .unwrap()
+            .insert(path.clone(), bytes.to_vec());
+    }
+
+    pub(crate) fn remove(&self, path: &HostPath) {
+        self.files.lock().unwrap().remove(path);
+    }
+
+    pub(crate) fn reads(&self) -> Vec<HostPath> {
+        self.reads.lock().unwrap().clone()
+    }
+
+    pub(crate) fn mutations(&self) -> Vec<String> {
+        self.mutations.lock().unwrap().clone()
+    }
+
+    pub(crate) fn fail_next_read(&self, error: FsError) {
+        *self.fail_with.lock().unwrap() = Some(error);
+    }
+
+    fn record(&self, entry: String) {
+        self.mutations.lock().unwrap().push(entry);
+    }
+}
+
+#[async_trait]
+impl FileSystem for RegistryFs {
+    async fn read(&self, path: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
+        self.reads.lock().unwrap().push(path.clone());
+        if let Some(error) = self.fail_with.lock().unwrap().take() {
+            return Err(error);
+        }
+        Ok(self.files.lock().unwrap().get(path).cloned())
+    }
+
+    async fn stat(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        Ok(self
+            .files
+            .lock()
+            .unwrap()
+            .contains_key(path)
+            .then_some(FileKind::File))
+    }
+
+    async fn list(&self, _dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
+        Ok(Vec::new())
+    }
+
+    async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
+        self.record(format!("create_dir_all {dir:?}"));
+        Ok(())
+    }
+
+    async fn write_new(
+        &self,
+        path: &HostPath,
+        _bytes: &[u8],
+        _mode: FileMode,
+    ) -> Result<(), FsError> {
+        self.record(format!("write_new {path:?}"));
+        Ok(())
+    }
+
+    async fn rename(&self, from: &HostPath, to: &HostPath) -> Result<(), FsError> {
+        self.record(format!("rename {from:?} {to:?}"));
+        Ok(())
+    }
+
+    async fn remove_file(&self, path: &HostPath) -> Result<(), FsError> {
+        self.record(format!("remove_file {path:?}"));
+        Ok(())
+    }
+
+    async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError> {
+        self.record(format!("sync_dir {dir:?}"));
+        Ok(())
+    }
+
+    async fn lock(&self, path: &HostPath) -> Result<FileLock, FsError> {
+        self.record(format!("lock {path:?}"));
+        Err(FsError::LockHeld(path.clone()))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Recorded {
+    pub(crate) program: Program,
+    pub(crate) args: Vec<String>,
+    pub(crate) cwd: Option<HostPath>,
+    pub(crate) env: Vec<(String, String)>,
+    pub(crate) stdin_null: bool,
+    pub(crate) timeout: Duration,
+}
+
+pub(crate) type Reply = Arc<dyn Fn(&Recorded) -> Result<ProcessOutput, ProcessError> + Send + Sync>;
+
+#[derive(Clone)]
+pub(crate) struct ScriptedRunner {
+    reply: Reply,
+    calls: Arc<Mutex<Vec<Recorded>>>,
+}
+
+impl std::fmt::Debug for ScriptedRunner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScriptedRunner").finish_non_exhaustive()
+    }
+}
+
+pub(crate) fn exited(code: i32, stdout: &[u8], stderr: &[u8]) -> ProcessOutput {
+    ProcessOutput {
+        status: ProcessStatus::Exited(code),
+        stdout: stdout.to_vec(),
+        stderr: stderr.to_vec(),
+    }
+}
+
+impl ScriptedRunner {
+    pub(crate) fn new(
+        reply: impl Fn(&Recorded) -> Result<ProcessOutput, ProcessError> + Send + Sync + 'static,
+    ) -> ScriptedRunner {
+        ScriptedRunner {
+            reply: Arc::new(reply),
+            calls: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub(crate) fn always(output: ProcessOutput) -> ScriptedRunner {
+        ScriptedRunner::new(move |_| Ok(output.clone()))
+    }
+
+    pub(crate) fn calls(&self) -> Vec<Recorded> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl ProcessRunner for ScriptedRunner {
+    async fn run(
+        &self,
+        spec: &ProcessSpec,
+        _lines: Option<&LineSink>,
+        _cancel: &CancellationToken,
+    ) -> Result<ProcessOutput, ProcessError> {
+        let recorded = Recorded {
+            program: spec.program,
+            args: spec.args.clone(),
+            cwd: spec.cwd.clone(),
+            env: spec.env.clone(),
+            stdin_null: matches!(spec.stdin, ProcessStdin::Null),
+            timeout: spec.timeout,
+        };
+        self.calls.lock().unwrap().push(recorded.clone());
+        if spec.program != Program::Openshell {
+            return Err(ProcessError::Spawn {
+                program: spec.program,
+                message: "only openshell is scripted".to_owned(),
+            });
+        }
+        (self.reply)(&recorded)
+    }
+}
