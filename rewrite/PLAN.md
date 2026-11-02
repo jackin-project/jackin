@@ -412,7 +412,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 - **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P6.1.
 - **Scope:** every `thiserror` message in `jackin-core`, `jackin-image`, `jackin-openshell`, `jackin-session`, and `jackin`.
-- **Steps:** Replace each `{x:?}` of an identifier or a path in an error message with its `Display` form, so the user reads `jackin-work-codex`, not `Provider(ProviderName("jackin-work-codex"))`. Add a repo gate that refuses `:?}` in an `#[error(...)]` attribute.
+- **Steps:** Replace each `{x:?}` of an identifier or a path in an error message with its `Display` form, so the user reads `jackin-work-codex`, not `Provider(ProviderName("jackin-work-codex"))`. Add a repo gate that refuses `:?}` in an `#[error(...)]` attribute. Fix the P6.2 defects: a manifest error that repeats its cause (`unknown field x: unknown field x`); `role check` on a missing directory, which must name the directory; `jackin ls` on an empty gateway, which must print that there are no sandboxes.
 - **Proof:** G-FAST passes; the new gate goes red on a reintroduced `:?}`.
 - [ ] P6.1b done
 
@@ -434,7 +434,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 - **Owner:** `verifier` at `model: sonnet, effort: high`. **Depends:** P6.1, P0.2.
 - **Steps:** Run `jackin doctor`, `jackin ls --json`, and `jackin role check` on a valid and an invalid manifest against `jackin-local`.
 - **Proof:** `evidence/P6.2-cli.md`.
-- [ ] P6.2 done
+- [x] P6.2 done. Proof: evidence/P6.2-cli.md (doctor 7/7 pass against jackin-local; `ls --json` matches `openshell sandbox list`; role check exits 0 on a valid manifest and 1 on an unknown key, a missing field, and a bad stage). Defects moved to P6.1b.
 
 ## Phase P7. Write the construct image and the sentinel role
 
