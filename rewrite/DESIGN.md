@@ -305,20 +305,21 @@ Evidence: `evidence/P0.3-codex.md` step 2.
 
 ### D25. The usage crates stay
 
-Jackin keeps account usage tracking. Move these crates to `crates/usage/` and port them to the new design:
+Jackin keeps account usage tracking. The usage crates live in `crates/usage/`. P6.3 ports these crates to the new design:
 
-- `jackin-usage`, `jackin-usage-broker`, `jackin-usage-broker-publish`, and `jackin-usage-broker-wire`
-- `jackin-usage-coordinator`, `jackin-usage-snapshot-store`, and `jackin-usage-store-backend`
-- `jackin-usage-discovery`, `jackin-usage-credential-resolver`, and `jackin-usage-credential-snapshots`
-- `jackin-usage-host-accounts`, `jackin-usage-host-credentials`, `jackin-usage-host-glance`, `jackin-usage-host-presentation`, and `jackin-usage-host-runtime`
-- `jackin-usage-projection`, `jackin-usage-destination`, `jackin-usage-output`, and `jackin-usage-token-monitor`
-- `jackin-usage-provider-core` and every `jackin-usage-provider-*` crate: amp, antigravity, claude, codex, cursor, gemini, grok, hermes, kimi, minimax, muse, opencode, openrouter, and zai
+- `jackin-usage`, rewritten as the facade: credential resolution, dispatch, and the cache
+- `jackin-usage-provider-core`, reduced to the bucket model, the provider error, the HTTP client, and the number and time helpers
+- the provider crates amp, claude, codex, cursor, gemini, grok, kimi, minimax, opencode, openrouter, and zai
+
+P6.3 deletes the other usage crates, because the program deletes what they serve: the broker, its wire, publish, and coordinator crates (the jackin daemon, D16); the snapshot store, the store backend, and the token monitor (SQLite and Capsule, D15 and D16); discovery, host accounts, host credentials, the credential resolver, and the credential snapshots (accounts live in the config, D26); host presentation, host glance, host runtime, projection, destination, and output (the native app, D16); and the antigravity, hermes, and muse providers, which have no host path to an account's usage.
+
+The Gemini provider reads usage for a Google-login account through the Code Assist `loadCodeAssist` and `retrieveUserQuota` methods, as gemini-cli does. A Gemini API key has no quota method; its usage shows the reason.
 
 Obey these rules in the port:
 
 - Remove every dependency on deleted crates, such as `jackin-protocol`, `jackin-telemetry`, Capsule, and Docker. Move the usage wire types into the usage crates.
 - Delete the old tests and comments, as for all other code.
-- Usage runs on the host. It reads the credentials of a jackin account on the host. It never sends a credential into a sandbox.
+- Usage runs on the host. It reads the credentials of a jackin account on the host. It never sends a credential into a sandbox. It never refreshes a token: a lapsed login shows the reason `expired_login`.
 - Delete `jackin-usage-capsule-telemetry` and `jackin-runtime-usage-relay`. They exist only for Capsule.
 - Usage supports every provider, not only the agents that jackin can run (D26).
 - The task that ports the crates can merge crates when a crate has one caller. It records each merge in the trail.
