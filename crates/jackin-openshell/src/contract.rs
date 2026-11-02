@@ -735,6 +735,14 @@ async fn provider_put_and_delete(ctx: &Ctx<'_>) -> Outcome<()> {
         expect(
             provider_state_is(ctx, &name, ProviderState::Absent).await?,
             "the provider is present after a delete",
+        )?;
+        ctx.gateway
+            .delete_provider(&name)
+            .await
+            .map_err(|error| format!("the second delete_provider failed: {error}"))?;
+        expect(
+            provider_state_is(ctx, &name, ProviderState::Absent).await?,
+            "the provider is present after the second delete",
         )
     }
     .await;

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -79,6 +79,7 @@ pub(crate) enum Broken {
     StopOnStopped,
     DeleteAttachedProviders,
     DeleteAfterRefusal,
+    DeleteAbsentRefused,
 }
 
 pub(crate) type ProfileHook = Box<dyn FnMut(&mut State) + Send>;
@@ -109,6 +110,7 @@ pub(crate) struct State {
     pub(crate) auto_advance: bool,
     pub(crate) ssh: Option<Arc<SshModel>>,
     pub(crate) broken: Option<Broken>,
+    pub(crate) deleted_providers: BTreeSet<Key>,
 }
 
 impl std::fmt::Debug for State {
@@ -196,6 +198,7 @@ fn fresh_state() -> State {
         auto_advance: false,
         ssh: None,
         broken: None,
+        deleted_providers: BTreeSet::new(),
     }
 }
 

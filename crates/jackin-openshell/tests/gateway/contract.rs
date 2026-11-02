@@ -372,6 +372,31 @@ async fn a_server_that_deletes_a_provider_while_refusing_the_delete_fails_only_t
     assert_nothing_left(&env);
 }
 
+#[tokio::test]
+async fn a_server_that_refuses_the_second_delete_of_a_provider_fails_the_put_and_delete_check() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root);
+    env.server.state().broken = Some(Broken::DeleteAbsentRefused);
+    let (_project, fixture) = fixture().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let report = run(&gateway, &fixture, ContractGroup::Core).await;
+    let failed = outcome(&report, "provider_put_and_delete");
+    assert!(
+        failed
+            .as_ref()
+            .is_err_and(|message| message.contains("the second delete_provider failed")),
+        "{failed:?}"
+    );
+    for check in report
+        .checks
+        .iter()
+        .take_while(|check| check.name != "provider_put_and_delete")
+    {
+        assert_eq!(check.outcome, Ok(()), "{}", check.name);
+    }
+}
+
 fn end_with(status: u32) -> Vec<Action> {
     vec![Action::ExitStatus(status), Action::Eof, Action::Close]
 }

@@ -246,7 +246,15 @@ impl Fake {
         let mut state = self.shared.lock();
         let key = (workspace.clone(), request.name.clone());
         if !state.providers.contains_key(&key) {
-            return Err(Status::not_found("provider not found"));
+            return Err(
+                if state.broken == Some(Broken::DeleteAbsentRefused)
+                    && state.deleted_providers.contains(&key)
+                {
+                    Status::failed_precondition("provider was deleted before")
+                } else {
+                    Status::not_found("provider not found")
+                },
+            );
         }
         let attached: Vec<&str> = state
             .sandboxes
@@ -274,6 +282,7 @@ impl Fake {
             Some(status) if !deletes_anyway => Err(status),
             refusal => {
                 state.providers.remove(&key);
+                state.deleted_providers.insert(key.clone());
                 state.refresh.retain(|(ws, provider, _), _| {
                     !(*ws == workspace && *provider == request.name)
                 });
