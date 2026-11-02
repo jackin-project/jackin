@@ -22,6 +22,16 @@ pub const HTTP_CLIENT_CRATE: &str = "reqwest";
 
 pub const HTTP_CLIENT_OWNER: &str = "jackin-usage-provider-core";
 
+const fn provider(member: &'static str) -> LayerRule {
+    LayerRule {
+        member,
+        depends: &["jackin-usage-provider-core"],
+        dev_depends: &[],
+        optional: &[],
+        imports: &[],
+    }
+}
+
 pub const LAYERS: &[LayerRule] = &[
     LayerRule {
         member: "jackin-core",
@@ -89,6 +99,7 @@ pub const LAYERS: &[LayerRule] = &[
         optional: &[],
         imports: &[],
     },
+    provider("jackin-usage-provider-codex"),
     LayerRule {
         member: "jackin-usage-provider-core",
         depends: &[],

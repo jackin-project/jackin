@@ -10,6 +10,7 @@ members = [
   "crates/jackin-session",
   "crates/jackin-testkit",
   "crates/jackin-tui",
+  "crates/usage/jackin-usage-provider-codex",
   "crates/usage/jackin-usage-provider-core",
   "crates/xtask",
 ]
@@ -30,6 +31,7 @@ jackin-openshell = { path = "crates/jackin-openshell", version = "0.1.0" }
 jackin-session = { path = "crates/jackin-session", version = "0.1.0" }
 jackin-testkit = { path = "crates/jackin-testkit", version = "0.1.0" }
 jackin-tui = { path = "crates/jackin-tui", version = "0.1.0" }
+jackin-usage-provider-core = { path = "crates/usage/jackin-usage-provider-core", version = "0.1.0" }
 async-trait = "0.1.92"
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 clap = { version = "4.6.7", features = ["derive"] }

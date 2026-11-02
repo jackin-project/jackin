@@ -2094,6 +2094,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-usage-provider-codex"
+version = "0.1.0"
+dependencies = [
+ "jackin-usage-provider-core",
+ "serde_json",
+]
+
+[[package]]
 name = "jackin-usage-provider-core"
 version = "0.1.0"
 dependencies = [

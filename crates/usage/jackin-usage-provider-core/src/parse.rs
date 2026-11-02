@@ -4,6 +4,8 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use crate::model::Money;
+
 const MILLISECOND_EPOCH_FLOOR: f64 = 1_000_000_000_000.0;
 
 pub fn json_number(value: &Value) -> Option<f64> {
@@ -52,4 +54,27 @@ pub fn json_epoch(value: &Value) -> Option<i64> {
         return trimmed.parse::<f64>().ok().and_then(epoch_seconds);
     }
     value.as_f64().and_then(epoch_seconds)
+}
+
+pub fn json_money(value: &Value, exponent: u32, unit: &str) -> Option<Money> {
+    match value {
+        Value::String(text) => Money::parse_decimal(text, exponent, unit),
+        other => Money::from_f64(other.as_f64()?, exponent, unit),
+    }
+}
+
+pub fn title_words(text: &str) -> String {
+    text.split(|c: char| c == '_' || c == '-' || c.is_whitespace())
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first
+                    .to_uppercase()
+                    .chain(chars.flat_map(char::to_lowercase))
+                    .collect()
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
