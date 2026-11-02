@@ -141,7 +141,7 @@ async fn program_timeout_and_cancel_stop_the_remote_process() {
                 .await
         })
     };
-    env.server.shared.child_started.notified().await;
+    guard(env.server.shared.child_started.notified()).await;
     tokio::time::pause();
     let error = timed.await.unwrap().unwrap_err();
     tokio::time::resume();
@@ -219,6 +219,20 @@ async fn write_file_applies_mode_and_exact_bytes_and_keeps_content_off_argv() {
         names.push(entry.file_name().to_string_lossy().into_owned());
     }
     assert_eq!(names, vec!["auth.json".to_owned()]);
+    let fresh = SandboxFile {
+        path: path("/sandbox/.fresh/nested/auth.json"),
+        mode: FileMode(0o600),
+        content: SecretBytes::new(b"fresh".to_vec()),
+    };
+    guard(gateway.write_file(&sandbox_name(SANDBOX), &fresh))
+        .await
+        .unwrap();
+    assert_eq!(
+        tokio::fs::read(root.path().join("sandbox/.fresh/nested/auth.json"))
+            .await
+            .unwrap(),
+        b"fresh"
+    );
     for start in &env.server.state().exec_starts {
         assert_no_sentinel(&format!("{start:?}"));
     }

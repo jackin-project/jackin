@@ -187,7 +187,7 @@ async fn call_timeouts_report_the_operation_and_the_configured_duration() {
         .insert("create_sandbox", Fault::Hang);
     let spec = create_spec(SANDBOX, "01hzy3k5m7p9r2t4v6w8x0abcd");
     let call = tokio::spawn(async move { short.create_sandbox(&spec).await });
-    env.server.shared.arrived.notified().await;
+    guard(env.server.shared.arrived.notified()).await;
     tokio::time::pause();
     let error = call.await.unwrap().unwrap_err();
     assert!(matches!(

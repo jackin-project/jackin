@@ -513,6 +513,12 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
         base.main().clone(),
     );
     guard(gateway.create_sandbox(&spec)).await.unwrap();
+    assert!(
+        env.server
+            .state()
+            .sandboxes
+            .contains_key(&(workspace.clone(), name.to_string()))
+    );
     let found = guard(gateway.find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed())))
         .await
         .unwrap();

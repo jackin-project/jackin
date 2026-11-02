@@ -4,7 +4,8 @@
 use std::collections::BTreeMap;
 
 use jackin_core::{
-    AccountName, Agent, ImageId, LaunchId, PlannedLabels, RoleName, SandboxLabels, WorkspaceName,
+    AccountName, Agent, ImageId, LabelError, Labels, LaunchId, PlannedLabels, RoleName,
+    SandboxLabels, WorkspaceName,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -42,5 +43,61 @@ fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
     assert_eq!(actual, expected);
     assert!(set.is_managed());
     assert_eq!(SandboxLabels::from_labels(&set)?, labels);
+    Ok(())
+}
+
+fn pairs(items: &[(&str, &str)]) -> Vec<(String, String)> {
+    items
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+#[test]
+fn from_pairs_keeps_foreign_labels_that_the_gateway_grammar_allows_and_rejects_the_rest()
+-> TestResult {
+    let long = "a".repeat(63);
+    let accepted = pairs(&[
+        ("team", "runtime"),
+        ("k8s.example.com/Tier-1_x.y", ""),
+        ("plain", &long),
+    ]);
+    let labels = Labels::from_pairs(accepted.clone())?;
+    let mut kept: Vec<(String, String)> = labels
+        .iter()
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect();
+    kept.sort();
+    let mut expected = accepted;
+    expected.sort();
+    assert_eq!(kept, expected);
+    assert!(!labels.is_managed());
+
+    let too_long = "a".repeat(64);
+    let bad_keys = [
+        "",
+        "-lead",
+        "trail-",
+        "has space",
+        "UPPER.example.com/x",
+        "example..com/x",
+        "-example.com/x",
+        "/x",
+        &too_long,
+    ];
+    for key in bad_keys {
+        let error = Labels::from_pairs(pairs(&[(key, "v")])).unwrap_err();
+        assert!(
+            matches!(error, LabelError::InvalidKey { .. }),
+            "{key}: {error:?}"
+        );
+    }
+    for value in [&too_long[..], "-lead", "trail-", "has space"] {
+        let error = Labels::from_pairs(pairs(&[("ok", value)])).unwrap_err();
+        assert!(
+            matches!(error, LabelError::InvalidValue { .. }),
+            "{value}: {error:?}"
+        );
+    }
     Ok(())
 }

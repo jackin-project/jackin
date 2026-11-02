@@ -106,6 +106,7 @@ fn closure_violations_follow_d10_for_hosts_ports_and_binaries() {
     let provider = ProviderName::parse("jackin-work-codex").unwrap();
     let generated = RuleKey::provider_rule(&provider);
     let generated_name = generated.as_str().to_owned();
+    assert_eq!(generated_name, "_provider_jackin_work_codex");
 
     let only_generated =
         PolicyDocument::parse(&rule_doc(&[(&generated_name, "api.openai.com", 443)])).unwrap();
