@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use flate2::{Decompress, FlushDecompress, Status};
 use jackin_core::{CommitId, FileSystem, HostPath};
@@ -50,7 +51,7 @@ pub enum BundleRefusal {
     Inflate,
     #[error("a pack entry declares {declared} bytes and inflates to at least {inflated}")]
     SizeMismatch { declared: u64, inflated: u64 },
-    #[error("a {kind:?} entry declares {size} bytes and the limit is {limit}")]
+    #[error("a {kind} entry declares {size} bytes and the limit is {limit}")]
     EntryTooLarge {
         kind: EntryKind,
         size: u64,
@@ -73,6 +74,20 @@ pub enum EntryKind {
     DeltaStream,
     DeltaBase,
     DeltaResult,
+}
+
+impl fmt::Display for EntryKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            EntryKind::Blob => "blob",
+            EntryKind::Tree => "tree",
+            EntryKind::Commit => "commit",
+            EntryKind::Tag => "tag",
+            EntryKind::DeltaStream => "delta stream",
+            EntryKind::DeltaBase => "delta base",
+            EntryKind::DeltaResult => "delta result",
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
