@@ -18,6 +18,10 @@ pub struct LayerRule {
 
 pub const GATEWAY_FAMILIES: &[&str] = &["openshell", "tonic", "russh"];
 
+pub const HTTP_CLIENT_CRATE: &str = "reqwest";
+
+pub const HTTP_CLIENT_OWNER: &str = "jackin-usage-provider-core";
+
 pub const LAYERS: &[LayerRule] = &[
     LayerRule {
         member: "jackin-core",
@@ -86,6 +90,13 @@ pub const LAYERS: &[LayerRule] = &[
         imports: &[],
     },
     LayerRule {
+        member: "jackin-usage-provider-core",
+        depends: &[],
+        dev_depends: &[],
+        optional: &[],
+        imports: &[],
+    },
+    LayerRule {
         member: "jackin-xtask",
         depends: &[],
         dev_depends: &["jackin-testkit"],
@@ -119,6 +130,7 @@ impl Check for LayersCheck {
             }
             let imports = rule.map_or(&[][..], |rule| rule.imports);
             violations.extend(import_violations(repo, member, imports));
+            violations.extend(http_client_violations(repo, member));
         }
         sorted(violations)
     }
@@ -165,6 +177,10 @@ fn dependency_problem(
 ) -> Option<String> {
     let name = dependency.name();
     let subject = format!("{} {} {name}", member.name(), verb(dependency.kind()));
+    if name == HTTP_CLIENT_CRATE {
+        return (member.name() != HTTP_CLIENT_OWNER)
+            .then(|| format!("{subject}; only {HTTP_CLIENT_OWNER} may use the HTTP client crate"));
+    }
     if let Some(family) = gateway_family(name) {
         return (!rule.imports.contains(&family))
             .then(|| format!("{subject}; only jackin-openshell may use the gateway crates (D14)"));
@@ -238,4 +254,50 @@ fn gateway_import(tokens: &[Token], index: usize) -> Option<(&'static str, Strin
             .ident()
             .is_some_and(|previous| previous != "use");
     (followed_by_path && !nested).then(|| (family, ident.replace('_', "-")))
+}
+
+fn http_client_violations(repo: &Repo, member: &Member) -> Vec<Violation> {
+    if member.name() == HTTP_CLIENT_OWNER {
+        return Vec::new();
+    }
+    let mut violations = Vec::new();
+    for file in repo.files() {
+        if file.kind() != FileKind::Rust || !file.path().starts_with(member.dir()) {
+            continue;
+        }
+        let tokens = lex_rust(file.text()).tokens;
+        for (index, token) in tokens.iter().enumerate() {
+            if !names_http_client(&tokens, index) {
+                continue;
+            }
+            violations.push(Violation::at_line(
+                CiStep::Layers,
+                file.path(),
+                token.line,
+                format!(
+                    "{} imports {HTTP_CLIENT_CRATE}; only {HTTP_CLIENT_OWNER} may import the HTTP client crate",
+                    member.name()
+                ),
+            ));
+        }
+    }
+    violations
+}
+
+fn names_http_client(tokens: &[Token], index: usize) -> bool {
+    if tokens[index].ident() != Some(HTTP_CLIENT_CRATE) {
+        return false;
+    }
+    let followed_by_path = tokens.get(index + 1).is_some_and(|t| t.is_punct(':'))
+        && tokens.get(index + 2).is_some_and(|t| t.is_punct(':'));
+    let nested = index >= 3
+        && tokens[index - 1].is_punct(':')
+        && tokens[index - 2].is_punct(':')
+        && tokens[index - 3]
+            .ident()
+            .is_some_and(|previous| previous != "use");
+    let extern_crate = index >= 2
+        && tokens[index - 1].ident() == Some("crate")
+        && tokens[index - 2].ident() == Some("extern");
+    (followed_by_path && !nested) || extern_crate
 }

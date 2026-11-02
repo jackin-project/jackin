@@ -2094,6 +2094,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-usage-provider-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "reqwest",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "jackin-xtask"
 version = "0.1.0"
 dependencies = [

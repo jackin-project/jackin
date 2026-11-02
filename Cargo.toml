@@ -10,6 +10,7 @@ members = [
   "crates/jackin-session",
   "crates/jackin-testkit",
   "crates/jackin-tui",
+  "crates/usage/jackin-usage-provider-core",
   "crates/xtask",
 ]
 resolver = "3"
@@ -30,6 +31,7 @@ jackin-session = { path = "crates/jackin-session", version = "0.1.0" }
 jackin-testkit = { path = "crates/jackin-testkit", version = "0.1.0" }
 jackin-tui = { path = "crates/jackin-tui", version = "0.1.0" }
 async-trait = "0.1.92"
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 clap = { version = "4.6.7", features = ["derive"] }
 flate2 = "1.1.10"
 futures = "0.3.34"
@@ -42,6 +44,7 @@ openshell-providers = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1
 openshell-sdk = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.6", version = "0.0.0" }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-native-roots-no-provider"] }
 russh = { version = "0.65.0", default-features = false, features = ["aws-lc-rs", "flate2"] }
 rustix = { version = "1.1.6", features = ["fs", "process"] }
 serde = { version = "1.0.229", features = ["derive"] }

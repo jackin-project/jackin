@@ -298,6 +298,10 @@ fn d14() -> Specs {
             ],
         ),
         (
+            "jackin-usage-provider-core",
+            vec![Normal("reqwest"), Normal("serde_json"), Normal("thiserror")],
+        ),
+        (
             "jackin-xtask",
             vec![
                 Optional("jackin-core"),
@@ -774,6 +778,76 @@ mod layers {
                 &["jackin-testkit", "openshell"],
                 &["jackin-tui", "tonic"],
                 &["jackin", "tonic"],
+            ],
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn reqwest_in_a_manifest_outside_the_http_owner_is_reported() -> TestResult {
+        use Dep::{Dev, Normal};
+        let mut specs = d14();
+        add(&mut specs, "jackin-session", Normal("reqwest"));
+        add(&mut specs, "jackin-image", Dev("reqwest"));
+        let violations = run(&specs, &[])?;
+        assert_eq!(
+            summary(&violations),
+            [
+                manifest_found(CiStep::Layers, "jackin-image"),
+                manifest_found(CiStep::Layers, "jackin-session"),
+            ]
+        );
+        assert_messages(
+            &violations,
+            &[
+                &["jackin-image", "reqwest", "jackin-usage-provider-core"],
+                &["jackin-session", "reqwest", "jackin-usage-provider-core"],
+            ],
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn reqwest_imports_in_source_outside_the_http_owner_are_reported() -> TestResult {
+        let group = "use reqwest::{Client, StatusCode};\n";
+        let path = "fn f() {\n    let _client = reqwest::Client::new();\n}\n";
+        let extern_crate = "extern crate reqwest;\n";
+        let in_macro = "fn f() {\n    wrap!(reqwest::get(\"x\"));\n}\n";
+        let owner = "use reqwest::Client;\nfn f() { let _ = reqwest::get(\"x\"); }\n";
+        let quiet = "fn docs() {\n    let text = \"use reqwest::Client;\";\n    let raw = r#\"reqwest::Client\"#;\n    reqwest_helper::run();\n    crate::reqwest_stub::f();\n}\n";
+        let violations = run(
+            &d14(),
+            &[
+                ("crates/jackin-session/src/a.rs", group),
+                ("crates/jackin-image/src/b.rs", path),
+                ("crates/jackin-core/src/c.rs", extern_crate),
+                ("crates/jackin-tui/src/d.rs", in_macro),
+                ("crates/usage/jackin-usage-provider-core/src/lib.rs", owner),
+                ("crates/jackin-testkit/src/q.rs", quiet),
+            ],
+        )?;
+        let expected = vec![
+            at(CiStep::Layers, "crates/jackin-core/src/c.rs", 1),
+            at(
+                CiStep::Layers,
+                "crates/jackin-image/src/b.rs",
+                line_of(path, "reqwest"),
+            ),
+            at(CiStep::Layers, "crates/jackin-session/src/a.rs", 1),
+            at(
+                CiStep::Layers,
+                "crates/jackin-tui/src/d.rs",
+                line_of(in_macro, "reqwest"),
+            ),
+        ];
+        assert_eq!(summary(&violations), expected);
+        assert_messages(
+            &violations,
+            &[
+                &["jackin-core", "reqwest"],
+                &["jackin-image", "reqwest"],
+                &["jackin-session", "reqwest"],
+                &["jackin-tui", "reqwest"],
             ],
         );
         Ok(())

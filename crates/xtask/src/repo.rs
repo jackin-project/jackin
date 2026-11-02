@@ -11,7 +11,19 @@ use serde::Deserialize;
 
 use crate::ci::CiError;
 
-pub const PENDING_PORT_PATHS: &[&str] = &["crates/usage/"];
+pub const PENDING_PORT_PATHS: &[&str] = &[
+    "crates/usage/jackin-usage/",
+    "crates/usage/jackin-usage-provider-claude/",
+    "crates/usage/jackin-usage-provider-codex/",
+    "crates/usage/jackin-usage-provider-cursor/",
+    "crates/usage/jackin-usage-provider-gemini/",
+    "crates/usage/jackin-usage-provider-grok/",
+    "crates/usage/jackin-usage-provider-kimi/",
+    "crates/usage/jackin-usage-provider-minimax/",
+    "crates/usage/jackin-usage-provider-opencode/",
+    "crates/usage/jackin-usage-provider-openrouter/",
+    "crates/usage/jackin-usage-provider-zai/",
+];
 
 const BUILD_OUTPUT_PATHS: &[&str] = &["target/", ".git/"];
 
