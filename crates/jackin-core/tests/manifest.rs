@@ -1,14 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
 use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, EnvName, EnvSpec, FileKind, FileLock, FileMode, FileSystem, FsError, HookKind,
-    HostPath, ManifestError, RepoPath, RoleManifest, StdFileSystem,
+    DirEntry, EnvFile, EnvName, EnvSpec, FileKind, FileLock, FileMode, FileSystem, FsError,
+    HookKind, HostPath, ManifestError, RepoPath, RoleManifest, StdFileSystem,
 };
 
 type Fallible<T> = Result<T, Box<dyn std::error::Error>>;
@@ -110,8 +111,7 @@ fn manifest_render_escapes_arbitrary_env_text() -> TestResult {
         "plain",
         "a\"b",
         "a\\b",
-        "line1\nline2",
-        "a\r\nb",
+        "cr\rin",
         "tab\there",
         "\u{1}",
         "é€😀",
@@ -141,6 +141,66 @@ fn manifest_render_escapes_arbitrary_env_text() -> TestResult {
             .ok_or("env.X")?;
         assert_eq!(entry.get("default").and_then(|v| v.as_str()), Some(sample));
         assert_eq!(entry.get("prompt").and_then(|v| v.as_str()), Some(sample));
+    }
+    Ok(())
+}
+
+fn toml_basic(text: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in text.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ch if ch.is_control() => out.push_str(&format!("\\u{:04X}", u32::from(ch))),
+            ch => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
+}
+
+#[test]
+fn manifest_env_default_and_prompt_reject_newline_and_nul_exactly_when_the_env_file_does()
+-> TestResult {
+    let samples = [
+        "",
+        "plain",
+        "a b",
+        "a\"b",
+        "a\\b",
+        "tab\t",
+        "cr\r",
+        "\u{1}",
+        "é€😀",
+        "'quote'",
+        "a\nb",
+        "a\r\nb",
+        "\n",
+        "a\0b",
+        "\0",
+        "x\n",
+    ];
+    for sample in samples {
+        let bad = sample.contains(['\n', '\0']);
+        let accepted_by_env_file =
+            EnvFile::new(BTreeMap::from([(env_name("A")?, sample.to_owned())])).is_ok();
+        assert_eq!(accepted_by_env_file, !bad, "{sample:?}");
+        for key in ["default", "prompt"] {
+            let text = format!("{MIN}[env.A]\n{key} = {}\n", toml_basic(sample));
+            let expected = if bad {
+                format!("invalid:env.A.{key}")
+            } else {
+                "ok".to_owned()
+            };
+            assert_eq!(outcome(&text), expected, "{key} {sample:?}");
+        }
+    }
+    for key in ["default", "prompt"] {
+        let text = format!("{MIN}[env.A]\n{key} = \"\"\"\nline1\nline2\"\"\"\n");
+        assert_eq!(outcome(&text), format!("invalid:env.A.{key}"), "{key}");
     }
     Ok(())
 }
@@ -282,10 +342,12 @@ fn manifest_rejects_invalid_values_naming_the_key() -> TestResult {
         "DOCKER_HOST",
         "CODEX_HOME",
         "CODEX_AUTH_ACCESS_TOKEN",
+        "PATH",
+        "OPENAI_API_KEY",
     ] {
         cases.push((format!("{MIN}[env.{name}]\n"), format!("reserved:{name}")));
     }
-    for name in ["FOO", "MY_DOCKER_HOST", "PATH"] {
+    for name in ["FOO", "MY_DOCKER_HOST", "PATHS", "MY_PATH"] {
         cases.push((format!("{MIN}[env.{name}]\n"), "ok".to_owned()));
     }
     for (hook, expected) in hook_cases() {

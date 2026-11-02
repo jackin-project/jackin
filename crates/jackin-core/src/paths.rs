@@ -41,32 +41,32 @@ pub enum PathError {
     Fs(#[from] FsError),
 }
 
-fn normalize_host(path: &Path) -> PathBuf {
+fn normalize_host(path: &Path) -> Result<PathBuf, PathError> {
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {
             Component::Prefix(_) | Component::RootDir => out.push(component.as_os_str()),
             Component::CurDir => {}
             Component::ParentDir => {
-                out.pop();
+                return Err(PathError::ParentSegment(path.display().to_string()));
             }
             Component::Normal(name) => out.push(name),
         }
     }
-    out
+    Ok(out)
 }
 
 impl HostPath {
     pub fn parse(path: &Path) -> Result<HostPath, PathError> {
         if path.is_absolute() {
-            Ok(HostPath(normalize_host(path)))
+            normalize_host(path).map(HostPath)
         } else {
             Err(PathError::NotAbsolute(path.display().to_string()))
         }
     }
 
     pub fn resolve(path: &Path, cwd: &HostPath) -> Result<HostPath, PathError> {
-        Ok(HostPath(normalize_host(&cwd.0.join(path))))
+        normalize_host(&cwd.0.join(path)).map(HostPath)
     }
 
     pub fn as_path(&self) -> &Path {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::HashSet;
+use std::path::Path;
 
 use jackin_core::{
     Agent, HookKind, HostPath, LaunchId, PathError, ProjectRoot, RepoPath, SandboxPath,
@@ -39,6 +40,47 @@ fn sandbox_path_normalizes_and_rejects_non_absolute_or_parent_paths() -> TestRes
     assert_eq!(base.join("x")?.as_str(), "/sandbox/project/x");
     assert!(matches!(base.join(".."), Err(PathError::ParentSegment(_))));
     assert!(matches!(base.join(""), Err(PathError::EmptySegment(_))));
+    Ok(())
+}
+
+#[test]
+fn host_path_rejects_parent_segments_and_folds_dots_and_slashes() -> TestResult {
+    for text in ["/a/../b", "/..", "/a/b/..", "/a/link/../b"] {
+        assert!(
+            matches!(
+                HostPath::parse(Path::new(text)),
+                Err(PathError::ParentSegment(_))
+            ),
+            "{text}"
+        );
+    }
+    for text in ["/a/..b", "/a/b..", "/a/..."] {
+        assert_eq!(HostPath::parse(Path::new(text))?.as_path(), Path::new(text));
+    }
+    let cwd = HostPath::parse(Path::new("/w"))?;
+    for text in ["../x", "x/../y"] {
+        assert!(
+            matches!(
+                HostPath::resolve(Path::new(text), &cwd),
+                Err(PathError::ParentSegment(_))
+            ),
+            "{text}"
+        );
+    }
+    for (text, expected) in [("x", "/w/x"), ("./x", "/w/x"), ("/abs", "/abs")] {
+        assert_eq!(
+            HostPath::resolve(Path::new(text), &cwd)?.as_path(),
+            Path::new(expected),
+            "{text}"
+        );
+    }
+    for text in ["/a/./b", "/a//b", "/a/b/"] {
+        assert_eq!(
+            HostPath::parse(Path::new(text))?.as_path(),
+            Path::new("/a/b"),
+            "{text}"
+        );
+    }
     Ok(())
 }
 

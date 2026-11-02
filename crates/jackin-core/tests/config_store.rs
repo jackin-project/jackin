@@ -3,16 +3,17 @@
 
 use std::io::ErrorKind;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    Account, AccountName, Config, ConfigEdit, ConfigError, ConfigStore, CredentialSource, DirEntry,
-    EnvName, FileKind, FileLock, FileMode, FileSystem, FsError, GatewayEntry, GatewayName,
-    HostPath, Platform, Provider, RoleName, RoleSource, StdFileSystem,
+    Account, AccountName, Clock, Config, ConfigEdit, ConfigError, ConfigStore, CredentialSource,
+    DirEntry, EnvName, FileKind, FileLock, FileMode, FileSystem, FsError, GatewayEntry,
+    GatewayName, HostPath, Platform, Provider, RoleName, RoleSource, StdFileSystem, Timestamp,
 };
-use tokio::sync::oneshot;
+use tokio::sync::{Semaphore, oneshot};
 
 type Fallible<T> = Result<T, Box<dyn std::error::Error>>;
 type TestResult = Fallible<()>;
@@ -62,8 +63,42 @@ fn has_role(config: &Config, name: &str) -> Fallible<bool> {
     Ok(config.role(&RoleName::parse(name)?).is_some())
 }
 
+#[derive(Debug, Default)]
+struct StepClock {
+    slept: Mutex<Vec<Duration>>,
+}
+
+impl StepClock {
+    fn sleeps(&self) -> Vec<Duration> {
+        self.slept
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+#[async_trait]
+impl Clock for StepClock {
+    fn now(&self) -> Timestamp {
+        Timestamp(0)
+    }
+
+    async fn sleep(&self, duration: Duration) {
+        self.slept
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(duration);
+    }
+}
+
+fn plain_with(path: &HostPath, clock: &Arc<StepClock>) -> ConfigStore {
+    let shared = Arc::clone(clock);
+    let clock: Arc<dyn Clock> = shared;
+    ConfigStore::new(Arc::new(StdFileSystem::default()), clock, path.clone())
+}
+
 fn plain(path: &HostPath) -> ConfigStore {
-    ConfigStore::new(Arc::new(StdFileSystem::default()), path.clone())
+    plain_with(path, &Arc::new(StepClock::default()))
 }
 
 fn label(error: &ConfigError) -> String {
@@ -82,6 +117,15 @@ fn label(error: &ConfigError) -> String {
         ConfigError::AmbiguousGateway { .. } => "ambiguous".to_owned(),
         ConfigError::UnknownGateway(_) => "unknown-gateway".to_owned(),
         ConfigError::NoWorkspaceForPath(_) => "no-workspace".to_owned(),
+        ConfigError::DuplicatePath { path, workspaces } => format!(
+            "duplicate-path:{}:{}",
+            path.as_path().display(),
+            workspaces
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
         ConfigError::Fs(_) => "fs".to_owned(),
     }
 }
@@ -110,7 +154,8 @@ async fn edit_settled(
 async fn store_creates_the_file_applies_edits_in_order_and_reads_them_back() -> TestResult {
     let dir = tempfile::tempdir()?;
     let path = hp(&dir.path().join("jackin").join("config.toml"))?;
-    let store = plain(&path);
+    let clock = Arc::new(StepClock::default());
+    let store = plain_with(&path, &clock);
     assert_eq!(store.load().await?, Config::empty());
     let saved = store
         .edit(vec![gateway("g1")?, default_gateway("g1")?, account("a")?])
@@ -132,6 +177,7 @@ async fn store_creates_the_file_applies_edits_in_order_and_reads_them_back() -> 
         config.default_gateway().map(ToString::to_string),
         Some("g2".to_owned())
     );
+    assert!(clock.sleeps().is_empty());
     assert_eq!(
         ConfigStore::default_path(&hp(Path::new("/home/u"))?).as_path(),
         Path::new("/home/u/.config/jackin/config.toml")
@@ -274,7 +320,7 @@ async fn crash_case(fault: Fault, existing: bool) -> TestResult {
         fault,
         fired: AtomicBool::new(false),
     });
-    let error = ConfigStore::new(crashing, path.clone())
+    let error = ConfigStore::new(crashing, Arc::new(StepClock::default()), path.clone())
         .edit(vec![account("new")?])
         .await
         .err()
@@ -319,6 +365,8 @@ async fn a_crash_during_the_write_leaves_the_old_file_and_the_next_edit_succeeds
 struct GateFs {
     inner: StdFileSystem,
     target: HostPath,
+    reads: AtomicUsize,
+    locks: AtomicUsize,
     gate: Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
 }
 
@@ -326,6 +374,7 @@ struct GateFs {
 impl FileSystem for GateFs {
     async fn read(&self, p: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
         let parked = if *p == self.target {
+            self.reads.fetch_add(1, Ordering::SeqCst);
             self.gate.lock().map_err(|_poisoned| gate_error(p))?.take()
         } else {
             None
@@ -350,6 +399,7 @@ impl FileSystem for GateFs {
         self.inner.remove_file(p).await
     }
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
+        self.locks.fetch_add(1, Ordering::SeqCst);
         self.inner.lock(p).await
     }
     async fn write_new(&self, p: &HostPath, b: &[u8], m: FileMode) -> Result<(), FsError> {
@@ -371,6 +421,56 @@ fn gate_error(path: &HostPath) -> FsError {
     }
 }
 
+#[derive(Debug)]
+struct TickClock {
+    slept: Mutex<Vec<Duration>>,
+    permits: Semaphore,
+}
+
+impl TickClock {
+    fn new() -> TickClock {
+        TickClock {
+            slept: Mutex::new(Vec::new()),
+            permits: Semaphore::new(0),
+        }
+    }
+
+    fn sleep_count(&self) -> usize {
+        self.slept
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len()
+    }
+}
+
+#[async_trait]
+impl Clock for TickClock {
+    fn now(&self) -> Timestamp {
+        Timestamp(0)
+    }
+
+    async fn sleep(&self, duration: Duration) {
+        self.slept
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(duration);
+        if let Ok(permit) = self.permits.acquire().await {
+            permit.forget();
+        }
+    }
+}
+
+async fn until(what: &str, mut ready: impl FnMut() -> bool) -> TestResult {
+    for _ in 0..SETTLE_ROUNDS {
+        if ready() {
+            return Ok(());
+        }
+        tokio::task::spawn_blocking(|| ()).await?;
+        tokio::task::yield_now().await;
+    }
+    Err(format!("timed out waiting for {what}").into())
+}
+
 #[tokio::test]
 async fn concurrent_edits_serialise_on_the_lock_and_lose_no_update() -> TestResult {
     let dir = tempfile::tempdir()?;
@@ -379,27 +479,189 @@ async fn concurrent_edits_serialise_on_the_lock_and_lose_no_update() -> TestResu
     let old_bytes = std::fs::read(path.as_path())?;
     let (entered_tx, entered_rx) = oneshot::channel();
     let (release_tx, release_rx) = oneshot::channel();
-    let fs: Arc<dyn FileSystem> = Arc::new(GateFs {
+    let gate = Arc::new(GateFs {
         inner: StdFileSystem::default(),
         target: path.clone(),
+        reads: AtomicUsize::new(0),
+        locks: AtomicUsize::new(0),
         gate: Mutex::new(Some((entered_tx, release_rx))),
     });
-    let first = ConfigStore::new(Arc::clone(&fs), path.clone());
-    let second = ConfigStore::new(fs, path.clone());
+    let clock = Arc::new(TickClock::new());
+    let (gate_copy, clock_copy) = (Arc::clone(&gate), Arc::clone(&clock));
+    let fs: Arc<dyn FileSystem> = gate_copy;
+    let tick: Arc<dyn Clock> = clock_copy;
+    let first = ConfigStore::new(Arc::clone(&fs), Arc::clone(&tick), path.clone());
+    let second = ConfigStore::new(fs, tick, path.clone());
     let edit_a = vec![role("a")?];
     let task_a = tokio::spawn(async move { first.edit(edit_a).await });
     entered_rx.await?;
     let edit_b = vec![role("b")?];
     let task_b = tokio::spawn(async move { second.edit(edit_b).await });
-    for _ in 0..50 {
-        tokio::task::yield_now().await;
+    until("the first failed lock attempt of B", || {
+        clock.sleep_count() >= 1 || gate.reads.load(Ordering::SeqCst) >= 2
+    })
+    .await?;
+    for round in 0..4 {
+        if round > 0 {
+            let seen = clock.sleep_count();
+            clock.permits.add_permits(1);
+            until("the next lock retry of B", || clock.sleep_count() > seen).await?;
+        }
+        assert_eq!(gate.reads.load(Ordering::SeqCst), 1, "round {round}");
+        assert!(!task_b.is_finished(), "round {round}");
+        assert_eq!(std::fs::read(path.as_path())?, old_bytes, "round {round}");
     }
-    assert!(!task_b.is_finished());
-    assert_eq!(std::fs::read(path.as_path())?, old_bytes);
     release_tx.send(()).map_err(|()| "release")?;
     settle(task_a).await??;
+    clock.permits.add_permits(1000);
     settle(task_b).await??;
+    assert_eq!(gate.reads.load(Ordering::SeqCst), 2);
     let merged = plain(&path).load().await?;
     assert!(has_role(&merged, "a")? && has_role(&merged, "b")?);
+    assert!(merged.gateway(&GatewayName::parse("g1")?).is_some());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_held_lock_is_retried_on_a_fixed_interval_then_edit_gives_up_with_lock_held() -> TestResult
+{
+    let dir = tempfile::tempdir()?;
+    let path = hp(&dir.path().join("config.toml"))?;
+    let lock_path = hp(&dir.path().join("config.toml.lock"))?;
+    let held = StdFileSystem::default().lock(&lock_path).await?;
+    let clock = Arc::new(StepClock::default());
+    let error = plain_with(&path, &clock)
+        .edit(vec![role("a")?])
+        .await
+        .err()
+        .ok_or("edit under a held lock")?;
+    assert!(
+        matches!(&error, ConfigError::Fs(FsError::LockHeld(p)) if *p == lock_path),
+        "{error:?}"
+    );
+    assert!(!path.as_path().exists());
+    let sleeps = clock.sleeps();
+    assert!(sleeps.len() >= 50, "{}", sleeps.len());
+    assert!(sleeps.iter().all(|d| *d == sleeps[0]), "{sleeps:?}");
+    assert!(
+        (Duration::from_millis(10)..=Duration::from_millis(50)).contains(&sleeps[0]),
+        "{:?}",
+        sleeps[0]
+    );
+    let total: Duration = sleeps.iter().sum();
+    assert!(
+        (Duration::from_secs(5)..=Duration::from_secs(20)).contains(&total),
+        "{total:?}"
+    );
+    drop(held);
+    let fresh = Arc::new(StepClock::default());
+    let config = plain_with(&path, &fresh).edit(vec![role("a")?]).await?;
+    assert!(has_role(&config, "a")?);
+    assert!(fresh.sleeps().is_empty());
+    Ok(())
+}
+
+#[derive(Debug)]
+struct HoldingClock {
+    held: Mutex<Option<FileLock>>,
+    slept: Mutex<usize>,
+}
+
+#[async_trait]
+impl Clock for HoldingClock {
+    fn now(&self) -> Timestamp {
+        Timestamp(0)
+    }
+
+    async fn sleep(&self, _duration: Duration) {
+        let count = {
+            let mut slept = self.slept.lock().unwrap_or_else(PoisonError::into_inner);
+            *slept += 1;
+            *slept
+        };
+        if count == 3 {
+            self.held
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take();
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_lock_released_during_the_wait_lets_the_edit_succeed() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = hp(&dir.path().join("config.toml"))?;
+    let lock_path = hp(&dir.path().join("config.toml.lock"))?;
+    let held = StdFileSystem::default().lock(&lock_path).await?;
+    let clock = Arc::new(HoldingClock {
+        held: Mutex::new(Some(held)),
+        slept: Mutex::new(0),
+    });
+    let counting = Arc::new(GateFs {
+        inner: StdFileSystem::default(),
+        target: path.clone(),
+        reads: AtomicUsize::new(0),
+        locks: AtomicUsize::new(0),
+        gate: Mutex::new(None),
+    });
+    let (fs_copy, clock_copy) = (Arc::clone(&counting), Arc::clone(&clock));
+    let fs: Arc<dyn FileSystem> = fs_copy;
+    let ticking: Arc<dyn Clock> = clock_copy;
+    let store = ConfigStore::new(fs, ticking, path.clone());
+    let config = store.edit(vec![role("a")?]).await?;
+    assert!(has_role(&config, "a")?);
+    assert_eq!(
+        *clock.slept.lock().unwrap_or_else(PoisonError::into_inner),
+        3
+    );
+    assert_eq!(counting.locks.load(Ordering::SeqCst), 4);
+    assert_eq!(std::fs::read(path.as_path())?, config.render().as_bytes());
+    StdFileSystem::default().lock(&lock_path).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn edit_through_a_symlinked_config_is_refused_and_leaves_the_target_untouched() -> TestResult
+{
+    let dir = tempfile::tempdir()?;
+    let real_dir = dir.path().join("real");
+    std::fs::create_dir(&real_dir)?;
+    let real = hp(&real_dir.join("config.toml"))?;
+    plain(&real).edit(vec![gateway("g1")?]).await?;
+    let before = std::fs::read(real.as_path())?;
+    let link = dir.path().join("config.toml");
+    std::os::unix::fs::symlink(real.as_path(), &link)?;
+    let error = plain(&hp(&link)?)
+        .edit(vec![role("a")?])
+        .await
+        .err()
+        .ok_or("edit through a link")?;
+    assert!(
+        matches!(&error, ConfigError::Fs(FsError::SymlinkTarget(_))),
+        "{error:?}"
+    );
+    assert_eq!(std::fs::read(real.as_path())?, before);
+    assert_eq!(std::fs::read_link(&link)?, real.as_path());
+    assert!(!dir.path().join(".config.toml.tmp").exists());
+    assert!(!real_dir.join(".config.toml.tmp").exists());
+    let config = plain(&real).edit(vec![role("a")?]).await?;
+    assert!(has_role(&config, "a")?);
+
+    let dangling = dir.path().join("dangling.toml");
+    let missing = dir.path().join("missing.toml");
+    std::os::unix::fs::symlink(&missing, &dangling)?;
+    let error = plain(&hp(&dangling)?)
+        .edit(vec![role("a")?])
+        .await
+        .err()
+        .ok_or("edit through a dangling link")?;
+    assert!(
+        matches!(&error, ConfigError::Fs(FsError::SymlinkTarget(_))),
+        "{error:?}"
+    );
+    assert!(!missing.exists());
+    assert_eq!(std::fs::read_link(&dangling)?, missing);
+    assert!(!dir.path().join(".dangling.toml.tmp").exists());
     Ok(())
 }

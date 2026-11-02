@@ -8,9 +8,11 @@ use std::time::Duration;
 
 use jackin_core::{
     AccountName, AttemptId, BranchName, BuilderName, ChatgptAccountId, CommitId, EnvFile, EnvName,
-    GatewayName, IdError, ImageId, ImageLabel, ImageTag, LaunchId, ModelName, NameSuffix,
-    OpReference, OpenShellWorkspace, ProcessSpec, ProcessStdin, ProfileId, Program, ProviderName,
-    Redactor, RoleName, SandboxName, SandboxSlug, Secret, SecretBytes, Sha256, WorkspaceName,
+    EnvSnapshot, EnvValue, GatewayName, IdError, ImageId, ImageLabel, ImageTag, LaunchId,
+    ModelName, NameSuffix, OpReference, OpenShellWorkspace, OutputLine, OutputStream, ProcessError,
+    ProcessOutput, ProcessSpec, ProcessStatus, ProcessStdin, ProfileId, Program, ProviderName,
+    Redactor, RoleName, RoleRev, RoleUrl, SandboxName, SandboxSlug, Secret, SecretBytes,
+    SecretOutput, Sha256, WorkspaceName,
 };
 use serde::Serialize;
 use static_assertions::assert_not_impl_any;
@@ -59,6 +61,7 @@ fn secret_debug_output_hides_the_value_wherever_it_is_nested() {
         args: vec!["--flag".to_owned()],
         cwd: None,
         env: Vec::new(),
+        env_remove_prefixes: Vec::new(),
         stdin: ProcessStdin::Bytes(SecretBytes::new(SENTINEL.as_bytes().to_vec())),
         timeout: Duration::from_secs(1),
     };
@@ -88,6 +91,8 @@ fn secret_debug_output_hides_the_value_wherever_it_is_nested() {
 fn secret_types_cannot_be_displayed_or_serialized() {
     assert_not_impl_any!(Secret: Serialize, Display);
     assert_not_impl_any!(SecretBytes: Serialize, Display);
+    assert_not_impl_any!(EnvValue: Serialize, Display);
+    assert_not_impl_any!(SecretOutput: Serialize, Display, Clone);
 }
 
 #[test]
@@ -191,6 +196,8 @@ fn errors_never_echo_a_secret_bearing_input() -> TestResult {
         ("OpReference", rejection::<OpReference>),
         ("ModelName", rejection::<ModelName>),
         ("ImageTag", rejection::<ImageTag>),
+        ("RoleUrl", rejection::<RoleUrl>),
+        ("RoleRev", rejection::<RoleRev>),
         ("ImageId", rejection::<ImageId>),
         ("AttemptId", rejection::<AttemptId>),
         ("BranchName", rejection::<BranchName>),
@@ -207,7 +214,7 @@ fn errors_never_echo_a_secret_bearing_input() -> TestResult {
             }
         }
     }
-    assert_eq!(checked, 22 * 3);
+    assert_eq!(checked, 24 * 3);
 
     let name = EnvName::parse("A")?;
     let invalid = EnvFile::new(BTreeMap::from([(name, format!("{SENTINEL}\n"))]))
@@ -219,4 +226,154 @@ fn errors_never_echo_a_secret_bearing_input() -> TestResult {
         .ok_or("accepted")?;
     assert_no_leak(SENTINEL, &format!("{syntax} {syntax:?}"));
     Ok(())
+}
+
+#[derive(Debug)]
+struct Chain {
+    env: EnvSnapshot,
+    spec: ProcessSpec,
+    output: Result<ProcessOutput, ProcessError>,
+    lines: Vec<OutputLine>,
+    secret: SecretOutput,
+}
+
+fn chain() -> Result<Chain, Box<dyn std::error::Error>> {
+    Ok(Chain {
+        env: EnvSnapshot::from_pairs([
+            ("ANTHROPIC_API_KEY".to_owned(), SENTINEL.to_owned()),
+            ("HOME".to_owned(), "/home/probe-user".to_owned()),
+        ]),
+        spec: ProcessSpec {
+            program: Program::Op,
+            args: vec!["read".to_owned(), "op://vault/item".to_owned()],
+            cwd: None,
+            env: vec![
+                (
+                    "OP_SERVICE_ACCOUNT_TOKEN".to_owned(),
+                    EnvValue::Secret(Secret::new(SENTINEL.to_owned())),
+                ),
+                ("LANG".to_owned(), EnvValue::Plain("en_US.UTF-8".to_owned())),
+            ],
+            env_remove_prefixes: vec!["OPENSHELL_".to_owned()],
+            stdin: ProcessStdin::Bytes(SecretBytes::new(SENTINEL.as_bytes().to_vec())),
+            timeout: Duration::from_secs(1),
+        },
+        output: Ok(ProcessOutput {
+            status: ProcessStatus::Exited(0),
+            stdout: SENTINEL.as_bytes().to_vec(),
+            stderr: format!("boom: {SENTINEL}\n").into_bytes(),
+        }),
+        lines: vec![OutputLine {
+            stream: OutputStream::Stdout,
+            text: SENTINEL.to_owned(),
+        }],
+        secret: SecretOutput {
+            status: ProcessStatus::Exited(0),
+            stdout: SecretBytes::new(SENTINEL.as_bytes().to_vec()),
+            stderr: SENTINEL.as_bytes().to_vec(),
+        },
+    })
+}
+
+#[test]
+fn process_boundary_debug_prints_names_and_lengths_never_values() -> TestResult {
+    let chain = chain()?;
+    for (rendered, status) in [
+        (format!("{chain:?}"), "Exited(0)"),
+        (format!("{chain:#?}"), "Exited("),
+    ] {
+        assert_no_leak(SENTINEL, &rendered);
+        assert_no_byte_leak(&rendered);
+        assert!(!rendered.contains("/home/probe-user"), "{rendered}");
+        for control in [
+            "ANTHROPIC_API_KEY",
+            "OP_SERVICE_ACCOUNT_TOKEN",
+            "en_US.UTF-8",
+            "op://vault/item",
+            "OPENSHELL_",
+            status,
+            "17",
+            "24",
+        ] {
+            assert!(
+                rendered.contains(control),
+                "{control} missing in {rendered}"
+            );
+        }
+    }
+    assert_eq!(
+        chain.env.get(&EnvName::parse("HOME")?),
+        Some("/home/probe-user")
+    );
+    assert_eq!(chain.spec.args.len(), 2);
+    assert_eq!(chain.lines[0].text, SENTINEL);
+    assert_eq!(chain.secret.stdout.expose(), SENTINEL.as_bytes());
+    assert_eq!(chain.output?.stderr.len(), 24);
+    Ok(())
+}
+
+#[test]
+fn redactor_masks_each_line_of_a_multi_line_secret_and_merges_overlapping_matches() {
+    let secret = "-----BEGIN KEY-----\nAAAAAAAA\nBBBBBBBB\n-----END KEY-----";
+    let redact = |secrets: &[&str], text: &str| {
+        let secrets: Vec<Secret> = secrets
+            .iter()
+            .map(|secret| Secret::new((*secret).to_owned()))
+            .collect();
+        Redactor::new(secrets.iter()).apply(text)
+    };
+    let mask = redact(&["abc"], "abc");
+    assert!(!mask.is_empty());
+    for line in ["AAAAAAAA", "BBBBBBBB", "-----BEGIN KEY-----"] {
+        assert_eq!(
+            redact(&[secret], &format!("line: {line}")),
+            format!("line: {mask}")
+        );
+    }
+    assert_eq!(
+        redact(&[secret], &format!("x\n{secret}\ny")),
+        format!("x\n{mask}\ny")
+    );
+    let blank = "AAAAAAAA\n\nBBBBBBBB";
+    assert_eq!(redact(&[blank], ""), "");
+    assert_eq!(redact(&[blank], "\n"), "\n");
+    assert_eq!(redact(&["AAAAAAAA\r\nBBBBBBBB"], "AAAAAAAA"), mask);
+    assert_eq!(redact(&["AAAAAAAA\r\nBBBBBBBB"], "BBBBBBBB"), mask);
+    let rows: [(&[&str], &str, String); 4] = [
+        (&["abc", "bcd"], "abcd", mask.clone()),
+        (&["abc", "bcd", "cde"], "xabcdey", format!("x{mask}y")),
+        (&["abc", "def"], "abcdef", format!("{mask}{mask}")),
+        (
+            &["AAAAAAAA\nBBBBBBBB", "BBBBBBBBcccc"],
+            "AAAAAAAA\nBBBBBBBBcccc",
+            mask.clone(),
+        ),
+    ];
+    for (secrets, text, expected) in rows {
+        assert_eq!(redact(secrets, text), expected, "{secrets:?} {text:?}");
+    }
+}
+
+#[test]
+fn credential_adjacent_ids_never_echo_a_rejected_character() {
+    let probes: [(&str, Probe); 3] = [
+        ("EnvName", rejection::<EnvName>),
+        ("ChatgptAccountId", rejection::<ChatgptAccountId>),
+        ("OpReference", rejection::<OpReference>),
+    ];
+    let inputs = [
+        SENTINEL.to_owned(),
+        format!("sk-{SENTINEL}"),
+        "\u{e9}\u{20ac}".to_owned(),
+        "a#b".to_owned(),
+    ];
+    for (name, probe) in probes {
+        for input in &inputs {
+            let rendered = probe(input).unwrap_or_default();
+            assert!(!rendered.is_empty(), "{name} accepted {input:?}");
+            for echoed in ['#', '!', '@', '\u{20ac}', '\u{e9}'] {
+                assert!(!rendered.contains(echoed), "{name} {input:?}: {rendered}");
+            }
+        }
+    }
 }

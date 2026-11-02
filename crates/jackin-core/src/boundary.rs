@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -11,13 +11,21 @@ use tokio_util::sync::CancellationToken;
 
 use crate::ids::EnvName;
 use crate::paths::HostPath;
-use crate::secret::SecretBytes;
+use crate::secret::{Secret, SecretBytes};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Timestamp(pub i64);
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct EnvSnapshot(BTreeMap<String, String>);
+
+impl Debug for EnvSnapshot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EnvSnapshot")
+            .field("names", &self.0.keys().collect::<Vec<_>>())
+            .finish()
+    }
+}
 
 #[async_trait]
 pub trait Clock: Send + Sync + Debug {
@@ -133,9 +141,16 @@ pub struct ProcessSpec {
     pub program: Program,
     pub args: Vec<String>,
     pub cwd: Option<HostPath>,
-    pub env: Vec<(String, String)>,
+    pub env: Vec<(String, EnvValue)>,
+    pub env_remove_prefixes: Vec<String>,
     pub stdin: ProcessStdin,
     pub timeout: Duration,
+}
+
+#[derive(Debug)]
+pub enum EnvValue {
+    Plain(String),
+    Secret(Secret),
 }
 
 #[derive(Debug)]
@@ -144,11 +159,37 @@ pub enum ProcessStdin {
     Bytes(SecretBytes),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ProcessOutput {
     pub status: ProcessStatus,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
+}
+
+impl Debug for ProcessOutput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProcessOutput")
+            .field("status", &self.status)
+            .field("stdout_len", &self.stdout.len())
+            .field("stderr_len", &self.stderr.len())
+            .finish()
+    }
+}
+
+pub struct SecretOutput {
+    pub status: ProcessStatus,
+    pub stdout: SecretBytes,
+    pub stderr: Vec<u8>,
+}
+
+impl Debug for SecretOutput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SecretOutput")
+            .field("status", &self.status)
+            .field("stdout", &self.stdout)
+            .field("stderr_len", &self.stderr.len())
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -157,10 +198,19 @@ pub enum ProcessStatus {
     Signaled(i32),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct OutputLine {
     pub stream: OutputStream,
     pub text: String,
+}
+
+impl Debug for OutputLine {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OutputLine")
+            .field("stream", &self.stream)
+            .field("text_len", &self.text.len())
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -179,6 +229,12 @@ pub trait ProcessRunner: Send + Sync + Debug {
         lines: Option<&LineSink>,
         cancel: &CancellationToken,
     ) -> Result<ProcessOutput, ProcessError>;
+
+    async fn run_secret(
+        &self,
+        spec: &ProcessSpec,
+        cancel: &CancellationToken,
+    ) -> Result<SecretOutput, ProcessError>;
 }
 
 #[derive(Debug, Error)]
@@ -193,6 +249,8 @@ pub enum FsError {
     AlreadyExists(HostPath),
     #[error("lock held: {0:?}")]
     LockHeld(HostPath),
+    #[error("refusing to replace the symbolic link {0:?}")]
+    SymlinkTarget(HostPath),
 }
 
 #[derive(Debug, Error)]

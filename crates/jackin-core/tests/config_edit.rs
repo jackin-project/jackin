@@ -412,6 +412,15 @@ fn label(error: &ConfigError) -> String {
         ConfigError::AmbiguousGateway { .. } => "ambiguous".to_owned(),
         ConfigError::UnknownGateway(name) => format!("unknown-gateway:{name}"),
         ConfigError::NoWorkspaceForPath(_) => "no-workspace".to_owned(),
+        ConfigError::DuplicatePath { path, workspaces } => format!(
+            "duplicate-path:{}:{}",
+            path.as_path().display(),
+            workspaces
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
         ConfigError::Fs(_) => "fs".to_owned(),
     }
 }
@@ -431,6 +440,41 @@ fn new_workspace(
             .map(|(provider, name)| Ok((provider, acct(name)?)))
             .collect::<Fallible<_>>()?,
     })
+}
+
+fn workspace_at(path: &str) -> Fallible<Workspace> {
+    Ok(Workspace {
+        path: hp(path)?,
+        ..new_workspace(vec![], None)?
+    })
+}
+
+fn duplicate_path_rows() -> Fallible<Vec<RejectedRow>> {
+    [
+        ("path of proj", "/p/proj", "duplicate-path:/p/proj:new,proj"),
+        (
+            "path of proj with a trailing slash",
+            "/p/proj/",
+            "duplicate-path:/p/proj:new,proj",
+        ),
+        (
+            "path of other",
+            "/p/other",
+            "duplicate-path:/p/other:new,other",
+        ),
+    ]
+    .into_iter()
+    .map(|(name, path, expected)| {
+        Ok((
+            name,
+            ConfigEdit::AddWorkspace {
+                name: ws("new")?,
+                workspace: workspace_at(path)?,
+            },
+            expected.to_owned(),
+        ))
+    })
+    .collect()
 }
 
 fn duplicate_rows() -> Fallible<Vec<RejectedRow>> {
@@ -617,6 +661,7 @@ fn blocked_rows() -> Fallible<Vec<RejectedRow>> {
 
 fn rejected_rows() -> Fallible<Vec<RejectedRow>> {
     let mut rows = duplicate_rows()?;
+    rows.extend(duplicate_path_rows()?);
     rows.extend(missing_rows()?);
     rows.extend(blocked_rows()?);
     Ok(rows)
@@ -632,6 +677,20 @@ fn rejected_edits_name_the_reason_and_leave_the_config_unchanged() -> TestResult
         assert_eq!(config, before, "{name}");
         assert_eq!(config.render(), before.render(), "{name}");
     }
+    Ok(())
+}
+
+#[test]
+fn a_workspace_path_is_free_again_after_its_workspace_is_removed() -> TestResult {
+    let mut config = Config::parse(BASE)?;
+    config.apply(ConfigEdit::RemoveWorkspace(ws("proj")?))?;
+    config.apply(ConfigEdit::AddWorkspace {
+        name: ws("new")?,
+        workspace: workspace_at("/p/proj")?,
+    })?;
+    let (name, _) = config.workspace_for(&hp("/p/proj")?)?;
+    assert_eq!(name, &ws("new")?);
+    assert_eq!(Config::parse(&config.render())?, config);
     Ok(())
 }
 

@@ -150,3 +150,50 @@ async fn write_atomic_failure_keeps_the_old_file_and_leaves_no_temp_file() -> Te
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn write_atomic_refuses_a_symlink_target_and_replaces_a_regular_file() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let root = dir.path();
+    let fs = StdFileSystem::default();
+    let at = |name: &str| HostPath::parse(&root.join(name));
+
+    std::fs::write(root.join("real.txt"), b"keep")?;
+    std::os::unix::fs::symlink(root.join("real.txt"), root.join("link-file"))?;
+    let outcome = write_atomic(&fs, &at("link-file")?, b"new", FileMode(0o600)).await;
+    assert!(
+        matches!(outcome, Err(FsError::SymlinkTarget(_))),
+        "{outcome:?}"
+    );
+    assert_eq!(std::fs::read(root.join("real.txt"))?, b"keep");
+    assert!(std::fs::symlink_metadata(root.join("link-file"))?.is_symlink());
+    assert!(!root.join(".link-file.tmp").exists());
+
+    std::os::unix::fs::symlink(root.join("missing.txt"), root.join("dangling"))?;
+    let outcome = write_atomic(&fs, &at("dangling")?, b"new", FileMode(0o600)).await;
+    assert!(
+        matches!(outcome, Err(FsError::SymlinkTarget(_))),
+        "{outcome:?}"
+    );
+    assert!(!root.join("missing.txt").exists());
+    assert!(!root.join(".dangling.tmp").exists());
+
+    std::fs::create_dir(root.join("a-dir"))?;
+    std::os::unix::fs::symlink(root.join("a-dir"), root.join("link-dir"))?;
+    let outcome = write_atomic(&fs, &at("link-dir")?, b"new", FileMode(0o600)).await;
+    assert!(
+        matches!(outcome, Err(FsError::SymlinkTarget(_))),
+        "{outcome:?}"
+    );
+    assert!(std::fs::symlink_metadata(root.join("link-dir"))?.is_symlink());
+
+    std::fs::write(root.join("regular.txt"), b"old")?;
+    write_atomic(&fs, &at("regular.txt")?, b"new", FileMode(0o600)).await?;
+    assert_eq!(std::fs::read(root.join("regular.txt"))?, b"new");
+
+    std::fs::create_dir(root.join("real_dir"))?;
+    std::os::unix::fs::symlink(root.join("real_dir"), root.join("link_dir"))?;
+    write_atomic(&fs, &at("link_dir/config.toml")?, b"in", FileMode(0o600)).await?;
+    assert_eq!(std::fs::read(root.join("real_dir/config.toml"))?, b"in");
+    Ok(())
+}

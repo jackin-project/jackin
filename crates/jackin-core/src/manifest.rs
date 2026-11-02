@@ -12,6 +12,7 @@ use crate::paths::{HostPath, RepoPath};
 use crate::tomlkit::{Finding, Reader, parse_table, quote};
 
 const MANIFEST_MODE: FileMode = FileMode(0o644);
+const ENV_TEXT: &str = "expected text without a newline or NUL";
 const REPO_PATH: &str = "expected a relative path without empty, . or .. segments";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,6 +103,14 @@ fn repo_path(text: &str) -> Result<RepoPath, &'static str> {
     RepoPath::parse(text).map_err(|_error| REPO_PATH)
 }
 
+fn env_text(text: &str) -> Result<String, &'static str> {
+    if text.contains(['\n', '\0']) {
+        Err(ENV_TEXT)
+    } else {
+        Ok(text.to_owned())
+    }
+}
+
 fn static_message(message: &'static str) -> String {
     message.to_owned()
 }
@@ -180,8 +189,8 @@ fn read_env(
         let Some(mut entry) = env.entry_table(key, value) else {
             continue;
         };
-        let default = entry.string("default").map(str::to_owned);
-        let prompt = entry.string("prompt").map(str::to_owned);
+        let default = entry.parsed("default", env_text, static_message);
+        let prompt = entry.parsed("prompt", env_text, static_message);
         entry.finish();
         if name.is_reserved() {
             reserved.push(ManifestError::ReservedEnvName(name));

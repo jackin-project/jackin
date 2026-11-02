@@ -46,14 +46,22 @@ where
     let interval = plan.interval.max(MIN_INTERVAL);
     let mut elapsed = Duration::ZERO;
     loop {
-        match probe().await.map_err(PollError::Probe)? {
+        let remaining = plan.timeout.saturating_sub(elapsed);
+        let outcome = tokio::select! {
+            biased;
+            () = cancel.cancelled() => return Err(PollError::Cancelled),
+            outcome = probe() => outcome,
+            () = clock.sleep(remaining) => {
+                return Err(PollError::Timeout { after: plan.timeout });
+            }
+        };
+        match outcome.map_err(PollError::Probe)? {
             Poll::Ready(value) => return Ok(value),
             Poll::Pending => {}
         }
         if cancel.is_cancelled() {
             return Err(PollError::Cancelled);
         }
-        let remaining = plan.timeout.saturating_sub(elapsed);
         if remaining.is_zero() {
             return Err(PollError::Timeout { after: elapsed });
         }

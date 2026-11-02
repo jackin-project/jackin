@@ -3,23 +3,27 @@
 
 use std::sync::Arc;
 
+use std::time::Duration;
+
 use super::{Config, ConfigEdit, ConfigError};
-use crate::boundary::{FileLock, FileMode, FileSystem, FsError};
+use crate::boundary::{Clock, FileLock, FileMode, FileSystem, FsError};
 use crate::fs::write_atomic;
 use crate::paths::HostPath;
 
 const CONFIG_MODE: FileMode = FileMode(0o600);
-const LOCK_ATTEMPTS: u32 = 100_000;
+const LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(20);
+const LOCK_WAIT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
 pub struct ConfigStore {
     fs: Arc<dyn FileSystem>,
+    clock: Arc<dyn Clock>,
     path: HostPath,
 }
 
 impl ConfigStore {
-    pub fn new(fs: Arc<dyn FileSystem>, path: HostPath) -> ConfigStore {
-        ConfigStore { fs, path }
+    pub fn new(fs: Arc<dyn FileSystem>, clock: Arc<dyn Clock>, path: HostPath) -> ConfigStore {
+        ConfigStore { fs, clock, path }
     }
 
     pub fn default_path(home: &HostPath) -> HostPath {
@@ -80,12 +84,12 @@ impl ConfigStore {
         let mut lock_name = name.to_os_string();
         lock_name.push(".lock");
         let lock_path = self.path.with_file_name(&lock_name);
-        let mut attempts = 0;
+        let mut waited = Duration::ZERO;
         loop {
             match self.fs.lock(&lock_path).await {
-                Err(FsError::LockHeld(_)) if attempts < LOCK_ATTEMPTS => {
-                    attempts += 1;
-                    tokio::task::yield_now().await;
+                Err(FsError::LockHeld(_)) if waited < LOCK_WAIT => {
+                    self.clock.sleep(LOCK_RETRY_INTERVAL).await;
+                    waited += LOCK_RETRY_INTERVAL;
                 }
                 other => return other.map_err(ConfigError::from),
             }

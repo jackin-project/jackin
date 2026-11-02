@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::fmt;
-use std::hash::{BuildHasher, RandomState};
 use std::num::NonZeroU64;
 use std::str::FromStr;
 
@@ -17,6 +16,23 @@ const BASE32: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
 const BASE36: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
 const SUFFIX_MODULUS: u64 = 36 * 36 * 36 * 36;
 const LAUNCH_ID_LEN: usize = 26;
+const RESERVED_PREFIXES: [&str; 7] = [
+    "JACKIN_",
+    "OPENAI_",
+    "CODEX_",
+    "DOCKER_",
+    "BUILDX_",
+    "LD_",
+    "OPENSHELL_",
+];
+const RESERVED_NAMES: [&str; 6] = [
+    "PATH",
+    "HOME",
+    "BASH_ENV",
+    "ENV",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+];
 const ATTEMPT_MAX: u64 = 999_999_999_999_999_999;
 const ATTEMPT_MAX_DIGITS: usize = 18;
 const SANDBOX_PREFIX: &str = "jackin-";
@@ -54,6 +70,10 @@ pub enum IdError {
     },
 }
 
+#[derive(Debug, Error)]
+#[error("the operating system could not provide random bytes: {0}")]
+pub struct EntropyError(getrandom::Error);
+
 #[derive(Clone, Copy)]
 enum Edge {
     Open,
@@ -67,6 +87,7 @@ struct Rule {
     accepts: fn(char) -> bool,
     edge: Edge,
     single_hyphen: bool,
+    quiet: Option<&'static str>,
 }
 
 impl Rule {
@@ -82,7 +103,13 @@ impl Rule {
                 len,
             });
         }
-        first_invalid(kind, text, 0, self.accepts)?;
+        match self.quiet {
+            Some(expected) if !text.chars().all(self.accepts) => {
+                return Err(IdError::BadFormat { kind, expected });
+            }
+            Some(_) => {}
+            None => first_invalid(kind, text, 0, self.accepts)?,
+        }
         let first_ok = text
             .chars()
             .next()
@@ -154,48 +181,56 @@ const LABEL_VALUE: Rule = Rule {
     accepts: label_char,
     edge: Edge::Both,
     single_hyphen: false,
+    quiet: None,
 };
 const ACCOUNT: Rule = Rule {
     max: 32,
     accepts: dns_char,
     edge: Edge::Both,
     single_hyphen: true,
+    quiet: None,
 };
 const DNS_19: Rule = Rule {
     max: 19,
     accepts: dns_char,
     edge: Edge::Both,
-    single_hyphen: false,
+    single_hyphen: true,
+    quiet: None,
 };
 const SLUG: Rule = Rule {
     max: 7,
     accepts: dns_char,
     edge: Edge::Both,
     single_hyphen: true,
+    quiet: None,
 };
 const DNS_NAME_63: Rule = Rule {
     max: 63,
     accepts: dns_char,
     edge: Edge::Both,
     single_hyphen: true,
+    quiet: None,
 };
 const GATEWAY_LIKE: Rule = Rule {
     max: 64,
     accepts: label_char,
     edge: Edge::Open,
     single_hyphen: false,
+    quiet: None,
 };
 const CHATGPT_ACCOUNT: Rule = Rule {
     max: 64,
     accepts: account_id_char,
     edge: Edge::Open,
     single_hyphen: false,
+    quiet: Some("ASCII letters, digits and hyphens"),
 };
 const MODEL: Rule = Rule {
     max: 64,
     accepts: model_char,
     edge: Edge::First,
     single_hyphen: false,
+    quiet: None,
 };
 
 fn hex_digest(bytes: &[u8]) -> String {
@@ -232,12 +267,17 @@ fn hex_text(
 
 fn check_env_name(kind: &'static str, text: &str) -> Result<(), IdError> {
     non_empty(kind, text)?;
-    match text.chars().enumerate().find(|(index, c)| {
-        let head = c.is_ascii_alphabetic() || *c == '_';
-        !(head || (*index > 0 && c.is_ascii_digit()))
-    }) {
-        Some((index, ch)) => Err(IdError::InvalidChar { kind, ch, index }),
-        None => Ok(()),
+    let valid = text
+        .chars()
+        .enumerate()
+        .all(|(index, c)| c.is_ascii_alphabetic() || c == '_' || (index > 0 && c.is_ascii_digit()));
+    if valid {
+        Ok(())
+    } else {
+        Err(IdError::BadFormat {
+            kind,
+            expected: "letters, digits and underscores, not starting with a digit",
+        })
     }
 }
 
@@ -256,12 +296,6 @@ fn check_name_suffix(kind: &'static str, text: &str) -> Result<(), IdError> {
 
 fn check_sandbox_name(kind: &'static str, text: &str) -> Result<(), IdError> {
     DNS_19.check(kind, text)?;
-    if text.contains("--") {
-        return Err(IdError::BadFormat {
-            kind,
-            expected: "free of consecutive hyphens",
-        });
-    }
     if !text.starts_with(SANDBOX_PREFIX) {
         return Err(IdError::BadFormat {
             kind,
@@ -269,6 +303,84 @@ fn check_sandbox_name(kind: &'static str, text: &str) -> Result<(), IdError> {
         });
     }
     Ok(())
+}
+
+fn plain_text(text: &str) -> bool {
+    !text.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+fn url_host(hostport: &str) -> bool {
+    let host = match hostport.split_once(':') {
+        Some((host, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => host,
+        Some(_) => return false,
+        None => hostport,
+    };
+    !host.is_empty() && !host.starts_with('-')
+}
+
+fn ssh_authority(authority: &str) -> bool {
+    match authority.rsplit_once('@') {
+        Some((user, hostport)) => {
+            !user.is_empty()
+                && !user.starts_with('-')
+                && !user.contains([':', '@'])
+                && url_host(hostport)
+        }
+        None => url_host(authority),
+    }
+}
+
+fn scp_form(text: &str) -> bool {
+    let Some((target, path)) = text.split_once(':') else {
+        return false;
+    };
+    let Some((user, host)) = target.split_once('@') else {
+        return false;
+    };
+    !path.is_empty()
+        && !target.contains('/')
+        && !user.is_empty()
+        && !user.starts_with('-')
+        && !host.is_empty()
+        && !host.starts_with('-')
+        && !host.contains('@')
+}
+
+fn check_role_url(kind: &'static str, text: &str) -> Result<(), IdError> {
+    non_empty(kind, text)?;
+    let accepted = plain_text(text)
+        && !text.starts_with('-')
+        && if let Some(rest) = text.strip_prefix("https://") {
+            let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+            !authority.contains('@') && url_host(authority)
+        } else if let Some(rest) = text.strip_prefix("ssh://") {
+            ssh_authority(rest.split(['/', '?', '#']).next().unwrap_or_default())
+        } else {
+            !text.contains("://") && scp_form(text)
+        };
+    if accepted {
+        Ok(())
+    } else {
+        Err(IdError::BadFormat {
+            kind,
+            expected: "an https URL without credentials, an ssh URL, or scp-style text, with a real host and no option, password or control character",
+        })
+    }
+}
+
+fn check_role_rev(kind: &'static str, text: &str) -> Result<(), IdError> {
+    non_empty(kind, text)?;
+    let charset = text
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'));
+    if charset && !text.starts_with('-') && !text.contains("..") {
+        Ok(())
+    } else {
+        Err(IdError::BadFormat {
+            kind,
+            expected: "a Git ref name of letters, digits, . _ - and /, not starting with a hyphen or containing ..",
+        })
+    }
 }
 
 fn check_commit_id(kind: &'static str, text: &str) -> Result<(), IdError> {
@@ -473,6 +585,8 @@ string_id!(Sha256, "SHA-256 digest", with check_sha256);
 string_id!(OpReference, "1Password reference", with check_op_reference);
 string_id!(ModelName, "model name", rule MODEL);
 string_id!(ImageTag, "image tag", with check_image_tag);
+string_id!(RoleUrl, "role URL", with check_role_url);
+string_id!(RoleRev, "role revision", with check_role_rev);
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(try_from = "String")]
@@ -539,21 +653,19 @@ impl SandboxName {
 }
 
 impl LaunchId {
-    pub fn generate() -> LaunchId {
-        let mut id = String::with_capacity(LAUNCH_ID_LEN);
-        let mut round = 0_u64;
-        while id.len() < LAUNCH_ID_LEN {
-            let mut bits = RandomState::new().hash_one(round);
-            round += 1;
-            for _ in 0..12 {
-                if id.len() == LAUNCH_ID_LEN {
-                    break;
-                }
-                id.push(char::from(BASE32[(bits & 31) as usize]));
-                bits >>= 5;
-            }
-        }
-        LaunchId(id)
+    pub fn generate() -> Result<LaunchId, EntropyError> {
+        let mut entropy = [0_u8; LAUNCH_ID_LEN];
+        getrandom::fill(&mut entropy).map_err(EntropyError)?;
+        Ok(LaunchId::from_entropy(&entropy))
+    }
+
+    pub fn from_entropy(entropy: &[u8; LAUNCH_ID_LEN]) -> LaunchId {
+        LaunchId(
+            entropy
+                .iter()
+                .map(|byte| char::from(BASE32[usize::from(byte & 31)]))
+                .collect(),
+        )
     }
 }
 
@@ -727,13 +839,16 @@ impl RoleName {
 }
 
 impl EnvName {
+    pub(crate) fn from_static(name: &'static str) -> EnvName {
+        EnvName(name.to_owned())
+    }
+
     pub fn is_reserved(&self) -> bool {
         let name = self.as_str();
-        name.starts_with("JACKIN_")
-            || matches!(
-                name,
-                "DOCKER_HOST" | "DOCKER_TLS_VERIFY" | "DOCKER_CERT_PATH"
-            )
+        RESERVED_PREFIXES
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+            || RESERVED_NAMES.contains(&name)
             || Agent::ALL.iter().any(|agent| {
                 let spec = agent.spec();
                 let keys = &spec.openshell.keys;

@@ -40,6 +40,9 @@ fn docker_capability_resolves_from_parsed_manifest_workspace_and_gateway() -> Te
     .into_iter()
     .map(|(name, value)| Ok((EnvName::parse(name)?, value.to_owned())))
     .collect::<Result<_, jackin_core::IdError>>()?;
+    for name in expected_env.keys() {
+        assert!(name.is_reserved(), "{name}");
+    }
     for role in [false, true] {
         for workspace in [false, true] {
             let parsed_role = RoleManifest::parse(&manifest(role))?;

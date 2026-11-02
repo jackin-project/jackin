@@ -112,7 +112,7 @@ impl DockerCapability {
             ),
         ]
         .into_iter()
-        .filter_map(|(name, value)| EnvName::parse(name).ok().map(|name| (name, value)))
+        .map(|(name, value)| (EnvName::from_static(name), value))
         .collect()
     }
 }

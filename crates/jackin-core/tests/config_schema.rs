@@ -5,8 +5,8 @@ use std::path::Path;
 
 use jackin_core::{
     Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, CredentialSource,
-    EnvName, GatewayEntry, GatewayName, HostPath, Platform, Provider, RoleName, RoleSource,
-    WorkspaceName,
+    EnvName, GatewayEntry, GatewayName, HostPath, Platform, Provider, RoleName, RoleRev,
+    RoleSource, RoleUrl, WorkspaceName,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -53,7 +53,7 @@ source = { path = "/Users/me/Projects/jackin-sentinel" }
 bindings = { codex = "work" }
 
 [roles."smith.v2"]
-source = { git = "ssh://git@example.com/smith repo.git", rev = "feature/x" }
+source = { git = "ssh://git@example.com/smith-repo.git", rev = "feature/x" }
 
 [workspaces.myproj]
 path = "/Users/me/Projects/myproj"
@@ -131,6 +131,15 @@ fn label(error: &ConfigError) -> String {
         ConfigError::NoWorkspaceForPath(path) => {
             format!("no-workspace:{}", path.as_path().display())
         }
+        ConfigError::DuplicatePath { path, workspaces } => format!(
+            "duplicate-path:{}:{}",
+            path.as_path().display(),
+            workspaces
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
         ConfigError::Fs(_) => "fs".to_owned(),
     }
 }
@@ -238,8 +247,8 @@ fn config_roles_and_workspaces_keep_their_sources_and_bindings() -> TestResult {
     assert_eq!(
         smith.source,
         RoleSource::Git {
-            url: "ssh://git@example.com/smith repo.git".to_owned(),
-            rev: Some("feature/x".to_owned()),
+            url: RoleUrl::parse("ssh://git@example.com/smith-repo.git")?,
+            rev: Some(RoleRev::parse("feature/x")?),
         }
     );
     assert!(smith.bindings.is_empty());
@@ -561,6 +570,16 @@ fn other_invalid_cases() -> Vec<(&'static str, String, String)> {
             "invalid:roles.r.source.path",
         ),
         case(
+            "workspace path with a parent segment",
+            ws("path = \"/p/../q\"\n"),
+            "invalid:workspaces.w.path",
+        ),
+        case(
+            "role path with a parent segment",
+            "[roles.r]\nsource.path = \"/r/../s\"\n".to_owned(),
+            "invalid:roles.r.source.path",
+        ),
+        case(
             "workspace without path",
             ws("docker = false\n"),
             "missing:workspaces.w.path",
@@ -650,6 +669,97 @@ fn config_parse_enforces_the_cross_reference_invariants() -> TestResult {
     for (name, text, expected) in cases {
         assert_eq!(failure(&text)?.0, expected, "{name}");
     }
+    Ok(())
+}
+
+fn workspaces_at(paths: &[(&str, &str)]) -> String {
+    paths
+        .iter()
+        .map(|(name, path)| format!("[workspaces.{name}]\npath = \"{path}\"\n"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn config_parse_rejects_workspaces_that_share_a_normalized_path() -> TestResult {
+    let rejected = [
+        (
+            vec![("a", "/p/x"), ("b", "/p/x/")],
+            "duplicate-path:/p/x:a,b",
+        ),
+        (
+            vec![("a", "/p/x"), ("b", "/p/./x")],
+            "duplicate-path:/p/x:a,b",
+        ),
+        (
+            vec![("a", "/p/x"), ("b", "/p//x")],
+            "duplicate-path:/p/x:a,b",
+        ),
+        (
+            vec![("a", "/p/x"), ("b", "/p/x"), ("c", "/p/x")],
+            "duplicate-path:/p/x:a,b,c",
+        ),
+    ];
+    for (paths, expected) in rejected {
+        let (found, shown) = failure(&workspaces_at(&paths))?;
+        assert_eq!(found, expected, "{paths:?}");
+        assert!(shown.contains("/p/x"), "{shown}");
+        for (name, _) in &paths {
+            assert!(shown.contains(name), "{shown}");
+        }
+    }
+    for paths in [
+        vec![("a", "/p/x"), ("b", "/p/y")],
+        vec![("a", "/p/x"), ("b", "/p/x/sub")],
+    ] {
+        let config = Config::parse(&workspaces_at(&paths))?;
+        assert_eq!(config.workspaces().count(), 2, "{paths:?}");
+        let (name, _) = config.workspace_for(&hp(paths[0].1)?)?;
+        assert_eq!(name.as_str(), "a");
+    }
+    Ok(())
+}
+
+#[test]
+fn config_git_role_sources_are_typed_and_bad_ones_name_their_key() -> TestResult {
+    let git = |source: &str| format!("[roles.r]\nsource = {{ {source} }}\n");
+    let password = "ghp_Zq7Xv9Lm2";
+    let rejected = [
+        (
+            git("git = \"-oProxyCommand=x\""),
+            "invalid:roles.r.source.git",
+        ),
+        (
+            git("git = \"https://example.com/r.git\", rev = \"--output=/tmp/x\""),
+            "invalid:roles.r.source.rev",
+        ),
+        (
+            git(&format!(
+                "git = \"https://user:{password}@example.com/r.git\""
+            )),
+            "invalid:roles.r.source.git",
+        ),
+        (git("git = \"\""), "invalid:roles.r.source.git"),
+    ];
+    for (text, expected) in rejected {
+        let (found, shown) = failure(&text)?;
+        assert_eq!(found, expected, "{text}");
+        for window in password.as_bytes().windows(3) {
+            let window = std::str::from_utf8(window)?;
+            assert!(!shown.contains(window), "{window} in {shown}");
+        }
+    }
+    let text = git("git = \"https://example.com/r.git\", rev = \"v1.2\"");
+    let config = Config::parse(&text)?;
+    let role = config.role(&RoleName::parse("r")?).ok_or("r")?;
+    assert_eq!(
+        role.source,
+        RoleSource::Git {
+            url: RoleUrl::parse("https://example.com/r.git")?,
+            rev: Some(RoleRev::parse("v1.2")?),
+        }
+    );
+    assert_eq!(Config::parse(&config.render())?, config);
     Ok(())
 }
 
@@ -824,6 +934,8 @@ fn config_errors_never_echo_a_pasted_secret() -> TestResult {
         ),
         format!("[accounts.a]\nprovider = \"{sentinel}\"\n"),
         format!("[accounts.a]\nprovider = \"codex\"\ncredential.var = {sentinel}\n"),
+        format!("[roles.r]\nsource = {{ git = \"https://user:{sentinel}@host/r.git\" }}\n"),
+        format!("[roles.r]\nsource = {{ git = \"https://h/r.git\", rev = \"--{sentinel}\" }}\n"),
     ];
     for text in cases {
         let error = Config::parse(&text).err().ok_or("expected an error")?;

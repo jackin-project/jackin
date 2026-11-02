@@ -184,6 +184,9 @@ pub async fn write_atomic(
     let mut temp_name = OsString::from(".");
     temp_name.push(name);
     temp_name.push(".tmp");
+    if fs.stat(path).await? == Some(FileKind::Symlink) {
+        return Err(FsError::SymlinkTarget(path.clone()));
+    }
     let temp = path.with_file_name(&temp_name);
     fs.remove_file(&temp).await?;
     let written = match fs.write_new(&temp, bytes, mode).await {

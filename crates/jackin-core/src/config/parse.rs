@@ -12,17 +12,21 @@ use crate::agent::Agent;
 use crate::docker::EngineConfig;
 use crate::ids::{
     AccountName, BuilderName, ChatgptAccountId, EnvName, GatewayName, IdError, OpReference,
-    OpenShellWorkspace, RoleName, WorkspaceName,
+    OpenShellWorkspace, RoleName, RoleRev, RoleUrl, WorkspaceName,
 };
-use crate::paths::HostPath;
+use crate::paths::{HostPath, PathError};
 use crate::platform::Platform;
 use crate::provider::Provider;
 use crate::tomlkit::{Reader, parse_table};
 
 const HOST_PATH: &str = "expected an absolute path";
+const PARENT_SEGMENT: &str = "expected a path without .. segments";
 
 fn host_path(text: &str) -> Result<HostPath, &'static str> {
-    HostPath::parse(Path::new(text)).map_err(|_error| HOST_PATH)
+    HostPath::parse(Path::new(text)).map_err(|error| match error {
+        PathError::ParentSegment(_) => PARENT_SEGMENT,
+        _ => HOST_PATH,
+    })
 }
 
 fn id_message(error: IdError) -> String {
@@ -287,20 +291,9 @@ fn read_role_source(role: &mut Reader<'_, '_>) -> Option<RoleSource> {
 }
 
 fn read_git_source(source: &mut Reader<'_, '_>) -> Option<RoleSource> {
-    let url = source.string("git");
-    let rev = source.string("rev");
-    if url == Some("") {
-        source.report_invalid("git", "expected a non-empty URL");
-        return None;
-    }
-    if rev == Some("") {
-        source.report_invalid("rev", "expected a non-empty revision");
-        return None;
-    }
-    Some(RoleSource::Git {
-        url: url?.to_owned(),
-        rev: rev.map(str::to_owned),
-    })
+    let url = source.parsed("git", RoleUrl::parse, id_message);
+    let rev = source.parsed("rev", RoleRev::parse, id_message);
+    Some(RoleSource::Git { url: url?, rev })
 }
 
 fn read_workspaces(root: &mut Reader<'_, '_>, out: &mut BTreeMap<WorkspaceName, Workspace>) {

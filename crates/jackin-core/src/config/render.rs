@@ -51,11 +51,15 @@ fn credential(source: &CredentialSource) -> String {
 fn role_source(source: &RoleSource) -> String {
     match source {
         RoleSource::Path(path) => format!("{{ path = {} }}", path_value(path)),
-        RoleSource::Git { url, rev: None } => format!("{{ git = {} }}", quote(url)),
+        RoleSource::Git { url, rev: None } => format!("{{ git = {} }}", quote(url.as_str())),
         RoleSource::Git {
             url,
             rev: Some(rev),
-        } => format!("{{ git = {}, rev = {} }}", quote(url), quote(rev)),
+        } => format!(
+            "{{ git = {}, rev = {} }}",
+            quote(url.as_str()),
+            quote(rev.as_str())
+        ),
     }
 }
 

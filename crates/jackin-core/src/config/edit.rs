@@ -230,6 +230,20 @@ impl Config {
             return Err(duplicate(KIND_WORKSPACE, &name));
         }
         self.check_workspace(&workspace)?;
+        let mut workspaces: Vec<WorkspaceName> = self
+            .workspaces
+            .iter()
+            .filter(|(_, owner)| owner.path == workspace.path)
+            .map(|(owner, _)| owner.clone())
+            .collect();
+        if !workspaces.is_empty() {
+            workspaces.push(name);
+            workspaces.sort();
+            return Err(ConfigError::DuplicatePath {
+                path: workspace.path,
+                workspaces,
+            });
+        }
         self.workspaces.insert(name, workspace);
         Ok(())
     }

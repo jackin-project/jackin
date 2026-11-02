@@ -17,7 +17,7 @@ use crate::boundary::FsError;
 use crate::docker::EngineConfig;
 use crate::ids::{
     AccountName, BuilderName, ChatgptAccountId, EnvName, GatewayName, OpReference,
-    OpenShellWorkspace, RoleName, WorkspaceName,
+    OpenShellWorkspace, RoleName, RoleRev, RoleUrl, WorkspaceName,
 };
 use crate::paths::HostPath;
 use crate::platform::Platform;
@@ -83,7 +83,7 @@ pub struct RoleEntry {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RoleSource {
     Path(HostPath),
-    Git { url: String, rev: Option<String> },
+    Git { url: RoleUrl, rev: Option<RoleRev> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -220,6 +220,15 @@ pub enum ConfigError {
     RoleInUse {
         role: RoleName,
         by: Vec<ConfigReference>,
+    },
+    #[error(
+        "workspaces {} share the path {}",
+        join_display(.workspaces),
+        .path.as_path().display()
+    )]
+    DuplicatePath {
+        path: HostPath,
+        workspaces: Vec<WorkspaceName>,
     },
     #[error("no gateway is configured; run jackin gateway add")]
     NoGateway,
@@ -449,7 +458,24 @@ impl Config {
                 self.check_binding(agent.provider(), account)?;
             }
         }
-        Ok(())
+        self.check_paths_unique()
+    }
+
+    fn check_paths_unique(&self) -> Result<(), ConfigError> {
+        let mut owners: BTreeMap<&HostPath, Vec<WorkspaceName>> = BTreeMap::new();
+        for (name, workspace) in &self.workspaces {
+            owners
+                .entry(&workspace.path)
+                .or_default()
+                .push(name.clone());
+        }
+        match owners.into_iter().find(|(_, names)| names.len() > 1) {
+            Some((path, workspaces)) => Err(ConfigError::DuplicatePath {
+                path: path.clone(),
+                workspaces,
+            }),
+            None => Ok(()),
+        }
     }
 
     pub(crate) fn check_workspace(&self, workspace: &Workspace) -> Result<(), ConfigError> {

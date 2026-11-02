@@ -149,11 +149,14 @@ fn account_name_and_openshell_workspace_are_capped_dns_labels() -> TestResult {
         rej("work-", Want::Edge),
     ];
     let workspace_max = rep('a', 19);
-    let workspace_accept = ["default", "a", workspace_max.as_str()];
+    let workspace_accept = ["default", "a", "a-b", workspace_max.as_str()];
     let workspace_reject = vec![
         rej(rep('a', 20), Want::TooLong(19, 20)),
         rej("Default", Want::CharAt('D', 0)),
         rej("-x", Want::Edge),
+        rej("a--b", Want::Format),
+        rej("a---b", Want::Format),
+        rej("aaaa--aaaa", Want::Format),
     ];
     distinct(&[
         grammar::<AccountName>(&account_accept, &account_reject)?,
@@ -251,32 +254,59 @@ fn env_name_is_a_posix_name_and_reserved_names_are_detected() -> TestResult {
     let accept = ["A", "_x", "FOO_BAR1", "lower_ok"];
     let reject = vec![
         rej("", Want::Empty),
-        rej("1A", Want::CharAt('1', 0)),
-        rej("A-B", Want::CharAt('-', 1)),
-        rej("A B", Want::CharAt(' ', 1)),
-        rej("A=B", Want::CharAt('=', 1)),
-        rej("\u{c9}", Want::CharAt('\u{c9}', 0)),
+        rej("1A", Want::Format),
+        rej("A-B", Want::Format),
+        rej("A B", Want::Format),
+        rej("A=B", Want::Format),
+        rej("\u{c9}", Want::Format),
     ];
     grammar::<EnvName>(&accept, &reject)?;
-    for name in [
+    let reserved = [
         "JACKIN_X",
-        "JACKIN_LAUNCH_ID",
         "DOCKER_HOST",
-        "DOCKER_TLS_VERIFY",
-        "DOCKER_CERT_PATH",
+        "DOCKER_CONFIG",
+        "DOCKER_CONTEXT",
+        "BUILDX_BUILDER",
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
         "CODEX_HOME",
-    ] {
+        "CODEX_API_KEY",
+        "CODEX_AUTH_ID_TOKEN",
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "OPENSHELL_GATEWAY",
+        "PATH",
+        "HOME",
+        "BASH_ENV",
+        "ENV",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+    ];
+    for name in reserved {
         assert!(EnvName::parse(name)?.is_reserved(), "{name}");
     }
-    for name in [
+    let free = [
         "FOO",
-        "PATH",
         "JACKIN",
         "JACKINX",
         "XJACKIN_A",
         "DOCKER",
         "MY_DOCKER_HOST",
-    ] {
+        "OPENAI",
+        "MY_OPENAI_KEY",
+        "CODEX",
+        "LD",
+        "LDX_A",
+        "PATHS",
+        "PATH_EXTRA",
+        "MY_PATH",
+        "HOMEDIR",
+        "ENVX",
+        "SSL_CERT",
+        "SSL_CERT_FILES",
+        "ANTHROPIC_API_KEY",
+    ];
+    for name in free {
         assert!(!EnvName::parse(name)?.is_reserved(), "{name}");
     }
     Ok(())
@@ -319,7 +349,7 @@ fn other_ids_reject_one_input_of_each_violated_class() -> TestResult {
     kinds.push(grammar::<ChatgptAccountId>(
         &["67e55044-10b1-426f-9247-bb680e5fe0c8"],
         &[
-            rej("a_b", Want::CharAt('_', 1)),
+            rej("a_b", Want::Format),
             rej(rep('a', 65), Want::TooLong(64, 65)),
         ],
     )?);
@@ -449,7 +479,9 @@ fn branch_name_agrees_with_git_check_ref_format() -> TestResult {
 
 #[test]
 fn launch_id_generate_yields_valid_distinct_ids() -> TestResult {
-    let ids: Vec<LaunchId> = (0..64).map(|_| LaunchId::generate()).collect();
+    let ids: Vec<LaunchId> = (0..64)
+        .map(|_| LaunchId::generate())
+        .collect::<Result<_, _>>()?;
     for id in &ids {
         let text = id.to_string();
         assert_eq!(text.len(), 26, "{text}");
@@ -462,6 +494,43 @@ fn launch_id_generate_yields_valid_distinct_ids() -> TestResult {
     }
     let distinct: HashSet<String> = ids.iter().map(ToString::to_string).collect();
     assert_eq!(distinct.len(), 64);
+    Ok(())
+}
+
+#[test]
+fn launch_id_encodes_entropy_one_byte_per_character_and_generate_uses_every_symbol_at_every_position()
+-> TestResult {
+    const SYMBOLS: &str = "abcdefghijklmnopqrstuvwxyz234567";
+    for (value, symbol) in (0_u8..32).zip(SYMBOLS.chars()) {
+        assert_eq!(
+            LaunchId::from_entropy(&[value; 26]).to_string(),
+            rep(symbol, 26),
+            "{value}"
+        );
+    }
+    assert_eq!(LaunchId::from_entropy(&[32; 26]).to_string(), rep('a', 26));
+    let mut ramp = [0_u8; 26];
+    for (slot, value) in ramp.iter_mut().zip(0_u8..) {
+        *slot = value;
+    }
+    assert_eq!(
+        LaunchId::from_entropy(&ramp).to_string(),
+        "abcdefghijklmnopqrstuvwxyz"
+    );
+    let mut seen = vec![HashSet::new(); 26];
+    let mut all = HashSet::new();
+    for _ in 0..2048 {
+        let text = LaunchId::generate()?.to_string();
+        assert_eq!(text, LaunchId::parse(&text)?.to_string());
+        assert_eq!(text.len(), 26);
+        for (position, symbol) in text.chars().enumerate() {
+            seen[position].insert(symbol);
+        }
+        assert!(all.insert(text));
+    }
+    for (position, symbols) in seen.iter().enumerate() {
+        assert_eq!(symbols.len(), 32, "position {position}");
+    }
     Ok(())
 }
 
