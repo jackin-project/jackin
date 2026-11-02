@@ -295,6 +295,10 @@ fn directive_rows() -> Vec<Row> {
             "NBSP-indented",
             "\u{a0}# escape=`\nFROM ubuntu\nRUN echo hi `\nFROM construct\n",
         ),
+        bypass(
+            "NBSP after the hash",
+            "#\u{a0}escape=`\nFROM ubuntu\nRUN echo hi `\nFROM construct\n",
+        ),
         ok(
             "indented, valid join",
             "  # escape=`\nFROM construct `\n AS role\n",

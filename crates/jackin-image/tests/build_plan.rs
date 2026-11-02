@@ -277,7 +277,7 @@ fn build_contexts_hold_exactly_the_documented_files() -> TestResult {
         request.hooks.preflight = declared_preflight
             .map(|b| source("hooks/p.sh", b))
             .transpose()?;
-        request.context_files = ["src/b.rs", "Dockerfile", "src/a.rs", "src/a.rs"]
+        request.context_files = ["src/a.rs", "Dockerfile", "src/a.rs", "src/b.rs"]
             .into_iter()
             .map(RepoPath::parse)
             .collect::<Result<_, _>>()?;
@@ -584,7 +584,7 @@ fn role_build_is_planned_with_the_dockerfile_on_stdin_and_the_listed_context() -
     let dockerfile = b"FROM construct AS role\n# marker 9f3a\n";
     let mut request = base()?;
     request.dockerfile = source("docker/Role.Dockerfile", dockerfile)?;
-    request.context_files = ["src/b.rs", "docker/Role.Dockerfile", "src/a.rs", "src/a.rs"]
+    request.context_files = ["src/a.rs", "docker/Role.Dockerfile", "src/a.rs", "src/b.rs"]
         .into_iter()
         .map(RepoPath::parse)
         .collect::<Result<_, _>>()?;
@@ -966,6 +966,7 @@ fn embedded_jackin_start_reads_start_requests_exactly_as_attempt_id_parses() -> 
         ("12\n34\n", true),
         ("\u{661}\u{662}\u{663}", false),
         ("1\r\n", false),
+        ("1\\\n2", false),
     ]
     .into_iter()
     .map(|(content, accepted)| {
