@@ -234,12 +234,13 @@ async fn buildx_refuses_a_link_whose_text_can_leave_the_role_root() -> TestResul
 }
 
 #[derive(Debug)]
-struct NonUtf8Fs {
+struct ProblemFs {
     inner: StdFileSystem,
+    problem: LinkProblem,
 }
 
 #[async_trait]
-impl FileSystem for NonUtf8Fs {
+impl FileSystem for ProblemFs {
     async fn read(&self, p: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
         self.inner.read(p).await
     }
@@ -295,7 +296,7 @@ impl FileSystem for NonUtf8Fs {
         file: &RepoPath,
     ) -> Result<Result<String, LinkProblem>, FsError> {
         match self.inner.read_link(root, file).await? {
-            Ok(_) => Ok(Err(LinkProblem::NonUtf8)),
+            Ok(_) => Ok(Err(self.problem)),
             Err(problem) => Ok(Err(problem)),
         }
     }
@@ -322,12 +323,29 @@ async fn buildx_checks_each_listed_link_on_its_own_text_and_never_resolves_chain
         pair.link("pair_x", "d1/up/../../outside")?;
         pair.refuses(&["d1/up", "pair_x"], "d1/up", ContextProblem::Escapes)
             .await?;
+        Ok(())
+    })
+    .await
+}
 
-        let utf8 = Lab::new(Arc::new(NonUtf8Fs {
-            inner: StdFileSystem::default(),
-        }))?;
-        utf8.link("bad", "target.txt")?;
-        utf8.refuses(&["bad"], "bad", ContextProblem::Escapes).await
+#[tokio::test]
+async fn buildx_maps_each_problem_found_while_reading_a_link_to_its_context_problem() -> TestResult
+{
+    guarded(async {
+        let rows = [
+            (LinkProblem::NonUtf8, ContextProblem::Escapes),
+            (LinkProblem::NotALink, ContextProblem::NotARegularFile),
+            (LinkProblem::Missing, ContextProblem::Missing),
+        ];
+        for (found, expected) in rows {
+            let lab = Lab::new(Arc::new(ProblemFs {
+                inner: StdFileSystem::default(),
+                problem: found,
+            }))?;
+            lab.link("bad", "target.txt")?;
+            lab.refuses(&["bad"], "bad", expected).await?;
+        }
+        Ok(())
     })
     .await
 }

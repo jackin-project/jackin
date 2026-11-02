@@ -378,6 +378,8 @@ async fn a_dirty_role_digest_follows_the_executable_bit_and_no_other_mode_bit() 
         chmod(&untracked, "run.sh", 0o755)?;
         chmod(&untracked, "run.sh", 0o775)?;
         assert_eq!(digest_of(&scope, &untracked).await?, exec);
+        chmod(&untracked, "run.sh", 0o645)?;
+        assert_eq!(digest_of(&scope, &untracked).await?, exec);
 
         let twin = tracked("").await?;
         twin.commit().await?;
