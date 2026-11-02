@@ -255,6 +255,21 @@ pub fn plan_image(
     })
 }
 
+fn launch_policy(
+    role: &LoadedRole,
+    docker: &DockerCapability,
+) -> Result<(ClosedPolicy, Vec<LaunchWarning>), PlanError> {
+    let (document, warnings) = match docker {
+        DockerCapability::Enabled(access) => (
+            role.policy()
+                .with_rule(NetworkRule::docker_engine(access.engine.port))?,
+            vec![LaunchWarning::DockerCapability],
+        ),
+        DockerCapability::Disabled => (role.policy().clone(), Vec::new()),
+    };
+    Ok((ClosedPolicy::parse(&document.render()?)?, warnings))
+}
+
 pub fn plan_launch(
     config: &Config,
     role: &LoadedRole,
@@ -308,15 +323,7 @@ pub fn plan_launch(
         workspace.docker,
         entry.docker_engine.as_ref(),
     )?;
-    let (document, warnings) = match &docker {
-        DockerCapability::Enabled(access) => (
-            role.policy()
-                .with_rule(NetworkRule::docker_engine(access.engine.port))?,
-            vec![LaunchWarning::DockerCapability],
-        ),
-        DockerCapability::Disabled => (role.policy().clone(), Vec::new()),
-    };
-    let policy = ClosedPolicy::parse(&document.render()?)?;
+    let (policy, warnings) = launch_policy(role, &docker)?;
     let mut values = resolve_env(role.manifest(), &request)?;
     values.extend(docker.environment());
     let files = PlannedFiles {

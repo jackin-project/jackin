@@ -4,7 +4,7 @@
 use std::error::Error;
 use std::sync::Arc;
 
-use jackin_core::{HookKind, HostPath, ManifestError, ModelName, RoleManifest, Sha256};
+use jackin_core::{HookKind, HostPath, ManifestError, ModelName, RepoPath, RoleManifest, Sha256};
 use jackin_image::{DockerfileError, RoleRevision};
 use jackin_openshell::ClosureViolation;
 use jackin_session::{LoadedRole, RoleCatalog, RoleError};
@@ -447,6 +447,33 @@ async fn role_findings_come_in_one_pass_and_load_path_returns_the_first() -> Tes
         );
         let first = only(vec![scope.catalog.load_path(role.root()).await.err().ok_or("loaded")?])?;
         assert_eq!(format!("{first:?}"), format!("{:?}", findings[0]));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn context_files_skip_deleted_tracked_files_and_submodule_paths() -> TestResult {
+    guard(async {
+        let role = tracked("").await?;
+        let commit = role.commit().await?;
+        role.remove("README.md").await?;
+        tokio::fs::create_dir_all(role.root().as_path().join("vendor/sub")).await?;
+        let status = tokio::process::Command::new("git")
+            .args(["update-index", "--add", "--cacheinfo"])
+            .arg(format!("160000,{},vendor/sub", commit.as_str()))
+            .current_dir(role.root().as_path())
+            .status()
+            .await?;
+        assert!(status.success());
+        let loaded = scope()?.catalog.load_path(role.root()).await?;
+        let names: Vec<&str> = loaded.files().iter().map(RepoPath::as_str).collect();
+        assert!(names.contains(&"jackin.role.toml"), "{names:?}");
+        assert!(!names.contains(&"README.md"), "{names:?}");
+        assert!(
+            !names.iter().any(|name| name.starts_with("vendor")),
+            "{names:?}"
+        );
         Ok(())
     })
     .await

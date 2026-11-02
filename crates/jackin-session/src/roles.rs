@@ -394,16 +394,19 @@ impl RoleCatalog {
             let text = String::from_utf8_lossy(name).into_owned();
             let path = RepoPath::parse(&text)?;
             let host = join_repo(root, &path)?;
-            let content = match self.fs.stat(&host).await? {
+            let (content, listed) = match self.fs.stat(&host).await? {
                 None => continue,
-                Some(FileKind::File) => self.fs.read(&host).await?.unwrap_or_default(),
-                Some(FileKind::Dir | FileKind::Symlink) => Vec::new(),
+                Some(FileKind::File) => (self.fs.read(&host).await?.unwrap_or_default(), true),
+                Some(FileKind::Symlink) => (Vec::new(), true),
+                Some(FileKind::Dir) => (Vec::new(), false),
             };
             digest_input.extend((name.len() as u64).to_be_bytes());
             digest_input.extend(name);
             digest_input.extend((content.len() as u64).to_be_bytes());
             digest_input.extend(content);
-            files.push(path);
+            if listed {
+                files.push(path);
+            }
         }
         let status = self.git(root, &["status", "--porcelain"]).await?;
         let revision = if status.is_empty() {
