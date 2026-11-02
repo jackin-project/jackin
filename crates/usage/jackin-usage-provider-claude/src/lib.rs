@@ -1,45 +1,44 @@
-mod collector;
-mod credentials;
-mod keychain;
-mod lease;
-mod oauth_types;
-mod payload_diagnostic;
-mod refresh;
-mod snapshot;
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 mod spend;
-mod wave;
 mod windows;
 
-pub use collector::{ClaudeCollectionError, experimental_claude_usage_snapshot_for_lease};
-pub use credentials::{
-    ClaudeKeychainProfile, ClaudeOAuthCredentials, claude_email_from_value,
-    claude_oauth_from_value, claude_organization_type_from_value, load_claude_account_email,
-    parse_claude_keychain_profile,
-};
-#[cfg(target_os = "macos")]
-pub use keychain::classify_claude_keychain_status;
-pub use keychain::{
-    ClaudeKeychainPolicyError, ClaudeKeychainRead, ClaudeUnattendedKeychainGuard,
-    read_claude_keychain_item, unattended_keychain_guard,
-};
-pub use lease::{
-    ClaudeCredentialBootstrapOutcome, ClaudeCredentialLease, bootstrap_claude_credential,
-    claude_source_capability_id_for_service,
-};
-pub use oauth_types::{
-    ClaudeOAuthExtraUsage, ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope,
-    ClaudeOAuthMoney, ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow,
-};
-pub use payload_diagnostic::{ClaudeCredentialPayloadDiagnostic, diagnose_claude_profile_payload};
-pub use refresh::{ClaudeResolved, ClaudeWaveResolution};
-pub use snapshot::claude_api_key_snapshot;
-pub use spend::{
-    ClaudeSpend, claude_spend_bucket, fetch_claude_oauth_usage, normalize_claude_spend,
-    push_claude_dollar_windows,
-};
-pub use wave::{
-    ClaudeWavePolicy, claude_error_is_scope_restriction, claude_provider_error_label,
-    claude_view_from_wave, claude_wave_policy,
-};
-pub use windows::ClaudeQuotaWindow;
-pub use windows::{CLAUDE_SESSION_WINDOW_SECONDS, CLAUDE_WEEKLY_WINDOW_SECONDS};
+use jackin_usage_provider_core::{Bucket, Credential, Http, ProviderError, json_text};
+use serde_json::Value;
+
+pub const API_KEY_REASON: &str = "Anthropic API keys have no subscription quota";
+
+const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+const API_KEY_PREFIX: &str = "sk-ant-api";
+
+pub async fn fetch(http: &Http, credential: Credential<'_>) -> Result<Vec<Bucket>, ProviderError> {
+    let token = match credential {
+        Credential::Token(token) => token.to_owned(),
+        Credential::Login(login) => login_token(login)?,
+    };
+    if token.starts_with(API_KEY_PREFIX) {
+        return Err(ProviderError::Unsupported(API_KEY_REASON));
+    }
+    let body = http
+        .get(USAGE_URL, &token, &[("anthropic-beta", "oauth-2025-04-20")])
+        .await?;
+    let mut buckets = windows::buckets(&body);
+    buckets.extend(spend::bucket(&body));
+    Ok(buckets)
+}
+
+fn login_token(login: &str) -> Result<String, ProviderError> {
+    let value: Value = serde_json::from_str(login)
+        .map_err(|_| ProviderError::Decode("the Claude login file is not valid JSON"))?;
+    let oauth = value.get("claudeAiOauth").ok_or(ProviderError::Decode(
+        "the Claude login file has no claudeAiOauth entry",
+    ))?;
+    ["accessToken", "access_token"]
+        .into_iter()
+        .find_map(|key| oauth.get(key).and_then(json_text))
+        .map(str::to_owned)
+        .ok_or(ProviderError::Decode(
+            "the Claude login file has no access token",
+        ))
+}

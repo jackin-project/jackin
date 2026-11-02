@@ -56,7 +56,7 @@ async fn usage_prints_one_line_per_window_in_account_order_and_marks_stale_and_u
         let config = [
             login_account(&world, "work", "acct-work")?,
             login_account(&world, "cached", "acct-cached")?,
-            env_account("spare", "openrouter", "SPARE_KEY"),
+            env_account("spare", "claude", "SPARE_KEY"),
             env_account("local", "muse", "MUSE_KEY"),
         ]
         .join("\n");
@@ -65,7 +65,7 @@ async fn usage_prints_one_line_per_window_in_account_order_and_marks_stale_and_u
         let server = world.usage.get().await?;
         server.serve(Provider::Codex, Method::Get, WHAM, codex_route(WORK, "acct-work"));
         server.serve(Provider::Codex, Method::Get, WHAM, codex_route(CACHED, "acct-cached"));
-        server.serve(Provider::Openrouter, Method::Get, "/api/v1/key", Route::status(401));
+        server.serve(Provider::Claude, Method::Get, "/api/oauth/usage", Route::status(401));
         harness.run(&["usage"]).await?.ok()?;
         world.clock.advance(Duration::from_secs(600));
         server.replace(Provider::Codex, Method::Get, WHAM, codex_route(WORK, "acct-work"));
@@ -80,7 +80,7 @@ async fn usage_prints_one_line_per_window_in_account_order_and_marks_stale_and_u
         let expected = [
             "cached\tcodex\t5-hour\t80% used\t20% left\tresets 2026-01-01T05:00:00Z (in 4h50m)\tstale, fetched 2026-01-01T00:00:00Z",
             "local\tmuse\tunavailable\tnot supported for this provider",
-            "spare\topenrouter\tunavailable\tlogin expired or rejected",
+            "spare\tclaude\tunavailable\tlogin expired or rejected",
             "work\tcodex\t5-hour\t42% used\t58% left\tresets 2026-01-01T02:00:00Z (in 1h50m)",
             "work\tcodex\tweekly\t12% used\t88% left\tresets 2028-02-29T23:59:59Z (in 789d23h)",
             "work\tcodex\tcredits\t-\t12.40 credits left\t-",

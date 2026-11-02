@@ -14,6 +14,7 @@ publish = false
 [dependencies]
 futures = { workspace = true }
 jackin-core = { workspace = true }
+jackin-usage-provider-claude = { workspace = true }
 jackin-usage-provider-codex = { workspace = true }
 jackin-usage-provider-core = { workspace = true }
 jackin-usage-provider-openrouter = { workspace = true }

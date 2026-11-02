@@ -9,6 +9,7 @@ use crate::support::{
     T0, TestResult, UsageHarness, Want, account, assert_windows, env_source, guard, unavailable,
 };
 
+mod claude;
 mod openrouter;
 
 pub(crate) use openrouter::serve_valid as openrouter_serve;
@@ -23,7 +24,7 @@ pub(crate) struct Case {
 }
 
 async fn cases() -> Result<Vec<Case>, Box<dyn std::error::Error>> {
-    Ok(vec![openrouter::case().await?])
+    Ok(vec![claude::case().await?, openrouter::case().await?])
 }
 
 fn fail_first(case: &Case, route: Route) {

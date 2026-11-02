@@ -12,7 +12,6 @@ use serde::Deserialize;
 use crate::ci::CiError;
 
 pub const PENDING_PORT_PATHS: &[&str] = &[
-    "crates/usage/jackin-usage-provider-claude/",
     "crates/usage/jackin-usage-provider-cursor/",
     "crates/usage/jackin-usage-provider-gemini/",
     "crates/usage/jackin-usage-provider-grok/",

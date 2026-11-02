@@ -11,6 +11,7 @@ members = [
   "crates/jackin-testkit",
   "crates/jackin-tui",
   "crates/usage/jackin-usage",
+  "crates/usage/jackin-usage-provider-claude",
   "crates/usage/jackin-usage-provider-codex",
   "crates/usage/jackin-usage-provider-core",
   "crates/usage/jackin-usage-provider-openrouter",
@@ -34,6 +35,7 @@ jackin-session = { path = "crates/jackin-session", version = "0.1.0" }
 jackin-testkit = { path = "crates/jackin-testkit", version = "0.1.0" }
 jackin-tui = { path = "crates/jackin-tui", version = "0.1.0" }
 jackin-usage = { path = "crates/usage/jackin-usage", version = "0.1.0" }
+jackin-usage-provider-claude = { path = "crates/usage/jackin-usage-provider-claude", version = "0.1.0" }
 jackin-usage-provider-codex = { path = "crates/usage/jackin-usage-provider-codex", version = "0.1.0" }
 jackin-usage-provider-core = { path = "crates/usage/jackin-usage-provider-core", version = "0.1.0" }
 jackin-usage-provider-openrouter = { path = "crates/usage/jackin-usage-provider-openrouter", version = "0.1.0" }

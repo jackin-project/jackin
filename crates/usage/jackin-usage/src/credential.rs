@@ -7,6 +7,7 @@ use std::time::Duration;
 use jackin_core::{
     CredentialSource, HostPath, ProcessSpec, ProcessStatus, ProcessStdin, Program, Secret,
 };
+use jackin_usage_provider_core::Credential;
 use tokio_util::sync::CancellationToken;
 
 use crate::deps::UsageDeps;
@@ -31,6 +32,13 @@ impl Material {
         Material {
             secret: Secret::new(text.to_owned()),
             shape: Shape::Token,
+        }
+    }
+
+    pub(crate) fn credential(&self) -> Credential<'_> {
+        match self.shape {
+            Shape::Token => Credential::Token(self.secret.expose()),
+            Shape::Login => Credential::Login(self.secret.expose()),
         }
     }
 

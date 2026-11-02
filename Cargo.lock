@@ -2103,6 +2103,7 @@ dependencies = [
  "futures",
  "jackin-core",
  "jackin-testkit",
+ "jackin-usage-provider-claude",
  "jackin-usage-provider-codex",
  "jackin-usage-provider-core",
  "jackin-usage-provider-openrouter",
@@ -2112,6 +2113,14 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "jackin-usage-provider-claude"
+version = "0.1.0"
+dependencies = [
+ "jackin-usage-provider-core",
+ "serde_json",
 ]
 
 [[package]]

@@ -200,3 +200,9 @@ fn prefixed(prefix: Option<&str>, text: &str) -> String {
         _ => text.to_owned(),
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Credential<'a> {
+    Token(&'a str),
+    Login(&'a str),
+}
