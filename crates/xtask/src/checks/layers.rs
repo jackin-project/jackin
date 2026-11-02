@@ -124,6 +124,7 @@ pub const LAYERS: &[LayerRule] = &[
             "jackin-openshell",
             "jackin-session",
             "jackin-tui",
+            "jackin-usage",
         ],
         dev_depends: &["jackin-testkit"],
         optional: &[],

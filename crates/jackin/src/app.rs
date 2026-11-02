@@ -12,6 +12,7 @@ use jackin_core::{Config, ConfigStore, EnvSnapshot, GatewayEntry, GatewayName, H
 use jackin_image::ImageEngine;
 use jackin_openshell::{DiscoveryError, Gateway, GatewayError};
 use jackin_session::{HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps};
+use jackin_usage::ProviderEndpoints;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -25,6 +26,7 @@ pub struct Deps {
     pub engine: Arc<dyn ImageEngine>,
     pub connect: Arc<dyn GatewayConnector>,
     pub limits: LaunchLimits,
+    pub usage_endpoints: ProviderEndpoints,
 }
 
 #[derive(Debug, Error)]

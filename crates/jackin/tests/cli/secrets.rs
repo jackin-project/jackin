@@ -3,15 +3,18 @@
 
 use jackin::AppEnv;
 use jackin_core::EnvSnapshot;
-use jackin_testkit::{ACCESS, REFRESH, Rig, TestResult, guard, launch_id};
+use jackin_testkit::{
+    ACCESS, ProcessReply, REFRESH, Rig, ScriptedProgram, TestResult, guard, launch_id,
+};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{Failure, Harness, Shared};
 
 const KEY: &str = "SECRETVALUE";
+const OP_STDERR: &str = "SECRET_OP_STDERR";
 
-fn secrets() -> [&'static str; 3] {
-    [ACCESS, REFRESH, KEY]
+fn secrets() -> [&'static str; 4] {
+    [ACCESS, REFRESH, KEY, OP_STDERR]
 }
 
 fn clean(haystack: &[String]) -> Result<(), Failure> {
@@ -36,10 +39,16 @@ async fn no_secret_reaches_any_output_json_config_or_debug_text() -> TestResult 
         harness.cwd = rig.repo.root().clone();
         harness.env.push(("CLAUDE_KEY".to_owned(), KEY.to_owned()));
         harness.write_config(&rig.config.render())?;
+        harness.usage_endpoints = rig.world.usage.get().await?.endpoints();
+        rig.world.runner.scripted().expect(
+            ScriptedProgram::Op,
+            &["read", "op://v/i/f"],
+            ProcessReply::exited(1, b"", format!("[ERROR] {OP_STDERR}").as_bytes()),
+        );
         let home = rig.home.as_path().display().to_string();
         let id = launch_id(1).to_string();
         let sandbox = rig.sandbox_name(1)?;
-        let runs: [(&[&str], bool); 8] = [
+        let runs: [(&[&str], bool); 11] = [
             (
                 &[
                     "account",
@@ -70,6 +79,20 @@ async fn no_secret_reaches_any_output_json_config_or_debug_text() -> TestResult 
             (&["account", "ls", "--json"], true),
             (&["account", "ls"], true),
             (&["doctor"], false),
+            (
+                &[
+                    "account",
+                    "add",
+                    "openrouter",
+                    "--name",
+                    "routed",
+                    "--credential",
+                    "op://v/i/f",
+                ],
+                true,
+            ),
+            (&["usage"], true),
+            (&["usage", "--json"], true),
         ];
         let mut haystack = Vec::new();
         let mut outputs = Vec::new();

@@ -1977,6 +1977,7 @@ dependencies = [
  "jackin-session",
  "jackin-testkit",
  "jackin-tui",
+ "jackin-usage",
  "rustix",
  "serde",
  "serde_json",

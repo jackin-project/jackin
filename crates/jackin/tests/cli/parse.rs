@@ -33,6 +33,9 @@ const CASES: &[(&[&str], &[&str])] = &[
         &["gateway", "add", "x", "--platform", "linux/riscv"],
         &["gateway", "add", "delta", "--platform", "linux/arm64"],
     ),
+    (&["usage", "--nope"], &["usage"]),
+    (&["usage", "extra"], &["usage"]),
+    (&["usage", "--refresh"], &["usage"]),
     (&["gateway", "rm"], &["gateway", "rm", "alpha"]),
     (
         &["workspace", "add", "only"],

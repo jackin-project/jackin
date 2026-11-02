@@ -18,6 +18,7 @@ jackin-image = { workspace = true }
 jackin-openshell = { workspace = true }
 jackin-session = { workspace = true }
 jackin-tui = { workspace = true }
+jackin-usage = { workspace = true }
 rustix = { workspace = true, features = ["termios"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

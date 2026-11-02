@@ -28,3 +28,4 @@ mod role_workspace;
 mod secrets;
 mod shell;
 mod support;
+mod usage;

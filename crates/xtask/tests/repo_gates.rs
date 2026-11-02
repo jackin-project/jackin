@@ -303,6 +303,7 @@ fn d14() -> Specs {
                 openshell,
                 session,
                 tui,
+                Normal("jackin-usage"),
                 Normal("clap"),
                 testkit,
             ],

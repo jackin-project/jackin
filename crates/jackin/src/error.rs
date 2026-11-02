@@ -11,6 +11,7 @@ use jackin_session::{
     PlanError, PurgeError, RestartError, RoleError,
 };
 use jackin_tui::ConsoleError;
+use jackin_usage::UsageError;
 use thiserror::Error;
 
 use crate::app::ConnectError;
@@ -87,6 +88,8 @@ pub enum CommandError {
     Json(serde_json::Error),
     #[error(transparent)]
     Console(#[from] ConsoleError),
+    #[error(transparent)]
+    Usage(#[from] UsageError),
     #[error("a terminal is required")]
     NoTerminal,
     #[error("{}", plain(.0))]
@@ -117,6 +120,7 @@ impl CommandError {
             | CommandError::Restart(RestartError::AlreadyRunning { .. })
             | CommandError::Purge(PurgeError::WorkNotExported { .. }) => ExitClass::Refused,
             CommandError::Cancelled(_)
+            | CommandError::Usage(UsageError::Cancelled)
             | CommandError::Image(ImageError::Cancelled)
             | CommandError::Export(ExportError::Cancelled)
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. })) => {
@@ -144,6 +148,7 @@ impl CommandError {
             | CommandError::Output(_)
             | CommandError::Json(_)
             | CommandError::Console(_)
+            | CommandError::Usage(_)
             | CommandError::NoTerminal
             | CommandError::Session(_)
             | CommandError::Environment(_)

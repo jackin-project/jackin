@@ -22,6 +22,7 @@ const COMMANDS: &[&str] = &[
     "purge",
     "doctor",
     "ls",
+    "usage",
     "inspect",
     "account",
     "account add",

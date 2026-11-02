@@ -48,6 +48,8 @@ pub enum Command {
     Shell(SandboxArg),
     #[command(about = "List the jackin sandboxes")]
     Ls(JsonArg),
+    #[command(about = "Show the limit windows of each account")]
+    Usage(JsonArg),
     #[command(about = "Show a sandbox, its labels, providers, and policy status")]
     Inspect(InspectArgs),
     #[command(subcommand, about = "Manage role sources")]

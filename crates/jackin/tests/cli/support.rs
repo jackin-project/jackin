@@ -24,6 +24,7 @@ use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, GatewayError, TermSize};
 use jackin_session::HostPorts;
 use jackin_testkit::{ProcessReply, ScriptedProgram, World, default_limits};
+use jackin_usage::ProviderEndpoints;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -264,6 +265,7 @@ pub(crate) struct Harness {
     pub(crate) config_path: HostPath,
     pub(crate) cache_dir: HostPath,
     pub(crate) env: Vec<(String, String)>,
+    pub(crate) usage_endpoints: ProviderEndpoints,
     host: HostPorts,
     engine: Arc<dyn ImageEngine>,
 }
@@ -292,6 +294,7 @@ impl Harness {
                 "HOME".to_owned(),
                 world.home().as_path().display().to_string(),
             )],
+            usage_endpoints: ProviderEndpoints::real(),
             host: HostPorts {
                 clock,
                 fs: Arc::clone(&world.fs),
@@ -309,6 +312,7 @@ impl Harness {
             config_path: self.config_path.clone(),
             cache_dir: self.cache_dir.clone(),
             env: self.env.clone(),
+            usage_endpoints: self.usage_endpoints.clone(),
             host: HostPorts {
                 clock: Arc::clone(&self.host.clock),
                 fs,
@@ -399,6 +403,7 @@ impl Invocation<'_> {
             engine: Arc::clone(&harness.engine),
             connect,
             limits: default_limits(),
+            usage_endpoints: harness.usage_endpoints.clone(),
         };
         let exit = jackin::run(env, deps).await;
         Ok(Ran {
