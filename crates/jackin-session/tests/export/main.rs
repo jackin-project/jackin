@@ -14,6 +14,7 @@ mod nesting;
 mod purge;
 mod refs;
 mod refuse;
+mod staging;
 mod support;
 mod unusable;
 mod work_state;

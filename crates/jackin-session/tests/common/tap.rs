@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -41,6 +42,7 @@ struct Hooks {
     gates: Vec<(SandboxPath, Gate)>,
     rm_clock: Option<Arc<dyn Clock>>,
     rm_runs: Vec<RmRun>,
+    download_dir_modes: Vec<u32>,
 }
 
 #[derive(Debug)]
@@ -105,6 +107,10 @@ impl Tap {
 
     pub(crate) fn stall_rm(&self, clock: Arc<dyn Clock>) {
         self.hooks().rm_clock = Some(clock);
+    }
+
+    pub(crate) fn download_dir_modes(&self) -> Vec<u32> {
+        self.hooks().download_dir_modes.clone()
     }
 
     pub(crate) fn rm_runs(&self) -> Vec<RmRun> {
@@ -265,6 +271,14 @@ impl Gateway for Tap {
     ) -> Result<Sha256, GatewayError> {
         let replacement = {
             let mut hooks = self.hooks();
+            if let Some(mode) = local
+                .as_path()
+                .parent()
+                .and_then(|dir| std::fs::metadata(dir).ok())
+                .map(|meta| meta.permissions().mode() & 0o777)
+            {
+                hooks.download_dir_modes.push(mode);
+            }
             if hooks.downloads.is_empty() {
                 None
             } else {

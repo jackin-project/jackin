@@ -442,7 +442,7 @@ impl Session {
     ) -> Result<Staging, ExportError> {
         let name = format!("export-{sandbox}-{unique}");
         let dir = HostPath::resolve(Path::new(&name), &self.deps.cache_dir)?;
-        self.deps.host.fs.create_dir_all(&dir).await?;
+        self.deps.host.fs.create_private_dir_all(&dir).await?;
         let bundle = HostPath::resolve(Path::new("export.bundle"), &dir)?;
         Ok(Staging { dir, bundle })
     }
