@@ -382,6 +382,21 @@ mod comments {
     }
 
     #[test]
+    fn a_comment_in_the_usage_subtree_is_reported() -> TestResult {
+        let source = format!("{HEADER}\n// note\nfn f() {{}}\n");
+        let fixture = Fixture::new(&bare(&["jackin-usage"]))?;
+        fixture.write("crates/usage/jackin-usage/src/lib.rs", &source)?;
+        let expected = lines(
+            CiStep::Comments,
+            "crates/usage/jackin-usage/src/lib.rs",
+            &source,
+            &["note"],
+        );
+        assert_eq!(run(&fixture)?, expected);
+        Ok(())
+    }
+
+    #[test]
     fn every_rust_comment_form_is_reported_at_its_line() -> TestResult {
         let late = ["// SPDX-License", "-Identifier: MIT"].concat();
         let source = format!(
