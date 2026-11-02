@@ -52,6 +52,7 @@ pub(crate) struct Setup {
     pub(crate) listed: bool,
     pub(crate) access: Access,
     pub(crate) pinned: String,
+    pub(crate) gateway_version: String,
     pub(crate) socket: Socket,
     pub(crate) health: Health,
 }
@@ -65,6 +66,7 @@ impl Setup {
             listed: true,
             access: Access::Connected,
             pinned: "0.1.6".to_owned(),
+            gateway_version: "0.1.6".to_owned(),
             socket: Socket::Live,
             health: Health::Serving,
         }
@@ -124,6 +126,7 @@ pub(crate) async fn run(setup: Setup) -> Result<Run, Box<dyn Error>> {
             },
         });
     }
+    world.gateway.set_version(&setup.gateway_version);
     world
         .gateway
         .set_serving(!matches!(setup.health, Health::NotServing));

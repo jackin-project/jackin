@@ -227,3 +227,35 @@ async fn version_details_carry_no_terminal_control_or_bidi_characters() -> TestR
     })
     .await
 }
+
+#[tokio::test]
+async fn the_gateway_version_detail_carries_no_terminal_control_or_bidi_characters() -> TestResult {
+    guard(async {
+        let hostile = "\u{1b}]0;x\u{7}\u{202e}0.1.6\u{9b}\u{202e}".to_owned();
+
+        let matching = run(Setup {
+            gateway_version: hostile.clone(),
+            pinned: hostile.clone(),
+            ..Setup::healthy()
+        })
+        .await?;
+        assert_eq!(statuses(&matching.report), expected([Pass; 7]));
+        assert_eq!(detail(&matching, CheckId::PinnedVersion)?, "0.1.6");
+
+        let differing = run(Setup {
+            gateway_version: hostile,
+            ..Setup::healthy()
+        })
+        .await?;
+        assert_eq!(
+            statuses(&differing.report),
+            expected([Pass, Pass, Pass, Pass, Pass, Fail, Pass])
+        );
+        assert_eq!(
+            detail(&differing, CheckId::PinnedVersion)?,
+            "the gateway runs 0.1.6, jackin is pinned to 0.1.6"
+        );
+        Ok(())
+    })
+    .await
+}

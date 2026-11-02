@@ -18,10 +18,10 @@ use tokio_util::sync::CancellationToken;
 
 use self::host::{HEAD, Host, HostRefs, exported_prefix};
 use self::sandbox::{Remote, RemoteError, Repository};
-
-const MAX_HEADS: usize = 1024;
 use crate::project::host_git;
 use crate::service::Session;
+
+const MAX_HEADS: usize = 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExportedBranch {

@@ -176,7 +176,8 @@ async fn export_takes_at_most_1024_heads_and_refuses_more_without_writing_anythi
                     limit: 1024
                 })
             ),
-            "{refused:?}"
+            "{:?}",
+            refused.as_ref().map(|report| report.branches.len())
         );
         let after = snapshot(&rig).await?;
         assert!(exports(&after).is_empty());

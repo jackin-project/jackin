@@ -165,11 +165,13 @@ async fn a_detached_head_in_a_linked_worktree_is_exported_under_the_unique_workt
         handle
             .git(&["worktree", "add", "-q", &on_branch, "side"])
             .await?;
+        let on_branch = std::fs::canonicalize(on_branch)?.display().to_string();
         let committed = [
             commit_in(&handle, &first, "one.txt").await?,
             commit_in(&handle, &second, "two.txt").await?,
             commit_in(&handle, &third, "three.txt").await?,
         ];
+        let side_tip = commit_in(&handle, &on_branch, "side.txt").await?;
         let main_tip = handle.commit_in_project("m.txt", b"m", "main").await?;
         let ids = worktree_ids(&handle)?;
         assert_eq!(ids.len(), 5);
@@ -182,7 +184,11 @@ async fn a_detached_head_in_a_linked_worktree_is_exported_under_the_unique_workt
             let id = by_path.get(path.as_str()).ok_or("no worktree id")?;
             expected.insert(ref_of(&name, &format!("worktree/{id}")), tip.clone());
         }
-        assert_eq!(expected.len(), 4);
+        let side_id = by_path
+            .get(on_branch.as_str())
+            .ok_or("no id for the worktree on side")?;
+        expected.insert(ref_of(&name, "side"), side_tip.clone());
+        assert_eq!(expected.len(), 5);
         assert_ne!(by_path.get(second.as_str()), by_path.get(third.as_str()));
         assert!(by_path.contains_key(fresh.as_str()));
         let sandbox_before = sandbox_repository(&handle).await?;
@@ -190,7 +196,12 @@ async fn a_detached_head_in_a_linked_worktree_is_exported_under_the_unique_workt
 
         let report = export(&rig, &name).await?;
 
-        assert_eq!(exports(&snapshot(&rig).await?), expected);
+        let landed = exports(&snapshot(&rig).await?);
+        assert!(
+            !landed.contains_key(&ref_of(&name, &format!("worktree/{side_id}"))),
+            "the worktree on the branch side is exported as a detached head: {landed:?}"
+        );
+        assert_eq!(landed, expected);
         assert_eq!(snapshot(&rig).await?.rest, before.rest);
         let reported: BTreeMap<String, String> = report
             .worktrees
@@ -198,8 +209,9 @@ async fn a_detached_head_in_a_linked_worktree_is_exported_under_the_unique_workt
             .map(|item| (item.host_ref.clone(), item.tip.as_str().to_owned()))
             .collect();
         expected.remove(&ref_of(&name, "main"));
+        expected.remove(&ref_of(&name, "side"));
         assert_eq!(reported, expected);
-        assert_eq!(report.branches.len(), 1);
+        assert_eq!(report.branches.len(), 2);
         assert_eq!(state(&rig, &name).await, WorkState::Exported);
         assert_eq!(sandbox_repository(&handle).await?, sandbox_before);
         assert_eq!(bundles_left(&handle), Vec::<String>::new());

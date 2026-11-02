@@ -265,6 +265,10 @@ impl FakeGateway {
         self.registry().serving = serving;
     }
 
+    pub fn set_version(&self, version: &str) {
+        version.clone_into(&mut self.registry().version);
+    }
+
     pub fn set_supervisor(&self, model: SupervisorModel) {
         self.registry().supervisor = model;
     }
@@ -475,9 +479,10 @@ impl Gateway for FakeGateway {
     async fn health(&self) -> Result<GatewayHealth, GatewayError> {
         tokio::task::yield_now().await;
         self.registry().strike(GatewayOp::Health)?;
+        let registry = self.registry();
         Ok(GatewayHealth {
-            version: "0.1.6".to_owned(),
-            serving: self.registry().serving,
+            version: registry.version.clone(),
+            serving: registry.serving,
         })
     }
 

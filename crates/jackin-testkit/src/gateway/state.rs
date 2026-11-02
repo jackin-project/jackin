@@ -79,6 +79,7 @@ pub(super) struct Registry {
     pub(super) hidden_until_conflict: bool,
     pub(super) start_ignored: bool,
     pub(super) serving: bool,
+    pub(super) version: String,
     pub(super) host_home: Option<PathBuf>,
     pub(super) host_edits: Vec<(UploadKind, HostEdit)>,
 }
@@ -104,6 +105,7 @@ impl Registry {
             hidden_until_conflict: false,
             start_ignored: false,
             serving: true,
+            version: "0.1.6".to_owned(),
             host_home: None,
             host_edits: Vec::new(),
         }
