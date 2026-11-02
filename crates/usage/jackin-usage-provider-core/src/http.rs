@@ -20,6 +20,7 @@ pub struct Http {
 
 impl Http {
     pub fn new(timeout: Duration) -> Result<Http, ProviderError> {
+        install_crypto_provider();
         let client = Client::builder()
             .timeout(timeout)
             .redirect(Policy::none())
@@ -116,6 +117,12 @@ impl Http {
             parsed.set_path(&joined);
         }
         Ok(parsed)
+    }
+}
+
+fn install_crypto_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _installed = rustls::crypto::aws_lc_rs::default_provider().install_default();
     }
 }
 

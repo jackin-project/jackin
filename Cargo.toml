@@ -10,6 +10,7 @@ members = [
   "crates/jackin-session",
   "crates/jackin-testkit",
   "crates/jackin-tui",
+  "crates/usage/jackin-usage",
   "crates/usage/jackin-usage-provider-codex",
   "crates/usage/jackin-usage-provider-core",
   "crates/xtask",
@@ -31,6 +32,8 @@ jackin-openshell = { path = "crates/jackin-openshell", version = "0.1.0" }
 jackin-session = { path = "crates/jackin-session", version = "0.1.0" }
 jackin-testkit = { path = "crates/jackin-testkit", version = "0.1.0" }
 jackin-tui = { path = "crates/jackin-tui", version = "0.1.0" }
+jackin-usage = { path = "crates/usage/jackin-usage", version = "0.1.0" }
+jackin-usage-provider-codex = { path = "crates/usage/jackin-usage-provider-codex", version = "0.1.0" }
 jackin-usage-provider-core = { path = "crates/usage/jackin-usage-provider-core", version = "0.1.0" }
 async-trait = "0.1.92"
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
@@ -49,6 +52,7 @@ regex = { version = "1.13.1", default-features = false, features = ["std", "unic
 reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-native-roots-no-provider"] }
 russh = { version = "0.65.0", default-features = false, features = ["aws-lc-rs", "flate2"] }
 rustix = { version = "1.1.6", features = ["fs", "process"] }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha1 = "0.11.0"

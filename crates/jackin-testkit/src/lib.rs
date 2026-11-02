@@ -10,6 +10,7 @@ mod rig;
 mod snapshot;
 mod supervisor;
 mod sync;
+mod usage;
 mod world;
 
 pub use engine::*;
@@ -19,4 +20,5 @@ pub use host::*;
 pub use rig::*;
 pub use snapshot::*;
 pub use supervisor::*;
+pub use usage::*;
 pub use world::*;

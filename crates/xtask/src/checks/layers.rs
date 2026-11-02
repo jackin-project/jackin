@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::path::Path;
+
 use super::Check;
 use crate::ci::CiStep;
 use crate::lex::{Token, lex_rust};
@@ -18,9 +20,36 @@ pub struct LayerRule {
 
 pub const GATEWAY_FAMILIES: &[&str] = &["openshell", "tonic", "russh"];
 
+pub const EXPOSE_ALLOWLIST: &[&str] = &[
+    "crates/jackin-core/src/secret.rs",
+    "crates/jackin-openshell/src/discovery.rs",
+    "crates/jackin-openshell/src/grpc/program.rs",
+    "crates/jackin-openshell/src/grpc/provider.rs",
+    "crates/jackin-session/src/host.rs",
+    "crates/jackin-testkit/src/gateway.rs",
+    "crates/jackin-testkit/src/gateway/exec.rs",
+    "crates/jackin-testkit/src/gateway/files.rs",
+    "crates/jackin-testkit/src/host/runner.rs",
+    "crates/usage/jackin-usage/src/credential.rs",
+    "crates/usage/jackin-usage/src/dispatch.rs",
+];
+
 pub const HTTP_CLIENT_CRATE: &str = "reqwest";
 
 pub const HTTP_CLIENT_OWNER: &str = "jackin-usage-provider-core";
+
+const USAGE_PROVIDERS: [&str; 10] = [
+    "jackin-usage-provider-claude",
+    "jackin-usage-provider-codex",
+    "jackin-usage-provider-cursor",
+    "jackin-usage-provider-gemini",
+    "jackin-usage-provider-grok",
+    "jackin-usage-provider-kimi",
+    "jackin-usage-provider-minimax",
+    "jackin-usage-provider-opencode",
+    "jackin-usage-provider-openrouter",
+    "jackin-usage-provider-zai",
+];
 
 const fn provider(member: &'static str) -> LayerRule {
     LayerRule {
@@ -81,6 +110,7 @@ pub const LAYERS: &[LayerRule] = &[
             "jackin-openshell",
             "jackin-session",
             "jackin-tui",
+            "jackin-usage",
         ],
         dev_depends: &[],
         optional: &[],
@@ -99,7 +129,36 @@ pub const LAYERS: &[LayerRule] = &[
         optional: &[],
         imports: &[],
     },
-    provider("jackin-usage-provider-codex"),
+    LayerRule {
+        member: "jackin-usage",
+        depends: &[
+            "jackin-core",
+            "jackin-usage-provider-core",
+            "jackin-usage-provider-claude",
+            "jackin-usage-provider-codex",
+            "jackin-usage-provider-cursor",
+            "jackin-usage-provider-gemini",
+            "jackin-usage-provider-grok",
+            "jackin-usage-provider-kimi",
+            "jackin-usage-provider-minimax",
+            "jackin-usage-provider-opencode",
+            "jackin-usage-provider-openrouter",
+            "jackin-usage-provider-zai",
+        ],
+        dev_depends: &["jackin-testkit"],
+        optional: &[],
+        imports: &[],
+    },
+    provider(USAGE_PROVIDERS[0]),
+    provider(USAGE_PROVIDERS[1]),
+    provider(USAGE_PROVIDERS[2]),
+    provider(USAGE_PROVIDERS[3]),
+    provider(USAGE_PROVIDERS[4]),
+    provider(USAGE_PROVIDERS[5]),
+    provider(USAGE_PROVIDERS[6]),
+    provider(USAGE_PROVIDERS[7]),
+    provider(USAGE_PROVIDERS[8]),
+    provider(USAGE_PROVIDERS[9]),
     LayerRule {
         member: "jackin-usage-provider-core",
         depends: &[],
@@ -143,6 +202,7 @@ impl Check for LayersCheck {
             violations.extend(import_violations(repo, member, imports));
             violations.extend(http_client_violations(repo, member));
         }
+        violations.extend(expose_violations(repo));
         sorted(violations)
     }
 }
@@ -311,4 +371,43 @@ fn names_http_client(tokens: &[Token], index: usize) -> bool {
         && tokens[index - 1].ident() == Some("crate")
         && tokens[index - 2].ident() == Some("extern");
     (followed_by_path && !nested) || extern_crate
+}
+
+fn expose_violations(repo: &Repo) -> Vec<Violation> {
+    let mut violations = Vec::new();
+    for file in repo.files() {
+        let path = file.path();
+        let listed = EXPOSE_ALLOWLIST
+            .iter()
+            .any(|allowed| path == Path::new(allowed));
+        let in_tests = path.components().any(|part| part.as_os_str() == "tests");
+        if file.kind() != FileKind::Rust || listed || in_tests {
+            continue;
+        }
+        let tokens = lex_rust(file.text()).tokens;
+        for (index, token) in tokens.iter().enumerate() {
+            if !calls_expose(&tokens, index) {
+                continue;
+            }
+            violations.push(Violation::at_line(
+                CiStep::Layers,
+                path,
+                token.line,
+                "calls Secret::expose outside the allowlist in crates/xtask/src/checks/layers.rs"
+                    .to_owned(),
+            ));
+        }
+    }
+    violations
+}
+
+fn calls_expose(tokens: &[Token], index: usize) -> bool {
+    if tokens[index].ident() != Some("expose") {
+        return false;
+    }
+    let opens = tokens.get(index + 1).is_some_and(|t| t.is_punct('('));
+    let after_dot = index >= 1 && tokens[index - 1].is_punct('.');
+    let after_path =
+        index >= 2 && tokens[index - 1].is_punct(':') && tokens[index - 2].is_punct(':');
+    opens && (after_dot || after_path)
 }

@@ -250,6 +250,13 @@ fn remove(specs: &mut Specs, member: &str, dep_name: &str) {
     }
 }
 
+fn usage_provider() -> Vec<Dep> {
+    vec![
+        Dep::Normal("jackin-usage-provider-core"),
+        Dep::Normal("serde_json"),
+    ]
+}
+
 fn d14() -> Specs {
     use Dep::{Dev, Normal, Optional};
     let core = Normal("jackin-core");
@@ -284,7 +291,10 @@ fn d14() -> Specs {
                 testkit,
             ],
         ),
-        ("jackin-testkit", vec![core, image, openshell, session, tui]),
+        (
+            "jackin-testkit",
+            vec![core, image, openshell, session, tui, Normal("jackin-usage")],
+        ),
         (
             "jackin",
             vec![
@@ -298,9 +308,29 @@ fn d14() -> Specs {
             ],
         ),
         (
+            "jackin-usage",
+            vec![
+                core,
+                Normal("jackin-usage-provider-core"),
+                Normal("jackin-usage-provider-codex"),
+                Normal("serde"),
+                testkit,
+            ],
+        ),
+        (
             "jackin-usage-provider-core",
             vec![Normal("reqwest"), Normal("serde_json"), Normal("thiserror")],
         ),
+        ("jackin-usage-provider-claude", usage_provider()),
+        ("jackin-usage-provider-codex", usage_provider()),
+        ("jackin-usage-provider-cursor", usage_provider()),
+        ("jackin-usage-provider-gemini", usage_provider()),
+        ("jackin-usage-provider-grok", usage_provider()),
+        ("jackin-usage-provider-kimi", usage_provider()),
+        ("jackin-usage-provider-minimax", usage_provider()),
+        ("jackin-usage-provider-opencode", usage_provider()),
+        ("jackin-usage-provider-openrouter", usage_provider()),
+        ("jackin-usage-provider-zai", usage_provider()),
         (
             "jackin-xtask",
             vec![
@@ -784,6 +814,71 @@ mod layers {
     }
 
     #[test]
+    fn usage_edges_outside_the_rows_are_reported() -> TestResult {
+        use Dep::{Dev, Normal};
+        let mut specs = d14();
+        add(&mut specs, "jackin-usage", Normal("jackin-openshell"));
+        add(&mut specs, "jackin-usage", Normal("jackin-session"));
+        add(
+            &mut specs,
+            "jackin-usage-provider-codex",
+            Normal("jackin-core"),
+        );
+        add(
+            &mut specs,
+            "jackin-usage-provider-claude",
+            Normal("jackin-usage"),
+        );
+        add(
+            &mut specs,
+            "jackin-usage-provider-core",
+            Normal("jackin-usage-provider-codex"),
+        );
+        add(&mut specs, "jackin-tui", Normal("jackin-usage"));
+        add(&mut specs, "jackin", Normal("jackin-usage-provider-core"));
+        add(
+            &mut specs,
+            "jackin-usage-provider-kimi",
+            Dev("jackin-testkit"),
+        );
+        let violations = run(&specs, &[])?;
+        let expected: Vec<Found> = [
+            "jackin-tui",
+            "jackin-usage-provider-claude",
+            "jackin-usage-provider-codex",
+            "jackin-usage-provider-core",
+            "jackin-usage-provider-kimi",
+            "jackin-usage",
+            "jackin-usage",
+            "jackin",
+        ]
+        .iter()
+        .map(|member| manifest_found(CiStep::Layers, member))
+        .collect();
+        assert_eq!(summary(&violations), expected);
+        assert_messages(
+            &violations,
+            &[
+                &["jackin-tui", "jackin-usage"],
+                &["jackin-usage-provider-claude", "jackin-usage"],
+                &["jackin-usage-provider-codex", "jackin-core"],
+                &["jackin-usage-provider-core", "jackin-usage-provider-codex"],
+                &["jackin-usage-provider-kimi", "jackin-testkit"],
+                &["jackin-usage", "jackin-openshell"],
+                &["jackin-usage", "jackin-session"],
+                &["jackin", "jackin-usage-provider-core"],
+            ],
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn usage_edges_inside_the_rows_pass() -> TestResult {
+        assert_eq!(summary(&run(&d14(), &[])?), []);
+        Ok(())
+    }
+
+    #[test]
     fn reqwest_in_a_manifest_outside_the_http_owner_is_reported() -> TestResult {
         use Dep::{Dev, Normal};
         let mut specs = d14();
@@ -889,6 +984,52 @@ mod layers {
             [manifest_found(CiStep::Layers, "jackin-newcrate")]
         );
         assert_messages(&violations, &[&["jackin-newcrate"]]);
+        Ok(())
+    }
+}
+
+mod expose {
+    use super::*;
+
+    fn run(files: &[(&str, &str)]) -> Result<Vec<Violation>, Box<dyn Error>> {
+        let fixture = Fixture::new(&d14())?;
+        for (path, text) in files {
+            fixture.write(path, text)?;
+        }
+        Ok(LayersCheck.run(&fixture.repo()?))
+    }
+
+    #[test]
+    fn expose_calls_outside_the_allowlist_are_reported_at_their_line() -> TestResult {
+        let source = "fn f(secret: &Secret) {\n    let _text = secret.expose();\n}\n";
+        let path = "crates/usage/jackin-usage/src/cache.rs";
+        let violations = run(&[(path, source)])?;
+        assert_eq!(summary(&violations), [at(CiStep::Layers, path, 2)]);
+        assert_messages(&violations, &[&["Secret::expose", "allowlist"]]);
+        Ok(())
+    }
+
+    #[test]
+    fn expose_calls_in_the_allowlisted_credential_file_pass() -> TestResult {
+        let source = "fn f(secret: &Secret) {\n    let _text = secret.expose();\n    let _bytes = SecretBytes::expose(&secret);\n}\n";
+        let violations = run(&[("crates/usage/jackin-usage/src/credential.rs", source)])?;
+        assert_eq!(summary(&violations), []);
+        Ok(())
+    }
+
+    #[test]
+    fn expose_in_strings_and_definitions_is_not_a_call() -> TestResult {
+        let source = "impl Secret {\n    pub fn expose(&self) -> &str { &self.0 }\n}\nfn docs() {\n    let a = \"secret.expose()\";\n    let b = r#\"secret.expose()\"#;\n    let expose = 1;\n}\n";
+        let violations = run(&[("crates/usage/jackin-usage/src/model.rs", source)])?;
+        assert_eq!(summary(&violations), []);
+        Ok(())
+    }
+
+    #[test]
+    fn expose_calls_under_a_tests_directory_pass() -> TestResult {
+        let source = "fn f(secret: &Secret) {\n    let _text = secret.expose();\n}\n";
+        let violations = run(&[("crates/usage/jackin-usage/tests/usage/secrets.rs", source)])?;
+        assert_eq!(summary(&violations), []);
         Ok(())
     }
 }

@@ -2078,6 +2078,8 @@ dependencies = [
  "jackin-image",
  "jackin-openshell",
  "jackin-session",
+ "jackin-usage",
+ "serde_json",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -2094,6 +2096,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-usage"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "jackin-core",
+ "jackin-testkit",
+ "jackin-usage-provider-codex",
+ "jackin-usage-provider-core",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "jackin-usage-provider-codex"
 version = "0.1.0"
 dependencies = [
@@ -2107,6 +2126,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "reqwest",
+ "rustls",
  "serde_json",
  "thiserror 2.0.21",
 ]

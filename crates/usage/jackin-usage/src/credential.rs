@@ -1,0 +1,119 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::path::Path;
+use std::time::Duration;
+
+use jackin_core::{
+    CredentialSource, HostPath, ProcessSpec, ProcessStatus, ProcessStdin, Program, Secret,
+};
+use tokio_util::sync::CancellationToken;
+
+use crate::deps::UsageDeps;
+use crate::request::UsageAccount;
+
+const OP_TIMEOUT: Duration = Duration::from_secs(30);
+const CODEX_LOGIN_FILE: &str = "auth.json";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Shape {
+    Token,
+    Login,
+}
+
+pub(crate) struct Material {
+    pub(crate) secret: Secret,
+    pub(crate) shape: Shape,
+}
+
+impl Material {
+    fn token(text: &str) -> Material {
+        Material {
+            secret: Secret::new(text.to_owned()),
+            shape: Shape::Token,
+        }
+    }
+
+    fn login(text: String) -> Material {
+        Material {
+            secret: Secret::new(text),
+            shape: Shape::Login,
+        }
+    }
+}
+
+pub(crate) enum Unresolved {
+    Missing,
+    Unreadable(&'static str),
+}
+
+pub(crate) async fn resolve(
+    deps: &UsageDeps,
+    account: &UsageAccount,
+    cancel: &CancellationToken,
+) -> Result<Material, Unresolved> {
+    match &account.credential {
+        CredentialSource::Env { var } => deps
+            .env
+            .get(var)
+            .and_then(non_empty)
+            .map(Material::token)
+            .ok_or(Unresolved::Missing),
+        CredentialSource::OnePassword { reference } => {
+            let spec = ProcessSpec {
+                program: Program::Op,
+                args: vec!["read".to_owned(), reference.as_str().to_owned()],
+                cwd: None,
+                env: Vec::new(),
+                env_remove_prefixes: Vec::new(),
+                stdin: ProcessStdin::Null,
+                timeout: OP_TIMEOUT,
+            };
+            let output = deps
+                .runner
+                .run_secret(&spec, cancel)
+                .await
+                .map_err(|_| Unresolved::Missing)?;
+            if output.status != ProcessStatus::Exited(0) {
+                return Err(Unresolved::Missing);
+            }
+            let text = std::str::from_utf8(output.stdout.expose())
+                .map_err(|_| Unresolved::Unreadable("the 1Password value is not text"))?;
+            non_empty(text)
+                .map(Material::token)
+                .ok_or(Unresolved::Missing)
+        }
+        CredentialSource::File { path } => {
+            let text = read_text(deps, path).await?;
+            Ok(if text.starts_with('{') {
+                Material::login(text)
+            } else {
+                Material::token(&text)
+            })
+        }
+        CredentialSource::CodexLogin { home, .. } => {
+            let path = HostPath::resolve(Path::new(CODEX_LOGIN_FILE), home)
+                .map_err(|_| Unresolved::Unreadable("the Codex home is not a usable path"))?;
+            Ok(Material::login(read_text(deps, &path).await?))
+        }
+    }
+}
+
+async fn read_text(deps: &UsageDeps, path: &HostPath) -> Result<String, Unresolved> {
+    let bytes = deps
+        .fs
+        .read(path)
+        .await
+        .map_err(|_| Unresolved::Unreadable("the credential file could not be read"))?
+        .ok_or(Unresolved::Missing)?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| Unresolved::Unreadable("the credential file is not text"))?;
+    non_empty(&text)
+        .map(str::to_owned)
+        .ok_or(Unresolved::Missing)
+}
+
+fn non_empty(text: &str) -> Option<&str> {
+    let trimmed = text.trim();
+    (!trimmed.is_empty()).then_some(trimmed)
+}

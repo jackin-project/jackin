@@ -14,6 +14,7 @@ publish = false
 [dependencies]
 chrono = { workspace = true }
 reqwest = { workspace = true }
+rustls = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
