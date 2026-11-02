@@ -38,7 +38,7 @@ pub(crate) fn staging_left(rig: &Rig) -> Result<Vec<String>, Box<dyn Error>> {
     let mut left = Vec::new();
     for entry in std::fs::read_dir(rig.world.cache_dir().as_path())? {
         let name = entry?.file_name().to_string_lossy().into_owned();
-        if name.starts_with("export-") {
+        if name.starts_with("export-") && !name.contains(".lock") {
             left.push(name);
         }
     }

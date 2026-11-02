@@ -7,10 +7,12 @@ mod sandbox;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use jackin_core::{
-    BranchName, CommitId, Config, FsError, HostPath, LabelError, PathError, Phase, ProcessError,
-    ProcessStatus, ProjectRoot, SandboxLabels, SandboxName, Sha256, TerminalText, WorkspaceName,
+    BranchName, CommitId, Config, FileLock, FsError, HostPath, LabelError, PathError, Phase,
+    ProcessError, ProcessStatus, ProjectRoot, SandboxLabels, SandboxName, Sha256, TerminalText,
+    WorkspaceName,
 };
 use jackin_openshell::{GatewayError, Missing};
 use thiserror::Error;
@@ -22,6 +24,7 @@ use crate::project::host_git;
 use crate::service::Session;
 
 static STAGINGS: AtomicU64 = AtomicU64::new(0);
+const LOCK_POLL: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExportedBranch {
@@ -280,6 +283,7 @@ impl Session {
         if cancel.is_cancelled() {
             return Err(ExportError::Cancelled);
         }
+        let _held = self.hold_export(sandbox, &cancel).await?;
         let view = self
             .find_managed(sandbox)
             .await?
@@ -325,6 +329,32 @@ impl Session {
             .await;
         drop(self.deps.host.fs.remove_dir_all(&staging.dir).await);
         result
+    }
+
+    async fn hold_export(
+        &self,
+        sandbox: &SandboxName,
+        cancel: &CancellationToken,
+    ) -> Result<FileLock, ExportError> {
+        let fs = self.deps.host.fs.as_ref();
+        fs.create_dir_all(&self.deps.cache_dir).await?;
+        let path = HostPath::resolve(
+            Path::new(&format!("export-{sandbox}.lock")),
+            &self.deps.cache_dir,
+        )?;
+        loop {
+            match fs.lock(&path).await {
+                Ok(lock) => return Ok(lock),
+                Err(FsError::LockHeld(_)) => {
+                    tokio::select! {
+                        biased;
+                        () = cancel.cancelled() => return Err(ExportError::Cancelled),
+                        () = self.deps.host.clock.sleep(LOCK_POLL) => {}
+                    }
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
     }
 
     async fn stage(&self, sandbox: &SandboxName) -> Result<Staging, ExportError> {
