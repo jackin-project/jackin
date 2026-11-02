@@ -29,6 +29,7 @@ pub use handle::SandboxHandle;
 
 use self::main_process::MainPlan;
 use self::state::{Action, Armed, ArmedTrigger, Cell, Registry, Sandbox, Settling};
+use crate::engine::FakeEngine;
 use crate::supervisor::SupervisorModel;
 use crate::sync::locked;
 
@@ -179,6 +180,10 @@ impl FakeGateway {
 
     pub fn add_image(&self, tag: &ImageTag) {
         self.registry().images.insert(tag.clone());
+    }
+
+    pub fn link_engine(&self, engine: Arc<FakeEngine>) {
+        self.registry().engine = Some(engine);
     }
 
     pub fn set_supervisor(&self, model: SupervisorModel) {
@@ -408,7 +413,12 @@ impl Gateway for FakeGateway {
         let failure = if registry.failing_creates > 0 {
             registry.failing_creates -= 1;
             Some("provisioning failed (injected by the fake)".to_owned())
-        } else if registry.images.contains(spec.image()) {
+        } else if registry.images.contains(spec.image())
+            || registry
+                .engine
+                .as_ref()
+                .is_some_and(|engine| engine.images().contains_key(spec.image()))
+        {
             None
         } else {
             Some(format!("failed to resolve image '{}'", spec.image()))

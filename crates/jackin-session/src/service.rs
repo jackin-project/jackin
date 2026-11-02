@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use jackin_core::{Clock, FileSystem, HostPath, ProcessRunner};
+use jackin_core::{Clock, FileSystem, GatewayName, HostPath, ProcessRunner};
 use jackin_image::ImageEngine;
 use jackin_openshell::Gateway;
 
@@ -26,4 +26,20 @@ pub struct SessionDeps {
 }
 
 #[derive(Clone, Debug)]
-pub struct Session {}
+pub struct Session {
+    pub(crate) deps: SessionDeps,
+}
+
+impl Session {
+    pub fn new(deps: SessionDeps) -> Session {
+        Session { deps }
+    }
+
+    pub fn gateway_name(&self) -> &GatewayName {
+        self.deps.gateway.name()
+    }
+
+    pub fn gateway(&self) -> &dyn Gateway {
+        self.deps.gateway.as_ref()
+    }
+}

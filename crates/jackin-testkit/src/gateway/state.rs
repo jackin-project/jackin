@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::main_process::{Main, MainPlan, PlanEnd};
 use super::{ProgramScript, ProviderRecord, RunRecord, Trigger};
+use crate::engine::FakeEngine;
 use crate::supervisor::{Supervisor, SupervisorModel};
 use crate::sync::locked;
 
@@ -59,6 +60,7 @@ pub(super) struct Registry {
     pub(super) profiles: BTreeMap<ProfileId, ProviderProfile>,
     pub(super) images: BTreeSet<ImageTag>,
     pub(super) installed: BTreeMap<SandboxPath, Vec<u8>>,
+    pub(super) engine: Option<Arc<FakeEngine>>,
     pub(super) faults: Vec<Armed>,
     pub(super) triggers: Vec<ArmedTrigger>,
     pub(super) stale_observations: u32,
@@ -78,6 +80,7 @@ impl Registry {
             profiles: BTreeMap::new(),
             images: BTreeSet::new(),
             installed: BTreeMap::new(),
+            engine: None,
             faults: Vec::new(),
             triggers: Vec::new(),
             stale_observations: 0,

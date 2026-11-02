@@ -2025,11 +2025,14 @@ dependencies = [
  "jackin-core",
  "jackin-image",
  "jackin-openshell",
+ "jackin-testkit",
  "rustix",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
+ "toml",
  "zeroize",
 ]
 

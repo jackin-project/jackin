@@ -1,6 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+mod decide;
+mod hooks;
+mod probe;
+mod run;
+mod tracker;
+
 use std::time::Duration;
 
 use jackin_core::{
@@ -10,6 +16,7 @@ use jackin_core::{
 use jackin_image::{ImageError, ImageEvent};
 use jackin_openshell::GatewayError;
 use thiserror::Error;
+use tokio::sync::mpsc;
 
 use crate::accounts::AccountError;
 use crate::credentials::CredentialError;
@@ -74,16 +81,46 @@ pub enum LaunchEvent {
     SandboxKnown(SandboxName),
 }
 
+pub const LAUNCH_EVENT_CAPACITY: usize = 64;
+
 #[derive(Clone, Debug)]
-pub struct LaunchEvents {}
+pub struct LaunchEvents {
+    sender: mpsc::Sender<LaunchEvent>,
+    lines: LineDelivery,
+}
 
 #[derive(Debug)]
-pub struct LaunchFeed {}
+pub struct LaunchFeed {
+    receiver: mpsc::Receiver<LaunchEvent>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LineDelivery {
     Reliable,
     BestEffort,
+}
+
+pub fn launch_events(lines: LineDelivery) -> (LaunchEvents, LaunchFeed) {
+    let (sender, receiver) = mpsc::channel(LAUNCH_EVENT_CAPACITY);
+    (LaunchEvents { sender, lines }, LaunchFeed { receiver })
+}
+
+impl LaunchEvents {
+    pub async fn emit(&self, event: LaunchEvent) {
+        let droppable = self.lines == LineDelivery::BestEffort
+            && matches!(event, LaunchEvent::Image(ImageEvent::Line { .. }));
+        if droppable {
+            drop(self.sender.try_send(event));
+        } else {
+            drop(self.sender.send(event).await);
+        }
+    }
+}
+
+impl LaunchFeed {
+    pub async fn recv(&mut self) -> Option<LaunchEvent> {
+        self.receiver.recv().await
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,12 +141,14 @@ pub enum LaunchOutcome {
     Cancelled(RestoreCandidate),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("launch {launch_id} failed at {step:?}: {error}")]
 pub struct LaunchFailure {
     pub launch_id: LaunchId,
     pub step: LaunchStep,
     pub sandbox: Option<SandboxName>,
-    pub error: LaunchError,
+    #[source]
+    pub error: Box<LaunchError>,
 }
 
 #[derive(Debug, Error)]
@@ -174,4 +213,6 @@ pub enum LaunchError {
     },
     #[error("the sandbox probe is invalid: {message}")]
     ProbeInvalid { message: String },
+    #[error("the sandbox {sandbox:?} has no value for {key}")]
+    PlaceholderMissing { sandbox: SandboxName, key: String },
 }

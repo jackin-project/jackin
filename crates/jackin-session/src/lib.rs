@@ -6,6 +6,7 @@ mod attach;
 mod credentials;
 mod doctor;
 mod export;
+mod files;
 mod host;
 mod launch;
 mod lifecycle;
