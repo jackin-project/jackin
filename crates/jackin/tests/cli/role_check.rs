@@ -333,6 +333,37 @@ async fn a_role_policy_without_landlock_hard_requirement_fails_naming_the_settin
 }
 
 #[tokio::test]
+async fn a_role_policy_naming_the_root_fails_role_check_naming_the_path() -> TestResult {
+    guard(async {
+        for (path, names) in [
+            ("/.", vec!["/.", "read_write"]),
+            ("/", vec!["read_write"]),
+            ("//", vec!["//", "read_write"]),
+            ("/proc/self/root", vec!["/proc/self/root", "read_write"]),
+            ("/usr/..", vec!["/usr/.."]),
+        ] {
+            let paths = format!(
+                "filesystem_policy:\n  read_only:\n    - /bin\n  read_write:\n    - '{path}'\n"
+            );
+            let role = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(
+                &paths,
+                HARD,
+                "example.com",
+            ));
+            let (ran, _, _) = checked(&role, false).await?;
+            failed(&ran, ExitClass::Failure, &names)?;
+        }
+        let read_only = "filesystem_policy:\n  read_only:\n    - /\n    - /proc\n";
+        let role =
+            RoleFixture::new("sentinel")?.policy_yaml(&policy_text(read_only, HARD, "example.com"));
+        let (ran, _, _) = checked(&role, false).await?;
+        ran.ok()?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_role_host_the_sandbox_would_match_to_a_provider_host_fails_in_every_dialect()
 -> TestResult {
     guard(async {

@@ -103,6 +103,22 @@ fn check_shape(root: &Value, source: Source) -> Result<(), PolicyError> {
     Ok(())
 }
 
+fn check_read_write(paths: &[String]) -> Result<(), PolicyError> {
+    for path in paths.iter().filter(|path| path.starts_with('/')) {
+        let mut pieces = path
+            .split('/')
+            .filter(|piece| !piece.is_empty() && *piece != ".");
+        match pieces.next() {
+            None => return Err(PolicyError::ReadWriteRoot { path: path.clone() }),
+            Some("proc" | "sys") => {
+                return Err(PolicyError::ReadWriteAlias { path: path.clone() });
+            }
+            Some(_) => {}
+        }
+    }
+    Ok(())
+}
+
 fn check_sandbox(proto: &SandboxPolicy) -> Result<(), PolicyError> {
     let found = proto
         .landlock
@@ -113,14 +129,16 @@ fn check_sandbox(proto: &SandboxPolicy) -> Result<(), PolicyError> {
             found: found.map(str::to_owned),
         });
     }
-    let has_paths = proto.filesystem.as_ref().is_some_and(|filesystem| {
-        !filesystem.read_only.is_empty() || !filesystem.read_write.is_empty()
-    });
-    if has_paths {
-        Ok(())
-    } else {
-        Err(PolicyError::NoFilesystemPaths)
-    }
+    let Some(filesystem) = proto
+        .filesystem
+        .as_ref()
+        .filter(|filesystem| !filesystem.read_only.is_empty() || !filesystem.read_write.is_empty())
+    else {
+        return Err(PolicyError::NoFilesystemPaths);
+    };
+    check_read_write(&filesystem.read_write)?;
+    openshell_policy::validate_sandbox_policy(proto)
+        .map_err(|violations| PolicyError::Gateway { violations })
 }
 
 pub(super) fn build(text: &str, source: Source) -> Result<PolicyDocument, PolicyError> {

@@ -726,3 +726,307 @@ fn an_authored_policy_with_no_filesystem_paths_is_refused() {
     let message = PolicyError::NoFilesystemPaths.to_string();
     assert!(message.contains("read_only") && message.contains("read_write"));
 }
+
+const HARD: &str = "landlock:\n  compatibility: hard_requirement\n";
+
+fn path_doc(list: &str, path: &str) -> String {
+    format!("version: 1\nfilesystem_policy:\n  {list}:\n    - '{path}'\n{HARD}")
+}
+
+fn gateway_refuses_text(text: &str) -> bool {
+    let proto = parse_sandbox_policy(text).unwrap();
+    validate_sandbox_policy(&proto).is_err()
+}
+
+fn is_root_form(path: &str) -> bool {
+    path.starts_with('/')
+        && path
+            .split('/')
+            .all(|piece| piece.is_empty() || piece == ".")
+}
+
+fn alias_form(path: &str) -> bool {
+    path.starts_with('/')
+        && match path
+            .split('/')
+            .find(|piece| !piece.is_empty() && *piece != ".")
+        {
+            None => true,
+            Some(piece) => piece == "proc" || piece == "sys",
+        }
+}
+
+fn strings_over(tokens: &[&str], longest: usize) -> Vec<String> {
+    let mut all = Vec::new();
+    let mut layer = vec![String::new()];
+    for _ in 0..longest {
+        layer = layer
+            .iter()
+            .flat_map(|head| tokens.iter().map(move |token| format!("{head}{token}")))
+            .collect();
+        all.extend(layer.iter().cloned());
+    }
+    all
+}
+
+#[test]
+fn an_authored_read_write_list_refuses_every_path_that_names_the_root_or_aliases_it() {
+    for path in ["/", "//", "/.", "/./", "/./.", "//.", "/.//."] {
+        let text = path_doc("read_write", path);
+        assert!(
+            matches!(
+                PolicyDocument::parse_authored(&text),
+                Err(PolicyError::ReadWriteRoot { path: ref got }) if got == path
+            ),
+            "read_write {path}"
+        );
+        assert!(
+            matches!(
+                ClosedPolicy::parse(&text),
+                Err(ClosedPolicyError::Policy(PolicyError::ReadWriteRoot { .. }))
+            ),
+            "closed read_write {path}"
+        );
+    }
+    for path in [
+        "/proc",
+        "/proc/",
+        "//proc/x",
+        "/./sys",
+        "/proc/self/root",
+        "/sys",
+        "/sys/kernel",
+    ] {
+        assert!(
+            matches!(
+                PolicyDocument::parse_authored(&path_doc("read_write", path)),
+                Err(PolicyError::ReadWriteAlias { path: ref got }) if got == path
+            ),
+            "read_write {path}"
+        );
+    }
+    assert!(matches!(
+        PolicyDocument::parse_authored(&path_doc("read_write", "/usr/..")),
+        Err(PolicyError::Gateway { .. })
+    ));
+    for path in [
+        "/tmp", "/tmp/", "/tmp/.", "/./tmp", "/.hidden", "/..x", "/...", "/a/./b", "/sandbox",
+        "/procfs", "/proc2", "/sysroot", "/system", "/a/proc", "/PROC",
+    ] {
+        PolicyDocument::parse_authored(&path_doc("read_write", path))
+            .unwrap_or_else(|error| panic!("read_write {path}: {error}"));
+    }
+    for path in ["/", "//", "/.", "/./", "/proc", "/sys", "/tmp"] {
+        PolicyDocument::parse_authored(&path_doc("read_only", path))
+            .unwrap_or_else(|error| panic!("read_only {path}: {error}"));
+    }
+    assert!(matches!(
+        PolicyDocument::parse_authored(&path_doc("read_only", "/usr/..")),
+        Err(PolicyError::Gateway { .. })
+    ));
+}
+
+#[test]
+fn role_check_refuses_every_filesystem_path_shape_the_gateway_refuses() {
+    let universe = strings_over(&["/", ".", "a"], 6);
+    assert_eq!(universe.len(), 1092);
+    let (mut gateway_only, mut lexical_only, mut accepted) = (0, 0, 0);
+    for path in &universe {
+        for list in ["read_write", "read_only"] {
+            let text = path_doc(list, path);
+            let gateway = gateway_refuses_text(&text);
+            let lexical = list == "read_write" && is_root_form(path);
+            let jackin = PolicyDocument::parse_authored(&text).is_err();
+            assert_eq!(
+                jackin,
+                gateway || lexical,
+                "{list} {path}: gateway refuses {gateway}, lexical root {lexical}, jackin refuses {jackin}"
+            );
+            match (gateway, lexical) {
+                (true, _) => gateway_only += 1,
+                (false, true) => lexical_only += 1,
+                (false, false) => accepted += 1,
+            }
+        }
+    }
+    assert_eq!(
+        (gateway_only, lexical_only, accepted),
+        (1528, 26, 630),
+        "gateway-refused, lexical-root-only and accepted path rows"
+    );
+}
+
+#[test]
+fn read_write_refuses_every_path_equal_or_below_proc_and_sys() {
+    let universe = strings_over(&["/", ".", "proc", "sys", "a"], 4);
+    assert_eq!(universe.len(), 780);
+    let (mut refused, mut accepted) = (0, 0);
+    for path in &universe {
+        let text = path_doc("read_write", path);
+        let expected = gateway_refuses_text(&text) || is_root_form(path) || alias_form(path);
+        let jackin = PolicyDocument::parse_authored(&text).is_err();
+        assert_eq!(jackin, expected, "read_write {path}");
+        let read_only = PolicyDocument::parse_authored(&path_doc("read_only", path)).is_err();
+        assert_eq!(
+            read_only,
+            gateway_refuses_text(&path_doc("read_only", path)),
+            "read_only {path}"
+        );
+        if jackin {
+            refused += 1;
+        } else {
+            accepted += 1;
+        }
+    }
+    assert_eq!(
+        (refused, accepted),
+        (660, 120),
+        "refused and accepted paths"
+    );
+}
+
+#[test]
+fn role_check_refuses_each_gateway_violation_class() {
+    let paths = |count: usize| {
+        (0..count).fold(String::new(), |mut text, index| {
+            text.push_str(&format!("    - /p{index}\n"));
+            text
+        })
+    };
+    let fs = |list: &str| format!("filesystem_policy:\n  read_only:\n    - /bin\n{list}");
+    let endpoint = |fields: &str| {
+        format!(
+            "network_policies:\n  r1:\n    name: r1\n    endpoints:\n      - host: example.com\n{fields}    binaries:\n      - path: /usr/bin/curl\n"
+        )
+    };
+    let cases: Vec<(&str, String)> = vec![
+        (
+            "run_as_user root",
+            format!(
+                "version: 1\n{}{HARD}process:\n  run_as_user: root\n",
+                fs("")
+            ),
+        ),
+        (
+            "run_as_user 0",
+            format!("version: 1\n{}{HARD}process:\n  run_as_user: '0'\n", fs("")),
+        ),
+        (
+            "run_as_group root",
+            format!(
+                "version: 1\n{}{HARD}process:\n  run_as_group: root\n",
+                fs("")
+            ),
+        ),
+        (
+            "relative path",
+            format!("version: 1\nfilesystem_policy:\n  read_only:\n    - bin\n{HARD}"),
+        ),
+        (
+            "dotdot in read_only",
+            format!("version: 1\nfilesystem_policy:\n  read_only:\n    - /usr/../etc\n{HARD}"),
+        ),
+        (
+            "too many paths",
+            format!(
+                "version: 1\nfilesystem_policy:\n  read_only:\n{}{HARD}",
+                paths(257)
+            ),
+        ),
+        (
+            "path too long",
+            format!(
+                "version: 1\nfilesystem_policy:\n  read_only:\n    - /{}\n{HARD}",
+                "a".repeat(4100)
+            ),
+        ),
+        (
+            "no port",
+            format!("version: 1\n{}{HARD}{}", fs(""), endpoint("")),
+        ),
+        (
+            "unknown credential signing",
+            format!(
+                "version: 1\n{}{HARD}{}",
+                fs(""),
+                endpoint(
+                    "        port: 443\n        credential_signing: bogus\n        signing_service: s3\n"
+                )
+            ),
+        ),
+        (
+            "signing without service",
+            format!(
+                "version: 1\n{}{HARD}{}",
+                fs(""),
+                endpoint("        port: 443\n        credential_signing: sigv4\n")
+            ),
+        ),
+        (
+            "tld wildcard",
+            format!(
+                "version: 1\n{}{HARD}{}",
+                fs(""),
+                endpoint("        port: 443\n").replace("example.com", "'*.com'")
+            ),
+        ),
+    ];
+    for (label, text) in &cases {
+        assert!(gateway_refuses_text(text), "{label}: the gateway accepts");
+        assert!(
+            matches!(
+                PolicyDocument::parse_authored(text),
+                Err(PolicyError::Gateway { .. } | PolicyError::InvalidHost(_))
+            ),
+            "{label}: parse_authored accepted"
+        );
+        PolicyDocument::parse(text).unwrap();
+    }
+    for identity in ["sandbox", "'1000'"] {
+        let text = format!(
+            "version: 1\n{}{HARD}process:\n  run_as_user: {identity}\n  run_as_group: sandbox\n",
+            fs("")
+        );
+        PolicyDocument::parse_authored(&text).unwrap();
+    }
+}
+
+#[test]
+fn policy_errors_print_no_control_sequences() {
+    for (list, path) in [
+        ("read_only", "\\u001b[31mx"),
+        ("read_write", "/\\u001b[31m/.."),
+    ] {
+        let text = format!("version: 1\nfilesystem_policy:\n  {list}:\n    - \"{path}\"\n{HARD}");
+        let error = PolicyDocument::parse_authored(&text).unwrap_err();
+        assert!(
+            matches!(error, PolicyError::Gateway { .. }),
+            "{list}: {error:?}"
+        );
+        let closed = ClosedPolicy::parse(&text).unwrap_err();
+        for shown in [error.to_string(), closed.to_string()] {
+            assert!(shown.contains("[31m"), "{shown}");
+            assert!(!shown.chars().any(char::is_control), "{list}: {shown:?}");
+        }
+    }
+}
+
+#[test]
+fn the_live_parse_still_accepts_the_same_paths() {
+    for list in ["read_write", "read_only"] {
+        for path in [
+            "/",
+            "//",
+            "/.",
+            "/./",
+            "/proc",
+            "/proc/self/root",
+            "/sys",
+            "/usr/..",
+            "bin",
+        ] {
+            PolicyDocument::parse(&path_doc(list, path))
+                .unwrap_or_else(|error| panic!("live {list} {path}: {error}"));
+        }
+    }
+}

@@ -202,6 +202,14 @@ pub enum PolicyError {
     LandlockMode { found: Option<String> },
     #[error("filesystem_policy must list at least one path in read_only or read_write")]
     NoFilesystemPaths,
+    #[error("read_write path {} names the filesystem root", plain(.path))]
+    ReadWriteRoot { path: String },
+    #[error("read_write path {} is /proc, /sys or below them, which alias the filesystem root", plain(.path))]
+    ReadWriteAlias { path: String },
+    #[error("the gateway would refuse the policy: {}", plain_list(.violations))]
+    Gateway {
+        violations: Vec<openshell_policy::PolicyViolation>,
+    },
     #[error("rule {} has the invalid port {port}", plain(.rule))]
     InvalidPort { rule: String, port: i64 },
     #[error("duplicate rule {0}")]
