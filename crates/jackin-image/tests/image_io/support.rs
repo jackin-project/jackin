@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::fs;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -13,8 +14,8 @@ use jackin_core::{
     ProcessRunner, ProcessStatus, Program, RepoPath, RoleName, Sha256, StdFileSystem,
 };
 use jackin_image::{
-    BuildStage, BuildxEngine, HookFiles, ImageEvent, ImageRequest, Rebuild, RoleRevision,
-    SourceFile,
+    BuildStage, BuildxEngine, BuiltImage, HookFiles, ImageError, ImageEvent, ImageRequest, Rebuild,
+    RoleRevision, SourceFile,
 };
 use jackin_testkit::{
     ProcessEffect, ProcessReply, ScriptedProcessRunner, ScriptedProgram, SeenCall, SeenEnv,
@@ -106,6 +107,7 @@ impl Fixture {
                 entries
                     .filter_map(Result::ok)
                     .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                    .filter(|name| name != "locks")
                     .collect()
             },
         )
@@ -164,6 +166,8 @@ struct ModelState {
     delivery: Delivery,
     after: Vec<(BuildStage, AfterBuild)>,
     broken: Vec<String>,
+    fresh: bool,
+    built: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -199,8 +203,14 @@ impl DockerModel {
                 delivery: Delivery::Normal,
                 after: Vec::new(),
                 broken: Vec::new(),
+                fresh: false,
+                built: 0,
             })),
         }
+    }
+
+    pub(crate) fn fresh_ids(&self) {
+        locked(&self.state).fresh = true;
     }
 
     pub(crate) fn driver(&self, driver: &str) {
@@ -250,7 +260,12 @@ impl DockerModel {
         let stage = stage_of(tag);
         let mut state = locked(&self.state);
         let script = state.scripts.get(&stage).cloned().unwrap_or_default();
-        let id = tag_id(tag);
+        state.built += 1;
+        let id = if state.fresh {
+            tag_id(&format!("{tag}#{}", state.built))
+        } else {
+            tag_id(tag)
+        };
         let succeeded = script.outcome == Outcome::Exit(ProcessStatus::Exited(0));
         if succeeded {
             let stored = match (&state.delivery, stage) {
@@ -364,6 +379,27 @@ impl Stack {
             .iter()
             .filter_map(|call| tag_of(call).map(str::to_owned))
             .collect()
+    }
+}
+
+pub(crate) async fn until_role_line<F>(
+    future: &mut Pin<Box<F>>,
+    rx: &mut Receiver<ImageEvent>,
+) -> TestResult
+where
+    F: Future<Output = Result<BuiltImage, ImageError>> + ?Sized,
+{
+    loop {
+        tokio::select! {
+            result = future.as_mut() => {
+                return Err(format!("the call ended before the role build printed: {result:?}").into());
+            }
+            event = rx.recv() => match event {
+                Some(ImageEvent::Line { stage: BuildStage::Role, .. }) => return Ok(()),
+                Some(_) => {}
+                None => return Err("the progress channel closed".into()),
+            },
+        }
     }
 }
 

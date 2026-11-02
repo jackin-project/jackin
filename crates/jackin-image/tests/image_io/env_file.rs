@@ -4,6 +4,8 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs;
+use std::io::ErrorKind;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -317,5 +319,42 @@ fn jackin_start_reads_the_env_file_before_every_attempt_and_a_missing_file_means
         Vec::<String>::new(),
         "names left in the shell"
     );
+    Ok(())
+}
+
+#[test]
+fn jackin_start_treats_an_unreadable_env_file_as_malformed() -> TestResult {
+    let shell = Shell::new()?;
+    let envfile = shell.root.join("envfile");
+    fs::write(&envfile, render(&one("JK_S9_A", "x")?)?)?;
+    fs::set_permissions(&envfile, fs::Permissions::from_mode(0o000))?;
+    match fs::read(&envfile) {
+        Err(error) if error.kind() == ErrorKind::PermissionDenied => {}
+        other => {
+            return Err(format!(
+                "the env file is readable despite mode 000 (running as root?): {other:?}"
+            )
+            .into());
+        }
+    }
+    let body = format!("run_attempt 9 sh -c \"$child\" sh \"$out\" JK_S9_A\n{REPORT}");
+    let output = shell.run(&body, &["JK_S9_A"])?;
+    assert!(output.status.success(), "the shell failed");
+    assert!(!shell.ran("out"), "the agent ran");
+    assert_eq!(
+        after_lines(&output),
+        Vec::<String>::new(),
+        "names were exported"
+    );
+    assert_eq!(shell.state()?, "exited 9 65\n");
+    assert_eq!(
+        SupervisorState::parse(&shell.state()?)?,
+        SupervisorState::Exited {
+            attempt: AttemptId::parse("9")?,
+            code: 65
+        }
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(&shell.path("envfile")), "{stderr}");
     Ok(())
 }

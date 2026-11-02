@@ -9,11 +9,14 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    BuilderName, DockerSubcommand, FileSystem, FsError, HostPath, ImageId, ImageTag, OutputLine,
-    ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program,
-    SecretBytes, TerminalText,
+    BuilderName, DockerSubcommand, FileLock, FileSystem, FsError, HostPath, ImageId, ImageTag,
+    OutputLine, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus,
+    ProcessStdin, Program, SecretBytes, Sha256, TerminalText,
 };
+use rustix::io::Errno;
+use rustix::process::{Pid, test_kill_process};
 use tokio::sync::mpsc;
+use tokio::time::{Instant, sleep};
 use tokio_util::sync::CancellationToken;
 
 use crate::context::stage;
@@ -25,6 +28,8 @@ const BUILD_TIMEOUT: Duration = Duration::from_secs(3600);
 const QUERY_TIMEOUT: Duration = Duration::from_secs(60);
 const TAIL_LINES: usize = 40;
 const LINE_BUFFER: usize = 64;
+const LOCK_POLL: Duration = Duration::from_millis(100);
+const LOCKS_DIR: &str = "locks";
 
 static CALLS: AtomicU64 = AtomicU64::new(0);
 
@@ -113,12 +118,60 @@ async fn forward(
     tail
 }
 
+struct CallDir(HostPath);
+
+impl Drop for CallDir {
+    fn drop(&mut self) {
+        drop(std::fs::remove_dir_all(self.0.as_path()));
+    }
+}
+
+fn call_owner(name: &str) -> Option<Pid> {
+    let (pid, counter) = name.split_once('-')?;
+    let digits = |text: &str| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
+    if !digits(pid) || !digits(counter) {
+        return None;
+    }
+    Pid::from_raw(pid.parse().ok()?)
+}
+
+fn process_alive(pid: Pid) -> bool {
+    match test_kill_process(pid) {
+        Ok(()) => true,
+        Err(error) => error != Errno::SRCH,
+    }
+}
+
+fn sweep_stale_calls(work_dir: &HostPath) {
+    let Ok(entries) = std::fs::read_dir(work_dir.as_path()) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name();
+        let Some(owner) = name.to_str().and_then(call_owner) else {
+            continue;
+        };
+        if process_alive(owner) {
+            continue;
+        }
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_symlink() {
+            drop(std::fs::remove_file(entry.path()));
+        } else if kind.is_dir() {
+            drop(std::fs::remove_dir_all(entry.path()));
+        }
+    }
+}
+
 impl BuildxEngine {
     pub fn new(
         runner: Arc<dyn ProcessRunner>,
         fs: Arc<dyn FileSystem>,
         work_dir: HostPath,
     ) -> BuildxEngine {
+        sweep_stale_calls(&work_dir);
         BuildxEngine {
             runner,
             fs,
@@ -259,8 +312,34 @@ impl ImageEngine for BuildxEngine {
             CALLS.fetch_add(1, Ordering::Relaxed)
         );
         let call = child(&self.work_dir, &name)?;
-        let result = self.build_in(&call, build, progress, cancel).await;
-        drop(self.fs.remove_dir_all(&call).await);
-        result
+        let _cleanup = CallDir(call.clone());
+        self.build_in(&call, build, progress, cancel).await
+    }
+
+    async fn hold(
+        &self,
+        key: &ImageTag,
+        cancel: &CancellationToken,
+    ) -> Result<Option<FileLock>, EngineError> {
+        let dir = child(&self.work_dir, LOCKS_DIR)?;
+        self.fs.create_dir_all(&dir).await?;
+        let digest = Sha256::of(key.to_string().as_bytes());
+        let file = child(&dir, &format!("{}.lock", digest.as_str()))?;
+        let started = Instant::now();
+        loop {
+            match self.fs.lock(&file).await {
+                Ok(lock) => return Ok(Some(lock)),
+                Err(FsError::LockHeld(_)) => {}
+                Err(other) => return Err(other.into()),
+            }
+            if started.elapsed() >= BUILD_TIMEOUT {
+                return Err(EngineError::LockTimeout { key: key.clone() });
+            }
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => return Err(EngineError::Cancelled),
+                () = sleep(LOCK_POLL) => {}
+            }
+        }
     }
 }

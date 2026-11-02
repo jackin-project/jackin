@@ -22,6 +22,10 @@ park() {
 
 check_env() {
     [ -f "$1" ] || return 0
+    [ -r "$1" ] || {
+        echo 0
+        return 1
+    }
     n=0
     line=
     while IFS= read -r line; do

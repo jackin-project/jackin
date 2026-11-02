@@ -758,6 +758,16 @@ fn stub(bin: &Path, name: &str, body: &str) -> TestResult {
     Ok(())
 }
 
+fn link_real(bin: &Path, name: &str) -> TestResult {
+    let real = ["/usr/bin", "/bin"]
+        .iter()
+        .map(|dir| Path::new(dir).join(name))
+        .find(|path| path.exists())
+        .ok_or_else(|| format!("no real {name}"))?;
+    std::os::unix::fs::symlink(real, bin.join(name))?;
+    Ok(())
+}
+
 #[test]
 fn derived_dockerfile_checks_fail_on_file_capabilities_and_setuid_files() -> TestResult {
     let scratch = Scratch::new("derived-checks")?;
@@ -774,11 +784,37 @@ fn derived_dockerfile_checks_fail_on_file_capabilities_and_setuid_files() -> Tes
     stub(
         &hostile,
         "getcap",
-        "if [ \"$*\" = \"-r /\" ]; then printf '%s\\n' '/usr/bin/ping cap_net_raw=ep'; fi\n",
+        "if [ \"$*\" = \"-r /\" ]; then printf '%s\\n' '/usr/bin/ping cap_net_raw=ep' '/usr/bin/arping cap_net_raw=ep'; fi\n",
     )?;
+    link_real(&hostile, "sed")?;
     let hostile_path = hostile.to_str().ok_or("path is not UTF-8")?;
     let (ok, text) = run_clause(&hostile, &capability_clause, hostile_path)?;
     assert!(!ok, "a file capability must fail the build: {text}");
+    for path in ["/usr/bin/ping", "/usr/bin/arping"] {
+        assert!(text.contains(path), "{path} missing from {text:?}");
+    }
+
+    let failing = scratch.fresh("failing")?;
+    stub(
+        &failing,
+        "getcap",
+        "echo 'getcap: cannot read the tree' >&2\nexit 2\n",
+    )?;
+    link_real(&failing, "sed")?;
+    let failing_path = failing.to_str().ok_or("path is not UTF-8")?;
+    let (ok, text) = run_clause(&failing, &capability_clause, failing_path)?;
+    assert!(!ok, "a failing getcap must fail the build: {text}");
+
+    let noisy = scratch.fresh("noisy")?;
+    stub(
+        &noisy,
+        "getcap",
+        "echo 'Failed to get capabilities of file /proc/1/x' >&2\nexit 0\n",
+    )?;
+    link_real(&noisy, "sed")?;
+    let noisy_path = noisy.to_str().ok_or("path is not UTF-8")?;
+    let (ok, text) = run_clause(&noisy, &capability_clause, noisy_path)?;
+    assert!(ok, "stderr noise alone must pass: {text}");
 
     let bare = scratch.fresh("bare")?;
     let bare_path = bare.to_str().ok_or("path is not UTF-8")?;

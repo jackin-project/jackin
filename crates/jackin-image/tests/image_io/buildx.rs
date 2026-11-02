@@ -6,6 +6,7 @@ use std::error::Error;
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -724,4 +725,77 @@ async fn buildx_check_builder_reads_the_driver_line_of_the_inspect_output() -> T
         Ok(())
     })
     .await
+}
+
+fn seed(base: &Path, name: &str, file: &str) -> TestResult {
+    let dir = base.join(name);
+    fs::create_dir_all(&dir)?;
+    fs::write(dir.join(file), b"x")?;
+    Ok(())
+}
+
+fn dead_pid() -> Result<u32, Box<dyn Error>> {
+    let mut child = Command::new("true").spawn()?;
+    let pid = child.id();
+    child.wait()?;
+    let alive = Command::new("sh")
+        .arg("-c")
+        .arg(format!("kill -0 {pid}"))
+        .stderr(Stdio::null())
+        .status()?
+        .success();
+    assert!(!alive, "pid {pid} is still alive, the control failed");
+    Ok(pid)
+}
+
+#[test]
+fn a_new_engine_removes_per_call_directories_of_dead_processes_and_nothing_else() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let base = dir.path().canonicalize()?;
+    let work = base.join("work");
+    let outside = base.join("outside");
+    fs::create_dir_all(&work)?;
+    fs::create_dir_all(&outside)?;
+    fs::write(outside.join("sentinel"), b"keep")?;
+    let dead = dead_pid()?;
+    let own = std::process::id();
+    let parent = std::os::unix::process::parent_id();
+    seed(&work, &format!("{dead}-1/context"), "x")?;
+    symlink(&outside, work.join(format!("{dead}-2")))?;
+    let survivors = [
+        format!("{own}-9"),
+        format!("{parent}-2"),
+        "1-1".to_owned(),
+        "locks".to_owned(),
+        "12".to_owned(),
+        "-5".to_owned(),
+        "ab-1".to_owned(),
+    ];
+    for name in &survivors {
+        seed(&work, name, "x")?;
+    }
+    fs::write(work.join("notes.txt"), b"keep")?;
+    let engine = BuildxEngine::new(
+        Arc::new(ScriptedProcessRunner::new()),
+        Arc::new(StdFileSystem::default()),
+        HostPath::parse(&work)?,
+    );
+    let mut left: Vec<String> = fs::read_dir(&work)?
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    let mut expected: Vec<String> = survivors.to_vec();
+    expected.push("notes.txt".to_owned());
+    expected.sort();
+    assert_eq!(left, expected, "entries of the work directory");
+    assert_eq!(fs::read(outside.join("sentinel"))?, b"keep");
+    drop(engine);
+    let absent = BuildxEngine::new(
+        Arc::new(ScriptedProcessRunner::new()),
+        Arc::new(StdFileSystem::default()),
+        HostPath::parse(&base.join("absent"))?,
+    );
+    drop(absent);
+    Ok(())
 }

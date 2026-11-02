@@ -5,7 +5,7 @@ use std::fmt::Debug;
 
 use async_trait::async_trait;
 use jackin_core::{
-    BuilderName, FsError, ImageId, ImageTag, ProcessError, ProcessStatus, TerminalText,
+    BuilderName, FileLock, FsError, ImageId, ImageTag, ProcessError, ProcessStatus, TerminalText,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -17,6 +17,13 @@ use crate::plan::{BuildStage, PlannedBuild};
 pub trait ImageEngine: Send + Sync + Debug {
     async fn find(&self, tag: &ImageTag) -> Result<Option<ImageId>, EngineError>;
     async fn check_builder(&self, builder: &BuilderName) -> Result<(), EngineError>;
+    async fn hold(
+        &self,
+        _key: &ImageTag,
+        _cancel: &CancellationToken,
+    ) -> Result<Option<FileLock>, EngineError> {
+        Ok(None)
+    }
     async fn build(
         &self,
         build: &PlannedBuild,
@@ -76,6 +83,8 @@ pub enum EngineError {
     Process(#[from] ProcessError),
     #[error(transparent)]
     Fs(#[from] FsError),
+    #[error("gave up waiting for another process to finish building {key}")]
+    LockTimeout { key: ImageTag },
     #[error("cancelled")]
     Cancelled,
 }

@@ -13,8 +13,9 @@ publish.workspace = true
 [dependencies]
 async-trait = { workspace = true }
 jackin-core = { workspace = true }
+rustix = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["macros", "sync"] }
+tokio = { workspace = true, features = ["macros", "sync", "time"] }
 tokio-util = { workspace = true }
 
 [dev-dependencies]

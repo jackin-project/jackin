@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{BuilderName, ImageId, ImageTag, TerminalText};
+use jackin_core::{BuilderName, FileLock, ImageId, ImageTag, TerminalText};
 use tokio_util::sync::CancellationToken;
 
 use crate::engine::{EngineError, ImageEngine};
@@ -38,6 +38,7 @@ pub type ProgressSink = tokio::sync::mpsc::Sender<ImageEvent>;
 fn from_engine(error: EngineError) -> ImageError {
     match error {
         EngineError::Cancelled => ImageError::Cancelled,
+        EngineError::LockTimeout { key } => ImageError::LockTimeout { key },
         other => ImageError::Engine(other),
     }
 }
@@ -70,6 +71,14 @@ impl Pipeline<'_> {
     async fn find(&self, tag: &ImageTag) -> Result<Option<ImageId>, ImageError> {
         self.live()?;
         self.engine.find(tag).await.map_err(from_engine)
+    }
+
+    async fn hold(&self, key: &ImageTag) -> Result<Option<FileLock>, ImageError> {
+        self.live()?;
+        self.engine
+            .hold(key, self.cancel)
+            .await
+            .map_err(from_engine)
     }
 
     async fn require(&self, tag: &ImageTag, expected: &ImageId) -> Result<(), ImageError> {
@@ -130,6 +139,7 @@ pub async fn ensure_image(
         builder_checked: false,
     };
     let construct = plan.construct_build();
+    let construct_lock = pipeline.hold(&construct.tag).await?;
     let cached = match request.rebuild {
         Rebuild::No => pipeline.find(&construct.tag).await?,
         Rebuild::Yes => None,
@@ -142,18 +152,20 @@ pub async fn ensure_image(
     } else {
         pipeline.build(construct, None).await?
     };
-    if request.rebuild == Rebuild::No {
-        let tag = plan.final_tag(&construct_id);
-        if let Some(id) = pipeline.find(&tag).await? {
-            pipeline
-                .emit(ImageEvent::StageCached(BuildStage::Derived))
-                .await;
-            return Ok(BuiltImage {
-                tag,
-                id,
-                source: ImageSource::Cache,
-            });
-        }
+    drop(construct_lock);
+    let final_tag = plan.final_tag(&construct_id);
+    let _final_lock = pipeline.hold(&final_tag).await?;
+    if request.rebuild == Rebuild::No
+        && let Some(id) = pipeline.find(&final_tag).await?
+    {
+        pipeline
+            .emit(ImageEvent::StageCached(BuildStage::Derived))
+            .await;
+        return Ok(BuiltImage {
+            tag: final_tag,
+            id,
+            source: ImageSource::Cache,
+        });
     }
     let builds = plan.final_builds(&construct_id);
     let role = pipeline

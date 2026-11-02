@@ -27,6 +27,8 @@ pub enum ImageError {
         expected: ImageId,
         found: Option<ImageId>,
     },
+    #[error("gave up waiting for another process to finish building {key}")]
+    LockTimeout { key: ImageTag },
     #[error("cancelled")]
     Cancelled,
 }

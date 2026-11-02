@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::error::Error;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use jackin_core::{DockerSubcommand, ImageId, ImageTag, OutputStream, ProcessStatus};
 use jackin_image::{
@@ -14,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::support::{
     AfterBuild, Delivery, Fixture, Outcome, Script, Stack, TestResult, assert_local_only, drain,
-    guarded, source, tag_id,
+    guarded, source, tag_id, until_role_line,
 };
 
 async fn ensure(
@@ -831,6 +833,52 @@ async fn a_cancelled_token_stops_ensure_image_before_any_engine_work_and_between
             )),
             "{events:?}"
         );
+        Ok(())
+    })
+    .await
+}
+
+fn staged_copies(dir: &Path, found: &mut Vec<PathBuf>) -> TestResult {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Ok(());
+    };
+    for entry in entries {
+        let path = entry?.path();
+        if path.is_dir() {
+            staged_copies(&path, found)?;
+        } else if path.file_name().is_some_and(|name| name == "a.rs")
+            || fs::read(&path).is_ok_and(|bytes| bytes == b"fn a() {}\n")
+        {
+            found.push(path);
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn dropping_ensure_image_mid_build_leaves_no_copy_of_the_context() -> TestResult {
+    guarded(async {
+        let stack = Stack::new()?;
+        let request = stack.fixture.request()?;
+        stack.model.script(
+            BuildStage::Role,
+            Script {
+                lines: vec![(OutputStream::Stdout, "building".to_owned())],
+                outcome: Outcome::UntilCancelled,
+                ..Script::default()
+            },
+        );
+        let (tx, mut rx) = mpsc::channel::<ImageEvent>(256);
+        let cancel = CancellationToken::new();
+        let mut call = Box::pin(ensure_image(&stack.engine, &request, &tx, &cancel));
+        until_role_line(&mut call, &mut rx).await?;
+        let mut during = Vec::new();
+        staged_copies(stack.fixture.work.as_path(), &mut during)?;
+        assert!(!during.is_empty(), "the control found no staged copy");
+        drop(call);
+        let mut after = Vec::new();
+        staged_copies(stack.fixture.work.as_path(), &mut after)?;
+        assert!(after.is_empty(), "copies left after the drop: {after:?}");
         Ok(())
     })
     .await
