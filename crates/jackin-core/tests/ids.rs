@@ -513,6 +513,91 @@ fn branch_name_agrees_with_git_check_ref_format() -> TestResult {
     Ok(())
 }
 
+const CF_UNICODE_17_0_0: &[(u32, u32)] = &[
+    (0x00AD, 0x00AD),
+    (0x0600, 0x0605),
+    (0x061C, 0x061C),
+    (0x06DD, 0x06DD),
+    (0x070F, 0x070F),
+    (0x0890, 0x0891),
+    (0x08E2, 0x08E2),
+    (0x180E, 0x180E),
+    (0x200B, 0x200F),
+    (0x202A, 0x202E),
+    (0x2060, 0x2064),
+    (0x2066, 0x206F),
+    (0xFEFF, 0xFEFF),
+    (0xFFF9, 0xFFFB),
+    (0x110BD, 0x110BD),
+    (0x110CD, 0x110CD),
+    (0x13430, 0x1343F),
+    (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A),
+    (0xE0001, 0xE0001),
+    (0xE0020, 0xE007F),
+];
+
+fn is_format_17_0_0(c: char) -> bool {
+    CF_UNICODE_17_0_0
+        .iter()
+        .any(|(low, high)| (*low..=*high).contains(&u32::from(c)))
+}
+
+fn branch_rejects(name: &str) -> bool {
+    BranchName::parse(name).is_err()
+}
+
+#[test]
+fn branch_name_rejects_every_control_and_format_character_and_nothing_else() -> TestResult {
+    for c in (0..=char::MAX as u32).filter_map(char::from_u32) {
+        let forbidden = c.is_control()
+            || is_format_17_0_0(c)
+            || matches!(c, ' ' | '~' | '^' | ':' | '?' | '*' | '[' | '\\');
+        let name = format!("a{c}b");
+        assert_eq!(branch_rejects(&name), forbidden, "U+{:04X}", u32::from(c));
+    }
+    for c in ('\u{80}'..='\u{9f}').chain(['\u{85}', '\u{202e}', '\u{2066}', '\u{2069}']) {
+        let error = BranchName::parse(&format!("a{c}b"))
+            .err()
+            .ok_or("accepted")?;
+        assert!(satisfies(&Want::CharAt(c, 1), &error), "{c:?}: {error:?}");
+    }
+    for accepted in [
+        "caf\u{e9}",
+        "\u{65e5}\u{672c}\u{8a9e}/x",
+        "a\u{ac}b",
+        "a\u{ae}b",
+        "a\u{2065}b",
+    ] {
+        assert_eq!(BranchName::parse(accepted)?.as_str(), accepted);
+    }
+    Ok(())
+}
+
+#[test]
+fn git_accepts_the_control_and_format_names_that_branch_name_deliberately_refuses() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    for c in [
+        '\u{9b}',
+        '\u{85}',
+        '\u{202e}',
+        '\u{2066}',
+        '\u{200b}',
+        '\u{ad}',
+        '\u{feff}',
+        '\u{e0020}',
+    ] {
+        let name = format!("a{c}b");
+        assert!(
+            git_accepts(&name, dir.path())?,
+            "git rejects U+{:04X}",
+            u32::from(c)
+        );
+        assert!(branch_rejects(&name), "U+{:04X}", u32::from(c));
+    }
+    Ok(())
+}
+
 #[test]
 fn launch_id_generate_yields_valid_distinct_ids() -> TestResult {
     let ids: Vec<LaunchId> = (0..64)
