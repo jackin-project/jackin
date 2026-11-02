@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{SandboxName, SupervisorReading, SupervisorState};
-use jackin_openshell::{EndReason, SessionClosed, TermSize, TerminalEvent};
-use jackin_session::{AttachRequest, AttachedTerminal, Session};
+use jackin_openshell::{EndReason, SessionClosed, TermSize, TerminalEvent, TerminalSession};
+use jackin_session::{AttachRequest, AttachedTerminal, Session, ShellRequest};
 
 use crate::app::App;
 use crate::error::CommandError;
@@ -11,30 +11,35 @@ use crate::terminal::TerminalInput;
 
 pub(crate) enum Remote {
     Main(AttachedTerminal),
+    Shell(TerminalSession),
 }
 
 impl Remote {
     async fn input(&mut self, bytes: Vec<u8>) -> Result<(), SessionClosed> {
         match self {
             Remote::Main(terminal) => terminal.input(bytes).await,
+            Remote::Shell(terminal) => terminal.input(bytes).await,
         }
     }
 
     async fn resize(&self, size: TermSize) -> Result<(), SessionClosed> {
         match self {
             Remote::Main(terminal) => terminal.resize(size).await,
+            Remote::Shell(terminal) => terminal.resize(size).await,
         }
     }
 
     async fn detach(&self) -> bool {
         match self {
             Remote::Main(terminal) => terminal.detach().await.is_ok(),
+            Remote::Shell(terminal) => terminal.detach().await.is_ok(),
         }
     }
 
     async fn next(&mut self) -> Option<TerminalEvent> {
         match self {
             Remote::Main(terminal) => terminal.next_event().await,
+            Remote::Shell(terminal) => terminal.next_event().await,
         }
     }
 }
@@ -42,6 +47,7 @@ impl Remote {
 #[derive(Debug)]
 pub(crate) struct Ended {
     pub(crate) reason: EndReason,
+    pub(crate) exit: Option<i32>,
     pub(crate) interrupted: bool,
 }
 
@@ -54,6 +60,7 @@ pub(crate) async fn pump(app: &mut App, remote: &mut Remote) -> Result<Ended, Co
     } = app;
     let terminal = terminal.as_mut().ok_or(CommandError::NoTerminal)?;
     let raw = terminal.enter_raw().map_err(CommandError::Terminal)?;
+    let mut exit = None;
     let (reason, interrupted) = loop {
         tokio::select! {
             input = terminal.next_input() => match input {
@@ -77,9 +84,8 @@ pub(crate) async fn pump(app: &mut App, remote: &mut Remote) -> Result<Ended, Co
                 Some(TerminalEvent::Output(bytes)) => io.bytes(&bytes)?,
                 Some(TerminalEvent::Notice(text)) => io.note(&text),
                 Some(TerminalEvent::Ended(reason)) => break (reason, false),
-                Some(
-                    TerminalEvent::Attached | TerminalEvent::Lease(_) | TerminalEvent::Exited(_),
-                ) => {}
+                Some(TerminalEvent::Exited(code)) => exit = code,
+                Some(TerminalEvent::Attached | TerminalEvent::Lease(_)) => {}
             },
             () = cancel.cancelled() => {
                 remote.detach().await;
@@ -90,6 +96,7 @@ pub(crate) async fn pump(app: &mut App, remote: &mut Remote) -> Result<Ended, Co
     drop(raw);
     Ok(Ended {
         reason,
+        exit,
         interrupted,
     })
 }
@@ -129,6 +136,34 @@ fn finish(app: &mut App, sandbox: &SandboxName, ended: Ended) -> Result<(), Comm
         EndReason::StreamClosed => Err(CommandError::Session(format!(
             "the terminal stream of sandbox {sandbox} closed"
         ))),
+        EndReason::Refused(text) | EndReason::Failed(text) => {
+            Err(CommandError::Session(format!("sandbox {sandbox}: {text}")))
+        }
+    }
+}
+
+pub(crate) async fn shell(
+    app: &mut App,
+    session: &Session,
+    request: ShellRequest,
+) -> Result<(), CommandError> {
+    let sandbox = request.sandbox.clone();
+    let mut remote = Remote::Shell(session.open_shell(request).await?);
+    let ended = pump(app, &mut remote).await?;
+    if ended.interrupted {
+        return Err(CommandError::Cancelled(format!(
+            "cancelled; closed the shell in sandbox {sandbox}"
+        )));
+    }
+    match ended.reason {
+        EndReason::Detached | EndReason::StreamClosed => {
+            if let Some(code) = ended.exit.filter(|code| *code != 0) {
+                app.io.note(&format!(
+                    "the shell in sandbox {sandbox} exited with code {code}"
+                ));
+            }
+            Ok(())
+        }
         EndReason::Refused(text) | EndReason::Failed(text) => {
             Err(CommandError::Session(format!("sandbox {sandbox}: {text}")))
         }

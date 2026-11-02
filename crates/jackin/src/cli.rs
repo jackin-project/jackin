@@ -26,6 +26,14 @@ pub struct Cli {
 pub enum Command {
     #[command(subcommand, about = "Manage the jackin gateway entries")]
     Gateway(GatewayCommand),
+    #[command(about = "Fetch the sandbox branches into the host repository")]
+    Export(SandboxArg),
+    #[command(about = "Stop a sandbox")]
+    Stop(SandboxArg),
+    #[command(about = "Start a stopped sandbox")]
+    Start(SandboxArg),
+    #[command(about = "Delete a sandbox; refuses unexported work without --force")]
+    Purge(PurgeArgs),
     #[command(subcommand, about = "Manage accounts and their bindings")]
     Account(AccountCommand),
     #[command(about = "Check the host tools, the gateway, and the engine socket")]
@@ -36,6 +44,8 @@ pub enum Command {
     Load(LoadArgs),
     #[command(about = "Reattach to the Codex terminal of a sandbox")]
     Attach(AttachArgs),
+    #[command(about = "Open a new shell in a sandbox")]
+    Shell(SandboxArg),
     #[command(about = "List the jackin sandboxes")]
     Ls(JsonArg),
     #[command(about = "Show a sandbox, its labels, providers, and policy status")]
@@ -369,4 +379,12 @@ pub struct AttachArgs {
     pub sandbox: SandboxName,
     #[arg(long, help = "Run preflight and start Codex again after it exited")]
     pub restart: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PurgeArgs {
+    #[arg(help = "Sandbox name")]
+    pub sandbox: SandboxName,
+    #[arg(long, help = "Delete the sandbox even when its work is not exported")]
+    pub force: bool,
 }

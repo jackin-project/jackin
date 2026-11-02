@@ -5,8 +5,8 @@ use std::error::Error;
 
 use jackin_core::{HookKind, Phase, SandboxName, TerminalText, WorkspaceName};
 use jackin_session::{
-    AttachError, EnvFileProblem, LaunchError, LaunchFailure, LifecycleError, PlanError, PurgeError,
-    RestartError, UnknownReason, WorkState,
+    AttachError, EnvFileProblem, ExportError, LaunchError, LaunchFailure, LifecycleError,
+    PlanError, PurgeError, RestartError, UnknownReason, WorkState,
 };
 
 use crate::error::CommandError;
@@ -218,6 +218,18 @@ fn purge_error(error: &PurgeError) -> String {
     }
 }
 
+fn export_error(error: &ExportError) -> String {
+    match error {
+        ExportError::NotFound(sandbox) => sandbox_missing(sandbox),
+        ExportError::NotRunning { sandbox, phase } => format!(
+            "sandbox {sandbox} is not running ({}); start it before exporting",
+            phase_text(*phase)
+        ),
+        ExportError::WorkspaceUnknown(workspace) => workspace_unknown(workspace),
+        other => chain(other),
+    }
+}
+
 pub(crate) fn report(error: &CommandError) -> String {
     let body = match error {
         CommandError::Cancelled(text) => return text.clone(),
@@ -234,6 +246,7 @@ pub(crate) fn report(error: &CommandError) -> String {
         CommandError::Restart(error) => restart_error(error),
         CommandError::Lifecycle(error) => lifecycle_error(error),
         CommandError::Purge(error) => purge_error(error),
+        CommandError::Export(error) => export_error(error),
         other => chain(other),
     };
     format!("error: {body}")
