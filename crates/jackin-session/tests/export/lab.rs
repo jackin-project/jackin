@@ -18,6 +18,7 @@ use super::support::{
 use super::tap::Tap;
 
 pub(crate) const IMPORT: [&str; 2] = ["index-pack", "update-ref"];
+const READ_ONLY: [&str; 3] = ["for-each-ref", "rev-parse", "worktree"];
 const BANNED: [&str; 7] = [
     "index-pack",
     "update-ref",
@@ -132,6 +133,12 @@ impl Lab {
             .filter(|word| !IMPORT.contains(word))
             .map(str::to_owned)
             .collect();
+        for word in &self.allowed {
+            assert!(
+                READ_ONLY.contains(&word.as_str()),
+                "the control export ran {word}, which is not a read-only command"
+            );
+        }
         self.forget_export().await
     }
 

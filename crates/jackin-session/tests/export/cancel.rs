@@ -79,7 +79,9 @@ impl FileSystem for CancelsOnRead {
     }
     async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
         let read = self.inner.read_at(path, offset, len).await;
-        self.token.cancel();
+        if offset > 0 {
+            self.token.cancel();
+        }
         read
     }
 }

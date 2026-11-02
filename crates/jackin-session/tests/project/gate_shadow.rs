@@ -167,3 +167,21 @@ async fn the_shadow_keeps_the_gate_equal_to_the_host_for_every_data_key_and_info
     })
     .await
 }
+
+#[tokio::test]
+async fn a_symlinked_info_attributes_file_is_absent_for_the_host_gate() -> TestResult {
+    guard(async {
+        let repo = RepoFixture::new().await?;
+        repo.file("data.dat", b"lower case\n").await?;
+        repo.commit().await?;
+        let outside = tempfile::tempdir()?;
+        let attributes = outside.path().join("attributes");
+        std::fs::write(&attributes, "*.dat filter=demo\n")?;
+        let link = repo.root().as_path().join(".git/info/attributes");
+        std::os::unix::fs::symlink(&attributes, &link)?;
+        let rig = Rig::new(repo).await?;
+        global_config(&rig, DEMO)?;
+        ready(rig.launch(1).await?)
+    })
+    .await
+}

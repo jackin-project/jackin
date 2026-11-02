@@ -57,3 +57,49 @@ async fn a_symbolic_ref_at_the_target_is_replaced_and_never_written_through() ->
     })
     .await
 }
+
+#[tokio::test]
+async fn every_target_of_a_multi_branch_export_is_replaced_when_all_of_them_are_symbolic_refs()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let first = branch_with_commit(&handle, "a", "a.txt").await?;
+        let second = branch_with_commit(&handle, "b", "b.txt").await?;
+        let main = rig.repo.git(&["rev-parse", "refs/heads/main"]).await?;
+        for branch in ["a", "b"] {
+            rig.repo
+                .git(&["symbolic-ref", &ref_of(&name, branch), "refs/heads/main"])
+                .await?;
+        }
+
+        export(&rig, &name)
+            .await
+            .map_err(|error| format!("{error:?}"))?;
+
+        for (branch, tip) in [("a", first), ("b", second)] {
+            let target = ref_of(&name, branch);
+            assert_eq!(
+                rig.repo.git(&["rev-parse", &target]).await?.trim(),
+                tip.as_str(),
+                "{branch}"
+            );
+            assert!(
+                rig.repo
+                    .git(&["symbolic-ref", "-q", &target])
+                    .await
+                    .is_err(),
+                "{branch}: the target is still a symbolic ref"
+            );
+        }
+        assert_eq!(
+            rig.repo.git(&["rev-parse", "refs/heads/main"]).await?,
+            main,
+            "main moved"
+        );
+        Ok(())
+    })
+    .await
+}

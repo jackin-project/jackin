@@ -182,6 +182,12 @@ async fn a_delta_instruction_stream_is_capped_and_must_match_its_declared_size()
             &too_large(EntryKind::DeltaStream, big as u64, CAP),
         )
         .await?;
+        lab.refuses(
+            "stream cap + 1",
+            one(&header, ref_delta(HASH, CAP + 1, &zeros(size + 1))),
+            &too_large(EntryKind::DeltaStream, CAP + 1, CAP),
+        )
+        .await?;
         lab.passes_the_walker("stream at the cap", |header| {
             one(header, ref_delta(HASH, CAP, &zeros(size)))
         })
