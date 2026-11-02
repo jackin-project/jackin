@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod decide;
-mod hooks;
-mod probe;
+pub(crate) mod hooks;
+pub(crate) mod probe;
 mod run;
 mod tracker;
 

@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use jackin_core::{
-    Config, HookKind, HostPath, LabelSelector, LaunchId, ProjectRoot, RoleName, SandboxName,
-    sandbox_layout,
+    Config, EnvName, HookKind, HostPath, LabelSelector, LaunchId, ProjectRoot, RoleName,
+    SandboxName, sandbox_layout,
 };
 use jackin_openshell::{Gateway, SandboxQuery};
 use jackin_session::{
@@ -120,7 +121,25 @@ impl Rig {
         id: u8,
         cancel: CancellationToken,
     ) -> Result<Result<LaunchOutcome, LaunchFailure>, FixtureError> {
-        let plan = self.plan(id)?;
+        self.run(self.request(id)?, cancel).await
+    }
+
+    pub async fn launch_with_env(
+        &self,
+        id: u8,
+        env: BTreeMap<EnvName, String>,
+    ) -> Result<LaunchOutcome, FixtureError> {
+        self.run(self.request(id)?.env(env), CancellationToken::new())
+            .await?
+            .map_err(|failure| format!("the launch failed: {failure:?}").into())
+    }
+
+    async fn run(
+        &self,
+        request: LaunchRequest,
+        cancel: CancellationToken,
+    ) -> Result<Result<LaunchOutcome, LaunchFailure>, FixtureError> {
+        let plan = plan_launch(&self.config, &self.loaded, request)?;
         let (events, mut feed) = launch_events(LineDelivery::Reliable);
         let drain = async { while feed.recv().await.is_some() {} };
         let (result, ()) = tokio::join!(self.world.session.launch(plan, events, cancel), drain);

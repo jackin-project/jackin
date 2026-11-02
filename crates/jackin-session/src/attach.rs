@@ -1,9 +1,27 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::Duration;
 
-use jackin_core::{AttemptId, EnvFileError, HookKind, Phase, SandboxName, TerminalText};
-use jackin_openshell::{GatewayError, InputMode, TermSize};
+use jackin_core::{
+    AttemptId, EnvFile, EnvFileError, EnvName, HookKind, LaunchId, Phase, SandboxLabels,
+    SandboxName, StartRequest, SupervisorReading, SupervisorState, TerminalText, sandbox_layout,
+};
+use jackin_openshell::{
+    Gateway, GatewayError, GatewayOp, InputMode, Missing, RepaintPolicy, SandboxFile,
+    SessionClosed, TermSize, TerminalEvent, TerminalKind, TerminalRequest, TerminalSession,
+};
 use thiserror::Error;
+use tokio_util::sync::CancellationToken;
+
+use crate::launch::hooks::{self, HookRun};
+use crate::launch::probe::reading;
+use crate::launch::{AttachTarget, LaunchEvent, LaunchEvents, LaunchStep, StepResult};
+use crate::service::{POLL, Session};
+
+const REPAINT_NUDGE: Duration = Duration::from_millis(600);
+const REQUEST_MODE: jackin_core::FileMode = jackin_core::FileMode(0o600);
+const ESC: u8 = 0x1b;
+const BEL: u8 = 0x07;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AttachRequest {
@@ -13,7 +31,12 @@ pub struct AttachRequest {
 }
 
 #[derive(Debug)]
-pub struct AttachedTerminal {}
+pub struct AttachedTerminal {
+    session: TerminalSession,
+    gateway: Arc<dyn Gateway>,
+    sandbox: SandboxName,
+    supervisor: SupervisorReading,
+}
 
 #[derive(Debug)]
 pub enum EnvFileProblem {
@@ -74,4 +97,425 @@ pub enum RestartError {
         sandbox: SandboxName,
         attempt: AttemptId,
     },
+}
+
+impl AttachRequest {
+    pub fn owner(target: AttachTarget, size: TermSize) -> AttachRequest {
+        AttachRequest {
+            sandbox: target.sandbox,
+            size,
+            input: InputMode::Owner,
+        }
+    }
+
+    pub fn viewer(sandbox: SandboxName, size: TermSize) -> AttachRequest {
+        AttachRequest {
+            sandbox,
+            size,
+            input: InputMode::Viewer,
+        }
+    }
+}
+
+fn digits(bytes: &[u8], from: usize) -> usize {
+    bytes[from..]
+        .iter()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count()
+}
+
+fn csi_reply(bytes: &[u8]) -> Option<usize> {
+    let body = bytes.strip_prefix(&[ESC, b'['])?;
+    if matches!(body.first(), Some(b'?' | b'>')) {
+        let params = body[1..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit() || matches!(byte, b';' | b':'))
+            .count();
+        return (body.get(1 + params) == Some(&b'c')).then_some(2 + 1 + params + 1);
+    }
+    let row = digits(body, 0);
+    if row == 0 || body.get(row) != Some(&b';') {
+        return None;
+    }
+    let col = digits(body, row + 1);
+    (col > 0 && body.get(row + 1 + col) == Some(&b'R')).then_some(2 + row + 1 + col + 1)
+}
+
+fn osc_reply(bytes: &[u8]) -> Option<usize> {
+    let body = bytes.strip_prefix(&[ESC, b']'])?;
+    if !(body.starts_with(b"10;") || body.starts_with(b"11;")) {
+        return None;
+    }
+    let end = body.iter().position(|byte| matches!(byte, &BEL | &ESC))?;
+    match body[end] {
+        BEL => Some(2 + end + 1),
+        _ => (body.get(end + 1) == Some(&b'\\')).then_some(2 + end + 2),
+    }
+}
+
+pub(crate) fn split_replies(chunk: &[u8]) -> (Vec<u8>, bool) {
+    let mut plain = Vec::with_capacity(chunk.len());
+    let mut replies = false;
+    let mut at = 0;
+    while at < chunk.len() {
+        if chunk[at] == ESC
+            && let Some(length) = csi_reply(&chunk[at..]).or_else(|| osc_reply(&chunk[at..]))
+        {
+            replies = true;
+            at += length;
+        } else {
+            plain.push(chunk[at]);
+            at += 1;
+        }
+    }
+    (plain, replies)
+}
+
+impl AttachedTerminal {
+    pub fn supervisor_at_attach(&self) -> &SupervisorReading {
+        &self.supervisor
+    }
+
+    pub async fn input(&mut self, bytes: Vec<u8>) -> Result<(), SessionClosed> {
+        let (plain, replies) = split_replies(&bytes);
+        let send = if !replies || self.running().await {
+            bytes
+        } else {
+            plain
+        };
+        if send.is_empty() {
+            return Ok(());
+        }
+        self.session.input(send).await
+    }
+
+    pub async fn resize(&self, size: TermSize) -> Result<(), SessionClosed> {
+        self.session.resize(size).await
+    }
+
+    pub async fn detach(&self) -> Result<(), SessionClosed> {
+        self.session.detach().await
+    }
+
+    pub async fn next_event(&mut self) -> Option<TerminalEvent> {
+        self.session.next_event().await
+    }
+
+    async fn running(&self) -> bool {
+        matches!(
+            read_state(self.gateway.as_ref(), &self.sandbox).await,
+            Ok(SupervisorReading::Reported(SupervisorState::Running { .. }))
+        )
+    }
+}
+
+async fn read_state(
+    gateway: &dyn Gateway,
+    sandbox: &SandboxName,
+) -> Result<SupervisorReading, GatewayError> {
+    let mut found = gateway
+        .read_files(sandbox, std::slice::from_ref(&sandbox_layout::RUN_STATE))
+        .await?;
+    Ok(reading(found.pop().flatten().as_deref()))
+}
+
+enum EnvFailure {
+    Gateway(GatewayError),
+    File(EnvFileProblem),
+}
+
+impl From<GatewayError> for EnvFailure {
+    fn from(error: GatewayError) -> EnvFailure {
+        EnvFailure::Gateway(error)
+    }
+}
+
+impl AttachError {
+    fn env(sandbox: &SandboxName, failure: EnvFailure) -> AttachError {
+        match failure {
+            EnvFailure::Gateway(error) => AttachError::Gateway(error),
+            EnvFailure::File(problem) => AttachError::EnvFile {
+                sandbox: sandbox.clone(),
+                problem,
+            },
+        }
+    }
+}
+
+impl RestartError {
+    fn env(sandbox: &SandboxName, failure: EnvFailure) -> RestartError {
+        match failure {
+            EnvFailure::Gateway(error) => RestartError::Gateway(error),
+            EnvFailure::File(problem) => RestartError::EnvFile {
+                sandbox: sandbox.clone(),
+                problem,
+            },
+        }
+    }
+}
+
+fn launch_of(labels: &jackin_core::Labels) -> Result<LaunchId, EnvFailure> {
+    SandboxLabels::from_labels(labels)
+        .map(|labels| labels.planned.launch)
+        .map_err(|_| EnvFailure::File(EnvFileProblem::NoLaunchLabel))
+}
+
+async fn env_values(
+    gateway: &dyn Gateway,
+    sandbox: &SandboxName,
+    launch: &LaunchId,
+) -> Result<BTreeMap<EnvName, String>, EnvFailure> {
+    let path = sandbox_layout::env_file(launch);
+    let mut found = gateway
+        .read_files(sandbox, std::slice::from_ref(&path))
+        .await?;
+    let bytes = found
+        .pop()
+        .flatten()
+        .ok_or(EnvFailure::File(EnvFileProblem::Missing))?;
+    let invalid = |error| EnvFailure::File(EnvFileProblem::Invalid(error));
+    let text = String::from_utf8(bytes).map_err(|_| invalid(EnvFileError::Syntax { line: 1 }))?;
+    EnvFile::parse(&text)
+        .map(|file| file.values().clone())
+        .map_err(invalid)
+}
+
+fn not_found(sandbox: &SandboxName) -> GatewayError {
+    GatewayError::NotFound {
+        what: Missing::Sandbox(sandbox.clone()),
+    }
+}
+
+impl Session {
+    pub async fn attach(&self, request: AttachRequest) -> Result<AttachedTerminal, AttachError> {
+        let sandbox = &request.sandbox;
+        let view = self
+            .find_managed(sandbox)
+            .await?
+            .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
+        require_ready::<AttachError>(view.phase, sandbox)?;
+        let session = self
+            .deps
+            .gateway
+            .open_terminal(&TerminalRequest {
+                sandbox: sandbox.clone(),
+                kind: TerminalKind::MainProcess {
+                    input: request.input,
+                    repaint: RepaintPolicy::NudgeAfter(REPAINT_NUDGE),
+                },
+                size: request.size,
+            })
+            .await?;
+        let supervisor = read_state(self.deps.gateway.as_ref(), sandbox).await?;
+        Ok(AttachedTerminal {
+            session,
+            gateway: Arc::clone(&self.deps.gateway),
+            sandbox: sandbox.clone(),
+            supervisor,
+        })
+    }
+
+    pub async fn open_shell(&self, request: ShellRequest) -> Result<TerminalSession, AttachError> {
+        let sandbox = &request.sandbox;
+        let view = self
+            .find_managed(sandbox)
+            .await?
+            .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
+        require_ready::<AttachError>(view.phase, sandbox)?;
+        let gateway = self.deps.gateway.as_ref();
+        let values = async {
+            let launch = launch_of(&view.labels)?;
+            env_values(gateway, sandbox, &launch).await
+        }
+        .await
+        .map_err(|failure| AttachError::env(sandbox, failure))?;
+        Ok(gateway
+            .open_terminal(&TerminalRequest {
+                sandbox: sandbox.clone(),
+                kind: TerminalKind::Shell {
+                    workdir: sandbox_layout::PROJECT.clone(),
+                    env: values,
+                },
+                size: request.size,
+            })
+            .await?)
+    }
+
+    pub async fn restart_agent(
+        &self,
+        sandbox: &SandboxName,
+        events: LaunchEvents,
+        cancel: CancellationToken,
+    ) -> Result<AttachTarget, RestartError> {
+        let gateway = self.deps.gateway.as_ref();
+        let view = self
+            .find_managed(sandbox)
+            .await?
+            .ok_or_else(|| not_found(sandbox))?;
+        require_ready::<RestartError>(view.phase, sandbox)?;
+        let values = async {
+            let launch = launch_of(&view.labels)?;
+            env_values(gateway, sandbox, &launch).await
+        }
+        .await
+        .map_err(|failure| RestartError::env(sandbox, failure))?;
+        let state = match read_state(gateway, sandbox).await? {
+            SupervisorReading::Reported(state) => state,
+            SupervisorReading::Unreadable | SupervisorReading::Invalid(_) => {
+                return Err(RestartError::StateUnreadable {
+                    sandbox: sandbox.clone(),
+                });
+            }
+        };
+        if let SupervisorState::Running { attempt } = state {
+            return Err(RestartError::AlreadyRunning {
+                sandbox: sandbox.clone(),
+                attempt,
+            });
+        }
+        let attempt = state
+            .next_attempt()
+            .ok_or_else(|| RestartError::AttemptsExhausted {
+                sandbox: sandbox.clone(),
+            })?;
+        self.restart_preflight(sandbox, &values, &events, &cancel)
+            .await?;
+        self.request_attempt(sandbox, attempt, &events, &cancel)
+            .await
+    }
+
+    async fn restart_preflight(
+        &self,
+        sandbox: &SandboxName,
+        values: &BTreeMap<EnvName, String>,
+        events: &LaunchEvents,
+        cancel: &CancellationToken,
+    ) -> Result<(), RestartError> {
+        let gateway = self.deps.gateway.as_ref();
+        events
+            .emit(LaunchEvent::StepStarted(LaunchStep::Hooks))
+            .await;
+        let hook = sandbox_layout::hook_path(HookKind::Preflight);
+        let mut found = gateway
+            .read_files(sandbox, std::slice::from_ref(&hook))
+            .await?;
+        let present = found.pop().flatten().is_some_and(|bytes| !bytes.is_empty());
+        if present {
+            hooks::run(
+                HookRun {
+                    gateway,
+                    sandbox,
+                    kind: HookKind::Preflight,
+                    env: values,
+                    touch_on_success: None,
+                    timeout: self.deps.limits.hook,
+                },
+                cancel,
+            )
+            .await?;
+        }
+        events
+            .emit(LaunchEvent::StepFinished {
+                step: LaunchStep::Hooks,
+                result: StepResult::Done,
+            })
+            .await;
+        Ok(())
+    }
+
+    async fn request_attempt(
+        &self,
+        sandbox: &SandboxName,
+        attempt: AttemptId,
+        events: &LaunchEvents,
+        cancel: &CancellationToken,
+    ) -> Result<AttachTarget, RestartError> {
+        let gateway = self.deps.gateway.as_ref();
+        events
+            .emit(LaunchEvent::StepStarted(LaunchStep::Start))
+            .await;
+        if cancel.is_cancelled() {
+            return Err(GatewayError::Cancelled {
+                op: GatewayOp::WriteFile,
+            }
+            .into());
+        }
+        gateway
+            .write_file(
+                sandbox,
+                &SandboxFile {
+                    path: sandbox_layout::RUN_START.clone(),
+                    mode: REQUEST_MODE,
+                    content: jackin_core::SecretBytes::new(
+                        StartRequest(attempt).render().into_bytes(),
+                    ),
+                },
+            )
+            .await?;
+        let limit = self.deps.limits.attempt;
+        let mut waited = Duration::ZERO;
+        loop {
+            let seen_state = read_state(gateway, sandbox).await?;
+            if let SupervisorReading::Reported(
+                state @ (SupervisorState::Running { attempt: seen }
+                | SupervisorState::Exited { attempt: seen, .. }),
+            ) = seen_state
+                && seen == attempt
+            {
+                events
+                    .emit(LaunchEvent::StepFinished {
+                        step: LaunchStep::Start,
+                        result: StepResult::Done,
+                    })
+                    .await;
+                return Ok(AttachTarget {
+                    sandbox: sandbox.clone(),
+                    state,
+                });
+            }
+            if waited >= limit {
+                return Err(RestartError::AttemptTimeout {
+                    sandbox: sandbox.clone(),
+                    attempt,
+                });
+            }
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => {
+                    return Err(GatewayError::Cancelled { op: GatewayOp::ReadFiles }.into());
+                }
+                () = self.deps.host.clock.sleep(POLL) => {}
+            }
+            waited += POLL;
+        }
+    }
+}
+
+fn require_ready<E>(phase: Phase, sandbox: &SandboxName) -> Result<(), E>
+where
+    E: From<GatewayError> + EndedMain,
+{
+    if phase.main_process_ended() {
+        Err(E::ended(sandbox.clone(), phase))
+    } else if phase == Phase::Ready {
+        Ok(())
+    } else {
+        Err(GatewayError::NotReady { phase }.into())
+    }
+}
+
+trait EndedMain {
+    fn ended(sandbox: SandboxName, phase: Phase) -> Self;
+}
+
+impl EndedMain for AttachError {
+    fn ended(sandbox: SandboxName, phase: Phase) -> AttachError {
+        AttachError::MainProcessEnded { sandbox, phase }
+    }
+}
+
+impl EndedMain for RestartError {
+    fn ended(sandbox: SandboxName, phase: Phase) -> RestartError {
+        RestartError::MainProcessEnded { sandbox, phase }
+    }
 }

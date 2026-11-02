@@ -22,7 +22,7 @@ pub(super) struct HookPresence {
     pub(super) preflight: bool,
 }
 
-fn reading(bytes: Option<&[u8]>) -> SupervisorReading {
+pub(crate) fn reading(bytes: Option<&[u8]>) -> SupervisorReading {
     let Some(bytes) = bytes else {
         return SupervisorReading::Unreadable;
     };

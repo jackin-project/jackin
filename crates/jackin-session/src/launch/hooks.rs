@@ -7,10 +7,61 @@ use std::time::Duration;
 use jackin_core::{
     EnvFile, EnvName, HookKind, LaunchId, SandboxName, SandboxPath, TerminalText, sandbox_layout,
 };
-use jackin_openshell::{Gateway, ProgramRun, ProgramStdin};
+use jackin_openshell::{Gateway, GatewayError, ProgramRun, ProgramStdin};
 use tokio_util::sync::CancellationToken;
 
+use crate::attach::RestartError;
 use crate::launch::LaunchError;
+
+#[derive(Debug)]
+pub(crate) enum HookFailure {
+    Gateway(GatewayError),
+    Failed {
+        hook: HookKind,
+        exit_code: i32,
+        output: TerminalText,
+    },
+}
+
+impl From<GatewayError> for HookFailure {
+    fn from(error: GatewayError) -> HookFailure {
+        HookFailure::Gateway(error)
+    }
+}
+
+impl From<HookFailure> for LaunchError {
+    fn from(failure: HookFailure) -> LaunchError {
+        match failure {
+            HookFailure::Gateway(error) => LaunchError::Gateway(error),
+            HookFailure::Failed {
+                hook,
+                exit_code,
+                output,
+            } => LaunchError::HookFailed {
+                hook,
+                exit_code,
+                output,
+            },
+        }
+    }
+}
+
+impl From<HookFailure> for RestartError {
+    fn from(failure: HookFailure) -> RestartError {
+        match failure {
+            HookFailure::Gateway(error) => RestartError::Gateway(error),
+            HookFailure::Failed {
+                hook,
+                exit_code,
+                output,
+            } => RestartError::HookFailed {
+                hook,
+                exit_code,
+                output,
+            },
+        }
+    }
+}
 
 pub(super) async fn read_env(
     gateway: &dyn Gateway,
@@ -36,16 +87,16 @@ pub(super) async fn read_env(
     Ok(file.values().clone())
 }
 
-pub(super) struct HookRun<'a> {
-    pub(super) gateway: &'a dyn Gateway,
-    pub(super) sandbox: &'a SandboxName,
-    pub(super) kind: HookKind,
-    pub(super) env: &'a BTreeMap<EnvName, String>,
-    pub(super) touch_on_success: Option<SandboxPath>,
-    pub(super) timeout: Duration,
+pub(crate) struct HookRun<'a> {
+    pub(crate) gateway: &'a dyn Gateway,
+    pub(crate) sandbox: &'a SandboxName,
+    pub(crate) kind: HookKind,
+    pub(crate) env: &'a BTreeMap<EnvName, String>,
+    pub(crate) touch_on_success: Option<SandboxPath>,
+    pub(crate) timeout: Duration,
 }
 
-pub(super) async fn run(hook: HookRun<'_>, cancel: &CancellationToken) -> Result<(), LaunchError> {
+pub(crate) async fn run(hook: HookRun<'_>, cancel: &CancellationToken) -> Result<(), HookFailure> {
     let outcome = hook
         .gateway
         .run_program(
@@ -67,7 +118,7 @@ pub(super) async fn run(hook: HookRun<'_>, cancel: &CancellationToken) -> Result
     }
     let mut output = outcome.stdout;
     output.extend(outcome.stderr);
-    Err(LaunchError::HookFailed {
+    Err(HookFailure::Failed {
         hook: hook.kind,
         exit_code: outcome.exit_code,
         output: TerminalText::sanitize(&output),
