@@ -926,17 +926,54 @@ async fn rest(repo: &RepoFixture) -> Result<HostState, Box<dyn Error>> {
     Ok(HostSnapshot::take(repo.root()).await?.rest)
 }
 
+fn changed_fields(after: &HostState, before: &HostState) -> Vec<&'static str> {
+    [
+        ("index", after.index != before.index),
+        ("refs", after.refs != before.refs),
+        ("head", after.head != before.head),
+        ("status", after.status != before.status),
+        ("config", after.config != before.config),
+        ("files", after.files != before.files),
+        ("links", after.links != before.links),
+        ("empty_dirs", after.empty_dirs != before.empty_dirs),
+    ]
+    .into_iter()
+    .filter_map(|(field, changed)| changed.then_some(field))
+    .collect()
+}
+
+#[track_caller]
+fn assert_same(step: &str, after: &HostState, before: &HostState) {
+    assert_eq!(
+        changed_fields(after, before),
+        Vec::<&str>::new(),
+        "{step}: the snapshot differs in these fields"
+    );
+}
+
+#[track_caller]
+fn assert_changed(step: &str, after: &HostState, before: &HostState) {
+    assert!(
+        !changed_fields(after, before).is_empty(),
+        "{step}: the snapshot did not change"
+    );
+}
+
 #[tokio::test]
 async fn a_host_snapshot_is_equal_without_a_change_and_equal_again_after_a_change_is_reverted()
 -> TestResult {
     let (repo, root) = snapshot_fixture().await?;
     let base = rest(&repo).await?;
-    assert_eq!(rest(&repo).await?, base);
+    assert_same(
+        "a second snapshot of the same tree",
+        &rest(&repo).await?,
+        &base,
+    );
     std::fs::create_dir(root.join("empty"))?;
     std::fs::remove_dir(root.join("empty"))?;
     std::fs::remove_file(root.join("link"))?;
     std::os::unix::fs::symlink("a.txt", root.join("link"))?;
-    assert_eq!(rest(&repo).await?, base);
+    assert_same("after the changes are reverted", &rest(&repo).await?, &base);
     Ok(())
 }
 
@@ -945,9 +982,9 @@ async fn a_host_snapshot_sees_an_added_empty_directory() -> TestResult {
     let (repo, root) = snapshot_fixture().await?;
     let base = rest(&repo).await?;
     std::fs::create_dir(root.join("empty"))?;
-    assert_ne!(rest(&repo).await?, base);
+    assert_changed("after the change", &rest(&repo).await?, &base);
     std::fs::remove_dir(root.join("empty"))?;
-    assert_eq!(rest(&repo).await?, base);
+    assert_same("after the change is reverted", &rest(&repo).await?, &base);
     Ok(())
 }
 
@@ -957,10 +994,10 @@ async fn a_host_snapshot_sees_a_link_retargeted_to_a_file_with_identical_content
     let base = rest(&repo).await?;
     std::fs::remove_file(root.join("link"))?;
     std::os::unix::fs::symlink("b.txt", root.join("link"))?;
-    assert_ne!(rest(&repo).await?, base);
+    assert_changed("after the change", &rest(&repo).await?, &base);
     std::fs::remove_file(root.join("link"))?;
     std::os::unix::fs::symlink("a.txt", root.join("link"))?;
-    assert_eq!(rest(&repo).await?, base);
+    assert_same("after the change is reverted", &rest(&repo).await?, &base);
     Ok(())
 }
 
@@ -971,10 +1008,10 @@ async fn a_host_snapshot_sees_a_link_replaced_by_a_regular_file_with_identical_c
     let base = rest(&repo).await?;
     std::fs::remove_file(root.join("link"))?;
     std::fs::write(root.join("link"), b"same\n")?;
-    assert_ne!(rest(&repo).await?, base);
+    assert_changed("after the change", &rest(&repo).await?, &base);
     std::fs::remove_file(root.join("link"))?;
     std::os::unix::fs::symlink("a.txt", root.join("link"))?;
-    assert_eq!(rest(&repo).await?, base);
+    assert_same("after the change is reverted", &rest(&repo).await?, &base);
     Ok(())
 }
 
@@ -983,8 +1020,8 @@ async fn a_host_snapshot_sees_an_added_dangling_link() -> TestResult {
     let (repo, root) = snapshot_fixture().await?;
     let base = rest(&repo).await?;
     std::os::unix::fs::symlink("nowhere", root.join("dangling"))?;
-    assert_ne!(rest(&repo).await?, base);
+    assert_changed("after the change", &rest(&repo).await?, &base);
     std::fs::remove_file(root.join("dangling"))?;
-    assert_eq!(rest(&repo).await?, base);
+    assert_same("after the change is reverted", &rest(&repo).await?, &base);
     Ok(())
 }

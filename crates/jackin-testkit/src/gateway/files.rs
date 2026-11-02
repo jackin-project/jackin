@@ -172,6 +172,20 @@ fn copy_entry(from: &Path, to: &Path) -> Result<(), CopyFailure> {
     }
 }
 
+fn require_supported(from: &Path) -> Result<(), CopyFailure> {
+    let kind = std::fs::symlink_metadata(from)?.file_type();
+    if kind.is_dir() {
+        for entry in std::fs::read_dir(from)? {
+            require_supported(&entry?.path())?;
+        }
+        Ok(())
+    } else if kind.is_symlink() || kind.is_file() {
+        Ok(())
+    } else {
+        Err(CopyFailure::Unsupported(from.to_path_buf()))
+    }
+}
+
 fn copy_tree(from: &Path, to: &Path) -> Result<(), CopyFailure> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
@@ -215,11 +229,15 @@ pub(super) async fn upload_tree(
         })
         .collect::<Result<Vec<PathBuf>, GatewayError>>()?;
     tokio::task::spawn_blocking(move || {
-        for relative in paths {
-            let from = source.join(&relative);
-            if std::fs::symlink_metadata(&from).is_ok() {
-                copy_entry(&from, &dest.join(&relative))?;
-            }
+        let present: Vec<PathBuf> = paths
+            .into_iter()
+            .filter(|relative| std::fs::symlink_metadata(source.join(relative)).is_ok())
+            .collect();
+        for relative in &present {
+            require_supported(&source.join(relative))?;
+        }
+        for relative in &present {
+            copy_entry(&source.join(relative), &dest.join(relative))?;
         }
         Ok::<(), CopyFailure>(())
     })

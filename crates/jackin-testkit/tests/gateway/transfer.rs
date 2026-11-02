@@ -155,6 +155,10 @@ async fn an_upload_with_a_fifo_or_a_socket_in_a_listed_entry_fails_and_a_clean_n
             .unwrap_err();
         let tail = refusal(&error, TransferOp::UploadFiltered)?;
         assert!(tail.contains("unsupported file type"), "{tail}");
+        assert_eq!(
+            (fifo_target.files(), fifo_target.links()),
+            (BTreeMap::new(), BTreeMap::new())
+        );
 
         let (socket_dir, socket) = project().await?;
         git(socket_dir.path(), &["init", "-q", "nested"]).await?;
@@ -167,7 +171,64 @@ async fn an_upload_with_a_fifo_or_a_socket_in_a_listed_entry_fails_and_a_clean_n
             .unwrap_err();
         let tail = refusal(&error, TransferOp::UploadFiltered)?;
         assert!(tail.contains("unsupported file type"), "{tail}");
+        assert_eq!(
+            (socket_target.files(), socket_target.links()),
+            (BTreeMap::new(), BTreeMap::new())
+        );
         drop(listener);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_upload_listing_never_runs_a_hostile_project_fsmonitor() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let (dir, root) = project().await?;
+        tokio::fs::write(dir.path().join("a.txt"), b"alpha").await?;
+        let scratch = tempfile::tempdir()?;
+        let marker = scratch.path().join("marker");
+        let hook = scratch.path().join("hook.sh");
+        tokio::fs::write(
+            &hook,
+            format!("#!/bin/sh\n/usr/bin/touch {}\n", marker.display()),
+        )
+        .await?;
+        tokio::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).await?;
+        let config = dir.path().join(".git/config");
+        let mut text = tokio::fs::read_to_string(&config).await?;
+        text.push_str(&format!("[core]\n\tfsmonitor = {}\n", hook.display()));
+        tokio::fs::write(&config, text).await?;
+
+        let listing = [
+            OsStr::new("ls-files"),
+            OsStr::new("-co"),
+            OsStr::new("--exclude-standard"),
+        ];
+        host_git(dir.path(), &listing)?;
+        assert!(
+            marker.exists(),
+            "the hostile fsmonitor did not fire in the control listing"
+        );
+        tokio::fs::remove_file(&marker).await?;
+
+        let target = ready(&fake, sh("sleep 3600")?).await?;
+        fake.upload_tree(
+            &target.name(),
+            &root,
+            &path("/sandbox/project")?,
+            &CancellationToken::new(),
+        )
+        .await?;
+        assert!(
+            !marker.exists(),
+            "the project fsmonitor ran during the upload"
+        );
+        assert_eq!(
+            target.file(&path("/sandbox/project/a.txt")?),
+            Some(b"alpha".to_vec())
+        );
         Ok(())
     })
     .await
@@ -273,13 +334,19 @@ async fn an_upload_reports_every_symlink_by_its_target_text_and_never_as_the_fil
         .map(|(link, target)| Ok((path(link)?, target.to_owned())))
         .collect::<Result<_, Box<dyn std::error::Error>>>()?;
         assert_eq!(linked.links(), expected);
-        let files = linked.files();
-        for kept in ["a.txt", "real/r.txt"] {
-            assert!(files.contains_key(&path(&format!("/sandbox/project/{kept}"))?));
-        }
-        for followed in ["link.txt", "dirlink", "dirlink/r.txt", "dangling"] {
-            assert!(!files.contains_key(&path(&format!("/sandbox/project/{followed}"))?));
-        }
+        let uploaded: Vec<String> = linked
+            .files()
+            .keys()
+            .map(|file| file.as_str().to_owned())
+            .collect();
+        assert_eq!(
+            uploaded,
+            [
+                "/sandbox/project/README.md",
+                "/sandbox/project/a.txt",
+                "/sandbox/project/real/r.txt"
+            ]
+        );
 
         let (plain_dir, plain) = project().await?;
         tokio::fs::write(plain_dir.path().join("a.txt"), b"alpha").await?;

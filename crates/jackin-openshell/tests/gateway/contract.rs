@@ -71,10 +71,7 @@ async fn core_group_passes_against_grpc_gateway_on_the_in_process_server() {
     for check in &report.checks {
         assert_eq!(check.outcome, Ok(()), "{}", check.name);
     }
-    let state = env.server.state();
-    assert!(state.profiles.is_empty(), "a contract profile is left");
-    assert!(state.providers.is_empty(), "a contract provider is left");
-    assert!(state.sandboxes.is_empty(), "a contract sandbox is left");
+    assert_nothing_left(&env);
 }
 
 #[tokio::test]
@@ -114,6 +111,18 @@ async fn a_leftover_profile_and_provider_from_an_aborted_run_do_not_fail_the_cor
     }
     let state = env.server.state();
     assert!(state.profiles.is_empty() && state.providers.is_empty());
+}
+
+#[track_caller]
+fn assert_no_sandboxes(env: &Env, label: &str) {
+    let left: Vec<String> = env
+        .server
+        .state()
+        .sandboxes
+        .keys()
+        .map(|(_, name)| name.clone())
+        .collect();
+    assert!(left.is_empty(), "{label}: the run left sandboxes {left:?}");
 }
 
 fn exit_when_told() -> ExecBackend {
@@ -171,7 +180,7 @@ async fn terminal_group_reports_exactly_the_published_checks_and_a_refused_attac
             );
         }
     }
-    assert!(env.server.state().sandboxes.is_empty());
+    assert_no_sandboxes(&env, "a refused attach");
 }
 
 #[tokio::test]
@@ -275,7 +284,7 @@ async fn shell_exit_code_cannot_hang_the_run() {
         .find(|check| check.name == "shell_exit_code")
         .unwrap();
     assert_eq!(check.outcome, Err("the shell never ended".to_owned()));
-    assert!(env.server.state().sandboxes.is_empty());
+    assert_no_sandboxes(&env, "a shell that never ends");
 }
 
 fn outcome<'a>(report: &'a ContractReport, name: &str) -> &'a Result<(), String> {
@@ -296,10 +305,12 @@ fn assert_others_pass(report: &ContractReport, except: &str) {
 }
 
 fn assert_nothing_left(env: &Env) {
-    let state = env.server.state();
-    assert!(state.profiles.is_empty(), "a contract profile is left");
-    assert!(state.providers.is_empty(), "a contract provider is left");
-    assert!(state.sandboxes.is_empty(), "a contract sandbox is left");
+    {
+        let state = env.server.state();
+        assert!(state.profiles.is_empty(), "a contract profile is left");
+        assert!(state.providers.is_empty(), "a contract provider is left");
+    }
+    assert_no_sandboxes(env, "the contract run");
 }
 
 #[tokio::test]
@@ -399,7 +410,7 @@ async fn an_ended_main_process_attach_that_is_refused_passes_the_check_and_one_t
     let names: Vec<&str> = report.checks.iter().map(|check| check.name).collect();
     assert_eq!(names, TERMINAL_CHECKS.to_vec());
     assert_eq!(outcome(&report, "main_ended_is_refused"), &Ok(()));
-    assert!(env.server.state().sandboxes.is_empty());
+    assert_no_sandboxes(&env, "a refused main-ended attach");
 
     let (env, report) = terminal_report(end_with(1)).await;
     let failed = outcome(&report, "main_ended_is_refused");
@@ -409,7 +420,7 @@ async fn an_ended_main_process_attach_that_is_refused_passes_the_check_and_one_t
         ),
         "{failed:?}"
     );
-    assert!(env.server.state().sandboxes.is_empty());
+    assert_no_sandboxes(&env, "a granted main-ended attach");
 }
 
 async fn transfer_report(runner: ScriptedRunner) -> (Env, ContractReport) {
@@ -434,7 +445,7 @@ async fn an_upload_to_an_absent_sandbox_passes_the_check_when_the_cli_fails_and_
         outcome(&report, "upload_absent_sandbox_is_a_transfer_error"),
         &Ok(())
     );
-    assert!(env.server.state().sandboxes.is_empty());
+    assert_no_sandboxes(&env, "a failing CLI on an absent sandbox");
 
     let passing = ScriptedRunner::always(exited(0, b"", b""));
     let (env, report) = transfer_report(passing).await;
@@ -445,7 +456,18 @@ async fn an_upload_to_an_absent_sandbox_passes_the_check_when_the_cli_fails_and_
             .is_err_and(|message| message.contains("is not a Transfer error")),
         "{failed:?}"
     );
-    assert!(env.server.state().sandboxes.is_empty());
+    assert_no_sandboxes(&env, "a succeeding CLI on an absent sandbox");
+
+    let wrong_status = ScriptedRunner::always(exited(2, b"", b"Error: sandbox not found"));
+    let (env, report) = transfer_report(wrong_status).await;
+    let failed = outcome(&report, "upload_absent_sandbox_is_a_transfer_error");
+    assert!(
+        failed
+            .as_ref()
+            .is_err_and(|message| message.contains("an absent sandbox")),
+        "the CLI exits 2 saying the sandbox is not found: {failed:?}"
+    );
+    assert_no_sandboxes(&env, "a CLI that exits 2 on an absent sandbox");
 }
 
 #[tokio::test]
@@ -462,12 +484,16 @@ async fn an_upload_to_a_stopped_sandbox_passes_the_check_only_when_the_cli_refus
             .is_err_and(|message| message.contains("is not a Transfer error")),
         "{absent:?}"
     );
-    assert!(env.server.state().sandboxes.is_empty());
+    assert_no_sandboxes(&env, "a refusing CLI on a Stopped sandbox");
 
     for (label, runner) in [
         (
             "the CLI says the sandbox is absent",
             ScriptedRunner::always(exited(1, b"", b"Error: sandbox not found")),
+        ),
+        (
+            "the CLI exits 2 saying the sandbox is not ready",
+            ScriptedRunner::always(exited(2, b"", b"Error: sandbox is not ready")),
         ),
         (
             "the CLI succeeds",
@@ -490,7 +516,7 @@ async fn an_upload_to_a_stopped_sandbox_passes_the_check_only_when_the_cli_refus
                 .is_err_and(|message| message.contains("a Stopped sandbox")),
             "{label}: {failed:?}"
         );
-        assert!(env.server.state().sandboxes.is_empty(), "{label}");
+        assert_no_sandboxes(&env, label);
     }
 }
 
@@ -532,7 +558,7 @@ async fn the_download_checks_pass_on_the_adapter_when_the_sandbox_answers_like_t
     ] {
         assert_eq!(outcome(&report, name), &Ok(()), "{name}");
     }
-    assert!(env.server.state().sandboxes.is_empty());
+    assert_no_sandboxes(&env, "the download checks");
 }
 
 #[tokio::test]
