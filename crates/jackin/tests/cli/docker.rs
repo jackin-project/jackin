@@ -8,6 +8,13 @@ use super::support::{Failure, Harness};
 
 const WARNING: &str = "warning: the Docker capability is enabled";
 
+const RISKS: [&str; DockerRisk::ALL.len()] = [
+    "  the agent can read the engine client key",
+    "  containers bypass the sandbox network policy",
+    "  a bind mount names a path on the engine host, not in the sandbox",
+    "  the engine outlives the sandbox, and sandboxes that use one engine see each other's containers; remove them yourself",
+];
+
 fn certs(rig: &Rig) -> Result<String, Failure> {
     let dir = rig.home.as_path().join("engine-certs");
     std::fs::create_dir(&dir)?;
@@ -79,11 +86,12 @@ async fn a_docker_workspace_gets_the_engine_variables_and_one_warning_and_a_plai
             .skip_while(|line| !line.starts_with(WARNING))
             .skip(1)
             .collect();
-        let risks = after
+        let risks: Vec<&str> = after
             .iter()
+            .copied()
             .take_while(|line| line.starts_with("  "))
-            .count();
-        assert_eq!(risks, DockerRisk::ALL.len(), "{}", ran.stderr);
+            .collect();
+        assert_eq!(risks, RISKS, "{}", ran.stderr);
         let names = env_names(&rig, 1).await?;
         for wanted in ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"] {
             assert!(

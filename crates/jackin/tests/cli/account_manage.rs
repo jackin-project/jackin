@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin::{AccountLs, ExitClass};
-use jackin_core::{AccountName, Agent, Config, Provider, ProviderName, RoleName, WorkspaceName};
-use jackin_openshell::{GatewayError, GatewayOp, Missing};
-use jackin_testkit::{Fault, Rig, TestResult, World, guard};
+use jackin_core::{
+    AccountName, Agent, Config, ConfigEdit, Provider, ProviderName, RoleName, WorkspaceName,
+};
+use jackin_testkit::{Rig, TestResult, World, guard};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Failure, Harness, failed};
+use super::support::{Failure, FixedConnector, GATEWAY_CONFIG, Harness, failed};
 
 const CONFIG: &str = "[defaults.accounts]
 codex = \"one\"
@@ -59,7 +60,7 @@ async fn default_and_bind_change_exactly_the_named_entry() -> TestResult {
 
         harness.run(&["account", "default", "two"]).await?.ok()?;
         let after_default = expect(|config| {
-            config.apply(jackin_core::ConfigEdit::SetDefaultAccount {
+            config.apply(ConfigEdit::SetDefaultAccount {
                 account: AccountName::parse("two")?,
             })?;
             Ok(())
@@ -254,30 +255,27 @@ async fn rm_checks_the_gateway_before_the_config_and_removes_both_when_nothing_u
 }
 
 #[tokio::test]
-async fn rm_of_an_account_whose_provider_is_already_gone_still_removes_the_account() -> TestResult {
+async fn rm_of_an_account_that_is_not_a_codex_login_never_connects_and_succeeds_with_the_gateway_down()
+-> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
-        let (harness, provider) = synced(&rig).await?;
-        rig.world
-            .session
-            .gateway()
-            .delete_provider(&provider)
-            .await?;
-        assert!(rig.gateway().provider(&provider).is_none());
-        rig.gateway().inject(Fault::FailNext {
-            op: GatewayOp::Provider,
-            error: GatewayError::NotFound {
-                what: Missing::Provider(provider),
-            },
-        });
-        harness.run(&["account", "rm", "work"]).await?.ok()?;
-        assert!(
-            harness
-                .stored()
-                .await?
-                .account(&AccountName::parse("work")?)
-                .is_none()
-        );
+        let world = World::builder().build()?;
+        let mut harness = Harness::new(&world);
+        harness.connector = FixedConnector::empty();
+        let text = format!("{GATEWAY_CONFIG}\n{CONFIG}");
+        harness.write_config(&text)?;
+        harness.run(&["account", "default", "two"]).await?.ok()?;
+        let mut expected = Config::parse(&text)?;
+        expected.apply(ConfigEdit::SetDefaultAccount {
+            account: AccountName::parse("two")?,
+        })?;
+        expected.apply(ConfigEdit::RemoveAccount(AccountName::parse("one")?))?;
+        harness.run(&["account", "rm", "one"]).await?.ok()?;
+        assert_eq!(rendered(&harness).await?, expected.render());
+
+        let before = harness.config_bytes()?;
+        let ran = harness.run(&["account", "rm", "four"]).await?;
+        failed(&ran, ExitClass::Failure, &["fake-gateway", "unreachable"])?;
+        assert_eq!(harness.config_bytes()?, before);
         Ok(())
     })
     .await

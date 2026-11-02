@@ -63,10 +63,8 @@ impl Session {
         }
         let _held = self.hold_account(account, cancel).await?;
         let provider = ProviderName::for_account(account.name(), Agent::Codex);
-        match self.deps.gateway.delete_provider(&provider).await {
-            Ok(()) | Err(GatewayError::NotFound { .. }) => Ok(()),
-            Err(error) => Err(error.into()),
-        }
+        self.deps.gateway.delete_provider(&provider).await?;
+        Ok(())
     }
 
     pub(crate) async fn sync_if_absent(

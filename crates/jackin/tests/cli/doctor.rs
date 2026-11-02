@@ -5,7 +5,7 @@ use jackin::ExitClass;
 use jackin_testkit::{ProcessReply, ScriptedProgram, TestResult, World, guard};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Failure, FixedConnector, Harness, Ran};
+use super::support::{Failure, FixedConnector, GATEWAY_CONFIG, Harness, Ran, connecting};
 
 const IDS: [&str; 7] = [
     "openshell-binary",
@@ -16,14 +16,6 @@ const IDS: [&str; 7] = [
     "pinned-version",
     "engine-socket",
 ];
-
-const CONFIG: &str = "default_gateway = \"fake-gateway\"
-
-[gateways.fake-gateway]
-openshell_workspace = \"default\"
-builder = \"b\"
-platform = \"linux/arm64\"
-";
 
 fn reported(ran: &Ran, class: ExitClass, ids: &[&str], stderr: &[&str]) -> Result<(), Failure> {
     if ran.exit != class {
@@ -87,7 +79,7 @@ fn fixture(socket: bool, openshell: ProcessReply) -> Result<Fixture, Failure> {
         "DOCKER_HOST".to_owned(),
         format!("unix://{}", socket_path.display()),
     ));
-    harness.write_config(CONFIG)?;
+    harness.write_config(GATEWAY_CONFIG)?;
     Ok(Fixture { world, harness })
 }
 
@@ -186,6 +178,25 @@ async fn doctor_under_a_cancel_exits_cancelled_and_prints_no_report() -> TestRes
             harness,
             world: _world,
         } = healthy()?;
+        let token = CancellationToken::new();
+        token.cancel();
+        let ran = harness.command(&["doctor"]).cancel(token).run().await?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert!(ran.stdout.is_empty(), "{}", ran.stdout);
+        for id in IDS {
+            assert!(!ran.stderr.contains(id), "{id}: {}", ran.stderr);
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn doctor_cancelled_while_the_gateway_is_being_discovered_exits_cancelled_at_once()
+-> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let (harness, _) = connecting(&world, ProcessReply::until_cancelled(Vec::new()))?;
         let token = CancellationToken::new();
         token.cancel();
         let ran = harness.command(&["doctor"]).cancel(token).run().await?;

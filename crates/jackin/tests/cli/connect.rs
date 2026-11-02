@@ -1,38 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::Arc;
-
-use jackin::{ConnectError, ExitClass, GatewayConnector, GrpcConnector};
-use jackin_core::{FileSystem, GatewayName, ProcessRunner};
-use jackin_testkit::{ProcessReply, ScriptedProgram, TestResult, World, guard};
+use jackin::{ConnectError, ExitClass, GatewayConnector};
+use jackin_core::GatewayName;
+use jackin_testkit::{ProcessReply, TestResult, World, guard};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Failure, Harness, failed};
-
-const CONFIG: &str = "default_gateway = \"fake-gateway\"
-
-[gateways.fake-gateway]
-openshell_workspace = \"default\"
-builder = \"b\"
-platform = \"linux/arm64\"
-";
-
-const LIST: [&str; 4] = ["gateway", "list", "-o", "json"];
-
-fn connecting(world: &World, reply: ProcessReply) -> Result<(Harness, GrpcConnector), Failure> {
-    let mut harness = Harness::new(world);
-    harness.write_config(CONFIG)?;
-    world
-        .runner
-        .scripted()
-        .expect(ScriptedProgram::Openshell, &LIST, reply);
-    let runner: Arc<dyn ProcessRunner> = Arc::<jackin_testkit::TestRunner>::clone(&world.runner);
-    let fs: Arc<dyn FileSystem> = Arc::clone(&world.fs);
-    let connector = GrpcConnector::new(runner, fs, world.home().clone());
-    harness.custom = Some(Arc::new(connector.clone()));
-    Ok((harness, connector))
-}
+use super::support::{connecting, failed};
 
 #[tokio::test]
 async fn a_missing_openshell_is_a_discovery_error_and_not_an_unreachable_gateway() -> TestResult {

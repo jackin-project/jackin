@@ -13,7 +13,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin::{
-    AppEnv, ConnectError, Deps, ExitClass, GatewayConnector, RawMode, Terminal, TerminalInput,
+    AppEnv, ConnectError, Deps, ExitClass, GatewayConnector, GrpcConnector, RawMode, Terminal,
+    TerminalInput,
 };
 use jackin_core::{
     Clock, Config, ConfigStore, EnvSnapshot, FileSystem, GatewayEntry, GatewayName, HostPath,
@@ -22,7 +23,7 @@ use jackin_core::{
 use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, GatewayError, TermSize};
 use jackin_session::HostPorts;
-use jackin_testkit::{World, default_limits};
+use jackin_testkit::{ProcessReply, ScriptedProgram, World, default_limits};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -406,6 +407,32 @@ impl Invocation<'_> {
             stderr: stderr.text(),
         })
     }
+}
+
+pub(crate) const GATEWAY_CONFIG: &str = "default_gateway = \"fake-gateway\"
+
+[gateways.fake-gateway]
+openshell_workspace = \"default\"
+builder = \"b\"
+platform = \"linux/arm64\"
+";
+
+pub(crate) fn connecting(
+    world: &World,
+    reply: ProcessReply,
+) -> Result<(Harness, GrpcConnector), Failure> {
+    let mut harness = Harness::new(world);
+    harness.write_config(GATEWAY_CONFIG)?;
+    world.runner.scripted().expect(
+        ScriptedProgram::Openshell,
+        &["gateway", "list", "-o", "json"],
+        reply,
+    );
+    let runner: Arc<dyn ProcessRunner> = Arc::<jackin_testkit::TestRunner>::clone(&world.runner);
+    let fs: Arc<dyn FileSystem> = Arc::clone(&world.fs);
+    let connector = GrpcConnector::new(runner, fs, world.home().clone());
+    harness.custom = Some(Arc::new(connector.clone()));
+    Ok((harness, connector))
 }
 
 pub(crate) fn host_path(path: &Path) -> Result<HostPath, Failure> {

@@ -154,7 +154,8 @@ async fn a_restart_on_a_running_codex_is_refused_and_a_missing_terminal_touches_
 }
 
 #[tokio::test]
-async fn a_completed_unknown_or_unmanaged_sandbox_cannot_be_attached() -> TestResult {
+async fn attaching_an_error_phase_sandbox_names_its_exit_code_and_an_absent_one_is_refused()
+-> TestResult {
     guard(async {
         let (_rig, harness, handle) = running().await?;
         let name = handle.name();
@@ -171,8 +172,8 @@ async fn a_completed_unknown_or_unmanaged_sandbox_cannot_be_attached() -> TestRe
             failed(&ran, ExitClass::Failure, &wanted)?;
             assert!(!raw.raw());
         }
-        let completed = harness.run(&["inspect", name.as_str(), "--json"]).await?;
-        assert!(completed.stdout.contains('5'));
+        let ended = harness.run(&["inspect", name.as_str(), "--json"]).await?;
+        assert!(ended.stdout.contains('5'));
         Ok(())
     })
     .await
