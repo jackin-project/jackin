@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
 use jackin_core::{HostPath, LaunchId};
@@ -100,18 +101,11 @@ async fn concurrent_uploads_of_one_project_to_one_sandbox_all_succeed_and_leave_
         let fake = Arc::new(fake()?);
         let (dir, root) = project().await?;
         for index in 0..40 {
-            tokio::fs::write(
-                dir.path().join(format!("file-{index}.txt")),
-                format!("{index}\n"),
-            )
-            .await?;
+            let file = dir.path().join(format!("file-{index}.txt"));
+            tokio::fs::write(&file, format!("{index}\n")).await?;
+            tokio::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o444)).await?;
         }
-        git(dir.path(), &["add", "."]).await?;
-        git(dir.path(), &["commit", "-q", "-m", "more"]).await?;
-        let upload = ProjectUpload {
-            source: root,
-            dest: path("/sandbox/project")?,
-        };
+        let dest = path("/sandbox/project")?;
         let handle = ready(&fake, sh("sleep 3600")?).await?;
         let name = handle.name();
 
@@ -119,9 +113,10 @@ async fn concurrent_uploads_of_one_project_to_one_sandbox_all_succeed_and_leave_
         for _ in 0..8 {
             let fake = Arc::clone(&fake);
             let name = name.clone();
-            let upload = upload.clone();
+            let root = root.clone();
+            let dest = dest.clone();
             uploads.spawn(async move {
-                fake.upload_project(&name, &upload, &CancellationToken::new())
+                fake.upload_tree(&name, &root, &dest, &CancellationToken::new())
                     .await
             });
         }
@@ -132,7 +127,10 @@ async fn concurrent_uploads_of_one_project_to_one_sandbox_all_succeed_and_leave_
             handle.file(&path("/sandbox/project/file-39.txt")?),
             Some(b"39\n".to_vec())
         );
-        assert!(handle.file(&path("/sandbox/project/.git/HEAD")?).is_some());
+        assert_eq!(
+            handle.file(&path("/sandbox/project/README.md")?),
+            Some(b"fixture\n".to_vec())
+        );
         Ok(())
     })
     .await
