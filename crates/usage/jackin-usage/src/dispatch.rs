@@ -8,6 +8,7 @@ use jackin_usage_provider_core::{Bucket, Http, ProviderError};
 use jackin_usage_provider_gemini as gemini;
 use jackin_usage_provider_kimi as kimi;
 use jackin_usage_provider_minimax as minimax;
+use jackin_usage_provider_opencode as opencode;
 use jackin_usage_provider_openrouter as openrouter;
 use jackin_usage_provider_zai as zai;
 use tokio_util::sync::CancellationToken;
@@ -34,6 +35,7 @@ pub(crate) async fn collect(call: &Call<'_>) -> Collected {
         Provider::Gemini => gemini_usage(call).await,
         Provider::Kimi => kimi_usage(call).await,
         Provider::Minimax => minimax_usage(call).await,
+        Provider::Opencode => opencode_usage(call).await,
         Provider::Openrouter => openrouter_usage(call).await,
         Provider::Zai => zai_usage(call).await,
         Provider::Amp
@@ -41,8 +43,7 @@ pub(crate) async fn collect(call: &Call<'_>) -> Collected {
         | Provider::Cursor
         | Provider::Grok
         | Provider::Hermes
-        | Provider::Muse
-        | Provider::Opencode => Err(unsupported(None)),
+        | Provider::Muse => Err(unsupported(None)),
     }
 }
 
@@ -100,6 +101,13 @@ async fn zai_usage(call: &Call<'_>) -> Collected {
 async fn minimax_usage(call: &Call<'_>) -> Collected {
     let key = call.token().await?;
     minimax::fetch(call.http, key.secret.expose(), call.now)
+        .await
+        .map_err(|error| reason(error, call.now))
+}
+
+async fn opencode_usage(call: &Call<'_>) -> Collected {
+    let material = call.material().await?;
+    opencode::fetch(call.http, material.credential())
         .await
         .map_err(|error| reason(error, call.now))
 }

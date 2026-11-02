@@ -13,6 +13,7 @@ mod claude;
 mod gemini;
 mod kimi;
 mod minimax;
+mod opencode;
 mod openrouter;
 mod zai;
 
@@ -33,6 +34,7 @@ async fn cases() -> Result<Vec<Case>, Box<dyn std::error::Error>> {
         gemini::case().await?,
         kimi::case().await?,
         minimax::case().await?,
+        opencode::case().await?,
         openrouter::case().await?,
         zai::case().await?,
     ])
