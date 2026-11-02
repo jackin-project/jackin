@@ -458,7 +458,7 @@ P7.1 can start after P0.3. It runs in parallel with P2 to P6. The image drafts t
   4. Write `jackin/rewrite/probe-schema.json` first. Then write the probe. It prints one JSON object with the result of each in-sandbox journey step, including the J15 and J16 Docker steps.
   5. Rewrite `README.md`.
 - **Proof:** G-ROLE passes after P6.1. `evidence/P7.2-sentinel.md` shows a build by hand in the P0.3 order. It shows the probe output in a sandbox.
-- [ ] P7.2 done
+- [x] P7.2 done. Proof: sentinel effbe8b, jackin 2f052bd7; G-ROLE exit 0; evidence/P7.2-sentinel.md (build in the P0.3 order, role layer CACHED on rebuild, probe in a jackin-local sandbox: J00 J04 J05 J06 J10 J11 J12 J13 J14 J16 PASS, J07 J08 J09 J15 SKIP for no credential or no Docker capability; schema validates).
 
 ### P7.3 Review the images, the OpenShell provider profile, and the policy
 
