@@ -411,7 +411,7 @@ filesystem_policy:
   read_write:
     - /sandbox
 landlock:
-  compatibility: best_effort
+  compatibility: hard_requirement
 process:
   run_as_user: sandbox
   run_as_group: sandbox

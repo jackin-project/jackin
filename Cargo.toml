@@ -33,6 +33,7 @@ async-trait = "0.1.92"
 clap = { version = "4.6.7", features = ["derive"] }
 futures = "0.3.34"
 getrandom = "0.4.3"
+globset = { version = "0.4.21", default-features = false }
 noyalib = { version = "0.0.53", default-features = false, features = ["std", "lossless-u64"] }
 openshell-core = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.6", version = "0.0.0" }
 openshell-policy = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.6", version = "0.0.0" }

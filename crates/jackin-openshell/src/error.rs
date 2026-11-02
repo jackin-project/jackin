@@ -198,6 +198,10 @@ pub enum PolicyError {
     ReservedRuleName(String),
     #[error("invalid host {}", plain(.0))]
     InvalidHost(String),
+    #[error("landlock.compatibility must be hard_requirement, found {}", plain(.found.as_deref().unwrap_or("no value")))]
+    LandlockMode { found: Option<String> },
+    #[error("filesystem_policy must list at least one path in read_only or read_write")]
+    NoFilesystemPaths,
     #[error("rule {} has the invalid port {port}", plain(.rule))]
     InvalidPort { rule: String, port: i64 },
     #[error("duplicate rule {0}")]

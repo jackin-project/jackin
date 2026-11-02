@@ -103,10 +103,33 @@ fn check_shape(root: &Value, source: Source) -> Result<(), PolicyError> {
     Ok(())
 }
 
+fn check_sandbox(proto: &SandboxPolicy) -> Result<(), PolicyError> {
+    let found = proto
+        .landlock
+        .as_ref()
+        .map(|landlock| landlock.compatibility.as_str());
+    if found != Some("hard_requirement") {
+        return Err(PolicyError::LandlockMode {
+            found: found.map(str::to_owned),
+        });
+    }
+    let has_paths = proto.filesystem.as_ref().is_some_and(|filesystem| {
+        !filesystem.read_only.is_empty() || !filesystem.read_write.is_empty()
+    });
+    if has_paths {
+        Ok(())
+    } else {
+        Err(PolicyError::NoFilesystemPaths)
+    }
+}
+
 pub(super) fn build(text: &str, source: Source) -> Result<PolicyDocument, PolicyError> {
     let value: Value = noyalib::from_str(text).map_err(syntax)?;
     check_shape(&value, source)?;
     let proto = openshell_policy::parse_sandbox_policy(text).map_err(syntax)?;
+    if source == Source::Authored {
+        check_sandbox(&proto)?;
+    }
     Ok(PolicyDocument { value, proto })
 }
 

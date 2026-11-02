@@ -36,7 +36,7 @@ filesystem_policy:
     - /tmp
     - /sandbox
 landlock:
-  compatibility: best_effort
+  compatibility: hard_requirement
 process:
   run_as_user: sandbox
   run_as_group: sandbox

@@ -14,7 +14,7 @@ filesystem_policy:
   read_write:
     - /tmp
 landlock:
-  compatibility: best_effort
+  compatibility: hard_requirement
 process:
   run_as_user: sandbox
   run_as_group: sandbox
@@ -290,6 +290,68 @@ async fn a_symlink_to_a_role_directory_is_checked_like_the_directory() -> TestRe
         let ran = check_path(&world, false, &link).await?;
         ran.ok()?;
         assert!(ran.stderr.is_empty(), "{}", ran.stderr);
+fn policy_text(paths: &str, landlock: &str, host: &str) -> String {
+    format!(
+        "version: 1\n{paths}{landlock}process:\n  run_as_user: sandbox\n  run_as_group: sandbox\nnetwork_policies:\n  r1:\n    name: r1\n    endpoints:\n      - host: '{host}'\n        port: 443\n    binaries:\n      - path: /usr/bin/curl\n"
+    )
+}
+
+const PATHS: &str = "filesystem_policy:\n  read_only:\n    - /bin\n";
+const HARD: &str = "landlock:\n  compatibility: hard_requirement\n";
+
+#[tokio::test]
+async fn a_role_policy_without_landlock_hard_requirement_fails_naming_the_setting() -> TestResult {
+    guard(async {
+        for landlock in [
+            "landlock:\n  compatibility: best_effort\n",
+            "",
+            "landlock: {}\n",
+        ] {
+            let role = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(
+                PATHS,
+                landlock,
+                "example.com",
+            ));
+            let (ran, _, _) = checked(&role, false).await?;
+            failed(&ran, ExitClass::Failure, &["landlock", "hard_requirement"])?;
+        }
+        let empty = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(
+            "filesystem_policy:\n  read_only: []\n  read_write: []\n",
+            HARD,
+            "example.com",
+        ));
+        let (ran, _, _) = checked(&empty, false).await?;
+        failed(&ran, ExitClass::Failure, &["read_only", "read_write"])?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_role_host_the_sandbox_would_match_to_a_provider_host_fails_in_every_dialect()
+-> TestResult {
+    guard(async {
+        for host in ["[^x]*hatgpt.com", "*\\.openai.com"] {
+            let role = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(PATHS, HARD, host));
+            let (ran, _, _) = checked(&role, false).await?;
+            failed(&ran, ExitClass::Failure, &[host])?;
+            assert!(!ran.stderr.contains("r1"), "{}", ran.stderr);
+        }
+        let shape = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(PATHS, HARD, "*.com"));
+        let (ran, _, _) = checked(&shape, false).await?;
+        failed(&ran, ExitClass::Failure, &["*.com"])?;
+
+        let closure =
+            RoleFixture::new("sentinel")?.policy_yaml(&policy_text(PATHS, HARD, "*.openai.com"));
+        let (ran, _, _) = checked(&closure, false).await?;
+        failed(&ran, ExitClass::Failure, &["r1", "openai.com"])?;
+
+        for host in ["github.com", "*.example.org", "host-1_a.example.com"] {
+            let role = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(PATHS, HARD, host));
+            let (ran, _, _) = checked(&role, false).await?;
+            ran.ok()?;
+            assert!(ran.stdout.is_empty());
+        }
         Ok(())
     })
     .await

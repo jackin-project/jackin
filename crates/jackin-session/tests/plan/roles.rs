@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use jackin_core::{HookKind, HostPath, ManifestError, ModelName, RepoPath, RoleManifest, Sha256};
 use jackin_image::{DockerfileError, RoleRevision};
-use jackin_openshell::ClosureViolation;
+use jackin_openshell::{ClosureViolation, PolicyError};
 use jackin_session::{LoadedRole, RoleCatalog, RoleError};
 use jackin_testkit::{RoleFixture, TestRunner};
 use tempfile::TempDir;
@@ -23,7 +23,7 @@ filesystem_policy:
     - /tmp
     - /sandbox
 landlock:
-  compatibility: best_effort
+  compatibility: hard_requirement
 process:
   run_as_user: sandbox
   run_as_group: sandbox
@@ -94,7 +94,6 @@ async fn a_role_policy_that_overlaps_a_codex_host_is_rejected_before_any_plan() 
         let rows = [
             policy("openai", "api.openai.com", 443, "/usr/bin/curl"),
             policy("wild", "*.openai.com", 443, "/usr/bin/curl"),
-            policy("all", "**", 443, "/usr/bin/curl"),
             policy("chat", "chatgpt.com", 8443, "/usr/bin/other"),
         ];
         for text in rows {
@@ -486,6 +485,32 @@ async fn context_files_skip_deleted_tracked_files_and_submodule_paths() -> TestR
             !names.iter().any(|name| name.starts_with("vendor")),
             "{names:?}"
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn load_refuses_a_bypass_host_or_a_weaker_landlock_mode() -> TestResult {
+    guard(async {
+        let bypass = RoleFixture::new("sentinel")?.policy_yaml(&policy("r1", "[^x]*hatgpt.com", 443, "/usr/bin/curl"));
+        assert!(
+            matches!(expect_err(&bypass).await?, RoleError::Policy(PolicyError::InvalidHost(host)) if host == "[^x]*hatgpt.com")
+        );
+
+        let best_effort = policy("r1", "example.com", 443, "/usr/bin/curl").replace("hard_requirement", "best_effort");
+        let weaker = RoleFixture::new("sentinel")?.policy_yaml(&best_effort);
+        assert!(
+            matches!(expect_err(&weaker).await?, RoleError::Policy(PolicyError::LandlockMode { found }) if found.as_deref() == Some("best_effort"))
+        );
+
+        let empty = policy("r1", "example.com", 443, "/usr/bin/curl")
+            .replace("  read_only:\n    - /bin\n    - /usr\n  read_write:\n    - /tmp\n    - /sandbox\n", "  read_only: []\n");
+        let bare = RoleFixture::new("sentinel")?.policy_yaml(&empty);
+        assert!(matches!(expect_err(&bare).await?, RoleError::Policy(PolicyError::NoFilesystemPaths)));
+
+        let fine = RoleFixture::new("sentinel")?.policy_yaml(&policy("r1", "example.com", 443, "/usr/bin/curl"));
+        load(&fine).await?;
         Ok(())
     })
     .await

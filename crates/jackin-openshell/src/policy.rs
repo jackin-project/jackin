@@ -223,8 +223,11 @@ impl fmt::Display for RuleKey {
 
 impl HostPattern {
     pub fn parse(text: &str) -> Result<HostPattern, PolicyError> {
-        host_pattern::HostPattern::new(text)
-            .map_err(|_| PolicyError::InvalidHost(text.to_owned()))?;
+        let invalid = || PolicyError::InvalidHost(text.to_owned());
+        if !text.split('.').all(label_in_alphabet) || gateway_refuses_shape(text) {
+            return Err(invalid());
+        }
+        host_pattern::HostPattern::new(text).map_err(|_| invalid())?;
         Ok(HostPattern(text.to_ascii_lowercase()))
     }
 
@@ -235,6 +238,31 @@ impl HostPattern {
     pub fn overlaps(&self, other: &HostPattern) -> bool {
         host_pattern::host_patterns_overlap(&self.0, &other.0).unwrap_or(true)
     }
+}
+
+fn label_in_alphabet(label: &str) -> bool {
+    label == "**"
+        || label
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'*'))
+}
+
+fn gateway_refuses_shape(host: &str) -> bool {
+    if host == "*" || host == "**" {
+        return true;
+    }
+    if !host.contains('*') {
+        return false;
+    }
+    let labels: Vec<&str> = host.split('.').collect();
+    let tld_wildcard = (host.starts_with("*.") || host.starts_with("**.")) && labels.len() <= 2;
+    let first = labels.first().copied().unwrap_or_default();
+    let first_invalid = first.contains("**") && first != "**";
+    let later_invalid = labels
+        .iter()
+        .skip(1)
+        .any(|label| label.contains("**") || (label.contains('*') && *label != "*"));
+    tld_wildcard || first_invalid || later_invalid
 }
 
 impl fmt::Display for HostPattern {
