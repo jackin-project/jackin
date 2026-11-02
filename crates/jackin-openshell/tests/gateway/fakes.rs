@@ -115,20 +115,12 @@ impl FileSystem for RegistryFs {
     async fn read_regular(
         &self,
         root: &HostPath,
-        file: &RepoPath,
+        _file: &RepoPath,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        let path =
-            HostPath::parse(&root.as_path().join(file.as_str())).map_err(|error| FsError::Io {
-                path: root.clone(),
-                kind: std::io::ErrorKind::InvalidInput,
-                message: error.to_string(),
-            })?;
-        Ok(match self.files.lock().unwrap().get(&path) {
-            Some(bytes) => Ok(RegularFile {
-                bytes: bytes.clone(),
-                mode: FileMode(0o644),
-            }),
-            None => Err(RegularFileProblem::Missing),
+        Err(FsError::Io {
+            path: root.clone(),
+            kind: std::io::ErrorKind::Unsupported,
+            message: "read_regular is unsupported by RegistryFs".to_owned(),
         })
     }
 

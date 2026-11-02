@@ -356,5 +356,7 @@ fn jackin_start_treats_an_unreadable_env_file_as_malformed() -> TestResult {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains(&shell.path("envfile")), "{stderr}");
+    assert!(stderr.contains("is not readable"), "{stderr}");
+    assert!(!stderr.contains("malformed"), "{stderr}");
     Ok(())
 }

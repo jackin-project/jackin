@@ -93,7 +93,10 @@ run_attempt() {
     if bad=$(check_env "$envfile"); then
         publish "running $attempt_id"
     else
-        echo "jackin-start: $envfile is malformed at line $bad" >&2
+        case $bad in
+            0) echo "jackin-start: $envfile is not readable" >&2 ;;
+            *) echo "jackin-start: $envfile is malformed at line $bad" >&2 ;;
+        esac
         publish "exited $attempt_id 65"
         park
         return 0

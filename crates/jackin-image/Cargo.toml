@@ -23,7 +23,7 @@ jackin-testkit = { workspace = true }
 regex = { workspace = true }
 sha2 = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt", "time"] }
+tokio = { workspace = true, features = ["macros", "rt", "test-util", "time"] }
 
 [lints]
 workspace = true

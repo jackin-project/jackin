@@ -12,8 +12,8 @@ use std::time::Duration;
 use jackin_core::{
     Clock, DirEntry, DockerSubcommand, EnvValue, FileKind, FileMode, FileSystem, FsError, HostPath,
     OutputLine, OutputStream, Poll, PollError, PollPlan, ProcessError, ProcessRunner, ProcessSpec,
-    ProcessStatus, ProcessStdin, Program, Secret, SecretBytes, StdFileSystem, Timestamp,
-    poll_until, write_atomic,
+    ProcessStatus, ProcessStdin, Program, RegularFile, RegularFileProblem, RepoPath, Secret,
+    SecretBytes, StdFileSystem, Timestamp, poll_until, write_atomic,
 };
 use jackin_testkit::{
     CapturedFile, FakeClock, FsOp, MemFs, ProcessEffect, ProcessReply, ScriptedProcessRunner,
@@ -113,6 +113,57 @@ async fn memfs_and_stdfilesystem_pass_the_same_filesystem_contract() -> TestResu
         .await?;
     assert_eq!(mem.read_string(&note), Some("text".to_owned()));
     assert_eq!(mem.read_string(&host("/mem/none")?), None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn memfs_read_regular_returns_bytes_and_mode_and_gives_the_typed_refusal_otherwise()
+-> TestResult {
+    let fs = MemFs::new();
+    let root = host("/mem/tree")?;
+    fs.create_dir_all(&child(&root, "dir")?).await?;
+    fs.write_new(&child(&root, "run.sh")?, b"#!/bin/sh\n", FileMode(0o755))
+        .await?;
+    fs.write_new(
+        &child(&child(&root, "dir")?, "inner.txt")?,
+        b"inner",
+        FileMode(0o644),
+    )
+    .await?;
+    let read = |name: &str| {
+        let fs = &fs;
+        let root = &root;
+        let file = RepoPath::parse(name);
+        async move {
+            fs.read_regular(root, &file?)
+                .await
+                .map_err(Box::<dyn Error>::from)
+        }
+    };
+    assert_eq!(
+        read("run.sh").await?,
+        Ok(RegularFile {
+            bytes: b"#!/bin/sh\n".to_vec(),
+            mode: FileMode(0o755),
+        })
+    );
+    assert_eq!(
+        read("dir/inner.txt").await?,
+        Ok(RegularFile {
+            bytes: b"inner".to_vec(),
+            mode: FileMode(0o644),
+        })
+    );
+    assert_eq!(read("dir").await?, Err(RegularFileProblem::NotARegularFile));
+    assert_eq!(read("gone.txt").await?, Err(RegularFileProblem::Missing));
+    assert_eq!(
+        read("gone/deeper.txt").await?,
+        Err(RegularFileProblem::Missing)
+    );
+    assert_eq!(
+        read("run.sh/below").await?,
+        Err(RegularFileProblem::Missing)
+    );
     Ok(())
 }
 

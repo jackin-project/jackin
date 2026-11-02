@@ -9,21 +9,25 @@ use async_trait::async_trait;
 use jackin_core::{
     CommitId, DirEntry, DockerSubcommand, FileKind, FileLock, FileMode, FileSystem, FsError,
     HostPath, LineSink, OutputStream, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec,
-    ProcessStatus, Program, RegularFile, RegularFileProblem, RepoPath, SecretOutput, StdFileSystem,
+    ProcessStatus, Program, RegularFile, RegularFileProblem, RepoPath, RoleName, SecretOutput,
+    StdFileSystem,
 };
 use jackin_image::{
-    BuildStage, BuildxEngine, BuiltImage, ImageError, ImageEvent, ImageRequest, ImageSource,
-    RoleRevision, ensure_image,
+    BuildStage, BuildxEngine, BuiltImage, ImageEngine, ImageError, ImageEvent, ImagePlan,
+    ImageRequest, ImageSource, RoleRevision, ensure_image,
 };
 use jackin_testkit::ScriptedProcessRunner;
 use tokio::sync::{mpsc, oneshot, watch};
-use tokio::time::timeout;
+use tokio::time::{Instant, timeout};
 use tokio_util::sync::CancellationToken;
 
-use crate::support::{DockerModel, Fixture, Outcome, Script, TestResult, guarded, until_role_line};
+use crate::support::{
+    DockerModel, Fixture, Outcome, Script, TestResult, guarded, tag_of, until_role_line,
+};
 
 #[derive(Debug)]
 struct Gate {
+    prefix: &'static str,
     inner: Arc<ScriptedProcessRunner>,
     open: watch::Sender<bool>,
     held: Mutex<Option<String>>,
@@ -40,7 +44,7 @@ impl Gate {
             .iter()
             .find_map(|arg| arg.strip_prefix("--tag="))?
             .to_owned();
-        if !tag.starts_with("jackin.invalid/role/") {
+        if !tag.starts_with(self.prefix) {
             return None;
         }
         let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
@@ -144,8 +148,15 @@ struct Rig {
     contended_tx: mpsc::UnboundedSender<()>,
 }
 
+const ROLE_TAGS: &str = "jackin.invalid/role/";
+const CONSTRUCT_TAGS: &str = "jackin.invalid/construct:";
+
 impl Rig {
     fn new() -> Result<Rig, Box<dyn Error>> {
+        Rig::holding(ROLE_TAGS)
+    }
+
+    fn holding(prefix: &'static str) -> Result<Rig, Box<dyn Error>> {
         let fixture = Fixture::new()?;
         let scripted = Arc::new(ScriptedProcessRunner::new());
         let model = DockerModel::new();
@@ -154,6 +165,7 @@ impl Rig {
         let (arrivals_tx, arrivals) = mpsc::unbounded_channel();
         let (contended_tx, contended) = mpsc::unbounded_channel();
         let gate = Arc::new(Gate {
+            prefix,
             inner: Arc::clone(&scripted),
             open: watch::channel(true).0,
             held: Mutex::new(None),
@@ -191,10 +203,15 @@ impl Rig {
     }
 
     fn builds(&self) -> usize {
+        self.builds_of("")
+    }
+
+    fn builds_of(&self, prefix: &str) -> usize {
         self.scripted
             .seen()
             .iter()
             .filter(|call| call.program == Program::Docker(DockerSubcommand::BuildxBuild))
+            .filter(|call| tag_of(call).is_some_and(|tag| tag.starts_with(prefix)))
             .count()
     }
 }
@@ -406,4 +423,85 @@ async fn the_key_lock_is_released_on_failure_cancel_and_drop_and_waiting_honors_
         waiting_case(&request).await
     })
     .await
+}
+
+#[tokio::test]
+async fn two_roles_that_both_miss_the_construct_build_it_once_and_neither_sees_a_moved_source()
+-> TestResult {
+    guarded(async {
+        let mut rig = Rig::holding(CONSTRUCT_TAGS)?;
+        rig.close();
+        let first_request = rig.fixture.request()?;
+        let mut second_request = first_request.clone();
+        second_request.role = RoleName::parse("other")?;
+        let (first, second) = (rig.engine(), rig.engine());
+        let (start_second, start) = oneshot::channel::<()>();
+        let cancel = CancellationToken::new();
+        let a = call(&first, &first_request, &cancel);
+        let b = async {
+            start.await?;
+            Ok::<_, Box<dyn Error>>(call(&second, &second_request, &cancel).await)
+        };
+        let driver = async {
+            rig.arrivals
+                .recv()
+                .await
+                .ok_or("the first call never built the construct")?;
+            start_second
+                .send(())
+                .map_err(|()| "the second call is gone")?;
+            let verdict = tokio::select! {
+                held = rig.contended.recv() => held.map(|()| None).ok_or("the signal closed"),
+                again = rig.arrivals.recv() => Ok(again),
+            };
+            rig.release();
+            Ok::<_, Box<dyn Error>>(verdict?)
+        };
+        let (a, b, driver) = tokio::join!(a, b, driver);
+        if let Some(tag) = driver? {
+            return Err(format!("the second call also reached the construct build {tag}").into());
+        }
+        let (a, b) = (a?, b??);
+        assert_eq!(a.source, ImageSource::Built);
+        assert_eq!(b.source, ImageSource::Built);
+        assert_ne!(a.tag, b.tag);
+        assert_eq!(rig.builds_of(CONSTRUCT_TAGS), 1, "construct builds");
+        assert_eq!(rig.builds(), 5, "builds the runner saw");
+        assert_eq!(rig.model.images().len(), 5, "{:?}", rig.model.images());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test(start_paused = true)]
+async fn waiting_behind_a_live_peer_gives_up_after_3600_seconds_with_the_construct_key()
+-> TestResult {
+    let rig = Rig::new()?;
+    let request = rig.fixture.request()?;
+    let construct = ImagePlan::new(&request)?.construct_build().tag.clone();
+    let peer = rig.engine();
+    let held = peer
+        .hold(&construct, &CancellationToken::new())
+        .await?
+        .ok_or("the peer got no lock")?;
+    let engine = rig.engine();
+    let started = Instant::now();
+    let result = timeout(
+        Duration::from_secs(3700),
+        call(&engine, &request, &CancellationToken::new()),
+    )
+    .await
+    .map_err(|_| "no LockTimeout within 3700 s of paused time")?;
+    let waited = started.elapsed();
+    match result {
+        Err(ImageError::LockTimeout { key }) => assert_eq!(key, construct),
+        other => return Err(format!("expected LockTimeout, got {other:?}").into()),
+    }
+    assert!(
+        waited >= Duration::from_secs(3600) && waited < Duration::from_secs(3700),
+        "waited {waited:?}"
+    );
+    assert_eq!(rig.builds(), 0, "builds the runner saw");
+    drop(held);
+    Ok(())
 }

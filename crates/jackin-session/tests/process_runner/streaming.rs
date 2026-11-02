@@ -213,7 +213,7 @@ async fn a_single_output_line_is_cut_at_64_kib_with_a_mark_and_the_next_line_arr
 -> TestResult {
     guarded(async {
         let scratch = Scratch::new()?;
-        let body = "for n in 65535 65536 65537; do head -c $n /dev/zero | tr '\\0' a; echo; done\necho next\nprintf last\nhead -c 1048576 /dev/zero | tr '\\0' e >&2\necho >&2\necho after-err >&2\n";
+        let body = "for n in 65535 65536; do head -c $n /dev/zero | tr '\\0' a; echo; done\nhead -c 65536 /dev/zero | tr '\\0' a; echo z\necho next\nprintf last\nhead -c 1048576 /dev/zero | tr '\\0' e >&2\necho >&2\necho after-err >&2\n";
         let (output, lines) = streamed(&scratch.spec(body, &[])?).await?;
         assert_eq!(output.status, ProcessStatus::Exited(0));
         let full = "a".repeat(LINE_LIMIT);
@@ -229,13 +229,22 @@ async fn a_single_output_line_is_cut_at_64_kib_with_a_mark_and_the_next_line_arr
             [err_cut.as_str(), "after-err"]
         );
         let mut raw_out = Vec::new();
-        for n in [LINE_LIMIT - 1, LINE_LIMIT, LINE_LIMIT + 1] {
+        for n in [LINE_LIMIT - 1, LINE_LIMIT] {
             raw_out.extend(std::iter::repeat_n(b'a', n));
             raw_out.push(b'\n');
         }
-        raw_out.extend_from_slice(b"next\nlast");
+        raw_out.extend(std::iter::repeat_n(b'a', LINE_LIMIT));
+        raw_out.extend_from_slice(b"z\nnext\nlast");
         assert_eq!(output.stdout.len(), LINE_LIMIT, "stdout tail length");
-        assert!(raw_out.ends_with(&output.stdout), "stdout tail is a raw suffix");
+        same_bytes(
+            "stdout tail is the raw suffix",
+            &output.stdout,
+            &raw_out[raw_out.len() - LINE_LIMIT..],
+        )?;
+        assert!(
+            output.stdout.ends_with(b"az\nnext\nlast"),
+            "stdout tail ends az, next, last"
+        );
         assert_eq!(output.stderr.len(), LINE_LIMIT, "stderr tail length");
         assert!(output.stderr.ends_with(b"\nafter-err\n"));
 
@@ -374,6 +383,15 @@ async fn unstreamed_output_beyond_16_mib_per_stream_fails_with_output_too_large_
             let scratch = Scratch::new()?;
             names(&too_large(&scratch, &body, secret).await?, stream)?;
         }
+
+        let both = Scratch::new()?;
+        let body = "head -c 10485760 /dev/zero\nhead -c 10485760 /dev/zero >&2\n";
+        let output = TokioProcessRunner
+            .run(&both.spec(body, &[])?, None, &CancellationToken::new())
+            .await?;
+        assert_eq!(output.status, ProcessStatus::Exited(0));
+        assert_eq!(output.stdout.len(), 10 * 1024 * 1024, "stdout length");
+        assert_eq!(output.stderr.len(), 10 * 1024 * 1024, "stderr length");
 
         let endless = Scratch::new()?;
         let body = format!("{LOOP_DETACHED}{WAIT_FOR}wait_for \"$d/beat\"\nyes\n");
