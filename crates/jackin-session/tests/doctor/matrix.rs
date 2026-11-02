@@ -6,12 +6,27 @@ use jackin_session::CheckId;
 use jackin_session::CheckStatus::{Fail, Pass, Skip, Warn};
 use jackin_testkit::{ProcessReply, TestResult, guard};
 
-use super::support::{Access, Health, Setup, expected, run, statuses};
+use super::support::{Access, Health, Setup, Socket, expected, run, statuses};
 
 #[tokio::test]
 async fn healthy_fakes_pass_every_check_in_order() -> TestResult {
     guard(async {
         let outcome = run(Setup::healthy()).await?;
+        assert_eq!(statuses(&outcome.report), expected([Pass; 7]));
+        assert!(outcome.report.is_healthy());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_symlink_to_a_live_socket_passes_like_the_socket_itself() -> TestResult {
+    guard(async {
+        let outcome = run(Setup {
+            socket: Socket::BehindSymlink,
+            ..Setup::healthy()
+        })
+        .await?;
         assert_eq!(statuses(&outcome.report), expected([Pass; 7]));
         assert!(outcome.report.is_healthy());
         Ok(())
@@ -127,7 +142,39 @@ async fn each_problem_flips_only_its_own_check_and_nothing_is_repaired() -> Test
             (
                 "no socket",
                 Setup {
-                    socket: false,
+                    socket: Socket::Missing,
+                    ..Setup::healthy()
+                },
+                [Pass, Pass, Pass, Pass, Pass, Pass, Warn],
+            ),
+            (
+                "a symlink to a removed target",
+                Setup {
+                    socket: Socket::Dangling,
+                    ..Setup::healthy()
+                },
+                [Pass, Pass, Pass, Pass, Pass, Pass, Warn],
+            ),
+            (
+                "a regular file",
+                Setup {
+                    socket: Socket::RegularFile,
+                    ..Setup::healthy()
+                },
+                [Pass, Pass, Pass, Pass, Pass, Pass, Warn],
+            ),
+            (
+                "a directory",
+                Setup {
+                    socket: Socket::Directory,
+                    ..Setup::healthy()
+                },
+                [Pass, Pass, Pass, Pass, Pass, Pass, Warn],
+            ),
+            (
+                "a symlink loop",
+                Setup {
+                    socket: Socket::Loop,
                     ..Setup::healthy()
                 },
                 [Pass, Pass, Pass, Pass, Pass, Pass, Warn],

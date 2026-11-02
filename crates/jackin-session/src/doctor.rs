@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use jackin_core::{
-    Compatibility, FileSystem, GatewayName, HostPath, ProcessRunner, ProcessSpec, ProcessStatus,
-    ProcessStdin, Program, TerminalText,
+    Compatibility, FileKind, FileSystem, GatewayName, HostPath, ProcessRunner, ProcessSpec,
+    ProcessStatus, ProcessStdin, Program, TerminalText,
 };
 use jackin_openshell::{Gateway, GatewayError, registered_gateways};
 use tokio_util::sync::CancellationToken;
@@ -212,8 +212,13 @@ async fn gateway_checks(input: &DoctorInput<'_>, cancel: &CancellationToken) -> 
 }
 
 async fn engine(input: &DoctorInput<'_>) -> Check {
-    match input.fs.stat(&input.engine_socket).await {
-        Ok(Some(_)) => check(CheckId::EngineSocket, CheckStatus::Pass, "present"),
+    match input.fs.stat_following(&input.engine_socket).await {
+        Ok(Some(FileKind::Socket)) => check(CheckId::EngineSocket, CheckStatus::Pass, "present"),
+        Ok(Some(_)) => check(
+            CheckId::EngineSocket,
+            CheckStatus::Warn,
+            "the engine socket path is not a socket; the Docker capability and image builds need it",
+        ),
         Ok(None) => check(
             CheckId::EngineSocket,
             CheckStatus::Warn,

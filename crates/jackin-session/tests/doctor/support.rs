@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::error::Error;
+use std::os::unix::fs::symlink;
+use std::os::unix::net::UnixListener;
+use std::path::Path;
 
-use jackin_core::{Compatibility, FileMode, FileSystem, GatewayName, HostPath};
+use jackin_core::{Compatibility, GatewayName, HostPath, StdFileSystem};
 use jackin_openshell::{Gateway, GatewayError, GatewayOp};
 use jackin_session::{CheckId, CheckStatus, DoctorInput, DoctorReport, GatewayAccess, doctor};
-use jackin_testkit::{Fault, MemFs, ProcessReply, ScriptedProgram, World};
+use jackin_testkit::{Fault, ProcessReply, ScriptedProgram, World};
 use tokio_util::sync::CancellationToken;
 
 pub(crate) const ORDER: [CheckId; 7] = [
@@ -31,6 +34,17 @@ pub(crate) enum Health {
     Fails,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Socket {
+    Live,
+    BehindSymlink,
+    Dangling,
+    RegularFile,
+    Directory,
+    Loop,
+    Missing,
+}
+
 pub(crate) struct Setup {
     pub(crate) openshell: ProcessReply,
     pub(crate) ssh: ProcessReply,
@@ -38,7 +52,7 @@ pub(crate) struct Setup {
     pub(crate) listed: bool,
     pub(crate) access: Access,
     pub(crate) pinned: String,
-    pub(crate) socket: bool,
+    pub(crate) socket: Socket,
     pub(crate) health: Health,
 }
 
@@ -51,7 +65,7 @@ impl Setup {
             listed: true,
             access: Access::Connected,
             pinned: "0.1.6".to_owned(),
-            socket: true,
+            socket: Socket::Live,
             health: Health::Serving,
         }
     }
@@ -60,6 +74,40 @@ impl Setup {
 pub(crate) struct Run {
     pub(crate) report: DoctorReport,
     pub(crate) world: World,
+}
+
+const SOCKET_PATH_LIMIT: usize = 100;
+
+fn engine_socket(
+    kind: Socket,
+) -> Result<(tempfile::TempDir, Option<UnixListener>, HostPath), Box<dyn Error>> {
+    let dir = tempfile::Builder::new().prefix("jk").tempdir_in("/tmp")?;
+    let path = dir.path().join("e.sock");
+    let live = dir.path().join("live.sock");
+    let mut listener = None;
+    match kind {
+        Socket::Live => listener = Some(UnixListener::bind(&path)?),
+        Socket::BehindSymlink => {
+            listener = Some(UnixListener::bind(&live)?);
+            symlink(&live, &path)?;
+        }
+        Socket::Dangling => symlink(dir.path().join("gone.sock"), &path)?,
+        Socket::RegularFile => std::fs::write(&path, b"")?,
+        Socket::Directory => std::fs::create_dir(&path)?,
+        Socket::Loop => {
+            let other = dir.path().join("other.sock");
+            symlink(&other, &path)?;
+            symlink(&path, &other)?;
+        }
+        Socket::Missing => {}
+    }
+    assert!(
+        path.as_os_str().len() < SOCKET_PATH_LIMIT,
+        "the socket path {} is too long for a unix socket",
+        path.display()
+    );
+    let host = HostPath::parse(Path::new(&path))?;
+    Ok((dir, listener, host))
 }
 
 pub(crate) async fn run(setup: Setup) -> Result<Run, Box<dyn Error>> {
@@ -92,13 +140,8 @@ pub(crate) async fn run(setup: Setup) -> Result<Run, Box<dyn Error>> {
         &["gateway", "list", "-o", "json"],
         ProcessReply::exited(0, list.as_bytes(), b""),
     );
-    let fs = MemFs::new();
-    let socket = HostPath::parse(std::path::Path::new("/run/docker.sock"))?;
-    if setup.socket {
-        fs.create_dir_all(&HostPath::parse(std::path::Path::new("/run"))?)
-            .await?;
-        fs.write_new(&socket, b"", FileMode(0o600)).await?;
-    }
+    let fs = StdFileSystem::default();
+    let (_dir, _listener, socket) = engine_socket(setup.socket)?;
     let pinned = Compatibility {
         openshell_version: setup.pinned,
         ..Compatibility::pinned()?
