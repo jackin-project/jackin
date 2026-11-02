@@ -4,9 +4,13 @@
 use std::time::Duration;
 
 use jackin_core::{
-    Config, LabelError, LabelSelector, Labels, Phase, SandboxLabels, SandboxName, SandboxSummary,
+    ClosureViolationView, Config, InspectView, LabelError, LabelSelector, Labels, Phase,
+    PolicyStatus, SandboxLabels, SandboxName, SandboxSummary, SupervisorReading, sandbox_layout,
 };
-use jackin_openshell::{GatewayError, PowerAction, SandboxQuery, SandboxView};
+use jackin_openshell::{
+    ClosureViolation, GatewayError, PowerAction, ProviderProfile, RuleKey, SandboxQuery,
+    SandboxView,
+};
 use thiserror::Error;
 
 use crate::export::WorkState;
@@ -71,6 +75,32 @@ pub enum LifecycleError {
     },
     #[error("the main process of {sandbox:?} has ended: {phase:?}")]
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
+}
+
+const INSPECT_SCHEMA: u32 = 1;
+
+fn violation_view(violation: &ClosureViolation) -> ClosureViolationView {
+    match violation {
+        ClosureViolation::Overlap {
+            rule,
+            host,
+            provider_host,
+        } => ClosureViolationView {
+            rule: rule.to_string(),
+            host: host.to_string(),
+            provider_host: provider_host.to_string(),
+        },
+        ClosureViolation::UnparsableHost { rule, host } => ClosureViolationView {
+            rule: rule.to_string(),
+            host: host.clone(),
+            provider_host: String::new(),
+        },
+        ClosureViolation::InvalidPort { rule, port } => ClosureViolationView {
+            rule: rule.to_string(),
+            host: format!("port {port}"),
+            provider_host: String::new(),
+        },
+    }
 }
 
 fn summary(view: &SandboxView) -> Result<SandboxSummary, LifecycleError> {
@@ -141,6 +171,59 @@ impl Session {
             }
         }
         Ok(listing)
+    }
+
+    pub async fn inspect(&self, sandbox: &SandboxName) -> Result<InspectView, LifecycleError> {
+        let detail = match self.deps.gateway.sandbox_detail(sandbox).await {
+            Ok(detail) if detail.view.labels.is_managed() => detail,
+            Ok(_) | Err(GatewayError::NotFound { .. }) => {
+                return Err(LifecycleError::NotFound(sandbox.clone()));
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let labels = labelled(sandbox, &detail.view.labels)?;
+        let generated: Vec<RuleKey> = detail
+            .providers
+            .iter()
+            .map(RuleKey::provider_rule)
+            .collect();
+        let mut violations = Vec::new();
+        for asset in labels.planned.agent.spec().profiles() {
+            if let Ok(profile) = ProviderProfile::parse(asset) {
+                violations.extend(
+                    detail
+                        .policy
+                        .document
+                        .closure_violations(&profile, &generated),
+                );
+            }
+        }
+        let supervisor = if detail.view.phase == Phase::Ready {
+            let mut found = self
+                .deps
+                .gateway
+                .read_files(sandbox, std::slice::from_ref(&sandbox_layout::RUN_STATE))
+                .await?;
+            crate::launch::probe::reading(found.pop().flatten().as_deref())
+        } else {
+            SupervisorReading::Unreadable
+        };
+        Ok(InspectView {
+            schema: INSPECT_SCHEMA,
+            summary: SandboxSummary {
+                name: detail.view.name.clone(),
+                labels,
+                phase: detail.view.phase,
+            },
+            providers: detail.providers.clone(),
+            policy: PolicyStatus {
+                hash: (!detail.policy.hash.is_empty()).then(|| detail.policy.hash.clone()),
+                version: (detail.policy.version > 0).then_some(detail.policy.version),
+                loaded: detail.policy.loaded,
+            },
+            closure_violations: violations.iter().map(violation_view).collect(),
+            supervisor,
+        })
     }
 
     pub async fn power(

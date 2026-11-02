@@ -9,7 +9,7 @@ use jackin_core::{
     ImageTag, Labels, Phase, ProfileId, ProviderName, SandboxName, SandboxPath, TerminalText,
 };
 use jackin_openshell::{
-    GatewayError, GatewayOp, ProviderProfile, Provisioning, SandboxCreate, SandboxView,
+    GatewayError, GatewayOp, NetworkRule, ProviderProfile, Provisioning, SandboxCreate, SandboxView,
 };
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
@@ -169,6 +169,7 @@ pub(super) struct Sandbox {
     pub(super) supervisor: Option<Supervisor>,
     pub(super) runs: Vec<(SandboxPath, RunRecord)>,
     pub(super) shown: Option<Labels>,
+    pub(super) live_rules: Vec<NetworkRule>,
 }
 
 impl Cell {
@@ -208,6 +209,7 @@ impl Sandbox {
             supervisor,
             runs: Vec::new(),
             shown: None,
+            live_rules: Vec::new(),
         }
     }
 

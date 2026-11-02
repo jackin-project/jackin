@@ -223,6 +223,12 @@ impl FakeGateway {
         Ok(())
     }
 
+    pub fn add_live_rule(&self, name: &SandboxName, rule: NetworkRule) {
+        if let Some(cell) = self.registry().sandboxes.get(name) {
+            cell.state().live_rules.push(rule);
+        }
+    }
+
     pub fn install_file(&self, path: &SandboxPath, bytes: Vec<u8>) {
         self.registry().installed.insert(path.clone(), bytes);
     }
@@ -637,7 +643,7 @@ impl Gateway for FakeGateway {
         tokio::task::yield_now().await;
         let cell = self.cell(GatewayOp::Detail, name)?;
         let view = observed(&cell);
-        let (spec, ready) = {
+        let (spec, ready, live) = {
             let state = cell.state();
             (
                 state.spec.clone(),
@@ -645,9 +651,11 @@ impl Gateway for FakeGateway {
                     state.provisioning,
                     jackin_openshell::Provisioning::Failed { .. }
                 ) && state.phase != Phase::Provisioning,
+                state.live_rules.clone(),
             )
         };
-        let rules = self.generated_rules(&spec);
+        let mut rules = self.generated_rules(&spec);
+        rules.extend(live);
         let version = if rules.is_empty() { 1 } else { 2 };
         let mut document = spec.policy().clone();
         for rule in rules {
