@@ -143,6 +143,13 @@ impl Program {
             Self::Op => "op",
         }
     }
+
+    pub fn leading_args(self) -> &'static [&'static str] {
+        match self {
+            Self::Docker(subcommand) => subcommand.argv(),
+            Self::Openshell | Self::Git | Self::Ssh | Self::Op => &[],
+        }
+    }
 }
 
 #[derive(Debug)]

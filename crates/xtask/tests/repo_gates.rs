@@ -1099,7 +1099,7 @@ mod containers {
     }
 
     #[test]
-    fn non_literal_command_new_is_allowed_in_xtask_only_and_literals_stay_checked() -> TestResult {
+    fn non_literal_command_new_is_allowed_in_xtask_and_the_session_host_file_only() -> TestResult {
         let tool = text(&[
             "fn a() {",
             "    let x = Command::new(cargo_program());",
@@ -1111,14 +1111,27 @@ mod containers {
         let tests =
             "fn r() {\n    let c = Command::new(env!(\"CARGO_BIN_EXE_jackin-xtask\"));\n}\n";
         let session = "fn y(program: P) {\n    let z = Command::new(program);\n}\n";
+        let host = text(&[
+            "fn c(spec: &ProcessSpec) {",
+            "    let ok = Command::new(spec.program.binary());",
+            "    let bad1 = Command::new(\"docker\");",
+            "    let bad2 = Command::new(\"podman\");",
+            "    let value = Command::new;",
+            "}",
+        ]);
         let violations = run(&[
             ("crates/xtask/src/tool.rs", &tool),
             ("crates/xtask/tests/run.rs", tests),
             ("crates/jackin-session/src/y.rs", session),
+            ("crates/jackin-session/src/host.rs", &host),
+            ("crates/jackin-session/src/launch.rs", session),
         ])?;
         assert_eq!(
             summary(&violations),
             [
+                at(CiStep::Containers, "crates/jackin-session/src/host.rs", 3),
+                at(CiStep::Containers, "crates/jackin-session/src/host.rs", 4),
+                at(CiStep::Containers, "crates/jackin-session/src/launch.rs", 2),
                 at(CiStep::Containers, "crates/jackin-session/src/y.rs", 2),
                 at(CiStep::Containers, "crates/xtask/src/tool.rs", 4),
                 at(CiStep::Containers, "crates/xtask/src/tool.rs", 5),

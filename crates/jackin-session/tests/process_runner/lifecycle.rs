@@ -1,0 +1,130 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::time::{Duration, Instant};
+
+use jackin_core::{OutputLine, OutputStream, ProcessError, ProcessRunner, ProcessStatus, Program};
+use jackin_session::TokioProcessRunner;
+use tokio::sync::mpsc;
+use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
+
+use crate::support::{
+    LOOP_DETACHED, LOOP_HOLDING, Scratch, TestResult, assert_no_leftover, guarded, next_line,
+    wait_for_beat,
+};
+
+#[tokio::test]
+async fn a_timeout_kills_the_child_and_every_descendant_and_reports_the_configured_limit()
+-> TestResult {
+    guarded(async {
+        let scratch = Scratch::new()?;
+        let mut spec = scratch.spec(&format!("{LOOP_DETACHED}echo ready\nwait\n"), &[])?;
+        spec.timeout = Duration::from_secs(3);
+        let (tx, mut rx) = mpsc::channel::<OutputLine>(8);
+        let cancel = CancellationToken::new();
+        let started = Instant::now();
+        let run = async {
+            let result = TokioProcessRunner.run(&spec, Some(&tx), &cancel).await;
+            drop(tx);
+            result
+        };
+        let collect = async {
+            let mut seen = Vec::new();
+            while let Some(line) = rx.recv().await {
+                seen.push((line.stream, line.text));
+            }
+            seen
+        };
+        let (result, seen) = tokio::join!(run, collect);
+        let elapsed = started.elapsed();
+        match result {
+            Err(ProcessError::Timeout { program, after }) => {
+                assert_eq!(program, Program::Git);
+                assert_eq!(after, Duration::from_secs(3), "the configured limit");
+            }
+            other => return Err(format!("expected Timeout, got {other:?}").into()),
+        }
+        assert!(
+            elapsed >= Duration::from_secs(3),
+            "returned after {elapsed:?}"
+        );
+        assert!(
+            seen.contains(&(OutputStream::Stdout, "ready".to_owned())),
+            "the child never ran: {seen:?}"
+        );
+        assert_no_leftover(scratch.root()).await?;
+
+        let holding = Scratch::new()?;
+        let spec = holding.spec(&format!("{LOOP_HOLDING}echo ready\n"), &[])?;
+        let started = Instant::now();
+        let output = TokioProcessRunner
+            .run(&spec, None, &CancellationToken::new())
+            .await?;
+        let elapsed = started.elapsed();
+        assert_eq!(output.status, ProcessStatus::Exited(0));
+        assert!(
+            elapsed >= Duration::from_secs(2) && elapsed < Duration::from_secs(6),
+            "a pipe-holding descendant ended the call after {elapsed:?}"
+        );
+        assert_no_leftover(holding.root()).await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn cancel_kills_the_child_and_every_descendant_and_reports_cancelled() -> TestResult {
+    guarded(async {
+        let scratch = Scratch::new()?;
+        let body = format!("{LOOP_HOLDING}echo ready\nwait\n");
+        let mut spec = scratch.spec(&body, &[])?;
+        spec.timeout = Duration::from_secs(120);
+        let (tx, mut rx) = mpsc::channel::<OutputLine>(8);
+        let cancel = CancellationToken::new();
+        let run = TokioProcessRunner.run(&spec, Some(&tx), &cancel);
+        let driver = async {
+            let line = next_line(&mut rx, "the ready line before the cancel").await?;
+            assert_eq!(line.text, "ready");
+            wait_for_beat(scratch.root()).await?;
+            cancel.cancel();
+            Ok::<_, Box<dyn std::error::Error>>(())
+        };
+        let (result, driven) = tokio::join!(run, driver);
+        driven?;
+        match result {
+            Err(ProcessError::Cancelled { program }) => assert_eq!(program, Program::Git),
+            other => return Err(format!("expected Cancelled, got {other:?}").into()),
+        }
+        assert_no_leftover(scratch.root()).await?;
+
+        let before = Scratch::new()?;
+        let spec = before.spec(&format!("{LOOP_DETACHED}wait\n"), &[])?;
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        match TokioProcessRunner.run(&spec, None, &cancelled).await {
+            Err(ProcessError::Cancelled { program }) => assert_eq!(program, Program::Git),
+            other => return Err(format!("expected Cancelled, got {other:?}").into()),
+        }
+        sleep(Duration::from_millis(300)).await;
+        assert!(
+            !before.root().join("beat").exists(),
+            "a child ran for a token that was cancelled before the call"
+        );
+
+        let dropped = Scratch::new()?;
+        let spec = dropped.spec(&format!("{LOOP_HOLDING}echo ready\nwait\n"), &[])?;
+        let (tx, mut rx) = mpsc::channel::<OutputLine>(8);
+        let cancel = CancellationToken::new();
+        let run = TokioProcessRunner.run(&spec, Some(&tx), &cancel);
+        let ready = async {
+            next_line(&mut rx, "the ready line before the drop").await?;
+            wait_for_beat(dropped.root()).await
+        };
+        tokio::select! {
+            result = run => return Err(format!("the run ended on its own: {result:?}").into()),
+            ready = ready => ready?,
+        }
+        assert_no_leftover(dropped.root()).await
+    })
+    .await
+}

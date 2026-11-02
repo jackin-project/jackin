@@ -1981,8 +1981,10 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "jackin-core",
+ "jackin-testkit",
  "regex",
  "sha2 0.11.1",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
@@ -2016,10 +2018,16 @@ dependencies = [
 name = "jackin-session"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "jackin-core",
  "jackin-image",
  "jackin-openshell",
+ "rustix",
+ "tempfile",
  "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "zeroize",
 ]
 
 [[package]]
