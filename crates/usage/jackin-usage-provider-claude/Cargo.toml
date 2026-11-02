@@ -10,7 +10,6 @@ rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
 description = "Claude/Anthropic OAuth usage snapshots and spend windows for broker-owned refreshes."
 license.workspace = true
-readme = "README.md"
 publish = false
 
 repository.workspace = true

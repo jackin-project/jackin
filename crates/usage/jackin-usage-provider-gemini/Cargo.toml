@@ -11,7 +11,6 @@ rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
 description = "Gemini CLI eligibility and project-quota snapshots: consumer-OAuth retirement, entitlement parsing, and quota buckets."
 license.workspace = true
-readme = "README.md"
 publish = false
 
 repository.workspace = true

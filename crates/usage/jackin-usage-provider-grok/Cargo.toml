@@ -11,7 +11,6 @@ rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
 description = "Grok/xAI usage snapshot collection: billing fetch, RPC transport, and cycle views."
 license.workspace = true
-readme = "README.md"
 publish = false
 
 repository.workspace = true

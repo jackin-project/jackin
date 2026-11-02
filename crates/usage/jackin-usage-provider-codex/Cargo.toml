@@ -10,7 +10,6 @@ rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
 description = "Codex/OpenAI usage snapshot collection: OAuth, RPC, and profile snapshots."
 license.workspace = true
-readme = "README.md"
 publish = false
 
 repository.workspace = true

@@ -10,7 +10,6 @@ rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
 description = "OpenCode Go subscription-limit adapter: API-key loading, zen/go usage fetch, and rolling/weekly/monthly quota views."
 license.workspace = true
-readme = "README.md"
 publish = false
 
 repository.workspace = true
