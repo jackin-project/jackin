@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    AttemptId, EnvFile, EnvFileError, EnvName, HookKind, LaunchId, Phase, SandboxLabels,
-    SandboxName, StartRequest, SupervisorReading, SupervisorState, TerminalText, sandbox_layout,
+    AttemptId, EnvFileError, EnvName, FileLock, FsError, HookKind, HostPath, LaunchId, PathError,
+    Phase, SandboxLabels, SandboxName, StartRequest, SupervisorReading, SupervisorState,
+    TerminalText, sandbox_layout,
 };
 use jackin_openshell::{
     Gateway, GatewayError, GatewayOp, InputMode, Missing, RepaintPolicy, SandboxFile,
@@ -17,9 +19,9 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::launch::hooks::{self, HookRun};
-use crate::launch::probe::reading;
 use crate::launch::{AttachTarget, LaunchEvent, LaunchEvents, LaunchStep, StepResult};
 use crate::service::{POLL, Session};
+use crate::state::{EnvReadError, env_file, run_state};
 
 const REPAINT_NUDGE: Duration = Duration::from_millis(600);
 const REQUEST_MODE: jackin_core::FileMode = jackin_core::FileMode(0o600);
@@ -89,6 +91,12 @@ pub enum RestartError {
     },
     #[error("the supervisor state of {sandbox:?} is unreadable")]
     StateUnreadable { sandbox: SandboxName },
+    #[error("another restart of {sandbox:?} is in progress")]
+    Busy { sandbox: SandboxName },
+    #[error(transparent)]
+    Fs(#[from] FsError),
+    #[error(transparent)]
+    Path(#[from] PathError),
     #[error("the {hook:?} hook exited with {exit_code}: {output:?}")]
     HookFailed {
         hook: HookKind,
@@ -206,20 +214,10 @@ impl AttachedTerminal {
 
     async fn running(&self) -> bool {
         matches!(
-            read_state(self.gateway.as_ref(), &self.sandbox).await,
+            run_state(self.gateway.as_ref(), &self.sandbox).await,
             Ok(SupervisorReading::Reported(SupervisorState::Running { .. }))
         )
     }
-}
-
-async fn read_state(
-    gateway: &dyn Gateway,
-    sandbox: &SandboxName,
-) -> Result<SupervisorReading, GatewayError> {
-    let mut found = gateway
-        .read_files(sandbox, std::slice::from_ref(&sandbox_layout::RUN_STATE))
-        .await?;
-    Ok(reading(found.pop().flatten().as_deref()))
 }
 
 enum EnvFailure {
@@ -227,9 +225,13 @@ enum EnvFailure {
     File(EnvFileProblem),
 }
 
-impl From<GatewayError> for EnvFailure {
-    fn from(error: GatewayError) -> EnvFailure {
-        EnvFailure::Gateway(error)
+impl From<EnvReadError> for EnvFailure {
+    fn from(error: EnvReadError) -> EnvFailure {
+        match error {
+            EnvReadError::Gateway(error) => EnvFailure::Gateway(error),
+            EnvReadError::Missing => EnvFailure::File(EnvFileProblem::Missing),
+            EnvReadError::Invalid(error) => EnvFailure::File(EnvFileProblem::Invalid(error)),
+        }
     }
 }
 
@@ -263,26 +265,6 @@ fn launch_of(labels: &jackin_core::Labels) -> Result<LaunchId, EnvFailure> {
         .map_err(|_| EnvFailure::File(EnvFileProblem::NoLaunchLabel))
 }
 
-async fn env_values(
-    gateway: &dyn Gateway,
-    sandbox: &SandboxName,
-    launch: &LaunchId,
-) -> Result<BTreeMap<EnvName, String>, EnvFailure> {
-    let path = sandbox_layout::env_file(launch);
-    let mut found = gateway
-        .read_files(sandbox, std::slice::from_ref(&path))
-        .await?;
-    let bytes = found
-        .pop()
-        .flatten()
-        .ok_or(EnvFailure::File(EnvFileProblem::Missing))?;
-    let invalid = |error| EnvFailure::File(EnvFileProblem::Invalid(error));
-    let text = String::from_utf8(bytes).map_err(|_| invalid(EnvFileError::Syntax { line: 1 }))?;
-    EnvFile::parse(&text)
-        .map(|file| file.values().clone())
-        .map_err(invalid)
-}
-
 fn not_found(sandbox: &SandboxName) -> GatewayError {
     GatewayError::NotFound {
         what: Missing::Sandbox(sandbox.clone()),
@@ -309,7 +291,7 @@ impl Session {
                 size: request.size,
             })
             .await?;
-        let supervisor = read_state(self.deps.gateway.as_ref(), sandbox).await?;
+        let supervisor = run_state(self.deps.gateway.as_ref(), sandbox).await?;
         Ok(AttachedTerminal {
             session,
             gateway: Arc::clone(&self.deps.gateway),
@@ -328,7 +310,7 @@ impl Session {
         let gateway = self.deps.gateway.as_ref();
         let values = async {
             let launch = launch_of(&view.labels)?;
-            env_values(gateway, sandbox, &launch).await
+            Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch).await?)
         }
         .await
         .map_err(|failure| AttachError::env(sandbox, failure))?;
@@ -358,11 +340,36 @@ impl Session {
         require_ready::<RestartError>(view.phase, sandbox)?;
         let values = async {
             let launch = launch_of(&view.labels)?;
-            env_values(gateway, sandbox, &launch).await
+            Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch).await?)
         }
         .await
         .map_err(|failure| RestartError::env(sandbox, failure))?;
-        let state = match read_state(gateway, sandbox).await? {
+        let _held = self.restart_lock(sandbox).await?;
+        self.restartable(sandbox).await?;
+        self.restart_preflight(sandbox, &values, &events, &cancel)
+            .await?;
+        let attempt = self.restartable(sandbox).await?;
+        self.request_attempt(sandbox, attempt, &events, &cancel)
+            .await
+    }
+
+    async fn restart_lock(&self, sandbox: &SandboxName) -> Result<FileLock, RestartError> {
+        let fs = self.deps.host.fs.as_ref();
+        fs.create_dir_all(&self.deps.cache_dir).await?;
+        let path = HostPath::resolve(
+            Path::new(&format!("restart-{sandbox}.lock")),
+            &self.deps.cache_dir,
+        )?;
+        match fs.lock(&path).await {
+            Err(FsError::LockHeld(_)) => Err(RestartError::Busy {
+                sandbox: sandbox.clone(),
+            }),
+            other => Ok(other?),
+        }
+    }
+
+    async fn restartable(&self, sandbox: &SandboxName) -> Result<AttemptId, RestartError> {
+        let state = match run_state(self.deps.gateway.as_ref(), sandbox).await? {
             SupervisorReading::Reported(state) => state,
             SupervisorReading::Unreadable | SupervisorReading::Invalid(_) => {
                 return Err(RestartError::StateUnreadable {
@@ -376,15 +383,11 @@ impl Session {
                 attempt,
             });
         }
-        let attempt = state
+        state
             .next_attempt()
             .ok_or_else(|| RestartError::AttemptsExhausted {
                 sandbox: sandbox.clone(),
-            })?;
-        self.restart_preflight(sandbox, &values, &events, &cancel)
-            .await?;
-        self.request_attempt(sandbox, attempt, &events, &cancel)
-            .await
+            })
     }
 
     async fn restart_preflight(
@@ -458,7 +461,7 @@ impl Session {
         let limit = self.deps.limits.attempt;
         let mut waited = Duration::ZERO;
         loop {
-            let seen_state = read_state(gateway, sandbox).await?;
+            let seen_state = run_state(gateway, sandbox).await?;
             if let SupervisorReading::Reported(
                 state @ (SupervisorState::Running { attempt: seen }
                 | SupervisorState::Exited { attempt: seen, .. }),

@@ -1,12 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{
-    HookKind, LaunchId, SandboxName, SupervisorReading, SupervisorState, sandbox_layout,
-};
+use jackin_core::{HookKind, LaunchId, SandboxName, SupervisorReading, sandbox_layout};
 use jackin_openshell::Gateway;
 
 use crate::launch::LaunchError;
+use crate::state::reading;
 
 #[derive(Clone, Debug)]
 pub(super) struct SandboxProbe {
@@ -20,19 +19,6 @@ pub(super) struct SandboxProbe {
 pub(super) struct HookPresence {
     pub(super) setup: bool,
     pub(super) preflight: bool,
-}
-
-pub(crate) fn reading(bytes: Option<&[u8]>) -> SupervisorReading {
-    let Some(bytes) = bytes else {
-        return SupervisorReading::Unreadable;
-    };
-    match std::str::from_utf8(bytes) {
-        Ok(text) => match SupervisorState::parse(text) {
-            Ok(state) => SupervisorReading::Reported(state),
-            Err(error) => SupervisorReading::Invalid(error.to_string()),
-        },
-        Err(_) => SupervisorReading::Invalid("the state is not valid UTF-8".to_owned()),
-    }
 }
 
 pub(super) async fn read(

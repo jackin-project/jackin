@@ -4,14 +4,13 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use jackin_core::{
-    EnvFile, EnvName, HookKind, LaunchId, SandboxName, SandboxPath, TerminalText, sandbox_layout,
-};
+use jackin_core::{EnvName, HookKind, SandboxName, SandboxPath, TerminalText, sandbox_layout};
 use jackin_openshell::{Gateway, GatewayError, ProgramRun, ProgramStdin};
 use tokio_util::sync::CancellationToken;
 
 use crate::attach::RestartError;
 use crate::launch::LaunchError;
+use crate::state::EnvReadError;
 
 #[derive(Debug)]
 pub(crate) enum HookFailure {
@@ -46,6 +45,20 @@ impl From<HookFailure> for LaunchError {
     }
 }
 
+impl From<EnvReadError> for LaunchError {
+    fn from(error: EnvReadError) -> LaunchError {
+        match error {
+            EnvReadError::Gateway(error) => LaunchError::Gateway(error),
+            EnvReadError::Missing => LaunchError::ProbeInvalid {
+                message: "the env file is missing".to_owned(),
+            },
+            EnvReadError::Invalid(error) => LaunchError::ProbeInvalid {
+                message: format!("the env file is invalid: {error}"),
+            },
+        }
+    }
+}
+
 impl From<HookFailure> for RestartError {
     fn from(failure: HookFailure) -> RestartError {
         match failure {
@@ -61,30 +74,6 @@ impl From<HookFailure> for RestartError {
             },
         }
     }
-}
-
-pub(super) async fn read_env(
-    gateway: &dyn Gateway,
-    sandbox: &SandboxName,
-    launch: &LaunchId,
-) -> Result<BTreeMap<EnvName, String>, LaunchError> {
-    let path = sandbox_layout::env_file(launch);
-    let mut found = gateway
-        .read_files(sandbox, std::slice::from_ref(&path))
-        .await?;
-    let bytes = found
-        .pop()
-        .flatten()
-        .ok_or_else(|| LaunchError::ProbeInvalid {
-            message: format!("{} is missing", path.as_str()),
-        })?;
-    let text = String::from_utf8(bytes).map_err(|_| LaunchError::ProbeInvalid {
-        message: format!("{} is not valid UTF-8", path.as_str()),
-    })?;
-    let file = EnvFile::parse(&text).map_err(|error| LaunchError::ProbeInvalid {
-        message: format!("{} is invalid: {error}", path.as_str()),
-    })?;
-    Ok(file.values().clone())
 }
 
 pub(crate) struct HookRun<'a> {

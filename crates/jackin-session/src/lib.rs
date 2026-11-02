@@ -15,6 +15,7 @@ mod plan;
 mod project;
 mod roles;
 mod service;
+mod state;
 
 pub use accounts::*;
 pub use attach::*;

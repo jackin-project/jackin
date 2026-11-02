@@ -570,7 +570,7 @@ impl Run<'_> {
         }
         if plan.setup || plan.preflight {
             let gateway = self.session.deps.gateway.as_ref();
-            let env = hooks::read_env(gateway, sandbox, self.plan.launch_id())
+            let env = crate::state::env_file(gateway, sandbox, self.plan.launch_id())
                 .await
                 .map_err(|error| failed(STEP, error))?;
             let timeout = self.session.deps.limits.hook;

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use jackin_core::{
     ClosureViolationView, Config, InspectView, LabelError, LabelSelector, Labels, Phase,
-    PolicyStatus, SandboxLabels, SandboxName, SandboxSummary, SupervisorReading, sandbox_layout,
+    PolicyStatus, SandboxLabels, SandboxName, SandboxSummary, SupervisorReading,
 };
 use jackin_openshell::{
     ClosureViolation, GatewayError, PolicyError, PowerAction, ProviderProfile, RuleKey,
@@ -200,12 +200,7 @@ impl Session {
             );
         }
         let supervisor = if detail.view.phase == Phase::Ready {
-            let mut found = self
-                .deps
-                .gateway
-                .read_files(sandbox, std::slice::from_ref(&sandbox_layout::RUN_STATE))
-                .await?;
-            crate::launch::probe::reading(found.pop().flatten().as_deref())
+            crate::state::run_state(self.deps.gateway.as_ref(), sandbox).await?
         } else {
             SupervisorReading::Unreadable
         };
