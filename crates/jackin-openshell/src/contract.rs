@@ -908,6 +908,9 @@ async fn scratch_project(dir: &Path) -> Outcome<ProjectRoot> {
             .await
             .map_err(text)?;
     }
+    tokio::fs::symlink("tracked.txt", dir.join("link.txt"))
+        .await
+        .map_err(text)?;
     host_git(dir, &["init", "-q"]).await?;
     host_git(dir, &["add", "tracked.txt", ".gitignore"]).await?;
     ProjectRoot::open(
@@ -954,6 +957,19 @@ async fn upload_tree_checks(
             &format!("the uploaded files are {files:?}, not {expected:?}"),
         )?;
     }
+    let link = ctx
+        .exec(
+            sandbox,
+            "cd \"$1\" && test -L link.txt && readlink link.txt",
+            &["/sandbox/project"],
+            ProgramStdin::Closed,
+            None,
+        )
+        .await?;
+    expect(
+        link.exit_code == 0 && String::from_utf8_lossy(&link.stdout).trim() == "tracked.txt",
+        "the uploaded link.txt is not a symlink to tracked.txt",
+    )?;
     let stale = SandboxFile {
         path: path("/sandbox/project/stale.txt")?,
         mode: FileMode(0o600),

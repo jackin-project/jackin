@@ -16,7 +16,7 @@ async fn has_refs(git: &HostGit<'_>) -> Result<bool, LaunchError> {
             words(&[
                 "for-each-ref",
                 "--count=1",
-                "--exclude=refs/heads/jackin/*",
+                "--exclude=refs/heads/jackin/**",
                 "--format=%(refname)",
                 "refs/heads",
                 "refs/tags",

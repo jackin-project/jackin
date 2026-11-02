@@ -2,14 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
-use jackin_core::{SandboxPath, sandbox_layout};
-use jackin_openshell::GatewayOp;
+use jackin_core::{FileLock, FileMode, HostPath, SandboxPath, SecretBytes, sandbox_layout};
+use jackin_openshell::{Gateway, GatewayOp, SandboxFile};
+use jackin_session::{
+    LaunchEvent, LaunchFeed, LaunchStep, LineDelivery, SkipReason, StepResult, launch_events,
+};
 use jackin_testkit::{Fault, RepoFixture, Trigger};
+use tokio_util::sync::CancellationToken;
 
 use super::oracle::arrived;
 use super::support::{
-    Rig, TestResult, failure, global_config, guard, launch_id, mismatch, path, ready,
+    Outcome, Rig, TestResult, failure, global_config, guard, launch_id, mismatch, path, ready,
 };
 
 fn injected() -> jackin_openshell::GatewayError {
@@ -96,12 +101,12 @@ async fn the_project_directory_is_emptied_but_nothing_outside_it() -> TestResult
             ("/sandbox/.jackin/extra", "extra"),
             ("/sandbox/.codex/note", "note"),
         ] {
-            let file = jackin_openshell::SandboxFile {
+            let file = SandboxFile {
                 path: path(target)?,
-                mode: jackin_core::FileMode(0o600),
-                content: jackin_core::SecretBytes::new(content.as_bytes().to_vec()),
+                mode: FileMode(0o600),
+                content: SecretBytes::new(content.as_bytes().to_vec()),
             };
-            jackin_openshell::Gateway::write_file(gateway.as_ref(), &handle.name(), &file).await?;
+            Gateway::write_file(gateway.as_ref(), &handle.name(), &file).await?;
         }
         let before = outside(&handle.files());
         assert!(before.len() >= 5, "{:?}", before.keys());
@@ -198,6 +203,79 @@ async fn no_marker_is_written_at_a_corrupt_upload_a_failing_step_or_a_mismatch()
         std::fs::remove_file(rig.world.home().as_path().join(".gitconfig"))?;
         ready(rig.launch(1).await?)?;
         assert!(rig.handle(1).await?.file(&marker()).is_some());
+        Ok(())
+    })
+    .await
+}
+
+async fn mark_as_a_peer(rig: &Rig) -> TestResult {
+    let name = rig.handle(1).await?.name();
+    for (target, content) in [
+        ("/sandbox/project/peer.txt", "from the peer"),
+        (marker().as_str(), ""),
+    ] {
+        let file = SandboxFile {
+            path: path(target)?,
+            mode: FileMode(0o600),
+            content: SecretBytes::new(content.as_bytes().to_vec()),
+        };
+        rig.world.gateway.write_file(&name, &file).await?;
+    }
+    Ok(())
+}
+
+async fn as_a_peer(
+    rig: &Rig,
+    feed: &mut LaunchFeed,
+    held: &mut Option<FileLock>,
+) -> Result<Option<StepResult>, Box<dyn std::error::Error>> {
+    let mut upload = None;
+    while let Some(event) = feed.recv().await {
+        match event {
+            LaunchEvent::StepStarted(LaunchStep::Upload) => {
+                mark_as_a_peer(rig).await?;
+                *held = None;
+            }
+            LaunchEvent::StepFinished {
+                step: LaunchStep::Upload,
+                result,
+            } => upload = Some(result),
+            _ => {}
+        }
+    }
+    Ok(upload)
+}
+
+#[tokio::test]
+async fn a_launch_that_waits_for_the_upload_lock_skips_the_upload_when_a_peer_marked_it_meanwhile()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new(base().await?).await?;
+        rig.world.fs.create_dir_all(rig.world.cache_dir()).await?;
+        let lock = HostPath::resolve(
+            Path::new(&format!("upload-{}.lock", launch_id(1))),
+            rig.world.cache_dir(),
+        )?;
+        let mut held = Some(rig.world.fs.lock(&lock).await?);
+        let (events, mut feed) = launch_events(LineDelivery::Reliable);
+        let launched = rig
+            .world
+            .session
+            .launch(rig.plan(1)?, events, CancellationToken::new());
+        let peer = as_a_peer(&rig, &mut feed, &mut held);
+        let (outcome, upload) = tokio::join!(launched, peer);
+        ready(Outcome { result: outcome })?;
+        assert_eq!(
+            upload?,
+            Some(StepResult::Skipped(SkipReason::AlreadyUploaded))
+        );
+        assert!(held.is_none());
+        let handle = rig.handle(1).await?;
+        assert_eq!(
+            handle.file(&path("/sandbox/project/peer.txt")?),
+            Some(b"from the peer".to_vec())
+        );
+        assert!(!handle.root().join("project/.git").exists());
         Ok(())
     })
     .await

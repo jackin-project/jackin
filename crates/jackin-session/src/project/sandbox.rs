@@ -148,7 +148,7 @@ impl Sandbox<'_> {
             self.write(&SHALLOW, shallow).await?;
         }
         if let Some(bundle) = bundle {
-            self.fetch(&facts.head, bundle).await?;
+            self.fetch(bundle).await?;
         }
         self.point(&facts.head).await?;
         for (key, value) in [
@@ -180,13 +180,10 @@ impl Sandbox<'_> {
         Ok(())
     }
 
-    async fn fetch(&self, head: &Head, bundle: &SandboxPath) -> Result<(), LaunchError> {
+    async fn fetch(&self, bundle: &SandboxPath) -> Result<(), LaunchError> {
         let mut args = words(&["fetch", "--quiet", "--update-head-ok", "--no-tags"]);
         args.push(path_arg(bundle));
         args.extend(REFSPECS.map(str::to_owned));
-        if matches!(head, Head::Detached { .. }) {
-            args.push("HEAD".to_owned());
-        }
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
         self.git(ProjectStep::Fetch, &refs, BTreeMap::new()).await?;
         Ok(())

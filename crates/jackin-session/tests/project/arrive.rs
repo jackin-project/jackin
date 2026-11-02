@@ -46,6 +46,25 @@ async fn a_normal_repository_arrives_with_its_files_refs_and_unstaged_changes() 
 }
 
 #[tokio::test]
+async fn symlinks_arrive_as_symlinks_for_a_file_a_directory_and_a_dangling_target() -> TestResult {
+    guard(async {
+        let repo = base().await?;
+        repo.file("real/inner.txt", b"inner\n").await?;
+        let root = repo.root().as_path().to_path_buf();
+        for (name, target) in [
+            ("link.txt", "a.txt"),
+            ("dirlink", "real"),
+            ("dangling", "nowhere"),
+        ] {
+            std::os::unix::fs::symlink(target, root.join(name))?;
+        }
+        repo.commit().await?;
+        arrives(repo, &[]).await
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_linked_worktree_root_arrives_as_a_normal_repository() -> TestResult {
     guard(async {
         let main = base().await?;

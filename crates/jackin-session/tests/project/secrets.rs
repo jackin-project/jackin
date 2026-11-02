@@ -34,6 +34,7 @@ async fn no_jackin_ref_reaches_the_sandbox_even_after_an_export_between_two_laun
             .await?;
         repo.file("a.txt", b"only on the exported branch\n").await?;
         repo.commit().await?;
+        let exported = repo.git(&["rev-parse", "HEAD"]).await?;
         repo.git(&["checkout", "-q", "main"]).await?;
         let rig = Rig::new(repo).await?;
         ready(rig.launch(1).await?)?;
@@ -43,6 +44,12 @@ async fn no_jackin_ref_reaches_the_sandbox_even_after_an_export_between_two_laun
             .map(str::to_owned)
             .into();
         assert_eq!(branch_refs(&project)?, expected);
+        assert!(
+            !run(&project, &["cat-file", "-e", exported.trim()])?
+                .status
+                .success(),
+            "the commit of a jackin branch is in the sandbox object store"
+        );
         arrived(rig.repo.root().as_path(), &first.root(), &[])?;
 
         let source = project.display().to_string();
@@ -89,6 +96,26 @@ async fn a_host_head_on_a_jackin_branch_arrives_detached_at_its_commit() -> Test
         git(&project, &["fsck", "--full"])?;
         assert_eq!(git(&project, &["status", "--porcelain"])?, "");
         Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_unborn_head_with_only_jackin_branches_launches_unborn_without_a_bundle() -> TestResult {
+    guard(async {
+        let repo = base().await?;
+        repo.git(&["branch", "jackin/old/main"]).await?;
+        repo.git(&["checkout", "-q", "--orphan", "fresh"]).await?;
+        repo.git(&["branch", "-D", "main"]).await?;
+        repo.git(&["rev-parse", "-q", "--verify", "HEAD"])
+            .await
+            .unwrap_err();
+        let rig = Rig::new(repo).await?;
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
+        let project = handle.root().join("project");
+        assert!(branch_refs(&project)?.is_empty());
+        arrived(rig.repo.root().as_path(), &handle.root(), &["?? a.txt"])
     })
     .await
 }
