@@ -60,10 +60,23 @@ impl SandboxHandle {
     }
 
     pub fn files(&self) -> BTreeMap<SandboxPath, Vec<u8>> {
+        self.walk().0
+    }
+
+    pub fn links(&self) -> BTreeMap<SandboxPath, String> {
+        self.walk().1
+    }
+
+    fn walk(
+        &self,
+    ) -> (
+        BTreeMap<SandboxPath, Vec<u8>>,
+        BTreeMap<SandboxPath, String>,
+    ) {
         let root = self.cell.root();
-        let mut found = BTreeMap::new();
-        collect_files(&root, &root, &mut found);
-        found
+        let mut walked = Walked::default();
+        collect(&root, &root, &mut walked);
+        (walked.files, walked.links)
     }
 
     pub fn supervisor(&self) -> Option<SupervisorState> {
@@ -132,7 +145,13 @@ impl SandboxHandle {
     }
 }
 
-fn collect_files(root: &Path, dir: &Path, found: &mut BTreeMap<SandboxPath, Vec<u8>>) {
+#[derive(Default)]
+struct Walked {
+    files: BTreeMap<SandboxPath, Vec<u8>>,
+    links: BTreeMap<SandboxPath, String>,
+}
+
+fn collect(root: &Path, dir: &Path, found: &mut Walked) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -142,13 +161,26 @@ fn collect_files(root: &Path, dir: &Path, found: &mut BTreeMap<SandboxPath, Vec<
             continue;
         };
         if kind.is_dir() {
-            collect_files(root, &path, found);
+            collect(root, &path, found);
+            continue;
+        }
+        let Ok(relative) = path.strip_prefix(root) else {
+            continue;
+        };
+        let Ok(sandbox) = SandboxPath::parse(&format!("/sandbox/{}", relative.to_string_lossy()))
+        else {
+            continue;
+        };
+        if kind.is_symlink() {
+            if let Ok(target) = std::fs::read_link(&path) {
+                found
+                    .links
+                    .insert(sandbox, target.to_string_lossy().into_owned());
+            }
         } else if kind.is_file()
-            && let (Ok(relative), Ok(bytes)) = (path.strip_prefix(root), std::fs::read(&path))
-            && let Ok(sandbox) =
-                SandboxPath::parse(&format!("/sandbox/{}", relative.to_string_lossy()))
+            && let Ok(bytes) = std::fs::read(&path)
         {
-            found.insert(sandbox, bytes);
+            found.files.insert(sandbox, bytes);
         }
     }
 }

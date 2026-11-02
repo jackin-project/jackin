@@ -16,8 +16,8 @@ use jackin_core::{
     SecretBytes, StdFileSystem, Timestamp, poll_until, write_atomic,
 };
 use jackin_testkit::{
-    CapturedFile, FakeClock, FsOp, MemFs, ProcessEffect, ProcessReply, ScriptedProcessRunner,
-    ScriptedProgram, SeenEnv, SeenStdin, TestRunner,
+    CapturedFile, FakeClock, FsOp, HostSnapshot, HostState, MemFs, ProcessEffect, ProcessReply,
+    RepoFixture, ScriptedProcessRunner, ScriptedProgram, SeenEnv, SeenStdin, TestRunner,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -581,6 +581,39 @@ async fn test_runner_runs_git_for_real_and_scripts_the_other_four() -> TestResul
     Ok(())
 }
 
+#[tokio::test]
+async fn a_scripted_git_version_answers_only_git_version_and_any_other_git_call_runs_for_real()
+-> TestResult {
+    const SCRIPTED: &str = "git version 0.0.1-scripted\n";
+    let dir = tempfile::tempdir()?;
+    let runner = TestRunner::new();
+    let cancel = CancellationToken::new();
+    let mut init = spec(Program::Git, &["init", "-q"]);
+    init.cwd = Some(HostPath::parse(dir.path())?);
+    runner.run(&init, None, &cancel).await?;
+    let version = spec(Program::Git, &["--version"]);
+    let mut parse = spec(Program::Git, &["rev-parse", "--git-dir"]);
+    parse.cwd = init.cwd.clone();
+
+    let real = stdout(&runner, &version).await?;
+    assert!(real.starts_with("git version "), "{real}");
+    assert_ne!(real, SCRIPTED);
+
+    runner
+        .scripted()
+        .expect_git_version(ProcessReply::exited(0, SCRIPTED.as_bytes(), b""));
+    assert_eq!(stdout(&runner, &version).await?, SCRIPTED);
+    assert_eq!(stdout(&runner, &parse).await?, ".git\n");
+    let seen: Vec<Vec<String>> = runner
+        .scripted()
+        .seen()
+        .into_iter()
+        .map(|call| call.args)
+        .collect();
+    assert_eq!(seen, [["--version"]]);
+    Ok(())
+}
+
 fn lines(items: &[(OutputStream, &str)]) -> Vec<(OutputStream, String)> {
     items.iter().map(|(s, t)| (*s, (*t).to_owned())).collect()
 }
@@ -874,5 +907,84 @@ async fn a_pre_cancelled_call_is_cancelled_before_any_reply_is_chosen_or_any_eff
     assert_eq!(stdout(&runner, &build).await?, "one");
     assert_eq!(tokio::fs::read(&iidfile).await?, b"sha256:abc\n");
     assert_eq!(runner.seen().len(), 1);
+    Ok(())
+}
+
+async fn snapshot_fixture() -> Result<(RepoFixture, std::path::PathBuf), Box<dyn Error>> {
+    let repo = RepoFixture::new().await?;
+    repo.file("a.txt", b"same\n").await?;
+    repo.file("b.txt", b"same\n").await?;
+    repo.file("dir/c.txt", b"c\n").await?;
+    repo.ignore("link\ndangling\nempty\n").await?;
+    repo.commit().await?;
+    let root = repo.root().as_path().to_path_buf();
+    std::os::unix::fs::symlink("a.txt", root.join("link"))?;
+    Ok((repo, root))
+}
+
+async fn rest(repo: &RepoFixture) -> Result<HostState, Box<dyn Error>> {
+    Ok(HostSnapshot::take(repo.root()).await?.rest)
+}
+
+#[tokio::test]
+async fn a_host_snapshot_is_equal_without_a_change_and_equal_again_after_a_change_is_reverted()
+-> TestResult {
+    let (repo, root) = snapshot_fixture().await?;
+    let base = rest(&repo).await?;
+    assert_eq!(rest(&repo).await?, base);
+    std::fs::create_dir(root.join("empty"))?;
+    std::fs::remove_dir(root.join("empty"))?;
+    std::fs::remove_file(root.join("link"))?;
+    std::os::unix::fs::symlink("a.txt", root.join("link"))?;
+    assert_eq!(rest(&repo).await?, base);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_host_snapshot_sees_an_added_empty_directory() -> TestResult {
+    let (repo, root) = snapshot_fixture().await?;
+    let base = rest(&repo).await?;
+    std::fs::create_dir(root.join("empty"))?;
+    assert_ne!(rest(&repo).await?, base);
+    std::fs::remove_dir(root.join("empty"))?;
+    assert_eq!(rest(&repo).await?, base);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_host_snapshot_sees_a_link_retargeted_to_a_file_with_identical_content() -> TestResult {
+    let (repo, root) = snapshot_fixture().await?;
+    let base = rest(&repo).await?;
+    std::fs::remove_file(root.join("link"))?;
+    std::os::unix::fs::symlink("b.txt", root.join("link"))?;
+    assert_ne!(rest(&repo).await?, base);
+    std::fs::remove_file(root.join("link"))?;
+    std::os::unix::fs::symlink("a.txt", root.join("link"))?;
+    assert_eq!(rest(&repo).await?, base);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_host_snapshot_sees_a_link_replaced_by_a_regular_file_with_identical_content()
+-> TestResult {
+    let (repo, root) = snapshot_fixture().await?;
+    let base = rest(&repo).await?;
+    std::fs::remove_file(root.join("link"))?;
+    std::fs::write(root.join("link"), b"same\n")?;
+    assert_ne!(rest(&repo).await?, base);
+    std::fs::remove_file(root.join("link"))?;
+    std::os::unix::fs::symlink("a.txt", root.join("link"))?;
+    assert_eq!(rest(&repo).await?, base);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_host_snapshot_sees_an_added_dangling_link() -> TestResult {
+    let (repo, root) = snapshot_fixture().await?;
+    let base = rest(&repo).await?;
+    std::os::unix::fs::symlink("nowhere", root.join("dangling"))?;
+    assert_ne!(rest(&repo).await?, base);
+    std::fs::remove_file(root.join("dangling"))?;
+    assert_eq!(rest(&repo).await?, base);
     Ok(())
 }

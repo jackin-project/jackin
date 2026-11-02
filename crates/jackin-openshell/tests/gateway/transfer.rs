@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeSet;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -37,20 +40,33 @@ async fn gateway_with(env: &Env, runner: ScriptedRunner) -> jackin_openshell::Gr
     .unwrap()
 }
 
+const HOOKS_PATH: &str = "/dev/null";
+
+fn git_in(dir: &Path, args: &[&str]) {
+    let status = std::process::Command::new("/usr/bin/git")
+        .args(args)
+        .current_dir(dir)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .stdin(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?}");
+}
+
+async fn open_project(dir: &Path) -> ProjectRoot {
+    let path = HostPath::parse(dir).unwrap();
+    ProjectRoot::open(&StdFileSystem::default(), &path)
+        .await
+        .unwrap()
+}
+
 async fn project() -> (TempDir, ProjectRoot) {
     let dir = TempDir::new().unwrap();
-    let status = tokio::process::Command::new("git")
-        .arg("init")
-        .arg("--quiet")
-        .arg(dir.path())
-        .status()
-        .await
-        .unwrap();
-    assert!(status.success());
-    let path = HostPath::parse(dir.path()).unwrap();
-    let root = ProjectRoot::open(&StdFileSystem::default(), &path)
-        .await
-        .unwrap();
+    git_in(dir.path(), &["init", "--quiet"]);
+    let root = open_project(dir.path()).await;
     (dir, root)
 }
 
@@ -165,11 +181,29 @@ async fn upload_tree_and_upload_file_run_one_scoped_call_each_and_compare_the_fi
     ]);
     assert_scoped(&calls[1], &endpoint, &expected);
     assert!(calls[1].cwd.is_none());
+    let hostile: BTreeSet<(String, String)> = [
+        ("GIT_CONFIG_COUNT", "2"),
+        ("GIT_CONFIG_KEY_0", "core.fsmonitor"),
+        ("GIT_CONFIG_VALUE_0", "false"),
+        ("GIT_CONFIG_KEY_1", "core.hooksPath"),
+        ("GIT_CONFIG_VALUE_1", HOOKS_PATH),
+    ]
+    .map(|(name, value)| (name.to_owned(), value.to_owned()))
+    .into();
     for call in &calls {
         assert_eq!(call.program, Program::Openshell);
         assert!(call.stdin_null && call.has_sink);
         assert_eq!(call.timeout, Duration::from_secs(123));
         call.assert_git_env_isolated();
+        assert_eq!(call.env.iter().cloned().collect::<BTreeSet<_>>(), hostile);
+        assert_eq!(call.env.len(), hostile.len());
+        assert_eq!(
+            call.env_remove_prefixes
+                .iter()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from(["GIT_", "OPENSHELL_"])
+        );
     }
     assert_eq!(
         seen.lock().unwrap().clone(),
@@ -209,6 +243,109 @@ async fn upload_tree_and_upload_file_run_one_scoped_call_each_and_compare_the_fi
         ),
         "{error:?}"
     );
+}
+
+fn model_listing(cwd: &Path, home: &Path, pairs: &[(String, String)]) -> Vec<String> {
+    let output = std::process::Command::new("/usr/bin/git")
+        .args(["ls-files", "-co", "--exclude-standard", "-z"])
+        .current_dir(cwd)
+        .env_clear()
+        .env("HOME", home)
+        .env("PATH", "/usr/bin:/bin")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .envs(pairs.iter().cloned())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap()
+        .wait_with_output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut names: Vec<String> = output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|name| !name.is_empty())
+        .map(|name| String::from_utf8(name.to_vec()).unwrap())
+        .collect();
+    names.sort();
+    names
+}
+
+#[tokio::test]
+async fn the_upload_env_makes_the_cli_git_ignore_a_hostile_project_config_and_keep_the_user_excludes()
+ {
+    let env = env().await;
+    add_sandbox(
+        &mut env.server.state(),
+        TRANSFER_WORKSPACE,
+        TRANSFER_SANDBOX,
+        SandboxPhase::Ready,
+        None,
+        &[],
+    );
+    let home = TempDir::new().unwrap();
+    std::fs::write(
+        home.path().join(".gitconfig"),
+        format!(
+            "[core]\n\texcludesFile = {}\n",
+            home.path().join("ignore").display()
+        ),
+    )
+    .unwrap();
+    std::fs::write(home.path().join("ignore"), "global-ignored.txt\n").unwrap();
+    let work = TempDir::new().unwrap();
+    for name in ["a.txt", "u.txt", "global-ignored.txt"] {
+        std::fs::write(work.path().join(name), name).unwrap();
+    }
+    git_in(work.path(), &["init", "--quiet"]);
+    git_in(work.path(), &["add", "a.txt"]);
+    let marker = home.path().join("marker");
+    let hook = home.path().join("hook.sh");
+    std::fs::write(&hook, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = work.path().join(".git/config");
+    let mut text = std::fs::read_to_string(&config).unwrap();
+    text.push_str(&format!("[core]\n\tfsmonitor = {}\n", hook.display()));
+    std::fs::write(&config, text).unwrap();
+    let root = open_project(work.path()).await;
+
+    let control = model_listing(work.path(), home.path(), &[]);
+    assert!(
+        marker.exists(),
+        "the hostile fsmonitor did not fire in the control run: {control:?}"
+    );
+    std::fs::remove_file(&marker).unwrap();
+
+    let listed = Arc::new(Mutex::new(Vec::new()));
+    let (seen, cwd, home_dir) = (
+        Arc::clone(&listed),
+        work.path().to_path_buf(),
+        home.path().to_path_buf(),
+    );
+    let runner = ScriptedRunner::new(move |call: &Recorded| {
+        if call.args.iter().any(|arg| arg == "upload") {
+            *seen.lock().unwrap() = model_listing(&cwd, &home_dir, &call.env);
+        }
+        Ok(exited(0, b"", b""))
+    });
+    let gateway = gateway_with(&env, runner).await;
+    let dest = SandboxPath::parse("/sandbox/project").unwrap();
+
+    guard(gateway.upload_tree(
+        &sandbox_name(TRANSFER_SANDBOX),
+        &root,
+        &dest,
+        &CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
+    assert!(!marker.exists(), "the project fsmonitor ran");
+    assert_eq!(*listed.lock().unwrap(), ["a.txt", "u.txt"]);
 }
 
 #[tokio::test]
@@ -376,16 +513,21 @@ async fn download_names_the_targets_and_verifies_the_digest() {
         .await
         .unwrap();
     let call = runner.calls().remove(0);
+    let first_temp = std::path::PathBuf::from(call.args.last().unwrap());
+    assert_ne!(first_temp, destination);
+    assert_eq!(first_temp.parent(), destination.parent());
     let mut expected = words(&[
         "sandbox",
         "download",
         TRANSFER_SANDBOX,
         "/sandbox/.jackin/export.bundle",
     ]);
-    expected.push(destination.display().to_string());
+    expected.push(first_temp.display().to_string());
     assert_scoped(&call, &env.server.endpoint(), &expected);
     assert!(call.stdin_null && call.has_sink && call.cwd.is_none());
     assert_eq!(call.timeout, Duration::from_secs(123));
+    assert!(call.env.is_empty(), "{:?}", call.env);
+    assert_eq!(std::fs::read(&destination).unwrap(), bytes);
 
     "0".repeat(64).clone_into(&mut remote_hex.lock().unwrap());
     let error = guard(gateway.download_file(&name, &remote, &local, &cancel))
@@ -401,6 +543,8 @@ async fn download_names_the_targets_and_verifies_the_digest() {
         ),
         "{error:?}"
     );
+    let second_temp = runner.calls()[1].args.last().cloned().unwrap();
+    assert_ne!(second_temp, first_temp.display().to_string());
 
     digest.as_str().clone_into(&mut remote_hex.lock().unwrap());
     remote_exit.store(1, Ordering::SeqCst);
@@ -433,6 +577,16 @@ async fn download_names_the_targets_and_verifies_the_digest() {
         ),
         "{error:?}"
     );
+    assert_eq!(entries(dir.path()), ["export.bundle"]);
+}
+
+fn entries(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
 }
 
 struct Download {
@@ -442,7 +596,13 @@ struct Download {
     sums: String,
 }
 
-type CliReply = Result<i32, ()>;
+#[derive(Clone, Copy)]
+enum CliReply {
+    Exit(i32),
+    Timeout,
+    Cancelled,
+    Oversize,
+}
 
 struct Scenario {
     label: &'static str,
@@ -460,7 +620,7 @@ fn scenarios() -> Vec<Scenario> {
         label,
         size: "12".to_owned(),
         stat_exit: 0,
-        cli: Ok(0),
+        cli: CliReply::Exit(0),
         sums_exit: 0,
         sums_match: true,
         cli_calls: 1,
@@ -503,7 +663,7 @@ fn scenarios() -> Vec<Scenario> {
             })
         },
         Scenario {
-            cli: Ok(1),
+            cli: CliReply::Exit(1),
             ..base("the CLI fails after a partial file", |error| {
                 matches!(
                     error,
@@ -516,8 +676,8 @@ fn scenarios() -> Vec<Scenario> {
             })
         },
         Scenario {
-            cli: Err(()),
-            ..base("the CLI times out", |error| {
+            cli: CliReply::Timeout,
+            ..base("the CLI times out after a partial file", |error| {
                 matches!(
                     error,
                     GatewayError::Timeout {
@@ -526,6 +686,25 @@ fn scenarios() -> Vec<Scenario> {
                     }
                 )
             })
+        },
+        Scenario {
+            cli: CliReply::Cancelled,
+            ..base("the download is cancelled after a partial file", |error| {
+                matches!(
+                    error,
+                    GatewayError::Cancelled {
+                        op: GatewayOp::Download
+                    }
+                )
+            })
+        },
+        Scenario {
+            cli: CliReply::Oversize,
+            sums_exit: 1,
+            ..base(
+                "the file grows past the limit during the download",
+                |error| matches!(error, GatewayError::DownloadTooLarge { size, limit } if *size == FOUR_GIB + 1 && *limit == FOUR_GIB),
+            )
         },
         Scenario {
             sums_exit: 1,
@@ -590,7 +769,8 @@ fn download_backend(plan: &Arc<Mutex<Download>>) -> super::server::ExecBackend {
 }
 
 #[tokio::test]
-async fn a_failed_download_leaves_no_local_file_and_the_size_limit_is_inclusive() {
+async fn a_failed_download_never_touches_the_destination_leaves_no_temp_and_the_size_limit_is_inclusive()
+ {
     let env = env().await;
     add_sandbox(
         &mut env.server.state(),
@@ -615,17 +795,28 @@ async fn a_failed_download_leaves_no_local_file_and_the_size_limit_is_inclusive(
     let remote = SandboxPath::parse("/sandbox/.jackin/export.bundle").unwrap();
     let name = sandbox_name(TRANSFER_SANDBOX);
     let cancel = CancellationToken::new();
-    let cli_reply = Arc::new(Mutex::new(Ok(0)));
+    let cli_reply = Arc::new(Mutex::new(CliReply::Exit(0)));
     let (reply, payload) = (Arc::clone(&cli_reply), bytes.clone());
-    let runner = ScriptedRunner::new(move |call: &Recorded| match *reply.lock().unwrap() {
-        Ok(code) => {
-            std::fs::write(call.args.last().unwrap(), &payload).unwrap();
-            Ok(exited(code, b"", b"cli said no"))
+    let runner = ScriptedRunner::new(move |call: &Recorded| {
+        let target = call.args.last().unwrap();
+        let reply = *reply.lock().unwrap();
+        if matches!(reply, CliReply::Oversize) {
+            let file = std::fs::File::create(target).unwrap();
+            file.set_len(FOUR_GIB + 1).unwrap();
+        } else {
+            std::fs::write(target, &payload).unwrap();
         }
-        Err(()) => Err(ProcessError::Timeout {
-            program: Program::Openshell,
-            after: Duration::from_secs(5),
-        }),
+        match reply {
+            CliReply::Exit(code) => Ok(exited(code, b"", b"cli said no")),
+            CliReply::Oversize => Ok(exited(0, b"", b"")),
+            CliReply::Timeout => Err(ProcessError::Timeout {
+                program: Program::Openshell,
+                after: Duration::from_secs(5),
+            }),
+            CliReply::Cancelled => Err(ProcessError::Cancelled {
+                program: Program::Openshell,
+            }),
+        }
     });
     let gateway = gateway_with(&env, runner.clone()).await;
 
@@ -634,7 +825,14 @@ async fn a_failed_download_leaves_no_local_file_and_the_size_limit_is_inclusive(
         .await
         .unwrap();
     assert_eq!(std::fs::read(&destination).unwrap(), bytes);
+    assert_eq!(entries(dir.path()), ["out.bundle"]);
     assert_eq!(runner.calls().len(), 1);
+    std::fs::remove_file(&destination).unwrap();
+    guard(gateway.download_file(&name, &remote, &local, &cancel))
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&destination).unwrap(), bytes);
+    std::fs::remove_file(&destination).unwrap();
 
     for scenario in scenarios() {
         {
@@ -649,22 +847,23 @@ async fn a_failed_download_leaves_no_local_file_and_the_size_limit_is_inclusive(
             };
         }
         *cli_reply.lock().unwrap() = scenario.cli;
-        std::fs::write(&destination, b"stale").unwrap();
-        let before = runner.calls().len();
-        let error = guard(gateway.download_file(&name, &remote, &local, &cancel))
-            .await
-            .unwrap_err();
-        assert!((scenario.expect)(&error), "{}: {error:?}", scenario.label);
-        assert!(
-            !destination.exists(),
-            "{}: the local file is left",
-            scenario.label
-        );
-        assert_eq!(
-            runner.calls().len() - before,
-            scenario.cli_calls,
-            "{}",
-            scenario.label
-        );
+        for seeded in [true, false] {
+            if seeded {
+                std::fs::write(&destination, b"stale").unwrap();
+            }
+            let before = runner.calls().len();
+            let error = guard(gateway.download_file(&name, &remote, &local, &cancel))
+                .await
+                .unwrap_err();
+            let label = format!("{} (seeded: {seeded})", scenario.label);
+            assert!((scenario.expect)(&error), "{label}: {error:?}");
+            let expected: &[&str] = if seeded { &["out.bundle"] } else { &[] };
+            assert_eq!(entries(dir.path()), expected, "{label}");
+            if seeded {
+                assert_eq!(std::fs::read(&destination).unwrap(), b"stale", "{label}");
+                std::fs::remove_file(&destination).unwrap();
+            }
+            assert_eq!(runner.calls().len() - before, scenario.cli_calls, "{label}");
+        }
     }
 }

@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use jackin_core::{
-    HostPath, ProcessError, ProcessSpec, ProcessStatus, ProcessStdin, Program, ProjectRoot,
-    SandboxName, SandboxPath, Sha256, TerminalText, sandbox_layout,
+    EnvValue, HostPath, ProcessError, ProcessSpec, ProcessStatus, ProcessStdin, Program,
+    ProjectRoot, SandboxName, SandboxPath, Sha256, TerminalText, sandbox_layout,
 };
 use sha2::{Digest, Sha256 as Hasher};
 use tokio::io::AsyncReadExt;
@@ -24,6 +25,50 @@ const DOWNLOAD_LIMIT: u64 = 4 * 1024 * 1024 * 1024;
 const LINE_CAPACITY: usize = 16;
 
 const HEX: &[u8; 16] = b"0123456789abcdef";
+
+const HOSTILE_GIT_CONFIG: [(&str, &str); 2] =
+    [("core.fsmonitor", "false"), ("core.hooksPath", "/dev/null")];
+
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn git_config_env() -> Vec<(String, EnvValue)> {
+    let mut env = vec![(
+        "GIT_CONFIG_COUNT".to_owned(),
+        EnvValue::Plain(HOSTILE_GIT_CONFIG.len().to_string()),
+    )];
+    for (index, (key, value)) in HOSTILE_GIT_CONFIG.iter().enumerate() {
+        env.push((
+            format!("GIT_CONFIG_KEY_{index}"),
+            EnvValue::Plain((*key).to_owned()),
+        ));
+        env.push((
+            format!("GIT_CONFIG_VALUE_{index}"),
+            EnvValue::Plain((*value).to_owned()),
+        ));
+    }
+    env
+}
+
+fn within_limit(size: u64) -> Result<(), GatewayError> {
+    if size > DOWNLOAD_LIMIT {
+        Err(GatewayError::DownloadTooLarge {
+            size,
+            limit: DOWNLOAD_LIMIT,
+        })
+    } else {
+        Ok(())
+    }
+}
+
+fn temp_beside(target: &Path) -> Option<PathBuf> {
+    let (parent, name) = (target.parent()?, target.file_name()?);
+    Some(parent.join(format!(
+        ".{}.jackin-{}-{}",
+        name.to_string_lossy(),
+        std::process::id(),
+        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    )))
+}
 
 fn process_error(error: ProcessError, op: GatewayOp) -> GatewayError {
     match error {
@@ -46,6 +91,7 @@ fn transfer_failure(op: TransferOp, status: ProcessStatus, note: &str) -> Gatewa
 struct CliCall {
     args: Vec<String>,
     cwd: Option<HostPath>,
+    env: Vec<(String, EnvValue)>,
     env_remove_prefixes: Vec<String>,
     step: TransferOp,
     op: GatewayOp,
@@ -65,7 +111,7 @@ impl Inner {
             program: Program::Openshell,
             args: call.args,
             cwd: call.cwd,
-            env: Vec::new(),
+            env: call.env,
             env_remove_prefixes: call.env_remove_prefixes,
             stdin: ProcessStdin::Null,
             timeout: self.transfer_timeout,
@@ -103,6 +149,7 @@ pub(crate) async fn upload_tree(
             CliCall {
                 args,
                 cwd: Some(source.path().clone()),
+                env: git_config_env(),
                 env_remove_prefixes: upload_env_prefixes(),
                 step: TransferOp::UploadFiltered,
                 op: GatewayOp::UploadTree,
@@ -126,6 +173,7 @@ pub(crate) async fn upload_file(
             CliCall {
                 args,
                 cwd: None,
+                env: git_config_env(),
                 env_remove_prefixes: upload_env_prefixes(),
                 step: TransferOp::UploadFile,
                 op: GatewayOp::UploadFile,
@@ -247,27 +295,21 @@ async fn remote_size(
         })
 }
 
-async fn fetch(
+async fn download_into(
     inner: &Inner,
     sandbox: &SandboxName,
     remote: &SandboxPath,
-    local: &HostPath,
+    temp: &Path,
     cancel: &CancellationToken,
 ) -> Result<Sha256, GatewayError> {
-    let size = remote_size(inner, sandbox, remote, cancel).await?;
-    if size > DOWNLOAD_LIMIT {
-        return Err(GatewayError::DownloadTooLarge {
-            size,
-            limit: DOWNLOAD_LIMIT,
-        });
-    }
-    let destination = local.as_path().display().to_string();
+    let destination = temp.display().to_string();
     let args = inner.scope_args().download(sandbox, remote, &destination);
     inner
         .run_cli(
             CliCall {
                 args,
                 cwd: None,
+                env: Vec::new(),
                 env_remove_prefixes: inherited_env_prefixes(),
                 step: TransferOp::Download,
                 op: GatewayOp::Download,
@@ -275,8 +317,11 @@ async fn fetch(
             cancel,
         )
         .await?;
+    if let Ok(landed) = tokio::fs::metadata(temp).await {
+        within_limit(landed.len())?;
+    }
     let expected = remote_digest(inner, sandbox, remote, cancel).await?;
-    let actual = local_digest(local.as_path()).await.map_err(|error| {
+    let actual = local_digest(temp).await.map_err(|error| {
         transfer_failure(
             TransferOp::Download,
             ProcessStatus::Exited(0),
@@ -301,9 +346,30 @@ pub(crate) async fn download_file(
     local: &HostPath,
     cancel: &CancellationToken,
 ) -> Result<Sha256, GatewayError> {
-    let result = fetch(inner, sandbox, remote, local, cancel).await;
-    if result.is_err() {
-        drop(tokio::fs::remove_file(local.as_path()).await);
+    within_limit(remote_size(inner, sandbox, remote, cancel).await?)?;
+    let temp = temp_beside(local.as_path()).ok_or_else(|| {
+        transfer_failure(
+            TransferOp::Download,
+            ProcessStatus::Exited(0),
+            "the download target has no directory or name",
+        )
+    })?;
+    let landed = download_into(inner, sandbox, remote, &temp, cancel).await;
+    let renamed = match landed {
+        Ok(digest) => tokio::fs::rename(&temp, local.as_path())
+            .await
+            .map(|()| digest)
+            .map_err(|error| {
+                transfer_failure(
+                    TransferOp::Download,
+                    ProcessStatus::Exited(0),
+                    &format!("the downloaded file cannot be moved into place: {error}"),
+                )
+            }),
+        Err(error) => Err(error),
+    };
+    if renamed.is_err() {
+        drop(tokio::fs::remove_file(&temp).await);
     }
-    result
+    renamed
 }

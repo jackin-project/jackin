@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
-use std::ffi::OsStr;
-use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -95,6 +93,12 @@ async fn tracked_and_untracked(
         command.env("HOME", home);
     }
     let output = command
+        .args([
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+        ])
         .args(["ls-files", "-z", "-co", "--exclude-standard"])
         .current_dir(source)
         .stdin(Stdio::null())
@@ -144,26 +148,45 @@ fn replace_symlink(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::rename(&temp, to)
 }
 
-fn copy_entry(from: &Path, to: &Path) -> std::io::Result<()> {
-    let kind = std::fs::symlink_metadata(from)?.file_type();
-    if kind.is_symlink() {
-        replace_symlink(from, to)
-    } else if kind.is_dir() {
-        copy_tree(from, to)
-    } else if kind.is_file() {
-        replace_file(from, to)
-    } else {
-        Ok(())
+enum CopyFailure {
+    Unsupported(PathBuf),
+    Io(std::io::Error),
+}
+
+impl From<std::io::Error> for CopyFailure {
+    fn from(error: std::io::Error) -> CopyFailure {
+        CopyFailure::Io(error)
     }
 }
 
-fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+fn copy_entry(from: &Path, to: &Path) -> Result<(), CopyFailure> {
+    let kind = std::fs::symlink_metadata(from)?.file_type();
+    if kind.is_symlink() {
+        Ok(replace_symlink(from, to)?)
+    } else if kind.is_dir() {
+        copy_tree(from, to)
+    } else if kind.is_file() {
+        Ok(replace_file(from, to)?)
+    } else {
+        Err(CopyFailure::Unsupported(from.to_path_buf()))
+    }
+}
+
+fn copy_tree(from: &Path, to: &Path) -> Result<(), CopyFailure> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
         copy_entry(&entry.path(), &to.join(entry.file_name()))?;
     }
     Ok(())
+}
+
+fn upload_failure(note: &str) -> GatewayError {
+    GatewayError::Transfer {
+        op: TransferOp::UploadFiltered,
+        status: ProcessStatus::Exited(1),
+        tail: TerminalText::sanitize(note.as_bytes()),
+    }
 }
 
 pub(super) async fn upload_tree(
@@ -181,19 +204,34 @@ pub(super) async fn upload_tree(
     let dest = writable(root, dest)?;
     let source = source.path().as_path().to_path_buf();
     let names = tracked_and_untracked(&source, home).await?;
+    let paths = names
+        .iter()
+        .map(|name| {
+            std::str::from_utf8(name)
+                .map(PathBuf::from)
+                .map_err(|error| {
+                    upload_failure(&format!("a listed file name is not UTF-8: {error}"))
+                })
+        })
+        .collect::<Result<Vec<PathBuf>, GatewayError>>()?;
     tokio::task::spawn_blocking(move || {
-        for name in names {
-            let relative = Path::new(OsStr::from_bytes(&name));
-            let from = source.join(relative);
+        for relative in paths {
+            let from = source.join(&relative);
             if std::fs::symlink_metadata(&from).is_ok() {
-                copy_entry(&from, &dest.join(relative))?;
+                copy_entry(&from, &dest.join(&relative))?;
             }
         }
-        Ok::<(), std::io::Error>(())
+        Ok::<(), CopyFailure>(())
     })
     .await
     .map_err(protocol)?
-    .map_err(protocol)
+    .map_err(|failure| match failure {
+        CopyFailure::Unsupported(path) => upload_failure(&format!(
+            "unsupported file type for upload: {}",
+            path.display()
+        )),
+        CopyFailure::Io(error) => protocol(error),
+    })
 }
 
 pub(super) async fn upload_file(
@@ -258,11 +296,19 @@ pub(super) async fn edit_host(edit: &super::HostEdit) -> Result<(), GatewayError
     }
 }
 
-pub(super) fn upload_refused(op: TransferOp) -> GatewayError {
+pub(super) fn upload_absent(op: TransferOp) -> GatewayError {
+    refused(op, b"sandbox not found")
+}
+
+pub(super) fn upload_not_ready(op: TransferOp) -> GatewayError {
+    refused(op, b"sandbox is not ready")
+}
+
+fn refused(op: TransferOp, note: &[u8]) -> GatewayError {
     GatewayError::Transfer {
         op,
         status: ProcessStatus::Exited(1),
-        tail: TerminalText::sanitize(b"sandbox not found"),
+        tail: TerminalText::sanitize(note),
     }
 }
 
@@ -305,24 +351,46 @@ pub(super) async fn download_file(
             None => bytes.push(0xff),
         }
     }
-    if let Some(parent) = local.as_path().parent() {
-        tokio::fs::create_dir_all(parent).await.map_err(protocol)?;
+    let Some(parent) = local.as_path().parent() else {
+        return Err(protocol("the download target has no directory"));
+    };
+    tokio::fs::create_dir_all(parent).await.map_err(protocol)?;
+    let temp =
+        temp_beside(local.as_path()).ok_or_else(|| protocol("the download target has no name"))?;
+    let landed = land(&temp, &bytes, &expected, local.as_path()).await;
+    if landed.is_err() {
+        drop(tokio::fs::remove_file(&temp).await);
     }
-    tokio::fs::write(local.as_path(), &bytes)
-        .await
-        .map_err(protocol)?;
-    let written = tokio::fs::read(local.as_path()).await.map_err(protocol)?;
+    landed.map(|()| expected)
+}
+
+fn temp_beside(target: &Path) -> Option<PathBuf> {
+    let (parent, name) = (target.parent()?, target.file_name()?);
+    Some(parent.join(format!(
+        ".{}.jackin-{:016x}",
+        name.to_string_lossy(),
+        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    )))
+}
+
+async fn land(
+    temp: &Path,
+    bytes: &[u8],
+    expected: &Sha256,
+    target: &Path,
+) -> Result<(), GatewayError> {
+    tokio::fs::write(temp, bytes).await.map_err(protocol)?;
+    let written = tokio::fs::read(temp).await.map_err(protocol)?;
     let actual = Sha256::of(&written);
-    if actual == expected {
-        Ok(expected)
-    } else {
-        Err(digest_failure(
+    if actual != *expected {
+        return Err(digest_failure(
             TransferOp::Digest,
             &format!(
                 "sha256 mismatch: the sandbox has {}, the download has {}",
                 expected.as_str(),
                 actual.as_str()
             ),
-        ))
+        ));
     }
+    tokio::fs::rename(temp, target).await.map_err(protocol)
 }

@@ -43,13 +43,14 @@ pub const CORE_CHECKS: [&str; 15] = [
     "delete_sandbox",
 ];
 
-pub const TRANSFER_CHECKS: [&str; 6] = [
+pub const TRANSFER_CHECKS: [&str; 7] = [
     "upload_tree",
     "upload_file_with_digest",
     "download_with_digest",
     "download_missing_remote_is_a_size_error",
     "download_pre_cancelled_is_cancelled",
     "upload_absent_sandbox_is_a_transfer_error",
+    "upload_stopped_sandbox_is_a_transfer_error",
 ];
 
 pub const TERMINAL_CHECKS: [&str; 6] = [
@@ -876,12 +877,14 @@ async fn host_git(dir: &Path, args: &[&str]) -> Outcome<()> {
         args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
     );
     let status = tokio::task::spawn_blocking(move || {
-        std::process::Command::new("git")
+        std::process::Command::new("/usr/bin/git")
             .args(&args)
             .current_dir(&dir)
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
             .env_remove("GIT_INDEX_FILE")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -1067,22 +1070,44 @@ async fn upload_file_with_digest(ctx: &Ctx<'_>) -> Outcome<()> {
     result
 }
 
-async fn upload_absent_sandbox_is_a_transfer_error(ctx: &Ctx<'_>) -> Outcome<()> {
-    let name = SandboxName::new(
-        &ctx.fixture.name_prefix,
-        &NameSuffix::for_launch(&fresh_launch()?),
-    );
-    let dir = scratch_dir("absent")?;
-    tokio::fs::create_dir_all(&dir).await.map_err(text)?;
+fn refused_upload(
+    result: &Result<(), GatewayError>,
+    op: TransferOp,
+    says: &str,
+    not: &str,
+    what: &str,
+) -> Outcome<()> {
+    expect(
+        matches!(
+            result,
+            Err(GatewayError::Transfer {
+                op: got,
+                status: ProcessStatus::Exited(1),
+                tail,
+            }) if *got == op && tail.as_str().contains(says) && !tail.as_str().contains(not)
+        ),
+        &format!("{what} is not a Transfer error with exit 1 that says {says:?}: {result:?}"),
+    )
+}
+
+async fn refused_uploads(
+    ctx: &Ctx<'_>,
+    sandbox: &SandboxName,
+    dir: &Path,
+    says: &str,
+    not: &str,
+    what: &str,
+) -> Outcome<()> {
+    tokio::fs::create_dir_all(dir).await.map_err(text)?;
     let local = HostPath::parse(&dir.join("payload.bin")).map_err(text)?;
-    tokio::fs::write(local.as_path(), b"absent")
+    tokio::fs::write(local.as_path(), b"refused")
         .await
         .map_err(text)?;
     let cancel = CancellationToken::new();
     let tree = ctx
         .gateway
         .upload_tree(
-            &name,
+            sandbox,
             &ctx.fixture.project,
             &path("/sandbox/project")?,
             &cancel,
@@ -1091,33 +1116,55 @@ async fn upload_absent_sandbox_is_a_transfer_error(ctx: &Ctx<'_>) -> Outcome<()>
     let file = ctx
         .gateway
         .upload_file(
-            &name,
+            sandbox,
             &local,
-            &path("/sandbox/.contract/absent.bin")?,
+            &path("/sandbox/.contract/refused.bin")?,
             &cancel,
         )
         .await;
-    drop(tokio::fs::remove_dir_all(&dir).await);
-    expect(
-        matches!(
-            tree,
-            Err(GatewayError::Transfer {
-                op: TransferOp::UploadFiltered,
-                ..
-            })
-        ),
-        &format!("a tree upload to an absent sandbox is not a Transfer error: {tree:?}"),
+    refused_upload(
+        &tree,
+        TransferOp::UploadFiltered,
+        says,
+        not,
+        &format!("a tree upload to {what}"),
     )?;
-    expect(
-        matches!(
-            file,
-            Err(GatewayError::Transfer {
-                op: TransferOp::UploadFile,
-                ..
-            })
-        ),
-        &format!("a file upload to an absent sandbox is not a Transfer error: {file:?}"),
+    refused_upload(
+        &file,
+        TransferOp::UploadFile,
+        says,
+        not,
+        &format!("a file upload to {what}"),
     )
+}
+
+async fn upload_absent_sandbox_is_a_transfer_error(ctx: &Ctx<'_>) -> Outcome<()> {
+    let name = SandboxName::new(
+        &ctx.fixture.name_prefix,
+        &NameSuffix::for_launch(&fresh_launch()?),
+    );
+    let dir = scratch_dir("absent")?;
+    let result = refused_uploads(ctx, &name, &dir, "found", "ready", "an absent sandbox").await;
+    drop(tokio::fs::remove_dir_all(&dir).await);
+    result
+}
+
+async fn upload_stopped_sandbox_is_a_transfer_error(ctx: &Ctx<'_>) -> Outcome<()> {
+    let sandbox = ctx.sleeper().await?;
+    let dir = scratch_dir("stopped")?;
+    let result = async {
+        ctx.gateway
+            .set_power(&sandbox, PowerAction::Stop)
+            .await
+            .map_err(text)?;
+        ctx.wait_for(&sandbox, "Stopped", |view| view.phase == Phase::Stopped)
+            .await?;
+        refused_uploads(ctx, &sandbox, &dir, "ready", "found", "a Stopped sandbox").await
+    }
+    .await;
+    drop(tokio::fs::remove_dir_all(&dir).await);
+    ctx.cleanup(&sandbox).await;
+    result
 }
 
 fn scratch_download() -> Outcome<HostPath> {
@@ -1163,17 +1210,58 @@ async fn download_with_digest(ctx: &Ctx<'_>) -> Outcome<()> {
     result
 }
 
+const KEPT: &[u8] = b"keep-me";
+
+async fn failed_download_keeps_the_local_file(
+    ctx: &Ctx<'_>,
+    sandbox: &SandboxName,
+    remote: &SandboxPath,
+    cancel: &CancellationToken,
+    what: &str,
+) -> Outcome<Result<(), GatewayError>> {
+    let seeded = scratch_download()?;
+    tokio::fs::write(seeded.as_path(), KEPT)
+        .await
+        .map_err(text)?;
+    let failed = ctx
+        .gateway
+        .download_file(sandbox, remote, &seeded, cancel)
+        .await
+        .map(drop);
+    let kept = tokio::fs::read(seeded.as_path()).await.map_err(text);
+    drop(tokio::fs::remove_file(seeded.as_path()).await);
+    expect(
+        kept.as_deref().ok() == Some(KEPT),
+        &format!("{what} did not leave the existing local file as it was: {kept:?}"),
+    )?;
+    let bare = scratch_download()?;
+    let again = ctx
+        .gateway
+        .download_file(sandbox, remote, &bare, cancel)
+        .await
+        .map(drop);
+    let local_left = tokio::fs::try_exists(bare.as_path()).await.map_err(text)?;
+    drop(tokio::fs::remove_file(bare.as_path()).await);
+    expect(!local_left, &format!("{what} left a local file"))?;
+    expect(
+        failed.is_err() && again.is_err(),
+        &format!("{what} did not fail with and without a local file: {failed:?}, {again:?}"),
+    )?;
+    Ok(failed)
+}
+
 async fn download_missing_remote_is_a_size_error(ctx: &Ctx<'_>) -> Outcome<()> {
     let sandbox = ctx.sleeper().await?;
     let result = async {
         let remote = path("/sandbox/.contract/missing.bin")?;
-        let local = scratch_download()?;
-        let missing = ctx
-            .gateway
-            .download_file(&sandbox, &remote, &local, &CancellationToken::new())
-            .await;
-        let local_left = tokio::fs::try_exists(local.as_path()).await.map_err(text)?;
-        drop(tokio::fs::remove_file(local.as_path()).await);
+        let missing = failed_download_keeps_the_local_file(
+            ctx,
+            &sandbox,
+            &remote,
+            &CancellationToken::new(),
+            "a download of a missing file",
+        )
+        .await?;
         expect(
             matches!(
                 missing,
@@ -1185,8 +1273,8 @@ async fn download_missing_remote_is_a_size_error(ctx: &Ctx<'_>) -> Outcome<()> {
             ),
             &format!("a download of a missing file is not a Size error: {missing:?}"),
         )?;
-        expect(!local_left, "a failed download left a local file")?;
         put_remote(ctx, &sandbox, &remote, b"now-present").await?;
+        let local = scratch_download()?;
         ctx.gateway
             .download_file(&sandbox, &remote, &local, &CancellationToken::new())
             .await
@@ -1208,20 +1296,21 @@ async fn download_pre_cancelled_is_cancelled(ctx: &Ctx<'_>) -> Outcome<()> {
     let result = async {
         let remote = path("/sandbox/.contract/cancelled.bin")?;
         put_remote(ctx, &sandbox, &remote, b"cancel-control").await?;
-        let local = scratch_download()?;
         let cancel = CancellationToken::new();
         cancel.cancel();
-        let cancelled = ctx
-            .gateway
-            .download_file(&sandbox, &remote, &local, &cancel)
-            .await;
-        let local_left = tokio::fs::try_exists(local.as_path()).await.map_err(text)?;
-        drop(tokio::fs::remove_file(local.as_path()).await);
+        let cancelled = failed_download_keeps_the_local_file(
+            ctx,
+            &sandbox,
+            &remote,
+            &cancel,
+            "a download with a cancelled token",
+        )
+        .await?;
         expect(
             matches!(cancelled, Err(GatewayError::Cancelled { .. })),
             &format!("a download with a cancelled token is not Cancelled: {cancelled:?}"),
         )?;
-        expect(!local_left, "a cancelled download left a local file")?;
+        let local = scratch_download()?;
         ctx.gateway
             .download_file(&sandbox, &remote, &local, &CancellationToken::new())
             .await
@@ -1629,6 +1718,12 @@ pub async fn run(
                 ctx,
                 "upload_absent_sandbox_is_a_transfer_error",
                 upload_absent_sandbox_is_a_transfer_error
+            );
+            check!(
+                checks,
+                ctx,
+                "upload_stopped_sandbox_is_a_transfer_error",
+                upload_stopped_sandbox_is_a_transfer_error
             );
         }
         ContractGroup::Terminal => {

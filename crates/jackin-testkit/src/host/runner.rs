@@ -279,8 +279,8 @@ impl ScriptedProcessRunner {
         );
     }
 
-    pub fn expect_git(&self, args_prefix: &[&str], reply: ProcessReply) {
-        self.push(Selector::Git, args_prefix, Replier::Fixed(reply));
+    pub fn expect_git_version(&self, reply: ProcessReply) {
+        self.push(Selector::Git, &["--version"], Replier::Fixed(reply));
     }
 
     pub fn expect_docker(

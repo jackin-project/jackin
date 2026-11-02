@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -19,6 +19,8 @@ pub struct HostState {
     pub status: String,
     pub config: Vec<u8>,
     pub files: BTreeMap<String, (Vec<u8>, u32)>,
+    pub links: BTreeMap<String, String>,
+    pub empty_dirs: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -40,29 +42,53 @@ async fn git_path(root: &Path, name: &str) -> Result<PathBuf, FixtureError> {
     Ok(PathBuf::from(printed.trim_end()))
 }
 
-fn files_under(root: &Path, dir: &Path, found: &mut BTreeMap<String, (Vec<u8>, u32)>) {
+#[derive(Default)]
+struct Tree {
+    files: BTreeMap<String, (Vec<u8>, u32)>,
+    links: BTreeMap<String, String>,
+    empty_dirs: BTreeSet<String>,
+}
+
+fn walk(root: &Path, dir: &Path, found: &mut Tree) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
+    let mut empty = true;
     for entry in entries.flatten() {
+        empty = false;
         let path = entry.path();
         let Ok(kind) = entry.file_type() else {
             continue;
         };
-        if kind.is_dir() {
-            if entry.file_name() != ".git" {
-                files_under(root, &path, found);
+        let Ok(relative) = path.strip_prefix(root) else {
+            continue;
+        };
+        let relative = relative.to_string_lossy().into_owned();
+        if kind.is_symlink() {
+            if let Ok(target) = std::fs::read_link(&path) {
+                found
+                    .links
+                    .insert(relative, target.to_string_lossy().into_owned());
             }
-        } else if let (Ok(relative), Ok(bytes), Ok(meta)) = (
-            path.strip_prefix(root),
-            std::fs::read(&path),
-            std::fs::symlink_metadata(&path),
-        ) {
-            found.insert(
-                relative.to_string_lossy().into_owned(),
-                (bytes, meta.permissions().mode() & 0o7777),
-            );
+        } else if kind.is_dir() {
+            if entry.file_name() != ".git" {
+                walk(root, &path, found);
+            }
+        } else if let (Ok(bytes), Ok(meta)) =
+            (std::fs::read(&path), std::fs::symlink_metadata(&path))
+        {
+            found
+                .files
+                .insert(relative, (bytes, meta.permissions().mode() & 0o7777));
         }
+    }
+    if empty
+        && dir != root
+        && let Ok(relative) = dir.strip_prefix(root)
+    {
+        found
+            .empty_dirs
+            .insert(relative.to_string_lossy().into_owned());
     }
 }
 
@@ -109,8 +135,8 @@ impl HostSnapshot {
             ],
         )
         .await?;
-        let mut files = BTreeMap::new();
-        files_under(root, root, &mut files);
+        let mut tree = Tree::default();
+        walk(root, root, &mut tree);
         Ok(HostSnapshot {
             exported,
             rest: HostState {
@@ -119,7 +145,9 @@ impl HostSnapshot {
                 head,
                 status,
                 config,
-                files,
+                files: tree.files,
+                links: tree.links,
+                empty_dirs: tree.empty_dirs,
             },
         })
     }

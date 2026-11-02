@@ -8,10 +8,7 @@ use tokio_util::sync::CancellationToken;
 use super::support::{Rig, TestResult, assert_nothing_created, failure, guard, ready};
 
 fn script(rig: &Rig, reply: ProcessReply) {
-    rig.world
-        .runner
-        .scripted()
-        .expect_git(&["--version"], reply);
+    rig.world.runner.scripted().expect_git_version(reply);
 }
 
 async fn rig() -> Result<Rig, Box<dyn std::error::Error>> {

@@ -31,7 +31,7 @@ async fn the_git_check_agrees_with_the_launch_check_for_the_same_version_output(
             })
             .await?;
             let world = World::builder().build()?;
-            world.runner.scripted().expect_git(&["--version"], reply());
+            world.runner.scripted().expect_git_version(reply());
             let launch = check_git(world.runner.as_ref(), &CancellationToken::new()).await;
             let expected = if launch.is_ok() {
                 CheckStatus::Pass

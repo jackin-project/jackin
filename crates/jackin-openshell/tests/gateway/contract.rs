@@ -448,6 +448,52 @@ async fn an_upload_to_an_absent_sandbox_passes_the_check_when_the_cli_fails_and_
     assert!(env.server.state().sandboxes.is_empty());
 }
 
+#[tokio::test]
+async fn an_upload_to_a_stopped_sandbox_passes_the_check_only_when_the_cli_refuses_it_as_not_ready()
+{
+    const CHECK: &str = "upload_stopped_sandbox_is_a_transfer_error";
+    let refusing = ScriptedRunner::always(exited(1, b"", b"Error: sandbox is not ready"));
+    let (env, report) = transfer_report(refusing).await;
+    assert_eq!(outcome(&report, CHECK), &Ok(()));
+    let absent = outcome(&report, "upload_absent_sandbox_is_a_transfer_error");
+    assert!(
+        absent
+            .as_ref()
+            .is_err_and(|message| message.contains("is not a Transfer error")),
+        "{absent:?}"
+    );
+    assert!(env.server.state().sandboxes.is_empty());
+
+    for (label, runner) in [
+        (
+            "the CLI says the sandbox is absent",
+            ScriptedRunner::always(exited(1, b"", b"Error: sandbox not found")),
+        ),
+        (
+            "the CLI succeeds",
+            ScriptedRunner::always(exited(0, b"", b"")),
+        ),
+        (
+            "the CLI fails without saying why",
+            ScriptedRunner::always(exited(1, b"", b"Error: boom")),
+        ),
+        (
+            "the CLI says both found and ready",
+            ScriptedRunner::always(exited(1, b"", b"Error: sandbox not found or not ready")),
+        ),
+    ] {
+        let (env, report) = transfer_report(runner).await;
+        let failed = outcome(&report, CHECK);
+        assert!(
+            failed
+                .as_ref()
+                .is_err_and(|message| message.contains("a Stopped sandbox")),
+            "{label}: {failed:?}"
+        );
+        assert!(env.server.state().sandboxes.is_empty(), "{label}");
+    }
+}
+
 fn sandbox_download(root: std::path::PathBuf) -> ScriptedRunner {
     ScriptedRunner::new(move |call: &Recorded| {
         let Some(at) = call.args.iter().position(|arg| arg == "download") else {

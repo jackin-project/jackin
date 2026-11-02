@@ -67,7 +67,7 @@ pub(crate) async fn run(setup: Setup) -> Result<Run, Box<dyn Error>> {
     let scripted = world.runner.scripted();
     scripted.expect(ScriptedProgram::Openshell, &["--version"], setup.openshell);
     scripted.expect(ScriptedProgram::Ssh, &["-V"], setup.ssh);
-    scripted.expect_git(&["--version"], setup.git);
+    scripted.expect_git_version(setup.git);
     if matches!(setup.health, Health::Fails) {
         world.gateway.inject(Fault::FailNext {
             op: GatewayOp::Health,

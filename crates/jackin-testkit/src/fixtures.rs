@@ -51,7 +51,7 @@ struct HookSpec {
 
 #[derive(Clone, Debug)]
 pub struct RoleFixture {
-    dir: Arc<TempDir>,
+    _dir: Arc<TempDir>,
     root: HostPath,
     name: String,
     model: Option<String>,
@@ -73,7 +73,7 @@ pub struct RepoFixture {
 }
 
 pub(crate) async fn git(dir: &Path, args: &[&str]) -> Result<Vec<u8>, FixtureError> {
-    let output = Command::new("git")
+    let output = Command::new("/usr/bin/git")
         .args(["-c", "user.name=jackin-test"])
         .args(["-c", "user.email=test@example.invalid"])
         .args(["-c", "commit.gpgsign=false"])
@@ -130,7 +130,7 @@ impl RoleFixture {
     pub fn new(name: &str) -> Result<RoleFixture, FixtureError> {
         let (dir, root, _) = temp_root("jackin-role-")?;
         Ok(RoleFixture {
-            dir,
+            _dir: dir,
             root,
             name: name.to_owned(),
             model: None,
@@ -318,7 +318,6 @@ impl RoleFixture {
         {
             git(root, &["init", "-q"]).await?;
         }
-        let _keep = &self.dir;
         commit_all(root).await
     }
 }
@@ -348,7 +347,6 @@ impl RepoFixture {
 
     pub async fn project(&self) -> Result<ProjectRoot, FixtureError> {
         let fs: &dyn FileSystem = &StdFileSystem::default();
-        let _keep = &self.dir;
         Ok(ProjectRoot::open(fs, &self.root).await?)
     }
 

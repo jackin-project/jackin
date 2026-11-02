@@ -5,8 +5,8 @@ use std::collections::BTreeSet;
 use std::error::Error;
 
 use jackin_core::{
-    AccountName, Agent, ChatgptAccountId, EnvName, LabelSelector, LaunchId, Phase, ProfileId,
-    ProviderName, SandboxLabels, Secret,
+    AccountName, Agent, ChatgptAccountId, EnvName, LabelSelector, Labels, LaunchId, Phase,
+    ProfileId, ProviderName, SandboxLabels, SandboxName, Secret,
 };
 use jackin_openshell::{
     Gateway, GatewayError, GatewayOp, Missing, ProfileSync, ProviderMaterial, ProviderProfile,
@@ -297,6 +297,48 @@ async fn delete_provider_is_refused_while_a_sandbox_lists_it_and_ok_after() -> T
         fake.delete_provider(&attached).await?;
         assert_eq!(fake.provider_state(&attached).await?, ProviderState::Absent);
         assert!(fake.providers().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn inserting_an_unmanaged_sandbox_over_an_existing_name_is_already_exists_and_changes_nothing()
+-> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let first = SandboxName::parse("jackin-foreign-0001")?;
+        let other = SandboxName::parse("jackin-foreign-0002")?;
+        let original = Labels::from_pairs([("origin".to_owned(), "first".to_owned())])?;
+        let replacement = Labels::from_pairs([("origin".to_owned(), "second".to_owned())])?;
+        fake.insert_unmanaged(&first, original.clone(), Phase::Ready)?;
+
+        let again = fake.insert_unmanaged(&first, replacement.clone(), Phase::Stopped);
+        assert!(
+            matches!(
+                again,
+                Err(GatewayError::AlreadyExists { what: Missing::Sandbox(ref name) }) if *name == first
+            ),
+            "{again:?}"
+        );
+        let shown = observe(&fake, &first).await?;
+        assert_eq!((shown.labels, shown.phase), (original, Phase::Ready));
+
+        let created = spec_with(&LaunchId::generate()?, IMAGE, Vec::new(), sh("sleep 3600")?)?;
+        fake.create_sandbox(&created).await?;
+        let over = fake.insert_unmanaged(created.name(), replacement, Phase::Stopped);
+        assert!(
+            matches!(
+                over,
+                Err(GatewayError::AlreadyExists { what: Missing::Sandbox(ref name) }) if name == created.name()
+            ),
+            "{over:?}"
+        );
+        let kept = observe(&fake, created.name()).await?;
+        assert_eq!(kept.labels, created.labels().to_labels());
+
+        fake.insert_unmanaged(&other, Labels::from_pairs([])?, Phase::Ready)?;
+        assert_eq!(fake.sandboxes().len(), 3);
         Ok(())
     })
     .await

@@ -9,6 +9,7 @@ mod state;
 mod terminal;
 
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
@@ -211,15 +212,18 @@ impl FakeGateway {
             .tempdir()
             .map_err(protocol)?;
         std::fs::create_dir(dir.path().join("sandbox")).map_err(protocol)?;
-        self.registry().sandboxes.insert(
-            name.clone(),
-            Arc::new(Cell {
-                name: name.clone(),
-                dir,
-                closed: CancellationToken::new(),
-                inner: Mutex::new(sandbox),
-            }),
-        );
+        let mut registry = self.registry();
+        let Entry::Vacant(slot) = registry.sandboxes.entry(name.clone()) else {
+            return Err(GatewayError::AlreadyExists {
+                what: Missing::Sandbox(name.clone()),
+            });
+        };
+        slot.insert(Arc::new(Cell {
+            name: name.clone(),
+            dir,
+            closed: CancellationToken::new(),
+            inner: Mutex::new(sandbox),
+        }));
         Ok(())
     }
 
@@ -317,6 +321,22 @@ impl FakeGateway {
             .ok_or_else(|| GatewayError::NotFound {
                 what: Missing::Sandbox(name.clone()),
             })
+    }
+
+    fn upload_cell(
+        &self,
+        op: GatewayOp,
+        step: TransferOp,
+        name: &SandboxName,
+    ) -> Result<Arc<Cell>, GatewayError> {
+        let cell = self
+            .struck_at(op, None, name)?
+            .ok_or_else(|| files::upload_absent(step))?;
+        if cell.settle().accepts_exec() {
+            Ok(cell)
+        } else {
+            Err(files::upload_not_ready(step))
+        }
     }
 
     fn settled_at(
@@ -798,12 +818,7 @@ impl Gateway for FakeGateway {
         cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
         tokio::task::yield_now().await;
-        let ready = self
-            .struck_at(GatewayOp::UploadTree, None, sandbox)?
-            .filter(|cell| cell.settle().accepts_exec());
-        let Some(cell) = ready else {
-            return Err(files::upload_refused(TransferOp::UploadFiltered));
-        };
+        let cell = self.upload_cell(GatewayOp::UploadTree, TransferOp::UploadFiltered, sandbox)?;
         let home = self.registry().host_home.clone();
         files::upload_tree(&cell.root(), home.as_deref(), source, dest, cancel).await?;
         self.edit_host(UploadKind::Tree).await
@@ -817,12 +832,7 @@ impl Gateway for FakeGateway {
         cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
         tokio::task::yield_now().await;
-        let ready = self
-            .struck_at(GatewayOp::UploadFile, None, sandbox)?
-            .filter(|cell| cell.settle().accepts_exec());
-        let Some(cell) = ready else {
-            return Err(files::upload_refused(TransferOp::UploadFile));
-        };
+        let cell = self.upload_cell(GatewayOp::UploadFile, TransferOp::UploadFile, sandbox)?;
         let corrupt = self.registry().corrupt.remove(&Direction::Upload);
         files::upload_file(&cell.root(), source, dest, corrupt, cancel).await?;
         self.edit_host(UploadKind::File).await
@@ -836,28 +846,21 @@ impl Gateway for FakeGateway {
         cancel: &CancellationToken,
     ) -> Result<Sha256, GatewayError> {
         tokio::task::yield_now().await;
-        let result = async {
-            let found = self.struck_at(GatewayOp::Download, None, sandbox)?;
-            if cancel.is_cancelled() {
-                return Err(GatewayError::Cancelled {
-                    op: GatewayOp::Download,
-                });
-            }
-            let cell = found.ok_or_else(|| GatewayError::NotFound {
-                what: Missing::Sandbox(sandbox.clone()),
-            })?;
-            let phase = cell.settle();
-            if !phase.accepts_exec() {
-                return Err(GatewayError::NotReady { phase });
-            }
-            let corrupt = self.registry().corrupt.remove(&Direction::Download);
-            files::download_file(&cell.root(), remote, local, corrupt).await
+        let found = self.struck_at(GatewayOp::Download, None, sandbox)?;
+        if cancel.is_cancelled() {
+            return Err(GatewayError::Cancelled {
+                op: GatewayOp::Download,
+            });
         }
-        .await;
-        if result.is_err() {
-            drop(tokio::fs::remove_file(local.as_path()).await);
+        let cell = found.ok_or_else(|| GatewayError::NotFound {
+            what: Missing::Sandbox(sandbox.clone()),
+        })?;
+        let phase = cell.settle();
+        if !phase.accepts_exec() {
+            return Err(GatewayError::NotReady { phase });
         }
-        result
+        let corrupt = self.registry().corrupt.remove(&Direction::Download);
+        files::download_file(&cell.root(), remote, local, corrupt).await
     }
 
     async fn open_terminal(
