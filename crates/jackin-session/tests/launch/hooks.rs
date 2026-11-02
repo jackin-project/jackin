@@ -1,0 +1,174 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use jackin_core::{EnvName, HookKind, Phase, SupervisorState, sandbox_layout};
+use jackin_openshell::{Gateway, ProgramRun, ProgramStdin};
+use jackin_session::{LaunchError, LaunchStep};
+use jackin_testkit::ProgramScript;
+use tokio_util::sync::CancellationToken;
+
+use super::support::{
+    Rig, Spec, TestResult, converged, failure, guard, has_file, launch_id, path, ready,
+};
+
+fn script(rig: &Rig, kind: HookKind, exit_code: i32, stdout: &[u8], stderr: &[u8]) {
+    rig.gateway().script_program(
+        &sandbox_layout::hook_path(kind),
+        ProgramScript {
+            exit_code,
+            stdout: stdout.to_vec(),
+            stderr: stderr.to_vec(),
+        },
+    );
+}
+
+#[tokio::test]
+async fn a_failing_hook_stops_the_launch_with_name_code_and_sanitized_output() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        script(
+            &rig,
+            HookKind::Preflight,
+            7,
+            b"checking\x1b[31m red \x1b]0;title\x07done\n",
+            b"boom\n",
+        );
+        let failed = failure(rig.launch(1).await?)?;
+        assert_eq!(failed.step, LaunchStep::Hooks);
+        assert!(failed.sandbox.is_some());
+        let LaunchError::HookFailed {
+            hook: HookKind::Preflight,
+            exit_code: 7,
+            output,
+        } = &*failed.error
+        else {
+            return Err(format!("{:?}", failed.error).into());
+        };
+        for wanted in ["checking", "red", "done", "boom"] {
+            assert!(output.as_str().contains(wanted), "{wanted}");
+        }
+        assert!(!output.as_str().contains('\x1b') && !output.as_str().contains('\x07'));
+        let handle = rig.handle(1).await?;
+        assert_eq!(handle.phase(), Phase::Ready);
+        let probe = ProgramRun {
+            sandbox: handle.name(),
+            program: path("/usr/bin/git")?,
+            args: vec!["--version".to_owned()],
+            workdir: None,
+            env: std::collections::BTreeMap::new(),
+            stdin: ProgramStdin::Closed,
+            touch_on_success: None,
+            timeout: std::time::Duration::from_secs(30),
+        };
+        assert_eq!(
+            rig.gateway()
+                .run_program(&probe, &CancellationToken::new())
+                .await?
+                .exit_code,
+            0
+        );
+        assert!(
+            rig.gateway()
+                .read_files(
+                    &handle.name(),
+                    std::slice::from_ref(&sandbox_layout::RUN_STATE)
+                )
+                .await?[0]
+                .is_some()
+        );
+        assert_eq!(handle.supervisor(), Some(SupervisorState::Waiting));
+        assert!(!has_file(&handle, &sandbox_layout::RUN_START));
+        assert!(has_file(
+            &handle,
+            &sandbox_layout::setup_done_marker(&launch_id(1))
+        ));
+
+        let rig = Rig::new().await?;
+        script(&rig, HookKind::Setup, 3, b"", b"setup broke\n");
+        let failed = failure(rig.launch(1).await?)?;
+        assert!(
+            matches!(
+                &*failed.error,
+                LaunchError::HookFailed {
+                    hook: HookKind::Setup,
+                    exit_code: 3,
+                    ..
+                }
+            ),
+            "{:?}",
+            failed.error
+        );
+        let handle = rig.handle(1).await?;
+        assert!(!has_file(
+            &handle,
+            &sandbox_layout::setup_done_marker(&launch_id(1))
+        ));
+        assert!(
+            handle
+                .runs(&sandbox_layout::hook_path(HookKind::Preflight))
+                .is_empty()
+        );
+        script(&rig, HookKind::Setup, 0, b"", b"");
+        ready(rig.launch(1).await?)?;
+        converged(&rig, &rig.handle(1).await?, 1)?;
+
+        let mut spec = Spec::new()?;
+        spec.role = jackin_testkit::RoleFixture::new("sentinel")?;
+        let rig = spec.rig().await?;
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
+        for kind in [HookKind::Setup, HookKind::Preflight] {
+            assert!(handle.runs(&sandbox_layout::hook_path(kind)).is_empty());
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn hooks_run_with_the_env_file_values_and_a_retry_replaces_them() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let env = |value: &str| -> Result<_, Box<dyn std::error::Error>> {
+            Ok(std::collections::BTreeMap::from([(
+                EnvName::parse("GREETING")?,
+                value.to_owned(),
+            )]))
+        };
+        script(&rig, HookKind::Preflight, 1, b"", b"");
+        let first = rig.request(1)?.env(env("first")?);
+        let failed = failure(rig.run(first, CancellationToken::new()).await?)?;
+        assert!(matches!(
+            &*failed.error,
+            LaunchError::HookFailed {
+                hook: HookKind::Preflight,
+                exit_code: 1,
+                ..
+            }
+        ));
+        let handle = rig.handle(1).await?;
+        let setups = handle.runs(&sandbox_layout::hook_path(HookKind::Setup));
+        assert_eq!(setups.len(), 1);
+        assert_eq!(setups[0].env, env("first")?);
+        assert_eq!(setups[0].workdir, Some(sandbox_layout::PROJECT.clone()));
+
+        script(&rig, HookKind::Preflight, 0, b"", b"");
+        let second = rig.request(1)?.env(env("second")?);
+        ready(rig.run(second, CancellationToken::new()).await?)?;
+        let plan = rig.plan(1)?;
+        let file = handle.file(&plan.files().env.path).ok_or("no env file")?;
+        assert!(String::from_utf8(file)?.contains("second"));
+        let preflights = handle.runs(&sandbox_layout::hook_path(HookKind::Preflight));
+        assert_eq!(preflights.len(), 2);
+        assert_eq!(preflights[1].env, env("second")?);
+        assert_eq!(
+            handle
+                .runs(&sandbox_layout::hook_path(HookKind::Setup))
+                .len(),
+            1
+        );
+        assert_eq!(handle.phase(), Phase::Ready);
+        Ok(())
+    })
+    .await
+}

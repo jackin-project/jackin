@@ -178,6 +178,10 @@ impl FakeGateway {
         self.registry().scripts.insert(program.clone(), script);
     }
 
+    pub fn release_stall(&self, program: &SandboxPath) {
+        self.registry().stalls.retain(|stalled| stalled != program);
+    }
+
     pub fn add_image(&self, tag: &ImageTag) {
         self.registry().images.insert(tag.clone());
     }
