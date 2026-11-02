@@ -161,6 +161,7 @@ async fn an_upload_with_a_fifo_or_a_socket_in_a_listed_entry_fails_and_a_clean_n
         );
 
         let (socket_dir, socket) = project().await?;
+        tokio::fs::write(socket_dir.path().join("a.txt"), b"alpha").await?;
         git(socket_dir.path(), &["init", "-q", "nested"]).await?;
         tokio::fs::write(socket_dir.path().join("nested/f"), b"inner").await?;
         let listener = std::os::unix::net::UnixListener::bind(socket_dir.path().join("nested/s"))?;
