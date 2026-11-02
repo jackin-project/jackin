@@ -55,7 +55,7 @@ The repository `mise.toml` and `rust-toolchain.toml` must agree with these pins.
 - Use the `openshell` CLI for three things only: `sandbox upload`, `sandbox download`, and `gateway list -o json`. Upload and download run over the system `ssh` binary, and the filtered upload runs the host `git`. Run each CLI call with stdin from `/dev/null` and a hard timeout. P0.2 saw one upload call hang before it reached the gateway.
 - Pass the gateway, the OpenShell workspace, and the sandbox name explicitly on every call. Never change the active gateway of the operator.
 - A jackin workspace is not an OpenShell workspace. The jackin gateway config names the OpenShell workspace that jackin uses.
-- Jackin gets the gateway endpoint from `openshell gateway list -o json`. For mTLS, jackin reads the `ca.crt`, `tls.crt`, and `tls.key` files of that gateway entry. Jackin does not write the registry.
+- Jackin gets the gateway endpoint from `openshell gateway list -o json`. For mTLS, jackin reads the `ca.crt`, `tls.crt`, and `tls.key` files of that gateway entry. Jackin does not write the registry. Jackin accepts only a gateway entry with an `https://` endpoint and mTLS. Any other entry is an error, so a token never travels in plain text.
 - Only `jackin-openshell` depends on `openshell-sdk`, `openshell-policy`, `tonic`, and `russh`. The SDK does not re-export tonic. `openshell-policy` parses and serializes the policy YAML.
 
 Evidence: `evidence/P0.6-panes.md` (transport research), `evidence/P0.2-gateway.md` (Gaps G1).
@@ -119,6 +119,8 @@ Evidence: `evidence/P0.2-gateway.md`, `evidence/P0.3-codex.md`, `evidence/P7.1-i
 - Jackin uploads the project with two CLI calls, with the project root as the working directory:
   1. `openshell sandbox upload <sandbox> . /sandbox/project`. It respects `.gitignore`, uploads untracked files that are not ignored, and omits `.git`.
   2. `openshell sandbox upload <sandbox> .git /sandbox/project --no-git-ignore`. It adds `.git`.
+  3. Jackin replaces `/sandbox/project/.git/config` with a copy that has no user information in a URL, no `http.*.extraheader`, no `credential` section, and no `include` or `includeIf`. Codex has not started yet, so it never sees a credential from the host configuration (D10).
+- Jackin removes every `GIT_` variable from the environment of these calls, so the host `git` lists the project it uploads.
 - A path other than `.` lands in `/sandbox/project/<basename>`. The first call needs `git` and a work tree on the host.
 - To retrieve work, `jackin export` runs `git bundle create` in `/sandbox/project` through exec, downloads the bundle from `/sandbox/.jackin/`, compares the sha256 digests, and fetches each branch into the host repository as `refs/heads/jackin/<sandbox-name>/<branch>`.
 - Work is exported when the sandbox has no uncommitted change and each branch tip exists under `refs/heads/jackin/<sandbox-name>/` on the host. A sandbox that jackin cannot inspect counts as not exported.
@@ -158,7 +160,7 @@ In this document, an **OpenShell provider** is the OpenShell credential object. 
 - Build the mode that the A1 credential permits first. The development Mac has only a host ChatGPT login, so build mode B first.
 - Mode B imports an existing Codex login. The command `jackin account add codex --chatgpt-from <codex-home>` reads `auth.json` and puts the refresh material into the OpenShell provider. The gateway then rotates the refresh token, so the host login may need a new `codex login` later. A device login needs a person, so no proof includes it.
 - The gateway replaces a placeholder by destination host, for each process that the policy lets reach the host. A rule for a binary also covers the processes that the binary starts. So a command that Codex starts can use the credential, but it cannot read it.
-- Provider host closure: in the merged policy, only the generated `_provider_<name>` rule may match a host of the Codex OpenShell provider profile. This includes wildcard hosts, any port, and any binary. `jackin role check` and `jackin load` reject a role policy that breaks the rule. `jackin inspect` reports a live policy that breaks it.
+- Provider host closure: in the merged policy, only the generated `_provider_<name>` rule may match a host of the Codex OpenShell provider profile. This includes wildcard hosts, any port, and any binary. Jackin decides a match with the host-pattern matcher of the pinned `openshell-core`, the one the gateway uses, so glob syntax such as `[c]hatgpt.com` cannot hide a provider host. `jackin role check` and `jackin load` reject a role policy that breaks the rule. `jackin inspect` reports a live policy that breaks it.
 - Jackin never writes a real token into a sandbox, an image, a log, a label, or the jackin config. The one exception is the Docker client key of D24.
 - For live tests, find the credential in the order that PLAN.md item A1 gives. A shared ChatGPT refresh token can rotate and break the host login. Accept this risk, and record the choice in the trail.
 - Run live runs that share one refresh token one after the other. Never run them in parallel.
