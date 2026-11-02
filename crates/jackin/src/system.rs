@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    Clock, ConfigStore, EnvName, EnvSnapshot, FileSystem, GatewayEntry, GatewayName, HostPath,
-    ProcessRunner, Timestamp,
+    ConfigStore, EnvName, EnvSnapshot, FileSystem, GatewayEntry, GatewayName, HostPath,
+    ProcessRunner,
 };
 use jackin_openshell::{
     Gateway, GatewayError, GrpcGateway, GrpcGatewayConfig, TermSize, resolve_gateway,
@@ -149,23 +149,6 @@ impl GatewayConnector for GrpcConnector {
         })
         .await?;
         Ok(Arc::new(gateway))
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct HostClock;
-
-#[async_trait]
-impl Clock for HostClock {
-    fn now(&self) -> Timestamp {
-        let seconds = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |elapsed| elapsed.as_secs());
-        Timestamp(i64::try_from(seconds).unwrap_or(i64::MAX))
-    }
-
-    async fn sleep(&self, duration: Duration) {
-        tokio::time::sleep(duration).await;
     }
 }
 

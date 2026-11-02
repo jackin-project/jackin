@@ -6,12 +6,11 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use jackin::{
-    AppEnv, Deps, ExitClass, GrpcConnector, HostClock, SystemTerminal, Terminal, launch_limits,
-    locations,
+    AppEnv, Deps, ExitClass, GrpcConnector, SystemTerminal, Terminal, launch_limits, locations,
 };
-use jackin_core::{EnvSnapshot, FileSystem, HostPath, ProcessRunner, StdFileSystem};
+use jackin_core::{EnvSnapshot, HostPath, StdFileSystem};
 use jackin_image::BuildxEngine;
-use jackin_session::{HostPorts, TokioProcessRunner};
+use jackin_session::HostPorts;
 use tokio_util::sync::CancellationToken;
 
 fn fail(message: &str) -> ExitCode {
@@ -61,24 +60,23 @@ async fn start() -> ExitCode {
         Err(error) => return fail(&error.to_string()),
     };
     let cancel = CancellationToken::new();
-    let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
-    let runner: Arc<dyn ProcessRunner> = Arc::new(TokioProcessRunner);
+    let host = HostPorts::system(Arc::new(StdFileSystem::default()));
     let build_dir = match HostPath::resolve(std::path::Path::new("build"), &places.cache_dir) {
         Ok(dir) => dir,
         Err(error) => return fail(&error.to_string()),
     };
     let deps = Deps {
-        host: HostPorts {
-            clock: Arc::new(HostClock),
-            fs: Arc::clone(&fs),
-            runner: Arc::clone(&runner),
-        },
         engine: Arc::new(BuildxEngine::new(
-            Arc::clone(&runner),
-            Arc::clone(&fs),
+            Arc::clone(&host.runner),
+            Arc::clone(&host.fs),
             build_dir,
         )),
-        connect: Arc::new(GrpcConnector::new(runner, fs, places.openshell_config)),
+        connect: Arc::new(GrpcConnector::new(
+            Arc::clone(&host.runner),
+            Arc::clone(&host.fs),
+            places.openshell_config,
+        )),
+        host,
         limits: launch_limits(),
     };
     let run = jackin::run(

@@ -3,7 +3,8 @@
 
 use jackin::{AccountLs, ExitClass};
 use jackin_core::{AccountName, Agent, Config, Provider, ProviderName, RoleName, WorkspaceName};
-use jackin_testkit::{Rig, TestResult, World, guard};
+use jackin_openshell::{GatewayError, GatewayOp, Missing};
+use jackin_testkit::{Fault, Rig, TestResult, World, guard};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{Failure, Harness, failed, keys, names};
@@ -232,6 +233,36 @@ async fn rm_checks_the_gateway_before_the_config_and_removes_both_when_nothing_u
                 .is_none()
         );
         assert!(rig.gateway().provider(&provider).is_none());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn rm_of_an_account_whose_provider_is_already_gone_still_removes_the_account() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let (harness, provider) = synced(&rig).await?;
+        rig.world
+            .session
+            .gateway()
+            .delete_provider(&provider)
+            .await?;
+        assert!(rig.gateway().provider(&provider).is_none());
+        rig.gateway().inject(Fault::FailNext {
+            op: GatewayOp::Provider,
+            error: GatewayError::NotFound {
+                what: Missing::Provider(provider),
+            },
+        });
+        harness.run(&["account", "rm", "work"]).await?.ok()?;
+        assert!(
+            harness
+                .stored()
+                .await?
+                .account(&AccountName::parse("work")?)
+                .is_none()
+        );
         Ok(())
     })
     .await

@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    Account, AccountName, Agent, ConfigEdit, ConfigError, CredentialSource, Provider, ProviderName,
+    Account, AccountName, Agent, ConfigEdit, ConfigError, CredentialSource, Provider,
 };
-use jackin_openshell::GatewayError;
 use jackin_session::read_chatgpt_login;
 
 use crate::app::App;
@@ -98,11 +97,7 @@ async fn rm(app: &App, arg: AccountArg) -> Result<(), CommandError> {
     config.clone().apply(remove.clone())?;
     if matches!(account.credential(), CredentialSource::CodexLogin { .. }) {
         let session = app.session(&config).await?;
-        let provider = ProviderName::for_account(account.name(), Agent::Codex);
-        match session.gateway().delete_provider(&provider).await {
-            Ok(()) | Err(GatewayError::NotFound { .. }) => {}
-            Err(error) => return Err(error.into()),
-        }
+        session.forget_account(account, &app.cancel).await?;
     }
     app.store.edit(vec![remove]).await?;
     Ok(())
