@@ -427,7 +427,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
   4. Add the usage crates to the workspace members and to the layer step.
   5. Build `jackin usage` and `jackin usage --json`. Show each limit window that a provider reports, such as the 5-hour and weekly windows, with the percentage used, the remaining amount, and the reset time.
 - **Proof:** G-FAST passes with the usage crates in the workspace. Tests verify the usage behavior through public interfaces, with a fake HTTP server for each provider backend that a test covers.
-- [ ] P6.3 done
+- [x] P6.3 done. Proof: merged at 4cdd4514; G-FAST 1020 passed, exit 0; 13 usage crates (facade, provider-core, 11 providers with Amp unsupported) and `jackin usage [--json]`; red/green by test-reviewer in three rounds (/private/tmp/claude-501/plans/P6.3-redgreen.md); live read-only run with the host Codex login in evidence/P6.3-usage-codex.md (weekly window 1% used, credits, no token refresh).
 
 ### P6.2 Run the CLI against the real gateway
 
