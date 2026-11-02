@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::fmt::Debug;
 use std::num::NonZeroU16;
 use std::time::Duration;
 
@@ -52,6 +53,7 @@ network_policies:
 ";
 
 const GUARD: Duration = Duration::from_secs(10);
+const WAIT: Duration = Duration::from_secs(3);
 
 pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
     tokio::time::timeout(GUARD, work)
@@ -220,26 +222,44 @@ pub(crate) async fn attach(
 }
 
 pub(crate) async fn collect_until(
+    label: &str,
     session: &mut TerminalSession,
     last: impl Fn(&TerminalEvent) -> bool,
 ) -> Result<Vec<TerminalEvent>, Box<dyn Error>> {
     let mut events = Vec::new();
-    while let Some(event) = session.next_event().await {
-        let done = last(&event);
-        events.push(event);
-        if done {
-            return Ok(events);
+    let deadline = tokio::time::Instant::now() + WAIT;
+    loop {
+        match tokio::time::timeout_at(deadline, session.next_event()).await {
+            Err(_) => return Err(format!("timed out waiting for {label}; saw {events:?}").into()),
+            Ok(None) => {
+                return Err(
+                    format!("the session closed waiting for {label}; saw {events:?}").into(),
+                );
+            }
+            Ok(Some(event)) => {
+                let done = last(&event);
+                events.push(event);
+                if done {
+                    return Ok(events);
+                }
+            }
         }
     }
-    Err(format!("the session closed after {events:?}").into())
 }
 
-pub(crate) async fn drain(session: &mut TerminalSession) -> Vec<TerminalEvent> {
+pub(crate) async fn drain(
+    label: &str,
+    session: &mut TerminalSession,
+) -> Result<Vec<TerminalEvent>, Box<dyn Error>> {
     let mut events = Vec::new();
-    while let Some(event) = session.next_event().await {
-        events.push(event);
+    let deadline = tokio::time::Instant::now() + WAIT;
+    loop {
+        match tokio::time::timeout_at(deadline, session.next_event()).await {
+            Err(_) => return Err(format!("timed out waiting for {label}; saw {events:?}").into()),
+            Ok(None) => return Ok(events),
+            Ok(Some(event)) => events.push(event),
+        }
     }
-    events
 }
 
 pub(crate) fn output_text(events: &[TerminalEvent]) -> String {
@@ -252,10 +272,23 @@ pub(crate) fn output_text(events: &[TerminalEvent]) -> String {
         .collect()
 }
 
-pub(crate) async fn eventually(done: impl Fn() -> bool) {
-    while !done() {
-        tokio::task::yield_now().await;
-    }
+pub(crate) async fn eventually<T: PartialEq + Debug>(
+    label: &str,
+    observe: impl Fn() -> T,
+    expected: T,
+) -> TestResult {
+    let waiting = async {
+        while observe() != expected {
+            tokio::task::yield_now().await;
+        }
+    };
+    tokio::time::timeout(WAIT, waiting).await.map_err(|_| {
+        format!(
+            "timed out waiting for {label} to be {expected:?}; saw {:?}",
+            observe()
+        )
+    })?;
+    Ok(())
 }
 
 pub(crate) async fn git(dir: &std::path::Path, args: &[&str]) -> TestResult {

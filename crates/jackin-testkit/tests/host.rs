@@ -92,6 +92,7 @@ async fn fs_contract(fs: &dyn FileSystem, root: &HostPath) -> TestResult {
     fs.write_new(&deep, b"deep", FileMode(0o644)).await?;
     fs.remove_dir_all(&child(root, "sub")?).await?;
     assert_eq!(names(fs, root).await?, Vec::<String>::new());
+    assert_eq!(fs.read(&deep).await?, None);
     fs.remove_dir_all(&child(root, "sub")?).await?;
     let lock = child(root, "config.lock")?;
     let held = fs.lock(&lock).await?;

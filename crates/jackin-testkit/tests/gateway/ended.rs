@@ -64,7 +64,7 @@ async fn ended_row(code: i32, ended: Phase) -> TestResult {
     write(&fake, &name, "/sandbox/kept", "data").await?;
     let mut session = attach(&fake, &name, InputMode::Owner).await?;
     handle.exit_main(code);
-    let events = drain(&mut session).await;
+    let events = drain("the main process to exit", &mut session).await?;
     assert_eq!(
         events[events.len() - 2..],
         [
