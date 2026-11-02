@@ -11,6 +11,8 @@ mod image_request;
 mod roles;
 mod roles_git;
 mod roles_load;
+mod roles_origin;
+mod roles_path;
 mod support;
 
 #[path = "../support/trap.rs"]
