@@ -14,10 +14,10 @@ use jackin_core::{
     Clock, EnvValue, FileSystem, LineSink, OutputLine, OutputStream, ProcessError, ProcessOutput,
     ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, SecretBytes, SecretOutput, Timestamp,
 };
-use rustix::process::{Pid, Signal, kill_process_group};
+use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
@@ -25,6 +25,8 @@ use crate::service::HostPorts;
 
 const TAIL_LIMIT: usize = 65536;
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
+const GROUP_GRACE: Duration = Duration::from_secs(5);
+const GROUP_POLL: Duration = Duration::from_millis(2);
 const READ_CHUNK: usize = 8192;
 const FEED_CHUNK: usize = 64 * 1024;
 const LINE_LIMIT: usize = 65536;
@@ -146,8 +148,10 @@ struct GroupGuard {
 }
 
 impl GroupGuard {
-    fn fire(&mut self) {
-        kill_group(self.group.take());
+    fn fire(&mut self) -> Option<Pid> {
+        let group = self.group.take();
+        kill_group(group);
+        group
     }
 }
 
@@ -155,6 +159,18 @@ impl Drop for GroupGuard {
     fn drop(&mut self) {
         self.fire();
     }
+}
+
+async fn gone(group: Option<Pid>) {
+    let Some(group) = group else {
+        return;
+    };
+    let emptied = async {
+        while test_kill_process_group(group).is_ok() {
+            sleep(GROUP_POLL).await;
+        }
+    };
+    drop(timeout(GROUP_GRACE, emptied).await);
 }
 
 fn kill_group(group: Option<Pid>) {
@@ -402,7 +418,7 @@ async fn execute(
     };
     let timer = sleep(spec.timeout);
     let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
-        guard.fire();
+        gone(guard.fire()).await;
         return Err(spawn_error("the output pipes are missing".to_owned()));
     };
     let pipes = Pipes {
@@ -434,12 +450,13 @@ async fn execute(
     };
     match outcome {
         Ok(status) => {
-            guard.fire();
+            gone(guard.fire()).await;
             Ok((status_of(status), out, err))
         }
         Err(error) => {
-            guard.fire();
+            let group = guard.fire();
             drop(child.kill().await);
+            gone(group).await;
             Err(error)
         }
     }
