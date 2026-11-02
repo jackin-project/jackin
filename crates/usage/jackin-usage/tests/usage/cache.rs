@@ -211,6 +211,33 @@ async fn a_malformed_body_after_a_good_report_replaces_the_old_windows() -> Test
 }
 
 #[tokio::test]
+async fn a_404_after_a_good_report_replaces_the_old_windows() -> TestResult {
+    guard(async {
+        let (harness, account, usage) = stale_after(Route::status(404)).await?;
+        assert!(matches!(
+            unavailable(&usage.outcome),
+            UnavailableReason::Provider(_)
+        ));
+        serve(&harness, codex_route(&codex_body(90)));
+        harness.advance(5);
+        let again = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!((again.freshness, used_of(&again)), (Freshness::Fresh, 90.0));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_503_after_a_good_report_returns_the_old_windows_as_stale() -> TestResult {
+    guard(async {
+        let (_, _, usage) = stale_after(Route::status(503)).await?;
+        assert_stale(&usage);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_forced_401_replaces_the_old_windows_and_a_later_cached_report_fetches() -> TestResult {
     guard(async {
         let (harness, account) = start(10).await?;

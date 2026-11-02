@@ -47,6 +47,17 @@ pub(crate) async fn cases() -> Result<Vec<Case>, Box<dyn std::error::Error>> {
     ])
 }
 
+async fn login_cases() -> Result<Vec<Case>, Box<dyn std::error::Error>> {
+    Ok(vec![
+        claude::login_case().await?,
+        cursor::login_case().await?,
+        gemini::login_case().await?,
+        grok::login_case().await?,
+        kimi::login_case().await?,
+        opencode::login_case().await?,
+    ])
+}
+
 fn fail_first(case: &Case, route: Route) {
     case.harness
         .server
@@ -73,6 +84,32 @@ async fn every_provider_case_maps_a_401_to_an_expired_login() -> TestResult {
         for case in cases().await? {
             fail_first(&case, Route::status(401));
             let usage = case.harness.one(&case.account, Refresh::Cached).await?;
+            let mismatches = case.harness.server.mismatches();
+            assert_eq!(
+                unavailable(&usage.outcome),
+                &UnavailableReason::ExpiredLogin,
+                "{:?}: {mismatches:?}",
+                case.provider,
+            );
+            assert!(
+                mismatches.is_empty(),
+                "{:?} sent a request no route answers: {mismatches:?}",
+                case.provider
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn every_login_file_provider_maps_a_401_without_any_other_request() -> TestResult {
+    guard(async {
+        for case in login_cases().await? {
+            let valid = case.harness.one(&case.account, Refresh::Force).await?;
+            assert_windows(&valid.outcome, case.expected);
+            fail_first(&case, Route::status(401));
+            let usage = case.harness.one(&case.account, Refresh::Force).await?;
             let mismatches = case.harness.server.mismatches();
             assert_eq!(
                 unavailable(&usage.outcome),

@@ -13,6 +13,7 @@ use crate::support::{
 
 const TOKEN: &str = "SECRET_TOKEN_CLAUDE";
 const PATH: &str = "/api/oauth/usage";
+const CREDS_PATH: &str = "/home/work/.claude/.credentials.json";
 const REASON: &str = "Anthropic API keys have no subscription quota";
 const LIVE: &str = include_str!("../fixtures/claude/oauth_usage_live_mirror.json");
 const LIMITS: &str = include_str!("../fixtures/claude/oauth_usage_limits.json");
@@ -96,6 +97,16 @@ pub(crate) async fn case() -> Result<Case, Box<dyn std::error::Error>> {
         account,
         first: (Method::Get, PATH),
         expected: &[FIVE, WEEK, SONNET],
+    })
+}
+
+pub(crate) async fn login_case() -> Result<Case, Box<dyn std::error::Error>> {
+    let case = case().await?;
+    case.harness.put(CREDS_PATH, CREDENTIALS).await?;
+    let login = account("claude", Provider::Claude, file_source(CREDS_PATH));
+    Ok(Case {
+        account: login,
+        ..case
     })
 }
 
@@ -363,6 +374,17 @@ async fn an_extra_usage_amount_beyond_the_integers_is_a_provider_error_port_fide
 {
     guard(async {
         let body = "{\"extra_usage\":{\"is_enabled\":true,\"monthly_limit\":1e300,\"used_credits\":7849.0,\"utilization\":30.0,\"currency\":\"SGD\",\"decimal_places\":2}}";
+        assert_provider(&windows_for(body).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_spend_used_and_limit_in_different_exponents_is_a_provider_error_port_fidelity()
+-> TestResult {
+    guard(async {
+        let body = "{\"spend\":{\"used\":{\"amount_minor\":5331,\"currency\":\"USD\",\"exponent\":2},\"limit\":{\"amount_minor\":30000,\"currency\":\"USD\",\"exponent\":3},\"percent\":18,\"enabled\":true}}";
         assert_provider(&windows_for(body).await?);
         Ok(())
     })

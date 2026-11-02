@@ -68,6 +68,16 @@ pub(crate) async fn case() -> Result<Case, Box<dyn std::error::Error>> {
     })
 }
 
+pub(crate) async fn login_case() -> Result<Case, Box<dyn std::error::Error>> {
+    let case = case().await?;
+    case.harness.put(LOGIN_PATH, CODE).await?;
+    let login = account("kimi", Provider::Kimi, file_source(LOGIN_PATH));
+    Ok(Case {
+        account: login,
+        ..case
+    })
+}
+
 async fn outcome(body: &str) -> Result<UsageOutcome, Box<dyn std::error::Error>> {
     let (harness, account) = started(body).await?;
     Ok(harness.one(&account, Refresh::Cached).await?.outcome)

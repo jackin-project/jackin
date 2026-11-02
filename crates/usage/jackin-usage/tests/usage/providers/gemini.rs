@@ -93,6 +93,16 @@ pub(crate) async fn case() -> Result<Case, Box<dyn std::error::Error>> {
     })
 }
 
+pub(crate) async fn login_case() -> Result<Case, Box<dyn std::error::Error>> {
+    let case = case().await?;
+    case.harness.put(CREDS_PATH, CREDS).await?;
+    let login = account("gemini", Provider::Gemini, file_source(CREDS_PATH));
+    Ok(Case {
+        account: login,
+        ..case
+    })
+}
+
 async fn outcome(load: &str, quota: &str) -> Result<UsageOutcome, Box<dyn std::error::Error>> {
     let (harness, account) = started_with(load, quota).await?;
     Ok(harness.one(&account, Refresh::Cached).await?.outcome)
