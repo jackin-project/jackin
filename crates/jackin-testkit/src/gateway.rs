@@ -756,11 +756,23 @@ impl Gateway for FakeGateway {
         sandbox: &SandboxName,
         remote: &SandboxPath,
         local: &HostPath,
-        _cancel: &CancellationToken,
+        cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
         tokio::task::yield_now().await;
         let result = async {
-            let cell = self.exec_cell(GatewayOp::Download, sandbox)?;
+            let found = self.struck_at(GatewayOp::Download, None, sandbox)?;
+            if cancel.is_cancelled() {
+                return Err(GatewayError::Cancelled {
+                    op: GatewayOp::Download,
+                });
+            }
+            let cell = found.ok_or_else(|| GatewayError::NotFound {
+                what: Missing::Sandbox(sandbox.clone()),
+            })?;
+            let phase = cell.settle();
+            if !phase.accepts_exec() {
+                return Err(GatewayError::NotReady { phase });
+            }
             let corrupt = self.registry().corrupt.remove(&Direction::Download);
             files::download_file(&cell.root(), remote, local, corrupt).await
         }

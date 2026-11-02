@@ -15,8 +15,8 @@ use openshell_sdk::raw::proto::{ObjectMeta, Provider, ProviderProfile, exec_sand
 use tempfile::TempDir;
 use tonic::Code;
 
-use super::exec_rpc::{exit_event, host_shell};
-use super::fakes::{ScriptedRunner, exited};
+use super::exec_rpc::{Step, exit_event, host_shell, host_tools, scripted};
+use super::fakes::{Recorded, ScriptedRunner, exited};
 use super::harness::{Env, WORKSPACE, config, connect, env, guard, resolved};
 use super::server::{Broken, ExecBackend, ExecCtx, Fault};
 use super::ssh_server::{
@@ -446,4 +446,71 @@ async fn an_upload_to_an_absent_sandbox_passes_the_check_when_the_cli_fails_and_
         "{failed:?}"
     );
     assert!(env.server.state().sandboxes.is_empty());
+}
+
+fn sandbox_download(root: std::path::PathBuf) -> ScriptedRunner {
+    ScriptedRunner::new(move |call: &Recorded| {
+        let Some(at) = call.args.iter().position(|arg| arg == "download") else {
+            return Ok(exited(1, b"", b"Error: only downloads are emulated"));
+        };
+        let remote = call.args[at + 2].trim_start_matches("/sandbox/");
+        let target = call.args[at + 3].clone();
+        match std::fs::copy(root.join("sandbox").join(remote), target) {
+            Ok(_) => Ok(exited(0, b"", b"")),
+            Err(error) => Ok(exited(1, b"", error.to_string().as_bytes())),
+        }
+    })
+}
+
+#[tokio::test]
+async fn the_download_checks_pass_on_the_adapter_when_the_sandbox_answers_like_the_real_tools() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root);
+    env.server.state().exec = Some(host_tools(root.path().to_path_buf()));
+    let (_project, fixture) = fixture().await;
+    let settings = config(
+        &env,
+        resolved(&env).await,
+        WORKSPACE,
+        sandbox_download(root.path().to_path_buf()),
+    );
+    let gateway = guard(GrpcGateway::connect(settings)).await.unwrap();
+    let report = run(&gateway, &fixture, ContractGroup::Transfer).await;
+    let names: Vec<&str> = report.checks.iter().map(|check| check.name).collect();
+    assert_eq!(names, TRANSFER_CHECKS.to_vec());
+    for name in [
+        "download_with_digest",
+        "download_missing_remote_is_a_size_error",
+        "download_pre_cancelled_is_cancelled",
+    ] {
+        assert_eq!(outcome(&report, name), &Ok(()), "{name}");
+    }
+    assert!(env.server.state().sandboxes.is_empty());
+}
+
+#[tokio::test]
+async fn a_gateway_that_finds_a_missing_file_and_fails_later_fails_the_size_check() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root);
+    env.server.state().exec = Some(scripted(|start, _| {
+        if start.command[0] == "/usr/bin/stat" {
+            vec![Step::Out(b"1\n".to_vec()), Step::Exit(0)]
+        } else {
+            vec![Step::Err(b"no such file".to_vec()), Step::Exit(1)]
+        }
+    }));
+    let (_project, fixture) = fixture().await;
+    let succeeding = ScriptedRunner::always(exited(0, b"", b""));
+    let settings = config(&env, resolved(&env).await, WORKSPACE, succeeding);
+    let gateway = guard(GrpcGateway::connect(settings)).await.unwrap();
+    let report = run(&gateway, &fixture, ContractGroup::Transfer).await;
+    let missing = outcome(&report, "download_missing_remote_is_a_size_error");
+    assert!(
+        missing.as_ref().is_err_and(
+            |message| message.contains("not a Size error") && message.contains("Digest")
+        ),
+        "{missing:?}"
+    );
 }

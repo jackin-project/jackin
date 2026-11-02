@@ -4,9 +4,9 @@
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
-use jackin_core::{HostPath, LaunchId};
-use jackin_openshell::{Gateway, GatewayError, PowerAction, TransferOp};
-use jackin_testkit::Fault;
+use jackin_core::{HostPath, LaunchId, ProcessStatus};
+use jackin_openshell::{Gateway, GatewayError, GatewayOp, PowerAction, TransferOp};
+use jackin_testkit::{Fault, Trigger};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
@@ -87,8 +87,50 @@ async fn a_failed_download_leaves_no_local_file_and_a_good_one_writes_it() -> Te
 
         let missing = path(&format!("/sandbox/{}", LaunchId::generate()?))?;
         let absent = fake.download_file(&name, &missing, &local, &cancel).await;
-        assert!(absent.is_err(), "{absent:?}");
+        assert!(
+            matches!(
+                absent,
+                Err(GatewayError::Transfer {
+                    op: TransferOp::Size,
+                    status: ProcessStatus::Exited(1),
+                    ..
+                })
+            ),
+            "{absent:?}"
+        );
         assert!(!tokio::fs::try_exists(local.as_path()).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_armed_at_the_download_ends_the_call_as_cancelled_and_leaves_no_file() -> TestResult
+{
+    guard(async {
+        let fake = fake()?;
+        let handle = ready(&fake, sh("sleep 3600")?).await?;
+        let name = handle.name();
+        write(&fake, &name, "/sandbox/export.bin", "bundle-bytes").await?;
+        let dir = tempfile::tempdir()?;
+        let local = HostPath::parse(&dir.path().join("export.bin"))?;
+        let remote = path("/sandbox/export.bin")?;
+        let cancel = CancellationToken::new();
+
+        fake.inject(Fault::CancelAt {
+            trigger: Trigger::Op(GatewayOp::Download),
+            token: cancel.clone(),
+        });
+        let cancelled = fake.download_file(&name, &remote, &local, &cancel).await;
+        assert!(
+            matches!(cancelled, Err(GatewayError::Cancelled { .. })),
+            "{cancelled:?}"
+        );
+        assert!(!tokio::fs::try_exists(local.as_path()).await?);
+
+        fake.download_file(&name, &remote, &local, &CancellationToken::new())
+            .await?;
+        assert_eq!(tokio::fs::read(local.as_path()).await?, b"bundle-bytes");
         Ok(())
     })
     .await

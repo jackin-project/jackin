@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use jackin_core::{
     AccountName, Agent, ChatgptAccountId, CredentialKeys, EnvName, FileMode, HostPath, ImageId,
-    ImageTag, LabelSelector, LaunchId, NameSuffix, Phase, PlannedLabels, ProfileAsset, ProfileId,
-    ProjectRoot, ProviderName, RoleName, SandboxName, SandboxPath, SandboxSlug, Secret,
-    SecretBytes, StdFileSystem, WorkspaceName,
+    ImageTag, LabelSelector, LaunchId, NameSuffix, Phase, PlannedLabels, ProcessStatus,
+    ProfileAsset, ProfileId, ProjectRoot, ProviderName, RoleName, SandboxName, SandboxPath,
+    SandboxSlug, Secret, SecretBytes, StdFileSystem, WorkspaceName,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -43,10 +43,12 @@ pub const CORE_CHECKS: [&str; 15] = [
     "delete_sandbox",
 ];
 
-pub const TRANSFER_CHECKS: [&str; 4] = [
+pub const TRANSFER_CHECKS: [&str; 6] = [
     "upload_tree",
     "upload_file_with_digest",
     "download_with_digest",
+    "download_missing_remote_is_a_size_error",
+    "download_pre_cancelled_is_cancelled",
     "upload_absent_sandbox_is_a_transfer_error",
 ];
 
@@ -1118,21 +1120,31 @@ async fn upload_absent_sandbox_is_a_transfer_error(ctx: &Ctx<'_>) -> Outcome<()>
     )
 }
 
+fn scratch_download() -> Outcome<HostPath> {
+    let local = std::env::temp_dir().join(format!("jackin-contract-{}.bin", fresh_launch()?));
+    HostPath::parse(&local).map_err(text)
+}
+
+async fn put_remote(
+    ctx: &Ctx<'_>,
+    sandbox: &SandboxName,
+    remote: &SandboxPath,
+    bytes: &[u8],
+) -> Outcome<()> {
+    let file = SandboxFile {
+        path: remote.clone(),
+        mode: FileMode(0o600),
+        content: SecretBytes::new(bytes.to_vec()),
+    };
+    ctx.gateway.write_file(sandbox, &file).await.map_err(text)
+}
+
 async fn download_with_digest(ctx: &Ctx<'_>) -> Outcome<()> {
     let sandbox = ctx.sleeper().await?;
     let result = async {
         let remote = path("/sandbox/.contract/export.bin")?;
-        let file = SandboxFile {
-            path: remote.clone(),
-            mode: FileMode(0o600),
-            content: SecretBytes::new(b"contract-export".to_vec()),
-        };
-        ctx.gateway
-            .write_file(&sandbox, &file)
-            .await
-            .map_err(text)?;
-        let local = std::env::temp_dir().join(format!("jackin-contract-{}.bin", fresh_launch()?));
-        let local = HostPath::parse(&local).map_err(text)?;
+        put_remote(ctx, &sandbox, &remote, b"contract-export").await?;
+        let local = scratch_download()?;
         ctx.gateway
             .download_file(&sandbox, &remote, &local, &CancellationToken::new())
             .await
@@ -1140,6 +1152,81 @@ async fn download_with_digest(ctx: &Ctx<'_>) -> Outcome<()> {
         let bytes = tokio::fs::read(local.as_path()).await.map_err(text)?;
         drop(tokio::fs::remove_file(local.as_path()).await);
         expect(bytes == b"contract-export", "the downloaded bytes differ")
+    }
+    .await;
+    ctx.cleanup(&sandbox).await;
+    result
+}
+
+async fn download_missing_remote_is_a_size_error(ctx: &Ctx<'_>) -> Outcome<()> {
+    let sandbox = ctx.sleeper().await?;
+    let result = async {
+        let remote = path("/sandbox/.contract/missing.bin")?;
+        let local = scratch_download()?;
+        let missing = ctx
+            .gateway
+            .download_file(&sandbox, &remote, &local, &CancellationToken::new())
+            .await;
+        let local_left = tokio::fs::try_exists(local.as_path()).await.map_err(text)?;
+        drop(tokio::fs::remove_file(local.as_path()).await);
+        expect(
+            matches!(
+                missing,
+                Err(GatewayError::Transfer {
+                    op: TransferOp::Size,
+                    status: ProcessStatus::Exited(code),
+                    ..
+                }) if code != 0
+            ),
+            &format!("a download of a missing file is not a Size error: {missing:?}"),
+        )?;
+        expect(!local_left, "a failed download left a local file")?;
+        put_remote(ctx, &sandbox, &remote, b"now-present").await?;
+        ctx.gateway
+            .download_file(&sandbox, &remote, &local, &CancellationToken::new())
+            .await
+            .map_err(text)?;
+        let bytes = tokio::fs::read(local.as_path()).await.map_err(text)?;
+        drop(tokio::fs::remove_file(local.as_path()).await);
+        expect(
+            bytes == b"now-present",
+            "the download after the file appeared has other bytes",
+        )
+    }
+    .await;
+    ctx.cleanup(&sandbox).await;
+    result
+}
+
+async fn download_pre_cancelled_is_cancelled(ctx: &Ctx<'_>) -> Outcome<()> {
+    let sandbox = ctx.sleeper().await?;
+    let result = async {
+        let remote = path("/sandbox/.contract/cancelled.bin")?;
+        put_remote(ctx, &sandbox, &remote, b"cancel-control").await?;
+        let local = scratch_download()?;
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let cancelled = ctx
+            .gateway
+            .download_file(&sandbox, &remote, &local, &cancel)
+            .await;
+        let local_left = tokio::fs::try_exists(local.as_path()).await.map_err(text)?;
+        drop(tokio::fs::remove_file(local.as_path()).await);
+        expect(
+            matches!(cancelled, Err(GatewayError::Cancelled { .. })),
+            &format!("a download with a cancelled token is not Cancelled: {cancelled:?}"),
+        )?;
+        expect(!local_left, "a cancelled download left a local file")?;
+        ctx.gateway
+            .download_file(&sandbox, &remote, &local, &CancellationToken::new())
+            .await
+            .map_err(text)?;
+        let bytes = tokio::fs::read(local.as_path()).await.map_err(text)?;
+        drop(tokio::fs::remove_file(local.as_path()).await);
+        expect(
+            bytes == b"cancel-control",
+            "the download with a fresh token has other bytes",
+        )
     }
     .await;
     ctx.cleanup(&sandbox).await;
@@ -1520,6 +1607,18 @@ pub async fn run(
                 upload_file_with_digest
             );
             check!(checks, ctx, "download_with_digest", download_with_digest);
+            check!(
+                checks,
+                ctx,
+                "download_missing_remote_is_a_size_error",
+                download_missing_remote_is_a_size_error
+            );
+            check!(
+                checks,
+                ctx,
+                "download_pre_cancelled_is_cancelled",
+                download_pre_cancelled_is_cancelled
+            );
             check!(
                 checks,
                 ctx,

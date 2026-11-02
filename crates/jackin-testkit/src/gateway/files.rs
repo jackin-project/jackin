@@ -280,16 +280,22 @@ pub(super) async fn download_file(
     local: &HostPath,
     corrupt: bool,
 ) -> Result<(), GatewayError> {
-    let source = host_path(root, remote.as_str());
-    let bytes = match source {
-        Some(path) => tokio::fs::read(path).await.ok(),
-        None => None,
-    };
-    let Some(mut bytes) = bytes else {
+    let Some(source) = host_path(root, remote.as_str()) else {
         return Err(GatewayError::Transfer {
             op: TransferOp::Download,
             status: ProcessStatus::Exited(1),
-            tail: TerminalText::sanitize(format!("{} is not a file", remote.as_str()).as_bytes()),
+            tail: TerminalText::sanitize(
+                format!("{} is outside /sandbox", remote.as_str()).as_bytes(),
+            ),
+        });
+    };
+    let Ok(mut bytes) = tokio::fs::read(source).await else {
+        return Err(GatewayError::Transfer {
+            op: TransferOp::Size,
+            status: ProcessStatus::Exited(1),
+            tail: TerminalText::sanitize(
+                format!("stat: cannot stat '{}': No such file", remote.as_str()).as_bytes(),
+            ),
         });
     };
     let expected = Sha256::of(&bytes);

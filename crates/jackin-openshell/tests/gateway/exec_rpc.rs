@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 
+use jackin_core::Sha256;
 use openshell_sdk::raw::proto::{
     ExecSandboxEvent, ExecSandboxExit, ExecSandboxInput, ExecSandboxStderr, ExecSandboxStdout,
     SandboxPhase, exec_sandbox_event, exec_sandbox_input,
@@ -118,6 +119,51 @@ enum Hook {
     Plain,
     AbortAfter(usize),
     GateAfter(usize, Arc<Barrier>),
+}
+
+const SANDBOX_TOOLS: [&str; 2] = ["/usr/bin/stat", "/usr/bin/sha256sum"];
+
+fn sandbox_tool(root: &Path, command: &[String]) -> Option<Vec<Step>> {
+    let program = command.first()?.as_str();
+    let target = |name: &str| PathBuf::from(rewrite(root, name));
+    match program {
+        "/usr/bin/stat" => {
+            let file = target(command.last()?);
+            Some(match std::fs::metadata(&file) {
+                Ok(meta) => vec![
+                    Step::Out(format!("{}\n", meta.len()).into_bytes()),
+                    Step::Exit(0),
+                ],
+                Err(error) => vec![Step::Err(error.to_string().into_bytes()), Step::Exit(1)],
+            })
+        }
+        "/usr/bin/sha256sum" => {
+            let name = command.get(1)?;
+            Some(match std::fs::read(target(name)) {
+                Ok(bytes) => vec![
+                    Step::Out(format!("{}  {name}\n", Sha256::of(&bytes).as_str()).into_bytes()),
+                    Step::Exit(0),
+                ],
+                Err(error) => vec![Step::Err(error.to_string().into_bytes()), Step::Exit(1)],
+            })
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn host_tools(root: PathBuf) -> ExecBackend {
+    let shell = host_shell(root.clone());
+    let tools = scripted(move |start, _| {
+        sandbox_tool(&root, &start.command).unwrap_or_else(|| vec![Step::Exit(MISSING_PROGRAM)])
+    });
+    Arc::new(move |ctx: ExecCtx| {
+        let native = ctx
+            .start
+            .command
+            .first()
+            .is_some_and(|program| SANDBOX_TOOLS.contains(&program.as_str()));
+        if native { tools(ctx) } else { shell(ctx) }
+    })
 }
 
 pub(crate) fn host_shell(root: PathBuf) -> ExecBackend {
