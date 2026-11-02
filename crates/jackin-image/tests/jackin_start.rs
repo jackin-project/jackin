@@ -173,15 +173,24 @@ impl Supervisor {
             .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
     }
 
-    async fn wait_state(&self, want: &str) -> TestResult {
-        let deadline = Instant::now() + STEP;
-        while self.state().trim_end() != want {
+    async fn wait_until(
+        &self,
+        limit: Duration,
+        want: &str,
+        done: impl Fn(&str) -> bool,
+    ) -> TestResult {
+        let deadline = Instant::now() + limit;
+        while !done(self.state().trim_end()) {
             if Instant::now() > deadline {
                 return Err(format!("state {:?}, wanted {want:?}", self.state()).into());
             }
             sleep(Duration::from_millis(10)).await;
         }
         Ok(())
+    }
+
+    async fn wait_state(&self, want: &str) -> TestResult {
+        self.wait_until(STEP, want, |state| state == want).await
     }
 
     fn request(&self, id: &str) -> TestResult {
@@ -558,5 +567,224 @@ async fn a_stale_record_is_removed_when_the_classifier_fails() -> TestResult {
         "a stale or partial record survived"
     );
     assert!(!supervisor.run_dir().join("env-kinds.tmp").exists());
+    Ok(())
+}
+
+const BIG_STEP: Duration = Duration::from_secs(150);
+
+fn replace_env_file(root: &Path, text: &str) -> TestResult {
+    let dir = root.join("sandbox/.jackin");
+    fs::write(dir.join("env-L1.tmp"), text)?;
+    fs::rename(dir.join("env-L1.tmp"), dir.join("env-L1"))?;
+    Ok(())
+}
+
+fn dump_value(supervisor: &Supervisor, name: &str) -> Result<Option<String>, Box<dyn Error>> {
+    let dump = fs::read_to_string(supervisor.root.join("dump"))?;
+    Ok(dump
+        .lines()
+        .filter_map(|line| line.split_once('\t'))
+        .find(|(key, _)| *key == name)
+        .map(|(_, value)| value.to_owned()))
+}
+
+fn marks(supervisor: &Supervisor) -> Result<Vec<String>, Box<dyn Error>> {
+    Ok(fs::read_dir(supervisor.root.join("marks"))?
+        .map(|e| e.map(|e| e.file_name().to_string_lossy().into_owned()))
+        .collect::<Result<_, _>>()?)
+}
+
+#[tokio::test]
+async fn jackin_start_applies_only_the_bytes_it_validated() -> TestResult {
+    let big = "export V='x'\n".repeat(200_000);
+    let mut setup = Setup::new();
+    setup.env_file = Some(&big);
+    let (dir, root) = Supervisor::prepare(&setup)?;
+    install(
+        &root.join("evil/prog"),
+        &format!("#!/bin/sh\n: > '{}/marks/evil'\n", root.display()),
+    )?;
+    let supervisor = Supervisor::spawn(setup, dir, root)?;
+    supervisor.wait_state("waiting").await?;
+    let started = Instant::now();
+    supervisor.request("1")?;
+    supervisor
+        .wait_until(BIG_STEP, "exited 1 0", |state| state == "exited 1 0")
+        .await?;
+    let control = started.elapsed();
+    assert_eq!(
+        dump_value(&supervisor, "V")?.as_deref(),
+        Some("x"),
+        "control"
+    );
+    let root = supervisor.root.display().to_string();
+    let swaps = [
+        format!("export V='second'\nexec {root}/evil/prog\n"),
+        format!("touch {root}/marks/touched\n"),
+    ];
+    let mut applied = 0;
+    for (index, swap) in swaps.iter().enumerate() {
+        let id = index + 2;
+        replace_env_file(&supervisor.root, &big)?;
+        let before = supervisor.state();
+        fs::write(supervisor.root.join("swap"), swap)?;
+        supervisor.request(&id.to_string())?;
+        sleep(control / 4).await;
+        assert_eq!(
+            supervisor.state(),
+            before,
+            "invalid instrument: validation of attempt {id} ended before the swap ({control:?} per attempt)"
+        );
+        fs::rename(
+            supervisor.root.join("swap"),
+            supervisor.root.join("sandbox/.jackin/env-L1"),
+        )?;
+        let prefix = format!("exited {id} ");
+        supervisor
+            .wait_until(BIG_STEP, &prefix, |state| state.starts_with(&prefix))
+            .await?;
+        assert_eq!(
+            marks(&supervisor)?,
+            Vec::<String>::new(),
+            "attempt {id} ran a swapped byte"
+        );
+        if supervisor.state() == format!("exited {id} 0\n") {
+            applied += 1;
+            assert_eq!(
+                dump_value(&supervisor, "V")?.as_deref(),
+                Some("x"),
+                "attempt {id}"
+            );
+        } else {
+            assert_eq!(
+                supervisor.state(),
+                format!("exited {id} 65\n"),
+                "attempt {id}"
+            );
+        }
+    }
+    assert!(
+        applied >= 1,
+        "no swap attempt reached Codex with the validated file ({control:?} per attempt)"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn jackin_start_refuses_every_malformed_env_file_and_runs_nothing() -> TestResult {
+    let rows: [(&str, &str, usize); 17] = [
+        ("bare command", "touch pwned\n", 1),
+        ("no export", "A=1\n", 1),
+        ("digit name", "export 1A='x'\n", 1),
+        ("dash in name", "export A-B='x'\n", 1),
+        ("empty name", "export ='x'\n", 1),
+        ("unquoted", "export A=x\n", 1),
+        ("text after quote", "export A='x'extra\n", 1),
+        ("semicolon", "export A='x'; touch pwned\n", 1),
+        ("substitution", "export A='x'$(touch pwned)\n", 1),
+        ("quote break", "export A='x'y'z'\n", 1),
+        ("comment", "# comment\n", 1),
+        ("blank line", "\n", 1),
+        ("crlf", "export A='x'\r\n", 1),
+        ("no final newline", "export A='x'\nexport B='y'", 2),
+        ("continuation", "export A='x'\n  exec evil\n", 2),
+        ("third line", "export A='x'\nexport B='y'\nbad\n", 3),
+        ("only no final newline", "export A='x'", 1),
+    ];
+    let mut setup = Setup::new();
+    setup.env_file = Some("");
+    let supervisor = Supervisor::start(setup)?;
+    supervisor.wait_state("waiting").await?;
+    for (index, (label, text, line)) in rows.iter().enumerate() {
+        let id = index + 1;
+        replace_env_file(&supervisor.root, text)?;
+        supervisor.request(&id.to_string())?;
+        supervisor.wait_state(&format!("exited {id} 65")).await?;
+        let stderr = fs::read_to_string(supervisor.root.join("stderr"))?;
+        let last = stderr.lines().last().unwrap_or_default();
+        assert!(
+            last.ends_with(&format!("env-L1 is malformed at line {line}")),
+            "{label}: {stderr}"
+        );
+        assert_eq!(supervisor.runs(), 0, "{label}: Codex ran");
+        assert!(
+            !supervisor.root.join("pwned").exists(),
+            "{label}: a command ran"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn jackin_start_gives_codex_every_env_value_byte_for_byte() -> TestResult {
+    let long = "z".repeat(100_000);
+    let values: [&str; 14] = [
+        "it's",
+        "a b",
+        "$HOME",
+        "$(touch @ROOT@/marks/cmd)",
+        "`touch @ROOT@/marks/tick`",
+        "\"q\"",
+        "a\\nb",
+        "*",
+        "#x",
+        "  padded  ",
+        "",
+        "a=b=c",
+        "'''",
+        &long,
+    ];
+    let mut text = String::new();
+    for (index, value) in values.iter().enumerate() {
+        text.push_str(&format!(
+            "export V{index}='{}'\n",
+            value.replace('\'', "'\\''")
+        ));
+    }
+    let mut setup = Setup::new();
+    setup.env_file = Some(&text);
+    let supervisor = Supervisor::start(setup)?;
+    supervisor.attempt(1).await?;
+    let root = supervisor.root.display().to_string();
+    for (index, value) in values.iter().enumerate() {
+        let wanted = value.replace("@ROOT@", &root);
+        assert_eq!(
+            dump_value(&supervisor, &format!("V{index}"))?.as_deref(),
+            Some(wanted.as_str()),
+            "V{index}"
+        );
+    }
+    assert_eq!(marks(&supervisor)?, Vec::<String>::new());
+    assert!(!supervisor.root.join("pwned").exists());
+    Ok(())
+}
+
+#[tokio::test]
+async fn jackin_start_reports_an_unreadable_env_file_and_accepts_a_missing_one() -> TestResult {
+    let mut setup = Setup::new();
+    setup.env_file = Some("export V='x'\n");
+    let (dir, root) = Supervisor::prepare(&setup)?;
+    let path = root.join("sandbox/.jackin/env-L1");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o000))?;
+    let readable = fs::read(&path).is_ok();
+    let supervisor = Supervisor::spawn(setup, dir, root)?;
+    supervisor.wait_state("waiting").await?;
+    supervisor.request("1")?;
+    if readable {
+        supervisor.wait_state("exited 1 0").await?;
+    } else {
+        supervisor.wait_state("exited 1 65").await?;
+        let stderr = fs::read_to_string(supervisor.root.join("stderr"))?;
+        assert!(stderr.contains("env-L1 is not readable"), "{stderr}");
+        assert_eq!(supervisor.runs(), 0);
+    }
+    fs::remove_file(&path)?;
+    supervisor.request("2")?;
+    supervisor.wait_state("exited 2 0").await?;
+    assert_eq!(
+        dump_value(&supervisor, "V")?,
+        None,
+        "a removed file left its variable"
+    );
     Ok(())
 }

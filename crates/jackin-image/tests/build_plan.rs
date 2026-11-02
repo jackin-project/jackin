@@ -553,22 +553,42 @@ fn derived_dockerfile_installs_jackin_start_and_hooks_at_the_layout_paths() -> T
         .iter()
         .filter_map(|l| l.strip_prefix("COPY "))
         .collect();
-    let start = "--chown=root:root --chmod=0755 jackin-start /usr/local/bin/jackin-start";
+    let start = "--from=trusted --chown=root:root --chmod=0755 /usr/local/bin/jackin-start /usr/local/bin/jackin-start";
     assert_eq!(
         copies.iter().filter(|c| **c == start).count(),
         1,
         "jackin-start copy in {copies:?}"
     );
+    let hooks_dir = sandbox_layout::HOOKS_DIR.as_str();
     let hooks = format!(
-        "--chown=root:root --chmod=0755 {} {} {}/",
-        hook_name(HookKind::Setup),
-        hook_name(HookKind::Preflight),
-        sandbox_layout::HOOKS_DIR.as_str()
+        "--from=trusted --chown=root:root --chmod=0755 {} {} {hooks_dir}/",
+        sandbox_layout::hook_path(HookKind::Setup).as_str(),
+        sandbox_layout::hook_path(HookKind::Preflight).as_str(),
     );
     assert_eq!(
         copies.iter().filter(|c| **c == hooks).count(),
         1,
         "hooks copy in {copies:?}"
+    );
+    let trusted = stage_named(&all, "trusted")?;
+    let trusted_copies: Vec<&str> = trusted
+        .lines
+        .iter()
+        .filter_map(|l| l.strip_prefix("COPY "))
+        .collect();
+    let start_source = "--chown=root:root --chmod=0755 jackin-start /usr/local/bin/jackin-start";
+    assert!(
+        trusted_copies.contains(&start_source),
+        "trusted jackin-start copy in {trusted_copies:?}"
+    );
+    let hook_sources = format!(
+        "--chown=root:root --chmod=0755 {} {} {hooks_dir}/",
+        hook_name(HookKind::Setup),
+        hook_name(HookKind::Preflight),
+    );
+    assert!(
+        trusted_copies.contains(&hook_sources.as_str()),
+        "trusted hooks copy in {trusted_copies:?}"
     );
     Ok(())
 }
@@ -696,7 +716,7 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
     let body = scan.lines[run].replace("${CODEX_BIN_DIR}", bin_dir);
     let words: Vec<&str> = body.split_whitespace().collect();
     assert!(words.contains(&"--mount=type=bind,from=assembled,source=/,target=/image,ro"));
-    assert!(words.contains(&"--mount=type=bind,from=codex,source=/,target=/trusted,ro"));
+    assert!(words.contains(&"--mount=type=bind,from=trusted,source=/,target=/trusted,ro"));
     assert_eq!(words_after(&words, "--owner"), ["0:0"], "scan owner");
     let command = words
         .iter()
@@ -747,14 +767,14 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
     assert_eq!(passed, protected, "protected paths passed to the scan");
     let mut same_as = words_after(&words, "--same-as");
     same_as.sort_unstable();
-    let mut wanted: Vec<String> = [&spec.binary, &spec.code_mode_host]
+    let mut wanted: Vec<String> = protected
         .iter()
-        .map(|path| format!("{0}=/trusted{0}", path.as_str()))
+        .map(|path| format!("{path}=/trusted{path}"))
         .collect();
     wanted.sort();
     assert_eq!(
         same_as, wanted,
-        "codex files compared with the trusted copy"
+        "protected files compared with the trusted copy"
     );
 
     let assembled = stage_named(&all, "assembled")?;
@@ -1080,5 +1100,124 @@ fn embedded_jackin_start_reads_start_requests_exactly_as_attempt_id_parses() -> 
             );
         }
     }
+    Ok(())
+}
+
+fn planned_dockerfile() -> Result<String, Box<dyn Error>> {
+    let built = ImagePlan::new(&base()?)?.final_builds(&construct_id()?);
+    let file = materialized(&built.derived)?
+        .iter()
+        .find(|file| file.name == "Dockerfile")
+        .ok_or("the derived context holds no Dockerfile")?;
+    Ok(String::from_utf8(file.bytes.clone())?)
+}
+
+#[test]
+fn no_role_program_runs_after_the_trusted_files_land() -> TestResult {
+    let all = stages(&instructions(&planned_dockerfile()?));
+    let mut derived: BTreeSet<String> = BTreeSet::from(["role".to_owned()]);
+    let mut checked = Vec::new();
+    for stage in &all {
+        if !derived.contains(&stage.from) {
+            continue;
+        }
+        derived.insert(stage.name.clone());
+        checked.push(stage.name.as_str());
+        for line in &stage.lines {
+            let kind = line.split_whitespace().next().unwrap_or("");
+            assert!(
+                ["ARG", "USER", "WORKDIR", "COPY"].contains(&kind),
+                "stage {:?} derived from the role image runs {line:?}",
+                stage.name
+            );
+        }
+    }
+    assert_eq!(
+        checked,
+        ["assembled", ""],
+        "stages derived from the role image"
+    );
+    Ok(())
+}
+
+fn copy_destinations(stage: &Stage, bin_dir: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    let mut out = Vec::new();
+    for line in &stage.lines {
+        let Some(rest) = line.strip_prefix("COPY ") else {
+            continue;
+        };
+        let rest = rest.replace("${CODEX_BIN_DIR}", bin_dir);
+        let words: Vec<&str> = rest.split_whitespace().collect();
+        let (flags, paths): (Vec<&str>, Vec<&str>) = words
+            .iter()
+            .copied()
+            .partition(|word| word.starts_with("--"));
+        assert!(
+            flags
+                .iter()
+                .all(|flag| !flag.starts_with("--from=") || *flag == "--from=codex"),
+            "the trusted stage copies from a stage other than codex: {line}"
+        );
+        let (dest, sources) = paths.split_last().ok_or("a COPY without paths")?;
+        for source in sources {
+            if dest.ends_with('/') {
+                out.push(format!("{dest}{}", last_segment(source)));
+            } else {
+                out.push((*dest).to_owned());
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[test]
+fn the_scan_compares_the_five_protected_files_with_copies_the_role_cannot_write() -> TestResult {
+    let spec = Agent::Codex.spec();
+    let bin_dir = parent(spec.binary.as_str());
+    let all = stages(&instructions(&planned_dockerfile()?));
+    let run = stage_named(&all, "scan")?
+        .lines
+        .iter()
+        .find(|line| line.starts_with("RUN "))
+        .ok_or("no scan RUN")?
+        .replace("${CODEX_BIN_DIR}", bin_dir);
+    let words: Vec<&str> = run.split_whitespace().collect();
+    let trusted = stage_named(&all, "trusted")?;
+    assert_eq!(trusted.from, "construct", "trusted stage base");
+    assert!(
+        words.contains(&"--mount=type=bind,from=trusted,source=/,target=/trusted,ro"),
+        "the trusted mount: {run}"
+    );
+    let destinations = copy_destinations(trusted, bin_dir)?;
+    let mut protected = vec![
+        "/usr/local/bin/jackin-start".to_owned(),
+        sandbox_layout::hook_path(HookKind::Setup)
+            .as_str()
+            .to_owned(),
+        sandbox_layout::hook_path(HookKind::Preflight)
+            .as_str()
+            .to_owned(),
+        spec.binary.as_str().to_owned(),
+        spec.code_mode_host.as_str().to_owned(),
+    ];
+    protected.sort();
+    let mut compared = Vec::new();
+    for pair in words_after(&words, "--same-as") {
+        let (path, expected) = pair.split_once('=').ok_or("a pair without =")?;
+        let inside = expected
+            .strip_prefix("/trusted")
+            .ok_or_else(|| format!("{pair}: the expected side is not under the trusted mount"))?;
+        assert_eq!(
+            inside, path,
+            "{pair}: the trusted copy sits at another path"
+        );
+        assert!(
+            destinations.iter().any(|dest| dest == inside),
+            "{pair}: no COPY in the trusted stage writes {inside}: {destinations:?}"
+        );
+        compared.push(path.to_owned());
+    }
+    compared.sort();
+    assert_eq!(compared, protected, "files compared with a trusted copy");
     Ok(())
 }

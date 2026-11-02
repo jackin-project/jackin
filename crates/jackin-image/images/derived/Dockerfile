@@ -33,16 +33,28 @@ RUN --mount=type=bind,from=codex-archive,source=/,target=/archive \
     && test "$(CODEX_HOME="$work/home" "${CODEX_BIN_DIR}/codex" --version)" = "codex-cli ${CODEX_VERSION}" \
     && rm -rf "$work"
 
-FROM role AS assembled
+FROM construct AS trusted
 ARG CODEX_BIN_DIR
 
 USER root
 COPY --from=codex --chown=root:root --chmod=0755 ${CODEX_BIN_DIR}/codex ${CODEX_BIN_DIR}/codex-code-mode-host ${CODEX_BIN_DIR}/
-COPY --from=codex --chown=root:root --chmod=u=rwX,go=rX /etc/codex/config.toml /etc/codex/config.toml
 COPY --chown=root:root --chmod=0755 jackin-start /usr/local/bin/jackin-start
 COPY --chown=root:root --chmod=0755 hooks/setup hooks/preflight /usr/local/lib/jackin/hooks/
-RUN chown root:root /usr/local/bin /usr/local/lib/jackin /usr/local/lib/jackin/hooks \
-    && chmod 0755 /usr/local/bin /usr/local/lib/jackin /usr/local/lib/jackin/hooks
+
+FROM construct AS layout
+
+USER root
+RUN install -d -m 0755 -o root -g root /layout/usr /layout/usr/local /layout/usr/local/bin /layout/usr/local/lib /layout/usr/local/lib/jackin /layout/usr/local/lib/jackin/hooks
+
+FROM role AS assembled
+ARG CODEX_BIN_DIR
+
+USER root
+COPY --from=layout --chown=root:root --chmod=0755 /layout/ /
+COPY --from=trusted --chown=root:root --chmod=0755 ${CODEX_BIN_DIR}/codex ${CODEX_BIN_DIR}/codex-code-mode-host ${CODEX_BIN_DIR}/
+COPY --from=codex --chown=root:root --chmod=u=rwX,go=rX /etc/codex/config.toml /etc/codex/config.toml
+COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/bin/jackin-start /usr/local/bin/jackin-start
+COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/lib/jackin/hooks/setup /usr/local/lib/jackin/hooks/preflight /usr/local/lib/jackin/hooks/
 
 FROM construct AS scan
 ARG CODEX_BIN_DIR
@@ -50,8 +62,11 @@ ARG CODEX_BIN_DIR
 USER root
 COPY scan /jackin-scan
 RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
-    --mount=type=bind,from=codex,source=/,target=/trusted,ro \
+    --mount=type=bind,from=trusted,source=/,target=/trusted,ro \
     /bin/sh /jackin-scan --owner 0:0 \
+        --same-as /usr/local/bin/jackin-start=/trusted/usr/local/bin/jackin-start \
+        --same-as /usr/local/lib/jackin/hooks/setup=/trusted/usr/local/lib/jackin/hooks/setup \
+        --same-as /usr/local/lib/jackin/hooks/preflight=/trusted/usr/local/lib/jackin/hooks/preflight \
         --same-as ${CODEX_BIN_DIR}/codex=/trusted${CODEX_BIN_DIR}/codex \
         --same-as ${CODEX_BIN_DIR}/codex-code-mode-host=/trusted${CODEX_BIN_DIR}/codex-code-mode-host \
         /image \

@@ -36,6 +36,26 @@ const DIRECTORIES: [&str; 6] = [
 ];
 const LEAVES: [&str; 5] = [START, CODEX, CODEX_HOST, SETUP, PREFLIGHT];
 const NO_GETCAP: &str = "exit 0\n";
+const PASSWD: &str = "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nsandbox:x:1000:1000::/sandbox:/bin/bash\nnobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n";
+const GROUP: &str = "root:x:0:\ndaemon:x:1:\nsandbox:x:1000:\nnogroup:x:65534:\n";
+const SANDBOX_PASSWD: &str = "sandbox:x:1000:1000::/sandbox:/bin/bash\n";
+const SANDBOX_GROUP: &str = "sandbox:x:1000:\n";
+const MISSING_PASSWD: &str = "sandbox account is missing or duplicated in /etc/passwd";
+const WRONG_PASSWD: &str = "sandbox account is not 1000:1000 in /etc/passwd";
+const MISSING_GROUP: &str = "sandbox group is missing or duplicated in /etc/group";
+const WRONG_GROUP: &str = "sandbox group is not gid 1000 in /etc/group";
+
+fn leaf_bytes(leaf: &str) -> Vec<u8> {
+    if leaf == CODEX || leaf == CODEX_HOST {
+        vec![7u8; 256 * 1024]
+    } else {
+        format!("#!/bin/sh\n# {leaf}\n").into_bytes()
+    }
+}
+
+fn trusted_name(leaf: &str) -> &str {
+    leaf.rsplit('/').next().unwrap_or(leaf)
+}
 
 fn scan_script() -> Result<Vec<u8>, Box<dyn Error>> {
     let request = ImageRequest {
@@ -113,14 +133,17 @@ impl Fixture {
             fx.dir(directory, 0o755)?;
         }
         for leaf in LEAVES {
-            fx.file(leaf, b"leaf", 0o755)?;
+            fx.file(leaf, &leaf_bytes(leaf), 0o755)?;
+            fs::write(fx.trusted(leaf), leaf_bytes(leaf))?;
         }
-        let big = vec![7u8; 256 * 1024];
-        fs::write(fx.top.join("trusted/codex"), &big)?;
-        fs::write(fx.top.join("trusted/codex-code-mode-host"), &big)?;
-        fx.file(CODEX, &big, 0o755)?;
-        fx.file(CODEX_HOST, &big, 0o755)?;
+        fx.dir("/etc", 0o755)?;
+        fx.file("/etc/passwd", PASSWD.as_bytes(), 0o644)?;
+        fx.file("/etc/group", GROUP.as_bytes(), 0o644)?;
         Ok(fx)
+    }
+
+    fn trusted(&self, leaf: &str) -> PathBuf {
+        self.top.join("trusted").join(trusted_name(leaf))
     }
 
     fn image(&self, path: &str) -> PathBuf {
@@ -172,16 +195,12 @@ impl Fixture {
     }
 
     fn arguments(&self) -> Vec<String> {
-        let trusted = self.top.join("trusted");
-        let mut args = vec![
-            "--owner".to_owned(),
-            format!("{}:{}", self.uid, self.gid),
-            "--same-as".to_owned(),
-            format!("{CODEX}={}/codex", trusted.display()),
-            "--same-as".to_owned(),
-            format!("{CODEX_HOST}={}/codex-code-mode-host", trusted.display()),
-            self.top.join("image").display().to_string(),
-        ];
+        let mut args = vec!["--owner".to_owned(), format!("{}:{}", self.uid, self.gid)];
+        for leaf in LEAVES {
+            args.push("--same-as".to_owned());
+            args.push(format!("{leaf}={}", self.trusted(leaf).display()));
+        }
+        args.push(self.top.join("image").display().to_string());
         args.extend(LEAVES.iter().map(|leaf| (*leaf).to_owned()));
         args
     }
@@ -539,35 +558,39 @@ fn scan_refuses_a_protected_path_that_is_not_a_real_root_owned_path() -> TestRes
 }
 
 #[test]
-fn scan_refuses_a_codex_file_that_differs_from_the_trusted_copy() -> TestResult {
+fn scan_refuses_a_protected_file_that_differs_from_the_trusted_copy() -> TestResult {
     let fx = Fixture::new()?;
     assert!(fx.scan()?.ok, "identical bytes must pass");
-    let wanted = |path: &str| format!("codex file differs from the trusted copy: {path}");
-    let mut last = vec![7u8; 256 * 1024];
-    last[256 * 1024 - 1] = 8;
-    for (label, path) in [("codex", CODEX), ("host", CODEX_HOST)] {
-        let fx = Fixture::new()?;
-        fx.file(path, &last, 0o755)?;
-        let out = fx.scan()?;
-        assert!(
-            !out.ok && out.lines() == [wanted(path)],
-            "{label} last byte: {}",
-            out.stderr
-        );
-        let fx = Fixture::new()?;
-        fx.file(path, b"", 0o755)?;
-        let out = fx.scan()?;
-        assert!(
-            !out.ok && out.lines() == [wanted(path)],
-            "{label} empty: {}",
-            out.stderr
-        );
+    let wanted = |path: &str| format!("protected file differs from the trusted copy: {path}");
+    for path in LEAVES {
+        let trusted = leaf_bytes(path);
+        let mut last = trusted.clone();
+        if let Some(byte) = last.last_mut() {
+            *byte ^= 1;
+        }
+        let mut appended = trusted.clone();
+        appended.push(b'x');
+        for (label, bytes) in [
+            ("last byte", last),
+            ("same size", vec![b'H'; trusted.len()]),
+            ("empty", Vec::new()),
+            ("appended", appended),
+        ] {
+            let fx = Fixture::new()?;
+            fx.file(path, &bytes, 0o755)?;
+            let out = fx.scan()?;
+            assert!(
+                !out.ok && out.lines() == [wanted(path)],
+                "{path} {label}: {}",
+                out.stderr
+            );
+        }
         let fx = Fixture::new()?;
         fs::remove_file(fx.image(path))?;
         let out = fx.scan()?;
         assert!(
-            out.stderr.contains(&wanted(path)),
-            "{label} missing: {}",
+            !out.ok && out.stderr.contains(&wanted(path)),
+            "{path} missing: {}",
             out.stderr
         );
         let fx = Fixture::new()?;
@@ -575,16 +598,15 @@ fn scan_refuses_a_codex_file_that_differs_from_the_trusted_copy() -> TestResult 
         let out = fx.scan()?;
         assert!(
             out.stderr.contains(&wanted(path)),
-            "{label} symlink: {}",
+            "{path} symlink: {}",
             out.stderr
         );
         let fx = Fixture::new()?;
-        let name = path.rsplit('/').next().unwrap_or(path);
-        fs::remove_file(fx.top.join("trusted").join(name))?;
+        fs::remove_file(fx.trusted(path))?;
         let out = fx.scan()?;
         assert!(
-            out.stderr.contains(&wanted(path)),
-            "{label} trusted copy missing: {}",
+            !out.ok && out.stderr.contains(&wanted(path)),
+            "{path} trusted copy missing: {}",
             out.stderr
         );
         let fx = Fixture::new()?;
@@ -593,9 +615,290 @@ fn scan_refuses_a_codex_file_that_differs_from_the_trusted_copy() -> TestResult 
         let out = fx.scan()?;
         assert!(
             out.stderr.contains(&wanted(path)),
-            "{label} directory: {}",
+            "{path} directory: {}",
             out.stderr
         );
     }
+    Ok(())
+}
+
+fn expect_lines(fx: &Fixture, label: &str, wanted: &[&str]) -> TestResult {
+    let out = fx.scan()?;
+    assert!(!out.ok, "{label}: the scan passed");
+    assert_eq!(out.lines(), wanted, "{label}");
+    Ok(())
+}
+
+#[test]
+fn scan_requires_the_sandbox_account_at_1000_and_no_other_uid_0_account() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.file("/etc/passwd", PASSWD.trim_end().as_bytes(), 0o644)?;
+    fx.file("/etc/group", GROUP.trim_end().as_bytes(), 0o644)?;
+    let out = fx.scan()?;
+    assert!(out.ok, "no trailing newline must pass: {}", out.stderr);
+    let fx = Fixture::new()?;
+    fx.file(
+        "/etc/passwd",
+        format!("{PASSWD}ops:x:1:0::/:/bin/sh\n").as_bytes(),
+        0o644,
+    )?;
+    assert!(fx.scan()?.ok, "a non-zero uid in group 0 passes");
+    let m3 = "malformed line 3 in /etc/passwd";
+    let m5 = "malformed line 5 in /etc/passwd";
+    let sandbox: [(&str, &str, Vec<&str>); 8] = [
+        (
+            "uid 0 gid 0",
+            "sandbox:x:0:0::/sandbox:/bin/bash\n",
+            vec![WRONG_PASSWD],
+        ),
+        (
+            "gid 0",
+            "sandbox:x:1000:0::/sandbox:/bin/bash\n",
+            vec![WRONG_PASSWD],
+        ),
+        (
+            "uid 0",
+            "sandbox:x:0:1000::/sandbox:/bin/bash\n",
+            vec![WRONG_PASSWD],
+        ),
+        (
+            "uid 1001",
+            "sandbox:x:1001:1001::/sandbox:/bin/bash\n",
+            vec![WRONG_PASSWD],
+        ),
+        (
+            "leading zeros",
+            "sandbox:x:01000:01000::/sandbox:/bin/bash\n",
+            vec![m3, MISSING_PASSWD],
+        ),
+        ("absent", "", vec![MISSING_PASSWD]),
+        (
+            "short line",
+            "sandbox:x:1000:1000::/sandbox\n",
+            vec![m3, MISSING_PASSWD],
+        ),
+        (
+            "second line at uid 0",
+            "sandbox:x:1000:1000::/sandbox:/bin/bash\nsandbox:x:0:0::/sandbox:/bin/bash\n",
+            vec![MISSING_PASSWD, WRONG_PASSWD],
+        ),
+    ];
+    for (label, line, wanted) in sandbox {
+        let fx = Fixture::new()?;
+        fx.file(
+            "/etc/passwd",
+            PASSWD.replace(SANDBOX_PASSWD, line).as_bytes(),
+            0o644,
+        )?;
+        expect_lines(&fx, label, &wanted)?;
+    }
+    let uid0 = "uid 0 account other than root in /etc/passwd: ";
+    let extra: [(&str, Vec<String>); 15] = [
+        ("toor:x:0:0::/root:/bin/sh", vec![format!("{uid0}toor")]),
+        ("Root:x:0:0::/root:/bin/sh", vec![format!("{uid0}Root")]),
+        ("toor:x:00:0::/root:/bin/sh", vec![m5.to_owned()]),
+        ("toor:x:+0:0::/root:/bin/sh", vec![m5.to_owned()]),
+        ("toor:x: 0:0::/root:/bin/sh", vec![m5.to_owned()]),
+        ("toor:x:0x0:0::/root:/bin/sh", vec![m5.to_owned()]),
+        ("toor:x:4294967296:0::/root:/bin/sh", vec![m5.to_owned()]),
+        ("toor:x:0:00::/root:/bin/sh", vec![m5.to_owned()]),
+        ("toor:x:0:+0::/root:/bin/sh", vec![m5.to_owned()]),
+        ("toor:x:0:0", vec![m5.to_owned()]),
+        ("# sandbox:x:0:0", vec![m5.to_owned()]),
+        (
+            "# sandbox:x:0:0::/:/bin/sh",
+            vec![format!("{uid0}# sandbox")],
+        ),
+        ("+::::::", vec![m5.to_owned()]),
+        ("", vec![m5.to_owned()]),
+        ("toor:x:0:0::/root:/bin/sh:extra", vec![m5.to_owned()]),
+    ];
+    for (line, wanted) in extra {
+        let fx = Fixture::new()?;
+        fx.file("/etc/passwd", format!("{PASSWD}{line}\n").as_bytes(), 0o644)?;
+        let wanted: Vec<&str> = wanted.iter().map(String::as_str).collect();
+        expect_lines(&fx, line, &wanted)?;
+    }
+    let g3 = "malformed line 3 in /etc/group";
+    let groups: [(&str, &str, Vec<&str>); 8] = [
+        ("gid 0", "sandbox:x:0:\n", vec![WRONG_GROUP]),
+        ("gid 1001", "sandbox:x:1001:\n", vec![WRONG_GROUP]),
+        (
+            "leading zero",
+            "sandbox:x:01000:\n",
+            vec![g3, MISSING_GROUP],
+        ),
+        ("plus sign", "sandbox:x:+1000:\n", vec![g3, MISSING_GROUP]),
+        ("absent", "", vec![MISSING_GROUP]),
+        (
+            "twice",
+            "sandbox:x:1000:\nsandbox:x:1000:\n",
+            vec![MISSING_GROUP],
+        ),
+        ("two fields", "sandbox:x:1000\n", vec![g3, MISSING_GROUP]),
+        (
+            "five fields",
+            "sandbox:x:1000:a:b\n",
+            vec![g3, MISSING_GROUP],
+        ),
+    ];
+    for (label, line, wanted) in groups {
+        let fx = Fixture::new()?;
+        fx.file(
+            "/etc/group",
+            GROUP.replace(SANDBOX_GROUP, line).as_bytes(),
+            0o644,
+        )?;
+        expect_lines(&fx, label, &wanted)?;
+    }
+    let fx = Fixture::new()?;
+    fx.file(
+        "/etc/group",
+        format!("{GROUP}big:x:4294967296:\n").as_bytes(),
+        0o644,
+    )?;
+    expect_lines(&fx, "ten digit gid", &["malformed line 5 in /etc/group"])?;
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_account_files_that_are_not_real_root_owned_files() -> TestResult {
+    let reason_dir = |reason: &str| {
+        format!("account directory is not a real root-owned directory: /etc ({reason})")
+    };
+    let reason_file = |name: &str, reason: &str| {
+        format!("account file is not a real root-owned file: /etc/{name} ({reason})")
+    };
+    for name in ["passwd", "group"] {
+        let text = if name == "passwd" { PASSWD } else { GROUP };
+        let path = format!("/etc/{name}");
+        let fx = Fixture::new()?;
+        fs::write(fx.top.join("sandbox/valid"), text)?;
+        fs::remove_file(fx.image(&path))?;
+        symlink(fx.top.join("sandbox/valid"), fx.image(&path))?;
+        expect_lines(&fx, "absolute symlink", &[&reason_file(name, "symlink")])?;
+        let fx = Fixture::new()?;
+        fs::rename(fx.image(&path), fx.image(&format!("{path}-")))?;
+        symlink(format!("{name}-"), fx.image(&path))?;
+        expect_lines(&fx, "relative symlink", &[&reason_file(name, "symlink")])?;
+        let fx = Fixture::new()?;
+        fs::remove_file(fx.image(&path))?;
+        expect_lines(&fx, "missing", &[&reason_file(name, "missing")])?;
+        fx.dir(&path, 0o755)?;
+        expect_lines(&fx, "directory", &[&reason_file(name, "wrong type")])?;
+        for mode in [0o666, 0o664, 0o646] {
+            let fx = Fixture::new()?;
+            fs::set_permissions(fx.image(&path), fs::Permissions::from_mode(mode))?;
+            let wanted = reason_file(name, "writable by group or others");
+            expect_lines(&fx, &format!("mode {mode:o}"), &[&wanted])?;
+        }
+        let fx = Fixture::new()?;
+        fx.file(&path, b"", 0o644)?;
+        let missing = if name == "passwd" {
+            MISSING_PASSWD
+        } else {
+            MISSING_GROUP
+        };
+        expect_lines(&fx, "empty", &[missing])?;
+        if let Some(gid) = other_group(fx.gid)? {
+            let fx = Fixture::new()?;
+            std::os::unix::fs::chown(fx.image(&path), None, Some(gid))?;
+            let wanted = reason_file(name, &format!("not owned by {}:{}", fx.uid, fx.gid));
+            expect_lines(&fx, "other group", &[&wanted])?;
+        }
+    }
+    let fx = Fixture::new()?;
+    fs::create_dir(fx.top.join("sandbox/etc"))?;
+    fs::write(fx.top.join("sandbox/etc/passwd"), PASSWD)?;
+    fs::write(fx.top.join("sandbox/etc/group"), GROUP)?;
+    fs::remove_dir_all(fx.image("/etc"))?;
+    symlink(fx.top.join("sandbox/etc"), fx.image("/etc"))?;
+    expect_lines(&fx, "/etc absolute symlink", &[&reason_dir("symlink")])?;
+    let fx = Fixture::new()?;
+    fs::set_permissions(fx.image("/etc"), fs::Permissions::from_mode(0o775))?;
+    expect_lines(
+        &fx,
+        "/etc 775",
+        &[&reason_dir("writable by group or others")],
+    )?;
+    let fx = Fixture::new()?;
+    fs::remove_dir_all(fx.image("/etc"))?;
+    expect_lines(&fx, "/etc missing", &[&reason_dir("missing")])?;
+    Ok(())
+}
+
+#[test]
+fn scan_never_passes_when_one_of_its_tools_is_missing() -> TestResult {
+    for tool in ["find", "tr", "cmp", "getcap"] {
+        let fx = Fixture::new()?;
+        fx.drop_tool(tool)?;
+        let out = fx.scan()?;
+        assert_eq!(out.ok, out.stderr.is_empty(), "{tool}: {}", out.stderr);
+        if tool != "tr" {
+            assert!(!out.ok, "{tool} missing: the scan passed");
+        }
+        let fx = Fixture::new()?;
+        fx.file(
+            "/etc/passwd",
+            PASSWD
+                .replace(SANDBOX_PASSWD, "sandbox:x:0:0::/:/bin/sh\n")
+                .as_bytes(),
+            0o644,
+        )?;
+        fx.drop_tool(tool)?;
+        let out = fx.scan()?;
+        assert!(!out.ok, "{tool} missing and uid 0 sandbox: the scan passed");
+    }
+    Ok(())
+}
+
+const DEVICE_FIND: &str = "n=$#\nwhile [ \"$n\" -gt 0 ]; do\n  a=$1; shift; n=$((n - 1))\n  if [ \"$a\" = -type ] && [ \"$n\" -gt 0 ]; then\n    t=$1; shift; n=$((n - 1))\n    case $t in\n      b) set -- \"$@\" -name '*.blk' ;;\n      c) set -- \"$@\" -name '*.chr' ;;\n      *) set -- \"$@\" -type \"$t\" ;;\n    esac\n  else\n    set -- \"$@\" \"$a\"\n  fi\ndone\nexec /usr/bin/find \"$@\"\n";
+
+#[test]
+fn scan_refuses_block_and_character_device_nodes_anywhere_in_the_tree() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.drop_tool("find")?;
+    fx.stub("find", DEVICE_FIND)?;
+    let out = fx.scan()?;
+    assert!(out.ok, "a clean tree must pass: {}", out.stderr);
+    fx.file("/sandbox/rawdisk", b"x", 0o644)?;
+    symlink("/dev/null", fx.image("/sandbox/rawmem"))?;
+    fx.dir("/sandbox/dev", 0o755)?;
+    let out = fx.scan()?;
+    assert!(out.ok, "files, links and directories pass: {}", out.stderr);
+    let mut fx = Fixture::new()?;
+    fx.drop_tool("find")?;
+    fx.stub("find", DEVICE_FIND)?;
+    fx.file("/sandbox/rawdisk.blk", b"x", 0o644)?;
+    fx.file("/sandbox/rawmem.chr", b"x", 0o644)?;
+    fx.file("/usr/lib/x y/tty.chr", b"x", 0o644)?;
+    fx.file("/usr/lib/t\tab.blk", b"x", 0o644)?;
+    let out = fx.scan()?;
+    assert!(!out.ok, "device nodes must fail the scan");
+    let mut found = out.lines();
+    found.sort_unstable();
+    assert_eq!(
+        found,
+        [
+            "device node in role image: /sandbox/rawdisk.blk",
+            "device node in role image: /sandbox/rawmem.chr",
+            "device node in role image: /usr/lib/t?ab.blk",
+            "device node in role image: /usr/lib/x y/tty.chr",
+        ]
+    );
+    fx = Fixture::new()?;
+    fx.drop_tool("find")?;
+    fx.stub(
+        "find",
+        "n=0\n[ ! -f \"$0.count\" ] || read n < \"$0.count\"\necho $((n + 1)) > \"$0.count\"\nif [ \"$n\" -eq 2 ]; then exit 1; fi\nexec /usr/bin/find \"$@\"\n",
+    )?;
+    let out = fx.scan()?;
+    assert!(!out.ok, "a failing device find must fail the scan");
+    assert!(
+        out.stderr
+            .contains("find failed while looking for device nodes"),
+        "{}",
+        out.stderr
+    );
     Ok(())
 }

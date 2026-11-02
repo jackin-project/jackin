@@ -37,6 +37,10 @@ good_file() {
     [ -n "$(find "$1" -maxdepth 0 -type f -uid "$uid" -gid "$gid" ! \( -perm -020 -o -perm -002 \) -perm -100 -print 2>/dev/null)" ]
 }
 
+good_data() {
+    [ -n "$(find "$1" -maxdepth 0 -type f -uid "$uid" -gid "$gid" ! \( -perm -020 -o -perm -002 \) -print 2>/dev/null)" ]
+}
+
 reason() {
     if [ -L "$1" ]; then
         echo "symlink"
@@ -48,6 +52,8 @@ reason() {
         echo "not owned by $uid:$gid"
     elif [ -n "$(find "$1" -maxdepth 0 \( -perm -020 -o -perm -002 \) -print 2>/dev/null)" ]; then
         echo "writable by group or others"
+    elif [ "${3:-}" = data ]; then
+        echo "unusable"
     else
         echo "not executable"
     fi
@@ -78,6 +84,93 @@ check_path() {
         good_file "$root$1" && return 0
     fi
     report "protected path is not a real root-owned path: $(show "$1") ($(reason "$root$1" "$2"))"
+}
+
+canonical() {
+    case $1 in
+        0) return 0 ;;
+        '' | *[!0-9]* | 0*) return 1 ;;
+    esac
+    [ "${#1}" -le 9 ]
+}
+
+colons() {
+    count=0
+    remainder=$1
+    while :; do
+        case $remainder in
+            *:*)
+                count=$((count + 1))
+                remainder=${remainder#*:}
+                ;;
+            *) break ;;
+        esac
+    done
+}
+
+check_passwd() {
+    seen=0
+    wrong=0
+    number=0
+    while IFS= read -r entry || [ -n "$entry" ]; do
+        number=$((number + 1))
+        colons "$entry"
+        remainder=${entry#*:}
+        remainder=${remainder#*:}
+        entry_uid=${remainder%%:*}
+        remainder=${remainder#*:}
+        entry_gid=${remainder%%:*}
+        if [ "$count" -ne 6 ] || ! canonical "$entry_uid" || ! canonical "$entry_gid"; then
+            report "malformed line $number in /etc/passwd"
+            continue
+        fi
+        entry_name=${entry%%:*}
+        if [ "$entry_name" = sandbox ]; then
+            seen=$((seen + 1))
+            [ "$entry_uid:$entry_gid" = 1000:1000 ] || wrong=1
+        elif [ "$entry_uid" = 0 ] && [ "$entry_name" != root ]; then
+            report "uid 0 account other than root in /etc/passwd: $(show "$entry_name")"
+        fi
+    done <"$root/etc/passwd"
+    [ "$seen" -eq 1 ] || report "sandbox account is missing or duplicated in /etc/passwd"
+    [ "$wrong" -eq 0 ] || report "sandbox account is not 1000:1000 in /etc/passwd"
+}
+
+check_group() {
+    seen=0
+    wrong=0
+    number=0
+    while IFS= read -r entry || [ -n "$entry" ]; do
+        number=$((number + 1))
+        colons "$entry"
+        remainder=${entry#*:}
+        remainder=${remainder#*:}
+        entry_gid=${remainder%%:*}
+        if [ "$count" -ne 3 ] || ! canonical "$entry_gid"; then
+            report "malformed line $number in /etc/group"
+            continue
+        fi
+        if [ "${entry%%:*}" = sandbox ]; then
+            seen=$((seen + 1))
+            [ "$entry_gid" = 1000 ] || wrong=1
+        fi
+    done <"$root/etc/group"
+    [ "$seen" -eq 1 ] || report "sandbox group is missing or duplicated in /etc/group"
+    [ "$wrong" -eq 0 ] || report "sandbox group is not gid 1000 in /etc/group"
+}
+
+check_accounts() {
+    if ! good_dir "$root/etc"; then
+        report "account directory is not a real root-owned directory: /etc ($(reason "$root/etc" d))"
+        return 0
+    fi
+    for account in passwd group; do
+        if good_data "$root/etc/$account"; then
+            "check_$account"
+        else
+            report "account file is not a real root-owned file: /etc/$account ($(reason "$root/etc/$account" f data))"
+        fi
+    done
 }
 
 owner=
@@ -132,6 +225,9 @@ done
 hits=$(find "$root" \( -type f \( -perm -100 -o -perm -010 -o -perm -001 \) -o -type l \) \( "$@" \)) || report "find failed while looking for forbidden tools"
 list "forbidden tool in role image: " "$hits"
 
+nodes=$(find "$root" \( -type b -o -type c \)) || report "find failed while looking for device nodes"
+list "device node in role image: " "$nodes"
+
 for path in $protected; do
     for ancestor in $(ancestors "$path"); do
         check_path "$ancestor" d
@@ -144,8 +240,10 @@ for pair in $pairs; do
     if [ -f "$root$path" ] && [ ! -L "$root$path" ] && cmp -s "$root$path" "${pair#*=}"; then
         continue
     fi
-    report "codex file differs from the trusted copy: $(show "$path")"
+    report "protected file differs from the trusted copy: $(show "$path")"
 done
+
+check_accounts
 
 [ "$failed" -eq 0 ] || exit 1
 echo "jackin-image-scan 1"
