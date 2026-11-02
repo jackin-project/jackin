@@ -38,8 +38,11 @@ pub trait Clock: Send + Sync + Debug {
 pub trait FileSystem: Send + Sync + Debug {
     async fn read(&self, path: &HostPath) -> Result<Option<Vec<u8>>, FsError>;
     async fn stat(&self, path: &HostPath) -> Result<Option<FileKind>, FsError>;
+    async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError>;
+    async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError>;
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError>;
     async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError>;
+    async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError>;
     async fn write_new(&self, path: &HostPath, bytes: &[u8], mode: FileMode)
     -> Result<(), FsError>;
     async fn rename(&self, from: &HostPath, to: &HostPath) -> Result<(), FsError>;
@@ -85,6 +88,7 @@ pub enum FileKind {
     File,
     Dir,
     Symlink,
+    Socket,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

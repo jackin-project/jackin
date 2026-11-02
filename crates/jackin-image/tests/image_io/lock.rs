@@ -96,11 +96,20 @@ impl FileSystem for SignalFs {
     async fn stat(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
         self.inner.stat(p).await
     }
+    async fn stat_following(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.inner.stat_following(p).await
+    }
+    async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
+        self.inner.file_len(p).await
+    }
     async fn list(&self, d: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         self.inner.list(d).await
     }
     async fn create_dir_all(&self, d: &HostPath) -> Result<(), FsError> {
         self.inner.create_dir_all(d).await
+    }
+    async fn create_private_dir_all(&self, d: &HostPath) -> Result<(), FsError> {
+        self.inner.create_private_dir_all(d).await
     }
     async fn write_new(&self, p: &HostPath, b: &[u8], m: FileMode) -> Result<(), FsError> {
         self.inner.write_new(p, b, m).await

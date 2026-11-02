@@ -270,6 +270,13 @@ impl FileSystem for CrashFs {
         self.gate(None, p)?;
         self.inner.stat(p).await
     }
+    async fn stat_following(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.gate(None, p)?;
+        self.inner.stat_following(p).await
+    }
+    async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
+        self.inner.file_len(p).await
+    }
     async fn list(&self, d: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         self.gate(None, d)?;
         self.inner.list(d).await
@@ -277,6 +284,10 @@ impl FileSystem for CrashFs {
     async fn create_dir_all(&self, d: &HostPath) -> Result<(), FsError> {
         self.gate(None, d)?;
         self.inner.create_dir_all(d).await
+    }
+    async fn create_private_dir_all(&self, d: &HostPath) -> Result<(), FsError> {
+        self.gate(None, d)?;
+        self.inner.create_private_dir_all(d).await
     }
     async fn remove_file(&self, p: &HostPath) -> Result<(), FsError> {
         self.gate(None, p)?;
@@ -403,11 +414,20 @@ impl FileSystem for GateFs {
     async fn stat(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
         self.inner.stat(p).await
     }
+    async fn stat_following(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.inner.stat_following(p).await
+    }
+    async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
+        self.inner.file_len(p).await
+    }
     async fn list(&self, d: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         self.inner.list(d).await
     }
     async fn create_dir_all(&self, d: &HostPath) -> Result<(), FsError> {
         self.inner.create_dir_all(d).await
+    }
+    async fn create_private_dir_all(&self, d: &HostPath) -> Result<(), FsError> {
+        self.inner.create_private_dir_all(d).await
     }
     async fn remove_file(&self, p: &HostPath) -> Result<(), FsError> {
         self.inner.remove_file(p).await

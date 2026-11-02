@@ -99,6 +99,24 @@ async fn fs_contract(fs: &dyn FileSystem, root: &HostPath) -> TestResult {
     assert!(matches!(fs.lock(&lock).await, Err(FsError::LockHeld(path)) if path == lock));
     drop(held);
     fs.lock(&lock).await?;
+    fs_boundary_extras(fs, root).await
+}
+
+async fn fs_boundary_extras(fs: &dyn FileSystem, root: &HostPath) -> TestResult {
+    let size = child(root, "size.bin")?;
+    assert_eq!(fs.file_len(&size).await?, None);
+    fs.write_new(&size, b"12345", FileMode(0o600)).await?;
+    assert_eq!(fs.file_len(&size).await?, Some(5));
+    assert_eq!(fs.stat_following(&size).await?, Some(FileKind::File));
+    assert_eq!(fs.stat_following(root).await?, Some(FileKind::Dir));
+    assert_eq!(fs.stat_following(&child(root, "none")?).await?, None);
+    fs.remove_file(&size).await?;
+    let private = child(root, "priv/inner")?;
+    fs.create_private_dir_all(&private).await?;
+    assert_eq!(fs.stat(&private).await?, Some(FileKind::Dir));
+    assert_eq!(fs.mode(&private).await?, Some(FileMode(0o700)));
+    assert_eq!(fs.mode(&child(root, "priv")?).await?, Some(FileMode(0o700)));
+    fs.remove_dir_all(&child(root, "priv")?).await?;
     Ok(())
 }
 
@@ -167,11 +185,14 @@ async fn memfs_read_regular_returns_bytes_and_mode_and_gives_the_typed_refusal_o
     Ok(())
 }
 
-const OPS: [FsOp; 11] = [
+const OPS: [FsOp; 14] = [
     FsOp::Read,
     FsOp::Stat,
+    FsOp::StatFollowing,
+    FsOp::FileLen,
     FsOp::List,
     FsOp::CreateDirAll,
+    FsOp::CreatePrivateDirAll,
     FsOp::WriteNew,
     FsOp::Rename,
     FsOp::RemoveFile,
@@ -195,8 +216,11 @@ async fn invoke(fs: &MemFs, op: FsOp, root: &HostPath, round: u32) -> Result<(),
     match op {
         FsOp::Read => fs.read(&file).await.map(drop),
         FsOp::Stat => fs.stat(&file).await.map(drop),
+        FsOp::StatFollowing => fs.stat_following(&file).await.map(drop),
+        FsOp::FileLen => fs.file_len(&file).await.map(drop),
         FsOp::List => fs.list(root).await.map(drop),
         FsOp::CreateDirAll => fs.create_dir_all(root).await,
+        FsOp::CreatePrivateDirAll => fs.create_private_dir_all(root).await,
         FsOp::WriteNew => {
             let fresh =
                 HostPath::parse(&root.as_path().join(format!("new{round}"))).map_err(|e| {

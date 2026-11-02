@@ -484,7 +484,7 @@ async fn snapshot(
                     let mode = fs.mode(&path).await?.unwrap_or(FileMode(0));
                     files.insert(relative, CapturedFile { bytes, mode });
                 }
-                FileKind::Symlink => {}
+                FileKind::Symlink | FileKind::Socket => {}
             }
         }
     }

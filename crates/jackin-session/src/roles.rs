@@ -339,13 +339,13 @@ impl RoleCatalog {
             let kind = self.fs.stat(&current).await?;
             let last = index + 1 == segments.len();
             match (kind, last) {
-                (None, _) | (Some(FileKind::File), false) => {
+                (None, _) | (Some(FileKind::File | FileKind::Socket), false) => {
                     return Err(RoleError::FileMissing { path: path.clone() });
                 }
                 (Some(FileKind::Symlink), _) => {
                     return Err(RoleError::EscapesRepository { path: path.clone() });
                 }
-                (Some(FileKind::Dir), true) => {
+                (Some(FileKind::Dir | FileKind::Socket), true) => {
                     return Err(RoleError::FileNotRegular { path: path.clone() });
                 }
                 (Some(FileKind::Dir), false) | (Some(FileKind::File), true) => {}
@@ -398,7 +398,7 @@ impl RoleCatalog {
                 None => continue,
                 Some(FileKind::File) => (self.fs.read(&host).await?.unwrap_or_default(), true),
                 Some(FileKind::Symlink) => (Vec::new(), true),
-                Some(FileKind::Dir) => (Vec::new(), false),
+                Some(FileKind::Dir | FileKind::Socket) => (Vec::new(), false),
             };
             digest_input.extend((name.len() as u64).to_be_bytes());
             digest_input.extend(name);

@@ -18,8 +18,11 @@ use crate::sync::locked;
 pub enum FsOp {
     Read,
     Stat,
+    StatFollowing,
+    FileLen,
     List,
     CreateDirAll,
+    CreatePrivateDirAll,
     WriteNew,
     Rename,
     RemoveFile,
@@ -37,7 +40,7 @@ pub struct MemFs {
 #[derive(Debug, Default)]
 struct FsState {
     files: BTreeMap<PathBuf, MemFile>,
-    dirs: BTreeSet<PathBuf>,
+    dirs: BTreeMap<PathBuf, FileMode>,
     locked: BTreeSet<PathBuf>,
     calls: HashMap<FsOp, u32>,
     faults: Vec<FsFault>,
@@ -78,7 +81,7 @@ fn io_error(path: &HostPath, kind: ErrorKind, message: &str) -> FsError {
 
 impl FsState {
     fn is_dir(&self, path: &Path) -> bool {
-        path == Path::new("/") || self.dirs.contains(path)
+        path == Path::new("/") || self.dirs.contains_key(path)
     }
 
     fn occupied(&self, path: &Path) -> bool {
@@ -95,6 +98,22 @@ impl FsState {
             _ => Ok(()),
         }
     }
+}
+
+fn make_dirs(state: &mut FsState, dir: &HostPath, mode: FileMode) -> Result<(), FsError> {
+    let mut missing = Vec::new();
+    for ancestor in dir.as_path().ancestors() {
+        if state.files.contains_key(ancestor) {
+            return Err(io_error(dir, ErrorKind::NotADirectory, "not a directory"));
+        }
+        if !state.is_dir(ancestor) {
+            missing.push(ancestor.to_path_buf());
+        }
+    }
+    state
+        .dirs
+        .extend(missing.into_iter().map(|path| (path, mode)));
+    Ok(())
 }
 
 impl MemFs {
@@ -160,6 +179,28 @@ impl FileSystem for MemFs {
         }
     }
 
+    async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        let state = self.enter(FsOp::StatFollowing)?;
+        if state.files.contains_key(path.as_path()) {
+            Ok(Some(FileKind::File))
+        } else if state.is_dir(path.as_path()) {
+            Ok(Some(FileKind::Dir))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
+        let state = self.enter(FsOp::FileLen)?;
+        if state.is_dir(path.as_path()) {
+            return Err(io_error(path, ErrorKind::IsADirectory, "is a directory"));
+        }
+        Ok(state
+            .files
+            .get(path.as_path())
+            .map(|file| file.bytes.len() as u64))
+    }
+
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         let state = self.enter(FsOp::List)?;
         if state.files.contains_key(dir.as_path()) {
@@ -184,7 +225,7 @@ impl FileSystem for MemFs {
             .chain(
                 state
                     .dirs
-                    .iter()
+                    .keys()
                     .filter_map(|path| child(path, FileKind::Dir)),
             )
             .collect();
@@ -194,17 +235,12 @@ impl FileSystem for MemFs {
 
     async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
         let mut state = self.enter(FsOp::CreateDirAll)?;
-        let mut missing = Vec::new();
-        for ancestor in dir.as_path().ancestors() {
-            if state.files.contains_key(ancestor) {
-                return Err(io_error(dir, ErrorKind::NotADirectory, "not a directory"));
-            }
-            if !state.is_dir(ancestor) {
-                missing.push(ancestor.to_path_buf());
-            }
-        }
-        state.dirs.extend(missing);
-        Ok(())
+        make_dirs(&mut state, dir, FileMode(0o755))
+    }
+
+    async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
+        let mut state = self.enter(FsOp::CreatePrivateDirAll)?;
+        make_dirs(&mut state, dir, FileMode(0o700))
     }
 
     async fn write_new(
@@ -266,7 +302,7 @@ impl FileSystem for MemFs {
         }
         let root = path.as_path();
         state.files.retain(|file, _| !file.starts_with(root));
-        state.dirs.retain(|dir| !dir.starts_with(root));
+        state.dirs.retain(|dir, _| !dir.starts_with(root));
         Ok(())
     }
 
@@ -274,6 +310,8 @@ impl FileSystem for MemFs {
         let state = self.enter(FsOp::Mode)?;
         if let Some(file) = state.files.get(path.as_path()) {
             Ok(Some(file.mode))
+        } else if let Some(mode) = state.dirs.get(path.as_path()) {
+            Ok(Some(*mode))
         } else if state.is_dir(path.as_path()) {
             Ok(Some(FileMode(0o755)))
         } else {

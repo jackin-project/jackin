@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::ffi::OsString;
-use std::fs::{self, File, OpenOptions, TryLockError};
+use std::fs::{self, DirBuilder, File, OpenOptions, TryLockError};
 use std::io::{self, ErrorKind, Read, Write};
 use std::os::fd::OwnedFd;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, FileTypeExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
 use async_trait::async_trait;
@@ -50,6 +50,8 @@ fn kind_of(file_type: fs::FileType) -> FileKind {
         FileKind::Dir
     } else if file_type.is_symlink() {
         FileKind::Symlink
+    } else if file_type.is_socket() {
+        FileKind::Socket
     } else {
         FileKind::File
     }
@@ -182,6 +184,20 @@ impl FileSystem for StdFileSystem {
         .await
     }
 
+    async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        blocking(path, |p| {
+            missing_is_none(fs::metadata(p)).map(|meta| meta.map(|m| kind_of(m.file_type())))
+        })
+        .await
+    }
+
+    async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
+        blocking(path, |p| {
+            missing_is_none(fs::metadata(p)).map(|meta| meta.map(|m| m.len()))
+        })
+        .await
+    }
+
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         blocking(dir, |p| {
             let mut entries = Vec::new();
@@ -200,6 +216,13 @@ impl FileSystem for StdFileSystem {
 
     async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
         blocking(dir, |p| fs::create_dir_all(p)).await
+    }
+
+    async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
+        blocking(dir, |p| {
+            DirBuilder::new().recursive(true).mode(0o700).create(p)
+        })
+        .await
     }
 
     async fn write_new(

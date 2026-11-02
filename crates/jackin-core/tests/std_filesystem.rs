@@ -121,3 +121,69 @@ async fn std_filesystem_removes_trees_and_reports_modes() -> TestResult {
     assert!(fs.mode(&dangling).await?.is_some());
     Ok(())
 }
+
+#[tokio::test]
+async fn private_dirs_are_created_with_mode_0700_at_every_new_level() -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let leaf = at(&dir, "cache/stage/one")?;
+    fs.create_private_dir_all(&leaf).await?;
+    fs.create_private_dir_all(&leaf).await?;
+    for level in ["cache", "cache/stage", "cache/stage/one"] {
+        let mode = std::fs::metadata(dir.path().join(level))?
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700, "{level}");
+    }
+    let file = at(&dir, "plain")?;
+    fs.write_new(&file, b"x", FileMode(0o600)).await?;
+    assert!(matches!(
+        fs.create_private_dir_all(&at(&dir, "plain/inner")?).await,
+        Err(FsError::Io { .. })
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn stat_following_resolves_links_and_reports_sockets() -> TestResult {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let socket = at(&dir, "engine.sock")?;
+    let _listener = std::os::unix::net::UnixListener::bind(socket.as_path())?;
+    let to_socket = at(&dir, "to-socket")?;
+    symlink(socket.as_path(), to_socket.as_path())?;
+    let file = at(&dir, "a.txt")?;
+    fs.write_new(&file, b"abc", FileMode(0o600)).await?;
+    let to_file = at(&dir, "to-file")?;
+    symlink(file.as_path(), to_file.as_path())?;
+    let dangling = at(&dir, "dangling")?;
+    symlink(dir.path().join("gone"), dangling.as_path())?;
+
+    assert_eq!(fs.stat_following(&socket).await?, Some(FileKind::Socket));
+    assert_eq!(fs.stat_following(&to_socket).await?, Some(FileKind::Socket));
+    assert_eq!(fs.stat(&to_socket).await?, Some(FileKind::Symlink));
+    assert_eq!(fs.stat_following(&to_file).await?, Some(FileKind::File));
+    assert_eq!(fs.stat_following(&root(&dir)?).await?, Some(FileKind::Dir));
+    assert_eq!(fs.stat_following(&dangling).await?, None);
+    assert_eq!(fs.stat_following(&at(&dir, "missing")?).await?, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn file_len_reports_the_size_of_a_local_file() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let file = at(&dir, "a.bin")?;
+    fs.write_new(&file, b"12345", FileMode(0o600)).await?;
+    assert_eq!(fs.file_len(&file).await?, Some(5));
+    assert_eq!(fs.file_len(&at(&dir, "missing")?).await?, None);
+    Ok(())
+}
+
+fn root(dir: &tempfile::TempDir) -> Result<HostPath, PathError> {
+    HostPath::parse(dir.path())
+}

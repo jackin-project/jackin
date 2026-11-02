@@ -69,12 +69,30 @@ impl FileSystem for RegistryFs {
             .then_some(FileKind::File))
     }
 
+    async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.stat(path).await
+    }
+
+    async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
+        Ok(self
+            .files
+            .lock()
+            .unwrap()
+            .get(path)
+            .map(|bytes| bytes.len() as u64))
+    }
+
     async fn list(&self, _dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         Ok(Vec::new())
     }
 
     async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
         self.record(format!("create_dir_all {dir:?}"));
+        Ok(())
+    }
+
+    async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
+        self.record(format!("create_private_dir_all {dir:?}"));
         Ok(())
     }
 
