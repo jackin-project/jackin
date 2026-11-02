@@ -12,7 +12,7 @@ use jackin_core::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::error::{GatewayError, Missing};
+use crate::error::{GatewayError, Missing, TransferOp};
 use crate::gateway::{
     Gateway, MainProcess, PowerAction, ProfileSync, ProgramRun, ProgramStdin, ProjectUpload,
     ProviderMaterial, ProviderSpec, ProviderState, Provisioning, SandboxCreate, SandboxFile,
@@ -24,7 +24,7 @@ use crate::terminal::{
     TerminalRequest, TerminalSession,
 };
 
-pub const CORE_CHECKS: [&str; 13] = [
+pub const CORE_CHECKS: [&str; 15] = [
     "create_find_by_label",
     "create_duplicate_name",
     "absent_sandbox_is_not_found",
@@ -35,19 +35,26 @@ pub const CORE_CHECKS: [&str; 13] = [
     "read_missing_file",
     "profile_import_unchanged_updated",
     "provider_put_and_delete",
+    "delete_provider_while_attached_is_refused",
     "power_transitions",
+    "stop_on_stopped_is_ok",
     "ended_main_process_stop_start",
     "delete_sandbox",
 ];
 
-pub const TRANSFER_CHECKS: [&str; 2] = ["upload_project", "download_with_digest"];
+pub const TRANSFER_CHECKS: [&str; 3] = [
+    "upload_project",
+    "download_with_digest",
+    "upload_absent_sandbox_is_a_transfer_error",
+];
 
-pub const TERMINAL_CHECKS: [&str; 5] = [
+pub const TERMINAL_CHECKS: [&str; 6] = [
     "shell_exit_code",
     "main_attach_detach_replay",
     "main_second_attachment_read_only",
     "main_viewer_read_only",
     "main_read_only_takes_lease_after_owner_leaves",
+    "main_ended_is_refused",
 ];
 
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -192,6 +199,16 @@ impl Ctx<'_> {
         image: &ImageTag,
         main: MainProcess,
     ) -> Outcome<SandboxCreate> {
+        self.spec_with(launch, image, Vec::new(), main)
+    }
+
+    fn spec_with(
+        &self,
+        launch: &LaunchId,
+        image: &ImageTag,
+        providers: Vec<ProviderName>,
+        main: MainProcess,
+    ) -> Outcome<SandboxCreate> {
         let name = SandboxName::new(&self.fixture.name_prefix, &NameSuffix::for_launch(launch));
         let planned = PlannedLabels {
             workspace: WorkspaceName::parse("contract").map_err(text)?,
@@ -205,7 +222,7 @@ impl Ctx<'_> {
             name,
             image.clone(),
             planned.complete(&image_id),
-            Vec::new(),
+            providers,
             ClosedPolicy::parse(CONTRACT_POLICY).map_err(text)?,
             main,
         ))
@@ -285,6 +302,22 @@ impl Ctx<'_> {
 
     async fn cleanup(&self, name: &SandboxName) {
         drop(self.gateway.delete_sandbox(name).await);
+    }
+
+    async fn gone(&self, name: &SandboxName) -> Outcome<()> {
+        for _ in 0..POLL_ATTEMPTS {
+            if self
+                .gateway
+                .find_sandboxes(&SandboxQuery::Name(name.clone()))
+                .await
+                .map_err(text)?
+                .is_empty()
+            {
+                return Ok(());
+            }
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
+        Err("the sandbox is still listed after a delete".to_owned())
     }
 
     async fn exec(
@@ -654,47 +687,92 @@ async fn profile_import_unchanged_updated(ctx: &Ctx<'_>) -> Outcome<()> {
     finish_contract_profile(ctx, result).await
 }
 
+fn contract_provider_spec(ctx: &Ctx<'_>) -> Outcome<ProviderSpec> {
+    Ok(ProviderSpec {
+        name: contract_provider(ctx)?,
+        profile: contract_profile()?,
+        keys: CONTRACT_KEYS,
+        material: ProviderMaterial::ChatgptLogin {
+            access_token: Secret::new("contract-access-token".to_owned()),
+            refresh_token: Secret::new("contract-refresh-token".to_owned()),
+            client_id: "contract-client".to_owned(),
+            chatgpt_account_id: ChatgptAccountId::parse("0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9")
+                .map_err(text)?,
+        },
+    })
+}
+
+async fn provider_state_is(
+    ctx: &Ctx<'_>,
+    name: &ProviderName,
+    expected: ProviderState,
+) -> Outcome<bool> {
+    ctx.gateway
+        .provider_state(name)
+        .await
+        .map_err(text)
+        .map(|state| state == expected)
+}
+
 async fn provider_put_and_delete(ctx: &Ctx<'_>) -> Outcome<()> {
     clear_contract_profile(ctx).await?;
     let result = async {
         sync_contract_profile(ctx, "first").await?;
-        let name = contract_provider(ctx)?;
-        let spec = ProviderSpec {
-            name: name.clone(),
-            profile: contract_profile()?,
-            keys: CONTRACT_KEYS,
-            material: ProviderMaterial::ChatgptLogin {
-                access_token: Secret::new("contract-access-token".to_owned()),
-                refresh_token: Secret::new("contract-refresh-token".to_owned()),
-                client_id: "contract-client".to_owned(),
-                chatgpt_account_id: ChatgptAccountId::parse("0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9")
-                    .map_err(text)?,
-            },
-        };
-        let state = |expected: ProviderState| {
-            let name = name.clone();
-            async move {
-                ctx.gateway
-                    .provider_state(&name)
-                    .await
-                    .map_err(text)
-                    .map(|state| state == expected)
-            }
-        };
+        let spec = contract_provider_spec(ctx)?;
+        let name = spec.name.clone();
         ctx.gateway.put_provider(&spec).await.map_err(text)?;
         ctx.gateway.put_provider(&spec).await.map_err(text)?;
         expect(
-            state(ProviderState::Present).await?,
+            provider_state_is(ctx, &name, ProviderState::Present).await?,
             "the provider is absent after a put",
         )?;
         ctx.gateway.delete_provider(&name).await.map_err(text)?;
         expect(
-            state(ProviderState::Absent).await?,
+            provider_state_is(ctx, &name, ProviderState::Absent).await?,
             "the provider is present after a delete",
         )
     }
     .await;
     finish_contract_profile(ctx, result).await
+}
+
+async fn delete_provider_while_attached_is_refused(ctx: &Ctx<'_>) -> Outcome<()> {
+    clear_contract_profile(ctx).await?;
+    let mut created = None;
+    let result = async {
+        sync_contract_profile(ctx, "first").await?;
+        let provider = contract_provider_spec(ctx)?;
+        let name = provider.name.clone();
+        ctx.gateway.put_provider(&provider).await.map_err(text)?;
+        let spec = ctx.spec_with(
+            &fresh_launch()?,
+            &ctx.fixture.image,
+            vec![name.clone()],
+            Ctx::main("/bin/sh", &["-c", "sleep 3600"])?,
+        )?;
+        ctx.gateway.create_sandbox(&spec).await.map_err(text)?;
+        created = Some(spec.name().clone());
+        let refused = ctx.gateway.delete_provider(&name).await;
+        expect(
+            matches!(refused, Err(GatewayError::FailedPrecondition { .. })),
+            &format!(
+                "delete_provider while a sandbox lists it is not FailedPrecondition: {refused:?}"
+            ),
+        )?;
+        expect(
+            provider_state_is(ctx, &name, ProviderState::Present).await?,
+            "the provider is absent after a refused delete",
+        )
+    }
+    .await;
+    let released = match &created {
+        Some(sandbox) => {
+            ctx.cleanup(sandbox).await;
+            ctx.gone(sandbox).await
+        }
+        None => Ok(()),
+    };
+    finish_contract_profile(ctx, result.and(released)).await
 }
 
 async fn power_transitions(ctx: &Ctx<'_>) -> Outcome<()> {
@@ -718,6 +796,30 @@ async fn power_transitions(ctx: &Ctx<'_>) -> Outcome<()> {
         ctx.wait_for(&sandbox, "Ready", |view| view.phase == Phase::Ready)
             .await?;
         Ok(())
+    }
+    .await;
+    ctx.cleanup(&sandbox).await;
+    result
+}
+
+async fn stop_on_stopped_is_ok(ctx: &Ctx<'_>) -> Outcome<()> {
+    let sandbox = ctx.sleeper().await?;
+    let result = async {
+        ctx.gateway
+            .set_power(&sandbox, PowerAction::Stop)
+            .await
+            .map_err(text)?;
+        ctx.wait_for(&sandbox, "Stopped", |view| view.phase == Phase::Stopped)
+            .await?;
+        let again = ctx
+            .gateway
+            .set_power(&sandbox, PowerAction::Stop)
+            .await
+            .map_err(text)?;
+        expect(
+            again.phase == Phase::Stopped,
+            "Stop on a Stopped sandbox does not return Stopped",
+        )
     }
     .await;
     ctx.cleanup(&sandbox).await;
@@ -756,19 +858,8 @@ async fn ended_main_process_stop_start(ctx: &Ctx<'_>) -> Outcome<()> {
 async fn delete_sandbox(ctx: &Ctx<'_>) -> Outcome<()> {
     let sandbox = ctx.sleeper().await?;
     ctx.gateway.delete_sandbox(&sandbox).await.map_err(text)?;
-    for _ in 0..POLL_ATTEMPTS {
-        if ctx
-            .gateway
-            .find_sandboxes(&SandboxQuery::Name(sandbox.clone()))
-            .await
-            .map_err(text)?
-            .is_empty()
-        {
-            return ctx.gateway.delete_sandbox(&sandbox).await.map_err(text);
-        }
-        tokio::time::sleep(POLL_INTERVAL).await;
-    }
-    Err("the sandbox is still listed after a delete".to_owned())
+    ctx.gone(&sandbox).await?;
+    ctx.gateway.delete_sandbox(&sandbox).await.map_err(text)
 }
 
 async fn upload_project(ctx: &Ctx<'_>) -> Outcome<()> {
@@ -806,6 +897,31 @@ async fn upload_project(ctx: &Ctx<'_>) -> Outcome<()> {
     .await;
     ctx.cleanup(&sandbox).await;
     result
+}
+
+async fn upload_absent_sandbox_is_a_transfer_error(ctx: &Ctx<'_>) -> Outcome<()> {
+    let name = SandboxName::new(
+        &ctx.fixture.name_prefix,
+        &NameSuffix::for_launch(&fresh_launch()?),
+    );
+    let upload = ProjectUpload {
+        source: ctx.fixture.project.clone(),
+        dest: path("/sandbox/project")?,
+    };
+    let result = ctx
+        .gateway
+        .upload_project(&name, &upload, &CancellationToken::new())
+        .await;
+    expect(
+        matches!(
+            result,
+            Err(GatewayError::Transfer {
+                op: TransferOp::UploadFiltered,
+                ..
+            })
+        ),
+        &format!("an upload to an absent sandbox is not a Transfer error: {result:?}"),
+    )
 }
 
 async fn download_with_digest(ctx: &Ctx<'_>) -> Outcome<()> {
@@ -1095,6 +1211,38 @@ async fn main_read_only_takes_lease_after_owner_leaves(ctx: &Ctx<'_>) -> Outcome
     result
 }
 
+async fn main_ended_is_refused(ctx: &Ctx<'_>) -> Outcome<()> {
+    let launch = fresh_launch()?;
+    let spec = ctx.spec(
+        &launch,
+        &ctx.fixture.image,
+        Ctx::main("/bin/sh", &["-c", "exit 7"])?,
+    )?;
+    ctx.gateway.create_sandbox(&spec).await.map_err(text)?;
+    let result = async {
+        ctx.wait_for(spec.name(), "an ended main process", |view| {
+            view.phase.main_process_ended()
+        })
+        .await?;
+        let request = Ctx::terminal(spec.name(), Ctx::owner_kind())?;
+        let mut session = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        let events = remaining(&mut session).await?;
+        expect(
+            matches!(
+                events.as_slice(),
+                [
+                    TerminalEvent::Attached,
+                    TerminalEvent::Ended(EndReason::Refused(_))
+                ]
+            ),
+            &format!("an attach to an ended main process is not refused: {events:?}"),
+        )
+    }
+    .await;
+    ctx.cleanup(spec.name()).await;
+    result
+}
+
 macro_rules! check {
     ($checks:ident, $ctx:ident, $name:literal, $run:ident) => {
         $checks.push(ContractCheck {
@@ -1153,7 +1301,14 @@ pub async fn run(
                 "provider_put_and_delete",
                 provider_put_and_delete
             );
+            check!(
+                checks,
+                ctx,
+                "delete_provider_while_attached_is_refused",
+                delete_provider_while_attached_is_refused
+            );
             check!(checks, ctx, "power_transitions", power_transitions);
+            check!(checks, ctx, "stop_on_stopped_is_ok", stop_on_stopped_is_ok);
             check!(
                 checks,
                 ctx,
@@ -1165,6 +1320,12 @@ pub async fn run(
         ContractGroup::Transfer => {
             check!(checks, ctx, "upload_project", upload_project);
             check!(checks, ctx, "download_with_digest", download_with_digest);
+            check!(
+                checks,
+                ctx,
+                "upload_absent_sandbox_is_a_transfer_error",
+                upload_absent_sandbox_is_a_transfer_error
+            );
         }
         ContractGroup::Terminal => {
             check!(checks, ctx, "shell_exit_code", shell_exit_code);
@@ -1187,6 +1348,7 @@ pub async fn run(
                 "main_read_only_takes_lease_after_owner_leaves",
                 main_read_only_takes_lease_after_owner_leaves
             );
+            check!(checks, ctx, "main_ended_is_refused", main_ended_is_refused);
         }
     }
     ContractReport { checks }

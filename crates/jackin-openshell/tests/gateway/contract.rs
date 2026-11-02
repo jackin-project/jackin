@@ -8,15 +8,20 @@ use std::time::Duration;
 use jackin_core::{HostPath, ImageTag, ProjectRoot, SandboxSlug, StdFileSystem};
 use jackin_openshell::GrpcGateway;
 use jackin_openshell::contract::{
-    CORE_CHECKS, ContractFixture, ContractGroup, TERMINAL_CHECKS, run,
+    CORE_CHECKS, ContractFixture, ContractGroup, ContractReport, TERMINAL_CHECKS, TRANSFER_CHECKS,
+    run,
 };
 use openshell_sdk::raw::proto::{ObjectMeta, Provider, ProviderProfile, exec_sandbox_input};
 use tempfile::TempDir;
 use tonic::Code;
 
 use super::exec_rpc::{exit_event, host_shell};
+use super::fakes::{ScriptedRunner, exited};
 use super::harness::{Env, WORKSPACE, config, connect, env, guard, resolved};
-use super::server::{ExecBackend, ExecCtx, Fault};
+use super::server::{Broken, ExecBackend, ExecCtx, Fault};
+use super::ssh_server::{
+    Action, REFUSED_NOTICE, RIGHT_FINGERPRINT, RIGHT_SEED, Script, SshModel, host_key,
+};
 
 const IMAGE: &str = "jackin.invalid/contract:0123456789abcdef";
 
@@ -270,5 +275,154 @@ async fn shell_exit_code_cannot_hang_the_run() {
         .find(|check| check.name == "shell_exit_code")
         .unwrap();
     assert_eq!(check.outcome, Err("the shell never ended".to_owned()));
+    assert!(env.server.state().sandboxes.is_empty());
+}
+
+fn outcome<'a>(report: &'a ContractReport, name: &str) -> &'a Result<(), String> {
+    &report
+        .checks
+        .iter()
+        .find(|check| check.name == name)
+        .unwrap()
+        .outcome
+}
+
+fn assert_others_pass(report: &ContractReport, except: &str) {
+    for check in &report.checks {
+        if check.name != except {
+            assert_eq!(check.outcome, Ok(()), "{}", check.name);
+        }
+    }
+}
+
+fn assert_nothing_left(env: &Env) {
+    let state = env.server.state();
+    assert!(state.profiles.is_empty(), "a contract profile is left");
+    assert!(state.providers.is_empty(), "a contract provider is left");
+    assert!(state.sandboxes.is_empty(), "a contract sandbox is left");
+}
+
+#[tokio::test]
+async fn a_server_that_refuses_stop_on_a_stopped_sandbox_fails_only_that_check() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root);
+    env.server.state().broken = Some(Broken::StopOnStopped);
+    let (_project, fixture) = fixture().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let report = run(&gateway, &fixture, ContractGroup::Core).await;
+    assert_eq!(report.checks.len(), CORE_CHECKS.len());
+    let failed = outcome(&report, "stop_on_stopped_is_ok");
+    assert!(
+        failed
+            .as_ref()
+            .is_err_and(|message| message.contains("must be Ready")),
+        "{failed:?}"
+    );
+    assert_others_pass(&report, "stop_on_stopped_is_ok");
+    assert_nothing_left(&env);
+}
+
+#[tokio::test]
+async fn a_server_that_deletes_an_attached_provider_fails_only_that_check_and_leaves_nothing() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root);
+    env.server.state().broken = Some(Broken::DeleteAttachedProviders);
+    let (_project, fixture) = fixture().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let report = run(&gateway, &fixture, ContractGroup::Core).await;
+    let failed = outcome(&report, "delete_provider_while_attached_is_refused");
+    assert!(
+        failed
+            .as_ref()
+            .is_err_and(|message| message.contains("not FailedPrecondition")),
+        "{failed:?}"
+    );
+    assert_others_pass(&report, "delete_provider_while_attached_is_refused");
+    assert_nothing_left(&env);
+}
+
+fn end_with(status: u32) -> Vec<Action> {
+    vec![Action::ExitStatus(status), Action::Eof, Action::Close]
+}
+
+async fn terminal_report(after_subsystem: Vec<Action>) -> (Env, ContractReport) {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root);
+    let model = SshModel::new(
+        &host_key(&RIGHT_SEED),
+        RIGHT_FINGERPRINT,
+        Script {
+            after_subsystem,
+            ..Script::default()
+        },
+    );
+    {
+        let mut state = env.server.state();
+        state.exec = Some(exit_when_told());
+        state.ssh = Some(model);
+    }
+    let (_project, fixture) = fixture().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let report = run(&gateway, &fixture, ContractGroup::Terminal).await;
+    (env, report)
+}
+
+#[tokio::test]
+async fn an_ended_main_process_attach_that_is_refused_passes_the_check_and_one_that_grants_the_lease_fails_it()
+ {
+    let refusing = [vec![Action::Notice(REFUSED_NOTICE)], end_with(1)].concat();
+    let (env, report) = terminal_report(refusing).await;
+    let names: Vec<&str> = report.checks.iter().map(|check| check.name).collect();
+    assert_eq!(names, TERMINAL_CHECKS.to_vec());
+    assert_eq!(outcome(&report, "main_ended_is_refused"), &Ok(()));
+    assert!(env.server.state().sandboxes.is_empty());
+
+    let (env, report) = terminal_report(end_with(1)).await;
+    let failed = outcome(&report, "main_ended_is_refused");
+    assert!(
+        failed.as_ref().is_err_and(
+            |message| message.contains("is not refused") && message.contains("Lease(Owner)")
+        ),
+        "{failed:?}"
+    );
+    assert!(env.server.state().sandboxes.is_empty());
+}
+
+async fn transfer_report(runner: ScriptedRunner) -> (Env, ContractReport) {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root);
+    let (_project, fixture) = fixture().await;
+    let settings = config(&env, resolved(&env).await, WORKSPACE, runner);
+    let gateway = guard(GrpcGateway::connect(settings)).await.unwrap();
+    let report = run(&gateway, &fixture, ContractGroup::Transfer).await;
+    (env, report)
+}
+
+#[tokio::test]
+async fn an_upload_to_an_absent_sandbox_passes_the_check_when_the_cli_fails_and_fails_it_when_the_cli_succeeds()
+ {
+    let failing = ScriptedRunner::always(exited(1, b"", b"Error: sandbox not found"));
+    let (env, report) = transfer_report(failing).await;
+    let names: Vec<&str> = report.checks.iter().map(|check| check.name).collect();
+    assert_eq!(names, TRANSFER_CHECKS.to_vec());
+    assert_eq!(
+        outcome(&report, "upload_absent_sandbox_is_a_transfer_error"),
+        &Ok(())
+    );
+    assert!(env.server.state().sandboxes.is_empty());
+
+    let passing = ScriptedRunner::always(exited(0, b"", b""));
+    let (env, report) = transfer_report(passing).await;
+    let failed = outcome(&report, "upload_absent_sandbox_is_a_transfer_error");
+    assert!(
+        failed
+            .as_ref()
+            .is_err_and(|message| message.contains("is not a Transfer error")),
+        "{failed:?}"
+    );
     assert!(env.server.state().sandboxes.is_empty());
 }

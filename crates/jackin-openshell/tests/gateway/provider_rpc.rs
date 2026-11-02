@@ -12,7 +12,7 @@ use openshell_sdk::raw::proto::{
 };
 use tonic::{Request, Response, Status};
 
-use super::server::{Fake, RefreshRecord, scope_name};
+use super::server::{Broken, Fake, RefreshRecord, scope_name};
 
 fn provider_name(provider: &openshell_sdk::raw::proto::Provider) -> String {
     provider
@@ -245,9 +245,29 @@ impl Fake {
         let workspace = scope_name(request.workspace_scope.as_ref())?;
         let mut state = self.shared.lock();
         let key = (workspace.clone(), request.name.clone());
-        if state.providers.remove(&key).is_none() {
+        if !state.providers.contains_key(&key) {
             return Err(Status::not_found("provider not found"));
         }
+        let attached: Vec<&str> = state
+            .sandboxes
+            .iter()
+            .filter(|((sandbox_workspace, _), sandbox)| {
+                *sandbox_workspace == workspace
+                    && sandbox
+                        .spec
+                        .as_ref()
+                        .is_some_and(|spec| spec.providers.contains(&request.name))
+            })
+            .map(|((_, name), _)| name.as_str())
+            .collect();
+        if !attached.is_empty() && state.broken != Some(Broken::DeleteAttachedProviders) {
+            return Err(Status::failed_precondition(format!(
+                "provider '{}' is attached to sandbox(es): {}",
+                request.name,
+                attached.join(", ")
+            )));
+        }
+        state.providers.remove(&key);
         state
             .refresh
             .retain(|(ws, provider, _), _| !(*ws == workspace && *provider == request.name));

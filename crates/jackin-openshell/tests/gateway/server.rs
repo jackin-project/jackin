@@ -74,6 +74,12 @@ pub(crate) struct Observed {
     pub(crate) request_stream_ended: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Broken {
+    StopOnStopped,
+    DeleteAttachedProviders,
+}
+
 pub(crate) type ProfileHook = Box<dyn FnMut(&mut State) + Send>;
 
 pub(crate) struct State {
@@ -101,6 +107,7 @@ pub(crate) struct State {
     pub(crate) observed: Observed,
     pub(crate) auto_advance: bool,
     pub(crate) ssh: Option<Arc<SshModel>>,
+    pub(crate) broken: Option<Broken>,
 }
 
 impl std::fmt::Debug for State {
@@ -187,6 +194,7 @@ fn fresh_state() -> State {
         observed: Observed::default(),
         auto_advance: false,
         ssh: None,
+        broken: None,
     }
 }
 

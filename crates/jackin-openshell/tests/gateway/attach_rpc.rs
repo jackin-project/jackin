@@ -28,7 +28,14 @@ fn lookup(state: &super::server::State, key: &(String, String)) -> Result<(), St
         .sandboxes
         .get(key)
         .ok_or_else(|| Status::not_found("sandbox not found"))?;
-    if phase_of(sandbox) == SandboxPhase::Ready as i32 {
+    let phase = phase_of(sandbox);
+    if [
+        SandboxPhase::Ready as i32,
+        SandboxPhase::Error as i32,
+        SandboxPhase::Completed as i32,
+    ]
+    .contains(&phase)
+    {
         Ok(())
     } else {
         Err(Status::failed_precondition("sandbox is not ready"))

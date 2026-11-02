@@ -13,7 +13,7 @@ use openshell_sdk::raw::proto::{
 use tonic::{Request, Response, Status};
 
 use super::server::{
-    Fake, Key, State, parse_selector, scope_name, validate_label_key, validate_label_value,
+    Broken, Fake, Key, State, parse_selector, scope_name, validate_label_key, validate_label_value,
     validate_sandbox_name,
 };
 
@@ -284,6 +284,11 @@ impl Fake {
         let mut state = self.shared.lock();
         let mut sandbox = selected(&state, &key)?;
         let phase = phase_of(&sandbox);
+        if phase == SandboxPhase::Stopped as i32 && state.broken == Some(Broken::StopOnStopped) {
+            return Err(Status::failed_precondition(
+                "sandbox must be Ready, Suspended, Error, or in an automatic restart to stop",
+            ));
+        }
         if phase == SandboxPhase::Ready as i32 {
             set_phase(&mut sandbox, SandboxPhase::Stopped);
             state.sandboxes.insert(key, sandbox.clone());
