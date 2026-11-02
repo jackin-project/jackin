@@ -12,6 +12,7 @@ use crate::support::{
 mod claude;
 mod kimi;
 mod openrouter;
+mod zai;
 
 pub(crate) use openrouter::serve_valid as openrouter_serve;
 pub(crate) use openrouter::started as openrouter_started;
@@ -29,6 +30,7 @@ async fn cases() -> Result<Vec<Case>, Box<dyn std::error::Error>> {
         claude::case().await?,
         kimi::case().await?,
         openrouter::case().await?,
+        zai::case().await?,
     ])
 }
 

@@ -17,7 +17,6 @@ pub const PENDING_PORT_PATHS: &[&str] = &[
     "crates/usage/jackin-usage-provider-grok/",
     "crates/usage/jackin-usage-provider-minimax/",
     "crates/usage/jackin-usage-provider-opencode/",
-    "crates/usage/jackin-usage-provider-zai/",
 ];
 
 const BUILD_OUTPUT_PATHS: &[&str] = &["target/", ".git/"];

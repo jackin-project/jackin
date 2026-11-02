@@ -7,6 +7,7 @@ use jackin_usage_provider_codex as codex;
 use jackin_usage_provider_core::{Bucket, Http, ProviderError};
 use jackin_usage_provider_kimi as kimi;
 use jackin_usage_provider_openrouter as openrouter;
+use jackin_usage_provider_zai as zai;
 use tokio_util::sync::CancellationToken;
 
 use crate::credential::{Material, Shape, Unresolved, resolve};
@@ -30,6 +31,7 @@ pub(crate) async fn collect(call: &Call<'_>) -> Collected {
         Provider::Codex => codex_usage(call).await,
         Provider::Kimi => kimi_usage(call).await,
         Provider::Openrouter => openrouter_usage(call).await,
+        Provider::Zai => zai_usage(call).await,
         Provider::Amp
         | Provider::Antigravity
         | Provider::Cursor
@@ -38,8 +40,7 @@ pub(crate) async fn collect(call: &Call<'_>) -> Collected {
         | Provider::Hermes
         | Provider::Minimax
         | Provider::Muse
-        | Provider::Opencode
-        | Provider::Zai => Err(unsupported(None)),
+        | Provider::Opencode => Err(unsupported(None)),
     }
 }
 
@@ -76,6 +77,13 @@ async fn claude_usage(call: &Call<'_>) -> Collected {
 async fn kimi_usage(call: &Call<'_>) -> Collected {
     let material = call.material().await?;
     kimi::fetch(call.http, material.credential(), call.now)
+        .await
+        .map_err(|error| reason(error, call.now))
+}
+
+async fn zai_usage(call: &Call<'_>) -> Collected {
+    let key = call.token().await?;
+    zai::fetch(call.http, key.secret.expose())
         .await
         .map_err(|error| reason(error, call.now))
 }

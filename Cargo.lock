@@ -2108,6 +2108,7 @@ dependencies = [
  "jackin-usage-provider-core",
  "jackin-usage-provider-kimi",
  "jackin-usage-provider-openrouter",
+ "jackin-usage-provider-zai",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -2153,6 +2154,14 @@ dependencies = [
 
 [[package]]
 name = "jackin-usage-provider-openrouter"
+version = "0.1.0"
+dependencies = [
+ "jackin-usage-provider-core",
+ "serde_json",
+]
+
+[[package]]
+name = "jackin-usage-provider-zai"
 version = "0.1.0"
 dependencies = [
  "jackin-usage-provider-core",

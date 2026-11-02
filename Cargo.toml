@@ -16,6 +16,7 @@ members = [
   "crates/usage/jackin-usage-provider-core",
   "crates/usage/jackin-usage-provider-kimi",
   "crates/usage/jackin-usage-provider-openrouter",
+  "crates/usage/jackin-usage-provider-zai",
   "crates/xtask",
 ]
 resolver = "3"
@@ -41,6 +42,7 @@ jackin-usage-provider-codex = { path = "crates/usage/jackin-usage-provider-codex
 jackin-usage-provider-core = { path = "crates/usage/jackin-usage-provider-core", version = "0.1.0" }
 jackin-usage-provider-kimi = { path = "crates/usage/jackin-usage-provider-kimi", version = "0.1.0" }
 jackin-usage-provider-openrouter = { path = "crates/usage/jackin-usage-provider-openrouter", version = "0.1.0" }
+jackin-usage-provider-zai = { path = "crates/usage/jackin-usage-provider-zai", version = "0.1.0" }
 async-trait = "0.1.92"
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 clap = { version = "4.6.7", features = ["derive"] }
