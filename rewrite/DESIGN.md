@@ -431,7 +431,7 @@ Jackin has the same screens, the same flows, the same key bindings, and the same
 | `jackin load [<role>] [<path>] [--account <a>] [--gateway <g>] [--rebuild] [--launch-id <id>] [--env NAME=VALUE]...` | Builds the image when necessary, creates or restores a sandbox, uploads, runs hooks, starts Codex, and attaches. |
 | `jackin attach <sandbox> [--restart]` | Reattaches to the Codex PTY. When Codex has exited, it shows the exit code. `--restart` runs `preflight` and starts Codex again (D09). |
 | `jackin shell <sandbox>` | Opens a new shell in the sandbox. |
-| `jackin ls [--json]` | Lists jackin sandboxes by label. |
+| `jackin ls [--json]` | Lists jackin sandboxes by label. With none, the human output prints `no sandboxes` on stderr and nothing on stdout. |
 | `jackin inspect <sandbox> --json` | Prints the sandbox, labels, OpenShell providers, and policy status. |
 | `jackin export <sandbox>` | Fetches each sandbox branch into `refs/heads/jackin/<sandbox>/<branch>` (D08). |
 | `jackin stop <sandbox>` and `jackin start <sandbox>` | Stops or starts the sandbox. |
