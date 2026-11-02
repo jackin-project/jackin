@@ -17,5 +17,9 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 
+[dev-dependencies]
+regex = { workspace = true }
+sha2 = { workspace = true }
+
 [lints]
 workspace = true

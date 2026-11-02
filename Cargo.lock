@@ -1990,6 +1990,8 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "jackin-core",
+ "regex",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",

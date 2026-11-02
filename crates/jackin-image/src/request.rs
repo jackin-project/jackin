@@ -29,6 +29,12 @@ pub enum Rebuild {
     Yes,
 }
 
+impl From<bool> for Rebuild {
+    fn from(flag: bool) -> Rebuild {
+        if flag { Rebuild::Yes } else { Rebuild::No }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ImageRequest {
     pub role: RoleName,

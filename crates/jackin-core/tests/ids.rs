@@ -474,7 +474,7 @@ fn sha256_image_tag_and_image_label_match_known_vectors() -> TestResult {
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
     assert_eq!(
-        ImageTag::for_image("backend", &Sha256::of(b"abc")).to_string(),
+        ImageTag::for_role(&RoleName::parse("backend")?, &Sha256::of(b"abc")).to_string(),
         "jackin/backend:ba7816bf8f01cfea"
     );
     let input = format!("sha256:{abc}");

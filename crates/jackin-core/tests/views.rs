@@ -119,7 +119,7 @@ fn json_views_round_trip_and_keep_the_documented_keys() -> TestResult {
     let key = Sha256::of(b"key");
     let build = BuildOutput {
         schema: 1,
-        image: ImageTag::for_image("sentinel", &key),
+        image: ImageTag::for_role(&RoleName::parse("sentinel")?, &key),
         id: ImageId::parse(&format!("sha256:{}", "cd".repeat(32)))?,
     };
     let json = round_trip(&build)?;

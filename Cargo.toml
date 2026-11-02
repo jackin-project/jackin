@@ -32,6 +32,7 @@ async-trait = "0.1.92"
 clap = { version = "4.6.7", features = ["derive"] }
 openshell-policy = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.6", version = "0.0.0" }
 openshell-sdk = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.6", version = "0.0.0" }
+regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
 russh = "0.65.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

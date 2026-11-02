@@ -24,6 +24,7 @@ const IMAGE_ID_PREFIX: &str = "sha256:";
 const IMAGE_TAG_PREFIX: &str = "jackin/";
 const OP_PREFIX: &str = "op://";
 const IMAGE_TAG_HEX_LEN: usize = 16;
+const IMAGE_NAME_MAX: usize = 255;
 const IMAGE_LABEL_HEX_LEN: usize = 32;
 const SHA256_HEX_LEN: usize = 64;
 const SLUG_FALLBACK: &str = "ws";
@@ -295,27 +296,58 @@ fn check_op_reference(kind: &'static str, text: &str) -> Result<(), IdError> {
     Ok(())
 }
 
+fn path_separator(run: &[u8]) -> bool {
+    matches!(run, b"." | b"_" | b"__") || run.iter().all(|byte| *byte == b'-')
+}
+
+fn path_component(text: &str) -> bool {
+    let is_alnum = |byte: &u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
+    let runs: Vec<&[u8]> = text
+        .as_bytes()
+        .chunk_by(|a, b| is_alnum(a) == is_alnum(b))
+        .collect();
+    runs.len() % 2 == 1
+        && runs.iter().enumerate().all(|(index, run)| {
+            if index % 2 == 0 {
+                run.iter().all(is_alnum)
+            } else {
+                path_separator(run)
+            }
+        })
+}
+
 fn check_image_tag(kind: &'static str, text: &str) -> Result<(), IdError> {
     non_empty(kind, text)?;
     let bad = IdError::BadFormat {
         kind,
         expected: "jackin/<name>:<16 lowercase hex digits>",
     };
-    let Some(rest) = text.strip_prefix(IMAGE_TAG_PREFIX) else {
+    let Some((name, tag)) = text.rsplit_once(':') else {
         return Err(bad);
     };
-    let Some((name, tag)) = rest.rsplit_once(':') else {
-        return Err(bad);
-    };
-    if name.is_empty() {
+    if !name.starts_with(IMAGE_TAG_PREFIX) {
         return Err(bad);
     }
     let offset = text.chars().count() - tag.chars().count();
     first_invalid(kind, tag, offset, hex_char)?;
-    if tag.len() == IMAGE_TAG_HEX_LEN {
+    if tag.len() != IMAGE_TAG_HEX_LEN {
+        return Err(bad);
+    }
+    let len = name.chars().count();
+    if len > IMAGE_NAME_MAX {
+        return Err(IdError::TooLong {
+            kind,
+            max: IMAGE_NAME_MAX,
+            len,
+        });
+    }
+    if name.split('/').all(path_component) {
         Ok(())
     } else {
-        Err(bad)
+        Err(IdError::BadFormat {
+            kind,
+            expected: "slash-separated lowercase path components",
+        })
     }
 }
 
@@ -655,11 +687,42 @@ impl Serialize for ImageId {
 }
 
 impl ImageTag {
-    pub fn for_image(name: &str, key: &Sha256) -> ImageTag {
+    pub fn for_construct(key: &Sha256) -> ImageTag {
+        ImageTag::build("construct", key)
+    }
+
+    pub fn for_role_stage(role: &RoleName, key: &Sha256) -> ImageTag {
+        ImageTag::build(&format!("role/{}", role.repository()), key)
+    }
+
+    pub fn for_role(role: &RoleName, key: &Sha256) -> ImageTag {
+        ImageTag::build(&role.repository(), key)
+    }
+
+    fn build(path: &str, key: &Sha256) -> ImageTag {
         ImageTag(format!(
-            "{IMAGE_TAG_PREFIX}{name}:{}",
+            "{IMAGE_TAG_PREFIX}{path}:{}",
             &key.0[..IMAGE_TAG_HEX_LEN]
         ))
+    }
+}
+
+impl RoleName {
+    fn repository(&self) -> String {
+        let mut repository = String::with_capacity(self.0.len());
+        let mut pending_hyphen = false;
+        for c in self.0.chars() {
+            if c.is_ascii_alphanumeric() {
+                if pending_hyphen {
+                    repository.push('-');
+                }
+                pending_hyphen = false;
+                repository.push(c.to_ascii_lowercase());
+            } else {
+                pending_hyphen = !repository.is_empty();
+            }
+        }
+        repository
     }
 }
 
