@@ -6,15 +6,13 @@ mod sandbox;
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
 
 use jackin_core::{
-    BranchName, CommitId, Config, FileLock, FsError, HostPath, LabelError, PathError, Phase,
-    ProcessError, ProcessStatus, ProjectRoot, SandboxLabels, SandboxName, Sha256, TerminalText,
-    WorkspaceName,
+    BranchName, CommitId, Config, EntropyError, FsError, HostPath, LabelError, LaunchId, PathError,
+    Phase, ProcessError, ProcessStatus, ProjectRoot, SandboxLabels, SandboxName, SandboxPath,
+    Sha256, TerminalText, WorkspaceName, sandbox_layout,
 };
-use jackin_openshell::{GatewayError, Missing};
+use jackin_openshell::GatewayError;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -22,9 +20,6 @@ use self::host::{HEAD, Host, HostRefs, exported_prefix};
 use self::sandbox::{Remote, RemoteError, Repository};
 use crate::project::host_git;
 use crate::service::Session;
-
-static STAGINGS: AtomicU64 = AtomicU64::new(0);
-const LOCK_POLL: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExportedBranch {
@@ -91,6 +86,8 @@ pub enum ExportError {
     WorkspaceUnknown(WorkspaceName),
     #[error(transparent)]
     Project(#[from] PathError),
+    #[error(transparent)]
+    Entropy(#[from] EntropyError),
     #[error("git in the sandbox exited with {exit_code}: {output:?}")]
     SandboxGit {
         exit_code: i32,
@@ -283,7 +280,6 @@ impl Session {
         if cancel.is_cancelled() {
             return Err(ExportError::Cancelled);
         }
-        let _held = self.hold_export(sandbox, &cancel).await?;
         let view = self
             .find_managed(sandbox)
             .await?
@@ -322,47 +318,43 @@ impl Session {
         let targets: Vec<String> = wanted.iter().map(|item| item.target(sandbox)).collect();
         guard(&host, &refs, &targets).await?;
         let sources: Vec<String> = wanted.iter().map(Wanted::source).collect();
-        let remote_bundle = self.remote(sandbox, &cancel).bundle(&sources).await?;
-        let staging = self.stage(sandbox).await?;
+        let unique = LaunchId::generate()?;
+        let remote_bundle = sandbox_layout::BUNDLE_DIR.join(&format!("export-{unique}.bundle"))?;
         let result = self
-            .fetch_exported(&host, sandbox, &remote_bundle, &staging, &cancel)
+            .ship(&host, sandbox, &unique, &remote_bundle, &sources, &cancel)
+            .await;
+        self.remote(sandbox, &CancellationToken::new())
+            .discard(&remote_bundle)
+            .await;
+        result
+    }
+
+    async fn ship(
+        &self,
+        host: &Host<'_>,
+        sandbox: &SandboxName,
+        unique: &LaunchId,
+        remote_bundle: &SandboxPath,
+        sources: &[String],
+        cancel: &CancellationToken,
+    ) -> Result<ExportReport, ExportError> {
+        self.remote(sandbox, cancel)
+            .bundle(remote_bundle, sources)
+            .await?;
+        let staging = self.stage(sandbox, unique).await?;
+        let result = self
+            .fetch_exported(host, sandbox, remote_bundle, &staging, cancel)
             .await;
         drop(self.deps.host.fs.remove_dir_all(&staging.dir).await);
         result
     }
 
-    async fn hold_export(
+    async fn stage(
         &self,
         sandbox: &SandboxName,
-        cancel: &CancellationToken,
-    ) -> Result<FileLock, ExportError> {
-        let fs = self.deps.host.fs.as_ref();
-        fs.create_dir_all(&self.deps.cache_dir).await?;
-        let path = HostPath::resolve(
-            Path::new(&format!("export-{sandbox}.lock")),
-            &self.deps.cache_dir,
-        )?;
-        loop {
-            match fs.lock(&path).await {
-                Ok(lock) => return Ok(lock),
-                Err(FsError::LockHeld(_)) => {
-                    tokio::select! {
-                        biased;
-                        () = cancel.cancelled() => return Err(ExportError::Cancelled),
-                        () = self.deps.host.clock.sleep(LOCK_POLL) => {}
-                    }
-                }
-                Err(error) => return Err(error.into()),
-            }
-        }
-    }
-
-    async fn stage(&self, sandbox: &SandboxName) -> Result<Staging, ExportError> {
-        let name = format!(
-            "export-{sandbox}-{}-{}",
-            std::process::id(),
-            STAGINGS.fetch_add(1, Ordering::Relaxed)
-        );
+        unique: &LaunchId,
+    ) -> Result<Staging, ExportError> {
+        let name = format!("export-{sandbox}-{unique}");
         let dir = HostPath::resolve(Path::new(&name), &self.deps.cache_dir)?;
         self.deps.host.fs.create_dir_all(&dir).await?;
         let bundle = HostPath::resolve(Path::new("export.bundle"), &dir)?;
@@ -373,26 +365,15 @@ impl Session {
         &self,
         host: &Host<'_>,
         sandbox: &SandboxName,
-        remote_bundle: &jackin_core::SandboxPath,
+        remote_bundle: &SandboxPath,
         staging: &Staging,
         cancel: &CancellationToken,
     ) -> Result<ExportReport, ExportError> {
-        self.deps
+        let digest = self
+            .deps
             .gateway
             .download_file(sandbox, remote_bundle, &staging.bundle, cancel)
             .await?;
-        let bytes = self
-            .deps
-            .host
-            .fs
-            .read(&staging.bundle)
-            .await?
-            .ok_or_else(|| {
-                ExportError::Gateway(GatewayError::NotFound {
-                    what: Missing::Sandbox(sandbox.clone()),
-                })
-            })?;
-        let digest = Sha256::of(&bytes);
         host.verify(&staging.bundle).await?;
         let heads = host.heads(&staging.bundle).await?;
         let prefix = exported_prefix(sandbox);

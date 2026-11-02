@@ -9,7 +9,7 @@ use jackin_core::{
     AccountName, Agent, ChatgptAccountId, CredentialKeys, EnvName, FileMode, HostPath, ImageId,
     ImageTag, LabelSelector, LaunchId, NameSuffix, Phase, PlannedLabels, ProcessStatus,
     ProfileAsset, ProfileId, ProjectRoot, ProviderName, RoleName, SandboxName, SandboxPath,
-    SandboxSlug, Secret, SecretBytes, StdFileSystem, WorkspaceName,
+    SandboxSlug, Secret, SecretBytes, Sha256, StdFileSystem, WorkspaceName,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -1145,13 +1145,18 @@ async fn download_with_digest(ctx: &Ctx<'_>) -> Outcome<()> {
         let remote = path("/sandbox/.contract/export.bin")?;
         put_remote(ctx, &sandbox, &remote, b"contract-export").await?;
         let local = scratch_download()?;
-        ctx.gateway
+        let digest = ctx
+            .gateway
             .download_file(&sandbox, &remote, &local, &CancellationToken::new())
             .await
             .map_err(text)?;
         let bytes = tokio::fs::read(local.as_path()).await.map_err(text)?;
         drop(tokio::fs::remove_file(local.as_path()).await);
-        expect(bytes == b"contract-export", "the downloaded bytes differ")
+        expect(bytes == b"contract-export", "the downloaded bytes differ")?;
+        expect(
+            digest == Sha256::of(&bytes),
+            &format!("the returned digest {digest} is not the digest of the bytes"),
+        )
     }
     .await;
     ctx.cleanup(&sandbox).await;

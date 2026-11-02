@@ -167,7 +167,7 @@ pub mod sandbox_layout {
     use std::borrow::Cow;
 
     use super::SandboxPath;
-    use crate::ids::{LaunchId, SandboxName};
+    use crate::ids::LaunchId;
     use crate::manifest::HookKind;
 
     pub static PROJECT: SandboxPath = SandboxPath::from_static(super::PROJECT_PATH);
@@ -220,9 +220,5 @@ pub mod sandbox_layout {
             HookKind::Preflight => "preflight",
         };
         under(&HOOKS_DIR, name.to_owned())
-    }
-
-    pub fn bundle_path(sandbox: &SandboxName) -> SandboxPath {
-        under(&BUNDLE_DIR, format!("{sandbox}.bundle"))
     }
 }

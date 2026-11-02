@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use jackin_core::{
     AccountName, Agent, ChatgptAccountId, EnvName, FileMode, GatewayName, HostPath, ImageId,
     ImageTag, Labels, LaunchId, OpenShellWorkspace, Phase, PlannedLabels, ProfileId, ProjectRoot,
-    ProviderName, RoleName, SandboxName, SandboxPath, WorkspaceName,
+    ProviderName, RoleName, SandboxName, SandboxPath, Sha256, WorkspaceName,
 };
 use jackin_openshell::{
     ClosedPolicy, EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, MainProcess,
@@ -666,8 +666,7 @@ impl Gateway for FakeGateway {
             providers: spec.providers().to_vec(),
             policy: PolicyReport {
                 version,
-                hash: jackin_core::Sha256::of(document.render().map_err(protocol)?.as_bytes())
-                    .to_string(),
+                hash: Sha256::of(document.render().map_err(protocol)?.as_bytes()).to_string(),
                 loaded: ready,
                 document,
             },
@@ -831,7 +830,7 @@ impl Gateway for FakeGateway {
         remote: &SandboxPath,
         local: &HostPath,
         cancel: &CancellationToken,
-    ) -> Result<(), GatewayError> {
+    ) -> Result<Sha256, GatewayError> {
         tokio::task::yield_now().await;
         let result = async {
             let found = self.struck_at(GatewayOp::Download, None, sandbox)?;

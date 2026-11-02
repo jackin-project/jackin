@@ -6,7 +6,7 @@ use jackin_session::ExportError;
 use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{export, exports, ref_of, snapshot, staging_left};
+use super::support::{bundles_left, export, exports, ref_of, snapshot, staging_left};
 
 #[tokio::test]
 async fn an_interrupted_export_leaves_no_ref_and_no_staging_file_and_a_retry_succeeds() -> TestResult
@@ -68,6 +68,7 @@ async fn an_interrupted_export_leaves_no_ref_and_no_staging_file_and_a_retry_suc
         assert_eq!(after.rest, before.rest);
         assert!(exports(&after).is_empty());
         assert_eq!(staging_left(&rig)?, Vec::<String>::new());
+        assert_eq!(bundles_left(&handle), Vec::<String>::new());
 
         export(&rig, &name).await?;
         assert!(exports(&snapshot(&rig).await?).contains_key(&ref_of(&name, "main")));

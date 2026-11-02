@@ -14,6 +14,7 @@ const HEADS: &str = "refs/heads/";
 const STASH: &str = "refs/stash";
 const NOT_A_REPOSITORY: &str = "not a git repository";
 static MKDIR: SandboxPath = SandboxPath::from_static("/usr/bin/mkdir");
+static RM: SandboxPath = SandboxPath::from_static("/usr/bin/rm");
 
 #[derive(Debug)]
 pub(super) enum RemoteError {
@@ -168,8 +169,21 @@ impl Remote<'_> {
         Ok(repository)
     }
 
-    pub(super) async fn bundle(&self, refs: &[String]) -> Result<SandboxPath, RemoteError> {
-        let target = sandbox_layout::bundle_path(self.name);
+    pub(super) async fn discard(&self, target: &SandboxPath) {
+        drop(
+            self.exec(
+                &RM,
+                vec!["-f".to_owned(), "--".to_owned(), target.as_str().to_owned()],
+            )
+            .await,
+        );
+    }
+
+    pub(super) async fn bundle(
+        &self,
+        target: &SandboxPath,
+        refs: &[String],
+    ) -> Result<(), RemoteError> {
         let made = self
             .exec(
                 &MKDIR,
@@ -192,7 +206,7 @@ impl Remote<'_> {
         args.extend_from_slice(refs);
         let outcome = self.exec(&sandbox_layout::GIT, args).await?;
         if outcome.exit_code == 0 {
-            Ok(target)
+            Ok(())
         } else {
             Err(failure(&outcome))
         }

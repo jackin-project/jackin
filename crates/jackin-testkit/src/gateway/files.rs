@@ -279,7 +279,7 @@ pub(super) async fn download_file(
     remote: &SandboxPath,
     local: &HostPath,
     corrupt: bool,
-) -> Result<(), GatewayError> {
+) -> Result<Sha256, GatewayError> {
     let Some(source) = host_path(root, remote.as_str()) else {
         return Err(GatewayError::Transfer {
             op: TransferOp::Download,
@@ -314,7 +314,7 @@ pub(super) async fn download_file(
     let written = tokio::fs::read(local.as_path()).await.map_err(protocol)?;
     let actual = Sha256::of(&written);
     if actual == expected {
-        Ok(())
+        Ok(expected)
     } else {
         Err(digest_failure(
             TransferOp::Digest,

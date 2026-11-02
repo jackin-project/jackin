@@ -8,7 +8,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use jackin_core::{
     GatewayName, HostPath, OpenShellWorkspace, ProcessRunner, ProfileId, ProjectRoot, ProviderName,
-    SandboxName, SandboxPath,
+    SandboxName, SandboxPath, Sha256,
 };
 use openshell_sdk::OpenShellClient;
 use openshell_sdk::raw::AuthedGrpcClient;
@@ -196,7 +196,7 @@ impl Gateway for GrpcGateway {
         remote: &SandboxPath,
         local: &HostPath,
         cancel: &CancellationToken,
-    ) -> Result<(), GatewayError> {
+    ) -> Result<Sha256, GatewayError> {
         crate::transfer::download_file(&self.inner, sandbox, remote, local, cancel).await
     }
 

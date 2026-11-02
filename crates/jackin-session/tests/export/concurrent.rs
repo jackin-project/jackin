@@ -4,10 +4,11 @@
 use jackin_testkit::{Rig, TestResult, guard};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{exports, ref_of, snapshot, staging_left};
+use super::support::{bundles_left, exports, ref_of, snapshot, staging_left};
 
 #[tokio::test]
-async fn two_concurrent_exports_of_one_sandbox_both_succeed_and_leave_no_staging() -> TestResult {
+async fn two_concurrent_exports_of_one_sandbox_both_succeed_and_leave_no_staging_and_no_bundle()
+-> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
@@ -28,6 +29,7 @@ async fn two_concurrent_exports_of_one_sandbox_both_succeed_and_leave_no_staging
             Some(tip.as_str())
         );
         assert_eq!(staging_left(&rig)?, Vec::<String>::new());
+        assert_eq!(bundles_left(&handle), Vec::<String>::new());
         Ok(())
     })
     .await

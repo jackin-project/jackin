@@ -3,10 +3,12 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::{Sha256, sandbox_layout};
+use jackin_core::Sha256;
 use jackin_testkit::{Rig, TestResult, guard};
 
-use super::support::{branch_with_commit, export, exports, ref_of, snapshot, staging_left, tip};
+use super::support::{
+    branch_with_commit, bundles_left, export, exports, ref_of, snapshot, staging_left, tip,
+};
 
 async fn rewrite_tracked(rig: &Rig) -> TestResult {
     let listed = rig.repo.git(&["ls-files"]).await?;
@@ -45,10 +47,22 @@ async fn export_writes_only_the_changed_branches_under_the_sandbox_prefix_and_ne
         ]);
         assert_eq!(exports(&after), expected);
         assert_eq!(report.sandbox, name);
-        let landed = handle
-            .file(&sandbox_layout::bundle_path(&name))
-            .ok_or("no sandbox bundle")?;
-        assert_eq!(report.bundle, Some(Sha256::of(&landed)));
+        let oracle = handle.root().join("oracle.bundle");
+        handle
+            .git(&[
+                "bundle",
+                "create",
+                "--quiet",
+                &oracle.display().to_string(),
+                "refs/heads/feature/x",
+                "refs/heads/main",
+            ])
+            .await?;
+        assert_eq!(
+            report.bundle,
+            Some(Sha256::of(&tokio::fs::read(&oracle).await?))
+        );
+        assert_eq!(bundles_left(&handle), Vec::<String>::new());
         let listed: Vec<(String, String, String)> = report
             .branches
             .iter()

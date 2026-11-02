@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use jackin_core::{
     ChatgptAccountId, CredentialKeys, EnvName, FileMode, GatewayName, HostPath, ImageTag,
     LabelSelector, Labels, Phase, ProfileId, ProjectRoot, ProviderName, SandboxLabels, SandboxName,
-    SandboxPath, Secret, SecretBytes, TerminalText,
+    SandboxPath, Secret, SecretBytes, Sha256, TerminalText,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -75,7 +75,7 @@ pub trait Gateway: Send + Sync + Debug {
         remote: &SandboxPath,
         local: &HostPath,
         cancel: &CancellationToken,
-    ) -> Result<(), GatewayError>;
+    ) -> Result<Sha256, GatewayError>;
 
     async fn open_terminal(
         &self,

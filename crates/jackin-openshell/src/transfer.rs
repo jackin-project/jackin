@@ -253,7 +253,7 @@ async fn fetch(
     remote: &SandboxPath,
     local: &HostPath,
     cancel: &CancellationToken,
-) -> Result<(), GatewayError> {
+) -> Result<Sha256, GatewayError> {
     let size = remote_size(inner, sandbox, remote, cancel).await?;
     if size > DOWNLOAD_LIMIT {
         return Err(GatewayError::DownloadTooLarge {
@@ -284,7 +284,7 @@ async fn fetch(
         )
     })?;
     if actual == expected.as_str() {
-        Ok(())
+        Ok(expected)
     } else {
         Err(transfer_failure(
             TransferOp::Digest,
@@ -300,7 +300,7 @@ pub(crate) async fn download_file(
     remote: &SandboxPath,
     local: &HostPath,
     cancel: &CancellationToken,
-) -> Result<(), GatewayError> {
+) -> Result<Sha256, GatewayError> {
     let result = fetch(inner, sandbox, remote, local, cancel).await;
     if result.is_err() {
         drop(tokio::fs::remove_file(local.as_path()).await);

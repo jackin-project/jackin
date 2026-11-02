@@ -4,7 +4,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
-use jackin_core::{HostPath, LaunchId, ProcessStatus};
+use jackin_core::{HostPath, LaunchId, ProcessStatus, Sha256};
 use jackin_openshell::{Gateway, GatewayError, GatewayOp, PowerAction, TransferOp};
 use jackin_testkit::{Fault, Trigger};
 use tokio::task::JoinSet;
@@ -82,8 +82,9 @@ async fn a_failed_download_leaves_no_local_file_and_a_good_one_writes_it() -> Te
         );
         assert!(!tokio::fs::try_exists(local.as_path()).await?);
 
-        fake.download_file(&name, &remote, &local, &cancel).await?;
+        let digest = fake.download_file(&name, &remote, &local, &cancel).await?;
         assert_eq!(tokio::fs::read(local.as_path()).await?, b"bundle-bytes");
+        assert_eq!(digest, Sha256::of(b"bundle-bytes"));
 
         let missing = path(&format!("/sandbox/{}", LaunchId::generate()?))?;
         let absent = fake.download_file(&name, &missing, &local, &cancel).await;

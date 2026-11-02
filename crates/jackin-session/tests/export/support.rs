@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 
-use jackin_core::{CommitId, SandboxName};
+use jackin_core::{CommitId, SandboxName, sandbox_layout};
 use jackin_session::{ExportError, ExportReport};
 use jackin_testkit::{HostSnapshot, Rig, SandboxHandle};
 use tokio_util::sync::CancellationToken;
@@ -43,6 +43,15 @@ pub(crate) fn staging_left(rig: &Rig) -> Result<Vec<String>, Box<dyn Error>> {
         }
     }
     Ok(left)
+}
+
+pub(crate) fn bundles_left(handle: &SandboxHandle) -> Vec<String> {
+    handle
+        .files()
+        .keys()
+        .map(|path| path.as_str().to_owned())
+        .filter(|path| path.starts_with(sandbox_layout::BUNDLE_DIR.as_str()))
+        .collect()
 }
 
 pub(crate) async fn branch_with_commit(
