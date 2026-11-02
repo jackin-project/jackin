@@ -309,9 +309,9 @@ Jackin keeps account usage tracking. The usage crates live in `crates/usage/`. P
 
 - `jackin-usage`, rewritten as the facade: credential resolution, dispatch, and the cache
 - `jackin-usage-provider-core`, reduced to the bucket model, the provider error, the HTTP client, and the number and time helpers
-- the provider crates amp, claude, codex, cursor, gemini, grok, kimi, minimax, opencode, openrouter, and zai
+- the provider crates claude, codex, cursor, gemini, grok, kimi, minimax, opencode, openrouter, and zai
 
-P6.3 deletes the other usage crates, because the program deletes what they serve: the broker, its wire, publish, and coordinator crates (the jackin daemon, D16); the snapshot store, the store backend, and the token monitor (SQLite and Capsule, D15 and D16); discovery, host accounts, host credentials, the credential resolver, and the credential snapshots (accounts live in the config, D26); host presentation, host glance, host runtime, projection, destination, and output (the native app, D16); and the antigravity, hermes, and muse providers, which have no host path to an account's usage.
+P6.3 deletes the other usage crates, because the program deletes what they serve: the broker, its wire, publish, and coordinator crates (the jackin daemon, D16); the snapshot store, the store backend, and the token monitor (SQLite and Capsule, D15 and D16); discovery, host accounts, host credentials, the credential resolver, and the credential snapshots (accounts live in the config, D26); host presentation, host glance, host runtime, projection, destination, and output (the native app, D16); and the antigravity, hermes, and muse providers, which have no host path to an account's usage. The amp provider crate is deleted too: its backend returns display text that the old code scraped, and no real response exists to test against. An Amp account shows the reason `unsupported` until a recorded response exists.
 
 The Gemini provider reads usage for a Google-login account through the Code Assist `loadCodeAssist` and `retrieveUserQuota` methods, as gemini-cli does. A Gemini API key has no quota method; its usage shows the reason.
 
