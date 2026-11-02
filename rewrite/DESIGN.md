@@ -273,7 +273,7 @@ Delete these features. Do not rebuild them in this program:
 
 - Delete every old test.
 - Write new tests only for the behavior that this program builds.
-- Obey the test rules in `AGENTS.md`. Before you write a test, get approval of its plan from the `tailrocks-test-reviewer` subagent. Keep a test only after `tailrocks-test-reviewer` sees it fail on broken code and pass on fixed code.
+- Obey the test rules in `AGENTS.md`. Before you write a test, get approval of its plan from `@"tailrocks-test-reviewer (agent)"`. Keep a test only after `@"tailrocks-test-reviewer (agent)"` sees it fail on broken code and pass on fixed code.
 - The nextest suite is hermetic. It uses the fakes from `jackin-testkit`. The fake boundaries are the OpenShell gateway, the image engine that the gateway driver reads (D23), the network, the clock, and the filesystem. A test may fake the host processes `docker`, `openshell`, `ssh`, and `op` only, because they are those boundaries. Tests run `git` for real.
 - Live tests against a real gateway run through `xtask e2e`, outside nextest. The orchestrator runs them and records the output in [evidence/](evidence/).
 
@@ -399,7 +399,7 @@ The jackin console is visually identical to the `jackin-preview` app in `tailroc
   - an input variant for external messages, for tokio events
   - a Cargo feature for `clap`, so the library does not always include it
 - A baseline change must never change its existing visual output. Each baseline task runs the full baseline test suite. All approved tuiscotti baselines under `tests/functional/baselines/` must pass unchanged. Never move the `visual-baseline` git tag.
-- Approve the new tuiscotti baseline of a new screen with `tuiscotti accept` after a `tailrocks-ux-specialist` review. Never change an existing baseline file.
+- Approve the new tuiscotti baseline of a new screen with `tuiscotti accept` after a `@"tailrocks-ux-specialist (agent)"` review. Never change an existing baseline file.
 - Every screen of `jackin-preview` exists in jackin with the same look and the same behavior (D28).
 - Jackin adds these screens with baseline components: the role editor, the role binding, the Docker setting of a workspace, and the doctor panel.
 - Jackin uses the baseline application loop (`Application`, `Page`, `Request`). Jackin does not add a second application loop.
