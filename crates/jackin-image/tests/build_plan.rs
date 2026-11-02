@@ -698,6 +698,31 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
     assert!(words.contains(&"--mount=type=bind,from=assembled,source=/,target=/image,ro"));
     assert!(words.contains(&"--mount=type=bind,from=codex,source=/,target=/trusted,ro"));
     assert_eq!(words_after(&words, "--owner"), ["0:0"], "scan owner");
+    let command = words
+        .iter()
+        .position(|word| *word == "/bin/sh")
+        .ok_or("the scan RUN does not start /bin/sh")?;
+    assert_eq!(
+        words.get(command..command + 2),
+        Some(&["/bin/sh", "/jackin-scan"][..]),
+        "the scan RUN must run /bin/sh /jackin-scan: {body}"
+    );
+    assert!(
+        words[..command]
+            .iter()
+            .all(|word| word.starts_with("--mount=") || *word == "RUN"),
+        "only mounts may precede the scan command: {body}"
+    );
+    assert_eq!(
+        words.get(words.len() - 2..),
+        Some(&[">", "/verdict"][..]),
+        "the scan RUN must end with > /verdict, so its exit status gates the stage: {body}"
+    );
+    assert!(
+        scan.lines.contains(&"COPY scan /jackin-scan".to_owned()),
+        "the scan script must be copied into the scan stage: {:?}",
+        scan.lines
+    );
     let tail: Vec<&str> = words
         .iter()
         .skip_while(|word| **word != "/image")
@@ -759,7 +784,7 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
             &"COPY --from=scan --chown=root:root --chmod=0644 /verdict /usr/local/lib/jackin/image-scan"
                 .to_owned()
         ),
-        "final stage lines {:?}",
+        "the final stage must COPY --from=scan the verdict, or BuildKit never builds the scan stage; final stage lines {:?}",
         last.lines
     );
     assert_eq!(

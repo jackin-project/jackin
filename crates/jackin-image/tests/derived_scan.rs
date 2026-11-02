@@ -147,7 +147,9 @@ impl Fixture {
     fn stub(&self, name: &str, body: &str) -> TestResult {
         let path = self.top.join("tools").join(name);
         match fs::remove_file(&path) {
-            Ok(()) | Err(_) => {}
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
         }
         fs::write(&path, format!("#!/bin/sh\n{body}"))?;
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755))?;
@@ -344,6 +346,20 @@ fn scan_fails_closed_when_getcap_or_find_is_missing_or_fails() -> TestResult {
     assert!(out.stderr.contains("getcap is missing"), "{}", out.stderr);
     let fx = Fixture::new()?;
     fx.drop_tool("find")?;
+    fx.stub(
+        "find",
+        "n=0\n[ ! -f \"$0.count\" ] || read n < \"$0.count\"\necho $((n + 1)) > \"$0.count\"\nif [ \"$n\" -eq 1 ]; then exit 1; fi\nexec /usr/bin/find \"$@\"\n",
+    )?;
+    let out = fx.scan()?;
+    assert!(!out.ok, "a failing forbidden-tool find must fail the scan");
+    assert!(
+        out.stderr
+            .contains("find failed while looking for forbidden tools"),
+        "{}",
+        out.stderr
+    );
+    let fx = Fixture::new()?;
+    fx.drop_tool("find")?;
     fx.stub("find", "exit 1\n")?;
     let out = fx.scan()?;
     assert!(!out.ok, "a failing find must fail the scan");
@@ -412,6 +428,19 @@ fn scan_refuses_forbidden_tools_by_name_anywhere_in_the_tree() -> TestResult {
     Ok(())
 }
 
+fn other_group(current: u32) -> Result<Option<u32>, Box<dyn Error>> {
+    let output = Command::new("id")
+        .arg("-G")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()?
+        .wait_with_output()?;
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .filter_map(|id| id.parse::<u32>().ok())
+        .find(|id| *id != current))
+}
+
 fn expect_refused(fx: &Fixture, path: &str, reason: &str, label: &str) -> TestResult {
     let out = fx.scan()?;
     assert!(!out.ok, "{label}: the scan passed");
@@ -432,6 +461,7 @@ fn scan_refuses_a_protected_path_that_is_not_a_real_root_owned_path() -> TestRes
     for (path, absolute) in [
         ("/usr/local/lib/jackin", true),
         ("/usr/local/lib/jackin", false),
+        ("/usr", false),
         ("/usr/local", false),
         ("/usr/local/lib", false),
         ("/usr/local/bin", false),
@@ -452,6 +482,27 @@ fn scan_refuses_a_protected_path_that_is_not_a_real_root_owned_path() -> TestRes
         fs::remove_file(fx.image(leaf))?;
         fx.dir(leaf, 0o755)?;
         expect_refused(&fx, leaf, "wrong type", &format!("{leaf} as a directory"))?;
+    }
+    for leaf in LEAVES {
+        let fx = Fixture::new()?;
+        fs::set_permissions(fx.image(leaf), fs::Permissions::from_mode(0o644))?;
+        expect_refused(&fx, leaf, "not executable", &format!("{leaf} 644"))?;
+    }
+    if let Some(gid) = other_group(fx.gid)? {
+        for leaf in LEAVES {
+            let fx = Fixture::new()?;
+            std::os::unix::fs::chown(fx.image(leaf), None, Some(gid))?;
+            let want = format!("not owned by {}:{}", fx.uid, fx.gid);
+            expect_refused(&fx, leaf, &want, &format!("{leaf} in group {gid}"))?;
+        }
+    }
+    if fx.uid == 0 {
+        for leaf in LEAVES {
+            let fx = Fixture::new()?;
+            std::os::unix::fs::chown(fx.image(leaf), Some(1), None)?;
+            let want = format!("not owned by {}:{}", fx.uid, fx.gid);
+            expect_refused(&fx, leaf, &want, &format!("{leaf} owned by uid 1"))?;
+        }
     }
     for (path, mode) in [
         (CODEX, 0o775),

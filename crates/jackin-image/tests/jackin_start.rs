@@ -47,6 +47,7 @@ struct Setup<'a> {
     env_file: Option<&'a str>,
     args: Vec<&'a str>,
     slow_record: bool,
+    missing_awk: bool,
 }
 
 impl<'a> Setup<'a> {
@@ -56,6 +57,7 @@ impl<'a> Setup<'a> {
             env_file: None,
             args: LAUNCH.to_vec(),
             slow_record: false,
+            missing_awk: false,
         }
     }
 }
@@ -112,6 +114,9 @@ impl Supervisor {
                 "#!/bin/sh\nsleep 0.4\nexec /bin/mv \"$@\"\n",
             )?;
             replacements.push(("/bin/mv -f", format!("{r}/slowmv -f")));
+        }
+        if setup.missing_awk {
+            replacements.push(("/usr/bin/awk", format!("{r}/no-such-awk")));
         }
         for (from, to) in replacements {
             text = substitute(&text, from, &to)?;
@@ -535,5 +540,23 @@ async fn jackin_start_accepts_only_the_successor_of_the_last_attempt() -> TestRe
     assert_eq!(supervisor.runs(), 2, "a repeated id ran again");
     supervisor.attempt(3).await?;
     assert_eq!(supervisor.runs(), 3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_stale_record_is_removed_when_the_classifier_fails() -> TestResult {
+    let mut setup = Setup::new();
+    setup.env = golden_env();
+    setup.missing_awk = true;
+    let (dir, root) = Supervisor::prepare(&setup)?;
+    fs::write(root.join("sandbox/.jackin/run/env-kinds"), "stale\n")?;
+    let supervisor = Supervisor::spawn(setup, dir, root)?;
+    supervisor.attempt(1).await?;
+    assert_eq!(
+        supervisor.record(),
+        None,
+        "a stale or partial record survived"
+    );
+    assert!(!supervisor.run_dir().join("env-kinds.tmp").exists());
     Ok(())
 }
