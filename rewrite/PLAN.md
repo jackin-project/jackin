@@ -373,8 +373,8 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 ### P5.2 Build attach, shell, export, list, stop, start, and purge
 
 - **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P5.1b.
-- **Scope:** `crates/jackin-session/src/{attach,export,lifecycle}.rs` (the host runner landed in P4.3).
-- **Steps:** Build each operation from DESIGN.md. Build the host process runner. `purge` refuses unexported work without `--force` (ADR-010).
+- **Scope:** `crates/jackin-session/src/{attach,export,lifecycle,doctor}.rs` (the host runner landed in P4.3), with `restart`, `inspect`, and `doctor` (API.md U10), and the fake download fixes scheduled in P4.2.
+- **Steps:** Build each operation from DESIGN.md. `purge` refuses unexported work without `--force` (ADR-010).
 - **Proof:** G-FAST passes. Tests show that an export writes only `refs/heads/jackin/<sandbox>` and never the working tree. Tests show that purge refuses unexported work. Tests show that list finds sandboxes by label only.
 - [ ] P5.2 done
 
