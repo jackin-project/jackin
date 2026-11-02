@@ -528,6 +528,15 @@ fn scan_refuses_a_codex_file_that_differs_from_the_trusted_copy() -> TestResult 
             out.stderr
         );
         let fx = Fixture::new()?;
+        let name = path.rsplit('/').next().unwrap_or(path);
+        fs::remove_file(fx.top.join("trusted").join(name))?;
+        let out = fx.scan()?;
+        assert!(
+            out.stderr.contains(&wanted(path)),
+            "{label} trusted copy missing: {}",
+            out.stderr
+        );
+        let fx = Fixture::new()?;
         fs::remove_file(fx.image(path))?;
         fx.dir(path, 0o755)?;
         let out = fx.scan()?;
