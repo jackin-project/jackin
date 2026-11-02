@@ -1711,6 +1711,8 @@ mod error_strings {
             "    N { wrapped: Wrapper<String>, items: Vec<String> },",
             "    #[error(\"map {name}\")]",
             "    M { name: Name, other: String },",
+            "    #[error(\"x {messages}\")]",
+            "    R { message: String, messages: HostPath },",
             "}",
             "#[error(\"struct {}\", plain(.text))]",
             "pub struct S { text: String }",
@@ -2159,6 +2161,10 @@ mod tool_text {
             (
                 CiError::Metadata(hostile()).to_string(),
                 "cargo metadata failed: a\\u{1b}[2J\\nb",
+            ),
+            (
+                CiError::Metadata("a \"b\" c\\d".to_owned()).to_string(),
+                "cargo metadata failed: a \"b\" c\\d",
             ),
             (
                 CiError::ListFiles(hostile()).to_string(),
