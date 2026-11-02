@@ -8,6 +8,7 @@ pub(crate) mod git;
 mod listing;
 mod refuse;
 mod sandbox;
+mod shadow;
 mod version;
 
 use std::fmt;
@@ -326,8 +327,12 @@ impl Staged {
             .fs
             .write_new(&paths, self.listing.as_bytes(), FileMode(0o600))
             .await?;
+        let git = host_git(deps, project.path(), cancel);
+        let shadow = shadow::create(&git, deps.host.fs.as_ref(), &self.dir, &self.facts).await?;
         let host = HostGate {
-            git: host_git(deps, project.path(), cancel),
+            git,
+            shadow,
+            work_tree: project.path(),
             index: HostPath::resolve(Path::new("gate-index"), &self.dir)?,
             objects,
             paths,

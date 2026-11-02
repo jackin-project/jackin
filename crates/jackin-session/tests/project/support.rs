@@ -3,17 +3,22 @@
 
 use std::error::Error;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    Config, HostPath, LabelSelector, LaunchId, ProjectRoot, RoleName, SandboxPath, sandbox_layout,
+    Clock, Config, HostPath, LabelSelector, LaunchId, ProcessRunner, ProjectRoot, RoleName,
+    SandboxPath, sandbox_layout,
 };
+use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, SandboxQuery};
 use jackin_session::{
-    LaunchError, LaunchFailure, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery, LoadedRole,
-    TreeMismatch, UnsupportedProject, launch_events, plan_launch,
+    HostPorts, LaunchError, LaunchFailure, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery,
+    LoadedRole, Session, SessionDeps, TreeMismatch, UnsupportedProject, launch_events, plan_launch,
 };
-use jackin_testkit::{RepoFixture, RoleFixture, SandboxHandle, World};
+use jackin_testkit::{
+    FakeClock, FakeEngine, FakeGateway, RepoFixture, RoleFixture, SandboxHandle, World,
+};
 use serde_json::json;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
@@ -133,6 +138,34 @@ impl Rig {
         let (events, mut feed) = launch_events(LineDelivery::Reliable);
         let drain = async { while feed.recv().await.is_some() {} };
         let (result, ()) = tokio::join!(self.world.session.launch(plan, events, cancel), drain);
+        Ok(Outcome { result })
+    }
+
+    pub(crate) async fn launch_over(
+        &self,
+        id: u8,
+        runner: Arc<dyn ProcessRunner>,
+        cancel: CancellationToken,
+    ) -> Result<Outcome, Box<dyn Error>> {
+        let world = &self.world;
+        let gateway: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&world.gateway);
+        let engine: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&world.engine);
+        let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
+        let session = Session::new(SessionDeps {
+            gateway,
+            engine,
+            host: HostPorts {
+                clock,
+                fs: Arc::clone(&world.fs),
+                runner,
+            },
+            cache_dir: world.cache_dir().clone(),
+            limits: jackin_testkit::default_limits(),
+        });
+        let plan = self.plan(id)?;
+        let (events, mut feed) = launch_events(LineDelivery::Reliable);
+        let drain = async { while feed.recv().await.is_some() {} };
+        let (result, ()) = tokio::join!(session.launch(plan, events, cancel), drain);
         Ok(Outcome { result })
     }
 

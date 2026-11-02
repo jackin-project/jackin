@@ -6,6 +6,7 @@ mod cache;
 mod digest;
 mod gate;
 mod gate_listing;
+mod gate_shadow;
 mod git_version;
 mod host_env;
 mod identity;
@@ -22,3 +23,10 @@ mod support;
 #[expect(dead_code, reason = "the project tests use part of the shared trap")]
 #[path = "../support/trap.rs"]
 mod trap;
+
+#[expect(
+    dead_code,
+    reason = "each test binary uses part of the shared wrappers"
+)]
+#[path = "../common/cancels.rs"]
+mod cancels;

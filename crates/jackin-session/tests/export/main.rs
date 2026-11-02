@@ -34,3 +34,10 @@ mod worktrees;
 #[expect(dead_code, reason = "each test binary uses part of the shared tap")]
 #[path = "../common/tap.rs"]
 mod tap;
+
+#[expect(
+    dead_code,
+    reason = "each test binary uses part of the shared wrappers"
+)]
+#[path = "../common/cancels.rs"]
+mod cancels;

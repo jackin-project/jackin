@@ -10,7 +10,8 @@ use jackin_session::ExportError;
 use jackin_testkit::{FakeClock, Fault, Rig, TestResult, Trigger, default_limits, guard};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{CancelsOn, bundles_left, export, exports, ref_of, snapshot, staging_left};
+use super::cancels::CancelsOn;
+use super::support::{bundles_left, export, exports, ref_of, snapshot, staging_left};
 use super::tap::{RmRun, Tap};
 
 #[tokio::test]
@@ -93,7 +94,8 @@ async fn a_cancel_that_ends_a_host_git_call_is_cancelled_and_leaves_nothing() ->
             handle.commit_in_project("a.txt", b"a", "work").await?;
             let before = snapshot(&rig).await?;
             let token = CancellationToken::new();
-            let session = rig.session_over(Arc::new(CancelsOn::new(&rig, word, &token)));
+            let session =
+                rig.session_over(Arc::new(CancelsOn::new(&rig.world.runner, word, &token)));
 
             let cancelled = session.export(&rig.config, &name, token).await;
 

@@ -70,6 +70,7 @@ pub(super) struct Facts {
     pub(super) identity: Identity,
     pub(super) exclude: Option<Vec<u8>>,
     pub(super) objects: HostPath,
+    pub(super) git_dir: HostPath,
 }
 
 fn malformed(step: ProjectStep, message: &str) -> LaunchError {
@@ -195,7 +196,8 @@ pub(super) async fn read(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Facts
     } else {
         None
     };
-    let exclude = regular_exclude(fs, &host_path(ProjectStep::Describe, git_dir)?).await?;
+    let git_dir = host_path(ProjectStep::Describe, git_dir)?;
+    let exclude = regular_exclude(fs, &git_dir).await?;
     Ok(Facts {
         head: head(git).await?,
         format,
@@ -206,5 +208,6 @@ pub(super) async fn read(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Facts
         },
         exclude,
         objects: host_path(ProjectStep::Describe, objects)?,
+        git_dir,
     })
 }

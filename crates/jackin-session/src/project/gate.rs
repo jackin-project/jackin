@@ -13,6 +13,8 @@ type Entries = BTreeMap<Vec<u8>, Vec<u8>>;
 
 pub(super) struct HostGate<'a> {
     pub(super) git: HostGit<'a>,
+    pub(super) shadow: HostPath,
+    pub(super) work_tree: &'a HostPath,
     pub(super) index: HostPath,
     pub(super) objects: HostPath,
     pub(super) paths: HostPath,
@@ -22,6 +24,13 @@ pub(super) struct HostGate<'a> {
 impl HostGate<'_> {
     fn env(&self) -> Vec<(String, EnvValue)> {
         vec![
+            plain("GIT_DIR", self.shadow.as_path().display().to_string()),
+            plain(
+                "GIT_WORK_TREE",
+                self.work_tree.as_path().display().to_string(),
+            ),
+            plain("GIT_CONFIG_NOSYSTEM", "1"),
+            plain("GIT_CONFIG_GLOBAL", "/dev/null"),
             plain("GIT_INDEX_FILE", self.index.as_path().display().to_string()),
             plain(
                 "GIT_OBJECT_DIRECTORY",
