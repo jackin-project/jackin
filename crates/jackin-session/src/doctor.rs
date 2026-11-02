@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use jackin_core::{
     Compatibility, FileSystem, GatewayName, HostPath, ProcessRunner, ProcessSpec, ProcessStatus,
-    ProcessStdin, Program,
+    ProcessStdin, Program, TerminalText,
 };
 use jackin_openshell::{Gateway, GatewayError, registered_gateways};
 use tokio_util::sync::CancellationToken;
@@ -100,7 +100,7 @@ async fn binary(
         Ok(output) if output.status == ProcessStatus::Exited(0) => {
             let mut text = output.stdout;
             text.extend(output.stderr);
-            check(id, CheckStatus::Pass, String::from_utf8_lossy(&text).trim())
+            check(id, CheckStatus::Pass, clean(&text))
         }
         Ok(output) => check(
             id,
@@ -116,6 +116,10 @@ async fn git(runner: &dyn ProcessRunner, cancel: &CancellationToken) -> Check {
         Ok(version) => check(CheckId::GitBinary, CheckStatus::Pass, version.to_string()),
         Err(error) => check(CheckId::GitBinary, CheckStatus::Fail, error.to_string()),
     }
+}
+
+fn clean(bytes: &[u8]) -> String {
+    TerminalText::sanitize(bytes).as_str().trim().to_owned()
 }
 
 fn same_version(reported: &str, pinned: &str) -> bool {
@@ -172,14 +176,19 @@ async fn gateway_checks(input: &DoctorInput<'_>, cancel: &CancellationToken) -> 
                         check(CheckId::GatewayHealth, CheckStatus::Fail, "not serving")
                     },
                     if same_version(&report.version, &input.pinned.openshell_version) {
-                        check(CheckId::PinnedVersion, CheckStatus::Pass, report.version)
+                        check(
+                            CheckId::PinnedVersion,
+                            CheckStatus::Pass,
+                            clean(report.version.as_bytes()),
+                        )
                     } else {
                         check(
                             CheckId::PinnedVersion,
                             CheckStatus::Fail,
                             format!(
                                 "the gateway runs {}, jackin is pinned to {}",
-                                report.version, input.pinned.openshell_version
+                                clean(report.version.as_bytes()),
+                                input.pinned.openshell_version
                             ),
                         )
                     },

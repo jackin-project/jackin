@@ -8,8 +8,8 @@ use jackin_core::{
     PolicyStatus, SandboxLabels, SandboxName, SandboxSummary, SupervisorReading, sandbox_layout,
 };
 use jackin_openshell::{
-    ClosureViolation, GatewayError, PowerAction, ProviderProfile, RuleKey, SandboxQuery,
-    SandboxView,
+    ClosureViolation, GatewayError, PolicyError, PowerAction, ProviderProfile, RuleKey,
+    SandboxQuery, SandboxView,
 };
 use thiserror::Error;
 
@@ -75,6 +75,8 @@ pub enum LifecycleError {
     },
     #[error("the main process of {sandbox:?} has ended: {phase:?}")]
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
+    #[error(transparent)]
+    Profile(#[from] PolicyError),
 }
 
 const INSPECT_SCHEMA: u32 = 1;
@@ -189,14 +191,13 @@ impl Session {
             .collect();
         let mut violations = Vec::new();
         for asset in labels.planned.agent.spec().profiles() {
-            if let Ok(profile) = ProviderProfile::parse(asset) {
-                violations.extend(
-                    detail
-                        .policy
-                        .document
-                        .closure_violations(&profile, &generated),
-                );
-            }
+            let profile = ProviderProfile::parse(asset)?;
+            violations.extend(
+                detail
+                    .policy
+                    .document
+                    .closure_violations(&profile, &generated),
+            );
         }
         let supervisor = if detail.view.phase == Phase::Ready {
             let mut found = self
@@ -233,6 +234,7 @@ impl Session {
     ) -> Result<SandboxSummary, LifecycleError> {
         let found = self.find_managed(sandbox).await?;
         let view = found.ok_or_else(|| LifecycleError::NotFound(sandbox.clone()))?;
+        labelled(sandbox, &view.labels)?;
         if view.phase.main_process_ended() {
             return Err(LifecycleError::MainProcessEnded {
                 sandbox: sandbox.clone(),

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_openshell::GatewayError;
+use jackin_session::CheckId;
 use jackin_session::CheckStatus::{Fail, Pass, Skip, Warn};
 use jackin_testkit::{ProcessReply, TestResult, guard};
 
@@ -143,6 +144,38 @@ async fn each_problem_flips_only_its_own_check_and_nothing_is_repaired() -> Test
             assert!(outcome.world.gateway.sandboxes().is_empty(), "{label}");
             assert!(outcome.world.gateway.providers().is_empty(), "{label}");
         }
+        Ok(())
+    })
+    .await
+}
+
+fn detail(outcome: &super::support::Run, id: CheckId) -> Result<&str, Box<dyn std::error::Error>> {
+    Ok(outcome
+        .report
+        .checks
+        .iter()
+        .find(|check| check.id == id)
+        .ok_or("no such check")?
+        .detail
+        .as_str())
+}
+
+#[tokio::test]
+async fn version_details_carry_no_terminal_control_or_bidi_characters() -> TestResult {
+    guard(async {
+        let hostile = |text: &str| format!("\u{1b}]0;x\u{7}\u{202e}{text}\u{9b}\u{202e}\n");
+        let outcome = run(Setup {
+            openshell: ProcessReply::exited(0, hostile("openshell 0.1.6").as_bytes(), b""),
+            ssh: ProcessReply::exited(0, b"", hostile("OpenSSH_9.9p1").as_bytes()),
+            ..Setup::healthy()
+        })
+        .await?;
+        assert_eq!(statuses(&outcome.report), expected([Pass; 7]));
+        assert_eq!(
+            detail(&outcome, CheckId::OpenshellBinary)?,
+            "openshell 0.1.6"
+        );
+        assert_eq!(detail(&outcome, CheckId::SshBinary)?, "OpenSSH_9.9p1");
         Ok(())
     })
     .await
