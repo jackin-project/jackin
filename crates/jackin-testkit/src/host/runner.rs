@@ -13,10 +13,9 @@ use jackin_core::{
     OutputLine, OutputStream, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec,
     ProcessStatus, ProcessStdin, Program, SecretBytes, SecretOutput, StdFileSystem, write_atomic,
 };
-use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 
-use crate::exec::{Failure, run_command};
+use crate::exec::{Failure, HostProgram, run_command};
 use crate::sync::locked;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -395,6 +394,11 @@ impl ScriptedProcessRunner {
         lines: Option<&LineSink>,
         cancel: &CancellationToken,
     ) -> Result<ProcessOutput, ProcessError> {
+        if cancel.is_cancelled() {
+            return Err(ProcessError::Cancelled {
+                program: spec.program,
+            });
+        }
         let (call, replier) = self.choose(spec)?;
         let reply = match replier {
             Replier::Fixed(reply) => reply,
@@ -561,20 +565,15 @@ impl TestRunner {
         spec: &ProcessSpec,
         cancel: &CancellationToken,
     ) -> Result<ProcessOutput, ProcessError> {
-        let mut command = Command::new("git");
+        if cancel.is_cancelled() {
+            return Err(ProcessError::Cancelled {
+                program: Program::Git,
+            });
+        }
+        let mut command = HostProgram::Git.command();
         command.args(&spec.args);
         if let Some(cwd) = &spec.cwd {
             command.current_dir(cwd.as_path());
-        }
-        for (name, _) in std::env::vars_os() {
-            let removed = name.to_str().is_some_and(|name| {
-                spec.env_remove_prefixes
-                    .iter()
-                    .any(|prefix| name.starts_with(prefix.as_str()))
-            });
-            if removed {
-                command.env_remove(&name);
-            }
         }
         for (name, value) in &spec.env {
             match value {

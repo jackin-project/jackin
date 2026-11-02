@@ -167,10 +167,17 @@ async fn providers_profiles_and_detail_follow_the_gateway_contract() -> TestResu
             .into();
         assert_eq!(keys, expected);
 
+        let refused = fake.delete_provider(&provider).await;
+        assert!(
+            matches!(refused, Err(GatewayError::FailedPrecondition { .. })),
+            "{refused:?}"
+        );
+        assert_eq!(fake.providers(), vec![provider.clone()]);
+        let handle = fake.sandboxes();
+        fake.delete_sandbox(spec.name()).await?;
         fake.delete_provider(&provider).await?;
         assert_eq!(fake.provider_state(&provider).await?, ProviderState::Absent);
         fake.delete_provider(&provider).await?;
-        let handle = fake.sandboxes();
         for secret in [ACCESS, REFRESH] {
             for text in [
                 format!("{fake:?}"),
@@ -207,6 +214,49 @@ async fn every_gateway_call_yields_to_the_scheduler_before_it_acts() -> TestResu
         assert!(pending_once(
             fake.provider_state(&ProviderName::parse("p")?)
         ));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn delete_provider_is_refused_while_a_sandbox_lists_it_and_ok_after() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let profile = ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile)?;
+        let attached = ProviderName::for_account(&AccountName::parse("work")?, Agent::Codex);
+        let free = ProviderName::for_account(&AccountName::parse("other")?, Agent::Codex);
+        fake.ensure_profile(&profile).await?;
+        fake.put_provider(&login(&profile.id, &attached)?).await?;
+        fake.put_provider(&login(&profile.id, &free)?).await?;
+        let spec = spec_with(
+            &LaunchId::generate()?,
+            IMAGE,
+            vec![attached.clone()],
+            sh("sleep 3600")?,
+        )?;
+        fake.create_sandbox(&spec).await?;
+
+        let refused = fake.delete_provider(&attached).await;
+        let Err(GatewayError::FailedPrecondition { message }) = refused else {
+            return Err(format!("{refused:?}").into());
+        };
+        assert!(message.contains(attached.as_str()), "{message}");
+        assert!(message.contains(spec.name().as_str()), "{message}");
+        assert!(fake.providers().contains(&attached));
+        assert_eq!(
+            fake.provider_state(&attached).await?,
+            ProviderState::Present
+        );
+
+        fake.delete_provider(&free).await?;
+        assert_eq!(fake.providers(), vec![attached.clone()]);
+
+        fake.delete_sandbox(spec.name()).await?;
+        fake.delete_provider(&attached).await?;
+        fake.delete_provider(&attached).await?;
+        assert_eq!(fake.provider_state(&attached).await?, ProviderState::Absent);
+        assert!(fake.providers().is_empty());
         Ok(())
     })
     .await

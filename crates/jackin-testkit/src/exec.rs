@@ -36,11 +36,13 @@ pub(crate) enum HostProgram {
 
 impl HostProgram {
     pub(crate) fn command(self) -> Command {
-        match self {
+        let mut command = match self {
             HostProgram::Shell => Command::new("/bin/sh"),
             HostProgram::Git => Command::new("/usr/bin/git"),
             HostProgram::Printenv => Command::new("/usr/bin/printenv"),
-        }
+        };
+        command.env_clear().env("PATH", SANDBOX_PATH);
+        command
     }
 }
 

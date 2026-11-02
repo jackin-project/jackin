@@ -12,6 +12,8 @@ const SHELL_PROGRAM: &str = "/bin/sh";
 const RETAINED_MAX: usize = 1024 * 1024;
 const CTRL_C: u8 = 0x03;
 const CTRL_D: u8 = 0x04;
+const DETACH_PREFIX: u8 = 0x10;
+const DETACH_KEY: u8 = 0x11;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum PlanEnd {
@@ -92,11 +94,18 @@ impl MainPlan {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Seat {
+    generation: u64,
+    id: u64,
+}
+
 #[derive(Debug)]
 struct Attachment {
     id: u64,
     input: InputMode,
     lease: InputLease,
+    prefix_held: bool,
     events: UnboundedSender<TerminalEvent>,
 }
 
@@ -108,6 +117,7 @@ impl Attachment {
 
 #[derive(Debug)]
 pub(super) struct Main {
+    generation: u64,
     output: Vec<u8>,
     echo: bool,
     input: Vec<u8>,
@@ -118,8 +128,9 @@ pub(super) struct Main {
 }
 
 impl Main {
-    pub(super) fn new(plan: &MainPlan) -> Main {
+    pub(super) fn new(plan: &MainPlan, generation: u64) -> Main {
         Main {
+            generation,
             output: plan.output.clone(),
             echo: plan.end == PlanEnd::Cat,
             input: Vec::new(),
@@ -146,7 +157,7 @@ impl Main {
         &mut self,
         input: InputMode,
         size: TermSize,
-    ) -> (u64, UnboundedReceiver<TerminalEvent>) {
+    ) -> (Seat, UnboundedReceiver<TerminalEvent>) {
         let (events, queued) = mpsc::unbounded_channel();
         let id = self.next;
         self.next += 1;
@@ -161,6 +172,7 @@ impl Main {
             id,
             input,
             lease,
+            prefix_held: false,
             events,
         };
         attachment.send(TerminalEvent::Attached);
@@ -169,20 +181,31 @@ impl Main {
             attachment.send(TerminalEvent::Output(self.output.clone()));
         }
         self.attachments.push(attachment);
-        (id, queued)
+        let seat = Seat {
+            generation: self.generation,
+            id,
+        };
+        (seat, queued)
     }
 
-    pub(super) fn command(&mut self, id: u64, command: TerminalCommand) {
+    pub(super) fn command(&mut self, seat: Seat, command: TerminalCommand) {
+        if seat.generation != self.generation {
+            return;
+        }
         match command {
-            TerminalCommand::Input(bytes) => self.input_from(id, &bytes),
+            TerminalCommand::Input(bytes) => self.input_from(seat.id, &bytes),
             TerminalCommand::Resize(size) => self.pty = Some(size),
-            TerminalCommand::Detach => self.end(id, EndReason::Detached),
+            TerminalCommand::Detach => self.end(seat.id, EndReason::Detached),
         }
     }
 
-    pub(super) fn forget(&mut self, id: u64) {
-        self.attachments.retain(|attachment| attachment.id != id);
-        if self.owner == Some(id) {
+    pub(super) fn forget(&mut self, seat: Seat) {
+        if seat.generation != self.generation {
+            return;
+        }
+        self.attachments
+            .retain(|attachment| attachment.id != seat.id);
+        if self.owner == Some(seat.id) {
             self.owner = None;
         }
     }
@@ -198,32 +221,65 @@ impl Main {
     }
 
     fn input_from(&mut self, id: u64, bytes: &[u8]) {
-        let Some(attachment) = self.attachments.iter().find(|a| a.id == id) else {
+        let Some((lease, mode)) = self
+            .attachments
+            .iter()
+            .find(|a| a.id == id)
+            .map(|a| (a.lease, a.input))
+        else {
             return;
         };
-        let (lease, mode) = (attachment.lease, attachment.input);
         if bytes.contains(&CTRL_D) {
             self.end(id, EndReason::Detached);
             return;
         }
+        if lease == InputLease::ReadOnly && bytes.contains(&CTRL_C) {
+            self.end(id, EndReason::StreamClosed);
+            return;
+        }
+        let (keys, detach) = self.keys_from(id, bytes);
         match lease {
-            InputLease::Owner => self.forward(bytes),
-            InputLease::ReadOnly if bytes.contains(&CTRL_C) => {
-                self.end(id, EndReason::StreamClosed);
-            }
+            InputLease::Owner => self.forward(&keys),
             InputLease::ReadOnly if mode == InputMode::Owner && self.owner.is_none() => {
                 self.owner = Some(id);
                 if let Some(attachment) = self.attachments.iter_mut().find(|a| a.id == id) {
                     attachment.lease = InputLease::Owner;
                     attachment.send(TerminalEvent::Lease(InputLease::Owner));
                 }
-                self.forward(bytes);
+                self.forward(&keys);
             }
             InputLease::ReadOnly => {}
         }
+        if detach {
+            self.end(id, EndReason::Detached);
+        }
+    }
+
+    fn keys_from(&mut self, id: u64, bytes: &[u8]) -> (Vec<u8>, bool) {
+        let mut keys = Vec::with_capacity(bytes.len());
+        let Some(attachment) = self.attachments.iter_mut().find(|a| a.id == id) else {
+            return (keys, false);
+        };
+        for &byte in bytes {
+            if std::mem::take(&mut attachment.prefix_held) {
+                if byte == DETACH_KEY {
+                    return (keys, true);
+                }
+                keys.push(DETACH_PREFIX);
+            }
+            if byte == DETACH_PREFIX {
+                attachment.prefix_held = true;
+            } else {
+                keys.push(byte);
+            }
+        }
+        (keys, false)
     }
 
     fn forward(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
         self.input.extend_from_slice(bytes);
         if self.echo {
             self.output.extend_from_slice(bytes);

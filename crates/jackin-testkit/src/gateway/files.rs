@@ -11,12 +11,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use jackin_core::{
     HostPath, ProcessStatus, SandboxPath, Sha256, TerminalText, sandbox_layout::RUN_START,
 };
-use jackin_openshell::{GatewayError, ProjectUpload, SandboxFile, TransferOp};
-use tokio::process::Command;
+use jackin_openshell::{
+    GatewayError, ProjectUpload, SandboxFile, TransferOp, sanitized_git_config,
+};
 use tokio_util::sync::CancellationToken;
 
 use super::exec::host_path;
 use super::state::Cell;
+use crate::exec::HostProgram;
+use crate::host::TestRunner;
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -84,7 +87,8 @@ pub(super) async fn write_file(cell: &Arc<Cell>, file: &SandboxFile) -> Result<(
 }
 
 async fn tracked_and_untracked(source: &Path) -> Result<Vec<String>, GatewayError> {
-    let output = Command::new("git")
+    let output = HostProgram::Git
+        .command()
         .args(["ls-files", "-z", "-co", "--exclude-standard"])
         .current_dir(source)
         .stdin(Stdio::null())
@@ -107,11 +111,17 @@ async fn tracked_and_untracked(source: &Path) -> Result<Vec<String>, GatewayErro
 }
 
 fn replace_file(from: &Path, to: &Path) -> std::io::Result<()> {
-    if let Some(parent) = to.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    drop(std::fs::remove_file(to));
-    std::fs::copy(from, to).map(drop)
+    let (Some(parent), Some(name)) = (to.parent(), to.file_name()) else {
+        return Err(std::io::ErrorKind::InvalidInput.into());
+    };
+    std::fs::create_dir_all(parent)?;
+    let temp = parent.join(format!(
+        ".{}.jackin-{:016x}",
+        name.to_string_lossy(),
+        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::copy(from, &temp)?;
+    std::fs::rename(&temp, to)
 }
 
 fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -135,12 +145,24 @@ pub(super) async fn upload_project(
 ) -> Result<(), GatewayError> {
     let dest = writable(root, &upload.dest)?;
     let source = upload.source.path().as_path().to_path_buf();
+    let git_dir = source.join(".git");
+    if !tokio::fs::symlink_metadata(&git_dir)
+        .await
+        .is_ok_and(|metadata| metadata.is_dir())
+    {
+        return Err(GatewayError::UnsupportedGitDirectory {
+            path: HostPath::parse(&git_dir).map_err(protocol)?,
+        });
+    }
+    let config = HostPath::parse(&git_dir.join("config")).map_err(protocol)?;
+    let sanitized = sanitized_git_config(&TestRunner::new(), &config, cancel).await?;
     let names = tracked_and_untracked(&source).await?;
     if cancel.is_cancelled() {
         return Err(GatewayError::Cancelled {
             op: jackin_openshell::GatewayOp::Upload,
         });
     }
+    let git_config = dest.join(".git").join("config");
     tokio::task::spawn_blocking(move || {
         for name in names {
             let from = source.join(&name);
@@ -148,11 +170,32 @@ pub(super) async fn upload_project(
                 replace_file(&from, &dest.join(&name))?;
             }
         }
-        copy_tree(&source.join(".git"), &dest.join(".git"))
+        copy_tree(&git_dir, &dest.join(".git"))
     })
     .await
     .map_err(protocol)?
-    .map_err(protocol)
+    .map_err(protocol)?;
+    let temp = git_config.with_file_name(format!(
+        ".config.jackin-{:016x}",
+        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    tokio::fs::write(&temp, sanitized.as_bytes())
+        .await
+        .map_err(protocol)?;
+    tokio::fs::set_permissions(&temp, std::fs::Permissions::from_mode(0o644))
+        .await
+        .map_err(protocol)?;
+    tokio::fs::rename(&temp, &git_config)
+        .await
+        .map_err(protocol)
+}
+
+pub(super) fn upload_refused() -> GatewayError {
+    GatewayError::Transfer {
+        op: TransferOp::UploadFiltered,
+        status: ProcessStatus::Exited(1),
+        tail: TerminalText::sanitize(b"sandbox not found"),
+    }
 }
 
 fn digest_failure(op: TransferOp, note: &str) -> GatewayError {

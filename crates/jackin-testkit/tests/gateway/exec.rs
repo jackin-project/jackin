@@ -104,3 +104,60 @@ async fn sha256sum_is_computed_in_process_over_the_sandbox_file() -> TestResult 
     })
     .await
 }
+
+#[tokio::test]
+async fn shell_scripts_map_every_sandbox_path_at_a_path_boundary_and_leave_look_alikes_alone()
+-> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let handle = ready(&fake, sh("sleep 3600")?).await?;
+        let name = handle.name();
+        let scripts = [
+            ("printf a >/sandbox/o.txt", "/sandbox/o.txt", "a"),
+            ("printf b > \"/sandbox/q 1.txt\"", "/sandbox/q 1.txt", "b"),
+            ("printf c > '/sandbox/q2.txt'", "/sandbox/q2.txt", "c"),
+            ("V=/sandbox/v; printf d >$V", "/sandbox/v", "d"),
+            ("cd /sandbox; printf e > e.txt", "/sandbox/e.txt", "e"),
+        ];
+        for (script, target, content) in scripts {
+            let outcome = run(&fake, &program_run(&name, "/bin/sh", &["-c", script])?).await?;
+            assert_eq!(outcome.exit_code, 0, "{script}: {outcome:?}");
+            assert_eq!(
+                handle.file(&path(target)?),
+                Some(content.as_bytes().to_vec()),
+                "{script}"
+            );
+        }
+        let alike = run(
+            &fake,
+            &program_run(
+                &name,
+                "/bin/sh",
+                &["-c", "echo /sandbox2/x /opt/sandbox/y /sandboxed"],
+            )?,
+        )
+        .await?;
+        assert_eq!(alike.stdout, b"/sandbox2/x /opt/sandbox/y /sandboxed\n");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_program_workdir_outside_sandbox_is_accepted_and_stays_inside_the_sandbox() -> TestResult
+{
+    guard(async {
+        let fake = fake()?;
+        let handle = ready(&fake, sh("sleep 3600")?).await?;
+        let name = handle.name();
+        let marker = format!("p-{}", jackin_core::LaunchId::generate()?);
+        let mut request = program_run(&name, "/bin/sh", &["-c", &format!("printf t > {marker}")])?;
+        request.workdir = Some(path("/tmp")?);
+        let outcome = run(&fake, &request).await?;
+        assert_eq!(outcome.exit_code, 0, "{outcome:?}");
+        assert!(!tokio::fs::try_exists(std::path::Path::new("/tmp").join(&marker)).await?);
+        assert_eq!(handle.file(&path(&format!("/sandbox/{marker}"))?), None);
+        Ok(())
+    })
+    .await
+}

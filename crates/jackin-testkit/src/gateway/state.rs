@@ -155,6 +155,7 @@ pub(super) struct Sandbox {
     pub(super) failure: Option<String>,
     pub(super) plan: MainPlan,
     pub(super) main: Main,
+    pub(super) generation: u64,
     pub(super) supervisor: Option<Supervisor>,
     pub(super) runs: Vec<(SandboxPath, RunRecord)>,
 }
@@ -166,6 +167,12 @@ impl Cell {
 
     pub(super) fn state(&self) -> std::sync::MutexGuard<'_, Sandbox> {
         locked(&self.inner)
+    }
+
+    pub(super) fn settle(&self) -> Phase {
+        let mut state = self.state();
+        state.observe(&self.root());
+        state.phase
     }
 }
 
@@ -184,7 +191,8 @@ impl Sandbox {
             spec,
             settling: Settling::Provisioning { polls_left: polls },
             failure,
-            main: Main::new(&plan),
+            main: Main::new(&plan, 0),
+            generation: 0,
             plan,
             supervisor,
             runs: Vec::new(),
@@ -242,7 +250,8 @@ impl Sandbox {
     fn settle_restart(&mut self, root: &Path) {
         self.settling = Settling::Done;
         self.phase = Phase::Ready;
-        self.main = Main::new(&self.plan);
+        self.generation += 1;
+        self.main = Main::new(&self.plan, self.generation);
         self.restart_supervisor(root);
     }
 

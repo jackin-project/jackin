@@ -16,11 +16,13 @@ use tokio::process::Child;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_util::sync::CancellationToken;
 
+use super::main_process::Seat;
 use super::state::Cell;
-use crate::exec::{HostProgram, SANDBOX_PATH, status_of};
+use crate::exec::{HostProgram, status_of};
 
 const CAPACITY: usize = 256;
 const CHUNK: usize = 4096;
+const ENDED_NOTICE: &str = "openshell: cannot connect to the canonical main process: canonical main process already finished";
 
 pub(super) fn attach_main(
     cell: &Arc<Cell>,
@@ -29,14 +31,25 @@ pub(super) fn attach_main(
     size: TermSize,
 ) -> TerminalSession {
     let (session, driver) = TerminalSession::pair(CAPACITY, kind);
-    let (id, queued) = cell.state().main.attach(input, size);
-    tokio::spawn(pump_main(Arc::clone(cell), id, driver, queued));
+    let (seat, queued) = cell.state().main.attach(input, size);
+    tokio::spawn(pump_main(Arc::clone(cell), seat, driver, queued));
+    session
+}
+
+pub(super) fn refuse_main(kind: TerminalKind) -> TerminalSession {
+    let (session, driver) = TerminalSession::pair(CAPACITY, kind);
+    for event in [
+        TerminalEvent::Attached,
+        TerminalEvent::Ended(EndReason::Refused(ENDED_NOTICE.to_owned())),
+    ] {
+        drop(driver.events.try_send(event));
+    }
     session
 }
 
 async fn pump_main(
     cell: Arc<Cell>,
-    id: u64,
+    seat: Seat,
     driver: TerminalDriver,
     mut queued: UnboundedReceiver<TerminalEvent>,
 ) {
@@ -47,7 +60,7 @@ async fn pump_main(
     loop {
         tokio::select! {
             command = commands.recv() => match command {
-                Some(command) => cell.state().main.command(id, command),
+                Some(command) => cell.state().main.command(seat, command),
                 None => break,
             },
             event = queued.recv() => match event {
@@ -61,7 +74,7 @@ async fn pump_main(
             },
         }
     }
-    cell.state().main.forget(id);
+    cell.state().main.forget(seat);
 }
 
 pub(super) fn spawn_shell(
@@ -73,8 +86,6 @@ pub(super) fn spawn_shell(
     let mut command = HostProgram::Shell.command();
     command
         .current_dir(workdir)
-        .env_clear()
-        .env("PATH", SANDBOX_PATH)
         .envs(env.iter().map(|(name, value)| (name.as_str(), value)))
         .kill_on_drop(true)
         .stdin(Stdio::piped())

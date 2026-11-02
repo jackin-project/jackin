@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::state::{Cell, SANDBOX_ROOT};
 use super::{ProgramScript, RunRecord};
-use crate::exec::{Failure, HostProgram, SANDBOX_PATH, run_command};
+use crate::exec::{Failure, HostProgram, run_command};
 
 pub(super) fn host_path(root: &Path, sandbox_path: &str) -> Option<PathBuf> {
     if sandbox_path == SANDBOX_ROOT {
@@ -21,11 +21,37 @@ pub(super) fn host_path(root: &Path, sandbox_path: &str) -> Option<PathBuf> {
         .map(|rest| root.join(rest))
 }
 
+pub(super) fn workdir_path(cell: &Cell, workdir: &str) -> Result<PathBuf, std::io::Error> {
+    let path = host_path(&cell.root(), workdir)
+        .unwrap_or_else(|| cell.dir.path().join(workdir.trim_start_matches('/')));
+    std::fs::create_dir_all(&path)?;
+    Ok(path)
+}
+
+fn is_name_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')
+}
+
 fn map_argument(root: &Path, argument: &str) -> String {
-    host_path(root, argument).map_or_else(
-        || argument.to_owned(),
-        |mapped| mapped.to_string_lossy().into_owned(),
-    )
+    let bytes = argument.as_bytes();
+    let target = root.to_string_lossy();
+    let mut mapped = String::with_capacity(argument.len());
+    let mut copied = 0;
+    let mut at = 0;
+    while let Some(found) = argument[at..].find(SANDBOX_ROOT) {
+        let start = at + found;
+        let end = start + SANDBOX_ROOT.len();
+        let opens = start == 0 || !(is_name_byte(bytes[start - 1]) || bytes[start - 1] == b'/');
+        let closes = end == bytes.len() || !is_name_byte(bytes[end]);
+        if opens && closes {
+            mapped.push_str(&argument[copied..start]);
+            mapped.push_str(&target);
+            copied = end;
+        }
+        at = end;
+    }
+    mapped.push_str(&argument[copied..]);
+    mapped
 }
 
 fn outcome(code: i32, stdout: Vec<u8>, stderr: Vec<u8>) -> ProgramOutcome {
@@ -45,16 +71,17 @@ fn exit_code(status: ProcessStatus) -> i32 {
 
 async fn run_host(
     program: HostProgram,
-    root: &Path,
+    cell: &Cell,
     run: &ProgramRun,
     cancel: &CancellationToken,
 ) -> Result<ProgramOutcome, GatewayError> {
+    let root_dir = cell.root();
+    let root = root_dir.as_path();
     let workdir = match &run.workdir {
         None => root.to_path_buf(),
         Some(workdir) => {
-            host_path(root, workdir.as_str()).ok_or_else(|| GatewayError::InvalidArgument {
-                field: "workdir".to_owned(),
-                message: "the fake maps only /sandbox".to_owned(),
+            workdir_path(cell, workdir.as_str()).map_err(|error| GatewayError::Protocol {
+                message: error.to_string(),
             })?
         }
     };
@@ -62,8 +89,6 @@ async fn run_host(
     command
         .args(run.args.iter().map(|argument| map_argument(root, argument)))
         .current_dir(workdir)
-        .env_clear()
-        .env("PATH", SANDBOX_PATH)
         .envs(run.env.iter().map(|(name, value)| (name.as_str(), value)));
     let stdin = match &run.stdin {
         ProgramStdin::Closed => None,
@@ -159,9 +184,9 @@ pub(super) async fn run_program(
         outcome(script.exit_code, script.stdout, script.stderr)
     } else {
         match run.program.as_str() {
-            "/bin/sh" => run_host(HostProgram::Shell, &root, run, cancel).await?,
-            "/usr/bin/git" => run_host(HostProgram::Git, &root, run, cancel).await?,
-            "/usr/bin/printenv" => run_host(HostProgram::Printenv, &root, run, cancel).await?,
+            "/bin/sh" => run_host(HostProgram::Shell, cell, run, cancel).await?,
+            "/usr/bin/git" => run_host(HostProgram::Git, cell, run, cancel).await?,
+            "/usr/bin/printenv" => run_host(HostProgram::Printenv, cell, run, cancel).await?,
             "/usr/bin/sha256sum" => sha256sum(&root, run).await,
             other => outcome(
                 127,

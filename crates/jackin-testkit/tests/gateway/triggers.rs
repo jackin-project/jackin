@@ -173,7 +173,8 @@ async fn settled_state(
     name: &SandboxName,
 ) -> Result<(Phase, String), Box<dyn Error>> {
     let view = observe(fake, name).await?;
-    let text = read(fake, name, STATE).await?.unwrap_or_default();
+    let handle = fake.sandbox(name).ok_or("the sandbox is gone")?;
+    let text = handle.file(&path(STATE)?).unwrap_or_default();
     Ok((view.phase, String::from_utf8(text)?))
 }
 

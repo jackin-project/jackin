@@ -229,21 +229,38 @@ impl FakeGateway {
         self.cell_at(op, None, name)
     }
 
+    fn struck_at(
+        &self,
+        op: GatewayOp,
+        special: Option<&Trigger>,
+        name: &SandboxName,
+    ) -> Result<Option<Arc<Cell>>, GatewayError> {
+        let mut registry = self.registry();
+        registry.strike_at(op, special)?;
+        Ok(registry.sandboxes.get(name).cloned())
+    }
+
     fn cell_at(
         &self,
         op: GatewayOp,
         special: Option<&Trigger>,
         name: &SandboxName,
     ) -> Result<Arc<Cell>, GatewayError> {
-        let mut registry = self.registry();
-        registry.strike_at(op, special)?;
-        registry
-            .sandboxes
-            .get(name)
-            .cloned()
+        self.struck_at(op, special, name)?
             .ok_or_else(|| GatewayError::NotFound {
                 what: Missing::Sandbox(name.clone()),
             })
+    }
+
+    fn settled_at(
+        &self,
+        op: GatewayOp,
+        special: Option<&Trigger>,
+        name: &SandboxName,
+    ) -> Result<(Arc<Cell>, Phase), GatewayError> {
+        let cell = self.cell_at(op, special, name)?;
+        let phase = cell.settle();
+        Ok((cell, phase))
     }
 
     fn exec_cell(&self, op: GatewayOp, name: &SandboxName) -> Result<Arc<Cell>, GatewayError> {
@@ -256,8 +273,7 @@ impl FakeGateway {
         special: Option<&Trigger>,
         name: &SandboxName,
     ) -> Result<Arc<Cell>, GatewayError> {
-        let cell = self.cell_at(op, special, name)?;
-        let phase = cell.state().phase;
+        let (cell, phase) = self.settled_at(op, special, name)?;
         if phase.accepts_exec() {
             Ok(cell)
         } else {
@@ -402,6 +418,20 @@ impl Gateway for FakeGateway {
         tokio::task::yield_now().await;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Provider)?;
+        let attached: Vec<String> = registry
+            .sandboxes
+            .values()
+            .filter(|cell| cell.state().spec.providers().contains(name))
+            .map(|cell| cell.name.to_string())
+            .collect();
+        if !attached.is_empty() {
+            return Err(GatewayError::FailedPrecondition {
+                message: format!(
+                    "provider '{name}' is attached to sandbox(es): {}",
+                    attached.join(", ")
+                ),
+            });
+        }
         registry.providers.remove(name);
         Ok(())
     }
@@ -540,6 +570,7 @@ impl Gateway for FakeGateway {
             (registry.stale_observations, registry.start_ignored)
         };
         let mut state = cell.state();
+        state.observe(&cell.root());
         match (action, state.phase) {
             (PowerAction::Stop, Phase::Ready) => {
                 state.phase = Phase::Stopped;
@@ -547,6 +578,12 @@ impl Gateway for FakeGateway {
                 if let Some(supervisor) = &mut state.supervisor {
                     supervisor.stop();
                 }
+            }
+            (PowerAction::Stop, Phase::Stopped) => {}
+            (PowerAction::Stop, Phase::Error { exit_code: None }) => {
+                return Err(protocol(
+                    "stop sandbox failed: persist stop marker failed: No such file or directory (os error 2)",
+                ));
             }
             (PowerAction::Stop, Phase::Completed { .. } | Phase::Error { .. }) => {
                 return Err(GatewayError::MainProcessFailed {
@@ -564,6 +601,11 @@ impl Gateway for FakeGateway {
             (PowerAction::Start, Phase::Stopped) => {
                 state.phase = Phase::Starting;
                 state.settling = Settling::Restarting { stale };
+            }
+            (PowerAction::Start, Phase::Error { exit_code: None }) => {
+                return Err(GatewayError::FailedPrecondition {
+                    message: "sandbox must be Stopped, Suspended, Completed, or a failed main-process Error to start (current phase: Error); stop the sandbox before retrying start".to_owned(),
+                });
             }
             (PowerAction::Start, Phase::Completed { .. } | Phase::Error { .. }) => {
                 state.phase = Phase::Starting;
@@ -636,7 +678,12 @@ impl Gateway for FakeGateway {
         cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
         tokio::task::yield_now().await;
-        let cell = self.exec_cell(GatewayOp::Upload, sandbox)?;
+        let ready = self
+            .struck_at(GatewayOp::Upload, None, sandbox)?
+            .filter(|cell| cell.settle().accepts_exec());
+        let Some(cell) = ready else {
+            return Err(files::upload_refused());
+        };
         files::upload_project(&cell.root(), upload, cancel).await
     }
 
@@ -648,9 +695,16 @@ impl Gateway for FakeGateway {
         _cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
         tokio::task::yield_now().await;
-        let cell = self.exec_cell(GatewayOp::Download, sandbox)?;
-        let corrupt = std::mem::take(&mut self.registry().corrupt_download);
-        files::download_file(&cell.root(), remote, local, corrupt).await
+        let result = async {
+            let cell = self.exec_cell(GatewayOp::Download, sandbox)?;
+            let corrupt = std::mem::take(&mut self.registry().corrupt_download);
+            files::download_file(&cell.root(), remote, local, corrupt).await
+        }
+        .await;
+        if result.is_err() {
+            drop(tokio::fs::remove_file(local.as_path()).await);
+        }
+        result
     }
 
     async fn open_terminal(
@@ -658,21 +712,30 @@ impl Gateway for FakeGateway {
         request: &TerminalRequest,
     ) -> Result<TerminalSession, GatewayError> {
         tokio::task::yield_now().await;
-        let cell = self.exec_cell(GatewayOp::Terminal, &request.sandbox)?;
+        let (cell, phase) = self.settled_at(GatewayOp::Terminal, None, &request.sandbox)?;
         match &request.kind {
-            TerminalKind::MainProcess { input, .. } => Ok(terminal::attach_main(
-                &cell,
-                request.kind.clone(),
-                *input,
-                request.size,
-            )),
+            TerminalKind::MainProcess { input, .. } => {
+                if phase.accepts_exec() {
+                    Ok(terminal::attach_main(
+                        &cell,
+                        request.kind.clone(),
+                        *input,
+                        request.size,
+                    ))
+                } else if matches!(
+                    phase,
+                    Phase::Completed { .. } | Phase::Error { exit_code: Some(_) }
+                ) {
+                    Ok(terminal::refuse_main(request.kind.clone()))
+                } else {
+                    Err(GatewayError::NotReady { phase })
+                }
+            }
             TerminalKind::Shell { workdir, env } => {
-                let host = exec::host_path(&cell.root(), workdir.as_str()).ok_or_else(|| {
-                    GatewayError::InvalidArgument {
-                        field: "workdir".to_owned(),
-                        message: "the fake maps only /sandbox".to_owned(),
-                    }
-                })?;
+                if !phase.accepts_exec() {
+                    return Err(GatewayError::NotReady { phase });
+                }
+                let host = exec::workdir_path(&cell, workdir.as_str()).map_err(protocol)?;
                 terminal::spawn_shell(&cell, request.kind.clone(), host, env)
             }
         }

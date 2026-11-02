@@ -5,14 +5,14 @@ use std::collections::BTreeMap;
 
 use jackin_core::{EnvName, Phase};
 use jackin_openshell::{
-    EndReason, Gateway, InputLease, InputMode, TerminalEvent, TerminalKind, TerminalRequest,
-    TerminalSession,
+    EndReason, Gateway, InputLease, InputMode, PowerAction, TerminalEvent, TerminalKind,
+    TerminalRequest, TerminalSession,
 };
 use jackin_testkit::{FakeGateway, SandboxHandle};
 
 use super::support::{
-    TestResult, attach, collect_until, drain, eventually, fake, guard, output_text, path, ready,
-    sh, size, write,
+    TestResult, attach, collect_until, drain, eventually, fake, guard, observe, output_text, path,
+    ready, sh, size, write,
 };
 
 const MAIN: &str = "echo banner; sleep 3600";
@@ -233,6 +233,201 @@ async fn shell_terminal_runs_in_the_sandbox_directory_with_env_and_reports_the_e
             events.last(),
             Some(&TerminalEvent::Lease(InputLease::Owner))
         );
+        Ok(())
+    })
+    .await
+}
+
+async fn cat_owner()
+-> Result<(FakeGateway, SandboxHandle, TerminalSession), Box<dyn std::error::Error>> {
+    let fake = fake()?;
+    let handle = ready(&fake, sh("exec cat")?).await?;
+    let mut owner = attach(&fake, &handle.name(), InputMode::Owner).await?;
+    let events = collect_until("the owner lease", &mut owner, |e| {
+        matches!(e, TerminalEvent::Lease(_))
+    })
+    .await?;
+    assert_eq!(
+        events.last(),
+        Some(&TerminalEvent::Lease(InputLease::Owner))
+    );
+    Ok((fake, handle, owner))
+}
+
+#[tokio::test]
+async fn a_late_ending_attachment_of_the_old_generation_does_not_release_the_new_attachment()
+-> TestResult {
+    guard(async {
+        let (fake, handle, mut old) = cat_owner().await?;
+        let name = handle.name();
+        fake.set_power(&name, PowerAction::Stop).await?;
+        fake.set_power(&name, PowerAction::Start).await?;
+        assert_eq!(observe(&fake, &name).await?.phase, Phase::Ready);
+        let mut fresh = attach(&fake, &name, InputMode::Owner).await?;
+        let events = collect_until("the new lease", &mut fresh, |e| {
+            matches!(e, TerminalEvent::Lease(_))
+        })
+        .await?;
+        assert_eq!(
+            events.last(),
+            Some(&TerminalEvent::Lease(InputLease::Owner))
+        );
+
+        let ended = drain("the old attachment to end", &mut old).await?;
+        assert_eq!(
+            ended.last(),
+            Some(&TerminalEvent::Ended(EndReason::StreamClosed))
+        );
+        assert_eq!(handle.attachments(), 1);
+        fresh.input(b"x".to_vec()).await?;
+        eventually(
+            "the new attachment input",
+            || handle.main_input(),
+            b"x".to_vec(),
+        )
+        .await?;
+
+        fresh.detach().await?;
+        drain("the new attachment to detach", &mut fresh).await?;
+        assert_eq!(handle.attachments(), 0);
+        Ok(())
+    })
+    .await
+}
+
+async fn expect_detached(
+    session: &mut TerminalSession,
+    handle: &SandboxHandle,
+    label: &str,
+) -> TestResult {
+    let events = drain(label, session).await?;
+    assert_eq!(
+        events.last(),
+        Some(&TerminalEvent::Ended(EndReason::Detached)),
+        "{label}: {events:?}"
+    );
+    assert!(
+        !events.iter().any(|e| matches!(e, TerminalEvent::Exited(_))),
+        "{label}: {events:?}"
+    );
+    assert_eq!(handle.phase(), Phase::Ready, "{label}");
+    assert_eq!(handle.attachments(), 0, "{label}");
+    assert!(handle.main_input().is_empty(), "{label}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn ctrl_p_ctrl_q_detaches_in_one_chunk_or_two_and_the_process_survives() -> TestResult {
+    guard(async {
+        let (_fake, handle, mut owner) = cat_owner().await?;
+        owner.input(vec![0x10, 0x11]).await?;
+        expect_detached(&mut owner, &handle, "one chunk").await?;
+
+        let (_fake, handle, mut owner) = cat_owner().await?;
+        owner.input(vec![0x10]).await?;
+        owner.input(vec![0x11]).await?;
+        expect_detached(&mut owner, &handle, "two chunks").await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_lone_ctrl_p_is_held_and_released_in_front_of_the_next_byte_and_a_lone_ctrl_q_is_forwarded()
+-> TestResult {
+    guard(async {
+        let (_fake, handle, mut owner) = cat_owner().await?;
+        owner.input(vec![0x10]).await?;
+        barrier(&owner, &handle, 101).await?;
+        assert!(handle.main_input().is_empty());
+        assert_eq!(handle.attachments(), 1);
+
+        owner.input(b"x".to_vec()).await?;
+        eventually(
+            "the released bytes",
+            || handle.main_input(),
+            vec![0x10, 0x78],
+        )
+        .await?;
+        let events = collect_until("the echo", &mut owner, |e| {
+            matches!(e, TerminalEvent::Output(_))
+        })
+        .await?;
+        assert_eq!(
+            events.last(),
+            Some(&TerminalEvent::Output(vec![0x10, 0x78]))
+        );
+        assert_eq!(handle.attachments(), 1);
+
+        let (_fake, handle, owner) = cat_owner().await?;
+        owner.input(vec![0x11]).await?;
+        eventually("a lone Ctrl-Q", || handle.main_input(), vec![0x11]).await?;
+        assert_eq!(handle.attachments(), 1);
+        Ok(())
+    })
+    .await
+}
+
+async fn shell_in(
+    fake: &FakeGateway,
+    name: &jackin_core::SandboxName,
+    workdir: &str,
+    script: &str,
+) -> Result<Vec<TerminalEvent>, Box<dyn std::error::Error>> {
+    let request = TerminalRequest {
+        sandbox: name.clone(),
+        kind: TerminalKind::Shell {
+            workdir: path(workdir)?,
+            env: BTreeMap::new(),
+        },
+        size: size(100, 30)?,
+    };
+    let mut shell = fake.open_terminal(&request).await?;
+    shell.input(script.as_bytes().to_vec()).await?;
+    drain("the shell to exit", &mut shell).await
+}
+
+fn exit_of(events: &[TerminalEvent]) -> Option<Option<i32>> {
+    events.iter().find_map(|event| match event {
+        TerminalEvent::Exited(code) => Some(*code),
+        _ => None,
+    })
+}
+
+#[tokio::test]
+async fn a_shell_workdir_outside_sandbox_is_a_per_sandbox_directory_and_never_the_host()
+-> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let first = ready(&fake, sh("sleep 3600")?).await?;
+        let second = ready(&fake, sh("sleep 3600")?).await?;
+        let marker = format!("m-{}", jackin_core::LaunchId::generate()?);
+
+        let wrote = shell_in(
+            &fake,
+            &first.name(),
+            "/tmp",
+            &format!("printf x > {marker}; exit 3\n"),
+        )
+        .await?;
+        assert_eq!(exit_of(&wrote), Some(Some(3)), "{wrote:?}");
+        let sees = shell_in(
+            &fake,
+            &first.name(),
+            "/tmp",
+            &format!("test -f {marker} && exit 0; exit 9\n"),
+        )
+        .await?;
+        assert_eq!(exit_of(&sees), Some(Some(0)), "{sees:?}");
+        let other = shell_in(
+            &fake,
+            &second.name(),
+            "/tmp",
+            &format!("test -f {marker} && exit 0; exit 9\n"),
+        )
+        .await?;
+        assert_eq!(exit_of(&other), Some(Some(9)), "{other:?}");
+        assert!(!tokio::fs::try_exists(std::path::Path::new("/tmp").join(&marker)).await?);
+        assert_eq!(first.file(&path(&format!("/sandbox/{marker}"))?), None);
         Ok(())
     })
     .await

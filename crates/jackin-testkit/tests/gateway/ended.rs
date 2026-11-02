@@ -8,7 +8,7 @@ use jackin_openshell::{
     EndReason, Gateway, GatewayError, InputMode, PowerAction, SandboxFile, TerminalEvent,
     TerminalKind, TerminalRequest,
 };
-use jackin_testkit::FakeGateway;
+use jackin_testkit::{FakeGateway, SandboxHandle};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
@@ -16,7 +16,7 @@ use super::support::{
     size, write,
 };
 
-async fn assert_not_ready(
+async fn assert_exec_not_ready(
     fake: &FakeGateway,
     name: &jackin_core::SandboxName,
     expected: Phase,
@@ -44,15 +44,48 @@ async fn assert_not_ready(
         fake.read_files(name, &[path("/sandbox/kept")?]).await.err(),
         fake.write_file(name, &file).await.err(),
         fake.open_terminal(&shell).await.err(),
-        fake.open_terminal(&main_request(name, InputMode::Owner)?)
-            .await
-            .err(),
     ];
     for error in errors {
         assert!(
             matches!(&error, Some(GatewayError::NotReady { phase }) if *phase == expected),
             "{error:?}"
         );
+    }
+    Ok(())
+}
+
+async fn assert_main_not_ready(
+    fake: &FakeGateway,
+    name: &jackin_core::SandboxName,
+    expected: Phase,
+) -> TestResult {
+    for mode in [InputMode::Owner, InputMode::Viewer] {
+        let error = fake.open_terminal(&main_request(name, mode)?).await.err();
+        assert!(
+            matches!(&error, Some(GatewayError::NotReady { phase }) if *phase == expected),
+            "{mode:?}: {error:?}"
+        );
+    }
+    Ok(())
+}
+
+async fn assert_main_refused(fake: &FakeGateway, handle: &SandboxHandle) -> TestResult {
+    for mode in [InputMode::Owner, InputMode::Viewer] {
+        let mut session = attach(fake, &handle.name(), mode).await?;
+        let events = drain("the refused attach to close", &mut session).await?;
+        let [
+            TerminalEvent::Attached,
+            TerminalEvent::Ended(EndReason::Refused(text)),
+        ] = events.as_slice()
+        else {
+            return Err(format!("{mode:?}: {events:?}").into());
+        };
+        assert!(
+            text.contains("cannot connect to the canonical main process"),
+            "{text}"
+        );
+        assert_eq!(handle.attachments(), 0);
+        assert!(handle.main_input().is_empty());
     }
     Ok(())
 }
@@ -73,7 +106,8 @@ async fn ended_row(code: i32, ended: Phase) -> TestResult {
         ]
     );
     assert_eq!(observe(&fake, &name).await?.phase, ended);
-    assert_not_ready(&fake, &name, ended).await?;
+    assert_exec_not_ready(&fake, &name, ended).await?;
+    assert_main_refused(&fake, &handle).await?;
     let stop = fake.set_power(&name, PowerAction::Stop).await;
     assert!(
         matches!(stop, Err(GatewayError::MainProcessFailed { ref sandbox }) if *sandbox == name)
@@ -97,17 +131,34 @@ async fn ended_row(code: i32, ended: Phase) -> TestResult {
             Err(GatewayError::FailedPrecondition { .. })
         ));
     }
-    assert_not_ready(&fake, &name, Phase::Starting).await?;
+    assert_exec_not_ready(&fake, &name, Phase::Starting).await?;
+    assert_main_not_ready(&fake, &name, Phase::Starting).await?;
     fake.delete_sandbox(&name).await?;
     assert!(fake.sandbox(&name).is_none());
     Ok(())
 }
 
 #[tokio::test]
-async fn ended_main_process_follows_the_live_0_1_6_capture_for_error_and_completed() -> TestResult {
+async fn an_ended_main_process_refuses_the_main_attach_and_blocks_every_other_call_for_error_and_completed()
+-> TestResult {
     guard(async {
         ended_row(7, Phase::Error { exit_code: Some(7) }).await?;
         ended_row(0, Phase::Completed { exit_code: 0 }).await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_main_attach_is_not_ready_on_a_stopped_sandbox() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let handle = ready(&fake, sh("sleep 3600")?).await?;
+        let name = handle.name();
+        fake.set_power(&name, PowerAction::Stop).await?;
+        assert_main_not_ready(&fake, &name, Phase::Stopped).await?;
+        assert_exec_not_ready(&fake, &name, Phase::Stopped).await?;
+        assert_eq!(handle.attachments(), 0);
+        Ok(())
     })
     .await
 }

@@ -96,7 +96,7 @@ async fn provision_for_keeps_provisioning_for_exactly_n_observations() -> TestRe
                 phase: Phase::Provisioning
             })
         ));
-        for _ in 0..3 {
+        for _ in 0..2 {
             assert_eq!(
                 observe(&fake, spec.name()).await?.phase,
                 Phase::Provisioning
