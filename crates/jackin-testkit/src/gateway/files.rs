@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -31,9 +32,17 @@ fn writable(root: &Path, path: &SandboxPath) -> Result<PathBuf, GatewayError> {
     })
 }
 
-pub(super) async fn read_files(root: &Path, paths: &[SandboxPath]) -> Vec<Option<Vec<u8>>> {
+pub(super) async fn read_files(
+    root: &Path,
+    installed: &BTreeMap<SandboxPath, Vec<u8>>,
+    paths: &[SandboxPath],
+) -> Vec<Option<Vec<u8>>> {
     let mut files = Vec::with_capacity(paths.len());
     for path in paths {
+        if let Some(bytes) = installed.get(path) {
+            files.push(Some(bytes.clone()));
+            continue;
+        }
         let found = match host_path(root, path.as_str()) {
             Some(host) => match tokio::fs::metadata(&host).await {
                 Ok(meta) if meta.is_file() => tokio::fs::read(&host).await.ok(),

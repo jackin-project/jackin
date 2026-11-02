@@ -146,6 +146,11 @@ pub(super) async fn run_program(
     run: &ProgramRun,
     cancel: &CancellationToken,
 ) -> Result<ProgramOutcome, GatewayError> {
+    if cancel.is_cancelled() {
+        return Err(GatewayError::Cancelled {
+            op: GatewayOp::Program,
+        });
+    }
     if stalled {
         return Err(stall(run, cancel).await);
     }
@@ -169,6 +174,8 @@ pub(super) async fn run_program(
     cell.state().runs.push((
         run.program.clone(),
         RunRecord {
+            args: run.args.clone(),
+            workdir: run.workdir.clone(),
             env: run.env.clone(),
             exit_code: finished.exit_code,
         },

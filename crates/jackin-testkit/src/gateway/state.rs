@@ -15,7 +15,7 @@ use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
 use super::main_process::{Main, MainPlan, PlanEnd};
-use super::{ProgramScript, RunRecord};
+use super::{ProgramScript, ProviderRecord, RunRecord, Trigger};
 use crate::supervisor::{Supervisor, SupervisorModel};
 use crate::sync::locked;
 
@@ -35,12 +35,33 @@ impl Armed {
 }
 
 #[derive(Debug)]
+pub(super) enum Action {
+    Fail(GatewayError),
+    Cancel(CancellationToken),
+}
+
+#[derive(Debug)]
+pub(super) struct ArmedTrigger {
+    trigger: Trigger,
+    action: Action,
+}
+
+impl ArmedTrigger {
+    pub(super) fn new(trigger: Trigger, action: Action) -> ArmedTrigger {
+        ArmedTrigger { trigger, action }
+    }
+}
+
+#[derive(Debug)]
 pub(super) struct Registry {
     pub(super) sandboxes: BTreeMap<SandboxName, Arc<Cell>>,
-    pub(super) providers: BTreeMap<ProviderName, ProfileId>,
+    pub(super) providers: BTreeMap<ProviderName, ProviderRecord>,
     pub(super) profiles: BTreeMap<ProfileId, ProviderProfile>,
     pub(super) images: BTreeSet<ImageTag>,
+    pub(super) installed: BTreeMap<SandboxPath, Vec<u8>>,
     pub(super) faults: Vec<Armed>,
+    pub(super) triggers: Vec<ArmedTrigger>,
+    pub(super) stale_observations: u32,
     pub(super) scripts: BTreeMap<SandboxPath, ProgramScript>,
     pub(super) stalls: Vec<SandboxPath>,
     pub(super) corrupt_download: bool,
@@ -56,7 +77,10 @@ impl Registry {
             providers: BTreeMap::new(),
             profiles: BTreeMap::new(),
             images: BTreeSet::new(),
+            installed: BTreeMap::new(),
             faults: Vec::new(),
+            triggers: Vec::new(),
+            stale_observations: 0,
             scripts: BTreeMap::new(),
             stalls: Vec::new(),
             corrupt_download: false,
@@ -67,6 +91,28 @@ impl Registry {
     }
 
     pub(super) fn strike(&mut self, op: GatewayOp) -> Result<(), GatewayError> {
+        self.strike_at(op, None)
+    }
+
+    pub(super) fn strike_at(
+        &mut self,
+        op: GatewayOp,
+        special: Option<&Trigger>,
+    ) -> Result<(), GatewayError> {
+        self.count_down(op)?;
+        let matches = |armed: &ArmedTrigger| {
+            armed.trigger == Trigger::Op(op) || special == Some(&armed.trigger)
+        };
+        while let Some(index) = self.triggers.iter().position(matches) {
+            match self.triggers.remove(index).action {
+                Action::Fail(error) => return Err(error),
+                Action::Cancel(token) => token.cancel(),
+            }
+        }
+        Ok(())
+    }
+
+    fn count_down(&mut self, op: GatewayOp) -> Result<(), GatewayError> {
         let Some(index) = self.faults.iter().position(|armed| armed.op == op) else {
             return Ok(());
         };
@@ -90,7 +136,7 @@ pub(super) struct Cell {
 pub(super) enum Settling {
     Done,
     Provisioning { polls_left: u32 },
-    Restarting,
+    Restarting { stale: u32 },
 }
 
 #[derive(Debug)]
@@ -160,7 +206,11 @@ impl Sandbox {
                 };
             }
             Settling::Provisioning { .. } => self.settle_new(root),
-            Settling::Restarting => self.settle_restart(root),
+            Settling::Restarting { stale } if stale > 0 => {
+                self.settling = Settling::Restarting { stale: stale - 1 };
+                self.phase = Phase::Ready;
+            }
+            Settling::Restarting { .. } => self.settle_restart(root),
         }
     }
 

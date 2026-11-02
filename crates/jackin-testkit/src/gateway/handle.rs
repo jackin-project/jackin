@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::sync::Arc;
 
 use jackin_core::{
@@ -52,6 +53,13 @@ impl SandboxHandle {
             .then(|| FileMode(meta.permissions().mode() & 0o777))
     }
 
+    pub fn files(&self) -> BTreeMap<SandboxPath, Vec<u8>> {
+        let root = self.cell.root();
+        let mut found = BTreeMap::new();
+        collect_files(&root, &root, &mut found);
+        found
+    }
+
     pub fn supervisor(&self) -> Option<SupervisorState> {
         let bytes = self.file(&sandbox_layout::RUN_STATE)?;
         SupervisorState::parse(&String::from_utf8_lossy(&bytes)).ok()
@@ -91,6 +99,27 @@ impl SandboxHandle {
         let mut state = self.cell.state();
         if state.phase == Phase::Ready {
             state.main_exited(code);
+        }
+    }
+}
+
+fn collect_files(root: &Path, dir: &Path, found: &mut BTreeMap<SandboxPath, Vec<u8>>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_dir() {
+            collect_files(root, &path, found);
+        } else if kind.is_file()
+            && let (Ok(relative), Ok(bytes)) = (path.strip_prefix(root), std::fs::read(&path))
+            && let Ok(sandbox) =
+                SandboxPath::parse(&format!("/sandbox/{}", relative.to_string_lossy()))
+        {
+            found.insert(sandbox, bytes);
         }
     }
 }

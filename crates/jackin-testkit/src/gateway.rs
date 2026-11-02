@@ -13,22 +13,22 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use jackin_core::{
-    EnvName, GatewayName, HostPath, ImageTag, OpenShellWorkspace, ProfileId, ProviderName,
-    SandboxName, SandboxPath,
+    ChatgptAccountId, EnvName, GatewayName, HostPath, ImageTag, OpenShellWorkspace, Phase,
+    ProfileId, ProviderName, SandboxName, SandboxPath,
 };
 use jackin_openshell::{
     EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, Missing, NetworkRule,
     PolicyReport, PowerAction, ProfileSync, ProgramOutcome, ProgramRun, ProjectUpload,
-    ProviderProfile, ProviderSpec, ProviderState, RuleEndpoint, RuleKey, SandboxCreate,
-    SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TerminalKind, TerminalRequest,
-    TerminalSession, TlsMode,
+    ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState, RuleEndpoint, RuleKey,
+    SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TerminalKind,
+    TerminalRequest, TerminalSession, TlsMode,
 };
 use tokio_util::sync::CancellationToken;
 
 pub use handle::SandboxHandle;
 
 use self::main_process::MainPlan;
-use self::state::{Armed, Cell, Registry, Sandbox, Settling};
+use self::state::{Action, Armed, ArmedTrigger, Cell, Registry, Sandbox, Settling};
 use crate::supervisor::SupervisorModel;
 use crate::sync::locked;
 
@@ -48,8 +48,39 @@ pub struct ProgramScript {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunRecord {
+    pub args: Vec<String>,
+    pub workdir: Option<SandboxPath>,
     pub env: BTreeMap<EnvName, String>,
     pub exit_code: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Trigger {
+    Op(GatewayOp),
+    Write(SandboxPath),
+    Program(SandboxPath),
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct ProviderRecord {
+    pub profile: ProfileId,
+    pub access_key: String,
+    pub account_id_key: String,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub client_id: String,
+    pub chatgpt_account_id: ChatgptAccountId,
+}
+
+impl std::fmt::Debug for ProviderRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProviderRecord")
+            .field("profile", &self.profile)
+            .field("access_key", &self.access_key)
+            .field("account_id_key", &self.account_id_key)
+            .field("chatgpt_account_id", &self.chatgpt_account_id)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug)]
@@ -72,6 +103,17 @@ pub enum Fault {
     },
     ProvisionFails {
         creates: u32,
+    },
+    StaleSupervisor {
+        observations: u32,
+    },
+    FailAt {
+        trigger: Trigger,
+        error: GatewayError,
+    },
+    CancelAt {
+        trigger: Trigger,
+        token: CancellationToken,
     },
 }
 
@@ -105,7 +147,30 @@ impl FakeGateway {
             Fault::CorruptDownload => registry.corrupt_download = true,
             Fault::ProvisionFor { polls } => registry.provision_polls = polls,
             Fault::ProvisionFails { creates } => registry.failing_creates = creates,
+            Fault::StaleSupervisor { observations } => registry.stale_observations = observations,
+            Fault::FailAt { trigger, error } => registry
+                .triggers
+                .push(ArmedTrigger::new(trigger, Action::Fail(error))),
+            Fault::CancelAt { trigger, token } => registry
+                .triggers
+                .push(ArmedTrigger::new(trigger, Action::Cancel(token))),
         }
+    }
+
+    pub fn force_phase(&self, name: &SandboxName, phase: Phase) {
+        if let Some(cell) = self.registry().sandboxes.get(name) {
+            let mut state = cell.state();
+            state.phase = phase;
+            state.settling = Settling::Done;
+        }
+    }
+
+    pub fn install_file(&self, path: &SandboxPath, bytes: Vec<u8>) {
+        self.registry().installed.insert(path.clone(), bytes);
+    }
+
+    pub fn provider(&self, name: &ProviderName) -> Option<ProviderRecord> {
+        self.registry().providers.get(name).cloned()
     }
 
     pub fn script_program(&self, program: &SandboxPath, script: ProgramScript) {
@@ -148,8 +213,17 @@ impl FakeGateway {
     }
 
     fn cell(&self, op: GatewayOp, name: &SandboxName) -> Result<Arc<Cell>, GatewayError> {
+        self.cell_at(op, None, name)
+    }
+
+    fn cell_at(
+        &self,
+        op: GatewayOp,
+        special: Option<&Trigger>,
+        name: &SandboxName,
+    ) -> Result<Arc<Cell>, GatewayError> {
         let mut registry = self.registry();
-        registry.strike(op)?;
+        registry.strike_at(op, special)?;
         registry
             .sandboxes
             .get(name)
@@ -160,7 +234,16 @@ impl FakeGateway {
     }
 
     fn exec_cell(&self, op: GatewayOp, name: &SandboxName) -> Result<Arc<Cell>, GatewayError> {
-        let cell = self.cell(op, name)?;
+        self.exec_cell_at(op, None, name)
+    }
+
+    fn exec_cell_at(
+        &self,
+        op: GatewayOp,
+        special: Option<&Trigger>,
+        name: &SandboxName,
+    ) -> Result<Arc<Cell>, GatewayError> {
+        let cell = self.cell_at(op, special, name)?;
         let phase = cell.state().phase;
         if phase.accepts_exec() {
             Ok(cell)
@@ -178,7 +261,7 @@ impl FakeGateway {
                 let profile = registry
                     .providers
                     .get(provider)
-                    .and_then(|id| registry.profiles.get(id))?;
+                    .and_then(|record| registry.profiles.get(&record.profile))?;
                 Some(provider_rule(provider, profile))
             })
             .collect()
@@ -249,7 +332,7 @@ impl Gateway for FakeGateway {
     async fn delete_profile(&self, id: &ProfileId) -> Result<(), GatewayError> {
         let mut registry = self.registry();
         registry.strike(GatewayOp::Profile)?;
-        if registry.providers.values().any(|used| used == id) {
+        if registry.providers.values().any(|used| used.profile == *id) {
             return Err(GatewayError::FailedPrecondition {
                 message: format!("profile '{id}' is used by a provider"),
             });
@@ -276,9 +359,24 @@ impl Gateway for FakeGateway {
                 what: Missing::Profile(spec.profile.clone()),
             });
         }
-        registry
-            .providers
-            .insert(spec.name.clone(), spec.profile.clone());
+        let ProviderMaterial::ChatgptLogin {
+            access_token,
+            refresh_token,
+            client_id,
+            chatgpt_account_id,
+        } = &spec.material;
+        registry.providers.insert(
+            spec.name.clone(),
+            ProviderRecord {
+                profile: spec.profile.clone(),
+                access_key: spec.keys.access_token.to_owned(),
+                account_id_key: spec.keys.account_id.to_owned(),
+                access_token: access_token.expose().to_owned(),
+                refresh_token: refresh_token.expose().to_owned(),
+                client_id: client_id.clone(),
+                chatgpt_account_id: chatgpt_account_id.clone(),
+            },
+        );
         Ok(())
     }
 
@@ -379,7 +477,7 @@ impl Gateway for FakeGateway {
                 !matches!(
                     state.provisioning,
                     jackin_openshell::Provisioning::Failed { .. }
-                ) && state.phase != jackin_core::Phase::Provisioning,
+                ) && state.phase != Phase::Provisioning,
             )
         };
         let rules = self.generated_rules(&spec);
@@ -406,8 +504,8 @@ impl Gateway for FakeGateway {
         name: &SandboxName,
         action: PowerAction,
     ) -> Result<SandboxView, GatewayError> {
-        use jackin_core::Phase;
         let cell = self.cell(GatewayOp::Power, name)?;
+        let stale = self.registry().stale_observations;
         let mut state = cell.state();
         match (action, state.phase) {
             (PowerAction::Stop, Phase::Ready) => {
@@ -431,7 +529,7 @@ impl Gateway for FakeGateway {
             }
             (PowerAction::Start, Phase::Stopped) => {
                 state.phase = Phase::Starting;
-                state.settling = Settling::Restarting;
+                state.settling = Settling::Restarting { stale };
             }
             (PowerAction::Start, Phase::Completed { .. } | Phase::Error { .. }) => {
                 state.phase = Phase::Starting;
@@ -461,7 +559,8 @@ impl Gateway for FakeGateway {
         run: &ProgramRun,
         cancel: &CancellationToken,
     ) -> Result<ProgramOutcome, GatewayError> {
-        let cell = self.exec_cell(GatewayOp::Program, &run.sandbox)?;
+        let trigger = Trigger::Program(run.program.clone());
+        let cell = self.exec_cell_at(GatewayOp::Program, Some(&trigger), &run.sandbox)?;
         let (script, stalled) = {
             let registry = self.registry();
             (
@@ -478,7 +577,8 @@ impl Gateway for FakeGateway {
         paths: &[SandboxPath],
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
         let cell = self.exec_cell(GatewayOp::ReadFiles, sandbox)?;
-        Ok(files::read_files(&cell.root(), paths).await)
+        let installed = self.registry().installed.clone();
+        Ok(files::read_files(&cell.root(), &installed, paths).await)
     }
 
     async fn write_file(
@@ -486,7 +586,8 @@ impl Gateway for FakeGateway {
         sandbox: &SandboxName,
         file: &SandboxFile,
     ) -> Result<(), GatewayError> {
-        let cell = self.exec_cell(GatewayOp::WriteFile, sandbox)?;
+        let trigger = Trigger::Write(file.path.clone());
+        let cell = self.exec_cell_at(GatewayOp::WriteFile, Some(&trigger), sandbox)?;
         files::write_file(&cell, file).await
     }
 

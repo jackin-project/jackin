@@ -9,3 +9,4 @@ mod lifecycle;
 mod supervisor;
 mod support;
 mod terminal;
+mod triggers;

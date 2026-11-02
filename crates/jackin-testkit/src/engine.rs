@@ -6,7 +6,7 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use jackin_core::{BuilderName, ImageId, ImageTag, ProcessStatus, Sha256, TerminalText};
-use jackin_image::{BuildStage, EngineError, ImageEngine, PlannedBuild, ProgressSink};
+use jackin_image::{BuildStage, EngineError, ImageEngine, ImageEvent, PlannedBuild, ProgressSink};
 use tokio_util::sync::CancellationToken;
 
 use crate::sync::locked;
@@ -18,6 +18,20 @@ struct EngineState {
     builds: Vec<BuildRecord>,
     failures: Vec<BuildStage>,
     script: Vec<(EngineMoment, EngineEffect)>,
+    lines: BTreeMap<BuildStageKey, Vec<String>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct BuildStageKey(u8);
+
+impl BuildStageKey {
+    fn of(stage: BuildStage) -> BuildStageKey {
+        BuildStageKey(match stage {
+            BuildStage::Construct => 0,
+            BuildStage::Role => 1,
+            BuildStage::Derived => 2,
+        })
+    }
 }
 
 #[derive(Debug, Default)]
@@ -92,6 +106,12 @@ impl FakeEngine {
     pub fn at(&self, moment: EngineMoment, effect: EngineEffect) {
         locked(&self.state).script.push((moment, effect));
     }
+
+    pub fn script_lines(&self, stage: BuildStage, lines: Vec<String>) {
+        locked(&self.state)
+            .lines
+            .insert(BuildStageKey::of(stage), lines);
+    }
 }
 
 fn id_of(tag: &ImageTag) -> Result<ImageId, EngineError> {
@@ -102,6 +122,50 @@ fn id_of(tag: &ImageTag) -> Result<ImageId, EngineError> {
             output: TerminalText::sanitize(error.to_string().as_bytes()),
         }
     })
+}
+
+impl FakeEngine {
+    fn begin(&self, build: &PlannedBuild) -> Result<Vec<String>, EngineError> {
+        let mut state = locked(&self.state);
+        if let Some(index) = state
+            .failures
+            .iter()
+            .position(|stage| *stage == build.stage)
+        {
+            state.failures.remove(index);
+            return Err(EngineError::BuildFailed {
+                stage: build.stage,
+                status: ProcessStatus::Exited(1),
+                tail: TerminalText::sanitize(b"the fake engine was told to fail this build"),
+            });
+        }
+        Ok(state
+            .lines
+            .get(&BuildStageKey::of(build.stage))
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    fn finish(
+        &self,
+        build: &PlannedBuild,
+        cancel: &CancellationToken,
+    ) -> Result<ImageId, EngineError> {
+        let mut state = locked(&self.state);
+        let id = match state.pinned.get(&build.tag) {
+            Some(id) => id.clone(),
+            None => id_of(&build.tag)?,
+        };
+        state.images.insert(build.tag.clone(), id.clone());
+        state.builds.push(BuildRecord {
+            stage: build.stage,
+            tag: build.tag.clone(),
+        });
+        if let Some(effect) = state.take(&EngineMoment::BuildFinished(build.stage)) {
+            state.apply(effect, Some(cancel));
+        }
+        Ok(id)
+    }
 }
 
 #[async_trait]
@@ -122,34 +186,19 @@ impl ImageEngine for FakeEngine {
     async fn build(
         &self,
         build: &PlannedBuild,
-        _progress: &ProgressSink,
+        progress: &ProgressSink,
         cancel: &CancellationToken,
     ) -> Result<ImageId, EngineError> {
-        let mut state = locked(&self.state);
-        if let Some(index) = state
-            .failures
-            .iter()
-            .position(|stage| *stage == build.stage)
-        {
-            state.failures.remove(index);
-            return Err(EngineError::BuildFailed {
-                stage: build.stage,
-                status: ProcessStatus::Exited(1),
-                tail: TerminalText::sanitize(b"the fake engine was told to fail this build"),
-            });
+        for line in self.begin(build)? {
+            drop(
+                progress
+                    .send(ImageEvent::Line {
+                        stage: build.stage,
+                        text: TerminalText::sanitize(line.as_bytes()),
+                    })
+                    .await,
+            );
         }
-        let id = match state.pinned.get(&build.tag) {
-            Some(id) => id.clone(),
-            None => id_of(&build.tag)?,
-        };
-        state.images.insert(build.tag.clone(), id.clone());
-        state.builds.push(BuildRecord {
-            stage: build.stage,
-            tag: build.tag.clone(),
-        });
-        if let Some(effect) = state.take(&EngineMoment::BuildFinished(build.stage)) {
-            state.apply(effect, Some(cancel));
-        }
-        Ok(id)
+        self.finish(build, cancel)
     }
 }
