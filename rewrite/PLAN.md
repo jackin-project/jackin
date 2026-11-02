@@ -541,7 +541,7 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 - **Repo:** terminal-components-baseline. **Owner:** `ux-specialist` writes the screen specs. `rust-cli-tui-engineer` builds them. **Depends:** P9.1.
 - **Steps:** Specify and build the role editor, the role binding, the Docker setting, and the doctor panel with baseline components. Follow the demo navigation and key bindings (D28). Add them to `jackin-preview`. Approve one new tuiscotti baseline for each new screen.
 - **Proof:** the full baseline suite passes. The existing baseline files have no diff. `jackin/rewrite/evidence/P9.2-baseline.md` lists the new baseline files.
-- [ ] P9.2 done
+- [x] P9.2 done — baseline 0734f95, evidence/P9.2-baseline.md (8 new baselines; 106/106; no existing baseline changed)
 
 ### P9.3 Wire the console to jackin data
 
