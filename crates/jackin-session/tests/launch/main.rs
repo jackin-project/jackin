@@ -10,6 +10,7 @@ mod events;
 mod exists;
 mod hooks;
 mod hostile_git;
+mod hostile_launch;
 mod modes;
 mod phases;
 mod proofs;
