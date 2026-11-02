@@ -64,7 +64,7 @@ async fn an_ended_suspended_or_deleting_sandbox_stops_the_launch_and_stays() -> 
 }
 
 #[tokio::test]
-async fn a_settling_sandbox_is_waited_for_on_the_clock_until_ready_or_timeout() -> TestResult {
+async fn a_settling_sandbox_is_waited_for_on_the_clock_until_ready() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.gateway().inject(Fault::ProvisionFor { polls: 5 });
@@ -72,11 +72,19 @@ async fn a_settling_sandbox_is_waited_for_on_the_clock_until_ready_or_timeout() 
         let slept: Duration = rig.world.clock.slept().iter().sum();
         assert!(!rig.world.clock.slept().is_empty());
         assert!(slept < Duration::from_secs(30), "{slept:?}");
+        Ok(())
+    })
+    .await
+}
 
+#[tokio::test]
+async fn a_sandbox_that_settles_too_slowly_times_out_on_the_clock_and_a_patient_launch_joins_it()
+-> TestResult {
+    guard(async {
         let mut spec = Spec::new()?;
         spec.limits = limits(5, 20);
         let rig = spec.rig().await?;
-        rig.gateway().inject(Fault::ProvisionFor { polls: 1000 });
+        rig.gateway().inject(Fault::ProvisionFor { polls: 40 });
         let failed = failure(rig.launch(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Ready);
         assert!(
@@ -90,7 +98,14 @@ async fn a_settling_sandbox_is_waited_for_on_the_clock_until_ready_or_timeout() 
         let outcome = rig.run_on(&patient, rig.request(1)?, CancellationToken::new()).await?;
         ready(outcome)?;
         assert_eq!(rig.gateway().sandboxes().len(), 1);
+        Ok(())
+    })
+    .await
+}
 
+#[tokio::test]
+async fn a_sandbox_in_an_unknown_phase_times_out_on_the_clock_and_stays() -> TestResult {
+    guard(async {
         let mut spec = Spec::new()?;
         spec.limits = limits(5, 20);
         let rig = spec.rig().await?;
@@ -98,7 +113,17 @@ async fn a_settling_sandbox_is_waited_for_on_the_clock_until_ready_or_timeout() 
         let handle = rig.handle(1).await?;
         rig.gateway().force_phase(&handle.name(), Phase::Unknown);
         let failed = failure(rig.launch(1).await?)?;
-        assert!(matches!(&*failed.error, LaunchError::ReadyTimeout { phase: Phase::Unknown, .. }), "{:?}", failed.error);
+        assert!(
+            matches!(
+                &*failed.error,
+                LaunchError::ReadyTimeout {
+                    phase: Phase::Unknown,
+                    ..
+                }
+            ),
+            "{:?}",
+            failed.error
+        );
         assert_eq!(rig.gateway().sandboxes().len(), 1);
         Ok(())
     })

@@ -21,17 +21,6 @@ enum Point {
     Start,
 }
 
-const POINTS: [Point; 8] = [
-    Point::Before,
-    Point::Provider,
-    Point::Create,
-    Point::Probe,
-    Point::Auth,
-    Point::Upload,
-    Point::Setup,
-    Point::Start,
-];
-
 fn trigger(point: Point) -> Option<Trigger> {
     let spec = Agent::Codex.spec();
     match point {
@@ -54,86 +43,127 @@ fn assert_nothing_before_sandbox(rig: &Rig, point: Point) {
     }
 }
 
-#[tokio::test]
-async fn a_cancel_at_each_point_leaves_a_restore_candidate_and_a_retry_completes() -> TestResult {
+async fn cancel_at(point: Point) -> TestResult {
     guard(async {
-        for point in POINTS {
-            let rig = Rig::new().await?;
-            let token = CancellationToken::new();
-            match trigger(point) {
-                Some(trigger) => rig.gateway().inject(Fault::CancelAt {
-                    trigger,
-                    token: token.clone(),
-                }),
-                None => token.cancel(),
+        let rig = Rig::new().await?;
+        let token = CancellationToken::new();
+        match trigger(point) {
+            Some(trigger) => rig.gateway().inject(Fault::CancelAt {
+                trigger,
+                token: token.clone(),
+            }),
+            None => token.cancel(),
+        }
+        let outcome = rig.run(rig.request(1)?, token).await?;
+        let Ok(LaunchOutcome::Cancelled(RestoreCandidate {
+            launch_id: id,
+            sandbox,
+        })) = outcome.result
+        else {
+            return Err(format!("{point:?}: not cancelled: {:?}", outcome.result).into());
+        };
+        assert_eq!(id, launch_id(1));
+        let found = rig.sandbox(1).await?;
+        assert_eq!(
+            sandbox,
+            found.as_ref().map(jackin_testkit::SandboxHandle::name),
+            "{point:?}"
+        );
+        assert!(rig.gateway().sandboxes().len() <= 1);
+        let setup = sandbox_layout::hook_path(HookKind::Setup);
+        match (point, &found) {
+            (Point::Before | Point::Provider, found) => {
+                assert!(found.is_none(), "{point:?}");
+                assert!(rig.gateway().sandboxes().is_empty());
+                assert_nothing_before_sandbox(&rig, point);
             }
-            let outcome = rig.run(rig.request(1)?, token).await?;
-            let Ok(LaunchOutcome::Cancelled(RestoreCandidate {
-                launch_id: id,
-                sandbox,
-            })) = outcome.result
-            else {
-                return Err(format!("{point:?}: not cancelled: {:?}", outcome.result).into());
-            };
-            assert_eq!(id, launch_id(1));
-            let found = rig.sandbox(1).await?;
+            (Point::Create | Point::Probe, Some(handle)) => {
+                assert!(!has_file(handle, &Agent::Codex.spec().auth_file.path));
+            }
+            (Point::Auth, Some(handle)) => {
+                assert!(has_file(handle, &Agent::Codex.spec().auth_file.path));
+                assert!(!has_file(handle, &Agent::Codex.spec().user_config.path));
+            }
+            (Point::Upload, Some(handle)) => {
+                assert!(!has_file(
+                    handle,
+                    &sandbox_layout::uploaded_marker(&launch_id(1))
+                ));
+                assert!(!has_file(handle, &sandbox_layout::RUN_START));
+            }
+            (Point::Setup, Some(handle)) => {
+                assert!(handle.runs(&setup).is_empty());
+                assert!(!has_file(
+                    handle,
+                    &sandbox_layout::setup_done_marker(&launch_id(1))
+                ));
+                assert!(!has_file(handle, &sandbox_layout::RUN_START));
+            }
+            (Point::Start, Some(handle)) => {
+                assert_eq!(handle.file(&sandbox_layout::RUN_START), Some(b"1".to_vec()));
+            }
+            (point, None) => return Err(format!("{point:?}: no sandbox").into()),
+        }
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
+        converged(&rig, &handle, 1)?;
+        assert_eq!(handle.runs(&setup).len(), 1);
+        if matches!(point, Point::Start) {
+            assert_eq!(handle.supervisor(), Some(running(1)?));
             assert_eq!(
-                sandbox,
-                found.as_ref().map(jackin_testkit::SandboxHandle::name),
-                "{point:?}"
+                handle
+                    .runs(&sandbox_layout::hook_path(HookKind::Preflight))
+                    .len(),
+                1
             );
-            assert!(rig.gateway().sandboxes().len() <= 1);
-            let setup = sandbox_layout::hook_path(HookKind::Setup);
-            match (point, &found) {
-                (Point::Before | Point::Provider, found) => {
-                    assert!(found.is_none(), "{point:?}");
-                    assert!(rig.gateway().sandboxes().is_empty());
-                    assert_nothing_before_sandbox(&rig, point);
-                }
-                (Point::Create | Point::Probe, Some(handle)) => {
-                    assert!(!has_file(handle, &Agent::Codex.spec().auth_file.path));
-                }
-                (Point::Auth, Some(handle)) => {
-                    assert!(has_file(handle, &Agent::Codex.spec().auth_file.path));
-                    assert!(!has_file(handle, &Agent::Codex.spec().user_config.path));
-                }
-                (Point::Upload, Some(handle)) => {
-                    assert!(!has_file(
-                        handle,
-                        &sandbox_layout::uploaded_marker(&launch_id(1))
-                    ));
-                    assert!(!has_file(handle, &sandbox_layout::RUN_START));
-                }
-                (Point::Setup, Some(handle)) => {
-                    assert!(handle.runs(&setup).is_empty());
-                    assert!(!has_file(
-                        handle,
-                        &sandbox_layout::setup_done_marker(&launch_id(1))
-                    ));
-                    assert!(!has_file(handle, &sandbox_layout::RUN_START));
-                }
-                (Point::Start, Some(handle)) => {
-                    assert_eq!(handle.file(&sandbox_layout::RUN_START), Some(b"1".to_vec()));
-                }
-                (point, None) => return Err(format!("{point:?}: no sandbox").into()),
-            }
-            ready(rig.launch(1).await?)?;
-            let handle = rig.handle(1).await?;
-            converged(&rig, &handle, 1)?;
-            assert_eq!(handle.runs(&setup).len(), 1);
-            if matches!(point, Point::Start) {
-                assert_eq!(handle.supervisor(), Some(running(1)?));
-                assert_eq!(
-                    handle
-                        .runs(&sandbox_layout::hook_path(HookKind::Preflight))
-                        .len(),
-                    1
-                );
-            }
         }
         Ok(())
     })
     .await
+}
+
+#[tokio::test]
+async fn a_cancel_before_the_launch_leaves_a_restore_candidate_and_a_retry_completes() -> TestResult
+{
+    cancel_at(Point::Before).await
+}
+
+#[tokio::test]
+async fn a_cancel_at_the_provider_sync_leaves_a_restore_candidate_and_a_retry_completes()
+-> TestResult {
+    cancel_at(Point::Provider).await
+}
+
+#[tokio::test]
+async fn a_cancel_at_the_create_leaves_a_restore_candidate_and_a_retry_completes() -> TestResult {
+    cancel_at(Point::Create).await
+}
+
+#[tokio::test]
+async fn a_cancel_at_the_probe_leaves_a_restore_candidate_and_a_retry_completes() -> TestResult {
+    cancel_at(Point::Probe).await
+}
+
+#[tokio::test]
+async fn a_cancel_at_the_credentials_leaves_a_restore_candidate_and_a_retry_completes() -> TestResult
+{
+    cancel_at(Point::Auth).await
+}
+
+#[tokio::test]
+async fn a_cancel_at_the_upload_leaves_a_restore_candidate_and_a_retry_completes() -> TestResult {
+    cancel_at(Point::Upload).await
+}
+
+#[tokio::test]
+async fn a_cancel_at_the_setup_hook_leaves_a_restore_candidate_and_a_retry_completes() -> TestResult
+{
+    cancel_at(Point::Setup).await
+}
+
+#[tokio::test]
+async fn a_cancel_at_the_start_leaves_a_restore_candidate_and_a_retry_completes() -> TestResult {
+    cancel_at(Point::Start).await
 }
 
 #[tokio::test]

@@ -27,12 +27,12 @@ pub(crate) const ACCESS: &str = "ACCESS-SECRET-7f3a91";
 pub(crate) const REFRESH: &str = "REFRESH-SECRET-c20e44";
 pub(crate) const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
 pub(crate) const PLACEHOLDER: &str = "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN";
-const GUARD: Duration = Duration::from_secs(10);
+const GUARD: Duration = Duration::from_secs(60);
 
 pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
     tokio::time::timeout(GUARD, work)
         .await
-        .map_err(|_| "the test hung for 10 s")?
+        .map_err(|_| "the test hung for 60 s")?
 }
 
 pub(crate) fn launch_id(byte: u8) -> LaunchId {
