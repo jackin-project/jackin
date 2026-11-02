@@ -223,9 +223,9 @@ impl Harness {
         Ok(store.load().await?)
     }
 
-    pub(crate) fn config_bytes(&self) -> Result<Option<Vec<u8>>, Failure> {
+    pub(crate) fn config_bytes(&self) -> Result<Option<String>, Failure> {
         match std::fs::read(self.config_path.as_path()) {
-            Ok(bytes) => Ok(Some(bytes)),
+            Ok(bytes) => Ok(Some(String::from_utf8(bytes)?)),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(error.into()),
         }

@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin::{AccountLs, ExitClass};
-use jackin_core::{AccountName, Agent, Config, Provider, RoleName, WorkspaceName};
-use jackin_testkit::{TestResult, World, guard};
+use jackin_core::{AccountName, Agent, Config, Provider, ProviderName, RoleName, WorkspaceName};
+use jackin_testkit::{Rig, TestResult, World, guard};
+use tokio_util::sync::CancellationToken;
 
 use super::support::{Failure, Harness, failed, keys, names};
 
@@ -162,6 +163,75 @@ async fn binding_an_unknown_or_mismatched_account_fails_without_a_write() -> Tes
             failed(&harness.run(args).await?, ExitClass::Failure, &[named])?;
             assert_eq!(harness.config_bytes()?, before, "{args:?}");
         }
+        Ok(())
+    })
+    .await
+}
+
+async fn synced(rig: &Rig) -> Result<(Harness, ProviderName), Failure> {
+    let harness = Harness::new(&rig.world);
+    harness.write_config(&rig.config.render())?;
+    let work = AccountName::parse("work")?;
+    let account = rig.config.account(&work).ok_or("no work account")?;
+    rig.world
+        .session
+        .sync_account(account, &CancellationToken::new())
+        .await?;
+    let provider = ProviderName::for_account(&work, Agent::Codex);
+    assert!(rig.gateway().provider(&provider).is_some());
+    Ok((harness, provider))
+}
+
+#[tokio::test]
+async fn rm_of_a_bound_account_lists_its_references_and_keeps_the_provider() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let (harness, provider) = synced(&rig).await?;
+        harness
+            .run(&["account", "bind", "work", "--workspace", "platform-backend"])
+            .await?
+            .ok()?;
+        let before = harness.config_bytes()?;
+        let ran = harness.run(&["account", "rm", "work"]).await?;
+        failed(&ran, ExitClass::Failure, &["work", "platform-backend"])?;
+        assert_eq!(harness.config_bytes()?, before);
+        assert!(rig.gateway().provider(&provider).is_some());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn rm_checks_the_gateway_before_the_config_and_removes_both_when_nothing_uses_the_account()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let (harness, provider) = synced(&rig).await?;
+        rig.launch(1).await?;
+        let before = harness.config_bytes()?;
+        let ran = harness.run(&["account", "rm", "work"]).await?;
+        failed(&ran, ExitClass::Failure, &["attached"])?;
+        assert_eq!(harness.config_bytes()?, before);
+        assert!(
+            harness
+                .stored()
+                .await?
+                .account(&AccountName::parse("work")?)
+                .is_some()
+        );
+        assert!(rig.gateway().provider(&provider).is_some());
+
+        let name = rig.sandbox_name(1)?;
+        rig.world.session.gateway().delete_sandbox(&name).await?;
+        harness.run(&["account", "rm", "work"]).await?.ok()?;
+        assert!(
+            harness
+                .stored()
+                .await?
+                .account(&AccountName::parse("work")?)
+                .is_none()
+        );
+        assert!(rig.gateway().provider(&provider).is_none());
         Ok(())
     })
     .await

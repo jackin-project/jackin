@@ -3,11 +3,12 @@
 
 use std::num::NonZeroU16;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use jackin_core::{
-    AccountName, BuilderName, GatewayName, OpenShellWorkspace, Platform, RoleName, RoleRev,
-    WorkspaceName,
+    AccountName, BuilderName, EnvName, GatewayName, OpReference, OpenShellWorkspace, Platform,
+    Provider, RoleName, RoleRev, WorkspaceName,
 };
 
 use crate::error::CommandError;
@@ -27,6 +28,8 @@ pub enum Command {
     Gateway(GatewayCommand),
     #[command(subcommand, about = "Manage accounts and their bindings")]
     Account(AccountCommand),
+    #[command(about = "Build the role image and print its image ID")]
+    Build(BuildArgs),
     #[command(subcommand, about = "Manage role sources")]
     Role(RoleCommand),
     #[command(subcommand, about = "Manage workspaces")]
@@ -45,8 +48,12 @@ pub enum GatewayCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum AccountCommand {
+    #[command(about = "Add an account")]
+    Add(AccountAddArgs),
     #[command(about = "List the accounts")]
     Ls(JsonArg),
+    #[command(about = "Remove an account")]
+    Rm(AccountArg),
     #[command(about = "Make an account the default of its provider")]
     Default(AccountArg),
     #[command(about = "Bind an account to a role or a workspace")]
@@ -213,4 +220,81 @@ pub struct WorkspaceAddArgs {
     pub path: PathBuf,
     #[arg(long, help = "Enable the Docker capability for this workspace")]
     pub docker: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct BuildArgs {
+    #[arg(help = "Role name; defaults to the workspace default role")]
+    pub role: Option<RoleName>,
+    #[arg(long, help = "Build the image again")]
+    pub rebuild: bool,
+    #[arg(long, help = "Print JSON")]
+    pub json: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CredentialArg {
+    Env(EnvName),
+    OnePassword(OpReference),
+    File(PathBuf),
+}
+
+impl FromStr for CredentialArg {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<CredentialArg, String> {
+        if let Some(name) = text.strip_prefix("env:") {
+            return EnvName::parse(name)
+                .map(CredentialArg::Env)
+                .map_err(|error| error.to_string());
+        }
+        if text.starts_with("op://") {
+            return OpReference::parse(text)
+                .map(CredentialArg::OnePassword)
+                .map_err(|error| error.to_string());
+        }
+        match text.strip_prefix("file:") {
+            Some(path) if !path.is_empty() => Ok(CredentialArg::File(PathBuf::from(path))),
+            _ => Err("expected env:NAME, an op:// reference, or file:PATH".to_owned()),
+        }
+    }
+}
+
+fn parse_provider(text: &str) -> Result<Provider, String> {
+    Provider::ALL
+        .into_iter()
+        .find(|provider| provider.as_str() == text)
+        .ok_or_else(|| {
+            let names: Vec<&str> = Provider::ALL.into_iter().map(Provider::as_str).collect();
+            format!(
+                "unknown provider {text}; expected one of {}",
+                names.join(", ")
+            )
+        })
+}
+
+#[derive(Debug, Args)]
+#[command(group(
+    ArgGroup::new("source")
+        .required(true)
+        .multiple(false)
+        .args(["chatgpt_from", "credential"])
+))]
+pub struct AccountAddArgs {
+    #[arg(value_parser = parse_provider, help = "Provider of the account")]
+    pub provider: Provider,
+    #[arg(long, help = "Account name")]
+    pub name: AccountName,
+    #[arg(
+        long = "chatgpt-from",
+        value_name = "CODEX_HOME",
+        help = "Import a Codex ChatGPT login"
+    )]
+    pub chatgpt_from: Option<PathBuf>,
+    #[arg(
+        long,
+        value_name = "SOURCE",
+        help = "Credential as env:NAME, an op:// reference, or file:PATH"
+    )]
+    pub credential: Option<CredentialArg>,
 }

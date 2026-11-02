@@ -35,6 +35,7 @@ pub async fn run(env: AppEnv, deps: Deps) -> ExitClass {
         cwd,
         config_path,
         cache_dir,
+        cancel,
         ..
     } = env;
     let mut io = Io::new(stdout, stderr);
@@ -53,6 +54,8 @@ pub async fn run(env: AppEnv, deps: Deps) -> ExitClass {
         store,
         cwd,
         cache_dir,
+        cancel,
+        gateway: cli.gateway,
     };
     let result = match cli.command {
         Some(command) => commands::dispatch(&mut app, command).await,

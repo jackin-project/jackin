@@ -134,7 +134,7 @@ async fn duplicates_shared_paths_and_roles_in_use_fail_and_leave_the_config_byte
             .run(&["workspace", "add", "one", "proj"])
             .await?
             .ok()?;
-        let mut text = String::from_utf8(harness.config_bytes()?.ok_or("no config")?)?;
+        let mut text = harness.config_bytes()?.ok_or("no config")?;
         text = text.replace(
             "[workspaces.one]\n",
             "[workspaces.one]\ndefault_role = \"remote\"\n",

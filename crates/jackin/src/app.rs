@@ -7,12 +7,13 @@ use std::io::Write;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use jackin_core::{ConfigStore, EnvSnapshot, GatewayEntry, GatewayName, HostPath};
+use jackin_core::{Config, ConfigStore, EnvSnapshot, GatewayEntry, GatewayName, HostPath};
 use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, GatewayError};
-use jackin_session::{HostPorts, LaunchLimits, RoleCatalog};
+use jackin_session::{HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps};
 use tokio_util::sync::CancellationToken;
 
+use crate::error::CommandError;
 use crate::output::Io;
 use crate::terminal::Terminal;
 
@@ -65,6 +66,8 @@ pub(crate) struct App {
     pub(crate) store: ConfigStore,
     pub(crate) cwd: HostPath,
     pub(crate) cache_dir: HostPath,
+    pub(crate) cancel: CancellationToken,
+    pub(crate) gateway: Option<GatewayName>,
 }
 
 impl App {
@@ -74,5 +77,19 @@ impl App {
             Arc::clone(&self.deps.host.runner),
             self.cache_dir.clone(),
         )
+    }
+}
+
+impl App {
+    pub(crate) async fn session(&self, config: &Config) -> Result<Session, CommandError> {
+        let (name, entry) = config.resolve_gateway(self.gateway.as_ref())?;
+        let gateway = self.deps.connect.connect(name, entry).await?;
+        Ok(Session::new(SessionDeps {
+            gateway,
+            engine: Arc::clone(&self.deps.engine),
+            host: self.deps.host.clone(),
+            cache_dir: self.cache_dir.clone(),
+            limits: self.deps.limits,
+        }))
     }
 }
