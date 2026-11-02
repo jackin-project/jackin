@@ -537,6 +537,29 @@ mod comments {
     }
 
     #[test]
+    fn shell_arithmetic_shift_is_not_a_heredoc() -> TestResult {
+        let shell = text(&[
+            "#!/bin/sh",
+            "x=$((1<<2))",
+            "y=$(( ( 1 + 2 ) << 3 ))",
+            "echo \"$x\" \"$y\" # note one",
+            "# note two",
+            "z=$(( 1 << 4 )) # note three",
+            "cat <<EOF",
+            "# inside the heredoc body",
+            "EOF",
+            "echo done # note four",
+        ]);
+        let fixture = Fixture::new(&bare(&["jackin-core"]))?;
+        fixture.write("scripts/arith.sh", &shell)?;
+        assert_eq!(
+            run(&fixture)?,
+            [4, 5, 6, 10].map(|line| at(CiStep::Comments, "scripts/arith.sh", line))
+        );
+        Ok(())
+    }
+
+    #[test]
     fn shell_backtick_starts_a_word() -> TestResult {
         let shell = text(&["#!/bin/sh", "x=`# alpha", "echo y`", "echo a#b `echo c#d`"]);
         let fixture = Fixture::new(&bare(&["jackin-core"]))?;
@@ -822,6 +845,7 @@ mod containers {
             "use jackin_core::Program as P;",
             "use jackin_core::Program::Docker;",
             "use jackin_core::Program::*;",
+            "type P2 = Program;",
             "fn specs(build: &Build, args: Vec<String>) {",
             "    let a = ProcessSpec { program: Program::Docker(DockerSubcommand::BuildxBuild), args: build.args.clone() };",
             "    let b = ProcessSpec { program: Program::Docker(DockerSubcommand::BuildxCreate), args };",
@@ -832,6 +856,7 @@ mod containers {
         let program = text(&[
             "pub enum Program { Docker(DockerSubcommand), Git }",
             "pub enum DockerSubcommand { Push }",
+            "pub type Alias = Program;",
             "impl Program {",
             "    fn binary(self) -> &'static str {",
             "        match self { Self::Docker(_) => \"docker\", Self::Git => \"git\" }",
@@ -850,6 +875,8 @@ mod containers {
             "use jackin_core::Program::{Git, Ssh};",
             "use jackin_core::ProgramRun as Run;",
             "use jackin_testkit::ScriptedProgram;",
+            "use std::process::Command as Cmd;",
+            "type Run = ProgramRun;",
             "fn host() {",
             "    let a = ProcessSpec { program: Program::Openshell, args: vec![\"sandbox\".to_owned(), \"run\".to_owned()] };",
             "    let b = ProcessSpec { program: Program::Git, args: vec![\"push\".to_owned()] };",
@@ -857,6 +884,7 @@ mod containers {
             "    let d = ProcessSpec { program: Program::Op, args: vec![\"read\".to_owned()] };",
             "    let e = Command::new(\"git\");",
             "    let f = Command::new(\"jackin\");",
+            "    let i = Cmd::new(\"git\");",
             "    let g = ScriptedProgram::Docker;",
             "    let h = MyDockerSubcommand::default();",
             "    tracing::info!(\"docker ready, container stopped, podman absent\");",
@@ -1094,6 +1122,151 @@ mod containers {
                 at(CiStep::Containers, "crates/xtask/src/tool.rs", 5),
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn command_aliases_are_checked_like_command_new() -> TestResult {
+        let session = text(&[
+            "use std::process::Command as Cmd;",
+            "use tokio::process::{Command as Tcmd, Stdio};",
+            "use std::{process::{Command as Nested}};",
+            "use std::process::Command as _;",
+            "fn f(name: &str) {",
+            "    let a = Cmd::new(\"docker\");",
+            "    let b = Tcmd::new(\"podman\");",
+            "    let c = Nested::new(name);",
+            "    let d = Cmd::new(\"git\");",
+            "    let e = Tcmd::new(r#\"jackin\"#);",
+            "    let g = Other::new(name);",
+            "}",
+        ]);
+        let image = text(&[
+            "use std::process::Command as C;",
+            "fn g(cfg: Cfg) {",
+            "    let a = C::new(\"docker\");",
+            "    let b = C::new(cfg.bin);",
+            "    let c = C::new(\"podman\");",
+            "}",
+        ]);
+        let tool = text(&[
+            "use std::process::Command as C;",
+            "fn h(program: P) {",
+            "    let a = C::new(program);",
+            "    let b = C::new(\"podman\");",
+            "}",
+        ]);
+        let violations = run(&[
+            ("crates/jackin-session/src/a.rs", &session),
+            ("crates/jackin-image/src/b.rs", &image),
+            ("crates/xtask/src/c.rs", &tool),
+        ])?;
+        assert_eq!(
+            summary(&violations),
+            [
+                at(CiStep::Containers, "crates/jackin-image/src/b.rs", 3),
+                at(CiStep::Containers, "crates/jackin-image/src/b.rs", 4),
+                at(CiStep::Containers, "crates/jackin-image/src/b.rs", 5),
+                at(CiStep::Containers, "crates/jackin-session/src/a.rs", 6),
+                at(CiStep::Containers, "crates/jackin-session/src/a.rs", 7),
+                at(CiStep::Containers, "crates/jackin-session/src/a.rs", 8),
+                at(CiStep::Containers, "crates/xtask/src/c.rs", 4),
+            ]
+        );
+        assert_messages(
+            &violations,
+            &[
+                &["docker"],
+                &["program"],
+                &["podman"],
+                &["docker"],
+                &["podman"],
+                &["program"],
+                &["podman"],
+            ],
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn type_aliases_of_program_are_reported_outside_the_allowed_crates() -> TestResult {
+        let session = text(&[
+            "type P = Program;",
+            "pub type Q = jackin_core::Program;",
+            "pub(crate) type R = crate::Program;",
+            "type Run = ProgramRun;",
+            "type Lists = Vec<ProgramSpec>;",
+            "type S = DockerSubcommand;",
+            "let s = \"type P = Program;\";",
+        ]);
+        let alias = "type X = Program;\n";
+        let allowed = "type P = Program;\n";
+        let violations = run(&[
+            ("crates/jackin-session/src/t.rs", &session),
+            ("crates/jackin-tui/src/x.rs", alias),
+            ("crates/jackin-image/src/t.rs", allowed),
+            ("crates/jackin-core/src/t.rs", allowed),
+            ("crates/jackin-testkit/src/t.rs", allowed),
+        ])?;
+        assert_eq!(
+            summary(&violations),
+            [
+                at(CiStep::Containers, "crates/jackin-session/src/t.rs", 1),
+                at(CiStep::Containers, "crates/jackin-session/src/t.rs", 2),
+                at(CiStep::Containers, "crates/jackin-session/src/t.rs", 3),
+                at(CiStep::Containers, "crates/jackin-session/src/t.rs", 6),
+                at(CiStep::Containers, "crates/jackin-tui/src/x.rs", 1),
+            ]
+        );
+        assert_messages(
+            &violations,
+            &[
+                &["Program", "jackin-image"],
+                &["Program", "jackin-image"],
+                &["Program", "jackin-image"],
+                &["DockerSubcommand"],
+                &["Program", "jackin-image"],
+            ],
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn command_new_used_as_a_value_is_reported() -> TestResult {
+        let session = text(&[
+            "use std::process::Command as Cmd;",
+            "fn f(names: Vec<&str>) {",
+            "    let a = Command::new;",
+            "    let b = std::process::Command::new;",
+            "    let c = names.iter().map(Command::new).count();",
+            "    let d = [tokio::process::Command::new];",
+            "    let e = Cmd::new;",
+            "    let ok = Command::new(\"git\");",
+            "    let s = \"Command::new\";",
+            "    let n = Command::new_in(\"x\");",
+            "}",
+        ]);
+        let value = "fn f() {\n    let f = Command::new;\n}\n";
+        let violations = run(&[
+            ("crates/jackin-session/src/v.rs", &session),
+            ("crates/jackin-image/src/v.rs", value),
+            ("crates/jackin-core/src/v.rs", value),
+            ("crates/xtask/src/v.rs", value),
+        ])?;
+        assert_eq!(
+            summary(&violations),
+            [
+                at(CiStep::Containers, "crates/jackin-core/src/v.rs", 2),
+                at(CiStep::Containers, "crates/jackin-image/src/v.rs", 2),
+                at(CiStep::Containers, "crates/jackin-session/src/v.rs", 3),
+                at(CiStep::Containers, "crates/jackin-session/src/v.rs", 4),
+                at(CiStep::Containers, "crates/jackin-session/src/v.rs", 5),
+                at(CiStep::Containers, "crates/jackin-session/src/v.rs", 6),
+                at(CiStep::Containers, "crates/jackin-session/src/v.rs", 7),
+            ]
+        );
+        let needle: &[&str] = &["Command::new"];
+        assert_messages(&violations, &[needle; 7]);
         Ok(())
     }
 }

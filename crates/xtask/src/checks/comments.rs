@@ -213,6 +213,11 @@ fn shell_comments(text: &str) -> Vec<Found> {
                 cursor.bump();
                 shell_double_quoted(&mut cursor);
             }
+            '$' if cursor.peek(1) == Some('(') && cursor.peek(2) == Some('(') => {
+                content = true;
+                word_start = false;
+                skip_arithmetic(&mut cursor);
+            }
             '<' if cursor.run_of('<') >= 3 => {
                 content = true;
                 word_start = true;
@@ -244,6 +249,19 @@ fn shell_comments(text: &str) -> Vec<Found> {
         }
     }
     found
+}
+
+fn skip_arithmetic(cursor: &mut Cursor) {
+    cursor.skip(3);
+    let mut depth = 2usize;
+    while depth > 0 {
+        match cursor.bump() {
+            None => break,
+            Some('(') => depth += 1,
+            Some(')') => depth -= 1,
+            Some(_) => {}
+        }
+    }
 }
 
 fn shell_double_quoted(cursor: &mut Cursor) {

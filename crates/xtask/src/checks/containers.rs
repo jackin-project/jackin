@@ -32,12 +32,13 @@ impl Check for ContainersCheck {
                 continue;
             }
             let tokens = lex_rust(file.text()).tokens;
+            let aliases = command_aliases(&tokens);
             let scope = Scope {
                 docker: under(file.path(), DOCKER_CRATE_DIRS),
                 computed_command: under(file.path(), COMPUTED_COMMAND_DIRS),
             };
             for index in 0..tokens.len() {
-                if let Some(message) = problem(&tokens, index, scope) {
+                if let Some(message) = problem(&tokens, &aliases, index, scope) {
                     violations.push(Violation::at_line(
                         self.step(),
                         file.path(),
@@ -68,16 +69,87 @@ fn path_pair(tokens: &[Token], index: usize, head: &str, tail: &str) -> bool {
         && tokens.get(index + 3).is_some_and(|t| t.is_ident(tail))
 }
 
-fn problem(tokens: &[Token], index: usize, scope: Scope) -> Option<String> {
+fn problem(tokens: &[Token], aliases: &[String], index: usize, scope: Scope) -> Option<String> {
     if !scope.docker
         && let Some(message) = docker_name_problem(tokens, index)
     {
         return Some(message);
     }
-    if path_pair(tokens, index, "Command", "new") && tokens.get(index + 4)?.is_punct('(') {
-        return command_problem(tokens, index + 5, scope);
+    if is_command(&tokens[index], aliases)
+        && path_pair(tokens, index, tokens[index].ident()?, "new")
+    {
+        return match tokens.get(index + 4) {
+            Some(t) if t.is_punct('(') => command_problem(tokens, index + 5, scope),
+            _ => (!scope.computed_command).then(|| {
+                "Command::new is used as a value; a function value can hide a computed program (D01)"
+                    .to_owned()
+            }),
+        };
     }
     None
+}
+
+fn is_command(token: &Token, aliases: &[String]) -> bool {
+    token.is_ident("Command")
+        || token
+            .ident()
+            .is_some_and(|name| aliases.iter().any(|a| a == name))
+}
+
+fn command_aliases(tokens: &[Token]) -> Vec<String> {
+    let mut aliases = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        if token.is_ident("use") {
+            let mut position = index + 1;
+            use_tree(tokens, &mut position, false, &mut aliases);
+        }
+    }
+    aliases
+}
+
+fn use_tree(
+    tokens: &[Token],
+    position: &mut usize,
+    mut in_process: bool,
+    aliases: &mut Vec<String>,
+) {
+    let mut last: Option<&str> = None;
+    while let Some(token) = tokens.get(*position) {
+        if token.is_punct('{') {
+            *position += 1;
+            loop {
+                use_tree(tokens, position, in_process, aliases);
+                if tokens.get(*position).is_some_and(|t| t.is_punct(',')) {
+                    *position += 1;
+                } else {
+                    break;
+                }
+            }
+            if tokens.get(*position).is_some_and(|t| t.is_punct('}')) {
+                *position += 1;
+            }
+            return;
+        }
+        if token.is_punct(':') {
+            *position += 1;
+            continue;
+        }
+        let Some(name) = token.ident() else {
+            return;
+        };
+        *position += 1;
+        if name == "as" {
+            if let Some(alias) = tokens.get(*position).and_then(Token::ident) {
+                *position += 1;
+                if last == Some("Command") && in_process && alias != "_" {
+                    aliases.push(alias.to_owned());
+                }
+            }
+            return;
+        }
+        in_process |= name == "process";
+        last = Some(name);
+    }
 }
 
 fn outside(what: &str) -> String {
@@ -89,6 +161,9 @@ fn outside(what: &str) -> String {
 fn docker_name_problem(tokens: &[Token], index: usize) -> Option<String> {
     if tokens[index].is_ident("DockerSubcommand") {
         return Some(outside("DockerSubcommand is used"));
+    }
+    if tokens[index].is_ident("type") {
+        return type_alias_problem(tokens, index);
     }
     if !tokens[index].is_ident("Program") {
         return None;
@@ -110,6 +185,25 @@ fn docker_name_problem(tokens: &[Token], index: usize) -> Option<String> {
         }
         _ => None,
     }
+}
+
+fn type_alias_problem(tokens: &[Token], index: usize) -> Option<String> {
+    tokens.get(index + 1)?.ident()?;
+    if !tokens.get(index + 2)?.is_punct('=') {
+        return None;
+    }
+    let mut position = index + 3;
+    let mut last = None;
+    while let Some(token) = tokens.get(position) {
+        if let Some(name) = token.ident() {
+            last = Some(name);
+        } else if !token.is_punct(':') {
+            break;
+        }
+        position += 1;
+    }
+    (last == Some("Program") && tokens.get(position)?.is_punct(';'))
+        .then(|| outside("`type X = Program` hides Program::Docker"))
 }
 
 fn group_names_docker(tokens: &[Token], open: usize) -> bool {
