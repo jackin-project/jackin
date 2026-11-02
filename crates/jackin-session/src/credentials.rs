@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use jackin_core::{ChatgptAccountId, FileSystem, FsError, HostPath, Secret};
+use jackin_core::{ChatgptAccountId, FileSystem, FsError, HostPath, Secret, plain};
 use serde_json::Value;
 use thiserror::Error;
 use zeroize::{Zeroize, Zeroizing};
@@ -23,7 +23,7 @@ pub struct ChatgptLogin {
 pub enum CredentialError {
     #[error("cannot read the login at {path}")]
     LoginUnreadable { path: HostPath },
-    #[error("auth.json is invalid at {key}")]
+    #[error("auth.json is invalid at {}", plain(.key))]
     AuthJsonInvalid { key: String },
     #[error("auth.json is not a ChatGPT login")]
     NotAChatgptLogin,

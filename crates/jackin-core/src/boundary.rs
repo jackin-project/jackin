@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
-use crate::display::plain_duration;
+use crate::display::{plain, plain_duration};
 use crate::ids::EnvName;
 use crate::paths::{HostPath, RepoPath};
 use crate::secret::{Secret, SecretBytes};
@@ -315,7 +315,7 @@ pub trait ProcessRunner: Send + Sync + Debug {
 
 #[derive(Debug, Error)]
 pub enum FsError {
-    #[error("i/o error at {path}: {message}")]
+    #[error("i/o error at {path}: {}", plain(.message))]
     Io {
         path: HostPath,
         kind: std::io::ErrorKind,
@@ -331,7 +331,7 @@ pub enum FsError {
 
 #[derive(Debug, Error)]
 pub enum ProcessError {
-    #[error("failed to start {program}: {message}")]
+    #[error("failed to start {program}: {}", plain(.message))]
     Spawn { program: Program, message: String },
     #[error("{program} timed out after {}", plain_duration(.after))]
     Timeout { program: Program, after: Duration },
@@ -343,7 +343,7 @@ pub enum ProcessError {
         stream: OutputStream,
         limit: usize,
     },
-    #[error("reading {stream} of {program} failed: {message}")]
+    #[error("reading {stream} of {program} failed: {}", plain(.message))]
     Read {
         program: Program,
         stream: OutputStream,

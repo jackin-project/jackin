@@ -3,6 +3,8 @@
 
 use thiserror::Error;
 
+use crate::display::plain;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Compatibility {
     pub openshell_version: String,
@@ -13,9 +15,9 @@ pub struct Compatibility {
 
 #[derive(Debug, Error)]
 pub enum CompatibilityError {
-    #[error("syntax error in compatibility.lock.toml: {message}")]
+    #[error("syntax error in compatibility.lock.toml: {}", plain(.message))]
     Syntax { message: String },
-    #[error("missing key {key} in compatibility.lock.toml")]
+    #[error("missing key {} in compatibility.lock.toml", plain(.key))]
     MissingField { key: String },
 }
 

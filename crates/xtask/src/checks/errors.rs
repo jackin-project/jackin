@@ -39,6 +39,7 @@ impl Check for ErrorsCheck {
 struct ErrorAttribute<'a> {
     arguments: &'a [Token],
     sources: Vec<String>,
+    strings: Vec<String>,
 }
 
 fn error_attribute(tokens: &[Token], index: usize) -> Option<ErrorAttribute<'_>> {
@@ -63,9 +64,11 @@ fn error_attribute(tokens: &[Token], index: usize) -> Option<ErrorAttribute<'_>>
             }
         }
     }
+    let fields = item::item_fields(tokens, index + 4 + close + 2);
     Some(ErrorAttribute {
         arguments: &body[..close],
-        sources: item::source_fields(tokens, index + 4 + close + 2),
+        sources: fields.sources,
+        strings: fields.strings,
     })
 }
 
@@ -82,7 +85,7 @@ fn attribute_problems(attribute: &ErrorAttribute<'_>) -> Vec<(u32, String)> {
     let mut problems = Vec::new();
     for (index, token) in arguments.iter().enumerate() {
         if let Some(literal) = token.string() {
-            if let Some(message) = literal_problem(literal, &attribute.sources) {
+            if let Some(message) = literal_problem(literal, attribute) {
                 problems.push((token.line, message));
             }
         } else if token.is_punct('.')
@@ -96,6 +99,13 @@ fn attribute_problems(attribute: &ErrorAttribute<'_>) -> Vec<(u32, String)> {
             if let Some(field) = field.filter(|field| is_source(field, &attribute.sources)) {
                 problems.push((token.line, source_message(&format!("`.{field}`"))));
             }
+            let bare = index
+                .checked_sub(1)
+                .is_some_and(|before| arguments[before].is_punct(','))
+                && arguments.get(index + 2).is_none_or(|t| t.is_punct(','));
+            if let Some(field) = field.filter(|field| bare && is_string(field, attribute)) {
+                problems.push((token.line, string_message(&format!("`.{field}`"), field)));
+            }
         }
     }
     problems
@@ -105,16 +115,24 @@ fn is_source(argument: &str, sources: &[String]) -> bool {
     argument == "source" || sources.iter().any(|name| name == argument)
 }
 
-fn literal_problem(literal: &str, sources: &[String]) -> Option<String> {
+fn is_string(argument: &str, attribute: &ErrorAttribute<'_>) -> bool {
+    attribute.strings.iter().any(|name| name == argument)
+}
+
+fn literal_problem(literal: &str, attribute: &ErrorAttribute<'_>) -> Option<String> {
     let mut debug = Vec::new();
     let mut source = Vec::new();
+    let mut strings = Vec::new();
     for inner in placeholders(literal) {
         let (argument, spec) = inner.split_once(':').unwrap_or((inner, ""));
         if spec.ends_with('?') {
             debug.push(format!("{{{inner}}}"));
         }
-        if is_source(argument, sources) {
+        if is_source(argument, &attribute.sources) {
             source.push(format!("{{{inner}}}"));
+        }
+        if is_string(argument, attribute) {
+            strings.push((format!("{{{inner}}}"), argument));
         }
     }
     let mut parts = Vec::new();
@@ -127,7 +145,20 @@ fn literal_problem(literal: &str, sources: &[String]) -> Option<String> {
     if !source.is_empty() {
         parts.push(source_message(&source.join(", ")));
     }
+    if let Some((_, field)) = strings.first() {
+        let shown: Vec<&str> = strings
+            .iter()
+            .map(|(placeholder, _)| placeholder.as_str())
+            .collect();
+        parts.push(string_message(&shown.join(", "), field));
+    }
     (!parts.is_empty()).then(|| parts.join("; "))
+}
+
+fn string_message(what: &str, field: &str) -> String {
+    format!(
+        "{what} prints a String field as it is; it can hold text from outside, so pass it through plain, as in `plain(.{field})`"
+    )
 }
 
 fn source_message(what: &str) -> String {

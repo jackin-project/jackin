@@ -12,7 +12,8 @@ use std::time::Duration;
 
 use jackin_core::{
     AccountName, AttemptId, FsError, HookKind, LaunchId, PathError, Phase, ProcessError,
-    SandboxName, SupervisorReading, SupervisorState, TerminalText, plain_duration, plain_list,
+    SandboxName, SupervisorReading, SupervisorState, TerminalText, plain, plain_duration,
+    plain_list,
 };
 use jackin_image::{ImageError, ImageEvent};
 use jackin_openshell::GatewayError;
@@ -202,7 +203,7 @@ pub enum LaunchError {
         exit_code: i32,
         output: TerminalText,
     },
-    #[error("project step {step} produced unusable output: {message}")]
+    #[error("project step {step} produced unusable output: {}", plain(.message))]
     ProjectOutput { step: ProjectStep, message: String },
     #[error("the provider for account {account} is unavailable")]
     ProviderUnavailable {
@@ -254,8 +255,8 @@ pub enum LaunchError {
         exit_code: i32,
         output: TerminalText,
     },
-    #[error("the sandbox probe is invalid: {message}")]
+    #[error("the sandbox probe is invalid: {}", plain(.message))]
     ProbeInvalid { message: String },
-    #[error("the sandbox {sandbox} has no value for {key}")]
+    #[error("the sandbox {sandbox} has no value for {}", plain(.key))]
     PlaceholderMissing { sandbox: SandboxName, key: String },
 }

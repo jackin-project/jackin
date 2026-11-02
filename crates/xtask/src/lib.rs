@@ -5,6 +5,7 @@ mod checks;
 mod ci;
 mod lex;
 mod repo;
+mod text;
 mod violation;
 
 pub use checks::*;

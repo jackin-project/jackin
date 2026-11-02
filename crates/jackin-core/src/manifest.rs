@@ -7,6 +7,7 @@ use std::fmt;
 use thiserror::Error;
 
 use crate::boundary::{FileMode, FileSystem, FsError};
+use crate::display::plain;
 use crate::fs::write_atomic;
 use crate::ids::{EnvName, IdError, ModelName, RoleName};
 use crate::paths::{HostPath, RepoPath};
@@ -75,17 +76,17 @@ impl fmt::Display for HookKind {
 
 #[derive(Debug, Error)]
 pub enum ManifestError {
-    #[error("syntax error at line {line}, column {column}: {message}")]
+    #[error("syntax error at line {line}, column {column}: {}", plain(.message))]
     Syntax {
         line: usize,
         column: usize,
         message: String,
     },
-    #[error("unknown field {key}")]
+    #[error("unknown field {}", plain(.key))]
     UnknownField { key: String },
-    #[error("missing field {key}")]
+    #[error("missing field {}", plain(.key))]
     MissingField { key: String },
-    #[error("invalid value for {key}: {message}")]
+    #[error("invalid value for {}: {}", plain(.key), plain(.message))]
     InvalidValue { key: String, message: String },
     #[error("unsupported schema version {found}")]
     UnsupportedSchema { found: i64 },

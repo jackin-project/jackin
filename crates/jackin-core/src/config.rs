@@ -14,6 +14,7 @@ use thiserror::Error;
 
 use crate::agent::{Agent, CodexAuthMode};
 use crate::boundary::FsError;
+use crate::display::plain;
 use crate::docker::EngineConfig;
 use crate::ids::{
     AccountName, BuilderName, ChatgptAccountId, EnvName, GatewayName, OpReference,
@@ -183,21 +184,21 @@ pub(crate) fn join_display<T: fmt::Display>(items: &[T]) -> String {
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
-    #[error("syntax error at line {line}, column {column}: {message}")]
+    #[error("syntax error at line {line}, column {column}: {}", plain(.message))]
     Syntax {
         line: usize,
         column: usize,
         message: String,
     },
-    #[error("unknown field {key}")]
+    #[error("unknown field {}", plain(.key))]
     UnknownField { key: String },
-    #[error("missing field {key}")]
+    #[error("missing field {}", plain(.key))]
     MissingField { key: String },
-    #[error("invalid value for {key}: {message}")]
+    #[error("invalid value for {}: {}", plain(.key), plain(.message))]
     InvalidValue { key: String, message: String },
-    #[error("duplicate {kind} name {name}")]
+    #[error("duplicate {kind} name {}", plain(.name))]
     DuplicateName { kind: &'static str, name: String },
-    #[error("unknown {kind} {name}")]
+    #[error("unknown {kind} {}", plain(.name))]
     MissingReference { kind: &'static str, name: String },
     #[error(
         "account {account} has provider {} but {} is required",

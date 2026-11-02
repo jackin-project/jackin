@@ -6,6 +6,7 @@ use std::fmt::Debug;
 use async_trait::async_trait;
 use jackin_core::{
     BuilderName, FileLock, FsError, ImageId, ImageTag, ProcessError, ProcessStatus, TerminalText,
+    plain,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -48,7 +49,7 @@ pub enum ContextProblem {
 pub enum EngineError {
     #[error("builder {builder} does not exist")]
     BuilderMissing { builder: BuilderName },
-    #[error("builder {builder} uses the {driver} driver; the docker driver is required")]
+    #[error("builder {builder} uses the {} driver; the docker driver is required", plain(.driver))]
     BuilderDriver {
         builder: BuilderName,
         driver: String,
@@ -65,7 +66,7 @@ pub enum EngineError {
         status: ProcessStatus,
         output: TerminalText,
     },
-    #[error("the build context cannot hold {path}: it {problem}")]
+    #[error("the build context cannot hold {}: it {problem}", plain(.path))]
     ContextEntry {
         path: String,
         problem: ContextProblem,

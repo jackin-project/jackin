@@ -1324,9 +1324,9 @@ mod errors {
             "    #[error(\"named {what:?}\")]",
             "    A,",
             "    #[error(\"positional {0:?}\")]",
-            "    B(String),",
+            "    B(Id),",
             "    #[error(\"bare {:?}\", .0)]",
-            "    C(String),",
+            "    C(Id),",
             "    #[error(\"alt {x:#?}\")]",
             "    D,",
             "    #[error(\"lower {x:x?}\")]",
@@ -1353,7 +1353,7 @@ mod errors {
             "    N,",
             "}",
             "#[error(\"tail {0:?}\")]",
-            "struct S(String);",
+            "struct S(Id);",
         ]);
         let violations = run(&[(LIB, &source)])?;
         let tags = [
@@ -1388,7 +1388,7 @@ mod errors {
 
     #[test]
     fn the_scan_covers_every_rust_file_under_crates() -> TestResult {
-        let defect = "#[error(\"{0:?}\")]\nstruct S(String);\n";
+        let defect = "#[error(\"{0:?}\")]\nstruct S(Id);\n";
         let paths = [
             "crates/jackin-core/tests/b.rs",
             "crates/jackin-testkit/src/lib.rs",
@@ -1465,7 +1465,7 @@ mod error_source {
         let source = text(&[
             "enum E {",
             "    #[error(\"manifest at {path}: {source}\")]",
-            "    A { path: String, source: M },",
+            "    A { path: Id, source: M },",
             "    #[error(\"alt {source:#}\")]",
             "    B { source: M },",
             "    #[error(\"wide {source:>8}\")]",
@@ -1479,7 +1479,7 @@ mod error_source {
             "    #[error(\"argform: {}\", .source)]",
             "    F { source: M },",
             "    #[error(\"both {path:?} and {source}\")]",
-            "    G { path: String, source: M },",
+            "    G { path: Id, source: M },",
             "}",
             "#[error(\"tail {source}\")]",
             "struct S { source: M }",
@@ -1541,7 +1541,7 @@ mod error_source {
         let source = text(&[
             "enum E {",
             "    #[error(\"launch failed t_named {error}\")]",
-            "    A { id: String, #[source] error: Box<M> },",
+            "    A { id: Id, #[source] error: Box<M> },",
             "    #[error(\"wrapped t_from {0}\")]",
             "    C(#[from] M),",
             "    #[error(\"arg t_form {}\", .0)]",
@@ -1551,7 +1551,7 @@ mod error_source {
             "    #[error(\"cause t_generic {cause}\")]",
             "    I { map: HashMap<String, u8>, #[source] cause: Box<dyn Error + Send + Sync> },",
             "    #[error(\"launch {id} t_wrapped {}\", .error)]",
-            "    J { id: String, #[source] error: Box<M> },",
+            "    J { id: Id, #[source] error: Box<M> },",
             "    #[error(\"x t_nested {} {}\", list(a), .0)]",
             "    L(#[source] M),",
             "    #[error(\"t_attr {0}\")]",
@@ -1594,15 +1594,15 @@ mod error_source {
         let source = text(&[
             "enum E {",
             "    #[error(\"launch failed {id}\")]",
-            "    A { id: String, #[source] error: Box<M> },",
+            "    A { id: Id, #[source] error: Box<M> },",
             "    #[error(\"plain {error}\")]",
-            "    B { error: String },",
+            "    B { error: Id },",
             "    #[error(\"first {0}\")]",
-            "    C(String, #[source] M),",
+            "    C(Id, #[source] M),",
             "    #[error(\"nested {}\", .0.error)]",
             "    D(Wrapper),",
             "    #[error(\"other variant {error}\")]",
-            "    F { error: String },",
+            "    F { error: Id },",
             "    #[error(\"has {n}\")]",
             "    G { n: usize, #[from] inner: M },",
             "    #[error(\"member {}\", .inner.error)]",
@@ -1619,7 +1619,101 @@ mod error_source {
             "#[error(\"launch {launch_id} failed\")]",
             "pub struct S { pub launch_id: L, #[source] pub error: Box<M> }",
             "#[error(\"tuple {0}\")]",
-            "pub struct T(String, #[from] M);",
+            "pub struct T(Id, #[from] M);",
+        ]);
+        assert_eq!(summary(&run(&source)?), []);
+        Ok(())
+    }
+}
+
+mod error_strings {
+    use super::*;
+
+    const LIB: &str = "crates/jackin-core/src/lib.rs";
+
+    fn run(source: &str) -> Result<Vec<Violation>, Box<dyn Error>> {
+        let fixture = Fixture::new(&bare(&["jackin-core"]))?;
+        fixture.write(LIB, source)?;
+        Ok(ErrorsCheck.run(&fixture.repo()?))
+    }
+
+    #[test]
+    fn a_bare_placeholder_of_a_string_field_is_reported_at_the_literal_line() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"named s_named {message}\")]",
+            "    A { message: String },",
+            "    #[error(\"tuple s_tuple {0}\")]",
+            "    B(String),",
+            "    #[error(\"spec s_spec {message:>8}\")]",
+            "    C { message: String },",
+            "    #[error(\"arg s_arg {}\", .message)]",
+            "    D { message: String },",
+            "    #[error(\"pub s_pub {message}\")]",
+            "    F { id: u8, pub message: String },",
+            "    #[error(\"two s_two {first} {second} {id}\")]",
+            "    G { id: u8, first: String, #[source] second: String },",
+            "    #[error(\"after s_after {1}\")]",
+            "    H(HashMap<String, u8>, String),",
+            "}",
+            "#[error(\"struct s_struct {text}\")]",
+            "pub struct S<T> { text: String, other: T }",
+        ]);
+        let violations = run(&source)?;
+        let tags = [
+            "s_named", "s_tuple", "s_spec", "s_arg", "s_pub", "s_two", "s_after", "s_struct",
+        ];
+        assert_eq!(
+            summary(&violations),
+            lines(CiStep::Errors, LIB, &source, &tags)
+        );
+        let named = &violations[0].message;
+        assert!(
+            named.contains("{message}") && named.contains("plain"),
+            "{named}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn string_fields_passed_through_plain_and_other_types_pass() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"wrapped {}\", plain(.message))]",
+            "    A { message: String },",
+            "    #[error(\"list {}\", plain_list(.items))]",
+            "    B { items: Vec<String> },",
+            "    #[error(\"count {count}\")]",
+            "    C { count: usize },",
+            "    #[error(\"kind {kind}\")]",
+            "    D { kind: &'static str },",
+            "    #[error(\"tail {tail}\")]",
+            "    E { tail: TerminalText },",
+            "    #[error(\"path {path}\")]",
+            "    F { path: HostPath },",
+            "    #[error(\"not printed\")]",
+            "    G { message: String },",
+            "    #[error(\"other variant {message}\")]",
+            "    H { message: HostPath },",
+            "    #[error(\"escaped {{message}}\")]",
+            "    I { message: String },",
+            "    #[error(\"tuple {}\", plain(.0))]",
+            "    J(String),",
+            "    #[error(\"first {0}\")]",
+            "    K(HostPath, String),",
+            "    #[error(\"opt {}\", scheme_text(.scheme.as_deref()))]",
+            "    L { scheme: Option<String> },",
+            "    #[error(\"call {}\", pair(a, .message))]",
+            "    P { message: String },",
+            "    #[error(\"call {}\", wrap(.text, a))]",
+            "    Q { text: String },",
+            "    #[error(\"wrapped {wrapped} {items}\")]",
+            "    N { wrapped: Wrapper<String>, items: Vec<String> },",
+            "    #[error(\"map {name}\")]",
+            "    M { name: Name, other: String },",
+            "}",
+            "#[error(\"struct {}\", plain(.text))]",
+            "pub struct S { text: String }",
         ]);
         assert_eq!(summary(&run(&source)?), []);
         Ok(())
@@ -2052,5 +2146,35 @@ mod ci_run {
             assert_eq!(outcome.log, Vec::<String>::new(), "args {args:?}");
         }
         Ok(())
+    }
+}
+
+mod tool_text {
+    use jackin_xtask::CiError;
+
+    #[test]
+    fn output_of_other_tools_is_shown_without_control_characters() {
+        let hostile = || "a\u{1b}[2J\nb".to_owned();
+        let rows = [
+            (
+                CiError::Metadata(hostile()).to_string(),
+                "cargo metadata failed: a\\u{1b}[2J\\nb",
+            ),
+            (
+                CiError::ListFiles(hostile()).to_string(),
+                "git ls-files failed: a\\u{1b}[2J\\nb",
+            ),
+            (
+                CiError::Spawn {
+                    program: hostile(),
+                    source: std::io::Error::other("x"),
+                }
+                .to_string(),
+                "cannot start a\\u{1b}[2J\\nb",
+            ),
+        ];
+        for (message, expected) in rows {
+            assert_eq!(message, expected);
+        }
     }
 }

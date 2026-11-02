@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::agent::Agent;
+use crate::display::plain;
 use crate::ids::{AccountName, IdError, ImageId, ImageLabel, LaunchId, RoleName, WorkspaceName};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -43,11 +44,11 @@ pub enum LabelError {
     Missing { key: &'static str },
     #[error("invalid value for label {key}")]
     Invalid { key: &'static str, source: IdError },
-    #[error("unknown agent label {0}")]
+    #[error("unknown agent label {}", plain(.0))]
     UnknownAgent(String),
-    #[error("invalid label key {key}: {reason}")]
+    #[error("invalid label key {}: {reason}", plain(.key))]
     InvalidKey { key: String, reason: &'static str },
-    #[error("invalid value for label {key}: {reason}")]
+    #[error("invalid value for label {}: {reason}", plain(.key))]
     InvalidValue { key: String, reason: &'static str },
 }
 

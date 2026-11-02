@@ -3,7 +3,13 @@
 
 use crate::lex::Token;
 
-pub(super) fn source_fields(tokens: &[Token], start: usize) -> Vec<String> {
+#[derive(Default)]
+pub(super) struct ItemFields {
+    pub(super) sources: Vec<String>,
+    pub(super) strings: Vec<String>,
+}
+
+pub(super) fn item_fields(tokens: &[Token], start: usize) -> ItemFields {
     let mut position = start;
     while let Some(token) = tokens.get(position) {
         if token.is_punct('#') {
@@ -23,7 +29,7 @@ pub(super) fn source_fields(tokens: &[Token], start: usize) -> Vec<String> {
         .get(position)
         .is_some_and(|t| t.ident().is_some() && !t.is_ident("enum"));
     if !named {
-        return Vec::new();
+        return ItemFields::default();
     }
     position += 1;
     if tokens.get(position).is_some_and(|t| t.is_punct('<')) {
@@ -34,7 +40,7 @@ pub(super) fn source_fields(tokens: &[Token], start: usize) -> Vec<String> {
             let close = group_end(tokens, position);
             fields(&tokens[position + 1..close], open.is_punct('('))
         }
-        _ => Vec::new(),
+        _ => ItemFields::default(),
     }
 }
 
@@ -106,8 +112,8 @@ fn split_fields(tokens: &[Token]) -> Vec<&[Token]> {
     parts
 }
 
-fn fields(tokens: &[Token], tuple: bool) -> Vec<String> {
-    let mut marked = Vec::new();
+fn fields(tokens: &[Token], tuple: bool) -> ItemFields {
+    let mut found = ItemFields::default();
     for (index, field) in split_fields(tokens).into_iter().enumerate() {
         let mut position = 0;
         let mut attribute = false;
@@ -127,15 +133,19 @@ fn fields(tokens: &[Token], tuple: bool) -> Vec<String> {
                 break;
             }
         }
-        let name = match field.get(position).and_then(Token::ident) {
-            Some(name) if !tuple && field.get(position + 1).is_some_and(|t| t.is_punct(':')) => {
-                name.to_owned()
-            }
-            _ => index.to_string(),
+        let named = !tuple
+            && field.get(position).is_some_and(|t| t.ident().is_some())
+            && field.get(position + 1).is_some_and(|t| t.is_punct(':'));
+        let (name, kind) = match field.get(position).and_then(Token::ident) {
+            Some(name) if named => (name.to_owned(), &field[position + 2..]),
+            _ => (index.to_string(), &field[position..]),
         };
+        if kind.len() == 1 && kind[0].is_ident("String") {
+            found.strings.push(name.clone());
+        }
         if attribute || name == "source" {
-            marked.push(name);
+            found.sources.push(name);
         }
     }
-    marked
+    found
 }

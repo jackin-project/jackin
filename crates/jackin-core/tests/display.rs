@@ -6,9 +6,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use jackin_core::{
-    CodexAuthMode, DockerSource, DockerSubcommand, FsError, HookKind, HostPath, OutputStream,
-    PathError, Platform, ProcessError, ProcessStatus, Program, SupervisorReading, SupervisorState,
-    plain, plain_duration, plain_list,
+    CodexAuthMode, CompatibilityError, ConfigError, DockerSource, DockerSubcommand, FsError,
+    HookKind, HostPath, LabelError, ManifestError, OutputStream, PathError, Platform, ProcessError,
+    ProcessStatus, Program, SupervisorReading, SupervisorState, plain, plain_duration, plain_list,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -157,4 +157,136 @@ fn supervisor_readings_print_words_and_escape_the_text_the_sandbox_wrote() {
     assert_eq!(reported.to_string(), "waiting");
     let invalid = SupervisorReading::Invalid("bad\u{1b}[2J\nnext".to_owned());
     assert_eq!(invalid.to_string(), "invalid (bad\\u{1b}[2J\\nnext)");
+}
+
+#[test]
+fn string_fields_of_core_errors_are_shown_without_control_characters() -> TestResult {
+    let hostile = || "a\u{1b}[2J\nb".to_owned();
+    let shown = "a\\u{1b}[2J\\nb";
+    let rows: Vec<(String, String)> = vec![
+        (
+            FsError::Io {
+                path: host("/x")?,
+                kind: ErrorKind::NotFound,
+                message: hostile(),
+            }
+            .to_string(),
+            format!("i/o error at /x: {shown}"),
+        ),
+        (
+            ProcessError::Spawn {
+                program: Program::Git,
+                message: hostile(),
+            }
+            .to_string(),
+            format!("failed to start git: {shown}"),
+        ),
+        (
+            ProcessError::Read {
+                program: Program::Git,
+                stream: OutputStream::Stderr,
+                message: hostile(),
+            }
+            .to_string(),
+            format!("reading stderr of git failed: {shown}"),
+        ),
+        (
+            CompatibilityError::Syntax { message: hostile() }.to_string(),
+            format!("syntax error in compatibility.lock.toml: {shown}"),
+        ),
+        (
+            CompatibilityError::MissingField { key: hostile() }.to_string(),
+            format!("missing key {shown} in compatibility.lock.toml"),
+        ),
+        (
+            ConfigError::Syntax {
+                line: 1,
+                column: 2,
+                message: hostile(),
+            }
+            .to_string(),
+            format!("syntax error at line 1, column 2: {shown}"),
+        ),
+        (
+            ConfigError::UnknownField { key: hostile() }.to_string(),
+            format!("unknown field {shown}"),
+        ),
+        (
+            ConfigError::MissingField { key: hostile() }.to_string(),
+            format!("missing field {shown}"),
+        ),
+        (
+            ConfigError::InvalidValue {
+                key: hostile(),
+                message: hostile(),
+            }
+            .to_string(),
+            format!("invalid value for {shown}: {shown}"),
+        ),
+        (
+            ConfigError::DuplicateName {
+                kind: "role",
+                name: hostile(),
+            }
+            .to_string(),
+            format!("duplicate role name {shown}"),
+        ),
+        (
+            ConfigError::MissingReference {
+                kind: "role",
+                name: hostile(),
+            }
+            .to_string(),
+            format!("unknown role {shown}"),
+        ),
+        (
+            LabelError::UnknownAgent(hostile()).to_string(),
+            format!("unknown agent label {shown}"),
+        ),
+        (
+            LabelError::InvalidKey {
+                key: hostile(),
+                reason: "too long",
+            }
+            .to_string(),
+            format!("invalid label key {shown}: too long"),
+        ),
+        (
+            LabelError::InvalidValue {
+                key: hostile(),
+                reason: "too long",
+            }
+            .to_string(),
+            format!("invalid value for label {shown}: too long"),
+        ),
+        (
+            ManifestError::Syntax {
+                line: 1,
+                column: 2,
+                message: hostile(),
+            }
+            .to_string(),
+            format!("syntax error at line 1, column 2: {shown}"),
+        ),
+        (
+            ManifestError::UnknownField { key: hostile() }.to_string(),
+            format!("unknown field {shown}"),
+        ),
+        (
+            ManifestError::MissingField { key: hostile() }.to_string(),
+            format!("missing field {shown}"),
+        ),
+        (
+            ManifestError::InvalidValue {
+                key: hostile(),
+                message: hostile(),
+            }
+            .to_string(),
+            format!("invalid value for {shown}: {shown}"),
+        ),
+    ];
+    for (message, expected) in rows {
+        assert_eq!(message, expected);
+    }
+    Ok(())
 }

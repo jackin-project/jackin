@@ -165,19 +165,19 @@ pub enum ExportError {
         status: ProcessStatus,
         output: TerminalText,
     },
-    #[error("git on the host printed unusable output: {message}")]
+    #[error("git on the host printed unusable output: {}", plain(.message))]
     HostOutput { message: String },
-    #[error("ref conflict at {host_ref}: {output}")]
+    #[error("ref conflict at {}: {output}", plain(.host_ref))]
     RefConflict {
         host_ref: String,
         output: TerminalText,
     },
-    #[error("{host_ref} is checked out in the worktree {worktree}")]
+    #[error("{} is checked out in the worktree {worktree}", plain(.host_ref))]
     RefCheckedOut {
         host_ref: String,
         worktree: HostPath,
     },
-    #[error("the sandbox branch {branch} cannot be exported")]
+    #[error("the sandbox branch {} cannot be exported", plain(.branch))]
     UnusableBranch { branch: TerminalText },
     #[error("the bundle heads differ from the requested set: extra {}; missing {}", plain_list(.extra), plain_list(.missing))]
     BundleHeads {
@@ -188,7 +188,7 @@ pub enum ExportError {
     TooManyHeads { count: usize, limit: usize },
     #[error("the sandbox bundle is {size} bytes and the limit is {limit}")]
     BundleTooLarge { size: u64, limit: u64 },
-    #[error("{host_ref} expected tip {expected} but found {}", tip_text(.found.as_ref()))]
+    #[error("{} expected tip {expected} but found {}", plain(.host_ref), tip_text(.found.as_ref()))]
     TipMismatch {
         host_ref: String,
         expected: CommitId,

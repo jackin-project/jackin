@@ -10,9 +10,9 @@ use jackin_core::{
 };
 use jackin_openshell::{ClosureViolation, RuleKey};
 use jackin_session::{
-    AttachError, EnvFileProblem, EnvQuestion, ExportError, LaunchError, LaunchFailure, LaunchStep,
-    PlanError, ProjectStep, PurgeError, RoleError, Unexported, UnknownReason, UnsupportedProject,
-    WorkState,
+    AttachError, CredentialError, EnvFileProblem, EnvQuestion, ExportError, HostGitError,
+    LaunchError, LaunchFailure, LaunchStep, PlanError, ProjectStep, PurgeError, RoleError,
+    Unexported, UnknownReason, UnsupportedProject, WorkState,
 };
 
 use super::support::{TestResult, launch_id};
@@ -308,5 +308,85 @@ fn role_errors_name_the_directory_the_file_and_leave_the_cause_to_the_source() -
         manifest.source().map(ToString::to_string).as_deref(),
         Some("syntax error at line 1, column 2: boom")
     );
+    Ok(())
+}
+
+#[test]
+fn string_fields_of_session_errors_are_shown_without_control_characters() -> TestResult {
+    let hostile = || "a\u{1b}[2J\nb".to_owned();
+    let shown = "a\\u{1b}[2J\\nb";
+    let sandbox = sandbox()?;
+    let rows: Vec<(String, String)> = vec![
+        (
+            CredentialError::AuthJsonInvalid { key: hostile() }.to_string(),
+            format!("auth.json is invalid at {shown}"),
+        ),
+        (
+            ExportError::HostOutput { message: hostile() }.to_string(),
+            format!("git on the host printed unusable output: {shown}"),
+        ),
+        (
+            ExportError::RefConflict {
+                host_ref: hostile(),
+                output: TerminalText::sanitize(b"out"),
+            }
+            .to_string(),
+            format!("ref conflict at {shown}: out"),
+        ),
+        (
+            ExportError::RefCheckedOut {
+                host_ref: hostile(),
+                worktree: HostPath::parse(std::path::Path::new("/work/tree"))?,
+            }
+            .to_string(),
+            format!("{shown} is checked out in the worktree /work/tree"),
+        ),
+        (
+            ExportError::TipMismatch {
+                host_ref: hostile(),
+                expected: CommitId::parse(&"b".repeat(40))?,
+                found: None,
+            }
+            .to_string(),
+            format!(
+                "{shown} expected tip {} but found no commit",
+                "b".repeat(40)
+            ),
+        ),
+        (
+            ExportError::UnusableBranch {
+                branch: TerminalText::sanitize(b"a\nb"),
+            }
+            .to_string(),
+            "the sandbox branch a\\nb cannot be exported".to_owned(),
+        ),
+        (
+            LaunchError::ProjectOutput {
+                step: ProjectStep::Head,
+                message: hostile(),
+            }
+            .to_string(),
+            format!("project step head produced unusable output: {shown}"),
+        ),
+        (
+            LaunchError::ProbeInvalid { message: hostile() }.to_string(),
+            format!("the sandbox probe is invalid: {shown}"),
+        ),
+        (
+            LaunchError::PlaceholderMissing {
+                sandbox,
+                key: hostile(),
+            }
+            .to_string(),
+            format!("the sandbox jackin-work-0001 has no value for {shown}"),
+        ),
+        (
+            HostGitError::Unusable { detail: hostile() }.to_string(),
+            format!("host git cannot be used: {shown}"),
+        ),
+    ];
+    for (message, expected) in rows {
+        assert_eq!(message, expected);
+    }
     Ok(())
 }

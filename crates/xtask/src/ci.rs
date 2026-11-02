@@ -11,6 +11,7 @@ use thiserror::Error;
 
 use crate::checks::{Check, CommentsCheck, ContainersCheck, ErrorsCheck, LayersCheck, PinsCheck};
 use crate::repo::{Repo, cargo_program};
+use crate::text::plain;
 use crate::violation::Violation;
 
 #[derive(Args, Clone, Debug)]
@@ -213,11 +214,11 @@ pub enum CiFailure {
 pub enum CiError {
     #[error("{step} failed with status {status}")]
     ToolFailed { step: CiStep, status: i32 },
-    #[error("cannot start {program}")]
+    #[error("cannot start {}", plain(.program))]
     Spawn { program: String, source: io::Error },
-    #[error("cargo metadata failed: {0}")]
+    #[error("cargo metadata failed: {}", plain(.0))]
     Metadata(String),
-    #[error("git ls-files failed: {0}")]
+    #[error("git ls-files failed: {}", plain(.0))]
     ListFiles(String),
     #[error(transparent)]
     Io(#[from] io::Error),

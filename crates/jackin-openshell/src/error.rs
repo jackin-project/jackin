@@ -169,7 +169,7 @@ pub enum DiscoveryError {
         status: ProcessStatus,
         tail: TerminalText,
     },
-    #[error("gateway list output cannot be parsed: {message}")]
+    #[error("gateway list output cannot be parsed: {}", plain(.message))]
     ListUnparsable { message: String },
     #[error("gateway {0} is not registered")]
     UnknownGateway(GatewayName),
@@ -190,19 +190,19 @@ pub enum DiscoveryError {
 
 #[derive(Debug, Error)]
 pub enum PolicyError {
-    #[error("policy syntax error: {message}")]
+    #[error("policy syntax error: {}", plain(.message))]
     Syntax { message: String },
-    #[error("{key} must be a mapping")]
+    #[error("{} must be a mapping", plain(.key))]
     NotAMapping { key: String },
-    #[error("rule name {0} is reserved")]
+    #[error("rule name {} is reserved", plain(.0))]
     ReservedRuleName(String),
-    #[error("invalid host {0}")]
+    #[error("invalid host {}", plain(.0))]
     InvalidHost(String),
-    #[error("rule {rule} has the invalid port {port}")]
+    #[error("rule {} has the invalid port {port}", plain(.rule))]
     InvalidPort { rule: String, port: i64 },
     #[error("duplicate rule {0}")]
     DuplicateRule(RuleKey),
-    #[error("profile {id}: {message}")]
+    #[error("profile {}: {}", plain(.id), plain(.message))]
     Profile { id: String, message: String },
 }
 

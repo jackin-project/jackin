@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin::{ExitClass, RoleLs, WorkspaceLs};
+use jackin::{CommandError, ExitClass, RoleLs, WorkspaceLs};
 use jackin_core::{HostPath, RoleName, RoleRev, RoleSource, WorkspaceName};
 use jackin_testkit::{TestResult, World, guard};
 
@@ -184,4 +184,49 @@ async fn duplicates_shared_paths_and_roles_in_use_fail_and_leave_the_config_byte
         Ok(())
     })
     .await
+}
+
+#[tokio::test]
+async fn an_argument_with_control_characters_is_shown_escaped_in_the_error() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        let ran = harness
+            .run(&["role", "add", "local", "no\u{1b}[2J\nwhere"])
+            .await?;
+        failed(&ran, ExitClass::Usage, &[])?;
+        assert_eq!(
+            ran.stderr,
+            "error: no\\u{1b}[2J\\nwhere is neither an existing directory nor a Git URL\n"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[test]
+fn command_error_text_is_shown_without_control_characters() {
+    let hostile = || "a\u{1b}[2J\nb".to_owned();
+    let shown = "a\\u{1b}[2J\\nb";
+    let rows = [
+        (
+            CommandError::Argument(hostile()).to_string(),
+            shown.to_owned(),
+        ),
+        (
+            CommandError::Session(hostile()).to_string(),
+            shown.to_owned(),
+        ),
+        (
+            CommandError::Cancelled(hostile()).to_string(),
+            shown.to_owned(),
+        ),
+        (
+            CommandError::Environment(hostile()).to_string(),
+            format!("the environment is incomplete: {shown}"),
+        ),
+    ];
+    for (message, expected) in rows {
+        assert_eq!(message, expected);
+    }
 }

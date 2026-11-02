@@ -9,7 +9,7 @@ use jackin_core::{
 };
 use jackin_openshell::{
     ClosedPolicyError, ClosureViolation, DiscoveryError, GatewayError, GatewayOp, HostPattern,
-    Missing, PolicyDocument, RuleKey, TransferOp, resolve_gateway,
+    Missing, PolicyDocument, PolicyError, RuleKey, TransferOp, resolve_gateway,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -279,5 +279,64 @@ fn text_supplied_by_the_gateway_is_shown_without_control_characters() {
     ];
     for (error, expected) in rows {
         assert_eq!(error.to_string(), expected);
+    }
+}
+
+#[test]
+fn policy_and_registry_text_fields_are_shown_without_control_characters() {
+    let hostile = || "a\u{1b}[2J\nb".to_owned();
+    let shown = "a\\u{1b}[2J\\nb";
+    let quoted = PolicyDocument::parse(
+        "version: 1\nnetwork_policies:\n  \"r\\u001b[2J\":\n    name: r\n    endpoints:\n      - host: example.org\n        port: 443\n",
+    )
+    .unwrap()
+    .network_rules()
+    .remove(0)
+    .key;
+    let rows = [
+        (
+            DiscoveryError::ListUnparsable { message: hostile() }.to_string(),
+            format!("gateway list output cannot be parsed: {shown}"),
+        ),
+        (
+            PolicyError::Syntax { message: hostile() }.to_string(),
+            format!("policy syntax error: {shown}"),
+        ),
+        (
+            PolicyError::NotAMapping { key: hostile() }.to_string(),
+            format!("{shown} must be a mapping"),
+        ),
+        (
+            PolicyError::ReservedRuleName(hostile()).to_string(),
+            format!("rule name {shown} is reserved"),
+        ),
+        (
+            PolicyError::InvalidHost(hostile()).to_string(),
+            format!("invalid host {shown}"),
+        ),
+        (
+            PolicyError::InvalidPort {
+                rule: hostile(),
+                port: 0,
+            }
+            .to_string(),
+            format!("rule {shown} has the invalid port 0"),
+        ),
+        (
+            PolicyError::Profile {
+                id: hostile(),
+                message: hostile(),
+            }
+            .to_string(),
+            format!("profile {shown}: {shown}"),
+        ),
+        (
+            PolicyError::DuplicateRule(quoted.clone()).to_string(),
+            "duplicate rule r\\u{1b}[2J".to_owned(),
+        ),
+        (quoted.to_string(), "r\\u{1b}[2J".to_owned()),
+    ];
+    for (message, expected) in rows {
+        assert_eq!(message, expected);
     }
 }

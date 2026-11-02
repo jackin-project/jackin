@@ -217,7 +217,7 @@ impl RuleKey {
 
 impl fmt::Display for RuleKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&plain(&self.0))
     }
 }
 
