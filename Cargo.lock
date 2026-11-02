@@ -2026,10 +2026,14 @@ dependencies = [
 name = "jackin-testkit"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "jackin-core",
  "jackin-image",
  "jackin-openshell",
  "jackin-session",
+ "tempfile",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

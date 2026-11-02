@@ -156,6 +156,21 @@ impl FileSystem for StdFileSystem {
         .await
     }
 
+    async fn remove_dir_all(&self, path: &HostPath) -> Result<(), FsError> {
+        blocking(path, |p| {
+            missing_is_none(fs::remove_dir_all(p)).map(|_removed| ())
+        })
+        .await
+    }
+
+    async fn mode(&self, path: &HostPath) -> Result<Option<FileMode>, FsError> {
+        blocking(path, |p| {
+            missing_is_none(fs::symlink_metadata(p))
+                .map(|meta| meta.map(|m| FileMode(m.permissions().mode() & 0o7777)))
+        })
+        .await
+    }
+
     async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError> {
         blocking(dir, sync_directory).await
     }

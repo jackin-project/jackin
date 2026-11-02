@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::any::Any;
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug};
 use std::time::Duration;
@@ -43,6 +44,8 @@ pub trait FileSystem: Send + Sync + Debug {
     -> Result<(), FsError>;
     async fn rename(&self, from: &HostPath, to: &HostPath) -> Result<(), FsError>;
     async fn remove_file(&self, path: &HostPath) -> Result<(), FsError>;
+    async fn remove_dir_all(&self, path: &HostPath) -> Result<(), FsError>;
+    async fn mode(&self, path: &HostPath) -> Result<Option<FileMode>, FsError>;
     async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError>;
     async fn lock(&self, path: &HostPath) -> Result<FileLock, FsError>;
 }
@@ -65,12 +68,18 @@ pub struct DirEntry {
 
 #[derive(Debug)]
 pub struct FileLock {
-    _file: std::fs::File,
+    _guard: Box<dyn Any + Send + Sync>,
 }
 
 impl FileLock {
+    pub fn from_guard<G: Send + Sync + 'static>(guard: G) -> FileLock {
+        FileLock {
+            _guard: Box::new(guard),
+        }
+    }
+
     pub(crate) fn new(file: std::fs::File) -> FileLock {
-        FileLock { _file: file }
+        FileLock::from_guard(file)
     }
 }
 

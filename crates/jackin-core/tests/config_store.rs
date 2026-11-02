@@ -297,6 +297,12 @@ impl FileSystem for CrashFs {
         self.gate(Some(Fault::Rename), f)?;
         self.inner.rename(f, t).await
     }
+    async fn remove_dir_all(&self, p: &HostPath) -> Result<(), FsError> {
+        self.inner.remove_dir_all(p).await
+    }
+    async fn mode(&self, p: &HostPath) -> Result<Option<FileMode>, FsError> {
+        self.inner.mode(p).await
+    }
     async fn sync_dir(&self, d: &HostPath) -> Result<(), FsError> {
         self.gate(None, d)?;
         self.inner.sync_dir(d).await?;
@@ -407,6 +413,12 @@ impl FileSystem for GateFs {
     }
     async fn rename(&self, f: &HostPath, t: &HostPath) -> Result<(), FsError> {
         self.inner.rename(f, t).await
+    }
+    async fn remove_dir_all(&self, p: &HostPath) -> Result<(), FsError> {
+        self.inner.remove_dir_all(p).await
+    }
+    async fn mode(&self, p: &HostPath) -> Result<Option<FileMode>, FsError> {
+        self.inner.mode(p).await
     }
     async fn sync_dir(&self, d: &HostPath) -> Result<(), FsError> {
         self.inner.sync_dir(d).await

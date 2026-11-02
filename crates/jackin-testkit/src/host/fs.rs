@@ -1,0 +1,311 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard};
+
+use async_trait::async_trait;
+use jackin_core::{DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath};
+
+use crate::sync::locked;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FsOp {
+    Read,
+    Stat,
+    List,
+    CreateDirAll,
+    WriteNew,
+    Rename,
+    RemoveFile,
+    RemoveDirAll,
+    Mode,
+    SyncDir,
+    Lock,
+}
+
+#[derive(Debug, Default)]
+pub struct MemFs {
+    state: Arc<Mutex<FsState>>,
+}
+
+#[derive(Debug, Default)]
+struct FsState {
+    files: BTreeMap<PathBuf, MemFile>,
+    dirs: BTreeSet<PathBuf>,
+    locked: BTreeSet<PathBuf>,
+    calls: HashMap<FsOp, u32>,
+    faults: Vec<FsFault>,
+}
+
+#[derive(Debug)]
+struct MemFile {
+    bytes: Vec<u8>,
+    mode: FileMode,
+}
+
+#[derive(Debug)]
+struct FsFault {
+    op: FsOp,
+    nth: u32,
+    error: Option<FsError>,
+}
+
+#[derive(Debug)]
+struct Held {
+    state: Arc<Mutex<FsState>>,
+    path: PathBuf,
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        locked(&self.state).locked.remove(&self.path);
+    }
+}
+
+fn io_error(path: &HostPath, kind: ErrorKind, message: &str) -> FsError {
+    FsError::Io {
+        path: path.clone(),
+        kind,
+        message: message.to_owned(),
+    }
+}
+
+impl FsState {
+    fn is_dir(&self, path: &Path) -> bool {
+        path == Path::new("/") || self.dirs.contains(path)
+    }
+
+    fn occupied(&self, path: &Path) -> bool {
+        self.files.contains_key(path) || self.is_dir(path)
+    }
+
+    fn parent_dir(&self, path: &HostPath) -> Result<(), FsError> {
+        match path.as_path().parent() {
+            Some(parent) if !self.is_dir(parent) => Err(io_error(
+                path,
+                ErrorKind::NotFound,
+                "the parent directory does not exist",
+            )),
+            _ => Ok(()),
+        }
+    }
+}
+
+impl MemFs {
+    pub fn new() -> MemFs {
+        MemFs::default()
+    }
+
+    pub fn fail_at(&self, op: FsOp, nth: u32, error: FsError) {
+        let mut state = locked(&self.state);
+        let due = state.calls.get(&op).copied().unwrap_or(0) + nth;
+        state.faults.push(FsFault {
+            op,
+            nth: due,
+            error: Some(error),
+        });
+    }
+
+    pub fn read_string(&self, path: &HostPath) -> Option<String> {
+        locked(&self.state)
+            .files
+            .get(path.as_path())
+            .map(|file| String::from_utf8_lossy(&file.bytes).into_owned())
+    }
+
+    fn enter(&self, op: FsOp) -> Result<MutexGuard<'_, FsState>, FsError> {
+        let mut state = locked(&self.state);
+        let count = state.calls.entry(op).or_insert(0);
+        *count += 1;
+        let nth = *count;
+        let fault = state
+            .faults
+            .iter_mut()
+            .find(|fault| fault.op == op && fault.nth == nth)
+            .and_then(|fault| fault.error.take());
+        match fault {
+            Some(error) => Err(error),
+            None => Ok(state),
+        }
+    }
+}
+
+#[async_trait]
+impl FileSystem for MemFs {
+    async fn read(&self, path: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
+        let state = self.enter(FsOp::Read)?;
+        if state.is_dir(path.as_path()) {
+            return Err(io_error(path, ErrorKind::IsADirectory, "is a directory"));
+        }
+        Ok(state
+            .files
+            .get(path.as_path())
+            .map(|file| file.bytes.clone()))
+    }
+
+    async fn stat(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        let state = self.enter(FsOp::Stat)?;
+        if state.files.contains_key(path.as_path()) {
+            Ok(Some(FileKind::File))
+        } else if state.is_dir(path.as_path()) {
+            Ok(Some(FileKind::Dir))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
+        let state = self.enter(FsOp::List)?;
+        if state.files.contains_key(dir.as_path()) {
+            return Err(io_error(dir, ErrorKind::NotADirectory, "not a directory"));
+        }
+        if !state.is_dir(dir.as_path()) {
+            return Err(io_error(dir, ErrorKind::NotFound, "no such directory"));
+        }
+        let child = |path: &PathBuf, kind: FileKind| {
+            (path.parent() == Some(dir.as_path())).then(|| DirEntry {
+                name: path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                kind,
+            })
+        };
+        let mut entries: Vec<DirEntry> = state
+            .files
+            .keys()
+            .filter_map(|path| child(path, FileKind::File))
+            .chain(
+                state
+                    .dirs
+                    .iter()
+                    .filter_map(|path| child(path, FileKind::Dir)),
+            )
+            .collect();
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(entries)
+    }
+
+    async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
+        let mut state = self.enter(FsOp::CreateDirAll)?;
+        let mut missing = Vec::new();
+        for ancestor in dir.as_path().ancestors() {
+            if state.files.contains_key(ancestor) {
+                return Err(io_error(dir, ErrorKind::NotADirectory, "not a directory"));
+            }
+            if !state.is_dir(ancestor) {
+                missing.push(ancestor.to_path_buf());
+            }
+        }
+        state.dirs.extend(missing);
+        Ok(())
+    }
+
+    async fn write_new(
+        &self,
+        path: &HostPath,
+        bytes: &[u8],
+        mode: FileMode,
+    ) -> Result<(), FsError> {
+        let mut state = self.enter(FsOp::WriteNew)?;
+        state.parent_dir(path)?;
+        if state.occupied(path.as_path()) {
+            return Err(FsError::AlreadyExists(path.clone()));
+        }
+        state.files.insert(
+            path.as_path().to_path_buf(),
+            MemFile {
+                bytes: bytes.to_vec(),
+                mode: FileMode(mode.0 & 0o7777),
+            },
+        );
+        Ok(())
+    }
+
+    async fn rename(&self, from: &HostPath, to: &HostPath) -> Result<(), FsError> {
+        let mut state = self.enter(FsOp::Rename)?;
+        if state.is_dir(from.as_path()) {
+            return Err(io_error(
+                from,
+                ErrorKind::Unsupported,
+                "MemFs does not rename directories",
+            ));
+        }
+        if !state.files.contains_key(from.as_path()) {
+            return Err(io_error(from, ErrorKind::NotFound, "no such file"));
+        }
+        state.parent_dir(to)?;
+        if state.is_dir(to.as_path()) {
+            return Err(io_error(to, ErrorKind::IsADirectory, "is a directory"));
+        }
+        if let Some(file) = state.files.remove(from.as_path()) {
+            state.files.insert(to.as_path().to_path_buf(), file);
+        }
+        Ok(())
+    }
+
+    async fn remove_file(&self, path: &HostPath) -> Result<(), FsError> {
+        let mut state = self.enter(FsOp::RemoveFile)?;
+        if state.is_dir(path.as_path()) {
+            return Err(io_error(path, ErrorKind::IsADirectory, "is a directory"));
+        }
+        state.files.remove(path.as_path());
+        Ok(())
+    }
+
+    async fn remove_dir_all(&self, path: &HostPath) -> Result<(), FsError> {
+        let mut state = self.enter(FsOp::RemoveDirAll)?;
+        if state.files.contains_key(path.as_path()) {
+            return Err(io_error(path, ErrorKind::NotADirectory, "not a directory"));
+        }
+        let root = path.as_path();
+        state.files.retain(|file, _| !file.starts_with(root));
+        state.dirs.retain(|dir| !dir.starts_with(root));
+        Ok(())
+    }
+
+    async fn mode(&self, path: &HostPath) -> Result<Option<FileMode>, FsError> {
+        let state = self.enter(FsOp::Mode)?;
+        if let Some(file) = state.files.get(path.as_path()) {
+            Ok(Some(file.mode))
+        } else if state.is_dir(path.as_path()) {
+            Ok(Some(FileMode(0o755)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError> {
+        let state = self.enter(FsOp::SyncDir)?;
+        if state.is_dir(dir.as_path()) {
+            Ok(())
+        } else {
+            Err(io_error(dir, ErrorKind::NotFound, "no such directory"))
+        }
+    }
+
+    async fn lock(&self, path: &HostPath) -> Result<FileLock, FsError> {
+        let mut state = self.enter(FsOp::Lock)?;
+        state.parent_dir(path)?;
+        if state.is_dir(path.as_path()) {
+            return Err(io_error(path, ErrorKind::IsADirectory, "is a directory"));
+        }
+        if !state.locked.insert(path.as_path().to_path_buf()) {
+            return Err(FsError::LockHeld(path.clone()));
+        }
+        state
+            .files
+            .entry(path.as_path().to_path_buf())
+            .or_insert_with(|| MemFile {
+                bytes: Vec::new(),
+                mode: FileMode(0o600),
+            });
+        Ok(FileLock::from_guard(Held {
+            state: Arc::clone(&self.state),
+            path: path.as_path().to_path_buf(),
+        }))
+    }
+}

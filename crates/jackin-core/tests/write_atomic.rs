@@ -73,6 +73,12 @@ impl FileSystem for FaultFs {
         self.fail(Fault::Rename, f)?;
         self.inner.rename(f, t).await
     }
+    async fn remove_dir_all(&self, p: &HostPath) -> Result<(), FsError> {
+        self.inner.remove_dir_all(p).await
+    }
+    async fn mode(&self, p: &HostPath) -> Result<Option<FileMode>, FsError> {
+        self.inner.mode(p).await
+    }
     async fn sync_dir(&self, d: &HostPath) -> Result<(), FsError> {
         self.fail(Fault::SyncDir, d)?;
         self.inner.sync_dir(d).await

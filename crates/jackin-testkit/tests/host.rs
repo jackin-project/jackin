@@ -1,0 +1,656 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::convert::Infallible;
+use std::error::Error;
+use std::io::ErrorKind;
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::time::Duration;
+
+use jackin_core::{
+    Clock, DirEntry, DockerSubcommand, EnvValue, FileKind, FileMode, FileSystem, FsError, HostPath,
+    OutputLine, OutputStream, Poll, PollError, PollPlan, ProcessError, ProcessRunner, ProcessSpec,
+    ProcessStatus, ProcessStdin, Program, Secret, SecretBytes, StdFileSystem, Timestamp,
+    poll_until, write_atomic,
+};
+use jackin_testkit::{
+    CapturedFile, FakeClock, FsOp, MemFs, ProcessEffect, ProcessReply, ScriptedProcessRunner,
+    ScriptedProgram, SeenEnv, SeenStdin, TestRunner,
+};
+use tokio_util::sync::CancellationToken;
+
+type TestResult = Result<(), Box<dyn Error>>;
+
+fn host(path: &str) -> Result<HostPath, Box<dyn Error>> {
+    Ok(HostPath::parse(Path::new(path))?)
+}
+
+fn child(root: &HostPath, name: &str) -> Result<HostPath, Box<dyn Error>> {
+    Ok(HostPath::parse(&root.as_path().join(name))?)
+}
+
+fn entry(name: &str, kind: FileKind) -> DirEntry {
+    DirEntry {
+        name: name.to_owned(),
+        kind,
+    }
+}
+
+async fn names(fs: &dyn FileSystem, dir: &HostPath) -> Result<Vec<String>, Box<dyn Error>> {
+    Ok(fs.list(dir).await?.into_iter().map(|e| e.name).collect())
+}
+
+async fn fs_contract(fs: &dyn FileSystem, root: &HostPath) -> TestResult {
+    fs.create_dir_all(root).await?;
+    let file = child(root, "a.txt")?;
+    assert_eq!(fs.read(&file).await?, None);
+    assert_eq!(fs.stat(&file).await?, None);
+    assert_eq!(fs.mode(&file).await?, None);
+    fs.write_new(&file, b"hello", FileMode(0o600)).await?;
+    assert_eq!(fs.read(&file).await?, Some(b"hello".to_vec()));
+    assert_eq!(fs.mode(&file).await?, Some(FileMode(0o600)));
+    assert!(matches!(
+        fs.write_new(&file, b"other", FileMode(0o600)).await,
+        Err(FsError::AlreadyExists(_))
+    ));
+    assert_eq!(fs.read(&file).await?, Some(b"hello".to_vec()));
+    let orphan = child(&child(root, "missing")?, "x")?;
+    assert!(matches!(
+        fs.write_new(&orphan, b"x", FileMode(0o600)).await,
+        Err(FsError::Io {
+            kind: ErrorKind::NotFound,
+            ..
+        })
+    ));
+    let sub = child(root, "sub/nested")?;
+    fs.create_dir_all(&sub).await?;
+    assert_eq!(fs.stat(&sub).await?, Some(FileKind::Dir));
+    let exec = child(root, "b.txt")?;
+    fs.write_new(&exec, b"new", FileMode(0o755)).await?;
+    assert_eq!(fs.mode(&exec).await?, Some(FileMode(0o755)));
+    assert_eq!(
+        fs.list(root).await?,
+        [
+            entry("a.txt", FileKind::File),
+            entry("b.txt", FileKind::File),
+            entry("sub", FileKind::Dir),
+        ]
+    );
+    fs.rename(&exec, &file).await?;
+    assert_eq!(fs.read(&file).await?, Some(b"new".to_vec()));
+    assert_eq!(fs.read(&exec).await?, None);
+    assert!(matches!(
+        fs.rename(&exec, &file).await,
+        Err(FsError::Io { .. })
+    ));
+    fs.remove_file(&exec).await?;
+    fs.remove_file(&file).await?;
+    assert_eq!(fs.stat(&file).await?, None);
+    let deep = child(&sub, "deep.txt")?;
+    fs.write_new(&deep, b"deep", FileMode(0o644)).await?;
+    fs.remove_dir_all(&child(root, "sub")?).await?;
+    assert_eq!(names(fs, root).await?, Vec::<String>::new());
+    fs.remove_dir_all(&child(root, "sub")?).await?;
+    let lock = child(root, "config.lock")?;
+    let held = fs.lock(&lock).await?;
+    assert!(matches!(fs.lock(&lock).await, Err(FsError::LockHeld(path)) if path == lock));
+    drop(held);
+    fs.lock(&lock).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn memfs_and_stdfilesystem_pass_the_same_filesystem_contract() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    fs_contract(&StdFileSystem::default(), &HostPath::parse(dir.path())?).await?;
+    let mem = MemFs::new();
+    fs_contract(&mem, &host("/mem/root")?).await?;
+    let note = host("/mem/note.txt")?;
+    mem.write_new(&note, "text".as_bytes(), FileMode(0o600))
+        .await?;
+    assert_eq!(mem.read_string(&note), Some("text".to_owned()));
+    assert_eq!(mem.read_string(&host("/mem/none")?), None);
+    Ok(())
+}
+
+const OPS: [FsOp; 11] = [
+    FsOp::Read,
+    FsOp::Stat,
+    FsOp::List,
+    FsOp::CreateDirAll,
+    FsOp::WriteNew,
+    FsOp::Rename,
+    FsOp::RemoveFile,
+    FsOp::RemoveDirAll,
+    FsOp::Mode,
+    FsOp::SyncDir,
+    FsOp::Lock,
+];
+
+async fn invoke(fs: &MemFs, op: FsOp, root: &HostPath, round: u32) -> Result<(), FsError> {
+    let file = HostPath::parse(&root.as_path().join("f")).map_err(|e| FsError::Io {
+        path: root.clone(),
+        kind: ErrorKind::InvalidInput,
+        message: e.to_string(),
+    })?;
+    let absent = HostPath::parse(&root.as_path().join("g")).map_err(|e| FsError::Io {
+        path: root.clone(),
+        kind: ErrorKind::InvalidInput,
+        message: e.to_string(),
+    })?;
+    match op {
+        FsOp::Read => fs.read(&file).await.map(drop),
+        FsOp::Stat => fs.stat(&file).await.map(drop),
+        FsOp::List => fs.list(root).await.map(drop),
+        FsOp::CreateDirAll => fs.create_dir_all(root).await,
+        FsOp::WriteNew => {
+            let fresh =
+                HostPath::parse(&root.as_path().join(format!("new{round}"))).map_err(|e| {
+                    FsError::Io {
+                        path: root.clone(),
+                        kind: ErrorKind::InvalidInput,
+                        message: e.to_string(),
+                    }
+                })?;
+            fs.write_new(&fresh, b"x", FileMode(0o600)).await
+        }
+        FsOp::Rename => fs.rename(&file, &file).await,
+        FsOp::RemoveFile => fs.remove_file(&absent).await,
+        FsOp::RemoveDirAll => fs.remove_dir_all(&absent).await,
+        FsOp::Mode => fs.mode(&file).await.map(drop),
+        FsOp::SyncDir => fs.sync_dir(root).await,
+        FsOp::Lock => fs.lock(&file).await.map(drop),
+    }
+}
+
+#[tokio::test]
+async fn fail_at_fails_the_nth_call_of_each_operation_once() -> TestResult {
+    let root = host("/mem")?;
+    for op in OPS {
+        let fs = MemFs::new();
+        fs.create_dir_all(&root).await?;
+        fs.write_new(&child(&root, "f")?, b"data", FileMode(0o600))
+            .await?;
+        fs.fail_at(
+            op,
+            2,
+            FsError::Io {
+                path: root.clone(),
+                kind: ErrorKind::StorageFull,
+                message: "injected".to_owned(),
+            },
+        );
+        invoke(&fs, op, &root, 1).await?;
+        for other in OPS.into_iter().filter(|other| *other != op) {
+            invoke(&fs, other, &root, 1).await?;
+        }
+        let failed = invoke(&fs, op, &root, 2).await;
+        assert!(
+            matches!(
+                failed,
+                Err(FsError::Io {
+                    kind: ErrorKind::StorageFull,
+                    ..
+                })
+            ),
+            "{op:?}: {failed:?}"
+        );
+        invoke(&fs, op, &root, 3).await?;
+    }
+    Ok(())
+}
+
+fn injected(root: &HostPath) -> FsError {
+    FsError::Io {
+        path: root.clone(),
+        kind: ErrorKind::StorageFull,
+        message: "injected".to_owned(),
+    }
+}
+
+async fn crash(faults: &[(FsOp, u32)], expect_new: bool, expect_temp: bool) -> TestResult {
+    let root = host("/mem")?;
+    let fs = MemFs::new();
+    fs.create_dir_all(&root).await?;
+    let target = child(&root, "f")?;
+    fs.write_new(&target, b"old", FileMode(0o600)).await?;
+    for (op, nth) in faults {
+        fs.fail_at(*op, *nth, injected(&root));
+    }
+    let result = write_atomic(&fs, &target, b"new", FileMode(0o600)).await;
+    assert!(result.is_err());
+    let expected: &[u8] = if expect_new { b"new" } else { b"old" };
+    assert_eq!(fs.read(&target).await?.as_deref(), Some(expected));
+    let listing = names(&fs, &root).await?;
+    assert_eq!(
+        listing.contains(&".f.tmp".to_owned()),
+        expect_temp,
+        "{listing:?}"
+    );
+    if expect_temp {
+        write_atomic(&fs, &target, b"new", FileMode(0o600)).await?;
+        assert_eq!(names(&fs, &root).await?, ["f"]);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn write_atomic_crash_at_every_step_keeps_the_old_file_or_the_complete_new_one() -> TestResult
+{
+    crash(&[(FsOp::WriteNew, 1)], false, false).await?;
+    crash(&[(FsOp::Rename, 1)], false, false).await?;
+    crash(&[(FsOp::Rename, 1), (FsOp::RemoveFile, 2)], false, true).await?;
+    crash(&[(FsOp::SyncDir, 1)], true, false).await
+}
+
+#[tokio::test]
+async fn fake_clock_sleep_advances_time_records_each_sleep_and_yields() -> TestResult {
+    let started = std::time::Instant::now();
+    let clock = FakeClock::new();
+    let start = clock.now();
+    clock.advance(Duration::from_secs(90));
+    assert_eq!(clock.now(), Timestamp(start.0 + 90));
+    let ran = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&ran);
+    tokio::spawn(async move { flag.store(true, Ordering::SeqCst) });
+    clock.sleep(Duration::from_secs(10)).await;
+    assert!(ran.load(Ordering::SeqCst));
+    assert_eq!(clock.now(), Timestamp(start.0 + 100));
+    assert_eq!(clock.slept(), [Duration::from_secs(10)]);
+
+    let plan = PollPlan {
+        interval: Duration::from_secs(1),
+        timeout: Duration::from_secs(10),
+    };
+    let never = FakeClock::new();
+    let pending = poll_until(&never, plan, &CancellationToken::new(), || async {
+        Ok::<_, Infallible>(Poll::<()>::Pending)
+    })
+    .await;
+    assert!(matches!(
+        pending,
+        Err(PollError::Timeout { after }) if after == Duration::from_secs(10)
+    ));
+    assert_eq!(
+        never.slept().iter().sum::<Duration>(),
+        Duration::from_secs(10)
+    );
+
+    let fourth = FakeClock::new();
+    let calls = AtomicU32::new(0);
+    let ready = poll_until(&fourth, plan, &CancellationToken::new(), || {
+        let count = calls.fetch_add(1, Ordering::SeqCst) + 1;
+        async move {
+            Ok::<_, Infallible>(if count == 4 {
+                Poll::Ready("done")
+            } else {
+                Poll::Pending
+            })
+        }
+    })
+    .await;
+    assert!(matches!(ready, Ok("done")));
+    assert_eq!(fourth.slept(), [Duration::from_secs(1); 3]);
+    assert!(started.elapsed() < Duration::from_secs(5));
+    Ok(())
+}
+
+fn spec(program: Program, args: &[&str]) -> ProcessSpec {
+    ProcessSpec {
+        program,
+        args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+        cwd: None,
+        env: Vec::new(),
+        env_remove_prefixes: Vec::new(),
+        stdin: ProcessStdin::Null,
+        timeout: Duration::from_secs(5),
+    }
+}
+
+async fn stdout(runner: &dyn ProcessRunner, spec: &ProcessSpec) -> Result<String, ProcessError> {
+    let output = runner.run(spec, None, &CancellationToken::new()).await?;
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+#[tokio::test]
+async fn scripted_runner_answers_in_order_records_every_spec_and_returns_each_reply_form()
+-> TestResult {
+    let runner = ScriptedProcessRunner::new();
+    runner.expect(
+        ScriptedProgram::Openshell,
+        &["gateway", "list"],
+        ProcessReply::exited(0, b"A", b""),
+    );
+    runner.expect(
+        ScriptedProgram::Openshell,
+        &["gateway", "list"],
+        ProcessReply::exited(0, b"B", b""),
+    );
+    runner.expect(
+        ScriptedProgram::Op,
+        &["read"],
+        ProcessReply::exited(0, b"op", b""),
+    );
+    runner.expect(
+        ScriptedProgram::Ssh,
+        &[],
+        ProcessReply::exited(0, b"ssh", b""),
+    );
+    runner.expect_docker(
+        DockerSubcommand::ImageInspect,
+        &["--format"],
+        ProcessReply::exited(0, b"inspect", b""),
+    );
+    runner.expect(
+        ScriptedProgram::Openshell,
+        &["timeout"],
+        ProcessReply::timeout(),
+    );
+    runner.expect(
+        ScriptedProgram::Openshell,
+        &["cancel"],
+        ProcessReply::cancelled(),
+    );
+    runner.expect(
+        ScriptedProgram::Openshell,
+        &["spawn"],
+        ProcessReply::spawn("no binary"),
+    );
+    let call = |program, args: &[&str]| spec(program, args);
+    let mut answers = Vec::new();
+    for _ in 0..3 {
+        answers.push(
+            stdout(
+                &runner,
+                &call(Program::Openshell, &["gateway", "list", "-o", "json"]),
+            )
+            .await?,
+        );
+    }
+    assert_eq!(answers, ["A", "B", "B"]);
+    assert_eq!(
+        stdout(&runner, &call(Program::Op, &["read", "x"])).await?,
+        "op"
+    );
+    assert_eq!(
+        stdout(&runner, &call(Program::Ssh, &["host"])).await?,
+        "ssh"
+    );
+    let inspect = call(
+        Program::Docker(DockerSubcommand::ImageInspect),
+        &["--format", "x"],
+    );
+    assert_eq!(stdout(&runner, &inspect).await?, "inspect");
+    let push = call(Program::Docker(DockerSubcommand::Push), &["--format", "x"]);
+    assert!(matches!(
+        stdout(&runner, &push).await,
+        Err(ProcessError::Spawn { .. })
+    ));
+    assert!(matches!(
+        stdout(&runner, &call(Program::Openshell, &["timeout"])).await,
+        Err(ProcessError::Timeout { program: Program::Openshell, after }) if after == Duration::from_secs(5)
+    ));
+    assert!(matches!(
+        stdout(&runner, &call(Program::Openshell, &["cancel"])).await,
+        Err(ProcessError::Cancelled {
+            program: Program::Openshell
+        })
+    ));
+    assert!(matches!(
+        stdout(&runner, &call(Program::Openshell, &["spawn"])).await,
+        Err(ProcessError::Spawn { program: Program::Openshell, ref message }) if message == "no binary"
+    ));
+    let seen = runner.seen();
+    assert_eq!(seen.len(), 10);
+    assert_eq!(seen[0].program, Program::Openshell);
+    assert_eq!(seen[0].args, ["gateway", "list", "-o", "json"]);
+    assert_eq!(seen[0].cwd, None);
+    assert_eq!(seen[0].stdin, SeenStdin::Null);
+    assert_eq!(seen[3].args, ["read", "x"]);
+    assert_eq!(
+        seen[5].program,
+        Program::Docker(DockerSubcommand::ImageInspect)
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn scripted_runner_rejects_git_and_unscripted_programs_naming_them() -> TestResult {
+    let scripted = ScriptedProcessRunner::new();
+    for program in [
+        ScriptedProgram::Ssh,
+        ScriptedProgram::Op,
+        ScriptedProgram::Docker,
+        ScriptedProgram::Openshell,
+    ] {
+        scripted.expect(program, &[], ProcessReply::exited(0, b"", b""));
+    }
+    let git = scripted
+        .run(
+            &spec(Program::Git, &["status"]),
+            None,
+            &CancellationToken::new(),
+        )
+        .await;
+    assert!(matches!(
+        git,
+        Err(ProcessError::Spawn { program: Program::Git, ref message }) if message.contains("git")
+    ));
+    assert_eq!(scripted.seen().len(), 1);
+    assert_eq!(scripted.seen()[0].program, Program::Git);
+
+    let empty = ScriptedProcessRunner::new();
+    for program in [
+        Program::Docker(DockerSubcommand::Push),
+        Program::Ssh,
+        Program::Op,
+        Program::Openshell,
+    ] {
+        let result = empty
+            .run(
+                &spec(program, &["unknown"]),
+                None,
+                &CancellationToken::new(),
+            )
+            .await;
+        assert!(
+            matches!(&result, Err(ProcessError::Spawn { program: p, message }) if *p == program && message.contains(program.binary())),
+            "{result:?}"
+        );
+    }
+    empty.expect(
+        ScriptedProgram::Openshell,
+        &["known"],
+        ProcessReply::exited(0, b"", b""),
+    );
+    let mismatch = empty
+        .run(
+            &spec(Program::Openshell, &["other"]),
+            None,
+            &CancellationToken::new(),
+        )
+        .await;
+    assert!(matches!(
+        mismatch,
+        Err(ProcessError::Spawn {
+            program: Program::Openshell,
+            ..
+        })
+    ));
+    assert_eq!(empty.seen().len(), 5);
+    let variants = |program: ScriptedProgram| match program {
+        ScriptedProgram::Docker => 0,
+        ScriptedProgram::Openshell => 1,
+        ScriptedProgram::Ssh => 2,
+        ScriptedProgram::Op => 3,
+    };
+    assert_eq!(variants(ScriptedProgram::Op), 3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_runner_runs_git_for_real_and_scripts_the_other_four() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let runner = TestRunner::new();
+    let mut init = spec(Program::Git, &["init", "-q"]);
+    init.cwd = Some(HostPath::parse(dir.path())?);
+    let cancel = CancellationToken::new();
+    assert_eq!(
+        runner.run(&init, None, &cancel).await?.status,
+        ProcessStatus::Exited(0)
+    );
+    let mut parse = spec(Program::Git, &["rev-parse", "--git-dir"]);
+    parse.cwd = init.cwd.clone();
+    let output = runner.run(&parse, None, &cancel).await?;
+    assert_eq!(output.status, ProcessStatus::Exited(0));
+    assert_eq!(output.stdout, b".git\n");
+    assert!(runner.scripted().seen().is_empty());
+    runner.scripted().expect(
+        ScriptedProgram::Openshell,
+        &[],
+        ProcessReply::exited(0, b"scripted", b""),
+    );
+    assert_eq!(
+        runner
+            .run(&spec(Program::Openshell, &["x"]), None, &cancel)
+            .await?
+            .stdout,
+        b"scripted"
+    );
+    let unscripted = runner
+        .run(&spec(Program::Op, &["read"]), None, &cancel)
+        .await;
+    assert!(matches!(
+        unscripted,
+        Err(ProcessError::Spawn { program: Program::Op, ref message }) if message.contains("op")
+    ));
+    Ok(())
+}
+
+fn lines(items: &[(OutputStream, &str)]) -> Vec<(OutputStream, String)> {
+    items.iter().map(|(s, t)| (*s, (*t).to_owned())).collect()
+}
+
+#[tokio::test]
+async fn scripted_runner_streams_lines_applies_effects_and_holds_until_cancel() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let context = dir.path().join("ctx");
+    tokio::fs::create_dir_all(context.join("nested")).await?;
+    tokio::fs::write(context.join("a.txt"), b"alpha").await?;
+    tokio::fs::write(context.join("nested/run.sh"), b"#!/bin/sh\n").await?;
+    let mut perms = tokio::fs::metadata(context.join("nested/run.sh"))
+        .await?
+        .permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+    tokio::fs::set_permissions(context.join("nested/run.sh"), perms).await?;
+    let iidfile = dir.path().join("iid");
+
+    let runner = ScriptedProcessRunner::new();
+    let streamed = lines(&[
+        (OutputStream::Stdout, "one"),
+        (OutputStream::Stdout, "two"),
+        (OutputStream::Stderr, "three"),
+        (OutputStream::Stdout, "four"),
+    ]);
+    runner.expect(
+        ScriptedProgram::Docker,
+        &["build"],
+        ProcessReply::lines(ProcessStatus::Exited(0), streamed)
+            .with_effect(ProcessEffect::WriteArgFile {
+                prefix: "--iidfile=".to_owned(),
+                bytes: b"sha256:abc\n".to_vec(),
+            })
+            .with_effect(ProcessEffect::CaptureContext),
+    );
+    let mut build = spec(
+        Program::Docker(DockerSubcommand::BuildxBuild),
+        &[
+            "build",
+            &format!("--iidfile={}", iidfile.display()),
+            &context.display().to_string(),
+        ],
+    );
+    build.env = vec![
+        ("PLAIN".to_owned(), EnvValue::Plain("v".to_owned())),
+        (
+            "TOKEN".to_owned(),
+            EnvValue::Secret(Secret::new("s3cret".to_owned())),
+        ),
+    ];
+    build.env_remove_prefixes = vec!["OPENSHELL_".to_owned()];
+    build.stdin = ProcessStdin::Bytes(SecretBytes::new(b"FROM scratch\n".to_vec()));
+    let (sink, mut received) = tokio::sync::mpsc::channel::<OutputLine>(16);
+    let output = runner
+        .run(&build, Some(&sink), &CancellationToken::new())
+        .await?;
+    let mut order = Vec::new();
+    while let Ok(line) = received.try_recv() {
+        order.push((line.stream, line.text));
+    }
+    assert_eq!(
+        order,
+        lines(&[
+            (OutputStream::Stdout, "one"),
+            (OutputStream::Stdout, "two"),
+            (OutputStream::Stderr, "three"),
+            (OutputStream::Stdout, "four")
+        ])
+    );
+    assert_eq!(output.stdout, b"one\ntwo\nfour\n");
+    assert_eq!(output.stderr, b"three\n");
+    assert_eq!(tokio::fs::read(&iidfile).await?, b"sha256:abc\n");
+    let captured = runner.captured_contexts();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(
+        captured[0].files["a.txt"],
+        CapturedFile {
+            bytes: b"alpha".to_vec(),
+            mode: captured[0].files["a.txt"].mode
+        }
+    );
+    assert_eq!(captured[0].files["nested/run.sh"].mode, FileMode(0o755));
+    assert_eq!(captured[0].files.len(), 2);
+    let seen = runner.seen();
+    assert_eq!(seen[0].stdin, SeenStdin::Bytes(b"FROM scratch\n".to_vec()));
+    assert_eq!(seen[0].timeout, Duration::from_secs(5));
+    assert_eq!(seen[0].env_remove_prefixes, ["OPENSHELL_"]);
+    assert_eq!(
+        seen[0].env,
+        [
+            ("PLAIN".to_owned(), SeenEnv::Plain("v".to_owned())),
+            ("TOKEN".to_owned(), SeenEnv::Secret)
+        ]
+    );
+    assert!(!format!("{seen:?}").contains("s3cret"));
+
+    runner.expect_fn(ScriptedProgram::Op, &["read"], |call| {
+        ProcessReply::exited(0, call.args.join("+").as_bytes(), b"")
+    });
+    assert_eq!(
+        stdout(&runner, &spec(Program::Op, &["read", "ref"])).await?,
+        "read+ref"
+    );
+
+    runner.expect(
+        ScriptedProgram::Ssh,
+        &[],
+        ProcessReply::until_cancelled(lines(&[(OutputStream::Stdout, "started")])),
+    );
+    let cancel = CancellationToken::new();
+    let (sink, mut received) = tokio::sync::mpsc::channel::<OutputLine>(4);
+    let held = spec(Program::Ssh, &["host"]);
+    let mut pending = Box::pin(runner.run(&held, Some(&sink), &cancel));
+    let early = tokio::time::timeout(Duration::from_millis(50), &mut pending).await;
+    assert!(early.is_err(), "returned before the token fired");
+    assert_eq!(received.try_recv()?.text, "started");
+    cancel.cancel();
+    assert!(matches!(
+        pending.await,
+        Err(ProcessError::Cancelled {
+            program: Program::Ssh
+        })
+    ));
+    Ok(())
+}

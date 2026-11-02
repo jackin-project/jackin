@@ -1,0 +1,106 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use jackin_core::{EnvName, FileMode, SecretBytes};
+use jackin_openshell::{Gateway, ProgramStdin, SandboxFile};
+use jackin_testkit::ProgramScript;
+
+use super::support::{TestResult, fake, guard, path, program_run, read, ready, run, sh, write};
+
+#[tokio::test]
+async fn run_program_maps_sandbox_paths_records_env_and_returns_127_for_unknown_programs()
+-> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let handle = ready(&fake, sh("sleep 3600")?).await?;
+        let name = handle.name();
+        let input = SandboxFile {
+            path: path("/sandbox/in.txt")?,
+            mode: FileMode(0o600),
+            content: SecretBytes::new(b"hi".to_vec()),
+        };
+        fake.write_file(&name, &input).await?;
+        assert_eq!(
+            handle.file_mode(&path("/sandbox/in.txt")?),
+            Some(FileMode(0o600))
+        );
+
+        let script = "cat \"$1\"; printf %s \"${HOME-unset}\" >&2; echo \"$FOO\" >&2; exit 4";
+        let mut shell = program_run(&name, "/bin/sh", &["-c", script, "sh", "/sandbox/in.txt"])?;
+        shell.env.insert(EnvName::parse("FOO")?, "bar".to_owned());
+        let outcome = run(&fake, &shell).await?;
+        assert_eq!(outcome.stdout, b"hi");
+        assert_eq!(outcome.stderr, b"unsetbar\n");
+        assert_eq!(outcome.exit_code, 4);
+        let records = handle.runs(&path("/bin/sh")?);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].exit_code, 4);
+        assert_eq!(
+            records[0].env,
+            [(EnvName::parse("FOO")?, "bar".to_owned())].into()
+        );
+
+        let unknown = run(&fake, &program_run(&name, "/usr/bin/nothing", &[])?).await?;
+        assert_eq!(unknown.exit_code, 127);
+
+        let hook = path("/usr/local/lib/jackin/hooks/setup")?;
+        let failing = path("/usr/local/lib/jackin/hooks/preflight")?;
+        for (program, exit_code) in [(&hook, 0), (&failing, 1)] {
+            fake.script_program(
+                program,
+                ProgramScript {
+                    exit_code,
+                    stdout: b"scripted".to_vec(),
+                    stderr: Vec::new(),
+                },
+            );
+        }
+        write(&fake, &name, "/sandbox/.jackin/seed", "s").await?;
+        let mut ok = program_run(&name, hook.as_str(), &[])?;
+        ok.env
+            .insert(EnvName::parse("HOOK_VALUE")?, "from-env-file".to_owned());
+        ok.touch_on_success = Some(path("/sandbox/.jackin/ok")?);
+        ok.stdin = ProgramStdin::Closed;
+        let outcome = run(&fake, &ok).await?;
+        assert_eq!(
+            (outcome.exit_code, outcome.stdout),
+            (0, b"scripted".to_vec())
+        );
+        assert_eq!(handle.runs(&hook)[0].env.len(), 1);
+        assert!(read(&fake, &name, "/sandbox/.jackin/ok").await?.is_some());
+        let mut bad = program_run(&name, failing.as_str(), &[])?;
+        bad.touch_on_success = Some(path("/sandbox/.jackin/bad")?);
+        assert_eq!(run(&fake, &bad).await?.exit_code, 1);
+        assert_eq!(read(&fake, &name, "/sandbox/.jackin/bad").await?, None);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn sha256sum_is_computed_in_process_over_the_sandbox_file() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let handle = ready(&fake, sh("sleep 3600")?).await?;
+        let name = handle.name();
+        write(&fake, &name, "/sandbox/abc", "abc").await?;
+        let found = run(
+            &fake,
+            &program_run(&name, "/usr/bin/sha256sum", &["/sandbox/abc"])?,
+        )
+        .await?;
+        assert_eq!(found.exit_code, 0);
+        assert!(
+            String::from_utf8_lossy(&found.stdout)
+                .starts_with("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        );
+        let missing = run(
+            &fake,
+            &program_run(&name, "/usr/bin/sha256sum", &["/sandbox/none"])?,
+        )
+        .await?;
+        assert_ne!(missing.exit_code, 0);
+        Ok(())
+    })
+    .await
+}

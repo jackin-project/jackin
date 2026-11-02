@@ -1,0 +1,216 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use jackin_core::{
+    ImageTag, Phase, ProfileId, ProviderName, SandboxLabels, SandboxName, SandboxPath, TerminalText,
+};
+use jackin_openshell::{
+    GatewayError, GatewayOp, ProviderProfile, Provisioning, SandboxCreate, SandboxView,
+};
+use tempfile::TempDir;
+use tokio_util::sync::CancellationToken;
+
+use super::main_process::{Main, MainPlan, PlanEnd};
+use super::{ProgramScript, RunRecord};
+use crate::supervisor::{Supervisor, SupervisorModel};
+use crate::sync::locked;
+
+pub(super) const SANDBOX_ROOT: &str = "/sandbox";
+
+#[derive(Debug)]
+pub(super) struct Armed {
+    op: GatewayOp,
+    skip: u32,
+    error: GatewayError,
+}
+
+impl Armed {
+    pub(super) fn new(op: GatewayOp, skip: u32, error: GatewayError) -> Armed {
+        Armed { op, skip, error }
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct Registry {
+    pub(super) sandboxes: BTreeMap<SandboxName, Arc<Cell>>,
+    pub(super) providers: BTreeMap<ProviderName, ProfileId>,
+    pub(super) profiles: BTreeMap<ProfileId, ProviderProfile>,
+    pub(super) images: BTreeSet<ImageTag>,
+    pub(super) faults: Vec<Armed>,
+    pub(super) scripts: BTreeMap<SandboxPath, ProgramScript>,
+    pub(super) stalls: Vec<SandboxPath>,
+    pub(super) corrupt_download: bool,
+    pub(super) provision_polls: u32,
+    pub(super) failing_creates: u32,
+    pub(super) supervisor: SupervisorModel,
+}
+
+impl Registry {
+    pub(super) fn new() -> Registry {
+        Registry {
+            sandboxes: BTreeMap::new(),
+            providers: BTreeMap::new(),
+            profiles: BTreeMap::new(),
+            images: BTreeSet::new(),
+            faults: Vec::new(),
+            scripts: BTreeMap::new(),
+            stalls: Vec::new(),
+            corrupt_download: false,
+            provision_polls: 0,
+            failing_creates: 0,
+            supervisor: SupervisorModel::Cooperative,
+        }
+    }
+
+    pub(super) fn strike(&mut self, op: GatewayOp) -> Result<(), GatewayError> {
+        let Some(index) = self.faults.iter().position(|armed| armed.op == op) else {
+            return Ok(());
+        };
+        if self.faults[index].skip > 0 {
+            self.faults[index].skip -= 1;
+            return Ok(());
+        }
+        Err(self.faults.remove(index).error)
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct Cell {
+    pub(super) name: SandboxName,
+    pub(super) dir: TempDir,
+    pub(super) closed: CancellationToken,
+    pub(super) inner: Mutex<Sandbox>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Settling {
+    Done,
+    Provisioning { polls_left: u32 },
+    Restarting,
+}
+
+#[derive(Debug)]
+pub(super) struct Sandbox {
+    pub(super) phase: Phase,
+    pub(super) provisioning: Provisioning,
+    pub(super) spec: SandboxCreate,
+    pub(super) settling: Settling,
+    pub(super) failure: Option<String>,
+    pub(super) plan: MainPlan,
+    pub(super) main: Main,
+    pub(super) supervisor: Option<Supervisor>,
+    pub(super) runs: Vec<(SandboxPath, RunRecord)>,
+}
+
+impl Cell {
+    pub(super) fn root(&self) -> PathBuf {
+        self.dir.path().join("sandbox")
+    }
+
+    pub(super) fn state(&self) -> std::sync::MutexGuard<'_, Sandbox> {
+        locked(&self.inner)
+    }
+}
+
+impl Sandbox {
+    pub(super) fn new(
+        spec: SandboxCreate,
+        plan: MainPlan,
+        polls: u32,
+        failure: Option<String>,
+        model: SupervisorModel,
+    ) -> Sandbox {
+        let supervisor = (plan.end == PlanEnd::Supervised).then(|| Supervisor::new(model));
+        Sandbox {
+            phase: Phase::Provisioning,
+            provisioning: Provisioning::Normal,
+            spec,
+            settling: Settling::Provisioning { polls_left: polls },
+            failure,
+            main: Main::new(&plan),
+            plan,
+            supervisor,
+            runs: Vec::new(),
+        }
+    }
+
+    pub(super) fn labels(&self) -> &SandboxLabels {
+        self.spec.labels()
+    }
+
+    pub(super) fn view(&self) -> SandboxView {
+        SandboxView {
+            name: self.spec.name().clone(),
+            phase: self.phase,
+            labels: self.labels().to_labels(),
+            provisioning: self.provisioning.clone(),
+        }
+    }
+
+    pub(super) fn observe(&mut self, root: &Path) {
+        match self.settling {
+            Settling::Done => {}
+            Settling::Provisioning { polls_left } if polls_left > 0 => {
+                self.settling = Settling::Provisioning {
+                    polls_left: polls_left - 1,
+                };
+            }
+            Settling::Provisioning { .. } => self.settle_new(root),
+            Settling::Restarting => self.settle_restart(root),
+        }
+    }
+
+    fn settle_new(&mut self, root: &Path) {
+        self.settling = Settling::Done;
+        if let Some(message) = &self.failure {
+            self.phase = Phase::Error { exit_code: None };
+            self.provisioning = Provisioning::Failed {
+                message: TerminalText::sanitize(message.as_bytes()),
+            };
+            return;
+        }
+        match self.plan.end {
+            PlanEnd::Exits(code) => self.phase = ended_phase(code),
+            PlanEnd::Sleeps | PlanEnd::Cat | PlanEnd::Supervised => {
+                self.phase = Phase::Ready;
+                self.restart_supervisor(root);
+            }
+        }
+    }
+
+    fn settle_restart(&mut self, root: &Path) {
+        self.settling = Settling::Done;
+        self.phase = Phase::Ready;
+        self.main = Main::new(&self.plan);
+        self.restart_supervisor(root);
+    }
+
+    fn restart_supervisor(&mut self, root: &Path) {
+        if let Some(supervisor) = &mut self.supervisor {
+            supervisor.restart(root);
+        }
+    }
+
+    pub(super) fn main_exited(&mut self, code: i32) {
+        self.phase = ended_phase(code);
+        self.settling = Settling::Done;
+        self.main.exit(Some(code));
+        if let Some(supervisor) = &mut self.supervisor {
+            supervisor.stop();
+        }
+    }
+}
+
+pub(super) fn ended_phase(code: i32) -> Phase {
+    if code == 0 {
+        Phase::Completed { exit_code: 0 }
+    } else {
+        Phase::Error {
+            exit_code: Some(code),
+        }
+    }
+}

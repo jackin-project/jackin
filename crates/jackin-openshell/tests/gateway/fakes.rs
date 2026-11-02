@@ -98,6 +98,15 @@ impl FileSystem for RegistryFs {
         Ok(())
     }
 
+    async fn remove_dir_all(&self, path: &HostPath) -> Result<(), FsError> {
+        self.record(format!("remove_dir_all {path:?}"));
+        Ok(())
+    }
+
+    async fn mode(&self, _path: &HostPath) -> Result<Option<FileMode>, FsError> {
+        Ok(None)
+    }
+
     async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError> {
         self.record(format!("sync_dir {dir:?}"));
         Ok(())

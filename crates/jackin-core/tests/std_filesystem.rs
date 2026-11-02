@@ -81,3 +81,43 @@ async fn file_lock_is_exclusive_until_dropped() -> TestResult {
     fs.lock(&path).await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn std_filesystem_removes_trees_and_reports_modes() -> TestResult {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let outside = at(&dir, "outside")?;
+    fs.create_dir_all(&outside).await?;
+    let survivor = at(&dir, "outside/keep.txt")?;
+    fs.write_new(&survivor, b"keep", FileMode(0o644)).await?;
+
+    let tree = at(&dir, "tree/a/b")?;
+    fs.create_dir_all(&tree).await?;
+    fs.write_new(&at(&dir, "tree/a/b/deep.txt")?, b"deep", FileMode(0o644))
+        .await?;
+    symlink(outside.as_path(), dir.path().join("tree/a/link"))?;
+    fs.remove_dir_all(&at(&dir, "tree")?).await?;
+    assert_eq!(fs.stat(&at(&dir, "tree")?).await?, None);
+    assert_eq!(fs.read(&survivor).await?, Some(b"keep".to_vec()));
+
+    let link = at(&dir, "root-link")?;
+    symlink(outside.as_path(), link.as_path())?;
+    fs.remove_dir_all(&link).await?;
+    assert_eq!(fs.stat(&link).await?, None);
+    assert_eq!(fs.read(&survivor).await?, Some(b"keep".to_vec()));
+    fs.remove_dir_all(&at(&dir, "never-existed")?).await?;
+
+    for (name, mode) in [("exec", 0o755), ("secret", 0o600), ("setuid", 0o4755)] {
+        let file = at(&dir, name)?;
+        fs.write_new(&file, b"x", FileMode(0o600)).await?;
+        std::fs::set_permissions(file.as_path(), std::fs::Permissions::from_mode(mode))?;
+        assert_eq!(fs.mode(&file).await?, Some(FileMode(mode)), "{name}");
+    }
+    assert_eq!(fs.mode(&at(&dir, "missing")?).await?, None);
+    let dangling = at(&dir, "dangling")?;
+    symlink(dir.path().join("missing"), dangling.as_path())?;
+    assert!(fs.mode(&dangling).await?.is_some());
+    Ok(())
+}

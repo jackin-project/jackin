@@ -11,10 +11,18 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+async-trait = { workspace = true }
 jackin-core = { workspace = true }
 jackin-image = { workspace = true }
 jackin-openshell = { workspace = true }
 jackin-session = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt", "sync", "time"] }
+tokio-util = { workspace = true }
+
+[dev-dependencies]
+jackin-openshell = { workspace = true, features = ["contract"] }
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 
 [lints]
 workspace = true
