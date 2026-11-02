@@ -692,14 +692,14 @@ async fn a_source_tag_that_moved_during_a_dependent_build_fails_that_stage_and_s
             effect: BuildEffect::Retag(retag(&tags.construct, Some(other.clone()))),
         });
         let (result, events) = ensure(&engine, &request).await?;
-        let image = result?;
         assert_eq!(
-            (image.tag, image.id, image.source),
+            moved(result)?,
             (
-                tags.derived.clone(),
-                tags.derived_id.clone(),
-                ImageSource::Built
-            )
+                tags.construct.clone(),
+                tags.construct_id.clone(),
+                Some(other.clone())
+            ),
+            "derived build construct fence"
         );
         assert_eq!(
             engine.images().get(&tags.construct),
@@ -707,7 +707,11 @@ async fn a_source_tag_that_moved_during_a_dependent_build_fails_that_stage_and_s
             "the retag ran"
         );
         assert!(
-            events.contains(&ImageEvent::StageFinished(BuildStage::Derived)),
+            events.contains(&ImageEvent::StageStarted(BuildStage::Derived)),
+            "{events:?}"
+        );
+        assert!(
+            !events.contains(&ImageEvent::StageFinished(BuildStage::Derived)),
             "{events:?}"
         );
         Ok(())

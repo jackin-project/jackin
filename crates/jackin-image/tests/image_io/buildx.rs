@@ -24,7 +24,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::support::{
     CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE, IidFile, JACKIN_START, Outcome, ROLE_DOCKERFILE,
-    Script, Stack, TestResult, assert_local_only, guarded, tag_id,
+    SCAN, Script, Stack, TestResult, assert_local_only, guarded, tag_id,
 };
 
 fn fixed_id() -> Result<ImageId, Box<dyn Error>> {
@@ -191,6 +191,7 @@ async fn buildx_context_holds_exactly_the_planned_files_with_normalized_modes() 
         let expected: BTreeSet<&str> = [
             "Dockerfile",
             "jackin-start",
+            "scan",
             "hooks/setup",
             "hooks/preflight",
         ]
@@ -198,6 +199,7 @@ async fn buildx_context_holds_exactly_the_planned_files_with_normalized_modes() 
         assert_eq!(names, expected, "derived context file set");
         assert_eq!(derived["Dockerfile"].bytes, DERIVED_DOCKERFILE);
         assert_eq!(derived["jackin-start"].bytes, JACKIN_START);
+        assert_eq!(derived["scan"].bytes, SCAN);
         assert_eq!(derived["hooks/setup"].bytes, b"#!/bin/sh\necho setup\n");
         assert!(
             derived["hooks/preflight"].bytes.is_empty(),

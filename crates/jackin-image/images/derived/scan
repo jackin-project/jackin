@@ -1,0 +1,151 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+set -u
+
+tools="sudo su-exec gosu doas iptables ip6tables nft ufw docker podman nerdctl containerd runc"
+
+usage() {
+    echo "usage: scan --owner UID:GID [--same-as PATH=EXPECTED]... ROOT PROTECTED..." >&2
+    exit 64
+}
+
+show() {
+    printf '%s' "$1" | LC_ALL=C tr -c '[:print:]' '?'
+}
+
+report() {
+    failed=1
+    printf '%s\n' "$1" >&2
+}
+
+list() {
+    [ -n "$2" ] || return 0
+    failed=1
+    while IFS= read -r line; do
+        printf '%s%s\n' "$1" "$(show "${line#"$root"}")" >&2
+    done <<EOF
+$2
+EOF
+}
+
+good_dir() {
+    [ -n "$(find "$1" -maxdepth 0 -type d -uid "$uid" -gid "$gid" ! \( -perm -020 -o -perm -002 \) -print 2>/dev/null)" ]
+}
+
+good_file() {
+    [ -n "$(find "$1" -maxdepth 0 -type f -uid "$uid" -gid "$gid" ! \( -perm -020 -o -perm -002 \) -perm -100 -print 2>/dev/null)" ]
+}
+
+reason() {
+    if [ -L "$1" ]; then
+        echo "symlink"
+    elif [ ! -e "$1" ]; then
+        echo "missing"
+    elif [ -z "$(find "$1" -maxdepth 0 -type "$2" -print 2>/dev/null)" ]; then
+        echo "wrong type"
+    elif [ -z "$(find "$1" -maxdepth 0 -uid "$uid" -gid "$gid" -print 2>/dev/null)" ]; then
+        echo "not owned by $uid:$gid"
+    elif [ -n "$(find "$1" -maxdepth 0 \( -perm -020 -o -perm -002 \) -print 2>/dev/null)" ]; then
+        echo "writable by group or others"
+    else
+        echo "not executable"
+    fi
+}
+
+ancestors() {
+    rest=${1#/}
+    acc=
+    while :; do
+        case $rest in
+            */*) ;;
+            *) break ;;
+        esac
+        acc=$acc/${rest%%/*}
+        rest=${rest#*/}
+        printf '%s\n' "$acc"
+    done
+}
+
+check_path() {
+    case " $checked " in
+        *" $1 "*) return 0 ;;
+    esac
+    checked="$checked $1"
+    if [ "$2" = d ]; then
+        good_dir "$root$1" && return 0
+    else
+        good_file "$root$1" && return 0
+    fi
+    report "protected path is not a real root-owned path: $(show "$1") ($(reason "$root$1" "$2"))"
+}
+
+owner=
+pairs=
+while [ "$#" -gt 0 ]; do
+    case $1 in
+        --owner)
+            [ "$#" -ge 2 ] || usage
+            owner=$2
+            shift 2
+            ;;
+        --same-as)
+            [ "$#" -ge 2 ] || usage
+            pairs="$pairs $2"
+            shift 2
+            ;;
+        -*) usage ;;
+        *) break ;;
+    esac
+done
+case $owner in
+    '' | *[!0-9:]* | :* | *: | *:*:*) usage ;;
+    *:*) ;;
+    *) usage ;;
+esac
+[ "$#" -ge 2 ] || usage
+uid=${owner%%:*}
+gid=${owner#*:}
+root=${1%/}
+shift
+protected=$*
+[ -d "$root" ] || usage
+
+failed=0
+checked=
+
+found=$(find "$root" -type f \( -perm -4000 -o -perm -2000 \)) || report "find failed while looking for setuid or setgid files"
+list "setuid or setgid file in role image: " "$found"
+
+if command -v getcap >/dev/null 2>&1; then
+    caps=$(getcap -r "$root") || report "getcap failed in role image"
+    list "file capability in role image: " "$caps"
+else
+    report "getcap is missing"
+fi
+
+set --
+for tool in $tools; do
+    [ "$#" -eq 0 ] || set -- "$@" -o
+    set -- "$@" -name "$tool"
+done
+hits=$(find "$root" \( -type f \( -perm -100 -o -perm -010 -o -perm -001 \) -o -type l \) \( "$@" \)) || report "find failed while looking for forbidden tools"
+list "forbidden tool in role image: " "$hits"
+
+for path in $protected; do
+    for ancestor in $(ancestors "$path"); do
+        check_path "$ancestor" d
+    done
+    check_path "$path" f
+done
+
+for pair in $pairs; do
+    path=${pair%%=*}
+    if [ -f "$root$path" ] && [ ! -L "$root$path" ] && cmp -s "$root$path" "${pair#*=}"; then
+        continue
+    fi
+    report "codex file differs from the trusted copy: $(show "$path")"
+done
+
+[ "$failed" -eq 0 ] || exit 1
+echo "jackin-image-scan 1"

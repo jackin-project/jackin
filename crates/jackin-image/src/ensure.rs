@@ -97,7 +97,7 @@ impl Pipeline<'_> {
     async fn build(
         &mut self,
         build: &PlannedBuild,
-        source: Option<(&ImageTag, &ImageId)>,
+        sources: &[(&ImageTag, &ImageId)],
     ) -> Result<ImageId, ImageError> {
         self.live()?;
         if !self.builder_checked {
@@ -107,7 +107,7 @@ impl Pipeline<'_> {
                 .map_err(from_engine)?;
             self.builder_checked = true;
         }
-        if let Some((tag, expected)) = source {
+        for (tag, expected) in sources {
             self.require(tag, expected).await?;
         }
         self.emit(ImageEvent::StageStarted(build.stage)).await;
@@ -116,7 +116,7 @@ impl Pipeline<'_> {
             .build(build, self.progress, self.cancel)
             .await
             .map_err(from_engine)?;
-        if let Some((tag, expected)) = source {
+        for (tag, expected) in sources {
             self.require(tag, expected).await?;
         }
         self.emit(ImageEvent::StageFinished(build.stage)).await;
@@ -150,7 +150,7 @@ pub async fn ensure_image(
             .await;
         id
     } else {
-        pipeline.build(construct, None).await?
+        pipeline.build(construct, &[]).await?
     };
     drop(construct_lock);
     let final_tag = plan.final_tag(&construct_id);
@@ -169,10 +169,13 @@ pub async fn ensure_image(
     }
     let builds = plan.final_builds(&construct_id);
     let role = pipeline
-        .build(&builds.role, Some((&construct.tag, &construct_id)))
+        .build(&builds.role, &[(&construct.tag, &construct_id)])
         .await?;
     let built = pipeline
-        .build(&builds.derived, Some((&builds.role.tag, &role)))
+        .build(
+            &builds.derived,
+            &[(&builds.role.tag, &role), (&construct.tag, &construct_id)],
+        )
         .await?;
     let found = pipeline.find(&builds.derived.tag).await?;
     if found.as_ref() != Some(&built) {

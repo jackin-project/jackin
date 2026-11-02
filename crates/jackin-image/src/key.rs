@@ -3,7 +3,7 @@
 
 use jackin_core::{Agent, DockerLayer, ImageId, InstallTarget, Platform, SandboxPath, Sha256};
 
-use crate::assets::{DERIVED_DOCKERFILE, JACKIN_START};
+use crate::assets::{DERIVED_DOCKERFILE, JACKIN_START, SCAN};
 use crate::error::ImageError;
 use crate::request::{HookFiles, ImageRequest, RoleRevision, SourceFile};
 
@@ -126,6 +126,7 @@ impl ImageKey {
         });
         fields.push(Sha256::of(JACKIN_START).as_str());
         fields.push(Sha256::of(DERIVED_DOCKERFILE).as_str());
+        fields.push(Sha256::of(SCAN).as_str());
         for hook in [setup, preflight] {
             if let Some(file) = hook {
                 fields.push(file.path.as_str());

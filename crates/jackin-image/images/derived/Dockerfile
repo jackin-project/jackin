@@ -17,7 +17,7 @@ ADD --checksum=sha256:${CODEX_SHA256_AMD64} https://github.com/openai/codex/rele
 
 FROM codex-archive-${TARGETARCH} AS codex-archive
 
-FROM role
+FROM construct AS codex
 ARG CODEX_VERSION
 ARG CODEX_BIN_DIR
 
@@ -32,15 +32,37 @@ RUN --mount=type=bind,from=codex-archive,source=/,target=/archive \
     && printf 'check_for_update_on_startup = false\n' > /etc/codex/config.toml \
     && test "$(CODEX_HOME="$work/home" "${CODEX_BIN_DIR}/codex" --version)" = "codex-cli ${CODEX_VERSION}" \
     && rm -rf "$work"
+
+FROM role AS assembled
+ARG CODEX_BIN_DIR
+
+USER root
+COPY --from=codex --chown=root:root --chmod=0755 ${CODEX_BIN_DIR}/codex ${CODEX_BIN_DIR}/codex-code-mode-host ${CODEX_BIN_DIR}/
+COPY --from=codex --chown=root:root --chmod=0644 /etc/codex/config.toml /etc/codex/config.toml
 COPY --chown=root:root --chmod=0755 jackin-start /usr/local/bin/jackin-start
 COPY --chown=root:root --chmod=0755 hooks/setup hooks/preflight /usr/local/lib/jackin/hooks/
 RUN chown root:root /usr/local/bin /usr/local/lib/jackin /usr/local/lib/jackin/hooks \
-    && chmod 0755 /usr/local/bin /usr/local/lib/jackin /usr/local/lib/jackin/hooks \
-    && for tool in sudo doas su-exec gosu docker podman iptables nft; do \
-        if command -v "$tool" >/dev/null; then echo "forbidden tool in role image: $tool" >&2; exit 1; fi; \
-    done \
-    && command -v getcap >/dev/null \
-    && { caps="$(getcap -r /)" || { echo "getcap failed in role image" >&2; exit 1; }; test -z "$caps" || { printf '%s\n' "$caps" | sed 's/^/file capability in role image: /' >&2; exit 1; }; } \
-    && { found="$(find / -xdev -type f -perm /6000)"; test -z "$found" || { printf '%s\n' "$found" | sed 's/^/setuid or setgid file in role image: /' >&2; exit 1; }; }
+    && chmod 0755 /usr/local/bin /usr/local/lib/jackin /usr/local/lib/jackin/hooks
+
+FROM construct AS scan
+ARG CODEX_BIN_DIR
+
+USER root
+COPY scan /jackin-scan
+RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
+    --mount=type=bind,from=codex,source=/,target=/trusted,ro \
+    /bin/sh /jackin-scan --owner 0:0 \
+        --same-as ${CODEX_BIN_DIR}/codex=/trusted${CODEX_BIN_DIR}/codex \
+        --same-as ${CODEX_BIN_DIR}/codex-code-mode-host=/trusted${CODEX_BIN_DIR}/codex-code-mode-host \
+        /image \
+        /usr/local/bin/jackin-start \
+        /usr/local/lib/jackin/hooks/setup \
+        /usr/local/lib/jackin/hooks/preflight \
+        ${CODEX_BIN_DIR}/codex \
+        ${CODEX_BIN_DIR}/codex-code-mode-host \
+    > /verdict
+
+FROM assembled
+COPY --from=scan --chown=root:root --chmod=0644 /verdict /usr/local/lib/jackin/image-scan
 USER sandbox
 WORKDIR /sandbox

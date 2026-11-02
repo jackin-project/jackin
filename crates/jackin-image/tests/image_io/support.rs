@@ -36,6 +36,8 @@ pub(crate) const DERIVED_DOCKERFILE: &[u8] = include_bytes!(concat!(
 ));
 pub(crate) const JACKIN_START: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/jackin-start"));
+pub(crate) const SCAN: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/derived/scan"));
 pub(crate) const ROLE_DOCKERFILE: &[u8] = b"FROM construct AS role\n";
 
 pub(crate) async fn guarded<F>(future: F) -> TestResult

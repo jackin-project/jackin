@@ -7,7 +7,7 @@ use jackin_core::{
     FileMode, HookKind, HostPath, ImageId, ImageTag, RepoPath, SandboxPath, Sha256, sandbox_layout,
 };
 
-use crate::assets::{CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE, JACKIN_START};
+use crate::assets::{CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE, JACKIN_START, SCAN};
 use crate::dockerfile::{DockerfileError, validate_dockerfile};
 use crate::error::ImageError;
 use crate::key::{Fields, ImageKey, derived_arguments};
@@ -104,6 +104,10 @@ impl ImagePlan {
         ));
         let mut derived_args = common_arguments(request, &derived_tag);
         derived_args.push(format!("--build-context=role=docker-image://{role_tag}"));
+        derived_args.push(format!(
+            "--build-context=construct=docker-image://{}",
+            self.construct.tag
+        ));
         derived_args.extend(self.derived_args.iter().cloned());
         FinalBuilds {
             key,
@@ -195,6 +199,7 @@ fn derived_context(request: &ImageRequest) -> Vec<MaterializedFile> {
     vec![
         file("Dockerfile", DERIVED_DOCKERFILE),
         file("jackin-start", JACKIN_START),
+        file("scan", SCAN),
         hook_file(HookKind::Setup, request.hooks.setup.as_ref()),
         hook_file(HookKind::Preflight, request.hooks.preflight.as_ref()),
     ]

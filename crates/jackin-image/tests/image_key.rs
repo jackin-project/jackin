@@ -27,6 +27,7 @@ const DERIVED_DOCKERFILE: &[u8] = include_bytes!(concat!(
 ));
 const JACKIN_START: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/jackin-start"));
+const SCAN: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/derived/scan"));
 
 const DOCKERFILE: &[u8] = b"FROM construct AS role\n";
 const SETUP: &[u8] = b"#!/bin/sh\necho setup\n";
@@ -259,6 +260,7 @@ fn expected_key(expect: &Expect<'_>) -> String {
     field(&mut out, expect.docker.as_bytes());
     field(&mut out, hex(JACKIN_START).as_bytes());
     field(&mut out, hex(DERIVED_DOCKERFILE).as_bytes());
+    field(&mut out, hex(SCAN).as_bytes());
     for hook in expect.hooks {
         let (path, bytes) = hook.unwrap_or(("", b""));
         field(&mut out, path.as_bytes());

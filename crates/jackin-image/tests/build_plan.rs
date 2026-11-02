@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -29,6 +28,7 @@ const DERIVED_DOCKERFILE: &[u8] = include_bytes!(concat!(
 ));
 const JACKIN_START: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/jackin-start"));
+const SCAN: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/derived/scan"));
 const ARG_NAMES: [&str; 4] = [
     "CODEX_VERSION",
     "CODEX_BIN_DIR",
@@ -153,6 +153,10 @@ fn check_stages(request: &ImageRequest) -> TestResult {
     derived.push(format!(
         "--build-context=role=docker-image://{}",
         built.role.tag
+    ));
+    derived.push(format!(
+        "--build-context=construct=docker-image://{}",
+        construct.tag
     ));
     assert_eq!(tokens(&derived_rest)?, sorted(derived), "derived {label}");
     assert_eq!(build_args.len(), 4, "derived build args {label}");
@@ -309,8 +313,14 @@ fn build_contexts_hold_exactly_the_documented_files() -> TestResult {
         assert_eq!(names.len(), files.len(), "duplicate name {label}");
         let setup_name = hook_name(HookKind::Setup);
         let preflight_name = hook_name(HookKind::Preflight);
-        let expected: BTreeSet<&str> =
-            ["Dockerfile", "jackin-start", &setup_name, &preflight_name].into();
+        let expected: BTreeSet<&str> = [
+            "Dockerfile",
+            "jackin-start",
+            "scan",
+            &setup_name,
+            &preflight_name,
+        ]
+        .into();
         assert_eq!(names, expected, "{label}");
         let by_name: BTreeMap<&str, &[u8]> = files
             .iter()
@@ -318,6 +328,7 @@ fn build_contexts_hold_exactly_the_documented_files() -> TestResult {
             .collect();
         assert_eq!(by_name["Dockerfile"], DERIVED_DOCKERFILE, "{label}");
         assert_eq!(by_name["jackin-start"], JACKIN_START, "{label}");
+        assert_eq!(by_name["scan"], SCAN, "{label}");
         assert_eq!(
             by_name[setup_name.as_str()],
             declared_setup.unwrap_or(b""),
@@ -527,24 +538,18 @@ fn derived_dockerfile_installs_what_the_codex_row_describes() -> TestResult {
 
 #[test]
 fn derived_dockerfile_installs_jackin_start_and_hooks_at_the_layout_paths() -> TestResult {
-    let lines = instructions(derived_text()?);
-    let last_from = lines
-        .iter()
-        .rev()
-        .find_map(|line| line.strip_prefix("FROM "))
-        .ok_or("no FROM")?;
-    assert_eq!(
-        last_from.split_whitespace().next(),
-        Some("role"),
-        "last_from"
-    );
-    let last_user = lines
+    let all = stages(&instructions(derived_text()?));
+    let assembled = stage_named(&all, "assembled")?;
+    let last = all.last().ok_or("no stage")?;
+    let last_user = last
+        .lines
         .iter()
         .rev()
         .find_map(|line| line.strip_prefix("USER "))
         .ok_or("no USER")?;
     assert_eq!(last_user, "sandbox", "last_user");
-    let copies: Vec<&str> = lines
+    let copies: Vec<&str> = assembled
+        .lines
         .iter()
         .filter_map(|l| l.strip_prefix("COPY "))
         .collect();
@@ -634,217 +639,129 @@ fn text_of(bytes: &'static [u8]) -> Result<&'static str, Box<dyn Error>> {
     Ok(std::str::from_utf8(bytes)?)
 }
 
-fn run_after_last_copy(lines: &[String]) -> Result<&String, Box<dyn Error>> {
-    let last_copy = lines
-        .iter()
-        .rposition(|line| line.starts_with("COPY "))
-        .ok_or("no COPY")?;
-    let last_user = lines
-        .iter()
-        .rposition(|line| line.starts_with("USER "))
-        .ok_or("no USER")?;
-    let between: Vec<&String> = lines[last_copy + 1..last_user]
-        .iter()
-        .filter(|line| line.starts_with("RUN "))
-        .collect();
-    match between.as_slice() {
-        [run] => Ok(run),
-        other => Err(format!("RUN lines after the last COPY: {other:?}").into()),
-    }
+struct Stage {
+    name: String,
+    from: String,
+    lines: Vec<String>,
 }
 
-fn operands<'a>(commands: &[&'a str], name: &str) -> Result<Vec<&'a str>, Box<dyn Error>> {
-    let command = commands
+fn stages(lines: &[String]) -> Vec<Stage> {
+    let mut out: Vec<Stage> = Vec::new();
+    for line in lines {
+        if let Some(rest) = line.strip_prefix("FROM ") {
+            let words: Vec<&str> = rest.split_whitespace().collect();
+            let name = match words.as_slice() {
+                [_, "AS", name] => (*name).to_owned(),
+                _ => String::new(),
+            };
+            out.push(Stage {
+                name,
+                from: words.first().map_or_else(String::new, |w| (*w).to_owned()),
+                lines: Vec::new(),
+            });
+        } else if let Some(stage) = out.last_mut() {
+            stage.lines.push(line.clone());
+        }
+    }
+    out
+}
+
+fn stage_named<'a>(all: &'a [Stage], name: &str) -> Result<&'a Stage, Box<dyn Error>> {
+    all.iter()
+        .find(|stage| stage.name == name)
+        .ok_or_else(|| format!("no stage {name}").into())
+}
+
+fn words_after<'a>(words: &[&'a str], flag: &str) -> Vec<&'a str> {
+    words
+        .windows(2)
+        .filter(|pair| pair[0] == flag)
+        .map(|pair| pair[1])
+        .collect()
+}
+
+#[test]
+fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stage() -> TestResult {
+    let spec = Agent::Codex.spec();
+    let bin_dir = parent(spec.binary.as_str());
+    let all = stages(&instructions(derived_text()?));
+    let scan = stage_named(&all, "scan")?;
+    assert_eq!(scan.from, "construct", "scan stage base");
+    let user = scan.lines.iter().position(|l| l == "USER root");
+    let run = scan.lines.iter().position(|l| l.starts_with("RUN "));
+    let (Some(user), Some(run)) = (user, run) else {
+        return Err(format!("scan stage lines {:?}", scan.lines).into());
+    };
+    assert!(user < run, "USER root before the scan RUN");
+    let body = scan.lines[run].replace("${CODEX_BIN_DIR}", bin_dir);
+    let words: Vec<&str> = body.split_whitespace().collect();
+    assert!(words.contains(&"--mount=type=bind,from=assembled,source=/,target=/image,ro"));
+    assert!(words.contains(&"--mount=type=bind,from=codex,source=/,target=/trusted,ro"));
+    assert_eq!(words_after(&words, "--owner"), ["0:0"], "scan owner");
+    let tail: Vec<&str> = words
         .iter()
-        .find(|command| command.split_whitespace().next() == Some(name))
-        .ok_or_else(|| format!("no {name} command"))?;
-    Ok(command
-        .split_whitespace()
+        .skip_while(|word| **word != "/image")
         .skip(1)
-        .filter(|word| !word.starts_with('-'))
-        .collect())
-}
-
-#[test]
-fn derived_dockerfile_re_asserts_root_ownership_and_forbidden_tools_after_the_role_layer()
--> TestResult {
-    let lines = instructions(derived_text()?);
-    let run = run_after_last_copy(&lines)?;
-    let body = run.strip_prefix("RUN ").ok_or("not a RUN")?;
-    let commands: Vec<&str> = body.split(" && ").map(str::trim).collect();
-    let directories = [
-        "/usr/local/bin",
-        "/usr/local/lib/jackin",
-        sandbox_layout::HOOKS_DIR.as_str(),
-    ];
-    let chown = operands(&commands, "chown")?;
-    assert_eq!(chown.first(), Some(&"root:root"), "chown owner {chown:?}");
-    assert_eq!(&chown[1..], directories, "chown paths");
-    let chmod = operands(&commands, "chmod")?;
-    assert_eq!(chmod.first(), Some(&"0755"), "chmod mode {chmod:?}");
-    assert_eq!(&chmod[1..], directories, "chmod paths");
-    let scan = commands
-        .iter()
-        .find(|command| command.starts_with("for tool in "))
-        .ok_or("no forbidden-tool loop")?;
-    let listed: BTreeSet<&str> = scan
-        .strip_prefix("for tool in ")
-        .and_then(|rest| rest.split_once(';'))
-        .map(|(tools, _)| tools.split_whitespace().collect())
-        .ok_or("unreadable tool list")?;
-    let wanted: BTreeSet<&str> = [
-        "sudo", "doas", "su-exec", "gosu", "docker", "podman", "iptables", "nft",
-    ]
-    .into();
-    assert_eq!(listed, wanted, "forbidden tools");
-    assert!(scan.contains("command -v"), "tool lookup in {scan}");
-    assert!(
-        scan.contains("exit 1"),
-        "tool hit fails the build in {scan}"
-    );
-    assert!(
-        commands
-            .iter()
-            .any(|command| command.contains("find / -xdev -type f -perm /6000")),
-        "setuid scan in {commands:?}"
-    );
-    let last_user = lines
-        .iter()
-        .rev()
-        .find_map(|line| line.strip_prefix("USER "))
-        .ok_or("no USER")?;
-    assert_eq!(last_user, "sandbox", "last_user");
-    Ok(())
-}
-
-fn derived_segments(needle: &str) -> Result<String, Box<dyn Error>> {
-    let lines = instructions(derived_text()?);
-    let run = run_after_last_copy(&lines)?;
-    let body = run.strip_prefix("RUN ").ok_or("not a RUN")?;
-    let segments: Vec<&str> = body
-        .split(" && ")
-        .map(str::trim)
-        .filter(|command| command.contains(needle))
+        .take_while(|word| **word != ">")
+        .copied()
         .collect();
-    assert!(!segments.is_empty(), "no segment contains {needle:?}");
-    Ok(segments.join(" && "))
-}
-
-fn run_clause(dir: &Path, body: &str, path: &str) -> Result<(bool, String), Box<dyn Error>> {
-    let child = Command::new("/bin/sh")
-        .arg("-c")
-        .arg(body)
-        .current_dir(dir)
-        .env_clear()
-        .env("PATH", path)
-        .env("LC_ALL", "C")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let output = child.wait_with_output()?;
-    let text = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    Ok((output.status.success(), text))
-}
-
-fn stub(bin: &Path, name: &str, body: &str) -> TestResult {
-    let path = bin.join(name);
-    fs::write(&path, format!("#!/bin/sh\n{body}"))?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))?;
-    Ok(())
-}
-
-fn link_real(bin: &Path, name: &str) -> TestResult {
-    let real = ["/usr/bin", "/bin"]
+    let mut protected = vec![
+        "/usr/local/bin/jackin-start".to_owned(),
+        sandbox_layout::hook_path(HookKind::Setup)
+            .as_str()
+            .to_owned(),
+        sandbox_layout::hook_path(HookKind::Preflight)
+            .as_str()
+            .to_owned(),
+        spec.binary.as_str().to_owned(),
+        spec.code_mode_host.as_str().to_owned(),
+    ];
+    protected.sort();
+    let mut passed: Vec<String> = tail.iter().map(|word| (*word).to_owned()).collect();
+    passed.sort();
+    assert_eq!(passed, protected, "protected paths passed to the scan");
+    let mut same_as = words_after(&words, "--same-as");
+    same_as.sort_unstable();
+    let mut wanted: Vec<String> = [&spec.binary, &spec.code_mode_host]
         .iter()
-        .map(|dir| Path::new(dir).join(name))
-        .find(|path| path.exists())
-        .ok_or_else(|| format!("no real {name}"))?;
-    std::os::unix::fs::symlink(real, bin.join(name))?;
-    Ok(())
-}
-
-#[test]
-fn derived_dockerfile_checks_fail_on_file_capabilities_and_setuid_files() -> TestResult {
-    let scratch = Scratch::new("derived-checks")?;
-    let capability_clause = derived_segments("getcap")?;
-    let setuid_clause = derived_segments("perm /6000")?;
-
-    let quiet = scratch.fresh("quiet")?;
-    stub(&quiet, "getcap", "exit 0\n")?;
-    let quiet_path = quiet.to_str().ok_or("path is not UTF-8")?;
-    let (ok, text) = run_clause(&quiet, &capability_clause, quiet_path)?;
-    assert!(ok, "a clean tree must pass the capability clause: {text}");
-
-    let hostile = scratch.fresh("hostile")?;
-    stub(
-        &hostile,
-        "getcap",
-        "if [ \"$*\" = \"-r /\" ]; then printf '%s\\n' '/usr/bin/ping cap_net_raw=ep' '/usr/bin/arping cap_net_raw=ep'; fi\n",
-    )?;
-    link_real(&hostile, "sed")?;
-    let hostile_path = hostile.to_str().ok_or("path is not UTF-8")?;
-    let (ok, text) = run_clause(&hostile, &capability_clause, hostile_path)?;
-    assert!(!ok, "a file capability must fail the build: {text}");
-    for path in ["/usr/bin/ping", "/usr/bin/arping"] {
-        assert!(text.contains(path), "{path} missing from {text:?}");
-    }
-
-    let failing = scratch.fresh("failing")?;
-    stub(
-        &failing,
-        "getcap",
-        "echo 'getcap: cannot read the tree' >&2\nexit 2\n",
-    )?;
-    link_real(&failing, "sed")?;
-    let failing_path = failing.to_str().ok_or("path is not UTF-8")?;
-    let (ok, text) = run_clause(&failing, &capability_clause, failing_path)?;
-    assert!(!ok, "a failing getcap must fail the build: {text}");
-
-    let noisy = scratch.fresh("noisy")?;
-    stub(
-        &noisy,
-        "getcap",
-        "echo 'Failed to get capabilities of file /proc/1/x' >&2\nexit 0\n",
-    )?;
-    link_real(&noisy, "sed")?;
-    let noisy_path = noisy.to_str().ok_or("path is not UTF-8")?;
-    let (ok, text) = run_clause(&noisy, &capability_clause, noisy_path)?;
-    assert!(ok, "stderr noise alone must pass: {text}");
-
-    let bare = scratch.fresh("bare")?;
-    let bare_path = bare.to_str().ok_or("path is not UTF-8")?;
-    let (ok, text) = run_clause(&bare, &capability_clause, bare_path)?;
-    assert!(!ok, "a missing getcap must fail the build: {text}");
-
-    let offending = scratch.fresh("offending")?;
-    stub(
-        &offending,
-        "find",
-        "if [ \"$1 $2 $3 $4 $5 $6\" = \"/ -xdev -type f -perm /6000\" ]; then printf '%s\\n' /usr/bin/su /usr/bin/passwd; fi\n",
-    )?;
-    let offending_path = format!(
-        "{}:/usr/bin:/bin",
-        offending.to_str().ok_or("path is not UTF-8")?
+        .map(|path| format!("{0}=/trusted{0}", path.as_str()))
+        .collect();
+    wanted.sort();
+    assert_eq!(
+        same_as, wanted,
+        "codex files compared with the trusted copy"
     );
-    let (ok, text) = run_clause(&offending, &setuid_clause, &offending_path)?;
-    assert!(!ok, "setuid files must fail the build: {text}");
-    for path in ["/usr/bin/su", "/usr/bin/passwd"] {
-        assert!(text.contains(path), "{path} missing from {text:?}");
-    }
 
-    let clean = scratch.fresh("clean")?;
-    stub(&clean, "find", "exit 0\n")?;
-    let clean_path = format!(
-        "{}:/usr/bin:/bin",
-        clean.to_str().ok_or("path is not UTF-8")?
+    let assembled = stage_named(&all, "assembled")?;
+    assert_eq!(assembled.from, "role", "assembled stage base");
+    assert_eq!(all.iter().filter(|stage| stage.from == "role").count(), 1);
+    for line in &assembled.lines {
+        for tool in ["find", "getcap", "command -v"] {
+            assert!(
+                !line.contains(tool),
+                "{tool} runs in the role stage: {line}"
+            );
+        }
+    }
+    assert_eq!(stage_named(&all, "codex")?.from, "construct", "codex stage");
+    let last = all.last().ok_or("no stage")?;
+    assert_eq!(last.from, "assembled", "final stage base");
+    assert!(
+        last.lines.contains(
+            &"COPY --from=scan --chown=root:root --chmod=0644 /verdict /usr/local/lib/jackin/image-scan"
+                .to_owned()
+        ),
+        "final stage lines {:?}",
+        last.lines
     );
-    let (ok, text) = run_clause(&clean, &setuid_clause, &clean_path)?;
-    assert!(ok, "a tree without setuid files must pass: {text}");
+    assert_eq!(
+        last.lines.last().map(String::as_str),
+        Some("WORKDIR /sandbox")
+    );
+    assert!(
+        last.lines.contains(&"USER sandbox".to_owned()),
+        "final USER"
+    );
     Ok(())
 }
 
