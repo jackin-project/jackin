@@ -169,7 +169,7 @@
               }
             }
           ],
-          "description": "Credential. SKIP when the sandbox holds no credential. PASS when every credential variable the probe could read and every token in auth.json is a placeholder or empty and the file scan finds no token-shaped string. The check detail names what was read and what was unreadable; facts.agent_environment records whether the main process and Codex environments were readable. A denied environment is not evidence that it is clean."
+          "description": "Credential. The credential check is SKIP when the sandbox holds no credential. The environment check is PASS only when a fresh, valid start record (facts.start_record.state read) covers the main process and Codex and every credential variable is a placeholder or empty; it is FAIL for a variable of kind other in a known environment or a malformed record, and SKIP for an absent, unreadable or stale record or an environment that Codex has not yet received. A readable /proc/PID/environ adds evidence and wins over the record for that environment; it never replaces the record. The record is written by jackin-start and the agent can rewrite it, so a PASS shows the launch path of jackin, not a hostile agent. The step is PASS when every check passes and the file scan finds no token-shaped string. facts.agent_environment records how each environment was known. A denied environment is not evidence that it is clean."
         },
         "J09": {
           "allOf": [
@@ -804,10 +804,11 @@
     "EnvironRead": {
       "enum": [
         "read",
+        "record",
         "denied",
         "absent"
       ],
-      "description": "read: the environment was read and classified. denied: /proc/PID/environ could not be opened. absent: there is no such process."
+      "description": "read: /proc/PID/environ was read and classified. record: the open of /proc/PID/environ failed or there is no process, and the fresh start record written by jackin-start covers that environment. denied: /proc/PID/environ could not be opened and no fresh record covers the environment. absent: there is no such process and no fresh record covers the environment."
     },
     "FactsJ08": {
       "type": "object",
@@ -815,6 +816,7 @@
       "required": [
         "environment",
         "agent_environment",
+        "start_record",
         "auth_file",
         "leaks"
       ],
@@ -847,11 +849,11 @@
                   "main",
                   "codex"
                 ],
-                "description": "probe is the environment of the probe process. launch_env is an export file /sandbox/.jackin/env-*, which jackin-start sources before it starts Codex. main and codex are the environment of that process."
+                "description": "probe is the environment of the probe process. launch_env is an export file /sandbox/.jackin/env-*, which jackin-start sources before it starts Codex. main and codex are the environment of that process, read from /proc/PID/environ or from a fresh start record."
               }
             }
           },
-          "description": "The variables whose name holds KEY, TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL or AUTH as a whole word, in each source the probe could read."
+          "description": "The variables whose name holds KEY, TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL or AUTH as a whole word (case sensitive, SSH_AUTH_SOCK excluded), in each source the probe could read. A name outside [A-Za-z_][A-Za-z0-9_]* appears as INVALID_NAME with kind other."
         },
         "agent_environment": {
           "type": "object",
@@ -868,7 +870,36 @@
               "$ref": "#/$defs/EnvironRead"
             }
           },
-          "description": "Whether the probe could read /proc/PID/environ of the main process and of Codex. denied means the open failed; the variables of that process are then unknown, never clean."
+          "description": "How the probe knows the variables of the main process and of Codex: read from /proc/PID/environ, from the start record, or not at all. denied and absent mean the variables of that process are unknown, never clean; the environment check is then SKIP."
+        },
+        "start_record": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "attempt"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "absent",
+                "unreadable",
+                "stale",
+                "malformed",
+                "read"
+              ],
+              "description": "The file /sandbox/.jackin/run/env-kinds that jackin-start writes. absent: no such file. unreadable: the file exists and cannot be read. stale: a valid record whose attempt differs from the attempt in run/state, or run/state is absent or garbled. malformed: not a regular file, over 64 KiB, or off the grammar. read: a valid record whose attempt equals the attempt in run/state (waiting is attempt 0)."
+            },
+            "attempt": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "The attempt number in the record; null when the record was not parsed."
+            }
+          },
+          "description": "The start record. jackin-start writes names and kinds, never values. The agent runs as the same user and can rewrite the file, so a record proves the launch path of jackin, not a hostile agent. With no fresh record the environment check is SKIP, never PASS."
         },
         "auth_file": {
           "anyOf": [

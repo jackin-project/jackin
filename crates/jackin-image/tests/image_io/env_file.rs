@@ -17,7 +17,8 @@ use tempfile::TempDir;
 use crate::support::{JACKIN_START, TestResult};
 
 const CHILD: &str = ": > \"$1.ran\"\nout=$1\nshift\nfor n in \"$@\"; do\n  if printenv \"$n\" > /dev/null; then\n    printf '%s=%s\\n' \"$n\" \"$(printenv \"$n\")\"\n  else\n    printf '%s unset\\n' \"$n\"\n  fi\ndone >> \"$out\"\n";
-const HEAD: &str = "set -u\nrun=$1; project=$2; envfile=$3; child=$4; out=$5\nshift 5\n";
+const HEAD: &str =
+    "set -u\nrun=$1; project=$2; envfile=$3; child=$4; out=$5; main_ok=0; main_lines=\nshift 5\n";
 const REPORT: &str =
     "for n in \"$@\"; do\n  if printenv \"$n\" > /dev/null; then echo \"AFTER $n\"; fi\ndone\n";
 
@@ -42,7 +43,16 @@ fn function(script: &str, name: &str) -> Result<String, Box<dyn Error>> {
 fn functions() -> Result<String, Box<dyn Error>> {
     let script = script()?;
     let mut text = String::new();
-    for name in ["publish", "park", "drain", "check_env", "run_attempt"] {
+    for name in [
+        "publish",
+        "park",
+        "kinds",
+        "write_record",
+        "record_codex",
+        "drain",
+        "check_env",
+        "run_attempt",
+    ] {
         text.push_str(&function(script, name)?);
         text.push('\n');
     }

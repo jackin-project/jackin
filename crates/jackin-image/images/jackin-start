@@ -5,6 +5,8 @@ set -u
 
 run=/sandbox/.jackin/run
 project=/sandbox/project
+bin_dir=/usr/local/bin
+environ_file=/proc/$$/environ
 
 fail() {
     echo "jackin-start: $1" >&2
@@ -77,6 +79,69 @@ check_env() {
     return 0
 }
 
+kinds() {
+    LC_ALL=C /usr/bin/awk -v section="$1" '
+        function credential(name,   word) {
+            word = name
+            gsub(/[^A-Za-z0-9_]/, "_", word)
+            return name != "SSH_AUTH_SOCK" && word ~ /(^|_)(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|AUTH)(_|$)/
+        }
+        function add(line,   i) {
+            for (i = 0; i < count; i++) if (lines[i] == line) return
+            lines[count++] = line
+        }
+        BEGIN {
+            for (name in ENVIRON) {
+                if (!credential(name)) continue
+                value = ENVIRON[name]
+                kind = "other"
+                if (value == "") kind = "empty"
+                else if (index(value, "\n") == 0 && value ~ /^openshell:resolve:/) kind = "placeholder"
+                if (name !~ /^[A-Za-z_][A-Za-z0-9_]*$/) { name = "INVALID_NAME"; kind = "other" }
+                add(section " " name " " kind)
+            }
+        }
+        {
+            eq = index($0, "=")
+            if (eq > 1) {
+                name = substr($0, 1, eq - 1)
+                if (name !~ /^[A-Za-z_][A-Za-z0-9_]*$/ && credential(name)) add(section " INVALID_NAME other")
+            }
+        }
+        END {
+            for (i = 1; i < count; i++) {
+                held = lines[i]
+                for (j = i - 1; j >= 0 && lines[j] > held; j--) lines[j + 1] = lines[j]
+                lines[j + 1] = held
+            }
+            for (i = 0; i < count; i++) print lines[i]
+        }'
+}
+
+startup_kinds() {
+    if [ -r "$environ_file" ]; then
+        /usr/bin/tr '\0' '\n' <"$environ_file" 2>/dev/null | kinds main
+    else
+        kinds main </dev/null
+    fi
+}
+
+write_record() {
+    [ "$main_ok" = 1 ] || return 0
+    {
+        printf 'jackin-env-kinds 1\nattempt %s\n' "$1"
+        [ -z "$main_lines" ] || printf '%s\n' "$main_lines"
+        [ -z "$2" ] || printf '%s\n' "$2"
+    } >"$run/env-kinds.tmp" && /bin/mv -f "$run/env-kinds.tmp" "$run/env-kinds"
+    return 0
+}
+
+record_codex() {
+    [ "$main_ok" = 1 ] || return 0
+    codex_lines=$(kinds codex </dev/null) || return 0
+    write_record "$1" "$codex_lines"
+}
+
 drain() {
     if [ -t 0 ]; then
         stty -icanon min 0 time 0
@@ -97,6 +162,7 @@ run_attempt() {
             0) echo "jackin-start: $envfile is not readable" >&2 ;;
             *) echo "jackin-start: $envfile is malformed at line $bad" >&2 ;;
         esac
+        write_record "$attempt_id" ""
         publish "exited $attempt_id 65"
         park
         return 0
@@ -105,6 +171,7 @@ run_attempt() {
     (
         [ ! -f "$envfile" ] || . "$envfile"
         cd "$project" || exit 66
+        record_codex "$attempt_id"
         exec "$@"
     ) || rc=$?
     publish "exited $attempt_id $rc"
@@ -112,7 +179,16 @@ run_attempt() {
     printf '\r\033[0m\033[?25hjackin-start: %s exited with code %s (attempt %s)\r\n' "${1##*/}" "$rc" "$attempt_id"
 }
 
-[ "$#" -gt 0 ] || fail "missing agent command"
+[ "$#" -gt 0 ] && [ -n "$1" ] || fail "missing agent command"
+
+case $1 in
+    */*) ;;
+    *)
+        program=$bin_dir/$1
+        shift
+        set -- "$program" "$@"
+        ;;
+esac
 
 case ${JACKIN_LAUNCH_ID:-} in
     '' | .* | *[!A-Za-z0-9._-]*) fail "JACKIN_LAUNCH_ID is missing or invalid" ;;
@@ -124,7 +200,15 @@ trap : INT TERM HUP QUIT TSTP
 
 park
 mkdir -p "$run"
-rm -f "$run/state" "$run/state.tmp" "$run/start" "$run/start.tmp"
+rm -f "$run/state" "$run/state.tmp" "$run/start" "$run/start.tmp" "$run/env-kinds" "$run/env-kinds.tmp"
+main_ok=0
+main_lines=
+if main_lines=$(startup_kinds); then
+    main_ok=1
+else
+    main_lines=
+fi
+write_record 0 ""
 publish waiting
 
 last=0
@@ -134,7 +218,7 @@ while :; do
     case $attempt in
         '' | 0* | *[!0-9]* | ???????????????????*) attempt= ;;
     esac
-    if [ -z "$attempt" ] || [ "$attempt" -le "$last" ]; then
+    if [ -z "$attempt" ] || [ "$attempt" -ne $((last + 1)) ]; then
         sleep 0.5 || :
         continue
     fi
