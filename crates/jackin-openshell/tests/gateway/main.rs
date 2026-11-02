@@ -9,6 +9,7 @@
 
 mod attach;
 mod attach_rpc;
+mod attach_ssh;
 mod connect;
 mod contract;
 mod discovery;
@@ -25,6 +26,7 @@ mod sandbox_rpc;
 mod sandboxes;
 mod server;
 mod service;
+mod ssh_server;
 mod status;
 mod support;
 mod transfer;

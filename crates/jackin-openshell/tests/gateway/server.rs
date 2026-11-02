@@ -18,6 +18,7 @@ use tonic::{Code, Status};
 use tonic_types::{ErrorDetails, StatusExt};
 
 use super::pki::Pki;
+use super::ssh_server::SshModel;
 
 pub(crate) const MAX_ROUTABLE_NAME_LEN: usize = 19;
 
@@ -99,6 +100,7 @@ pub(crate) struct State {
     pub(crate) forward_error: Option<Status>,
     pub(crate) observed: Observed,
     pub(crate) auto_advance: bool,
+    pub(crate) ssh: Option<Arc<SshModel>>,
 }
 
 impl std::fmt::Debug for State {
@@ -184,6 +186,7 @@ fn fresh_state() -> State {
         forward_error: None,
         observed: Observed::default(),
         auto_advance: false,
+        ssh: None,
     }
 }
 

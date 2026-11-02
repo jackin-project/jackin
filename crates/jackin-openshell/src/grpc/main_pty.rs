@@ -74,6 +74,35 @@ impl client::Handler for PinnedKey {
     }
 }
 
+struct RevokeOnDrop {
+    inner: Arc<Inner>,
+    token: Option<String>,
+}
+
+impl RevokeOnDrop {
+    fn new(inner: &Arc<Inner>, token: &str) -> RevokeOnDrop {
+        RevokeOnDrop {
+            inner: Arc::clone(inner),
+            token: Some(token.to_owned()),
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.token = None;
+    }
+}
+
+impl Drop for RevokeOnDrop {
+    fn drop(&mut self) {
+        let (Some(token), Ok(runtime)) = (self.token.take(), tokio::runtime::Handle::try_current())
+        else {
+            return;
+        };
+        let inner = Arc::clone(&self.inner);
+        drop(runtime.spawn(async move { inner.revoke(&token).await }));
+    }
+}
+
 struct Attach {
     channel: Channel<Msg>,
     handle: Handle<PinnedKey>,
@@ -221,6 +250,7 @@ impl Inner {
             });
         };
         let session = self.create_ssh_session(&request.sandbox).await?;
+        let mut guard = RevokeOnDrop::new(self, &session.token);
         let opened =
             tokio::time::timeout(self.call_timeout, self.handshake(request, &session, *input))
                 .await;
@@ -235,9 +265,11 @@ impl Inner {
             Ok(opened) => opened,
             Err(error) => {
                 self.revoke(&session.token).await;
+                guard.disarm();
                 return Err(self.refine_not_ready(&request.sandbox, error).await);
             }
         };
+        guard.disarm();
         let mut queue = VecDeque::from([TerminalEvent::Attached]);
         let mut ended = false;
         let mut watch = Watch::new(InputLease::ReadOnly);
@@ -267,6 +299,7 @@ impl Inner {
             watch,
             ended,
             size: request.size,
+            input: *input,
             repaint: *repaint,
         };
         tokio::spawn(pump.run());
@@ -502,6 +535,7 @@ struct Pump {
     watch: Watch,
     ended: bool,
     size: TermSize,
+    input: InputMode,
     repaint: RepaintPolicy,
 }
 
@@ -516,6 +550,7 @@ impl Pump {
             mut watch,
             mut ended,
             mut size,
+            input,
             repaint,
         } = self;
         let TerminalDriver {
@@ -544,7 +579,13 @@ impl Pump {
                     }
                     Some(TerminalCommand::Input(bytes)) => {
                         watch.sent(&bytes);
-                        if let Err(error) = attach.channel.data_bytes(bytes).await {
+                        if input == InputMode::Viewer {
+                            if let Some(reason) = watch.closing.take() {
+                                close_channel(&attach.channel).await;
+                                queue.push_back(TerminalEvent::Ended(reason));
+                                ended = true;
+                            }
+                        } else if let Err(error) = attach.channel.data_bytes(bytes).await {
                             queue.push_back(TerminalEvent::Ended(EndReason::Failed(error.to_string())));
                             ended = true;
                         }
