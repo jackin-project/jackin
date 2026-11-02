@@ -10,8 +10,8 @@ mod tracker;
 use std::time::Duration;
 
 use jackin_core::{
-    AccountName, AttemptId, FsError, HookKind, LaunchId, Phase, SandboxName, SupervisorReading,
-    SupervisorState, TerminalText,
+    AccountName, AttemptId, FsError, HookKind, LaunchId, PathError, Phase, ProcessError,
+    SandboxName, SupervisorReading, SupervisorState, TerminalText,
 };
 use jackin_image::{ImageError, ImageEvent};
 use jackin_openshell::GatewayError;
@@ -20,6 +20,7 @@ use tokio::sync::mpsc;
 
 use crate::accounts::AccountError;
 use crate::credentials::CredentialError;
+use crate::project::{HostGitError, ProjectStep, TreeMismatch, UnsupportedProject};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LaunchStep {
@@ -161,6 +162,24 @@ pub enum LaunchError {
     Credential(#[from] CredentialError),
     #[error(transparent)]
     Fs(#[from] FsError),
+    #[error(transparent)]
+    Process(#[from] ProcessError),
+    #[error(transparent)]
+    Path(#[from] PathError),
+    #[error(transparent)]
+    HostGit(#[from] HostGitError),
+    #[error(transparent)]
+    Unsupported(#[from] UnsupportedProject),
+    #[error("{0}")]
+    ProjectMismatch(Box<TreeMismatch>),
+    #[error("project step {step:?} failed with exit code {exit_code}: {output:?}")]
+    ProjectFailed {
+        step: ProjectStep,
+        exit_code: i32,
+        output: TerminalText,
+    },
+    #[error("project step {step:?} produced unusable output: {message}")]
+    ProjectOutput { step: ProjectStep, message: String },
     #[error("the provider for account {account:?} is unavailable")]
     ProviderUnavailable {
         account: AccountName,

@@ -40,7 +40,7 @@ fn trigger(point: Point) -> Option<Trigger> {
         Point::Create => Some(Trigger::Op(GatewayOp::Create)),
         Point::Probe => Some(Trigger::Op(GatewayOp::ReadFiles)),
         Point::Auth => Some(Trigger::Write(spec.auth_file.path.clone())),
-        Point::Upload => Some(Trigger::Op(GatewayOp::Upload)),
+        Point::Upload => Some(Trigger::Op(GatewayOp::UploadTree)),
         Point::Setup => Some(Trigger::Program(sandbox_layout::hook_path(HookKind::Setup))),
         Point::Start => Some(Trigger::Write(sandbox_layout::RUN_START.clone())),
     }

@@ -10,8 +10,8 @@ use jackin_core::{
 };
 use jackin_image::{BuiltImage, ImageSource, ensure_image};
 use jackin_openshell::{
-    GatewayError, GatewayOp, PowerAction, ProgramRun, ProgramStdin, ProjectUpload, SandboxFile,
-    SandboxQuery, SandboxView,
+    GatewayError, GatewayOp, PowerAction, ProgramRun, ProgramStdin, SandboxFile, SandboxQuery,
+    SandboxView,
 };
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -26,12 +26,18 @@ use crate::launch::{
     RestoreCandidate, SkipReason,
 };
 use crate::plan::LaunchPlan;
+use crate::project::{self, Staged};
 use crate::service::Session;
 
 const POLL: Duration = Duration::from_millis(500);
 const EXEC_TIMEOUT: Duration = Duration::from_secs(30);
 const IMAGE_PROGRESS: usize = 64;
 const MARKER_MODE: FileMode = FileMode(0o600);
+
+enum Uploaded {
+    Done,
+    ByPeer,
+}
 
 enum Stop {
     Cancelled,
@@ -75,6 +81,35 @@ impl Session {
 
 impl Run<'_> {
     async fn execute(mut self) -> Result<LaunchOutcome, LaunchFailure> {
+        if self.cancel.is_cancelled() {
+            return Ok(self.cancelled().await);
+        }
+        let deps = &self.session.deps;
+        let prepared = project::prepare(
+            deps,
+            self.plan.project(),
+            self.plan.launch_id(),
+            self.cancel,
+        )
+        .await;
+        let staged = match prepared {
+            Ok(staged) => staged,
+            Err(_) if self.cancel.is_cancelled() => return Ok(self.cancelled().await),
+            Err(error) => {
+                return Err(LaunchFailure {
+                    launch_id: self.plan.launch_id().clone(),
+                    step: LaunchStep::Upload,
+                    sandbox: None,
+                    error: Box::new(error),
+                });
+            }
+        };
+        let outcome = self.drive(&staged).await;
+        staged.release(&self.session.deps).await;
+        outcome
+    }
+
+    async fn drive(&mut self, staged: &Staged) -> Result<LaunchOutcome, LaunchFailure> {
         loop {
             let observed = match self.observe().await {
                 Ok(observed) => observed,
@@ -91,7 +126,7 @@ impl Run<'_> {
                     return self.stopped(Stop::Failed(step, error)).await;
                 }
                 Decision::Run(act) => {
-                    if let Err(stop) = self.act(act).await {
+                    if let Err(stop) = self.act(act, staged).await {
                         return self.stopped(stop).await;
                     }
                 }
@@ -198,7 +233,7 @@ impl Run<'_> {
         Ok(Observed::Ready(view, probe))
     }
 
-    async fn act(&mut self, act: Act) -> Result<(), Stop> {
+    async fn act(&mut self, act: Act, staged: &Staged) -> Result<(), Stop> {
         match act {
             Act::Image => self.image().await,
             Act::Provider => self.provider().await,
@@ -207,7 +242,7 @@ impl Run<'_> {
             Act::Power(sandbox) => self.power(&sandbox).await,
             Act::Wait(kind) => self.wait(kind).await,
             Act::Credentials(sandbox) => self.credentials(&sandbox).await,
-            Act::Upload(sandbox) => self.upload(&sandbox).await,
+            Act::Upload(sandbox) => self.upload(&sandbox, staged).await,
             Act::Hooks(sandbox, plan) => self.hooks(&sandbox, plan).await,
             Act::Start(sandbox, attempt) => self.start(&sandbox, attempt).await,
         }
@@ -436,34 +471,50 @@ impl Run<'_> {
         Ok(())
     }
 
-    async fn upload(&mut self, sandbox: &SandboxName) -> Result<(), Stop> {
+    async fn upload(&mut self, sandbox: &SandboxName, staged: &Staged) -> Result<(), Stop> {
         const STEP: LaunchStep = LaunchStep::Upload;
         self.enter(STEP).await;
-        let upload = ProjectUpload {
-            source: self.plan.project().clone(),
-            dest: sandbox_layout::PROJECT.clone(),
-        };
         let limit = self.session.deps.limits.upload;
-        let sending = self
-            .session
-            .deps
-            .gateway
-            .upload_project(sandbox, &upload, self.cancel);
-        match tokio::time::timeout(limit, sending).await {
-            Ok(result) => result.map_err(|error| failed(STEP, error))?,
-            Err(_) => {
-                return Err(failed(
-                    STEP,
-                    GatewayError::Timeout {
-                        op: GatewayOp::Upload,
-                        after: limit,
-                    },
-                ));
+        match tokio::time::timeout(limit, self.upload_once(sandbox, staged)).await {
+            Ok(Ok(Uploaded::Done)) => Ok(()),
+            Ok(Ok(Uploaded::ByPeer)) => {
+                self.tracker.skip(SkipReason::AlreadyUploaded);
+                Ok(())
             }
+            Ok(Err(stop)) => Err(stop),
+            Err(_) => Err(failed(
+                STEP,
+                GatewayError::Timeout {
+                    op: GatewayOp::UploadTree,
+                    after: limit,
+                },
+            )),
         }
-        let marker = sandbox_layout::uploaded_marker(self.plan.launch_id());
-        self.write(STEP, sandbox, &marker, MARKER_MODE, Vec::new())
+    }
+
+    async fn upload_once(&self, sandbox: &SandboxName, staged: &Staged) -> Result<Uploaded, Stop> {
+        const STEP: LaunchStep = LaunchStep::Upload;
+        let deps = &self.session.deps;
+        let launch = self.plan.launch_id();
+        let _held = project::hold(deps, launch, self.cancel)
             .await
+            .map_err(|error| failed(STEP, error))?;
+        let marker = sandbox_layout::uploaded_marker(launch);
+        let found = deps
+            .gateway
+            .read_files(sandbox, std::slice::from_ref(&marker))
+            .await
+            .map_err(|error| failed(STEP, error))?;
+        if found.first().is_some_and(Option::is_some) {
+            return Ok(Uploaded::ByPeer);
+        }
+        staged
+            .upload(deps, self.plan.project(), sandbox, launch, self.cancel)
+            .await
+            .map_err(|error| failed(STEP, error))?;
+        self.write(STEP, sandbox, &marker, MARKER_MODE, Vec::new())
+            .await?;
+        Ok(Uploaded::Done)
     }
 
     async fn hooks(&mut self, sandbox: &SandboxName, plan: HookPlan) -> Result<(), Stop> {

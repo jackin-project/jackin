@@ -83,7 +83,7 @@ async fn a_failure_in_credentials_or_upload_resumes_without_repeating_finished_s
         let marker = sandbox_layout::uploaded_marker(&launch_id(1));
         let rows = [
             (Trigger::Write(config.clone()), LaunchStep::Credentials),
-            (Trigger::Op(GatewayOp::Upload), LaunchStep::Upload),
+            (Trigger::Op(GatewayOp::UploadTree), LaunchStep::Upload),
             (Trigger::Write(marker.clone()), LaunchStep::Upload),
         ];
         for (index, (trigger, step)) in rows.into_iter().enumerate() {

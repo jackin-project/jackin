@@ -146,7 +146,7 @@ async fn a_failed_or_cancelled_run_ends_its_events_at_the_failing_step() -> Test
         let rig = Rig::new().await?;
         let token = CancellationToken::new();
         rig.gateway().inject(Fault::CancelAt {
-            trigger: Trigger::Op(GatewayOp::Upload),
+            trigger: Trigger::Op(GatewayOp::UploadTree),
             token: token.clone(),
         });
         let cancelled = rig.run(rig.request(1)?, token).await?;

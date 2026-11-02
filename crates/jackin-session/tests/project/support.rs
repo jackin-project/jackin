@@ -1,0 +1,214 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::error::Error;
+use std::path::Path;
+use std::time::Duration;
+
+use jackin_core::{
+    Config, HostPath, LabelSelector, LaunchId, ProjectRoot, RoleName, SandboxPath, sandbox_layout,
+};
+use jackin_openshell::{Gateway, SandboxQuery};
+use jackin_session::{
+    LaunchError, LaunchFailure, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery, LoadedRole,
+    TreeMismatch, UnsupportedProject, launch_events, plan_launch,
+};
+use jackin_testkit::{RepoFixture, RoleFixture, SandboxHandle, World};
+use serde_json::json;
+use tempfile::TempDir;
+use tokio_util::sync::CancellationToken;
+
+pub(crate) type TestResult = Result<(), Box<dyn Error>>;
+
+pub(crate) const PLACEHOLDER: &str = "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN";
+const GUARD: Duration = Duration::from_secs(60);
+const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
+
+pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
+    tokio::time::timeout(GUARD, work)
+        .await
+        .map_err(|_| "the test hung for 60 s")?
+}
+
+pub(crate) fn launch_id(byte: u8) -> LaunchId {
+    LaunchId::from_entropy(&[byte; 26])
+}
+
+pub(crate) fn path(text: &str) -> Result<SandboxPath, Box<dyn Error>> {
+    Ok(SandboxPath::parse(text)?)
+}
+
+pub(crate) struct Outcome {
+    pub(crate) result: Result<LaunchOutcome, LaunchFailure>,
+}
+
+pub(crate) struct Rig {
+    pub(crate) world: World,
+    pub(crate) repo: RepoFixture,
+    _role: RoleFixture,
+    loaded: LoadedRole,
+    config: Config,
+    project: ProjectRoot,
+    _home_dir: TempDir,
+}
+
+impl Rig {
+    pub(crate) async fn new(repo: RepoFixture) -> Result<Rig, Box<dyn Error>> {
+        let world = World::builder().build()?;
+        let role = RoleFixture::new("sentinel")?;
+        role.commit().await?;
+        let loaded = world.roles.load_path(role.root()).await?;
+        let home_dir = tempfile::tempdir()?;
+        let home = HostPath::parse(&std::fs::canonicalize(home_dir.path())?)?;
+        let login = json!({
+            "auth_mode": "chatgpt",
+            "OPENAI_API_KEY": null,
+            "tokens": {
+                "id_token": "header.payload.signature",
+                "access_token": "ACCESS-SECRET-7f3a91",
+                "refresh_token": "REFRESH-SECRET-c20e44",
+                "oauth_provenance": {
+                    "issuer": "https://auth.openai.com",
+                    "client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
+                },
+                "login_owner_id": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+                "account_id": ACCOUNT_ID,
+            },
+            "last_refresh": "2026-11-02T10:11:12.123456789Z",
+        });
+        tokio::fs::write(home.as_path().join("auth.json"), login.to_string()).await?;
+        let config = Config::parse(&format!(
+            "default_gateway = \"fake-gateway\"\n\n[gateways.fake-gateway]\nopenshell_workspace = \"default\"\nbuilder = \"jackin-builder\"\nplatform = \"linux/arm64\"\n\n[accounts.work]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{ACCOUNT_ID}\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.platform-backend]\npath = \"{}\"\n",
+            home.as_path().display(),
+            role.root().as_path().display(),
+            repo.root().as_path().display(),
+        ))?;
+        let project = repo.project().await?;
+        world.gateway.script_program(
+            &sandbox_layout::PRINTENV,
+            jackin_testkit::ProgramScript {
+                exit_code: 0,
+                stdout: format!("{PLACEHOLDER}\n").into_bytes(),
+                stderr: Vec::new(),
+            },
+        );
+        Ok(Rig {
+            world,
+            repo,
+            _role: role,
+            loaded,
+            config,
+            project,
+            _home_dir: home_dir,
+        })
+    }
+
+    pub(crate) fn request(&self, id: u8) -> Result<LaunchRequest, Box<dyn Error>> {
+        Ok(LaunchRequest::new(
+            self.world.gateway.name().clone(),
+            self.project.clone(),
+            RoleName::parse("sentinel")?,
+            launch_id(id),
+        ))
+    }
+
+    pub(crate) fn plan(&self, id: u8) -> Result<LaunchPlan, Box<dyn Error>> {
+        Ok(plan_launch(&self.config, &self.loaded, self.request(id)?)?)
+    }
+
+    pub(crate) async fn launch(&self, id: u8) -> Result<Outcome, Box<dyn Error>> {
+        self.launch_with(id, CancellationToken::new()).await
+    }
+
+    pub(crate) async fn launch_with(
+        &self,
+        id: u8,
+        cancel: CancellationToken,
+    ) -> Result<Outcome, Box<dyn Error>> {
+        let plan = self.plan(id)?;
+        let (events, mut feed) = launch_events(LineDelivery::Reliable);
+        let drain = async { while feed.recv().await.is_some() {} };
+        let (result, ()) = tokio::join!(self.world.session.launch(plan, events, cancel), drain);
+        Ok(Outcome { result })
+    }
+
+    pub(crate) async fn handle(&self, id: u8) -> Result<SandboxHandle, Box<dyn Error>> {
+        let found = self
+            .world
+            .gateway
+            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&launch_id(id))))
+            .await?;
+        found
+            .first()
+            .and_then(|view| self.world.gateway.sandbox(&view.name))
+            .ok_or_else(|| "the launch has no sandbox".into())
+    }
+}
+
+pub(crate) fn ready(outcome: Outcome) -> TestResult {
+    match outcome.result {
+        Ok(LaunchOutcome::Ready(_)) => Ok(()),
+        other => Err(format!("expected a ready launch, saw {other:?}").into()),
+    }
+}
+
+pub(crate) fn failure(outcome: Outcome) -> Result<LaunchFailure, Box<dyn Error>> {
+    match outcome.result {
+        Err(failure) => Ok(failure),
+        other => Err(format!("expected a failed launch, saw {other:?}").into()),
+    }
+}
+
+pub(crate) fn unsupported(outcome: Outcome) -> Result<UnsupportedProject, Box<dyn Error>> {
+    match *failure(outcome)?.error {
+        LaunchError::Unsupported(refusal) => Ok(refusal),
+        other => Err(format!("expected a refusal, saw {other:?}").into()),
+    }
+}
+
+pub(crate) fn mismatch(outcome: Outcome) -> Result<TreeMismatch, Box<dyn Error>> {
+    match *failure(outcome)?.error {
+        LaunchError::ProjectMismatch(found) => Ok(*found),
+        other => Err(format!("expected a ProjectMismatch, saw {other:?}").into()),
+    }
+}
+
+pub(crate) fn tree_of(path: &Path) -> Result<Vec<String>, Box<dyn Error>> {
+    let mut names = Vec::new();
+    if !path.exists() {
+        return Ok(names);
+    }
+    let mut pending = vec![path.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir)? {
+            let entry = entry?;
+            let relative = entry.path().strip_prefix(path)?.display().to_string();
+            if entry.file_type()?.is_dir() {
+                pending.push(entry.path());
+            }
+            names.push(relative);
+        }
+    }
+    names.sort();
+    Ok(names)
+}
+
+pub(crate) fn assert_nothing_created(rig: &Rig) -> TestResult {
+    assert!(rig.world.gateway.sandboxes().is_empty());
+    assert!(rig.world.gateway.providers().is_empty());
+    assert!(rig.world.gateway.profiles().is_empty());
+    assert!(rig.world.engine.builds().is_empty());
+    assert!(rig.world.engine.images().is_empty());
+    let cache = tree_of(rig.world.cache_dir().as_path())?;
+    assert_eq!(
+        cache.iter().filter(|name| name.contains("upload-")).count(),
+        0,
+        "{cache:?}"
+    );
+    Ok(())
+}
+
+pub(crate) fn global_config(rig: &Rig, text: &str) -> TestResult {
+    std::fs::write(rig.world.home().as_path().join(".gitconfig"), text)?;
+    Ok(())
+}

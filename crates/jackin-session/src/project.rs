@@ -1,0 +1,297 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+mod bundle;
+mod facts;
+mod gate;
+mod git;
+mod refuse;
+mod sandbox;
+mod version;
+
+use std::fmt;
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
+use jackin_core::{
+    FileLock, FsError, HostPath, IdError, LaunchId, ProjectRoot, RepoPath, SandboxName,
+    SandboxPath, TerminalText, sandbox_layout,
+};
+use jackin_openshell::{GatewayError, GatewayOp};
+use thiserror::Error;
+use tokio_util::sync::CancellationToken;
+
+use crate::launch::LaunchError;
+use crate::project::facts::Facts;
+use crate::project::gate::HostGate;
+use crate::project::git::HostGit;
+use crate::project::sandbox::Sandbox;
+use crate::service::SessionDeps;
+
+pub use version::{GitVersion, HostGitError, MINIMUM_GIT, check_git};
+
+const LISTED_PATHS: usize = 5;
+const LOCK_POLL: Duration = Duration::from_millis(100);
+
+static STAGINGS: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ProjectStep {
+    Describe,
+    Head,
+    Identity,
+    Listing,
+    Bundle,
+    Empty,
+    Init,
+    Fetch,
+    SetHead,
+    Reset,
+    Configure,
+    RemoveBundle,
+    HostTree,
+    SandboxTree,
+    TreeList,
+}
+
+#[derive(Debug, Error)]
+pub enum UnsupportedProject {
+    #[error(
+        "the project has skip-worktree entries (a sparse checkout); run `git sparse-checkout disable`"
+    )]
+    SparseCheckout,
+    #[error("the project has populated submodules {0:?}; run `git submodule deinit --all`")]
+    PopulatedSubmodules(Vec<RepoPath>),
+    #[error("the project has nested git repositories {0:?}; ignore or remove them")]
+    NestedRepositories(Vec<RepoPath>),
+    #[error("the project is a partial clone: {output:?}")]
+    PartialClone { output: TerminalText },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TreeId(String);
+
+impl TreeId {
+    pub fn parse(text: &str) -> Result<TreeId, IdError> {
+        let lowercase_hex = text
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+        if matches!(text.len(), 40 | 64) && lowercase_hex {
+            Ok(TreeId(text.to_owned()))
+        } else {
+            Err(IdError::BadFormat {
+                kind: "tree ID",
+                expected: "40 or 64 lowercase hex digits",
+            })
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for TreeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TreeMismatch {
+    pub host: TreeId,
+    pub sandbox: TreeId,
+    pub host_only: Vec<RepoPath>,
+    pub sandbox_only: Vec<RepoPath>,
+    pub differing: Vec<RepoPath>,
+    pub autocrlf: Option<String>,
+}
+
+fn sample(label: &str, paths: &[RepoPath]) -> String {
+    if paths.is_empty() {
+        return String::new();
+    }
+    let shown: Vec<&str> = paths
+        .iter()
+        .take(LISTED_PATHS)
+        .map(RepoPath::as_str)
+        .collect();
+    let more = paths.len().saturating_sub(LISTED_PATHS);
+    let tail = if more > 0 {
+        format!(" and {more} more")
+    } else {
+        String::new()
+    };
+    format!("; {label}: {}{tail}", shown.join(", "))
+}
+
+impl fmt::Display for TreeMismatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "the uploaded project tree {} differs from the host tree {}{}{}{}",
+            self.sandbox,
+            self.host,
+            sample("only on the host", &self.host_only),
+            sample("only in the sandbox", &self.sandbox_only),
+            sample("different content", &self.differing),
+        )?;
+        if let Some(value) = &self.autocrlf {
+            write!(
+                f,
+                "; core.autocrlf is {value:?} on the host, a likely cause: set `text eol=...` in .gitattributes instead"
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct Staged {
+    dir: HostPath,
+    bundle: Option<HostPath>,
+    facts: Facts,
+}
+
+fn host_git<'a>(
+    deps: &'a SessionDeps,
+    root: &'a HostPath,
+    cancel: &'a CancellationToken,
+) -> HostGit<'a> {
+    HostGit {
+        runner: deps.host.runner.as_ref(),
+        root,
+        cancel,
+    }
+}
+
+pub(crate) async fn hold(
+    deps: &SessionDeps,
+    launch: &LaunchId,
+    cancel: &CancellationToken,
+) -> Result<FileLock, LaunchError> {
+    let path = HostPath::resolve(Path::new(&format!("upload-{launch}.lock")), &deps.cache_dir)?;
+    loop {
+        match deps.host.fs.lock(&path).await {
+            Ok(lock) => return Ok(lock),
+            Err(FsError::LockHeld(_)) => {
+                tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => {
+                        return Err(GatewayError::Cancelled { op: GatewayOp::UploadTree }.into());
+                    }
+                    () = deps.host.clock.sleep(LOCK_POLL) => {}
+                }
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
+pub(crate) async fn prepare(
+    deps: &SessionDeps,
+    project: &ProjectRoot,
+    launch: &LaunchId,
+    cancel: &CancellationToken,
+) -> Result<Staged, LaunchError> {
+    check_git(deps.host.runner.as_ref(), cancel).await?;
+    let git = host_git(deps, project.path(), cancel);
+    let fs = deps.host.fs.as_ref();
+    refuse::check(&git, fs).await?;
+    let facts = facts::read(&git, fs).await?;
+    let name = format!(
+        "upload-{launch}-{}-{}",
+        std::process::id(),
+        STAGINGS.fetch_add(1, Ordering::Relaxed)
+    );
+    let dir = HostPath::resolve(Path::new(&name), &deps.cache_dir)?;
+    fs.create_dir_all(&dir).await?;
+    let file = HostPath::resolve(Path::new("upload.bundle"), &dir)?;
+    match bundle::create(&git, &facts.head, &file).await {
+        Ok(bundle) => Ok(Staged { dir, bundle, facts }),
+        Err(error) => {
+            drop(fs.remove_dir_all(&dir).await);
+            Err(error)
+        }
+    }
+}
+
+impl Staged {
+    pub(crate) async fn release(self, deps: &SessionDeps) {
+        drop(deps.host.fs.remove_dir_all(&self.dir).await);
+    }
+
+    pub(crate) async fn upload(
+        &self,
+        deps: &SessionDeps,
+        project: &ProjectRoot,
+        sandbox: &SandboxName,
+        launch: &LaunchId,
+        cancel: &CancellationToken,
+    ) -> Result<(), LaunchError> {
+        let remote = Sandbox {
+            gateway: deps.gateway.as_ref(),
+            name: sandbox,
+            timeout: deps.limits.upload,
+            cancel,
+        };
+        remote.empty().await?;
+        deps.gateway
+            .upload_tree(sandbox, project, &sandbox_layout::PROJECT, cancel)
+            .await?;
+        let landed = self.send_bundle(deps, sandbox, launch, cancel).await?;
+        remote.repository(&self.facts, landed.as_ref()).await?;
+        self.verify(deps, project, &remote, launch, cancel).await
+    }
+
+    async fn send_bundle(
+        &self,
+        deps: &SessionDeps,
+        sandbox: &SandboxName,
+        launch: &LaunchId,
+        cancel: &CancellationToken,
+    ) -> Result<Option<SandboxPath>, LaunchError> {
+        let Some(bundle) = &self.bundle else {
+            return Ok(None);
+        };
+        let target = sandbox_layout::BUNDLE_DIR.join(&format!("upload-{launch}.bundle"))?;
+        deps.gateway
+            .upload_file(sandbox, bundle, &target, cancel)
+            .await?;
+        Ok(Some(target))
+    }
+
+    async fn verify(
+        &self,
+        deps: &SessionDeps,
+        project: &ProjectRoot,
+        remote: &Sandbox<'_>,
+        launch: &LaunchId,
+        cancel: &CancellationToken,
+    ) -> Result<(), LaunchError> {
+        let gate = sandbox_layout::JACKIN_DIR.join(&format!("gate-{launch}"))?;
+        let sandbox_tree = remote.tree(&gate).await?;
+        let objects = HostPath::resolve(Path::new("gate-objects"), &self.dir)?;
+        deps.host.fs.create_dir_all(&objects).await?;
+        let host = HostGate {
+            git: host_git(deps, project.path(), cancel),
+            index: HostPath::resolve(Path::new("gate-index"), &self.dir)?,
+            objects,
+            alternates: &self.facts.objects,
+        };
+        let host_tree = host.tree().await?;
+        if host_tree == sandbox_tree {
+            return remote.clear(&gate).await;
+        }
+        let host_entries = host.entries(&host_tree).await?;
+        let sandbox_entries = remote.entries(&gate, &sandbox_tree).await?;
+        let autocrlf = host.autocrlf().await?;
+        remote.clear(&gate).await?;
+        Err(LaunchError::ProjectMismatch(Box::new(gate::mismatch(
+            (host_tree, &host_entries),
+            (sandbox_tree, &sandbox_entries),
+            autocrlf,
+        ))))
+    }
+}

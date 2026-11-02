@@ -11,6 +11,7 @@ mod host;
 mod launch;
 mod lifecycle;
 mod plan;
+mod project;
 mod roles;
 mod service;
 
@@ -23,5 +24,6 @@ pub use host::*;
 pub use launch::*;
 pub use lifecycle::*;
 pub use plan::*;
+pub use project::*;
 pub use roles::*;
 pub use service::*;

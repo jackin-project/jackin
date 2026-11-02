@@ -69,6 +69,7 @@ pub struct RoleFixture {
 pub struct RepoFixture {
     dir: Arc<TempDir>,
     root: HostPath,
+    keep: Vec<Arc<TempDir>>,
 }
 
 async fn git(dir: &Path, args: &[&str]) -> Result<Vec<u8>, FixtureError> {
@@ -82,6 +83,8 @@ async fn git(dir: &Path, args: &[&str]) -> Result<Vec<u8>, FixtureError> {
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
         .env_remove("GIT_INDEX_FILE")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .stdin(std::process::Stdio::null())
         .output()
         .await?;
@@ -322,9 +325,21 @@ impl RoleFixture {
 
 impl RepoFixture {
     pub async fn new() -> Result<RepoFixture, FixtureError> {
+        RepoFixture::init(&["init", "-q"]).await
+    }
+
+    pub async fn new_sha256() -> Result<RepoFixture, FixtureError> {
+        RepoFixture::init(&["init", "-q", "--object-format=sha256"]).await
+    }
+
+    async fn init(args: &[&str]) -> Result<RepoFixture, FixtureError> {
         let (dir, root, canonical) = temp_root("jackin-project-")?;
-        git(&canonical, &["init", "-q"]).await?;
-        Ok(RepoFixture { dir, root })
+        git(&canonical, args).await?;
+        Ok(RepoFixture {
+            dir,
+            root,
+            keep: Vec::new(),
+        })
     }
 
     pub fn root(&self) -> &HostPath {
@@ -341,11 +356,94 @@ impl RepoFixture {
         write_file(self.root.as_path(), path, bytes).await
     }
 
+    pub async fn read(&self, path: &str) -> Result<Vec<u8>, FixtureError> {
+        Ok(tokio::fs::read(self.root.as_path().join(path)).await?)
+    }
+
+    pub async fn remove(&self, path: &str) -> Result<(), FixtureError> {
+        tokio::fs::remove_file(self.root.as_path().join(path)).await?;
+        Ok(())
+    }
+
+    pub async fn chmod(&self, path: &str, mode: u32) -> Result<(), FixtureError> {
+        use std::os::unix::fs::PermissionsExt;
+        tokio::fs::set_permissions(
+            self.root.as_path().join(path),
+            std::fs::Permissions::from_mode(mode),
+        )
+        .await?;
+        Ok(())
+    }
+
     pub async fn ignore(&self, text: &str) -> Result<(), FixtureError> {
         write_file(self.root.as_path(), ".gitignore", text.as_bytes()).await
     }
 
     pub async fn commit(&self) -> Result<CommitId, FixtureError> {
         commit_all(self.root.as_path()).await
+    }
+
+    pub async fn git(&self, args: &[&str]) -> Result<String, FixtureError> {
+        Ok(String::from_utf8(git(self.root.as_path(), args).await?)?)
+    }
+
+    pub async fn linked_worktree(&self, branch: &str) -> Result<RepoFixture, FixtureError> {
+        let (dir, root, _) = temp_root("jackin-worktree-")?;
+        let target = root.as_path().join("tree");
+        let target_text = target.to_string_lossy().into_owned();
+        self.git(&["worktree", "add", "-q", "-b", branch, &target_text])
+            .await?;
+        self.derived(dir, &target)
+    }
+
+    pub async fn clone_of(&self, options: &[&str]) -> Result<RepoFixture, FixtureError> {
+        let (dir, root, _) = temp_root("jackin-clone-")?;
+        let target = root.as_path().join("clone");
+        let source = format!("file://{}", self.root.as_path().display());
+        let target_text = target.to_string_lossy().into_owned();
+        let mut args = vec!["clone", "-q"];
+        args.extend_from_slice(options);
+        args.extend([source.as_str(), target_text.as_str()]);
+        git(root.as_path(), &args).await?;
+        self.derived(dir, &target)
+    }
+
+    pub async fn superproject(&self) -> Result<RepoFixture, FixtureError> {
+        let (dir, _, canonical) = temp_root("jackin-submodule-")?;
+        let outer = canonical.join("outer");
+        tokio::fs::create_dir(&outer).await?;
+        git(&outer, &["init", "-q"]).await?;
+        let source = self.root.as_path().to_string_lossy().into_owned();
+        git(
+            &outer,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "-q",
+                &source,
+                "lib",
+            ],
+        )
+        .await?;
+        commit_all(&outer).await?;
+        self.derived(dir, &outer)
+    }
+
+    pub async fn submodule_checkout(&self) -> Result<RepoFixture, FixtureError> {
+        let outer = self.superproject().await?;
+        let lib = outer.root.as_path().join("lib");
+        outer.derived(Arc::clone(&outer.dir), &lib)
+    }
+
+    fn derived(&self, dir: Arc<TempDir>, root: &Path) -> Result<RepoFixture, FixtureError> {
+        let mut keep = self.keep.clone();
+        keep.push(Arc::clone(&self.dir));
+        Ok(RepoFixture {
+            dir,
+            root: HostPath::parse(root)?,
+            keep,
+        })
     }
 }
