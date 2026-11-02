@@ -37,6 +37,9 @@ Use the latest stable release of every tool and every dependency. Do not use a p
 | OpenShell | 0.1.6 (`ac7f615cd12d5cc49cb16eb1f5f10ffeb1e90f47`, 2026-10-27) | Homebrew `openshell`, git tag `v0.1.6` |
 | Codex CLI | 0.166.0 (2026-10-29) | `@openai/codex` |
 | cargo-nextest | 0.9.150 | mise aqua |
+| Docker CLI (D24 client layer) | 29.9.2 | `download.docker.com` static archive, hash fixed on first fetch (no published checksum file) |
+| docker-buildx | 0.38.1 | GitHub release, published checksum |
+| docker-compose | 5.7.0 | GitHub release, published checksum |
 
 The operator set the global toolchain with this command:
 
@@ -364,11 +367,11 @@ If no rule selects an account, the launch stops with an error that names the mis
 Some workspaces must start Docker containers during implementation and tests. The Docker capability gives the agent in a sandbox a Docker engine.
 
 - The capability is disabled by default. A launch enables it when the role manifest has `[docker] enabled = true` or the workspace has `docker = true`.
-- When the capability is disabled, the image has no Docker client, the policy permits no engine endpoint, and the sandbox gets no engine file or variable.
+- When the capability is disabled, the image has no Docker client, the policy permits no engine endpoint, and the sandbox gets no engine file or variable. A role policy never names `host.openshell.internal` on any port; `role check` refuses it, so only jackin's engine rule can reach the engine.
 - When the capability is enabled, the agent starts its containers through the engine. Jackin does not start containers.
 - Jackin never starts or stops an engine itself.
 
-The engine is a dedicated external engine. It holds nothing else. The operator starts it on the gateway host and names it in the jackin gateway config, because OpenShell has no place for an engine endpoint. The recommended form is rootless Docker-in-Docker. The engine listens on `127.0.0.1` with TLS and client certificates, and its server certificate names `host.openshell.internal`.
+The engine is a dedicated external engine. It holds nothing else. The operator starts it on the gateway host and names it, with the directory of its client certificates, in the gateway entry of the jackin config, because OpenShell has no place for an engine endpoint. The recommended form is rootless Docker-in-Docker. The engine listens on `127.0.0.1` with TLS and client certificates, and its server certificate names `host.openshell.internal`.
 
 An engine inside the sandbox is impossible in OpenShell 0.1.6. The workload has no capabilities, `no_new_privs` is set, and seccomp denies `mount` and user namespaces. Upstream tracks it as `NVIDIA/OpenShell#4970`. When upstream allows it, it becomes the preferred source. The default engine of the host is not a source, because a sandbox that reaches it has root access to the host.
 
@@ -378,7 +381,7 @@ When the capability is enabled:
 - Jackin writes `ca.pem`, `cert.pem`, and `key.pem` to `/sandbox/.jackin/docker/` through exec stdin before the first attempt. The key has mode 0600.
 - The sandbox environment and each shell request have `DOCKER_HOST=tcp://host.openshell.internal:<port>`, `DOCKER_TLS_VERIFY=1`, and `DOCKER_CERT_PATH=/sandbox/.jackin/docker`.
 
-OpenShell 0.1.6 cannot keep a working engine credential outside the sandbox (`blockers/P0.5-docker-credentials.md`). So the agent can read the client key. `jackin load` and the console show a warning for each launch with the capability. The warning says these facts:
+OpenShell 0.1.6 cannot keep a working engine credential outside the sandbox (`blockers/P0.5-docker-credentials.md`). So the agent can read the client key. `jackin load` and the console show a warning for each launch with the capability. `Session::launch` emits it as the first launch event, before the image step, and the CLI and the console print the same text from one `DockerRisk` source, worded as the approved baseline console screen shows it. A retry with the same launch ID whose capability or image differs from the sandbox labels is refused, so a stale sandbox never continues. The warning says these facts:
 
 - The agent can read the engine client key.
 - Containers bypass the sandbox network policy.
