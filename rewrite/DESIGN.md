@@ -86,7 +86,7 @@ Jackin builds the image for each launch that needs one:
    - sets the user to `sandbox`
 5. Jackin delivers the final image to the gateway (D23).
 
-The image identity is the Docker image ID. The cache key is a hash of the role revision, the `Dockerfile` digest, the built construct image ID, the Codex version, the platform, the Docker capability, and the digests of `jackin-start` and each hook file. The image tag is the cache key. The role revision is the role commit, or the commit and a digest of the changed files when the role tree has uncommitted changes. When a local image with that tag exists, jackin does not build again. `--rebuild` ignores the cache. Jackin streams the build output to the CLI and to the console.
+The image identity is the Docker image ID. The cache key is a hash of the role revision, the `Dockerfile` digest, the built construct image ID, the Codex version, the platform, the Docker capability, and the digests of `jackin-start` and each hook file. The image tag is the cache key. Every jackin image name starts with the registry host `jackin.invalid/` (for example `jackin.invalid/construct:<hex>`). The `.invalid` top-level domain never resolves (RFC 2606), so a build that names a missing local image fails instead of pulling a same-named image from Docker Hub. The role revision is the role commit, or the commit and a digest of the changed files when the role tree has uncommitted changes. When a local image with that tag exists, jackin does not build again. `--rebuild` ignores the cache. Jackin streams the build output to the CLI and to the console.
 
 Evidence: `evidence/P0.3-codex.md`, `evidence/P7.1-image.md`.
 
