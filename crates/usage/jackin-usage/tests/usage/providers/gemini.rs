@@ -85,6 +85,7 @@ pub(crate) async fn case() -> Result<Case, Box<dyn std::error::Error>> {
     let (harness, account) = started_with(LOAD, QUOTA).await?;
     Ok(Case {
         provider: Provider::Gemini,
+        token: TOKEN,
         harness,
         account,
         first: (Method::Post, LOAD_PATH),

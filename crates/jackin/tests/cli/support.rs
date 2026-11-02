@@ -18,7 +18,7 @@ use jackin::{
 };
 use jackin_core::{
     Clock, Config, ConfigStore, EnvSnapshot, FileSystem, GatewayEntry, GatewayName, HostPath,
-    ProcessRunner,
+    ProcessRunner, Provider,
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, GatewayError, TermSize};
@@ -248,6 +248,16 @@ impl Terminal for ScriptedTerminal {
     }
 }
 
+pub(crate) const CLOSED_ORIGIN: &str = "http://127.0.0.1:1";
+
+pub(crate) fn closed_endpoints() -> ProviderEndpoints {
+    Provider::ALL
+        .into_iter()
+        .fold(ProviderEndpoints::real(), |endpoints, provider| {
+            endpoints.with(provider, CLOSED_ORIGIN.to_owned())
+        })
+}
+
 pub(crate) async fn until(mut done: impl FnMut() -> bool) -> Result<(), Failure> {
     for _ in 0..400 {
         if done() {
@@ -294,7 +304,7 @@ impl Harness {
                 "HOME".to_owned(),
                 world.home().as_path().display().to_string(),
             )],
-            usage_endpoints: ProviderEndpoints::real(),
+            usage_endpoints: closed_endpoints(),
             host: HostPorts {
                 clock,
                 fs: Arc::clone(&world.fs),

@@ -60,6 +60,7 @@ pub(crate) async fn case() -> Result<Case, Box<dyn std::error::Error>> {
     let (harness, account) = started(USAGES).await?;
     Ok(Case {
         provider: Provider::Kimi,
+        token: TOKEN,
         harness,
         account,
         first: (Method::Get, PATH),

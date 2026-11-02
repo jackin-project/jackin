@@ -8,7 +8,7 @@ use jackin_core::Provider;
 use jackin_testkit::{Method, Route, TestResult, World, guard};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Failure, FixedConnector, Harness};
+use super::support::{CLOSED_ORIGIN, Failure, FixedConnector, Harness};
 
 const WORK: &str = include_str!("fixtures/usage/usage_cli_work.json");
 const CACHED: &str = include_str!("fixtures/usage/usage_cli_cached.json");
@@ -272,4 +272,68 @@ async fn usage_reads_the_cache_inside_the_ttl_and_fetches_again_after_it() -> Te
         Ok(())
     })
     .await
+}
+
+#[tokio::test]
+async fn a_harness_that_sets_no_usage_endpoints_points_every_provider_at_a_closed_port()
+-> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        let text = format!("{:?}", harness.usage_endpoints);
+        assert_eq!(
+            text.matches(CLOSED_ORIGIN).count(),
+            Provider::ALL.len(),
+            "{text}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+fn make_unusable(path: &std::path::Path, mode: u32) -> Result<(), Failure> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
+    Ok(())
+}
+
+async fn failing_store(read: bool) -> TestResult {
+    let world = World::builder().build()?;
+    let config = login_account(&world, "work", "acct-work")?;
+    let harness = started(&config, &world).await?;
+    let server = world.usage.get().await?;
+    server.serve(
+        Provider::Codex,
+        Method::Get,
+        WHAM,
+        codex_route(ONE, "acct-work"),
+    );
+    let state = world.cache_dir().as_path().join("usage");
+    std::fs::create_dir_all(&state)?;
+    let file = state.join("usage.json");
+    if read {
+        std::fs::write(&file, "{}")?;
+        make_unusable(&file, 0o000)?;
+    } else {
+        make_unusable(&state, 0o555)?;
+    }
+    let ran = harness.run(&["usage"]).await?;
+    make_unusable(&state, 0o755)?;
+    if read {
+        make_unusable(&file, 0o644)?;
+    }
+    assert_eq!(ran.exit, ExitClass::Failure, "{}", ran.stderr);
+    assert!(ran.stdout.is_empty(), "{}", ran.stdout);
+    assert!(ran.stderr.contains("usage.json"), "{}", ran.stderr);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_cache_file_that_cannot_be_read_fails_the_command() -> TestResult {
+    guard(failing_store(true)).await
+}
+
+#[tokio::test]
+async fn a_cache_directory_that_cannot_be_written_fails_the_command() -> TestResult {
+    guard(failing_store(false)).await
 }

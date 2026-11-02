@@ -10,6 +10,7 @@ use crate::support::{
 };
 
 mod claude;
+mod codex;
 mod cursor;
 mod gemini;
 mod grok;
@@ -26,13 +27,15 @@ pub(crate) struct Case {
     pub(crate) provider: Provider,
     pub(crate) harness: UsageHarness,
     pub(crate) account: UsageAccount,
+    pub(crate) token: &'static str,
     pub(crate) first: (Method, &'static str),
     pub(crate) expected: &'static [Want],
 }
 
-async fn cases() -> Result<Vec<Case>, Box<dyn std::error::Error>> {
+pub(crate) async fn cases() -> Result<Vec<Case>, Box<dyn std::error::Error>> {
     Ok(vec![
         claude::case().await?,
+        codex::case().await?,
         cursor::case().await?,
         gemini::case().await?,
         grok::case().await?,
@@ -70,12 +73,17 @@ async fn every_provider_case_maps_a_401_to_an_expired_login() -> TestResult {
         for case in cases().await? {
             fail_first(&case, Route::status(401));
             let usage = case.harness.one(&case.account, Refresh::Cached).await?;
+            let mismatches = case.harness.server.mismatches();
             assert_eq!(
                 unavailable(&usage.outcome),
                 &UnavailableReason::ExpiredLogin,
-                "{:?}: {:?}",
+                "{:?}: {mismatches:?}",
                 case.provider,
-                case.harness.server.mismatches()
+            );
+            assert!(
+                mismatches.is_empty(),
+                "{:?} sent a request no route answers: {mismatches:?}",
+                case.provider
             );
         }
         Ok(())

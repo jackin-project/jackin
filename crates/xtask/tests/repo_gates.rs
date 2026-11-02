@@ -1017,11 +1017,20 @@ mod expose {
 
     #[test]
     fn expose_calls_outside_the_allowlist_are_reported_at_their_line() -> TestResult {
-        let source = "fn f(secret: &Secret) {\n    let _text = secret.expose();\n}\n";
+        let source = "fn f(secret: &Secret) {\n    let _text = secret.expose();\n    let _bytes = SecretBytes::expose(&secret);\n}\n";
         let path = "crates/usage/jackin-usage/src/cache.rs";
         let violations = run(&[(path, source)])?;
-        assert_eq!(summary(&violations), [at(CiStep::Layers, path, 2)]);
-        assert_messages(&violations, &[&["Secret::expose", "allowlist"]]);
+        assert_eq!(
+            summary(&violations),
+            [at(CiStep::Layers, path, 2), at(CiStep::Layers, path, 3)]
+        );
+        assert_messages(
+            &violations,
+            &[
+                &["Secret::expose", "allowlist"],
+                &["Secret::expose", "allowlist"],
+            ],
+        );
         Ok(())
     }
 

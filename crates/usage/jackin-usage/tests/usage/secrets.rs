@@ -183,3 +183,49 @@ async fn the_cache_file_holds_no_secret_and_the_credential_files_are_unchanged()
     })
     .await
 }
+
+async fn surfaces_of(
+    case: &crate::providers::Case,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let echo = format!("{} SECRET_TEXT_BODY", case.token);
+    let accounts = std::slice::from_ref(&case.account);
+    let mut surfaces = Vec::new();
+    let valid = case.harness.report(accounts, Refresh::Force).await?;
+    surfaces.push(serde_json::to_string(&valid)?);
+    surfaces.push(format!("{valid:?}"));
+    let echoes = [
+        Route::json(500, &format!("{{\"error\":\"{echo}\"}}")),
+        Route::json(200, &format!("not json {echo}")),
+        Route::json(200, &format!("{{\"note\":\"{echo}\"}}")),
+    ];
+    for route in echoes {
+        case.harness
+            .server
+            .replace(case.provider, case.first.0, case.first.1, route);
+        let report = case.harness.report(accounts, Refresh::Force).await?;
+        surfaces.push(serde_json::to_string(&report)?);
+        surfaces.push(format!("{report:?}"));
+    }
+    surfaces.extend(case.harness.cache_text());
+    Ok(surfaces)
+}
+
+#[tokio::test]
+async fn every_provider_keeps_its_token_and_the_response_text_out_of_the_report_and_the_cache()
+-> TestResult {
+    guard(async {
+        for case in crate::providers::cases().await? {
+            let surfaces = surfaces_of(&case).await?;
+            let leaked = surfaces.iter().find(|surface| {
+                surface.contains(case.token) || surface.contains("SECRET_TEXT_BODY")
+            });
+            assert!(
+                leaked.is_none(),
+                "{:?} leaked a secret into {leaked:?}",
+                case.provider
+            );
+        }
+        Ok(())
+    })
+    .await
+}

@@ -76,6 +76,7 @@ pub(crate) async fn case() -> Result<Case, Box<dyn std::error::Error>> {
     let (harness, account) = started().await?;
     Ok(Case {
         provider: Provider::Openrouter,
+        token: TOKEN,
         harness,
         account,
         first: (Method::Get, KEY_PATH),

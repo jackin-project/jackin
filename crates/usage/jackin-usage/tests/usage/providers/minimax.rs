@@ -61,6 +61,7 @@ pub(crate) async fn case() -> Result<Case, Box<dyn std::error::Error>> {
     let (harness, account) = started(REMAINS).await?;
     Ok(Case {
         provider: Provider::Minimax,
+        token: TOKEN,
         harness,
         account,
         first: (Method::Get, PATH),

@@ -69,6 +69,7 @@ pub(crate) async fn case() -> Result<Case, Box<dyn std::error::Error>> {
     let (harness, account) = started(PERIOD).await?;
     Ok(Case {
         provider: Provider::Cursor,
+        token: TOKEN,
         harness,
         account,
         first: (Method::Post, PATH),

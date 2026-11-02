@@ -56,6 +56,7 @@ pub(crate) async fn case() -> Result<Case, Box<dyn std::error::Error>> {
     let (harness, account) = started(QUOTA).await?;
     Ok(Case {
         provider: Provider::Zai,
+        token: TOKEN,
         harness,
         account,
         first: (Method::Get, PATH),

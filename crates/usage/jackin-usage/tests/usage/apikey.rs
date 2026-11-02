@@ -100,7 +100,7 @@ async fn a_file_account_is_unsupported() -> TestResult {
 }
 
 #[tokio::test]
-async fn a_login_file_with_only_an_api_key_is_unsupported() -> TestResult {
+async fn a_login_file_with_only_an_api_key_is_unsupported_port_fidelity() -> TestResult {
     guard(async {
         let harness = open_server().await?;
         harness
@@ -117,7 +117,7 @@ async fn a_login_file_with_only_an_api_key_is_unsupported() -> TestResult {
 }
 
 #[tokio::test]
-async fn a_login_file_with_an_api_key_and_tokens_uses_the_tokens() -> TestResult {
+async fn a_login_file_with_an_api_key_and_tokens_uses_the_tokens_port_fidelity() -> TestResult {
     guard(async {
         let harness = open_server().await?;
         harness
@@ -165,7 +165,7 @@ async fn a_login_file_that_is_not_json_is_a_provider_error_without_its_text() ->
 }
 
 #[tokio::test]
-async fn a_login_file_with_tokens_but_no_access_token_is_a_provider_error_without_its_text()
+async fn a_login_file_with_tokens_but_no_access_token_is_a_provider_error_without_its_text_port_fidelity()
 -> TestResult {
     guard(async {
         let harness = open_server().await?;
