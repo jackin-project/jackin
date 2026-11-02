@@ -27,7 +27,9 @@ fn process_error(error: ProcessError, op: GatewayOp) -> GatewayError {
     match error {
         ProcessError::Timeout { after, .. } => GatewayError::Timeout { op, after },
         ProcessError::Cancelled { .. } => GatewayError::Cancelled { op },
-        spawn @ ProcessError::Spawn { .. } => GatewayError::Process(spawn),
+        failed @ (ProcessError::Spawn { .. }
+        | ProcessError::OutputTooLarge { .. }
+        | ProcessError::Read { .. }) => GatewayError::Process(failed),
     }
 }
 

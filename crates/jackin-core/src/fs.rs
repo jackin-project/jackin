@@ -3,14 +3,19 @@
 
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions, TryLockError};
-use std::io::{self, ErrorKind, Write};
+use std::io::{self, ErrorKind, Read, Write};
+use std::os::fd::OwnedFd;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
 use async_trait::async_trait;
+use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, statat};
+use rustix::io::Errno;
 
-use crate::boundary::{DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError};
-use crate::paths::HostPath;
+use crate::boundary::{
+    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, RegularFile, RegularFileProblem,
+};
+use crate::paths::{HostPath, RepoPath};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StdFileSystem {}
@@ -89,6 +94,78 @@ fn lock_file(path: &Path) -> io::Result<Result<File, ()>> {
         Err(TryLockError::WouldBlock) => Ok(Err(())),
         Err(TryLockError::Error(source)) => Err(source),
     }
+}
+
+fn classify(
+    dir: &OwnedFd,
+    name: &str,
+    failure: Errno,
+    last: bool,
+) -> io::Result<RegularFileProblem> {
+    let stat = match statat(dir, name, AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(stat) => stat,
+        Err(Errno::NOENT) => return Ok(RegularFileProblem::Missing),
+        Err(other) => return Err(other.into()),
+    };
+    match FileType::from_raw_mode(stat.st_mode) {
+        FileType::Symlink => Ok(RegularFileProblem::Symlink),
+        FileType::Directory => Err(failure.into()),
+        _ if !last => Ok(RegularFileProblem::Missing),
+        FileType::RegularFile => Err(failure.into()),
+        _ => Ok(RegularFileProblem::NotARegularFile),
+    }
+}
+
+fn open_below(
+    dir: &OwnedFd,
+    name: &str,
+    flags: OFlags,
+    last: bool,
+) -> io::Result<Result<OwnedFd, RegularFileProblem>> {
+    match openat(
+        dir,
+        name,
+        flags | OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(fd) => Ok(Ok(fd)),
+        Err(Errno::NOENT) => Ok(Err(RegularFileProblem::Missing)),
+        Err(failure) => classify(dir, name, failure, last).map(Err),
+    }
+}
+
+fn read_below(root: &Path, file: &RepoPath) -> io::Result<Result<RegularFile, RegularFileProblem>> {
+    let mut dir = open(
+        root,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+        Mode::empty(),
+    )?;
+    let mut names = file.as_str().split('/').peekable();
+    while let Some(name) = names.next() {
+        if names.peek().is_some() {
+            match open_below(&dir, name, OFlags::DIRECTORY, false)? {
+                Ok(next) => dir = next,
+                Err(problem) => return Ok(Err(problem)),
+            }
+            continue;
+        }
+        let leaf = match open_below(&dir, name, OFlags::NONBLOCK, true)? {
+            Ok(leaf) => leaf,
+            Err(problem) => return Ok(Err(problem)),
+        };
+        let mut opened = File::from(leaf);
+        let meta = opened.metadata()?;
+        if !meta.is_file() {
+            return Ok(Err(RegularFileProblem::NotARegularFile));
+        }
+        let mut bytes = Vec::new();
+        opened.read_to_end(&mut bytes)?;
+        return Ok(Ok(RegularFile {
+            bytes,
+            mode: FileMode(meta.permissions().mode() & 0o7777),
+        }));
+    }
+    Ok(Err(RegularFileProblem::Missing))
 }
 
 #[async_trait]
@@ -180,6 +257,15 @@ impl FileSystem for StdFileSystem {
             Ok(file) => Ok(FileLock::new(file)),
             Err(()) => Err(FsError::LockHeld(path.clone())),
         }
+    }
+
+    async fn read_regular(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        let file = file.clone();
+        blocking(root, move |p| read_below(p, &file)).await
     }
 }
 

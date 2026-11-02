@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use jackin_core::{
     DirEntry, EnvValue, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LineSink,
     ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program,
-    SecretOutput,
+    RegularFile, RegularFileProblem, RepoPath, SecretOutput,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -110,6 +110,26 @@ impl FileSystem for RegistryFs {
     async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError> {
         self.record(format!("sync_dir {dir:?}"));
         Ok(())
+    }
+
+    async fn read_regular(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        let path =
+            HostPath::parse(&root.as_path().join(file.as_str())).map_err(|error| FsError::Io {
+                path: root.clone(),
+                kind: std::io::ErrorKind::InvalidInput,
+                message: error.to_string(),
+            })?;
+        Ok(match self.files.lock().unwrap().get(&path) {
+            Some(bytes) => Ok(RegularFile {
+                bytes: bytes.clone(),
+                mode: FileMode(0o644),
+            }),
+            None => Err(RegularFileProblem::Missing),
+        })
     }
 
     async fn lock(&self, path: &HostPath) -> Result<FileLock, FsError> {

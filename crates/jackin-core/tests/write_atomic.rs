@@ -5,8 +5,8 @@ use std::io::ErrorKind;
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, StdFileSystem,
-    write_atomic,
+    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, RegularFile,
+    RegularFileProblem, RepoPath, StdFileSystem, write_atomic,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -56,6 +56,13 @@ impl FileSystem for FaultFs {
     }
     async fn remove_file(&self, p: &HostPath) -> Result<(), FsError> {
         self.inner.remove_file(p).await
+    }
+    async fn read_regular(
+        &self,
+        r: &HostPath,
+        f: &RepoPath,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        self.inner.read_regular(r, f).await
     }
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
         self.inner.lock(p).await

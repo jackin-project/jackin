@@ -7,7 +7,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
-use jackin_core::{DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath};
+use jackin_core::{
+    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, RegularFile,
+    RegularFileProblem, RepoPath,
+};
 
 use crate::sync::locked;
 
@@ -307,5 +310,36 @@ impl FileSystem for MemFs {
             state: Arc::clone(&self.state),
             path: path.as_path().to_path_buf(),
         }))
+    }
+
+    async fn read_regular(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        let state = self.enter(FsOp::Read)?;
+        let mut current = root.as_path().to_path_buf();
+        let mut names = file.as_str().split('/').peekable();
+        while let Some(name) = names.next() {
+            current.push(name);
+            let last = names.peek().is_none();
+            if let Some(found) = state.files.get(&current) {
+                return Ok(if last {
+                    Ok(RegularFile {
+                        bytes: found.bytes.clone(),
+                        mode: found.mode,
+                    })
+                } else {
+                    Err(RegularFileProblem::Missing)
+                });
+            }
+            if !state.is_dir(&current) {
+                return Ok(Err(RegularFileProblem::Missing));
+            }
+            if last {
+                return Ok(Err(RegularFileProblem::NotARegularFile));
+            }
+        }
+        Ok(Err(RegularFileProblem::Missing))
     }
 }

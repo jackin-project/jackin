@@ -11,7 +11,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::ids::EnvName;
-use crate::paths::HostPath;
+use crate::paths::{HostPath, RepoPath};
 use crate::secret::{Secret, SecretBytes};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -48,6 +48,33 @@ pub trait FileSystem: Send + Sync + Debug {
     async fn mode(&self, path: &HostPath) -> Result<Option<FileMode>, FsError>;
     async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError>;
     async fn lock(&self, path: &HostPath) -> Result<FileLock, FsError>;
+    async fn read_regular(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError>;
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct RegularFile {
+    pub bytes: Vec<u8>,
+    pub mode: FileMode,
+}
+
+impl Debug for RegularFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RegularFile")
+            .field("len", &self.bytes.len())
+            .field("mode", &self.mode)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RegularFileProblem {
+    Symlink,
+    NotARegularFile,
+    Missing,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -277,4 +304,16 @@ pub enum ProcessError {
     Timeout { program: Program, after: Duration },
     #[error("{program:?} was cancelled")]
     Cancelled { program: Program },
+    #[error("{program:?} wrote more than {limit} bytes to {stream:?}")]
+    OutputTooLarge {
+        program: Program,
+        stream: OutputStream,
+        limit: usize,
+    },
+    #[error("reading {stream:?} of {program:?} failed: {message}")]
+    Read {
+        program: Program,
+        stream: OutputStream,
+        message: String,
+    },
 }

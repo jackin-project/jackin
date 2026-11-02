@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use jackin_core::{FileKind, FileMode, FileSystem, HostPath, RepoPath};
+use jackin_core::{FileMode, FileSystem, HostPath, RegularFile, RegularFileProblem, RepoPath};
 
 use crate::engine::{ContextProblem, EngineError};
 use crate::plan::{ContextSource, MaterializedFile};
@@ -45,37 +45,29 @@ async fn put(
     Ok(())
 }
 
-async fn listed_mode(
+pub async fn read_regular_file(
     fs: &dyn FileSystem,
     root: &HostPath,
     file: &RepoPath,
-) -> Result<FileMode, EngineError> {
+) -> Result<RegularFile, EngineError> {
     let shown = file.as_str();
-    let segments: Vec<&str> = shown.split('/').collect();
-    let mut current = root.as_path().to_path_buf();
-    for (index, segment) in segments.iter().enumerate() {
-        current.push(segment);
-        let entry = host(&current, shown)?;
-        let last = index + 1 == segments.len();
-        match (fs.stat(&entry).await?, last) {
-            (None, _) | (Some(FileKind::File), false) => {
-                return Err(refuse(shown, ContextProblem::Missing));
-            }
-            (Some(FileKind::Symlink), _) => return Err(refuse(shown, ContextProblem::Symlink)),
-            (Some(FileKind::Dir), true) => {
-                return Err(refuse(shown, ContextProblem::NotARegularFile));
-            }
-            (Some(FileKind::Dir), false) => {}
-            (Some(FileKind::File), true) => {
-                let mode = fs.mode(&entry).await?;
-                return Ok(match mode {
-                    Some(mode) if mode.0 & 0o111 != 0 => EXECUTABLE,
-                    _ => PLAIN,
-                });
-            }
+    let problem = match fs.read_regular(root, file).await? {
+        Ok(regular) => {
+            let mode = if regular.mode.0 & 0o111 == 0 {
+                PLAIN
+            } else {
+                EXECUTABLE
+            };
+            return Ok(RegularFile {
+                bytes: regular.bytes,
+                mode,
+            });
         }
-    }
-    Err(refuse(shown, ContextProblem::Missing))
+        Err(RegularFileProblem::Symlink) => ContextProblem::Symlink,
+        Err(RegularFileProblem::NotARegularFile) => ContextProblem::NotARegularFile,
+        Err(RegularFileProblem::Missing) => ContextProblem::Missing,
+    };
+    Err(refuse(shown, problem))
 }
 
 async fn stage_listed(
@@ -85,13 +77,8 @@ async fn stage_listed(
     target: &HostPath,
 ) -> Result<(), EngineError> {
     for file in files {
-        let mode = listed_mode(fs, root, file).await?;
-        let source = host(&root.as_path().join(file.as_str()), file.as_str())?;
-        let bytes = fs
-            .read(&source)
-            .await?
-            .ok_or_else(|| refuse(file.as_str(), ContextProblem::Missing))?;
-        put(fs, target, file.as_str(), &bytes, mode).await?;
+        let regular = read_regular_file(fs, root, file).await?;
+        put(fs, target, file.as_str(), &regular.bytes, regular.mode).await?;
     }
     Ok(())
 }

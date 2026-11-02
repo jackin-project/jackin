@@ -13,6 +13,7 @@ mod plan;
 mod request;
 
 pub use buildx::*;
+pub use context::read_regular_file;
 pub use dockerfile::*;
 pub use engine::*;
 pub use ensure::*;

@@ -9,7 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use async_trait::async_trait;
 use jackin_core::{
     DirEntry, EnvFile, EnvName, EnvSpec, FileKind, FileLock, FileMode, FileSystem, FsError,
-    HookKind, HostPath, ManifestError, RepoPath, RoleManifest, StdFileSystem,
+    HookKind, HostPath, ManifestError, RegularFile, RegularFileProblem, RepoPath, RoleManifest,
+    StdFileSystem,
 };
 
 type Fallible<T> = Result<T, Box<dyn std::error::Error>>;
@@ -469,6 +470,13 @@ impl FileSystem for CrashFs {
     async fn remove_file(&self, p: &HostPath) -> Result<(), FsError> {
         self.gate(p)?;
         self.inner.remove_file(p).await
+    }
+    async fn read_regular(
+        &self,
+        r: &HostPath,
+        f: &RepoPath,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        self.inner.read_regular(r, f).await
     }
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
         self.inner.lock(p).await

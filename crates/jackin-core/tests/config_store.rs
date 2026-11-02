@@ -11,7 +11,8 @@ use async_trait::async_trait;
 use jackin_core::{
     Account, AccountName, Clock, Config, ConfigEdit, ConfigError, ConfigStore, CredentialSource,
     DirEntry, EnvName, FileKind, FileLock, FileMode, FileSystem, FsError, GatewayEntry,
-    GatewayName, HostPath, Platform, Provider, RoleName, RoleSource, StdFileSystem, Timestamp,
+    GatewayName, HostPath, Platform, Provider, RegularFile, RegularFileProblem, RepoPath, RoleName,
+    RoleSource, StdFileSystem, Timestamp,
 };
 use tokio::sync::{Semaphore, oneshot};
 
@@ -281,6 +282,13 @@ impl FileSystem for CrashFs {
         self.gate(None, p)?;
         self.inner.remove_file(p).await
     }
+    async fn read_regular(
+        &self,
+        r: &HostPath,
+        f: &RepoPath,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        self.inner.read_regular(r, f).await
+    }
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
         self.gate(None, p)?;
         self.inner.lock(p).await
@@ -403,6 +411,13 @@ impl FileSystem for GateFs {
     }
     async fn remove_file(&self, p: &HostPath) -> Result<(), FsError> {
         self.inner.remove_file(p).await
+    }
+    async fn read_regular(
+        &self,
+        r: &HostPath,
+        f: &RepoPath,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        self.inner.read_regular(r, f).await
     }
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
         self.locks.fetch_add(1, Ordering::SeqCst);
