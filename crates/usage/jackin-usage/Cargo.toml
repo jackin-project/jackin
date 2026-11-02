@@ -18,6 +18,7 @@ jackin-usage-provider-claude = { workspace = true }
 jackin-usage-provider-codex = { workspace = true }
 jackin-usage-provider-core = { workspace = true }
 jackin-usage-provider-kimi = { workspace = true }
+jackin-usage-provider-minimax = { workspace = true }
 jackin-usage-provider-openrouter = { workspace = true }
 jackin-usage-provider-zai = { workspace = true }
 serde = { workspace = true }

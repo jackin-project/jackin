@@ -11,6 +11,7 @@ use crate::support::{
 
 mod claude;
 mod kimi;
+mod minimax;
 mod openrouter;
 mod zai;
 
@@ -29,6 +30,7 @@ async fn cases() -> Result<Vec<Case>, Box<dyn std::error::Error>> {
     Ok(vec![
         claude::case().await?,
         kimi::case().await?,
+        minimax::case().await?,
         openrouter::case().await?,
         zai::case().await?,
     ])

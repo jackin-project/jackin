@@ -15,6 +15,7 @@ members = [
   "crates/usage/jackin-usage-provider-codex",
   "crates/usage/jackin-usage-provider-core",
   "crates/usage/jackin-usage-provider-kimi",
+  "crates/usage/jackin-usage-provider-minimax",
   "crates/usage/jackin-usage-provider-openrouter",
   "crates/usage/jackin-usage-provider-zai",
   "crates/xtask",
@@ -41,6 +42,7 @@ jackin-usage-provider-claude = { path = "crates/usage/jackin-usage-provider-clau
 jackin-usage-provider-codex = { path = "crates/usage/jackin-usage-provider-codex", version = "0.1.0" }
 jackin-usage-provider-core = { path = "crates/usage/jackin-usage-provider-core", version = "0.1.0" }
 jackin-usage-provider-kimi = { path = "crates/usage/jackin-usage-provider-kimi", version = "0.1.0" }
+jackin-usage-provider-minimax = { path = "crates/usage/jackin-usage-provider-minimax", version = "0.1.0" }
 jackin-usage-provider-openrouter = { path = "crates/usage/jackin-usage-provider-openrouter", version = "0.1.0" }
 jackin-usage-provider-zai = { path = "crates/usage/jackin-usage-provider-zai", version = "0.1.0" }
 async-trait = "0.1.92"
