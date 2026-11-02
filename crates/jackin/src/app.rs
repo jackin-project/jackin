@@ -64,6 +64,7 @@ pub(crate) struct App {
     pub(crate) io: Io,
     pub(crate) deps: Deps,
     pub(crate) store: ConfigStore,
+    pub(crate) terminal: Option<Box<dyn Terminal>>,
     pub(crate) cwd: HostPath,
     pub(crate) cache_dir: HostPath,
     pub(crate) env: EnvSnapshot,

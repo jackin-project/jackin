@@ -145,6 +145,18 @@ const CASES: &[(&[&str], &[&str])] = &[
         ],
     ),
     (&["build", "--nope"], &["build", "--json"]),
+    (
+        &["load", "--launch-id", "bad id"],
+        &["load", "--launch-id", "good-id"],
+    ),
+    (&["load", "--env", "NOEQUALS"], &["load", "--env", "A=1"]),
+    (&["load", "--env", "1BAD=x"], &["load", "--env", "GOOD=x"]),
+    (&["load", "a", ".", "extra"], &["load", "a", "."]),
+    (&["attach"], &["attach", "jackin-x-0001"]),
+    (
+        &["attach", "jackin-x-0001", "--nope"],
+        &["attach", "jackin-x-0001", "--restart"],
+    ),
     (&["doctor", "extra"], &["doctor"]),
     (&["ls", "extra"], &["ls", "--json"]),
     (&["inspect"], &["inspect", "jackin-x-0001"]),

@@ -13,6 +13,8 @@ const COMMANDS: &[&str] = &[
     "gateway ls",
     "gateway rm",
     "build",
+    "load",
+    "attach",
     "doctor",
     "ls",
     "inspect",

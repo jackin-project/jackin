@@ -9,6 +9,7 @@ mod output;
 mod paths;
 mod report;
 mod system;
+mod term;
 mod terminal;
 mod views;
 
@@ -32,12 +33,12 @@ pub async fn run(env: AppEnv, deps: Deps) -> ExitClass {
         args,
         stdout,
         stderr,
+        terminal,
         cwd,
         config_path,
         cache_dir,
         env,
         cancel,
-        ..
     } = env;
     let mut io = Io::new(stdout, stderr);
     let cli = match Cli::try_parse_from(&args) {
@@ -53,6 +54,7 @@ pub async fn run(env: AppEnv, deps: Deps) -> ExitClass {
         io,
         deps,
         store,
+        terminal,
         cwd,
         cache_dir,
         env,

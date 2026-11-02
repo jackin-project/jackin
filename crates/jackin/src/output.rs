@@ -41,6 +41,18 @@ impl Io {
         self.data(&text)
     }
 
+    pub(crate) fn ask(&mut self, text: &str) {
+        drop(self.stderr.write_all(text.as_bytes()));
+        drop(self.stderr.flush());
+    }
+
+    pub(crate) fn bytes(&mut self, bytes: &[u8]) -> Result<(), CommandError> {
+        self.stdout
+            .write_all(bytes)
+            .and_then(|()| self.stdout.flush())
+            .map_err(CommandError::Output)
+    }
+
     pub(crate) fn note(&mut self, text: &str) {
         drop(self.stderr.write_all(format!("{text}\n").as_bytes()));
         drop(self.stderr.flush());

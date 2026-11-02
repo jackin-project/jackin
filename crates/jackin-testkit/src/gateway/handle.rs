@@ -129,6 +129,10 @@ impl SandboxHandle {
         )?)
     }
 
+    pub fn print_main(&self, bytes: &[u8]) {
+        self.cell.state().main.emit(bytes);
+    }
+
     pub fn exit_codex(&self, code: i32) {
         let root = self.cell.root();
         let mut state = self.cell.state();

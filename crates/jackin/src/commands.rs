@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod account;
+mod attach;
 mod build;
 mod doctor;
 mod gateway;
 mod inspect;
+mod load;
 mod ls;
 mod progress;
 mod role;
@@ -21,6 +23,8 @@ pub(crate) async fn dispatch(app: &mut App, command: Command) -> Result<(), Comm
         Command::Account(command) => account::run(app, command).await,
         Command::Doctor => doctor::run(app).await,
         Command::Build(args) => build::run(app, args).await,
+        Command::Load(args) => load::run(app, args).await,
+        Command::Attach(args) => attach::run(app, args).await,
         Command::Ls(arg) => ls::run(app, &arg).await,
         Command::Inspect(args) => inspect::run(app, args).await,
         Command::Role(command) => role::run(app, command).await,

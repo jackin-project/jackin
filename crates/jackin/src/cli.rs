@@ -7,8 +7,8 @@ use std::str::FromStr;
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use jackin_core::{
-    AccountName, BuilderName, EnvName, GatewayName, OpReference, OpenShellWorkspace, Platform,
-    Provider, RoleName, RoleRev, SandboxName, WorkspaceName,
+    AccountName, BuilderName, EnvName, GatewayName, LaunchId, OpReference, OpenShellWorkspace,
+    Platform, Provider, RoleName, RoleRev, SandboxName, WorkspaceName,
 };
 
 use crate::error::CommandError;
@@ -32,6 +32,10 @@ pub enum Command {
     Doctor,
     #[command(about = "Build the role image and print its image ID")]
     Build(BuildArgs),
+    #[command(about = "Build the image if needed, launch a sandbox, and attach to Codex")]
+    Load(LoadArgs),
+    #[command(about = "Reattach to the Codex terminal of a sandbox")]
+    Attach(AttachArgs),
     #[command(about = "List the jackin sandboxes")]
     Ls(JsonArg),
     #[command(about = "Show a sandbox, its labels, providers, and policy status")]
@@ -317,4 +321,52 @@ pub struct AccountAddArgs {
         help = "Credential as env:NAME, an op:// reference, or file:PATH"
     )]
     pub credential: Option<CredentialArg>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EnvAssignment {
+    pub name: EnvName,
+    pub value: String,
+}
+
+impl FromStr for EnvAssignment {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<EnvAssignment, String> {
+        let (name, value) = text
+            .split_once('=')
+            .ok_or_else(|| "expected NAME=VALUE".to_owned())?;
+        Ok(EnvAssignment {
+            name: EnvName::parse(name).map_err(|error| error.to_string())?,
+            value: value.to_owned(),
+        })
+    }
+}
+
+#[derive(Debug, Args)]
+pub struct LoadArgs {
+    #[arg(help = "Role name; defaults to the workspace default role")]
+    pub role: Option<RoleName>,
+    #[arg(default_value = ".", help = "Project directory")]
+    pub path: PathBuf,
+    #[arg(long, help = "Account to use for this launch")]
+    pub account: Option<AccountName>,
+    #[arg(long, help = "Build the image again")]
+    pub rebuild: bool,
+    #[arg(long, help = "Continue an earlier launch")]
+    pub launch_id: Option<LaunchId>,
+    #[arg(
+        long = "env",
+        value_name = "NAME=VALUE",
+        help = "Value for a role env entry"
+    )]
+    pub env: Vec<EnvAssignment>,
+}
+
+#[derive(Debug, Args)]
+pub struct AttachArgs {
+    #[arg(help = "Sandbox name")]
+    pub sandbox: SandboxName,
+    #[arg(long, help = "Run preflight and start Codex again after it exited")]
+    pub restart: bool,
 }

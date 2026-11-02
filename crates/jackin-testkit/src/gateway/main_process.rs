@@ -276,20 +276,24 @@ impl Main {
         (keys, false)
     }
 
+    pub(super) fn emit(&mut self, bytes: &[u8]) {
+        self.output.extend_from_slice(bytes);
+        if self.output.len() > RETAINED_MAX {
+            let excess = self.output.len() - RETAINED_MAX;
+            self.output.drain(..excess);
+        }
+        for attachment in &self.attachments {
+            attachment.send(TerminalEvent::Output(bytes.to_vec()));
+        }
+    }
+
     fn forward(&mut self, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
         }
         self.input.extend_from_slice(bytes);
         if self.echo {
-            self.output.extend_from_slice(bytes);
-            if self.output.len() > RETAINED_MAX {
-                let excess = self.output.len() - RETAINED_MAX;
-                self.output.drain(..excess);
-            }
-            for attachment in &self.attachments {
-                attachment.send(TerminalEvent::Output(bytes.to_vec()));
-            }
+            self.emit(bytes);
         }
     }
 

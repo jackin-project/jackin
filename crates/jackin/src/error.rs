@@ -90,6 +90,8 @@ pub enum CommandError {
     #[error("a terminal is required")]
     NoTerminal,
     #[error("{0}")]
+    Session(String),
+    #[error("{0}")]
     Cancelled(String),
     #[error("the environment is incomplete: {0}")]
     Environment(String),
@@ -156,6 +158,7 @@ impl CommandError {
             | CommandError::Json(_)
             | CommandError::Console(_)
             | CommandError::NoTerminal
+            | CommandError::Session(_)
             | CommandError::Environment(_)
             | CommandError::Unhealthy => ExitClass::Failure,
         }

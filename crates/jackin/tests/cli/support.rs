@@ -1,21 +1,24 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::ffi::OsString;
 use std::fmt::Debug;
 use std::io::{self, Write};
+use std::num::NonZeroU16;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
-use jackin::{AppEnv, Deps, ExitClass, GatewayConnector};
+use jackin::{AppEnv, Deps, ExitClass, GatewayConnector, RawMode, Terminal, TerminalInput};
 use jackin_core::{
     Clock, Config, ConfigStore, EnvSnapshot, FileSystem, GatewayEntry, GatewayName, HostPath,
     ProcessRunner,
 };
 use jackin_image::ImageEngine;
-use jackin_openshell::{Gateway, GatewayError};
+use jackin_openshell::{Gateway, GatewayError, TermSize};
 use jackin_session::HostPorts;
 use jackin_testkit::{World, default_limits};
 use serde::de::DeserializeOwned;
@@ -148,6 +151,109 @@ impl GatewayConnector for FixedConnector {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) enum Step {
+    Line(String),
+    Bytes(Vec<u8>),
+    Resize(TermSize),
+    Close,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct RawProbe(Arc<AtomicBool>);
+
+impl RawProbe {
+    pub(crate) fn raw(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+struct Leave(Arc<AtomicBool>);
+
+impl Drop for Leave {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ScriptedTerminal {
+    script: VecDeque<Step>,
+    size: TermSize,
+    raw: Arc<AtomicBool>,
+}
+
+pub(crate) fn term_size(cols: u16, rows: u16) -> Result<TermSize, Failure> {
+    Ok(TermSize {
+        cols: NonZeroU16::new(cols).ok_or("zero columns")?,
+        rows: NonZeroU16::new(rows).ok_or("zero rows")?,
+    })
+}
+
+impl ScriptedTerminal {
+    pub(crate) fn new(steps: Vec<Step>) -> Result<(ScriptedTerminal, RawProbe), Failure> {
+        let raw = Arc::new(AtomicBool::new(false));
+        Ok((
+            ScriptedTerminal {
+                script: steps.into(),
+                size: term_size(100, 30)?,
+                raw: Arc::clone(&raw),
+            },
+            RawProbe(raw),
+        ))
+    }
+}
+
+#[async_trait]
+impl Terminal for ScriptedTerminal {
+    fn size(&self) -> TermSize {
+        self.size
+    }
+
+    fn enter_raw(&mut self) -> io::Result<RawMode> {
+        self.raw.store(true, Ordering::SeqCst);
+        Ok(RawMode::new(Leave(Arc::clone(&self.raw))))
+    }
+
+    async fn read_line(&mut self) -> io::Result<Option<String>> {
+        match self.script.front() {
+            Some(Step::Line(_)) => match self.script.pop_front() {
+                Some(Step::Line(line)) => Ok(Some(line)),
+                _ => std::future::pending().await,
+            },
+            Some(Step::Close) => {
+                self.script.pop_front();
+                Ok(None)
+            }
+            _ => std::future::pending().await,
+        }
+    }
+
+    async fn next_input(&mut self) -> TerminalInput {
+        match self.script.front() {
+            Some(Step::Bytes(_) | Step::Resize(_) | Step::Close) => match self.script.pop_front() {
+                Some(Step::Bytes(bytes)) => TerminalInput::Bytes(bytes),
+                Some(Step::Resize(size)) => {
+                    self.size = size;
+                    TerminalInput::Resized(size)
+                }
+                _ => TerminalInput::Closed,
+            },
+            _ => std::future::pending().await,
+        }
+    }
+}
+
+pub(crate) async fn until(mut done: impl FnMut() -> bool) -> Result<(), Failure> {
+    for _ in 0..400 {
+        if done() {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    Err("the condition never held".into())
+}
+
 pub(crate) struct Harness {
     pub(crate) connector: FixedConnector,
     pub(crate) cwd: HostPath,
@@ -161,6 +267,7 @@ pub(crate) struct Harness {
 pub(crate) struct Invocation<'a> {
     harness: &'a Harness,
     args: Vec<String>,
+    terminal: Option<ScriptedTerminal>,
     cancel: CancellationToken,
 }
 
@@ -235,6 +342,7 @@ impl Harness {
         Invocation {
             harness: self,
             args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+            terminal: None,
             cancel: CancellationToken::new(),
         }
     }
@@ -245,17 +353,31 @@ impl Harness {
 }
 
 impl Invocation<'_> {
+    pub(crate) fn terminal(mut self, terminal: ScriptedTerminal) -> Self {
+        self.terminal = Some(terminal);
+        self
+    }
+
+    pub(crate) fn cancel(mut self, cancel: CancellationToken) -> Self {
+        self.cancel = cancel;
+        self
+    }
+
     pub(crate) async fn run(self) -> Result<Ran, Failure> {
         let harness = self.harness;
         let stdout = Shared::default();
         let stderr = Shared::default();
         let mut args: Vec<OsString> = vec![OsString::from("jackin")];
         args.extend(self.args.iter().map(OsString::from));
+        let terminal: Option<Box<dyn Terminal>> = match self.terminal {
+            Some(terminal) => Some(Box::new(terminal)),
+            None => None,
+        };
         let env = AppEnv {
             args,
             stdout: Box::new(stdout.clone()),
             stderr: Box::new(stderr.clone()),
-            terminal: None,
+            terminal,
             cwd: harness.cwd.clone(),
             config_path: harness.config_path.clone(),
             cache_dir: harness.cache_dir.clone(),
