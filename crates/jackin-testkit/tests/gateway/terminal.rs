@@ -254,15 +254,43 @@ async fn cat_owner()
     Ok((fake, handle, owner))
 }
 
+async fn flood(session: &TerminalSession) -> TestResult {
+    for _ in 0..4000 {
+        let sent = tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            session.input(b"a".to_vec()),
+        )
+        .await;
+        if sent.is_err() {
+            return Ok(());
+        }
+    }
+    Err("the session never filled".into())
+}
+
 #[tokio::test]
-async fn a_late_ending_attachment_of_the_old_generation_does_not_release_the_new_attachment()
+async fn a_session_dropped_while_its_channels_are_full_leaves_no_attachment() -> TestResult {
+    guard(async {
+        let (_fake, handle, owner) = cat_owner().await?;
+        flood(&owner).await?;
+        assert_eq!(handle.attachments(), 1);
+        drop(owner);
+        eventually("the attachment to be released", || handle.attachments(), 0).await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_late_ending_attachment_of_the_old_generation_does_not_release_or_feed_the_new_attachment()
 -> TestResult {
     guard(async {
         let (fake, handle, mut old) = cat_owner().await?;
         let name = handle.name();
+        flood(&old).await?;
         fake.set_power(&name, PowerAction::Stop).await?;
         fake.set_power(&name, PowerAction::Start).await?;
         assert_eq!(observe(&fake, &name).await?.phase, Phase::Ready);
+        assert!(handle.main_input().is_empty());
         let mut fresh = attach(&fake, &name, InputMode::Owner).await?;
         let events = collect_until("the new lease", &mut fresh, |e| {
             matches!(e, TerminalEvent::Lease(_))

@@ -18,6 +18,8 @@ use tokio_util::sync::CancellationToken;
 use crate::exec::{Failure, HostProgram, run_command};
 use crate::sync::locked;
 
+const TAIL_LIMIT: usize = 65536;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ScriptedProgram {
     Docker,
@@ -417,11 +419,20 @@ impl ScriptedProcessRunner {
                     stderr,
                 };
                 emit_output(lines, &output).await;
-                Ok(output)
+                Ok(if lines.is_some() {
+                    tailed(output)
+                } else {
+                    output
+                })
             }
             ReplyBody::Lines { status, lines: all } => {
                 emit(lines, &all).await;
-                Ok(collect(status, &all))
+                let output = collect(status, &all);
+                Ok(if lines.is_some() {
+                    tailed(output)
+                } else {
+                    output
+                })
             }
             ReplyBody::UntilCancelled { lines: all } => {
                 emit(lines, &all).await;
@@ -472,6 +483,14 @@ async fn snapshot(
         }
     }
     Ok(files)
+}
+
+fn tailed(mut output: ProcessOutput) -> ProcessOutput {
+    for bytes in [&mut output.stdout, &mut output.stderr] {
+        let excess = bytes.len().saturating_sub(TAIL_LIMIT);
+        bytes.drain(..excess);
+    }
+    output
 }
 
 fn collect(status: ProcessStatus, all: &[(OutputStream, String)]) -> ProcessOutput {

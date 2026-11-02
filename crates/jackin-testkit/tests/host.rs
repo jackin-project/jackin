@@ -706,3 +706,129 @@ async fn scripted_runner_streams_lines_applies_effects_and_holds_until_cancel() 
     ));
     Ok(())
 }
+
+#[tokio::test]
+async fn concurrent_sleepers_wake_at_their_own_deadlines_and_do_not_add_their_durations()
+-> TestResult {
+    let clock = FakeClock::new();
+    let start = clock.now();
+    let five = Duration::from_secs(5);
+    tokio::join!(clock.sleep(five), clock.sleep(five));
+    assert_eq!(clock.now(), Timestamp(start.0 + 5));
+    assert_eq!(clock.slept(), [five, five]);
+
+    let clock = FakeClock::new();
+    let start = clock.now();
+    let ((), seen) = tokio::join!(clock.sleep(five), async {
+        clock.sleep(Duration::from_secs(3)).await;
+        clock.now()
+    });
+    assert_eq!(seen, Timestamp(start.0 + 3));
+    assert_eq!(clock.now(), Timestamp(start.0 + 5));
+    let mut slept = clock.slept();
+    slept.sort();
+    assert_eq!(slept, [Duration::from_secs(3), five]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_dropped_sleeper_leaves_no_trace_and_a_lone_race_still_moves_time() -> TestResult {
+    let clock = FakeClock::new();
+    let start = clock.now();
+    let plan = PollPlan {
+        interval: Duration::from_secs(1),
+        timeout: Duration::from_secs(30),
+    };
+    let yields = AtomicU32::new(0);
+    let ready = poll_until(&clock, plan, &CancellationToken::new(), || async {
+        if yields.fetch_add(1, Ordering::SeqCst) == 0 {
+            for _ in 0..8 {
+                tokio::task::yield_now().await;
+            }
+        }
+        Ok::<_, Infallible>(Poll::Ready("done"))
+    })
+    .await;
+    assert!(matches!(ready, Ok("done")), "{ready:?}");
+    assert_eq!(clock.now(), start);
+    assert!(clock.slept().is_empty());
+
+    let thirty = Duration::from_secs(30);
+    tokio::select! {
+        () = clock.sleep(thirty) => {}
+        () = std::future::pending::<()>() => {}
+    }
+    assert_eq!(clock.now(), Timestamp(start.0 + 30));
+    assert_eq!(clock.slept(), [thirty]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_runner_starts_git_with_a_cleared_environment_plus_the_spec_env() -> TestResult {
+    let runner = TestRunner::new();
+    let mut run = spec(Program::Git, &["-c", "alias.e=!env", "e"]);
+    run.env = vec![("JACKIN_F2".to_owned(), EnvValue::Plain("1".to_owned()))];
+    let printed = stdout(&runner, &run).await?;
+    let lines: Vec<&str> = printed.lines().collect();
+    assert!(lines.contains(&"JACKIN_F2=1"), "the spec env is missing");
+    let inherited: Vec<&&str> = lines
+        .iter()
+        .filter(|line| line.starts_with("HOME=") || line.starts_with("CARGO_MANIFEST_DIR="))
+        .collect();
+    assert!(inherited.is_empty(), "inherited: {inherited:?}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_pre_cancelled_call_is_cancelled_before_any_reply_is_chosen_or_any_effect_runs()
+-> TestResult {
+    let dir = tempfile::tempdir()?;
+    let iidfile = dir.path().join("iid");
+    let runner = ScriptedProcessRunner::new();
+    runner.expect(
+        ScriptedProgram::Docker,
+        &["build"],
+        ProcessReply::exited(0, b"one", b"").with_effect(ProcessEffect::WriteArgFile {
+            prefix: "--iidfile=".to_owned(),
+            bytes: b"sha256:abc\n".to_vec(),
+        }),
+    );
+    runner.expect(
+        ScriptedProgram::Docker,
+        &["build"],
+        ProcessReply::exited(0, b"two", b""),
+    );
+    let build = spec(
+        Program::Docker(DockerSubcommand::BuildxBuild),
+        &["build", &format!("--iidfile={}", iidfile.display())],
+    );
+    let cancelled = CancellationToken::new();
+    cancelled.cancel();
+    let run = runner.run(&build, None, &cancelled).await;
+    assert!(
+        matches!(
+            run,
+            Err(ProcessError::Cancelled {
+                program: Program::Docker(_)
+            })
+        ),
+        "{run:?}"
+    );
+    let secret = runner.run_secret(&build, &cancelled).await;
+    assert!(
+        matches!(
+            secret,
+            Err(ProcessError::Cancelled {
+                program: Program::Docker(_)
+            })
+        ),
+        "{secret:?}"
+    );
+    assert!(!tokio::fs::try_exists(&iidfile).await?);
+    assert!(runner.seen().is_empty());
+
+    assert_eq!(stdout(&runner, &build).await?, "one");
+    assert_eq!(tokio::fs::read(&iidfile).await?, b"sha256:abc\n");
+    assert_eq!(runner.seen().len(), 1);
+    Ok(())
+}
