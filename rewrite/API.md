@@ -503,7 +503,8 @@ pub mod sandbox_layout {
     pub static GIT: SandboxPath;
     pub static PRINTENV: SandboxPath;
     pub static SHA256SUM: SandboxPath;
-    pub fn fixed() -> [&'static SandboxPath; 10];
+    pub static STAT: SandboxPath;
+    pub fn fixed() -> [&'static SandboxPath; 11];
     pub fn uploaded_marker(launch: &LaunchId) -> SandboxPath;
     pub fn setup_done_marker(launch: &LaunchId) -> SandboxPath;
     pub fn env_file(launch: &LaunchId) -> SandboxPath;
@@ -511,7 +512,7 @@ pub mod sandbox_layout {
     pub fn bundle_path(sandbox: &SandboxName) -> SandboxPath;
 }```
 
-`SandboxPath` is absolute, normalized, and has no `..`. `from_static` is `const` and does not validate, because `panic` is denied and a `const fn` cannot return an error: a test in `jackin-core` parses every `sandbox_layout::fixed()` entry and every `AgentSpec::paths()` entry and requires the parsed value to equal the constant. `RepoPath` is relative with no `..` and no empty or `.` segment (D11). `HostPath::resolve` joins a relative CLI argument to the working directory and normalizes it without touching the disk. `ProjectRoot::open` checks that the path is an existing directory with a `.git` entry (D08 needs a work tree). `sandbox_layout` is the single owner of every in-sandbox path that jackin and `jackin-start` agree on (D09, D11), including the env file, and of the three absolute program paths that `run_program` uses (`/usr/bin/git`, `/usr/bin/printenv`, `/usr/bin/sha256sum`). `jackin-image` embeds `jackin-start`, and a test there asserts the script text contains each constant, so the script and the Rust cannot drift.
+`SandboxPath` is absolute, normalized, and has no `..`. `from_static` is `const` and does not validate, because `panic` is denied and a `const fn` cannot return an error: a test in `jackin-core` parses every `sandbox_layout::fixed()` entry and every `AgentSpec::paths()` entry and requires the parsed value to equal the constant. `RepoPath` is relative with no `..` and no empty or `.` segment (D11). `HostPath::resolve` joins a relative CLI argument to the working directory and normalizes it without touching the disk. `ProjectRoot::open` checks that the path is an existing directory with a `.git` entry (D08 needs a work tree). `sandbox_layout` is the single owner of every in-sandbox path that jackin and `jackin-start` agree on (D09, D11), including the env file, and of the four absolute program paths that `run_program` uses (`/usr/bin/git`, `/usr/bin/printenv`, `/usr/bin/sha256sum`, `/usr/bin/stat`). `jackin-image` embeds `jackin-start`, and a test there asserts the script text contains each constant, so the script and the Rust cannot drift.
 
 ### Secrets and terminal text
 
@@ -3608,3 +3609,375 @@ Decision. The `known` assignments in `create` and `join` stay (see the last bull
 | U8-A2 join | `proofs::a_failure_right_after_a_join_still_reports_the_joined_sandbox` | `self.known = Some(view.name.clone())` removed from `join` | `left: None right: Some(SandboxName("jackin-platfor-ij4f"))` at `proofs.rs:176` |
 
 Each mutation was applied alone: the other row stayed green, and both rows pass with the assignments restored. The rows count finds, so a change to the observe-after-act shape of the loop moves `FINDS_BEFORE_CREATE`; the `step == Sandbox` assertion fails first in that case (the failure then lands at `Image` or `Provider`), so a stale count is not silent.
+
+### U9-F3 (P4.4 fix batch F3), from rewrite/reconciliation/U9-F3.md
+
+This file records where batch F3 of the P4.4 fix round differs from `rewrite/API.md`, and the preconditions P1 to P13 of the approved test plan (`P4.4-F3-test-plan.md`, with the orchestrator decisions on P2, P4, P9, P10 and P12). The orchestrator folds it into API.md at merge.
+
+## Preconditions
+
+- P1. Row order. The rows that need a cross-crate decision were written after the decision: P2 (rows 05), P9c (row 12), P10 (rows 13 and 14).
+- P2. `ProcessError` gains two variants in `jackin-core`: `OutputTooLarge { program: Program, stream: OutputStream, limit: usize }` and `Read { program: Program, stream: OutputStream, message: String }`. `Read` is a failed read of a pipe of the child; it is not `Spawn`. The only exhaustive matches in the workspace are in `jackin-openshell/src/transfer.rs` (`process_error`, both variants map to `GatewayError::Process`). The testkit runner builds `ProcessError` values and never matches on them, so it needs no arm.
+- P10. Option A. `FileSystem::read_regular(&self, root: &HostPath, file: &RepoPath) -> Result<Result<RegularFile, RegularFileProblem>, FsError>` in `jackin-core`. `RegularFile { bytes: Vec<u8>, mode: FileMode }` carries the raw permission bits (`mode & 0o7777`) of the one opened descriptor. `RegularFileProblem` is `Symlink`, `NotARegularFile` or `Missing`; a refusal is the inner `Err`, an I/O failure is the outer `Err`. `StdFileSystem` walks the components with `openat` below an open root descriptor: every ancestor with `O_DIRECTORY | O_NOFOLLOW`, the leaf with `O_NOFOLLOW | O_NONBLOCK`, and takes the type and mode from `fstat` of that descriptor (`File::metadata`). A failed open is classified with `fstatat(AT_SYMLINK_NOFOLLOW)`: a symbolic link is `Symlink`, a missing entry is `Missing`, a non-directory ancestor is `Missing`, a special file at the leaf is `NotARegularFile`. The root itself is trusted and followed. The rustix `fs` feature joins the root `Cargo.toml` and `jackin-core` depends on `rustix`. `MemFs::read_regular` reuses `FsOp::Read` for fault injection and call counting, because adding an `FsOp` variant breaks the exhaustive match in `jackin-testkit/tests/host.rs`. `jackin-image` exports `read_regular_file(fs, root, file) -> Result<RegularFile, EngineError>`, which maps the problem to `ContextProblem` and normalizes the mode to 0o755 (any execute bit) or 0o644. Callers: `stage_listed`, and the example for the Dockerfile. The U8 hook reader will call the same function.
+- P3. Line cap. `LINE_LIMIT` is 65536 raw bytes per line, counted before the lossy decoding. A longer line is delivered as its first 65536 bytes decoded lossily, followed by the ASCII mark ` [truncated]` (a leading space); the rest of the line is discarded up to the next newline. A line of exactly 65536 bytes gets no mark. The line state belongs to one pump, so it is per stream. The tail buffer still takes the raw chunks and keeps the true raw suffix of 65536 bytes.
+- P4. Whole bound. `WHOLE_LIMIT` is 16777216 bytes per stream. The bound is checked on every chunk: `==` passes and `>` fails. On overflow the pump ends, the runner kills the process group, reaps the child and returns `ProcessError::OutputTooLarge { program, stream, limit }`; the error carries no output. It applies to the stdout and the stderr of `run` without a sink and to both streams of `run_secret` (orchestrator decision: `Buffer::Secret` is bounded as well). Sink mode keeps the 65536-byte tail and no other bound.
+- P5. Zeroization. `Buffer::Secret` holds `Zeroizing<Vec<u8>>`, the pump chunk is `Zeroizing<[u8; 8192]>` and the pump line is `Zeroizing<Vec<u8>>`, so drop glue covers success, error, timeout, cancel and a dropped future. No test is kept (impossible under `forbid(unsafe_code)`); the red/green reviewer runs the allocator probe from the plan.
+- Read errors. `pump` returns `Result<(), StreamFault>`; a failed pipe read ends the run with `ProcessError::Read { program, stream, message }` instead of a short output with `Exited(0)`. No test is kept.
+- P6. Success-path kill. After the leader is reaped and both pipes are closed, the runner kills the process group (ESRCH is ignored). A descendant that left the group with `setsid` escapes. Callers of `ProcessRunner::run` and `run_secret` in the tree: `openshell gateway list` (`jackin-openshell/src/discovery.rs`), the `openshell sandbox upload/download` calls (`jackin-openshell/src/transfer.rs`), and `docker buildx build`, `buildx inspect` and `image inspect` (`jackin-image/src/buildx.rs`). All are foreground commands; none relies on a surviving descendant.
+
+## Line loss under load (found by the coordinator, root-caused in F3)
+
+`streamed_output_is_lossless_ordered_per_stream_lossy_decoded_and_tailed_to_64_kib` once received 29104 of 30002 lines. Cause: after the child exited, `drive` started a 2 s wall-clock grace timer that ran while the pumps were still delivering buffered lines to a bounded sink. A consumer that is slower than the pipe (capacity-1 sink, loaded machine) kept the pumps busy for more than 2 s, so the timer fired, killed the group and returned with the unread pipe data and undelivered lines lost. The timer measured delivery time, not pipe idleness. Fix: the grace is now per read. Once the child has exited (a `CancellationToken` set by `drive`), each pump races its pipe read against `idle()`, which waits for the exit and then sleeps `DRAIN_GRACE`; the sleep restarts for every read, and time spent in `sink.send` is outside the race. A pipe that stays silent for 2 s after the exit still ends the pump (a descendant that holds the pipes), and the success path then kills the group. The `expire` branch and the `Sleep` state of `drive` are deleted. Reproduction before the fix (a throwaway test, not kept: `seq 1 30000`, capacity-1 sink, a collector that sleeps 1 ms per line after line 22000): 22766 of 30000 lines on the old runner, 30000 of 30000 on the fixed one. A kept test of this needs a plan row; it would be slow (20 s) and is proposed to the orchestrator as an open question.
+
+- Row P44-F3-17 keeps that test: `a_slow_sink_after_the_child_exits_loses_no_line_and_the_idle_rule_still_ends_the_run` (`tests/process_runner/streaming.rs`). A 200-line script (12000 bytes) finishes writing and touches a done marker; a capacity-1 consumer waits for the marker, then stalls 3 s, longer than the 2 s grace. Phase A expects all 200 lines in order; phase B adds a silent pipe-holding descendant and expects the same lines, `Ok`, and no leftover process, so the idle rule still ends the run. Restoring the pre-8bf4e60e exit-anchored timer turns it red with `1 of 200 lines; first difference at index 1` (3 of 3 runs, 3.0 s); the fixed code passes in 5.95 s.
+
+## Image records
+
+- P7. Per-call directory guard and sweep. `BuildxEngine::build` holds a `CallDir` guard whose `Drop` runs the synchronous `std::fs::remove_dir_all` (a `Drop` cannot await), so a dropped `ensure_image` future removes the copy of the context. `BuildxEngine::new` sweeps `work_dir` once with std fs: an entry is a per-call directory only when its name is `<digits>-<digits>` and it is a directory or a symbolic link; it is removed when `kill(pid, 0)` returns ESRCH (EPERM counts as alive; pid 0 and unparsable pids are never swept). A symbolic link is removed as a link and never followed. `locks/`, lock files and every other entry are never deleted. A missing `work_dir` is not an error. `jackin-image` depends on `rustix` (workspace, features `fs` and `process`) for the liveness probe. The sweep and the guard use std fs, not the `FileSystem` boundary, as P7 says; an engine over `MemFs` therefore does not clean its in-memory call directory on drop.
+- P8. Unreadable env file. `check_env` tests `-r` after `-f` and prints `0`, so `run_attempt` publishes `exited <attempt> 65` and writes `jackin-start: <path> is not readable` on stderr (any other bad file prints `is malformed at line <n>`). The test fails loudly when the file stays readable at mode 000, which is the case for root. Whether CI runs as root: not verified.
+- P9. Key lock. (a) `BuildxEngine::hold` uses `FileSystem::lock` on `<work_dir>/locks/<sha256 of the tag>.lock`, which never matches the P7 pattern. The locks directory is created on demand and its files are never deleted. (b) `ensure_image` takes the construct-tag lock first, finds or builds the construct, releases it, then takes the lock of the final tag and keeps it to the end of the call, so the span covers the first `find` of the final tag, both builds and the delivery check. The wait polls every 100 ms, stops at once on cancel (`ImageError::Cancelled`) and gives up after 3600 s (`BUILD_TIMEOUT`) with `EngineError::LockTimeout { key }`, mapped to `ImageError::LockTimeout { key }` by `from_engine`. The maximum wait behind a live peer is therefore 3600 s; a hung peer that holds the lock for longer makes the waiter fail, not hang. `hold` uses `tokio::time`, so a `start_paused` test covers the limit (row below). (c) The construct lock is released before the final lock is taken, so two roles do not wait for each other during their role builds, and two roles that both miss the construct do not race on its tag. (d) `ImageEngine::hold(&self, key: &ImageTag, cancel: &CancellationToken) -> Result<Option<FileLock>, EngineError>` has a default body that returns `Ok(None)`, so `FakeEngine` compiles unchanged and takes no lock.
+- P11. Derived getcap clause. One segment without ` && ` inside: `{ caps="$(getcap -r /)" || { echo "getcap failed in role image" >&2; exit 1; }; test -z "$caps" || { printf '%s\n' "$caps" | sed 's/^/file capability in role image: /' >&2; exit 1; }; }`. It captures stdout only. A failing `getcap` fails the build; stderr noise with exit 0 passes; each file with a capability is named on stderr before the build fails. Open risk for the live check: if real `getcap -r /` exits non-zero on harmless unreadable paths, every role build fails. The live evidence (exit code and stderr of real `getcap -r /` on a clean construct, a clean-role build, a hostile-role build) is the orchestrator's item P13.
+- Test support. `work_entries()` in `tests/image_io/support.rs` ignores the `locks` directory; the assertions that use it still say that no per-call directory is left. `DockerModel::fresh_ids()` makes every build of a tag yield a new image ID.
+
+## Example
+
+- P12. `build_images` refuses a role tree that is dirty before any docker call. Dirty means `git status --porcelain -z --untracked-files=all` prints anything: tracked edits, staged changes, deletions and untracked files that `git ls-files -co --exclude-standard` would list (ignored files are not listed by either). The request keeps `RoleRevision::Clean`. The Dockerfile is read with `read_regular_file`, so a symbolic link is refused. The `--minimal` flag is deleted. The default work directory is `$XDG_STATE_HOME/jackin/build-images`, or `~/.local/state/jackin/build-images` when the variable is unset or empty; `--work-dir` overrides it. The directory is created with mode 0700 (parents with the default mode). An existing path that is not a directory, is a symbolic link, or has any other mode than 0700 is refused with an error naming the mode; nothing changes its mode.
+- F3-16 manual checks (macOS, a temporary `XDG_STATE_HOME`, `PATH` holding only `git`): a tracked edit exits 1 with ` M a.txt` and an untracked file exits 1 with `?? new.txt`, both before any docker call; `--minimal` exits 1 with `unknown argument --minimal`; the clean role reaches the first docker call (`Spawn { program: Docker(ImageInspect) ... }` because docker is absent); the created directory has mode 700; after `chmod 755` the run exits 1 with `must be a directory with mode 0700, found mode 755`.
+
+## Red/green addendum (round 2, reviewer verdict CHANGES)
+
+Each row below was run red against the named mutant and green on the fixed tree.
+
+- Row 05, per stream: `unstreamed_output_beyond_16_mib_per_stream_fails_with_output_too_large_and_stops_the_child` gained a run with 10 MiB on stdout and 10 MiB on stderr, no sink, expecting `Ok` with both streams whole. Mutant: the byte count shared by both streams of one call. Red: `Error: OutputTooLarge { program: Git, stream: Stderr, limit: 16777216 }`.
+- Row 03, raw tail: `a_single_output_line_is_cut_at_64_kib_with_a_mark_and_the_next_line_arrives_intact` ends the long line with `z` and compares the whole stdout tail with the raw suffix (`...az\nnext\nlast`). Mutant: the tail fed with the capped bytes of each line. Red: `stdout tail is the raw suffix: 65536 bytes against 65536 expected; first difference at index 65525`.
+- `LockTimeout`: `waiting_behind_a_live_peer_gives_up_after_3600_seconds_with_the_construct_key` (`start_paused`, `tokio` `test-util` added to the `jackin-image` dev-dependencies). A peer engine holds the construct tag lock; `ensure_image` returns `LockTimeout { key }` with the construct tag after at least 3600 s and less than 3700 s of paused time, and starts no build. The limit is a `timeout` of 3700 s of paused time, not `guarded` (its 10 s limit would fire first under auto-advance). Mutant: limit times 1000. Red: `Error: "no LockTimeout within 3700 s of paused time"` after 1.7 s. Mutant: limit divided by 60. Red: the `waited` assertion. Mutant: the mapped error loses the key. Red: `expected LockTimeout, got Err(Cancelled)`.
+- Construct lock (P9c): `two_roles_that_both_miss_the_construct_build_it_once_and_neither_sees_a_moved_source`. A gate holds the first construct build; the second role (a different role name, same construct tag) must report lock contention and not reach its own construct build; after the release both calls are `Built`, the construct was built once (1 of 5 builds) and neither returns `SourceMoved`. The gate takes a tag prefix, so the existing role-build gate rows are unchanged. Mutant: the construct-tag lock removed. Red: `Error: "the second call also reached the construct build jackin.invalid/construct:abda10c023014b79"`.
+- `MemFs::read_regular`: `memfs_read_regular_returns_bytes_and_mode_and_gives_the_typed_refusal_otherwise` (`jackin-testkit/tests/host.rs`): a regular file and a nested file return bytes and mode; a directory is `NotARegularFile`; a missing entry, a missing parent and a non-directory ancestor are `Missing`. Mutant: always `Symlink`. Red: `left: Err(Symlink)`, `right: Ok(RegularFile { len: 10, mode: FileMode(493) })`. Mutant: mode fixed at 0o644. Red: `left: ... mode: FileMode(420)`, `right: ... mode: FileMode(493)`.
+- `RegistryFs::read_regular` (`jackin-openshell/tests/gateway/fakes.rs`) returns `FsError::Io` with kind `Unsupported` and the message `read_regular is unsupported by RegistryFs`. Nothing calls it.
+- Unreadable env file message: `jackin_start_treats_an_unreadable_env_file_as_malformed` also asserts `is not readable` and no `malformed` on stderr. Against the old script it is red (stderr said `is malformed at line 0`).
+
+## Residuals
+
+- Row 13 reads the mode from the one opened descriptor. A mutant that reads the mode by path in a second call survives rows 13 and 14, because the swap in row 14 happens after `read_regular` returns, so no test can race the mode read. The single-descriptor rule is proven by reading `StdFileSystem::read_regular`, not by a test.
+
+### U9-F1 (P4.4 fix batch F1), from rewrite/reconciliation/U9-F1.md
+
+Records of the decisions and preconditions for batch F1 (`jackin-openshell`, `jackin-core` ids, the root manifest). Each precondition is written before the test that uses it. Source plan: the P4.4 F1 test plan and the orchestrator decisions on it.
+
+## Closure matcher (F1-1, F1-4, F1-10, F1-11, F1-12)
+
+### F1-1-P1. The matcher
+
+- The matcher is `openshell_core::host_pattern`, from `openshell-core` at the git tag `v0.1.6`, the same source as `openshell-sdk`. The root manifest has a new workspace dependency `openshell-core`, and `jackin-openshell` is the only crate that names it.
+- The xtask layers rule needs no change. `gateway_family("openshell-core")` matches the prefix `openshell`, and `repo_gates.rs` already has the manifest and source rows for `openshell-core`.
+- `HostPattern::overlaps` calls `host_patterns_overlap`. The hand-written `labels`, `label_overlap` and `sequences_overlap` are deleted. An upstream error maps to "overlaps", which is fail-closed. It cannot happen for a `HostPattern`, because `HostPattern::parse` accepted the text through the same upstream parser.
+
+### F1-1-P2. The host grammar
+
+- `HostPattern::parse` is upstream-only: `openshell_core::host_pattern::HostPattern::new` decides, then the text is lowercased. Jackin keeps no charset gate of its own.
+- Rejected by upstream and therefore a parse error: the empty text, any whitespace, `{` and `}` (brace alternates), an empty label (`a..b`, and a trailing dot as in `chatgpt.com.`), and a label the `glob` crate cannot compile (`[unclosed.com`).
+- `api.openai.com/v1` was an unparsable host under the old charset gate. Under the upstream grammar it parses, as a host whose last label is `com/v1`. It overlaps no profile host, so it is no violation. The test row that used it now uses `{api,x}.openai.com`.
+- The U5 deviation "a partial `*` counts as a whole label" is replaced by the upstream rule: `x*.com` no longer overlaps `chatgpt.com`, while `*gpt.com` and `chat*.com` do.
+- Bracket classes, `?` and `*` inside a label are decided by the upstream glob matcher. `[c]hatgpt.com`, `[a-z]hatgpt.com`, `chatgpt.co[m]`, `api.openai.co[m]` and `[a]pi.openai.com` are violations. `[d]hatgpt.com` and `chatgpt.co[n]` are not.
+- The upstream matcher does not treat an IPv6 literal specially. It sees one label. Jackin has no policy that names an IPv6 host. Not verified against the gateway's own handling.
+
+### F1-4-P1. Render error
+
+- `yaml::render` returns `Result<String, PolicyError>`, and so does the public `PolicyDocument::render`. `with_rule` propagates the error. Nothing swallows a serialization error any more.
+- Probe for a trigger: `openshell-policy` rejects every key it does not know, so only a free-form key can carry deep nesting into a parsed document. The probe used `network_middlewares.<m>.config`, which is free-form. The parse stops at nesting depth 61, below the upstream `ParseLimits.max_depth` of 64, and `noyalib::from_str` refuses deeper input with `recursion depth limit exceeded`. Every depth that parsed went through `with_rule` without a serializer error. No parsed document reaches the serializer with a depth the serializer refuses. The error path is therefore unreachable through a parsed document, and F1-4 has no test. The earlier probe under an unknown key was refused at parse time before depth mattered, so it did not test the serializer boundary.
+- The one caller outside `jackin-openshell` is `crates/jackin-testkit/src/gateway.rs` (the policy hash). It maps the error to `GatewayError::Protocol`.
+
+### F1-10-P1. ClosedPolicy
+
+- `ClosedPolicy` is a tuple struct with a private field. It has one public constructor, `ClosedPolicy::parse(text)`, which parses with `PolicyDocument::parse_authored`, then requires `closure_violations` against the embedded Codex profile (`Agent::Codex.spec().openshell.chatgpt_profile`) with an empty `generated` list to be empty. It derives only `Clone` and `Debug`.
+- The error is `ClosedPolicyError`: `Policy(PolicyError)` for a parse failure (a reserved `_provider_` key, port 0, an unparsable host) and `Violations(Vec<ClosureViolation>)` for an overlap.
+- `SandboxCreate::new` takes a `ClosedPolicy`. `SandboxCreate::policy()` still returns `&PolicyDocument`. A raw `PolicyDocument` cannot reach `CreateSandbox`. The contract suite builds its sandbox through `ClosedPolicy::parse` as well.
+- The type-level guarantee has no runtime test and no compile-fail test (nextest does not run doctests). The reviewer checks it by search: one public constructor, a private field, no `Default`, no `FromStr`, no `From<PolicyDocument>`.
+
+### F1-11-P1. Name grammar
+
+- `GatewayName` and `BuilderName` use the edge rule `Edge::First`: the first character must be ASCII alphanumeric. A leading `-`, `.` and `_` are rejected. The explicit rows are `-x`, `--help`, `-` and `.`.
+- `.` matters beyond option injection. `Path::join("gateways").join(".")` folds to `gateways/mtls`, a different directory from the gateway's own.
+- The last character is not restricted, so `a-` and `a.` stay valid.
+
+### F1-12-P1. The noyalib feature
+
+- `noyalib` supports `lossless-u64` as its own feature. `compat-serde-yaml` is `["lossless-u64"]`. The root manifest now names `lossless-u64`. `port_problem` relies on it for the `as_u64` branch.
+- `compat-serde-yaml` is still enabled in the resolved graph, by `openshell-policy-schema` (upstream), so the feature set of the build does not change. `Cargo.lock` changes by one line: `openshell-core` in the dependency list of `jackin-openshell`.
+- `cargo tree --offline -e features -i noyalib`, before: `jackin-openshell` is listed under `noyalib feature "compat-serde-yaml"`. After: `jackin-openshell` is listed under `noyalib feature "lossless-u64"` and `noyalib feature "std"`; `compat-serde-yaml` stays with the upstream crates only.
+- No test: no behavior changes.
+
+## Gateway discovery (F1-6)
+
+### F1-6-P1. Variants and rules
+
+- `resolve_gateway` accepts only an entry whose endpoint starts with the literal `https://` and whose auth is exactly `mtls`. The check runs before any certificate file is read. The SDK compares the scheme the same way (`starts_with`). Upper-case `HTTPS://` is refused.
+- Two new `DiscoveryError` variants: `InsecureEndpoint { name, scheme: Option<String> }` and `UnsupportedAuth { name, auth }`. `scheme` is the text before `://` when it is at most 16 characters of letters, digits, `+`, `-` and `.`, and `None` otherwise (including an endpoint with no `://`). The error never carries the endpoint, so user information in an endpoint cannot reach a log.
+- The scheme check comes first. An entry with both faults reports the scheme.
+- `registered_gateways` is unchanged. It lists every entry, so `jackin doctor` can still show a non-mTLS entry.
+
+## Contract suite and exec cap (F1-2, F1-5, F1-8)
+
+### F1-2-P1. Ready failure
+
+- `Ctx::ready` deletes the created sandbox on any `Err` from `wait_for` (an unavailable gateway, or the poll limit), ignores a failure of that delete, and returns the wait error. The delete sits on the shared `Err` return, so the poll-limit path and the error path use the same code. No separate test for the poll limit (60 s).
+
+### F1-5-P1. Shell exit bound
+
+- The event loop of `shell_exit_code` runs under `PROGRAM_TIMEOUT` (60 s). When it expires, the check fails with exactly `the shell never ended`, which the test pins, and `cleanup` still runs. The check does not add a field to `ContractFixture`.
+
+### F1-8-P1. Exec output cap
+
+- The cap is 16 MiB (`16 * 1024 * 1024`) inclusive, per stream, inside `exec_collect`. It covers `run_program`, `read_files`, `write_file` and `remote_digest`. A chunk that would take a stream above the cap ends the call with `GatewayError::OutputTooLarge { op, stream, limit }` and drops the response stream, so the supervisor sees the call cancelled and kills the process. A truncated output is never returned.
+- `OutputTooLarge` carries `jackin_core::OutputStream` and is not retryable. It is a `GatewayError` variant of this crate. The runner-side `ProcessError` variants belong to batch F3 (F1-8-P2).
+
+## Upload and download (F1-7, F1-8 sink, F1-9)
+
+### F1-7-P1. Sanitizer rules
+
+The sanitizer reads the host `.git/config` through `git config --no-includes -f <config> --list -z`, run by the `ProcessRunner` with `Program::Git`, `GIT_` removed from the environment, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, null stdin and a 30 s timeout. There is no hand parser of the git config format: the only parsing is the NUL and newline framing of the `-z` listing. All names follow git's own parsing, because the listing comes from git:
+
+- Section and variable names are lower-case in the listing, so `[CREDENTIAL]` and `[Credential]` are `credential`. A header with a key on the same line, an old dotted header such as `[credential.example]`, a continuation line of a value, and a quoted value with `#` or `;` reach the filter already decoded.
+- An entry is dropped when its section is exactly `credential`, `include` or `includeif`; when its section is `http` and its variable is `extraheader` (this covers `http.extraheader` and `http.<url>.extraheader`); or when its subsection holds user information in a `scheme://` URL (the key itself would carry the secret, and a key cannot be rewritten without changing what it matches). `[credentials]` and `[includes]` stay.
+- In the value of every other entry, the user information of the authority of each `scheme://` URL is removed, up to the last `@` of the authority, so a password that contains `@` leaves no tail. The authority ends at `/`, `?`, `#`, whitespace or a quote. Text after the authority, such as `path@v1`, stays. An scp-style `user@host:path` has no `://` and stays.
+- An input that git cannot parse (for example `[remote "o]`, exit 128) is an error and yields no text. A listing that is not UTF-8, not NUL-terminated, or has a value with a carriage return is an error as well.
+- The output is a fresh config: every value is written in double quotes with `\\`, `\"`, `\n`, `\t` and `\b` escaped, so git reads back the same value.
+
+### F1-7-P2. Where the sanitizer lives
+
+- `GitConfigEntry` and the pure filter `sanitize_entries(Vec<GitConfigEntry>) -> Vec<GitConfigEntry>` are public in `git_config.rs`. `sanitized_git_config(runner, config, cancel)` is the public git-backed reader and renderer in `transfer.rs`. The testkit fake can call both later (F2).
+
+### F1-7-P3. Config path and environment
+
+- The sandbox file is `<upload.dest>/.git/config`, written with the gateway file write at mode 0644 after both CLI uploads. The sanitized text is built before the first CLI call, so an unparsable config stops the upload before anything leaves the host.
+- Both upload CLI calls now remove `GIT_` as well as `OPENSHELL_` (`upload_env_prefixes`). The download and the gateway list keep `OPENSHELL_` only.
+
+### F1-7-P4. A `.git` that is not a directory
+
+- `upload_project` returns `GatewayError::UnsupportedGitDirectory { path }` before any CLI call, git call or write when `<source>/.git` is not a real directory (a file as in a linked worktree or a submodule, a symbolic link, or missing). The export through the git common directory stays the open P5 trail item (F1-15).
+
+### F1-7-P5. Failure after the `.git` upload
+
+- A failure after the `.git` upload leaves the raw host config in the sandbox. The caller (P5 launch) must treat any `Err` from `upload_project` as a failed launch, must not start Codex, and writes the upload marker only after `Ok`.
+
+### F1-8 sink half. Transfer CLI calls use the tail buffer
+
+- Each transfer CLI call passes a line sink to `ProcessRunner::run`, drained by a concurrent receiver, so the runner keeps only the bounded 64 KiB tail of each stream (runner contract U7-B5(c)). The tests assert `has_sink` on the recorded request. The memory bound itself belongs to the runner tests of batch F3.
+
+### F1-9-P1. Download
+
+- The remote size comes from `/usr/bin/stat -c %s -- <path>` as a direct program (not through a shell). The backend keys on `command[0]`. The limit is 4 GiB inclusive. A larger size is `GatewayError::DownloadTooLarge { size, limit }` before the CLI call. A failing `stat` or a non-numeric size is `Transfer { op: Size, .. }`.
+- The `stat` path is `sandbox_layout::STAT` in `jackin-core` (`/usr/bin/stat`), listed in `sandbox_layout::fixed()`, so the image check of batch F3 covers it. `transfer.rs` reads the constant from `sandbox_layout`.
+- On any failure after the call starts (size, transfer, digest read, digest mismatch) `download_file` removes the local file, including a file that existed before the call. The digest is a corruption check only: it shows that the bytes arrived as the sandbox holds them, and it does not authenticate the sandbox.
+
+## SSH main-process path (F1-3)
+
+### F1-3-P1. The model and its limits
+
+- `tests/gateway/ssh_server.rs` is a model of the sandbox supervisor, not interop proof. It is an in-process `russh` server (`russh::server::run_stream`) behind the in-process tonic `ForwardTcp`, which bridges the frames to a `tokio::io::duplex`. The tests call `GrpcGateway::open_terminal` end to end. No production item became more visible and no `cfg(test)` hook exists.
+- Keys: two Ed25519 host keys from the fixed seeds `[0x2a; 32]` and `[0x55; 32]` (`Ed25519Keypair::from_seed`), so no RNG and no key file. The expected fingerprints are literals computed with `ssh-keygen -l -f` on the OpenSSH public key of each seed:
+  - `[0x2a; 32]`: `SHA256:1Lt0B6m58n9i5yp9hABit7qhCJ/7aR7kRxt8QRziO8k`
+  - `[0x55; 32]`: `SHA256:G0rarR9Wy+cqC2YbqeAoaVmUU9hm1OPuwLi2DueJAYU`
+- The server is a dumb scripted actor. It accepts `auth_none` and the session channel, answers the `openshell-main` subsystem with success, and records the user, each `env` and `pty` request in order, each window change with its `Instant`, every data chunk, and EOF and close. It does not read detach keys. A test declares what the server sends after the subsystem (`after_subsystem`), what it sends once it has seen given bytes (`reactions`), and what it pushes later (`push`). One option stalls the subsystem reply.
+- The in-process `CreateSshSession` returns the scripted fingerprint (right, wrong or empty) and a unique token, and records it. `RevokeSshSession` records the token. Both are recorded in the model.
+- Fidelity sources for what the model sends: the supervisor `ssh.rs` of OpenShell v0.1.6 (`openshell-main` handling at lines 748 to 850: success first, then the notice, then exit status, EOF and close for a refusal; the `OPENSHELL_MAIN_READ_ONLY` env at 915; the input-enabled notice at 987) and the live capture in `evidence/P4.1-adapter-live.md` (c and e). The live Terminal group of the contract suite stays the fidelity oracle.
+- Real time: the 250 ms lease window and a 600 ms nudge. No paused clock.
+- Not covered: a host certificate. `check_server_key` answers `false` for a certificate. A certificate builder needs a signing key and a CA key, which would add test code beyond the plan's rule (no new dependency); the `Certificate => false` arm stays untested.
+- A drop of `open_terminal` during `CreateSshSession` itself is not covered: the token is not known yet.
+- The drop guard (`RevokeOnDrop`) revokes exactly once. The explicit revoke on the handshake failure path runs first and then disarms the guard. The guard is disarmed when the `Pump` takes the token.
+
+### F1-3-P2. Viewer input
+
+- Client-side dropping applies to `InputMode::Viewer` only. An Owner-mode attachment under a ReadOnly lease still forwards input, because the lease takeover (API.md "Input lease", contract check `main_read_only_takes_lease_after_owner_leaves`) depends on it.
+- For a Viewer, the detach keys (Ctrl-D, Ctrl-P Ctrl-Q) and Ctrl-C under the ReadOnly lease end the session locally: the pump closes the channel and queues the pending end reason (`Detached` or `StreamClosed`). No input reaches the supervisor, so the supervisor does not need to answer a key that never arrived.
+
+## Red/green fix round
+
+Each row below was made red by the named mutant in the worktree and green on the clean tree. The mutant is reverted after each run.
+
+| Item | Test | Mutant | Red line |
+|---|---|---|---|
+| G8 | `git_config::the_sanitized_config_follows_git_parsing_and_keeps_everything_else`, case "an at sign inside the password" | `authority.rfind('@')` to `authority.find('@')` | `an at sign inside the password: remote.o.url` |
+| T5 | `transfer::upload_with_an_unparsable_git_config_fails_before_anything_leaves_the_host` | sanitized config built after the two CLI uploads | `assertion failed: runner.calls().is_empty()` |
+| T6 symlink | `transfer::upload_fails_when_the_sanitized_write_fails_and_when_git_is_not_a_directory`, row "a symbolic link" | `symlink_metadata` to `metadata` | `called Result::unwrap_err() on an Ok value: ()` |
+| T6 missing | same test, row "a missing entry" | `is_ok_and` to `map_or(true, ..)` | `a missing entry: Transfer { op: GitConfig, status: Exited(128), .. }` where `UnsupportedGitDirectory` was expected |
+| M6f | `discovery::resolve_gateway_refuses_a_plaintext_or_non_mtls_entry`, row `admin:hunter2@h://x` | `scheme_of` without the length and charset guard | `admin:hunter2@h://x` left `Some("admin:hunter2@h")` right `None` |
+| C4 | `attach_ssh::the_detach_keys_end_the_session_without_an_exit_status`, row "ctrl-p then x" | any byte after Ctrl-P detaches | left `[Attached, Lease(Owner), Ended(Detached)]` right `[Attached, Lease(Owner), Exited(Some(0)), Ended(StreamClosed)]` |
+| C6 | same test, row "ctrl-c under an owner lease" | Ctrl-C closes under any lease | left `[Attached, Lease(Owner), Ended(StreamClosed)]` right has `Exited(Some(0))` before `Ended(StreamClosed)` |
+| C9 | same test, row "ctrl-p x ctrl-q" | the prefix flag is never cleared by another byte | left `[Attached, Lease(Owner), Ended(Detached)]` right has `Exited(Some(0))` and `Ended(StreamClosed)` |
+| E3 | `attach_ssh::the_host_key_pin_accepts_the_advertised_key_and_refuses_every_other` | handshake failure path does not disarm the guard | left `["token-id-2", "token-id-2"]` right `["token-id-2"]`; the test without the 150 ms wait passed under the same mutant |
+| 3e | `attach_ssh::the_session_token_is_revoked_once_on_every_way_a_session_ends` | no revoke at the end of the pump | `detach: the session token was never revoked` |
+| M11b | `ids::other_ids_reject_one_input_of_each_violated_class`, names `a-` and `a.` | `GATEWAY_LIKE` edge `First` to `Both` | `Error: BadEdge { kind: "gateway name" }` |
+| F1-9 layout | `paths::sandbox_layout_matches_the_documented_literals` | `STAT` replaced by a second `SHA256SUM` in `fixed()` | `assertion left == right failed: left: 10 right: 11` |
+| F1-9 layout | `transfer::a_failed_download_leaves_no_local_file_and_the_size_limit_is_inclusive` | `STAT` set to `/bin/stat` | `called Result::unwrap() on an Err value: Protocol { message: "the exec stream ended without an exit event" }` |
+| F1-5 | `contract::shell_exit_code_cannot_hang_the_run` | the timeout text changed to `no end` | left `Err("no end")` right `Err("the shell never ended")` |
+
+### U9-F2 (P4.4 fix batch F2), from rewrite/reconciliation/U9-F2.md
+
+This file records the decisions and the preconditions for batch F2 (`jackin-testkit`, the four shared contract checks of F1-16, and the `FakeEngine` call sites in `jackin-image` tests). Each precondition is written before the test that uses it. Sources: the P4.4 fix decisions (F2-1 to F2-13 and F1-16), the approved F2 test plan with the orchestrator decisions at its end, the F1 test plan rows P44-F1-16a to 16d, and the live evidence `P4.1-adapter-live.md`, `P4.4-live.md` and `P0.6-panes.md`. `API.md` is not edited here. API.md section 7 (U6) and `U8.md` state the rules this file supersedes.
+
+## Fake gateway rules
+
+### F2-P1. Base and numbering
+
+- The base is `3f17ce17`, the P5.1 branch rebased onto `feature/openshell-native` with the F1 and F3 fixes. P5.1 already edited `gateway.rs`, `state.rs`, `exec.rs`, `files.rs`, `engine.rs` and `tests/gateway/main.rs`.
+- `U8.md` is P5.1's numbering. This file is `U9-F2.md` and its identifiers are `F2-P*`.
+- TK-2 (`StaleSupervisor` counts observations) and TK-3 (`FailAt` and `CancelAt` fire at call entry) interact with F2-7. The strike still happens at call entry, before the lookup and before any observation. Consequence for TK-2: every call that reads the phase is one observation, so a test that counted observations must count its own reads. One existing test changes for this reason (see "Changed expectations").
+
+### F2-P2. Oracle per behavior
+
+| Behavior | Oracle | Status |
+|---|---|---|
+| `open_terminal(MainProcess)` on `Completed` or `Error{Some(_)}` is `Ok`, events `[Attached, Ended(Refused(..))]` | `P4.1-adapter-live.md` e.3: "open_terminal(main) on it -> Ok; events=[Attached, Ended(Refused("openshell: cannot connect to the canonical main process: canonical main process already finished"))]" | live for `Error{7}` |
+| The same for `Completed` | e.3 is captured on `Error{7}` only. `Completed` has the same supervisor path (U6, the `MainProcessCompleted` condition) | source-derived |
+| `open_terminal(MainProcess)` on `Stopped` is `NotReady{Stopped}` | e.5: "run_program and open_terminal(main) on Stopped -> NotReady { phase: Stopped }" | live |
+| `open_terminal(MainProcess)` on `Starting`, `Provisioning`, `Error{None}` is `NotReady` | `Starting` and `Provisioning` have no main session to refuse from (e.5 for `Stopped`). `Error{None}` has no capture | unverified, stays `NotReady` |
+| `run_program` and shell terminal on an ended sandbox are `NotReady{phase}` | e.3 | live |
+| `delete_provider` while a sandbox lists the provider is `FailedPrecondition` naming the provider and the sandbox | b.10: "delete_provider while attached -> Err(FailedPrecondition { message: "provider 'jackin-p41a-codex' is attached to sandbox(es): jackin-p41a-ib8t" })" | live for a Ready sandbox |
+| Any sandbox that lists the provider counts, in any phase | the fake rule | unverified (b.10 had a Ready sandbox) |
+| `delete_provider` after the sandbox is gone is `Ok`, and `Ok` again; state `Absent` | b.12 | live |
+| `set_power(Stop)` on `Stopped` is `Ok(Stopped)` | e.5: "Stop again -> Ok(Stopped)" | live |
+| `set_power(Stop)` on `Completed` or `Error{Some}` is `MainProcessFailed`; `Start` is `FailedPrecondition` and leaves the phase `Starting` | e.4 | live, unchanged |
+| `Stop` on `Error{None}` with `Provisioning::Failed` fails with the status class `Internal`, which the adapter maps to `Protocol`; the phase is unchanged | `P4.4-live.md`, "Stop, twice: Internal error, phase unchanged": `code: 'Internal error', message: "stop sandbox failed: persist stop marker failed: No such file or directory (os error 2)"`; `grpc/status.rs` maps every code outside its list to `Protocol{message}` | live |
+| `Start` on `Error{None}` with `Provisioning::Failed` is `FailedPrecondition`; the phase stays `Error` | `P4.4-live.md`, "Start, twice: FailedPrecondition, phase unchanged (not Starting)" | live |
+| `delete_sandbox` on a provisioning-failed sandbox succeeds | `P4.4-live.md`, "Delete: accepted" | live |
+| `upload_project` on an absent sandbox is `Transfer{op: UploadFiltered}` | `P4.4-live.md`, "Upload to an absent sandbox": both CLI calls exit 1 with "sandbox not found" at once; `transfer.rs` maps the first non-zero exit to `Transfer{UploadFiltered}` | live |
+| `upload_project` on a sandbox that is not Ready is `Transfer{op: UploadFiltered}` | the same code path (`run_cli` maps any non-zero exit). No capture of the CLI on a stopped sandbox | source-derived |
+| A lone Ctrl-Q (no Ctrl-P before it) is forwarded | the fake rule; P0.6 has no capture of it | source-derived |
+| Ctrl-P Ctrl-Q detaches, a lone Ctrl-P is held, Ctrl-P then another byte forwards both | `P0.6-panes.md`: "`0x10` is held until the next byte. `0x10 0x11` detaches. Any other byte releases the held `0x10` first." and "CHECK held Ctrl-P is released with the next byte: PASS" | live |
+| A read-only attachment and Ctrl-P Ctrl-Q | the adapter's `Watch::sent` ends any attachment on the pair; the supervisor side for a read-only attachment is not captured | unverified, not asserted |
+
+### F2-P3. Download (amendment A1)
+
+- F1-9 makes the real `download_file` read the remote size through `exec` first. On an absent sandbox that is `NotFound{Sandbox}` and on a stopped one `NotReady` (n.1 and e.3). The fake's download therefore keeps `NotFound` and `NotReady`. F2-5 covers upload only.
+- F2-13: on any download failure, including a digest mismatch, the fake removes the local file. This mirrors `transfer.rs::download_file`, which removes the local file when `fetch` returns any `Err`. Before this change the fake left the corrupt file, because it wrote the file before it compared digests.
+
+### F2-P4. Observation order and handle accessors
+
+- `delete_provider` strikes first as well: an injected `Provider` fault fails the call even while a sandbox lists the provider, and a fault that has fired is gone, so the next call gets the attached-check refusal.
+- Every gateway call that reads the phase runs in this order: strike (fault and trigger), lookup (`NotFound`), observe, phase read. The calls are `run_program`, `read_files`, `write_file`, `upload_project`, `download_file`, `open_terminal` and `set_power`. `find_sandboxes` and `sandbox_detail` already observed.
+- A failed call (an injected error, `NotFound`) does not observe, so it does not settle a `ProvisionFor` window.
+- `SandboxHandle` accessors (`phase`, `file`, `files`, `attachments`, `main_input`, `runs`, `supervisor`) never observe.
+- This supersedes API.md section 7 (U6) G4 ("observations (find and detail)"): an observation is any call listed above plus `find_sandboxes` and `sandbox_detail`.
+
+### F2-P5. Main attach generation (F2-4)
+
+- The main process keeps a generation number. A restart (`Stop` then `Start`) creates a new `Main` with the next generation, and attachment ids restart at 1. A terminal pump holds a `Seat` (generation and id). `forget` and `command` ignore a seat of another generation. Before this change a pump that ended late released the attachment that a new attach had received under the same id.
+- The main pump's `select!` is `biased` and polls the command channel first. A pump that was blocked on a full event channel therefore delivers every command it still holds before it reads the queued `Ended`, so a late command of the old generation reaches `Main::command` every time, and the test for it does not depend on the order a random `select!` picks. The test helper `flood` yields between inputs, so the pump forwards one queued event per input and the event channel and then the command channel fill; without the yield, the command-first pump drains the commands as fast as the test sends them and the channels never fill.
+
+### F2-P6. Process, git and workdir (F2-9)
+
+- One builder makes every host command of the fake: `HostProgram::command()` in `crates/jackin-testkit/src/exec.rs`. It starts `/bin/sh`, `/usr/bin/git` or `/usr/bin/printenv` with a cleared environment and `PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin`. The gateway program runs, the shell terminal, the fake upload's `git ls-files` and `TestRunner`'s git use it. `spec.env` or `run.env` is applied after the clear.
+- Deviation from the real runner: `TokioProcessRunner` inherits the environment and removes the named prefixes; the fake starts from nothing. `env_remove_prefixes` of a git spec has no effect in `TestRunner`, because there is nothing inherited to remove.
+- The `/sandbox` mapping in `run_program` arguments is textual and applies to every argument, not only to a whole argument. An occurrence of `/sandbox` maps to the sandbox root when the byte before it is absent or is not an ASCII letter, digit, `_`, `-`, `.` or `/`, and the byte after it is absent or is not an ASCII letter, digit, `_`, `-` or `.`. So `>/sandbox/o.txt`, `"/sandbox/q 1.txt"`, `'/sandbox/q2.txt'`, `V=/sandbox/v` and `cd /sandbox;` map; `/sandbox2/x`, `/opt/sandbox/y`, `/sandboxed` and `/sandbox.bak` do not. The replacement is the host root path without quoting, which is safe for the temporary directory names the fake makes.
+- A `workdir` outside `/sandbox` (a program run or a shell terminal) maps to `<sandbox temporary directory>/<path>` and is created on demand. Evidence: `P4.1-adapter-live.md` p.8 "env/workdir -> "a'b c:/tmp:ubuntu" exit=0" and p.9 "env P41A_SHELL=yes and workdir /tmp reached the shell". The real adapter accepts the workdir; the fake used to reject it with `InvalidArgument`.
+- Recorded fake limits: `pwd` in a script shows host paths; the shell is `/bin/sh`, not bash; a path outside `/sandbox` other than a workdir is not mapped in arguments.
+- `install_file` (P5.1 TK-4) is a separate map and does not change.
+
+### F2-P7. Upload (F2-5)
+
+- The fake `upload_project` refuses an absent sandbox and a sandbox that is not Ready with `Transfer{op: UploadFiltered, status: Exited(1), tail: "sandbox not found"}`. The fault strike runs first, so an injected error still wins. No sandbox appears.
+- The fake builds the sanitized git config the way the adapter does: it calls the public `sanitized_git_config` with a `TestRunner`, which runs the real `git config --no-includes -f <config> --list -z` with a cleared environment. It does this before it copies anything, and it writes the result to `<dest>/.git/config` with mode 0644 after it copies the `.git` tree. A `.git` that is not a directory (a linked worktree or a submodule) gives `UnsupportedGitDirectory`, as in the adapter. This keeps the fake short and means a test sees the same config text that a real sandbox would hold.
+- The copy of one file goes through a temporary name and a rename. With a plain remove and copy, two uploads of one project into one sandbox could fail with a permission error on a read-only git object that the other upload had just created.
+- The test for this runs 8 uploads of one project (a git history with 41 files, so many read-only objects) to one sandbox at the same time, once. No interleaving of the two file steps can be forced from outside without a hook in the copy, and a hook is not added to the fake for one test. The count is the justification for the single run instead of a loop: under remove-then-copy it failed in 10 of 10 runs with `Permission denied`, and with the committed code it passed in 20 of 20 runs.
+
+### F2-P9. Ctrl-P hold rule (F2-12)
+
+- The fake keeps one flag per attachment: a Ctrl-P (`0x10`) is held until the next byte. The held byte is released in front of the next byte, unless the next byte is Ctrl-Q (`0x11`), which detaches the attachment. Ctrl-D keeps precedence over the whole chunk, as before. Bytes in front of the pair in the same chunk are forwarded by the lease rules, then the attachment detaches.
+- A lone Ctrl-Q is forwarded unchanged. Source-derived: `P0.6-panes.md` states only that any other byte releases the held `0x10`; it has no capture of a Ctrl-Q that follows no Ctrl-P.
+- The held byte is not echoed and not counted in `main_input` until it is released.
+- This supersedes API.md section 7 (U6) G6 ("Ctrl-P Ctrl-Q not modelled").
+- Recorded fake limits, with no change: `Notice` events are not produced by the fake main; the main PTY echo exists only for the `exec cat` main; the phases `Stopping`, `Deleting`, `Suspended` and `Unknown` are P5.1 TK rows.
+
+## Clock and process fakes
+
+### F2-P8. Clock wake rule (F2-8)
+
+- `FakeClock::sleep(d)` registers the deadline `now + d` at its first poll. Every poll yields to the scheduler once. A sleeper returns, adds its duration to `slept()` and moves `now` to its deadline when one of two things holds: another sleeper already moved `now` past its deadline, or it has yielded at least 64 times (`WAKE_YIELDS`) and its deadline is the earliest of the live sleepers. A sleeper with a later deadline keeps yielding.
+- The rule is deterministic and uses no wall time. A lone sleeper adds exactly its duration, so sequential behavior and the `poll_until` sums are unchanged. Two concurrent 5 s sleepers move `now` by 5 s and `slept()` lists both. A 3 s and a 5 s sleeper wake in deadline order whatever the poll order: the 3 s sleeper sees `start + 3 s` and the total is `start + 5 s`.
+- A sleeper that is dropped before it wakes is removed from the live set and leaves no trace in `now()` or `slept()`. `poll_until` drops its `sleep(remaining)` when the probe wins the race, so a probe that yields up to 63 times and then returns `Ready` finishes with `now()` unchanged and an empty `slept()`.
+- The bound of 64 yields is a count of scheduler turns, not a measure of work. A probe that waits on something that does not yield (the blocking pool behind `tokio::fs`, a real process) can lose the race against a virtual timeout. Tests that race such work against a fake sleep must not rely on the work finishing first. `jackin-session`'s executor races `poll_until` against fake gateway calls, which yield; the `jackin-session` suite is part of the gate on this merge.
+- This supersedes API.md section 7 (U6) G8 ("yields once", "There are no pending sleepers").
+
+### F2-P10. Scripted runner (F2-10)
+
+- A token cancelled before the call gives `Cancelled{program}` before any expectation is chosen, in `run` and in `run_secret`, and in `TestRunner` for git. The real runner does the same before it spawns (`jackin-session/src/host.rs`, `execute`). The effect of the reply does not run, the reply is not consumed, and `seen()` does not list the call: `seen()` lists calls that reached the script.
+- When a line sink is present, `stdout` and `stderr` of a scripted reply are cut to their last 65,536 bytes (a byte cut, not a line cut), as the live runner does with its tail buffer. The sink still gets every line. Without a sink the whole text is returned. The constant is a copy of `TAIL_LIMIT` in `jackin-session/src/host.rs`, which is private; it is duplicated until a later change exports it. The parity test runs the live runner and the fake on the same lines, so a drift fails there.
+
+## Fake engine
+
+### F2-P11. Engine script and cancel (F2-10, F2-11)
+
+- `FakeEngine::at` takes one `EngineMoment`, and the moment decides which effects it accepts. `AfterFind{tag, retag}` retags once after a `find` of that tag. `FindFails(tag)` makes one `find` of that tag fail with `DigestUnreadable`, the class the buildx engine returns when the image id cannot be read. `CheckBuilderFails` makes one `check_builder` fail with `BuilderUnreadable`. `BuildFinished{stage, effect}` takes a `BuildEffect`: `Retag(Retag)` or `Cancel`. `Cancel` after a find has no way to be written, so it cannot silently do nothing. This replaces the pair `at(EngineMoment, EngineEffect)`. `EngineEffect` is deleted, and the `ensure.rs` call sites of `jackin-image` use the new form (F2-11, proof by compile probe, not by a test).
+- A scripted failure fires once and then clears. A failure of one tag does not touch another tag.
+- `build` returns `EngineError::Cancelled` for a token that is cancelled before the call. The check runs before the queued `fail_next` is consumed, before any `Line` event and before the image is stored, as `buildx.rs` does before it starts a process. The `BuildFinished` effect `Cancel` keeps its meaning: the build is done, the image is stored, `build` returns `Ok(id)` and the token is cancelled afterwards (U7-C6).
+- `FakeEngine` `Line` events stay with P5.1 TK-9.
+- The F2-11 probe: `engine.at(EngineMoment::AfterFind { tag, retag: BuildEffect::Cancel })` fails `cargo check` with `expected Retag, found BuildEffect`. At `3f17ce17`, `engine.at(EngineMoment::AfterFind(tag), EngineEffect::Cancel)` compiles and does nothing.
+
+## Shared contract checks (F1-16)
+
+### F2-P12. The four checks and the in-process server
+
+- Sequencing: F1-16 lands with the fake fixes, so the testkit contract test is never red between batches. The live evidence for the upload check is `P4.4-live.md`, "Upload to an absent sandbox": both CLI calls exit 1 at once with "sandbox not found" and do not hang. The check does not need a live run to be written; a live run of the four checks is still owed (see "Not verified").
+- Counts: `CORE_CHECKS` 13 to 15, `TRANSFER_CHECKS` 2 to 3, `TERMINAL_CHECKS` 5 to 6. The new names sit where the group runs them: `delete_provider_while_attached_is_refused` after `provider_put_and_delete`, `stop_on_stopped_is_ok` after `power_transitions`, `upload_absent_sandbox_is_a_transfer_error` last in Transfer, `main_ended_is_refused` last in Terminal. The first check of each group is unchanged, so the fault tests that hit "the first call" still hit the same check.
+- `stop_on_stopped_is_ok` (P4.1 e.5): a Ready sandbox, Stop, wait for `Stopped`, Stop again must be `Ok` with phase `Stopped`. The sandbox is deleted on every path.
+- `delete_provider_while_attached_is_refused` (P4.1 b.10, b.12): clear the contract profile, sync it, put the contract provider, create a sandbox that lists it (not waited to Ready), then `delete_provider` must be `FailedPrecondition` and the provider must still be `Present`. Cleanup order, which matters because the next run starts with `clear_contract_profile`: delete the sandbox, poll until `find_sandboxes(Name)` is empty, then delete the provider and the profile. The check returns the cleanup error when the body passed. The Codex profile of b.10 is not used; the contract profile is, so a live run is owed.
+- `main_ended_is_refused` (P4.1 e.3): create the `exit 7` sandbox, wait for the ended phase, open the main terminal as Owner. The events must be exactly `[Attached, Ended(Refused(_))]` and the session must close. The read is bounded by `PROGRAM_TIMEOUT`. A failing open propagates its text, so the existing forward fault shows "connection limit" in this check too.
+- `upload_absent_sandbox_is_a_transfer_error`: no sandbox is created. A fresh name, `upload_project` must be `Err(Transfer{op: UploadFiltered, ..})`. The op is the live one (the first CLI call fails).
+- In-process server (`crates/jackin-openshell/tests/gateway`): `delete_provider` refuses with `FailedPrecondition "provider '<n>' is attached to sandbox(es): <names>"` when a sandbox of the workspace lists it; `create_ssh_session` and `forward_tcp` accept `Error` and `Completed` sandboxes (e.3) and keep refusing `Stopped` (e.5); Stop on `Stopped` was already `Ok`. Two switches build the red variants: `refuse_stop_on_stopped` and `delete_attached_providers`. A script without the refusal notice builds the third red variant (the adapter grants the lease); a runner that exits 0 builds the fourth.
+- Limit: on the in-process server only the Core group passes in full, as before. For the Terminal and Transfer groups the tests assert the outcome of the new check, because the other checks need a PTY model and an upload target that the in-process server does not have. The testkit contract test runs all three groups in full on `FakeGateway`.
+
+### Superseded statements
+
+- API.md section 7 (U6) G5: `Stop` on `Stopped` is `FailedPrecondition`. Now `Ok(Stopped)`.
+- The notes line "upload/download NotFound/NotReady". Now upload is `Transfer{UploadFiltered}` on an absent or not Ready sandbox; download keeps `NotFound` and `NotReady`.
+- API.md section 7 (U6) G8 (sleep) is superseded in the clock section below.
+
+### Changed expectations in existing tests
+
+- `crates/jackin-testkit/tests/gateway/ended.rs`: `assert_not_ready` listed `open_terminal(main)` among the `NotReady` calls. Main now attaches and is refused on `Completed` and `Error{Some}`, and stays `NotReady` on `Starting`. The test name and the G6 note change with it.
+- `crates/jackin-testkit/tests/gateway/lifecycle.rs`, `providers_profiles_and_detail_follow_the_gateway_contract`: it deleted the provider while the sandbox existed. It now expects `FailedPrecondition` first, then deletes the sandbox, then the provider (b.10, b.12).
+- `crates/jackin-testkit/tests/gateway/faults.rs`, `provision_for_keeps_provisioning_for_exactly_n_observations`: the `run_program` call after `create` is now observation 1.
+- `crates/jackin-testkit/tests/gateway/triggers.rs`, `a_stale_supervisor_window_keeps_the_old_state_for_n_observations_after_power_start`: `settled_state` observed twice (a find, then `read_files`). It reads the state file through the handle now, so each call is one observation.
+
+## Other crates
+
+- `crates/jackin-image/tests/image_io/ensure.rs`: the `FakeEngine::at` call sites use `EngineMoment::AfterFind { tag, retag }` and `EngineMoment::BuildFinished { stage, effect }`; the `retag` helper returns a `Retag`. No expectation changed and no assertion was touched.
+- `crates/jackin-session/tests`: no expectation changed. The P5.1 session suite passes on the merged clock, observation and upload changes.
+
+## Red and green record
+
+Each row was proven red by reverting only the named source hunk with the tests kept (the mutated source is restored after each run). The line is the disagreement the failing run printed.
+
+| Row | Test (file under `crates/jackin-testkit/tests` unless noted) | Mutation | Red line |
+|---|---|---|---|
+| P44-F2-01 | `gateway/ended.rs` `an_ended_main_process_refuses_the_main_attach_and_blocks_every_other_call_for_error_and_completed`, `a_main_attach_is_not_ready_on_a_stopped_sandbox` | main through `exec_cell`; `StreamClosed` for `Refused`; attach in every phase but `Provisioning` | `Error: NotReady { phase: Error { exit_code: Some(7) } }`; `Error: "Owner: [Attached, Ended(StreamClosed)]"`; `Owner: None` |
+| P44-F2-02 | `gateway/lifecycle.rs` `delete_provider_is_refused_while_a_sandbox_lists_it_and_ok_after`, `providers_profiles_and_detail_follow_the_gateway_contract` | unconditional delete; always refuse | `Error: "Ok(())"`; `FailedPrecondition { message: "provider 'jackin-other-codex' is attached to sandbox(es): " }` |
+| P44-F2-03 | `gateway/power.rs` `stop_on_a_stopped_sandbox_is_ok_keeps_the_files_and_ended_sandboxes_still_refuse_it` | the arm gives `FailedPrecondition`; the arm moves to `Starting` | `Error: FailedPrecondition { message: "x" }`; `left: Starting`, `right: Stopped` |
+| P44-F2-04 | `gateway/terminal.rs` `a_late_ending_attachment_of_the_old_generation_does_not_release_or_feed_the_new_attachment`, `a_session_dropped_while_its_channels_are_full_leaves_no_attachment` | unscoped `forget`; unscoped `command` (red in 10 of 10 runs with the `biased` pump; 65 of 70 before); never `forget` | `left: 0`, `right: 1` (attachments); `timed out waiting for the new attachment input to be [120]; saw [97, 97, 97, ..., 120]` (the held inputs of the old attachment, then the new one); `timed out waiting for the attachment to be released to be 0; saw 1` |
+| P44-F2-05a | `gateway/transfer.rs` `upload_copies_the_files_and_a_sanitized_git_dir_and_refuses_an_absent_or_stopped_sandbox_as_a_transfer_error` | through `exec_cell`; `UploadGit`; raw git config | `Err(NotFound { what: Sandbox(..) })`; `Err(Transfer { op: UploadGit, .. })`; the raw `[core]` config in the failed `!config.contains(SECRET)` |
+| P44-F2-05c | `gateway/transfer.rs` `concurrent_uploads_of_one_project_to_one_sandbox_all_succeed_and_leave_the_project` | `replace_file` as remove then copy (no temporary name, no rename) | `Error: Protocol { message: "Permission denied (os error 13)" }` in 10 of 10 runs; green in 20 of 20 runs with the committed code |
+| P44-F2-05b, F2-13 | `gateway/transfer.rs` `a_failed_download_leaves_no_local_file_and_a_good_one_writes_it` | no cleanup of the local file | `assertion failed: !tokio::fs::try_exists(local.as_path()).await?` |
+| P44-F2-06 | `gateway/power.rs` `stop_and_start_on_a_provisioning_failed_sandbox_follow_the_p4_4_capture` | `Stop` through the `Error{..}` arm; `Start` through the `Error{..}` arm | `Err(MainProcessFailed { sandbox: .. })`; `left: Starting`, `right: Error { exit_code: None }` |
+| P44-F2-02b | `gateway/lifecycle.rs` `a_provider_fault_is_struck_before_the_attached_check_and_clears` | `strike(Provider)` moved after the attached check in `delete_provider` | `Err(FailedPrecondition { message: "provider 'jackin-work-codex' is attached to sandbox(es): jackin-work-cc05" })` where the injected `Protocol` error was expected |
+| P44-F2-07 | `gateway/power.rs` `every_phase_reading_call_is_one_observation_that_settles_a_provisioning_window`, `a_start_settles_on_the_first_call_that_reads_the_phase_and_the_files_are_kept`, `a_failed_call_does_not_settle_and_handles_and_absent_sandboxes_never_observe` | settle without observe; no observe in `set_power`; no settle in upload; handle observes; observe before strike | `Program call 3: Err(NotReady { phase: Provisioning })`; `Stop call 3: Err(FailedPrecondition ..)`; `Upload call 3: Err(Transfer { op: UploadFiltered, .. })`; `left: Ready`, `right: Provisioning`; `Ok(ProgramOutcome { exit_code: 0, .. })` |
+| P44-F2-08 | `host.rs` `concurrent_sleepers_wake_at_their_own_deadlines_and_do_not_add_their_durations`, `a_dropped_sleeper_leaves_no_trace_and_a_lone_race_still_moves_time` | `+=`; wake after one yield; a dropped sleeper advances time; wake in poll order | `left: Timestamp(1767225610)`, `right: Timestamp(1767225605)`; `Err(Timeout { after: 30s })`; `left: Timestamp(1767225605)`, `right: Timestamp(1767225603)` |
+| P44-F2-09a | `host.rs` `test_runner_starts_git_with_a_cleared_environment_plus_the_spec_env` | inherited environment; `spec.env` dropped | `inherited: ["CARGO_MANIFEST_DIR=..", "HOME=.."]`; `the spec env is missing` |
+| P44-F2-09b | `gateway/exec.rs` `shell_scripts_map_every_sandbox_path_at_a_path_boundary_and_leave_look_alikes_alone`, `a_program_workdir_outside_sandbox_is_accepted_and_stays_inside_the_sandbox` | whole-argument mapping only; no boundary; reject the workdir; host `/tmp` | `printf a >/sandbox/o.txt: ProgramOutcome { exit_code: 1 .. }`, `left: 1`, `right: 0`; the look-alike echo prints host paths (`left: "/var/folders/.../jackin-fake-sandbox-dMmLJw/sandbox2/x /opt/sandbox/y /var/folders/.../jackin-fake-sandbox-dMmLJw/sandboxed\n"`, `right: "/sandbox2/x /opt/sandbox/y /sandboxed\n"`, as text, not bytes); `Protocol { message: "the fake maps only /sandbox" }`; `assertion failed: !tokio::fs::try_exists(..)` |
+| P44-F2-09c | `gateway/terminal.rs` `a_shell_workdir_outside_sandbox_is_a_per_sandbox_directory_and_never_the_host` | host `/tmp` | `left: Some(Some(0))`, `right: Some(Some(9))` |
+| P44-F2-10a | `host.rs` `a_pre_cancelled_call_is_cancelled_before_any_reply_is_chosen_or_any_effect_runs` | ignore the token; check after the reply is chosen | `Ok(ProcessOutput { status: Exited(0), stdout_len: 3, .. })`; `assertion failed: runner.seen().is_empty()` |
+| P44-F2-10d | `host.rs` `a_pre_cancelled_git_call_is_cancelled_before_git_is_started` | the pre-cancel check removed from `TestRunner::run_git` | `Err(Spawn { program: Git, message: "No such file or directory (os error 2)" })` where `Cancelled { program: Git }` was expected (the cwd does not exist, so only a started git can fail this way) |
+| P44-F2-10b | `host_runner.rs` `the_scripted_runner_returns_the_same_tail_as_the_live_runner_for_a_long_output` | no tail; tail by whole lines | `left: 505000`, `right: 65536`; `left: 65448`, `right: 65536` |
+| P44-F2-10c | `engine.rs` `a_pre_cancelled_build_is_cancelled_before_it_fails_prints_or_stores_anything`, `a_scripted_find_failure_hits_one_call_of_one_tag_and_then_clears`, `a_scripted_builder_check_failure_hits_one_call_and_then_clears`, `a_cancel_at_the_end_of_a_build_still_returns_the_image_it_stored` | ignore the token; check after the failure is consumed; failure persists; failure hits any tag; cancel drops the image | `Err(BuildFailed { stage: Construct, .. })` for the `Cancelled` assertion; `assertion failed: matches!(engine.find(&hit).await, Ok(None))`; `assertion failed: matches!(engine.find(&other).await, Ok(None))`; `Error: BuilderUnreadable { .. }`; `left: None`, `right: Some(ImageId(..))` |
+| P44-F2-11 | none (compile probe) | `engine.at(EngineMoment::AfterFind { tag, retag: BuildEffect::Cancel })` | `error[E0308]: mismatched types ... expected Retag, found BuildEffect`; at `3f17ce17` the old form `at(AfterFind(tag), Cancel)` compiles |
+| P44-F2-12 | `gateway/terminal.rs` `ctrl_p_ctrl_q_detaches_in_one_chunk_or_two_and_the_process_survives`, `a_lone_ctrl_p_is_held_and_released_in_front_of_the_next_byte_and_a_lone_ctrl_q_is_forwarded` | no detach; forward Ctrl-P at once; never release the held byte; detach on Ctrl-Q alone | `timed out waiting for one chunk; saw []`; `assertion failed: handle.main_input().is_empty()` and `saw [Output([16, 17])]`; `timed out waiting for the released bytes to be [16, 120]; saw [120]`; `timed out waiting for a lone Ctrl-Q to be [17]; saw []` |
+| P44-F1-16a | `gateway/contract.rs` `core_group_passes_on_the_fake_with_every_published_check_ok`; `crates/jackin-openshell/tests/gateway/contract.rs` `a_server_that_refuses_stop_on_a_stopped_sandbox_fails_only_that_check` | fake: Stop on `Stopped` refused; check without the second Stop | `left: [("stop_on_stopped_is_ok", "failed precondition: x")]`; the red-variant test got `Ok(())` |
+| P44-F1-16b | `gateway/contract.rs` `core_group_passes_on_the_fake_with_every_published_check_ok`; openshell `a_server_that_deletes_an_attached_provider_fails_only_that_check_and_leaves_nothing`, `core_group_passes_against_grpc_gateway_on_the_in_process_server` | fake: unconditional delete; server without the attached check; check without the assertion | `delete_provider while a sandbox lists it is not FailedPrecondition: Ok(())`; `Err("the provider is absent after a refused delete")` |
+| P44-F1-16c | `gateway/contract.rs` `terminal_group_passes_on_the_fake_including_the_lease_checks`; openshell `an_ended_main_process_attach_that_is_refused_passes_the_check_and_one_that_grants_the_lease_fails_it`, `a_main_attach_on_an_ended_sandbox_is_refused_and_on_a_stopped_one_not_ready`, `terminal_group_reports_exactly_the_published_checks_and_a_refused_attach_fails_the_attach_checks` | fake: main through `exec_cell`; server lookup Ready only; check accepts any events | `("main_ended_is_refused", "the sandbox is not ready: Error { exit_code: Some(7) }")`; `called Result::unwrap() on an Err value: NotReady { phase: Error { exit_code: Some(7) } }`; the red-variant test got `Ok(())` |
+| P44-F1-16d | `gateway/contract.rs` `transfer_group_passes_on_the_fake`; openshell `an_upload_to_an_absent_sandbox_passes_the_check_when_the_cli_fails_and_fails_it_when_the_cli_succeeds` | fake: upload through `exec_cell`; check accepts any error | `("upload_absent_sandbox_is_a_transfer_error", "an upload to an absent sandbox is not a Transfer error: Err(NotFound { what: Sandbox(..) })")`; the red-variant test got `Ok(())` |
+| P44-F2-13 | `gateway/contract.rs` `a_server_that_deletes_a_provider_while_refusing_the_delete_fails_only_the_presence_assertion` | check assertion `provider_state_is(.., Present).await? \|\| true`; server variant `Broken::DeleteAfterRefusal` (removes the provider, still returns `failed_precondition`) | `Ok(())` where `Err("the provider is absent after a refused delete")` was expected; restored: pass |
+
+## Not verified
+
+- No live gateway run. The four new checks have not run against a real gateway. The first live run must confirm: Stop on `Stopped` (e.5 is a Ready-to-Stopped capture followed by a second Stop), the contract profile with an attached provider (b.10 used the Codex profile), the ended-main refusal text, and the upload error class.
+- `Completed` main attach (source-derived), attach to a sandbox that is not Ready for upload (source-derived), `Error{None}` main attach (stays `NotReady`), a read-only attachment and Ctrl-P Ctrl-Q.

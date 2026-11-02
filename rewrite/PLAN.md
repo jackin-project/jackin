@@ -346,7 +346,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 - **Owner:** `code-reviewer` and `security-reviewer` on `<P4 start>..HEAD`. **Depends:** P4.2, P4.3.
 - **Proof:** both verdicts in the chat, the fix round, and G-FULL.
-- [ ] P4.4 done
+- [x] P4.4 done — b94d8dbc, G-FULL exit 0 (`xtask ci --no-docs`: Fmt, Clippy, Nextest 428 run: 428 passed, Deny, Shear, Comments, Layers, Pins, Containers, Reuse compliant); verdicts: code review A CHANGES (1 blocking), B CHANGES (1 blocking), C CHANGES (0 blocking), security CHANGES (1 high, 3 medium); fix batches F1 (31d0a2d4), F3 (55be1a3d), F2 (deae699e, b94d8dbc), each red/green KEEP; live contract Core 15, Transfer 3, Terminal 6 (`evidence/P4.4-live.md`)
 
 ## Phase P5. Build jackin-session
 
