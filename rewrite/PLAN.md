@@ -406,7 +406,15 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 - **Scope:** `crates/jackin/`.
 - **Steps:** Build each command in the DESIGN.md CLI table. Write help text with clap attributes, not doc comments (D17). `--json` output is stable and has a typed schema.
 - **Proof:** G-FAST passes. Tests run the binary against the fake gateway and assert the exit code, the JSON output, and the resulting fake state.
-- [ ] P6.1 done
+- [x] P6.1 done. Proof: merged at ad60590d; G-FAST `xtask ci --fast` 650 passed, exit 0; red/green by test-reviewer in three rounds (/private/tmp/claude-501/plans/P6.1-redgreen.md, -2.md, -3.md), verdict APPROVE.
+
+### P6.1b Name identifiers plainly in user-facing errors
+
+- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P6.1.
+- **Scope:** every `thiserror` message in `jackin-core`, `jackin-image`, `jackin-openshell`, `jackin-session`, and `jackin`.
+- **Steps:** Replace each `{x:?}` of an identifier or a path in an error message with its `Display` form, so the user reads `jackin-work-codex`, not `Provider(ProviderName("jackin-work-codex"))`. Add a repo gate that refuses `:?}` in an `#[error(...)]` attribute.
+- **Proof:** G-FAST passes; the new gate goes red on a reintroduced `:?}`.
+- [ ] P6.1b done
 
 ### P6.3 Port the usage crates
 
