@@ -296,7 +296,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 - **Scope:** `crates/jackin-core/src/{config,manifest}/`.
 - **Steps:** Build the D15 config with atomic writes and the D11 manifest parser, including the D24 `docker` settings and the D26 account bindings. Reject each unknown field and name the key.
 - **Proof:** G-FAST passes. Tests show a round trip of a valid file. Tests show the rejection of each invalid case. Tests show that a crash during a write leaves the old file intact.
-- [ ] P3.2 done
+- [x] P3.2 done — eb69d1c7, G-FAST exit 0 (`99 tests run: 99 passed`); test-reviewer KEEP (34 tests, about 85 mutations)
 
 ### P3.3 Build the image plan
 
