@@ -12,7 +12,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use jackin::{AppEnv, Deps, ExitClass, GatewayConnector, RawMode, Terminal, TerminalInput};
+use jackin::{
+    AppEnv, ConnectError, Deps, ExitClass, GatewayConnector, RawMode, Terminal, TerminalInput,
+};
 use jackin_core::{
     Clock, Config, ConfigStore, EnvSnapshot, FileSystem, GatewayEntry, GatewayName, HostPath,
     ProcessRunner,
@@ -140,14 +142,14 @@ impl GatewayConnector for FixedConnector {
         &self,
         name: &GatewayName,
         _entry: &GatewayEntry,
-    ) -> Result<Arc<dyn Gateway>, GatewayError> {
-        self.gateways
-            .get(name)
-            .cloned()
-            .ok_or_else(|| GatewayError::Unreachable {
+        _cancel: &CancellationToken,
+    ) -> Result<Arc<dyn Gateway>, ConnectError> {
+        self.gateways.get(name).cloned().ok_or_else(|| {
+            ConnectError::Gateway(GatewayError::Unreachable {
                 endpoint: name.to_string(),
                 message: "the test connector knows no such gateway".to_owned(),
             })
+        })
     }
 }
 
@@ -256,6 +258,7 @@ pub(crate) async fn until(mut done: impl FnMut() -> bool) -> Result<(), Failure>
 
 pub(crate) struct Harness {
     pub(crate) connector: FixedConnector,
+    pub(crate) custom: Option<Arc<dyn GatewayConnector>>,
     pub(crate) cwd: HostPath,
     pub(crate) config_path: HostPath,
     pub(crate) cache_dir: HostPath,
@@ -280,6 +283,7 @@ impl Harness {
         let gateway: Arc<dyn Gateway> = Arc::<jackin_testkit::FakeGateway>::clone(&world.gateway);
         Harness {
             connector: FixedConnector::empty().with(gateway),
+            custom: None,
             cwd: world.home().clone(),
             config_path: ConfigStore::default_path(world.home()),
             cache_dir: world.cache_dir().clone(),
@@ -299,6 +303,7 @@ impl Harness {
     pub(crate) fn fs(&self, fs: Arc<dyn FileSystem>) -> Harness {
         Harness {
             connector: self.connector.clone(),
+            custom: self.custom.clone(),
             cwd: self.cwd.clone(),
             config_path: self.config_path.clone(),
             cache_dir: self.cache_dir.clone(),
@@ -384,10 +389,14 @@ impl Invocation<'_> {
             env: EnvSnapshot::from_pairs(harness.env.iter().cloned()),
             cancel: self.cancel,
         };
+        let connect: Arc<dyn GatewayConnector> = match &harness.custom {
+            Some(custom) => Arc::clone(custom),
+            None => Arc::new(harness.connector.clone()),
+        };
         let deps = Deps {
             host: harness.host.clone(),
             engine: Arc::clone(&harness.engine),
-            connect: Arc::new(harness.connector.clone()),
+            connect,
             limits: default_limits(),
         };
         let exit = jackin::run(env, deps).await;

@@ -3,13 +3,15 @@
 
 use jackin_core::{CompatibilityError, ConfigError, EntropyError, FsError, HostPath, PathError};
 use jackin_image::ImageError;
-use jackin_openshell::{DiscoveryError, GatewayError};
+use jackin_openshell::GatewayError;
 use jackin_session::{
     AccountError, AttachError, CredentialError, ExportError, LaunchFailure, LifecycleError,
     PlanError, PurgeError, RestartError, RoleError,
 };
 use jackin_tui::ConsoleError;
 use thiserror::Error;
+
+use crate::app::ConnectError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ExitClass {
@@ -72,9 +74,7 @@ pub enum CommandError {
     #[error(transparent)]
     Image(#[from] ImageError),
     #[error(transparent)]
-    Gateway(#[from] GatewayError),
-    #[error(transparent)]
-    Discovery(#[from] DiscoveryError),
+    Connect(ConnectError),
     #[error(transparent)]
     Entropy(#[from] EntropyError),
     #[error("terminal error: {0}")]
@@ -95,6 +95,16 @@ pub enum CommandError {
     Environment(String),
     #[error("the checks did not pass")]
     Unhealthy,
+}
+
+impl From<ConnectError> for CommandError {
+    fn from(error: ConnectError) -> CommandError {
+        if error.is_cancelled() {
+            CommandError::Cancelled("cancelled while connecting to the gateway".to_owned())
+        } else {
+            CommandError::Connect(error)
+        }
+    }
 }
 
 impl CommandError {
@@ -126,8 +136,7 @@ impl CommandError {
             | CommandError::Account(_)
             | CommandError::Login { .. }
             | CommandError::Image(_)
-            | CommandError::Gateway(_)
-            | CommandError::Discovery(_)
+            | CommandError::Connect(_)
             | CommandError::Entropy(_)
             | CommandError::Terminal(_)
             | CommandError::Output(_)

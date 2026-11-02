@@ -12,16 +12,14 @@ use jackin_core::{
     ConfigStore, EnvName, EnvSnapshot, FileSystem, GatewayEntry, GatewayName, HostPath,
     ProcessRunner,
 };
-use jackin_openshell::{
-    Gateway, GatewayError, GrpcGateway, GrpcGatewayConfig, TermSize, resolve_gateway,
-};
+use jackin_openshell::{Gateway, GrpcGateway, GrpcGatewayConfig, TermSize, resolve_gateway};
 use jackin_session::{DEFAULT_BUNDLE_BYTES, LaunchLimits};
 use rustix::termios::{self, OptionalActions, Termios};
 use tokio::signal::unix::{Signal, SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::app::GatewayConnector;
+use crate::app::{ConnectError, GatewayConnector};
 use crate::error::CommandError;
 use crate::terminal::{RawMode, Terminal, TerminalInput};
 
@@ -127,18 +125,19 @@ impl GatewayConnector for GrpcConnector {
         &self,
         name: &GatewayName,
         entry: &GatewayEntry,
-    ) -> Result<Arc<dyn Gateway>, GatewayError> {
+        cancel: &CancellationToken,
+    ) -> Result<Arc<dyn Gateway>, ConnectError> {
         let resolved = resolve_gateway(
             self.runner.as_ref(),
             self.fs.as_ref(),
             &self.openshell_config,
             name,
-            &CancellationToken::new(),
+            cancel,
         )
         .await
-        .map_err(|error| GatewayError::Unreachable {
-            endpoint: name.to_string(),
-            message: error.to_string(),
+        .map_err(|source| ConnectError::Discovery {
+            gateway: name.clone(),
+            source,
         })?;
         let gateway = GrpcGateway::connect(GrpcGatewayConfig {
             gateway: resolved,

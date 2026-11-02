@@ -3,6 +3,7 @@
 
 use jackin::ExitClass;
 use jackin_testkit::{ProcessReply, ScriptedProgram, TestResult, World, guard};
+use tokio_util::sync::CancellationToken;
 
 use super::support::{Failure, FixedConnector, Harness, failed};
 
@@ -149,6 +150,26 @@ async fn doctor_without_a_gateway_fails_and_names_the_command_that_adds_one() ->
             ExitClass::Failure,
             &["jackin gateway add", "openshell-binary", "git-binary"],
         )?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn doctor_under_a_cancel_exits_cancelled_and_prints_no_report() -> TestResult {
+    guard(async {
+        let Fixture {
+            harness,
+            world: _world,
+        } = healthy()?;
+        let token = CancellationToken::new();
+        token.cancel();
+        let ran = harness.command(&["doctor"]).cancel(token).run().await?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert!(ran.stdout.is_empty());
+        for id in IDS {
+            assert!(!ran.stderr.contains(id), "{id}: {}", ran.stderr);
+        }
         Ok(())
     })
     .await

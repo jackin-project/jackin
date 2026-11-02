@@ -7,6 +7,7 @@ mod attach;
 mod build;
 mod cancel;
 mod config_io;
+mod connect;
 mod docker;
 mod doctor;
 mod env;

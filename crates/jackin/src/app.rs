@@ -7,10 +7,12 @@ use std::io::Write;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use jackin_core::ProcessError;
 use jackin_core::{Config, ConfigStore, EnvSnapshot, GatewayEntry, GatewayName, HostPath};
 use jackin_image::ImageEngine;
-use jackin_openshell::{Gateway, GatewayError};
+use jackin_openshell::{DiscoveryError, Gateway, GatewayError};
 use jackin_session::{HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps};
+use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::CommandError;
@@ -25,13 +27,37 @@ pub struct Deps {
     pub limits: LaunchLimits,
 }
 
+#[derive(Debug, Error)]
+pub enum ConnectError {
+    #[error("cannot discover gateway {gateway}")]
+    Discovery {
+        gateway: GatewayName,
+        source: DiscoveryError,
+    },
+    #[error(transparent)]
+    Gateway(#[from] GatewayError),
+}
+
+impl ConnectError {
+    pub fn is_cancelled(&self) -> bool {
+        matches!(
+            self,
+            ConnectError::Discovery {
+                source: DiscoveryError::Process(ProcessError::Cancelled { .. }),
+                ..
+            } | ConnectError::Gateway(GatewayError::Cancelled { .. })
+        )
+    }
+}
+
 #[async_trait]
 pub trait GatewayConnector: Send + Sync + Debug {
     async fn connect(
         &self,
         name: &GatewayName,
         entry: &GatewayEntry,
-    ) -> Result<Arc<dyn Gateway>, GatewayError>;
+        cancel: &CancellationToken,
+    ) -> Result<Arc<dyn Gateway>, ConnectError>;
 }
 
 pub struct AppEnv {
@@ -85,7 +111,7 @@ impl App {
 impl App {
     pub(crate) async fn session(&self, config: &Config) -> Result<Session, CommandError> {
         let (name, entry) = config.resolve_gateway(self.gateway.as_ref())?;
-        let gateway = self.deps.connect.connect(name, entry).await?;
+        let gateway = self.deps.connect.connect(name, entry, &self.cancel).await?;
         Ok(Session::new(SessionDeps {
             gateway,
             engine: Arc::clone(&self.deps.engine),

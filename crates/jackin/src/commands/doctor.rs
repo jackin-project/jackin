@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::Compatibility;
+use jackin_core::{Compatibility, GatewayName};
+use jackin_openshell::GatewayError;
 use jackin_session::{CheckId, CheckStatus, DoctorInput, DoctorReport, GatewayAccess, doctor};
 
-use crate::app::App;
+use crate::app::{App, ConnectError};
 use crate::error::CommandError;
+use crate::report::chain;
 use crate::system::engine_socket;
 
 fn check_name(id: CheckId) -> &'static str {
@@ -29,6 +31,16 @@ fn status_name(status: CheckStatus) -> &'static str {
     }
 }
 
+fn gateway_failure(name: &GatewayName, error: ConnectError) -> GatewayError {
+    match error {
+        ConnectError::Gateway(error) => error,
+        discovery @ ConnectError::Discovery { .. } => GatewayError::Unreachable {
+            endpoint: name.to_string(),
+            message: chain(&discovery),
+        },
+    }
+}
+
 async fn inspect(app: &App, access: GatewayAccess<'_>) -> Result<DoctorReport, CommandError> {
     let pinned = Compatibility::pinned()?;
     let input = DoctorInput {
@@ -46,14 +58,16 @@ pub(crate) async fn run(app: &mut App) -> Result<(), CommandError> {
     let chosen = config.resolve_gateway(app.gateway.as_ref());
     let (report, unchosen) = match chosen {
         Ok((name, entry)) => {
-            let report = match app.deps.connect.connect(name, entry).await {
+            let connected = app.deps.connect.connect(name, entry, &app.cancel).await;
+            let report = match connected {
                 Ok(gateway) => inspect(app, GatewayAccess::Connected(gateway.as_ref())).await?,
                 Err(error) => {
+                    let failure = gateway_failure(name, error);
                     inspect(
                         app,
                         GatewayAccess::Failed {
                             name,
-                            error: &error,
+                            error: &failure,
                         },
                     )
                     .await?
@@ -63,6 +77,11 @@ pub(crate) async fn run(app: &mut App) -> Result<(), CommandError> {
         }
         Err(error) => (inspect(app, GatewayAccess::NotChosen).await?, Some(error)),
     };
+    if app.cancel.is_cancelled() {
+        return Err(CommandError::Cancelled(
+            "cancelled; the checks stopped".to_owned(),
+        ));
+    }
     for check in &report.checks {
         let detail = check.detail.replace('\n', " ");
         app.io.note(&format!(
