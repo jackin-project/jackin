@@ -562,9 +562,9 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 ### P9.3 Wire the console to jackin data
 
 - **Repo:** jackin. **Owner:** `rust-cli-tui-engineer`. **Depends:** P8.2, P9.2.
-- **Scope:** `crates/jackin-tui/`, the console entry in `crates/jackin/`.
+- **Scope:** `crates/jackin-tui/`, the console entry in `crates/jackin/`. The console depends on the baseline crates `junie-tui` (reusable blocks) and `jackin-console` (`apps/jackin`, the jackin screens and domain).
 - **Steps:**
-  1. Pin `junie-tui` to the head of the baseline branch `feature/openshell-native`.
+  1. Pin `junie-tui` and `jackin-console` to the head of the baseline branch `feature/openshell-native`.
   2. Implement the baseline data interfaces with `jackin-session`, `jackin-core`, and the usage crates.
   3. Show the D24 Docker setting, the D25 usage windows, and the D26 accounts, defaults, and bindings.
   4. Build the D28 session tabs and panes with the P0.6 transport. `jackin attach` and `jackin shell` use the same sessions (D03).
