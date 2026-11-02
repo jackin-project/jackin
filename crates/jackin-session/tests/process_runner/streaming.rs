@@ -14,16 +14,18 @@ use jackin_core::{
 };
 use jackin_session::TokioProcessRunner;
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 use crate::support::{
-    LOOP_DETACHED, Scratch, TestResult, WAIT_FOR, assert_no_leftover, guarded, next_line,
-    same_bytes,
+    LOOP_DETACHED, LOOP_HOLDING, Scratch, TestResult, WAIT_FOR, assert_no_leftover, guarded,
+    next_line, same_bytes,
 };
 
 const MARK: &str = " [truncated]";
 const LINE_LIMIT: usize = 65536;
 const WHOLE_LIMIT: usize = 16_777_216;
+const SLOW_LINES: usize = 200;
 
 fn numbers(last: u32) -> String {
     let mut text = String::new();
@@ -272,7 +274,7 @@ async fn a_128_mib_line_does_not_grow_process_memory() -> TestResult {
             let mut peak = 0;
             while !watching.load(Ordering::SeqCst) {
                 peak = peak.max(resident_kib().await?);
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                sleep(Duration::from_millis(10)).await;
             }
             Ok::<u64, Box<dyn Error + Send + Sync>>(peak)
         });
@@ -394,6 +396,93 @@ async fn unstreamed_output_beyond_16_mib_per_stream_fails_with_output_too_large_
         assert!(lines.iter().all(|line| line.text.len() == 999));
         assert_eq!(output.stdout.len(), LINE_LIMIT);
         Ok(())
+    })
+    .await
+}
+
+async fn stalled_consumer(
+    mut rx: mpsc::Receiver<OutputLine>,
+    root: &Path,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let done = root.join("done");
+    let mut polls = 0;
+    while !done.exists() {
+        polls += 1;
+        if polls > 500 {
+            return Err("the child never wrote its done marker".into());
+        }
+        sleep(Duration::from_millis(20)).await;
+    }
+    sleep(Duration::from_secs(3)).await;
+    let mut lines = Vec::new();
+    while let Some(line) = rx.recv().await {
+        lines.push(line.text);
+    }
+    Ok(lines)
+}
+
+fn same_lines(actual: &[String], expected: &[String]) -> TestResult {
+    if actual == expected {
+        return Ok(());
+    }
+    let at = actual
+        .iter()
+        .zip(expected)
+        .position(|(left, right)| left != right)
+        .unwrap_or_else(|| actual.len().min(expected.len()));
+    Err(format!(
+        "{} of {} lines; first difference at index {at}",
+        actual.len(),
+        expected.len()
+    )
+    .into())
+}
+
+async fn slow_sink_run(holding: bool) -> TestResult {
+    let scratch = Scratch::new()?;
+    let holder = if holding { LOOP_HOLDING } else { "" };
+    let body = format!(
+        "{holder}i=1\nwhile [ \"$i\" -le {SLOW_LINES} ]; do printf 'line-%03d-%050d\\n' \"$i\" 0; i=$((i+1)); done\n: > \"$1/done\"\nexit 0\n"
+    );
+    let mut spec = scratch.spec(&body, &[])?;
+    spec.timeout = Duration::from_secs(15);
+    let expected: Vec<String> = (1..=SLOW_LINES)
+        .map(|n| format!("line-{n:03}-{:050}", 0))
+        .collect();
+    let written: usize = expected.iter().map(|line| line.len() + 1).sum();
+    assert!(
+        (8193..16384).contains(&written),
+        "payload of {written} bytes"
+    );
+    let (tx, rx) = mpsc::channel::<OutputLine>(1);
+    let cancel = CancellationToken::new();
+    let run = async {
+        let result = TokioProcessRunner.run(&spec, Some(&tx), &cancel).await;
+        drop(tx);
+        result
+    };
+    let (output, lines) = tokio::join!(run, stalled_consumer(rx, scratch.root()));
+    let output = output?;
+    assert_eq!(output.status, ProcessStatus::Exited(0));
+    same_lines(&lines?, &expected)?;
+    let bytes = format!("{}\n", expected.join("\n"));
+    assert!(
+        bytes.as_bytes().ends_with(&output.stdout),
+        "the tail is not a suffix"
+    );
+    if holding {
+        assert_no_leftover(scratch.root()).await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_slow_sink_after_the_child_exits_loses_no_line_and_the_idle_rule_still_ends_the_run()
+-> TestResult {
+    guarded(async {
+        let (plain, holding) = tokio::join!(slow_sink_run(false), slow_sink_run(true));
+        plain?;
+        holding
     })
     .await
 }
