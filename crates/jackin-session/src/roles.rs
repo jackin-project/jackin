@@ -247,15 +247,15 @@ impl RoleCatalog {
         let name = RepoPath::parse(MANIFEST_FILE).map_err(|error| vec![RoleError::from(error)])?;
         match self
             .fs
-            .stat(root)
+            .stat_following(root)
             .await
             .map_err(|error| vec![RoleError::from(error)])?
         {
             None => return Err(vec![RoleError::RootMissing { path: root.clone() }]),
-            Some(FileKind::File | FileKind::Socket) => {
+            Some(FileKind::Dir) => {}
+            Some(FileKind::File | FileKind::Socket | FileKind::Symlink) => {
                 return Err(vec![RoleError::RootNotDirectory { path: root.clone() }]);
             }
-            Some(FileKind::Dir | FileKind::Symlink) => {}
         }
         let manifest_missing = || vec![RoleError::ManifestMissing { root: root.clone() }];
         let path = match self.check_file(root, &name).await {

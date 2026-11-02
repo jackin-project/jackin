@@ -7,6 +7,8 @@ use crate::lex::{Token, lex_rust};
 use crate::repo::{FileKind, Repo};
 use crate::violation::{Violation, sorted};
 
+mod item;
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ErrorsCheck;
 
@@ -22,8 +24,8 @@ impl Check for ErrorsCheck {
                 let tokens = lex_rust(file.text()).tokens;
                 violations.extend(
                     (0..tokens.len())
-                        .filter_map(|index| error_arguments(&tokens, index))
-                        .flat_map(attribute_problems)
+                        .filter_map(|index| error_attribute(&tokens, index))
+                        .flat_map(|attribute| attribute_problems(&attribute))
                         .map(|(line, message)| {
                             Violation::at_line(self.step(), file.path(), line, message)
                         }),
@@ -34,7 +36,12 @@ impl Check for ErrorsCheck {
     }
 }
 
-fn error_arguments(tokens: &[Token], index: usize) -> Option<&[Token]> {
+struct ErrorAttribute<'a> {
+    arguments: &'a [Token],
+    sources: Vec<String>,
+}
+
+fn error_attribute(tokens: &[Token], index: usize) -> Option<ErrorAttribute<'_>> {
     let opens = tokens[index].is_punct('#')
         && tokens.get(index + 1)?.is_punct('[')
         && tokens.get(index + 2)?.is_ident("error")
@@ -44,38 +51,61 @@ fn error_arguments(tokens: &[Token], index: usize) -> Option<&[Token]> {
     }
     let body = &tokens[index + 4..];
     let mut depth = 1usize;
+    let mut close = body.len();
     for (offset, token) in body.iter().enumerate() {
         if token.is_punct('(') {
             depth += 1;
         } else if token.is_punct(')') {
             depth -= 1;
             if depth == 0 {
-                return Some(&body[..offset]);
+                close = offset;
+                break;
             }
         }
     }
-    Some(body)
+    Some(ErrorAttribute {
+        arguments: &body[..close],
+        sources: item::source_fields(tokens, index + 4 + close + 2),
+    })
 }
 
-fn attribute_problems(arguments: &[Token]) -> Vec<(u32, String)> {
+fn ends_expression(token: &Token) -> bool {
+    token.ident().is_some()
+        || token.number().is_some()
+        || token.string().is_some()
+        || token.is_punct(')')
+        || token.is_punct(']')
+}
+
+fn attribute_problems(attribute: &ErrorAttribute<'_>) -> Vec<(u32, String)> {
+    let arguments = attribute.arguments;
     let mut problems = Vec::new();
     for (index, token) in arguments.iter().enumerate() {
         if let Some(literal) = token.string() {
-            if let Some(message) = literal_problem(literal) {
+            if let Some(message) = literal_problem(literal, &attribute.sources) {
                 problems.push((token.line, message));
             }
         } else if token.is_punct('.')
-            && arguments
-                .get(index + 1)
-                .is_some_and(|t| t.is_ident("source"))
+            && !index
+                .checked_sub(1)
+                .is_some_and(|before| ends_expression(&arguments[before]))
         {
-            problems.push((token.line, source_message("`.source`")));
+            let field = arguments
+                .get(index + 1)
+                .and_then(|t| t.ident().or_else(|| t.number()));
+            if let Some(field) = field.filter(|field| is_source(field, &attribute.sources)) {
+                problems.push((token.line, source_message(&format!("`.{field}`"))));
+            }
         }
     }
     problems
 }
 
-fn literal_problem(literal: &str) -> Option<String> {
+fn is_source(argument: &str, sources: &[String]) -> bool {
+    argument == "source" || sources.iter().any(|name| name == argument)
+}
+
+fn literal_problem(literal: &str, sources: &[String]) -> Option<String> {
     let mut debug = Vec::new();
     let mut source = Vec::new();
     for inner in placeholders(literal) {
@@ -83,7 +113,7 @@ fn literal_problem(literal: &str) -> Option<String> {
         if spec.ends_with('?') {
             debug.push(format!("{{{inner}}}"));
         }
-        if argument == "source" {
+        if is_source(argument, sources) {
             source.push(format!("{{{inner}}}"));
         }
     }

@@ -167,7 +167,7 @@ pub enum LaunchOutcome {
 }
 
 #[derive(Debug, Error)]
-#[error("launch {launch_id} failed at {step}: {error}")]
+#[error("launch {launch_id} failed at {step}")]
 pub struct LaunchFailure {
     pub launch_id: LaunchId,
     pub step: LaunchStep,

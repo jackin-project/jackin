@@ -1535,6 +1535,77 @@ mod error_source {
         assert_eq!(summary(&run(&source)?), []);
         Ok(())
     }
+
+    #[test]
+    fn a_placeholder_naming_a_source_or_from_field_of_its_own_variant_is_reported() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"launch failed t_named {error}\")]",
+            "    A { id: String, #[source] error: Box<M> },",
+            "    #[error(\"wrapped t_from {0}\")]",
+            "    C(#[from] M),",
+            "    #[error(\"arg t_form {}\", .0)]",
+            "    D(#[from] M),",
+            "    #[error(\"second t_index {1}\")]",
+            "    F(HashMap<String, u8>, #[source] M),",
+            "    #[error(\"cause t_generic {cause}\")]",
+            "    I { map: HashMap<String, u8>, #[source] cause: Box<dyn Error + Send + Sync> },",
+            "    #[error(\"launch {id} t_wrapped {}\", .error)]",
+            "    J { id: String, #[source] error: Box<M> },",
+            "}",
+            "#[derive(Debug, Error)]",
+            "#[error(\"launch {launch_id} failed t_struct: {error}\")]",
+            "pub struct S { pub launch_id: L, #[source] pub error: Box<M> }",
+            "#[error(\"tuple t_tuple {0}\")]",
+            "pub struct T(#[from] M);",
+        ]);
+        let violations = run(&source)?;
+        let tags = [
+            "t_named",
+            "t_from",
+            "t_form",
+            "t_index",
+            "t_generic",
+            "t_wrapped",
+            "t_struct",
+            "t_tuple",
+        ];
+        assert_eq!(
+            summary(&violations),
+            lines(CiStep::Errors, LIB, &source, &tags)
+        );
+        let named = &violations[0].message;
+        assert!(named.contains("{error}"), "{named}");
+        Ok(())
+    }
+
+    #[test]
+    fn a_source_field_that_the_message_does_not_print_and_unmarked_fields_pass() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"launch failed {id}\")]",
+            "    A { id: String, #[source] error: Box<M> },",
+            "    #[error(\"plain {error}\")]",
+            "    B { error: String },",
+            "    #[error(\"first {0}\")]",
+            "    C(String, #[source] M),",
+            "    #[error(\"nested {}\", .0.error)]",
+            "    D(Wrapper),",
+            "    #[error(\"other variant {error}\")]",
+            "    F { error: String },",
+            "    #[error(\"has {n}\")]",
+            "    G { n: usize, #[from] inner: M },",
+            "    #[error(\"member {}\", .inner.error)]",
+            "    K { inner: Wrapper, #[source] error: M },",
+            "}",
+            "#[error(\"launch {launch_id} failed\")]",
+            "pub struct S { pub launch_id: L, #[source] pub error: Box<M> }",
+            "#[error(\"tuple {0}\")]",
+            "pub struct T(String, #[from] M);",
+        ]);
+        assert_eq!(summary(&run(&source)?), []);
+        Ok(())
+    }
 }
 
 mod repo {

@@ -247,3 +247,50 @@ async fn a_file_in_place_of_the_directory_is_named() -> TestResult {
     })
     .await
 }
+
+#[tokio::test]
+async fn a_symlink_to_a_file_in_place_of_the_directory_is_named() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let file = world.home().as_path().join("afile");
+        std::fs::write(&file, "x")?;
+        let link = world.home().as_path().join("alink");
+        std::os::unix::fs::symlink(&file, &link)?;
+        let ran = check_path(&world, false, &link).await?;
+        failed(&ran, ExitClass::Failure, &[])?;
+        assert_eq!(
+            ran.stderr,
+            format!("error: {} is not a directory\n", link.display())
+        );
+        for needle in ["jackin.role.toml", "os error", "i/o error", "HostPath("] {
+            assert!(!ran.stderr.contains(needle), "{}", ran.stderr);
+        }
+
+        let dangling = world.home().as_path().join("dangling");
+        std::os::unix::fs::symlink(world.home().as_path().join("gone"), &dangling)?;
+        let ran = check_path(&world, false, &dangling).await?;
+        failed(&ran, ExitClass::Failure, &[])?;
+        assert_eq!(
+            ran.stderr,
+            format!("error: {} does not exist\n", dangling.display())
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_symlink_to_a_role_directory_is_checked_like_the_directory() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let role = RoleFixture::new("sentinel")?;
+        role.commit().await?;
+        let link = world.home().as_path().join("rolelink");
+        std::os::unix::fs::symlink(role.root().as_path(), &link)?;
+        let ran = check_path(&world, false, &link).await?;
+        ran.ok()?;
+        assert!(ran.stderr.is_empty(), "{}", ran.stderr);
+        Ok(())
+    })
+    .await
+}

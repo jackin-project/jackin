@@ -219,3 +219,33 @@ async fn project_root_prints_its_host_path() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn path_errors_show_the_rejected_text_as_plain_text() {
+    let host = |text: &str| {
+        HostPath::parse(Path::new(text))
+            .err()
+            .map(|e| e.to_string())
+    };
+    let sandbox = |text: &str| SandboxPath::parse(text).err().map(|e| e.to_string());
+    let repo = |text: &str| RepoPath::parse(text).err().map(|e| e.to_string());
+    let shown = [
+        (host("rel/x"), "path is not absolute: rel/x"),
+        (host("rel\u{1b}x"), "path is not absolute: rel\\u{1b}x"),
+        (
+            host("/a\n/../b"),
+            "path contains a parent segment: /a\\n/../b",
+        ),
+        (sandbox("rel\nx"), "path is not absolute: rel\\nx"),
+        (
+            sandbox("/a\u{1b}//b"),
+            "path contains an empty segment: /a\\u{1b}//b",
+        ),
+        (repo("/a\u{202e}"), "path is not relative: /a\\u{202e}"),
+        (repo("a\n/.."), "path contains a parent segment: a\\n/.."),
+        (repo("a\n//b"), "path contains an empty segment: a\\n//b"),
+    ];
+    for (message, expected) in shown {
+        assert_eq!(message.as_deref(), Some(expected));
+    }
+}

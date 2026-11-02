@@ -123,7 +123,11 @@ fn launch_errors_name_sandboxes_phases_durations_and_launches_plainly() -> TestR
     };
     assert_eq!(
         failure.to_string(),
-        format!("launch {first} failed at credentials: sandbox jackin-work-0001 is suspended")
+        format!("launch {first} failed at credentials")
+    );
+    assert_eq!(
+        failure.source().map(ToString::to_string).as_deref(),
+        Some("sandbox jackin-work-0001 is suspended")
     );
     Ok(())
 }

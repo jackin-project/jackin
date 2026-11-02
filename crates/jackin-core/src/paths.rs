@@ -27,13 +27,13 @@ pub struct ProjectRoot(HostPath);
 
 #[derive(Debug, Error)]
 pub enum PathError {
-    #[error("path is not absolute: {0}")]
+    #[error("path is not absolute: {}", plain(.0))]
     NotAbsolute(String),
-    #[error("path is not relative: {0}")]
+    #[error("path is not relative: {}", plain(.0))]
     NotRelative(String),
-    #[error("path contains a parent segment: {0}")]
+    #[error("path contains a parent segment: {}", plain(.0))]
     ParentSegment(String),
-    #[error("path contains an empty segment: {0}")]
+    #[error("path contains an empty segment: {}", plain(.0))]
     EmptySegment(String),
     #[error("not a directory: {0}")]
     NotADirectory(HostPath),
