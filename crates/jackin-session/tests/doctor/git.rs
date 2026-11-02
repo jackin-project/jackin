@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_session::{CheckId, CheckStatus, MINIMUM_GIT, check_git};
+use jackin_session::{CheckId, CheckStatus, check_git};
 use jackin_testkit::{ProcessReply, TestResult, World, guard};
 use tokio_util::sync::CancellationToken;
 
@@ -16,14 +16,17 @@ fn git_status(report: &jackin_session::DoctorReport) -> Option<CheckStatus> {
 #[tokio::test]
 async fn the_git_check_agrees_with_the_launch_check_for_the_same_version_output() -> TestResult {
     guard(async {
-        let outputs: [&[u8]; 5] = [
-            b"git version 2.44.9\n",
-            b"git version 2.45.0\n",
-            b"git version 2.50.1 (Apple Git-155)\n",
-            b"no idea\n",
-            b"git version 2.9.0\n",
+        let outputs: [(&[u8], CheckStatus); 8] = [
+            (b"git version 2.44.9\n", CheckStatus::Fail),
+            (b"git version 2.45.3\n", CheckStatus::Fail),
+            (b"git version 2.45.4\n", CheckStatus::Pass),
+            (b"git version 2.50.0\n", CheckStatus::Fail),
+            (b"git version 2.50.1 (Apple Git-155)\n", CheckStatus::Pass),
+            (b"git version 2.51.0\n", CheckStatus::Pass),
+            (b"git version 2.54.0 (Apple Git-157)\n", CheckStatus::Pass),
+            (b"no idea\n", CheckStatus::Fail),
         ];
-        for output in outputs {
+        for (output, wanted) in outputs {
             let reply = || ProcessReply::exited(0, output, b"");
             let outcome = run(Setup {
                 git: reply(),
@@ -38,7 +41,8 @@ async fn the_git_check_agrees_with_the_launch_check_for_the_same_version_output(
             } else {
                 CheckStatus::Fail
             };
-            assert_eq!(git_status(&outcome.report), Some(expected), "{output:?}");
+            assert_eq!(expected, wanted, "{output:?}");
+            assert_eq!(git_status(&outcome.report), Some(wanted), "{output:?}");
             let detail = outcome
                 .report
                 .checks
@@ -47,7 +51,7 @@ async fn the_git_check_agrees_with_the_launch_check_for_the_same_version_output(
                 .map(|check| check.detail.clone())
                 .unwrap_or_default();
             if output == b"git version 2.44.9\n" {
-                assert!(detail.contains(&MINIMUM_GIT.to_string()), "{detail}");
+                assert!(detail.contains("2.45.4"), "{detail}");
             }
         }
         Ok(())

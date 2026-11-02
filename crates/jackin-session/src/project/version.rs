@@ -17,11 +17,33 @@ pub struct GitVersion {
     pub patch: u32,
 }
 
-pub const MINIMUM_GIT: GitVersion = GitVersion {
-    major: 2,
-    minor: 45,
-    patch: 0,
-};
+const fn version(major: u32, minor: u32, patch: u32) -> GitVersion {
+    GitVersion {
+        major,
+        minor,
+        patch,
+    }
+}
+
+const GIT_FLOORS: [GitVersion; 7] = [
+    version(2, 45, 4),
+    version(2, 46, 4),
+    version(2, 47, 3),
+    version(2, 48, 2),
+    version(2, 49, 1),
+    version(2, 50, 1),
+    version(2, 51, 0),
+];
+
+fn required_for(found: GitVersion) -> Option<GitVersion> {
+    let own_line = GIT_FLOORS
+        .iter()
+        .find(|floor| (floor.major, floor.minor) == (found.major, found.minor));
+    match own_line {
+        Some(floor) => (found < *floor).then_some(*floor),
+        None => GIT_FLOORS.iter().find(|floor| **floor > found).copied(),
+    }
+}
 
 impl fmt::Display for GitVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -90,12 +112,8 @@ pub async fn check_git(
     let text = String::from_utf8_lossy(&output.stdout);
     let found =
         parse(&text).ok_or_else(|| unusable(format!("unrecognized version output {text:?}")))?;
-    if found < MINIMUM_GIT {
-        Err(HostGitError::TooOld {
-            found,
-            required: MINIMUM_GIT,
-        })
-    } else {
-        Ok(found)
+    match required_for(found) {
+        Some(required) => Err(HostGitError::TooOld { found, required }),
+        None => Ok(found),
     }
 }

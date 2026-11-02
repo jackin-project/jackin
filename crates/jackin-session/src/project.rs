@@ -29,7 +29,7 @@ use crate::project::git::HostGit;
 use crate::project::sandbox::Sandbox;
 use crate::service::{Session, SessionDeps};
 
-pub use version::{GitVersion, HostGitError, MINIMUM_GIT, check_git};
+pub use version::{GitVersion, HostGitError, check_git};
 
 const LISTED_PATHS: usize = 5;
 const LOCK_POLL: Duration = Duration::from_millis(100);
