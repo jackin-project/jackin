@@ -8,8 +8,8 @@ use jackin_core::{
     ProviderName, SandboxLabels, Secret,
 };
 use jackin_openshell::{
-    Gateway, PolicyDocument, PowerAction, ProviderMaterial, ProviderProfile, ProviderSpec,
-    ProviderState, Provisioning, SandboxQuery,
+    ClosedPolicy, Gateway, PolicyDocument, PowerAction, ProviderMaterial, ProviderProfile,
+    ProviderSpec, ProviderState, Provisioning, SandboxQuery,
 };
 use openshell_sdk::raw::proto::{Provider, SandboxPhase, SandboxRestartPolicy};
 
@@ -513,7 +513,7 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
         base.image().clone(),
         labels.clone(),
         Vec::new(),
-        base.policy().clone(),
+        ClosedPolicy::parse(POLICY).unwrap(),
         base.main().clone(),
     );
     guard(gateway.create_sandbox(&spec)).await.unwrap();
@@ -564,7 +564,7 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
         base.image().clone(),
         labels,
         vec![provider.clone()],
-        base.policy().clone(),
+        ClosedPolicy::parse(POLICY).unwrap(),
         base.main().clone(),
     );
     guard(gateway.create_sandbox(&with_provider)).await.unwrap();

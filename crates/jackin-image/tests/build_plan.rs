@@ -218,7 +218,7 @@ fn buildx_arguments_are_explicit_single_tokens_for_all_three_stages() -> TestRes
             "{args:?}"
         );
     }
-    for builder in ["--help", "-evil"] {
+    for builder in ["help", "evil"] {
         let mut request = base()?;
         request.builder = BuilderName::parse(builder)?;
         let plan = ImagePlan::new(&request)?;

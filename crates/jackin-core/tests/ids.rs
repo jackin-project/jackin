@@ -335,16 +335,26 @@ fn other_ids_reject_one_input_of_each_violated_class() -> TestResult {
         &[rej("co_dex", Want::CharAt('_', 2)), rej("", Want::Empty)],
     )?);
     kinds.push(grammar::<GatewayName>(
-        &["jackin-local", "My.Gw_1"],
+        &["jackin-local", "My.Gw_1", "a-b"],
         &[
             rej("", Want::Empty),
             rej(rep('a', 65), Want::TooLong(64, 65)),
             rej("a b", Want::CharAt(' ', 1)),
+            rej("-x", Want::Edge),
+            rej("--help", Want::Edge),
+            rej("-", Want::Edge),
+            rej(".", Want::Edge),
         ],
     )?);
     kinds.push(grammar::<BuilderName>(
-        &["orbstack"],
-        &[rej("a/b", Want::CharAt('/', 1))],
+        &["orbstack", "a-b"],
+        &[
+            rej("a/b", Want::CharAt('/', 1)),
+            rej("-x", Want::Edge),
+            rej("--help", Want::Edge),
+            rej("-", Want::Edge),
+            rej(".", Want::Edge),
+        ],
     )?);
     kinds.push(grammar::<ChatgptAccountId>(
         &["67e55044-10b1-426f-9247-bb680e5fe0c8"],

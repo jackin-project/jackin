@@ -22,6 +22,7 @@ required-features = ["contract"]
 async-trait = { workspace = true }
 jackin-core = { workspace = true }
 noyalib = { workspace = true }
+openshell-core = { workspace = true }
 openshell-policy = { workspace = true }
 openshell-providers = { workspace = true }
 openshell-sdk = { workspace = true }

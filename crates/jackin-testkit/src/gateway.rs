@@ -393,7 +393,8 @@ impl Gateway for FakeGateway {
             providers: spec.providers().to_vec(),
             policy: PolicyReport {
                 version,
-                hash: jackin_core::Sha256::of(document.render().as_bytes()).to_string(),
+                hash: jackin_core::Sha256::of(document.render().map_err(protocol)?.as_bytes())
+                    .to_string(),
                 loaded: ready,
                 document,
             },

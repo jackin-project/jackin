@@ -5,10 +5,11 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::num::NonZeroU16;
 
-use jackin_core::{ProfileAsset, ProfileId, ProviderName, SandboxPath};
+use jackin_core::{Agent, ProfileAsset, ProfileId, ProviderName, SandboxPath};
+use openshell_core::host_pattern;
 use openshell_sdk::raw::proto::SandboxPolicy;
 
-use crate::error::PolicyError;
+use crate::error::{ClosedPolicyError, PolicyError};
 
 mod yaml;
 
@@ -82,6 +83,9 @@ pub enum ClosureViolation {
     },
 }
 
+#[derive(Clone, Debug)]
+pub struct ClosedPolicy(PolicyDocument);
+
 impl PolicyDocument {
     pub fn parse(text: &str) -> Result<PolicyDocument, PolicyError> {
         yaml::build(text, yaml::Source::Live)
@@ -130,7 +134,7 @@ impl PolicyDocument {
         yaml::with_rule(&self.value, &rule)
     }
 
-    pub fn render(&self) -> String {
+    pub fn render(&self) -> Result<String, PolicyError> {
         yaml::render(&self.value)
     }
 
@@ -140,6 +144,23 @@ impl PolicyDocument {
 
     pub(crate) fn from_proto(proto: &SandboxPolicy) -> Result<PolicyDocument, PolicyError> {
         yaml::from_proto(proto)
+    }
+}
+
+impl ClosedPolicy {
+    pub fn parse(text: &str) -> Result<ClosedPolicy, ClosedPolicyError> {
+        let profile = ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile)?;
+        let document = PolicyDocument::parse_authored(text)?;
+        let violations = document.closure_violations(&profile, &[]);
+        if violations.is_empty() {
+            Ok(ClosedPolicy(document))
+        } else {
+            Err(ClosedPolicyError::Violations(violations))
+        }
+    }
+
+    pub fn document(&self) -> &PolicyDocument {
+        &self.0
     }
 }
 
@@ -179,67 +200,11 @@ impl fmt::Display for RuleKey {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Label<'a> {
-    Exact(&'a str),
-    One,
-    Many,
-}
-
-fn labels(pattern: &str) -> Vec<Label<'_>> {
-    pattern
-        .split('.')
-        .map(|label| {
-            if label == "**" {
-                Label::Many
-            } else if label.contains('*') {
-                Label::One
-            } else {
-                Label::Exact(label)
-            }
-        })
-        .collect()
-}
-
-fn label_overlap(a: Label<'_>, b: Label<'_>) -> bool {
-    match (a, b) {
-        (Label::Exact(x), Label::Exact(y)) => x == y,
-        _ => true,
-    }
-}
-
-fn sequences_overlap(a: &[Label<'_>], b: &[Label<'_>]) -> bool {
-    match (a.split_first(), b.split_first()) {
-        (None, None) => true,
-        (None, Some(_)) | (Some(_), None) => false,
-        (Some((Label::Many, rest_a)), Some((Label::Many, rest_b))) => {
-            sequences_overlap(rest_a, b)
-                || sequences_overlap(a, rest_b)
-                || sequences_overlap(rest_a, rest_b)
-        }
-        (Some((Label::Many, rest_a)), Some((_, rest_b))) => {
-            sequences_overlap(rest_a, rest_b) || sequences_overlap(a, rest_b)
-        }
-        (Some((_, rest_a)), Some((Label::Many, rest_b))) => {
-            sequences_overlap(rest_a, rest_b) || sequences_overlap(rest_a, b)
-        }
-        (Some((first_a, rest_a)), Some((first_b, rest_b))) => {
-            label_overlap(*first_a, *first_b) && sequences_overlap(rest_a, rest_b)
-        }
-    }
-}
-
 impl HostPattern {
     pub fn parse(text: &str) -> Result<HostPattern, PolicyError> {
-        let valid = !text.is_empty()
-            && text.chars().all(|c| {
-                c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '*' | ':' | '[' | ']')
-            });
-        if valid {
-            Ok(HostPattern(text.to_ascii_lowercase()))
-        } else {
-            Err(PolicyError::InvalidHost(text.to_owned()))
-        }
+        host_pattern::HostPattern::new(text)
+            .map_err(|_| PolicyError::InvalidHost(text.to_owned()))?;
+        Ok(HostPattern(text.to_ascii_lowercase()))
     }
 
     pub fn as_str(&self) -> &str {
@@ -247,7 +212,7 @@ impl HostPattern {
     }
 
     pub fn overlaps(&self, other: &HostPattern) -> bool {
-        sequences_overlap(&labels(&self.0), &labels(&other.0))
+        host_pattern::host_patterns_overlap(&self.0, &other.0).unwrap_or(true)
     }
 }
 

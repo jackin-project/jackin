@@ -14,7 +14,7 @@ use jackin_core::{
 };
 use jackin_openshell::contract::ContractFixture;
 use jackin_openshell::{
-    Gateway, InputMode, MainProcess, PolicyDocument, ProgramOutcome, ProgramRun, ProgramStdin,
+    ClosedPolicy, Gateway, InputMode, MainProcess, ProgramOutcome, ProgramRun, ProgramStdin,
     RepaintPolicy, SandboxCreate, SandboxFile, SandboxQuery, SandboxView, TermSize, TerminalEvent,
     TerminalKind, TerminalRequest, TerminalSession,
 };
@@ -118,7 +118,7 @@ pub(crate) fn spec_with(
         ImageTag::parse(image)?,
         planned.complete(&image_id),
         providers,
-        PolicyDocument::parse_authored(POLICY)?,
+        ClosedPolicy::parse(POLICY)?,
         main,
     ))
 }

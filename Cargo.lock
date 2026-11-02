@@ -2000,6 +2000,7 @@ dependencies = [
  "futures",
  "jackin-core",
  "noyalib",
+ "openshell-core",
  "openshell-policy",
  "openshell-providers",
  "openshell-sdk",

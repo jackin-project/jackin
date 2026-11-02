@@ -14,7 +14,7 @@ use jackin_core::{
 use tokio_util::sync::CancellationToken;
 
 use crate::error::GatewayError;
-use crate::policy::{PolicyDocument, ProviderProfile};
+use crate::policy::{ClosedPolicy, PolicyDocument, ProviderProfile};
 use crate::terminal::{TerminalRequest, TerminalSession};
 
 #[async_trait]
@@ -124,7 +124,7 @@ pub struct SandboxCreate {
     image: ImageTag,
     labels: SandboxLabels,
     providers: Vec<ProviderName>,
-    policy: PolicyDocument,
+    policy: ClosedPolicy,
     main: MainProcess,
 }
 
@@ -136,7 +136,7 @@ impl SandboxCreate {
         image: ImageTag,
         labels: SandboxLabels,
         providers: Vec<ProviderName>,
-        policy: PolicyDocument,
+        policy: ClosedPolicy,
         main: MainProcess,
     ) -> SandboxCreate {
         SandboxCreate {
@@ -166,7 +166,7 @@ impl SandboxCreate {
     }
 
     pub fn policy(&self) -> &PolicyDocument {
-        &self.policy
+        self.policy.document()
     }
 
     pub fn main(&self) -> &MainProcess {

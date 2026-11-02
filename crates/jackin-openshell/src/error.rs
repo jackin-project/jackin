@@ -9,7 +9,7 @@ use jackin_core::{
 };
 use thiserror::Error;
 
-use crate::policy::RuleKey;
+use crate::policy::{ClosureViolation, RuleKey};
 
 #[derive(Debug, Error)]
 pub enum GatewayError {
@@ -133,6 +133,14 @@ pub enum PolicyError {
     DuplicateRule(RuleKey),
     #[error("profile {id}: {message}")]
     Profile { id: String, message: String },
+}
+
+#[derive(Debug, Error)]
+pub enum ClosedPolicyError {
+    #[error(transparent)]
+    Policy(#[from] PolicyError),
+    #[error("the policy overlaps provider hosts: {0:?}")]
+    Violations(Vec<ClosureViolation>),
 }
 
 impl GatewayError {

@@ -115,8 +115,8 @@ pub(super) fn from_proto(proto: &SandboxPolicy) -> Result<PolicyDocument, Policy
     build(&text, Source::Live)
 }
 
-pub(super) fn render(value: &Value) -> String {
-    noyalib::to_string(value).unwrap_or_default()
+pub(super) fn render(value: &Value) -> Result<String, PolicyError> {
+    noyalib::to_string(value).map_err(syntax)
 }
 
 pub(super) struct Scanned {
@@ -246,7 +246,7 @@ pub(super) fn with_rule(value: &Value, rule: &NetworkRule) -> Result<PolicyDocum
         return Err(PolicyError::DuplicateRule(rule.key.clone()));
     }
     rules.insert(rule.key.as_str(), rule_node(rule));
-    build(&render(&root), Source::Live)
+    build(&render(&root)?, Source::Live)
 }
 
 fn profile_error(id: &str, message: impl ToString) -> PolicyError {

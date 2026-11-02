@@ -214,7 +214,7 @@ const DNS_NAME_63: Rule = Rule {
 const GATEWAY_LIKE: Rule = Rule {
     max: 64,
     accepts: label_char,
-    edge: Edge::Open,
+    edge: Edge::First,
     single_hyphen: false,
     quiet: None,
 };

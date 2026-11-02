@@ -18,7 +18,7 @@ use crate::gateway::{
     ProviderMaterial, ProviderSpec, ProviderState, Provisioning, SandboxCreate, SandboxFile,
     SandboxQuery, SandboxView,
 };
-use crate::policy::{PolicyDocument, ProviderProfile};
+use crate::policy::{ClosedPolicy, ProviderProfile};
 use crate::terminal::{
     EndReason, InputLease, InputMode, RepaintPolicy, TermSize, TerminalEvent, TerminalKind,
     TerminalRequest, TerminalSession,
@@ -206,7 +206,7 @@ impl Ctx<'_> {
             image.clone(),
             planned.complete(&image_id),
             Vec::new(),
-            PolicyDocument::parse_authored(CONTRACT_POLICY).map_err(text)?,
+            ClosedPolicy::parse(CONTRACT_POLICY).map_err(text)?,
             main,
         ))
     }

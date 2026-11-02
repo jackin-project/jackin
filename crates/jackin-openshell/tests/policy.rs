@@ -11,9 +11,10 @@ use std::num::NonZeroU16;
 
 use jackin_core::{Agent, ProviderName};
 use jackin_openshell::{
-    ClosureViolation, EndpointProtocol, HostPattern, NetworkRule, PolicyDocument, PolicyError,
-    ProviderProfile, RuleKey, TlsMode,
+    ClosedPolicy, ClosedPolicyError, ClosureViolation, EndpointProtocol, HostPattern, NetworkRule,
+    PolicyDocument, PolicyError, ProviderProfile, RuleKey, TlsMode,
 };
+use openshell_core::host_pattern::host_matches;
 
 fn rule_doc(rules: &[(&str, &str, u16)]) -> String {
     let mut text = String::from("version: 1\nnetwork_policies:\n");
@@ -175,7 +176,7 @@ fn closure_check_reports_hosts_it_cannot_parse_instead_of_skipping_them() {
     let generated = RuleKey::provider_rule(&provider);
     let generated_name = generated.as_str().to_owned();
     let document = PolicyDocument::parse(&rule_doc(&[
-        ("r6", "api.openai.com/v1", 443),
+        ("r6", "{api,x}.openai.com", 443),
         ("r7", "", 443),
         ("r8", "example.com", 0),
         (&generated_name, "bad host!", 443),
@@ -191,7 +192,7 @@ fn closure_check_reports_hosts_it_cannot_parse_instead_of_skipping_them() {
         BTreeSet::from([
             ClosureViolation::UnparsableHost {
                 rule: key_of("r6"),
-                host: "api.openai.com/v1".to_owned(),
+                host: "{api,x}.openai.com".to_owned(),
             },
             ClosureViolation::UnparsableHost {
                 rule: key_of("r7"),
@@ -202,6 +203,156 @@ fn closure_check_reports_hosts_it_cannot_parse_instead_of_skipping_them() {
                 port: 0,
             },
         ])
+    );
+}
+
+const BYPASS_FORMS: [&str; 9] = [
+    "[c]hatgpt.com",
+    "[a-z]hatgpt.com",
+    "chatgpt.co[m]",
+    "api.openai.co[m]",
+    "[a]pi.openai.com",
+    "*gpt.com",
+    "chat*.com",
+    "**",
+    "*.openai.com",
+];
+
+const OTHER_HOSTS: [&str; 6] = [
+    "[d]hatgpt.com",
+    "chatgpt.co[n]",
+    "x*.com",
+    "chatgpt.com.evil.net",
+    "example.com",
+    "*.example.com",
+];
+
+const UNPARSABLE_FORMS: [&str; 6] = [
+    "{chatgpt,x}.com",
+    "chatgpt.{com,net}",
+    "bad host",
+    "a..b",
+    "chatgpt.com.",
+    "[unclosed.com",
+];
+
+#[test]
+fn closure_covers_every_glob_form_that_reaches_a_provider_host() {
+    let profile = profile();
+    let foreign = RuleKey::provider_rule(&ProviderName::parse("jackin-other-codex").unwrap());
+    for form in BYPASS_FORMS {
+        assert!(
+            profile
+                .endpoints
+                .iter()
+                .any(|endpoint| host_matches(form, endpoint.host.as_str()) == Ok(true)),
+            "{form} reaches no profile host, so it is not a bypass"
+        );
+        let document = PolicyDocument::parse_authored(&rule_doc(&[("r1", form, 443)])).unwrap();
+        for generated in [&[][..], std::slice::from_ref(&foreign)] {
+            let violations = document.closure_violations(&profile, generated);
+            assert!(
+                !violations.is_empty()
+                    && violations.iter().all(|found| matches!(
+                        found,
+                        ClosureViolation::Overlap { rule, host, .. }
+                            if rule.as_str() == "r1" && host.as_str() == form
+                    )),
+                "{form}: {violations:?}"
+            );
+        }
+    }
+    let other_binary_and_port =
+        PolicyDocument::parse_authored(&rule_doc(&[("r2", "chatgpt.com", 8080)])).unwrap();
+    assert_eq!(
+        other_binary_and_port.closure_violations(&profile, &[]),
+        vec![violation("r2", "chatgpt.com", "chatgpt.com")]
+    );
+    for form in OTHER_HOSTS {
+        assert!(
+            profile
+                .endpoints
+                .iter()
+                .all(|endpoint| host_matches(form, endpoint.host.as_str()) == Ok(false)),
+            "{form} reaches a profile host"
+        );
+        let document = PolicyDocument::parse_authored(&rule_doc(&[("r1", form, 443)])).unwrap();
+        assert_eq!(
+            document.closure_violations(&profile, &[]),
+            Vec::new(),
+            "{form}"
+        );
+    }
+}
+
+#[test]
+fn hosts_the_upstream_matcher_rejects_are_unparsable_in_both_parses() {
+    let profile = profile();
+    for form in UNPARSABLE_FORMS {
+        assert!(host_matches(form, "chatgpt.com").is_err(), "{form}");
+        assert!(
+            matches!(
+                PolicyDocument::parse_authored(&rule_doc(&[("r1", form, 443)])),
+                Err(PolicyError::InvalidHost(ref host)) if host == form
+            ),
+            "{form}"
+        );
+        let live = PolicyDocument::parse(&rule_doc(&[("r1", form, 443)])).unwrap();
+        assert_eq!(
+            live.closure_violations(&profile, &[]),
+            vec![ClosureViolation::UnparsableHost {
+                rule: key_of("r1"),
+                host: form.to_owned(),
+            }],
+            "{form}"
+        );
+    }
+}
+
+#[test]
+fn a_closed_policy_exists_only_for_an_authored_policy_that_passes_the_closure_check() {
+    let clean = rule_doc(&[("r1", "example.com", 443), ("r2", "*.example.org", 8443)]);
+    let closed = ClosedPolicy::parse(&clean).unwrap();
+    assert_eq!(
+        closed.document().network_rules(),
+        PolicyDocument::parse_authored(&clean)
+            .unwrap()
+            .network_rules()
+    );
+
+    let overlapping = ClosedPolicy::parse(&rule_doc(&[("r1", "[c]hatgpt.com", 443)])).unwrap_err();
+    assert!(
+        matches!(
+            overlapping,
+            ClosedPolicyError::Violations(ref found)
+                if found == &vec![violation("r1", "[c]hatgpt.com", "chatgpt.com")]
+        ),
+        "{overlapping:?}"
+    );
+    let reserved =
+        ClosedPolicy::parse(&rule_doc(&[("_provider_x", "example.com", 443)])).unwrap_err();
+    assert!(
+        matches!(
+            reserved,
+            ClosedPolicyError::Policy(PolicyError::ReservedRuleName(ref key)) if key == "_provider_x"
+        ),
+        "{reserved:?}"
+    );
+    let port_zero = ClosedPolicy::parse(&rule_doc(&[("r1", "example.com", 0)])).unwrap_err();
+    assert!(
+        matches!(
+            port_zero,
+            ClosedPolicyError::Policy(PolicyError::InvalidPort { ref rule, port: 0 }) if rule == "r1"
+        ),
+        "{port_zero:?}"
+    );
+    let unparsable = ClosedPolicy::parse(&rule_doc(&[("r1", "{a,b}.com", 443)])).unwrap_err();
+    assert!(
+        matches!(
+            unparsable,
+            ClosedPolicyError::Policy(PolicyError::InvalidHost(_))
+        ),
+        "{unparsable:?}"
     );
 }
 
@@ -236,7 +387,7 @@ fn with_rule_adds_exactly_one_docker_rule_and_keeps_every_other_node() {
     let updated = original.with_rule(engine.clone()).unwrap();
 
     let before: noyalib::Value = noyalib::from_str(BASE).unwrap();
-    let after: noyalib::Value = noyalib::from_str(&updated.render()).unwrap();
+    let after: noyalib::Value = noyalib::from_str(&updated.render().unwrap()).unwrap();
     let (before, after) = (before.as_mapping().unwrap(), after.as_mapping().unwrap());
     for (key, value) in before {
         if key != "network_policies" {
@@ -274,7 +425,7 @@ fn with_rule_adds_exactly_one_docker_rule_and_keeps_every_other_node() {
         Err(PolicyError::DuplicateRule(ref key)) if key.as_str() == "docker_engine"
     ));
     assert_eq!(
-        PolicyDocument::parse(&updated.render())
+        PolicyDocument::parse(&updated.render().unwrap())
             .unwrap()
             .network_rules(),
         updated.network_rules()
