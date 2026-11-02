@@ -1,0 +1,1255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProbeReport",
+  "description": "The one JSON object that jackin-sentinel-probe prints to stdout. It reports the in-sandbox journey steps J00, J04 to J16. The steps J01, J02, J03 and J17 have no in-sandbox part and never appear. A step that needs a credential or a capability that the sandbox lacks reports SKIP, never PASS. The probe exits 0 whenever it printed a report, even when a step is FAIL. No field ever holds a secret value.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "probe",
+    "mode",
+    "docker",
+    "steps"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1,
+      "description": "The version of this contract. A breaking change raises it."
+    },
+    "probe": {
+      "const": "jackin-sentinel-probe"
+    },
+    "mode": {
+      "enum": [
+        "sandbox",
+        "host"
+      ],
+      "description": "host is the dry mode (--host): nothing runs, every selected step is SKIP and facts is null."
+    },
+    "docker": {
+      "enum": [
+        "on",
+        "off"
+      ],
+      "description": "The Docker capability that the caller told the probe to expect (--docker). off is the default. on makes J15 run and J16 SKIP, off the reverse."
+    },
+    "steps": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "description": "One member for each step that ran. --only selects steps; an unselected step is absent.",
+      "properties": {
+        "J00": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ00"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Image. PASS when /usr/local/bin/codex is an executable file and codex --version exits 0. The host compares the version with the pin."
+        },
+        "J04": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ04"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Sandbox identity. PASS when the user is sandbox with uid and gid 1000, sudo does not work, and a docker binary exists exactly when docker is on."
+        },
+        "J05": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ05"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Upload. PASS when the project directory is a git work tree and the file list is not empty. The host compares the list with git ls-files and requires that an ignored file is absent."
+        },
+        "J06": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ06"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Hooks. PASS when setup ran exactly once, preflight ran at least once, and no installed hook file is writable by the sandbox user. The host compares the counts with the number of starts and failed attempts."
+        },
+        "J07": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ07"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Codex. The process check is SKIP when jackin-start is not in the state running. The codex exec check is SKIP when the sandbox holds no credential. PASS when the main process is jackin-start, Codex is its child, and codex exec answers the fixed prompt."
+        },
+        "J08": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ08"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Credential. SKIP when the sandbox holds no credential. PASS when every credential variable and every token in auth.json is a placeholder or empty and the file scan finds no token-shaped string."
+        },
+        "J09": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ09"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Egress. PASS when codex exec reached its API, a host outside the policy gets no HTTP response, the metadata address gets none, and curl, which is not Codex, gets no 2xx answer from a provider host when it sends the placeholder. The provider host check and the codex exec check are SKIP without a credential."
+        },
+        "J10": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ10"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Filesystem. PASS when a file can be created under /sandbox and /tmp and cannot be created at any denied path, and at least one denied path was writable by file mode, so the policy and not the mode caused the denial."
+        },
+        "J11": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ11"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Detach and reattach. PASS when a Codex process is a child of the main process. The host compares pid and start_ticks before and after the detach. SKIP when no Codex runs."
+        },
+        "J12": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ12"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Shell. PASS when the probe is not a descendant of the main process and, when both are known, its tty differs from the tty of Codex. The host compares the Codex process before and after the shell opens."
+        },
+        "J13": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ13"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Export. PASS when the project is a git work tree and its HEAD is readable. The host compares branches and head with the exported refs and requires that the host working tree is unchanged."
+        },
+        "J14": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ14"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Lifecycle. PASS when the marker file exists after the probe ran. The first run creates it (created is true). A later run reads the same id (created is false). The host requires the same id after stop and start and a new boot_id."
+        },
+        "J15": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ15"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Docker capability on. SKIP when docker is off. PASS when the Docker variables and certificates exist and docker run --rm hello-world prints the hello text. engine.id lets the host compare the engine with the chosen one."
+        },
+        "J16": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ16"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Docker capability off. SKIP when docker is on. PASS when there is no docker binary, no DOCKER_ variable, and a curl to the engine endpoint cannot connect (curl exit 6 or 7). The connection check is SKIP when no --engine endpoint was given."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Result": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "SKIP"
+      ]
+    },
+    "Check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "result",
+        "detail"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "result": {
+          "$ref": "#/$defs/Result"
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    },
+    "Step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result",
+        "reason",
+        "checks",
+        "facts"
+      ],
+      "description": "result is FAIL when any check is FAIL, otherwise SKIP when any check is SKIP, otherwise PASS. reason is empty for PASS, otherwise it joins the name and detail of the checks that gave the result. facts is null in host mode.",
+      "properties": {
+        "result": {
+          "$ref": "#/$defs/Result"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Check"
+          }
+        },
+        "facts": true
+      },
+      "if": {
+        "properties": {
+          "result": {
+            "const": "PASS"
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reason": {
+            "maxLength": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "reason": {
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "Mode": {
+      "type": "string",
+      "pattern": "^[0-7]{3,4}$"
+    },
+    "TokenKind": {
+      "enum": [
+        "absent",
+        "empty",
+        "placeholder",
+        "other"
+      ],
+      "description": "placeholder starts with openshell:resolve: (the id_token placeholder ends with .placeholder). other is a value that may be a real secret; its text is never reported."
+    },
+    "ProcessInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pid",
+        "ppid",
+        "sid",
+        "exe",
+        "args",
+        "start_ticks",
+        "tty"
+      ],
+      "properties": {
+        "pid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ppid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exe": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "args": {
+          "type": "string"
+        },
+        "start_ticks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tty": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Processes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boot_id",
+        "run_state",
+        "main",
+        "codex",
+        "self",
+        "self_descends_from_main"
+      ],
+      "properties": {
+        "boot_id": {
+          "type": "string"
+        },
+        "run_state": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The first line of /sandbox/.jackin/run/state. The agent can write it, so the host treats it as advisory."
+        },
+        "main": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The process whose command line holds /usr/local/bin/jackin-start and whose parent does not."
+        },
+        "codex": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProcessInfo"
+          },
+          "description": "The children of main whose exe is /usr/local/bin/codex."
+        },
+        "self": {
+          "$ref": "#/$defs/ProcessInfo"
+        },
+        "self_descends_from_main": {
+          "type": "boolean"
+        }
+      }
+    },
+    "CodexExec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempted",
+        "credential",
+        "exit_code",
+        "answered",
+        "output_bytes"
+      ],
+      "properties": {
+        "attempted": {
+          "type": "boolean"
+        },
+        "credential": {
+          "enum": [
+            "chatgpt_login",
+            "api_key",
+            "none"
+          ],
+          "description": "chatgpt_login is a /sandbox/.codex/auth.json with an access token. api_key is an OPENAI_API_KEY variable. none gives attempted false."
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "answered": {
+          "type": "boolean",
+          "description": "True when the output of codex exec --skip-git-repo-check 'Reply with the word ready' holds the word ready in any case."
+        },
+        "output_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "Egress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url",
+        "curl_exit",
+        "http_code"
+      ],
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "curl_exit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "http_code": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999,
+          "description": "0 when no HTTP response came."
+        }
+      }
+    },
+    "FactsJ00": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "codex"
+      ],
+      "properties": {
+        "codex": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "present",
+            "executable",
+            "version"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "present": {
+              "type": "boolean"
+            },
+            "executable": {
+              "type": "boolean"
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "FactsJ04": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "user",
+        "uid",
+        "gid",
+        "home",
+        "sudo",
+        "docker_binary"
+      ],
+      "properties": {
+        "user": {
+          "type": "string"
+        },
+        "uid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "home": {
+          "type": "string"
+        },
+        "sudo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "found",
+            "works"
+          ],
+          "properties": {
+            "found": {
+              "type": "boolean"
+            },
+            "works": {
+              "type": "boolean"
+            }
+          }
+        },
+        "docker_binary": {
+          "type": "boolean"
+        }
+      }
+    },
+    "FactsJ05": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "git_work_tree",
+        "files"
+      ],
+      "properties": {
+        "project": {
+          "type": "string"
+        },
+        "git_work_tree": {
+          "type": "boolean"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "$ref": "#/$defs/Sha256"
+              }
+            }
+          },
+          "description": "Every regular file below project, outside .git, sorted by byte value of the path, path relative to project."
+        }
+      }
+    },
+    "FactsJ06": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_dir",
+        "setup_runs",
+        "preflight_runs",
+        "preflight_failures",
+        "hooks"
+      ],
+      "properties": {
+        "state_dir": {
+          "type": "string"
+        },
+        "setup_runs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preflight_runs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preflight_failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hooks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "path",
+              "uid",
+              "mode",
+              "writable"
+            ],
+            "properties": {
+              "name": {
+                "enum": [
+                  "setup",
+                  "preflight"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "uid": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mode": {
+                "$ref": "#/$defs/Mode"
+              },
+              "writable": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "FactsJ07": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processes",
+        "codex_exec"
+      ],
+      "properties": {
+        "processes": {
+          "$ref": "#/$defs/Processes"
+        },
+        "codex_exec": {
+          "$ref": "#/$defs/CodexExec"
+        }
+      }
+    },
+    "FactsJ08": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "auth_file",
+        "leaks"
+      ],
+      "properties": {
+        "environment": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "kind"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "placeholder",
+                  "empty",
+                  "other"
+                ]
+              }
+            }
+          },
+          "description": "The variables of the probe whose name holds KEY, TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL or AUTH as a whole word, and the same variables of the main process."
+        },
+        "auth_file": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "mode",
+                "access_token",
+                "refresh_token",
+                "id_token"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "mode": {
+                  "$ref": "#/$defs/Mode"
+                },
+                "access_token": {
+                  "$ref": "#/$defs/TokenKind"
+                },
+                "refresh_token": {
+                  "$ref": "#/$defs/TokenKind"
+                },
+                "id_token": {
+                  "$ref": "#/$defs/TokenKind"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "leaks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Paths of files outside the project that hold a token-shaped string. Only paths are reported."
+        }
+      }
+    },
+    "FactsJ09": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outside_host",
+        "metadata_host",
+        "provider_host",
+        "codex_exec"
+      ],
+      "properties": {
+        "outside_host": {
+          "$ref": "#/$defs/Egress"
+        },
+        "metadata_host": {
+          "$ref": "#/$defs/Egress"
+        },
+        "provider_host": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Egress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A curl to a Codex provider host with the placeholder as the bearer value. null without a credential."
+        },
+        "codex_exec": {
+          "$ref": "#/$defs/CodexExec"
+        }
+      }
+    },
+    "FactsJ10": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "writes"
+      ],
+      "properties": {
+        "writes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "expected",
+              "dac_writable",
+              "created"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "expected": {
+                "enum": [
+                  "allowed",
+                  "denied"
+                ]
+              },
+              "dac_writable": {
+                "type": "boolean"
+              },
+              "created": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "FactsJ11": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processes"
+      ],
+      "properties": {
+        "processes": {
+          "$ref": "#/$defs/Processes"
+        }
+      }
+    },
+    "FactsJ12": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processes"
+      ],
+      "properties": {
+        "processes": {
+          "$ref": "#/$defs/Processes"
+        }
+      }
+    },
+    "FactsJ13": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "work_tree",
+        "branch",
+        "head",
+        "branches",
+        "clean",
+        "stash"
+      ],
+      "properties": {
+        "project": {
+          "type": "string"
+        },
+        "work_tree": {
+          "type": "boolean"
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "branches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "tip"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "tip": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40,64}$"
+              }
+            }
+          }
+        },
+        "clean": {
+          "type": "boolean"
+        },
+        "stash": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "FactsJ14": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boot_id",
+        "marker",
+        "setup_runs",
+        "preflight_runs"
+      ],
+      "properties": {
+        "boot_id": {
+          "type": "string"
+        },
+        "marker": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "id",
+            "created"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "created": {
+              "type": "boolean"
+            }
+          }
+        },
+        "setup_runs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preflight_runs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "FactsJ15": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "docker_binary",
+        "environment",
+        "certificates",
+        "run",
+        "engine"
+      ],
+      "properties": {
+        "docker_binary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "found",
+            "path"
+          ],
+          "properties": {
+            "found": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "docker_host",
+            "tls_verify",
+            "cert_path"
+          ],
+          "properties": {
+            "docker_host": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tls_verify": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "cert_path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "certificates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "mode"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/$defs/Mode"
+              }
+            }
+          }
+        },
+        "run": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "exit_code",
+            "hello"
+          ],
+          "properties": {
+            "exit_code": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "hello": {
+              "type": "boolean"
+            }
+          }
+        },
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "server_version"
+          ],
+          "properties": {
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "server_version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "FactsJ16": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "docker_binary",
+        "docker_variables",
+        "endpoint",
+        "connection"
+      ],
+      "properties": {
+        "docker_binary": {
+          "type": "boolean"
+        },
+        "docker_variables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Names of the DOCKER_ variables that are set."
+        },
+        "endpoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "connection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempted",
+            "curl_exit",
+            "http_code"
+          ],
+          "properties": {
+            "attempted": {
+              "type": "boolean"
+            },
+            "curl_exit": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "http_code": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}
