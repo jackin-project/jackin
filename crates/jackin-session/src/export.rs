@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+mod bundle;
 mod host;
 mod sandbox;
 
@@ -17,12 +18,12 @@ use jackin_openshell::GatewayError;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
+pub use self::bundle::BundleRefusal;
+use self::bundle::MAX_HEADS;
 use self::host::{HEAD, Host, HostRefs, exported_prefix};
 use self::sandbox::{Remote, RemoteError, Repository};
 use crate::project::host_git;
 use crate::service::Session;
-
-const MAX_HEADS: usize = 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExportedBranch {
@@ -186,6 +187,8 @@ pub enum ExportError {
     },
     #[error("{count} heads need export and the limit is {limit}")]
     TooManyHeads { count: usize, limit: usize },
+    #[error("the sandbox bundle was refused: {0}")]
+    BundleRefused(BundleRefusal),
     #[error("the sandbox bundle is {size} bytes and the limit is {limit}")]
     BundleTooLarge { size: u64, limit: u64 },
     #[error("{} expected tip {expected} but found {}", plain(.host_ref), tip_text(.found.as_ref()))]
@@ -516,16 +519,25 @@ impl Session {
         {
             return Err(ExportError::BundleTooLarge { size, limit });
         }
-        host.verify(&staging.bundle).await?;
-        let heads = host.heads(&staging.bundle).await?;
-        require_heads(&heads, items)?;
+        let format = host.object_format().await?;
+        let header =
+            bundle::header(self.deps.host.fs.as_ref(), &staging.bundle, format, cancel).await?;
+        require_heads(&header.heads, items)?;
+        bundle::walk(
+            self.deps.host.fs.as_ref(),
+            &staging.bundle,
+            header.pack_offset,
+            format,
+            cancel,
+        )
+        .await?;
         let refspecs: Vec<String> = items
             .iter()
             .map(|item| format!("+{}:{}", item.source(), item.target(sandbox)))
             .collect();
         host.fetch(&staging.bundle, &refspecs).await?;
         let landed = host.refs(sandbox).await?;
-        report(sandbox, digest, items, &heads, &landed)
+        report(sandbox, digest, items, &header.heads, &landed)
     }
 }
 

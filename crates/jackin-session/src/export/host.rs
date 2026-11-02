@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use jackin_core::{CommitId, EnvValue, HostPath, ProcessStatus, SandboxName, TerminalText};
 
 use super::ExportError;
+use crate::project::ObjectFormat;
 use crate::project::git::{HostGit, Pace, words};
 
 const HEADS: &str = "refs/heads/";
@@ -168,29 +169,15 @@ impl Host<'_> {
         Ok(found)
     }
 
-    pub(super) async fn verify(&self, bundle: &HostPath) -> Result<(), ExportError> {
-        let mut args = words(&BOUNDS);
-        args.extend(words(&["bundle", "verify", "--quiet"]));
-        args.push(bundle.as_path().display().to_string());
-        self.run(Pace::Long, args).await.map(drop)
-    }
-
-    pub(super) async fn heads(
-        &self,
-        bundle: &HostPath,
-    ) -> Result<BTreeMap<String, CommitId>, ExportError> {
-        let mut args = words(&BOUNDS);
-        args.extend(words(&["bundle", "list-heads"]));
-        args.push(bundle.as_path().display().to_string());
-        let listed = self.run(Pace::Long, args).await?;
-        let mut heads = BTreeMap::new();
-        for line in String::from_utf8_lossy(&listed).lines() {
-            let (oid, name) = line.split_once(' ').ok_or(ExportError::HostOutput {
-                message: "list-heads printed a line without a name".to_owned(),
-            })?;
-            heads.insert(name.to_owned(), commit(oid)?);
-        }
-        Ok(heads)
+    pub(super) async fn object_format(&self) -> Result<ObjectFormat, ExportError> {
+        let printed = self
+            .run(Pace::Quick, words(&["rev-parse", "--show-object-format"]))
+            .await?;
+        ObjectFormat::parse(String::from_utf8_lossy(&printed).trim()).ok_or(
+            ExportError::HostOutput {
+                message: "rev-parse printed an unknown object format".to_owned(),
+            },
+        )
     }
 
     pub(super) async fn fetch(

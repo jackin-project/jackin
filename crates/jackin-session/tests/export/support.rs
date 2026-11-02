@@ -54,26 +54,60 @@ impl ProcessRunner for CancelsOn {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct Call {
+    pub(crate) args: Vec<String>,
+}
+
+impl Call {
+    pub(crate) fn subcommand(&self) -> Option<&str> {
+        let mut args = self.args.iter();
+        while let Some(arg) = args.next() {
+            if arg == "-c" {
+                args.next();
+            } else if !arg.starts_with('-') {
+                return Some(arg);
+            }
+        }
+        None
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Sees {
     inner: Arc<TestRunner>,
-    args: Mutex<Vec<Vec<String>>>,
+    calls: Mutex<Vec<Call>>,
 }
 
 impl Sees {
     pub(crate) fn new(rig: &Rig) -> Sees {
         Sees {
             inner: Arc::clone(&rig.world.runner),
-            args: Mutex::new(Vec::new()),
+            calls: Mutex::new(Vec::new()),
         }
     }
 
-    pub(crate) fn ran(&self, word: &str) -> bool {
-        self.args
+    pub(crate) fn mark(&self) -> usize {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len()
+    }
+
+    pub(crate) fn since(&self, mark: usize) -> Vec<Call> {
+        self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .iter()
-            .any(|args| args.iter().any(|arg| arg == word))
+            .skip(mark)
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) fn ran(&self, word: &str) -> bool {
+        self.since(0)
+            .iter()
+            .any(|call| call.args.iter().any(|arg| arg == word))
     }
 }
 
@@ -85,10 +119,12 @@ impl ProcessRunner for Sees {
         lines: Option<&LineSink>,
         cancel: &CancellationToken,
     ) -> Result<ProcessOutput, ProcessError> {
-        self.args
+        self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(spec.args.clone());
+            .push(Call {
+                args: spec.args.clone(),
+            });
         self.inner.run(spec, lines, cancel).await
     }
 

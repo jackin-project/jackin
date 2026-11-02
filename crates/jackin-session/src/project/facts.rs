@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::ffi::OsStr;
+use std::fmt;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 
@@ -14,20 +15,26 @@ use crate::project::git::{HostGit, Pace, failure, words};
 const JACKIN_HEADS: &str = "refs/heads/jackin/";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ObjectFormat {
+pub enum ObjectFormat {
     Sha1,
     Sha256,
 }
 
+impl fmt::Display for ObjectFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 impl ObjectFormat {
-    pub(super) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             ObjectFormat::Sha1 => "sha1",
             ObjectFormat::Sha256 => "sha256",
         }
     }
 
-    fn parse(text: &str) -> Option<ObjectFormat> {
+    pub(crate) fn parse(text: &str) -> Option<ObjectFormat> {
         match text {
             "sha1" => Some(ObjectFormat::Sha1),
             "sha256" => Some(ObjectFormat::Sha256),

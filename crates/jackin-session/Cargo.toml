@@ -12,11 +12,14 @@ publish.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+flate2 = { workspace = true }
 jackin-core = { workspace = true }
 jackin-image = { workspace = true }
 jackin-openshell = { workspace = true }
 rustix = { workspace = true }
 serde_json = { workspace = true }
+sha1 = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt", "sync", "time"] }

@@ -92,7 +92,7 @@ async fn a_cancel_that_ends_a_host_git_call_is_cancelled_and_leaves_nothing() ->
         handle.commit_in_project("a.txt", b"a", "work").await?;
         let before = snapshot(&rig).await?;
         let token = CancellationToken::new();
-        let session = rig.session_over(Arc::new(CancelsOn::new(&rig, "verify", &token)));
+        let session = rig.session_over(Arc::new(CancelsOn::new(&rig, "fetch", &token)));
 
         let cancelled = session.export(&rig.config, &name, token).await;
 

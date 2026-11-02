@@ -31,6 +31,7 @@ use crate::project::listing::Listing;
 use crate::project::sandbox::Sandbox;
 use crate::service::{Session, SessionDeps};
 
+pub use facts::ObjectFormat;
 pub use version::{GitVersion, HostGitError, check_git};
 
 const LISTED_PATHS: usize = 5;
