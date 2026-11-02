@@ -1,0 +1,374 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::collections::{BTreeMap, HashMap};
+use std::error::Error;
+use std::fs;
+use std::future::Future;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
+
+use jackin_core::{
+    Agent, BuilderName, CommitId, DockerLayer, DockerSubcommand, HostPath, OutputStream, Platform,
+    ProcessRunner, ProcessStatus, Program, RepoPath, RoleName, Sha256, StdFileSystem,
+};
+use jackin_image::{
+    BuildStage, BuildxEngine, HookFiles, ImageEvent, ImageRequest, Rebuild, RoleRevision,
+    SourceFile,
+};
+use jackin_testkit::{
+    ProcessEffect, ProcessReply, ScriptedProcessRunner, ScriptedProgram, SeenCall, SeenEnv,
+};
+use tempfile::TempDir;
+use tokio::sync::mpsc::Receiver;
+use tokio::time::timeout;
+
+pub(crate) type TestResult = Result<(), Box<dyn Error>>;
+
+pub(crate) const CONSTRUCT_DOCKERFILE: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/images/construct/Dockerfile"
+));
+pub(crate) const DERIVED_DOCKERFILE: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/images/derived/Dockerfile"
+));
+pub(crate) const JACKIN_START: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/jackin-start"));
+pub(crate) const ROLE_DOCKERFILE: &[u8] = b"FROM construct AS role\n";
+
+pub(crate) async fn guarded<F>(future: F) -> TestResult
+where
+    F: Future<Output = TestResult>,
+{
+    timeout(Duration::from_secs(10), future)
+        .await
+        .map_err(|_| "the test exceeded its 10 s guard")?
+}
+
+pub(crate) fn tag_id(tag: &str) -> String {
+    format!("sha256:{}", Sha256::of(tag.as_bytes()).as_str())
+}
+
+pub(crate) fn source(path: &str, bytes: &[u8]) -> Result<SourceFile, Box<dyn Error>> {
+    Ok(SourceFile {
+        path: RepoPath::parse(path)?,
+        bytes: bytes.to_vec(),
+    })
+}
+
+pub(crate) struct Fixture {
+    pub(crate) dir: TempDir,
+    pub(crate) role: HostPath,
+    pub(crate) work: HostPath,
+}
+
+impl Fixture {
+    pub(crate) fn new() -> Result<Fixture, Box<dyn Error>> {
+        let dir = tempfile::tempdir()?;
+        let base = dir.path().canonicalize()?;
+        let role = base.join("role");
+        fs::create_dir_all(role.join("src"))?;
+        fs::write(role.join("Dockerfile"), ROLE_DOCKERFILE)?;
+        fs::write(role.join("src/a.rs"), b"fn a() {}\n")?;
+        Ok(Fixture {
+            role: HostPath::parse(&role)?,
+            work: HostPath::parse(&base.join("work"))?,
+            dir,
+        })
+    }
+
+    pub(crate) fn request(&self) -> Result<ImageRequest, Box<dyn Error>> {
+        Ok(ImageRequest {
+            role: RoleName::parse("sentinel")?,
+            context: self.role.clone(),
+            context_files: vec![RepoPath::parse("Dockerfile")?, RepoPath::parse("src/a.rs")?],
+            dockerfile: source("Dockerfile", ROLE_DOCKERFILE)?,
+            hooks: HookFiles {
+                setup: Some(source("hooks/setup.sh", b"#!/bin/sh\necho setup\n")?),
+                preflight: None,
+            },
+            revision: RoleRevision::Clean {
+                commit: CommitId::parse(&"1".repeat(40))?,
+            },
+            agent: Agent::Codex,
+            platform: Platform::LinuxArm64,
+            builder: BuilderName::parse("orbstack")?,
+            docker: DockerLayer::Absent,
+            rebuild: Rebuild::No,
+        })
+    }
+
+    pub(crate) fn work_entries(&self) -> Vec<String> {
+        fs::read_dir(self.work.as_path()).map_or_else(
+            |_| Vec::new(),
+            |entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                    .collect()
+            },
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Outcome {
+    Exit(ProcessStatus),
+    Timeout,
+    UntilCancelled,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum IidFile {
+    Id,
+    Text(String),
+    Absent,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum Delivery {
+    Normal,
+    Dropped,
+    Moved(String),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Script {
+    pub(crate) lines: Vec<(OutputStream, String)>,
+    pub(crate) outcome: Outcome,
+    pub(crate) iid: IidFile,
+}
+
+impl Default for Script {
+    fn default() -> Script {
+        Script {
+            lines: Vec::new(),
+            outcome: Outcome::Exit(ProcessStatus::Exited(0)),
+            iid: IidFile::Id,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ModelState {
+    images: BTreeMap<String, String>,
+    driver: String,
+    scripts: HashMap<BuildStage, Script>,
+    delivery: Delivery,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct DockerModel {
+    state: Arc<Mutex<ModelState>>,
+}
+
+fn locked(state: &Mutex<ModelState>) -> MutexGuard<'_, ModelState> {
+    state.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn stage_of(tag: &str) -> BuildStage {
+    if tag.starts_with("jackin/construct:") {
+        BuildStage::Construct
+    } else if tag.starts_with("jackin/role/") {
+        BuildStage::Role
+    } else {
+        BuildStage::Derived
+    }
+}
+
+pub(crate) fn tag_of(call: &SeenCall) -> Option<&str> {
+    call.args.iter().find_map(|arg| arg.strip_prefix("--tag="))
+}
+
+impl DockerModel {
+    pub(crate) fn new() -> DockerModel {
+        DockerModel {
+            state: Arc::new(Mutex::new(ModelState {
+                images: BTreeMap::new(),
+                driver: "docker".to_owned(),
+                scripts: HashMap::new(),
+                delivery: Delivery::Normal,
+            })),
+        }
+    }
+
+    pub(crate) fn driver(&self, driver: &str) {
+        driver.clone_into(&mut locked(&self.state).driver);
+    }
+
+    pub(crate) fn script(&self, stage: BuildStage, script: Script) {
+        locked(&self.state).scripts.insert(stage, script);
+    }
+
+    pub(crate) fn delivery(&self, delivery: Delivery) {
+        locked(&self.state).delivery = delivery;
+    }
+
+    pub(crate) fn preload(&self, tag: &str) -> String {
+        let id = tag_id(tag);
+        locked(&self.state)
+            .images
+            .insert(tag.to_owned(), id.clone());
+        id
+    }
+
+    pub(crate) fn images(&self) -> BTreeMap<String, String> {
+        locked(&self.state).images.clone()
+    }
+
+    pub(crate) fn install(&self, runner: &ScriptedProcessRunner) {
+        let model = self.clone();
+        runner.expect_fn(ScriptedProgram::Docker, &[], move |call| model.answer(call));
+    }
+
+    fn answer(&self, call: &SeenCall) -> ProcessReply {
+        match call.program {
+            Program::Docker(DockerSubcommand::BuildxBuild) => self.build(call),
+            Program::Docker(DockerSubcommand::ImageInspect) => self.inspect(call),
+            Program::Docker(DockerSubcommand::BuildxInspect) => self.builder(),
+            _ => ProcessReply::spawn("the model knows only buildx build and the two inspects"),
+        }
+    }
+
+    fn build(&self, call: &SeenCall) -> ProcessReply {
+        let tag = tag_of(call).unwrap_or_default();
+        let stage = stage_of(tag);
+        let mut state = locked(&self.state);
+        let script = state.scripts.get(&stage).cloned().unwrap_or_default();
+        let id = tag_id(tag);
+        let succeeded = script.outcome == Outcome::Exit(ProcessStatus::Exited(0));
+        if succeeded {
+            let stored = match (&state.delivery, stage) {
+                (Delivery::Dropped, BuildStage::Derived) => None,
+                (Delivery::Moved(other), BuildStage::Derived) => Some(other.clone()),
+                _ => Some(id.clone()),
+            };
+            if let Some(stored) = stored {
+                state.images.insert(tag.to_owned(), stored);
+            }
+        }
+        let mut reply = match script.outcome {
+            Outcome::Exit(status) => ProcessReply::lines(status, script.lines),
+            Outcome::Timeout => ProcessReply::timeout(),
+            Outcome::UntilCancelled => ProcessReply::until_cancelled(script.lines),
+        };
+        let written = match script.iid {
+            IidFile::Id => Some(format!("{id}\n")),
+            IidFile::Text(text) => Some(text),
+            IidFile::Absent => None,
+        };
+        if let (true, Some(text)) = (succeeded, written) {
+            reply = reply.with_effect(ProcessEffect::WriteArgFile {
+                prefix: "--iidfile=".to_owned(),
+                bytes: text.into_bytes(),
+            });
+        }
+        reply.with_effect(ProcessEffect::CaptureContext)
+    }
+
+    fn inspect(&self, call: &SeenCall) -> ProcessReply {
+        let tag = call.args.last().map_or("", String::as_str);
+        match locked(&self.state).images.get(tag) {
+            Some(id) => ProcessReply::exited(0, format!("{id}\n").as_bytes(), b""),
+            None => ProcessReply::exited(
+                1,
+                b"",
+                format!("Error response from daemon: No such image: {tag}\n").as_bytes(),
+            ),
+        }
+    }
+
+    fn builder(&self) -> ProcessReply {
+        let driver = locked(&self.state).driver.clone();
+        let text = format!(
+            "Name:          orbstack\nDriver:        {driver}\nLast Activity: 2026-11-02 08:00:00 +0000 UTC\n\nNodes:\nName:             orbstack\nEndpoint:         orbstack\nStatus:           running\n"
+        );
+        ProcessReply::exited(0, text.as_bytes(), b"")
+    }
+}
+
+pub(crate) struct Stack {
+    pub(crate) fixture: Fixture,
+    pub(crate) runner: Arc<ScriptedProcessRunner>,
+    pub(crate) model: DockerModel,
+    pub(crate) engine: BuildxEngine,
+}
+
+impl Stack {
+    pub(crate) fn new() -> Result<Stack, Box<dyn Error>> {
+        let fixture = Fixture::new()?;
+        let runner = Arc::new(ScriptedProcessRunner::new());
+        let model = DockerModel::new();
+        model.install(&runner);
+        let shared: Arc<dyn ProcessRunner> = Arc::<ScriptedProcessRunner>::clone(&runner);
+        let engine = BuildxEngine::new(
+            shared,
+            Arc::new(StdFileSystem::default()),
+            fixture.work.clone(),
+        );
+        Ok(Stack {
+            fixture,
+            runner,
+            model,
+            engine,
+        })
+    }
+
+    pub(crate) fn calls(&self, sub: DockerSubcommand) -> Vec<SeenCall> {
+        self.runner
+            .seen()
+            .into_iter()
+            .filter(|call| call.program == Program::Docker(sub))
+            .collect()
+    }
+
+    pub(crate) fn built_tags(&self) -> Vec<String> {
+        self.calls(DockerSubcommand::BuildxBuild)
+            .iter()
+            .filter_map(|call| tag_of(call).map(str::to_owned))
+            .collect()
+    }
+}
+
+pub(crate) fn drain(rx: &mut Receiver<ImageEvent>) -> Vec<ImageEvent> {
+    let mut events = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        events.push(event);
+    }
+    events
+}
+
+pub(crate) fn assert_local_only(runner: &ScriptedProcessRunner) -> TestResult {
+    for call in runner.seen() {
+        let allowed = matches!(
+            call.program,
+            Program::Docker(
+                DockerSubcommand::BuildxBuild
+                    | DockerSubcommand::BuildxInspect
+                    | DockerSubcommand::ImageInspect
+            )
+        );
+        if !allowed {
+            return Err(format!("a non-local program ran: {:?}", call.program).into());
+        }
+        for arg in &call.args {
+            if arg == "--push"
+                || arg == "-o"
+                || arg.starts_with("--output")
+                || arg.contains("type=registry")
+            {
+                return Err(format!("a registry argument: {arg}").into());
+            }
+            if let Some(tag) = arg.strip_prefix("--tag=")
+                && !tag.starts_with("jackin/")
+            {
+                return Err(format!("a tag outside jackin/: {tag}").into());
+            }
+        }
+        if call.env.iter().any(|(_, value)| *value == SeenEnv::Secret) {
+            return Err("a secret env value reached docker".into());
+        }
+    }
+    Ok(())
+}

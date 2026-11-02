@@ -20,6 +20,59 @@ park() {
     return 0
 }
 
+check_env() {
+    [ -f "$1" ] || return 0
+    n=0
+    line=
+    while IFS= read -r line; do
+        n=$((n + 1))
+        case $line in
+            'export '*=*) ;;
+            *)
+                echo "$n"
+                return 1
+                ;;
+        esac
+        rest=${line#export }
+        name=${rest%%=*}
+        case $name in
+            '' | [0123456789]* | *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_]*)
+                echo "$n"
+                return 1
+                ;;
+        esac
+        quoted=${rest#*=}
+        case $quoted in
+            \'*\') ;;
+            *)
+                echo "$n"
+                return 1
+                ;;
+        esac
+        inner=${quoted#\'}
+        inner=${inner%\'}
+        while :; do
+            case $inner in
+                *\'*) ;;
+                *) break ;;
+            esac
+            after=${inner#*\'}
+            case $after in
+                \\\'\'*) inner=${after#\\\'\'} ;;
+                *)
+                    echo "$n"
+                    return 1
+                    ;;
+            esac
+        done
+    done <"$1"
+    [ -z "$line" ] || {
+        echo $((n + 1))
+        return 1
+    }
+    return 0
+}
+
 drain() {
     if [ -t 0 ]; then
         stty -icanon min 0 time 0
@@ -29,11 +82,36 @@ drain() {
     return 0
 }
 
+run_attempt() {
+    attempt_id=$1
+    shift
+    drain
+    if bad=$(check_env "$envfile"); then
+        publish "running $attempt_id"
+    else
+        echo "jackin-start: $envfile is malformed at line $bad" >&2
+        publish "exited $attempt_id 65"
+        park
+        return 0
+    fi
+    rc=0
+    (
+        [ ! -f "$envfile" ] || . "$envfile"
+        cd "$project" || exit 66
+        exec "$@"
+    ) || rc=$?
+    publish "exited $attempt_id $rc"
+    park
+    printf '\r\033[0m\033[?25hjackin-start: %s exited with code %s (attempt %s)\r\n' "${1##*/}" "$rc" "$attempt_id"
+}
+
 [ "$#" -gt 0 ] || fail "missing agent command"
 
 case ${JACKIN_LAUNCH_ID:-} in
     '' | .* | *[!A-Za-z0-9._-]*) fail "JACKIN_LAUNCH_ID is missing or invalid" ;;
 esac
+
+envfile=/sandbox/.jackin/env-$JACKIN_LAUNCH_ID
 
 trap : INT TERM HUP QUIT TSTP
 
@@ -55,11 +133,5 @@ while :; do
     fi
 
     last=$attempt
-    drain
-    publish "running $attempt"
-    rc=0
-    (cd "$project" || exit 66; exec "$@") || rc=$?
-    publish "exited $attempt $rc"
-    park
-    printf '\r\033[0m\033[?25hjackin-start: %s exited with code %s (attempt %s)\r\n' "${1##*/}" "$rc" "$attempt"
+    run_attempt "$attempt" "$@"
 done

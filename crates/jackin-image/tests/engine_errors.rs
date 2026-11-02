@@ -3,8 +3,8 @@
 
 use std::error::Error;
 
-use jackin_core::{BuilderName, ImageTag, ProcessStatus, RoleName, Sha256, TerminalText};
-use jackin_image::{BuildStage, EngineError};
+use jackin_core::{BuilderName, ImageId, ImageTag, ProcessStatus, RoleName, Sha256, TerminalText};
+use jackin_image::{BuildStage, ContextProblem, EngineError, ImageError};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
@@ -33,11 +33,41 @@ fn engine_failure_messages_show_names_and_build_output_as_plain_text() -> TestRe
     }
     .to_string();
 
+    let entry = EngineError::ContextEntry {
+        path: "src/link".to_owned(),
+        problem: ContextProblem::Symlink,
+    }
+    .to_string();
+    let builder_unreadable = EngineError::BuilderUnreadable {
+        builder: BuilderName::parse("orbstack")?,
+        status: ProcessStatus::Exited(1),
+        output: TerminalText::sanitize(b"Cannot connect\nto the daemon"),
+    }
+    .to_string();
+    let built = ImageId::parse(&format!("sha256:{}", "a".repeat(64)))?;
+    let found = ImageId::parse(&format!("sha256:{}", "b".repeat(64)))?;
+    let absent = ImageError::NotDelivered {
+        tag: tag.clone(),
+        built: built.clone(),
+        found: None,
+    }
+    .to_string();
+    let moved = ImageError::NotDelivered {
+        tag: tag.clone(),
+        built: built.clone(),
+        found: Some(found.clone()),
+    }
+    .to_string();
+
     for (label, message) in [
         ("missing", &missing),
         ("driver", &driver),
         ("failed", &failed),
         ("unreadable", &unreadable),
+        ("entry", &entry),
+        ("builder unreadable", &builder_unreadable),
+        ("not delivered, absent", &absent),
+        ("not delivered, moved", &moved),
     ] {
         assert!(!message.contains("BuilderName"), "{label}: {message:?}");
         assert!(!message.contains("ImageTag("), "{label}: {message:?}");
@@ -59,5 +89,22 @@ fn engine_failure_messages_show_names_and_build_output_as_plain_text() -> TestRe
     let unreadable_lines: Vec<&str> = unreadable.lines().collect();
     assert!(unreadable_lines.contains(&"line a"), "{unreadable_lines:?}");
     assert!(unreadable_lines.contains(&"line b"), "{unreadable_lines:?}");
+    assert!(entry.contains("src/link"), "{entry:?}");
+    assert!(entry.contains("symbolic link"), "{entry:?}");
+    assert!(
+        builder_unreadable.contains("orbstack"),
+        "{builder_unreadable:?}"
+    );
+    let unreadable_lines: Vec<&str> = builder_unreadable.lines().collect();
+    assert!(
+        unreadable_lines.contains(&"to the daemon"),
+        "{unreadable_lines:?}"
+    );
+    for message in [&absent, &moved] {
+        assert!(message.contains(&tag.to_string()), "{message:?}");
+        assert!(message.contains(&built.to_string()), "{message:?}");
+    }
+    assert!(moved.contains(&found.to_string()), "{moved:?}");
+    assert!(!absent.contains(&found.to_string()), "{absent:?}");
     Ok(())
 }

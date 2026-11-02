@@ -65,7 +65,10 @@ fn plan_verdict(result: Result<ImagePlan, ImageError>) -> Verdict {
         Ok(_) => Verdict::Accepted,
         Err(ImageError::Dockerfile(error)) => classify(&error),
         Err(
-            ImageError::MissingInstallTarget { .. } | ImageError::Engine(_) | ImageError::Cancelled,
+            ImageError::MissingInstallTarget { .. }
+            | ImageError::Engine(_)
+            | ImageError::NotDelivered { .. }
+            | ImageError::Cancelled,
         ) => Verdict::Other,
     }
 }

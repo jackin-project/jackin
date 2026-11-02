@@ -25,14 +25,23 @@ pub trait ImageEngine: Send + Sync + Debug {
     ) -> Result<ImageId, EngineError>;
 }
 
-#[derive(Clone, Debug)]
-pub struct BuildxEngine {}
-
 fn describe(status: ProcessStatus) -> String {
     match status {
         ProcessStatus::Exited(code) => format!("exit code {code}"),
         ProcessStatus::Signaled(signal) => format!("signal {signal}"),
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
+pub enum ContextProblem {
+    #[error("is a symbolic link")]
+    Symlink,
+    #[error("is not a regular file")]
+    NotARegularFile,
+    #[error("does not exist")]
+    Missing,
+    #[error("leaves the build context")]
+    Escapes,
 }
 
 #[derive(Debug, Error)]
@@ -49,6 +58,17 @@ pub enum EngineError {
         stage: BuildStage,
         status: ProcessStatus,
         tail: TerminalText,
+    },
+    #[error("cannot read the driver of builder {builder}; its inspect command ended with {}:\n{}", describe(*.status), .output.as_str())]
+    BuilderUnreadable {
+        builder: BuilderName,
+        status: ProcessStatus,
+        output: TerminalText,
+    },
+    #[error("the build context cannot hold {path}: it {problem}")]
+    ContextEntry {
+        path: String,
+        problem: ContextProblem,
     },
     #[error("cannot read the image ID of {tag}:\n{}", .output.as_str())]
     DigestUnreadable { tag: ImageTag, output: TerminalText },

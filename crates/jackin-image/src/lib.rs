@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod assets;
+mod buildx;
+mod context;
 mod dockerfile;
 mod engine;
 mod ensure;
@@ -10,6 +12,7 @@ mod key;
 mod plan;
 mod request;
 
+pub use buildx::*;
 pub use dockerfile::*;
 pub use engine::*;
 pub use ensure::*;

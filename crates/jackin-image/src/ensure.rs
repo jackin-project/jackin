@@ -1,9 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{ImageId, ImageTag, TerminalText};
+use jackin_core::{BuilderName, ImageId, ImageTag, TerminalText};
+use tokio_util::sync::CancellationToken;
 
-use crate::plan::BuildStage;
+use crate::engine::{EngineError, ImageEngine};
+use crate::error::ImageError;
+use crate::plan::{BuildStage, ImagePlan, PlannedBuild};
+use crate::request::{ImageRequest, Rebuild};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ImageSource {
@@ -30,3 +34,118 @@ pub enum ImageEvent {
 }
 
 pub type ProgressSink = tokio::sync::mpsc::Sender<ImageEvent>;
+
+fn from_engine(error: EngineError) -> ImageError {
+    match error {
+        EngineError::Cancelled => ImageError::Cancelled,
+        other => ImageError::Engine(other),
+    }
+}
+
+struct Pipeline<'a> {
+    engine: &'a dyn ImageEngine,
+    builder: &'a BuilderName,
+    progress: &'a ProgressSink,
+    cancel: &'a CancellationToken,
+    builder_checked: bool,
+}
+
+impl Pipeline<'_> {
+    fn live(&self) -> Result<(), ImageError> {
+        if self.cancel.is_cancelled() {
+            Err(ImageError::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn emit(&self, event: ImageEvent) {
+        tokio::select! {
+            biased;
+            () = self.cancel.cancelled() => {}
+            sent = self.progress.send(event) => drop(sent),
+        }
+    }
+
+    async fn find(&self, tag: &ImageTag) -> Result<Option<ImageId>, ImageError> {
+        self.live()?;
+        self.engine.find(tag).await.map_err(from_engine)
+    }
+
+    async fn build(&mut self, build: &PlannedBuild) -> Result<ImageId, ImageError> {
+        self.live()?;
+        if !self.builder_checked {
+            self.engine
+                .check_builder(self.builder)
+                .await
+                .map_err(from_engine)?;
+            self.builder_checked = true;
+        }
+        self.emit(ImageEvent::StageStarted(build.stage)).await;
+        let id = self
+            .engine
+            .build(build, self.progress, self.cancel)
+            .await
+            .map_err(from_engine)?;
+        self.emit(ImageEvent::StageFinished(build.stage)).await;
+        Ok(id)
+    }
+}
+
+pub async fn ensure_image(
+    engine: &dyn ImageEngine,
+    request: &ImageRequest,
+    progress: &ProgressSink,
+    cancel: &CancellationToken,
+) -> Result<BuiltImage, ImageError> {
+    let plan = ImagePlan::new(request)?;
+    let mut pipeline = Pipeline {
+        engine,
+        builder: &request.builder,
+        progress,
+        cancel,
+        builder_checked: false,
+    };
+    let construct = plan.construct_build();
+    let cached = match request.rebuild {
+        Rebuild::No => pipeline.find(&construct.tag).await?,
+        Rebuild::Yes => None,
+    };
+    let construct_id = if let Some(id) = cached {
+        pipeline
+            .emit(ImageEvent::StageCached(BuildStage::Construct))
+            .await;
+        id
+    } else {
+        pipeline.build(construct).await?
+    };
+    if request.rebuild == Rebuild::No {
+        let tag = plan.final_tag(&construct_id);
+        if let Some(id) = pipeline.find(&tag).await? {
+            pipeline
+                .emit(ImageEvent::StageCached(BuildStage::Derived))
+                .await;
+            return Ok(BuiltImage {
+                tag,
+                id,
+                source: ImageSource::Cache,
+            });
+        }
+    }
+    let builds = plan.final_builds(&construct_id);
+    pipeline.build(&builds.role).await?;
+    let built = pipeline.build(&builds.derived).await?;
+    let found = pipeline.find(&builds.derived.tag).await?;
+    if found.as_ref() != Some(&built) {
+        return Err(ImageError::NotDelivered {
+            tag: builds.derived.tag,
+            built,
+            found,
+        });
+    }
+    Ok(BuiltImage {
+        tag: builds.derived.tag,
+        id: built,
+        source: ImageSource::Built,
+    })
+}
