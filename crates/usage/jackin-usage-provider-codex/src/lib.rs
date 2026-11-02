@@ -24,7 +24,7 @@ pub async fn fetch(
             &[("chatgpt-account-id", chatgpt_account_id)],
         )
         .await?;
-    Ok(windows::buckets(&body, now))
+    windows::buckets(&body, now)
 }
 
 fn access_token(login: &str) -> Result<String, ProviderError> {

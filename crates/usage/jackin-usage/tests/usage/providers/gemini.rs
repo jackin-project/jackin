@@ -260,3 +260,31 @@ async fn a_missing_login_file_is_no_credentials() -> TestResult {
     })
     .await
 }
+
+#[tokio::test]
+async fn an_expiry_date_at_the_edge_of_the_integers_does_not_panic() -> TestResult {
+    guard(async {
+        let (harness, _) = started_with(LOAD, QUOTA).await?;
+        let far = CREDS.replace("1767232800000", "9223372036854775807");
+        let past = CREDS.replace("1767232800000", "-9223372036854775808");
+        harness.put(CREDS_PATH, &far).await?;
+        let login = account("gemini", Provider::Gemini, file_source(CREDS_PATH));
+        assert_windows(
+            &harness.one(&login, Refresh::Cached).await?.outcome,
+            &[PRO, FLASH],
+        );
+        harness.put("/home/work/.gemini/past.json", &past).await?;
+        let login = account(
+            "gemini-past",
+            Provider::Gemini,
+            file_source("/home/work/.gemini/past.json"),
+        );
+        let usage = harness.one(&login, Refresh::Force).await?;
+        assert_eq!(
+            unavailable(&usage.outcome),
+            &UnavailableReason::ExpiredLogin
+        );
+        Ok(())
+    })
+    .await
+}

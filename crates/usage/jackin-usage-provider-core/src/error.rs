@@ -20,3 +20,8 @@ pub enum ProviderError {
     #[error("{0}")]
     Unsupported(&'static str),
 }
+
+impl ProviderError {
+    pub const OUT_OF_RANGE: ProviderError =
+        ProviderError::Decode("a number in the response is out of range");
+}

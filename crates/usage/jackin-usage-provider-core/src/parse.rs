@@ -4,9 +4,11 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use crate::error::ProviderError;
 use crate::model::Money;
 
 const MILLISECOND_EPOCH_FLOOR: f64 = 1_000_000_000_000.0;
+const LAST_EPOCH: f64 = 253_402_300_799.0;
 
 pub fn json_number(value: &Value) -> Option<f64> {
     value
@@ -42,7 +44,7 @@ pub fn epoch_seconds(value: f64) -> Option<i64> {
     } else {
         value
     };
-    Some(seconds.floor() as i64)
+    (seconds <= LAST_EPOCH).then_some(seconds.floor() as i64)
 }
 
 pub fn json_epoch(value: &Value) -> Option<i64> {
@@ -56,11 +58,17 @@ pub fn json_epoch(value: &Value) -> Option<i64> {
     value.as_f64().and_then(epoch_seconds)
 }
 
-pub fn json_money(value: &Value, exponent: u32, unit: &str) -> Option<Money> {
-    match value {
-        Value::String(text) => Money::parse_decimal(text, exponent, unit),
-        other => Money::from_f64(other.as_f64()?, exponent, unit),
-    }
+pub fn json_money(
+    value: &Value,
+    exponent: u32,
+    unit: &str,
+) -> Result<Option<Money>, ProviderError> {
+    let Some(number) = json_number(value) else {
+        return Ok(None);
+    };
+    Money::from_f64(number, exponent, unit)
+        .map(Some)
+        .ok_or(ProviderError::OUT_OF_RANGE)
 }
 
 pub fn title_words(text: &str) -> String {

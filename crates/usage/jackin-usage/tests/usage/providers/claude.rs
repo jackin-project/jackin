@@ -327,3 +327,43 @@ async fn the_cache_fetches_again_after_five_minutes() -> TestResult {
     })
     .await
 }
+
+fn assert_provider(outcome: &jackin_usage::UsageOutcome) {
+    assert!(
+        matches!(unavailable(outcome), UnavailableReason::Provider(_)),
+        "{outcome:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_spend_amount_at_the_edge_of_the_integers_is_a_provider_error_port_fidelity() -> TestResult
+{
+    guard(async {
+        let body = "{\"spend\":{\"used\":{\"amount_minor\":-9223372036854775808,\"currency\":\"USD\",\"exponent\":2},\"limit\":{\"amount_minor\":9223372036854775807,\"currency\":\"USD\",\"exponent\":2},\"percent\":18,\"enabled\":true}}";
+        assert_provider(&windows_for(body).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_extra_usage_exponent_that_overflows_a_power_of_ten_is_a_provider_error_port_fidelity()
+-> TestResult {
+    guard(async {
+        let body = "{\"extra_usage\":{\"is_enabled\":true,\"monthly_limit\":26000.0,\"used_credits\":7849.0,\"utilization\":30.0,\"currency\":\"SGD\",\"decimal_places\":40}}";
+        assert_provider(&windows_for(body).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_extra_usage_amount_beyond_the_integers_is_a_provider_error_port_fidelity() -> TestResult
+{
+    guard(async {
+        let body = "{\"extra_usage\":{\"is_enabled\":true,\"monthly_limit\":1e300,\"used_credits\":7849.0,\"utilization\":30.0,\"currency\":\"SGD\",\"decimal_places\":2}}";
+        assert_provider(&windows_for(body).await?);
+        Ok(())
+    })
+    .await
+}

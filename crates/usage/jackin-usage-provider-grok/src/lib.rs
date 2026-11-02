@@ -27,10 +27,10 @@ pub async fn fetch(
     let config = body.get("config").unwrap_or(&Value::Null);
     let on_demand = body.get("on_demand_enabled").and_then(Value::as_bool) != Some(false);
     let mut out = Vec::new();
-    out.extend(period_window(config));
-    out.extend(prepaid(config));
+    out.extend(period_window(config)?);
+    out.extend(prepaid(config)?);
     if on_demand {
-        out.extend(on_demand_window(config));
+        out.extend(on_demand_window(config)?);
     }
     Ok(out)
 }
@@ -68,9 +68,16 @@ fn login_key(login: &str, now: i64) -> Result<String, ProviderError> {
     Ok(key.to_owned())
 }
 
-fn cents(value: Option<&Value>) -> Option<Money> {
-    let minor = value?.get("val").and_then(Value::as_i64).unwrap_or(0);
-    Some(Money::new(minor.abs(), 2, UNIT))
+fn cents(value: Option<&Value>) -> Result<Option<Money>, ProviderError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let minor = match value.get("val") {
+        None | Some(Value::Null) => 0,
+        Some(number) => number.as_i64().ok_or(ProviderError::OUT_OF_RANGE)?,
+    };
+    let magnitude = minor.checked_abs().ok_or(ProviderError::OUT_OF_RANGE)?;
+    Ok(Some(Money::cents(magnitude, UNIT)))
 }
 
 fn period(config: &Value) -> (Option<i64>, Option<i64>) {
@@ -87,45 +94,51 @@ fn period(config: &Value) -> (Option<i64>, Option<i64>) {
     )
 }
 
-fn period_window(config: &Value) -> Option<Bucket> {
+fn period_window(config: &Value) -> Result<Option<Bucket>, ProviderError> {
     let (start, end) = period(config);
-    let length = start.zip(end).map(|(start, end)| end - start);
-    let limit = cents(config.get("monthlyLimit")).filter(|limit| limit.minor() > 0);
-    let spent = cents(config.get("used"));
+    let length = match start.zip(end) {
+        Some((start, end)) => Some(end.checked_sub(start).ok_or(ProviderError::OUT_OF_RANGE)?),
+        None => None,
+    };
     let (used, left) = if let Some(percent) = config.get("creditUsagePercent").and_then(json_number)
     {
         (percent, None)
     } else {
-        let (limit, spent) = limit.zip(spent)?;
+        let limit = cents(config.get("monthlyLimit"))?.filter(|limit| limit.minor() > 0);
+        let Some((limit, spent)) = limit.zip(cents(config.get("used"))?) else {
+            return Ok(None);
+        };
         let used = spent.minor() as f64 / limit.minor() as f64 * 100.0;
-        (
-            used,
-            Some(Remaining::Amount(limit.minus(&spent).clamped_at_zero())),
-        )
+        let left = limit.minus(&spent).ok_or(ProviderError::OUT_OF_RANGE)?;
+        (used, Some(Remaining::Amount(left.clamped_at_zero())))
     };
-    Some(
+    Ok(Some(
         Bucket::timed(None, length, None, "Credits")
             .used(Some(used))
             .left(left)
             .resets(end),
-    )
+    ))
 }
 
-fn prepaid(config: &Value) -> Option<Bucket> {
-    let balance = cents(config.get("prepaidBalance")).filter(|balance| balance.minor() > 0)?;
-    Some(
-        Bucket::named(BucketKind::Credits, "Extra usage credits")
-            .left(Some(Remaining::Amount(balance))),
-    )
+fn prepaid(config: &Value) -> Result<Option<Bucket>, ProviderError> {
+    Ok(cents(config.get("prepaidBalance"))?
+        .filter(|balance| balance.minor() > 0)
+        .map(|balance| {
+            Bucket::named(BucketKind::Credits, "Extra usage credits")
+                .left(Some(Remaining::Amount(balance)))
+        }))
 }
 
-fn on_demand_window(config: &Value) -> Option<Bucket> {
-    let cap = cents(config.get("onDemandCap")).filter(|cap| cap.minor() > 0)?;
-    let spent = cents(config.get("onDemandUsed")).unwrap_or_else(|| Money::new(0, 2, UNIT));
+fn on_demand_window(config: &Value) -> Result<Option<Bucket>, ProviderError> {
+    let Some(cap) = cents(config.get("onDemandCap"))?.filter(|cap| cap.minor() > 0) else {
+        return Ok(None);
+    };
+    let spent = cents(config.get("onDemandUsed"))?.unwrap_or_else(|| Money::cents(0, UNIT));
     let used = spent.minor() as f64 / cap.minor() as f64 * 100.0;
-    Some(
+    let left = cap.minus(&spent).ok_or(ProviderError::OUT_OF_RANGE)?;
+    Ok(Some(
         Bucket::named(BucketKind::Spend, "On-demand")
             .used(Some(used))
-            .left(Some(Remaining::Amount(cap.minus(&spent).clamped_at_zero()))),
-    )
+            .left(Some(Remaining::Amount(left.clamped_at_zero()))),
+    ))
 }

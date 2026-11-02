@@ -24,7 +24,7 @@ pub async fn fetch(http: &Http, credential: Credential<'_>) -> Result<Vec<Bucket
         .get(USAGE_URL, &token, &[("anthropic-beta", "oauth-2025-04-20")])
         .await?;
     let mut buckets = windows::buckets(&body);
-    buckets.extend(spend::bucket(&body));
+    buckets.extend(spend::bucket(&body)?);
     Ok(buckets)
 }
 

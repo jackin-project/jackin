@@ -7,6 +7,8 @@ use jackin_usage_provider_core::{Bucket, BucketKind, Remaining as BucketRemainin
 use crate::model::{LimitWindow, Percent, Remaining, UnavailableReason, WindowKind};
 
 const NOT_FINITE: &str = "the provider reported a number that is not finite";
+const OUT_OF_RANGE: &str = "a time in the response is out of range";
+const LAST_EPOCH: i64 = 253_402_300_799;
 const NO_WINDOWS: &str = "the provider reported no limit windows";
 
 pub(crate) fn windows(buckets: Vec<Bucket>) -> Result<Vec<LimitWindow>, UnavailableReason> {
@@ -35,7 +37,8 @@ fn window(bucket: Bucket) -> Result<Option<LimitWindow>, UnavailableReason> {
             None => None,
         },
     };
-    if used.is_none() && remaining.is_none() && bucket.resets_at.is_none() {
+    let resets_at = bucket.resets_at.map(instant).transpose()?;
+    if used.is_none() && remaining.is_none() && resets_at.is_none() {
         return Ok(None);
     }
     Ok(Some(LimitWindow {
@@ -43,8 +46,16 @@ fn window(bucket: Bucket) -> Result<Option<LimitWindow>, UnavailableReason> {
         label: bucket.label,
         used,
         remaining,
-        resets_at: bucket.resets_at.map(Timestamp),
+        resets_at,
     }))
+}
+
+fn instant(epoch: i64) -> Result<Timestamp, UnavailableReason> {
+    if (0..=LAST_EPOCH).contains(&epoch) {
+        Ok(Timestamp(epoch))
+    } else {
+        Err(provider(OUT_OF_RANGE))
+    }
 }
 
 fn percent(value: f64) -> Result<Percent, UnavailableReason> {

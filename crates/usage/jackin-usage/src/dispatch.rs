@@ -169,7 +169,8 @@ fn reason(error: ProviderError, now: i64) -> UnavailableReason {
         } => UnavailableReason::RateLimited {
             retry_at: retry_after_seconds
                 .and_then(|seconds| i64::try_from(seconds).ok())
-                .map(|seconds| Timestamp(now.saturating_add(seconds))),
+                .and_then(|seconds| now.checked_add(seconds))
+                .map(Timestamp),
         },
         ProviderError::Network(message) => UnavailableReason::Network(message.to_owned()),
         ProviderError::Status(_) | ProviderError::Decode(_) => {

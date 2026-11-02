@@ -199,3 +199,13 @@ async fn a_pay_as_you_go_key_is_unsupported_and_the_route_is_not_reached() -> Te
     })
     .await
 }
+
+#[tokio::test]
+async fn a_remaining_time_that_overflows_is_a_provider_error_port_fidelity() -> TestResult {
+    guard(async {
+        let body = "{\"base_resp\":{\"status_code\":0},\"model_remains\":[{\"model_name\":\"general\",\"remains_time\":9223372036854775807,\"current_interval_remaining_percent\":58}]}";
+        assert_provider_without(&outcome(body).await?);
+        Ok(())
+    })
+    .await
+}

@@ -153,3 +153,15 @@ async fn an_auth_file_without_an_access_token_is_a_provider_error_port_fidelity(
     })
     .await
 }
+
+#[tokio::test]
+async fn billing_bounds_at_the_edge_of_the_integers_leave_unlabelled_windows_port_fidelity()
+-> TestResult {
+    guard(async {
+        let body = "{\"billingCycleStart\":\"-9223372036854775808\",\"billingCycleEnd\":\"9223372036854775807\",\"planUsage\":{\"totalPercentUsed\":11.597}}";
+        let plain = want(WindowKind::Other, "Plan usage", Some(11.597), Left::Percent(88.403), None);
+        assert_windows(&outcome(body).await?, &[plain]);
+        Ok(())
+    })
+    .await
+}

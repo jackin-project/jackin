@@ -185,3 +185,13 @@ async fn a_login_json_file_is_a_provider_error_port_fidelity() -> TestResult {
     })
     .await
 }
+
+#[tokio::test]
+async fn a_window_length_that_overflows_is_a_provider_error_port_fidelity() -> TestResult {
+    guard(async {
+        let body = "{\"code\":200,\"success\":true,\"data\":{\"limits\":[{\"type\":\"TOKENS_LIMIT\",\"unit\":6,\"number\":9223372036854775807,\"percentage\":40,\"nextResetTime\":1767232800000},{\"type\":\"TOKENS_LIMIT\",\"unit\":3,\"number\":5,\"percentage\":40,\"nextResetTime\":1767232800000}]}}";
+        assert_provider_without(&outcome(body).await?);
+        Ok(())
+    })
+    .await
+}

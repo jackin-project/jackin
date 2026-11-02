@@ -138,3 +138,36 @@ async fn a_garbage_secondary_window_is_dropped_and_the_primary_stays() -> TestRe
     })
     .await
 }
+
+#[tokio::test]
+async fn a_reset_after_that_overflows_is_a_provider_error() -> TestResult {
+    guard(async {
+        let body = "{\"rate_limit\":{\"primary_window\":{\"used_percent\":42,\"limit_window_seconds\":18000,\"reset_after_seconds\":9223372036854775807}}}";
+        assert!(matches!(broken(body).await?, UnavailableReason::Provider(_)));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_reset_time_at_the_edge_of_the_integers_is_a_provider_error() -> TestResult {
+    guard(async {
+        let body = "{\"rate_limit\":{\"primary_window\":{\"used_percent\":42,\"limit_window_seconds\":18000,\"reset_at\":-9223372036854775808}}}";
+        assert!(matches!(broken(body).await?, UnavailableReason::Provider(_)));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_individual_limit_beyond_the_integers_is_a_provider_error() -> TestResult {
+    guard(async {
+        let body = "{\"rate_limit\":{\"primary_window\":{\"used_percent\":42,\"limit_window_seconds\":18000,\"reset_at\":1767232800}},\"spend_control\":{\"individual_limit\":{\"limit\":\"1e300\",\"used\":\"1.00\"}}}";
+        assert!(matches!(
+            broken(body).await?,
+            UnavailableReason::Provider(_)
+        ));
+        Ok(())
+    })
+    .await
+}

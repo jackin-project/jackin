@@ -25,7 +25,10 @@ pub async fn fetch(http: &Http, credential: Credential<'_>) -> Result<Vec<Bucket
     let plan = body.get("planUsage").unwrap_or(&Value::Null);
     let start = body.get("billingCycleStart").and_then(seconds);
     let end = body.get("billingCycleEnd").and_then(seconds);
-    let length = start.zip(end).map(|(start, end)| end - start);
+    let length = match start.zip(end) {
+        Some((start, end)) => Some(end.checked_sub(start).ok_or(ProviderError::OUT_OF_RANGE)?),
+        None => None,
+    };
     Ok([
         ("totalPercentUsed", None),
         ("autoPercentUsed", Some("Auto")),

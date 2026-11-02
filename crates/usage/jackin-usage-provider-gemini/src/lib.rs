@@ -67,7 +67,7 @@ fn login_token(login: &str, now: i64) -> Result<String, ProviderError> {
     let expired = value
         .get("expiry_date")
         .and_then(Value::as_i64)
-        .is_some_and(|at| at <= now.saturating_mul(1000));
+        .is_some_and(|at| now.checked_mul(1000).is_none_or(|now_ms| at <= now_ms));
     if expired {
         return Err(ProviderError::Unauthorized);
     }

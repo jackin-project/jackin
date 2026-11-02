@@ -37,29 +37,29 @@ pub struct Bucket {
     pub resets_at: Option<i64>,
 }
 
+pub const MAX_EXPONENT: u32 = 9;
+const MAX_MINOR: f64 = 9.0e15;
+
 impl Money {
-    pub fn new(minor: i64, exponent: u32, unit: impl Into<String>) -> Money {
-        Money {
+    pub fn new(minor: i64, exponent: u32, unit: impl Into<String>) -> Option<Money> {
+        (exponent <= MAX_EXPONENT).then(|| Money {
             minor,
             exponent,
+            unit: unit.into(),
+        })
+    }
+
+    pub fn cents(minor: i64, unit: impl Into<String>) -> Money {
+        Money {
+            minor,
+            exponent: 2,
             unit: unit.into(),
         }
     }
 
     pub fn from_f64(value: f64, exponent: u32, unit: impl Into<String>) -> Option<Money> {
-        if !value.is_finite() {
-            return None;
-        }
         let scaled = (value * 10_f64.powi(i32::try_from(exponent).ok()?)).round();
-        if scaled.abs() > 9.0e15 {
-            return None;
-        }
-        Some(Money::new(scaled as i64, exponent, unit))
-    }
-
-    pub fn parse_decimal(text: &str, exponent: u32, unit: impl Into<String>) -> Option<Money> {
-        let value: f64 = text.trim().parse().ok()?;
-        Money::from_f64(value, exponent, unit)
+        Money::new(minor_units(scaled)?, exponent, unit)
     }
 
     pub fn minor(&self) -> i64 {
@@ -70,29 +70,37 @@ impl Money {
         &self.unit
     }
 
-    #[must_use]
-    pub fn magnitude(&self) -> Money {
-        Money::new(self.minor.abs(), self.exponent, self.unit.clone())
+    pub fn magnitude(&self) -> Option<Money> {
+        Money::new(self.minor.checked_abs()?, self.exponent, self.unit.clone())
     }
 
-    #[must_use]
-    pub fn minus(&self, other: &Money) -> Money {
-        Money::new(self.minor - other.minor, self.exponent, self.unit.clone())
+    pub fn minus(&self, other: &Money) -> Option<Money> {
+        if self.exponent != other.exponent {
+            return None;
+        }
+        Money::new(
+            self.minor.checked_sub(other.minor)?,
+            self.exponent,
+            self.unit.clone(),
+        )
     }
 
     #[must_use]
     pub fn clamped_at_zero(&self) -> Money {
-        Money::new(self.minor.max(0), self.exponent, self.unit.clone())
+        Money {
+            minor: self.minor.max(0),
+            exponent: self.exponent,
+            unit: self.unit.clone(),
+        }
     }
 
     pub fn text(&self) -> String {
         if self.exponent == 0 {
             return self.minor.to_string();
         }
-        let scale = 10_i64.pow(self.exponent);
+        let scale = 10_u64.pow(self.exponent);
         let sign = if self.minor < 0 { "-" } else { "" };
         let magnitude = self.minor.unsigned_abs();
-        let scale = scale.unsigned_abs();
         format!(
             "{sign}{}.{:0width$}",
             magnitude / scale,
@@ -100,6 +108,10 @@ impl Money {
             width = self.exponent as usize
         )
     }
+}
+
+pub fn minor_units(value: f64) -> Option<i64> {
+    (value.is_finite() && value.abs() <= MAX_MINOR).then_some(value as i64)
 }
 
 fn kind_from_seconds(seconds: i64) -> Option<BucketKind> {

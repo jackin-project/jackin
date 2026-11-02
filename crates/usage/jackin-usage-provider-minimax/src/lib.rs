@@ -33,12 +33,12 @@ pub async fn fetch(http: &Http, token: &str, now: i64) -> Result<Vec<Bucket>, Pr
         .into_iter()
         .flatten()
     {
-        out.extend(model_windows(model, now));
+        out.extend(model_windows(model, now)?);
     }
     Ok(out)
 }
 
-fn model_windows(model: &Value, now: i64) -> Vec<Bucket> {
+fn model_windows(model: &Value, now: i64) -> Result<Vec<Bucket>, ProviderError> {
     let name = model
         .get("model_name")
         .and_then(Value::as_str)
@@ -52,7 +52,7 @@ fn model_windows(model: &Value, now: i64) -> Vec<Bucket> {
     let mut out = vec![
         Bucket::named(kind, label)
             .used(used(model, "interval"))
-            .resets(interval_reset(model, now)),
+            .resets(interval_reset(model, now)?),
     ];
     if general {
         out.push(
@@ -66,7 +66,7 @@ fn model_windows(model: &Value, now: i64) -> Vec<Bucket> {
                 ),
         );
     }
-    out
+    Ok(out)
 }
 
 fn used(model: &Value, period: &str) -> Option<f64> {
@@ -82,19 +82,23 @@ fn used(model: &Value, period: &str) -> Option<f64> {
     (status == Some(EXHAUSTED)).then_some(100.0)
 }
 
-fn interval_reset(model: &Value, now: i64) -> Option<i64> {
+fn interval_reset(model: &Value, now: i64) -> Result<Option<i64>, ProviderError> {
     if let Some(end) = model
         .get("end_time")
         .and_then(json_number)
         .and_then(epoch_seconds)
     {
-        return Some(end);
+        return Ok(Some(end));
     }
-    let remains = model.get("remains_time").and_then(json_integer)?;
+    let Some(remains) = model.get("remains_time").and_then(json_integer) else {
+        return Ok(None);
+    };
     let seconds = if remains > MILLISECONDS {
         remains / 1000
     } else {
         remains
     };
-    Some(now.saturating_add(seconds))
+    now.checked_add(seconds)
+        .map(Some)
+        .ok_or(ProviderError::OUT_OF_RANGE)
 }

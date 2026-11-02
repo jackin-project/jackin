@@ -1,56 +1,92 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_usage_provider_core::{Bucket, BucketKind, Money, Remaining, json_number, json_text};
+use jackin_usage_provider_core::{
+    Bucket, BucketKind, Money, ProviderError, Remaining, json_number, json_text, minor_units,
+};
 use serde_json::Value;
 
 const LABEL: &str = "Extra usage";
 
-pub(crate) fn bucket(body: &Value) -> Option<Bucket> {
+pub(crate) fn bucket(body: &Value) -> Result<Option<Bucket>, ProviderError> {
     let spend = body.get("spend").filter(|value| value.is_object());
-    if let Some(used) = spend.and_then(|spend| money(spend.get("used"))) {
-        let spend = spend?;
+    if let Some(spend) = spend
+        && let Some(used) = money(spend.get("used"))?
+    {
         if spend.get("enabled").and_then(Value::as_bool) == Some(false) {
-            return None;
+            return Ok(None);
         }
-        let left = money(spend.get("limit")).map(|limit| limit.minus(&used).clamped_at_zero());
-        return Some(build(spend.get("percent").and_then(json_number), left));
+        let left = left(money(spend.get("limit"))?, &used)?;
+        return Ok(Some(build(
+            spend.get("percent").and_then(json_number),
+            left,
+        )));
     }
-    let extra = body.get("extra_usage").filter(|value| value.is_object())?;
+    let Some(extra) = body.get("extra_usage").filter(|value| value.is_object()) else {
+        return Ok(None);
+    };
     if extra.get("is_enabled").and_then(Value::as_bool) == Some(false) {
-        return None;
+        return Ok(None);
     }
-    let exponent = extra
-        .get("decimal_places")
-        .and_then(Value::as_u64)
-        .and_then(|places| u32::try_from(places).ok())
-        .unwrap_or(2);
+    let exponent = exponent(extra.get("decimal_places"))?;
     let unit = extra
         .get("currency")
         .and_then(json_text)
         .unwrap_or("credits");
-    let minor = |key: &str| -> Option<Money> {
-        let value = extra.get(key).and_then(Value::as_f64)?;
-        Some(Money::new(value.round() as i64, exponent, unit))
+    let minor = |key: &str| -> Result<Option<Money>, ProviderError> {
+        let Some(value) = extra.get(key).and_then(Value::as_f64) else {
+            return Ok(None);
+        };
+        let amount = minor_units(value.round()).ok_or(ProviderError::OUT_OF_RANGE)?;
+        Money::new(amount, exponent, unit)
+            .map(Some)
+            .ok_or(ProviderError::OUT_OF_RANGE)
     };
-    let used = minor("used_credits")?;
-    let left = minor("monthly_limit").map(|limit| limit.minus(&used).clamped_at_zero());
-    Some(build(extra.get("utilization").and_then(json_number), left))
+    let Some(used) = minor("used_credits")? else {
+        return Ok(None);
+    };
+    let left = left(minor("monthly_limit")?, &used)?;
+    Ok(Some(build(
+        extra.get("utilization").and_then(json_number),
+        left,
+    )))
 }
 
-fn money(value: Option<&Value>) -> Option<Money> {
-    let value = value.filter(|value| value.is_object())?;
-    let minor = value.get("amount_minor").and_then(Value::as_i64)?;
-    let exponent = value
-        .get("exponent")
-        .and_then(Value::as_u64)
-        .and_then(|exponent| u32::try_from(exponent).ok())
-        .unwrap_or(2);
+fn left(limit: Option<Money>, used: &Money) -> Result<Option<Money>, ProviderError> {
+    limit
+        .map(|limit| {
+            limit
+                .minus(used)
+                .map(|left| left.clamped_at_zero())
+                .ok_or(ProviderError::OUT_OF_RANGE)
+        })
+        .transpose()
+}
+
+fn exponent(value: Option<&Value>) -> Result<u32, ProviderError> {
+    match value {
+        None | Some(Value::Null) => Ok(2),
+        Some(value) => value
+            .as_u64()
+            .and_then(|places| u32::try_from(places).ok())
+            .ok_or(ProviderError::OUT_OF_RANGE),
+    }
+}
+
+fn money(value: Option<&Value>) -> Result<Option<Money>, ProviderError> {
+    let Some(value) = value.filter(|value| value.is_object()) else {
+        return Ok(None);
+    };
+    let Some(minor) = value.get("amount_minor").and_then(Value::as_i64) else {
+        return Ok(None);
+    };
     let unit = value
         .get("currency")
         .and_then(json_text)
         .unwrap_or("credits");
-    Some(Money::new(minor, exponent, unit))
+    Money::new(minor, exponent(value.get("exponent"))?, unit)
+        .map(Some)
+        .ok_or(ProviderError::OUT_OF_RANGE)
 }
 
 fn build(used: Option<f64>, left: Option<Money>) -> Bucket {

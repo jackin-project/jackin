@@ -220,3 +220,23 @@ async fn an_entry_that_expires_now_is_an_expired_login_without_a_request() -> Te
     })
     .await
 }
+
+#[tokio::test]
+async fn a_cent_value_of_the_smallest_integer_is_a_provider_error() -> TestResult {
+    guard(async {
+        let body = "{\"config\":{\"creditUsagePercent\":42.5,\"prepaidBalance\":{\"val\":-9223372036854775808}}}";
+        assert_provider_without(&outcome(body).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cent_value_that_is_not_an_integer_is_a_provider_error() -> TestResult {
+    guard(async {
+        let body = "{\"config\":{\"creditUsagePercent\":42.5,\"onDemandCap\":{\"val\":1e30}}}";
+        assert_provider_without(&outcome(body).await?);
+        Ok(())
+    })
+    .await
+}

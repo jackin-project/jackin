@@ -237,3 +237,22 @@ async fn negative_total_credits_are_a_provider_error() -> TestResult {
     })
     .await
 }
+
+#[tokio::test]
+async fn a_key_limit_beyond_the_integers_is_a_provider_error() -> TestResult {
+    guard(async {
+        let (harness, account) = started().await?;
+        serve(
+            &harness,
+            "{\"data\":{\"limit\":1e300,\"limit_remaining\":1.0}}",
+            Route::json(200, CREDITS),
+        );
+        let usage = harness.one(&account, Refresh::Cached).await?;
+        assert!(matches!(
+            unavailable(&usage.outcome),
+            UnavailableReason::Provider(_)
+        ));
+        Ok(())
+    })
+    .await
+}

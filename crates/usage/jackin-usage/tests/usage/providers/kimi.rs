@@ -214,3 +214,13 @@ async fn a_login_that_expired_before_now_is_an_expired_login_without_a_request()
     })
     .await
 }
+
+#[tokio::test]
+async fn a_window_length_that_overflows_is_a_provider_error() -> TestResult {
+    guard(async {
+        let body = "{\"limits\":[{\"window\":{\"duration\":9223372036854775807,\"timeUnit\":\"TIME_UNIT_HOUR\"},\"detail\":{\"limit\":10,\"used\":1}}]}";
+        assert_provider(&outcome(body).await?);
+        Ok(())
+    })
+    .await
+}

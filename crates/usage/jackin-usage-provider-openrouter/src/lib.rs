@@ -22,8 +22,11 @@ pub async fn fetch(http: &Http, key: &str) -> Result<Vec<Bucket>, ProviderError>
     Ok(out)
 }
 
-fn money(value: Option<&Value>) -> Option<Money> {
-    json_money(value?, 2, UNIT)
+fn money(value: Option<&Value>) -> Result<Option<Money>, ProviderError> {
+    match value {
+        Some(value) => json_money(value, 2, UNIT),
+        None => Ok(None),
+    }
 }
 
 fn percent(part: &Money, whole: &Money) -> Option<f64> {
@@ -35,20 +38,22 @@ fn key_limit(body: &Value) -> Result<Option<Bucket>, ProviderError> {
         .get("data")
         .filter(|data| data.is_object())
         .ok_or(ProviderError::Decode("the key response has no data object"))?;
-    let Some(limit) = money(data.get("limit")).filter(|limit| limit.minor() > 0) else {
+    let Some(limit) = money(data.get("limit"))?.filter(|limit| limit.minor() > 0) else {
         return Ok(None);
     };
-    let left = money(data.get("limit_remaining")).or_else(|| {
-        let used = money(data.get("usage"))?;
-        Some(limit.minus(&used))
-    });
+    let left = match money(data.get("limit_remaining"))? {
+        Some(left) => Some(left),
+        None => money(data.get("usage"))?
+            .map(|used| limit.minus(&used).ok_or(ProviderError::OUT_OF_RANGE))
+            .transpose()?,
+    };
     let Some(left) = left.map(|left| left.clamped_at_zero()) else {
         return Ok(None);
     };
-    let used = percent(&limit.minus(&left), &limit);
+    let spent = limit.minus(&left).ok_or(ProviderError::OUT_OF_RANGE)?;
     Ok(Some(
         Bucket::named(BucketKind::Spend, "Key limit")
-            .used(used)
+            .used(percent(&spent, &limit))
             .left(Some(Remaining::Amount(left))),
     ))
 }
@@ -60,13 +65,16 @@ fn account_credits(body: &Value) -> Result<Option<Bucket>, ProviderError> {
         .ok_or(ProviderError::Decode(
             "the credits response has no data object",
         ))?;
-    let total = money(data.get("total_credits"))
+    let total = money(data.get("total_credits"))?
         .filter(|total| total.minor() >= 0)
         .ok_or(ProviderError::Decode("the credits are not valid"))?;
-    let spent = money(data.get("total_usage"))
+    let spent = money(data.get("total_usage"))?
         .filter(|spent| spent.minor() >= 0)
         .ok_or(ProviderError::Decode("the credit usage is not valid"))?;
-    let left = total.minus(&spent).clamped_at_zero();
+    let left = total
+        .minus(&spent)
+        .ok_or(ProviderError::OUT_OF_RANGE)?
+        .clamped_at_zero();
     let used = percent(&spent, &total).map(|used| used.min(100.0));
     Ok(Some(
         Bucket::named(BucketKind::Credits, "Account credits")
