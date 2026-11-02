@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod abort;
+mod bundle_limits;
 mod concurrent;
 mod detached;
 mod empty;

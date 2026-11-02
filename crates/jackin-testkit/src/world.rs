@@ -11,7 +11,9 @@ use jackin_core::{
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::Gateway;
-use jackin_session::{HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps};
+use jackin_session::{
+    DEFAULT_BUNDLE_BYTES, HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps,
+};
 use tempfile::TempDir;
 
 use crate::engine::FakeEngine;
@@ -47,6 +49,7 @@ pub fn default_limits() -> LaunchLimits {
         hook: Duration::from_secs(600),
         upload: Duration::from_secs(600),
         create_attempts: NonZeroU8::MIN.saturating_add(2),
+        bundle_bytes: DEFAULT_BUNDLE_BYTES,
     }
 }
 

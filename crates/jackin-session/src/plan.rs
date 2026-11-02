@@ -44,6 +44,8 @@ pub struct EnvQuestion {
     pub default: Option<String>,
 }
 
+pub const DEFAULT_BUNDLE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LaunchLimits {
     pub ready: Duration,
@@ -52,6 +54,7 @@ pub struct LaunchLimits {
     pub hook: Duration,
     pub upload: Duration,
     pub create_attempts: NonZeroU8,
+    pub bundle_bytes: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -137,6 +137,8 @@ pub enum ExportError {
     },
     #[error("{count} heads need export and the limit is {limit}")]
     TooManyHeads { count: usize, limit: usize },
+    #[error("the sandbox bundle is {size} bytes and the limit is {limit}")]
+    BundleTooLarge { size: u64, limit: u64 },
     #[error("{host_ref} expected tip {expected:?} but found {found:?}")]
     TipMismatch {
         host_ref: String,
@@ -459,6 +461,12 @@ impl Session {
             .gateway
             .download_file(sandbox, remote_bundle, &staging.bundle, cancel)
             .await?;
+        let limit = self.deps.limits.bundle_bytes;
+        if let Some(size) = self.deps.host.fs.file_len(&staging.bundle).await?
+            && size > limit
+        {
+            return Err(ExportError::BundleTooLarge { size, limit });
+        }
         host.verify(&staging.bundle).await?;
         let heads = host.heads(&staging.bundle).await?;
         require_heads(&heads, items)?;

@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::error::Error;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use jackin_core::{
@@ -42,6 +42,53 @@ impl ProcessRunner for CancelsOn {
         if spec.args.iter().any(|arg| arg == self.word) {
             self.token.cancel();
         }
+        self.inner.run(spec, lines, cancel).await
+    }
+
+    async fn run_secret(
+        &self,
+        spec: &ProcessSpec,
+        cancel: &CancellationToken,
+    ) -> Result<SecretOutput, ProcessError> {
+        self.inner.run_secret(spec, cancel).await
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct Sees {
+    inner: Arc<TestRunner>,
+    args: Mutex<Vec<Vec<String>>>,
+}
+
+impl Sees {
+    pub(crate) fn new(rig: &Rig) -> Sees {
+        Sees {
+            inner: Arc::clone(&rig.world.runner),
+            args: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub(crate) fn ran(&self, word: &str) -> bool {
+        self.args
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .any(|args| args.iter().any(|arg| arg == word))
+    }
+}
+
+#[async_trait]
+impl ProcessRunner for Sees {
+    async fn run(
+        &self,
+        spec: &ProcessSpec,
+        lines: Option<&LineSink>,
+        cancel: &CancellationToken,
+    ) -> Result<ProcessOutput, ProcessError> {
+        self.args
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(spec.args.clone());
         self.inner.run(spec, lines, cancel).await
     }
 

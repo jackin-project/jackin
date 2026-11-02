@@ -20,7 +20,10 @@ struct Case {
     missing: Vec<&'static str>,
 }
 
-async fn crafted(handle: &SandboxHandle, refs: &[&str]) -> Result<Vec<u8>, Box<dyn Error>> {
+pub(crate) async fn crafted(
+    handle: &SandboxHandle,
+    refs: &[&str],
+) -> Result<Vec<u8>, Box<dyn Error>> {
     let path = handle.root().join("crafted.bundle");
     let mut args = vec![
         "bundle".to_owned(),

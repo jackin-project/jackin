@@ -21,7 +21,8 @@ use jackin_openshell::{
     SandboxCreate, SandboxQuery, resolve_gateway,
 };
 use jackin_session::{
-    HostPorts, LaunchLimits, PurgeMode, Session, SessionDeps, TokioProcessRunner,
+    DEFAULT_BUNDLE_BYTES, HostPorts, LaunchLimits, PurgeMode, Session, SessionDeps,
+    TokioProcessRunner,
 };
 use jackin_testkit::FakeEngine;
 use tokio_util::sync::CancellationToken;
@@ -240,6 +241,7 @@ impl Live {
                 hook: Duration::from_secs(600),
                 upload: Duration::from_secs(3600),
                 create_attempts: NonZeroU8::MIN,
+                bundle_bytes: DEFAULT_BUNDLE_BYTES,
             },
         });
         let root = HostPath::parse(&options.project.canonicalize()?)?;
