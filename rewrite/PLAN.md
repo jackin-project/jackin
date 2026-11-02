@@ -382,7 +382,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 - **Owner:** `code-reviewer` and `security-reviewer` on `<P5 start>..HEAD`. **Depends:** P5.2.
 - **Proof:** both verdicts in the chat, the fix round, and G-FULL.
-- [ ] P5.3 done
+- [x] P5.3 done. Proof: code-reviewer A/B/C and security-reviewer verdicts (/private/tmp/claude-501/plans/P5.3-review-A.md, -B.md, -C.md, P5.3-security.md) with the G1 G2 G3 fix round (acead3eb); pstack interrogate (Sonnet, Opus, Haiku; four verified findings V1-V4, V1 a live leak) with the int fix round merged at 9cc24701 and red/green APPROVE after R1-R4; live contract Core 15/15, Transfer 8/8, Terminal 6/6 and export scenario on jackin-local; G-FULL `xtask ci --no-docs` 773 passed, exit 0 on 9cc24701.
 
 ### P5.4 Build the Docker capability
 
