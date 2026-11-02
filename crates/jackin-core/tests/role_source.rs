@@ -85,6 +85,12 @@ fn role_url_accepts_only_https_ssh_and_scp_forms_without_secrets_or_options() ->
         "git@:path",
         "@host:path",
         "host:path",
+        "ssh://-oProxyCommand=id@example.com/x",
+        "ssh://git@[::1]/r.git",
+        "ssh://git@example.com:abc/r",
+        "ssh://git@example.com:/r",
+        "https://example.com:abc/r",
+        "https://example.com:/r",
     ];
     reject.extend(controlled.iter().map(String::as_str));
     grammar::<RoleUrl>(&accept, &reject)?;
