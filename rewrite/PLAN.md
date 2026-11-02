@@ -333,10 +333,10 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 ### P4.3 Build the image builder and the delivery
 
 - **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P3.3, P0.3, P7.1, P7.4.
-- **Scope:** `crates/jackin-image/src/{build,deliver}.rs`, `crates/jackin-image/images/construct/Dockerfile`.
+- **Scope:** `crates/jackin-image/src/{build,deliver}.rs`, `crates/jackin-image/images/construct/Dockerfile`, the `FakeEngine` in `crates/jackin-testkit`, and the host process runner `TokioProcessRunner` in `crates/jackin-session/src/host.rs`, moved forward from P5.2 so the live build proof runs through `BuildxEngine`.
 - **Steps:**
   1. Run the buildx plan through the `ProcessRunner` trait of `jackin-core`. Stream the build output as typed progress events.
-  2. Read the image digest from the build metadata.
+  2. Read the image ID from the `--iidfile` that buildx writes (U7-A1).
   3. Deliver the image with the D23 method of the gateway.
   4. Put the construct `Dockerfile` and `jackin-start` from P7.4 in the crate. Make `jackin-start` read `/sandbox/.jackin/env-<launch-id>` before each attempt (D11).
 - **Proof:** G-FAST passes. `evidence/P4.3-build.md` shows a build of the construct image and of a minimal role. It shows a second build that uses the cache. It shows a delivered image that the gateway can start.
