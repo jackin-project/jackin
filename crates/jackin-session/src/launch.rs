@@ -7,11 +7,13 @@ pub(crate) mod probe;
 mod run;
 mod tracker;
 
+use std::fmt;
 use std::time::Duration;
 
 use jackin_core::{
     AccountName, AttemptId, FsError, HookKind, LaunchId, PathError, Phase, ProcessError,
-    SandboxName, SupervisorReading, SupervisorState, TerminalText,
+    SandboxName, SupervisorReading, SupervisorState, TerminalText, plain, plain_duration,
+    plain_list,
 };
 use jackin_image::{ImageError, ImageEvent};
 use jackin_openshell::GatewayError;
@@ -47,6 +49,29 @@ impl LaunchStep {
         LaunchStep::Hooks,
         LaunchStep::Start,
     ];
+}
+
+impl fmt::Display for LaunchStep {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            LaunchStep::Image => "image",
+            LaunchStep::Provider => "provider",
+            LaunchStep::Sandbox => "sandbox",
+            LaunchStep::Ready => "ready",
+            LaunchStep::Credentials => "credentials",
+            LaunchStep::Upload => "upload",
+            LaunchStep::Supervisor => "supervisor",
+            LaunchStep::Hooks => "hooks",
+            LaunchStep::Start => "start",
+        })
+    }
+}
+
+fn holder_text(other: Option<&LaunchId>) -> String {
+    other.map_or_else(
+        || "a sandbox with no launch ID".to_owned(),
+        |launch| format!("another launch {launch}"),
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -143,7 +168,7 @@ pub enum LaunchOutcome {
 }
 
 #[derive(Debug, Error)]
-#[error("launch {launch_id} failed at {step:?}: {error}")]
+#[error("launch {launch_id} failed at {step}")]
 pub struct LaunchFailure {
     pub launch_id: LaunchId,
     pub step: LaunchStep,
@@ -172,66 +197,66 @@ pub enum LaunchError {
     Unsupported(#[from] UnsupportedProject),
     #[error("{0}")]
     ProjectMismatch(Box<TreeMismatch>),
-    #[error("project step {step:?} failed with exit code {exit_code}: {output:?}")]
+    #[error("project step {step} failed with exit code {exit_code}: {output}")]
     ProjectFailed {
         step: ProjectStep,
         exit_code: i32,
         output: TerminalText,
     },
-    #[error("project step {step:?} produced unusable output: {message}")]
+    #[error("project step {step} produced unusable output: {}", plain(.message))]
     ProjectOutput { step: ProjectStep, message: String },
-    #[error("the provider for account {account:?} is unavailable")]
+    #[error("the provider for account {account} is unavailable")]
     ProviderUnavailable {
         account: AccountName,
         source: Box<AccountError>,
     },
-    #[error("launch {launch:?} matches several sandboxes: {sandboxes:?}")]
+    #[error("launch {launch} matches several sandboxes: {}", plain_list(.sandboxes))]
     AmbiguousLaunch {
         launch: LaunchId,
         sandboxes: Vec<SandboxName>,
     },
-    #[error("sandbox name {name:?} belongs to another launch {other:?}")]
+    #[error("sandbox name {name} belongs to {}", holder_text(.other.as_ref()))]
     NameCollision {
         name: SandboxName,
         other: Option<LaunchId>,
     },
-    #[error("the main process of {sandbox:?} has ended: {phase:?}")]
+    #[error("the main process of {sandbox} has ended: {phase}")]
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
-    #[error("sandbox {sandbox:?} is suspended")]
+    #[error("sandbox {sandbox} is suspended")]
     SandboxSuspended { sandbox: SandboxName },
-    #[error("provisioning of {sandbox:?} failed after {attempts} attempts: {message:?}")]
+    #[error("provisioning of {sandbox} failed after {attempts} attempts: {message}")]
     ProvisioningFailed {
         sandbox: SandboxName,
         attempts: u8,
         message: TerminalText,
     },
-    #[error("the attempt IDs of {sandbox:?} are exhausted")]
+    #[error("the attempt IDs of {sandbox} are exhausted")]
     AttemptsExhausted { sandbox: SandboxName },
-    #[error("sandbox {sandbox:?} was {phase:?} after {after:?}")]
+    #[error("sandbox {sandbox} was {phase} after {}", plain_duration(.after))]
     ReadyTimeout {
         sandbox: SandboxName,
         phase: Phase,
         after: Duration,
     },
-    #[error("the supervisor of {sandbox:?} did not report within {after:?}")]
+    #[error("the supervisor of {sandbox} did not report within {}", plain_duration(.after))]
     SupervisorTimeout {
         sandbox: SandboxName,
         after: Duration,
     },
-    #[error("attempt {attempt:?} of {sandbox:?} did not start; last reading {last:?}")]
+    #[error("attempt {attempt} of {sandbox} did not start; last reading {last}")]
     AttemptTimeout {
         sandbox: SandboxName,
         attempt: AttemptId,
         last: SupervisorReading,
     },
-    #[error("the {hook:?} hook exited with {exit_code}: {output:?}")]
+    #[error("the {hook} hook exited with {exit_code}: {output}")]
     HookFailed {
         hook: HookKind,
         exit_code: i32,
         output: TerminalText,
     },
-    #[error("the sandbox probe is invalid: {message}")]
+    #[error("the sandbox probe is invalid: {}", plain(.message))]
     ProbeInvalid { message: String },
-    #[error("the sandbox {sandbox:?} has no value for {key}")]
+    #[error("the sandbox {sandbox} has no value for {}", plain(.key))]
     PlaceholderMissing { sandbox: SandboxName, key: String },
 }

@@ -77,6 +77,7 @@ pub(crate) struct Token {
 pub(crate) enum Tok {
     Ident(String),
     Str(String),
+    Number(String),
     Punct(char),
     Other,
 }
@@ -92,6 +93,13 @@ impl Token {
     pub(crate) fn ident(&self) -> Option<&str> {
         match &self.kind {
             Tok::Ident(name) => Some(name),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn number(&self) -> Option<&str> {
+        match &self.kind {
+            Tok::Number(digits) => Some(digits),
             _ => None,
         }
     }
@@ -149,10 +157,12 @@ impl Lexer {
                 '\'' => self.quote(line),
                 c if is_ident_start(c) => self.word(line),
                 c if c.is_ascii_digit() => {
+                    let start = self.cur.pos;
                     while self.cur.peek(0).is_some_and(is_ident_continue) {
                         self.cur.bump();
                     }
-                    self.push(Tok::Other, line);
+                    let digits = self.cur.slice(start, self.cur.pos);
+                    self.push(Tok::Number(digits), line);
                 }
                 c if c.is_whitespace() => {
                     self.cur.bump();

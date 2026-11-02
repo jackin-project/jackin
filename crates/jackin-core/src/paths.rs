@@ -3,12 +3,14 @@
 
 use std::borrow::Cow;
 use std::ffi::OsStr;
+use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 use thiserror::Error;
 
 use crate::boundary::{FileKind, FileSystem, FsError};
+use crate::display::plain;
 pub(crate) const PROJECT_PATH: &str = "/sandbox/project";
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -25,17 +27,17 @@ pub struct ProjectRoot(HostPath);
 
 #[derive(Debug, Error)]
 pub enum PathError {
-    #[error("path is not absolute: {0}")]
+    #[error("path is not absolute: {}", plain(.0))]
     NotAbsolute(String),
-    #[error("path is not relative: {0}")]
+    #[error("path is not relative: {}", plain(.0))]
     NotRelative(String),
-    #[error("path contains a parent segment: {0}")]
+    #[error("path contains a parent segment: {}", plain(.0))]
     ParentSegment(String),
-    #[error("path contains an empty segment: {0}")]
+    #[error("path contains an empty segment: {}", plain(.0))]
     EmptySegment(String),
-    #[error("not a directory: {0:?}")]
+    #[error("not a directory: {0}")]
     NotADirectory(HostPath),
-    #[error("not a git work tree: {0:?}")]
+    #[error("not a git work tree: {0}")]
     NotAGitWorkTree(HostPath),
     #[error(transparent)]
     Fs(#[from] FsError),
@@ -54,6 +56,30 @@ fn normalize_host(path: &Path) -> Result<PathBuf, PathError> {
         }
     }
     Ok(out)
+}
+
+impl fmt::Display for HostPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&plain(self.0.display()))
+    }
+}
+
+impl fmt::Display for SandboxPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&plain(self.as_str()))
+    }
+}
+
+impl fmt::Display for RepoPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&plain(&self.0))
+    }
+}
+
+impl fmt::Display for ProjectRoot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
 }
 
 impl HostPath {

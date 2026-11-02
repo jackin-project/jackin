@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use jackin_core::{
     FileLock, FileMode, HostPath, IdError, LaunchId, ProjectRoot, RepoPath, SandboxName,
-    SandboxPath, TerminalText, sandbox_layout,
+    SandboxPath, TerminalText, plain_list, sandbox_layout,
 };
 use jackin_openshell::{GatewayError, GatewayOp};
 use thiserror::Error;
@@ -56,17 +56,39 @@ pub enum ProjectStep {
     TreeList,
 }
 
+impl fmt::Display for ProjectStep {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            ProjectStep::Describe => "describe",
+            ProjectStep::Head => "head",
+            ProjectStep::Identity => "identity",
+            ProjectStep::Listing => "listing",
+            ProjectStep::Bundle => "bundle",
+            ProjectStep::Empty => "empty",
+            ProjectStep::Init => "init",
+            ProjectStep::Fetch => "fetch",
+            ProjectStep::SetHead => "set head",
+            ProjectStep::Reset => "reset",
+            ProjectStep::Configure => "configure",
+            ProjectStep::RemoveBundle => "remove bundle",
+            ProjectStep::HostTree => "host tree",
+            ProjectStep::SandboxTree => "sandbox tree",
+            ProjectStep::TreeList => "tree list",
+        })
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum UnsupportedProject {
     #[error(
         "the project has skip-worktree entries (a sparse checkout); run `git sparse-checkout disable`"
     )]
     SparseCheckout,
-    #[error("the project has populated submodules {0:?}; run `git submodule deinit --all`")]
+    #[error("the project has populated submodules {}; run `git submodule deinit --all`", plain_list(.0))]
     PopulatedSubmodules(Vec<RepoPath>),
-    #[error("the project has nested git repositories {0:?}; ignore or remove them")]
+    #[error("the project has nested git repositories {}; ignore or remove them", plain_list(.0))]
     NestedRepositories(Vec<RepoPath>),
-    #[error("the project is a partial clone: {output:?}")]
+    #[error("the project is a partial clone: {output}")]
     PartialClone { output: TerminalText },
 }
 

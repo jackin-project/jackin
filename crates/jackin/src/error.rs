@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{CompatibilityError, ConfigError, EntropyError, FsError, HostPath, PathError};
+use jackin_core::{
+    CompatibilityError, ConfigError, EntropyError, FsError, HostPath, PathError, plain,
+};
 use jackin_image::ImageError;
 use jackin_openshell::GatewayError;
 use jackin_session::{
@@ -36,7 +38,7 @@ impl ExitClass {
 
 #[derive(Debug, Error)]
 pub enum CommandError {
-    #[error("{0}")]
+    #[error("{}", plain(.0))]
     Argument(String),
     #[error(transparent)]
     Config(#[from] ConfigError),
@@ -52,7 +54,7 @@ pub enum CommandError {
     Role(#[from] RoleError),
     #[error("the role is invalid")]
     RoleFindings(Vec<RoleError>),
-    #[error("launch failed at step {:?}: {}", .0.step, .0.error)]
+    #[error("launch failed at step {}: {}", .0.step, .0.error)]
     Launch(LaunchFailure),
     #[error(transparent)]
     Attach(#[from] AttachError),
@@ -87,11 +89,11 @@ pub enum CommandError {
     Console(#[from] ConsoleError),
     #[error("a terminal is required")]
     NoTerminal,
-    #[error("{0}")]
+    #[error("{}", plain(.0))]
     Session(String),
-    #[error("{0}")]
+    #[error("{}", plain(.0))]
     Cancelled(String),
-    #[error("the environment is incomplete: {0}")]
+    #[error("the environment is incomplete: {}", plain(.0))]
     Environment(String),
     #[error("the checks did not pass")]
     Unhealthy,

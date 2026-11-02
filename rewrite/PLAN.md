@@ -414,7 +414,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 - **Scope:** every `thiserror` message in `jackin-core`, `jackin-image`, `jackin-openshell`, `jackin-session`, and `jackin`.
 - **Steps:** Replace each `{x:?}` of an identifier or a path in an error message with its `Display` form, so the user reads `jackin-work-codex`, not `Provider(ProviderName("jackin-work-codex"))`. Add a repo gate that refuses `:?}` in an `#[error(...)]` attribute. Fix the P6.2 defects: a manifest error that repeats its cause (`unknown field x: unknown field x`); `role check` on a missing directory, which must name the directory; `jackin ls` on an empty gateway, which must print that there are no sandboxes.
 - **Proof:** G-FAST passes; the new gate goes red on a reintroduced `:?}`.
-- [ ] P6.1b done
+- [x] P6.1b done. Proof: merged at 427ae44a; G-FAST `xtask ci --fast` 702 passed, exit 0; the `errors` CI step refuses Debug placeholders, source fields, and bare String fields in error messages; red/green by test-reviewer (/private/tmp/claude-501/plans/P6.1b-redgreen.md: about 205 mutations, then R1-R5, the String rule, and 104 plain removals red); E1 and E2 proven red by the implementer as the reviewer specified.
 
 ### P6.3 Port the usage crates
 

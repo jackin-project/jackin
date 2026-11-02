@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::num::NonZeroU16;
 
-use jackin_core::{Agent, ProfileAsset, ProfileId, ProviderName, SandboxPath};
+use jackin_core::{Agent, ProfileAsset, ProfileId, ProviderName, SandboxPath, plain};
 use openshell_core::host_pattern;
 use openshell_sdk::raw::proto::SandboxPolicy;
 
@@ -81,6 +81,27 @@ pub enum ClosureViolation {
         rule: RuleKey,
         port: u32,
     },
+}
+
+impl fmt::Display for ClosureViolation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ClosureViolation::Overlap {
+                rule,
+                host,
+                provider_host,
+            } => write!(
+                f,
+                "rule {rule}: {host} overlaps the provider host {provider_host}"
+            ),
+            ClosureViolation::UnparsableHost { rule, host } => {
+                write!(f, "rule {rule}: the host {} cannot be read", plain(host))
+            }
+            ClosureViolation::InvalidPort { rule, port } => {
+                write!(f, "rule {rule}: the port {port} is invalid")
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -196,7 +217,7 @@ impl RuleKey {
 
 impl fmt::Display for RuleKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&plain(&self.0))
     }
 }
 

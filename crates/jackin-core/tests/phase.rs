@@ -45,3 +45,33 @@ fn phase_predicates_follow_the_gateway_mapping() {
         assert_eq!(actual, expected(phase), "{phase:?}");
     }
 }
+
+#[test]
+fn every_phase_prints_its_words() {
+    let table = [
+        (Phase::Provisioning, "provisioning"),
+        (Phase::Starting, "starting"),
+        (Phase::Ready, "ready"),
+        (Phase::Stopping, "stopping"),
+        (Phase::Stopped, "stopped"),
+        (
+            Phase::Completed { exit_code: 0 },
+            "completed with exit code 0",
+        ),
+        (
+            Phase::Error { exit_code: Some(3) },
+            "error with exit code 3",
+        ),
+        (
+            Phase::Error { exit_code: None },
+            "error without an exit code",
+        ),
+        (Phase::Deleting, "deleting"),
+        (Phase::Suspending, "suspending"),
+        (Phase::Suspended, "suspended"),
+        (Phase::Unknown, "unknown"),
+    ];
+    for (phase, words) in table {
+        assert_eq!(phase.to_string(), words);
+    }
+}

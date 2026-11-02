@@ -50,3 +50,19 @@ async fn a_cancel_during_discovery_exits_cancelled_at_once() -> TestResult {
     })
     .await
 }
+
+#[tokio::test]
+async fn an_unregistered_gateway_is_named_as_a_plain_word() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let (harness, _) = connecting(&world, ProcessReply::exited(0, b"[]", b""))?;
+        let ran = harness.run(&["ls"]).await?;
+        failed(&ran, ExitClass::Failure, &[])?;
+        assert_eq!(
+            ran.stderr,
+            "error: cannot discover gateway fake-gateway: gateway fake-gateway is not registered\n"
+        );
+        Ok(())
+    })
+    .await
+}

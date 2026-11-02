@@ -187,3 +187,22 @@ fn next_attempt_is_the_only_way_to_choose_a_start_request() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn supervisor_errors_show_the_words_read_from_the_sandbox_as_plain_text() {
+    let shown = |text: &str| {
+        SupervisorState::parse(text)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default()
+    };
+    assert_eq!(shown("pwn 1"), "unknown supervisor state word pwn");
+    assert_eq!(
+        shown("pwn\u{1b}[2J"),
+        "unknown supervisor state word pwn\\u{1b}[2J"
+    );
+    assert_eq!(shown("exited 1 x"), "invalid exit code x");
+    assert_eq!(shown("exited 1 x\u{1b}"), "invalid exit code x\\u{1b}");
+    assert_eq!(shown("waiting now"), "trailing text now");
+    assert_eq!(shown("waiting \u{1b}[2J"), "trailing text \\u{1b}[2J");
+}

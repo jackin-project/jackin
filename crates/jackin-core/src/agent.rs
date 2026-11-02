@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 use crate::boundary::FileMode;
@@ -40,6 +42,15 @@ impl Agent {
 pub enum CodexAuthMode {
     ApiKey,
     ChatgptLogin,
+}
+
+impl fmt::Display for CodexAuthMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            CodexAuthMode::ApiKey => "api key",
+            CodexAuthMode::ChatgptLogin => "chatgpt login",
+        })
+    }
 }
 
 #[derive(Clone, Debug)]

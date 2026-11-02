@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::num::NonZeroU16;
 
 use thiserror::Error;
@@ -22,6 +23,16 @@ pub enum DockerSource {
     Role,
     Workspace,
     Both,
+}
+
+impl fmt::Display for DockerSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            DockerSource::Role => "the role",
+            DockerSource::Workspace => "the workspace",
+            DockerSource::Both => "both the role and the workspace",
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -62,7 +73,7 @@ impl DockerRisk {
 #[derive(Debug, Error)]
 pub enum DockerError {
     #[error(
-        "the Docker capability is enabled by {enabled_by:?} but the gateway has no Docker engine"
+        "the Docker capability is enabled by {enabled_by} but the gateway has no Docker engine"
     )]
     EngineMissing { enabled_by: DockerSource },
 }

@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::display::plain;
 use crate::ids::{AttemptId, IdError};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -20,13 +21,13 @@ pub struct StartRequest(pub AttemptId);
 pub enum SupervisorStateError {
     #[error("supervisor state is empty")]
     Empty,
-    #[error("unknown supervisor state word {0:?}")]
+    #[error("unknown supervisor state word {}", plain(.0))]
     UnknownWord(String),
     #[error("invalid attempt ID")]
     BadAttempt(IdError),
-    #[error("invalid exit code {0:?}")]
+    #[error("invalid exit code {}", plain(.0))]
     BadExitCode(String),
-    #[error("trailing text {0:?}")]
+    #[error("trailing text {}", plain(.0))]
     TrailingText(String),
 }
 

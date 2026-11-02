@@ -34,12 +34,12 @@ pub enum AccountError {
     Policy(#[from] PolicyError),
     #[error(transparent)]
     Lock(#[from] LockError),
-    #[error("account {account:?} uses {mode:?}, which is not supported yet")]
+    #[error("account {account} uses {mode}, which is not supported yet")]
     Unsupported {
         account: AccountName,
         mode: CodexAuthMode,
     },
-    #[error("the login of account {account:?} belongs to another ChatGPT account")]
+    #[error("the login of account {account} belongs to another ChatGPT account")]
     AccountIdMismatch { account: AccountName },
 }
 

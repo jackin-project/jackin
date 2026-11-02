@@ -7,7 +7,7 @@ use std::sync::Arc;
 use jackin_core::{
     Agent, CommitId, Config, FileKind, FileSystem, FsError, HookKind, HostPath, ManifestError,
     PathError, ProcessError, ProcessOutput, ProcessRunner, ProcessStatus, RepoPath, RoleManifest,
-    RoleName, RoleRev, RoleSource, RoleUrl, Sha256, TerminalText, Workspace,
+    RoleName, RoleRev, RoleSource, RoleUrl, Sha256, TerminalText, Workspace, plain_list,
 };
 use jackin_image::{DockerfileError, HookFiles, RoleRevision, SourceFile, validate_dockerfile};
 use jackin_openshell::{ClosureViolation, PolicyDocument, PolicyError, ProviderProfile};
@@ -41,26 +41,32 @@ pub struct LoadedRole {
 pub enum RoleError {
     #[error("no role is selected and none is configured")]
     NoRole,
-    #[error("unknown role {0:?}")]
+    #[error("unknown role {0}")]
     UnknownRole(RoleName),
-    #[error("invalid role manifest at {path:?}: {source}")]
+    #[error("invalid role manifest at {path}")]
     Manifest {
         path: HostPath,
         source: ManifestError,
     },
-    #[error("missing file {path:?}")]
+    #[error("{path} does not exist")]
+    RootMissing { path: HostPath },
+    #[error("{path} is not a directory")]
+    RootNotDirectory { path: HostPath },
+    #[error("{root} has no {}", MANIFEST_FILE)]
+    ManifestMissing { root: HostPath },
+    #[error("missing file {path}")]
     FileMissing { path: RepoPath },
-    #[error("not a regular file: {path:?}")]
+    #[error("not a regular file: {path}")]
     FileNotRegular { path: RepoPath },
-    #[error("path escapes the repository: {path:?}")]
+    #[error("path escapes the repository: {path}")]
     EscapesRepository { path: RepoPath },
     #[error(transparent)]
     Dockerfile(#[from] DockerfileError),
     #[error(transparent)]
     Policy(#[from] PolicyError),
-    #[error("the role policy overlaps provider hosts: {0:?}")]
+    #[error("the role policy overlaps provider hosts: {}", plain_list(.0))]
     ProviderHostClosure(Vec<ClosureViolation>),
-    #[error("git failed with {status:?}: {output:?}")]
+    #[error("git failed with {status}: {output}")]
     Git {
         status: ProcessStatus,
         output: TerminalText,
@@ -239,16 +245,30 @@ impl RoleCatalog {
 
     async fn read_manifest(&self, root: &HostPath) -> Result<RoleManifest, Vec<RoleError>> {
         let name = RepoPath::parse(MANIFEST_FILE).map_err(|error| vec![RoleError::from(error)])?;
-        let path = self
-            .check_file(root, &name)
+        match self
+            .fs
+            .stat_following(root)
             .await
-            .map_err(|error| vec![error])?;
+            .map_err(|error| vec![RoleError::from(error)])?
+        {
+            None => return Err(vec![RoleError::RootMissing { path: root.clone() }]),
+            Some(FileKind::Dir) => {}
+            Some(FileKind::File | FileKind::Socket | FileKind::Symlink) => {
+                return Err(vec![RoleError::RootNotDirectory { path: root.clone() }]);
+            }
+        }
+        let manifest_missing = || vec![RoleError::ManifestMissing { root: root.clone() }];
+        let path = match self.check_file(root, &name).await {
+            Ok(path) => path,
+            Err(RoleError::FileMissing { .. }) => return Err(manifest_missing()),
+            Err(error) => return Err(vec![error]),
+        };
         let bytes = self
             .fs
             .read(&path)
             .await
             .map_err(|error| vec![RoleError::from(error)])?
-            .ok_or_else(|| vec![RoleError::FileMissing { path: name.clone() }])?;
+            .ok_or_else(manifest_missing)?;
         let text = String::from_utf8(bytes).map_err(|_| {
             vec![RoleError::Manifest {
                 path: path.clone(),

@@ -141,3 +141,20 @@ async fn a_path_without_a_workspace_or_an_unknown_role_fails_and_creates_nothing
     })
     .await
 }
+
+#[tokio::test]
+async fn an_unknown_role_is_named_as_a_plain_word() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = configured(&rig)?;
+        harness.cwd = rig.repo.root().clone();
+        let ran = harness.run(&["load", "ghostrole"]).await?;
+        failed(&ran, ExitClass::Failure, &[])?;
+        assert_eq!(ran.stderr, "error: unknown role ghostrole\n");
+        assert!(rig.world.gateway.sandboxes().is_empty());
+        assert!(rig.world.gateway.providers().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}

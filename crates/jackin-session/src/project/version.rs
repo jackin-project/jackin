@@ -4,7 +4,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use jackin_core::{ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program};
+use jackin_core::{ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program, plain};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -58,7 +58,7 @@ pub enum HostGitError {
         found: GitVersion,
         required: GitVersion,
     },
-    #[error("host git cannot be used: {detail}")]
+    #[error("host git cannot be used: {}", plain(.detail))]
     Unusable { detail: String },
 }
 

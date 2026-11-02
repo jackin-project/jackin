@@ -131,3 +131,24 @@ fn engine_failure_messages_show_names_and_build_output_as_plain_text() -> TestRe
     assert!(!source_gone.contains(&found.to_string()), "{source_gone:?}");
     Ok(())
 }
+
+#[test]
+fn engine_text_fields_are_shown_without_control_characters() -> TestResult {
+    let driver = EngineError::BuilderDriver {
+        builder: BuilderName::parse("jackin-builder")?,
+        driver: "docker\u{1b}[2J\ncontainer".to_owned(),
+    };
+    assert_eq!(
+        driver.to_string(),
+        "builder jackin-builder uses the docker\\u{1b}[2J\\ncontainer driver; the docker driver is required"
+    );
+    let entry = EngineError::ContextEntry {
+        path: "bin/a\u{1b}b\nc".to_owned(),
+        problem: ContextProblem::Symlink,
+    };
+    assert_eq!(
+        entry.to_string(),
+        "the build context cannot hold bin/a\\u{1b}b\\nc: it is a symbolic link"
+    );
+    Ok(())
+}

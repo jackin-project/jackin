@@ -11,7 +11,7 @@ use crate::engine::EngineError;
 pub enum ImageError {
     #[error(transparent)]
     Dockerfile(#[from] DockerfileError),
-    #[error("the agent has no install target for {platform:?}")]
+    #[error("the agent has no install target for {platform}")]
     MissingInstallTarget { platform: Platform },
     #[error(transparent)]
     Engine(#[from] EngineError),

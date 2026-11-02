@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use jackin_core::{
     ClosureViolationView, Config, InspectView, LabelError, LabelSelector, Labels, Phase,
-    PolicyStatus, SandboxLabels, SandboxName, SandboxSummary, SupervisorReading,
+    PolicyStatus, SandboxLabels, SandboxName, SandboxSummary, SupervisorReading, plain_duration,
 };
 use jackin_openshell::{
     ClosureViolation, GatewayError, PolicyError, PowerAction, ProviderProfile, RuleKey,
@@ -47,7 +47,7 @@ pub enum PurgeOutcome {
 
 #[derive(Debug, Error)]
 pub enum PurgeError {
-    #[error("the work in {sandbox:?} is not exported: {state:?}")]
+    #[error("the work in {sandbox} is not exported: {state}")]
     WorkNotExported {
         sandbox: SandboxName,
         state: Box<WorkState>,
@@ -60,20 +60,20 @@ pub enum PurgeError {
 pub enum LifecycleError {
     #[error(transparent)]
     Gateway(#[from] GatewayError),
-    #[error("the labels of {sandbox:?} are invalid")]
+    #[error("the labels of {sandbox} are invalid")]
     Labels {
         sandbox: SandboxName,
         source: LabelError,
     },
-    #[error("sandbox {0:?} was not found")]
+    #[error("sandbox {0} was not found")]
     NotFound(SandboxName),
-    #[error("sandbox {sandbox:?} did not reach {wanted:?} within {after:?}")]
+    #[error("sandbox {sandbox} did not reach {wanted} within {}", plain_duration(.after))]
     PowerTimeout {
         sandbox: SandboxName,
         wanted: Phase,
         after: Duration,
     },
-    #[error("the main process of {sandbox:?} has ended: {phase:?}")]
+    #[error("the main process of {sandbox} has ended: {phase}")]
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
     #[error(transparent)]
     Profile(#[from] PolicyError),

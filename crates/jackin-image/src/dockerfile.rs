@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_core::plain;
 use thiserror::Error;
 
 const CONSTRUCT: &str = "construct";
@@ -9,11 +10,11 @@ const CONSTRUCT: &str = "construct";
 pub enum DockerfileError {
     #[error("the Dockerfile has no stages")]
     NoStages,
-    #[error("line {line}: the final stage must start FROM construct, found {found:?}")]
+    #[error("line {line}: the final stage must start FROM construct, found {}", plain(.found))]
     FinalStageNotConstruct { line: usize, found: String },
     #[error("line {line}: a stage must not be named construct")]
     ConstructStageDefined { line: usize },
-    #[error("line {line}: cannot read the FROM instruction {text:?}")]
+    #[error("line {line}: cannot read the FROM instruction {}", plain(.text))]
     UnreadableFrom { line: usize, text: String },
     #[error("the Dockerfile is not valid UTF-8")]
     NotUtf8,

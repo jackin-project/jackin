@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,6 +51,16 @@ pub enum EnvFileProblem {
     Invalid(EnvFileError),
 }
 
+impl fmt::Display for EnvFileProblem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EnvFileProblem::NoLaunchLabel => f.write_str("no launch label"),
+            EnvFileProblem::Missing => f.write_str("missing"),
+            EnvFileProblem::Invalid(error) => write!(f, "invalid: {error}"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShellRequest {
     pub sandbox: SandboxName,
@@ -60,11 +71,11 @@ pub struct ShellRequest {
 pub enum AttachError {
     #[error(transparent)]
     Gateway(#[from] GatewayError),
-    #[error("sandbox {0:?} was not found")]
+    #[error("sandbox {0} was not found")]
     NotFound(SandboxName),
-    #[error("the main process of {sandbox:?} has ended: {phase:?}")]
+    #[error("the main process of {sandbox} has ended: {phase}")]
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
-    #[error("the env file of {sandbox:?} is unusable: {problem:?}")]
+    #[error("the env file of {sandbox} is unusable: {problem}")]
     EnvFile {
         sandbox: SandboxName,
         problem: EnvFileProblem,
@@ -75,35 +86,35 @@ pub enum AttachError {
 pub enum RestartError {
     #[error(transparent)]
     Gateway(#[from] GatewayError),
-    #[error("the main process of {sandbox:?} has ended: {phase:?}")]
+    #[error("the main process of {sandbox} has ended: {phase}")]
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
-    #[error("the agent in {sandbox:?} is already running as attempt {attempt:?}")]
+    #[error("the agent in {sandbox} is already running as attempt {attempt}")]
     AlreadyRunning {
         sandbox: SandboxName,
         attempt: AttemptId,
     },
-    #[error("no attempt IDs are left for {sandbox:?}")]
+    #[error("no attempt IDs are left for {sandbox}")]
     AttemptsExhausted { sandbox: SandboxName },
-    #[error("the env file of {sandbox:?} is unusable: {problem:?}")]
+    #[error("the env file of {sandbox} is unusable: {problem}")]
     EnvFile {
         sandbox: SandboxName,
         problem: EnvFileProblem,
     },
-    #[error("the supervisor state of {sandbox:?} is unreadable")]
+    #[error("the supervisor state of {sandbox} is unreadable")]
     StateUnreadable { sandbox: SandboxName },
-    #[error("another restart of {sandbox:?} is in progress")]
+    #[error("another restart of {sandbox} is in progress")]
     Busy { sandbox: SandboxName },
     #[error(transparent)]
     Fs(#[from] FsError),
     #[error(transparent)]
     Path(#[from] PathError),
-    #[error("the {hook:?} hook exited with {exit_code}: {output:?}")]
+    #[error("the {hook} hook exited with {exit_code}: {output}")]
     HookFailed {
         hook: HookKind,
         exit_code: i32,
         output: TerminalText,
     },
-    #[error("attempt {attempt:?} of {sandbox:?} did not start")]
+    #[error("attempt {attempt} of {sandbox} did not start")]
     AttemptTimeout {
         sandbox: SandboxName,
         attempt: AttemptId,

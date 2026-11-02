@@ -385,3 +385,29 @@ fn plan_new_applies_the_same_validation_to_the_request_bytes() -> TestResult {
     assert_eq!(invalid, Verdict::NotUtf8);
     Ok(())
 }
+
+#[test]
+fn dockerfile_errors_quote_what_they_found_as_plain_text() {
+    let shown = |text: &str| {
+        validate_dockerfile(text)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default()
+    };
+    assert_eq!(
+        shown("FROM ubuntu\n"),
+        "line 1: the final stage must start FROM construct, found ubuntu"
+    );
+    assert_eq!(
+        shown("FROM \"a\" b c\n"),
+        "line 1: cannot read the FROM instruction FROM \"a\" b c"
+    );
+    assert_eq!(
+        shown("FROM a\u{1b}[2Jb c d\n"),
+        "line 1: cannot read the FROM instruction FROM a\\u{1b}[2Jb c d"
+    );
+    assert_eq!(
+        shown("FROM ubuntu\u{1b}[2J\n"),
+        "line 1: the final stage must start FROM construct, found ubuntu\\u{1b}[2J"
+    );
+}
