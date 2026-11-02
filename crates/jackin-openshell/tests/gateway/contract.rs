@@ -17,7 +17,7 @@ use tonic::Code;
 
 use super::exec_rpc::{Step, exit_event, host_shell, host_tools, scripted};
 use super::fakes::{Recorded, ScriptedRunner, exited};
-use super::harness::{Env, WORKSPACE, config, connect, env, guard, resolved};
+use super::harness::{Env, WORKSPACE, config, connect, drive_paused, env, guard, resolved};
 use super::server::{Broken, ExecBackend, ExecCtx, Fault};
 use super::ssh_server::{
     Action, REFUSED_NOTICE, RIGHT_FINGERPRINT, RIGHT_SEED, Script, SshModel, host_key,
@@ -272,12 +272,9 @@ async fn shell_exit_code_cannot_hang_the_run() {
     let running =
         tokio::spawn(async move { run(&gateway, &fixture, ContractGroup::Terminal).await });
     guard(env.server.shared.child_started.notified()).await;
-    tokio::time::pause();
-    let finished = tokio::time::timeout(Duration::from_secs(120), running).await;
-    tokio::time::resume();
-    let report = finished
-        .expect("the shell_exit_code check did not end")
-        .unwrap();
+    let report = drive_paused(running, Duration::from_secs(120))
+        .await
+        .expect("the shell_exit_code check did not end");
     let check = report
         .checks
         .iter()
