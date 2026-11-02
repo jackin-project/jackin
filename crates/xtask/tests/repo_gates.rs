@@ -430,6 +430,7 @@ mod comments {
     #[test]
     fn build_output_and_unscanned_file_types_are_skipped() -> TestResult {
         let fixture = Fixture::new(&bare(&["jackin-core"]))?;
+        fixture.remove(".gitignore")?;
         fixture.write("target/debug/gen.rs", "fn f() {} // c\n")?;
         fixture.write("target/x.toml", "# c\n")?;
         fixture.write("docs/page.md", "# Heading\n")?;
