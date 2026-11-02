@@ -19,7 +19,6 @@ pub const PENDING_PORT_PATHS: &[&str] = &[
     "crates/usage/jackin-usage-provider-kimi/",
     "crates/usage/jackin-usage-provider-minimax/",
     "crates/usage/jackin-usage-provider-opencode/",
-    "crates/usage/jackin-usage-provider-openrouter/",
     "crates/usage/jackin-usage-provider-zai/",
 ];
 

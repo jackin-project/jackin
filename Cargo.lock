@@ -2104,6 +2104,7 @@ dependencies = [
  "jackin-testkit",
  "jackin-usage-provider-codex",
  "jackin-usage-provider-core",
+ "jackin-usage-provider-openrouter",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -2129,6 +2130,14 @@ dependencies = [
  "rustls",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "jackin-usage-provider-openrouter"
+version = "0.1.0"
+dependencies = [
+ "jackin-usage-provider-core",
+ "serde_json",
 ]
 
 [[package]]

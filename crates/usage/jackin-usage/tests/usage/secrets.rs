@@ -5,17 +5,29 @@ use std::io::ErrorKind;
 use std::sync::Arc;
 
 use jackin_core::{Clock, EnvSnapshot, FileSystem, FsError, ProcessRunner, Provider};
-use jackin_testkit::{FakeClock, FsOp, MemFs, Method, Route, ScriptedProcessRunner};
+use jackin_testkit::{
+    FakeClock, FsOp, MemFs, Method, ProcessReply, Route, ScriptedProcessRunner, ScriptedProgram,
+};
 use jackin_usage::{
-    HostUsage, ProviderEndpoints, Refresh, UsageDeps, UsageError, UsageOutcome, UsageReport,
+    HostUsage, ProviderEndpoints, Refresh, UnavailableReason, UsageDeps, UsageError, UsageOutcome,
+    UsageReport,
 };
 
+use crate::providers::openrouter_serve;
 use crate::support::{
-    CODEX_PATH, TestResult, UsageHarness, codex_body, codex_login, guard, host_path, windows_of,
+    CODEX_PATH, TestResult, UsageHarness, account, codex_body, codex_login, env_source,
+    file_source, guard, host_path, op_source, windows_of,
 };
 
 const AUTH: &str = include_str!("fixtures/codex/auth_chatgpt.json");
-const SECRETS: [&str; 3] = ["SECRET_TOKEN_CODEX", "SECRET_TEXT_BODY", "SECRET_TOKEN_ENV"];
+const SECRETS: [&str; 6] = [
+    "SECRET_TOKEN_CODEX",
+    "SECRET_TEXT_BODY",
+    "SECRET_TOKEN_ENV",
+    "SECRET_TOKEN_FILE",
+    "SECRET_TOKEN_OP",
+    "SECRET_TOKEN_OP-LEAK",
+];
 
 fn assert_clean(surface: &str, text: &str) {
     for secret in SECRETS {
@@ -58,10 +70,21 @@ async fn echoing() -> Result<(UsageHarness, UsageReport), Box<dyn std::error::Er
         Route::json(200, "not json SECRET_TOKEN_CODEX SECRET_TEXT_BODY")
             .requires_header("chatgpt-account-id", "junk-id"),
     );
+    harness.put("/keys/router", "SECRET_TOKEN_FILE\n").await?;
+    harness.runner.expect(
+        ScriptedProgram::Op,
+        &["read", "op://v/i/f"],
+        ProcessReply::exited(1, b"", b"[ERROR] item \"SECRET_TOKEN_OP-LEAK\" not found"),
+    );
+    openrouter_serve(&harness, "SECRET_TOKEN_ENV");
+    let router = |name: &str, source| account(name, Provider::Openrouter, source);
     let accounts = [
         codex_login("echo-ok", "/home/ok/.codex", "ok-id"),
         codex_login("echo-err", "/home/err/.codex", "err-id"),
         codex_login("echo-junk", "/home/junk/.codex", "junk-id"),
+        router("env-router", env_source("OPENROUTER_TEST_KEY")),
+        router("op-router", op_source("op://v/i/f")),
+        router("file-router", file_source("/keys/router")),
     ];
     let report = harness.report(&accounts, Refresh::Cached).await?;
     Ok((harness, report))
@@ -80,6 +103,11 @@ async fn the_report_its_json_and_its_debug_output_hold_no_secret() -> TestResult
             report.accounts[2].outcome,
             UsageOutcome::Unavailable(_)
         ));
+        assert_eq!(windows_of(&report.accounts[3].outcome).len(), 2);
+        assert_eq!(
+            report.accounts[4].outcome,
+            UsageOutcome::Unavailable(UnavailableReason::NoCredentials)
+        );
         assert_clean("the report JSON", &serde_json::to_string(&report)?);
         assert_clean("the report Debug", &format!("{report:?}"));
         Ok(())
@@ -145,10 +173,10 @@ async fn the_cache_file_holds_no_secret_and_the_credential_files_are_unchanged()
         let (harness, _report) = echoing().await?;
         for (path, bytes) in harness.all_files().await? {
             let text = String::from_utf8(bytes)?;
-            if path.ends_with("auth.json") {
-                assert_eq!(text, AUTH, "{path} changed");
-            } else {
-                assert_clean(&path, &text);
+            match path.as_str() {
+                "/state/usage/usage.json" => assert_clean(&path, &text),
+                "/keys/router" => assert_eq!(text, "SECRET_TOKEN_FILE\n", "{path} changed"),
+                _ => assert_eq!(text, AUTH, "{path} changed"),
             }
         }
         Ok(())

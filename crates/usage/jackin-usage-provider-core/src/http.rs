@@ -85,9 +85,8 @@ impl Http {
         let status = response.status();
         let retry_after = retry_after_seconds(&response);
         match status {
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-                return Err(ProviderError::Unauthorized);
-            }
+            StatusCode::UNAUTHORIZED => return Err(ProviderError::Unauthorized),
+            StatusCode::FORBIDDEN => return Err(ProviderError::Forbidden),
             StatusCode::TOO_MANY_REQUESTS => {
                 return Err(ProviderError::RateLimited {
                     retry_after_seconds: retry_after,

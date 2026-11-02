@@ -4,6 +4,7 @@
 use jackin_core::{CredentialSource, Provider, Timestamp};
 use jackin_usage_provider_codex as codex;
 use jackin_usage_provider_core::{Bucket, Http, ProviderError};
+use jackin_usage_provider_openrouter as openrouter;
 use tokio_util::sync::CancellationToken;
 
 use crate::credential::{Material, Shape, Unresolved, resolve};
@@ -24,6 +25,7 @@ type Collected = Result<Vec<Bucket>, UnavailableReason>;
 pub(crate) async fn collect(call: &Call<'_>) -> Collected {
     match call.account.provider {
         Provider::Codex => codex_usage(call).await,
+        Provider::Openrouter => openrouter_usage(call).await,
         Provider::Amp
         | Provider::Antigravity
         | Provider::Claude
@@ -35,7 +37,6 @@ pub(crate) async fn collect(call: &Call<'_>) -> Collected {
         | Provider::Minimax
         | Provider::Muse
         | Provider::Opencode
-        | Provider::Openrouter
         | Provider::Zai => Err(unsupported(None)),
     }
 }
@@ -63,7 +64,24 @@ async fn codex_usage(call: &Call<'_>) -> Collected {
     .map_err(|error| reason(error, call.now))
 }
 
+async fn openrouter_usage(call: &Call<'_>) -> Collected {
+    let key = call.token().await?;
+    openrouter::fetch(call.http, key.secret.expose())
+        .await
+        .map_err(|error| reason(error, call.now))
+}
+
 impl Call<'_> {
+    async fn token(&self) -> Result<Material, UnavailableReason> {
+        let material = self.material().await?;
+        if material.shape == Shape::Login {
+            return Err(UnavailableReason::Provider(
+                "this provider does not accept a login file".to_owned(),
+            ));
+        }
+        Ok(material)
+    }
+
     async fn material(&self) -> Result<Material, UnavailableReason> {
         resolve(self.deps, self.account, self.cancel)
             .await
@@ -82,7 +100,7 @@ fn unsupported(detail: Option<&str>) -> UnavailableReason {
 
 fn reason(error: ProviderError, now: i64) -> UnavailableReason {
     match error {
-        ProviderError::Unauthorized => UnavailableReason::ExpiredLogin,
+        ProviderError::Unauthorized | ProviderError::Forbidden => UnavailableReason::ExpiredLogin,
         ProviderError::RateLimited {
             retry_after_seconds,
         } => UnavailableReason::RateLimited {

@@ -1,32 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-
-
 [package]
 name = "jackin-usage-provider-openrouter"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
-description = "OpenRouter usage snapshot collection: key quota, credits, and model checks."
+description = "OpenRouter usage: the key limit and the account credits."
 license.workspace = true
+repository.workspace = true
 publish = false
 
-repository.workspace = true
-
-[lib]
-name = "jackin_usage_provider_openrouter"
-path = "src/lib.rs"
-
 [dependencies]
-jackin-protocol = { workspace = true }
-jackin-telemetry = { workspace = true }
 jackin-usage-provider-core = { workspace = true }
-
-reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true, features = ["raw_value"] }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

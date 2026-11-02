@@ -11,6 +11,7 @@ mod apikey;
 mod cache;
 mod cancel;
 mod codex;
+mod credentials;
 mod errors;
 mod isolation;
 mod kinds;

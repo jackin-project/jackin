@@ -391,3 +391,20 @@ async fn a_cache_write_error_is_a_store_error_naming_the_path() -> TestResult {
     })
     .await
 }
+
+#[tokio::test]
+async fn a_cache_read_error_is_a_store_error_naming_the_path() -> TestResult {
+    guard(async {
+        let (harness, account) = crate::providers::openrouter_started().await?;
+        harness.fs.fail_at(FsOp::Read, 1, denied());
+        let result = harness.report(&[account], Refresh::Cached).await;
+        match result {
+            Err(UsageError::Store { path, .. }) => {
+                assert_eq!(path, host_path("/state/usage/usage.json"));
+            }
+            other => panic!("expected a store error, found {other:?}"),
+        }
+        Ok(())
+    })
+    .await
+}

@@ -7,6 +7,8 @@ use thiserror::Error;
 pub enum ProviderError {
     #[error("the login was rejected")]
     Unauthorized,
+    #[error("the login is not allowed to read this")]
+    Forbidden,
     #[error("the provider rate-limited the request")]
     RateLimited { retry_after_seconds: Option<u64> },
     #[error("{0}")]
