@@ -21,13 +21,32 @@ pub(crate) const LOOP_DETACHED: &str = "d=$1\n( i=0; while [ \"$i\" -lt 600 ]; d
 
 pub(crate) const LOOP_HOLDING: &str = "d=$1\n( i=0; while [ \"$i\" -lt 600 ]; do echo x >> \"$d/beat\"; i=$((i+1)); sleep 0.05; done ) &\n";
 
+const GUARD: Duration = Duration::from_secs(30);
+const RUN_LIMIT: Duration = Duration::from_secs(10);
+const HEAVY_GUARD: Duration = Duration::from_secs(120);
+const HEAVY_RUN_LIMIT: Duration = Duration::from_secs(60);
+
 pub(crate) async fn guarded<F>(future: F) -> TestResult
 where
     F: Future<Output = TestResult>,
 {
-    timeout(Duration::from_secs(30), future)
+    bounded(GUARD, future).await
+}
+
+pub(crate) async fn guarded_heavy<F>(future: F) -> TestResult
+where
+    F: Future<Output = TestResult>,
+{
+    bounded(HEAVY_GUARD, future).await
+}
+
+async fn bounded<F>(limit: Duration, future: F) -> TestResult
+where
+    F: Future<Output = TestResult>,
+{
+    timeout(limit, future)
         .await
-        .map_err(|_| "the test exceeded its 30 s guard")?
+        .map_err(|_| format!("the test exceeded its {} s guard", limit.as_secs()))?
 }
 
 pub(crate) async fn next_line(
@@ -64,10 +83,19 @@ pub(crate) struct Scratch {
     work: PathBuf,
     ceiling: PathBuf,
     scripts: Cell<usize>,
+    run_limit: Duration,
 }
 
 impl Scratch {
     pub(crate) fn new() -> Result<Scratch, Box<dyn Error>> {
+        Scratch::with_run_limit(RUN_LIMIT)
+    }
+
+    pub(crate) fn heavy() -> Result<Scratch, Box<dyn Error>> {
+        Scratch::with_run_limit(HEAVY_RUN_LIMIT)
+    }
+
+    fn with_run_limit(run_limit: Duration) -> Result<Scratch, Box<dyn Error>> {
         let dir = tempfile::tempdir()?;
         let root = dir.path().canonicalize()?;
         let work = root.join("work");
@@ -82,6 +110,7 @@ impl Scratch {
             work,
             ceiling,
             scripts: Cell::new(0),
+            run_limit,
         })
     }
 
@@ -117,7 +146,7 @@ impl Scratch {
             )],
             env_remove_prefixes: vec!["GIT_".to_owned()],
             stdin: ProcessStdin::Null,
-            timeout: Duration::from_secs(10),
+            timeout: self.run_limit,
         })
     }
 }

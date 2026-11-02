@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::support::{
     LOOP_DETACHED, LOOP_HOLDING, Scratch, TestResult, WAIT_FOR, assert_no_leftover, guarded,
-    next_line, same_bytes,
+    guarded_heavy, next_line, same_bytes,
 };
 
 const MARK: &str = " [truncated]";
@@ -108,8 +108,8 @@ async fn unstreamed_output_is_returned_whole_from_both_streams_without_a_pipe_de
 #[tokio::test]
 async fn streamed_output_is_lossless_ordered_per_stream_lossy_decoded_and_tailed_to_64_kib()
 -> TestResult {
-    guarded(async {
-        let scratch = Scratch::new()?;
+    guarded_heavy(async {
+        let scratch = Scratch::heavy()?;
         let body = "seq 1 30000\nprintf '\\377\\376bad\\n'\nseq 1 5 >&2\necho done\n";
         let spec = scratch.spec(body, &[])?;
         let (tx, mut rx) = mpsc::channel::<OutputLine>(1);
@@ -273,8 +273,8 @@ async fn resident_kib() -> Result<u64, Box<dyn Error + Send + Sync>> {
 
 #[tokio::test]
 async fn a_128_mib_line_does_not_grow_process_memory() -> TestResult {
-    guarded(async {
-        let scratch = Scratch::new()?;
+    guarded_heavy(async {
+        let scratch = Scratch::heavy()?;
         let spec = scratch.spec("head -c 134217728 /dev/zero | tr '\\0' a\n", &[])?;
         let baseline = resident_kib().await.map_err(|error| error.to_string())?;
         let stop = Arc::new(AtomicBool::new(false));
@@ -348,8 +348,8 @@ fn names(error: &ProcessError, expected: OutputStream) -> TestResult {
 #[tokio::test]
 async fn unstreamed_output_beyond_16_mib_per_stream_fails_with_output_too_large_and_stops_the_child()
 -> TestResult {
-    guarded(async {
-        let exact = Scratch::new()?;
+    guarded_heavy(async {
+        let exact = Scratch::heavy()?;
         let spec = exact.spec(&flood(OutputStream::Stdout, WHOLE_LIMIT, ""), &[])?;
         let output = TokioProcessRunner
             .run(&spec, None, &CancellationToken::new())
@@ -380,11 +380,11 @@ async fn unstreamed_output_beyond_16_mib_per_stream_fails_with_output_too_large_
             ),
         ];
         for (stream, body, secret) in rows {
-            let scratch = Scratch::new()?;
+            let scratch = Scratch::heavy()?;
             names(&too_large(&scratch, &body, secret).await?, stream)?;
         }
 
-        let both = Scratch::new()?;
+        let both = Scratch::heavy()?;
         let body = "head -c 10485760 /dev/zero\nhead -c 10485760 /dev/zero >&2\n";
         let output = TokioProcessRunner
             .run(&both.spec(body, &[])?, None, &CancellationToken::new())
@@ -393,10 +393,9 @@ async fn unstreamed_output_beyond_16_mib_per_stream_fails_with_output_too_large_
         assert_eq!(output.stdout.len(), 10 * 1024 * 1024, "stdout length");
         assert_eq!(output.stderr.len(), 10 * 1024 * 1024, "stderr length");
 
-        let endless = Scratch::new()?;
+        let endless = Scratch::heavy()?;
         let body = format!("{LOOP_DETACHED}{WAIT_FOR}wait_for \"$d/beat\"\nyes\n");
-        let mut spec = endless.spec(&body, &[])?;
-        spec.timeout = Duration::from_secs(10);
+        let spec = endless.spec(&body, &[])?;
         match TokioProcessRunner
             .run(&spec, None, &CancellationToken::new())
             .await
@@ -406,7 +405,7 @@ async fn unstreamed_output_beyond_16_mib_per_stream_fails_with_output_too_large_
         }
         assert_no_leftover(endless.root()).await?;
 
-        let sinked = Scratch::new()?;
+        let sinked = Scratch::heavy()?;
         let body = "yes \"$(printf '%0999d' 0)\" | head -c 20971000\n";
         let (output, lines) = streamed(&sinked.spec(body, &[])?).await?;
         assert_eq!(output.status, ProcessStatus::Exited(0));
