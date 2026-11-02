@@ -53,6 +53,22 @@ impl Session {
         self.sync_locked(account).await
     }
 
+    pub async fn forget_account(
+        &self,
+        account: &Account,
+        cancel: &CancellationToken,
+    ) -> Result<(), AccountError> {
+        if !matches!(account.credential(), CredentialSource::CodexLogin { .. }) {
+            return Ok(());
+        }
+        let _held = self.hold_account(account, cancel).await?;
+        let provider = ProviderName::for_account(account.name(), Agent::Codex);
+        match self.deps.gateway.delete_provider(&provider).await {
+            Ok(()) | Err(GatewayError::NotFound { .. }) => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     pub(crate) async fn sync_if_absent(
         &self,
         account: &Account,

@@ -6,12 +6,13 @@ use std::io;
 use std::os::unix::process::ExitStatusExt;
 use std::pin::pin;
 use std::process::{ExitStatus, Stdio};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    EnvValue, LineSink, OutputLine, OutputStream, ProcessError, ProcessOutput, ProcessRunner,
-    ProcessSpec, ProcessStatus, ProcessStdin, SecretBytes, SecretOutput,
+    Clock, EnvValue, FileSystem, LineSink, OutputLine, OutputStream, ProcessError, ProcessOutput,
+    ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, SecretBytes, SecretOutput, Timestamp,
 };
 use rustix::process::{Pid, Signal, kill_process_group};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
@@ -19,6 +20,8 @@ use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
+
+use crate::service::HostPorts;
 
 const TAIL_LIMIT: usize = 65536;
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
@@ -29,6 +32,30 @@ const LINE_CUT_MARK: &str = " [truncated]";
 
 #[derive(Clone, Copy, Debug)]
 pub struct SystemClock;
+
+#[async_trait]
+impl Clock for SystemClock {
+    fn now(&self) -> Timestamp {
+        let seconds = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs());
+        Timestamp(i64::try_from(seconds).unwrap_or(i64::MAX))
+    }
+
+    async fn sleep(&self, duration: Duration) {
+        sleep(duration).await;
+    }
+}
+
+impl HostPorts {
+    pub fn system(fs: Arc<dyn FileSystem>) -> HostPorts {
+        HostPorts {
+            clock: Arc::new(SystemClock),
+            fs,
+            runner: Arc::new(TokioProcessRunner),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TokioProcessRunner;

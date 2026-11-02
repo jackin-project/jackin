@@ -9,12 +9,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use jackin_core::{
-    AccountName, Agent, Clock, FileMode, FileSystem, GatewayName, HostPath, ImageId, ImageTag,
-    LaunchId, NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, ProcessRunner, ProcessSpec,
+    AccountName, Agent, FileMode, FileSystem, GatewayName, HostPath, ImageId, ImageTag, LaunchId,
+    NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, ProcessRunner, ProcessSpec,
     ProcessStatus, ProcessStdin, Program, ProjectRoot, RoleName, SandboxName, SandboxPath,
-    SandboxSlug, SecretBytes, StdFileSystem, Timestamp, WorkspaceName,
+    SandboxSlug, SecretBytes, StdFileSystem, WorkspaceName,
 };
 use jackin_openshell::contract::{ContractFixture, ContractGroup, run};
 use jackin_openshell::{
@@ -22,7 +21,8 @@ use jackin_openshell::{
     SandboxCreate, SandboxFile, SandboxQuery, resolve_gateway,
 };
 use jackin_session::{
-    DEFAULT_BUNDLE_BYTES, HostPorts, LaunchLimits, Session, SessionDeps, TokioProcessRunner,
+    DEFAULT_BUNDLE_BYTES, HostPorts, LaunchLimits, Session, SessionDeps, SystemClock,
+    TokioProcessRunner,
 };
 use jackin_testkit::FakeEngine;
 use tokio_util::sync::CancellationToken;
@@ -52,23 +52,6 @@ const SH: &str = "/bin/sh";
 const EXEC_TIMEOUT: Duration = Duration::from_secs(300);
 const READY_ATTEMPTS: usize = 240;
 const SYNTHETIC_MARK: &str = "jackin-p51b-driver";
-
-#[derive(Debug)]
-struct LiveClock;
-
-#[async_trait]
-impl Clock for LiveClock {
-    fn now(&self) -> Timestamp {
-        let seconds = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |elapsed| elapsed.as_secs());
-        Timestamp(i64::try_from(seconds).unwrap_or(i64::MAX))
-    }
-
-    async fn sleep(&self, duration: Duration) {
-        tokio::time::sleep(duration).await;
-    }
-}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Flag {
@@ -223,12 +206,11 @@ impl Live {
         );
         std::fs::create_dir_all(&options.work_dir)?;
         let work = options.work_dir.canonicalize()?;
-        let clock: Arc<dyn Clock> = Arc::new(LiveClock);
         let session = Session::new(SessionDeps {
             gateway: Arc::<GrpcGateway>::clone(&gateway),
             engine: Arc::new(FakeEngine::new()),
             host: HostPorts {
-                clock,
+                clock: Arc::new(SystemClock),
                 fs: Arc::clone(&fs),
                 runner: Arc::clone(&port),
             },
