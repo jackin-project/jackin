@@ -32,13 +32,6 @@ pub trait ImageEngine: Send + Sync + Debug {
     ) -> Result<ImageId, EngineError>;
 }
 
-fn describe(status: ProcessStatus) -> String {
-    match status {
-        ProcessStatus::Exited(code) => format!("exit code {code}"),
-        ProcessStatus::Signaled(signal) => format!("signal {signal}"),
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
 pub enum ContextProblem {
     #[error("is a symbolic link")]
@@ -60,13 +53,13 @@ pub enum EngineError {
         builder: BuilderName,
         driver: String,
     },
-    #[error("the {stage} build failed with {}:\n{}", describe(*.status), .tail.as_str())]
+    #[error("the {stage} build failed with {status}:\n{}", .tail.as_str())]
     BuildFailed {
         stage: BuildStage,
         status: ProcessStatus,
         tail: TerminalText,
     },
-    #[error("cannot read the driver of builder {builder}; its inspect command ended with {}:\n{}", describe(*.status), .output.as_str())]
+    #[error("cannot read the driver of builder {builder}; its inspect command ended with {status}:\n{}", .output.as_str())]
     BuilderUnreadable {
         builder: BuilderName,
         status: ProcessStatus,

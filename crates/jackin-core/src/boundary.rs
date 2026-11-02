@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
+use crate::display::plain_duration;
 use crate::ids::EnvName;
 use crate::paths::{HostPath, RepoPath};
 use crate::secret::{Secret, SecretBytes};
@@ -164,6 +165,16 @@ impl DockerSubcommand {
     }
 }
 
+impl fmt::Display for Program {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.binary())?;
+        for argument in self.leading_args() {
+            write!(f, " {argument}")?;
+        }
+        Ok(())
+    }
+}
+
 impl Program {
     pub fn binary(self) -> &'static str {
         match self {
@@ -245,6 +256,15 @@ pub enum ProcessStatus {
     Signaled(i32),
 }
 
+impl fmt::Display for ProcessStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProcessStatus::Exited(code) => write!(f, "exit code {code}"),
+            ProcessStatus::Signaled(signal) => write!(f, "signal {signal}"),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct OutputLine {
     pub stream: OutputStream,
@@ -264,6 +284,15 @@ impl Debug for OutputLine {
 pub enum OutputStream {
     Stdout,
     Stderr,
+}
+
+impl fmt::Display for OutputStream {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            OutputStream::Stdout => "stdout",
+            OutputStream::Stderr => "stderr",
+        })
+    }
 }
 
 pub type LineSink = tokio::sync::mpsc::Sender<OutputLine>;
@@ -286,35 +315,35 @@ pub trait ProcessRunner: Send + Sync + Debug {
 
 #[derive(Debug, Error)]
 pub enum FsError {
-    #[error("i/o error at {path:?}: {message}")]
+    #[error("i/o error at {path}: {message}")]
     Io {
         path: HostPath,
         kind: std::io::ErrorKind,
         message: String,
     },
-    #[error("already exists: {0:?}")]
+    #[error("already exists: {0}")]
     AlreadyExists(HostPath),
-    #[error("lock held: {0:?}")]
+    #[error("lock held: {0}")]
     LockHeld(HostPath),
-    #[error("refusing to replace the symbolic link {0:?}")]
+    #[error("refusing to replace the symbolic link {0}")]
     SymlinkTarget(HostPath),
 }
 
 #[derive(Debug, Error)]
 pub enum ProcessError {
-    #[error("failed to start {program:?}: {message}")]
+    #[error("failed to start {program}: {message}")]
     Spawn { program: Program, message: String },
-    #[error("{program:?} timed out after {after:?}")]
+    #[error("{program} timed out after {}", plain_duration(.after))]
     Timeout { program: Program, after: Duration },
-    #[error("{program:?} was cancelled")]
+    #[error("{program} was cancelled")]
     Cancelled { program: Program },
-    #[error("{program:?} wrote more than {limit} bytes to {stream:?}")]
+    #[error("{program} wrote more than {limit} bytes to {stream}")]
     OutputTooLarge {
         program: Program,
         stream: OutputStream,
         limit: usize,
     },
-    #[error("reading {stream:?} of {program:?} failed: {message}")]
+    #[error("reading {stream} of {program} failed: {message}")]
     Read {
         program: Program,
         stream: OutputStream,

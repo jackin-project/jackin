@@ -5,12 +5,13 @@ mod host;
 mod sandbox;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::path::Path;
 
 use jackin_core::{
     BranchName, CommitId, Config, EntropyError, FsError, HostPath, LabelError, LaunchId, PathError,
     Phase, ProcessError, ProcessStatus, ProjectRoot, SandboxLabels, SandboxName, SandboxPath,
-    Sha256, TerminalText, WorkspaceName, sandbox_layout,
+    Sha256, TerminalText, WorkspaceName, plain, plain_list, sandbox_layout,
 };
 use jackin_openshell::GatewayError;
 use thiserror::Error;
@@ -60,6 +61,22 @@ pub enum UnknownReason {
     InspectionFailed,
 }
 
+impl fmt::Display for UnknownReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UnknownReason::NotRunning(phase) => write!(f, "cannot be inspected ({phase})"),
+            UnknownReason::WorkspaceUnknown(workspace) => {
+                write!(
+                    f,
+                    "cannot be inspected (workspace {workspace} is not in the config)"
+                )
+            }
+            UnknownReason::NoRepository => f.write_str("cannot be inspected (no repository)"),
+            UnknownReason::InspectionFailed => f.write_str("cannot be inspected"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unexported {
     pub uncommitted: bool,
@@ -76,6 +93,38 @@ pub enum WorkState {
     Unknown(UnknownReason),
 }
 
+impl fmt::Display for WorkState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WorkState::Exported => f.write_str("exported"),
+            WorkState::Unexported(found) => {
+                let mut parts = Vec::new();
+                if found.uncommitted {
+                    parts.push("uncommitted changes".to_owned());
+                }
+                for branch in &found.branches {
+                    parts.push(format!("branch {branch} not exported"));
+                }
+                if let Some(commit) = &found.detached {
+                    parts.push(format!("detached HEAD {commit} not exported"));
+                }
+                for name in &found.worktrees {
+                    parts.push(format!("worktree {name} not exported"));
+                }
+                for name in &found.unusable {
+                    parts.push(format!("branch {} cannot be exported", plain(name)));
+                }
+                f.write_str(&parts.join(", "))
+            }
+            WorkState::Unknown(reason) => reason.fmt(f),
+        }
+    }
+}
+
+fn tip_text(found: Option<&CommitId>) -> String {
+    found.map_or_else(|| "no commit".to_owned(), ToString::to_string)
+}
+
 #[derive(Debug, Error)]
 pub enum ExportError {
     #[error(transparent)]
@@ -84,53 +133,53 @@ pub enum ExportError {
     Process(ProcessError),
     #[error(transparent)]
     Fs(#[from] FsError),
-    #[error("the labels of {sandbox:?} are invalid")]
+    #[error("the labels of {sandbox} are invalid")]
     Labels {
         sandbox: SandboxName,
         source: LabelError,
     },
-    #[error("sandbox {0:?} was not found")]
+    #[error("sandbox {0} was not found")]
     NotFound(SandboxName),
-    #[error("sandbox {sandbox:?} is not running: {phase:?}")]
+    #[error("sandbox {sandbox} is not running: {phase}")]
     NotRunning { sandbox: SandboxName, phase: Phase },
-    #[error("unknown workspace {0:?}")]
+    #[error("unknown workspace {0}")]
     WorkspaceUnknown(WorkspaceName),
     #[error(transparent)]
     Project(#[from] PathError),
     #[error(transparent)]
     Entropy(#[from] EntropyError),
-    #[error("sandbox {sandbox:?} has no project repository")]
+    #[error("sandbox {sandbox} has no project repository")]
     NoRepository { sandbox: SandboxName },
-    #[error("git in {sandbox:?} printed unusable output: {what}")]
+    #[error("git in {sandbox} printed unusable output: {what}")]
     SandboxOutput {
         sandbox: SandboxName,
         what: &'static str,
     },
-    #[error("git in the sandbox exited with {exit_code}: {output:?}")]
+    #[error("git in the sandbox exited with {exit_code}: {output}")]
     SandboxGit {
         exit_code: i32,
         output: TerminalText,
     },
-    #[error("git on the host failed with {status:?}: {output:?}")]
+    #[error("git on the host failed with {status}: {output}")]
     HostGit {
         status: ProcessStatus,
         output: TerminalText,
     },
     #[error("git on the host printed unusable output: {message}")]
     HostOutput { message: String },
-    #[error("ref conflict at {host_ref}: {output:?}")]
+    #[error("ref conflict at {host_ref}: {output}")]
     RefConflict {
         host_ref: String,
         output: TerminalText,
     },
-    #[error("{host_ref} is checked out in the worktree {worktree:?}")]
+    #[error("{host_ref} is checked out in the worktree {worktree}")]
     RefCheckedOut {
         host_ref: String,
         worktree: HostPath,
     },
-    #[error("the sandbox branch {branch:?} cannot be exported")]
+    #[error("the sandbox branch {branch} cannot be exported")]
     UnusableBranch { branch: TerminalText },
-    #[error("the bundle heads differ from the requested set: extra {extra:?}, missing {missing:?}")]
+    #[error("the bundle heads differ from the requested set: extra {}; missing {}", plain_list(.extra), plain_list(.missing))]
     BundleHeads {
         extra: Vec<TerminalText>,
         missing: Vec<String>,
@@ -139,7 +188,7 @@ pub enum ExportError {
     TooManyHeads { count: usize, limit: usize },
     #[error("the sandbox bundle is {size} bytes and the limit is {limit}")]
     BundleTooLarge { size: u64, limit: u64 },
-    #[error("{host_ref} expected tip {expected:?} but found {found:?}")]
+    #[error("{host_ref} expected tip {expected} but found {}", tip_text(.found.as_ref()))]
     TipMismatch {
         host_ref: String,
         expected: CommitId,

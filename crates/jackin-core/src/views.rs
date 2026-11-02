@@ -1,8 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
+use crate::display::plain;
 use crate::ids::{ImageId, ImageTag, ProviderName, SandboxName};
 use crate::labels::SandboxLabels;
 use crate::phase::Phase;
@@ -50,6 +53,16 @@ pub enum SupervisorReading {
     Unreadable,
     Reported(SupervisorState),
     Invalid(String),
+}
+
+impl fmt::Display for SupervisorReading {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SupervisorReading::Unreadable => f.write_str("unreadable"),
+            SupervisorReading::Reported(state) => f.write_str(&state.render()),
+            SupervisorReading::Invalid(message) => write!(f, "invalid ({})", plain(message)),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

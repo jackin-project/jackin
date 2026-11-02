@@ -108,3 +108,10 @@ fn unterminated_string_sequences_end_at_the_line_and_bidi_controls_are_stripped(
         assert_eq!(TerminalText::sanitize(text.as_bytes()).as_str(), text);
     }
 }
+
+#[test]
+fn display_prints_the_sanitized_text() {
+    let text = TerminalText::sanitize(b"a\x1b[31mb\nc");
+    assert_eq!(text.to_string(), "ab\nc");
+    assert_eq!(text.to_string(), text.as_str());
+}

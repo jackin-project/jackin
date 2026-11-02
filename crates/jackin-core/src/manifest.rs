@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use thiserror::Error;
 
@@ -61,6 +62,15 @@ pub struct EnvSpec {
 pub enum HookKind {
     Setup,
     Preflight,
+}
+
+impl fmt::Display for HookKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            HookKind::Setup => "setup",
+            HookKind::Preflight => "preflight",
+        })
+    }
 }
 
 #[derive(Debug, Error)]

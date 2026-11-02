@@ -7,6 +7,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::boundary::Clock;
+use crate::display::plain_duration;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PollPlan {
@@ -22,7 +23,7 @@ pub enum Poll<T> {
 
 #[derive(Debug, Error)]
 pub enum PollError<E: std::error::Error + 'static> {
-    #[error("timed out after {after:?}")]
+    #[error("timed out after {}", plain_duration(.after))]
     Timeout { after: Duration },
     #[error("cancelled")]
     Cancelled,

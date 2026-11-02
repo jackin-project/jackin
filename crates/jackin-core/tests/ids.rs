@@ -695,3 +695,29 @@ fn provider_name_for_every_valid_account_name_is_a_valid_provider_name() -> Test
     }
     Ok(())
 }
+
+#[test]
+fn an_invalid_character_is_shown_as_plain_text_even_when_it_is_a_control_character() {
+    let shown = |text: &str| {
+        ProviderName::parse(text)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default()
+    };
+    assert_eq!(
+        shown("a$b"),
+        "provider name has the invalid character $ at index 1"
+    );
+    assert_eq!(
+        shown("a\nb"),
+        "provider name has the invalid character \\n at index 1"
+    );
+    assert_eq!(
+        shown("a\u{1b}b"),
+        "provider name has the invalid character \\u{1b} at index 1"
+    );
+    assert_eq!(
+        shown("a\u{202e}b"),
+        "provider name has the invalid character \\u{202e} at index 1"
+    );
+}

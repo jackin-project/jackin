@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256 as Sha256Hasher};
 use thiserror::Error;
 
 use crate::agent::Agent;
+use crate::display::plain;
 
 const HEX: &[u8; 16] = b"0123456789abcdef";
 const BASE32: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
@@ -55,7 +56,7 @@ pub enum IdError {
         max: usize,
         len: usize,
     },
-    #[error("{kind} has the invalid character {ch:?} at index {index}")]
+    #[error("{kind} has the invalid character {} at index {index}", plain(.ch))]
     InvalidChar {
         kind: &'static str,
         ch: char,

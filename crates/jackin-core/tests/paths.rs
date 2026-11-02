@@ -191,3 +191,31 @@ async fn project_root_open_requires_a_directory_with_a_git_entry() -> TestResult
     ));
     Ok(())
 }
+
+#[test]
+fn path_newtypes_print_their_value_as_plain_text() -> TestResult {
+    let host = |text: &str| HostPath::parse(Path::new(text));
+    assert_eq!(host("/a/b c/\u{fc}")?.to_string(), "/a/b c/\u{fc}");
+    assert_eq!(host("/q\"d\\e")?.to_string(), "/q\"d\\e");
+    assert_eq!(host("/a/b\nc\u{1b}")?.to_string(), "/a/b\\nc\\u{1b}");
+    assert_eq!(
+        SandboxPath::parse("/sandbox/project/")?.to_string(),
+        "/sandbox/project"
+    );
+    assert_eq!(RepoPath::parse("src/a.rs")?.to_string(), "src/a.rs");
+    Ok(())
+}
+
+#[tokio::test]
+async fn project_root_prints_its_host_path() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    std::fs::create_dir_all(dir.path().join("plain/.git"))?;
+    let path = HostPath::parse(&dir.path().join("plain"))?;
+    let root = ProjectRoot::open(&StdFileSystem::default(), &path).await?;
+    assert_eq!(root.to_string(), path.to_string());
+    assert_eq!(
+        root.to_string(),
+        dir.path().join("plain").display().to_string()
+    );
+    Ok(())
+}

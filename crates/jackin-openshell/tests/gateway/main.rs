@@ -14,6 +14,7 @@ mod connect;
 mod contract;
 mod discovery;
 mod ended;
+mod error_text;
 mod exec;
 mod exec_rpc;
 mod fakes;

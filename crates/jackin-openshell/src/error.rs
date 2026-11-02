@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::fmt;
 use std::time::Duration;
 
 use jackin_core::{
     FsError, GatewayName, HostPath, OpenShellWorkspace, OutputStream, Phase, ProcessError,
-    ProcessStatus, ProfileId, ProviderName, SandboxName, TerminalText,
+    ProcessStatus, ProfileId, ProviderName, SandboxName, TerminalText, plain, plain_duration,
+    plain_list,
 };
 use thiserror::Error;
 
@@ -15,7 +17,7 @@ use crate::policy::{ClosureViolation, RuleKey};
 pub enum GatewayError {
     #[error("gateway {endpoint} is unreachable: {message}")]
     Unreachable { endpoint: String, message: String },
-    #[error("the supervisor of {sandbox:?} is unreachable: {message}")]
+    #[error("the supervisor of {sandbox} is unreachable: {message}")]
     SandboxUnreachable {
         sandbox: SandboxName,
         message: String,
@@ -26,13 +28,13 @@ pub enum GatewayError {
     Unauthenticated,
     #[error("permission denied: {what}")]
     PermissionDenied { what: String },
-    #[error("not found: {what:?}")]
+    #[error("not found: {what}")]
     NotFound { what: Missing },
-    #[error("already exists: {what:?}")]
+    #[error("already exists: {what}")]
     AlreadyExists { what: Missing },
-    #[error("the sandbox is not ready: {phase:?}")]
+    #[error("the sandbox is not ready: {phase}")]
     NotReady { phase: Phase },
-    #[error("the main process of {sandbox:?} has ended")]
+    #[error("the main process of {sandbox} has ended")]
     MainProcessFailed { sandbox: SandboxName },
     #[error("failed precondition: {message}")]
     FailedPrecondition { message: String },
@@ -40,13 +42,13 @@ pub enum GatewayError {
     ResourceExhausted { what: String },
     #[error("invalid argument {field}: {message}")]
     InvalidArgument { field: String, message: String },
-    #[error("{op:?} timed out after {after:?}")]
+    #[error("{op} timed out after {}", plain_duration(.after))]
     Timeout { op: GatewayOp, after: Duration },
-    #[error("{op:?} was cancelled")]
+    #[error("{op} was cancelled")]
     Cancelled { op: GatewayOp },
     #[error(transparent)]
     Process(#[from] ProcessError),
-    #[error("{op:?} failed with {status:?}: {tail:?}")]
+    #[error("{op} failed with {status}: {tail}")]
     Transfer {
         op: TransferOp,
         status: ProcessStatus,
@@ -54,7 +56,7 @@ pub enum GatewayError {
     },
     #[error("the remote file has {size} bytes, more than the limit of {limit}")]
     DownloadTooLarge { size: u64, limit: u64 },
-    #[error("the {stream:?} output of {op:?} is larger than {limit} bytes")]
+    #[error("the {stream} output of {op} is larger than {limit} bytes")]
     OutputTooLarge {
         op: GatewayOp,
         stream: OutputStream,
@@ -104,29 +106,81 @@ pub enum TransferOp {
     Size,
 }
 
+impl fmt::Display for Missing {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Missing::Sandbox(name) => write!(f, "sandbox {name}"),
+            Missing::Provider(name) => write!(f, "provider {name}"),
+            Missing::Profile(id) => write!(f, "profile {id}"),
+            Missing::Workspace(name) => write!(f, "workspace {name}"),
+        }
+    }
+}
+
+impl fmt::Display for GatewayOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            GatewayOp::Health => "health",
+            GatewayOp::Profile => "profile",
+            GatewayOp::Provider => "provider",
+            GatewayOp::Create => "create",
+            GatewayOp::Find => "find",
+            GatewayOp::Detail => "detail",
+            GatewayOp::Power => "power",
+            GatewayOp::Delete => "delete",
+            GatewayOp::Program => "program",
+            GatewayOp::ReadFiles => "read files",
+            GatewayOp::WriteFile => "write file",
+            GatewayOp::UploadTree => "upload tree",
+            GatewayOp::UploadFile => "upload file",
+            GatewayOp::Download => "download",
+            GatewayOp::Terminal => "terminal",
+        })
+    }
+}
+
+impl fmt::Display for TransferOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            TransferOp::UploadFiltered => "upload filtered",
+            TransferOp::UploadFile => "upload file",
+            TransferOp::Download => "download",
+            TransferOp::Digest => "digest",
+            TransferOp::Size => "size",
+        })
+    }
+}
+
+fn scheme_text(scheme: Option<&str>) -> String {
+    scheme.map_or_else(
+        || "no endpoint scheme".to_owned(),
+        |scheme| format!("the endpoint scheme {}", plain(scheme)),
+    )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
 #[error("the terminal session is closed")]
 pub struct SessionClosed;
 
 #[derive(Debug, Error)]
 pub enum DiscoveryError {
-    #[error("gateway list failed with {status:?}: {tail:?}")]
+    #[error("gateway list failed with {status}: {tail}")]
     ListFailed {
         status: ProcessStatus,
         tail: TerminalText,
     },
     #[error("gateway list output cannot be parsed: {message}")]
     ListUnparsable { message: String },
-    #[error("gateway {0:?} is not registered")]
+    #[error("gateway {0} is not registered")]
     UnknownGateway(GatewayName),
-    #[error("gateway {name:?} has the endpoint scheme {scheme:?}; only https is accepted")]
+    #[error("gateway {name} has {}; only https is accepted", scheme_text(.scheme.as_deref()))]
     InsecureEndpoint {
         name: GatewayName,
         scheme: Option<String>,
     },
-    #[error("gateway {name:?} uses the authentication {auth:?}; only mtls is accepted")]
+    #[error("gateway {name} uses the authentication {}; only mtls is accepted", plain(.auth))]
     UnsupportedAuth { name: GatewayName, auth: String },
-    #[error("missing certificate {path:?}")]
+    #[error("missing certificate {path}")]
     MissingCertificate { path: HostPath },
     #[error(transparent)]
     Process(#[from] ProcessError),
@@ -146,7 +200,7 @@ pub enum PolicyError {
     InvalidHost(String),
     #[error("rule {rule} has the invalid port {port}")]
     InvalidPort { rule: String, port: i64 },
-    #[error("duplicate rule {0:?}")]
+    #[error("duplicate rule {0}")]
     DuplicateRule(RuleKey),
     #[error("profile {id}: {message}")]
     Profile { id: String, message: String },
@@ -156,7 +210,7 @@ pub enum PolicyError {
 pub enum ClosedPolicyError {
     #[error(transparent)]
     Policy(#[from] PolicyError),
-    #[error("the policy overlaps provider hosts: {0:?}")]
+    #[error("the policy overlaps provider hosts: {}", plain_list(.0))]
     Violations(Vec<ClosureViolation>),
 }
 

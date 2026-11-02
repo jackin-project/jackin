@@ -4,6 +4,7 @@
 mod accounts;
 mod docker;
 mod env;
+mod error_text;
 mod errors;
 mod files;
 mod identity;

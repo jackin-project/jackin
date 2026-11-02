@@ -21,7 +21,7 @@ pub struct ChatgptLogin {
 
 #[derive(Debug, Error)]
 pub enum CredentialError {
-    #[error("cannot read the login at {path:?}")]
+    #[error("cannot read the login at {path}")]
     LoginUnreadable { path: HostPath },
     #[error("auth.json is invalid at {key}")]
     AuthJsonInvalid { key: String },

@@ -52,7 +52,7 @@ pub enum CommandError {
     Role(#[from] RoleError),
     #[error("the role is invalid")]
     RoleFindings(Vec<RoleError>),
-    #[error("launch failed at step {:?}: {}", .0.step, .0.error)]
+    #[error("launch failed at step {}: {}", .0.step, .0.error)]
     Launch(LaunchFailure),
     #[error(transparent)]
     Attach(#[from] AttachError),

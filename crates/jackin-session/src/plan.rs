@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::num::NonZeroU8;
 use std::time::Duration;
 
@@ -10,7 +11,7 @@ use jackin_core::{
     Config, ConfigError, CredentialSource, DockerCapability, DockerError, DockerLayer, EnvFile,
     EnvFileError, EnvName, FileMode, GatewayName, LaunchId, NameSuffix, PathError, PlannedLabels,
     ProjectRoot, Provider, ProviderName, RoleManifest, RoleName, SandboxName, SandboxPath,
-    SelectionError, Workspace, WorkspaceName, sandbox_layout,
+    SelectionError, Workspace, WorkspaceName, plain_list, sandbox_layout,
 };
 use jackin_image::{ImageError, ImageRequest, Rebuild};
 use jackin_openshell::{
@@ -42,6 +43,12 @@ pub struct EnvQuestion {
     pub name: EnvName,
     pub prompt: Option<String>,
     pub default: Option<String>,
+}
+
+impl fmt::Display for EnvQuestion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.name.fmt(f)
+    }
 }
 
 pub const DEFAULT_BUNDLE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
@@ -118,13 +125,13 @@ pub enum PlanError {
     Closure(#[from] ClosedPolicyError),
     #[error(transparent)]
     Docker(#[from] DockerError),
-    #[error("environment values are needed: {0:?}")]
+    #[error("environment values are needed: {}", plain_list(.0))]
     EnvNeeded(Vec<EnvQuestion>),
-    #[error("environment names are not declared by the role: {0:?}")]
+    #[error("environment names are not declared by the role: {}", plain_list(.0))]
     EnvUndeclared(Vec<EnvName>),
     #[error(transparent)]
     EnvFile(#[from] EnvFileError),
-    #[error("account {account:?} uses {mode:?}, which is not supported yet")]
+    #[error("account {account} uses {mode}, which is not supported yet")]
     Unsupported {
         account: AccountName,
         mode: CodexAuthMode,

@@ -12,7 +12,7 @@ pub struct EnvFile(BTreeMap<EnvName, String>);
 
 #[derive(Debug, Error)]
 pub enum EnvFileError {
-    #[error("invalid value for {name:?}")]
+    #[error("invalid value for {name}")]
     InvalidValue { name: EnvName },
     #[error("syntax error at line {line}")]
     Syntax { line: usize },

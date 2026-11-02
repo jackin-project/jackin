@@ -125,6 +125,12 @@ enum Scan {
     StrEscape,
 }
 
+impl fmt::Display for TerminalText {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 impl TerminalText {
     pub fn sanitize(bytes: &[u8]) -> TerminalText {
         let decoded = String::from_utf8_lossy(bytes);

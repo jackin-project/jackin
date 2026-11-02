@@ -5,7 +5,7 @@ use jackin::ExitClass;
 use jackin_core::{Labels, LsOutput, Phase, SandboxLabels, SandboxName, SandboxSummary};
 use jackin_testkit::{Rig, SandboxHandle, TestResult, World, guard};
 
-use super::support::{Failure, FixedConnector, Harness, keys, names};
+use super::support::{Failure, FixedConnector, GATEWAY_CONFIG, Harness, keys, names};
 
 fn summary(handle: &SandboxHandle) -> Result<SandboxSummary, Failure> {
     Ok(SandboxSummary {
@@ -88,6 +88,7 @@ async fn ls_without_json_prints_the_managed_names_and_an_empty_gateway_is_a_lite
             assert!(ran.stdout.contains(sandbox.name.as_str()), "{}", ran.stdout);
         }
         assert!(!ran.stdout.contains("jackin-ghost-0000"));
+        assert!(!ran.stderr.contains("no sandboxes"), "{}", ran.stderr);
 
         let world = World::builder().build()?;
         let harness = Harness::new(&world);
@@ -101,6 +102,35 @@ async fn ls_without_json_prints_the_managed_names_and_an_empty_gateway_is_a_lite
         let mut offline = Harness::new(&world);
         offline.connector = FixedConnector::empty();
         assert_eq!(offline.run(&["ls", "--json"]).await?.exit, ExitClass::Failure);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_empty_gateway_prints_no_sandboxes_in_human_output_only() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        harness.write_config(GATEWAY_CONFIG)?;
+        let ran = harness.run(&["ls"]).await?;
+        assert_eq!(ran.exit, ExitClass::Ok);
+        assert!(ran.stdout.is_empty(), "{}", ran.stdout);
+        assert_eq!(ran.stderr, "no sandboxes\n");
+
+        let broken = SandboxName::parse("jackin-broken-0002")?;
+        world.gateway.insert_unmanaged(
+            &broken,
+            Labels::from_pairs([("jackin.dev/managed".to_owned(), "true".to_owned())])?,
+            Phase::Ready,
+        )?;
+        let ran = harness.run(&["ls"]).await?;
+        assert_eq!(ran.exit, ExitClass::Ok);
+        assert!(ran.stdout.is_empty(), "{}", ran.stdout);
+        assert_eq!(
+            ran.stderr,
+            "warning: sandbox jackin-broken-0002 has unreadable labels and is not listed: missing label jackin.dev/agent\nno sandboxes\n"
+        );
         Ok(())
     })
     .await
