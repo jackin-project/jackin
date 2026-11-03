@@ -89,15 +89,74 @@ pub(super) async fn check(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<(), 
     if listing.skipped {
         return Err(UnsupportedProject::SparseCheckout.into());
     }
-    let submodules = populated(fs, git.root, &listing.gitlinks).await?;
+    let submodules = populated(fs, git.root(), &listing.gitlinks).await?;
     if !submodules.is_empty() {
         return Err(UnsupportedProject::PopulatedSubmodules(submodules).into());
     }
-    let nested = populated(fs, git.root, &listing.untracked_dirs).await?;
+    let nested = populated(fs, git.root(), &listing.untracked_dirs).await?;
     if nested.is_empty() {
         Ok(())
     } else {
         Err(UnsupportedProject::NestedRepositories(nested).into())
+    }
+}
+
+pub(super) async fn borrowed_objects(
+    fs: &dyn FileSystem,
+    git_dir: &HostPath,
+) -> Result<(), LaunchError> {
+    let at = |name: &str| {
+        HostPath::resolve(Path::new(name), git_dir).map_err(|error| malformed(&error.to_string()))
+    };
+    let objects = at("objects")?;
+    if fs.stat(&objects).await? == Some(FileKind::Symlink) {
+        return Err(UnsupportedProject::LinkedObjects(objects).into());
+    }
+    for name in ["objects/info/alternates", "objects/info/http-alternates"] {
+        let file = at(name)?;
+        if fs.stat(&file).await?.is_some() {
+            return Err(UnsupportedProject::Alternates(file).into());
+        }
+    }
+    let pack = at("objects/pack")?;
+    if matches!(fs.stat(&pack).await?, Some(kind) if kind != FileKind::Dir) {
+        return Err(UnsupportedProject::LinkedObjects(pack).into());
+    }
+    let mut pending = vec![objects];
+    while let Some(dir) = pending.pop() {
+        for entry in fs.list(&dir).await? {
+            let path = HostPath::resolve(Path::new(&entry.name), &dir)
+                .map_err(|error| malformed(&error.to_string()))?;
+            match entry.kind {
+                FileKind::Dir => pending.push(path),
+                FileKind::File => {}
+                FileKind::Symlink | FileKind::Socket => {
+                    return Err(UnsupportedProject::LinkedObjects(path).into());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn unchanged(staged: &UploadListing, now: &UploadListing) -> Result<(), LaunchError> {
+    let before: BTreeSet<&[u8]> = staged.paths().collect();
+    let after: BTreeSet<&[u8]> = now.paths().collect();
+    let named = |names: Vec<&[u8]>| -> Result<Vec<RepoPath>, LaunchError> {
+        names
+            .into_iter()
+            .map(|name| {
+                RepoPath::parse(&String::from_utf8_lossy(name))
+                    .map_err(|error| malformed(&error.to_string()))
+            })
+            .collect()
+    };
+    let added = named(after.difference(&before).copied().collect())?;
+    let removed = named(before.difference(&after).copied().collect())?;
+    if added.is_empty() && removed.is_empty() {
+        Ok(())
+    } else {
+        Err(UnsupportedProject::ChangedDuringUpload { added, removed }.into())
     }
 }
 

@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use jackin_core::{GatewayName, HostPath, OpenShellWorkspace};
+use jackin_core::{GatewayName, HostPath, OpenShellWorkspace, ProcessRunner};
 use jackin_openshell::{GrpcGateway, GrpcGatewayConfig, resolve_gateway};
 use tokio_util::sync::CancellationToken;
 
@@ -92,7 +92,7 @@ pub(crate) fn config(
     env: &Env,
     gateway: jackin_openshell::ResolvedGateway,
     workspace: &str,
-    runner: ScriptedRunner,
+    runner: impl ProcessRunner + 'static,
 ) -> GrpcGatewayConfig {
     let _ = env;
     GrpcGatewayConfig {

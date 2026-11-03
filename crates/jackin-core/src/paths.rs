@@ -39,6 +39,10 @@ pub enum PathError {
     NotADirectory(HostPath),
     #[error("not a git work tree: {0}")]
     NotAGitWorkTree(HostPath),
+    #[error(
+        "the .git of {0} is a symlink or another kind of file; use a normal repository, a linked worktree, or a submodule checkout"
+    )]
+    UnsupportedGitEntry(HostPath),
     #[error(transparent)]
     Fs(#[from] FsError),
 }
@@ -178,10 +182,13 @@ impl ProjectRoot {
         if fs.stat(path).await? != Some(FileKind::Dir) {
             return Err(PathError::NotADirectory(path.clone()));
         }
-        if fs.stat(&path.join_name(".git")).await?.is_none() {
-            return Err(PathError::NotAGitWorkTree(path.clone()));
+        let git = path.join_name(".git");
+        match fs.stat(&git).await? {
+            None => Err(PathError::NotAGitWorkTree(path.clone())),
+            Some(FileKind::Dir) => Ok(ProjectRoot(path.clone())),
+            Some(FileKind::File) => Ok(ProjectRoot(path.clone())),
+            Some(_) => Err(PathError::UnsupportedGitEntry(path.clone())),
         }
-        Ok(ProjectRoot(path.clone()))
     }
 
     pub fn path(&self) -> &HostPath {

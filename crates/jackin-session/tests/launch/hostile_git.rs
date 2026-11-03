@@ -16,6 +16,7 @@ async fn a_launch_and_an_export_run_no_program_named_by_the_project_repository_c
         let root = rig.repo.root().as_path();
         trap.arm_hostile(root).await?;
         trap.prove_armed(root).await?;
+        std::fs::remove_file(root.join(".git/objects/info/alternates"))?;
         rig.launch(1).await?;
         assert_eq!(trap.fired(), "", "the launch ran a program of the project");
         let handle = rig.handle(1).await?;
