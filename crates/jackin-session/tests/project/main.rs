@@ -15,6 +15,8 @@ mod oracle;
 mod refuse;
 mod refuse_deep;
 mod refuse_filter;
+mod refuse_git;
+mod refuse_objects;
 mod refuse_symlink;
 mod retry;
 mod secrets;

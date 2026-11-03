@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use jackin_core::{
     Clock, Config, HostPath, LabelSelector, LaunchId, ProcessRunner, ProjectRoot, RoleName,
-    SandboxPath, sandbox_layout,
+    SandboxPath, StdFileSystem, sandbox_layout,
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, SandboxQuery};
@@ -59,6 +59,11 @@ pub(crate) struct Rig {
 
 impl Rig {
     pub(crate) async fn new(repo: RepoFixture) -> Result<Rig, Box<dyn Error>> {
+        let at = repo.root().clone();
+        Rig::new_at(repo, &at).await
+    }
+
+    pub(crate) async fn new_at(repo: RepoFixture, at: &HostPath) -> Result<Rig, Box<dyn Error>> {
         let world = World::builder().build()?;
         let role = RoleFixture::new("sentinel")?;
         role.commit().await?;
@@ -86,10 +91,10 @@ impl Rig {
             "default_gateway = \"fake-gateway\"\n\n[gateways.fake-gateway]\nopenshell_workspace = \"default\"\nbuilder = \"jackin-builder\"\nplatform = \"linux/arm64\"\n\n[accounts.work]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{ACCOUNT_ID}\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.platform-backend]\npath = \"{}\"\n",
             home.as_path().display(),
             role.root().as_path().display(),
-            repo.root().as_path().display(),
+            at.as_path().display(),
         ))?;
         world.seed_config(&config).await?;
-        let project = repo.project().await?;
+        let project = ProjectRoot::open(&StdFileSystem::default(), at).await?;
         world.gateway.script_program(
             &sandbox_layout::PRINTENV,
             jackin_testkit::ProgramScript {

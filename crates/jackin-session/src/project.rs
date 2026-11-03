@@ -116,6 +116,10 @@ pub enum UnsupportedProject {
         removed: Vec<RepoPath>,
     },
     #[error(
+        "the git directory of {0} does not belong to it (a redirect to another repository, a separate git directory, or a shared common directory); use a normal repository, a linked worktree, or a submodule checkout"
+    )]
+    ForeignGit(HostPath),
+    #[error(
         "the object store borrows objects from other repositories through {0}; run `git repack -a -d`, then remove the file"
     )]
     Alternates(HostPath),
