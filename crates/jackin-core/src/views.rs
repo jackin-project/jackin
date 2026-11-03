@@ -5,6 +5,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::boundary::Timestamp;
 use crate::display::plain;
 use crate::ids::{ImageId, ImageTag, ProviderName, SandboxName};
 use crate::labels::SandboxLabels;
@@ -22,6 +23,8 @@ pub struct SandboxSummary {
     pub name: SandboxName,
     pub labels: SandboxLabels,
     pub phase: Phase,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<Timestamp>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

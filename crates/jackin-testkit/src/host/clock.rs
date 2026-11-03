@@ -20,6 +20,7 @@ pub struct FakeClock {
 
 #[derive(Debug, Default)]
 struct ClockState {
+    offset: i32,
     elapsed: Duration,
     slept: Vec<Duration>,
     waiting: BTreeMap<u64, Duration>,
@@ -48,6 +49,10 @@ impl FakeClock {
         locked(&self.state).elapsed += by;
     }
 
+    pub fn set_utc_offset(&self, seconds: i32) {
+        locked(&self.state).offset = seconds;
+    }
+
     pub fn slept(&self) -> Vec<Duration> {
         locked(&self.state).slept.clone()
     }
@@ -64,6 +69,10 @@ impl Clock for FakeClock {
     fn now(&self) -> Timestamp {
         let elapsed = locked(&self.state).elapsed.as_secs();
         Timestamp(START.saturating_add(i64::try_from(elapsed).unwrap_or(i64::MAX)))
+    }
+
+    fn utc_offset_secs(&self) -> i32 {
+        locked(&self.state).offset
     }
 
     async fn sleep(&self, duration: Duration) {

@@ -4,9 +4,9 @@
 use std::path::Path;
 
 use jackin_core::{
-    Account, AccountName, AccountQuery, Agent, Config, ConfigEdit, ConfigError, ConfigReference,
-    CredentialSource, EngineConfig, EnvName, GatewayEntry, GatewayName, HostPath, Platform,
-    Provider, RoleName, RoleSource, SelectionRule, Workspace, WorkspaceName,
+    Account, AccountName, AccountQuery, Agent, ChatgptAccountId, Config, ConfigEdit, ConfigError,
+    ConfigReference, CredentialSource, EngineConfig, EnvName, GatewayEntry, GatewayName, HostPath,
+    Platform, Provider, RoleName, RoleSource, SelectionRule, Workspace, WorkspaceName,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -237,6 +237,19 @@ fn account_rows() -> Fallible<Vec<Row>> {
             "remove account",
             ConfigEdit::RemoveAccount(acct("ci")?),
             unset(&[&["accounts", "ci"]]),
+        ),
+        row(
+            "replace an account credential",
+            ConfigEdit::SetAccountCredential {
+                account: acct("work")?,
+                credential: CredentialSource::File {
+                    path: hp("/keys/work")?,
+                },
+            },
+            set(
+                &["accounts", "work", "credential"],
+                "{ source = \"file\", path = \"/keys/work\" }",
+            ),
         ),
         row(
             "set default account",
@@ -540,6 +553,16 @@ fn missing_rows() -> Fallible<Vec<RejectedRow>> {
             "reference:role:ghost".to_owned(),
         ),
         (
+            "credential of a ghost account",
+            ConfigEdit::SetAccountCredential {
+                account: acct("ghost")?,
+                credential: CredentialSource::File {
+                    path: hp("/keys/ghost")?,
+                },
+            },
+            "reference:account:ghost".to_owned(),
+        ),
+        (
             "remove ghost workspace",
             ConfigEdit::RemoveWorkspace(ws("ghost")?),
             "reference:workspace:ghost".to_owned(),
@@ -621,6 +644,17 @@ fn blocked_rows() -> Fallible<Vec<RejectedRow>> {
                 account: acct("personal")?,
             },
             "mismatch:personal:codex:claude".to_owned(),
+        ),
+        (
+            "a ChatGPT login on a claude account",
+            ConfigEdit::SetAccountCredential {
+                account: acct("personal")?,
+                credential: CredentialSource::CodexLogin {
+                    home: hp("/codex")?,
+                    chatgpt_account_id: ChatgptAccountId::parse("acct-1")?,
+                },
+            },
+            "credential:claude".to_owned(),
         ),
         (
             "account in use by three",

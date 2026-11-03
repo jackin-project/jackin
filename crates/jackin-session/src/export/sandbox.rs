@@ -8,13 +8,16 @@ use std::time::Duration;
 use jackin_core::{
     BranchName, CommitId, EnvName, SandboxName, SandboxPath, TerminalText, sandbox_layout,
 };
+
+use super::diff::{ChangedFile, added_file, parse_patch};
 use jackin_openshell::{Gateway, GatewayError, ProgramOutcome, ProgramRun, ProgramStdin};
 use tokio_util::sync::CancellationToken;
 
 const HEADS: &str = "refs/heads/";
-const STASH: &str = "refs/stash";
 const NOT_A_REPOSITORY: &str = "not a git repository";
 const CLEANUP: Duration = Duration::from_secs(10);
+const UNTRACKED_FILES: usize = 500;
+const UNTRACKED_BYTES: usize = 256 * 1024;
 static MKDIR: SandboxPath = SandboxPath::from_static("/usr/bin/mkdir");
 static RM: SandboxPath = SandboxPath::from_static("/usr/bin/rm");
 
@@ -75,6 +78,13 @@ fn failure(outcome: &ProgramOutcome) -> RemoteError {
         exit_code: outcome.exit_code,
         output: TerminalText::sanitize(text),
     }
+}
+
+fn lines(output: &[u8]) -> usize {
+    output
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .count()
 }
 
 fn checkouts(listed: &[u8]) -> Result<Vec<Checkout>, RemoteError> {
@@ -259,22 +269,91 @@ impl Remote<'_> {
         Ok(repository)
     }
 
-    pub(super) async fn uncommitted(&self, repository: &Repository) -> Result<bool, RemoteError> {
-        let stash = self
-            .require(&["for-each-ref", "--format=%(refname)", STASH])
-            .await?;
-        if !stash.is_empty() {
-            return Ok(true);
-        }
+    pub(super) async fn uncommitted(&self, repository: &Repository) -> Result<usize, RemoteError> {
+        let stashed = self.require(&["stash", "list"]).await?;
+        let mut count = lines(&stashed);
         for path in &repository.checkouts {
             let status = self
-                .require(&["-C", path, "--no-optional-locks", "status", "--porcelain"])
+                .require(&[
+                    "-C",
+                    path,
+                    "--no-optional-locks",
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=all",
+                ])
                 .await?;
-            if !status.is_empty() {
-                return Ok(true);
-            }
+            count += lines(&status);
         }
-        Ok(false)
+        Ok(count)
+    }
+
+    pub(super) async fn changes(
+        &self,
+        repository: &Repository,
+    ) -> Result<Vec<ChangedFile>, RemoteError> {
+        let root = repository.checkouts.first().ok_or(RemoteError::Malformed(
+            "git worktree list printed no checkout",
+        ))?;
+        let head = self
+            .git(&["-C", root, "rev-parse", "--verify", "--quiet", "HEAD"])
+            .await?;
+        let mut files = if head.exit_code == 0 {
+            let patch = self
+                .require(&[
+                    "-C",
+                    root,
+                    "-c",
+                    "core.quotepath=false",
+                    "diff",
+                    "--no-color",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--find-renames",
+                    "-U3",
+                    "HEAD",
+                    "--",
+                ])
+                .await?;
+            parse_patch(&patch).map_err(RemoteError::Malformed)?
+        } else {
+            Vec::new()
+        };
+        let listed = self
+            .require(&[
+                "-C",
+                root,
+                "ls-files",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ])
+            .await?;
+        let names: Vec<String> = listed
+            .split(|byte| *byte == 0)
+            .filter(|name| !name.is_empty())
+            .take(UNTRACKED_FILES)
+            .map(|name| String::from_utf8_lossy(name).into_owned())
+            .collect();
+        let paths: Vec<Option<SandboxPath>> = names
+            .iter()
+            .map(|name| sandbox_layout::PROJECT.join(name).ok())
+            .collect();
+        let wanted: Vec<SandboxPath> = paths.iter().flatten().cloned().collect();
+        let mut contents = self
+            .gateway
+            .read_files(self.name, &wanted)
+            .await?
+            .into_iter();
+        for (name, path) in names.iter().zip(&paths) {
+            let content = path
+                .as_ref()
+                .and_then(|_| contents.next())
+                .flatten()
+                .filter(|bytes| bytes.len() <= UNTRACKED_BYTES);
+            files.push(added_file(name, content.as_deref()));
+        }
+        Ok(files)
     }
 
     pub(super) async fn discard(&self, target: &SandboxPath) {

@@ -21,3 +21,4 @@ mod rate;
 mod schema;
 mod secrets;
 mod support;
+mod text;

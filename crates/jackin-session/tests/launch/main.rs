@@ -12,6 +12,7 @@ mod docker_fence;
 mod docker_support;
 mod events;
 mod exists;
+mod failure_text;
 mod hooks;
 mod hostile_git;
 mod hostile_launch;

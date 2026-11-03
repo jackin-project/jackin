@@ -50,7 +50,7 @@ async fn inspect_json_pins_every_key_set_and_reports_the_live_closure_violation(
         assert_eq!(value["schema"], 1);
         assert_eq!(
             keys(&value["summary"])?,
-            names(&["name", "labels", "phase"])
+            names(&["name", "labels", "phase", "created_at"])
         );
         assert_eq!(
             keys(&value["policy"])?,

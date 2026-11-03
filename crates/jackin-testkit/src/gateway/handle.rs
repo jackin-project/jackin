@@ -8,14 +8,15 @@ use std::sync::Arc;
 
 use jackin_core::{
     CommitId, EnvName, FileMode, Labels, Phase, SandboxName, SandboxPath, SupervisorState,
-    sandbox_layout,
+    Timestamp, sandbox_layout,
 };
 use jackin_openshell::TermSize;
 
-use super::RunRecord;
 use super::exec::host_path;
 use super::state::Cell;
+use super::{RunRecord, ShellWitness};
 use crate::fixtures::{FixtureError, git};
+use crate::sync::locked;
 
 #[derive(Clone, Debug)]
 pub struct SandboxHandle {
@@ -33,6 +34,10 @@ impl SandboxHandle {
 
     pub fn root(&self) -> PathBuf {
         self.cell.root()
+    }
+
+    pub fn created_at(&self) -> Option<Timestamp> {
+        self.cell.state().created_at
     }
 
     pub fn phase(&self) -> Phase {
@@ -94,6 +99,35 @@ impl SandboxHandle {
 
     pub fn pty_size(&self) -> Option<TermSize> {
         self.cell.state().main.pty()
+    }
+
+    pub fn resizes(&self) -> Vec<TermSize> {
+        self.cell.state().main.resizes()
+    }
+
+    pub fn raw_input(&self) -> Vec<u8> {
+        self.cell.state().main.raw()
+    }
+
+    pub fn advance_repaint(&self) {
+        self.cell.state().main.advance_repaint();
+    }
+
+    pub fn set_replay_window(&self, bytes: Option<usize>) {
+        self.cell.state().replay_window = bytes;
+    }
+
+    pub fn set_stream_exit_status(&self, status: Option<i32>) {
+        self.cell.state().stream_status = status;
+    }
+
+    pub fn shells(&self) -> Vec<ShellWitness> {
+        self.cell
+            .state()
+            .shells
+            .iter()
+            .map(|shell| locked(shell).clone())
+            .collect()
     }
 
     pub fn runs(&self, program: &SandboxPath) -> Vec<RunRecord> {

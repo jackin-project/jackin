@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin::ExitClass;
+use jackin_session::CheckId;
 use jackin_testkit::{ProcessReply, ScriptedProgram, TestResult, World, guard};
 use tokio_util::sync::CancellationToken;
 
@@ -97,6 +98,9 @@ async fn healthy_fakes_exit_ok_and_print_one_line_per_check_id_on_stdout_only() 
         let ran = harness.run(&["doctor"]).await?;
         ran.ok()?;
         assert!(ran.stderr.is_empty(), "{}", ran.stderr);
+        for line in ran.stdout.lines().filter(|line| line.starts_with("pass")) {
+            assert!(!line.contains("fix:"), "{line}");
+        }
         reported(&ran, ExitClass::Ok, &IDS, &[])
     })
     .await
@@ -113,6 +117,18 @@ async fn a_missing_engine_socket_is_only_a_warning() -> TestResult {
         ran.ok()?;
         assert!(ran.stderr.is_empty(), "{}", ran.stderr);
         assert!(ran.stdout.contains("warn"), "{}", ran.stdout);
+        assert_eq!(
+            ran.stdout.matches("fix:").count(),
+            1,
+            "only the warning carries a fix: {}",
+            ran.stdout
+        );
+        assert!(
+            ran.stdout
+                .contains(&format!("fix: {}", CheckId::EngineSocket.fix())),
+            "{}",
+            ran.stdout
+        );
         reported(&ran, ExitClass::Ok, &IDS, &[])
     })
     .await
@@ -125,6 +141,15 @@ async fn a_failed_check_fails_the_run_names_its_id_and_never_hides_the_others() 
         world.gateway.set_serving(false);
         let ran = harness.run(&["doctor"]).await?;
         reported(&ran, ExitClass::Failure, &IDS, &["error:"])?;
+        let health = ran
+            .stdout
+            .lines()
+            .find(|line| line.contains("gateway-health"))
+            .ok_or("no gateway-health line")?;
+        assert!(
+            health.ends_with(&format!("fix: {}", CheckId::GatewayHealth.fix())),
+            "{health}"
+        );
 
         let Fixture {
             mut harness,

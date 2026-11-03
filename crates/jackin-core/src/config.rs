@@ -106,6 +106,10 @@ pub enum ConfigEdit {
     AddAccount(Account),
     RemoveAccount(AccountName),
     RemoveAccountClearingBindings(AccountName),
+    SetAccountCredential {
+        account: AccountName,
+        credential: CredentialSource,
+    },
     SetDefaultAccount {
         account: AccountName,
     },

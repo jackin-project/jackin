@@ -153,7 +153,7 @@ fn env_file_and_work_state_problems_print_as_sentences() -> TestResult {
     }
     let commit = CommitId::parse(&"a".repeat(40))?;
     let unexported = WorkState::Unexported(Unexported {
-        uncommitted: true,
+        uncommitted: 3,
         branches: vec![BranchName::parse("main")?],
         detached: Some(commit.clone()),
         worktrees: vec![BranchName::parse("side")?],

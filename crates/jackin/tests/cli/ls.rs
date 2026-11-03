@@ -13,6 +13,7 @@ fn summary(handle: &SandboxHandle) -> Result<SandboxSummary, Failure> {
         name: handle.name(),
         labels: SandboxLabels::from_labels(&handle.labels())?,
         phase: handle.phase(),
+        created_at: handle.created_at(),
     })
 }
 
@@ -57,7 +58,10 @@ async fn ls_json_pins_the_schema_and_lists_exactly_the_readable_managed_sandboxe
         assert_eq!(value["schema"], 1);
         let rows = value["sandboxes"].as_array().ok_or("no rows")?;
         for row in rows {
-            assert_eq!(keys(row)?, names(&["name", "labels", "phase"]));
+            assert_eq!(
+                keys(row)?,
+                names(&["name", "labels", "phase", "created_at"])
+            );
         }
         let mut typed: LsOutput = ran.json()?;
         typed

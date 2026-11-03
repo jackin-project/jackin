@@ -6,14 +6,12 @@ use std::fmt::{self, Debug};
 use std::io::Write;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use jackin_core::ProcessError;
-use jackin_core::{Config, ConfigStore, EnvSnapshot, GatewayEntry, GatewayName, HostPath};
+use jackin_core::{Config, ConfigStore, EnvSnapshot, GatewayName, HostPath};
 use jackin_image::ImageEngine;
-use jackin_openshell::{DiscoveryError, Gateway, GatewayError};
-use jackin_session::{HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps};
+use jackin_session::{
+    GatewayConnector, HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps,
+};
 use jackin_usage::ProviderEndpoints;
-use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::CommandError;
@@ -27,39 +25,6 @@ pub struct Deps {
     pub connect: Arc<dyn GatewayConnector>,
     pub limits: LaunchLimits,
     pub usage_endpoints: ProviderEndpoints,
-}
-
-#[derive(Debug, Error)]
-pub enum ConnectError {
-    #[error("cannot discover gateway {gateway}")]
-    Discovery {
-        gateway: GatewayName,
-        source: DiscoveryError,
-    },
-    #[error(transparent)]
-    Gateway(#[from] GatewayError),
-}
-
-impl ConnectError {
-    pub fn is_cancelled(&self) -> bool {
-        matches!(
-            self,
-            ConnectError::Discovery {
-                source: DiscoveryError::Process(ProcessError::Cancelled { .. }),
-                ..
-            } | ConnectError::Gateway(GatewayError::Cancelled { .. })
-        )
-    }
-}
-
-#[async_trait]
-pub trait GatewayConnector: Send + Sync + Debug {
-    async fn connect(
-        &self,
-        name: &GatewayName,
-        entry: &GatewayEntry,
-        cancel: &CancellationToken,
-    ) -> Result<Arc<dyn Gateway>, ConnectError>;
 }
 
 pub struct AppEnv {

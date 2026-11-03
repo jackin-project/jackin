@@ -44,6 +44,44 @@ pub enum CheckId {
     EngineSocket,
 }
 
+impl CheckId {
+    pub const ALL: [CheckId; 7] = [
+        CheckId::OpenshellBinary,
+        CheckId::SshBinary,
+        CheckId::GitBinary,
+        CheckId::GatewayRegistered,
+        CheckId::GatewayHealth,
+        CheckId::PinnedVersion,
+        CheckId::EngineSocket,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            CheckId::OpenshellBinary => "OpenShell binary",
+            CheckId::SshBinary => "SSH client",
+            CheckId::GitBinary => "Git binary",
+            CheckId::GatewayRegistered => "Gateway registered",
+            CheckId::GatewayHealth => "Gateway health",
+            CheckId::PinnedVersion => "Pinned version",
+            CheckId::EngineSocket => "Docker engine socket",
+        }
+    }
+
+    pub fn fix(self) -> &'static str {
+        match self {
+            CheckId::OpenshellBinary => {
+                "Install the pinned OpenShell release and put openshell on PATH"
+            }
+            CheckId::SshBinary => "Install an OpenSSH client and put ssh on PATH",
+            CheckId::GitBinary => "Install git and put it on PATH",
+            CheckId::GatewayRegistered => "Register the gateway with openshell gateway add",
+            CheckId::GatewayHealth => "Start the gateway; jackin does not start or repair it",
+            CheckId::PinnedVersion => "Run the OpenShell release that jackin is pinned to",
+            CheckId::EngineSocket => "Start the Docker engine, or set DOCKER_HOST to its socket",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CheckStatus {
     Pass,

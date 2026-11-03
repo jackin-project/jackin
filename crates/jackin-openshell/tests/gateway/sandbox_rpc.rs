@@ -17,6 +17,8 @@ use super::server::{
     validate_sandbox_name,
 };
 
+pub(crate) const CREATED_MILLIS: i64 = 1_700_000_000_000;
+
 pub(crate) fn phase_of(sandbox: &Sandbox) -> i32 {
     sandbox.status.as_ref().map_or(0, |status| status.phase)
 }
@@ -156,6 +158,7 @@ impl Fake {
                 name: request.name.clone(),
                 labels,
                 workspace,
+                created_time: openshell_core::time::timestamp_from_millis(CREATED_MILLIS).ok(),
                 ..ObjectMeta::default()
             }),
             spec: request.spec.clone().map(|mut spec| {

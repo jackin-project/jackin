@@ -26,7 +26,7 @@ async fn a_detached_head_commit_is_unexported_until_it_is_exported_as_the_head_r
         assert_eq!(
             session.work_state(&rig.config, &name).await,
             WorkState::Unexported(Unexported {
-                uncommitted: false,
+                uncommitted: 0,
                 branches: Vec::new(),
                 detached: Some(commit.clone()),
                 worktrees: Vec::new(),

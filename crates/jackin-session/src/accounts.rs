@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    Account, AccountName, Agent, CodexAuthMode, CredentialSource, FileLock, Provider, ProviderName,
+    Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, ConfigStore,
+    CredentialSource, FileLock, Provider, ProviderName,
 };
 use jackin_openshell::{
     GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile, ProviderSpec,
@@ -41,6 +42,93 @@ pub enum AccountError {
     },
     #[error("the login of account {account} belongs to another ChatGPT account")]
     AccountIdMismatch { account: AccountName },
+}
+
+#[derive(Debug, Error)]
+pub enum AccountEditError {
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error(transparent)]
+    Account(#[from] AccountError),
+    #[error("the edit changes a gateway provider and needs a connected gateway")]
+    GatewayRequired,
+}
+
+#[derive(Clone, Debug)]
+pub struct AccountPlan {
+    forget: Vec<Account>,
+    sync: Vec<Account>,
+    edits: Vec<ConfigEdit>,
+}
+
+fn has_provider(account: &Account) -> bool {
+    matches!(account.credential(), CredentialSource::CodexLogin { .. })
+}
+
+pub fn plan_account_edits(
+    config: &Config,
+    edits: Vec<ConfigEdit>,
+) -> Result<AccountPlan, ConfigError> {
+    let mut trial = config.clone();
+    let mut forget = Vec::new();
+    let mut sync = Vec::new();
+    for edit in &edits {
+        let before = match edit {
+            ConfigEdit::RemoveAccount(name)
+            | ConfigEdit::RemoveAccountClearingBindings(name)
+            | ConfigEdit::SetAccountCredential { account: name, .. } => {
+                trial.account(name).cloned()
+            }
+            _ => None,
+        };
+        trial.apply(edit.clone())?;
+        match edit {
+            ConfigEdit::AddAccount(account) if has_provider(account) => {
+                sync.push(account.clone());
+            }
+            ConfigEdit::RemoveAccount(_) | ConfigEdit::RemoveAccountClearingBindings(_) => {
+                forget.extend(before.filter(has_provider));
+            }
+            ConfigEdit::SetAccountCredential { account, .. } => {
+                let after = trial.account(account).cloned();
+                match (before.filter(has_provider), after.filter(has_provider)) {
+                    (_, Some(now)) => sync.push(now),
+                    (Some(old), None) => forget.push(old),
+                    (None, None) => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(AccountPlan {
+        forget,
+        sync,
+        edits,
+    })
+}
+
+impl AccountPlan {
+    pub fn needs_gateway(&self) -> bool {
+        !self.forget.is_empty() || !self.sync.is_empty()
+    }
+
+    pub async fn apply(
+        self,
+        session: Option<&Session>,
+        store: &ConfigStore,
+        cancel: &CancellationToken,
+    ) -> Result<Config, AccountEditError> {
+        if self.needs_gateway() {
+            let session = session.ok_or(AccountEditError::GatewayRequired)?;
+            for account in &self.forget {
+                session.forget_account(account, cancel).await?;
+            }
+            for account in &self.sync {
+                session.sync_account(account, cancel).await?;
+            }
+        }
+        Ok(store.edit(self.edits).await?)
+    }
 }
 
 impl Session {

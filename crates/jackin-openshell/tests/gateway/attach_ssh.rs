@@ -5,6 +5,7 @@ use std::num::NonZeroU16;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use jackin_openshell::contract::NUDGE_CASES;
 use jackin_openshell::{
     EndReason, Gateway, GatewayError, GrpcGateway, InputLease, InputMode, RepaintPolicy, TermSize,
     TerminalEvent, TerminalKind, TerminalRequest, TerminalSession,
@@ -448,6 +449,65 @@ async fn the_repaint_nudge_resizes_one_row_less_and_back_after_the_delay() {
         .unwrap();
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(one_row.windows().is_empty());
+}
+
+async fn settled() {
+    tokio::task::spawn_blocking(|| {
+        let (_open, idle) = std::sync::mpsc::channel::<()>();
+        assert_eq!(
+            idle.recv_timeout(Duration::from_millis(30)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        );
+    })
+    .await
+    .unwrap();
+}
+
+fn pairs(cases: &[(u16, u16)]) -> Vec<(u32, u32)> {
+    cases
+        .iter()
+        .map(|&(cols, rows)| (u32::from(cols), u32::from(rows)))
+        .collect()
+}
+
+#[tokio::test]
+async fn the_repaint_nudge_follows_tokio_time_for_every_shared_case() {
+    let delay = Duration::from_millis(600);
+    for case in NUDGE_CASES {
+        let rig = good(Script::default()).await;
+        let policy = if case.nudge {
+            RepaintPolicy::NudgeAfter(delay)
+        } else {
+            RepaintPolicy::Never
+        };
+        let session = rig
+            .try_open(InputMode::Owner, policy, size(case.open.0, case.open.1))
+            .await
+            .unwrap();
+        for &(cols, rows) in case.resize_before {
+            session.resize(size(cols, rows)).await.unwrap();
+        }
+        let before = pairs(case.resize_before);
+        eventually(case.name, || rig.windows().len() >= before.len()).await;
+
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_millis(10)).await;
+        settled().await;
+        assert_eq!(rig.windows(), before, "{}: the nudge came early", case.name);
+        tokio::time::advance(delay).await;
+        eventually(case.name, || rig.windows().len() >= case.windows.len()).await;
+        assert_eq!(rig.windows(), pairs(case.windows), "{}", case.name);
+        tokio::time::advance(delay * 3).await;
+        settled().await;
+        assert_eq!(
+            rig.windows(),
+            pairs(case.windows),
+            "{}: the nudge fired twice",
+            case.name
+        );
+        tokio::time::resume();
+        drop(session);
+    }
 }
 
 #[tokio::test]

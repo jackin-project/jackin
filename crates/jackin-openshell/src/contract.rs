@@ -25,8 +25,9 @@ use crate::terminal::{
     TerminalRequest, TerminalSession,
 };
 
-pub const CORE_CHECKS: [&str; 16] = [
+pub const CORE_CHECKS: [&str; 17] = [
     "create_find_by_label",
+    "created_at_is_reported_and_stable",
     "create_duplicate_name",
     "sandbox_environment_is_the_create_request",
     "absent_sandbox_is_not_found",
@@ -62,6 +63,46 @@ pub const TERMINAL_CHECKS: [&str; 6] = [
     "main_viewer_read_only",
     "main_read_only_takes_lease_after_owner_leaves",
     "main_ended_is_refused",
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NudgeCase {
+    pub name: &'static str,
+    pub open: (u16, u16),
+    pub resize_before: &'static [(u16, u16)],
+    pub nudge: bool,
+    pub windows: &'static [(u16, u16)],
+}
+
+pub const NUDGE_CASES: [NudgeCase; 4] = [
+    NudgeCase {
+        name: "the nudge shrinks one row and restores it at the attach size",
+        open: (100, 30),
+        resize_before: &[],
+        nudge: true,
+        windows: &[(100, 29), (100, 30)],
+    },
+    NudgeCase {
+        name: "a resize before the nudge is not overwritten",
+        open: (100, 30),
+        resize_before: &[(80, 20)],
+        nudge: true,
+        windows: &[(80, 20), (80, 19), (80, 20)],
+    },
+    NudgeCase {
+        name: "a one-row terminal is not nudged",
+        open: (100, 1),
+        resize_before: &[],
+        nudge: true,
+        windows: &[],
+    },
+    NudgeCase {
+        name: "a policy of never repaints nothing",
+        open: (100, 30),
+        resize_before: &[(90, 25)],
+        nudge: false,
+        windows: &[(90, 25)],
+    },
 ];
 
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -381,6 +422,29 @@ async fn create_find_by_label(ctx: &Ctx<'_>) -> Outcome<()> {
         jackin_core::SandboxLabels::from_labels(&found[0].labels)
             .is_ok_and(|labels| labels == *spec.labels()),
         "the stored labels differ from the requested labels",
+    )
+}
+
+async fn created_at_is_reported_and_stable(ctx: &Ctx<'_>) -> Outcome<()> {
+    let launch = fresh_launch()?;
+    let spec = ctx.spec(
+        &launch,
+        &ctx.fixture.image,
+        Ctx::main("/bin/sh", &["-c", "sleep 3600"])?,
+    )?;
+    let made = ctx.gateway.create_sandbox(&spec).await.map_err(text)?;
+    let ready = ctx
+        .wait_for(spec.name(), "Ready", |view| view.phase == Phase::Ready)
+        .await;
+    ctx.cleanup(spec.name()).await;
+    let ready = ready?;
+    expect(
+        made.created_at.is_some_and(|created| created.0 > 0),
+        "a created sandbox reports no creation time",
+    )?;
+    expect(
+        ready.created_at == made.created_at,
+        "the creation time changed between the create reply and the Ready view",
     )
 }
 
@@ -1740,6 +1804,12 @@ pub async fn run(
     match group {
         ContractGroup::Core => {
             check!(checks, ctx, "create_find_by_label", create_find_by_label);
+            check!(
+                checks,
+                ctx,
+                "created_at_is_reported_and_stable",
+                created_at_is_reported_and_stable
+            );
             check!(checks, ctx, "create_duplicate_name", create_duplicate_name);
             check!(
                 checks,

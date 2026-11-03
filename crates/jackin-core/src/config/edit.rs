@@ -4,8 +4,9 @@
 use std::collections::btree_map::Entry;
 
 use super::{
-    Account, Config, ConfigEdit, ConfigError, ConfigReference, GatewayEntry, KIND_ACCOUNT,
-    KIND_GATEWAY, KIND_ROLE, KIND_WORKSPACE, RoleEntry, RoleSource, Workspace, duplicate, missing,
+    Account, Config, ConfigEdit, ConfigError, ConfigReference, CredentialSource, GatewayEntry,
+    KIND_ACCOUNT, KIND_GATEWAY, KIND_ROLE, KIND_WORKSPACE, RoleEntry, RoleSource, Workspace,
+    duplicate, missing,
 };
 use crate::agent::Agent;
 use crate::docker::EngineConfig;
@@ -24,6 +25,10 @@ impl Config {
             ConfigEdit::RemoveAccountClearingBindings(name) => {
                 self.remove_account_clearing_bindings(&name)
             }
+            ConfigEdit::SetAccountCredential {
+                account,
+                credential,
+            } => self.set_account_credential(&account, credential),
             ConfigEdit::SetDefaultAccount { account } => self.set_default_account(account),
             ConfigEdit::ClearDefaultAccount { provider } => {
                 self.defaults.remove(&provider);
@@ -158,6 +163,19 @@ impl Config {
             role.bindings.retain(|_, account| account != name);
         }
         self.accounts.remove(name);
+        Ok(())
+    }
+
+    fn set_account_credential(
+        &mut self,
+        name: &AccountName,
+        credential: CredentialSource,
+    ) -> Result<(), ConfigError> {
+        let provider = self.require_account(name)?.provider;
+        self.accounts.insert(
+            name.clone(),
+            Account::new(name.clone(), provider, credential)?,
+        );
         Ok(())
     }
 

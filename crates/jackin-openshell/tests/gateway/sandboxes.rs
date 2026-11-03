@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use jackin_core::{
     AccountName, Agent, ChatgptAccountId, ImageId, LabelSelector, LaunchId, Phase, ProfileId,
-    ProviderName, SandboxLabels, Secret,
+    ProviderName, SandboxLabels, Secret, Timestamp,
 };
 use jackin_openshell::{
     ClosedPolicy, Gateway, PolicyDocument, PowerAction, ProviderMaterial, ProviderProfile,
@@ -14,6 +14,7 @@ use jackin_openshell::{
 use openshell_sdk::raw::proto::{Provider, SandboxPhase, SandboxRestartPolicy};
 
 use super::harness::{WORKSPACE, connect, env, guard};
+use super::sandbox_rpc::CREATED_MILLIS;
 use super::support::{
     IMAGE_DIGEST, LAUNCH, POLICY, SANDBOX, add_sandbox, create_spec, planned, sandbox_name,
     set_conditions,
@@ -30,6 +31,7 @@ async fn create_then_find_by_launch_label_round_trips_the_server_state() {
     let spec = create_spec(SANDBOX, LAUNCH);
     let view = guard(gateway.create_sandbox(&spec)).await.unwrap();
     assert_eq!(view.phase, Phase::Provisioning);
+    assert_eq!(view.created_at, Some(Timestamp(CREATED_MILLIS / 1000)));
     {
         let state = env.server.state();
         assert_eq!(state.sandboxes.len(), 1);
@@ -87,10 +89,31 @@ async fn create_then_find_by_launch_label_round_trips_the_server_state() {
     .unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].name, sandbox_name(SANDBOX));
+    assert_eq!(found[0].created_at, view.created_at);
     assert_eq!(
         &SandboxLabels::from_labels(&found[0].labels).unwrap(),
         spec.labels()
     );
+}
+
+#[tokio::test]
+async fn a_sandbox_the_server_never_stamped_has_no_creation_time() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    add_sandbox(
+        &mut env.server.state(),
+        WORKSPACE,
+        "jackin-unstamped",
+        SandboxPhase::Ready,
+        None,
+        &managed(),
+    );
+    let found =
+        guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name("jackin-unstamped"))))
+            .await
+            .unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].created_at, None);
 }
 
 #[tokio::test]

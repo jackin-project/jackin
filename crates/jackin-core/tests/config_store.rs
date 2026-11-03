@@ -84,6 +84,10 @@ impl Clock for StepClock {
         Timestamp(0)
     }
 
+    fn utc_offset_secs(&self) -> i32 {
+        0
+    }
+
     async fn sleep(&self, duration: Duration) {
         self.slept
             .lock()
@@ -524,6 +528,10 @@ impl Clock for TickClock {
         Timestamp(0)
     }
 
+    fn utc_offset_secs(&self) -> i32 {
+        0
+    }
+
     async fn sleep(&self, duration: Duration) {
         self.slept
             .lock()
@@ -646,6 +654,10 @@ struct HoldingClock {
 impl Clock for HoldingClock {
     fn now(&self) -> Timestamp {
         Timestamp(0)
+    }
+
+    fn utc_offset_secs(&self) -> i32 {
+        0
     }
 
     async fn sleep(&self, _duration: Duration) {
