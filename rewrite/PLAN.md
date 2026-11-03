@@ -396,7 +396,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 - **Owner:** `security-reviewer`, then the orchestrator runs `pstack:interrogate`. **Depends:** P5.4.
 - **Proof:** the verdicts in the chat. No open blocking finding.
-- [ ] P5.5 done
+- [x] P5.5 done. Proof: security-reviewer CHANGES_REQUIRED (/private/tmp/claude-501/plans/P5.5-security.md, F1 high) fixed and red/green APPROVE (816ef7d14); pstack interrogate (Sonnet, Opus, Haiku; seven verified findings V1-V7, /private/tmp/claude-501/plans/P5.5-interrogate.md) fixed on wt/P5.5-int with red/green KEEP and the four review edits proven red, merged at 28164db91; G-FAST 1187 passed; live IP-literal check in evidence/P5.4-docker.md.
 
 ## Phase P6. Build the CLI
 
