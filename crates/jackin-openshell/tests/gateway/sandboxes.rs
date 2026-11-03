@@ -505,7 +505,8 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
     let gateway = connect(&env, &workspace).await;
     let long = "a".repeat(63);
     let image = ImageId::parse(&format!("sha256:{IMAGE_DIGEST}")).unwrap();
-    let labels = planned(&long, &long, &"a".repeat(32), LAUNCH).complete(&image);
+    let labels = planned(&long, &long, &"a".repeat(32), LAUNCH)
+        .complete(&image, jackin_core::DockerLabel::Off);
     let base = create_spec(SANDBOX, LAUNCH);
     let name = sandbox_name("jackin-abcdefg-wxyz");
     assert_eq!(name.as_str().len(), 19);

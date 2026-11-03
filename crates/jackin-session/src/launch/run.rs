@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use jackin_core::{
-    Agent, DockerCapability, EngineCert, FileMode, HookKind, HostPath, LabelSelector,
+    Agent, DockerCapability, DockerLabel, EngineCert, FileMode, HookKind, HostPath, LabelSelector,
     SandboxLabels, SandboxName, SandboxPath, SecretBytes, StartRequest, sandbox_layout,
 };
 use jackin_image::{BuiltImage, ImageSource, ensure_image};
@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::accounts::AccountError;
 use crate::files::render_auth_json;
-use crate::launch::certs;
+use crate::launch::certs::{self, Bound};
 use crate::launch::decide::{Act, Boot, Decision, Done, Finish, HookPlan, Observed, Wait, decide};
 use crate::launch::hooks::{self, HookRun};
 use crate::launch::probe;
@@ -106,23 +106,24 @@ impl Run<'_> {
                 });
             }
         }
-        if let DockerCapability::Enabled(access) = self.plan.docker()
-            && let Err(error) = certs::precheck(deps.host.fs.as_ref(), access).await
-        {
-            return Err(LaunchFailure {
-                launch_id: self.plan.launch_id().clone(),
-                step: LaunchStep::Credentials,
-                sandbox: None,
-                error: Box::new(error),
-            });
-        }
+        let bound = match certs::bind(deps.host.fs.as_ref(), self.plan.docker()).await {
+            Ok(bound) => bound,
+            Err(error) => {
+                return Err(LaunchFailure {
+                    launch_id: self.plan.launch_id().clone(),
+                    step: LaunchStep::Credentials,
+                    sandbox: None,
+                    error: Box::new(error),
+                });
+            }
+        };
         for warning in self.plan.warnings() {
             self.events.emit(LaunchEvent::Warning(*warning)).await;
         }
-        self.drive().await
+        self.drive(&bound).await
     }
 
-    async fn drive(&mut self) -> Result<LaunchOutcome, LaunchFailure> {
+    async fn drive(&mut self, bound: &Bound) -> Result<LaunchOutcome, LaunchFailure> {
         loop {
             let observed = match self.observe().await {
                 Ok(observed) => observed,
@@ -133,13 +134,13 @@ impl Run<'_> {
             }
             self.done.absorb(&observed);
             let limits = self.session.deps.limits;
-            match decide(self.plan, &observed, &self.done, &limits) {
+            match decide(self.plan, bound.label(), &observed, &self.done, &limits) {
                 Decision::Finish(finish) => return Ok(self.finished(finish).await),
                 Decision::Fail(step, error) => {
                     return self.stopped(Stop::Failed(step, error)).await;
                 }
                 Decision::Run(act) => {
-                    if let Err(stop) = self.act(act).await {
+                    if let Err(stop) = self.act(act, bound).await {
                         return self.stopped(stop).await;
                     }
                 }
@@ -259,15 +260,15 @@ impl Run<'_> {
         }
     }
 
-    async fn act(&mut self, act: Act) -> Result<(), Stop> {
+    async fn act(&mut self, act: Act, bound: &Bound) -> Result<(), Stop> {
         match act {
             Act::Image => self.image().await,
             Act::Provider => self.provider().await,
-            Act::Create(image) => self.create(&image).await,
+            Act::Create(image) => self.create(&image, bound.label()).await,
             Act::Replace(sandbox) => self.replace(&sandbox).await,
             Act::Power(sandbox) => self.power(&sandbox).await,
             Act::Wait(kind) => self.wait(kind).await,
-            Act::Credentials(sandbox) => self.credentials(&sandbox).await,
+            Act::Credentials(sandbox) => self.credentials(&sandbox, bound).await,
             Act::Upload(sandbox) => self.upload(&sandbox).await,
             Act::Hooks(sandbox, plan) => self.hooks(&sandbox, plan).await,
             Act::Start(sandbox, attempt) => self.start(&sandbox, attempt).await,
@@ -335,9 +336,9 @@ impl Run<'_> {
         Ok(())
     }
 
-    async fn create(&mut self, image: &BuiltImage) -> Result<(), Stop> {
+    async fn create(&mut self, image: &BuiltImage, docker: DockerLabel) -> Result<(), Stop> {
         self.enter(LaunchStep::Sandbox).await;
-        let create = self.plan.draft().complete(image);
+        let create = self.plan.draft().complete(image, docker);
         match self.session.deps.gateway.create_sandbox(&create).await {
             Ok(view) => {
                 self.done.created = self.done.created.saturating_add(1);
@@ -458,7 +459,7 @@ impl Run<'_> {
             .map_err(|error| failed(step, error))
     }
 
-    async fn credentials(&mut self, sandbox: &SandboxName) -> Result<(), Stop> {
+    async fn credentials(&mut self, sandbox: &SandboxName, bound: &Bound) -> Result<(), Stop> {
         const STEP: LaunchStep = LaunchStep::Credentials;
         self.enter(STEP).await;
         let spec = Agent::Codex.spec();
@@ -509,7 +510,7 @@ impl Run<'_> {
         .await?;
         let files = self.plan.files();
         self.write_planned(sandbox, &files.codex_config).await?;
-        self.engine_certs(sandbox).await?;
+        self.engine_certs(sandbox, bound).await?;
         self.write_planned(sandbox, &files.env).await?;
         self.done.steps.insert(STEP);
         Ok(())
@@ -526,14 +527,22 @@ impl Run<'_> {
         .await
     }
 
-    async fn engine_certs(&self, sandbox: &SandboxName) -> Result<(), Stop> {
+    async fn engine_certs(&self, sandbox: &SandboxName, bound: &Bound) -> Result<(), Stop> {
         const STEP: LaunchStep = LaunchStep::Credentials;
-        let DockerCapability::Enabled(access) = self.plan.docker() else {
+        let (DockerCapability::Enabled(access), Bound::Engine { ca, .. }) =
+            (self.plan.docker(), bound)
+        else {
             return Ok(());
         };
         let mut files = Vec::new();
         for cert in EngineCert::ALL {
-            match certs::read(self.session.deps.host.fs.as_ref(), access, cert).await {
+            let read = match cert {
+                EngineCert::Ca => Ok(ca.clone()),
+                EngineCert::Cert | EngineCert::Key => {
+                    certs::read(self.session.deps.host.fs.as_ref(), access, cert).await
+                }
+            };
+            match read {
                 Ok(bytes) => files.push((cert, bytes)),
                 Err(error) => {
                     for (_, bytes) in files {

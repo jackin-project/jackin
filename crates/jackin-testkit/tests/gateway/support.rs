@@ -107,7 +107,6 @@ pub(crate) fn spec_with(
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
         launch: launch.clone(),
-        docker: jackin_core::DockerLabel::Off,
     };
     let image_id = ImageId::parse(&format!("sha256:{}", "ba7816bf".repeat(8)))?;
     let name = SandboxName::new(
@@ -117,7 +116,7 @@ pub(crate) fn spec_with(
     Ok(SandboxCreate::new(
         name,
         ImageTag::parse(image)?,
-        planned.complete(&image_id),
+        planned.complete(&image_id, jackin_core::DockerLabel::Off),
         providers,
         ClosedPolicy::parse(POLICY)?,
         main,

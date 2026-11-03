@@ -17,15 +17,8 @@ const BASE32: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
 const BASE36: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
 const SUFFIX_MODULUS: u64 = 36 * 36 * 36 * 36;
 const LAUNCH_ID_LEN: usize = 26;
-const RESERVED_PREFIXES: [&str; 7] = [
-    "JACKIN_",
-    "OPENAI_",
-    "CODEX_",
-    "DOCKER_",
-    "BUILDX_",
-    "LD_",
-    "OPENSHELL_",
-];
+const ENGINE_CLIENT_PREFIXES: [&str; 2] = ["DOCKER_", "BUILDX_"];
+const RESERVED_PREFIXES: [&str; 5] = ["JACKIN_", "OPENAI_", "CODEX_", "LD_", "OPENSHELL_"];
 const RESERVED_NAMES: [&str; 6] = [
     "PATH",
     "HOME",
@@ -873,11 +866,18 @@ impl EnvName {
         EnvName(name.to_owned())
     }
 
-    pub fn is_reserved(&self) -> bool {
-        let name = self.as_str();
-        RESERVED_PREFIXES
+    pub fn is_engine_client(name: &str) -> bool {
+        ENGINE_CLIENT_PREFIXES
             .iter()
             .any(|prefix| name.starts_with(prefix))
+    }
+
+    pub fn is_reserved(&self) -> bool {
+        let name = self.as_str();
+        Self::is_engine_client(name)
+            || RESERVED_PREFIXES
+                .iter()
+                .any(|prefix| name.starts_with(prefix))
             || RESERVED_NAMES.contains(&name)
             || Agent::ALL.iter().any(|agent| {
                 let spec = agent.spec();

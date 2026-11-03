@@ -54,6 +54,7 @@ jackin-usage-provider-opencode = { path = "crates/usage/jackin-usage-provider-op
 jackin-usage-provider-openrouter = { path = "crates/usage/jackin-usage-provider-openrouter", version = "0.1.0" }
 jackin-usage-provider-zai = { path = "crates/usage/jackin-usage-provider-zai", version = "0.1.0" }
 async-trait = "0.1.92"
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 clap = { version = "4.6.7", features = ["derive"] }
 flate2 = "1.1.10"

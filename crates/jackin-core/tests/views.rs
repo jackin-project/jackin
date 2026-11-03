@@ -23,9 +23,8 @@ fn summary(phase: Phase) -> Fallible<SandboxSummary> {
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
         launch: LaunchId::parse("01hzy3k5m7p9r2t4v6w8x0abcd")?,
-        docker: jackin_core::DockerLabel::Off,
     };
-    let labels: SandboxLabels = planned.complete(&image);
+    let labels: SandboxLabels = planned.complete(&image, jackin_core::DockerLabel::Off);
     Ok(SandboxSummary {
         name: SandboxName::new(&SandboxSlug::parse("proj")?, &NameSuffix::parse("0abc")?),
         labels,

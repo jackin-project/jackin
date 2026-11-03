@@ -4,19 +4,21 @@
 use std::collections::BTreeMap;
 
 use jackin_core::{
-    Config, ConfigEdit, DockerLabel, ImageId, ImageLabel, Phase, SandboxPath, WorkspaceName,
-    sandbox_layout,
+    CaFingerprint, Config, ConfigEdit, DockerLabel, EngineCert, HostPath, ImageId, ImageLabel,
+    Phase, SandboxLabels, SandboxPath, WorkspaceName, sandbox_layout,
 };
-use jackin_image::Rebuild;
+use jackin_image::{BuildStage, Rebuild};
 use jackin_openshell::GatewayOp;
 use jackin_session::{
     LaunchError, LaunchEvent, LaunchFailure, LaunchOutcome, LaunchPlan, LaunchStep, LaunchWarning,
     plan_launch,
 };
-use jackin_testkit::{ENGINE_PORT, Fault, Outcome, Rig, Trigger, launch_id};
+use jackin_testkit::{
+    BuildEffect, ENGINE_PORT, EngineMoment, Fault, HostEdit, Outcome, Rig, Trigger, launch_id,
+};
 use tokio_util::sync::CancellationToken;
 
-use super::docker_support::{Engine, docker_rig, rule_keys, split_failure};
+use super::docker_support::{Engine, docker_files, docker_rig, rule_keys, split_failure};
 use super::support::{TestResult, guard, ready, write};
 
 type Snapshot = (
@@ -192,6 +194,116 @@ async fn a_flipped_retry_is_refused_while_the_sandbox_is_still_provisioning() ->
         let (_, _, found_docker, wanted_docker) = stale(&failed)?;
         assert_ne!(found_docker, wanted_docker);
         assert_eq!(rig.gateway().sandboxes().len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+const OTHER_CA: &str =
+    "-----BEGIN CERTIFICATE-----\nQ0FDQTJDQUEyQ0FDQTJDQUEyQ0FDQTI=\n-----END CERTIFICATE-----\n";
+
+fn certs_dir(rig: &Rig) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    Ok(rig.engine_certs()?.as_path().to_path_buf())
+}
+
+fn rewrite(rig: &Rig, cert: EngineCert, text: &str) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::write(certs_dir(rig)?.join(cert.file_name()), text)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_retry_with_another_ca_on_the_same_port_is_refused_and_changes_nothing() -> TestResult {
+    guard(async {
+        let rig = docker_rig(false, true, Engine::WithCerts).await?;
+        ready(rig.launch_observed(1).await?)?;
+        let kept = snapshot(&rig).await?;
+        rewrite(&rig, EngineCert::Ca, OTHER_CA)?;
+        let (_, failed) = split_failure(retry(&rig, &rig.config, Rebuild::No).await?)?;
+        assert_eq!(failed.step, LaunchStep::Sandbox);
+        assert_eq!(failed.sandbox, Some(rig.handle(1).await?.name()));
+        let (found, wanted, found_docker, wanted_docker) = stale(&failed)?;
+        assert_eq!(found, wanted);
+        assert_ne!(found_docker, wanted_docker);
+        let shown = failed.error.to_string();
+        for docker in [found_docker, wanted_docker] {
+            assert!(shown.contains(&docker.to_string()), "{docker}: {shown}");
+        }
+        assert_eq!(snapshot(&rig).await?, kept);
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_retry_after_rotating_only_the_client_certificate_and_key_continues() -> TestResult {
+    guard(async {
+        let rig = docker_rig(false, true, Engine::WithCerts).await?;
+        ready(rig.launch_observed(1).await?)?;
+        let labels = rig.handle(1).await?.labels();
+        let fresh_cert = "-----BEGIN CERTIFICATE-----\nRlJFU0hDRVJURlJFU0hDRVJURlJFU0g=\n-----END CERTIFICATE-----\n";
+        let fresh_key = "-----BEGIN PRIVATE KEY-----\nRlJFU0hLRVlGUkVTSEtFWUZSRVNIS0U=\n-----END PRIVATE KEY-----\n";
+        rewrite(&rig, EngineCert::Cert, fresh_cert)?;
+        rewrite(&rig, EngineCert::Key, fresh_key)?;
+        ready(retry(&rig, &rig.config, Rebuild::No).await?)?;
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
+        let handle = rig.handle(1).await?;
+        assert_eq!(handle.labels(), labels);
+        let files = docker_files(&handle);
+        for (cert, text) in [(EngineCert::Cert, fresh_cert), (EngineCert::Key, fresh_key)] {
+            assert_eq!(
+                files.get(&cert.sandbox_path()).map(Vec::as_slice),
+                Some(text.as_bytes()),
+                "{cert:?}"
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_retry_with_the_same_ca_saved_with_other_line_endings_continues() -> TestResult {
+    guard(async {
+        let rig = docker_rig(false, true, Engine::WithCerts).await?;
+        ready(rig.launch_observed(1).await?)?;
+        let labels = rig.handle(1).await?.labels();
+        let original = std::fs::read_to_string(certs_dir(&rig)?.join("ca.pem"))?;
+        let resaved = format!("{}\n\n", original.replace('\n', "\r\n"));
+        rewrite(&rig, EngineCert::Ca, &resaved)?;
+        ready(retry(&rig, &rig.config, Rebuild::No).await?)?;
+        assert_eq!(rig.handle(1).await?.labels(), labels);
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_ca_changed_during_the_build_never_reaches_the_sandbox_under_the_old_fingerprint()
+-> TestResult {
+    guard(async {
+        let rig = docker_rig(false, true, Engine::WithCerts).await?;
+        let ca = certs_dir(&rig)?.join("ca.pem");
+        let original = std::fs::read(&ca)?;
+        rig.world.engine.at(EngineMoment::BuildFinished {
+            stage: BuildStage::Derived,
+            effect: BuildEffect::EditHost(HostEdit::Write {
+                path: HostPath::parse(&ca)?,
+                bytes: OTHER_CA.as_bytes().to_vec(),
+            }),
+        });
+        ready(rig.launch_observed(1).await?)?;
+        let handle = rig.handle(1).await?;
+        let delivered = docker_files(&handle)
+            .get(&EngineCert::Ca.sandbox_path())
+            .map(|bytes| String::from_utf8_lossy(bytes).into_owned());
+        assert_eq!(delivered, Some(String::from_utf8(original.clone())?));
+        let labelled = SandboxLabels::from_labels(&handle.labels())?.docker;
+        let DockerLabel::Engine { ca: labelled, .. } = labelled else {
+            return Err("the sandbox has no engine label".into());
+        };
+        assert_eq!(CaFingerprint::of_ca(&original)?, labelled);
         Ok(())
     })
     .await

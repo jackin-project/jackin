@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::agent::Agent;
 use crate::display::plain;
-use crate::docker::DockerLabel;
+use crate::docker::{CaFingerprint, DockerLabel};
 use crate::ids::{AccountName, IdError, ImageId, ImageLabel, LaunchId, RoleName, WorkspaceName};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -28,13 +28,13 @@ pub struct PlannedLabels {
     pub agent: Agent,
     pub account: AccountName,
     pub launch: LaunchId,
-    pub docker: DockerLabel,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SandboxLabels {
     pub planned: PlannedLabels,
     pub image: ImageLabel,
+    pub docker: DockerLabel,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -64,6 +64,7 @@ const ACCOUNT: &str = "jackin.dev/account";
 const IMAGE: &str = "jackin.dev/image";
 const LAUNCH: &str = "jackin.dev/launch";
 const DOCKER: &str = "jackin.dev/docker";
+const ENGINE_PREFIX: &str = "engine-";
 
 impl fmt::Display for LabelKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -82,10 +83,11 @@ fn pair(key: &str, value: &str) -> (LabelKey, LabelValue) {
 }
 
 impl PlannedLabels {
-    pub fn complete(self, image: &ImageId) -> SandboxLabels {
+    pub fn complete(self, image: &ImageId, docker: DockerLabel) -> SandboxLabels {
         SandboxLabels {
             planned: self,
             image: image.label_value(),
+            docker,
         }
     }
 }
@@ -101,7 +103,7 @@ impl SandboxLabels {
             pair(ACCOUNT, planned.account.as_str()),
             pair(IMAGE, self.image.as_str()),
             pair(LAUNCH, planned.launch.as_str()),
-            pair(DOCKER, &docker_value(planned.docker)),
+            pair(DOCKER, &docker_value(self.docker)),
         ]))
     }
 
@@ -118,9 +120,9 @@ impl SandboxLabels {
                 agent,
                 account: labels.parsed(ACCOUNT, AccountName::parse)?,
                 launch: labels.parsed(LAUNCH, LaunchId::parse)?,
-                docker: docker_label(labels.value(DOCKER)?)?,
             },
             image: labels.parsed(IMAGE, ImageLabel::parse)?,
+            docker: docker_label(labels.value(DOCKER)?)?,
         })
     }
 }
@@ -128,7 +130,7 @@ impl SandboxLabels {
 fn docker_value(label: DockerLabel) -> String {
     match label {
         DockerLabel::Off => "off".to_owned(),
-        DockerLabel::Engine(port) => port.to_string(),
+        DockerLabel::Engine { port, ca } => format!("{ENGINE_PREFIX}{port}-{ca}"),
     }
 }
 
@@ -136,15 +138,21 @@ fn docker_label(value: &str) -> Result<DockerLabel, LabelError> {
     if value == "off" {
         return Ok(DockerLabel::Off);
     }
-    let canonical = !value.starts_with('0') && value.bytes().all(|byte| byte.is_ascii_digit());
-    canonical
-        .then(|| value.parse().ok())
-        .flatten()
-        .map(DockerLabel::Engine)
-        .ok_or_else(|| LabelError::InvalidValue {
-            key: DOCKER.to_owned(),
-            reason: "is neither off nor an engine port",
-        })
+    let parsed = value
+        .strip_prefix(ENGINE_PREFIX)
+        .and_then(|rest| rest.split_once('-'))
+        .and_then(|(port, ca)| {
+            let canonical =
+                !port.starts_with('0') && port.bytes().all(|byte| byte.is_ascii_digit());
+            Some(DockerLabel::Engine {
+                port: canonical.then(|| port.parse().ok()).flatten()?,
+                ca: CaFingerprint::parse(ca)?,
+            })
+        });
+    parsed.ok_or_else(|| LabelError::InvalidValue {
+        key: DOCKER.to_owned(),
+        reason: "is neither off nor an engine port with a CA fingerprint",
+    })
 }
 
 fn label_name_problem(name: &str) -> Option<&'static str> {

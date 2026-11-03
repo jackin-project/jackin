@@ -251,13 +251,12 @@ impl Live {
             agent: Agent::Codex,
             account: AccountName::parse("p51b")?,
             launch: launch.clone(),
-            docker: jackin_core::DockerLabel::Off,
         };
         let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64)))?;
         let create = SandboxCreate::new(
             name.clone(),
             ImageTag::parse(&self.options.image)?,
-            planned.complete(&image_id),
+            planned.complete(&image_id, jackin_core::DockerLabel::Off),
             Vec::new(),
             ClosedPolicy::parse(POLICY)?,
             MainProcess {

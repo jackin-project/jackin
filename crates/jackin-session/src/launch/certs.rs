@@ -4,8 +4,8 @@
 use std::io::ErrorKind;
 
 use jackin_core::{
-    ENGINE_CERT_MAX_BYTES, EngineAccess, EngineCert, EngineCertProblem, FileSystem, FsError,
-    RegularFileProblem, RepoPath, SecretBytes,
+    CaFingerprint, DockerCapability, DockerLabel, ENGINE_CERT_MAX_BYTES, EngineAccess, EngineCert,
+    EngineCertProblem, FileSystem, FsError, RegularFileProblem, RepoPath, SecretBytes,
 };
 
 use crate::launch::LaunchError;
@@ -48,12 +48,41 @@ pub(super) async fn read(
     Ok(file.bytes)
 }
 
-pub(super) async fn precheck(
+pub(super) enum Bound {
+    Off,
+    Engine { label: DockerLabel, ca: Vec<u8> },
+}
+
+impl Bound {
+    pub(super) fn label(&self) -> DockerLabel {
+        match self {
+            Bound::Off => DockerLabel::Off,
+            Bound::Engine { label, .. } => *label,
+        }
+    }
+}
+
+pub(super) async fn bind(
     fs: &dyn FileSystem,
-    access: &EngineAccess,
-) -> Result<(), LaunchError> {
-    for cert in EngineCert::ALL {
+    docker: &DockerCapability,
+) -> Result<Bound, LaunchError> {
+    let DockerCapability::Enabled(access) = docker else {
+        return Ok(Bound::Off);
+    };
+    let ca = read(fs, access, EngineCert::Ca).await?;
+    let fingerprint = CaFingerprint::of_ca(&ca).map_err(|problem| LaunchError::EngineCert {
+        file: EngineCert::Ca,
+        directory: access.engine.client_certs.clone(),
+        problem,
+    })?;
+    for cert in [EngineCert::Cert, EngineCert::Key] {
         drop(SecretBytes::new(read(fs, access, cert).await?));
     }
-    Ok(())
+    Ok(Bound::Engine {
+        label: DockerLabel::Engine {
+            port: access.engine.port,
+            ca: fingerprint,
+        },
+        ca,
+    })
 }

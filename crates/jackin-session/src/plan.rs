@@ -8,10 +8,10 @@ use std::time::Duration;
 
 use jackin_core::{
     Account, AccountName, AccountQuery, AccountSelection, Agent, ChatgptAccountId, CodexAuthMode,
-    Config, ConfigError, CredentialSource, DockerCapability, DockerError, DockerLayer, EnvFile,
-    EnvFileError, EnvName, FileMode, GatewayName, LaunchId, NameSuffix, PathError, PlannedLabels,
-    ProjectRoot, Provider, ProviderName, RoleManifest, RoleName, SandboxName, SandboxPath,
-    SelectionError, Workspace, WorkspaceName, plain_list, sandbox_layout,
+    Config, ConfigError, CredentialSource, DockerCapability, DockerError, DockerLabel, DockerLayer,
+    EnvFile, EnvFileError, EnvName, FileMode, GatewayName, LaunchId, NameSuffix, PathError,
+    PlannedLabels, ProjectRoot, Provider, ProviderName, RoleManifest, RoleName, SandboxName,
+    SandboxPath, SelectionError, Workspace, WorkspaceName, plain_list, sandbox_layout,
 };
 use jackin_image::{ImageError, ImageRequest, Rebuild};
 use jackin_openshell::{
@@ -368,7 +368,6 @@ pub fn plan_launch(
             agent,
             account: selection.account.clone(),
             launch: request.launch.clone(),
-            docker: docker.label(),
         },
         provider: ProviderName::for_account(&selection.account, agent),
         policy,
@@ -465,11 +464,11 @@ impl SandboxDraft {
         &self.provider
     }
 
-    pub fn complete(&self, image: &jackin_image::BuiltImage) -> SandboxCreate {
+    pub fn complete(&self, image: &jackin_image::BuiltImage, docker: DockerLabel) -> SandboxCreate {
         SandboxCreate::new(
             self.name.clone(),
             image.tag.clone(),
-            self.labels.clone().complete(&image.id),
+            self.labels.clone().complete(&image.id, docker),
             vec![self.provider.clone()],
             self.policy.clone(),
             self.main.clone(),

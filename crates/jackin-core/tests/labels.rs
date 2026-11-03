@@ -3,9 +3,11 @@
 
 use std::collections::BTreeMap;
 
+use std::num::NonZeroU16;
+
 use jackin_core::{
-    AccountName, Agent, DockerLabel, ImageId, LabelError, Labels, LaunchId, PlannedLabels,
-    RoleName, SandboxLabels, WorkspaceName,
+    AccountName, Agent, CaFingerprint, DockerLabel, ImageId, LabelError, Labels, LaunchId,
+    PlannedLabels, RoleName, SandboxLabels, WorkspaceName,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -20,10 +22,9 @@ fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
         launch: launch.clone(),
-        docker: DockerLabel::Off,
     };
     let image = ImageId::parse(&format!("sha256:{digest}"))?;
-    let labels = planned.complete(&image);
+    let labels = planned.complete(&image, DockerLabel::Off);
     let set = labels.to_labels();
     let actual: BTreeMap<String, String> = set
         .iter()
@@ -48,49 +49,99 @@ fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
     Ok(())
 }
 
-#[test]
-fn docker_label_holds_off_or_the_engine_port_and_refuses_anything_else() -> TestResult {
-    let planned = PlannedLabels {
+fn planned() -> Result<PlannedLabels, Box<dyn std::error::Error>> {
+    Ok(PlannedLabels {
         workspace: WorkspaceName::parse("proj")?,
         role: RoleName::parse("backend")?,
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
         launch: LaunchId::parse("01hzy3k5m7p9r2t4v6w8x0abcd")?,
-        docker: DockerLabel::Engine(std::num::NonZeroU16::new(2376).ok_or("port")?),
-    };
-    let image = ImageId::parse(&format!("sha256:{}", "ab".repeat(32)))?;
-    let labels = planned.complete(&image);
-    let set = labels.to_labels();
-    let value = |set: &Labels| {
+    })
+}
+
+fn docker_value(set: &Labels) -> Option<String> {
+    set.iter()
+        .find(|(key, _)| key.to_string() == "jackin.dev/docker")
+        .map(|(_, value)| value.to_string())
+}
+
+fn with_docker(set: &Labels, docker: Option<&str>) -> Result<Labels, LabelError> {
+    Labels::from_pairs(
         set.iter()
-            .find(|(key, _)| key.to_string() == "jackin.dev/docker")
-            .map(|(_, value)| value.to_string())
-    };
-    assert_eq!(value(&set), Some("2376".to_owned()));
-    assert_eq!(SandboxLabels::from_labels(&set)?, labels);
-    let rebuilt = |docker: Option<&str>| {
-        Labels::from_pairs(
-            set.iter()
-                .filter(|(key, _)| key.to_string() != "jackin.dev/docker")
-                .map(|(key, value)| (key.to_string(), value.to_string()))
-                .chain(docker.map(|v| ("jackin.dev/docker".to_owned(), v.to_owned()))),
-        )
-    };
-    assert_eq!(
-        SandboxLabels::from_labels(&rebuilt(Some("off"))?)?
-            .planned
-            .docker,
-        DockerLabel::Off
-    );
+            .filter(|(key, _)| key.to_string() != "jackin.dev/docker")
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .chain(docker.map(|v| ("jackin.dev/docker".to_owned(), v.to_owned()))),
+    )
+}
+
+#[test]
+fn every_docker_label_value_passes_the_label_grammar_and_round_trips() -> TestResult {
+    let image = ImageId::parse(&format!("sha256:{}", "ab".repeat(32)))?;
+    let fingerprints = ["0123456789abcdef", "ffffffffffffffff", "0000000000000000"];
+    let mut variants = vec![(DockerLabel::Off, "off".to_owned())];
+    for port in [1_u16, 2376, 65535] {
+        for text in fingerprints {
+            let ca = CaFingerprint::parse(text).ok_or("fingerprint")?;
+            variants.push((
+                DockerLabel::Engine {
+                    port: NonZeroU16::new(port).ok_or("port")?,
+                    ca,
+                },
+                format!("engine-{port}-{text}"),
+            ));
+        }
+    }
+    for (docker, text) in variants {
+        let labels = planned()?.complete(&image, docker);
+        let set = labels.to_labels();
+        let pairs = set
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()));
+        let checked = Labels::from_pairs(pairs)?;
+        assert_eq!(checked, set, "{text}");
+        assert_eq!(docker_value(&set), Some(text.clone()));
+        assert_eq!(SandboxLabels::from_labels(&checked)?, labels, "{text}");
+    }
+    Ok(())
+}
+
+#[test]
+fn docker_label_refuses_anything_but_off_or_a_canonical_port_and_a_lowercase_fingerprint()
+-> TestResult {
+    let image = ImageId::parse(&format!("sha256:{}", "ab".repeat(32)))?;
+    let set = planned()?.complete(&image, DockerLabel::Off).to_labels();
     assert!(matches!(
-        SandboxLabels::from_labels(&rebuilt(None)?),
+        SandboxLabels::from_labels(&with_docker(&set, None)?),
         Err(LabelError::Missing { .. })
     ));
-    for bad in ["0", "65536", "abc", "02376", ""] {
-        let error = SandboxLabels::from_labels(&rebuilt(Some(bad))?).unwrap_err();
+    let hex = "0123456789abcdef";
+    let bad = [
+        String::new(),
+        "2376".to_owned(),
+        "engine".to_owned(),
+        "engine-2376".to_owned(),
+        "engine-2376-".to_owned(),
+        format!("engine-2376-{}", &hex[..15]),
+        format!("engine-2376-{hex}0"),
+        format!("engine-2376-{}", hex.to_uppercase()),
+        format!("engine-2376-{}g", &hex[..15]),
+        format!("engine-02376-{hex}"),
+        format!("engine-0-{hex}"),
+        format!("engine-65536-{hex}"),
+        format!("engine--{hex}"),
+        format!("engine-+2376-{hex}"),
+        format!("Engine-2376-{hex}"),
+        format!("engine:2376:{hex}"),
+        format!("engine-2376-{hex}-x"),
+    ];
+    for value in bad {
+        let error = match with_docker(&set, Some(&value)) {
+            Err(error) => error,
+            Ok(labels) => SandboxLabels::from_labels(&labels).unwrap_err(),
+        };
         assert!(
             matches!(error, LabelError::InvalidValue { .. }),
-            "{bad:?}: {error:?}"
+            "{value:?}: {error:?}"
         );
     }
     Ok(())

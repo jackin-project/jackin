@@ -426,13 +426,12 @@ fn foreign_spec(name: &SandboxName) -> Result<SandboxCreate, GatewayError> {
         agent: Agent::Codex,
         account: AccountName::parse("foreign").map_err(protocol)?,
         launch: LaunchId::from_entropy(&[0; 26]),
-        docker: jackin_core::DockerLabel::Off,
     };
     let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64))).map_err(protocol)?;
     Ok(SandboxCreate::new(
         name.clone(),
         ImageTag::parse("jackin.invalid/foreign:0000000000000000").map_err(protocol)?,
-        planned.complete(&image_id),
+        planned.complete(&image_id, jackin_core::DockerLabel::Off),
         Vec::new(),
         ClosedPolicy::parse(FOREIGN_POLICY).map_err(protocol)?,
         MainProcess {

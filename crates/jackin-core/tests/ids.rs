@@ -721,3 +721,27 @@ fn an_invalid_character_is_shown_as_plain_text_even_when_it_is_a_control_charact
         "provider name has the invalid character \\u{202e} at index 1"
     );
 }
+
+#[test]
+fn engine_client_variables_are_only_names_that_start_with_docker_or_buildx_underscore() -> TestResult
+{
+    for name in ["DOCKER_HOST", "DOCKER_", "BUILDX_BUILDER", "DOCKER_CONFIG"] {
+        assert!(EnvName::is_engine_client(name), "{name}");
+        assert!(EnvName::parse(name)?.is_reserved(), "{name}");
+    }
+    for name in [
+        "DOCKER",
+        "docker_host",
+        "MY_DOCKER_HOST",
+        "BUILDX",
+        "XBUILDX_A",
+        "DOCKERHOST",
+        "PATH",
+        "HOME",
+        "FOO",
+        "",
+    ] {
+        assert!(!EnvName::is_engine_client(name), "{name:?}");
+    }
+    Ok(())
+}

@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use jackin_core::{
-    AttemptId, Phase, SandboxLabels, SandboxName, SupervisorReading, SupervisorState,
+    AttemptId, DockerLabel, Phase, SandboxLabels, SandboxName, SupervisorReading, SupervisorState,
 };
 use jackin_image::BuiltImage;
 use jackin_openshell::{Provisioning, SandboxView};
@@ -141,6 +141,7 @@ fn waiting(
 
 pub(super) fn decide(
     plan: &LaunchPlan,
+    docker: DockerLabel,
     observed: &Observed,
     done: &Done,
     limits: &LaunchLimits,
@@ -151,7 +152,7 @@ pub(super) fn decide(
     if !done.steps.contains(&LaunchStep::Provider) {
         return Decision::Run(Act::Provider);
     }
-    if let Some(stale) = stale(plan, image, observed) {
+    if let Some(stale) = stale(plan, docker, image, observed) {
         return Decision::Fail(LaunchStep::Sandbox, stale);
     }
     match observed {
@@ -168,11 +169,16 @@ pub(super) fn decide(
     }
 }
 
-fn stale(plan: &LaunchPlan, image: &BuiltImage, observed: &Observed) -> Option<LaunchError> {
+fn stale(
+    plan: &LaunchPlan,
+    docker: DockerLabel,
+    image: &BuiltImage,
+    observed: &Observed,
+) -> Option<LaunchError> {
     let (Observed::Settling(view) | Observed::Ready(view, _)) = observed else {
         return None;
     };
-    let wanted = plan.draft().labels().clone().complete(&image.id);
+    let wanted = plan.draft().labels().clone().complete(&image.id, docker);
     let found = match SandboxLabels::from_labels(&view.labels) {
         Ok(found) => found,
         Err(error) => {
@@ -182,14 +188,14 @@ fn stale(plan: &LaunchPlan, image: &BuiltImage, observed: &Observed) -> Option<L
             });
         }
     };
-    (found.image != wanted.image || found.planned.docker != wanted.planned.docker).then(|| {
+    (found.image != wanted.image || found.docker != wanted.docker).then(|| {
         LaunchError::StaleSandbox {
             launch: plan.launch_id().clone(),
             sandbox: view.name.clone(),
             found_image: found.image,
             wanted_image: wanted.image,
-            found_docker: found.planned.docker,
-            wanted_docker: wanted.planned.docker,
+            found_docker: found.docker,
+            wanted_docker: wanted.docker,
         }
     })
 }

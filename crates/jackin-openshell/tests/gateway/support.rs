@@ -89,13 +89,12 @@ pub(crate) fn planned(workspace: &str, role: &str, account: &str, launch: &str) 
         agent: Agent::Codex,
         account: AccountName::parse(account).unwrap(),
         launch: LaunchId::parse(launch).unwrap(),
-        docker: jackin_core::DockerLabel::Off,
     }
 }
 
 pub(crate) fn labels_for(launch: &str) -> SandboxLabels {
     let image = ImageId::parse(&format!("sha256:{IMAGE_DIGEST}")).unwrap();
-    planned("My.Project", "backend", "work", launch).complete(&image)
+    planned("My.Project", "backend", "work", launch).complete(&image, jackin_core::DockerLabel::Off)
 }
 
 pub(crate) fn create_spec(name: &str, launch: &str) -> SandboxCreate {

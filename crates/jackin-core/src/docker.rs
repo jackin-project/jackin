@@ -5,7 +5,11 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::num::NonZeroU16;
 
-use serde::{Deserialize, Serialize};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::boundary::FileMode;
@@ -90,18 +94,85 @@ impl DockerLayer {
     }
 }
 
+const CA_FINGERPRINT_BYTES: usize = 8;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct CaFingerprint([u8; CA_FINGERPRINT_BYTES]);
+
+impl CaFingerprint {
+    pub fn of_ca(pem: &[u8]) -> Result<CaFingerprint, EngineCertProblem> {
+        EngineCert::Ca.check(pem)?;
+        let text = std::str::from_utf8(pem).map_err(|_| EngineCertProblem::NotPem)?;
+        let mut certificates = Vec::new();
+        for block in pem_blocks(text)? {
+            if block.label == "CERTIFICATE" {
+                let body = block.body.concat();
+                certificates.push(
+                    STANDARD
+                        .decode(body)
+                        .map_err(|_| EngineCertProblem::NotPem)?,
+                );
+            }
+        }
+        certificates.sort();
+        certificates.dedup();
+        let mut hasher = Sha256::new();
+        for certificate in &certificates {
+            hasher.update(certificate);
+        }
+        let digest = hasher.finalize();
+        let mut bytes = [0_u8; CA_FINGERPRINT_BYTES];
+        bytes.copy_from_slice(&digest[..CA_FINGERPRINT_BYTES]);
+        Ok(CaFingerprint(bytes))
+    }
+
+    pub fn parse(text: &str) -> Option<CaFingerprint> {
+        let lower_hex = text
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'));
+        if text.len() != CA_FINGERPRINT_BYTES * 2 || !lower_hex {
+            return None;
+        }
+        let mut bytes = [0_u8; CA_FINGERPRINT_BYTES];
+        for (index, slot) in bytes.iter_mut().enumerate() {
+            *slot = u8::from_str_radix(text.get(index * 2..index * 2 + 2)?, 16).ok()?;
+        }
+        Some(CaFingerprint(bytes))
+    }
+}
+
+impl fmt::Display for CaFingerprint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
+    }
+}
+
+impl Serialize for CaFingerprint {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for CaFingerprint {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<CaFingerprint, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        CaFingerprint::parse(&text)
+            .ok_or_else(|| D::Error::custom("a CA fingerprint is 16 lowercase hex digits"))
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DockerLabel {
     Off,
-    Engine(NonZeroU16),
+    Engine { port: NonZeroU16, ca: CaFingerprint },
 }
 
 impl fmt::Display for DockerLabel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DockerLabel::Off => f.write_str("off"),
-            DockerLabel::Engine(port) => write!(f, "engine port {port}"),
+            DockerLabel::Engine { port, ca } => write!(f, "engine port {port} with CA {ca}"),
         }
     }
 }
@@ -170,13 +241,6 @@ impl DockerCapability {
                 })
             })
             .ok_or(DockerError::EngineMissing { enabled_by })
-    }
-
-    pub fn label(&self) -> DockerLabel {
-        match self {
-            DockerCapability::Disabled => DockerLabel::Off,
-            DockerCapability::Enabled(access) => DockerLabel::Engine(access.engine.port),
-        }
     }
 
     pub fn layer(&self) -> DockerLayer {
@@ -348,16 +412,22 @@ impl EngineCert {
             return Err(EngineCertProblem::TooLarge);
         }
         let text = std::str::from_utf8(bytes).map_err(|_| EngineCertProblem::NotPem)?;
-        let labels = pem_labels(text)?;
-        for label in labels {
-            match (self, label) {
-                (EngineCert::Ca | EngineCert::Cert, "CERTIFICATE")
-                | (EngineCert::Key, "PRIVATE KEY" | "RSA PRIVATE KEY" | "EC PRIVATE KEY") => {}
+        let mut keys = 0_usize;
+        for block in pem_blocks(text)? {
+            match (self, block.label) {
+                (EngineCert::Ca | EngineCert::Cert, "CERTIFICATE") => {}
+                (EngineCert::Key, "PRIVATE KEY" | "RSA PRIVATE KEY" | "EC PRIVATE KEY") => {
+                    keys += 1;
+                }
+                (EngineCert::Key, "EC PARAMETERS" | "DH PARAMETERS") => {}
                 (EngineCert::Key, "ENCRYPTED PRIVATE KEY") => {
                     return Err(EngineCertProblem::EncryptedKey);
                 }
                 _ => return Err(EngineCertProblem::WrongKind),
             }
+        }
+        if matches!(self, EngineCert::Key) && keys == 0 {
+            return Err(EngineCertProblem::WrongKind);
         }
         Ok(())
     }
@@ -377,29 +447,39 @@ fn base64_line(line: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
 }
 
-fn pem_labels(text: &str) -> Result<Vec<&str>, EngineCertProblem> {
-    let mut labels = Vec::new();
-    let mut open: Option<(&str, usize)> = None;
+struct PemBlock<'a> {
+    label: &'a str,
+    body: Vec<&'a str>,
+}
+
+fn pem_blocks(text: &str) -> Result<Vec<PemBlock<'_>>, EngineCertProblem> {
+    let mut blocks = Vec::new();
+    let mut open: Option<PemBlock<'_>> = None;
     for line in text.lines().map(str::trim_end) {
-        match open {
-            None => open = armor(line, "BEGIN").map(|label| (label, 0)),
-            Some((label, body)) => {
+        match open.take() {
+            None => {
+                open = armor(line, "BEGIN").map(|label| PemBlock {
+                    label,
+                    body: Vec::new(),
+                });
+            }
+            Some(mut block) => {
                 if let Some(found) = armor(line, "END") {
-                    if found != label || body == 0 {
+                    if found != block.label || block.body.is_empty() {
                         return Err(EngineCertProblem::NotPem);
                     }
-                    labels.push(label);
-                    open = None;
+                    blocks.push(block);
                 } else if armor(line, "BEGIN").is_some() || !base64_line(line) {
                     return Err(EngineCertProblem::NotPem);
                 } else {
-                    open = Some((label, body + 1));
+                    block.body.push(line);
+                    open = Some(block);
                 }
             }
         }
     }
-    if open.is_some() || labels.is_empty() {
+    if open.is_some() || blocks.is_empty() {
         return Err(EngineCertProblem::NotPem);
     }
-    Ok(labels)
+    Ok(blocks)
 }

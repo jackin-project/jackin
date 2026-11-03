@@ -38,7 +38,12 @@ async fn two_runs_with_one_launch_id_give_one_build_one_sandbox_one_upload_one_s
         assert_eq!(rig.gateway().sandboxes().len(), 1);
         let handle = rig.handle(1).await?;
         let built = rig.final_image()?;
-        let expected = rig.plan(1)?.draft().labels().clone().complete(&built.id);
+        let expected = rig
+            .plan(1)?
+            .draft()
+            .labels()
+            .clone()
+            .complete(&built.id, jackin_core::DockerLabel::Off);
         assert_eq!(SandboxLabels::from_labels(&handle.labels())?, expected);
         for present in ["src/main.rs", "README.md", ".git/HEAD", "notes.txt"] {
             assert!(
@@ -100,7 +105,12 @@ async fn a_failure_after_create_leaves_the_sandbox_and_a_retry_continues_it() ->
         let handle = rig.handle(1).await?;
         assert_eq!(handle.phase(), jackin_core::Phase::Ready);
         let built = rig.final_image()?;
-        let labels = rig.plan(1)?.draft().labels().clone().complete(&built.id);
+        let labels = rig
+            .plan(1)?
+            .draft()
+            .labels()
+            .clone()
+            .complete(&built.id, jackin_core::DockerLabel::Off);
         assert_eq!(SandboxLabels::from_labels(&handle.labels())?, labels);
         assert!(!has_file(
             &handle,

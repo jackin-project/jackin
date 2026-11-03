@@ -223,13 +223,12 @@ impl Ctx<'_> {
             agent: Agent::Codex,
             account: AccountName::parse("contract").map_err(text)?,
             launch: launch.clone(),
-            docker: jackin_core::DockerLabel::Off,
         };
         let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64))).map_err(text)?;
         Ok(SandboxCreate::new(
             name,
             image.clone(),
-            planned.complete(&image_id),
+            planned.complete(&image_id, jackin_core::DockerLabel::Off),
             providers,
             ClosedPolicy::parse(CONTRACT_POLICY).map_err(text)?,
             main,
