@@ -211,7 +211,7 @@ mod hostile_neighbours {
                 std::os::unix::fs::symlink("/bin/sleep", &odd)?;
                 let non_utf8 = bystander(&odd)?;
                 named_like(b"(\xffx\xfe)", &non_utf8).await?;
-                let fake = format!("x) S 1 {group} (");
+                let fake = format!("x) S 1 {group} ");
                 let forged = scratch.root().join(&fake);
                 std::os::unix::fs::symlink("/bin/sleep", &forged)?;
                 let impostor = bystander(&forged)?;

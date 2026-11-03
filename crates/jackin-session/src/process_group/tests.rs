@@ -205,7 +205,7 @@ async fn by_member_ends_every_live_member_of_a_group_it_does_not_leave_to_the_gr
     let (_, second) = cleanup.spawn("exec sleep 60", None, Some(group), Stdio::null())?;
     let (_, third) = cleanup.spawn("exec sleep 60", None, Some(group), Stdio::null())?;
     let links = tempfile::tempdir()?;
-    let forged = format!("x) S 1 {} (", group.as_raw_pid());
+    let forged = format!("x) S 1 {} ", group.as_raw_pid());
     let link = links.path().join(&forged);
     std::os::unix::fs::symlink("/bin/sleep", &link)?;
     let (_, bystander) = cleanup.spawn("exec \"$0\" 60", Some(&link), None, Stdio::null())?;

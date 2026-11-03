@@ -240,11 +240,19 @@ async fn exit_round(round: usize) -> TestResult {
     Ok(())
 }
 
-async fn cancel_once_the_group_is_known(scratch: &Scratch, cancel: &CancellationToken) {
+async fn cancel_once_the_group_is_known(
+    scratch: &Scratch,
+    cancel: &CancellationToken,
+) -> TestResult {
     while !scratch.root().join("pgid").exists() {
         tokio::time::sleep(Duration::from_millis(2)).await;
     }
+    assert!(
+        !group_is_empty(scratch)?,
+        "the oracle sees no member of a group that is still running"
+    );
     cancel.cancel();
+    Ok(())
 }
 
 async fn cancel_round(round: usize) -> TestResult {
@@ -252,10 +260,11 @@ async fn cancel_round(round: usize) -> TestResult {
     let body = format!("{GROUP_BODY}{GROUP_ID}sleep 30\n");
     let spec = scratch.spec(&body, &[])?;
     let cancel = CancellationToken::new();
-    let (result, ()) = tokio::join!(
+    let (result, known) = tokio::join!(
         TokioProcessRunner.run(&spec, None, &cancel),
         cancel_once_the_group_is_known(&scratch, &cancel)
     );
+    known?;
     assert!(
         matches!(result, Err(ProcessError::Cancelled { .. })),
         "{result:?}"
