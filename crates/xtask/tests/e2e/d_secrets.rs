@@ -197,6 +197,10 @@ async fn only_a_chatgpt_login_is_an_a1_source() {
             json!({"OPENAI_API_KEY": "sk-test-0123456789abcdef"}).to_string(),
         ),
         (
+            "api key mode with tokens present",
+            auth_json(ACCESS, REFRESH, ID_TOKEN, ACCOUNT_ID).replace("\"chatgpt\"", "\"apikey\""),
+        ),
+        (
             "empty refresh token",
             auth_json(ACCESS, "", ID_TOKEN, ACCOUNT_ID),
         ),
