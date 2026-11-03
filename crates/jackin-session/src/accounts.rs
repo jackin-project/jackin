@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use jackin_core::{
     Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, ConfigStore,
-    FileLock, Provider, ProviderName,
+    FileLock, GatewayName, Provider, ProviderName,
 };
 use jackin_openshell::{
     GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile, ProviderSpec,
@@ -15,7 +15,9 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::credentials::{CredentialError, read_chatgpt_login};
+use crate::gateways::{Gateways, UnreachableGateway};
 use crate::lock::{self, LockError};
+use crate::report::error_chain;
 use crate::service::Session;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -52,6 +54,21 @@ pub enum AccountEditError {
     Config(#[from] ConfigError),
     #[error(transparent)]
     Account(#[from] AccountError),
+    #[error("gateway {gateway} failed")]
+    OnGateway {
+        gateway: GatewayName,
+        source: GatewayError,
+    },
+    #[error("{}", unreachable_text(.0))]
+    Unreachable(Vec<UnreachableGateway>),
+}
+
+fn unreachable_text(gateways: &[UnreachableGateway]) -> String {
+    gateways
+        .iter()
+        .map(|gateway| error_chain(gateway))
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 #[derive(Clone, Debug)]
@@ -122,13 +139,13 @@ impl AccountPlan {
 
     pub async fn apply(
         self,
-        session: &Session,
+        gateways: &Gateways,
         store: &ConfigStore,
         cancel: &CancellationToken,
     ) -> Result<Config, AccountEditError> {
         match self {
             AccountPlan::Offline(plan) => Ok(plan.apply(store).await?),
-            AccountPlan::Gateway(plan) => plan.apply(session, store, cancel).await,
+            AccountPlan::Gateway(plan) => plan.apply(gateways, store, cancel).await,
         }
     }
 }
@@ -142,10 +159,11 @@ impl OfflinePlan {
 impl GatewayPlan {
     pub async fn apply(
         self,
-        session: &Session,
+        gateways: &Gateways,
         store: &ConfigStore,
         cancel: &CancellationToken,
     ) -> Result<Config, AccountEditError> {
+        let session = gateways.home();
         for account in &self.forget {
             session.forget_account(account, cancel).await?;
         }
