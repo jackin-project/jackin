@@ -497,7 +497,6 @@ async fn arrived(what: &str, model: &Arc<SshModel>, windows: usize) {
 #[tokio::test]
 async fn the_repaint_nudge_follows_tokio_time_for_every_shared_case() {
     let delay = Duration::from_secs(2);
-    let step = delay / 2 + Duration::from_millis(5);
     for case in NUDGE_CASES {
         let rig = good(Script::default()).await;
         let policy = if case.nudge {
@@ -505,6 +504,7 @@ async fn the_repaint_nudge_follows_tokio_time_for_every_shared_case() {
         } else {
             RepaintPolicy::Never
         };
+        let opening = Instant::now();
         let session = rig
             .try_open(InputMode::Owner, policy, size(case.open.0, case.open.1))
             .await
@@ -516,11 +516,12 @@ async fn the_repaint_nudge_follows_tokio_time_for_every_shared_case() {
         eventually(case.name, || rig.windows().len() >= before.len()).await;
 
         tokio::time::pause();
+        let quiet = delay.saturating_sub(opening.elapsed() + Duration::from_millis(20));
         settled().await;
-        tokio::time::advance(step).await;
+        tokio::time::advance(quiet).await;
         settled().await;
         assert_eq!(rig.windows(), before, "{}: the nudge came early", case.name);
-        tokio::time::advance(step).await;
+        tokio::time::advance(delay.saturating_sub(quiet) + Duration::from_millis(10)).await;
         arrived(case.name, &rig.model, case.windows.len()).await;
         assert_eq!(rig.windows(), pairs(case.windows), "{}", case.name);
         tokio::time::advance(delay * 3).await;

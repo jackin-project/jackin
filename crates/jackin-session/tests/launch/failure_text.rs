@@ -150,13 +150,15 @@ fn chain(texts: &[&'static str]) -> Option<Link> {
 #[test]
 fn an_error_chain_prints_each_cause_once_and_drops_only_a_repeat_of_the_line_before() -> Fallible<()>
 {
-    let cases: [(&[&'static str], &str); 6] = [
+    let cases: [(&[&'static str], &str); 8] = [
         (&["x"], "x"),
         (&["x", "x"], "x"),
         (&["a", "a", "a"], "a"),
         (&["a", "b", "c"], "a: b: c"),
         (&["x", "x", "y"], "x: y"),
         (&["x", "y", "x"], "x: y: x"),
+        (&["a", "b", "b"], "a: b"),
+        (&["ab", "b"], "ab: b"),
     ];
     for (texts, expected) in cases {
         let error = chain(texts).ok_or("an empty chain")?;

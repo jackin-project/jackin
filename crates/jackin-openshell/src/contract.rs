@@ -744,14 +744,17 @@ async fn read_missing_file(ctx: &Ctx<'_>) -> Outcome<()> {
 fn output_too_large(
     found: &Result<impl std::fmt::Debug, GatewayError>,
     op: GatewayOp,
+    stream: OutputStream,
 ) -> Outcome<()> {
     expect(
         matches!(
             found,
-            Err(GatewayError::OutputTooLarge { op: seen, stream: OutputStream::Stdout, limit })
-                if *seen == op && *limit == OUTPUT_LIMIT
+            Err(GatewayError::OutputTooLarge { op: seen, stream: seen_stream, limit })
+                if *seen == op && *seen_stream == stream && *limit == OUTPUT_LIMIT
         ),
-        &format!("an output over {OUTPUT_LIMIT} bytes is not an OutputTooLarge error of {op:?}"),
+        &format!(
+            "an output over {OUTPUT_LIMIT} bytes is not an OutputTooLarge error of {op:?} on {stream:?}"
+        ),
     )
 }
 
@@ -781,7 +784,32 @@ async fn output_over_the_limit_is_an_error(ctx: &Ctx<'_>) -> Outcome<()> {
                 None,
             )
             .await?;
-        output_too_large(&over, GatewayOp::Program)?;
+        output_too_large(&over, GatewayOp::Program, OutputStream::Stdout)?;
+
+        let emit_err = |bytes: usize| format!("yes | head -c {bytes} >&2");
+        let err_at_limit = ctx
+            .exec(
+                &sandbox,
+                &emit_err(OUTPUT_LIMIT),
+                &[],
+                ProgramStdin::Closed,
+                None,
+            )
+            .await?;
+        expect(
+            err_at_limit.stderr.len() == OUTPUT_LIMIT,
+            "a stderr of exactly the limit is not returned whole",
+        )?;
+        let err_over = ctx
+            .exec_typed(
+                &sandbox,
+                &emit_err(OUTPUT_LIMIT + 1),
+                &[],
+                ProgramStdin::Closed,
+                None,
+            )
+            .await?;
+        output_too_large(&err_over, GatewayOp::Program, OutputStream::Stderr)?;
 
         let big = path("/sandbox/.contract/big")?;
         ctx.exec(
@@ -813,7 +841,7 @@ async fn output_over_the_limit_is_an_error(ctx: &Ctx<'_>) -> Outcome<()> {
             .gateway
             .read_files(&sandbox, std::slice::from_ref(&big))
             .await;
-        output_too_large(&over, GatewayOp::ReadFiles)
+        output_too_large(&over, GatewayOp::ReadFiles, OutputStream::Stdout)
     }
     .await;
     ctx.cleanup(&sandbox).await;
