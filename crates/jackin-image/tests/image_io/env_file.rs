@@ -17,8 +17,7 @@ use tempfile::TempDir;
 use crate::support::{JACKIN_START, TestResult};
 
 const CHILD: &str = ": > \"$1.ran\"\nout=$1\nshift\nfor n in \"$@\"; do\n  if printenv \"$n\" > /dev/null; then\n    printf '%s=%s\\n' \"$n\" \"$(printenv \"$n\")\"\n  else\n    printf '%s unset\\n' \"$n\"\n  fi\ndone >> \"$out\"\n";
-const HEAD: &str =
-    "set -u\nrun=$1; project=$2; envfile=$3; child=$4; out=$5; main_ok=0; main_lines=\nshift 5\n";
+const HEAD: &str = "set -u\nJACKIN_RUN=$1; JACKIN_PROJECT=$2; JACKIN_ENVFILE=$3; child=$4; out=$5; JACKIN_MAIN_OK=0; JACKIN_MAIN_LINES=\nshift 5\n";
 const REPORT: &str =
     "for n in \"$@\"; do\n  if printenv \"$n\" > /dev/null; then echo \"AFTER $n\"; fi\ndone\n";
 
@@ -278,8 +277,8 @@ fn jackin_start_reads_the_env_file_before_every_attempt_and_a_missing_file_means
     let launch = LaunchId::parse("launch-1")?;
     let assigned = script()?
         .lines()
-        .find_map(|line| line.strip_prefix("envfile="))
-        .ok_or("no envfile= line")?;
+        .find_map(|line| line.strip_prefix("JACKIN_ENVFILE="))
+        .ok_or("no JACKIN_ENVFILE= line")?;
     assert_eq!(
         assigned.replace("$JACKIN_LAUNCH_ID", launch.as_str()),
         sandbox_layout::env_file(&launch).as_str(),
@@ -301,7 +300,7 @@ fn jackin_start_reads_the_env_file_before_every_attempt_and_a_missing_file_means
         )
     };
     let body = format!(
-        "cp \"{e1}\" \"$envfile\"\n{a1}cp \"{e2}\" \"$envfile\"\n{a2}rm -f \"$envfile\"\n{a3}{REPORT}",
+        "cp \"{e1}\" \"$JACKIN_ENVFILE\"\n{a1}cp \"{e2}\" \"$JACKIN_ENVFILE\"\n{a2}rm -f \"$JACKIN_ENVFILE\"\n{a3}{REPORT}",
         e1 = shell.path("e1"),
         e2 = shell.path("e2"),
         a1 = attempt(1),

@@ -1052,7 +1052,7 @@ fn publish_all(scratch: &Scratch, name: &str, states: &[&str]) -> Result<PathBuf
     let calls: Vec<String> = (0..states.len())
         .map(|index| format!("publish \"${}\"", index + 2))
         .collect();
-    let body = format!("set -u; run=$1; {function}\n{}", calls.join("; "));
+    let body = format!("set -u; JACKIN_RUN=$1; {function}\n{}", calls.join("; "));
     let dir = scratch.fresh(name)?;
     let dir_text = dir.to_str().ok_or("temp dir is not UTF-8")?;
     let mut args = vec![dir_text];
@@ -1071,20 +1071,20 @@ fn embedded_jackin_start_publishes_what_the_supervisor_parser_accepts() -> TestR
     let script = script()?;
     let state = sandbox_layout::RUN_STATE.as_str();
     let start = sandbox_layout::RUN_START.as_str();
-    let run = assignment(script, "run")?;
+    let run = assignment(script, "JACKIN_RUN")?;
     assert_eq!(run, parent(state), "run directory against RUN_STATE");
     assert_eq!(run, parent(start), "run directory against RUN_START");
     assert_eq!(last_segment(state), "state", "state file name");
     assert_eq!(last_segment(start), "start", "start file name");
     assert!(
-        script.contains("\"$run/state\""),
+        script.contains("\"$JACKIN_RUN/state\""),
         "state path in the script"
     );
     assert!(
-        script.contains("\"$run/start\""),
+        script.contains("\"$JACKIN_RUN/start\""),
         "start path in the script"
     );
-    let project = assignment(script, "project")?;
+    let project = assignment(script, "JACKIN_PROJECT")?;
     assert_eq!(project, sandbox_layout::PROJECT.as_str(), "project path");
     assert_eq!(
         project,
@@ -1125,8 +1125,8 @@ fn read_attempt(
     name: &str,
     content: Option<&[u8]>,
 ) -> Result<(String, bool), Box<dyn Error>> {
-    let segment = segment(script()?, "attempt=", "esac")?.join("\n");
-    let body = format!("set -u; run=$1\n{segment}\nprintf %s \"$attempt\"");
+    let segment = segment(script()?, "JACKIN_ATTEMPT=", "esac")?.join("\n");
+    let body = format!("set -u; JACKIN_RUN=$1\n{segment}\nprintf %s \"$JACKIN_ATTEMPT\"");
     let dir = scratch.fresh(name)?;
     if let Some(bytes) = content {
         fs::write(dir.join("start"), bytes)?;

@@ -90,21 +90,24 @@ impl Supervisor {
         let mut text = SCRIPT.to_owned();
         let mut replacements = vec![
             (
-                "run=/sandbox/.jackin/run\n",
-                format!("run={r}/sandbox/.jackin/run\n"),
+                "JACKIN_RUN=/sandbox/.jackin/run\n",
+                format!("JACKIN_RUN={r}/sandbox/.jackin/run\n"),
             ),
             (
-                "project=/sandbox/project\n",
-                format!("project={r}/sandbox/project\n"),
-            ),
-            ("bin_dir=/usr/local/bin\n", format!("bin_dir={r}/bin\n")),
-            (
-                "environ_file=/proc/$$/environ\n",
-                format!("environ_file={r}/environ\n"),
+                "JACKIN_PROJECT=/sandbox/project\n",
+                format!("JACKIN_PROJECT={r}/sandbox/project\n"),
             ),
             (
-                "envfile=/sandbox/.jackin/env-$",
-                format!("envfile={r}/sandbox/.jackin/env-$"),
+                "JACKIN_BIN_DIR=/usr/local/bin\n",
+                format!("JACKIN_BIN_DIR={r}/bin\n"),
+            ),
+            (
+                "JACKIN_ENVIRON_FILE=/proc/$$/environ\n",
+                format!("JACKIN_ENVIRON_FILE={r}/environ\n"),
+            ),
+            (
+                "JACKIN_ENVFILE=/sandbox/.jackin/env-$",
+                format!("JACKIN_ENVFILE={r}/sandbox/.jackin/env-$"),
             ),
             ("sleep 0.5", format!("sleep {}", POLL.as_secs_f64())),
         ];
@@ -508,8 +511,8 @@ fn launch_command_name_resolves_to_the_agent_binary_path() -> TestResult {
     let spec = Agent::Codex.spec();
     let directory = SCRIPT
         .lines()
-        .find_map(|line| line.strip_prefix("bin_dir="))
-        .ok_or("no bin_dir= line in jackin-start")?;
+        .find_map(|line| line.strip_prefix("JACKIN_BIN_DIR="))
+        .ok_or("no JACKIN_BIN_DIR= line in jackin-start")?;
     let name = spec.launch_command.first().ok_or("empty launch command")?;
     assert!(
         !name.contains('/'),
