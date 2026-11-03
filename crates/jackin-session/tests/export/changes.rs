@@ -272,6 +272,23 @@ async fn untracked_files_beyond_the_first_five_hundred_are_counted_not_listed() 
     .await
 }
 
+async fn touch_readme(handle: &SandboxHandle) -> TestResult {
+    tokio::fs::OpenOptions::new()
+        .write(true)
+        .open(handle.root().join("project/README.md"))
+        .await?
+        .into_std()
+        .await
+        .set_modified(UNIX_EPOCH + Duration::from_secs(1_700_000_000))?;
+    Ok(())
+}
+
+fn index_digest(handle: &SandboxHandle) -> Result<Sha256, std::io::Error> {
+    Ok(Sha256::of(&std::fs::read(
+        handle.root().join("project/.git/index"),
+    )?))
+}
+
 #[tokio::test]
 async fn asking_for_the_work_state_never_rewrites_the_sandbox_index() -> TestResult {
     guard(async {
@@ -279,22 +296,40 @@ async fn asking_for_the_work_state_never_rewrites_the_sandbox_index() -> TestRes
         rig.launch(1).await?;
         let handle = rig.handle(1).await?;
         let name = handle.name();
-        let readme = handle.root().join("project/README.md");
-        tokio::fs::OpenOptions::new()
-            .write(true)
-            .open(&readme)
-            .await?
-            .into_std()
-            .await
-            .set_modified(UNIX_EPOCH + Duration::from_secs(1_700_000_000))?;
-        let index = handle.root().join("project/.git/index");
-        let before = Sha256::of(&std::fs::read(&index)?);
+        touch_readme(&handle).await?;
+        let before = index_digest(&handle)?;
 
         state(&rig, &name).await;
-        assert_eq!(Sha256::of(&std::fs::read(&index)?), before);
+        assert_eq!(index_digest(&handle)?, before);
 
         handle.git(&["status", "--porcelain"]).await?;
-        assert_ne!(Sha256::of(&std::fs::read(&index)?), before);
+        assert_ne!(index_digest(&handle)?, before);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn asking_for_the_changes_never_rewrites_the_sandbox_index() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        touch_readme(&handle).await?;
+        let before = index_digest(&handle)?;
+
+        assert_eq!(
+            changes(&rig, &name).await?,
+            ChangeSet {
+                files: Vec::new(),
+                omitted: 0
+            }
+        );
+        assert_eq!(index_digest(&handle)?, before);
+
+        handle.git(&["status", "--porcelain"]).await?;
+        assert_ne!(index_digest(&handle)?, before);
         Ok(())
     })
     .await
