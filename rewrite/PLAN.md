@@ -625,7 +625,7 @@ P11.1 and P11.2 run in parallel.
 - **Repo:** jackin-the-architect. **Owner:** `agent-sandbox-engineer`. **Depends:** P8.2.
 - **Steps:** Apply D20. Delete `jackin-toolchain/`, `scripts/update-jackin-toolchain.rs`, `AGENTS.md.d/`, `docs/pr-workflow.md`, `caveman-config.json`, and every Claude file. Install the D02 Rust toolchain and mr-boxington in the image. Write the policy for crates.io, GitHub, and the mise download hosts.
 - **Proof:** G-ROLE passes. In a sandbox of this role, G-FAST passes on a clone of jackin. Record it in `evidence/P11.2-architect.md`.
-- [ ] P11.2 done
+- [x] P11.2 done. Proof: jackin-the-architect feature/openshell-native fe88f07 (role ffc8735: Codex role, locked toolchain under root-owned /usr/local with jackin's pins, egress crates.io read-only and github.com git fetch only); G-ROLE exit 0 (`jackin role check .`, `mise run test`); live G-FAST in a sandbox of this role on jackin 24d77b490: exit 0, 1215/1215 passed; code-reviewer fixed, security-reviewer APPROVE; evidence/P11.2-architect.md.
 
 ## Phase P12. Rewrite the documents
 
