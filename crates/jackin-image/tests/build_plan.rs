@@ -1449,8 +1449,20 @@ fn derived_dockerfile_copies_the_client_once_and_scans_it_against_the_client_sta
         .collect();
     assert_eq!(
         copies,
-        ["COPY --from=docker-client --chown=root:root --chmod=0755 / /"]
+        ["COPY --from=docker-client --chown=root:root --chmod=u=rwX,go=rX / /"]
     );
+    for layer in ["absent", "client"] {
+        let stage = stage_named(&all, &format!("docker-client-{layer}"))?;
+        assert_eq!(stage.from, "scratch", "{layer}");
+        assert!(
+            stage
+                .lines
+                .iter()
+                .any(|line| line.starts_with("COPY --from=docker-client-")),
+            "an empty scratch source reuses the cached client copy: {:?}",
+            stage.lines
+        );
+    }
     let run = stage_named(&all, "scan")?
         .lines
         .iter()

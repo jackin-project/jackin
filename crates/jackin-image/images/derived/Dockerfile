@@ -93,6 +93,8 @@ RUN --mount=type=bind,from=docker-cli-archive,source=/,target=/cli \
     && install -D -m 0755 -o root -g root "$work/docker/docker" /out/usr/local/bin/docker \
     && install -D -m 0755 -o root -g root /buildx/docker-buildx /out/usr/local/libexec/docker/cli-plugins/docker-buildx \
     && install -D -m 0755 -o root -g root /compose/docker-compose /out/usr/local/libexec/docker/cli-plugins/docker-compose \
+    && install -D -m 0644 -o root -g root /dev/null /out/usr/local/lib/jackin/docker-layer \
+    && printf 'client\n' > /out/usr/local/lib/jackin/docker-layer \
     && test "$(/out/usr/local/bin/docker --version | cut -d, -f1)" = "Docker version ${DOCKER_CLI_VERSION}" \
     && test "$(/out/usr/local/libexec/docker/cli-plugins/docker-buildx version | cut -d' ' -f2)" = "v${DOCKER_BUILDX_VERSION}" \
     && test "$(/out/usr/local/libexec/docker/cli-plugins/docker-compose version)" = "Docker Compose version v${DOCKER_COMPOSE_VERSION}" \
@@ -101,7 +103,13 @@ RUN --mount=type=bind,from=docker-cli-archive,source=/,target=/cli \
 FROM scratch AS docker-client-client
 COPY --from=docker-client-build /out/ /
 
+FROM construct AS docker-client-none
+USER root
+RUN install -D -m 0644 -o root -g root /dev/null /out/usr/local/lib/jackin/docker-layer \
+    && printf 'absent\n' > /out/usr/local/lib/jackin/docker-layer
+
 FROM scratch AS docker-client-absent
+COPY --from=docker-client-none /out/ /
 
 FROM docker-client-${DOCKER_LAYER} AS docker-client
 
@@ -125,7 +133,7 @@ USER root
 COPY --from=layout --chown=root:root --chmod=0755 /layout/ /
 COPY --from=trusted --chown=root:root --chmod=0755 ${CODEX_BIN_DIR}/codex ${CODEX_BIN_DIR}/codex-code-mode-host ${CODEX_BIN_DIR}/
 COPY --from=codex --chown=root:root --chmod=u=rwX,go=rX /etc/codex/config.toml /etc/codex/config.toml
-COPY --from=docker-client --chown=root:root --chmod=0755 / /
+COPY --from=docker-client --chown=root:root --chmod=u=rwX,go=rX / /
 COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/bin/jackin-start /usr/local/bin/jackin-start
 COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/lib/jackin/hooks/setup /usr/local/lib/jackin/hooks/preflight /usr/local/lib/jackin/hooks/
 
