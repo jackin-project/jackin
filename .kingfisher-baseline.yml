@@ -20,24 +20,18 @@ fingerprint_algorithm: kingfisher-v1
 repositories:
 - id: git://github.com/jackin-project/jackin
   findings:
-  - path: ''
-    fingerprint: '12638979745217639803'
-    rule_id: betterleaks.jwt
-    line: 9
-    first_seen_at: 2026-11-03T10:42:09.428389+00:00
-    last_updated_at: 2026-11-03T10:42:09.428389+00:00
-  - path: ''
-    fingerprint: '11953210001442509036'
-    rule_id: betterleaks.jwt
-    line: 11
-    first_seen_at: 2026-11-03T10:42:09.428389+00:00
-    last_updated_at: 2026-11-03T10:42:09.428389+00:00
-  - path: ''
-    fingerprint: '14654735214883087869'
-    rule_id: betterleaks.jwt
-    line: 165
-    first_seen_at: 2026-11-03T10:42:09.428389+00:00
-    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: .kingfisher-baseline.yml
+    fingerprint: '1265784279435296958'
+    rule_id: betterleaks.azure-storage-account-name
+    line: 524
+    first_seen_at: 2026-11-03T11:07:30.629497+00:00
+    last_updated_at: 2026-11-03T11:07:30.629497+00:00
+  - path: .kingfisher-baseline.yml
+    fingerprint: '12899230867388031377'
+    rule_id: betterleaks.azure-storage-account-name
+    line: 524
+    first_seen_at: 2026-11-03T11:07:30.629497+00:00
+    last_updated_at: 2026-11-03T11:07:30.629497+00:00
   - path: crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs
     fingerprint: '18085921644036203508'
     rule_id: betterleaks.generic-credential-uri
@@ -74,6 +68,12 @@ repositories:
     line: 27
     first_seen_at: 2026-11-03T10:42:09.428389+00:00
     last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-core/src/agent.rs
+    fingerprint: '14654735214883087869'
+    rule_id: betterleaks.jwt
+    line: 165
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T11:07:30.629497+00:00
   - path: crates/jackin-core/src/agent.rs
     fingerprint: '2001662616931921538'
     rule_id: betterleaks.jwt
@@ -243,17 +243,17 @@ repositories:
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
   - path: crates/jackin-openshell/tests/gateway/discovery.rs
-    fingerprint: '10218341178583489200'
-    rule_id: betterleaks.generic-credential-uri
-    line: 228
-    first_seen_at: 2026-11-03T10:42:09.428389+00:00
-    last_updated_at: 2026-11-03T10:42:09.428389+00:00
-  - path: crates/jackin-openshell/tests/gateway/discovery.rs
     fingerprint: '15695154713795733532'
     rule_id: betterleaks.generic-credential-uri
     line: 228
     first_seen_at: 2026-11-03T10:42:09.428389+00:00
     last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-openshell/tests/gateway/discovery.rs
+    fingerprint: '3407169798526525991'
+    rule_id: betterleaks.generic-credential-uri
+    line: 229
+    first_seen_at: 2026-11-03T11:07:30.629497+00:00
+    last_updated_at: 2026-11-03T11:07:30.629497+00:00
   - path: crates/jackin-openshell/tests/gateway/discovery.rs
     fingerprint: '9524989594829128001'
     rule_id: betterleaks.generic-credential-uri
@@ -501,11 +501,23 @@ repositories:
     first_seen_at: 2026-11-03T10:42:09.428389+00:00
     last_updated_at: 2026-11-03T10:42:09.428389+00:00
   - path: crates/xtask/tests/e2e/scenario/world.rs
+    fingerprint: '12638979745217639803'
+    rule_id: betterleaks.jwt
+    line: 9
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T11:07:30.629497+00:00
+  - path: crates/xtask/tests/e2e/scenario/world.rs
     fingerprint: '13837221004436367791'
     rule_id: betterleaks.jwt
     line: 9
     first_seen_at: 2026-11-03T10:42:09.428389+00:00
     last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/xtask/tests/e2e/scenario/world.rs
+    fingerprint: '11953210001442509036'
+    rule_id: betterleaks.jwt
+    line: 11
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T11:07:30.629497+00:00
   - path: crates/xtask/tests/e2e/scenario/world.rs
     fingerprint: '6047543060910122716'
     rule_id: betterleaks.jwt
