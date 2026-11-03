@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use jackin_core::{
-    AccountName, Agent, Compatibility, DockerLabel, ImageId, InspectView, LaunchId, Phase,
-    PlannedLabels, PolicyStatus, ProviderName, RoleName, SandboxName, SandboxSummary,
+    AccountName, Agent, CaFingerprint, Compatibility, DockerLabel, ImageId, InspectView, LaunchId,
+    Phase, PlannedLabels, PolicyStatus, ProviderName, RoleName, SandboxName, SandboxSummary,
     SupervisorReading, SupervisorState, WorkspaceName,
 };
 use jackin_openshell::Gateway;
@@ -102,7 +102,7 @@ impl ScenarioHost {
             .get(workspace)
             .is_some_and(|(_, docker)| *docker);
         if docker && !self.shared.knobs().docker_label_off {
-            "2376".to_owned()
+            "engine-2376-0123456789abcdef".to_owned()
         } else {
             "off".to_owned()
         }
@@ -259,10 +259,14 @@ impl ScenarioHost {
             agent: Agent::Codex,
             account: AccountName::parse(&model.account).expect("account"),
             launch: LaunchId::parse(&model.launch).expect("launch"),
-            docker: self
-                .docker_value(&model.workspace)
-                .parse()
-                .map_or(DockerLabel::Off, DockerLabel::Engine),
+        };
+        let docker = if self.docker_value(&model.workspace) == "off" {
+            DockerLabel::Off
+        } else {
+            DockerLabel::Engine {
+                port: std::num::NonZeroU16::new(2376).expect("port"),
+                ca: CaFingerprint::parse("0123456789abcdef").expect("ca"),
+            }
         };
         let supervisor = SupervisorReading::Reported(
             SupervisorState::parse(&model.supervisor).expect("supervisor"),
@@ -271,7 +275,7 @@ impl ScenarioHost {
             schema: 1,
             summary: SandboxSummary {
                 name: SandboxName::parse(name).expect("name"),
-                labels: planned.complete(&ImageId::parse(IMAGE_ID).expect("image")),
+                labels: planned.complete(&ImageId::parse(IMAGE_ID).expect("image"), docker),
                 phase: Phase::Ready,
             },
             providers: Vec::new(),
