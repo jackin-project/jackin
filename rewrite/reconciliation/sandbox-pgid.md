@@ -131,3 +131,91 @@ CPU burners alone (54, then 354 `while :; do :; done` subshells, killed by PID) 
 - `adr008` root cause.
 - That a pool stall is what hit the sandbox run (the symptom and the mechanism match; the sandbox was not instrumented).
 - A sandbox without a reaping init (finding 5 ran with the primitive and a plain zombie, not in a pid namespace).
+
+## Round 3: the approved tests and three code fixes
+
+Commits on `wt/sandbox-pgid` after `fac3877b7`: `cc8f18f8f` (fault translation), `9a197a3bb` (one group stop, unreadable stat line, the process-group tests), `5371a61c2` (clock-guard tests) and the follow-up test commits up to the head of this round. Inputs: the code review, the test plan, the plan review (APPROVED WITH AMENDMENTS) and the rerun section of the P11.2 evidence. Only the amended cases were written: P1a-c, P2, U1, the parser table, H1-H4, the amended T4 rows, F1-F8 and A9-A10. A11 (`shell_exit_code_cannot_hang_the_run`) is out of scope and untouched. The Display rows of T3/A7 and the per-type Display checks of A6 were written because A6 and A7 are amendments.
+
+### Decisions
+
+1. Fault translation. `EngineError::Cancelled`, `ExportError::Cancelled`, `GatewayError::Cancelled` and `GatewayError::Timeout` carry `group: Option<GroupFault>`. The translations that built them from a `ProcessError` or a `GatewayError` (`transfer::process_error`, `buildx::from_process`, both `ExportError` conversions) pass the fault on. Every `Display` appends `; <fault>` through `GroupFault::note`, which goes through `plain`. `ConnectError::cancel` replaces the `is_cancelled` pattern, and the cancelled exit of the CLI now names the fault. `ProcessReply` gained `cancelled_with`, `timeout_with` and `group`. Not changed: `EngineError::Cancelled` still becomes the unit `ImageError::Cancelled` in `ensure.rs:40`, so the fault is dropped there (no review item listed it). A caller that matches `Cancelled { .. }` or `Timeout { .. }` sees no difference.
+2. One group stop. The code moved from `jackin-session::host::group` to `jackin-core::process_group` as `ProcessGroup` (`of_leader`, `strike`, `sweep`, `stop`) with `Sweep`. `jackin-core` is the only crate that both `jackin-session` and `xtask` may depend on: the `layers` rows allow `xtask` to use `jackin-core` and `jackin-openshell`, and `jackin-session` has `jackin-core` as a dependency, so no row changed and the `layers` step passed. `jackin-core` already depended on `rustix` and already held `GroupFault`; its `tokio` gained the `time` feature (no new crate, no version change). `rustix` moved to the dev-dependencies of `jackin-session` and `xtask` because only their tests use it now. D14 says `jackin-core` does no I/O except config files; `ProcessGroup` (SIGKILL and `/proc` reads) is the one exception, recorded in API.md. The orchestrator owns `decisions.tsv` and should record it.
+3. xtask. `RealHost::run` strikes the group, reaps the leader with `Child::kill`, then calls `ProcessGroup::stop`, the same order as `execute` in the runner; the old order waited on a leader that the sandbox never signalled. `PortableLink::drop` sweeps once. `HostError::Timeout` and `HostError::Cancelled` carry the fault and `HostError::Group` is new; `production.rs` maps them to the `ProcessError` variants. No test covers those three xtask paths (the hermetic trigger is the P1 table, and A10 allowed leaving it out if the fault was dropped; it is kept, so it is unproven).
+4. Unreadable stat line. `stat::is_live_member` returns `Result<bool, Unparsable>`; `members` turns `Unparsable` into `GroupFault::Unreachable` that names the pid. ENOENT and ESRCH during the read still skip the pid. A `pgrp` beyond `i32` is unparsable too.
+5. The first `cfg(test)` module in the workspace: `process_group/tests.rs`, declared `#[cfg(all(test, target_os = "linux"))]`, as A3 allowed. Reason: `by_member` runs only when the group signal answers EPERM, and no public path reaches it on a host where the group signal works. `by_member` and `members` are private; the module sees them as a child. `mod stat` was not widened. The orchestrator should record the exception.
+6. H2 differs from the plan review. A `pre-commit` hook blocks inside `git commit`, and `git` holds its own guard, so deleting the guard of `commit_in_project` leaves that test green (the guard there covers the two `tokio::fs` awaits). H2 therefore blocks the write of `commit_in_project` on a FIFO, released by the test.
+7. P2 and the forged name. On a host where the group signal works, the scan runs once, after the first strike, and the next poll gets ESRCH. A parser that splits at the first `)` therefore cannot fail P2 there; only the non-UTF-8 neighbour can. The forged-name neighbour is also a bystander of the U1 test (named `x) S 1 <group> (`), where `by_member` kills every parsed member, so that case is red on a Linux host. P2's forged neighbour is red only on the EPERM branch (owed).
+8. P2 starts its neighbours as `sh -c 'exec "$0" 60' <symlink>` because the `containers` check rejects a computed `Command::new` program. The test waits until `comm` shows the odd name, so it cannot pass without the name.
+9. Cleanup. Every spawned child is killed in a drop guard (`Held`, `Cleanup`), the git alias loops stop on a flag written on drop, the FIFO write is released on drop, and the xtask timeout test kills the background `sleep` it recorded.
+10. Test environment. `git` was missing on `jackin-engine`; it was installed with `apt-get install git` (1:2.43.0-1ubuntu7.4). Linux test binaries were built on macOS with `cargo zigbuild` (target `aarch64-unknown-linux-gnu`, `CARGO_ZIGBUILD_ZIG_PATH` set) and run on `jackin-engine` through `orb -m jackin-engine <binary>` from the crate directory. Breaks ran in copies of the worktree, never in the worktree.
+
+### Red and green
+
+Each row: the named break (a one-place edit to production code or to the probe, reverted after the run), the red line of the first failing assertion, and where green was seen. Green: macOS rows pass in the final `xtask ci --fast` run; Linux rows pass on `jackin-engine` (aarch64, kernel 7.2.12) from the same sources. "Red (mac)" ran on macOS arm64, "Red (linux)" on `jackin-engine`.
+
+| Test | Break | Red line |
+|---|---|---|
+| `a_stat_line_is_a_live_member_only_of_its_own_group_...` (linux) | `PGRP` 2 to 1 | `tests.rs:50 a sleeping member: left Ok(false), right Ok(true)` |
+| same | `THREADS` 17 to 18 | `tests.rs:77 a zombie with one thread: left Ok(true), right Ok(false)` |
+| same | `b'Z'` always over | `tests.rs:83 a zombie leader with a running thread: left Ok(false), right Ok(true)` |
+| same | `b'Z'` never over | `tests.rs:78 a zombie with one thread: left Ok(true), right Ok(false)` |
+| same | the `b'X'` arm removed | `tests.rs:87 a dead process: left Ok(true), right Ok(false)` |
+| same | `rposition` to `position` | `tests.rs:93 a comm that is only parentheses: left Ok(false), right Ok(true)` |
+| `a_stat_line_that_cannot_be_read_is_a_fault_...` (linux) | `ok_or(Unparsable)?` to `Ok(false)` | `tests.rs:108 cut before the group: left Ok(false), right Err(Unparsable)` |
+| same | `pgrp` parsed as `u64` and cast to `i32` | `tests.rs:109 a group beyond i32: left Ok(true), right Err(Unparsable)` |
+| `by_member_ends_every_live_member_...` and `..._the_orphans_...` (linux) | `by_member` sends `SIGCONT` | `the group empties: "group 14320 still had a live member after 30 s"` (both tests) |
+| `by_member_ends_every_live_member_...` (linux) | `rposition` to `position` | `tests.rs:208 three members before: left 4, right 3` (the forged bystander counts as a member) |
+| P1a-c (mac) | `with_group` returns `Group` for `Timeout` and `Cancelled` | `expected Cancelled, got Err(Group { program: Git, fault: Alive { after: 5s } })`; the same for `Timeout` |
+| P1b-c (mac) | `execute` drops the `gone` result | `group.rs:159 left: None, right: Some(Alive { after: 5s })` |
+| P1a (mac) | the clean-exit path drops the fault | `expected Some(Alive { after: 5s }) as the fault, got Ok(ProcessOutput { status: Exited(0), ... })` |
+| P1a-c (linux) | `survivors` always `Signalled` | `expected None as the fault, got Err(Group { program: Git, fault: Alive { after: 5s } })`; `group.rs:159 left: Some(Alive { after: 5s }), right: None` |
+| P1b-c (linux) | a zombie counts as live | `group.rs:159 left: Some(Alive { after: 5s }), right: None` (3 of 4 tests fail) |
+| P2 non-UTF-8 name (linux) | `members` reads with `read_to_string` | `Error: Group { program: Git, fault: Unreachable { message: "reading the state of process 14586 failed: stream did not contain valid UTF-8" } }` |
+| P2 forged name (linux) | `rposition` to `position` | none: green on this host, see decision 7. Owed in the sandbox rerun. |
+| A9 `stdin_is_dev_null_...` (mac, linux) | `Null` stdin as a pipe | `Null stdin: left "other\n", right "devnull\n"` |
+| same (mac) | the probe always prints `devnull` | `Bytes stdin is not /dev/null: left "devnull\ngiven", right "other\ngiven"` |
+| same (mac, linux) | none of the three paths exists | `Null stdin: left "unobservable\n", right "devnull\n"` |
+| Display rows, `display.rs` and `error_text.rs` (mac) | `GroupFault::note` returns an empty string | `left "git was cancelled", right "git was cancelled; processes of its group were still alive after 5s"` |
+| same | `plain` removed from `Unreachable` | `left "...x\ny\u{1b}[31m", right "...x\\ny\\u{1b}[31m"` |
+| F1 `a_group_fault_rides_through_each_transfer_...` (mac) | `process_error` drops the timeout fault | `transfer.rs:958 UploadFile timeout fault: left None, right Some(Alive { after: 5s })` |
+| F2 same | drops the cancel fault | `transfer.rs:972 UploadFile cancel fault: left None, right Some(Unreachable { message: "cannot list /proc: x\ny\u{1b}[0m" })` |
+| F3 same | invents a fault when there is none | `UploadFile: Timeout { op: UploadFile, after: 9s, group: Some(Alive { after: 0ns }) }` |
+| F3 same | a `Group` error becomes `Cancelled` | `UploadFile: Cancelled { op: UploadFile, group: None }` |
+| F4 `buildx_find_reads_...` (mac) | `from_process` drops the cancel fault | `buildx.rs:702 cancelled with a fault: left None, right Some(Alive { after: 5s })` |
+| F4 same | a `Timeout` becomes `Cancelled` | `Error: "timeout: got Err(Cancelled { group: None })"` |
+| F4 same | a `Group` error becomes `Cancelled` | `Error: "group fault: got Err(Cancelled { group: None })"` |
+| F5 `a_host_git_call_cancelled_with_a_group_fault_...` (mac) | the `ProcessError` conversion drops the fault | `abort.rs:223 index-pack: left "cancelled", right "cancelled; processes of its group were still alive after 5s"` |
+| F5 same | `ExportError::Cancelled` prints without the fault | the same line |
+| F6 `a_gateway_cancel_or_timeout_with_a_group_fault_...` (mac) | the `GatewayError` conversion drops the fault | `abort.rs:265 left: None, right: Some(Alive { after: 5s })` |
+| F7 same | a `Timeout` passes through without its fault | `abort.rs:280 left: None, right: Some(Alive { after: 5s })` |
+| F8 `a_cancel_whose_group_stop_failed_...` (mac) | `cancel()` hides a cancel that has a fault | `connect.rs:90 cannot discover gateway fake-gateway` |
+| F8 same | the exit text drops the fault | `connect.rs:95 the fault is lost: cancelled while connecting to the gateway` |
+| T4 `a_guard_taken_one_poll_before_a_sleep_wakes_...` (mac) | `quiet &&` removed from the completion check | `host.rs:407 woke under a guard: left Some(1), right None` |
+| T4 `a_sleep_waits_for_the_last_of_two_guards`, `a_sleep_begun_under_a_guard_...` (mac) | no guard check at all | `host.rs:451 woke under two guards: left Some(65), right None` |
+| T4 `a_sleep_waits_for_the_last_of_two_guards` (mac) | the counter is a flag | `host.rs:457 woke under one guard: left Some(65), right None` |
+| T4 `a_sleep_blocked_by_a_guard_does_not_wake_itself_...` (mac) | `until_quiet` not awaited (busy spin) | `host.rs:481 a blocked sleep woke its own task: left 1, right 0` |
+| H1 (mac) | the guard removed from `SandboxHandle::git` | `clock.rs:142 the clock moved while a git call was in flight` (H1 and H4) |
+| H2 (mac) | the guard removed from `commit_in_project` | `clock.rs:210 the clock moved while the commit was in flight` |
+| H1 (mac) | `sandbox()` passes no clock | `clock.rs:142 the clock moved while a git call was in flight` |
+| H4 (mac) | `sandboxes()` passes no clock | the same line, in the `sandboxes` test only |
+| stalled `run_program` row (mac) | the guard removed from `run_program` | `clock.rs:303 linked: true; the sleeper was held: false` |
+| A10 `real_host_kills_the_whole_process_group_on_timeout` (mac) | `stop_group` does not strike or stop | `e_scratch.rs:286 the background process of the group is gone` |
+| same | `stop_group` waits for the leader and never kills | `e_scratch.rs:259 the run did not return: "the test hung for 15 s"` |
+| A10 `dropping_a_link_kills_the_child_and_its_group` (mac) | `PortableLink::kill` does not sweep | `f_pty.rs:188 the grandchild is gone` |
+
+H3 (an unlinked gateway does not hold the clock) is the negative side of H1, H2 and H4: it fails if the guard is added where no clock is linked, and no separate break was run for it.
+
+### Owed in the sandbox rerun
+
+The group signal works on macOS and on `jackin-engine`, so these cannot show red or green here. They need the OpenShell sandbox, on the final SHA of this branch:
+
+- P1a-c on the EPERM branch (`by_member` through the runner) and the forged-name neighbour of P2 (red only there).
+- `f_pty::dropping_a_link_kills_the_child_and_its_group` and `e_scratch::real_host_kills_the_whole_process_group_on_timeout` (A10). The recorded sandbox failures are the red; the green is a sandbox run. A10 also says to change the "is it gone" oracle (`kill(pid, 0)` succeeds for a zombie) only if a sandbox run still fails and `ps` shows `Z`.
+- `stdin_is_dev_null_or_the_given_bytes_followed_by_end_of_input` through `/proc/self/fd/0` (the host had `/dev/stdin`; the sandbox path was not exercised).
+
+### Not proven, and found on the way
+
+- The three xtask paths of decision 3 and the six-method leak check of A4 (that each guarded fake method returns its guard) have no test. The stalled `run_program` row is the representative of the six.
+- `lifecycle::a_run_returns_only_after_no_process_of_its_group_is_left` fails on `jackin-engine` as a plain binary in 5 of 6 runs on the base commit `fac3877b7` too (`exit, round N`; the oracle `group_is_empty` sees a live group after `run` returned). A retry of the oracle for 1 s did not remove it (13 of 20 runs failed), and a later `ps` showed no zombie, so the cause is not found. It passed in the sandbox rerun. Not touched here.
+- Run directly (not through nextest) on `jackin-engine`, `env::the_child_gets_the_spec_environment_...` fails by design ("run the test under cargo nextest") and `streaming::a_128_mib_line_does_not_grow_process_memory` reports a peak of 68144 KiB against a 48 MiB budget. Not investigated.
+- `ImageError::Cancelled` still drops the fault (decision 1).
