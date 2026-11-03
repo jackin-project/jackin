@@ -28,10 +28,12 @@ tokio-util = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+alacritty_terminal = { workspace = true }
 jackin-openshell = { workspace = true, features = ["contract"] }
 jackin-testkit = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+termwiz = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "time"] }
 
 [lints]

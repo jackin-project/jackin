@@ -218,3 +218,27 @@ async fn the_terminal_is_restored_after_a_session_error_and_a_cancel_detaches_wi
     })
     .await
 }
+
+#[tokio::test]
+async fn osc52_is_blocked_in_both_directions_while_other_bytes_pass() -> TestResult {
+    guard(async {
+        let (_rig, harness, handle) = running().await?;
+        let name = handle.name();
+        handle.print_main(b"x\x1b]52;c;c2VjcmV0\x07y\x1b]52;c;?\x1b\\z\x1b[1mbold");
+        let (terminal, _) = script(vec![
+            Step::Bytes(b"a\x1b]52;c;c2VjcmV0\x1b\\b\x1b[12;40Rc".to_vec()),
+            Step::Bytes(DETACH.to_vec()),
+        ])?;
+        let ran = harness
+            .command(&["attach", name.as_str()])
+            .terminal(terminal)
+            .run()
+            .await?;
+        ran.ok()?;
+        assert!(ran.stdout.contains("xyz\x1b[1mbold"), "{:?}", ran.stdout);
+        assert!(!ran.stdout.contains("]52"), "{:?}", ran.stdout);
+        assert_eq!(handle.main_input(), b"ab\x1b[12;40Rc");
+        Ok(())
+    })
+    .await
+}

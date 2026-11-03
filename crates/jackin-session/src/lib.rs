@@ -4,6 +4,7 @@
 mod accounts;
 mod attach;
 mod build;
+mod clipboard;
 mod connect;
 mod credentials;
 mod doctor;
@@ -27,6 +28,7 @@ mod workspace;
 pub use accounts::*;
 pub use attach::*;
 pub use build::*;
+pub use clipboard::*;
 pub use connect::*;
 pub use credentials::*;
 pub use doctor::*;
