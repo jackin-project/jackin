@@ -106,6 +106,11 @@ fn pem_check_refuses_everything_else_without_echoing_the_content() {
             EngineCertProblem::WrongKind,
         ),
         (
+            EngineCert::Cert,
+            format!("{cert}-----BEGIN PRIVATE KEY-----\n{MARKER}\n").into_bytes(),
+            EngineCertProblem::NotPem,
+        ),
+        (
             EngineCert::Key,
             block("ENCRYPTED PRIVATE KEY").into_bytes(),
             EngineCertProblem::EncryptedKey,

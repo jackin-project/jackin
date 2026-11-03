@@ -385,3 +385,28 @@ async fn the_warning_is_the_first_event_once_per_launch_and_never_for_a_refusal_
     })
     .await
 }
+
+#[tokio::test]
+async fn a_missing_certificate_directory_is_a_typed_error_that_names_the_directory() -> TestResult {
+    guard(async {
+        let rig = docker_rig(true, false, Engine::WithCerts).await?;
+        let directory = rig.engine_certs()?;
+        std::fs::remove_dir_all(directory.as_path())?;
+        let outcome = rig.launch_observed(1).await?;
+        assert!(outcome.events.is_empty());
+        let failed = failure(outcome)?;
+        assert_eq!(
+            (failed.step, failed.sandbox.clone()),
+            (LaunchStep::Credentials, None)
+        );
+        let (file, problem, named) = engine_error(&failed)?;
+        assert_eq!(
+            (file, problem),
+            (EngineCert::Ca, EngineCertProblem::Missing)
+        );
+        assert_eq!(named, directory.as_path().display().to_string());
+        nothing_was_created(&rig).await?;
+        Ok(())
+    })
+    .await
+}

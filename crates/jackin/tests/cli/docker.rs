@@ -139,3 +139,40 @@ async fn a_docker_workspace_gets_the_engine_variables_and_one_warning_and_a_plai
     })
     .await
 }
+
+#[tokio::test]
+async fn a_refused_stale_retry_prints_the_refusal_and_no_retry_hint() -> TestResult {
+    guard(async {
+        let rig = Rig::builder()
+            .workspace_docker(true)
+            .engine(jackin_testkit::ENGINE_PORT)
+            .build()
+            .await?;
+        rig.write_engine_certs().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        harness.write_config(&rig.config.render())?;
+        let id = launch_id(1).to_string();
+        harness.run(&["load", "--launch-id", &id]).await?.ok()?;
+        let flipped = rig
+            .config
+            .render()
+            .replace("docker = true", "docker = false");
+        assert_ne!(flipped, rig.config.render());
+        harness.write_config(&flipped)?;
+        let refused = harness.run(&["load", "--launch-id", &id]).await?;
+        failed(
+            &refused,
+            ExitClass::Failure,
+            &["cannot continue sandbox", "start a new launch"],
+        )?;
+        assert!(!refused.stderr.contains("retry with"), "{}", refused.stderr);
+        assert!(
+            !refused.stderr.contains("--launch-id"),
+            "{}",
+            refused.stderr
+        );
+        Ok(())
+    })
+    .await
+}

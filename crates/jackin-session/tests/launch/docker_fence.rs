@@ -4,14 +4,16 @@
 use std::collections::BTreeMap;
 
 use jackin_core::{
-    Config, ConfigEdit, DockerLabel, ImageId, ImageLabel, SandboxPath, WorkspaceName,
+    Config, ConfigEdit, DockerLabel, ImageId, ImageLabel, Phase, SandboxPath, WorkspaceName,
     sandbox_layout,
 };
 use jackin_image::Rebuild;
+use jackin_openshell::GatewayOp;
 use jackin_session::{
-    LaunchError, LaunchEvent, LaunchFailure, LaunchPlan, LaunchStep, LaunchWarning, plan_launch,
+    LaunchError, LaunchEvent, LaunchFailure, LaunchOutcome, LaunchPlan, LaunchStep, LaunchWarning,
+    plan_launch,
 };
-use jackin_testkit::{ENGINE_PORT, Outcome, Rig, launch_id};
+use jackin_testkit::{ENGINE_PORT, Fault, Outcome, Rig, Trigger, launch_id};
 use tokio_util::sync::CancellationToken;
 
 use super::docker_support::{Engine, docker_rig, rule_keys, split_failure};
@@ -165,6 +167,31 @@ async fn a_retry_with_another_image_a_rebuild_that_changes_the_image_or_another_
             assert_eq!(found_docker, wanted_docker);
             assert_eq!(snapshot(&rig).await?, kept);
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_flipped_retry_is_refused_while_the_sandbox_is_still_provisioning() -> TestResult {
+    guard(async {
+        let rig = docker_rig(false, true, Engine::WithCerts).await?;
+        let token = CancellationToken::new();
+        rig.gateway().inject(Fault::ProvisionFor { polls: 400 });
+        rig.gateway().inject(Fault::CancelAt {
+            trigger: Trigger::Op(GatewayOp::Create),
+            token: token.clone(),
+        });
+        let first = rig.run(rig.request(1)?, token).await?;
+        assert!(matches!(first.result, Ok(LaunchOutcome::Cancelled(_))));
+        let handle = rig.handle(1).await?;
+        assert_ne!(handle.phase(), Phase::Ready);
+        let outcome = retry(&rig, &flipped(&rig, false)?, Rebuild::No).await?;
+        let (_, failed) = split_failure(outcome)?;
+        assert_eq!(failed.step, LaunchStep::Sandbox);
+        let (_, _, found_docker, wanted_docker) = stale(&failed)?;
+        assert_ne!(found_docker, wanted_docker);
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
         Ok(())
     })
     .await

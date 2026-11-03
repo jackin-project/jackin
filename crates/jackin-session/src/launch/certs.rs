@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::io::ErrorKind;
+
 use jackin_core::{
-    EngineAccess, EngineCert, EngineCertProblem, FileSystem, RegularFileProblem, RepoPath,
+    EngineAccess, EngineCert, EngineCertProblem, FileSystem, FsError, RegularFileProblem, RepoPath,
     SecretBytes,
 };
 
@@ -28,10 +30,14 @@ pub(super) async fn read(
         problem,
     };
     let name = RepoPath::parse(cert.file_name())?;
-    let file = fs
-        .read_regular(directory, &name)
-        .await?
-        .map_err(|found| unusable(problem(found)))?;
+    let read = match fs.read_regular(directory, &name).await {
+        Err(FsError::Io {
+            kind: ErrorKind::NotFound,
+            ..
+        }) => return Err(unusable(EngineCertProblem::Missing)),
+        other => other?,
+    };
+    let file = read.map_err(|found| unusable(problem(found)))?;
     if let Err(found) = cert.check(&file.bytes) {
         drop(SecretBytes::new(file.bytes));
         return Err(unusable(found));
