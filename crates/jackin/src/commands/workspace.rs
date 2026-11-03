@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
-
 use jackin_core::{ConfigEdit, Workspace};
 
 use crate::app::App;
@@ -20,12 +18,7 @@ pub(crate) async fn run(app: &mut App, command: WorkspaceCommand) -> Result<(), 
 }
 
 async fn add(app: &App, args: WorkspaceAddArgs) -> Result<(), CommandError> {
-    let workspace = Workspace {
-        path: absolutize(&args.path, &app.cwd)?,
-        docker: args.docker,
-        default_role: None,
-        bindings: BTreeMap::new(),
-    };
+    let workspace = Workspace::new(absolutize(&args.path, &app.cwd)?, args.docker);
     app.store
         .edit(vec![ConfigEdit::AddWorkspace {
             name: args.name,

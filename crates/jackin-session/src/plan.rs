@@ -9,9 +9,9 @@ use std::time::Duration;
 use jackin_core::{
     Account, AccountName, AccountQuery, AccountSelection, Agent, ChatgptAccountId, CodexAuthMode,
     Config, ConfigError, CredentialSource, DockerCapability, DockerError, DockerLabel, DockerLayer,
-    EnvFile, EnvFileError, EnvName, FileMode, GatewayName, LaunchId, NameSuffix, PathError,
-    PlannedLabels, ProjectRoot, Provider, ProviderName, RoleManifest, RoleName, SandboxName,
-    SandboxPath, SelectionError, Workspace, WorkspaceName, plain_list, sandbox_layout,
+    EnvFile, EnvFileError, EnvName, EnvTable, FileMode, GatewayName, LaunchId, NameSuffix,
+    PathError, PlannedLabels, ProjectRoot, Provider, ProviderName, RoleManifest, RoleName,
+    SandboxName, SandboxPath, SelectionError, Workspace, WorkspaceName, plain_list, sandbox_layout,
 };
 use jackin_image::{ImageError, ImageRequest, Rebuild};
 use jackin_openshell::{
@@ -149,6 +149,11 @@ pub enum PlanError {
         requested: RoleName,
         loaded: RoleName,
     },
+    #[error("workspace {workspace} does not allow role {role}")]
+    RoleNotAllowed {
+        workspace: WorkspaceName,
+        role: RoleName,
+    },
 }
 
 impl Prompting {
@@ -205,12 +210,30 @@ impl LaunchRequest {
     }
 }
 
-fn resolve_env(
+#[derive(Clone, Copy, Debug)]
+pub struct EnvLayers<'a> {
+    pub global: &'a EnvTable,
+    pub workspace: &'a EnvTable,
+    pub workspace_role: Option<&'a EnvTable>,
+}
+
+impl<'a> EnvLayers<'a> {
+    pub fn of(config: &'a Config, workspace: &'a Workspace, role: &RoleName) -> EnvLayers<'a> {
+        EnvLayers {
+            global: config.env(),
+            workspace: &workspace.env,
+            workspace_role: workspace.role_env.get(role),
+        }
+    }
+}
+
+pub fn resolve_env(
+    layers: &EnvLayers<'_>,
     manifest: &RoleManifest,
-    request: &LaunchRequest,
+    answers: &BTreeMap<EnvName, String>,
+    prompting: Prompting,
 ) -> Result<BTreeMap<EnvName, String>, PlanError> {
-    let undeclared: Vec<EnvName> = request
-        .env
+    let undeclared: Vec<EnvName> = answers
         .keys()
         .filter(|name| !manifest.env.contains_key(*name))
         .cloned()
@@ -218,14 +241,31 @@ fn resolve_env(
     if !undeclared.is_empty() {
         return Err(PlanError::EnvUndeclared(undeclared));
     }
-    let mut values = BTreeMap::new();
+    let mut values: BTreeMap<EnvName, String> = BTreeMap::new();
+    for table in [
+        Some(layers.global),
+        Some(layers.workspace),
+        layers.workspace_role,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        values.extend(
+            table
+                .iter()
+                .map(|(name, value)| (name.clone(), value.as_str().to_owned())),
+        );
+    }
     let mut questions = Vec::new();
     for (name, spec) in &manifest.env {
-        if let Some(value) = request.env.get(name) {
+        if let Some(value) = answers.get(name) {
             values.insert(name.clone(), value.clone());
             continue;
         }
-        match (request.prompting, &spec.default) {
+        if values.contains_key(name) {
+            continue;
+        }
+        match (prompting, &spec.default) {
             (Prompting::Never, Some(default)) => {
                 values.insert(name.clone(), default.clone());
             }
@@ -300,6 +340,12 @@ pub fn plan_launch(
             loaded: role.name().clone(),
         });
     }
+    if !workspace.roles.allows(&request.role) {
+        return Err(PlanError::RoleNotAllowed {
+            workspace: workspace_name.clone(),
+            role: request.role.clone(),
+        });
+    }
     let agent = Agent::Codex;
     let spec = agent.spec();
     let selection = config.select_account(&AccountQuery {
@@ -341,7 +387,8 @@ pub fn plan_launch(
         entry.docker_engine.as_ref(),
     )?;
     let (policy, warnings) = launch_policy(role, &docker)?;
-    let mut values = resolve_env(role.manifest(), &request)?;
+    let layers = EnvLayers::of(config, workspace, &request.role);
+    let mut values = resolve_env(&layers, role.manifest(), &request.env, request.prompting)?;
     values.extend(docker.environment());
     let files = PlannedFiles {
         codex_config: PlannedFile {

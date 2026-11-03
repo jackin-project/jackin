@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
-
 use jackin_core::{Config, ConfigError, HostPath, Workspace, WorkspaceName};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,12 +28,7 @@ impl WorkspaceLookup {
     pub fn workspace(self) -> Workspace {
         match self {
             WorkspaceLookup::Saved { workspace, .. } => workspace,
-            WorkspaceLookup::Unsaved { path } => Workspace {
-                path,
-                docker: false,
-                default_role: None,
-                bindings: BTreeMap::new(),
-            },
+            WorkspaceLookup::Unsaved { path } => Workspace::new(path, false),
         }
     }
 

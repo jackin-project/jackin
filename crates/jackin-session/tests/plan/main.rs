@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod accounts;
+mod allowed_roles;
 mod docker;
 mod env;
 mod error_text;
@@ -15,6 +16,7 @@ mod roles_git;
 mod roles_load;
 mod roles_origin;
 mod roles_path;
+mod scoped_env;
 mod support;
 
 #[path = "../support/trap.rs"]

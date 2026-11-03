@@ -7,7 +7,7 @@ mod render;
 mod select;
 mod store;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use thiserror::Error;
@@ -36,6 +36,7 @@ pub(crate) const KIND_WORKSPACE: &str = "workspace";
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Config {
     default_gateway: Option<GatewayName>,
+    env: EnvTable,
     gateways: BTreeMap<GatewayName, GatewayEntry>,
     defaults: BTreeMap<Provider, AccountName>,
     accounts: BTreeMap<AccountName, Account>,
@@ -93,6 +94,107 @@ pub struct Workspace {
     pub docker: bool,
     pub default_role: Option<RoleName>,
     pub bindings: BTreeMap<Provider, AccountName>,
+    pub roles: AllowedRoles,
+    pub env: EnvTable,
+    pub role_env: BTreeMap<RoleName, EnvTable>,
+}
+
+pub type EnvTable = BTreeMap<EnvName, PlainEnvValue>;
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PlainEnvValue(String);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
+pub enum EnvValueError {
+    #[error("a 1Password reference is not allowed; jackin keeps no secrets in env, use an account")]
+    OnePassword,
+    #[error("expected text without a newline or a NUL")]
+    Control,
+}
+
+impl PlainEnvValue {
+    pub fn parse(text: &str) -> Result<PlainEnvValue, EnvValueError> {
+        if text.starts_with("op://") {
+            Err(EnvValueError::OnePassword)
+        } else if text.contains(['\n', '\0']) {
+            Err(EnvValueError::Control)
+        } else {
+            Ok(PlainEnvValue(text.to_owned()))
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for PlainEnvValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoleSet(BTreeSet<RoleName>);
+
+impl RoleSet {
+    pub fn new(roles: impl IntoIterator<Item = RoleName>) -> Option<RoleSet> {
+        let roles: BTreeSet<RoleName> = roles.into_iter().collect();
+        (!roles.is_empty()).then_some(RoleSet(roles))
+    }
+
+    pub fn contains(&self, role: &RoleName) -> bool {
+        self.0.contains(role)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &RoleName> {
+        self.0.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum AllowedRoles {
+    #[default]
+    All,
+    Only(RoleSet),
+}
+
+impl AllowedRoles {
+    pub fn allows(&self, role: &RoleName) -> bool {
+        match self {
+            AllowedRoles::All => true,
+            AllowedRoles::Only(set) => set.contains(role),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EnvScope {
+    Global,
+    Workspace(WorkspaceName),
+    WorkspaceRole(WorkspaceName, RoleName),
+}
+
+impl Workspace {
+    pub fn new(path: HostPath, docker: bool) -> Workspace {
+        Workspace {
+            path,
+            docker,
+            default_role: None,
+            bindings: BTreeMap::new(),
+            roles: AllowedRoles::All,
+            env: EnvTable::new(),
+            role_env: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -151,6 +253,15 @@ pub enum ConfigEdit {
         workspace: WorkspaceName,
         role: Option<RoleName>,
     },
+    SetWorkspaceRoles {
+        workspace: WorkspaceName,
+        roles: AllowedRoles,
+    },
+    SetEnv {
+        scope: EnvScope,
+        name: EnvName,
+        value: Option<PlainEnvValue>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -159,6 +270,8 @@ pub enum ConfigReference {
     WorkspaceBinding(WorkspaceName),
     RoleBinding(RoleName),
     WorkspaceDefaultRole(WorkspaceName),
+    WorkspaceRoles(WorkspaceName),
+    WorkspaceRoleEnv(WorkspaceName),
 }
 
 impl fmt::Display for ConfigReference {
@@ -173,6 +286,12 @@ impl fmt::Display for ConfigReference {
             ConfigReference::RoleBinding(role) => write!(f, "the binding of role {role}"),
             ConfigReference::WorkspaceDefaultRole(workspace) => {
                 write!(f, "the default role of workspace {workspace}")
+            }
+            ConfigReference::WorkspaceRoles(workspace) => {
+                write!(f, "the allowed roles of workspace {workspace}")
+            }
+            ConfigReference::WorkspaceRoleEnv(workspace) => {
+                write!(f, "the role variables of workspace {workspace}")
             }
         }
     }
@@ -267,6 +386,24 @@ pub(crate) fn missing(kind: &'static str, name: impl fmt::Display) -> ConfigErro
     }
 }
 
+pub(crate) fn reserved_env_name(name: &EnvName) -> Result<(), ConfigError> {
+    if name.is_reserved() {
+        Err(ConfigError::InvalidValue {
+            key: format!("env.{name}"),
+            message: "reserved by jackin".to_owned(),
+        })
+    } else {
+        Ok(())
+    }
+}
+
+pub(crate) fn default_role_not_allowed(workspace: &WorkspaceName, role: &RoleName) -> ConfigError {
+    ConfigError::InvalidValue {
+        key: format!("workspaces.{workspace}.default_role"),
+        message: format!("role {role} is not in the allowed roles"),
+    }
+}
+
 pub(crate) fn duplicate(kind: &'static str, name: impl fmt::Display) -> ConfigError {
     ConfigError::DuplicateName {
         kind,
@@ -323,6 +460,10 @@ impl Config {
 
     pub fn default_gateway(&self) -> Option<&GatewayName> {
         self.default_gateway.as_ref()
+    }
+
+    pub fn env(&self) -> &EnvTable {
+        &self.env
     }
 
     pub fn gateway(&self, name: &GatewayName) -> Option<&GatewayEntry> {
@@ -455,8 +596,11 @@ impl Config {
         for (provider, account) in &self.defaults {
             self.check_binding(*provider, account)?;
         }
-        for workspace in self.workspaces.values() {
-            self.check_workspace(workspace)?;
+        for name in self.env.keys() {
+            reserved_env_name(name)?;
+        }
+        for (name, workspace) in &self.workspaces {
+            self.check_workspace(name, workspace)?;
         }
         for role in self.roles.values() {
             for (agent, account) in &role.bindings {
@@ -483,13 +627,42 @@ impl Config {
         }
     }
 
-    pub(crate) fn check_workspace(&self, workspace: &Workspace) -> Result<(), ConfigError> {
+    pub(crate) fn check_workspace(
+        &self,
+        name: &WorkspaceName,
+        workspace: &Workspace,
+    ) -> Result<(), ConfigError> {
         for (provider, account) in &workspace.bindings {
             self.check_binding(*provider, account)?;
         }
-        match &workspace.default_role {
-            Some(role) if !self.roles.contains_key(role) => Err(missing(KIND_ROLE, role)),
-            _ => Ok(()),
+        if let Some(role) = &workspace.default_role {
+            self.require_configured_role(role)?;
+            if !workspace.roles.allows(role) {
+                return Err(default_role_not_allowed(name, role));
+            }
+        }
+        if let AllowedRoles::Only(set) = &workspace.roles {
+            for role in set.iter() {
+                self.require_configured_role(role)?;
+            }
+        }
+        for (role, table) in &workspace.role_env {
+            self.require_configured_role(role)?;
+            for env_name in table.keys() {
+                reserved_env_name(env_name)?;
+            }
+        }
+        for env_name in workspace.env.keys() {
+            reserved_env_name(env_name)?;
+        }
+        Ok(())
+    }
+
+    fn require_configured_role(&self, role: &RoleName) -> Result<(), ConfigError> {
+        if self.roles.contains_key(role) {
+            Ok(())
+        } else {
+            Err(missing(KIND_ROLE, role))
         }
     }
 }

@@ -4,13 +4,14 @@
 use std::collections::btree_map::Entry;
 
 use super::{
-    Account, Config, ConfigEdit, ConfigError, ConfigReference, CredentialSource, GatewayEntry,
-    KIND_ACCOUNT, KIND_GATEWAY, KIND_ROLE, KIND_WORKSPACE, RoleEntry, RoleSource, Workspace,
-    duplicate, missing,
+    Account, AllowedRoles, Config, ConfigEdit, ConfigError, ConfigReference, CredentialSource,
+    EnvScope, EnvTable, GatewayEntry, KIND_ACCOUNT, KIND_GATEWAY, KIND_ROLE, KIND_WORKSPACE,
+    PlainEnvValue, RoleEntry, RoleSource, Workspace, default_role_not_allowed, duplicate, missing,
+    reserved_env_name,
 };
 use crate::agent::Agent;
 use crate::docker::EngineConfig;
-use crate::ids::{AccountName, GatewayName, RoleName, WorkspaceName};
+use crate::ids::{AccountName, EnvName, GatewayName, RoleName, WorkspaceName};
 use crate::provider::Provider;
 use crate::tomlkit;
 
@@ -58,6 +59,10 @@ impl Config {
             ConfigEdit::SetWorkspaceDefaultRole { workspace, role } => {
                 self.set_workspace_default_role(&workspace, role)
             }
+            ConfigEdit::SetWorkspaceRoles { workspace, roles } => {
+                self.set_workspace_roles(&workspace, roles)
+            }
+            ConfigEdit::SetEnv { scope, name, value } => self.set_env(&scope, name, value),
         }
     }
 
@@ -238,12 +243,18 @@ impl Config {
 
     fn remove_role(&mut self, name: &RoleName) -> Result<(), ConfigError> {
         self.require_role(name)?;
-        let by: Vec<ConfigReference> = self
-            .workspaces
-            .iter()
-            .filter(|(_, workspace)| workspace.default_role.as_ref() == Some(name))
-            .map(|(workspace, _)| ConfigReference::WorkspaceDefaultRole(workspace.clone()))
-            .collect();
+        let mut by: Vec<ConfigReference> = Vec::new();
+        for (workspace, entry) in &self.workspaces {
+            if entry.default_role.as_ref() == Some(name) {
+                by.push(ConfigReference::WorkspaceDefaultRole(workspace.clone()));
+            }
+            if matches!(&entry.roles, AllowedRoles::Only(set) if set.contains(name)) {
+                by.push(ConfigReference::WorkspaceRoles(workspace.clone()));
+            }
+            if entry.role_env.contains_key(name) {
+                by.push(ConfigReference::WorkspaceRoleEnv(workspace.clone()));
+            }
+        }
         if !by.is_empty() {
             return Err(ConfigError::RoleInUse {
                 role: name.clone(),
@@ -262,7 +273,7 @@ impl Config {
         if self.workspaces.contains_key(&name) {
             return Err(duplicate(KIND_WORKSPACE, &name));
         }
-        self.check_workspace(&workspace)?;
+        self.check_workspace(&name, &workspace)?;
         let mut workspaces: Vec<WorkspaceName> = self
             .workspaces
             .iter()
@@ -296,7 +307,69 @@ impl Config {
         if let Some(role) = &role {
             self.require_role(role)?;
         }
-        self.workspace_mut(workspace)?.default_role = role;
+        let entry = self.workspace_mut(workspace)?;
+        if let Some(role) = &role
+            && !entry.roles.allows(role)
+        {
+            return Err(default_role_not_allowed(workspace, role));
+        }
+        entry.default_role = role;
         Ok(())
+    }
+
+    fn set_workspace_roles(
+        &mut self,
+        workspace: &WorkspaceName,
+        roles: AllowedRoles,
+    ) -> Result<(), ConfigError> {
+        if let AllowedRoles::Only(set) = &roles {
+            for role in set.iter() {
+                self.require_role(role)?;
+            }
+        }
+        let entry = self.workspace_mut(workspace)?;
+        if let Some(default) = &entry.default_role
+            && !roles.allows(default)
+        {
+            return Err(default_role_not_allowed(workspace, default));
+        }
+        entry.roles = roles;
+        Ok(())
+    }
+
+    fn set_env(
+        &mut self,
+        scope: &EnvScope,
+        name: EnvName,
+        value: Option<PlainEnvValue>,
+    ) -> Result<(), ConfigError> {
+        reserved_env_name(&name)?;
+        match scope {
+            EnvScope::Global => put(&mut self.env, name, value),
+            EnvScope::Workspace(workspace) => {
+                put(&mut self.workspace_mut(workspace)?.env, name, value);
+            }
+            EnvScope::WorkspaceRole(workspace, role) => {
+                self.require_role(role)?;
+                let entry = self.workspace_mut(workspace)?;
+                let table = entry.role_env.entry(role.clone()).or_default();
+                put(table, name, value);
+                if table.is_empty() {
+                    entry.role_env.remove(role);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn put(table: &mut EnvTable, name: EnvName, value: Option<PlainEnvValue>) {
+    match value {
+        Some(value) => {
+            table.insert(name, value);
+        }
+        None => {
+            table.remove(&name);
+        }
     }
 }
