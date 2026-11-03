@@ -285,18 +285,20 @@ impl FakeGateway {
     }
 
     pub fn sandboxes(&self) -> Vec<SandboxHandle> {
-        self.registry()
+        let registry = self.registry();
+        registry
             .sandboxes
             .values()
-            .map(|cell| SandboxHandle::new(Arc::clone(cell)))
+            .map(|cell| SandboxHandle::new(Arc::clone(cell), registry.clock.clone()))
             .collect()
     }
 
     pub fn sandbox(&self, name: &SandboxName) -> Option<SandboxHandle> {
-        self.registry()
+        let registry = self.registry();
+        registry
             .sandboxes
             .get(name)
-            .map(|cell| SandboxHandle::new(Arc::clone(cell)))
+            .map(|cell| SandboxHandle::new(Arc::clone(cell), registry.clock.clone()))
     }
 
     pub fn providers(&self) -> Vec<ProviderName> {
