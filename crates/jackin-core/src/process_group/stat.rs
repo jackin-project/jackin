@@ -41,6 +41,10 @@ fn parse(stat: &[u8]) -> Option<Stat> {
     })
 }
 
-pub(super) fn is_live_member(stat: &[u8], group: Pid) -> bool {
-    parse(stat).is_some_and(|stat| stat.pgrp == group.as_raw_pid() && !stat.is_over())
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct Unparsable;
+
+pub(super) fn is_live_member(stat: &[u8], group: Pid) -> Result<bool, Unparsable> {
+    let stat = parse(stat).ok_or(Unparsable)?;
+    Ok(stat.pgrp == group.as_raw_pid() && !stat.is_over())
 }

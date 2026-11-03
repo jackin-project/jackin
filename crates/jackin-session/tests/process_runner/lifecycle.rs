@@ -11,8 +11,8 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::support::{
-    LOOP_DETACHED, LOOP_HOLDING, Scratch, TestResult, WAIT_FOR, assert_no_leftover, guarded,
-    next_line, wait_for_beat,
+    GROUP_ID, LOOP_DETACHED, LOOP_HOLDING, Scratch, TestResult, WAIT_FOR, assert_no_leftover,
+    guarded, next_line, wait_for_beat,
 };
 
 #[tokio::test]
@@ -174,9 +174,6 @@ async fn a_clean_exit_kills_a_descendant_that_closed_its_pipes() -> TestResult {
 
 const GROUP_BODY: &str =
     "d=$1\nfor n in 1 2 3 4 5 6 7 8; do ( while :; do sleep 0.05; done ) >/dev/null 2>&1 & done\n";
-
-const GROUP_ID: &str =
-    "ps -o pgid= -p $$ | tr -d ' ' > \"$d/pgid.tmp\"\nmv \"$d/pgid.tmp\" \"$d/pgid\"\n";
 
 fn group_is_empty(scratch: &Scratch) -> Result<bool, Box<dyn std::error::Error>> {
     let raw: i32 = std::fs::read_to_string(scratch.root().join("pgid"))?

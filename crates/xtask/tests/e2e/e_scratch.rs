@@ -5,8 +5,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::time::Duration;
 
+use jackin_testkit::guard_within;
 use jackin_xtask::{
-    Exit, HostCommand, HostError, HostProcess, RealHost, Scratch, child_env, snapshot_tree,
+    Exit, HostCommand, HostError, HostOutput, HostProcess, RealHost, Scratch, child_env,
+    snapshot_tree,
 };
 use rustix::process::{Pid, test_kill_process};
 use tokio_util::sync::CancellationToken;
@@ -229,18 +231,33 @@ fn sh(script: &str, timeout: Duration) -> HostCommand {
         .env(env)
 }
 
+async fn bounded_run(
+    host: &RealHost,
+    command: &HostCommand,
+    cancel: &CancellationToken,
+) -> Result<HostOutput, HostError> {
+    let mut result = None;
+    guard_within(Duration::from_secs(15), async {
+        result = Some(host.run(command, cancel).await);
+        Ok(())
+    })
+    .await
+    .expect("the run did not return");
+    result.expect("the run finished")
+}
+
 #[tokio::test]
 async fn real_host_kills_the_whole_process_group_on_timeout() {
     let dir = tempfile::tempdir().expect("tempdir");
     let pidfile = dir.path().join("pid");
     let script = format!("sleep 600 & echo $! > {}; sleep 600", pidfile.display());
     let started = tokio::time::Instant::now();
-    let result = RealHost::default()
-        .run(
-            &sh(&script, Duration::from_secs(1)),
-            &CancellationToken::new(),
-        )
-        .await;
+    let result = bounded_run(
+        &RealHost::default(),
+        &sh(&script, Duration::from_secs(1)),
+        &CancellationToken::new(),
+    )
+    .await;
     assert!(
         matches!(result, Err(HostError::Timeout { .. })),
         "{result:?}"
@@ -293,9 +310,7 @@ async fn real_host_kills_the_whole_process_group_on_timeout() {
         tokio::time::sleep(Duration::from_millis(300)).await;
         trigger.cancel();
     });
-    let result = host
-        .run(&sh(&script, Duration::from_secs(30)), &token)
-        .await;
+    let result = bounded_run(&host, &sh(&script, Duration::from_secs(30)), &token).await;
     assert!(
         matches!(result, Err(HostError::Cancelled { .. })),
         "{result:?}"

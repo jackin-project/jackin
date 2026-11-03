@@ -12,26 +12,19 @@ use std::time::Duration;
 use async_trait::async_trait;
 use jackin_core::{
     Clock, EnvValue, FileSystem, GroupFault, LineSink, OutputLine, OutputStream, ProcessError,
-    ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program, SecretBytes,
-    SecretOutput, Timestamp,
+    ProcessGroup, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program,
+    SecretBytes, SecretOutput, Timestamp,
 };
-use rustix::process::Pid;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
-use tokio::time::{sleep, timeout};
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
 use crate::service::HostPorts;
 
-mod group;
-
-use group::{Sweep, strike, sweep};
-
 const TAIL_LIMIT: usize = 65536;
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
-const GROUP_GRACE: Duration = Duration::from_secs(5);
-const GROUP_POLL: Duration = Duration::from_millis(2);
 const READ_CHUNK: usize = 8192;
 const FEED_CHUNK: usize = 64 * 1024;
 const LINE_LIMIT: usize = 65536;
@@ -149,14 +142,14 @@ impl Line {
 }
 
 struct GroupGuard {
-    group: Option<Pid>,
+    group: Option<ProcessGroup>,
 }
 
 impl GroupGuard {
-    fn fire(&mut self) -> Option<Pid> {
+    fn fire(&mut self) -> Option<ProcessGroup> {
         let group = self.group.take();
         if let Some(group) = group {
-            strike(group);
+            group.strike();
         }
         group
     }
@@ -165,36 +158,16 @@ impl GroupGuard {
 impl Drop for GroupGuard {
     fn drop(&mut self) {
         if let Some(group) = self.group.take() {
-            drop(sweep(group));
+            drop(group.sweep());
         }
     }
 }
 
-async fn swept(group: Pid) -> Result<Sweep, GroupFault> {
-    tokio::task::spawn_blocking(move || sweep(group))
-        .await
-        .unwrap_or_else(|error| {
-            Err(GroupFault::Unreachable {
-                message: format!("the sweep did not finish: {error}"),
-            })
-        })
-}
-
-async fn gone(group: Option<Pid>) -> Result<(), GroupFault> {
-    let Some(group) = group else {
-        return Ok(());
-    };
-    let emptied = async {
-        loop {
-            match swept(group).await? {
-                Sweep::Empty => return Ok(()),
-                Sweep::Signalled => sleep(GROUP_POLL).await,
-            }
-        }
-    };
-    timeout(GROUP_GRACE, emptied)
-        .await
-        .unwrap_or(Err(GroupFault::Alive { after: GROUP_GRACE }))
+async fn gone(group: Option<ProcessGroup>) -> Result<(), GroupFault> {
+    match group {
+        Some(group) => group.stop().await,
+        None => Ok(()),
+    }
 }
 
 fn left_running(program: Program) -> impl FnOnce(GroupFault) -> ProcessError {
@@ -455,10 +428,7 @@ async fn execute(
         .spawn()
         .map_err(|error| spawn_error(error.to_string()))?;
     let mut guard = GroupGuard {
-        group: child
-            .id()
-            .and_then(|id| i32::try_from(id).ok())
-            .and_then(Pid::from_raw),
+        group: child.id().and_then(ProcessGroup::of_leader),
     };
     let timer = sleep(spec.timeout);
     let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {

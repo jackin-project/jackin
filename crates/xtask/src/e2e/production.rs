@@ -104,14 +104,18 @@ impl ProcessRunner for ToolRunner {
                 stdout: output.stdout.to_vec(),
                 stderr: output.stderr.to_vec(),
             }),
-            Err(HostError::Timeout { after, .. }) => Err(ProcessError::Timeout {
+            Err(HostError::Timeout { after, group, .. }) => Err(ProcessError::Timeout {
                 program: spec.program,
                 after,
-                group: None,
+                group,
             }),
-            Err(HostError::Cancelled { .. }) => Err(ProcessError::Cancelled {
+            Err(HostError::Cancelled { group, .. }) => Err(ProcessError::Cancelled {
                 program: spec.program,
-                group: None,
+                group,
+            }),
+            Err(HostError::Group { fault, .. }) => Err(ProcessError::Group {
+                program: spec.program,
+                fault,
             }),
             Err(HostError::OutputTooLarge { limit, .. }) => Err(ProcessError::OutputTooLarge {
                 program: spec.program,
