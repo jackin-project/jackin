@@ -70,7 +70,10 @@ impl Pipeline<'_> {
 
     async fn find(&self, tag: &ImageTag) -> Result<Option<ImageId>, ImageError> {
         self.live()?;
-        self.engine.find(tag).await.map_err(from_engine)
+        self.engine
+            .find(tag, self.cancel)
+            .await
+            .map_err(from_engine)
     }
 
     async fn hold(&self, key: &ImageTag) -> Result<Option<FileLock>, ImageError> {
@@ -102,7 +105,7 @@ impl Pipeline<'_> {
         self.live()?;
         if !self.builder_checked {
             self.engine
-                .check_builder(self.builder)
+                .check_builder(self.builder, self.cancel)
                 .await
                 .map_err(from_engine)?;
             self.builder_checked = true;
@@ -124,12 +127,34 @@ impl Pipeline<'_> {
     }
 }
 
+#[derive(Debug)]
+pub struct ImageHold {
+    _lock: Option<FileLock>,
+}
+
+#[derive(Debug)]
+pub struct HeldImage {
+    pub image: BuiltImage,
+    pub hold: ImageHold,
+}
+
 pub async fn ensure_image(
     engine: &dyn ImageEngine,
     request: &ImageRequest,
     progress: &ProgressSink,
     cancel: &CancellationToken,
 ) -> Result<BuiltImage, ImageError> {
+    ensure_held(engine, request, progress, cancel)
+        .await
+        .map(|held| held.image)
+}
+
+pub async fn ensure_held(
+    engine: &dyn ImageEngine,
+    request: &ImageRequest,
+    progress: &ProgressSink,
+    cancel: &CancellationToken,
+) -> Result<HeldImage, ImageError> {
     let plan = ImagePlan::new(request)?;
     let mut pipeline = Pipeline {
         engine,
@@ -154,20 +179,24 @@ pub async fn ensure_image(
     };
     drop(construct_lock);
     let final_tag = plan.final_tag(&construct_id);
-    let _final_lock = pipeline.hold(&final_tag).await?;
+    let hold = pipeline.hold(&final_tag).await?;
     if request.rebuild == Rebuild::No
         && let Some(id) = pipeline.find(&final_tag).await?
     {
         pipeline
             .emit(ImageEvent::StageCached(BuildStage::Derived))
             .await;
-        return Ok(BuiltImage {
-            tag: final_tag,
-            id,
-            source: ImageSource::Cache,
+        return Ok(HeldImage {
+            image: BuiltImage {
+                tag: final_tag,
+                id,
+                source: ImageSource::Cache,
+            },
+            hold: ImageHold { _lock: hold },
         });
     }
     let builds = plan.final_builds(&construct_id);
+    let _reading = pipeline.hold(&construct.tag).await?;
     let role = pipeline
         .build(&builds.role, &[(&construct.tag, &construct_id)])
         .await?;
@@ -185,9 +214,12 @@ pub async fn ensure_image(
             found,
         });
     }
-    Ok(BuiltImage {
-        tag: builds.derived.tag,
-        id: built,
-        source: ImageSource::Built,
+    Ok(HeldImage {
+        image: BuiltImage {
+            tag: builds.derived.tag,
+            id: built,
+            source: ImageSource::Built,
+        },
+        hold: ImageHold { _lock: hold },
     })
 }

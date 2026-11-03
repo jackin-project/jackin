@@ -166,7 +166,10 @@ async fn changes_refuses_a_stopped_or_absent_sandbox_and_a_project_that_is_not_a
             Err(ChangesError::NoRepository { .. })
         ));
 
-        rig.world.session.power(&name, PowerAction::Stop).await?;
+        rig.world
+            .session
+            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .await?;
         assert!(matches!(
             changes(&rig, &name).await,
             Err(ChangesError::NotRunning {

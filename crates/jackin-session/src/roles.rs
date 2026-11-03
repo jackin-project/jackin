@@ -606,7 +606,7 @@ impl RoleCatalog {
             self.git(
                 dir,
                 cancel,
-                &["fetch", "--quiet", "--tags", "--force", "origin"],
+                &["fetch", "--quiet", "--prune", "--tags", "--force", "origin"],
             )
             .await?;
             self.git(dir, cancel, &["remote", "set-head", "origin", "--auto"])

@@ -8,7 +8,7 @@ use jackin_core::{
     Agent, DockerCapability, DockerLabel, EngineCert, FileMode, HookKind, HostPath, LabelSelector,
     SandboxLabels, SandboxName, SandboxPath, SecretBytes, StartRequest, sandbox_layout,
 };
-use jackin_image::{BuiltImage, ImageSource, ensure_image};
+use jackin_image::{BuiltImage, ImageHold, ImageSource, ensure_held};
 use jackin_openshell::{
     GatewayError, GatewayOp, Missing, PowerAction, ProgramRun, ProgramStdin, ProviderState,
     SandboxFile, SandboxQuery, SandboxView,
@@ -58,6 +58,7 @@ struct Run<'a> {
     done: Done,
     tracker: Tracker,
     known: Option<SandboxName>,
+    image_hold: Option<ImageHold>,
 }
 
 impl Session {
@@ -75,6 +76,7 @@ impl Session {
             done: Done::new(),
             tracker: Tracker::new(),
             known: None,
+            image_hold: None,
         }
         .execute()
         .await
@@ -133,6 +135,9 @@ impl Run<'_> {
                 return Ok(self.cancelled().await);
             }
             self.done.absorb(&observed);
+            if matches!(observed, Observed::Ready(..)) {
+                self.image_hold = None;
+            }
             let limits = self.session.deps.limits;
             match decide(self.plan, bound.label(), &observed, &self.done, &limits) {
                 Decision::Finish(finish) => return Ok(self.finished(finish).await),
@@ -281,7 +286,7 @@ impl Run<'_> {
         let engine = self.session.deps.engine.as_ref();
         let (sender, mut receiver) = mpsc::channel(IMAGE_PROGRESS);
         let work = async {
-            let result = ensure_image(engine, plan.image_request(), &sender, cancel).await;
+            let result = ensure_held(engine, plan.image_request(), &sender, cancel).await;
             drop(sender);
             result
         };
@@ -291,11 +296,12 @@ impl Run<'_> {
             }
         };
         let (result, ()) = tokio::join!(work, forward);
-        let built = result.map_err(|error| failed(LaunchStep::Image, error))?;
-        if built.source == ImageSource::Cache {
+        let held = result.map_err(|error| failed(LaunchStep::Image, error))?;
+        if held.image.source == ImageSource::Cache {
             self.tracker.skip(SkipReason::ImageCached);
         }
-        self.done.image = Some(built);
+        self.done.image = Some(held.image);
+        self.image_hold = Some(held.hold);
         Ok(())
     }
 

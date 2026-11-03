@@ -163,7 +163,7 @@ async fn a_prompt_and_a_default_from_the_role_reach_the_terminal_as_printable_te
             .await?;
         ran.ok()?;
         assert!(
-            ran.stderr.contains("Deploy key [hellothere]: "),
+            ran.stderr.contains("Deploy key2J [hellothere]: "),
             "{:?}",
             ran.stderr
         );

@@ -225,6 +225,10 @@ impl DockerModel {
         locked(&self.state).fresh = true;
     }
 
+    pub(crate) fn stable_ids(&self) {
+        locked(&self.state).fresh = false;
+    }
+
     pub(crate) fn driver(&self, driver: &str) {
         driver.clone_into(&mut locked(&self.state).driver);
     }

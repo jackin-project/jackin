@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::{EnvName, LaunchId, ProjectRoot};
+use jackin_core::{EnvName, LaunchId, ProjectRoot, TerminalText};
 use jackin_image::Rebuild;
 use jackin_session::{
     AttachRequest, EnvQuestion, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery, PlanError,
@@ -18,19 +18,29 @@ use crate::paths::absolutize;
 use crate::term;
 
 async fn answer(app: &mut App, question: &EnvQuestion) -> Result<String, CommandError> {
-    let label = question
-        .prompt
-        .as_deref()
-        .unwrap_or_else(|| question.name.as_str());
+    let printable = |text: &str| TerminalText::sanitize(text.as_bytes());
+    let label = printable(
+        question
+            .prompt
+            .as_deref()
+            .unwrap_or_else(|| question.name.as_str()),
+    );
     let shown = question
         .default
         .as_deref()
-        .map(|default| format!(" [{default}]"))
+        .map(|default| format!(" [{}]", printable(default).as_str()))
         .unwrap_or_default();
     loop {
-        app.io.ask(&format!("{label}{shown}: "));
+        app.io.ask(&format!("{}{shown}: ", label.as_str()));
         let terminal = app.terminal.as_mut().ok_or(CommandError::NoTerminal)?;
-        let line = terminal.read_line().await.map_err(CommandError::Terminal)?;
+        let line = tokio::select! {
+            biased;
+            () = app.cancel.cancelled() => return Err(CommandError::Cancelled(format!(
+                "cancelled while asking for {}",
+                question.name
+            ))),
+            line = terminal.read_line() => line.map_err(CommandError::Terminal)?,
+        };
         match (line, &question.default) {
             (None, _) => {
                 return Err(CommandError::Cancelled(format!(
