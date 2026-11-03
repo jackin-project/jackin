@@ -107,7 +107,9 @@ async fn markers_defeat_the_terminal_echo() {
         let link = PortablePty::default()
             .open(&spec("/bin/sh", &[]))
             .expect("open");
-        PtySession::new(link, Redactor::none())
+        let mut screen = PtySession::new(link, Redactor::none());
+        screen.send(b"set +m\n").expect("job control off");
+        screen
     };
     let mut screen = shell();
     assert_eq!(
