@@ -1168,7 +1168,7 @@ fn scan_refuses_a_path_with_a_control_character_instead_of_splitting_it_into_lin
     hidden_below_a_newline_directory(&fx)?;
     let out = fx.scan_client()?;
     assert!(!out.ok, "a newline in a directory name hid a docker binary");
-    assert!(out.stderr.contains(CONTROL), "{}", out.stderr);
+    assert_eq!(out.lines(), [format!("{CONTROL}/usr/local/bin/docker?")]);
 
     let fx = Fixture::new()?;
     hidden_below_a_newline_directory(&fx)?;

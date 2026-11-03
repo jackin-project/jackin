@@ -5,6 +5,8 @@ set -u
 
 tools="sudo su-exec gosu doas iptables ip6tables nft ufw docker podman nerdctl dockerd containerd containerd-shim containerd-shim-runc-v2 runc crun buildkitd rootlesskit docker-proxy dockerd-rootless.sh"
 client_tools="docker-compose docker-buildx buildctl ctr"
+newline='
+'
 
 usage() {
     echo "usage: scan --owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... ROOT PROTECTED..." >&2
@@ -281,7 +283,9 @@ list "forbidden tool in role image: " "$remaining"
 nodes=$(find "$root" \( -type b -o -type c \)) || report "find failed while looking for device nodes"
 list "device node in role image: " "$nodes"
 
-control=$(LC_ALL=C find "$root" -name '*[[:cntrl:]]*') || report "find failed while looking for control characters in names"
+control=$(LC_ALL=C find "$root" -name '*[[:cntrl:]]*' && echo x) || report "find failed while looking for control characters in names"
+control=${control%x}
+control=${control%"$newline"}
 [ -z "$control" ] || report "path with a control character in role image: $(show "${control#"$root"}")"
 
 for path in $protected; do
