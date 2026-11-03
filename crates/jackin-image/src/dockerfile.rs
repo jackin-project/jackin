@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::plain;
+use jackin_core::{EnvName, plain};
 use thiserror::Error;
 
 const CONSTRUCT: &str = "construct";
@@ -16,6 +16,10 @@ pub enum DockerfileError {
     ConstructStageDefined { line: usize },
     #[error("line {line}: cannot read the FROM instruction {}", plain(.text))]
     UnreadableFrom { line: usize, text: String },
+    #[error("line {line}: ENV sets {}, which names the Docker engine client; jackin sets it from the Docker capability", plain(.name))]
+    EngineClientEnv { line: usize, name: String },
+    #[error("line {line}: the ENV name {} expands a variable, so it cannot be checked", plain(.name))]
+    ExpandingEnvName { line: usize, name: String },
     #[error("the Dockerfile is not valid UTF-8")]
     NotUtf8,
 }
@@ -45,9 +49,13 @@ struct Reader<'a> {
 pub fn validate_dockerfile(text: &str) -> Result<(), DockerfileError> {
     let mut reader = Reader::new(text);
     let mut stages = Vec::new();
+    let mut final_env = None;
     while let Some(instruction) = reader.read() {
         if let Some(stage) = parse_from(&instruction)? {
             stages.push(stage);
+            final_env = None;
+        } else if final_env.is_none() {
+            final_env = env_problem(&instruction);
         }
     }
     let Some(last) = stages.last() else {
@@ -67,7 +75,67 @@ pub fn validate_dockerfile(text: &str) -> Result<(), DockerfileError> {
             found: last.image.clone(),
         });
     }
-    Ok(())
+    final_env.map_or(Ok(()), Err)
+}
+
+fn env_problem(instruction: &Instruction) -> Option<DockerfileError> {
+    let mut parts = words(&instruction.text);
+    if !parts.next()?.eq_ignore_ascii_case("env") {
+        return None;
+    }
+    let rest = instruction
+        .text
+        .trim_start_matches(is_blank)
+        .get(3..)?
+        .to_owned();
+    let line = instruction.line;
+    for key in env_keys(&rest) {
+        if key.contains('$') {
+            return Some(DockerfileError::ExpandingEnvName { line, name: key });
+        }
+        let name = unquote(&key);
+        if EnvName::is_engine_client(&name) {
+            return Some(DockerfileError::EngineClientEnv { line, name });
+        }
+    }
+    None
+}
+
+fn env_keys(arguments: &str) -> Vec<String> {
+    let words = split_shell_words(arguments);
+    let keyed = words
+        .first()
+        .is_some_and(|word| unquoted_equals(word).is_some());
+    let keys = words.iter().map(|word| match unquoted_equals(word) {
+        Some(at) => word[..at].to_owned(),
+        None => word.clone(),
+    });
+    if keyed {
+        keys.collect()
+    } else {
+        keys.take(1).collect()
+    }
+}
+
+fn unquoted_equals(word: &str) -> Option<usize> {
+    let mut quote: Option<char> = None;
+    let mut skip = false;
+    for (index, c) in word.char_indices() {
+        if skip {
+            skip = false;
+            continue;
+        }
+        match quote {
+            Some(open) if c == open => quote = None,
+            Some('"') if c == '\\' => skip = true,
+            Some(_) => {}
+            None if c == '"' || c == '\'' => quote = Some(c),
+            None if c == '\\' => skip = true,
+            None if c == '=' => return Some(index),
+            None => {}
+        }
+    }
+    None
 }
 
 fn is_blank(c: char) -> bool {

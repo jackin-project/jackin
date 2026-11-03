@@ -473,3 +473,44 @@ async fn role_check_and_load_refuse_a_policy_that_names_a_host_gateway_alias_on_
     })
     .await
 }
+
+#[tokio::test]
+async fn role_check_and_load_refuse_a_dockerfile_env_that_names_the_docker_engine_client()
+-> TestResult {
+    guard(async {
+        let docker_env = "FROM construct\nENV A=1 \\\n    DOCKER_HOST=tcp://host.openshell.internal:2376\n";
+        let refused = RoleFixture::new("sentinel")?.dockerfile(docker_env);
+        let (ran, _, _) = checked(&refused, false).await?;
+        failed(&ran, ExitClass::Failure, &[])?;
+        assert_eq!(
+            ran.stderr,
+            "error: line 2: ENV sets DOCKER_HOST, which names the Docker engine client; jackin sets it from the Docker capability\n"
+        );
+        let expanding = RoleFixture::new("sentinel")?.dockerfile("FROM construct\nENV ${NAME}=x\n");
+        let (ran, _, _) = checked(&expanding, false).await?;
+        failed(&ran, ExitClass::Failure, &["NAME", "line 2"])?;
+
+        let allowed = RoleFixture::new("sentinel")?
+            .dockerfile("FROM construct\nENV PATH=/opt/bin:$PATH FOO=1\nARG DOCKER_HOST=x\n");
+        let (ran, _, _) = checked(&allowed, false).await?;
+        ran.ok()?;
+
+        let rig = Rig::new().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        let good = rig.loaded.root().as_path().display().to_string();
+        let bad = RoleFixture::new("sentinel")?.dockerfile(docker_env);
+        bad.commit().await?;
+        let swapped = rig
+            .config
+            .render()
+            .replace(&good, &bad.root().as_path().display().to_string());
+        harness.write_config(&swapped)?;
+        let ran = harness.run(&["load"]).await?;
+        failed(&ran, ExitClass::Failure, &["line 2", "DOCKER_HOST"])?;
+        assert!(rig.gateway().sandboxes().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}

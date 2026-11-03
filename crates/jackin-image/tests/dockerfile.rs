@@ -21,6 +21,8 @@ enum Verdict {
     NotConstruct(usize, String),
     ConstructStage(usize),
     Unreadable(usize),
+    EngineClientEnv(usize, String),
+    ExpandingEnvName(usize, String),
     NotUtf8,
     Other,
 }
@@ -52,6 +54,12 @@ fn classify(error: &DockerfileError) -> Verdict {
         }
         DockerfileError::ConstructStageDefined { line } => Verdict::ConstructStage(*line),
         DockerfileError::UnreadableFrom { line, .. } => Verdict::Unreadable(*line),
+        DockerfileError::EngineClientEnv { line, name } => {
+            Verdict::EngineClientEnv(*line, name.clone())
+        }
+        DockerfileError::ExpandingEnvName { line, name } => {
+            Verdict::ExpandingEnvName(*line, name.clone())
+        }
         DockerfileError::NotUtf8 => Verdict::NotUtf8,
     }
 }
@@ -273,6 +281,142 @@ fn noise_rejected() -> Vec<Row> {
     ]
 }
 
+fn env_rows() -> Vec<Row> {
+    let ok = |label, text: &str| row(label, text, Verdict::Accepted);
+    let client = |label, text: &str, line, name: &str| {
+        row(label, text, Verdict::EngineClientEnv(line, name.to_owned()))
+    };
+    let expands = |label, text: &str, line, name: &str| {
+        row(
+            label,
+            text,
+            Verdict::ExpandingEnvName(line, name.to_owned()),
+        )
+    };
+    vec![
+        ok("plain variable", "FROM construct\nENV FOO=1\n"),
+        ok(
+            "path and home are not engine client variables",
+            "FROM construct\nENV PATH=/opt/bin:$PATH HOME=/sandbox\nENV LD_LIBRARY_PATH=/x\n",
+        ),
+        ok(
+            "names that merely contain the text",
+            "FROM construct\nENV MY_DOCKER_HOST=x DOCKERHOST=x BUILDX=x docker_host=x\n",
+        ),
+        ok(
+            "the text only in a value",
+            "FROM construct\nENV A=\"DOCKER_HOST=x\" B='BUILDX_BUILDER'\nENV C DOCKER_HOST\n",
+        ),
+        ok(
+            "arg is not checked",
+            "ARG DOCKER_HOST=x\nFROM construct\nARG BUILDX_BUILDER\n",
+        ),
+        ok(
+            "an earlier stage does not reach the image",
+            "FROM golang AS build\nENV DOCKER_HOST=x\nFROM construct AS role\nENV FOO=1\n",
+        ),
+        ok(
+            "words that are not an instruction",
+            "FROM construct\n# ENV DOCKER_HOST=x\nRUN echo ENV DOCKER_HOST=x\nLABEL ENV=DOCKER_HOST\n",
+        ),
+        ok(
+            "a heredoc body line",
+            "FROM construct\nRUN <<EOF\nENV DOCKER_HOST=x\nEOF\n",
+        ),
+        client(
+            "docker host",
+            "FROM construct\nENV DOCKER_HOST=tcp://x:2376\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        client(
+            "lower case keyword",
+            "FROM construct\nenv DOCKER_TLS_VERIFY=1\n",
+            2,
+            "DOCKER_TLS_VERIFY",
+        ),
+        client(
+            "buildx",
+            "FROM construct\nENV BUILDX_BUILDER=x\n",
+            2,
+            "BUILDX_BUILDER",
+        ),
+        client(
+            "the second pair",
+            "FROM construct\nENV A=1 DOCKER_CERT_PATH=/x\n",
+            2,
+            "DOCKER_CERT_PATH",
+        ),
+        client(
+            "legacy form",
+            "FROM construct\nENV DOCKER_HOST tcp://x:2376\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        client(
+            "double quoted key",
+            "FROM construct\nENV \"DOCKER_HOST\"=x\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        client(
+            "single quoted key",
+            "FROM construct\nENV 'BUILDX_BUILDER'=x\n",
+            2,
+            "BUILDX_BUILDER",
+        ),
+        client(
+            "continuation",
+            "FROM construct\nENV A=1 \\\n    DOCKER_CONFIG=/x\n",
+            2,
+            "DOCKER_CONFIG",
+        ),
+        client(
+            "escape directive",
+            "# escape=`\nFROM construct\nENV A=1 `\n    DOCKER_HOST=x\n",
+            3,
+            "DOCKER_HOST",
+        ),
+        client(
+            "final stage of several",
+            "FROM golang AS build\nFROM construct AS role\nENV DOCKER_HOST=x\n",
+            3,
+            "DOCKER_HOST",
+        ),
+        client(
+            "the final stage after a clean earlier one",
+            "FROM construct AS a\nENV X=1\nFROM construct\nENV Y=1\nENV DOCKER_HOST=x\n",
+            5,
+            "DOCKER_HOST",
+        ),
+        expands("expanding key", "FROM construct\nENV $NAME=x\n", 2, "$NAME"),
+        expands(
+            "braced key",
+            "FROM construct\nENV A=1 ${NAME}=x\n",
+            2,
+            "${NAME}",
+        ),
+        expands(
+            "quoted expanding key",
+            "FROM construct\nENV \"$NAME\"=x\n",
+            2,
+            "\"$NAME\"",
+        ),
+        expands(
+            "expanding legacy key",
+            "FROM construct\nENV $NAME x\n",
+            2,
+            "$NAME",
+        ),
+    ]
+}
+
+#[test]
+fn env_may_not_name_the_docker_engine_client_in_the_final_stage() -> TestResult {
+    check(&env_rows());
+    Ok(())
+}
+
 #[test]
 fn parser_noise_never_changes_the_verdict() -> TestResult {
     check(&noise_accepted());
@@ -409,5 +553,13 @@ fn dockerfile_errors_quote_what_they_found_as_plain_text() {
     assert_eq!(
         shown("FROM ubuntu\u{1b}[2J\n"),
         "line 1: the final stage must start FROM construct, found ubuntu\\u{1b}[2J"
+    );
+    assert_eq!(
+        shown("FROM construct\nENV DOCKER_\u{1b}[2J=x\n"),
+        "line 2: ENV sets DOCKER_\\u{1b}[2J, which names the Docker engine client; jackin sets it from the Docker capability"
+    );
+    assert_eq!(
+        shown("FROM construct\nENV $A\u{1b}[2J=x\n"),
+        "line 2: the ENV name $A\\u{1b}[2J expands a variable, so it cannot be checked"
     );
 }
