@@ -3,7 +3,7 @@
 
 use jackin_core::{BranchName, Config, Phase, SandboxName};
 use jackin_openshell::{GatewayError, GatewayOp};
-use jackin_session::{PurgeError, PurgeMode, Unexported, UnknownReason, WorkState};
+use jackin_session::{PurgeError, PurgeMode, PurgeOutcome, Unexported, UnknownReason, WorkState};
 use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard};
 use tokio_util::sync::CancellationToken;
 
@@ -283,6 +283,75 @@ async fn a_stash_counts_from_its_ref_so_an_expired_reflog_still_blocks_a_guarded
             "{purge:?}"
         );
         assert!(rig.world.gateway.sandbox(&name).is_some());
+        Ok(())
+    })
+    .await
+}
+
+async fn refuses_a_guarded_purge(rig: &Rig, name: &SandboxName) -> TestResult {
+    let result = rig
+        .world
+        .session
+        .purge(&rig.config, name, PurgeMode::Guarded)
+        .await;
+    assert!(
+        matches!(result, Err(PurgeError::WorkNotExported { .. })),
+        "{result:?}"
+    );
+    assert!(rig.world.gateway.sandbox(name).is_some());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_repository_setting_cannot_hide_an_untracked_file_from_the_purge_check() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        std::fs::write(handle.root().join("project/new.txt"), b"untracked\n")?;
+        assert_eq!(state(&rig, &name).await, unexported(1, &[])?);
+
+        handle
+            .git(&["config", "status.showUntrackedFiles", "no"])
+            .await?;
+        assert_eq!(handle.git(&["status", "--porcelain"]).await?, "");
+        assert_eq!(state(&rig, &name).await, unexported(1, &[])?);
+        refuses_a_guarded_purge(&rig, &name).await?;
+
+        let forced = rig
+            .world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Forced)
+            .await?;
+        assert!(matches!(forced, PurgeOutcome::Deleted { .. }), "{forced:?}");
+        assert!(rig.world.gateway.sandbox(&name).is_none());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_index_flag_cannot_hide_a_modified_file_from_the_purge_check() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        for (id, flag) in [(1_u8, "--assume-unchanged"), (2, "--skip-worktree")] {
+            rig.launch(id).await?;
+            let handle = rig.handle(id).await?;
+            let name = handle.name();
+            assert_eq!(state(&rig, &name).await, WorkState::Exported, "{flag}");
+
+            handle.git(&["update-index", flag, "README.md"]).await?;
+            std::fs::write(handle.root().join("project/README.md"), b"hidden edit\n")?;
+            assert_eq!(handle.git(&["status", "--porcelain"]).await?, "", "{flag}");
+            assert_eq!(state(&rig, &name).await, unexported(1, &[])?, "{flag}");
+            refuses_a_guarded_purge(&rig, &name).await?;
+
+            let undo = flag.replacen("--", "--no-", 1);
+            handle.git(&["update-index", &undo, "README.md"]).await?;
+            handle.git(&["checkout", "-q", "--", "README.md"]).await?;
+            assert_eq!(state(&rig, &name).await, WorkState::Exported, "{flag}");
+        }
         Ok(())
     })
     .await
