@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::gateway::ScenarioGateway;
-use super::world::World;
+use super::world::{POLICY, World};
 use super::{ExportMode, Rule, SandboxModel, Shared};
 use crate::support::capture;
 
@@ -116,6 +116,10 @@ impl ScenarioHost {
             ("jackin.dev/role".to_owned(), "sentinel".to_owned()),
             ("jackin.dev/agent".to_owned(), "codex".to_owned()),
             ("jackin.dev/account".to_owned(), account.to_owned()),
+            (
+                "jackin.dev/policy".to_owned(),
+                PolicyLabel::of(POLICY).to_string(),
+            ),
             ("jackin.dev/image".to_owned(), IMAGE_ID[7..39].to_owned()),
             ("jackin.dev/launch".to_owned(), launch.to_owned()),
             ("jackin.dev/docker".to_owned(), self.docker_value(workspace)),
@@ -257,7 +261,7 @@ impl ScenarioHost {
             role: RoleName::parse("sentinel").expect("role"),
             agent: Agent::Codex,
             account: AccountName::parse(&model.account).expect("account"),
-            policy: PolicyLabel::of("policy"),
+            policy: PolicyLabel::of(POLICY),
             launch: LaunchId::parse(&model.launch).expect("launch"),
         };
         let docker = if self.docker_value(&model.workspace) == "off" {
