@@ -3089,7 +3089,7 @@ Location: `crates/jackin/tests/*.rs`. Boundaries faked: the gateway through `Gat
 
 ## 9. jackin-xtask
 
-Role: repository gates and the live journey runner. Package `jackin-xtask`, alias `cargo xtask`. A binary plus a lib target, with pure check modules, so each gate step is tested on fixture repositories and also run on the repository. With the default features it depends on no product crate, so a compile error in a product crate cannot stop `xtask ci` from building and reporting the other gates. The cargo feature `e2e` adds `jackin-core` (typed views), `jackin-openshell` (a `Gateway` to run the sentinel probe and read files, decision 12), the `jackin-usage` facade (`UsageReport` for J17, from U13), `portable-pty`, and `schemars`, and no other product crate. The `clippy` and `nextest` steps pass `--all-features`, so they still build and test the `e2e` items.
+Role: repository gates and the live journey runner. Package `jackin-xtask`, alias `cargo xtask`. A binary plus a lib target, with pure check modules, so each gate step is tested on fixture repositories and also run on the repository. It depends on three product crates: `jackin-core` (typed views), `jackin-openshell` (a `Gateway` to run the sentinel probe and read files, decision 12) and `jackin-session` (`ProcessGroup`, the group stop that `RealHost` and `PortableLink` share with the host process runner). The `layers` row allows those three and the dev-dependency `jackin-testkit`, and no other product crate. A compile error in one of them stops `xtask ci` from building. It also depends on `portable-pty`.
 
 ### Module map
 
