@@ -118,3 +118,12 @@ fn a_window_reads_used_left_and_reset_and_a_dash_where_the_provider_said_nothing
         "resets 2025-12-31T23:59:59Z (passed)"
     );
 }
+
+#[test]
+fn a_reset_reads_as_passed_at_the_instant_and_as_days_from_a_full_day() {
+    let reset = |offset: i64| window(None, None, Some(NOW + offset)).reset_text(Timestamp(NOW));
+    assert_eq!(reset(0), "resets 2026-01-01T00:00:00Z (passed)");
+    assert!(!reset(1).contains("passed"), "{}", reset(1));
+    assert_eq!(reset(86_400 - 1), "resets 2026-01-01T23:59:59Z (in 23h59m)");
+    assert_eq!(reset(86_400), "resets 2026-01-02T00:00:00Z (in 1d0h)");
+}

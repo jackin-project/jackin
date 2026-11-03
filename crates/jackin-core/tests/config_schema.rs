@@ -710,6 +710,31 @@ fn env_invalid_cases() -> Vec<(&'static str, String, String)> {
             "invalid:env.DOCKER_HOST",
         ),
         case(
+            "global env value that is an upper-case 1Password reference",
+            "[env]\nREGION = \"OP://Dev/Region/value\"\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env value that is a 1Password reference after a space",
+            "[env]\nREGION = \" op://Dev/Region/value\"\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env value that is an OpenShell placeholder",
+            "[env]\nREGION = \"openshell:resolve:env:X\"\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env name that jackin reserves, written quoted",
+            "[env]\n\"PATH\" = \"x\"\n".to_owned(),
+            "invalid:env.PATH",
+        ),
+        case(
+            "role env name that jackin reserves",
+            format!("{ROLE}{WS}[workspaces.w.role_env.r]\nPATH = \"x\"\n"),
+            "invalid:workspaces.w.role_env.r.PATH",
+        ),
+        case(
             "workspace env value that is a 1Password reference",
             format!("{WS}[workspaces.w.env]\nA = \"op://x/y/z\"\n"),
             "invalid:workspaces.w.env.A",

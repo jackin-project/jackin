@@ -5,9 +5,9 @@ use std::path::Path;
 
 use jackin_core::{
     Account, AccountName, AccountQuery, Agent, AllowedRoles, ChatgptAccountId, Config, ConfigEdit,
-    ConfigError, ConfigReference, CredentialSource, EngineConfig, EnvName, EnvScope, GatewayEntry,
-    GatewayName, HostPath, PlainEnvValue, Platform, Provider, RoleName, RoleSet, RoleSource,
-    SelectionRule, Workspace, WorkspaceName,
+    ConfigError, ConfigReference, CredentialSource, EngineConfig, EnvName, EnvScope, EnvValueError,
+    GatewayEntry, GatewayName, HostPath, PlainEnvValue, Platform, Provider, ReservedEnvName,
+    RoleName, RoleSet, RoleSource, ScopedEnvName, SelectionRule, Workspace, WorkspaceName,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -771,6 +771,33 @@ fn env_rejected_rows() -> Fallible<Vec<RejectedRow>> {
             "invalid:env.DOCKER_HOST".to_owned(),
         ),
         (
+            "a reserved workspace variable",
+            ConfigEdit::SetEnv {
+                scope: EnvScope::Workspace(ws("proj")?),
+                name: var("DOCKER_HOST")?,
+                value: Some(plain("x")?),
+            },
+            "invalid:workspaces.proj.env.DOCKER_HOST".to_owned(),
+        ),
+        (
+            "a reserved workspace role variable",
+            ConfigEdit::SetEnv {
+                scope: EnvScope::WorkspaceRole(ws("proj")?, role("smith")?),
+                name: var("DOCKER_HOST")?,
+                value: Some(plain("x")?),
+            },
+            "invalid:workspaces.proj.role_env.smith.DOCKER_HOST".to_owned(),
+        ),
+        (
+            "unsetting a reserved workspace role variable",
+            ConfigEdit::SetEnv {
+                scope: EnvScope::WorkspaceRole(ws("proj")?, role("smith")?),
+                name: var("PATH")?,
+                value: None,
+            },
+            "invalid:workspaces.proj.role_env.smith.PATH".to_owned(),
+        ),
+        (
             "unsetting a reserved variable",
             ConfigEdit::SetEnv {
                 scope: EnvScope::Workspace(ws("proj")?),
@@ -1116,13 +1143,10 @@ fn a_plain_env_value_refuses_a_1password_reference_and_control_characters() -> T
         ("hello world", Ok("hello world")),
         ("a=b;c", Ok("a=b;c")),
         ("see op://not-at-start", Ok("see op://not-at-start")),
-        (
-            "op://Dev/Item/field",
-            Err(jackin_core::EnvValueError::OnePassword),
-        ),
-        ("op://", Err(jackin_core::EnvValueError::OnePassword)),
-        ("one\ntwo", Err(jackin_core::EnvValueError::Control)),
-        ("nul\0byte", Err(jackin_core::EnvValueError::Control)),
+        ("op://Dev/Item/field", Err(EnvValueError::OnePassword)),
+        ("op://", Err(EnvValueError::OnePassword)),
+        ("one\ntwo", Err(EnvValueError::Control)),
+        ("nul\0byte", Err(EnvValueError::Control)),
     ] {
         let parsed = PlainEnvValue::parse(text);
         assert_eq!(
@@ -1133,6 +1157,100 @@ fn a_plain_env_value_refuses_a_1password_reference_and_control_characters() -> T
         assert_eq!(
             parsed.map(|value| value.to_string()),
             expected.map(str::to_owned)
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_scoped_env_name_is_never_a_name_jackin_reserves() -> TestResult {
+    for reserved in [
+        "PATH",
+        "HOME",
+        "JACKIN_LAUNCH_ID",
+        "DOCKER_HOST",
+        "BUILDX_BUILDER",
+        "OPENSHELL_ENDPOINT",
+        "CODEX_AUTH_ACCESS_TOKEN",
+        "LD_PRELOAD",
+        "OPENAI_API_KEY",
+        "CODEX_HOME",
+    ] {
+        assert_eq!(
+            ScopedEnvName::new(EnvName::parse(reserved)?),
+            Err(ReservedEnvName),
+            "{reserved}"
+        );
+    }
+    for free in ["GITHUB_TOKEN", "path", "REGION", "HOMEPAGE", "MY_PATH"] {
+        let name = ScopedEnvName::new(EnvName::parse(free)?)?;
+        assert_eq!(name.as_str(), free);
+    }
+    Ok(())
+}
+
+#[test]
+fn replacing_a_credential_keeps_the_bindings_and_never_creates_a_default() -> TestResult {
+    let mut config = Config::parse(&BASE.replace("claude = \"personal\"\n", ""))?;
+    assert_eq!(config.default_account(Provider::Claude), None);
+    config.apply(ConfigEdit::SetAccountCredential {
+        account: acct("personal")?,
+        credential: CredentialSource::File {
+            path: hp("/keys/personal")?,
+        },
+    })?;
+    assert_eq!(config.default_account(Provider::Claude), None);
+    assert_eq!(
+        config.default_account(Provider::Codex),
+        Some(&acct("work")?)
+    );
+    let bound = config
+        .workspace(&ws("proj")?)
+        .and_then(|workspace| workspace.bindings.get(&Provider::Claude));
+    assert_eq!(bound, Some(&acct("personal")?));
+    Ok(())
+}
+
+#[test]
+fn a_plain_env_value_refuses_a_credential_reference_in_any_case_after_leading_space() -> TestResult
+{
+    let refused = [
+        ("op://v/i/f", EnvValueError::OnePassword),
+        (" op://v/i/f", EnvValueError::OnePassword),
+        ("\t Op://x", EnvValueError::OnePassword),
+        ("OP://V/I/F", EnvValueError::OnePassword),
+        ("\u{feff}op://x", EnvValueError::OnePassword),
+        (" \u{feff} \u{feff}op://x", EnvValueError::OnePassword),
+        ("openshell:resolve:env:X", EnvValueError::Placeholder),
+        (" OPENSHELL:RESOLVE:x", EnvValueError::Placeholder),
+        (
+            "\u{feff}openshell:resolve:env:X",
+            EnvValueError::Placeholder,
+        ),
+    ];
+    for (text, error) in refused {
+        assert_eq!(PlainEnvValue::parse(text), Err(error), "{text:?}");
+    }
+    for text in [
+        "ghp_abc",
+        "sk-live-1",
+        "-----BEGIN PRIVATE KEY-----",
+        "\"op://x\"",
+        "see op://x",
+        "https://op.example",
+        "o",
+        "é",
+        "",
+        "openshell:resolve",
+        "abcdé",
+        "openshell:resolveé",
+    ] {
+        assert_eq!(
+            PlainEnvValue::parse(text)
+                .as_ref()
+                .map(PlainEnvValue::as_str),
+            Ok(text),
+            "{text:?}"
         );
     }
     Ok(())
