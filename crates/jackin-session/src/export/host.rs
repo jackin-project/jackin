@@ -34,6 +34,13 @@ pub(super) struct HostRefs {
 }
 
 #[derive(Debug)]
+pub(super) struct Update {
+    pub(super) target: String,
+    pub(super) tip: CommitId,
+    pub(super) observed: Option<CommitId>,
+}
+
+#[derive(Debug)]
 pub(super) struct Worktree {
     pub(super) path: HostPath,
     pub(super) branch: Option<String>,
@@ -95,7 +102,7 @@ impl Host<'_> {
             branches: BTreeMap::new(),
             exported: BTreeMap::new(),
             every: Vec::new(),
-            head: self.head().await?,
+            head: self.resolve(HEAD).await?,
         };
         for line in String::from_utf8_lossy(&listed).lines() {
             let (oid, name) = line.split_once(' ').ok_or(ExportError::HostOutput {
@@ -114,12 +121,12 @@ impl Host<'_> {
         Ok(refs)
     }
 
-    async fn head(&self) -> Result<Option<CommitId>, ExportError> {
+    async fn resolve(&self, name: &str) -> Result<Option<CommitId>, ExportError> {
         let output = self
             .git
             .capture(
                 Pace::Quick,
-                words(&["rev-parse", "-q", "--verify", "HEAD"]),
+                words(&["rev-parse", "-q", "--verify", name]),
                 Vec::new(),
             )
             .await?;
@@ -190,10 +197,51 @@ impl Host<'_> {
         self.run_from(Pace::Long, args, stdin).await.map(drop)
     }
 
-    pub(super) async fn publish(&self, updates: &[(String, CommitId)]) -> Result<(), ExportError> {
+    pub(super) async fn publish(&self, updates: Vec<Update>) -> Result<(), ExportError> {
+        let mut pending = updates;
+        while !pending.is_empty() {
+            let error = match self.transaction(&pending).await {
+                Ok(()) => return Ok(()),
+                Err(error @ ExportError::HostGit { .. }) => error,
+                Err(error) => return Err(error),
+            };
+            let mut unmoved = Vec::new();
+            let mut landed = false;
+            for update in pending {
+                let found = self.resolve(&update.target).await?;
+                if found.as_ref() == Some(&update.tip) {
+                    landed = true;
+                } else if found == update.observed {
+                    unmoved.push(update);
+                } else {
+                    return Err(ExportError::RefMoved {
+                        host_ref: update.target,
+                        observed: update.observed,
+                        found,
+                    });
+                }
+            }
+            if !landed {
+                return Err(error);
+            }
+            pending = unmoved;
+        }
+        Ok(())
+    }
+
+    async fn transaction(&self, updates: &[Update]) -> Result<(), ExportError> {
         let mut commands = String::new();
-        for (target, tip) in updates {
-            commands.push_str(&format!("option no-deref\nupdate {target} {tip}\n"));
+        for Update {
+            target,
+            tip,
+            observed,
+        } in updates
+        {
+            commands.push_str("option no-deref\n");
+            match observed {
+                Some(old) => commands.push_str(&format!("update {target} {tip} {old}\n")),
+                None => commands.push_str(&format!("create {target} {tip}\n")),
+            }
         }
         let stdin = ProcessStdin::Bytes(SecretBytes::new(commands.into_bytes()));
         self.run_from(Pace::Long, words(&["update-ref", "--stdin"]), stdin)

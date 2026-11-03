@@ -24,7 +24,7 @@ use tokio_util::sync::CancellationToken;
 
 pub use self::bundle::{BundleRefusal, EntryKind};
 use self::bundle::{Limits, MAX_HEADS};
-use self::host::{HEAD, Host, HostRefs, exported_prefix};
+use self::host::{HEAD, Host, HostRefs, Update, exported_prefix};
 use self::sandbox::{Remote, RemoteError, Repository};
 use crate::project::host_git;
 use crate::service::Session;
@@ -207,6 +207,12 @@ pub enum ExportError {
         expected: CommitId,
         found: Option<CommitId>,
     },
+    #[error("{} changed during the export: it was {}, it is now {}", plain(.host_ref), tip_text(.observed.as_ref()), tip_text(.found.as_ref()))]
+    RefMoved {
+        host_ref: String,
+        observed: Option<CommitId>,
+        found: Option<CommitId>,
+    },
     #[error("cancelled{}", GroupFault::note(.group.as_ref()))]
     Cancelled { group: Option<GroupFault> },
 }
@@ -381,6 +387,11 @@ struct Staging {
     bundle: HostPath,
 }
 
+struct Observed<'a, 'git> {
+    host: &'a Host<'git>,
+    refs: &'a HostRefs,
+}
+
 impl Session {
     async fn resolve_project(
         &self,
@@ -466,8 +477,12 @@ impl Session {
         guard(&host, &refs, &targets).await?;
         let unique = LaunchId::generate()?;
         let remote_bundle = sandbox_layout::BUNDLE_DIR.join(&format!("export-{unique}.bundle"))?;
+        let observed = Observed {
+            host: &host,
+            refs: &refs,
+        };
         let result = self
-            .ship(&host, sandbox, &unique, &remote_bundle, &items, &cancel)
+            .ship(&observed, sandbox, &unique, &remote_bundle, &items, &cancel)
             .await;
         self.remote(sandbox, &CancellationToken::new())
             .discard(&remote_bundle)
@@ -477,7 +492,7 @@ impl Session {
 
     async fn ship(
         &self,
-        host: &Host<'_>,
+        observed: &Observed<'_, '_>,
         sandbox: &SandboxName,
         unique: &LaunchId,
         remote_bundle: &SandboxPath,
@@ -491,7 +506,7 @@ impl Session {
             .map_err(|error| ExportError::remote(sandbox, error))?;
         let staging = self.stage(sandbox, unique).await?;
         let result = self
-            .import_exported(host, sandbox, remote_bundle, &staging, items, cancel)
+            .import_exported(observed, sandbox, remote_bundle, &staging, items, cancel)
             .await;
         drop(self.deps.host.fs.remove_dir_all(&staging.dir).await);
         result
@@ -511,7 +526,7 @@ impl Session {
 
     async fn import_exported(
         &self,
-        host: &Host<'_>,
+        observed: &Observed<'_, '_>,
         sandbox: &SandboxName,
         remote_bundle: &SandboxPath,
         staging: &Staging,
@@ -529,6 +544,7 @@ impl Session {
         {
             return Err(ExportError::BundleTooLarge { size, limit });
         }
+        let host = observed.host;
         let format = host.object_format().await?;
         let header =
             bundle::header(self.deps.host.fs.as_ref(), &staging.bundle, format, cancel).await?;
@@ -556,9 +572,13 @@ impl Session {
                     extra: Vec::new(),
                     missing: vec![item.source()],
                 })?;
-            updates.push((item.target(sandbox), tip.clone()));
+            updates.push(Update {
+                target: item.target(sandbox),
+                tip: tip.clone(),
+                observed: observed.refs.exported.get(&item.name()).cloned(),
+            });
         }
-        host.publish(&updates).await?;
+        host.publish(updates).await?;
         let landed = host.refs(sandbox).await?;
         report(sandbox, digest, items, &header.heads, &landed)
     }

@@ -89,6 +89,17 @@ fn lines(output: &[u8]) -> usize {
         .count()
 }
 
+fn hidden(listed: &[u8]) -> usize {
+    listed
+        .split(|byte| *byte == 0)
+        .filter(|entry| {
+            entry
+                .first()
+                .is_some_and(|tag| *tag == b'S' || tag.is_ascii_lowercase())
+        })
+        .count()
+}
+
 fn checkouts(listed: &[u8]) -> Result<Vec<Checkout>, RemoteError> {
     const MALFORMED: RemoteError =
         RemoteError::Malformed("git worktree list printed unreadable output");
@@ -285,9 +296,24 @@ impl Remote<'_> {
         };
         for path in &repository.checkouts {
             let status = self
-                .require(&["-C", path, "status", "--porcelain", "--untracked-files=all"])
+                .require(&[
+                    "-C",
+                    path,
+                    "-c",
+                    "core.fileMode=true",
+                    "-c",
+                    "core.trustctime=true",
+                    "-c",
+                    "core.checkStat=default",
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=all",
+                    "--ignore-submodules=none",
+                ])
                 .await?;
             count += lines(&status);
+            let flagged = self.require(&["-C", path, "ls-files", "-v", "-z"]).await?;
+            count += hidden(&flagged);
         }
         Ok(count)
     }
