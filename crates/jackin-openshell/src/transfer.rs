@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use jackin_core::{
     EnvValue, HostPath, ProcessError, ProcessSpec, ProcessStatus, ProcessStdin, Program,
@@ -23,6 +24,7 @@ use tokio::sync::mpsc;
 
 const DOWNLOAD_LIMIT: u64 = 4 * 1024 * 1024 * 1024;
 const LINE_CAPACITY: usize = 16;
+const GROWTH_POLL: Duration = Duration::from_millis(10);
 
 const HEX: &[u8; 16] = b"0123456789abcdef";
 
@@ -296,6 +298,27 @@ async fn remote_size(
         })
 }
 
+async fn watch_growth(
+    temp: &Path,
+    stop: &CancellationToken,
+    finished: &CancellationToken,
+) -> Option<u64> {
+    let mut tick = tokio::time::interval(GROWTH_POLL);
+    loop {
+        tokio::select! {
+            biased;
+            () = finished.cancelled() => return None,
+            _ = tick.tick() => {}
+        }
+        if let Ok(landed) = tokio::fs::metadata(temp).await
+            && landed.len() > DOWNLOAD_LIMIT
+        {
+            stop.cancel();
+            return Some(landed.len());
+        }
+    }
+}
+
 async fn download_into(
     inner: &Inner,
     sandbox: &SandboxName,
@@ -305,19 +328,29 @@ async fn download_into(
 ) -> Result<Sha256, GatewayError> {
     let destination = temp.display().to_string();
     let args = inner.scope_args().download(sandbox, remote, &destination);
-    inner
-        .run_cli(
-            CliCall {
-                args,
-                cwd: None,
-                env: Vec::new(),
-                env_remove_prefixes: inherited_env_prefixes(),
-                step: TransferOp::Download,
-                op: GatewayOp::Download,
-            },
-            cancel,
-        )
-        .await?;
+    let call = CliCall {
+        args,
+        cwd: None,
+        env: Vec::new(),
+        env_remove_prefixes: inherited_env_prefixes(),
+        step: TransferOp::Download,
+        op: GatewayOp::Download,
+    };
+    let stop = cancel.child_token();
+    let finished = CancellationToken::new();
+    let running = async {
+        let result = inner.run_cli(call, &stop).await;
+        finished.cancel();
+        result
+    };
+    let (result, grown) = tokio::join!(running, watch_growth(temp, &stop, &finished));
+    if let Some(size) = grown {
+        return Err(GatewayError::DownloadTooLarge {
+            size,
+            limit: DOWNLOAD_LIMIT,
+        });
+    }
+    result?;
     if let Ok(landed) = tokio::fs::metadata(temp).await {
         within_limit(landed.len())?;
     }

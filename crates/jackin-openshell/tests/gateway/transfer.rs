@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use jackin_core::{
-    GroupFault, HostPath, ProcessError, ProcessStatus, Program, ProjectRoot, SandboxPath, Sha256,
-    StdFileSystem,
+    GroupFault, HostPath, ProcessError, ProcessRunner, ProcessStatus, Program, ProjectRoot,
+    SandboxPath, Sha256, StdFileSystem,
 };
 use jackin_openshell::{Gateway, GatewayError, GatewayOp, TransferOp};
 use openshell_sdk::raw::proto::SandboxPhase;
@@ -23,13 +23,16 @@ use super::fakes::{Recorded, ScriptedRunner, exited};
 use super::harness::{Env, config, env, guard, resolved};
 use super::support::{add_sandbox, sandbox_name};
 
-const TRANSFER_WORKSPACE: &str = "jackin-ws";
-const TRANSFER_SANDBOX: &str = "jackin-ws-ab12";
-const STAT: &str = "/usr/bin/stat";
+pub(super) const TRANSFER_WORKSPACE: &str = "jackin-ws";
+pub(super) const TRANSFER_SANDBOX: &str = "jackin-ws-ab12";
+pub(super) const STAT: &str = "/usr/bin/stat";
 const SUMS: &str = "/usr/bin/sha256sum";
-const FOUR_GIB: u64 = 4 * 1024 * 1024 * 1024;
+pub(super) const FOUR_GIB: u64 = 4 * 1024 * 1024 * 1024;
 
-async fn gateway_with(env: &Env, runner: ScriptedRunner) -> jackin_openshell::GrpcGateway {
+pub(super) async fn gateway_with(
+    env: &Env,
+    runner: impl ProcessRunner + 'static,
+) -> jackin_openshell::GrpcGateway {
     let resolved = resolved(env).await;
     guard(jackin_openshell::GrpcGateway::connect(config(
         env,
@@ -587,7 +590,7 @@ async fn download_names_the_targets_and_verifies_the_digest() {
     assert_eq!(entries(dir.path()), ["export.bundle"]);
 }
 
-fn entries(dir: &Path) -> Vec<String> {
+pub(super) fn entries(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(dir)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
