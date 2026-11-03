@@ -33,7 +33,7 @@ Use the latest stable release of every tool and every dependency. Do not use a p
 | Tool | Version | Source |
 |---|---|---|
 | Rust | 1.99.1 | mise `rust`, with tool option `mr_boxington = true` |
-| mr-boxington (`mbx`) | 1.29.1 | mise `mr-boxington` |
+| mr-boxington (`mbx`) | 1.29.2 | mise `mr-boxington` |
 | OpenShell | 0.1.6 (`ac7f615cd12d5cc49cb16eb1f5f10ffeb1e90f47`, 2026-10-27) | Homebrew `openshell`, git tag `v0.1.6` |
 | Codex CLI | 0.166.0 (2026-10-29) | `@openai/codex` |
 | cargo-nextest | 0.9.151 (P8.0a) | mise aqua |
