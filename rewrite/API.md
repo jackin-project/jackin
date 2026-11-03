@@ -195,7 +195,7 @@ AGENTS.md and D18 allow fakes only at external boundaries, behind interfaces jac
 | jackin-openshell | `Gateway` (16 methods), `TerminalSession`, `PolicyDocument`, discovery | SDK, tonic, russh, `openshell-policy`, host key pinning, token minting, status mapping, CLI argv, timeouts, stdin from `/dev/null` |
 | jackin-session | `plan_launch`, `plan_image`, `Session` (12 operations), `RoleCatalog`, `doctor` | convergent executor, probe, hook runs, `auth.json` and `config.toml` rendering, reply filter, bundle export, work-state inspection |
 | jackin-usage | `HostUsage` (1 method) | every provider crate, credential discovery, caches, HTTP |
-| jackin-tui | `Console`, `run_console` | pages, panes, vt100 parsing, key encoding |
+| jackin-tui | `Console`, `run_console` | projection, persistence diff, pane tasks and byte inboxes; no pixels, no screen text, no terminal emulation (the baseline owns termpane) |
 
 The widest surface is `Gateway`. Sixteen methods is the number of distinct external operations the launch needs. Splitting it into several traits would give the fake several things to implement and the session several handles to hold, with no hidden complexity gained.
 
@@ -2435,24 +2435,26 @@ Location: `crates/usage/jackin-usage/tests/*.rs`. Boundaries faked: the network 
 
 ## 6. jackin-tui
 
-Role: the console (D27, D28). It wires the `junie-tui` blocks (the baseline library, pinned by `rev`) to jackin data. It keeps the baseline `Application`, `Page`, `Request` loop and adds no second loop. It holds `Session` values, a `RoleCatalog`, and a `HostUsage`. The baseline data interfaces, the terminal pane block, the external-message input, and the `clap` feature are baseline work (P9.1, P9.2) and are used here, not redefined. The baseline has only `runtime::Application` today, so every item that names the terminal pane block (`junie_tui::terminal::TerminalState`) or a baseline data interface arrives with U14, and every item that names `jackin-usage` arrives with U13 (section 10).
+Role: the console (D27, D28). It is the glue between jackin data and the baseline application `jackin-console`. The baseline owns every screen, pixel, key binding, word, the UI model `World`, the Fixed state and the terminal emulation. Jackin owns four things: the projection of config, fleet, usage and gateway health into a baseline `Snapshot`; the persistence diff from a baseline payload into `ConfigEdit`s; `JackinBackend`, the baseline `Backend` implemented with `jackin-session`; and the tokio pane tasks that carry OpenShell terminal bytes to and from the baseline panes. `jackin-tui` draws nothing and writes no text for a screen. It adds no application loop: it runs the baseline `App` with `junie_tui::shell::run`.
+
+Dependencies on the baseline are git dependencies on `https://github.com/tailrocks/terminal-components-baseline` at one pinned `rev` on the branch `feature/openshell-native`, with `default-features = false` (`junie-tui` with `features = ["terminal"]`). The demo feature of the baseline is never enabled. The `baseline` and `demo-gate` steps of `xtask` enforce both (section 9).
 
 ### Module map
 
 ```text
 crates/jackin-tui/src/
   lib.rs
-  console.rs         Console, ConsoleDeps, SessionSet, GatewayState, ConsoleStart, ConsoleExit, ConsoleError, run_console
-  bridge.rs          pub(crate) external messages into the baseline loop
-  msg.rs             pub(crate) Msg
-  model.rs           pub(crate) Model: config snapshot, fleet, usage, doctor, launches, tabs
-  panes.rs           pub(crate) Pane, PaneKind, Link, PaneId, layout, size sync
-  keys.rs            pub(crate) chord table: detach, close, focus; Ctrl-D never forwarded
-  pages.rs           pub(crate) page registry
-  pages/{manager,editor,role_editor,accounts,usage,cockpit,doctor,gateways}.rs
-                     roster and actions; workspace editor with the Docker row; role sources and bindings;
-                     accounts, defaults, bindings, 1Password flow; usage panel; launch cockpit;
-                     doctor and gateway health; gateway entries
+  console.rs     ConsoleDeps, ConsoleLimits, ConsoleHost, Console, ConsoleExit, ConsoleError, build_console, run_console
+  sessions.rs    SessionSet, GatewayState, SessionConnector
+  backend.rs     JackinBackend: impl jackin_console::backend::Backend
+  project.rs     pure: (Config, Fleet, UsageReport, DoctorReport, OriginInfo, OpSnapshot, IdTable) -> Snapshot
+  persist.rs     pure: (&Config, payload, &IdTable) -> Result<Vec<ConfigEdit>, Unrepresentable>; destructures without `..`
+  ids.rs         IdTable
+  bridge.rs      InFlight counter, ExternalSender plumbing
+  launch.rs      LaunchEvent mapping and failure text
+  panes.rs       PaneHub, pane_task, PaneInbox, JackinPaneLink: impl PaneLink
+  onepassword.rs OpSnapshot and the `op` loader
+  clipboard.rs   HostClipboard: the native clipboard sink for jackin_console::app::NativeClipboard
 ```
 
 ### Public surface
@@ -2468,110 +2470,70 @@ impl SessionSet {
     pub fn default_name(&self) -> &GatewayName;
 }
 
+pub struct ConsoleLimits { pub pane_inbox_bytes: usize, pub pane_feed_budget_bytes: usize, pub connect_deadline: Duration }
+
 pub struct ConsoleDeps {
     pub config: ConfigStore,
     pub sessions: SessionSet,
+    pub connect: Arc<dyn SessionConnector>,
     pub roles: Arc<RoleCatalog>,
     pub usage: Arc<HostUsage>,
     pub host: HostPorts,
     pub env: EnvSnapshot,
     pub cwd: HostPath,
     pub engine_socket: HostPath,
+    pub handle: tokio::runtime::Handle,
+    pub limits: ConsoleLimits,
 }
-pub enum ConsoleStart { Home, Launch(LaunchRequest) }
 pub enum ConsoleExit { Quit }
 pub struct Console { }
 
 impl Console {
-    pub fn new(deps: ConsoleDeps, runtime: tokio::runtime::Handle, start: ConsoleStart) -> Console;
+    pub fn app(&mut self) -> &mut jackin_console::app::App;
+    pub async fn drain(&mut self);
 }
 
-impl junie_tui::runtime::Application for Console { }
+pub trait ConsoleHost: Send + Sync {
+    fn run(&self, deps: ConsoleDeps) -> Result<ConsoleExit, ConsoleError>;
+}
 
-pub fn run_console(deps: ConsoleDeps, runtime: tokio::runtime::Handle, start: ConsoleStart) -> Result<ConsoleExit, ConsoleError>;
+pub fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError>;
+pub fn run_console(deps: ConsoleDeps) -> Result<ConsoleExit, ConsoleError>;
 
 pub enum ConsoleError { Terminal(std::io::Error), Config(ConfigError) }
 ```
 
-`Console` implements the baseline `Application`. Tests and the identity gate drive it through `handle(Input)` and `render`, so they use the production entry point. A gateway that failed to connect stays in the set as `Failed`, so the console still opens and the doctor panel shows the error.
+`build_console` loads the config, waits for the first fleet listing (up to `limits.connect_deadline`) so that the baseline arbiter knows the running count before `App::start`, builds the `World` through the baseline `WorldParts` with `Surfaces::openshell` and the projection, and calls the baseline `assemble` with entry page `Manager`, clipboard `Host(HostClipboard)` and motion from `JACKIN_NO_MOTION` in `EnvSnapshot`. It returns the baseline `App` with an in-flight counter of effect tasks. `run_console` runs the app with `junie_tui::shell::run` under `spawn_blocking`, so the current-thread runtime keeps polling tasks. `drain` delivers queued external messages until no effect task is in flight; pane tasks are long-lived and are not counted, so the testkit rig waits for pane output with `wait_for_text` and a barrier byte. The testkit rig and the tests use it. A gateway that failed to connect stays in the set as `Failed`, so the console still opens and the doctor panel shows the error.
 
-### Internal model (the P0.6 recommendation as types)
+### Ownership and concurrency
 
-```rust
-pub(crate) struct Model {
-    config: Config,
-    fleet: Vec<SandboxSummary>,
-    usage: Option<UsageReport>,
-    doctor: Option<DoctorReport>,
-    launches: BTreeMap<LaunchId, LaunchView>,
-    tabs: Vec<Tab>,
-    focus: PaneId,
-}
-pub(crate) struct Tab { gateway: GatewayName, sandbox: SandboxName, panes: Vec<Pane> }
-pub(crate) enum PaneKind { Codex, Shell }
-pub(crate) struct Pane {
-    id: PaneId,
-    kind: PaneKind,
-    generation: u64,
-    link: Link,
-    screen: junie_tui::terminal::TerminalState,
-    forwarded: TermSize,
-}
-pub(crate) enum PaneTerminal { Codex(AttachedTerminal), Shell(TerminalSession) }
-pub(crate) enum Link { Detached, Attaching, Attached(tokio::sync::mpsc::Sender<TerminalCommand>), Exited(Option<i32>), Failed(String) }
-pub(crate) enum Msg {
-    FleetRefreshed(Result<Vec<SandboxSummary>, LifecycleError>),
-    UsageRefreshed(Result<UsageReport, UsageError>),
-    DoctorFinished(DoctorReport),
-    Launch(LaunchEvent),
-    LaunchDone(Result<LaunchOutcome, LaunchFailure>),
-    PaneOpened { pane: PaneId, generation: u64, result: Result<PaneTerminal, AttachError> },
-    PaneEvent { pane: PaneId, generation: u64, event: TerminalEvent },
-    ConfigSaved(Result<Config, ConfigError>),
-    Tick,
-}
-```
-
-Ownership and concurrency.
-
-- One owner of all UI state: `Model`, mutated only inside `Application::handle` after the bridge delivers a `Msg` (the baseline external-message input). Render reads and does no I/O.
-- Each pane has one forwarding task that owns the `AttachedTerminal` of its pane (a shell pane owns a `TerminalSession`). The model keeps only a `TerminalCommand` sender, so input, resize, and detach go to the task, which sends `Input` bytes through `AttachedTerminal::input` (the reply filter, section 4) and turns `next_event` into `Msg::PaneEvent`. The task exits when the session ends. A `generation` is bumped on every attach and carried by `Msg`, so late events of a closed session are dropped.
-- Invariant: a `Tab` holds at most one `PaneKind::Codex` pane. `Model::open_codex(sandbox)` returns the existing pane. One function computes the pane layout for render and for the size sync; the inner size of each pane is sent as `Resize` only when it changed and is at least 20x5.
-- Config writes: every edit is `ConfigStore::edit(vec![ConfigEdit..])` in a task, answered by `Msg::ConfigSaved(Ok(config))`, which replaces the snapshot. A save error shows a dialog. No write path skips `ConfigEdit`.
-- Chords: detach, close, and focus switch belong to `keys.rs`. Byte `0x04` is never sent to a Codex pane. A lone Ctrl-P is held until the next key and sent with it (D09, P0.6 fact 3). Each Codex attach uses `RepaintPolicy::NudgeAfter(600 ms)` through `Session::attach`, and the pane builds a fresh `TerminalState` (D28).
-- On `Exited` or `Ended` for a Codex pane, the model refreshes the fleet. The exit code shown comes from `SandboxSummary.phase`, not from the SSH status (P0.6 fact 6). No retry.
+- One writer of UI state: the baseline `App` on the render thread. It owns `World`, every screen, the `termpane` grid of each pane, the viewport, the selection and the scroll offset.
+- One writer of `config.toml`: `ConfigStore::edit`. `Backend::perform` only spawns a task; the task runs the edit from the effect payload and its `base` (a three-way diff: only the fields the editor changed are written) and sends the reply, which carries the new `Snapshot` on success, through `ExternalSender`. After a failure the reply carries the error text and a `Reloaded(Snapshot)` of the last saved config follows. No screen writes `World` after an effect.
+- Each pane has one tokio task that owns the session (`AttachedTerminal` for the Codex pane, `TerminalSession` for a shell pane). The render thread talks to it through a `PaneLink`: a bounded command queue (input, reply, redraw, detach), a latest-wins size, and a bounded byte inbox the render thread drains. The task stops reading events at the inbox cap, so the bounded transport channel applies backpressure. One wake message per pane is outstanding at most.
+- Dropping the link ends the task: a main-process pane detaches, a shell pane closes.
+- Pane bytes: `TerminalEvent::Output` goes to the inbox; the render thread feeds `junie_tui::terminal::TerminalState`, which wraps `termpane`; the replies that `termpane` produces go back as `PaneCommand::Reply` and are written with `AttachedTerminal::reply`, which sends them only while the supervisor reads `Running`; the baseline drops replies produced while the attach replay window is open. The title is sanitised and shown in the info dialog. OSC 52 writes from the program are accepted only from the focused Codex pane within a short window after operator input, up to 100,000 decoded bytes, with a status each time; reads are refused and shell panes are always refused. A bell or notification from an unfocused pane marks the pane as needing input.
+- Chords: the baseline capsule screen owns detach, close, focus and the prefix; `ForwardPolicy` (baseline) never sends `0x04` or `0x11` to a pane, and `Ctrl+B Ctrl+B` sends `0x02` to a Terminal pane. A lone `0x10` is sent as typed (D09, P0.6 fact 3). The wheel on the alternate screen sends arrow keys; no mouse bytes reach the program.
+- Each Codex attach uses `RepaintPolicy::NudgeAfter(600 ms)` through `Session::attach` and builds a fresh `TerminalState` (D28). The pane starts at its first valid grid size (at least 20 columns by 4 rows; the last inner column is the scroll track) and sends a new size only when it changes. A pane link has seven states (pending, attaching, owner, viewing, detached, exited, failed), each with a note row and one recovery.
+- On `Exited` or `Ended` for a Codex pane the console refreshes the fleet. The exit code shown comes from `SandboxSummary.phase`, not from the SSH status (P0.6 fact 6). No retry.
 
 Screen to data to edit (D27, D28):
 
 | Screen | Reads | Writes through |
 |---|---|---|
 | Manager roster | `fleet`, `config.workspaces()` | `Session::power`, `purge`, `attach`, `open_shell`, `inspect` |
-| Launch picker and cockpit | `config`, `LaunchEvent` stream, `LaunchStep::ALL` | `plan_launch`, `Session::launch`, the cancel token |
-| Workspace editor, Docker setting row | `config.workspace(..)` | `ConfigEdit::SetWorkspaceDocker`, `AddWorkspace`, `RemoveWorkspace`, `BindWorkspaceAccount` |
+| Launch picker and cockpit | `config`, the `LaunchEvent` stream, `LaunchStep::ALL` | `plan_launch`, `Session::launch`, the cancel token |
+| Workspace editor, Docker setting row | `config.workspace(..)` | `SaveWorkspace { id, workspace }` through `ConfigEdit::SetWorkspaceDocker`, `AddWorkspace`, `RemoveWorkspace`, `SetWorkspaceDefaultRole`, `SetWorkspaceRoles`, `SetEnv`, `BindWorkspaceAccount` |
 | Role editor and role binding | `config.roles()` | `ConfigEdit::AddRole`, `RemoveRole`, `BindRoleAccount` |
-| Accounts, defaults, bindings | `config.accounts()`, defaults | `ConfigEdit::AddAccount`, `SetDefaultAccount`, `RemoveAccount`, then `Session::sync_account` or `forget_account` |
-| Gateways | `config.gateways()` | `ConfigEdit::AddGateway`, `RemoveGateway`, `SetDefaultGateway` |
+| Accounts, defaults, bindings | `config.accounts()`, defaults | `SaveAccounts { registry }` through `ConfigEdit::AddAccount`, `SetAccountCredential`, `SetDefaultAccount`, `RemoveAccountClearingBindings`, then `Session::sync_account` or `forget_account` |
 | Usage panel | `UsageReport` | `HostUsage::report` (all accounts, or `Config::workspace_accounts`) |
 | Doctor and gateway health | `DoctorReport` | `doctor` over `SessionSet::access` |
+| Capsule panes | `PaneLink` events | `PaneCommand` |
 
-The D24 warning is rendered from `DockerRisk::ALL` in the launch picker before the launch starts and in the cockpit. The stage rail is rendered from `LaunchStep::ALL` with one `match` per label, so a new step is a compile error until it has a label. The console creates a workspace for a launch from an unknown directory (decision 8). The 1Password flow edits `CredentialSource::OnePassword`; the usage crates resolve it on the host.
+There is no gateway page: `jackin gateway add|ls|rm` stays CLI-only. The D24 warning is rendered from `DockerRisk::ALL` in the launch picker and in the cockpit. The stage rail is rendered by the baseline from its seven OpenShell stages; jackin supplies the exhaustive many-to-one mapping from `LaunchStep`. The 1Password flow edits `CredentialSource::OnePassword`; the usage crates resolve it on the host.
 
 ### Test plan outline (mark for `test-reviewer`; P9.3 and P9.4)
 
-Location: `crates/jackin-tui/tests/*.rs`. Boundaries faked: the gateway (`FakeGateway`), the image engine, the clock, the filesystem (`MemFs` behind `ConfigStore`), and the network for usage (`UsageServer`). Tests build a `World` from `jackin-testkit`, construct `Console`, feed `Input::Key` values, call `render` into a buffer, and assert the config in the store, the fake gateway state, and the rendered text. `jackin-tui` dev-depends on `jackin-testkit`, which depends on `jackin-tui`; integration tests link one copy of the crate.
-
-| Behavior | Positive | Negative |
-|---|---|---|
-| Launch from the roster | Enter on a workspace, pick the sentinel role, confirm: a sandbox exists in the fake gateway with the D07 labels and a Codex pane is `Attached` | Esc at the confirm step changes nothing; a plan error (no account) shows the dialog and creates no sandbox |
-| Launch from an unknown directory (decision 8) | the console opens the workspace editor, saves `AddWorkspace`, and launches | Esc leaves the config unchanged |
-| Cancel in the cockpit | the cancel key during upload leaves the sandbox and shows the restore candidate | cancel before create leaves none |
-| Docker setting | toggling the workspace row writes `docker = true` to the stored config; the launch picker shows the four D24 risks | with the setting off no risk text is rendered |
-| Accounts and bindings (J17) | add a Codex account, set default, bind to a workspace: the stored config has all three; the launch uses the workspace binding | removing a bound account shows `AccountInUse` and leaves the config unchanged |
-| Usage panel | the fixture server's report renders 5-hour and weekly windows for bound accounts | an `Unavailable(ExpiredLogin)` account renders its reason, and the rest still render |
-| Panes (D28) | open a Codex pane, then a shell pane: two sessions, the main process unchanged; resize sends the inner size once; detach keeps the process; re-attach builds a fresh screen and the nudge arrives | a second open of the Codex pane for the same sandbox focuses the existing one (the fake shows one main attachment); Ctrl-D is never delivered to the fake main process; a stale-generation event is ignored |
-| Failed gateway | a gateway in `Failed` state shows its error in the doctor panel and the console still opens | a launch against it shows the unavailable dialog and creates nothing |
-| Purge dialog (ADR-010) | purging an exported sandbox deletes it | purging an unexported sandbox shows the refusal and keeps it; the force path needs the explicit confirm |
-| Identity gate (P9.4) | the `console-fixture` binary of `jackin-testkit` runs the console on fixture data in a PTY; every demo key sequence matches its baseline | a one-cell color change in a baseline file fails the gate (red run recorded by `test-reviewer`) |
+Location: `crates/jackin-tui/tests/*.rs`, one entry test in `crates/jackin/tests/cli/console.rs`, structural tests in `crates/xtask/tests/`. Boundaries faked: the gateway (`FakeGateway`), the image engine, the clock, the filesystem (`MemFs` behind `ConfigStore`), host programs (`ScriptedProcessRunner`) and the network for usage (`LazyUsageServer`). Tests build the console through `build_console` with `ConsoleRig` from `jackin-testkit`, send keys and clicks, and assert the config in the store, the fake gateway state, the raw bytes the transport received, and the rendered text. The full list of rows is `P9.3-test-plan-v6.md` with `P9.3-test-plan-v7-delta.md`. Key behaviors: launch and cancel; first snapshot before the intro; Docker setting; accounts and bindings; usage windows; every Fixed control refuses by key and by click; panes (one Codex pane per main process, size after each layout change, Ctrl-D never delivered, replies gated by the supervisor state and the replay window, focus events and attention, scrollback, selection and copy that joins soft wraps, the clipboard policy, the seven link states, reattach builds a fresh screen); failed gateway; purge dialog; the tie between `project()` and the baseline `OpenshellFixed`; the `baseline` and `demo-gate` steps; the identity gate (P9.4) on the `console-fixture` binary.
 
 ---
 

@@ -569,28 +569,33 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 
 ### P9.3 Wire the console to jackin data
 
-- **Repo:** jackin. **Owner:** `rust-cli-tui-engineer`. **Depends:** P8.2, P9.2.
-- **Scope:** `crates/jackin-tui/`, the console entry in `crates/jackin/`. The console depends on the baseline crates `junie-tui` (reusable blocks) and `jackin-console` (`apps/jackin`, the jackin screens and domain) as git dependencies (D27). The console is `jackin-console` run with `JackinBackend`; the baseline demo is the same `jackin-console` run with the demo backend. No screen code, pixel, or screen text is written in jackin; a missing screen or behavior is added to the baseline.
+- **Repos:** terminal-components-baseline (the baseline steps), then jackin (the jackin steps). **Owner:** `rust-cli-tui-engineer`. `ux-specialist` reviews every new baseline look. `test-reviewer` approves each test plan and records the red and green runs. **Depends:** P8.2, P9.2.
+- **Rule (D27, D28):** jackin has one console application, `jackin-console`, from `https://github.com/tailrocks/terminal-components-baseline`, branch `feature/openshell-native`. It runs as the demo `jackin-preview` and as the jackin product. Jackin depends on `junie-tui` and `jackin-console` only as git dependencies with that URL, a full `rev` on that branch and `default-features = false`. A path dependency, a copy, another URL, a branch or tag reference, and a `[patch]` of these crates are errors, and the `baseline` step of `xtask` fails on each. The demo data, `SimBackend`, the scripted sessions, the fixtures and every demo-only code path stay in the baseline behind the Cargo feature `demo`, which is off by default. No demo data and no demo symbol reaches the jackin build, and the `demo-gate` step of `xtask` fails if one does. No screen code, pixel or screen text is written in jackin: a missing screen, control, word or behavior is added to the baseline. Jackin Capsule runs on the host, and its panes use `termpane` through `junie-tui`.
+- **Scope:** the baseline `apps/jackin` and `src/` for the baseline steps. In jackin: `crates/jackin-tui/`, the console entry in `crates/jackin/`, `crates/jackin-testkit/`, `crates/xtask/`, `deny.toml`. The design is `P9.3-design-v7`.
 - **Steps:**
-  1. Pin `junie-tui` and `jackin-console` to the head of the baseline branch `feature/openshell-native`.
-  2. Implement the baseline data interfaces with `jackin-session`, `jackin-core`, and the usage crates.
-  3. Show the D24 Docker setting, the D25 usage windows, and the D26 accounts, defaults, and bindings.
-  4. Build the D28 session tabs and panes with the P0.6 transport. `jackin attach` and `jackin shell` use the same sessions (D03).
-  5. Build the D28 1Password flow and the gateway health screen.
-- **Proof:** G-FAST passes. Tests drive key sequences and assert the resulting jackin config and session state.
+  1. Baseline, one app in two modes (B1b, B2c, B3b, B5b, B8a, B6, B7a): the feature `demo`, `default = []`, the bin `jackin-preview`; `Entry` and `AppOptions` instead of `Scenario`; the live-data constructor `Surfaces::openshell`; the demo literals, the scripted pane player, the simulated outcomes and the simulated launch move into `fixtures` and `sim`; effects carry a payload with its base and failure replies, and a successful reply carries the new snapshot, so no screen writes `World` after an effect. Proof: the full baseline suite with `--all-features` and the product-shape job with `--no-default-features --features product` pass, and `git diff --stat -- tests/functional/baselines apps/jackin/tests/functional/baselines` prints nothing.
+  2. Baseline Fixed controls (B4a, B4b, B4c): every control is live, mapped, or fixed with a visible reason. Each new look has one new baseline reviewed by `ux-specialist`.
+  3. Baseline terminal block (B8-0, B8-1, B8b, B5, B7b): `termpane` replaces `vt100` under `junie_tui::terminal`; `showcase_page_terminalpane` and `showcase_terminal_replay_mid_sequence` leave the baselines byte-identical; the terminal viewport (selection, copy, scroll); the terminal pane with its seven link states, focus events and attention; pending results; the launch views.
+  4. Jackin prerequisites and the testkit (J0a, J0b): the session, core and testkit changes in `API.md` sections 1 to 4 and 7 that the console needs.
+  5. Pin and wire (J1, J1b): the two dependency lines of D27, the `baseline`, `screen` and `demo-gate` steps, `deny.toml`, `build_console` and `run_console`, the read-only projection of config, fleet and gateway health, and the doctor panel.
+  6. Data and persistence (J2, J3): persist every live edit through `ConfigStore::edit`; show the D24 Docker setting, the D25 usage windows and the D26 accounts, defaults and bindings; the 1Password flow up to usage.
+  7. Launch (J4): the cockpit and the launch events from `Session::launch`.
+  8. Capsule (J5): the D28 session tabs and panes with the P0.6 transport, the byte path through `termpane`, replies, scrollback, selection and copy, the clipboard policy, export. `jackin attach` and `jackin shell` use the same sessions (D03).
+  9. Entry (J6): `jackin` with no arguments opens the console on a terminal. `xtask product-check` passes on the release build.
+- **Proof:** G-FAST passes at each step. Tests drive key sequences and assert the resulting jackin config and session state. Each test has an independent red run and green run.
 - [ ] P9.3 done
 
 ### P9.4 Prove that the console is identical to the baseline
 
 - **Repo:** jackin. **Owner:** `rust-cli-tui-engineer`, with `test-reviewer` for the red and green record. **Depends:** P9.3.
-- **Steps:** Add the D27 identity gate to the nextest suite. It runs the jackin console in a PTY on the baseline fixture data. It drives each demo scenario and each key-driven demo state with the demo key sequence (D28). It verifies each result against its `jackin-preview` tuiscotti baseline.
-- **Proof:** G-FAST passes. `test-reviewer` records a red run after a one-cell color change and a green run after the revert.
+- **Steps:** Add the D27 identity gate to the nextest suite. The gate builds the console through build_console, the function the product uses, with the baseline feature demo enabled only in test builds. It runs the jackin console in a PTY on the baseline fixture data. It drives each demo scenario and each key-driven demo state with the demo key sequence (D28). It verifies each result against its `jackin-preview` tuiscotti baseline.
+- **Proof:** G-FAST passes. `test-reviewer` records a red run after a one-cell color change and a green run after the revert. xtask demo-gate passes.
 - [ ] P9.4 done
 
 ### P9.5 Drive the console live
 
 - **Owner:** `verifier` at `model: sonnet, effort: high`, with the `run` skill. **Depends:** P9.4.
-- **Steps:** Start the console in a PTY against `jackin-local`. Follow the demo flows with real data. Create a workspace. Add a Codex account and an account of one other provider. Set a default account. Bind accounts to the sentinel role and to the workspace. Open the usage panel. Launch the sentinel role. Open a shell pane next to the Codex pane. Detach. Attach again from the list. Purge.
+- **Steps:** Start the console in a PTY against `jackin-local`. Follow the demo flows with real data. Create a workspace. Add a Codex account and an account of one other provider. Set a default account. Bind accounts to the sentinel role and to the workspace. Open the usage panel. Launch the sentinel role with the Codex login from --chatgpt-from. Open a shell pane next to the Codex pane. Detach. Attach again from the list. Purge.
 - **Proof:** terminal captures in `evidence/P9.5-console.md`.
 - [ ] P9.5 done
 
