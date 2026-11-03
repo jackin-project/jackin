@@ -36,7 +36,7 @@ Use the latest stable release of every tool and every dependency. Do not use a p
 | mr-boxington (`mbx`) | 1.29.1 | mise `mr-boxington` |
 | OpenShell | 0.1.6 (`ac7f615cd12d5cc49cb16eb1f5f10ffeb1e90f47`, 2026-10-27) | Homebrew `openshell`, git tag `v0.1.6` |
 | Codex CLI | 0.166.0 (2026-10-29) | `@openai/codex` |
-| cargo-nextest | 0.9.150 | mise aqua |
+| cargo-nextest | 0.9.151 (P8.0a) | mise aqua |
 | Docker CLI (D24 client layer) | 29.9.2 | `download.docker.com` static archive, hash fixed on first fetch (no published checksum file) |
 | docker-buildx | 0.38.1 | GitHub release, published checksum |
 | docker-compose | 5.7.0 | GitHub release, published checksum |

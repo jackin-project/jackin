@@ -489,7 +489,15 @@ This phase is the first end-to-end proof.
 - **Owner:** `docs-researcher`. **Depends:** P7.3.
 - **Steps:** Look for newer stable releases of the D02 tools. For each newer release, add a task that updates the pin and runs the affected live proofs again.
 - **Proof:** a trail row with the versions found.
-- [ ] P8.0 done
+- [x] P8.0 done. Proof: decisions.tsv row 2026-11-06 P8.0 and /private/tmp/claude-501/plans/P8.0-releases.md (newer: cargo-nextest 0.9.151, hk 2.11.0, baseline velnor-actions 0.1.72, zizmor 1.32.0; OpenShell has no stable release after 0.1.6). Task P8.0a bumps them.
+
+### P8.0a Bump the pins that P8.0 found
+
+- **Owner:** `cicd-architect`. **Depends:** P8.0.
+- **Scope:** the pins in jackin, jackin-sentinel, and terminal-components-baseline (`mise.toml`, `mise.lock`, `hk.pkl`, the nextest pin, the D02 table row by the orchestrator) and the Velnor-generated workflows.
+- **Steps:** Bump cargo-nextest to 0.9.151 in every repository, hk to 2.11.0 with the `hk.pkl` package URLs, velnor-actions to 0.1.72 in the baseline with regenerated workflows, and zizmor to 1.32.0 where it is pinned. Run each repository's gate.
+- **Proof:** each repository's gate passes on the bumped pins; regenerated workflows show no diff on a second run.
+- [ ] P8.0a done
 
 ### P8.1 Build xtask e2e
 
