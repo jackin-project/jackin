@@ -26,27 +26,26 @@ use jackin_openshell::{
     SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TermSize, TerminalKind,
     TerminalRequest, TerminalSession, TlsMode, TransferOp,
 };
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 pub use handle::SandboxHandle;
 
 use self::main_process::MainPlan;
 use self::state::{
-    Action, Armed, ArmedTrigger, Cell, Direction, Hold, Registry, Sandbox, Settling,
+    Action, Armed, ArmedTrigger, Cell, Direction, Hold, HoldStatus, Registry, Sandbox, Settling,
 };
 use crate::engine::FakeEngine;
 use crate::host::{FakeClock, Working};
 use crate::supervisor::SupervisorModel;
 use crate::sync::locked;
 
-const HELD_POLLS: u32 = 2_000;
-const HELD_POLL: std::time::Duration = std::time::Duration::from_millis(1);
-
 #[derive(Debug)]
 pub struct FakeGateway {
     name: GatewayName,
     workspace: OpenShellWorkspace,
     registry: Mutex<Registry>,
+    holds_changed: Notify,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -171,6 +170,7 @@ impl FakeGateway {
             name,
             workspace,
             registry: Mutex::new(Registry::new()),
+            holds_changed: Notify::new(),
         }
     }
 
@@ -209,7 +209,9 @@ impl FakeGateway {
     }
 
     pub fn release(&self, trigger: &Trigger) -> bool {
-        self.registry().release(trigger)
+        let released = self.registry().release(trigger);
+        self.holds_changed.notify_waiters();
+        released
     }
 
     pub fn held(&self) -> Vec<Trigger> {
@@ -217,13 +219,17 @@ impl FakeGateway {
     }
 
     pub async fn until_held(&self, trigger: &Trigger) -> bool {
-        for _ in 0..HELD_POLLS {
-            if self.held().contains(trigger) {
-                return true;
+        loop {
+            let changed = self.holds_changed.notified();
+            let mut changed = std::pin::pin!(changed);
+            changed.as_mut().enable();
+            let status = self.registry().hold_status(trigger);
+            match status {
+                HoldStatus::Reached => return true,
+                HoldStatus::Absent => return false,
+                HoldStatus::Armed => changed.await,
             }
-            tokio::time::sleep(HELD_POLL).await;
         }
-        false
     }
 
     pub fn set_attachment_cap(&self, cap: usize) {
@@ -239,6 +245,7 @@ impl FakeGateway {
         let Some(gate) = self.registry().arrive(op, special) else {
             return Ok(());
         };
+        self.holds_changed.notify_waiters();
         if let Some(token) = cancel {
             tokio::select! {
                 () = gate.wait() => Ok(()),
@@ -610,6 +617,7 @@ impl Gateway for FakeGateway {
 
     async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::Provider, None, None).await?;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Provider)?;
         if !registry.profiles.contains_key(&spec.profile) {
@@ -640,6 +648,7 @@ impl Gateway for FakeGateway {
 
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::Provider, None, None).await?;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Provider)?;
         let attached: Vec<String> = registry
@@ -681,15 +690,14 @@ impl Gateway for FakeGateway {
             });
         }
         let plan = MainPlan::parse(spec.main())?;
+        let image_id = registry
+            .engine
+            .as_ref()
+            .and_then(|engine| engine.images().get(spec.image()).cloned());
         let failure = if registry.failing_creates > 0 {
             registry.failing_creates -= 1;
             Some("provisioning failed (injected by the fake)".to_owned())
-        } else if registry.images.contains(spec.image())
-            || registry
-                .engine
-                .as_ref()
-                .is_some_and(|engine| engine.images().contains_key(spec.image()))
-        {
+        } else if registry.images.contains(spec.image()) || image_id.is_some() {
             None
         } else {
             Some(format!("failed to resolve image '{}'", spec.image()))
@@ -699,7 +707,7 @@ impl Gateway for FakeGateway {
             .tempdir()
             .map_err(protocol)?;
         std::fs::create_dir(dir.path().join("sandbox")).map_err(protocol)?;
-        let sandbox = Sandbox::new(
+        let mut sandbox = Sandbox::new(
             spec.clone(),
             plan,
             registry.provision_polls,
@@ -707,6 +715,7 @@ impl Gateway for FakeGateway {
             registry.supervisor,
             registry.now(),
         );
+        sandbox.image_id = image_id;
         let view = sandbox.view();
         registry.sandboxes.insert(
             spec.name().clone(),

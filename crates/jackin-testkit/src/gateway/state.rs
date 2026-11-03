@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use jackin_core::{
-    Clock, ImageTag, Labels, Phase, ProfileId, ProviderName, SandboxName, SandboxPath,
+    Clock, ImageId, ImageTag, Labels, Phase, ProfileId, ProviderName, SandboxName, SandboxPath,
     TerminalText, Timestamp,
 };
 use jackin_openshell::{
@@ -94,6 +94,13 @@ impl Hold {
             gate: Arc::new(Gate::default()),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum HoldStatus {
+    Absent,
+    Armed,
+    Reached,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -191,6 +198,17 @@ impl Registry {
             .collect()
     }
 
+    pub(super) fn hold_status(&self, trigger: &Trigger) -> HoldStatus {
+        let mut status = HoldStatus::Absent;
+        for hold in self.holds.iter().filter(|hold| hold.trigger == *trigger) {
+            if hold.gate.reached.load(Ordering::SeqCst) {
+                return HoldStatus::Reached;
+            }
+            status = HoldStatus::Armed;
+        }
+        status
+    }
+
     pub(super) fn strike(&mut self, op: GatewayOp) -> Result<(), GatewayError> {
         self.strike_at(op, None)
     }
@@ -243,6 +261,7 @@ pub(super) enum Settling {
 #[derive(Debug)]
 pub(super) struct Sandbox {
     pub(super) created_at: Option<Timestamp>,
+    pub(super) image_id: Option<ImageId>,
     pub(super) phase: Phase,
     pub(super) provisioning: Provisioning,
     pub(super) spec: SandboxCreate,
@@ -288,6 +307,7 @@ impl Sandbox {
         let supervisor = (plan.end == PlanEnd::Supervised).then(|| Supervisor::new(model));
         Sandbox {
             created_at: Some(created_at),
+            image_id: None,
             phase: Phase::Provisioning,
             provisioning: Provisioning::Normal,
             spec,
