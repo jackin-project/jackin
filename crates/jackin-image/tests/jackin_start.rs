@@ -612,6 +612,7 @@ async fn jackin_start_applies_only_the_bytes_it_validated() -> TestResult {
         .wait_until(BIG_STEP, "exited 1 0", |state| state == "exited 1 0")
         .await?;
     let control = started.elapsed();
+    let swap_delay = (control / 10).clamp(Duration::from_millis(300), Duration::from_millis(1200));
     assert_eq!(
         dump_value(&supervisor, "V")?.as_deref(),
         Some("x"),
@@ -629,7 +630,7 @@ async fn jackin_start_applies_only_the_bytes_it_validated() -> TestResult {
         let before = supervisor.state();
         fs::write(supervisor.root.join("swap"), swap)?;
         supervisor.request(&id.to_string())?;
-        sleep(control / 4).await;
+        sleep(swap_delay).await;
         assert_eq!(
             supervisor.state(),
             before,
