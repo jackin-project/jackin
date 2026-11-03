@@ -135,7 +135,7 @@ async fn program_timeout_and_cancel_stop_the_remote_process() {
     env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
     ready(&env);
     let gateway = Arc::new(connect(&env, WORKSPACE).await);
-    let mut sleeper = run("/bin/sh", &["-c", "sleep 300"]);
+    let mut sleeper = run("/bin/sh", &["-c", "exec sleep 300"]);
     sleeper.timeout = Duration::from_secs(5);
     let timed = {
         let gateway = Arc::clone(&gateway);
@@ -159,7 +159,7 @@ async fn program_timeout_and_cancel_stop_the_remote_process() {
     let cancelled = {
         let gateway = Arc::clone(&gateway);
         let cancel = cancel.clone();
-        let sleeper = run("/bin/sh", &["-c", "sleep 300"]);
+        let sleeper = run("/bin/sh", &["-c", "exec sleep 300"]);
         tokio::spawn(async move { gateway.run_program(&sleeper, &cancel).await })
     };
     guard(env.server.shared.child_started.notified()).await;
@@ -725,7 +725,7 @@ async fn collected_output_is_capped_per_stream() {
         (0, CAP + 1, OutputStream::Stderr),
         (CAP, CAP + 1, OutputStream::Stderr),
     ] {
-        let error = guard(gateway.run_program(&emit(stdout, stderr, "sleep 300"), &cancel))
+        let error = guard(gateway.run_program(&emit(stdout, stderr, "exec sleep 300"), &cancel))
             .await
             .unwrap_err();
         assert!(
