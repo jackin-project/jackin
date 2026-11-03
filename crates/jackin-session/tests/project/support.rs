@@ -160,6 +160,7 @@ impl Rig {
                 runner,
             },
             cache_dir: world.cache_dir().clone(),
+            config: world.config.clone(),
             limits: jackin_testkit::default_limits(),
         });
         let plan = self.plan(id)?;

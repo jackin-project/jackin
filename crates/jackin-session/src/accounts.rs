@@ -39,6 +39,14 @@ pub enum AccountError {
     Policy(#[from] PolicyError),
     #[error(transparent)]
     Lock(#[from] LockError),
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error("account {account} was removed after the launch was planned")]
+    Removed { account: AccountName },
+    #[error("account {account} changed after the launch was planned")]
+    Changed { account: AccountName },
+    #[error("gateway {gateway} was removed after the launch was planned")]
+    GatewayRemoved { gateway: GatewayName },
     #[error("account {account} uses {mode}, which is not supported yet")]
     Unsupported {
         account: AccountName,

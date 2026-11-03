@@ -10,7 +10,7 @@ use thiserror::Error;
 
 #[derive(Debug)]
 pub enum GatewayState {
-    Connected(Session),
+    Connected(Box<Session>),
     Failed(GatewayError),
 }
 

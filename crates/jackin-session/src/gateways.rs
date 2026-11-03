@@ -25,7 +25,7 @@ impl UnreachableGateway {
 
 #[derive(Clone, Debug)]
 enum Peer {
-    Up(Session),
+    Up(Box<Session>),
     Down(UnreachableGateway),
 }
 
@@ -55,10 +55,10 @@ impl Gateways {
                 continue;
             }
             match connector.connect(name, entry, cancel).await {
-                Ok(gateway) => peers.push(Peer::Up(Session::new(SessionDeps {
+                Ok(gateway) => peers.push(Peer::Up(Box::new(Session::new(SessionDeps {
                     gateway,
                     ..home.deps.clone()
-                }))),
+                })))),
                 Err(error) if error.is_cancelled() => return Err(error),
                 Err(error) => peers.push(Peer::Down(UnreachableGateway {
                     gateway: name.clone(),

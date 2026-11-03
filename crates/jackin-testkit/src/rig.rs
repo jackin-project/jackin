@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    Clock, Config, EngineCert, EnvName, FileSystem, HookKind, HostPath, LabelSelector, LaunchId,
-    ProcessRunner, ProjectRoot, RoleName, SandboxName, sandbox_layout,
+    Clock, Config, ConfigEdit, EngineCert, EnvName, FileSystem, HookKind, HostPath, LabelSelector,
+    LaunchId, ProcessRunner, ProjectRoot, RoleName, SandboxName, sandbox_layout,
 };
 use jackin_image::{BuildStage, BuiltImage, ImageEngine, ImageSource};
 use jackin_openshell::{Gateway, SandboxQuery};
@@ -258,6 +258,7 @@ impl Rig {
             engine,
             host: HostPorts { clock, fs, runner },
             cache_dir: world.cache_dir().clone(),
+            config: world.config.clone(),
             limits,
         })
     }
@@ -403,6 +404,15 @@ impl RigBuilder {
             role.root().as_path().display(),
             repo.root().as_path().display(),
         ))?;
+        let mut seed: Vec<ConfigEdit> = config
+            .gateways()
+            .map(|(name, entry)| ConfigEdit::AddGateway {
+                name: name.clone(),
+                entry: entry.clone(),
+            })
+            .collect();
+        seed.extend(config.accounts().cloned().map(ConfigEdit::AddAccount));
+        world.config.edit(seed).await?;
         let project = repo.project().await?;
         let gateway = &world.gateway;
         gateway.script_program(

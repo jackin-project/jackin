@@ -105,6 +105,7 @@ impl WorldBuilder {
         let engine_port: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&engine);
         let clock_port: Arc<dyn Clock> = Arc::<FakeClock>::clone(&clock);
         let runner_port: Arc<dyn ProcessRunner> = Arc::<TestRunner>::clone(&runner);
+        let config = ConfigStore::new(Arc::clone(&fs), Arc::clone(&clock_port), config_path);
         let session = Session::new(SessionDeps {
             gateway: gateway_port,
             engine: engine_port,
@@ -114,6 +115,7 @@ impl WorldBuilder {
                 runner: Arc::clone(&runner_port),
             },
             cache_dir: cache_dir.clone(),
+            config: config.clone(),
             limits: self.limits,
         });
         Ok(World {
@@ -123,7 +125,7 @@ impl WorldBuilder {
                 Arc::clone(&clock_port),
                 cache_dir.clone(),
             )),
-            config: ConfigStore::new(Arc::clone(&fs), clock_port, config_path),
+            config,
             usage: LazyUsageServer::default(),
             gateway,
             engine,

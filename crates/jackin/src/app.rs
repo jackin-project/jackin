@@ -85,6 +85,7 @@ impl App {
             engine: Arc::clone(&self.deps.engine),
             host: self.deps.host.clone(),
             cache_dir: self.cache_dir.clone(),
+            config: self.store.clone(),
             limits: self.deps.limits,
         }))
     }

@@ -309,6 +309,7 @@ fn session_on(rig: &Rig, gateway: &Arc<FakeGateway>) -> Session {
             runner: Arc::<jackin_testkit::TestRunner>::clone(&rig.world.runner),
         },
         cache_dir: rig.world.cache_dir().clone(),
+        config: rig.world.config.clone(),
         limits: default_limits(),
     })
 }

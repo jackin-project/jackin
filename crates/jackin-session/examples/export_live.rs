@@ -9,8 +9,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    AccountName, Agent, Config, FileSystem, GatewayName, HostPath, ImageId, ImageTag, LaunchId,
-    NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, ProcessRunner, ProcessSpec,
+    AccountName, Agent, Config, ConfigStore, FileSystem, GatewayName, HostPath, ImageId, ImageTag,
+    LaunchId, NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, ProcessRunner, ProcessSpec,
     ProcessStatus, ProcessStdin, Program, ProjectRoot, RoleName, SandboxName, SandboxPath,
     SandboxSlug, StdFileSystem, WorkspaceName,
 };
@@ -216,6 +216,11 @@ impl Live {
                 runner: Arc::clone(&port),
             },
             cache_dir: HostPath::parse(&work.join("cache"))?,
+            config: ConfigStore::new(
+                Arc::clone(&fs),
+                Arc::new(SystemClock),
+                HostPath::parse(&work.join("config.toml"))?,
+            ),
             limits: LaunchLimits {
                 ready: Duration::from_secs(120),
                 supervisor: Duration::from_secs(60),
