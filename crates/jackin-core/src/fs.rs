@@ -370,6 +370,49 @@ impl FileSystem for StdFileSystem {
     }
 }
 
+pub async fn write_atomic_locked(
+    fs: &dyn FileSystem,
+    path: &HostPath,
+    bytes: &[u8],
+    mode: FileMode,
+    _held: &FileLock,
+) -> Result<(), FsError> {
+    sweep_stale_temps(fs, path).await;
+    write_atomic(fs, path, bytes, mode).await
+}
+
+async fn sweep_stale_temps(fs: &dyn FileSystem, path: &HostPath) {
+    let (Some(dir), Some(name)) = (
+        path.parent(),
+        path.file_name().and_then(|name| name.to_str()),
+    ) else {
+        return;
+    };
+    let Ok(entries) = fs.list(&dir).await else {
+        return;
+    };
+    for entry in entries {
+        if entry.kind == FileKind::File && is_temp_of(name, &entry.name) {
+            let _swept = fs.remove_file(&dir.join_name(&entry.name)).await;
+        }
+    }
+}
+
+fn is_temp_of(target: &str, candidate: &str) -> bool {
+    let counters = candidate
+        .strip_prefix('.')
+        .and_then(|rest| rest.strip_prefix(target))
+        .and_then(|rest| rest.strip_prefix('.'))
+        .and_then(|rest| rest.strip_suffix(".tmp"));
+    counters
+        .and_then(|counters| counters.split_once('-'))
+        .is_some_and(|(pid, count)| all_digits(pid) && all_digits(count))
+}
+
+fn all_digits(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 pub async fn write_atomic(
     fs: &dyn FileSystem,
     path: &HostPath,

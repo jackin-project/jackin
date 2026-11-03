@@ -6,7 +6,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use jackin_core::{
-    CredentialSource, FileMode, FsError, HostPath, PollError, PollPlan, hold_lock, write_atomic,
+    CredentialSource, FileMode, FsError, HostPath, PollError, PollPlan, hold_lock,
+    write_atomic_locked,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -87,7 +88,7 @@ impl Cache {
             .map_err(|error| store(&self.path, &error))?;
         let lock_path = HostPath::resolve(Path::new(LOCK_FILE), &deps.state_dir)
             .map_err(|error| UsageError::Internal(error.to_string()))?;
-        let _lock = hold_lock(&*deps.fs, &*deps.clock, &lock_path, LOCK_PLAN, cancel)
+        let lock = hold_lock(&*deps.fs, &*deps.clock, &lock_path, LOCK_PLAN, cancel)
             .await
             .map_err(|error| match error {
                 PollError::Cancelled => UsageError::Cancelled,
@@ -106,7 +107,7 @@ impl Cache {
         }
         let bytes =
             serde_json::to_vec(&file).map_err(|error| UsageError::Internal(error.to_string()))?;
-        write_atomic(&*deps.fs, &self.path, &bytes, CACHE_MODE)
+        write_atomic_locked(&*deps.fs, &self.path, &bytes, CACHE_MODE, &lock)
             .await
             .map_err(|error| store(&self.path, &error))
     }

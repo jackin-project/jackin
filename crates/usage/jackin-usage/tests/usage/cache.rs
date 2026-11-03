@@ -654,3 +654,48 @@ async fn concurrent_reports_neither_drop_nor_bring_back_cache_entries() -> TestR
     })
     .await
 }
+
+#[tokio::test]
+async fn a_save_sweeps_the_crash_leftovers_of_the_cache_file_and_keeps_every_other_file()
+-> TestResult {
+    guard(async {
+        let (harness, account) = start(10).await?;
+        let leftovers = [
+            "/state/usage/.usage.json.4242-0.tmp",
+            "/state/usage/.usage.json.7-31.tmp",
+        ];
+        let others = [
+            "/state/usage/.usage.json.tmp",
+            "/state/usage/.usage.json.4242-0.tmp.bak",
+            "/state/usage/.usage.json.x-0.tmp",
+            "/state/usage/.usage.json.4242-.tmp",
+            "/state/usage/.usage.json.4242-0.5-6.tmp",
+            "/state/usage/usage.json.4242-0.tmp",
+            "/state/usage/.other.json.4242-0.tmp",
+            "/state/usage/.usage.json.lock.4242-0.tmp",
+        ];
+        for path in leftovers.iter().chain(&others) {
+            harness.put(path, "leftover").await?;
+        }
+        harness.one(&account, Refresh::Cached).await?;
+        let mut expected: Vec<String> = others.iter().map(ToString::to_string).collect();
+        expected.extend(
+            [
+                "/home/work/.codex/auth.json",
+                "/state/usage/usage.json",
+                "/state/usage/usage.json.lock",
+            ]
+            .map(str::to_owned),
+        );
+        expected.sort();
+        let found: Vec<String> = harness
+            .all_files()
+            .await?
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect();
+        assert_eq!(found, expected);
+        Ok(())
+    })
+    .await
+}
