@@ -16,8 +16,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use async_trait::async_trait;
 use jackin_core::{
     AccountName, Agent, ChatgptAccountId, EnvName, FileMode, GatewayName, HostPath, ImageId,
-    ImageTag, Labels, LaunchId, OpenShellWorkspace, Phase, PlannedLabels, ProfileId, ProjectRoot,
-    ProviderName, RoleName, SandboxName, SandboxPath, Sha256, WorkspaceName,
+    ImageTag, Labels, LaunchId, OpenShellWorkspace, Phase, PlannedLabels, PolicyLabel, ProfileId,
+    ProjectRoot, ProviderName, RoleName, SandboxName, SandboxPath, Sha256, WorkspaceName,
 };
 use jackin_openshell::{
     ClosedPolicy, EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, MainProcess,
@@ -511,6 +511,7 @@ fn foreign_spec(name: &SandboxName) -> Result<SandboxCreate, GatewayError> {
         role: RoleName::parse("foreign").map_err(protocol)?,
         agent: Agent::Codex,
         account: AccountName::parse("foreign").map_err(protocol)?,
+        policy: PolicyLabel::of("policy"),
         launch: LaunchId::from_entropy(&[0; 26]),
     };
     let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64))).map_err(protocol)?;

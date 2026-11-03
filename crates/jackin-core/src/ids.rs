@@ -35,7 +35,7 @@ const IMAGE_TAG_PREFIX: &str = "jackin.invalid/";
 const OP_PREFIX: &str = "op://";
 const IMAGE_TAG_HEX_LEN: usize = 16;
 const IMAGE_NAME_MAX: usize = 255;
-const IMAGE_LABEL_HEX_LEN: usize = 32;
+const DIGEST_LABEL_HEX_LEN: usize = 32;
 const SHA256_HEX_LEN: usize = 64;
 const SLUG_FALLBACK: &str = "ws";
 
@@ -591,6 +591,7 @@ string_id!(WorkspaceName, "workspace name", rule LABEL_VALUE);
 string_id!(RoleName, "role name", rule LABEL_VALUE);
 string_id!(LaunchId, "launch ID", rule LABEL_VALUE);
 string_id!(ImageLabel, "image label", rule LABEL_VALUE);
+string_id!(PolicyLabel, "policy label", rule LABEL_VALUE);
 string_id!(AccountName, "account name", rule ACCOUNT);
 string_id!(OpenShellWorkspace, "OpenShell workspace", rule DNS_19);
 string_id!(SandboxName, "sandbox name", with check_sandbox_name);
@@ -776,6 +777,12 @@ impl Sha256 {
     }
 }
 
+impl PolicyLabel {
+    pub fn of(document: &str) -> PolicyLabel {
+        PolicyLabel(Sha256::of(document.as_bytes()).0[..DIGEST_LABEL_HEX_LEN].to_owned())
+    }
+}
+
 impl ImageId {
     const KIND: &'static str = "image ID";
 
@@ -785,7 +792,7 @@ impl ImageId {
     }
 
     pub fn label_value(&self) -> ImageLabel {
-        ImageLabel(self.0.0[..IMAGE_LABEL_HEX_LEN].to_owned())
+        ImageLabel(self.0.0[..DIGEST_LABEL_HEX_LEN].to_owned())
     }
 
     pub fn full(&self) -> &str {

@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use jackin_core::{
     AccountName, Agent, EnvName, FileMode, GatewayName, HostPath, ImageId, ImageTag, LaunchId,
-    NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, ProjectRoot, ProviderName, RoleName,
-    SandboxName, SandboxPath, SandboxSlug, SecretBytes, StdFileSystem, WorkspaceName,
+    NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, PolicyLabel, ProjectRoot, ProviderName,
+    RoleName, SandboxName, SandboxPath, SandboxSlug, SecretBytes, StdFileSystem, WorkspaceName,
 };
 use jackin_openshell::contract::{ContractFixture, SHELL_END_TIMEOUT};
 use jackin_openshell::{
@@ -106,6 +106,7 @@ pub(crate) fn spec_with(
         role: RoleName::parse("backend")?,
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
+        policy: PolicyLabel::of("policy"),
         launch: launch.clone(),
     };
     let image_id = ImageId::parse(&format!("sha256:{}", "ba7816bf".repeat(8)))?;

@@ -10,8 +10,8 @@ use jackin_core::{
     Account, AccountName, AccountQuery, AccountSelection, Agent, ChatgptAccountId, CodexAuthMode,
     Config, ConfigError, DockerCapability, DockerError, DockerLabel, DockerLayer, EnvFile,
     EnvFileError, EnvName, EnvTable, FileMode, GatewayName, LaunchId, NameSuffix, PathError,
-    PlannedLabels, ProjectRoot, Provider, ProviderName, RoleManifest, RoleName, SandboxName,
-    SandboxPath, SelectionError, Workspace, WorkspaceName, plain_list, sandbox_layout,
+    PlannedLabels, PolicyLabel, ProjectRoot, Provider, ProviderName, RoleManifest, RoleName,
+    SandboxName, SandboxPath, SelectionError, Workspace, WorkspaceName, plain_list, sandbox_layout,
 };
 use jackin_image::{ImageError, ImageRequest, Rebuild};
 use jackin_openshell::{
@@ -380,6 +380,7 @@ pub fn plan_launch(
         entry.docker_engine.as_ref(),
     )?;
     let (policy, warnings) = launch_policy(role, &docker)?;
+    let policy_label = PolicyLabel::of(&policy.document().render()?);
     let layers = EnvLayers::of(config, workspace, &request.role);
     let mut values = resolve_env(&layers, role.manifest(), &request.env, request.prompting)?;
     values.extend(docker.environment());
@@ -407,6 +408,7 @@ pub fn plan_launch(
             role: request.role.clone(),
             agent,
             account: selection.account.clone(),
+            policy: policy_label,
             launch: request.launch.clone(),
         },
         provider: ProviderName::for_account(&selection.account, agent),

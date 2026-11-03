@@ -4,7 +4,10 @@
 use std::error::Error;
 use std::fmt;
 
-use jackin_core::{DockerLabel, HookKind, ImageLabel, LaunchId, Phase, SandboxName, TerminalText};
+use jackin_core::{
+    AccountName, Agent, DockerLabel, HookKind, ImageId, LaunchId, Phase, PlannedLabels,
+    PolicyLabel, RoleName, SandboxName, TerminalText, WorkspaceName,
+};
 use jackin_openshell::GatewayError;
 use jackin_session::{LaunchError, LaunchFailure, LaunchNextStep, LaunchStep, error_chain};
 
@@ -94,17 +97,28 @@ fn a_failure_reads_as_one_summary_and_names_the_retry_when_a_sandbox_remains() -
 
 #[test]
 fn a_stale_sandbox_is_never_offered_a_retry_under_the_same_launch() -> Fallible<()> {
-    let image = ImageLabel::parse(&"ab".repeat(16))?;
+    let planned = PlannedLabels {
+        workspace: WorkspaceName::parse("proj")?,
+        role: RoleName::parse("backend")?,
+        agent: Agent::Codex,
+        account: AccountName::parse("work")?,
+        policy: PolicyLabel::of("found"),
+        launch: launch()?,
+    };
+    let image = ImageId::parse(&format!("sha256:{}", "ab".repeat(32)))?;
+    let wanted = PlannedLabels {
+        policy: PolicyLabel::of("wanted"),
+        ..planned.clone()
+    }
+    .complete(&image, DockerLabel::Off);
+    let found = planned.complete(&image, DockerLabel::Off);
     let stale = failure(
         LaunchStep::Sandbox,
         Some(sandbox()?),
         LaunchError::StaleSandbox {
             launch: launch()?,
             sandbox: sandbox()?,
-            found_image: image.clone(),
-            wanted_image: image,
-            found_docker: DockerLabel::Off,
-            wanted_docker: DockerLabel::Off,
+            differences: found.differences(&wanted),
         },
     )?;
     assert_eq!(stale.next_step(), None);

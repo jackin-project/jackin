@@ -9,12 +9,13 @@ use crate::e2e::run::{Fail, Res, Run, fail, labels_of, text_of};
 use crate::e2e::verdict::Verdict;
 use crate::e2e::world::LoadObs;
 
-const KEYS: [&str; 8] = [
+const KEYS: [&str; 9] = [
     "jackin.dev/managed",
     "jackin.dev/workspace",
     "jackin.dev/role",
     "jackin.dev/agent",
     "jackin.dev/account",
+    "jackin.dev/policy",
     "jackin.dev/image",
     "jackin.dev/launch",
     "jackin.dev/docker",

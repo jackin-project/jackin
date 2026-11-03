@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use jackin_core::{
     AccountName, Agent, ChatgptAccountId, CredentialKeys, EnvName, FileMode, HostPath, ImageId,
-    ImageTag, LabelSelector, LaunchId, NameSuffix, OutputStream, Phase, PlannedLabels,
+    ImageTag, LabelSelector, LaunchId, NameSuffix, OutputStream, Phase, PlannedLabels, PolicyLabel,
     ProcessStatus, ProfileAsset, ProfileId, ProjectRoot, ProviderName, RoleName, SandboxName,
     SandboxPath, SandboxSlug, Secret, SecretBytes, Sha256, StdFileSystem, WorkspaceName,
 };
@@ -267,6 +267,7 @@ impl Ctx<'_> {
             role: RoleName::parse("contract").map_err(text)?,
             agent: Agent::Codex,
             account: AccountName::parse("contract").map_err(text)?,
+            policy: PolicyLabel::of("policy"),
             launch: launch.clone(),
         };
         let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64))).map_err(text)?;

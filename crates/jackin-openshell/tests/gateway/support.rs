@@ -6,8 +6,8 @@ use std::num::NonZeroU16;
 use std::time::Duration;
 
 use jackin_core::{
-    AccountName, Agent, ImageId, ImageTag, LaunchId, PlannedLabels, ProviderName, RoleName,
-    SandboxLabels, SandboxName, SandboxPath, WorkspaceName,
+    AccountName, Agent, ImageId, ImageTag, LaunchId, PlannedLabels, PolicyLabel, ProviderName,
+    RoleName, SandboxLabels, SandboxName, SandboxPath, WorkspaceName,
 };
 use jackin_openshell::{
     ClosedPolicy, GatewayError, InputMode, MainProcess, RepaintPolicy, SandboxCreate, TermSize,
@@ -88,6 +88,7 @@ pub(crate) fn planned(workspace: &str, role: &str, account: &str, launch: &str) 
         role: RoleName::parse(role).unwrap(),
         agent: Agent::Codex,
         account: AccountName::parse(account).unwrap(),
+        policy: PolicyLabel::of("policy"),
         launch: LaunchId::parse(launch).unwrap(),
     }
 }

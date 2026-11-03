@@ -7,7 +7,7 @@ use std::num::NonZeroU16;
 
 use jackin_core::{
     AccountName, Agent, CaFingerprint, DockerLabel, ImageId, LabelError, Labels, LaunchId,
-    PlannedLabels, RoleName, SandboxLabels, WorkspaceName,
+    PlannedLabels, PolicyLabel, RoleName, SandboxLabels, WorkspaceName,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -21,6 +21,7 @@ fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
         role: RoleName::parse("backend")?,
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
+        policy: PolicyLabel::of("policy"),
         launch: launch.clone(),
     };
     let image = ImageId::parse(&format!("sha256:{digest}"))?;
@@ -36,6 +37,10 @@ fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
         ("jackin.dev/role", "backend".to_owned()),
         ("jackin.dev/agent", "codex".to_owned()),
         ("jackin.dev/account", "work".to_owned()),
+        (
+            "jackin.dev/policy",
+            "823412d1eacb67956220e532959f0104".to_owned(),
+        ),
         ("jackin.dev/image", digest[..32].to_owned()),
         ("jackin.dev/launch", launch.to_string()),
         ("jackin.dev/docker", "off".to_owned()),
@@ -55,6 +60,7 @@ fn planned() -> Result<PlannedLabels, Box<dyn std::error::Error>> {
         role: RoleName::parse("backend")?,
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
+        policy: PolicyLabel::of("policy"),
         launch: LaunchId::parse("01hzy3k5m7p9r2t4v6w8x0abcd")?,
     })
 }
