@@ -145,3 +145,74 @@ async fn gateway_rm_clears_a_default_and_duplicates_and_unknown_names_fail_witho
     })
     .await
 }
+
+#[tokio::test]
+async fn gateway_add_refuses_the_plaintext_docker_port_and_leaves_the_config_unchanged()
+-> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        let refused = harness
+            .run(&[
+                "gateway",
+                "add",
+                "beta",
+                "--engine-port",
+                "2375",
+                "--engine-certs",
+                "certs",
+            ])
+            .await?;
+        failed(
+            &refused,
+            ExitClass::Failure,
+            &["beta", "docker_engine.port", "2375"],
+        )?;
+        assert_eq!(harness.config_bytes()?, None);
+        let empty = harness.run(&["gateway", "ls"]).await?;
+        empty.ok()?;
+        assert!(empty.stdout.is_empty());
+
+        harness
+            .run(&["gateway", "add", "alpha", "--default"])
+            .await?
+            .ok()?;
+        let before = harness.config_bytes()?;
+        let again = harness
+            .run(&[
+                "gateway",
+                "add",
+                "beta",
+                "--engine-port",
+                "2375",
+                "--engine-certs",
+                "certs",
+                "--default",
+            ])
+            .await?;
+        failed(&again, ExitClass::Failure, &["beta", "docker_engine.port"])?;
+        assert_eq!(harness.config_bytes()?, before);
+        let listed = harness.run(&["gateway", "ls"]).await?;
+        listed.ok()?;
+        assert!(listed.stdout.starts_with("alpha\t"), "{}", listed.stdout);
+        assert!(!listed.stdout.contains("beta"), "{}", listed.stdout);
+
+        harness
+            .run(&[
+                "gateway",
+                "add",
+                "gamma",
+                "--engine-port",
+                "2376",
+                "--engine-certs",
+                "certs",
+            ])
+            .await?
+            .ok()?;
+        let listed = harness.run(&["gateway", "ls"]).await?;
+        listed.ok()?;
+        assert!(listed.stdout.contains("gamma\t"), "{}", listed.stdout);
+        Ok(())
+    })
+    .await
+}

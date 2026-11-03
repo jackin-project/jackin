@@ -167,6 +167,7 @@ impl FileSystem for RegistryFs {
         &self,
         root: &HostPath,
         _file: &RepoPath,
+        _max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
         Err(FsError::Io {
             path: root.clone(),

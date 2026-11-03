@@ -1,16 +1,23 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeSet;
+use std::sync::Arc;
+
 use jackin_core::{
-    DockerLayer, EngineCert, EngineCertProblem, FileMode, HostPath, SandboxPath, sandbox_layout,
+    Clock, DockerLayer, ENGINE_CERT_MAX_BYTES, EngineCert, EngineCertProblem, FileMode, FileSystem,
+    HostPath, ProcessRunner, SandboxPath, sandbox_layout,
 };
-use jackin_image::BuildStage;
-use jackin_session::{LaunchEvent, LaunchStep, LaunchWarning};
+use jackin_image::{BuildStage, ImageEngine};
+use jackin_openshell::Gateway;
+use jackin_session::{HostPorts, LaunchEvent, LaunchStep, LaunchWarning, Session, SessionDeps};
 use jackin_testkit::{
-    BuildEffect, ENGINE_PORT, EngineMoment, Fault, HostEdit, KEY_MARKER, Trigger, engine_pem,
+    BuildEffect, ENGINE_PORT, EngineMoment, FakeClock, FakeEngine, FakeGateway, Fault, HostEdit,
+    KEY_MARKER, TestRunner, Trigger, default_limits, engine_pem,
 };
 use tokio_util::sync::CancellationToken;
 
+use super::cap_fs::RecordsCaps;
 use super::docker_support::{
     Engine, docker_files, docker_rig, engine_error, env_values, nothing_was_created, padded,
     rule_keys, split_failure, warnings,
@@ -406,6 +413,48 @@ async fn a_missing_certificate_directory_is_a_typed_error_that_names_the_directo
         );
         assert_eq!(named, directory.as_path().display().to_string());
         nothing_was_created(&rig).await?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn every_certificate_read_asks_the_filesystem_for_no_more_than_the_size_cap() -> TestResult {
+    guard(async {
+        let rig = docker_rig(false, true, Engine::WithCerts).await?;
+        let recorder = Arc::new(RecordsCaps::new(Arc::clone(&rig.world.fs)));
+        let fs: Arc<dyn FileSystem> = Arc::<RecordsCaps>::clone(&recorder);
+        let world = &rig.world;
+        let gateway: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&world.gateway);
+        let engine: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&world.engine);
+        let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
+        let runner: Arc<dyn ProcessRunner> = Arc::<TestRunner>::clone(&world.runner);
+        let session = Session::new(SessionDeps {
+            gateway,
+            engine,
+            host: HostPorts { clock, fs, runner },
+            cache_dir: world.cache_dir().clone(),
+            limits: default_limits(),
+        });
+        let outcome = rig
+            .run_on(&session, rig.request(1)?, CancellationToken::new())
+            .await?;
+        ready(outcome)?;
+
+        let names: BTreeSet<&str> = EngineCert::ALL
+            .iter()
+            .map(|cert| cert.file_name())
+            .collect();
+        let reads: Vec<(String, usize)> = recorder
+            .seen()
+            .into_iter()
+            .filter(|(file, _)| names.contains(file.as_str()))
+            .collect();
+        let read_names: BTreeSet<&str> = reads.iter().map(|(file, _)| file.as_str()).collect();
+        assert_eq!(read_names, names, "{reads:?}");
+        for (file, max) in &reads {
+            assert!(*max <= ENGINE_CERT_MAX_BYTES + 1, "{file}: {max}");
+        }
         Ok(())
     })
     .await

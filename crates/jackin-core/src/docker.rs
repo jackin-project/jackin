@@ -14,11 +14,25 @@ use crate::paths::{HostPath, SandboxPath, sandbox_layout};
 use crate::platform::Platform;
 
 pub const ENGINE_HOST: &str = "host.openshell.internal";
+pub const HOST_GATEWAY_ALIASES: [&str; 3] = [
+    ENGINE_HOST,
+    "host.containers.internal",
+    "host.docker.internal",
+];
+pub const PLAINTEXT_DOCKER_PORT: u16 = 2375;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EngineConfig {
     pub port: NonZeroU16,
     pub client_certs: HostPath,
+}
+
+impl EngineConfig {
+    pub fn port_refusal(port: NonZeroU16) -> Option<String> {
+        (port.get() == PLAINTEXT_DOCKER_PORT).then(|| {
+            format!("port {PLAINTEXT_DOCKER_PORT} is the plaintext Docker port; use the TLS port")
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

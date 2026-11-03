@@ -172,7 +172,11 @@ fn open_parent<'a>(
     Ok(Err(RegularFileProblem::Missing))
 }
 
-fn read_below(root: &Path, file: &RepoPath) -> io::Result<Result<RegularFile, RegularFileProblem>> {
+fn read_below(
+    root: &Path,
+    file: &RepoPath,
+    max_bytes: usize,
+) -> io::Result<Result<RegularFile, RegularFileProblem>> {
     let (dir, name) = match open_parent(root, file)? {
         Ok(parent) => parent,
         Err(problem) => return Ok(Err(problem)),
@@ -187,7 +191,10 @@ fn read_below(root: &Path, file: &RepoPath) -> io::Result<Result<RegularFile, Re
         return Ok(Err(RegularFileProblem::NotARegularFile));
     }
     let mut bytes = Vec::new();
-    opened.read_to_end(&mut bytes)?;
+    let limit = u64::try_from(max_bytes)
+        .unwrap_or(u64::MAX)
+        .saturating_add(1);
+    (&mut opened).take(limit).read_to_end(&mut bytes)?;
     Ok(Ok(RegularFile {
         bytes,
         mode: FileMode(meta.permissions().mode() & 0o7777),
@@ -326,9 +333,10 @@ impl FileSystem for StdFileSystem {
         &self,
         root: &HostPath,
         file: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
         let file = file.clone();
-        blocking(root, move |p| read_below(p, &file)).await
+        blocking(root, move |p| read_below(p, &file, max_bytes)).await
     }
 
     async fn read_link(

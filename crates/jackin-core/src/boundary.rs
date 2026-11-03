@@ -66,6 +66,8 @@ pub trait Clock: Send + Sync + Debug {
     async fn sleep(&self, duration: Duration);
 }
 
+pub const UNBOUNDED_READ: usize = usize::MAX;
+
 #[async_trait]
 pub trait FileSystem: Send + Sync + Debug {
     async fn read(&self, path: &HostPath) -> Result<Option<Vec<u8>>, FsError>;
@@ -87,6 +89,7 @@ pub trait FileSystem: Send + Sync + Debug {
         &self,
         root: &HostPath,
         file: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError>;
     async fn read_link(
         &self,

@@ -4,8 +4,8 @@
 use std::io::ErrorKind;
 
 use jackin_core::{
-    EngineAccess, EngineCert, EngineCertProblem, FileSystem, FsError, RegularFileProblem, RepoPath,
-    SecretBytes,
+    ENGINE_CERT_MAX_BYTES, EngineAccess, EngineCert, EngineCertProblem, FileSystem, FsError,
+    RegularFileProblem, RepoPath, SecretBytes,
 };
 
 use crate::launch::LaunchError;
@@ -30,7 +30,10 @@ pub(super) async fn read(
         problem,
     };
     let name = RepoPath::parse(cert.file_name())?;
-    let read = match fs.read_regular(directory, &name).await {
+    let read = match fs
+        .read_regular(directory, &name, ENGINE_CERT_MAX_BYTES)
+        .await
+    {
         Err(FsError::Io {
             kind: ErrorKind::NotFound,
             ..

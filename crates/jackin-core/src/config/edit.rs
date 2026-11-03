@@ -8,8 +8,10 @@ use super::{
     KIND_GATEWAY, KIND_ROLE, KIND_WORKSPACE, RoleEntry, RoleSource, Workspace, duplicate, missing,
 };
 use crate::agent::Agent;
+use crate::docker::EngineConfig;
 use crate::ids::{AccountName, GatewayName, RoleName, WorkspaceName};
 use crate::provider::Provider;
+use crate::tomlkit;
 
 impl Config {
     pub fn apply(&mut self, edit: ConfigEdit) -> Result<(), ConfigError> {
@@ -81,6 +83,19 @@ impl Config {
     }
 
     fn add_gateway(&mut self, name: GatewayName, entry: GatewayEntry) -> Result<(), ConfigError> {
+        if let Some(message) = entry
+            .docker_engine
+            .as_ref()
+            .and_then(|engine| EngineConfig::port_refusal(engine.port))
+        {
+            return Err(ConfigError::InvalidValue {
+                key: format!(
+                    "gateways.{}.docker_engine.port",
+                    tomlkit::key(name.as_str())
+                ),
+                message,
+            });
+        }
         match self.gateways.entry(name) {
             Entry::Occupied(taken) => Err(duplicate(KIND_GATEWAY, taken.key())),
             Entry::Vacant(slot) => {

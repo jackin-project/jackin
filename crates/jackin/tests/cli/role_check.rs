@@ -419,23 +419,32 @@ network_policies:
   engine-peek:
     name: engine-peek
     endpoints:
-      - host: host.openshell.internal
+      - host: HOST
         port: 8080
     binaries:
       - path: /usr/bin/curl
 ";
 
+fn engine_rule(host: &str) -> String {
+    ENGINE_RULE.replace("HOST", host)
+}
+
 #[tokio::test]
-async fn role_check_and_load_refuse_a_policy_that_names_the_engine_host_on_any_port() -> TestResult
-{
+async fn role_check_and_load_refuse_a_policy_that_names_a_host_gateway_alias_on_any_port()
+-> TestResult {
     guard(async {
-        let rule = RoleFixture::new("sentinel")?.policy_yaml(ENGINE_RULE);
-        let (ran, _, _) = checked(&rule, false).await?;
-        failed(
-            &ran,
-            ExitClass::Failure,
-            &["engine-peek", "host.openshell.internal"],
-        )?;
+        for (host, alias) in [
+            ("host.openshell.internal", "host.openshell.internal"),
+            ("host.containers.internal", "host.containers.internal"),
+            ("host.docker.internal", "host.docker.internal"),
+            ("HOST.Docker.Internal", "host.docker.internal"),
+            ("\"*.docker.internal\"", "host.docker.internal"),
+            ("\"*ost.docker.internal\"", "host.docker.internal"),
+        ] {
+            let rule = RoleFixture::new("sentinel")?.policy_yaml(&engine_rule(host));
+            let (ran, _, _) = checked(&rule, false).await?;
+            failed(&ran, ExitClass::Failure, &["engine-peek", alias])?;
+        }
         let clean = RoleFixture::new("sentinel")?;
         let (ran, _, _) = checked(&clean, false).await?;
         ran.ok()?;
@@ -444,7 +453,7 @@ async fn role_check_and_load_refuse_a_policy_that_names_the_engine_host_on_any_p
         let mut harness = Harness::new(&rig.world);
         harness.cwd = rig.repo.root().clone();
         let good = rig.loaded.root().as_path().display().to_string();
-        let bad = RoleFixture::new("sentinel")?.policy_yaml(ENGINE_RULE);
+        let bad = RoleFixture::new("sentinel")?.policy_yaml(&engine_rule("host.docker.internal"));
         bad.commit().await?;
         let swapped = rig
             .config
@@ -455,7 +464,7 @@ async fn role_check_and_load_refuse_a_policy_that_names_the_engine_host_on_any_p
         failed(
             &ran,
             ExitClass::Failure,
-            &["engine-peek", "host.openshell.internal"],
+            &["engine-peek", "host.docker.internal"],
         )?;
         assert!(rig.gateway().sandboxes().is_empty());
         assert!(rig.gateway().providers().is_empty());

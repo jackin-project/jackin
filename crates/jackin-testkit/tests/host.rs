@@ -13,7 +13,7 @@ use jackin_core::{
     Clock, DirEntry, DockerSubcommand, EnvValue, FileKind, FileMode, FileSystem, FsError, HostPath,
     OutputLine, OutputStream, Poll, PollError, PollPlan, ProcessError, ProcessRunner, ProcessSpec,
     ProcessStatus, ProcessStdin, Program, RegularFile, RegularFileProblem, RepoPath, Secret,
-    SecretBytes, StdFileSystem, Timestamp, poll_until, write_atomic,
+    SecretBytes, StdFileSystem, Timestamp, UNBOUNDED_READ, poll_until, write_atomic,
 };
 use jackin_testkit::{
     CapturedFile, FakeClock, FsOp, HostSnapshot, HostState, MemFs, ProcessEffect, ProcessReply,
@@ -182,7 +182,7 @@ async fn memfs_read_regular_returns_bytes_and_mode_and_gives_the_typed_refusal_o
         let root = &root;
         let file = RepoPath::parse(name);
         async move {
-            fs.read_regular(root, &file?)
+            fs.read_regular(root, &file?, UNBOUNDED_READ)
                 .await
                 .map_err(Box::<dyn Error>::from)
         }
@@ -201,6 +201,11 @@ async fn memfs_read_regular_returns_bytes_and_mode_and_gives_the_typed_refusal_o
             mode: FileMode(0o644),
         })
     );
+    let capped = fs
+        .read_regular(&root, &RepoPath::parse("dir/inner.txt")?, 2)
+        .await?
+        .map_err(|problem| format!("{problem:?}"))?;
+    assert_eq!(capped.bytes, b"inn");
     assert_eq!(read("dir").await?, Err(RegularFileProblem::NotARegularFile));
     assert_eq!(read("gone.txt").await?, Err(RegularFileProblem::Missing));
     assert_eq!(

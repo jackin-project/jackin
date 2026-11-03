@@ -235,8 +235,9 @@ impl FileSystem for SwapFs {
         &self,
         root: &HostPath,
         file: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        let found = self.inner.read_regular(root, file).await;
+        let found = self.inner.read_regular(root, file, max_bytes).await;
         self.swap_after(
             &HostPath::parse(&root.as_path().join(file.as_str())).map_err(|error| FsError::Io {
                 path: root.clone(),

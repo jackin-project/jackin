@@ -3,6 +3,7 @@
 
 mod adr008;
 mod cancel;
+mod cap_fs;
 mod crash;
 mod credentials;
 mod delivery;

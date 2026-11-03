@@ -84,8 +84,9 @@ impl FileSystem for CancelsOnRead {
         &self,
         root: &HostPath,
         file: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        self.inner.read_regular(root, file).await
+        self.inner.read_regular(root, file, max_bytes).await
     }
     async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
         let read = self.inner.read_at(path, offset, len).await;

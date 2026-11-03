@@ -492,6 +492,11 @@ fn gateway_invalid_cases() -> Vec<(&'static str, String, String)> {
             "invalid:gateways.g.docker_engine.port",
         ),
         case(
+            "plaintext docker port",
+            engine("port = 2375\nclient_certs = \"/c\"\n"),
+            "invalid:gateways.g.docker_engine.port",
+        ),
+        case(
             "no certs",
             engine("port = 1\n"),
             "missing:gateways.g.docker_engine.client_certs",
@@ -629,6 +634,25 @@ fn invalid_cases() -> Vec<(&'static str, String, String)> {
     let mut cases = gateway_invalid_cases();
     cases.extend(other_invalid_cases());
     cases
+}
+
+#[test]
+fn config_accepts_every_engine_port_except_the_plaintext_docker_port() -> TestResult {
+    for port in [1, 2374, 2376, 12376, 65535] {
+        let text =
+            format!("{GW}[gateways.g.docker_engine]\nport = {port}\nclient_certs = \"/c\"\n");
+        let config = Config::parse(&text)?;
+        let engine = config
+            .gateways()
+            .find_map(|(_, entry)| entry.docker_engine.as_ref())
+            .ok_or("no engine")?;
+        assert_eq!(engine.port.get(), port);
+    }
+    let (_, shown) = failure(&format!(
+        "{GW}[gateways.g.docker_engine]\nport = 2375\nclient_certs = \"/c\"\n"
+    ))?;
+    assert!(shown.contains("2375"), "{shown}");
+    Ok(())
 }
 
 #[test]

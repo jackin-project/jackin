@@ -5,7 +5,10 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::num::NonZeroU16;
 
-use jackin_core::{Agent, ENGINE_HOST, ProfileAsset, ProfileId, ProviderName, SandboxPath, plain};
+use jackin_core::{
+    Agent, ENGINE_HOST, HOST_GATEWAY_ALIASES, ProfileAsset, ProfileId, ProviderName, SandboxPath,
+    plain,
+};
 use openshell_core::host_pattern;
 use openshell_sdk::raw::proto::SandboxPolicy;
 
@@ -104,6 +107,18 @@ impl fmt::Display for ClosureViolation {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EngineHostViolation {
+    pub rule: RuleKey,
+    pub aliases: Vec<&'static str>,
+}
+
+impl fmt::Display for EngineHostViolation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ({})", self.rule, self.aliases.join(", "))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ClosedPolicy(PolicyDocument);
 
@@ -151,18 +166,26 @@ impl PolicyDocument {
         found.into_iter().collect()
     }
 
-    pub fn engine_host_rules(&self) -> Vec<RuleKey> {
-        let engine = HostPattern(ENGINE_HOST.to_owned());
+    pub fn engine_host_violations(&self) -> Vec<EngineHostViolation> {
         yaml::scan(&self.proto)
             .into_iter()
-            .filter(|scanned| {
-                scanned
-                    .rule
-                    .endpoints
-                    .iter()
-                    .any(|endpoint| endpoint.host.overlaps(&engine))
+            .filter_map(|scanned| {
+                let aliases: Vec<&'static str> = HOST_GATEWAY_ALIASES
+                    .into_iter()
+                    .filter(|alias| {
+                        let alias = HostPattern((*alias).to_owned());
+                        scanned
+                            .rule
+                            .endpoints
+                            .iter()
+                            .any(|endpoint| endpoint.host.overlaps(&alias))
+                    })
+                    .collect();
+                (!aliases.is_empty()).then(|| EngineHostViolation {
+                    rule: scanned.rule.key,
+                    aliases,
+                })
             })
-            .map(|scanned| scanned.rule.key)
             .collect()
     }
 

@@ -394,6 +394,7 @@ impl FileSystem for MemFs {
         &self,
         root: &HostPath,
         file: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
         let state = self.enter(FsOp::Read)?;
         let mut current = root.as_path().to_path_buf();
@@ -404,7 +405,12 @@ impl FileSystem for MemFs {
             if let Some(found) = state.files.get(&current) {
                 return Ok(if last {
                     Ok(RegularFile {
-                        bytes: found.bytes.clone(),
+                        bytes: found
+                            .bytes
+                            .iter()
+                            .take(max_bytes.saturating_add(1))
+                            .copied()
+                            .collect(),
                         mode: found.mode,
                     })
                 } else {

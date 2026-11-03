@@ -155,8 +155,9 @@ impl FileSystem for SignalFs {
         &self,
         root: &HostPath,
         file: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        self.inner.read_regular(root, file).await
+        self.inner.read_regular(root, file, max_bytes).await
     }
 }
 

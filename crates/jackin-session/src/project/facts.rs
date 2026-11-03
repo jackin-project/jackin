@@ -6,7 +6,7 @@ use std::fmt;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 
-use jackin_core::{CommitId, FileSystem, HostPath, ProcessStatus, RepoPath};
+use jackin_core::{CommitId, FileSystem, HostPath, ProcessStatus, RepoPath, UNBOUNDED_READ};
 
 use crate::launch::LaunchError;
 use crate::project::ProjectStep;
@@ -156,7 +156,7 @@ async fn regular_exclude(
     let relative = RepoPath::parse("info/exclude")
         .map_err(|error| malformed(ProjectStep::Describe, &error.to_string()))?;
     Ok(fs
-        .read_regular(git_dir, &relative)
+        .read_regular(git_dir, &relative, UNBOUNDED_READ)
         .await?
         .ok()
         .map(|file| file.bytes))

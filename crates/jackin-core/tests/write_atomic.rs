@@ -83,8 +83,9 @@ impl FileSystem for FaultFs {
         &self,
         r: &HostPath,
         f: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        self.inner.read_regular(r, f).await
+        self.inner.read_regular(r, f, max_bytes).await
     }
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
         self.inner.lock(p).await

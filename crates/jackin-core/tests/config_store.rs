@@ -310,8 +310,9 @@ impl FileSystem for CrashFs {
         &self,
         r: &HostPath,
         f: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        self.inner.read_regular(r, f).await
+        self.inner.read_regular(r, f, max_bytes).await
     }
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
         self.gate(None, p)?;
@@ -462,8 +463,9 @@ impl FileSystem for GateFs {
         &self,
         r: &HostPath,
         f: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        self.inner.read_regular(r, f).await
+        self.inner.read_regular(r, f, max_bytes).await
     }
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
         self.locks.fetch_add(1, Ordering::SeqCst);

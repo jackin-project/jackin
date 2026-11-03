@@ -135,10 +135,15 @@ fn read_engine(entry: &mut Reader<'_, '_>) -> Option<Option<EngineConfig>> {
     };
     let port = engine.required_integer("port").and_then(|number| {
         let port = u16::try_from(number).ok().and_then(NonZeroU16::new);
-        if port.is_none() {
+        let Some(port) = port else {
             engine.report_invalid("port", "expected an integer from 1 to 65535");
+            return None;
+        };
+        if let Some(refusal) = EngineConfig::port_refusal(port) {
+            engine.report_invalid("port", &refusal);
+            return None;
         }
-        port
+        Some(port)
     });
     let client_certs = engine.required_parsed("client_certs", host_path, static_message);
     engine.finish();

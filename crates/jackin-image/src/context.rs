@@ -5,6 +5,7 @@ use std::path::Path;
 
 use jackin_core::{
     FileMode, FileSystem, HostPath, LinkProblem, RegularFile, RegularFileProblem, RepoPath,
+    UNBOUNDED_READ,
 };
 
 use crate::engine::{ContextProblem, EngineError};
@@ -104,7 +105,7 @@ pub async fn read_regular_file(
     root: &HostPath,
     file: &RepoPath,
 ) -> Result<RegularFile, EngineError> {
-    match fs.read_regular(root, file).await? {
+    match fs.read_regular(root, file, UNBOUNDED_READ).await? {
         Ok(regular) => Ok(staged_mode(regular)),
         Err(problem) => Err(refuse(file.as_str(), regular_problem(problem))),
     }
@@ -137,7 +138,7 @@ async fn stage_listed(
     target: &HostPath,
 ) -> Result<(), EngineError> {
     for file in files {
-        match fs.read_regular(root, file).await? {
+        match fs.read_regular(root, file, UNBOUNDED_READ).await? {
             Ok(regular) => {
                 let regular = staged_mode(regular);
                 put(fs, target, file.as_str(), &regular.bytes, regular.mode).await?;
