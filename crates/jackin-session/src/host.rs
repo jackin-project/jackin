@@ -11,22 +11,21 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    Clock, EnvValue, FileSystem, LineSink, OutputLine, OutputStream, ProcessError, ProcessOutput,
-    ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, SecretBytes, SecretOutput, Timestamp,
+    Clock, EnvValue, FileSystem, GroupFault, LineSink, OutputLine, OutputStream, ProcessError,
+    ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program, SecretBytes,
+    SecretOutput, Timestamp,
 };
-use rustix::process::{Pid, Signal, kill_process_group};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
-use tokio::time::{sleep, timeout};
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
+use crate::process_group::ProcessGroup;
 use crate::service::HostPorts;
 
 const TAIL_LIMIT: usize = 65536;
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
-const GROUP_GRACE: Duration = Duration::from_secs(5);
-const GROUP_POLL: Duration = Duration::from_millis(2);
 const READ_CHUNK: usize = 8192;
 const FEED_CHUNK: usize = 64 * 1024;
 const LINE_LIMIT: usize = 65536;
@@ -148,40 +147,56 @@ impl Line {
 }
 
 struct GroupGuard {
-    group: Option<Pid>,
+    group: Option<ProcessGroup>,
 }
 
 impl GroupGuard {
-    fn fire(&mut self) -> Option<Pid> {
+    fn fire(&mut self) -> Option<ProcessGroup> {
         let group = self.group.take();
-        kill_group(group);
+        if let Some(group) = group {
+            group.strike();
+        }
         group
     }
 }
 
 impl Drop for GroupGuard {
     fn drop(&mut self) {
-        self.fire();
+        if let Some(group) = self.group.take() {
+            drop(group.sweep());
+        }
     }
 }
 
-async fn gone(group: Option<Pid>) {
-    let Some(group) = group else {
-        return;
-    };
-    let emptied = async {
-        while kill_process_group(group, Signal::KILL).is_ok() {
-            sleep(GROUP_POLL).await;
-        }
-    };
-    drop(timeout(GROUP_GRACE, emptied).await);
+async fn gone(group: Option<ProcessGroup>) -> Result<(), GroupFault> {
+    match group {
+        Some(group) => group.stop().await,
+        None => Ok(()),
+    }
 }
 
-fn kill_group(group: Option<Pid>) {
-    if let Some(group) = group {
-        match kill_process_group(group, Signal::KILL) {
-            Ok(()) | Err(_) => {}
-        }
+fn left_running(program: Program) -> impl FnOnce(GroupFault) -> ProcessError {
+    move |fault| ProcessError::Group { program, fault }
+}
+
+fn with_group(error: ProcessError, stopped: Result<(), GroupFault>) -> ProcessError {
+    let Err(fault) = stopped else {
+        return error;
+    };
+    match error {
+        ProcessError::Timeout { program, after, .. } => ProcessError::Timeout {
+            program,
+            after,
+            group: Some(fault),
+        },
+        ProcessError::Cancelled { program, .. } => ProcessError::Cancelled {
+            program,
+            group: Some(fault),
+        },
+        ProcessError::Spawn { program, .. }
+        | ProcessError::OutputTooLarge { program, .. }
+        | ProcessError::Read { program, .. }
+        | ProcessError::Group { program, .. } => ProcessError::Group { program, fault },
     }
 }
 
@@ -408,22 +423,25 @@ async fn execute(
     let program = spec.program;
     let spawn_error = |message: String| ProcessError::Spawn { program, message };
     if cancel.is_cancelled() {
-        return Err(ProcessError::Cancelled { program });
+        return Err(ProcessError::Cancelled {
+            program,
+            group: None,
+        });
     }
     let input = open_input(spec).await?;
     let mut child = command_for(spec)
         .spawn()
         .map_err(|error| spawn_error(error.to_string()))?;
     let mut guard = GroupGuard {
-        group: child
-            .id()
-            .and_then(|id| i32::try_from(id).ok())
-            .and_then(Pid::from_raw),
+        group: child.id().and_then(ProcessGroup::of_leader),
     };
     let timer = sleep(spec.timeout);
     let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
-        gone(guard.fire()).await;
-        return Err(spawn_error("the output pipes are missing".to_owned()));
+        let stopped = gone(guard.fire()).await;
+        return Err(with_group(
+            spawn_error("the output pipes are missing".to_owned()),
+            stopped,
+        ));
     };
     let pipes = Pipes {
         stdin: child.stdin.take(),
@@ -436,8 +454,8 @@ async fn execute(
     };
     let outcome = tokio::select! {
         biased;
-        () = cancel.cancelled() => Err(ProcessError::Cancelled { program }),
-        () = timer => Err(ProcessError::Timeout { program, after: spec.timeout }),
+        () = cancel.cancelled() => Err(ProcessError::Cancelled { program, group: None }),
+        () = timer => Err(ProcessError::Timeout { program, after: spec.timeout, group: None }),
         result = drive(&mut child, pipes) => result.map_err(|fault| match fault {
             DriveFault::Wait(error) => spawn_error(error.to_string()),
             DriveFault::Stream(stream, StreamFault::Read(error)) => ProcessError::Read {
@@ -454,14 +472,13 @@ async fn execute(
     };
     match outcome {
         Ok(status) => {
-            gone(guard.fire()).await;
+            gone(guard.fire()).await.map_err(left_running(program))?;
             Ok((status_of(status), out, err))
         }
         Err(error) => {
             let group = guard.fire();
             drop(child.kill().await);
-            gone(group).await;
-            Err(error)
+            Err(with_group(error, gone(group).await))
         }
     }
 }

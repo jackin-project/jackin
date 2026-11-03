@@ -17,6 +17,9 @@ pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
 pub(crate) const WAIT_FOR: &str = "wait_for() { i=0; while [ ! -e \"$1\" ] && [ \"$i\" -lt 1000 ]; do i=$((i+1)); sleep 0.02; done; }\n";
 
+pub(crate) const GROUP_ID: &str =
+    "ps -o pgid= -p $$ | tr -d ' ' > \"$d/pgid.tmp\"\nmv \"$d/pgid.tmp\" \"$d/pgid\"\n";
+
 pub(crate) const LOOP_DETACHED: &str = "d=$1\n( i=0; while [ \"$i\" -lt 600 ]; do echo x >> \"$d/beat\"; i=$((i+1)); sleep 0.05; done ) >/dev/null 2>&1 &\n";
 
 pub(crate) const LOOP_HOLDING: &str = "d=$1\n( i=0; while [ \"$i\" -lt 600 ]; do echo x >> \"$d/beat\"; i=$((i+1)); sleep 0.05; done ) &\n";

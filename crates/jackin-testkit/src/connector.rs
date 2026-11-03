@@ -64,6 +64,7 @@ impl GatewayConnector for ScriptedConnector {
         if cancel.is_cancelled() {
             return Err(ConnectError::Gateway(GatewayError::Cancelled {
                 op: GatewayOp::Health,
+                group: None,
             }));
         }
         let mut gateways = locked(&self.gateways);

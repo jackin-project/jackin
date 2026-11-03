@@ -194,7 +194,7 @@ async fn only_a_chatgpt_login_is_an_a1_source() {
     for (case, text) in [
         (
             "api key only",
-            json!({"OPENAI_API_KEY": "sk-test-0123456789abcdef"}).to_string(),
+            json!({"OPENAI_API_KEY": REFRESH}).to_string(),
         ),
         (
             "api key mode with tokens present",

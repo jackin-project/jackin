@@ -110,7 +110,7 @@ pub(super) struct Registry {
     pub(super) images: BTreeSet<ImageTag>,
     pub(super) installed: BTreeMap<SandboxPath, Vec<u8>>,
     pub(super) engine: Option<Arc<FakeEngine>>,
-    pub(super) clock: Arc<dyn Clock>,
+    pub(super) clock: Arc<FakeClock>,
     pub(super) faults: Vec<Armed>,
     pub(super) holds: Vec<Hold>,
     pub(super) attachment_cap: usize,

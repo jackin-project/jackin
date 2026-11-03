@@ -9,6 +9,10 @@ fn block(label: &str) -> String {
     format!("-----BEGIN {label}-----\n{MARKER}\nAAAA\n-----END {label}-----\n")
 }
 
+fn open(label: &str) -> String {
+    format!("-----BEGIN {label}-----\n{MARKER}\n")
+}
+
 fn padded(label: &str, total: usize) -> Vec<u8> {
     let head = format!("-----BEGIN {label}-----\n");
     let tail = format!("-----END {label}-----\n");
@@ -63,7 +67,7 @@ fn pem_check_accepts_the_right_kind_in_each_slot_up_to_64_kib() {
 fn pem_check_refuses_everything_else_without_echoing_the_content() {
     let cert = block("CERTIFICATE");
     let key = block("PRIVATE KEY");
-    let unterminated = format!("-----BEGIN PRIVATE KEY-----\n{MARKER}\n");
+    let unterminated = open("PRIVATE KEY");
     let non_utf8 = [0xff, 0xfe, 0x00];
     let big = padded("CERTIFICATE", ENGINE_CERT_MAX_BYTES + 1);
     assert_eq!(big.len(), 65537);
@@ -107,7 +111,7 @@ fn pem_check_refuses_everything_else_without_echoing_the_content() {
         ),
         (
             EngineCert::Cert,
-            format!("{cert}-----BEGIN PRIVATE KEY-----\n{MARKER}\n").into_bytes(),
+            format!("{cert}{}", open("PRIVATE KEY")).into_bytes(),
             EngineCertProblem::NotPem,
         ),
         (
@@ -126,11 +130,9 @@ fn pem_check_refuses_everything_else_without_echoing_the_content() {
 
 const EC_PARAMETERS: &str =
     "-----BEGIN EC PARAMETERS-----\nBggqhkjOPQMBBw==\n-----END EC PARAMETERS-----\n";
-const EC_KEY_BODY: &str = "MHcCAQEEIBEsxiHjujJq+KSj8xsMQ++A5xUgSZyfVcEUpXJDxgxkoAoGCCqGSM49\nAwEHoUQDQgAEb3SWStGuM0pTTnG9Xw/xNBqz6ZFWBqXYs9+IKIM+IZ7SrRCtwtUT\nBZdbV9oZSMVCKmWnYEN8f/BX2STCTwJJXQ==\n";
-const KEY_WORDS: &str = "PRIVATE KEY";
 
 fn ec_key() -> String {
-    format!("-----BEGIN EC {KEY_WORDS}-----\n{EC_KEY_BODY}-----END EC {KEY_WORDS}-----\n")
+    block("EC PRIVATE KEY")
 }
 
 fn ecparam_genkey_output() -> String {
@@ -216,7 +218,7 @@ fn key_check_still_refuses_parameters_without_a_usable_key_and_foreign_blocks() 
         let result = slot.check(text.as_bytes());
         assert_eq!(result, Err(expected), "{label}");
         let problem = expected;
-        assert!(!format!("{problem} {problem:?}").contains(EC_KEY_BODY.trim_end()));
+        assert!(!format!("{problem} {problem:?}").contains(MARKER));
     }
 }
 

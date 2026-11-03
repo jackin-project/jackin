@@ -9,17 +9,24 @@ use tokio_util::sync::CancellationToken;
 
 use crate::support::{Scratch, TestResult, guarded, same_bytes};
 
+const FD_ZERO_IS_DEV_NULL: &str = "for t in /dev/stdin /dev/fd/0 /proc/self/fd/0; do [ -e \"$t\" ] && break; done\n[ -e \"$t\" ] || { echo unobservable; exit 9; }\n[ \"$t\" -ef /dev/null ] && echo devnull || echo other\ncat\n";
+
 #[tokio::test]
 async fn stdin_is_dev_null_or_the_given_bytes_followed_by_end_of_input() -> TestResult {
     guarded(async {
         let scratch = Scratch::new()?;
         let cancel = CancellationToken::new();
-        let null = scratch.spec(
-            "[ /dev/stdin -ef /dev/null ] && echo devnull || echo other\ncat\n",
-            &[],
-        )?;
+        let null = scratch.spec(FD_ZERO_IS_DEV_NULL, &[])?;
         let output = TokioProcessRunner.run(&null, None, &cancel).await?;
         assert_eq!(output.stdout, b"devnull\n", "Null stdin");
+
+        let mut piped = scratch.spec(FD_ZERO_IS_DEV_NULL, &[])?;
+        piped.stdin = ProcessStdin::Bytes(SecretBytes::new(b"given".to_vec()));
+        let output = TokioProcessRunner.run(&piped, None, &cancel).await?;
+        assert_eq!(
+            output.stdout, b"other\ngiven",
+            "Bytes stdin is not /dev/null"
+        );
 
         let input: Vec<u8> = (0..1_usize << 20)
             .map(|index| (index % 256) as u8)

@@ -151,7 +151,7 @@ async fn read_chunk(
 ) -> Result<Vec<u8>, ExportError> {
     let bytes = fs.read_at(path, offset, len).await?;
     if cancel.is_cancelled() {
-        return Err(ExportError::Cancelled);
+        return Err(ExportError::Cancelled { group: None });
     }
     Ok(bytes)
 }
@@ -453,7 +453,7 @@ impl Pack<'_> {
                 return Err(refused(BundleRefusal::Inflate));
             }
             if self.cancel.is_cancelled() {
-                return Err(ExportError::Cancelled);
+                return Err(ExportError::Cancelled { group: None });
             }
             tokio::task::yield_now().await;
         }

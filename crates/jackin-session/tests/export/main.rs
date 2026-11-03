@@ -20,6 +20,7 @@ mod pack;
 mod purge;
 mod refs;
 mod refuse;
+mod replies;
 mod staging;
 mod support;
 mod symref;

@@ -90,12 +90,14 @@ async fn an_interrupt_with_a_failed_cleanup_still_exits_130() {
         op: jackin_openshell::GatewayOp::Delete,
         error: jackin_openshell::GatewayError::Cancelled {
             op: jackin_openshell::GatewayOp::Delete,
+            group: None,
         },
     });
     scenario.fake.inject(jackin_testkit::Fault::FailNext {
         op: jackin_openshell::GatewayOp::Delete,
         error: jackin_openshell::GatewayError::Cancelled {
             op: jackin_openshell::GatewayOp::Delete,
+            group: None,
         },
     });
     let ran = scenario.run().await;

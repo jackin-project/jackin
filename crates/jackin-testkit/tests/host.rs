@@ -3,10 +3,13 @@
 
 use std::convert::Infallible;
 use std::error::Error;
+use std::future::Future;
 use std::io::ErrorKind;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::task::{Context, Wake, Waker};
 use std::time::Duration;
 
 use jackin_core::{
@@ -357,6 +360,165 @@ async fn write_atomic_crash_at_every_step_keeps_the_old_file_or_the_complete_new
     crash(&[(FsOp::SyncDir, 1)], true, false).await
 }
 
+#[derive(Default)]
+struct Wakes(AtomicUsize);
+
+impl Wake for Wakes {
+    fn wake(self: Arc<Self>) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+type Sleeper = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+fn sleeper(clock: &Arc<FakeClock>) -> Sleeper {
+    let clock = Arc::clone(clock);
+    Box::pin(async move { clock.sleep(Duration::from_secs(10)).await })
+}
+
+fn poll_n(future: &mut Sleeper, waker: &Waker, polls: usize) -> Option<usize> {
+    let mut cx = Context::from_waker(waker);
+    (1..=polls).find(|_| future.as_mut().poll(&mut cx).is_ready())
+}
+
+fn polls_to_wake_unheld() -> Option<usize> {
+    let clock = Arc::new(FakeClock::new());
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    poll_n(&mut sleeper(&clock), &waker, 10_000)
+}
+
+#[tokio::test]
+async fn a_guard_taken_one_poll_before_a_sleep_wakes_holds_time_until_it_drops() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let start = clock.now();
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, wake_at - 1),
+        None,
+        "not yet awake"
+    );
+    let guard = clock.working();
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 1_000),
+        None,
+        "woke under a guard"
+    );
+    assert_eq!(clock.now(), start, "time moved under a guard");
+    drop(guard);
+    assert!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at).is_some(),
+        "never woke"
+    );
+    assert_eq!(clock.now(), Timestamp(start.0 + 10));
+}
+
+#[tokio::test]
+async fn a_sleep_begun_under_a_guard_stays_asleep_until_the_guard_drops() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let start = clock.now();
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    let guard = clock.working();
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 1_000),
+        None,
+        "woke under a guard"
+    );
+    assert_eq!(clock.now(), start, "time moved under a guard");
+    drop(guard);
+    assert!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at).is_some(),
+        "never woke"
+    );
+    assert_eq!(clock.now(), Timestamp(start.0 + 10));
+}
+
+#[tokio::test]
+async fn a_sleep_waits_for_the_last_of_two_guards() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    let first = clock.working();
+    let second = clock.working();
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 500),
+        None,
+        "woke under two guards"
+    );
+    drop(first);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 1_000),
+        None,
+        "woke under one guard"
+    );
+    drop(second);
+    assert!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at).is_some(),
+        "never woke"
+    );
+}
+
+#[tokio::test]
+async fn a_sleep_interrupted_by_a_guard_counts_its_quiet_yields_again_from_zero() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, wake_at - 20),
+        None,
+        "not yet awake"
+    );
+    let guard = clock.working();
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 100),
+        None,
+        "woke under a guard"
+    );
+    drop(guard);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at),
+        Some(wake_at),
+        "the quiet yields before the guard still counted"
+    );
+}
+
+#[tokio::test]
+async fn a_sleep_blocked_by_a_guard_does_not_wake_itself_and_wakes_when_the_guard_drops() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let wakes = Arc::new(Wakes::default());
+    let waker = Waker::from(Arc::clone(&wakes));
+    let guard = clock.working();
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(poll_n(&mut sleeping, &waker, 1), None);
+    let settled = wakes.0.load(Ordering::SeqCst);
+    assert_eq!(poll_n(&mut sleeping, &waker, 100), None);
+    tokio::task::yield_now().await;
+    assert_eq!(
+        wakes.0.load(Ordering::SeqCst),
+        settled,
+        "a blocked sleep woke its own task"
+    );
+    drop(guard);
+    assert!(
+        wakes.0.load(Ordering::SeqCst) > settled,
+        "dropping the last guard did not wake the sleep"
+    );
+    assert!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at).is_some(),
+        "never woke"
+    );
+}
+
 #[tokio::test]
 async fn fake_clock_sleep_advances_time_records_each_sleep_and_yields() -> TestResult {
     let started = std::time::Instant::now();
@@ -502,12 +664,13 @@ async fn scripted_runner_answers_in_order_records_every_spec_and_returns_each_re
     ));
     assert!(matches!(
         stdout(&runner, &call(Program::Openshell, &["timeout"])).await,
-        Err(ProcessError::Timeout { program: Program::Openshell, after }) if after == Duration::from_secs(5)
+        Err(ProcessError::Timeout { program: Program::Openshell, after, group: None }) if after == Duration::from_secs(5)
     ));
     assert!(matches!(
         stdout(&runner, &call(Program::Openshell, &["cancel"])).await,
         Err(ProcessError::Cancelled {
-            program: Program::Openshell
+            program: Program::Openshell,
+            group: None
         })
     ));
     assert!(matches!(
@@ -837,7 +1000,8 @@ async fn scripted_runner_streams_lines_applies_effects_and_holds_until_cancel() 
     assert!(matches!(
         pending.await,
         Err(ProcessError::Cancelled {
-            program: Program::Ssh
+            program: Program::Ssh,
+            group: None
         })
     ));
     Ok(())
@@ -941,7 +1105,8 @@ async fn a_pre_cancelled_git_call_is_cancelled_before_git_is_started() -> TestRe
         matches!(
             plain,
             Err(ProcessError::Cancelled {
-                program: Program::Git
+                program: Program::Git,
+                group: None
             })
         ),
         "{plain:?}"
@@ -951,7 +1116,8 @@ async fn a_pre_cancelled_git_call_is_cancelled_before_git_is_started() -> TestRe
         matches!(
             secret,
             Err(ProcessError::Cancelled {
-                program: Program::Git
+                program: Program::Git,
+                group: None
             })
         ),
         "{secret:?}"
@@ -989,7 +1155,8 @@ async fn a_pre_cancelled_call_is_cancelled_before_any_reply_is_chosen_or_any_eff
         matches!(
             run,
             Err(ProcessError::Cancelled {
-                program: Program::Docker(_)
+                program: Program::Docker(_),
+                group: None
             })
         ),
         "{run:?}"
@@ -999,7 +1166,8 @@ async fn a_pre_cancelled_call_is_cancelled_before_any_reply_is_chosen_or_any_eff
         matches!(
             secret,
             Err(ProcessError::Cancelled {
-                program: Program::Docker(_)
+                program: Program::Docker(_),
+                group: None
             })
         ),
         "{secret:?}"

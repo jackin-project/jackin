@@ -2,13 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::fs;
+use std::os::unix::process::CommandExt;
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use async_trait::async_trait;
+use jackin_core::{GroupFault, ProcessError, ProcessRunner, ProcessSpec, ProcessStdin, Program};
+use jackin_testkit::guard_within;
 use jackin_xtask::{
-    Exit, HostCommand, HostError, HostProcess, RealHost, Scratch, child_env, snapshot_tree,
+    Exit, HostCommand, HostError, HostOutput, HostProcess, RealHost, Scratch, ToolRunner,
+    child_env, snapshot_tree,
 };
-use rustix::process::{Pid, test_kill_process};
+use rustix::process::{
+    Pid, Signal, WaitId, WaitIdOptions, kill_process, test_kill_process, waitid,
+};
 use tokio_util::sync::CancellationToken;
 
 use super::scenario::Scenario;
@@ -128,11 +139,7 @@ async fn fixture_projects_have_the_shapes_journey_steps_need() {
         .await
         .expect("fixture");
     let git = |args: &[&str]| {
-        let output = capture(
-            std::process::Command::new("git")
-                .args(args)
-                .current_dir(&project),
-        );
+        let output = capture(Command::new("git").args(args).current_dir(&project));
         String::from_utf8_lossy(&output.stdout).into_owned()
     };
     assert_eq!(
@@ -229,18 +236,48 @@ fn sh(script: &str, timeout: Duration) -> HostCommand {
         .env(env)
 }
 
+struct KillRecorded(std::path::PathBuf);
+
+impl Drop for KillRecorded {
+    fn drop(&mut self) {
+        let recorded = fs::read_to_string(&self.0)
+            .ok()
+            .and_then(|text| text.trim().parse::<i32>().ok())
+            .and_then(Pid::from_raw);
+        if let Some(pid) = recorded {
+            kill_process(pid, Signal::KILL).unwrap_or_default();
+        }
+    }
+}
+
+async fn bounded_run(
+    host: &RealHost,
+    command: &HostCommand,
+    cancel: &CancellationToken,
+) -> Result<HostOutput, HostError> {
+    let mut result = None;
+    guard_within(Duration::from_secs(15), async {
+        result = Some(host.run(command, cancel).await);
+        Ok(())
+    })
+    .await
+    .expect("the run did not return");
+    result.expect("the run finished")
+}
+
 #[tokio::test]
 async fn real_host_kills_the_whole_process_group_on_timeout() {
     let dir = tempfile::tempdir().expect("tempdir");
     let pidfile = dir.path().join("pid");
+    let _reap = KillRecorded(pidfile.clone());
     let script = format!("sleep 600 & echo $! > {}; sleep 600", pidfile.display());
     let started = tokio::time::Instant::now();
-    let result = RealHost::default()
-        .run(
-            &sh(&script, Duration::from_secs(1)),
-            &CancellationToken::new(),
-        )
-        .await;
+    let result = bounded_run(
+        &RealHost::default(),
+        &sh(&script, Duration::from_secs(1)),
+        &CancellationToken::new(),
+    )
+    .await;
     assert!(
         matches!(result, Err(HostError::Timeout { .. })),
         "{result:?}"
@@ -293,9 +330,7 @@ async fn real_host_kills_the_whole_process_group_on_timeout() {
         tokio::time::sleep(Duration::from_millis(300)).await;
         trigger.cancel();
     });
-    let result = host
-        .run(&sh(&script, Duration::from_secs(30)), &token)
-        .await;
+    let result = bounded_run(&host, &sh(&script, Duration::from_secs(30)), &token).await;
     assert!(
         matches!(result, Err(HostError::Cancelled { .. })),
         "{result:?}"
@@ -320,5 +355,260 @@ async fn real_host_caps_captured_output() {
             assert_eq!(limit, 1024 * 1024);
         }
         other => panic!("expected the cap to fire, got {other:?}"),
+    }
+}
+
+const GRACE: Duration = Duration::from_secs(5);
+const CAP: usize = 1024 * 1024;
+
+struct Held(Child);
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        drop(self.0.kill());
+        drop(self.0.wait());
+    }
+}
+
+fn zombie_left() -> Option<GroupFault> {
+    if cfg!(target_os = "linux") {
+        None
+    } else {
+        Some(GroupFault::Alive { after: GRACE })
+    }
+}
+
+async fn group_of(pidfile: &Path) -> Result<i32, Box<dyn Error>> {
+    for _ in 0..1000 {
+        if let Some(group) = fs::read_to_string(pidfile)
+            .ok()
+            .and_then(|text| text.trim().parse().ok())
+        {
+            return Ok(group);
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    Err("the script never wrote its group id".into())
+}
+
+async fn exited_unreaped(zombie: &Held) -> Result<(), Box<dyn Error>> {
+    let pid = Pid::from_raw(i32::try_from(zombie.0.id())?).ok_or("the zombie has no pid")?;
+    for _ in 0..1000 {
+        let options = WaitIdOptions::EXITED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG;
+        if waitid(WaitId::Pid(pid), options)?.is_some() {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    Err("the zombie never exited".into())
+}
+
+#[derive(Clone, Copy)]
+enum Ending {
+    OutputCap,
+    TimeOut,
+    Cancel,
+}
+
+async fn run_with_a_zombie(
+    ending: Ending,
+) -> Result<Result<HostOutput, HostError>, Box<dyn Error>> {
+    let dir = tempfile::tempdir()?;
+    let pidfile = dir.path().join("pid");
+    let go = dir.path().join("go");
+    let script = match ending {
+        Ending::OutputCap => format!(
+            "echo $$ > {}; while [ ! -e {} ]; do sleep 0.05; done; head -c 3145728 /dev/zero",
+            pidfile.display(),
+            go.display()
+        ),
+        Ending::TimeOut | Ending::Cancel => {
+            format!("echo $$ > {}; sleep 600", pidfile.display())
+        }
+    };
+    let timeout = match ending {
+        Ending::TimeOut => Duration::from_secs(3),
+        Ending::OutputCap | Ending::Cancel => Duration::from_secs(60),
+    };
+    let command = sh(&script, timeout).output_cap(CAP);
+    let cancel = CancellationToken::new();
+    let driver = async {
+        let group = group_of(&pidfile).await?;
+        let zombie = Held(
+            Command::new("sh")
+                .args(["-c", "exit 0"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .process_group(group)
+                .spawn()?,
+        );
+        exited_unreaped(&zombie).await?;
+        match ending {
+            Ending::OutputCap => fs::write(&go, b"")?,
+            Ending::TimeOut => {}
+            Ending::Cancel => cancel.cancel(),
+        }
+        Ok::<_, Box<dyn Error>>(zombie)
+    };
+    let host = RealHost::default();
+    let (result, zombie) = tokio::join!(bounded_run(&host, &command, &cancel), driver);
+    let mut zombie = zombie?;
+    match zombie.0.try_wait() {
+        Ok(Some(status)) if status.success() => Ok(result),
+        other => Err(format!("the host reaped the zombie or it failed: {other:?}").into()),
+    }
+}
+
+#[tokio::test]
+async fn a_failed_group_stop_after_too_much_output_is_a_group_error_and_never_swallowed() {
+    let result = run_with_a_zombie(Ending::OutputCap).await.expect("the run");
+    match (result, zombie_left()) {
+        (Err(HostError::OutputTooLarge { stream, limit, .. }), None) => {
+            assert_eq!((stream, limit), ("stdout", CAP));
+        }
+        (Err(HostError::Group { program, fault }), Some(alive)) => {
+            assert_eq!(program, "/bin/sh");
+            assert_eq!(fault, alive);
+        }
+        (other, expected) => panic!("expected {expected:?} as the fault, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_timeout_that_leaves_only_a_zombie_in_the_group_keeps_the_timeout_and_its_fault() {
+    let result = run_with_a_zombie(Ending::TimeOut).await.expect("the run");
+    match result {
+        Err(HostError::Timeout {
+            program,
+            after,
+            group,
+        }) => {
+            assert_eq!(program, "/bin/sh");
+            assert_eq!(after, Duration::from_secs(3));
+            assert_eq!(group, zombie_left());
+        }
+        other => panic!("expected Timeout, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_cancel_that_leaves_only_a_zombie_in_the_group_keeps_the_cancel_and_its_fault() {
+    let result = run_with_a_zombie(Ending::Cancel).await.expect("the run");
+    match result {
+        Err(HostError::Cancelled { program, group }) => {
+            assert_eq!(program, "/bin/sh");
+            assert_eq!(group, zombie_left());
+        }
+        other => panic!("expected Cancelled, got {other:?}"),
+    }
+}
+
+#[derive(Debug)]
+struct Failing(Mutex<Option<HostError>>);
+
+#[async_trait]
+impl HostProcess for Failing {
+    async fn run(
+        &self,
+        _command: &HostCommand,
+        _cancel: &CancellationToken,
+    ) -> Result<HostOutput, HostError> {
+        Err(self
+            .0
+            .lock()
+            .expect("lock")
+            .take()
+            .expect("one error per run"))
+    }
+}
+
+async fn tool_run(error: HostError) -> Result<jackin_core::ProcessOutput, ProcessError> {
+    let host = Arc::new(Failing(Mutex::new(Some(error))));
+    let spec = ProcessSpec {
+        program: Program::Git,
+        args: Vec::new(),
+        cwd: None,
+        env: Vec::new(),
+        env_remove_prefixes: Vec::new(),
+        stdin: ProcessStdin::Null,
+        timeout: Duration::from_secs(9),
+    };
+    ToolRunner::new(host, BTreeMap::new())
+        .run(&spec, None, &CancellationToken::new())
+        .await
+}
+
+#[tokio::test]
+async fn a_tool_run_hands_the_group_fault_of_the_host_to_the_process_error() {
+    let alive = GroupFault::Alive { after: GRACE };
+    let lost = GroupFault::Unreachable {
+        message: "cannot list /proc".to_owned(),
+    };
+    let program = || "git".to_owned();
+
+    match tool_run(HostError::Timeout {
+        program: program(),
+        after: Duration::from_secs(4),
+        group: Some(alive.clone()),
+    })
+    .await
+    {
+        Err(ProcessError::Timeout {
+            program,
+            after,
+            group,
+        }) => {
+            assert_eq!(program, Program::Git);
+            assert_eq!(after, Duration::from_secs(4));
+            assert_eq!(group, Some(alive.clone()), "a timeout keeps its fault");
+        }
+        other => panic!("expected Timeout, got {other:?}"),
+    }
+    match tool_run(HostError::Timeout {
+        program: program(),
+        after: Duration::from_secs(4),
+        group: None,
+    })
+    .await
+    {
+        Err(ProcessError::Timeout { group, .. }) => {
+            assert_eq!(group, None, "a clean stop has no fault");
+        }
+        other => panic!("expected Timeout, got {other:?}"),
+    }
+    match tool_run(HostError::Cancelled {
+        program: program(),
+        group: Some(lost.clone()),
+    })
+    .await
+    {
+        Err(ProcessError::Cancelled { program, group }) => {
+            assert_eq!(program, Program::Git);
+            assert_eq!(group, Some(lost.clone()), "a cancel keeps its fault");
+        }
+        other => panic!("expected Cancelled, got {other:?}"),
+    }
+    match tool_run(HostError::Cancelled {
+        program: program(),
+        group: None,
+    })
+    .await
+    {
+        Err(ProcessError::Cancelled { group, .. }) => {
+            assert_eq!(group, None, "a clean stop has no fault");
+        }
+        other => panic!("expected Cancelled, got {other:?}"),
+    }
+    match tool_run(HostError::Group {
+        program: program(),
+        fault: alive.clone(),
+    })
+    .await
+    {
+        Err(ProcessError::Group { program, fault }) => {
+            assert_eq!(program, Program::Git);
+            assert_eq!(fault, alive, "a group error keeps its fault");
+        }
+        other => panic!("expected Group, got {other:?}"),
     }
 }

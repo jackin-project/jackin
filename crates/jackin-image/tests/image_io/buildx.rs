@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    BuilderName, DockerSubcommand, FileMode, HostPath, ImageId, ImageTag, OutputStream,
+    BuilderName, DockerSubcommand, FileMode, GroupFault, HostPath, ImageId, ImageTag, OutputStream,
     ProcessError, ProcessRunner, ProcessStatus, Program, RepoPath, StdFileSystem,
 };
 use jackin_image::{
@@ -26,6 +26,12 @@ use crate::support::{
     CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE, IidFile, JACKIN_START, Outcome, ROLE_DOCKERFILE,
     SCAN, Script, Stack, TestResult, assert_local_only, guarded, tag_id,
 };
+
+fn still_alive() -> GroupFault {
+    GroupFault::Alive {
+        after: Duration::from_secs(5),
+    }
+}
 
 fn fixed_id() -> Result<ImageId, Box<dyn Error>> {
     Ok(ImageId::parse(&format!("sha256:{}", "2".repeat(64)))?)
@@ -594,7 +600,10 @@ async fn buildx_failures_timeouts_and_cancel_are_typed_and_leave_no_directory() 
             cancel.cancel();
         };
         let (result, ()) = tokio::join!(build, driver);
-        assert!(matches!(result, Err(EngineError::Cancelled)), "{result:?}");
+        assert!(
+            matches!(result, Err(EngineError::Cancelled { group: None })),
+            "{result:?}"
+        );
         assert!(stack.fixture.work_entries().is_empty(), "after a cancel");
         Ok(())
     })
@@ -653,10 +662,20 @@ async fn buildx_find_reads_the_image_id_and_never_mistakes_a_failure_for_absence
             ("garbage", ProcessReply::exited(0, b"garbage\n", b"")),
             ("timeout", ProcessReply::timeout()),
             ("cancelled", ProcessReply::cancelled()),
+            (
+                "timeout with a fault",
+                ProcessReply::timeout_with(still_alive()),
+            ),
+            (
+                "cancelled with a fault",
+                ProcessReply::cancelled_with(still_alive()),
+            ),
+            ("group fault", ProcessReply::group(still_alive())),
         ];
         for (label, reply) in rows {
             let (engine, runner) = standalone(reply, sub)?;
             let result = engine.find(&tag).await;
+            let shown = result.as_ref().err().map(ToString::to_string);
             let call = only_call(&runner, sub)?;
             assert_eq!(
                 call.args.last(),
@@ -669,12 +688,30 @@ async fn buildx_find_reads_the_image_id_and_never_mistakes_a_failure_for_absence
             );
             match (label, result) {
                 ("found", Ok(Some(found))) => assert_eq!(found.to_string(), id),
-                ("absent", Ok(None)) | ("cancelled", Err(EngineError::Cancelled)) => {}
+                ("absent", Ok(None))
+                | ("cancelled", Err(EngineError::Cancelled { group: None })) => {}
                 ("daemon down", Err(EngineError::DigestUnreadable { output, .. })) => {
                     assert!(output.as_str().contains("Cannot connect"), "{output:?}");
                 }
                 ("garbage", Err(EngineError::DigestUnreadable { .. }))
-                | ("timeout", Err(EngineError::Process(ProcessError::Timeout { .. }))) => {}
+                | (
+                    "timeout",
+                    Err(EngineError::Process(ProcessError::Timeout { group: None, .. })),
+                ) => {}
+                ("cancelled with a fault", Err(EngineError::Cancelled { group })) => {
+                    assert_eq!(group, Some(still_alive()), "{label}");
+                    assert_eq!(
+                        shown.as_deref(),
+                        Some("cancelled; processes of its group were still alive after 5s")
+                    );
+                }
+                (
+                    "timeout with a fault",
+                    Err(EngineError::Process(ProcessError::Timeout { group, .. })),
+                ) => assert_eq!(group, Some(still_alive()), "{label}"),
+                ("group fault", Err(EngineError::Process(ProcessError::Group { fault, .. }))) => {
+                    assert_eq!(fault, still_alive(), "{label}");
+                }
                 (_, other) => return Err(format!("{label}: got {other:?}").into()),
             }
         }

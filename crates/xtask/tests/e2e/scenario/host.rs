@@ -664,6 +664,7 @@ impl HostProcess for ScenarioHost {
         if cancel.is_cancelled() {
             return Err(HostError::Cancelled {
                 program: command.program.clone(),
+                group: None,
             });
         }
         if command.program == "git" {
@@ -733,6 +734,7 @@ impl HostProcess for ScenarioHost {
                     op: jackin_openshell::GatewayOp::Delete,
                     error: jackin_openshell::GatewayError::Cancelled {
                         op: jackin_openshell::GatewayOp::Delete,
+                        group: None,
                     },
                 });
             }

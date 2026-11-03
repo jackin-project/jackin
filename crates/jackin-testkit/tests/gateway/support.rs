@@ -12,7 +12,7 @@ use jackin_core::{
     NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, ProjectRoot, ProviderName, RoleName,
     SandboxName, SandboxPath, SandboxSlug, SecretBytes, StdFileSystem, WorkspaceName,
 };
-use jackin_openshell::contract::ContractFixture;
+use jackin_openshell::contract::{ContractFixture, SHELL_END_TIMEOUT};
 use jackin_openshell::{
     ClosedPolicy, Gateway, InputMode, MainProcess, ProgramOutcome, ProgramRun, ProgramStdin,
     RepaintPolicy, SandboxCreate, SandboxFile, SandboxQuery, SandboxView, TermSize, TerminalEvent,
@@ -330,6 +330,7 @@ pub(crate) async fn fixture(
             image,
             project,
             name_prefix: SandboxSlug::parse("ctr")?,
+            shell_end_timeout: SHELL_END_TIMEOUT,
         },
     ))
 }

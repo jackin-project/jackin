@@ -111,7 +111,8 @@ async fn a_release_before_the_call_arrives_lets_it_through_and_a_cancel_ends_a_h
             matches!(
                 result,
                 Err(GatewayError::Cancelled {
-                    op: GatewayOp::UploadTree
+                    op: GatewayOp::UploadTree,
+                    group: None
                 })
             ),
             "{result:?}"

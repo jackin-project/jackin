@@ -50,8 +50,7 @@ async fn an_upload_that_exceeds_its_limit_fails_with_a_typed_timeout_and_a_retry
                 *failed.error,
                 LaunchError::Gateway(GatewayError::Timeout {
                     op: GatewayOp::UploadTree,
-                    after
-                }) if after == Duration::from_secs(1)
+                    after, .. }) if after == Duration::from_secs(1)
             ),
             "{:?}",
             failed.error

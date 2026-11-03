@@ -223,6 +223,7 @@ async fn sweep_removes_only_e2e_leftovers() {
         op: jackin_openshell::GatewayOp::Delete,
         error: jackin_openshell::GatewayError::Cancelled {
             op: jackin_openshell::GatewayOp::Delete,
+            group: None,
         },
     });
     let mut args = failing.args.clone();

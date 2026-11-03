@@ -98,8 +98,7 @@ impl WorldBuilder {
         gateway.link_engine(Arc::clone(&engine));
         gateway.use_host_home(&home);
         let clock = Arc::new(FakeClock::new());
-        let linked: Arc<dyn Clock> = Arc::<FakeClock>::clone(&clock);
-        gateway.link_clock(linked);
+        gateway.link_clock(Arc::clone(&clock));
         let runner = Arc::new(TestRunner::with_home(&home));
         let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
         let gateway_port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&gateway);

@@ -37,7 +37,7 @@ pub type ProgressSink = tokio::sync::mpsc::Sender<ImageEvent>;
 
 fn from_engine(error: EngineError) -> ImageError {
     match error {
-        EngineError::Cancelled => ImageError::Cancelled,
+        EngineError::Cancelled { group } => ImageError::Cancelled { group },
         EngineError::LockTimeout { key } => ImageError::LockTimeout { key },
         other => ImageError::Engine(other),
     }
@@ -54,7 +54,7 @@ struct Pipeline<'a> {
 impl Pipeline<'_> {
     fn live(&self) -> Result<(), ImageError> {
         if self.cancel.is_cancelled() {
-            Err(ImageError::Cancelled)
+            Err(ImageError::Cancelled { group: None })
         } else {
             Ok(())
         }

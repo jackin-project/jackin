@@ -425,3 +425,8 @@ e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/ma
 e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/materialize/tests/case_01.rs:generic-credential-uri:104
 e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/materialize/tests/case_03.rs:generic-credential-uri:18
 d84c40a1677e4e190c11f9994492aab893f8ac4b:crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs:generic-credential-uri:245
+
+# Reason: test fixture or placeholder, no credential, reviewed 2026-11-03
+# History fingerprints for betterleaks git: the jackin placeholder ID token at its first path, and prose in a deleted reconciliation note
+ddd296b40920dc19887107cca29f9204b4f8ae5e:crates/jackin-session/src/files.rs:jwt:7
+6e96df7af2d32cf9ad22b7e19227a0d1f603a46d:rewrite/reconciliation/P9.3.md:generic-password:31

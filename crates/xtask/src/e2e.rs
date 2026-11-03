@@ -42,7 +42,7 @@ pub use probe::{
     ProbeCheck, ProbeError, ProbeMode, ProbeReport, ProbeRequest, ProbeResult, ProbeStep,
     SCHEMA_TEXT, schema_step_drift,
 };
-pub use production::{ProductionError, production};
+pub use production::{ProductionError, ToolRunner, production};
 pub use pty::{PortablePty, PtyError, PtyHost, PtyLink, PtySession, PtySpec};
 pub use redact::Redactor;
 pub use report::{Capture, Sink};

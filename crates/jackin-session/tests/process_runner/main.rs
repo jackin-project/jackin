@@ -3,6 +3,7 @@
 
 mod env;
 mod exit;
+mod group;
 mod lifecycle;
 mod secret;
 mod stdin;

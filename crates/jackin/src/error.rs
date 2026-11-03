@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    CompatibilityError, ConfigError, EntropyError, FsError, HostPath, PathError, plain,
+    CompatibilityError, ConfigError, EntropyError, FsError, GroupFault, HostPath, PathError, plain,
 };
 use jackin_image::ImageError;
 use jackin_openshell::GatewayError;
@@ -122,10 +122,15 @@ impl From<BuildError> for CommandError {
 
 impl From<ConnectError> for CommandError {
     fn from(error: ConnectError) -> CommandError {
-        if error.is_cancelled() {
-            CommandError::Cancelled("cancelled while connecting to the gateway".to_owned())
-        } else {
-            CommandError::Connect(error)
+        let cancelled = error.cancel().map(|group| {
+            format!(
+                "cancelled while connecting to the gateway{}",
+                GroupFault::note(group)
+            )
+        });
+        match cancelled {
+            Some(text) => CommandError::Cancelled(text),
+            None => CommandError::Connect(error),
         }
     }
 }
@@ -139,8 +144,8 @@ impl CommandError {
             | CommandError::Purge(PurgeError::WorkNotExported { .. }) => ExitClass::Refused,
             CommandError::Cancelled(_)
             | CommandError::Usage(UsageError::Cancelled)
-            | CommandError::Image(ImageError::Cancelled)
-            | CommandError::Export(ExportError::Cancelled)
+            | CommandError::Image(ImageError::Cancelled { .. })
+            | CommandError::Export(ExportError::Cancelled { .. })
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. })) => {
                 ExitClass::Cancelled
             }

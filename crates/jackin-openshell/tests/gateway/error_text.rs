@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use jackin_core::{
-    OpenShellWorkspace, OutputStream, Phase, ProcessStatus, ProfileId, ProviderName, SandboxName,
-    SandboxPath, TerminalText,
+    GroupFault, OpenShellWorkspace, OutputStream, Phase, ProcessStatus, ProfileId, ProviderName,
+    SandboxName, SandboxPath, TerminalText,
 };
 use jackin_openshell::{
     ClosedPolicyError, ClosureViolation, DiscoveryError, GatewayError, GatewayOp, HostPattern,
@@ -54,6 +54,7 @@ fn operations_phases_and_durations_print_as_words() {
             GatewayError::Timeout {
                 op: GatewayOp::Health,
                 after: Duration::from_secs(30),
+                group: None,
             },
             "health timed out after 30s",
         ),
@@ -61,14 +62,35 @@ fn operations_phases_and_durations_print_as_words() {
             GatewayError::Timeout {
                 op: GatewayOp::ReadFiles,
                 after: Duration::from_millis(250),
+                group: None,
             },
             "read files timed out after 250ms",
         ),
         (
             GatewayError::Cancelled {
                 op: GatewayOp::UploadTree,
+                group: None,
             },
             "upload tree was cancelled",
+        ),
+        (
+            GatewayError::Cancelled {
+                op: GatewayOp::UploadTree,
+                group: Some(GroupFault::Alive {
+                    after: Duration::from_secs(5),
+                }),
+            },
+            "upload tree was cancelled; processes of its group were still alive after 5s",
+        ),
+        (
+            GatewayError::Timeout {
+                op: GatewayOp::Download,
+                after: Duration::from_secs(9),
+                group: Some(GroupFault::Unreachable {
+                    message: "nope\n".to_owned(),
+                }),
+            },
+            "download timed out after 9s; cannot stop the processes of its group: nope\\n",
         ),
         (
             GatewayError::NotReady {

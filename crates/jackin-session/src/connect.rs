@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use jackin_core::{GatewayEntry, GatewayName, ProcessError};
+use jackin_core::{GatewayEntry, GatewayName, GroupFault, ProcessError};
 use jackin_openshell::{DiscoveryError, Gateway, GatewayError};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -23,13 +23,18 @@ pub enum ConnectError {
 
 impl ConnectError {
     pub fn is_cancelled(&self) -> bool {
-        matches!(
-            self,
+        self.cancel().is_some()
+    }
+
+    pub fn cancel(&self) -> Option<Option<&GroupFault>> {
+        match self {
             ConnectError::Discovery {
-                source: DiscoveryError::Process(ProcessError::Cancelled { .. }),
+                source: DiscoveryError::Process(ProcessError::Cancelled { group, .. }),
                 ..
-            } | ConnectError::Gateway(GatewayError::Cancelled { .. })
-        )
+            }
+            | ConnectError::Gateway(GatewayError::Cancelled { group, .. }) => Some(group.as_ref()),
+            ConnectError::Discovery { .. } | ConnectError::Gateway(_) => None,
+        }
     }
 }
 
