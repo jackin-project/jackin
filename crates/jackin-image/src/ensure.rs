@@ -164,11 +164,17 @@ pub async fn ensure_held(
         builder_checked: false,
     };
     let construct = plan.construct_build();
-    let construct_lock = pipeline.hold(&construct.tag).await?;
-    let cached = match request.rebuild {
+    let mut cached = match request.rebuild {
         Rebuild::No => pipeline.find(&construct.tag).await?,
         Rebuild::Yes => None,
     };
+    let mut construct_lock = None;
+    if cached.is_none() {
+        construct_lock = pipeline.hold(&construct.tag).await?;
+        if request.rebuild == Rebuild::No {
+            cached = pipeline.find(&construct.tag).await?;
+        }
+    }
     let construct_id = if let Some(id) = cached {
         pipeline
             .emit(ImageEvent::StageCached(BuildStage::Construct))

@@ -477,7 +477,10 @@ async fn a_cached_role_is_served_without_waiting_for_a_peers_role_build() -> Tes
         let b = b?;
         assert_eq!(b.source, ImageSource::Cache);
         assert_eq!(b.id, warm.id);
-        assert_eq!(role_builds, 2, "role builds when the cached call finished");
+        assert_eq!(
+            role_builds, 1,
+            "role builds begun when the cached call finished"
+        );
         Ok(())
     })
     .await
