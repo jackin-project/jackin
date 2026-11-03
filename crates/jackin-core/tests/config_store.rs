@@ -84,6 +84,10 @@ impl Clock for StepClock {
         Timestamp(0)
     }
 
+    fn utc_offset_secs(&self) -> i32 {
+        0
+    }
+
     async fn sleep(&self, duration: Duration) {
         self.slept
             .lock()
@@ -524,6 +528,10 @@ impl Clock for TickClock {
         Timestamp(0)
     }
 
+    fn utc_offset_secs(&self) -> i32 {
+        0
+    }
+
     async fn sleep(&self, duration: Duration) {
         self.slept
             .lock()
@@ -648,6 +656,10 @@ impl Clock for HoldingClock {
         Timestamp(0)
     }
 
+    fn utc_offset_secs(&self) -> i32 {
+        0
+    }
+
     async fn sleep(&self, _duration: Duration) {
         let count = {
             let mut slept = self.slept.lock().unwrap_or_else(PoisonError::into_inner);
@@ -738,5 +750,36 @@ async fn edit_through_a_symlinked_config_is_refused_and_leaves_the_target_untouc
     assert!(!missing.exists());
     assert_eq!(std::fs::read_link(&dangling)?, missing);
     assert!(!dir.path().join(".dangling.toml.tmp").exists());
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_edit_sweeps_the_crash_leftovers_of_its_file_and_keeps_every_other_file() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = hp(&dir.path().join("config.toml"))?;
+    let leftovers = [".config.toml.4242-0.tmp", ".config.toml.7-31.tmp"];
+    let others = [
+        ".config.toml.tmp",
+        ".config.toml.4242-0.tmp.bak",
+        ".config.toml.x-0.tmp",
+        ".config.toml.4242-.tmp",
+        ".config.toml.4242-0.5-6.tmp",
+        "config.toml.4242-0.tmp",
+        ".other.toml.4242-0.tmp",
+        ".config.toml.lock.4242-0.tmp",
+    ];
+    for name in leftovers.iter().chain(&others) {
+        std::fs::write(dir.path().join(name), b"leftover")?;
+    }
+    std::fs::create_dir(dir.path().join(".config.toml.9-9.tmp"))?;
+    plain(&path).edit(vec![role("a")?]).await?;
+    let mut expected: Vec<String> = others.iter().map(ToString::to_string).collect();
+    expected.extend([".config.toml.9-9.tmp", "config.toml", "config.toml.lock"].map(str::to_owned));
+    expected.sort();
+    let mut found: Vec<String> = std::fs::read_dir(dir.path())?
+        .map(|entry| Ok(entry?.file_name().to_string_lossy().into_owned()))
+        .collect::<Result<_, std::io::Error>>()?;
+    found.sort();
+    assert_eq!(found, expected);
     Ok(())
 }

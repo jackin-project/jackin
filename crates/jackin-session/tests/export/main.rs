@@ -4,6 +4,7 @@
 mod abort;
 mod bundle_limits;
 mod cancel;
+mod changes;
 mod concurrent;
 mod detached;
 mod empty;
@@ -35,10 +36,3 @@ mod worktrees;
 #[expect(dead_code, reason = "each test binary uses part of the shared tap")]
 #[path = "../common/tap.rs"]
 mod tap;
-
-#[expect(
-    dead_code,
-    reason = "each test binary uses part of the shared wrappers"
-)]
-#[path = "../common/cancels.rs"]
-mod cancels;

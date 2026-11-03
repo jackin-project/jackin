@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use jackin_core::{
-    Agent, CommitId, Config, FileKind, FileSystem, FsError, HookKind, HostPath, LinkProblem,
+    Agent, Clock, CommitId, Config, FileKind, FileSystem, FsError, HookKind, HostPath, LinkProblem,
     ManifestError, PathError, ProcessError, ProcessOutput, ProcessRunner, ProcessStatus, RepoPath,
     RoleManifest, RoleName, RoleRev, RoleSource, RoleUrl, Sha256, TerminalText, Workspace,
     plain_list,
@@ -28,6 +28,11 @@ const KIND_OTHER: u8 = b'o';
 pub struct RoleCatalog {
     fs: Arc<dyn FileSystem>,
     runner: Arc<dyn ProcessRunner>,
+    #[expect(
+        dead_code,
+        reason = "the role cache lock of the next change waits on it"
+    )]
+    clock: Arc<dyn Clock>,
     cache_dir: HostPath,
 }
 
@@ -45,8 +50,10 @@ pub struct LoadedRole {
 
 #[derive(Debug, Error)]
 pub enum RoleError {
-    #[error("no role is selected and none is configured")]
+    #[error("no role is selected: set a default role or name one")]
     NoRole,
+    #[error("the workspace does not allow role {0}")]
+    NotAllowed(RoleName),
     #[error("unknown role {0}")]
     UnknownRole(RoleName),
     #[error("invalid role manifest at {path}")]
@@ -143,11 +150,13 @@ impl RoleCatalog {
     pub fn new(
         fs: Arc<dyn FileSystem>,
         runner: Arc<dyn ProcessRunner>,
+        clock: Arc<dyn Clock>,
         cache_dir: HostPath,
     ) -> RoleCatalog {
         RoleCatalog {
             fs,
             runner,
+            clock,
             cache_dir,
         }
     }
@@ -161,7 +170,9 @@ impl RoleCatalog {
         let name = if let Some(name) = role.or(workspace.default_role.as_ref()) {
             name.clone()
         } else {
-            let mut roles = config.roles();
+            let mut roles = config
+                .roles()
+                .filter(|(name, _)| workspace.roles.allows(name));
             match (roles.next(), roles.next()) {
                 (Some((only, _)), None) => only.clone(),
                 _ => return Err(RoleError::NoRole),
@@ -170,6 +181,9 @@ impl RoleCatalog {
         let entry = config
             .role(&name)
             .ok_or_else(|| RoleError::UnknownRole(name.clone()))?;
+        if !workspace.roles.allows(&name) {
+            return Err(RoleError::NotAllowed(name));
+        }
         let root = match &entry.source {
             RoleSource::Path(path) => path.clone(),
             RoleSource::Git { url, rev } => self.checkout(&name, url, rev.as_ref()).await?,

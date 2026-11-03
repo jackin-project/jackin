@@ -65,7 +65,7 @@ pub enum GatewayCommand {
     #[command(about = "List the gateway entries")]
     Ls(JsonArg),
     #[command(about = "Remove a gateway entry")]
-    Rm(GatewayNameArg),
+    Rm(GatewayRmArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -128,9 +128,14 @@ pub struct JsonArg {
 }
 
 #[derive(Debug, Args)]
-pub struct GatewayNameArg {
+pub struct GatewayRmArgs {
     #[arg(help = "Gateway name from the jackin config")]
     pub name: GatewayName,
+    #[arg(
+        long,
+        help = "Remove the entry without contacting the gateway; its OpenShell providers stay on it"
+    )]
+    pub offline: bool,
 }
 
 #[derive(Debug, Args)]

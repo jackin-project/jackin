@@ -149,11 +149,11 @@ pub(super) fn decide(
     let Some(image) = &done.image else {
         return Decision::Run(Act::Image);
     };
-    if !done.steps.contains(&LaunchStep::Provider) {
-        return Decision::Run(Act::Provider);
-    }
     if let Some(stale) = stale(plan, docker, image, observed) {
         return Decision::Fail(LaunchStep::Sandbox, stale);
+    }
+    if !done.steps.contains(&LaunchStep::Provider) {
+        return Decision::Run(Act::Provider);
     }
     match observed {
         Observed::Absent => Decision::Run(Act::Create(image.clone())),
@@ -188,15 +188,11 @@ fn stale(
             });
         }
     };
-    (found.image != wanted.image || found.docker != wanted.docker).then(|| {
-        LaunchError::StaleSandbox {
-            launch: plan.launch_id().clone(),
-            sandbox: view.name.clone(),
-            found_image: found.image,
-            wanted_image: wanted.image,
-            found_docker: found.docker,
-            wanted_docker: wanted.docker,
-        }
+    let differences = found.differences(&wanted);
+    (!differences.is_empty()).then(|| LaunchError::StaleSandbox {
+        launch: plan.launch_id().clone(),
+        sandbox: view.name.clone(),
+        differences,
     })
 }
 

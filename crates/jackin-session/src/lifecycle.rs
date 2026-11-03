@@ -110,6 +110,7 @@ fn summary(view: &SandboxView) -> Result<SandboxSummary, LifecycleError> {
         name: view.name.clone(),
         labels,
         phase: view.phase,
+        created_at: view.created_at,
     })
 }
 
@@ -165,6 +166,7 @@ impl Session {
                     name: view.name,
                     labels,
                     phase: view.phase,
+                    created_at: view.created_at,
                 }),
                 Err(error) => listing.unreadable.push(UnreadableSandbox {
                     name: view.name,
@@ -210,6 +212,7 @@ impl Session {
                 name: detail.view.name.clone(),
                 labels,
                 phase: detail.view.phase,
+                created_at: detail.view.created_at,
             },
             providers: detail.providers.clone(),
             policy: PolicyStatus {

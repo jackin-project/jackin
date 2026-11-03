@@ -12,8 +12,8 @@ use std::fmt;
 use std::time::Duration;
 
 use jackin_core::{
-    AccountName, AttemptId, DockerLabel, EngineCert, EngineCertProblem, FsError, HookKind,
-    HostPath, ImageLabel, LabelError, LaunchId, PathError, Phase, ProcessError, SandboxName,
+    AccountName, AttemptId, EngineCert, EngineCertProblem, FsError, HookKind, HostPath,
+    LabelDifference, LabelError, LaunchId, PathError, Phase, ProcessError, SandboxName,
     SupervisorReading, SupervisorState, TerminalText, plain, plain_duration, plain_list,
 };
 use jackin_image::{ImageError, ImageEvent};
@@ -263,15 +263,13 @@ pub enum LaunchError {
         problem: EngineCertProblem,
     },
     #[error(
-        "launch {launch} cannot continue sandbox {sandbox}: the sandbox has image {found_image} and Docker {found_docker}, this launch has image {wanted_image} and Docker {wanted_docker}; start a new launch with a new launch ID"
+        "launch {launch} cannot continue sandbox {sandbox}: {}; start a new launch with a new launch ID",
+        plain_list(.differences)
     )]
     StaleSandbox {
         launch: LaunchId,
         sandbox: SandboxName,
-        found_image: ImageLabel,
-        wanted_image: ImageLabel,
-        found_docker: DockerLabel,
-        wanted_docker: DockerLabel,
+        differences: Vec<LabelDifference>,
     },
     #[error("the labels of sandbox {sandbox} are unreadable: {error}")]
     SandboxLabels {

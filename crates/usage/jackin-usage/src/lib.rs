@@ -8,6 +8,7 @@ mod dispatch;
 mod host;
 mod model;
 mod request;
+mod text;
 mod window;
 
 pub use deps::*;

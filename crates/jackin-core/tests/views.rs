@@ -5,9 +5,9 @@ use std::collections::BTreeSet;
 
 use jackin_core::{
     AccountName, Agent, AttemptId, BuildOutput, ClosureViolationView, ImageId, ImageTag,
-    InspectView, LaunchId, LsOutput, NameSuffix, Phase, PlannedLabels, PolicyStatus, ProviderName,
-    RoleName, SandboxLabels, SandboxName, SandboxSlug, SandboxSummary, Sha256, SupervisorReading,
-    SupervisorState, WorkspaceName,
+    InspectView, LaunchId, LsOutput, NameSuffix, Phase, PlannedLabels, PolicyLabel, PolicyStatus,
+    ProviderName, RoleName, SandboxLabels, SandboxName, SandboxSlug, SandboxSummary, Sha256,
+    SupervisorReading, SupervisorState, Timestamp, WorkspaceName,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -22,6 +22,7 @@ fn summary(phase: Phase) -> Fallible<SandboxSummary> {
         role: RoleName::parse("sentinel")?,
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
+        policy: PolicyLabel::of("policy"),
         launch: LaunchId::parse("01hzy3k5m7p9r2t4v6w8x0abcd")?,
     };
     let labels: SandboxLabels = planned.complete(&image, jackin_core::DockerLabel::Off);
@@ -29,6 +30,7 @@ fn summary(phase: Phase) -> Fallible<SandboxSummary> {
         name: SandboxName::new(&SandboxSlug::parse("proj")?, &NameSuffix::parse("0abc")?),
         labels,
         phase,
+        created_at: Some(Timestamp(1_767_225_600)),
     })
 }
 
@@ -61,8 +63,14 @@ fn json_views_round_trip_and_keep_the_documented_keys() -> TestResult {
     assert_eq!(keys(&json)?, set(&["schema", "sandboxes"]));
     assert_eq!(
         keys(&json["sandboxes"][0])?,
-        set(&["name", "labels", "phase"])
+        set(&["name", "labels", "phase", "created_at"])
     );
+    let unstamped = SandboxSummary {
+        created_at: None,
+        ..summary(Phase::Ready)?
+    };
+    let json = round_trip(&unstamped)?;
+    assert_eq!(keys(&json)?, set(&["name", "labels", "phase"]));
     let readings = [
         SupervisorReading::Unreadable,
         SupervisorReading::Reported(SupervisorState::Exited {

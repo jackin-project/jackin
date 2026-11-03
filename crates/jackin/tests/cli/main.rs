@@ -15,6 +15,7 @@ mod exit;
 mod export;
 mod gateway;
 mod gateway_choice;
+mod gateway_rm;
 mod help;
 mod inspect;
 mod load;

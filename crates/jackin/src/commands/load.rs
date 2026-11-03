@@ -7,7 +7,7 @@ use jackin_core::{EnvName, LaunchId, ProjectRoot};
 use jackin_image::Rebuild;
 use jackin_session::{
     AttachRequest, EnvQuestion, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery, PlanError,
-    Prompting, RestoreCandidate, launch_events, plan_launch,
+    Prompting, RestoreCandidate, launch_events, lookup_workspace, plan_launch,
 };
 
 use super::progress::launch_event;
@@ -83,12 +83,12 @@ fn cancelled(candidate: &RestoreCandidate) -> CommandError {
 pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandError> {
     let config = app.store.load().await?;
     let path = absolutize(&args.path, &app.cwd)?;
-    let (_, workspace) = config.workspace_for(&path)?;
+    let (_, workspace) = lookup_workspace(&config, &path).require_saved()?;
     let project = ProjectRoot::open(app.deps.host.fs.as_ref(), &path).await?;
     let (gateway, _) = config.resolve_gateway(app.gateway.as_ref())?;
     let role = app
         .catalog()
-        .load(&config, args.role.as_ref(), workspace)
+        .load(&config, args.role.as_ref(), &workspace)
         .await?;
     let launch = match args.launch_id {
         Some(launch) => launch,

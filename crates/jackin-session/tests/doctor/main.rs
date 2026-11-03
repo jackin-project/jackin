@@ -4,3 +4,4 @@
 mod git;
 mod matrix;
 mod support;
+mod text;

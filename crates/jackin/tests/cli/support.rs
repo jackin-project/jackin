@@ -12,17 +12,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use jackin::{
-    AppEnv, ConnectError, Deps, ExitClass, GatewayConnector, GrpcConnector, RawMode, Terminal,
-    TerminalInput,
-};
+use jackin::{AppEnv, Deps, ExitClass, GrpcConnector, RawMode, Terminal, TerminalInput};
 use jackin_core::{
     Clock, Config, ConfigStore, EnvSnapshot, FileSystem, GatewayEntry, GatewayName, HostPath,
     ProcessRunner, Provider,
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, GatewayError, TermSize};
-use jackin_session::HostPorts;
+use jackin_session::{ConnectError, GatewayConnector, HostPorts};
 use jackin_testkit::{ProcessReply, ScriptedProgram, World, default_limits};
 use jackin_usage::ProviderEndpoints;
 use serde::de::DeserializeOwned;

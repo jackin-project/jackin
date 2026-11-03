@@ -14,15 +14,14 @@ use jackin_core::{
 };
 use jackin_openshell::{Gateway, GrpcGateway, GrpcGatewayConfig, TermSize, resolve_gateway};
 use jackin_session::{
-    DEFAULT_BUNDLE_BYTES, DEFAULT_EXPORT_ENTRY_BYTES, DEFAULT_EXPORT_OBJECTS,
-    DEFAULT_EXPORT_TOTAL_BYTES, LaunchLimits,
+    ConnectError, DEFAULT_BUNDLE_BYTES, DEFAULT_EXPORT_ENTRY_BYTES, DEFAULT_EXPORT_OBJECTS,
+    DEFAULT_EXPORT_TOTAL_BYTES, GatewayConnector, LaunchLimits,
 };
 use rustix::termios::{self, OptionalActions, Termios};
 use tokio::signal::unix::{Signal, SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::app::{ConnectError, GatewayConnector};
 use crate::error::CommandError;
 use crate::terminal::{RawMode, Terminal, TerminalInput};
 

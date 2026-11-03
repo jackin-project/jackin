@@ -10,10 +10,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use jackin_core::{
-    AccountName, Agent, FileMode, FileSystem, GatewayName, HostPath, ImageId, ImageTag, LaunchId,
-    NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, ProcessRunner, ProcessSpec,
-    ProcessStatus, ProcessStdin, Program, ProjectRoot, RoleName, SandboxName, SandboxPath,
-    SandboxSlug, SecretBytes, StdFileSystem, WorkspaceName,
+    AccountName, Agent, ConfigStore, FileMode, FileSystem, GatewayName, HostPath, ImageId,
+    ImageTag, LaunchId, NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, PolicyLabel,
+    ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program, ProjectRoot, RoleName,
+    SandboxName, SandboxPath, SandboxSlug, SecretBytes, StdFileSystem, WorkspaceName,
 };
 use jackin_openshell::contract::{ContractFixture, ContractGroup, SHELL_END_TIMEOUT, run};
 use jackin_openshell::{
@@ -216,6 +216,11 @@ impl Live {
                 runner: Arc::clone(&port),
             },
             cache_dir: HostPath::parse(&work.join("cache"))?,
+            config: ConfigStore::new(
+                Arc::clone(&fs),
+                Arc::new(SystemClock),
+                HostPath::parse(&work.join("config.toml"))?,
+            ),
             limits: LaunchLimits {
                 ready: Duration::from_secs(120),
                 supervisor: Duration::from_secs(60),
@@ -250,6 +255,7 @@ impl Live {
             role: RoleName::parse("p51b")?,
             agent: Agent::Codex,
             account: AccountName::parse("p51b")?,
+            policy: PolicyLabel::of("policy"),
             launch: launch.clone(),
         };
         let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64)))?;

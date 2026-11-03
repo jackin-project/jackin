@@ -35,7 +35,7 @@ async fn a_sandbox_branch_under_jackin_fails_the_export_and_is_never_exported() 
         assert_eq!(
             state,
             WorkState::Unexported(Unexported {
-                uncommitted: false,
+                uncommitted: 0,
                 branches: vec![jackin_core::BranchName::parse("good")?],
                 detached: None,
                 worktrees: Vec::new(),
@@ -141,7 +141,7 @@ async fn a_branch_name_with_a_control_or_format_character_is_unusable_and_plain_
             assert!(exports(&after).is_empty(), "{name:?}");
             assert_eq!(after.rest, before.rest, "{name:?}");
             let expected = WorkState::Unexported(Unexported {
-                uncommitted: false,
+                uncommitted: 0,
                 branches: Vec::new(),
                 detached: None,
                 worktrees: Vec::new(),

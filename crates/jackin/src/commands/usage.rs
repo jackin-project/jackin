@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use jackin_core::{HostPath, Timestamp};
 use jackin_usage::{
-    AccountUsage, Freshness, HostUsage, LimitWindow, Refresh, Remaining, UnavailableReason,
-    UsageAccount, UsageDeps, UsageOutcome, UsageReport, UsageRequest,
+    AccountUsage, Freshness, HostUsage, LimitWindow, Refresh, UsageAccount, UsageDeps,
+    UsageOutcome, UsageReport, UsageRequest,
 };
 
 use crate::app::App;
@@ -15,7 +15,6 @@ use crate::cli::JsonArg;
 use crate::error::CommandError;
 
 const STATE_DIR: &str = "usage";
-const DAY: i64 = 86_400;
 
 pub(crate) async fn run(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
     let config = app.store.load().await?;
@@ -53,7 +52,7 @@ fn account_lines(usage: &AccountUsage, now: Timestamp) -> Vec<String> {
     let head = format!("{}\t{}", usage.account, usage.provider.as_str());
     match &usage.outcome {
         UsageOutcome::Unavailable(reason) => {
-            vec![format!("{head}\tunavailable\t{}", reason_text(reason))]
+            vec![format!("{head}\tunavailable\t{reason}")]
         }
         UsageOutcome::Windows(windows) => windows
             .iter()
@@ -69,52 +68,11 @@ fn account_lines(usage: &AccountUsage, now: Timestamp) -> Vec<String> {
 }
 
 fn window_text(window: &LimitWindow, now: Timestamp) -> String {
-    let used = window.used.map_or_else(
-        || "-".to_owned(),
-        |used| format!("{}% used", number(used.get())),
-    );
-    let left = match &window.remaining {
-        Some(Remaining::Percent(left)) => format!("{}% left", number(left.get())),
-        Some(Remaining::Amount { value, unit }) => format!("{value} {unit} left"),
-        None => "-".to_owned(),
-    };
-    let resets = window.resets_at.map_or_else(
-        || "-".to_owned(),
-        |at| format!("resets {} ({})", at.rfc3339(), distance(at.0 - now.0)),
-    );
-    format!("{}\t{used}\t{left}\t{resets}", window.label)
-}
-
-fn number(value: f64) -> String {
-    let text = format!("{:.2}", (value * 100.0).round() / 100.0);
-    text.trim_end_matches('0').trim_end_matches('.').to_owned()
-}
-
-fn distance(seconds: i64) -> String {
-    if seconds <= 0 {
-        "passed".to_owned()
-    } else if seconds < DAY {
-        format!("in {}h{}m", seconds / 3_600, seconds % 3_600 / 60)
-    } else {
-        format!("in {}d{}h", seconds / DAY, seconds % DAY / 3_600)
-    }
-}
-
-fn reason_text(reason: &UnavailableReason) -> String {
-    match reason {
-        UnavailableReason::NoCredentials => "no credentials".to_owned(),
-        UnavailableReason::ExpiredLogin => "login expired or rejected".to_owned(),
-        UnavailableReason::Unsupported { detail: None } => {
-            "not supported for this provider".to_owned()
-        }
-        UnavailableReason::Unsupported {
-            detail: Some(detail),
-        } => format!("not supported: {detail}"),
-        UnavailableReason::RateLimited { retry_at: None } => "rate limited".to_owned(),
-        UnavailableReason::RateLimited { retry_at: Some(at) } => {
-            format!("rate limited, retry at {}", at.rfc3339())
-        }
-        UnavailableReason::Network(message) => format!("network error: {message}"),
-        UnavailableReason::Provider(message) => format!("provider error: {message}"),
-    }
+    format!(
+        "{}\t{}\t{}\t{}",
+        window.label,
+        window.used_text(),
+        window.remaining_text(),
+        window.reset_text(now)
+    )
 }

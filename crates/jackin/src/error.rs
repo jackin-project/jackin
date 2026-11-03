@@ -7,14 +7,12 @@ use jackin_core::{
 use jackin_image::ImageError;
 use jackin_openshell::GatewayError;
 use jackin_session::{
-    AccountError, AttachError, CredentialError, ExportError, LaunchFailure, LifecycleError,
-    PlanError, PurgeError, RestartError, RoleError,
+    AccountEditError, AccountError, AttachError, BuildError, ConnectError, CredentialError,
+    ExportError, LaunchFailure, LifecycleError, PlanError, PurgeError, RestartError, RoleError,
 };
 use jackin_tui::ConsoleError;
 use jackin_usage::UsageError;
 use thiserror::Error;
-
-use crate::app::ConnectError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ExitClass {
@@ -69,6 +67,8 @@ pub enum CommandError {
     Purge(#[from] PurgeError),
     #[error(transparent)]
     Account(#[from] AccountError),
+    #[error(transparent)]
+    Accounts(AccountEditError),
     #[error("cannot import the ChatGPT login from {}", .home.as_path().display())]
     Login {
         home: HostPath,
@@ -100,6 +100,27 @@ pub enum CommandError {
     Environment(String),
     #[error("the checks did not pass")]
     Unhealthy,
+}
+
+impl From<AccountEditError> for CommandError {
+    fn from(error: AccountEditError) -> CommandError {
+        match error {
+            AccountEditError::Config(error) => CommandError::Config(error),
+            AccountEditError::Account(error) => CommandError::Account(error),
+            other => CommandError::Accounts(other),
+        }
+    }
+}
+
+impl From<BuildError> for CommandError {
+    fn from(error: BuildError) -> CommandError {
+        match error {
+            BuildError::Config(error) => CommandError::Config(error),
+            BuildError::Role(error) => CommandError::Role(error),
+            BuildError::Plan(error) => CommandError::Plan(error),
+            BuildError::Image(error) => CommandError::Image(error),
+        }
+    }
 }
 
 impl From<ConnectError> for CommandError {
@@ -145,6 +166,7 @@ impl CommandError {
             | CommandError::Export(_)
             | CommandError::Purge(_)
             | CommandError::Account(_)
+            | CommandError::Accounts(_)
             | CommandError::Login { .. }
             | CommandError::Image(_)
             | CommandError::Connect(_)

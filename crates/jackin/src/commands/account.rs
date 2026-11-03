@@ -1,10 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{
-    Account, AccountName, Agent, ConfigEdit, ConfigError, CredentialSource, Provider,
-};
-use jackin_session::read_chatgpt_login;
+use jackin_core::{Account, AccountName, Agent, Config, ConfigEdit, ConfigError, CredentialSource};
+use jackin_session::{AccountPlan, plan_account_edits, read_chatgpt_login};
 
 use crate::app::App;
 use crate::cli::{
@@ -55,13 +53,19 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
 async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
     let config = app.store.load().await?;
     let account = Account::new(args.name.clone(), args.provider, source(app, &args).await?)?;
-    let add = ConfigEdit::AddAccount(account.clone());
-    config.clone().apply(add.clone())?;
-    if account.provider() == Provider::Codex {
-        let session = app.session(&config).await?;
-        session.sync_account(&account, &app.cancel).await?;
+    apply(app, &config, vec![ConfigEdit::AddAccount(account)]).await
+}
+
+async fn apply(app: &App, config: &Config, edits: Vec<ConfigEdit>) -> Result<(), CommandError> {
+    match plan_account_edits(config, edits)? {
+        AccountPlan::Offline(plan) => {
+            plan.apply(&app.store).await?;
+        }
+        AccountPlan::Gateway(plan) => {
+            let gateways = app.gateways(config).await?;
+            plan.apply(&gateways, &app.store, &app.cancel).await?;
+        }
     }
-    app.store.edit(vec![add]).await?;
     Ok(())
 }
 
@@ -90,17 +94,7 @@ fn unknown_account(name: &AccountName) -> CommandError {
 
 async fn rm(app: &App, arg: AccountArg) -> Result<(), CommandError> {
     let config = app.store.load().await?;
-    let account = config
-        .account(&arg.account)
-        .ok_or_else(|| unknown_account(&arg.account))?;
-    let remove = ConfigEdit::RemoveAccount(arg.account.clone());
-    config.clone().apply(remove.clone())?;
-    if matches!(account.credential(), CredentialSource::CodexLogin { .. }) {
-        let session = app.session(&config).await?;
-        session.forget_account(account, &app.cancel).await?;
-    }
-    app.store.edit(vec![remove]).await?;
-    Ok(())
+    apply(app, &config, vec![ConfigEdit::RemoveAccount(arg.account)]).await
 }
 
 async fn default(app: &App, arg: AccountArg) -> Result<(), CommandError> {

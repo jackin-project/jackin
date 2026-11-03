@@ -7,25 +7,26 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use jackin_core::{
-    CommitId, EnvName, FileMode, Labels, Phase, SandboxName, SandboxPath, SupervisorState,
-    sandbox_layout,
+    CommitId, EnvName, FileMode, ImageId, Labels, Phase, SandboxName, SandboxPath, SupervisorState,
+    Timestamp, sandbox_layout,
 };
 use jackin_openshell::TermSize;
 
-use super::RunRecord;
 use super::exec::host_path;
 use super::state::Cell;
+use super::{RunRecord, ShellWitness};
 use crate::fixtures::{FixtureError, git};
 use crate::host::FakeClock;
+use crate::sync::locked;
 
 #[derive(Clone, Debug)]
 pub struct SandboxHandle {
     cell: Arc<Cell>,
-    clock: Option<Arc<FakeClock>>,
+    clock: Arc<FakeClock>,
 }
 
 impl SandboxHandle {
-    pub(super) fn new(cell: Arc<Cell>, clock: Option<Arc<FakeClock>>) -> SandboxHandle {
+    pub(super) fn new(cell: Arc<Cell>, clock: Arc<FakeClock>) -> SandboxHandle {
         SandboxHandle { cell, clock }
     }
 
@@ -35,6 +36,14 @@ impl SandboxHandle {
 
     pub fn root(&self) -> PathBuf {
         self.cell.root()
+    }
+
+    pub fn created_at(&self) -> Option<Timestamp> {
+        self.cell.state().created_at
+    }
+
+    pub fn image_id(&self) -> Option<ImageId> {
+        self.cell.state().image_id.clone()
     }
 
     pub fn phase(&self) -> Phase {
@@ -98,6 +107,35 @@ impl SandboxHandle {
         self.cell.state().main.pty()
     }
 
+    pub fn resizes(&self) -> Vec<TermSize> {
+        self.cell.state().main.resizes()
+    }
+
+    pub fn raw_input(&self) -> Vec<u8> {
+        self.cell.state().main.raw()
+    }
+
+    pub fn advance_repaint(&self) {
+        self.cell.state().main.advance_repaint();
+    }
+
+    pub fn set_replay_window(&self, bytes: Option<usize>) {
+        self.cell.state().replay_window = bytes;
+    }
+
+    pub fn set_stream_exit_status(&self, status: Option<i32>) {
+        self.cell.state().stream_status = status;
+    }
+
+    pub fn shells(&self) -> Vec<ShellWitness> {
+        self.cell
+            .state()
+            .shells
+            .iter()
+            .map(|shell| locked(shell).clone())
+            .collect()
+    }
+
     pub fn runs(&self, program: &SandboxPath) -> Vec<RunRecord> {
         self.cell
             .state()
@@ -109,7 +147,7 @@ impl SandboxHandle {
     }
 
     pub async fn git(&self, args: &[&str]) -> Result<String, FixtureError> {
-        let _working = self.clock.as_ref().map(FakeClock::working);
+        let _working = FakeClock::working(&self.clock);
         let project = self.root().join("project");
         Ok(String::from_utf8(git(&project, args).await?)?)
     }
@@ -120,7 +158,7 @@ impl SandboxHandle {
         content: &[u8],
         message: &str,
     ) -> Result<CommitId, FixtureError> {
-        let _working = self.clock.as_ref().map(FakeClock::working);
+        let _working = FakeClock::working(&self.clock);
         let target = self.root().join("project").join(file);
         if let Some(parent) = target.parent() {
             tokio::fs::create_dir_all(parent).await?;

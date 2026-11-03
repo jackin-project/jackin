@@ -16,22 +16,25 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use async_trait::async_trait;
 use jackin_core::{
     AccountName, Agent, ChatgptAccountId, EnvName, FileMode, GatewayName, HostPath, ImageId,
-    ImageTag, Labels, LaunchId, OpenShellWorkspace, Phase, PlannedLabels, ProfileId, ProjectRoot,
-    ProviderName, RoleName, SandboxName, SandboxPath, Sha256, WorkspaceName,
+    ImageTag, Labels, LaunchId, OpenShellWorkspace, Phase, PlannedLabels, PolicyLabel, ProfileId,
+    ProjectRoot, ProviderName, RoleName, SandboxName, SandboxPath, Sha256, WorkspaceName,
 };
 use jackin_openshell::{
     ClosedPolicy, EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, MainProcess,
     Missing, NetworkRule, PolicyReport, PowerAction, ProfileSync, ProgramOutcome, ProgramRun,
     ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState, RuleEndpoint, RuleKey,
-    SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TerminalKind,
+    SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TermSize, TerminalKind,
     TerminalRequest, TerminalSession, TlsMode, TransferOp,
 };
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 pub use handle::SandboxHandle;
 
 use self::main_process::MainPlan;
-use self::state::{Action, Armed, ArmedTrigger, Cell, Direction, Registry, Sandbox, Settling};
+use self::state::{
+    Action, Armed, ArmedTrigger, Cell, Direction, Hold, HoldStatus, Registry, Sandbox, Settling,
+};
 use crate::engine::FakeEngine;
 use crate::host::{FakeClock, Working};
 use crate::supervisor::SupervisorModel;
@@ -42,6 +45,7 @@ pub struct FakeGateway {
     name: GatewayName,
     workspace: OpenShellWorkspace,
     registry: Mutex<Registry>,
+    holds_changed: Notify,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -57,6 +61,15 @@ pub struct RunRecord {
     pub workdir: Option<SandboxPath>,
     pub env: BTreeMap<EnvName, String>,
     pub exit_code: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShellWitness {
+    pub workdir: SandboxPath,
+    pub env: BTreeMap<EnvName, String>,
+    pub input: Vec<u8>,
+    pub sizes: Vec<TermSize>,
+    pub closed: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -140,6 +153,12 @@ pub enum Fault {
     },
     HideUntilCreateConflict,
     StartIgnored,
+    HoldAt {
+        trigger: Trigger,
+    },
+    PutProviderFailsAfterWrite {
+        error: GatewayError,
+    },
 }
 
 fn protocol(message: impl ToString) -> GatewayError {
@@ -154,6 +173,7 @@ impl FakeGateway {
             name,
             workspace,
             registry: Mutex::new(Registry::new()),
+            holds_changed: Notify::new(),
         }
     }
 
@@ -187,6 +207,59 @@ impl FakeGateway {
                 .push(ArmedTrigger::new(trigger, Action::Cancel(token))),
             Fault::HideUntilCreateConflict => registry.hidden_until_conflict = true,
             Fault::StartIgnored => registry.start_ignored = true,
+            Fault::HoldAt { trigger } => registry.holds.push(Hold::new(trigger)),
+            Fault::PutProviderFailsAfterWrite { error } => {
+                registry.put_fails_after_write = Some(error);
+            }
+        }
+    }
+
+    pub fn release(&self, trigger: &Trigger) -> bool {
+        let released = self.registry().release(trigger);
+        self.holds_changed.notify_waiters();
+        released
+    }
+
+    pub fn held(&self) -> Vec<Trigger> {
+        self.registry().held()
+    }
+
+    pub async fn until_held(&self, trigger: &Trigger) -> bool {
+        loop {
+            let changed = self.holds_changed.notified();
+            let mut changed = std::pin::pin!(changed);
+            changed.as_mut().enable();
+            let status = self.registry().hold_status(trigger);
+            match status {
+                HoldStatus::Reached => return true,
+                HoldStatus::Absent => return false,
+                HoldStatus::Armed => changed.await,
+            }
+        }
+    }
+
+    pub fn set_attachment_cap(&self, cap: usize) {
+        self.registry().attachment_cap = cap;
+    }
+
+    async fn pause(
+        &self,
+        op: GatewayOp,
+        special: Option<&Trigger>,
+        cancel: Option<&CancellationToken>,
+    ) -> Result<(), GatewayError> {
+        let Some(gate) = self.registry().arrive(op, special) else {
+            return Ok(());
+        };
+        self.holds_changed.notify_waiters();
+        if let Some(token) = cancel {
+            tokio::select! {
+                () = gate.wait() => Ok(()),
+                () = token.cancelled() => Err(GatewayError::Cancelled { op, group: None }),
+            }
+        } else {
+            gate.wait().await;
+            Ok(())
         }
     }
 
@@ -206,7 +279,15 @@ impl FakeGateway {
     ) -> Result<(), GatewayError> {
         let spec = foreign_spec(name)?;
         let plan = MainPlan::parse(spec.main())?;
-        let mut sandbox = Sandbox::new(spec, plan, 0, None, SupervisorModel::Cooperative);
+        let created_at = self.registry().now();
+        let mut sandbox = Sandbox::new(
+            spec,
+            plan,
+            0,
+            None,
+            SupervisorModel::Cooperative,
+            created_at,
+        );
         sandbox.shown = Some(labels);
         sandbox.phase = phase;
         sandbox.settling = Settling::Done;
@@ -265,11 +346,11 @@ impl FakeGateway {
     }
 
     pub fn link_clock(&self, clock: Arc<FakeClock>) {
-        self.registry().clock = Some(clock);
+        self.registry().clock = clock;
     }
 
-    fn working(&self) -> Option<Working> {
-        self.registry().clock.as_ref().map(FakeClock::working)
+    fn working(&self) -> Working {
+        FakeClock::working(&self.registry().clock)
     }
 
     pub fn set_serving(&self, serving: bool) {
@@ -289,7 +370,7 @@ impl FakeGateway {
         registry
             .sandboxes
             .values()
-            .map(|cell| SandboxHandle::new(Arc::clone(cell), registry.clock.clone()))
+            .map(|cell| SandboxHandle::new(Arc::clone(cell), Arc::clone(&registry.clock)))
             .collect()
     }
 
@@ -298,7 +379,7 @@ impl FakeGateway {
         registry
             .sandboxes
             .get(name)
-            .map(|cell| SandboxHandle::new(Arc::clone(cell), registry.clock.clone()))
+            .map(|cell| SandboxHandle::new(Arc::clone(cell), Arc::clone(&registry.clock)))
     }
 
     pub fn providers(&self) -> Vec<ProviderName> {
@@ -436,6 +517,7 @@ fn foreign_spec(name: &SandboxName) -> Result<SandboxCreate, GatewayError> {
         role: RoleName::parse("foreign").map_err(protocol)?,
         agent: Agent::Codex,
         account: AccountName::parse("foreign").map_err(protocol)?,
+        policy: PolicyLabel::of("policy"),
         launch: LaunchId::from_entropy(&[0; 26]),
     };
     let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64))).map_err(protocol)?;
@@ -542,6 +624,7 @@ impl Gateway for FakeGateway {
 
     async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::Provider, None, None).await?;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Provider)?;
         if !registry.profiles.contains_key(&spec.profile) {
@@ -567,11 +650,15 @@ impl Gateway for FakeGateway {
                 chatgpt_account_id: chatgpt_account_id.clone(),
             },
         );
-        Ok(())
+        match registry.put_fails_after_write.take() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::Provider, None, None).await?;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Provider)?;
         let attached: Vec<String> = registry
@@ -594,6 +681,7 @@ impl Gateway for FakeGateway {
 
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError> {
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::Create, None, None).await?;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Create)?;
         if registry.sandboxes.contains_key(spec.name()) {
@@ -612,15 +700,14 @@ impl Gateway for FakeGateway {
             });
         }
         let plan = MainPlan::parse(spec.main())?;
+        let image_id = registry
+            .engine
+            .as_ref()
+            .and_then(|engine| engine.images().get(spec.image()).cloned());
         let failure = if registry.failing_creates > 0 {
             registry.failing_creates -= 1;
             Some("provisioning failed (injected by the fake)".to_owned())
-        } else if registry.images.contains(spec.image())
-            || registry
-                .engine
-                .as_ref()
-                .is_some_and(|engine| engine.images().contains_key(spec.image()))
-        {
+        } else if registry.images.contains(spec.image()) || image_id.is_some() {
             None
         } else {
             Some(format!("failed to resolve image '{}'", spec.image()))
@@ -630,13 +717,15 @@ impl Gateway for FakeGateway {
             .tempdir()
             .map_err(protocol)?;
         std::fs::create_dir(dir.path().join("sandbox")).map_err(protocol)?;
-        let sandbox = Sandbox::new(
+        let mut sandbox = Sandbox::new(
             spec.clone(),
             plan,
             registry.provision_polls,
             failure,
             registry.supervisor,
+            registry.now(),
         );
+        sandbox.image_id = image_id;
         let view = sandbox.view();
         registry.sandboxes.insert(
             spec.name().clone(),
@@ -731,6 +820,7 @@ impl Gateway for FakeGateway {
         action: PowerAction,
     ) -> Result<SandboxView, GatewayError> {
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::Power, None, None).await?;
         let cell = self.cell(GatewayOp::Power, name)?;
         let (stale, start_ignored) = {
             let registry = self.registry();
@@ -806,6 +896,8 @@ impl Gateway for FakeGateway {
         let _working = self.working();
         tokio::task::yield_now().await;
         let trigger = Trigger::Program(run.program.clone());
+        self.pause(GatewayOp::Program, Some(&trigger), Some(cancel))
+            .await?;
         let cell = self.exec_cell_at(GatewayOp::Program, Some(&trigger), &run.sandbox)?;
         let (script, stalled) = {
             let registry = self.registry();
@@ -826,7 +918,7 @@ impl Gateway for FakeGateway {
         tokio::task::yield_now().await;
         let cell = self.exec_cell(GatewayOp::ReadFiles, sandbox)?;
         let installed = self.registry().installed.clone();
-        Ok(files::read_files(&cell.root(), &installed, paths).await)
+        files::read_files(&cell.root(), &installed, paths).await
     }
 
     async fn write_file(
@@ -837,6 +929,8 @@ impl Gateway for FakeGateway {
         let _working = self.working();
         tokio::task::yield_now().await;
         let trigger = Trigger::Write(file.path.clone());
+        self.pause(GatewayOp::WriteFile, Some(&trigger), None)
+            .await?;
         let cell = self.exec_cell_at(GatewayOp::WriteFile, Some(&trigger), sandbox)?;
         files::write_file(&cell, file).await
     }
@@ -850,6 +944,8 @@ impl Gateway for FakeGateway {
     ) -> Result<(), GatewayError> {
         let _working = self.working();
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::UploadTree, None, Some(cancel))
+            .await?;
         let cell = self.upload_cell(GatewayOp::UploadTree, TransferOp::UploadFiltered, sandbox)?;
         let home = self.registry().host_home.clone();
         files::upload_tree(&cell.root(), home.as_deref(), source, dest, cancel).await?;
@@ -865,6 +961,8 @@ impl Gateway for FakeGateway {
     ) -> Result<(), GatewayError> {
         let _working = self.working();
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::UploadFile, None, Some(cancel))
+            .await?;
         let cell = self.upload_cell(GatewayOp::UploadFile, TransferOp::UploadFile, sandbox)?;
         let corrupt = self.registry().corrupt.remove(&Direction::Upload);
         files::upload_file(&cell.root(), source, dest, corrupt, cancel).await?;
@@ -880,6 +978,7 @@ impl Gateway for FakeGateway {
     ) -> Result<Sha256, GatewayError> {
         let _working = self.working();
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::Download, None, Some(cancel)).await?;
         let found = self.struck_at(GatewayOp::Download, None, sandbox)?;
         if cancel.is_cancelled() {
             return Err(GatewayError::Cancelled {
@@ -903,16 +1002,13 @@ impl Gateway for FakeGateway {
         request: &TerminalRequest,
     ) -> Result<TerminalSession, GatewayError> {
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::Terminal, None, None).await?;
         let (cell, phase) = self.settled_at(GatewayOp::Terminal, None, &request.sandbox)?;
         match &request.kind {
-            TerminalKind::MainProcess { input, .. } => {
+            TerminalKind::MainProcess { .. } => {
                 if phase.accepts_exec() {
-                    Ok(terminal::attach_main(
-                        &cell,
-                        request.kind.clone(),
-                        *input,
-                        request.size,
-                    ))
+                    let cap = self.registry().attachment_cap;
+                    terminal::attach_main(&cell, request.kind.clone(), request.size, cap)
                 } else if matches!(
                     phase,
                     Phase::Completed { .. } | Phase::Error { exit_code: Some(_) }
@@ -922,12 +1018,12 @@ impl Gateway for FakeGateway {
                     Err(GatewayError::NotReady { phase })
                 }
             }
-            TerminalKind::Shell { workdir, env } => {
+            TerminalKind::Shell { workdir, .. } => {
                 if !phase.accepts_exec() {
                     return Err(GatewayError::NotReady { phase });
                 }
                 let host = exec::workdir_path(&cell, workdir.as_str()).map_err(protocol)?;
-                terminal::spawn_shell(&cell, request.kind.clone(), host, env)
+                terminal::spawn_shell(&cell, request.kind.clone(), host, request.size)
             }
         }
     }

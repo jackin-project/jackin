@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{ConfigEdit, EngineConfig, GatewayEntry, Platform};
+use jackin_session::{AccountEditError, UnreachableGateway, gateway_holds_providers};
 
 use crate::app::App;
-use crate::cli::{GatewayAddArgs, GatewayCommand, GatewayNameArg, JsonArg};
+use crate::cli::{GatewayAddArgs, GatewayCommand, GatewayRmArgs, JsonArg};
 use crate::error::CommandError;
 use crate::paths::absolutize;
 use crate::views::GatewayLs;
@@ -13,7 +14,7 @@ pub(crate) async fn run(app: &mut App, command: GatewayCommand) -> Result<(), Co
     match command {
         GatewayCommand::Add(args) => add(app, args).await,
         GatewayCommand::Ls(arg) => ls(app, &arg).await,
-        GatewayCommand::Rm(arg) => rm(app, arg).await,
+        GatewayCommand::Rm(args) => rm(app, args).await,
     }
 }
 
@@ -65,9 +66,44 @@ async fn ls(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
     Ok(())
 }
 
-async fn rm(app: &App, arg: GatewayNameArg) -> Result<(), CommandError> {
-    app.store
-        .edit(vec![ConfigEdit::RemoveGateway(arg.name)])
+async fn rm(app: &mut App, arg: GatewayRmArgs) -> Result<(), CommandError> {
+    if arg.offline {
+        app.store
+            .edit(vec![ConfigEdit::RemoveGateway(arg.name.clone())])
+            .await?;
+        app.io.note(&format!(
+            "warning: gateway {} was removed without contacting it; its OpenShell providers, which hold account credentials, stay on it until that gateway is reset",
+            arg.name
+        ));
+        return Ok(());
+    }
+    let config = app.store.load().await?;
+    let entry = config
+        .gateway(&arg.name)
+        .filter(|_| gateway_holds_providers(&config));
+    let Some(entry) = entry else {
+        app.store
+            .edit(vec![ConfigEdit::RemoveGateway(arg.name)])
+            .await?;
+        return Ok(());
+    };
+    let gateway = match app
+        .deps
+        .connect
+        .connect(&arg.name, entry, &app.cancel)
+        .await
+    {
+        Ok(gateway) => gateway,
+        Err(error) if error.is_cancelled() => return Err(error.into()),
+        Err(error) => {
+            return Err(AccountEditError::Unreachable(vec![UnreachableGateway::new(
+                arg.name, error,
+            )])
+            .into());
+        }
+    };
+    app.session_of(gateway)
+        .remove_gateway(&app.store, &app.cancel)
         .await?;
     Ok(())
 }

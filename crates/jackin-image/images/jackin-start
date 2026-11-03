@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 set -u
 
-run=/sandbox/.jackin/run
-project=/sandbox/project
-bin_dir=/usr/local/bin
-environ_file=/proc/$$/environ
+JACKIN_RUN=/sandbox/.jackin/run
+JACKIN_PROJECT=/sandbox/project
+JACKIN_BIN_DIR=/usr/local/bin
+JACKIN_ENVIRON_FILE=/proc/$$/environ
 
 fail() {
     echo "jackin-start: $1" >&2
@@ -14,7 +14,7 @@ fail() {
 }
 
 publish() {
-    printf '%s\n' "$1" >"$run/state.tmp" && mv -f "$run/state.tmp" "$run/state"
+    printf '%s\n' "$1" >"$JACKIN_RUN/state.tmp" && mv -f "$JACKIN_RUN/state.tmp" "$JACKIN_RUN/state"
 }
 
 park() {
@@ -23,52 +23,52 @@ park() {
 }
 
 check_env() {
-    n=0
-    line=
-    while IFS= read -r line; do
-        n=$((n + 1))
-        case $line in
+    JACKIN_N=0
+    JACKIN_LINE=
+    while IFS= read -r JACKIN_LINE; do
+        JACKIN_N=$((JACKIN_N + 1))
+        case $JACKIN_LINE in
             'export '*=*) ;;
             *)
-                echo "$n"
+                echo "$JACKIN_N"
                 return 1
                 ;;
         esac
-        rest=${line#export }
-        name=${rest%%=*}
-        case $name in
-            '' | [0123456789]* | *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_]*)
-                echo "$n"
+        JACKIN_REST=${JACKIN_LINE#export }
+        JACKIN_NAME=${JACKIN_REST%%=*}
+        case $JACKIN_NAME in
+            '' | JACKIN_* | [0123456789]* | *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_]*)
+                echo "$JACKIN_N"
                 return 1
                 ;;
         esac
-        quoted=${rest#*=}
-        case $quoted in
+        JACKIN_QUOTED=${JACKIN_REST#*=}
+        case $JACKIN_QUOTED in
             \'*\') ;;
             *)
-                echo "$n"
+                echo "$JACKIN_N"
                 return 1
                 ;;
         esac
-        inner=${quoted#\'}
-        inner=${inner%\'}
+        JACKIN_INNER=${JACKIN_QUOTED#\'}
+        JACKIN_INNER=${JACKIN_INNER%\'}
         while :; do
-            case $inner in
+            case $JACKIN_INNER in
                 *\'*) ;;
                 *) break ;;
             esac
-            after=${inner#*\'}
-            case $after in
-                \\\'\'*) inner=${after#\\\'\'} ;;
+            JACKIN_AFTER=${JACKIN_INNER#*\'}
+            case $JACKIN_AFTER in
+                \\\'\'*) JACKIN_INNER=${JACKIN_AFTER#\\\'\'} ;;
                 *)
-                    echo "$n"
+                    echo "$JACKIN_N"
                     return 1
                     ;;
             esac
         done
     done
-    [ -z "$line" ] || {
-        echo $((n + 1))
+    [ -z "$JACKIN_LINE" ] || {
+        echo $((JACKIN_N + 1))
         return 1
     }
     return 0
@@ -114,27 +114,27 @@ kinds() {
 }
 
 startup_kinds() {
-    if [ -r "$environ_file" ]; then
-        /usr/bin/tr '\0' '\n' <"$environ_file" 2>/dev/null | kinds main
+    if [ -r "$JACKIN_ENVIRON_FILE" ]; then
+        /usr/bin/tr '\0' '\n' <"$JACKIN_ENVIRON_FILE" 2>/dev/null | kinds main
     else
         kinds main </dev/null
     fi
 }
 
 write_record() {
-    [ "$main_ok" = 1 ] || return 0
+    [ "$JACKIN_MAIN_OK" = 1 ] || return 0
     {
         printf 'jackin-env-kinds 1\nattempt %s\n' "$1"
-        [ -z "$main_lines" ] || printf '%s\n' "$main_lines"
+        [ -z "$JACKIN_MAIN_LINES" ] || printf '%s\n' "$JACKIN_MAIN_LINES"
         [ -z "$2" ] || printf '%s\n' "$2"
-    } >"$run/env-kinds.tmp" && /bin/mv -f "$run/env-kinds.tmp" "$run/env-kinds"
+    } >"$JACKIN_RUN/env-kinds.tmp" && /bin/mv -f "$JACKIN_RUN/env-kinds.tmp" "$JACKIN_RUN/env-kinds"
     return 0
 }
 
 record_codex() {
-    [ "$main_ok" = 1 ] || return 0
-    codex_lines=$(kinds codex </dev/null) || return 0
-    write_record "$1" "$codex_lines"
+    [ "$JACKIN_MAIN_OK" = 1 ] || return 0
+    JACKIN_CODEX_LINES=$(kinds codex </dev/null) || return 0
+    write_record "$1" "$JACKIN_CODEX_LINES"
 }
 
 drain() {
@@ -147,41 +147,41 @@ drain() {
 }
 
 run_attempt() {
-    attempt_id=$1
+    JACKIN_ATTEMPT_ID=$1
     shift
     drain
-    env_text=
-    bad=
-    if [ -f "$envfile" ]; then
-        if env_text=$(/bin/cat "$envfile" 2>/dev/null && echo x); then
-            env_text=${env_text%x}
-            bad=$(printf '%s' "$env_text" 2>/dev/null | check_env) || :
+    JACKIN_ENV_TEXT=
+    JACKIN_BAD=
+    if [ -f "$JACKIN_ENVFILE" ]; then
+        if JACKIN_ENV_TEXT=$(/bin/cat "$JACKIN_ENVFILE" 2>/dev/null && echo x); then
+            JACKIN_ENV_TEXT=${JACKIN_ENV_TEXT%x}
+            JACKIN_BAD=$(printf '%s' "$JACKIN_ENV_TEXT" 2>/dev/null | check_env) || :
         else
-            bad=0
+            JACKIN_BAD=0
         fi
     fi
-    if [ -z "$bad" ]; then
-        publish "running $attempt_id"
+    if [ -z "$JACKIN_BAD" ]; then
+        publish "running $JACKIN_ATTEMPT_ID"
     else
-        case $bad in
-            0) echo "jackin-start: $envfile is not readable" >&2 ;;
-            *) echo "jackin-start: $envfile is malformed at line $bad" >&2 ;;
+        case $JACKIN_BAD in
+            0) echo "jackin-start: $JACKIN_ENVFILE is not readable" >&2 ;;
+            *) echo "jackin-start: $JACKIN_ENVFILE is malformed at line $JACKIN_BAD" >&2 ;;
         esac
-        write_record "$attempt_id" ""
-        publish "exited $attempt_id 65"
+        write_record "$JACKIN_ATTEMPT_ID" ""
+        publish "exited $JACKIN_ATTEMPT_ID 65"
         park
         return 0
     fi
-    rc=0
+    JACKIN_RC=0
     (
-        eval "$env_text"
-        cd "$project" || exit 66
-        record_codex "$attempt_id"
+        eval "$JACKIN_ENV_TEXT"
+        cd "$JACKIN_PROJECT" || exit 66
+        record_codex "$JACKIN_ATTEMPT_ID"
         exec "$@"
-    ) || rc=$?
-    publish "exited $attempt_id $rc"
+    ) || JACKIN_RC=$?
+    publish "exited $JACKIN_ATTEMPT_ID $JACKIN_RC"
     park
-    printf '\r\033[0m\033[?25hjackin-start: %s exited with code %s (attempt %s)\r\n' "${1##*/}" "$rc" "$attempt_id"
+    printf '\r\033[0m\033[?25hjackin-start: %s exited with code %s (attempt %s)\r\n' "${1##*/}" "$JACKIN_RC" "$JACKIN_ATTEMPT_ID"
 }
 
 [ "$#" -gt 0 ] && [ -n "$1" ] || fail "missing agent command"
@@ -189,9 +189,9 @@ run_attempt() {
 case $1 in
     */*) ;;
     *)
-        program=$bin_dir/$1
+        JACKIN_PROGRAM=$JACKIN_BIN_DIR/$1
         shift
-        set -- "$program" "$@"
+        set -- "$JACKIN_PROGRAM" "$@"
         ;;
 esac
 
@@ -199,35 +199,35 @@ case ${JACKIN_LAUNCH_ID:-} in
     '' | .* | *[!A-Za-z0-9._-]*) fail "JACKIN_LAUNCH_ID is missing or invalid" ;;
 esac
 
-envfile=/sandbox/.jackin/env-$JACKIN_LAUNCH_ID
+JACKIN_ENVFILE=/sandbox/.jackin/env-$JACKIN_LAUNCH_ID
 
 trap : INT TERM HUP QUIT TSTP
 
 park
-mkdir -p "$run"
-rm -f "$run/state" "$run/state.tmp" "$run/start" "$run/start.tmp" "$run/env-kinds" "$run/env-kinds.tmp"
-main_ok=0
-main_lines=
-if main_lines=$(startup_kinds); then
-    main_ok=1
+mkdir -p "$JACKIN_RUN"
+rm -f "$JACKIN_RUN/state" "$JACKIN_RUN/state.tmp" "$JACKIN_RUN/start" "$JACKIN_RUN/start.tmp" "$JACKIN_RUN/env-kinds" "$JACKIN_RUN/env-kinds.tmp"
+JACKIN_MAIN_OK=0
+JACKIN_MAIN_LINES=
+if JACKIN_MAIN_LINES=$(startup_kinds); then
+    JACKIN_MAIN_OK=1
 else
-    main_lines=
+    JACKIN_MAIN_LINES=
 fi
 write_record 0 ""
 publish waiting
 
-last=0
+JACKIN_LAST=0
 while :; do
-    attempt=
-    [ -f "$run/start" ] && IFS= read -r attempt 2>/dev/null <"$run/start"
-    case $attempt in
-        '' | 0* | *[!0-9]* | ???????????????????*) attempt= ;;
+    JACKIN_ATTEMPT=
+    [ -f "$JACKIN_RUN/start" ] && IFS= read -r JACKIN_ATTEMPT 2>/dev/null <"$JACKIN_RUN/start"
+    case $JACKIN_ATTEMPT in
+        '' | 0* | *[!0-9]* | ???????????????????*) JACKIN_ATTEMPT= ;;
     esac
-    if [ -z "$attempt" ] || [ "$attempt" -ne $((last + 1)) ]; then
+    if [ -z "$JACKIN_ATTEMPT" ] || [ "$JACKIN_ATTEMPT" -ne $((JACKIN_LAST + 1)) ]; then
         sleep 0.5 || :
         continue
     fi
 
-    last=$attempt
-    run_attempt "$attempt" "$@"
+    JACKIN_LAST=$JACKIN_ATTEMPT
+    run_attempt "$JACKIN_ATTEMPT" "$@"
 done

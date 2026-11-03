@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 
 use jackin_core::{
-    CaFingerprint, Config, ConfigEdit, DockerLabel, EngineCert, HostPath, ImageId, ImageLabel,
-    Phase, SandboxLabels, SandboxPath, WorkspaceName, sandbox_layout,
+    CaFingerprint, Config, ConfigEdit, DockerLabel, EngineCert, HostPath, ImageId, Phase,
+    SandboxLabels, SandboxPath, WorkspaceName, sandbox_layout,
 };
 use jackin_image::{BuildStage, Rebuild};
 use jackin_openshell::GatewayOp;
@@ -55,40 +55,43 @@ async fn retry(
         .await)
 }
 
-fn stale(
-    failed: &LaunchFailure,
-) -> Result<(ImageLabel, ImageLabel, DockerLabel, DockerLabel), Box<dyn std::error::Error>> {
+fn stale(failed: &LaunchFailure) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     match &*failed.error {
         LaunchError::StaleSandbox {
             launch,
             sandbox,
-            found_image,
-            wanted_image,
-            found_docker,
-            wanted_docker,
+            differences,
         } => {
             assert_eq!(launch, &launch_id(1));
             assert_eq!(Some(sandbox), failed.sandbox.as_ref());
             let shown = failed.error.to_string();
-            for part in [
+            let mut parts = vec![
                 launch.to_string(),
                 sandbox.to_string(),
-                found_image.to_string(),
-                wanted_image.to_string(),
                 "new launch".to_owned(),
-            ] {
+            ];
+            for difference in differences {
+                parts.extend([
+                    difference.key.to_string(),
+                    difference.found.to_string(),
+                    difference.wanted.to_string(),
+                ]);
+            }
+            for part in parts {
                 assert!(shown.contains(&part), "{part}: {shown}");
             }
-            Ok((
-                found_image.clone(),
-                wanted_image.clone(),
-                *found_docker,
-                *wanted_docker,
-            ))
+            Ok(differences
+                .iter()
+                .map(|difference| difference.key.to_string())
+                .collect())
         }
         other => Err(format!("expected a stale sandbox, saw {other:?}").into()),
     }
 }
+
+const DOCKER_KEY: &str = "jackin.dev/docker";
+const IMAGE_KEY: &str = "jackin.dev/image";
+const POLICY_KEY: &str = "jackin.dev/policy";
 
 fn flipped(rig: &Rig, docker: bool) -> Result<Config, Box<dyn std::error::Error>> {
     let mut config = rig.config.clone();
@@ -113,9 +116,7 @@ async fn a_retry_whose_capability_differs_from_the_sandbox_is_refused_and_change
             let (events, failed) = split_failure(outcome)?;
             assert_eq!(failed.step, LaunchStep::Sandbox);
             assert_eq!(failed.sandbox, Some(rig.handle(1).await?.name()));
-            let (found, wanted, found_docker, wanted_docker) = stale(&failed)?;
-            assert_ne!(found, wanted);
-            assert_ne!(found_docker, wanted_docker);
+            assert_eq!(stale(&failed)?, [DOCKER_KEY, IMAGE_KEY, POLICY_KEY]);
             assert_eq!(snapshot(&rig).await?, kept);
             assert_eq!(rig.gateway().sandboxes().len(), 1);
             assert_eq!(
@@ -153,9 +154,7 @@ async fn a_retry_with_another_image_a_rebuild_that_changes_the_image_or_another_
                 .replace(&format!("port = {ENGINE_PORT}"), "port = 2377"),
         )?;
         let (_, failed) = split_failure(retry(&rig, &moved, Rebuild::No).await?)?;
-        let (found, wanted, found_docker, wanted_docker) = stale(&failed)?;
-        assert_eq!(found, wanted);
-        assert_ne!(found_docker, wanted_docker);
+        assert_eq!(stale(&failed)?, [DOCKER_KEY, POLICY_KEY]);
         assert_eq!(snapshot(&rig).await?, kept);
 
         let tag = rig.final_image()?.tag;
@@ -164,9 +163,7 @@ async fn a_retry_with_another_image_a_rebuild_that_changes_the_image_or_another_
         for rebuild in [Rebuild::No, Rebuild::Yes] {
             let (_, failed) = split_failure(retry(&rig, &rig.config, rebuild).await?)?;
             assert_eq!(failed.step, LaunchStep::Sandbox);
-            let (found, wanted, found_docker, wanted_docker) = stale(&failed)?;
-            assert_ne!(found, wanted);
-            assert_eq!(found_docker, wanted_docker);
+            assert_eq!(stale(&failed)?, [IMAGE_KEY]);
             assert_eq!(snapshot(&rig).await?, kept);
         }
         Ok(())
@@ -191,8 +188,7 @@ async fn a_flipped_retry_is_refused_while_the_sandbox_is_still_provisioning() ->
         let outcome = retry(&rig, &flipped(&rig, false)?, Rebuild::No).await?;
         let (_, failed) = split_failure(outcome)?;
         assert_eq!(failed.step, LaunchStep::Sandbox);
-        let (_, _, found_docker, wanted_docker) = stale(&failed)?;
-        assert_ne!(found_docker, wanted_docker);
+        assert!(stale(&failed)?.contains(&DOCKER_KEY.to_owned()));
         assert_eq!(rig.gateway().sandboxes().len(), 1);
         Ok(())
     })
@@ -221,16 +217,16 @@ async fn a_retry_with_another_ca_on_the_same_port_is_refused_and_changes_nothing
         let (_, failed) = split_failure(retry(&rig, &rig.config, Rebuild::No).await?)?;
         assert_eq!(failed.step, LaunchStep::Sandbox);
         assert_eq!(failed.sandbox, Some(rig.handle(1).await?.name()));
-        let (found, wanted, found_docker, wanted_docker) = stale(&failed)?;
-        assert_eq!(found, wanted);
-        assert_ne!(found_docker, wanted_docker);
+        assert_eq!(stale(&failed)?, [DOCKER_KEY]);
         let shown = failed.error.to_string();
-        for docker in [found_docker, wanted_docker] {
-            let DockerLabel::Engine { ca, .. } = docker else {
-                return Err("a label without an engine".into());
-            };
-            assert_eq!(ca.to_string().len(), 16);
-            assert!(shown.contains(&ca.to_string()), "{ca}: {shown}");
+        let LaunchError::StaleSandbox { differences, .. } = &*failed.error else {
+            return Err("not a stale sandbox".into());
+        };
+        for docker in [&differences[0].found, &differences[0].wanted] {
+            let text = docker.to_string();
+            let ca = text.rsplit('-').next().ok_or("a label without an engine")?;
+            assert_eq!(ca.len(), 16, "{text}");
+            assert!(shown.contains(ca), "{ca}: {shown}");
         }
         assert_eq!(snapshot(&rig).await?, kept);
         assert_eq!(rig.gateway().sandboxes().len(), 1);

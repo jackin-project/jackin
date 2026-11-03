@@ -44,6 +44,10 @@ impl Clock for SystemClock {
         Timestamp(i64::try_from(seconds).unwrap_or(i64::MAX))
     }
 
+    fn utc_offset_secs(&self) -> i32 {
+        chrono::Local::now().offset().local_minus_utc()
+    }
+
     async fn sleep(&self, duration: Duration) {
         sleep(duration).await;
     }

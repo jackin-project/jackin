@@ -55,11 +55,23 @@ bindings = { codex = "work" }
 [roles."smith.v2"]
 source = { git = "ssh://git@example.com/smith-repo.git", rev = "feature/x" }
 
+[env]
+REGION = "eu"
+GREETING = "hello world"
+
 [workspaces.myproj]
 path = "/Users/me/Projects/myproj"
 docker = false
 default_role = "sentinel"
+roles = ["sentinel", "smith.v2"]
 bindings = { codex = "work", claude = "personal" }
+
+[workspaces.myproj.env]
+REGION = "us"
+
+[workspaces.myproj.role_env.sentinel]
+REGION = "ap"
+MODE = "fast"
 
 [workspaces."my.project"]
 path = "/Users/me/Projects/my \"quoted\" dir\\α"
@@ -227,6 +239,45 @@ fn config_parses_the_full_documented_file_and_exposes_every_value() -> TestResul
 }
 
 #[test]
+fn env_at_three_scopes_and_the_allowed_roles_parse_into_the_config() -> TestResult {
+    let config = Config::parse(FULL)?;
+    let pairs = |table: &jackin_core::EnvTable| -> Vec<(String, String)> {
+        table
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect()
+    };
+    assert_eq!(
+        pairs(config.env()),
+        [
+            ("GREETING".to_owned(), "hello world".to_owned()),
+            ("REGION".to_owned(), "eu".to_owned())
+        ]
+    );
+    let myproj = config
+        .workspace(&WorkspaceName::parse("myproj")?)
+        .ok_or("myproj")?;
+    assert_eq!(pairs(&myproj.env), [("REGION".to_owned(), "us".to_owned())]);
+    let sentinel = RoleName::parse("sentinel")?;
+    assert_eq!(
+        myproj.role_env.get(&sentinel).map(pairs),
+        Some(vec![
+            ("MODE".to_owned(), "fast".to_owned()),
+            ("REGION".to_owned(), "ap".to_owned())
+        ])
+    );
+    assert!(myproj.roles.allows(&sentinel));
+    assert!(myproj.roles.allows(&RoleName::parse("smith.v2")?));
+    assert!(!myproj.roles.allows(&RoleName::parse("other")?));
+    let quoted = config
+        .workspace(&WorkspaceName::parse("my.project")?)
+        .ok_or("my.project")?;
+    assert_eq!(quoted.roles, jackin_core::AllowedRoles::All);
+    assert!(quoted.env.is_empty() && quoted.role_env.is_empty());
+    Ok(())
+}
+
+#[test]
 fn config_roles_and_workspaces_keep_their_sources_and_bindings() -> TestResult {
     let config = Config::parse(FULL)?;
     let sentinel = config
@@ -331,10 +382,9 @@ fn built(forward: bool) -> Result<Config, Box<dyn std::error::Error>> {
     independent.push(ConfigEdit::AddWorkspace {
         name: WorkspaceName::parse("w")?,
         workspace: jackin_core::Workspace {
-            path: hp("/w")?,
-            docker: true,
             default_role: Some(RoleName::parse("r1")?),
             bindings: [(Provider::Claude, AccountName::parse("a2")?)].into(),
+            ..jackin_core::Workspace::new(hp("/w")?, true)
         },
     });
     let mut config = Config::empty();
@@ -630,9 +680,107 @@ fn other_invalid_cases() -> Vec<(&'static str, String, String)> {
     ]
 }
 
+fn env_invalid_cases() -> Vec<(&'static str, String, String)> {
+    let ws = |lines: &str| format!("[workspaces.w]\n{lines}");
+    let case = |name, text: String, found: &str| (name, text, found.to_owned());
+    vec![
+        case(
+            "global env value that is a 1Password reference",
+            "[env]\nREGION = \"op://Dev/Region/value\"\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env value that is not text",
+            "[env]\nREGION = 5\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env value with a newline",
+            "[env]\nREGION = \"a\\nb\"\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env name outside the alphabet",
+            "[env]\n\"1BAD\" = \"x\"\n".to_owned(),
+            "invalid:env.1BAD",
+        ),
+        case(
+            "global env name that jackin reserves",
+            "[env]\nDOCKER_HOST = \"x\"\n".to_owned(),
+            "invalid:env.DOCKER_HOST",
+        ),
+        case(
+            "global env value that is an upper-case 1Password reference",
+            "[env]\nREGION = \"OP://Dev/Region/value\"\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env value that is a 1Password reference after a space",
+            "[env]\nREGION = \" op://Dev/Region/value\"\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env value that is an OpenShell placeholder",
+            "[env]\nREGION = \"openshell:resolve:env:X\"\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env name that jackin reserves, written quoted",
+            "[env]\n\"PATH\" = \"x\"\n".to_owned(),
+            "invalid:env.PATH",
+        ),
+        case(
+            "role env name that jackin reserves",
+            format!("{ROLE}{WS}[workspaces.w.role_env.r]\nPATH = \"x\"\n"),
+            "invalid:workspaces.w.role_env.r.PATH",
+        ),
+        case(
+            "workspace env value that is a 1Password reference",
+            format!("{WS}[workspaces.w.env]\nA = \"op://x/y/z\"\n"),
+            "invalid:workspaces.w.env.A",
+        ),
+        case(
+            "workspace env name that jackin reserves",
+            format!("{WS}[workspaces.w.env]\nJACKIN_LAUNCH_ID = \"x\"\n"),
+            "invalid:workspaces.w.env.JACKIN_LAUNCH_ID",
+        ),
+        case(
+            "role env value that is a 1Password reference",
+            format!("{ROLE}{WS}[workspaces.w.role_env.r]\nA = \"op://x/y/z\"\n"),
+            "invalid:workspaces.w.role_env.r.A",
+        ),
+        case(
+            "role env that is not a table",
+            format!("{ROLE}{WS}[workspaces.w.role_env]\nr = \"x\"\n"),
+            "invalid:workspaces.w.role_env.r",
+        ),
+        case(
+            "allowed roles that are empty",
+            ws("path = \"/p\"\nroles = []\n"),
+            "invalid:workspaces.w.roles",
+        ),
+        case(
+            "allowed roles that are not a list",
+            ws("path = \"/p\"\nroles = \"r\"\n"),
+            "invalid:workspaces.w.roles",
+        ),
+        case(
+            "allowed roles with a bad name",
+            ws("path = \"/p\"\nroles = [\"Bad Role\"]\n"),
+            "invalid:workspaces.w.roles",
+        ),
+        case(
+            "allowed roles with a non-text item",
+            ws("path = \"/p\"\nroles = [3]\n"),
+            "invalid:workspaces.w.roles",
+        ),
+    ]
+}
+
 fn invalid_cases() -> Vec<(&'static str, String, String)> {
     let mut cases = gateway_invalid_cases();
     cases.extend(other_invalid_cases());
+    cases.extend(env_invalid_cases());
     cases
 }
 
@@ -683,6 +831,21 @@ fn config_parse_enforces_the_cross_reference_invariants() -> TestResult {
         ("role account", role("bindings.codex = \"ghost\""), "reference:account:ghost"),
         ("role mismatch", role("bindings.codex = \"cl\""), "mismatch:cl:codex:claude"),
         ("default role", ws_line("default_role = \"ghost\""), "reference:role:ghost"),
+        (
+            "allowed role that is not configured",
+            format!("{context}[roles.r]\nsource.path = \"/r\"\n[workspaces.w2]\npath = \"/q\"\nroles = [\"r\", \"ghost\"]\n"),
+            "reference:role:ghost",
+        ),
+        (
+            "default role outside the allowed roles",
+            format!("{GW}[roles.r]\nsource.path = \"/r\"\n[roles.s]\nsource.path = \"/s\"\n[workspaces.w]\npath = \"/p\"\ndefault_role = \"s\"\nroles = [\"r\"]\n"),
+            "invalid:workspaces.w.default_role",
+        ),
+        (
+            "role env for a role that is not configured",
+            format!("{context}[workspaces.w.role_env.ghost]\nA = \"x\"\n"),
+            "reference:role:ghost",
+        ),
         (
             "codex login on claude",
             "[accounts.x]\nprovider = \"claude\"\ncredential = { source = \"codex-login\", home = \"/h\", chatgpt_account_id = \"1\" }\n".to_owned(),

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use super::{Config, ConfigEdit, ConfigError};
 use crate::boundary::{Clock, FileLock, FileMode, FileSystem, FsError};
-use crate::fs::write_atomic;
+use crate::fs::{lock_path, write_atomic_locked};
 use crate::paths::HostPath;
 
 const CONFIG_MODE: FileMode = FileMode(0o600);
@@ -40,16 +40,17 @@ impl ConfigStore {
         if let Some(dir) = self.path.parent() {
             self.fs.create_dir_all(&dir).await?;
         }
-        let _lock = self.lock().await?;
+        let lock = self.lock().await?;
         let mut config = self.read().await?;
         for edit in edits {
             config.apply(edit)?;
         }
-        write_atomic(
+        write_atomic_locked(
             self.fs.as_ref(),
             &self.path,
             config.render().as_bytes(),
             CONFIG_MODE,
+            &lock,
         )
         .await?;
         Ok(config)
@@ -74,16 +75,7 @@ impl ConfigStore {
     }
 
     async fn lock(&self) -> Result<FileLock, ConfigError> {
-        let Some(name) = self.path.file_name() else {
-            return Err(ConfigError::Fs(FsError::Io {
-                path: self.path.clone(),
-                kind: std::io::ErrorKind::InvalidInput,
-                message: "path has no file name".to_owned(),
-            }));
-        };
-        let mut lock_name = name.to_os_string();
-        lock_name.push(".lock");
-        let lock_path = self.path.with_file_name(&lock_name);
+        let lock_path = lock_path(&self.path)?;
         let mut waited = Duration::ZERO;
         loop {
             match self.fs.lock(&lock_path).await {

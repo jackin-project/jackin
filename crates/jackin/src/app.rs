@@ -6,15 +6,13 @@ use std::fmt::{self, Debug};
 use std::io::Write;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use jackin_core::{
-    Config, ConfigStore, EnvSnapshot, GatewayEntry, GatewayName, GroupFault, HostPath, ProcessError,
-};
+use jackin_core::{Config, ConfigStore, EnvSnapshot, GatewayName, HostPath};
 use jackin_image::ImageEngine;
-use jackin_openshell::{DiscoveryError, Gateway, GatewayError};
-use jackin_session::{HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps};
+use jackin_openshell::Gateway;
+use jackin_session::{
+    GatewayConnector, Gateways, HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps,
+};
 use jackin_usage::ProviderEndpoints;
-use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::CommandError;
@@ -28,44 +26,6 @@ pub struct Deps {
     pub connect: Arc<dyn GatewayConnector>,
     pub limits: LaunchLimits,
     pub usage_endpoints: ProviderEndpoints,
-}
-
-#[derive(Debug, Error)]
-pub enum ConnectError {
-    #[error("cannot discover gateway {gateway}")]
-    Discovery {
-        gateway: GatewayName,
-        source: DiscoveryError,
-    },
-    #[error(transparent)]
-    Gateway(#[from] GatewayError),
-}
-
-impl ConnectError {
-    pub fn is_cancelled(&self) -> bool {
-        self.cancel().is_some()
-    }
-
-    pub(crate) fn cancel(&self) -> Option<Option<&GroupFault>> {
-        match self {
-            ConnectError::Discovery {
-                source: DiscoveryError::Process(ProcessError::Cancelled { group, .. }),
-                ..
-            }
-            | ConnectError::Gateway(GatewayError::Cancelled { group, .. }) => Some(group.as_ref()),
-            ConnectError::Discovery { .. } | ConnectError::Gateway(_) => None,
-        }
-    }
-}
-
-#[async_trait]
-pub trait GatewayConnector: Send + Sync + Debug {
-    async fn connect(
-        &self,
-        name: &GatewayName,
-        entry: &GatewayEntry,
-        cancel: &CancellationToken,
-    ) -> Result<Arc<dyn Gateway>, ConnectError>;
 }
 
 pub struct AppEnv {
@@ -111,6 +71,7 @@ impl App {
         RoleCatalog::new(
             Arc::clone(&self.deps.host.fs),
             Arc::clone(&self.deps.host.runner),
+            Arc::clone(&self.deps.host.clock),
             self.cache_dir.clone(),
         )
     }
@@ -120,12 +81,22 @@ impl App {
     pub(crate) async fn session(&self, config: &Config) -> Result<Session, CommandError> {
         let (name, entry) = config.resolve_gateway(self.gateway.as_ref())?;
         let gateway = self.deps.connect.connect(name, entry, &self.cancel).await?;
-        Ok(Session::new(SessionDeps {
+        Ok(self.session_of(gateway))
+    }
+
+    pub(crate) fn session_of(&self, gateway: Arc<dyn Gateway>) -> Session {
+        Session::new(SessionDeps {
             gateway,
             engine: Arc::clone(&self.deps.engine),
             host: self.deps.host.clone(),
             cache_dir: self.cache_dir.clone(),
+            config: self.store.clone(),
             limits: self.deps.limits,
-        }))
+        })
+    }
+
+    pub(crate) async fn gateways(&self, config: &Config) -> Result<Gateways, CommandError> {
+        let home = self.session(config).await?;
+        Ok(Gateways::with_peers(home, config, self.deps.connect.as_ref(), &self.cancel).await?)
     }
 }

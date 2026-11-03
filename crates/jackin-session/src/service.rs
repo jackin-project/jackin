@@ -4,7 +4,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use jackin_core::{Clock, FileSystem, GatewayName, HostPath, ProcessRunner, SandboxName};
+use jackin_core::{
+    Clock, ConfigStore, FileSystem, GatewayName, HostPath, ProcessRunner, SandboxName,
+};
 use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, GatewayError, SandboxQuery, SandboxView};
 
@@ -25,6 +27,7 @@ pub struct SessionDeps {
     pub engine: Arc<dyn ImageEngine>,
     pub host: HostPorts,
     pub cache_dir: HostPath,
+    pub config: ConfigStore,
     pub limits: LaunchLimits,
 }
 
