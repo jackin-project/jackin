@@ -398,7 +398,13 @@ Evidence: `evidence/P0.5-docker.md`, `blockers/P0.5-docker-credentials.md`.
 
 The jackin console is visually identical to the `jackin-preview` app in `tailrocks/terminal-components-baseline`, called "the baseline" here. Jackin does not use `termrock`.
 
-- `jackin-tui` depends on the baseline library crate `junie-tui` as a git dependency at a pinned `rev`. The pin is a commit on the baseline branch `feature/openshell-native`.
+- The jackin console is built only from `tailrocks/terminal-components-baseline` crates, used as git dependencies at a pinned `rev` on the baseline branch `feature/openshell-native`. Jackin never copies baseline code. The two crates are:
+  - `junie-tui`: the reusable components, widgets, blocks, containers, shells, and utilities.
+  - `jackin-console` (`apps/jackin`): the one jackin application. It owns every screen, every pixel, every key binding, the page router, the UI model `World`, the wording tables, and the fixed state. It talks to its data and actions only through its `Backend` interface and its external message input.
+- The same `jackin-console` application runs in two ways:
+  1. The baseline demo: `jackin-preview` is `jackin-console` with the demo backend and the demo fixtures, which live in the baseline. It looks and works exactly as the approved baseline, and its tuiscotti baselines prove it.
+  2. The jackin product: `jackin-tui` is `jackin-console` with `JackinBackend`, which implements the `Backend` interface with `jackin-session`, `jackin-core`, and the usage crates. `jackin-tui` draws nothing, defines no screen, and writes no user-visible text for a screen. It only projects jackin data into `World`, persists edits, performs effects, and bridges async events.
+- When jackin needs a screen, a control, a word, or a behavior that the demo lacks, the change goes into the baseline: the generic part into `junie-tui`, the jackin part into `jackin-console`, with the demo default unchanged. The baseline is refactored as needed so the one application serves both the demo and the product.
 - The baseline repository is `/Users/donbeave/Projects/jackin-project/terminal-components-baseline`. Its own `AGENTS.md` applies to every change in it. Read it before each baseline task.
 - On 2026-11-02 the `jackin-preview` screens exist only in the baseline binary. Move each screen pattern into a reusable block of the baseline library. Make `jackin-preview` use those blocks. Make jackin use the same blocks with real data.
 - If the baseline lacks what jackin needs, extend the baseline. Do not copy baseline code into jackin. The known extensions are:
