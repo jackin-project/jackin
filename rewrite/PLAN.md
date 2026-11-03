@@ -497,7 +497,7 @@ This phase is the first end-to-end proof.
 - **Scope:** the pins in jackin, jackin-sentinel, and terminal-components-baseline (`mise.toml`, `mise.lock`, `hk.pkl`, the nextest pin, the D02 table row by the orchestrator) and the Velnor-generated workflows.
 - **Steps:** Bump cargo-nextest to 0.9.151 in every repository, hk to 2.11.0 with the `hk.pkl` package URLs, velnor-actions to 0.1.72 in the baseline with regenerated workflows, and zizmor to 1.32.0 where it is pinned. Run each repository's gate.
 - **Proof:** each repository's gate passes on the bumped pins; regenerated workflows show no diff on a second run.
-- [ ] P8.0a done
+- [x] P8.0a done. Proof: jackin (cargo-nextest 0.9.151, hk 2.11.0, zizmor 1.32.0, velnor-actions 0.1.72 with a root zizmor.yml ignoring only self-repository in ci.yml, which the 0.1.72 generator leaves without its inline ignore) G-FAST 1034 passed and `hk check --step zizmor` exit 0; baseline 3a7c020 (cargo-nextest 0.9.151, zizmor 1.32.0, velnor-actions 0.1.72) functional suite 106/106 before and after; sentinel already current; checksums match the release assets; generate twice gives no diff.
 
 ### P8.1 Build xtask e2e
 
