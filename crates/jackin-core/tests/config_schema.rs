@@ -747,7 +747,7 @@ fn config_parse_rejects_workspaces_that_share_a_normalized_path() -> TestResult 
 #[test]
 fn config_git_role_sources_are_typed_and_bad_ones_name_their_key() -> TestResult {
     let git = |source: &str| format!("[roles.r]\nsource = {{ {source} }}\n");
-    let password = "ghp_Zq7Xv9Lm2";
+    let password = "TEST-ONLY-pw-Zq7Xv9Lm2";
     let rejected = [
         (
             git("git = \"-oProxyCommand=x\""),
