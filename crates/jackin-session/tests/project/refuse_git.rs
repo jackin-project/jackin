@@ -102,6 +102,63 @@ fn gitfile_target(root: &Path) -> Result<PathBuf, Box<dyn Error>> {
     Ok(root.join(target))
 }
 
+async fn with_gitfile(target: &str) -> Result<RepoFixture, Box<dyn Error>> {
+    let repo = base().await?;
+    let root = repo.root().as_path();
+    std::fs::remove_dir_all(root.join(".git"))?;
+    std::fs::write(root.join(".git"), format!("gitdir: {target}\n"))?;
+    Ok(repo)
+}
+
+#[tokio::test]
+async fn a_gitfile_that_does_not_point_back_at_the_project_is_refused() -> TestResult {
+    guard(async {
+        let (victim, victim_git) = victim().await?;
+        foreign(
+            with_gitfile(&victim_git.display().to_string()).await?,
+            "gitfile naming another repository",
+        )
+        .await?;
+
+        let up = "../".repeat(victim_git.components().count() + 8);
+        let relative = format!(
+            "{up}{}",
+            victim_git.display().to_string().trim_start_matches('/')
+        );
+        foreign(
+            with_gitfile(&relative).await?,
+            "gitfile with a relative path to another repository",
+        )
+        .await?;
+
+        let worktree = victim.linked_worktree("lw").await?;
+        let worktree_gitdir = gitfile_target(worktree.root().as_path())?;
+        foreign(
+            with_gitfile(&worktree_gitdir.display().to_string()).await?,
+            "gitfile naming a linked worktree gitdir that points back elsewhere",
+        )
+        .await?;
+
+        let checkout = victim.submodule_checkout().await?;
+        let module_gitdir = gitfile_target(checkout.root().as_path())?;
+        foreign(
+            with_gitfile(&module_gitdir.display().to_string()).await?,
+            "gitfile naming a submodule gitdir whose work tree is elsewhere",
+        )
+        .await?;
+
+        let separate = base().await?;
+        let moved = victim_git.parent().ok_or("no parent")?.join("separate.git");
+        std::fs::rename(separate.root().as_path().join(".git"), &moved)?;
+        std::fs::write(
+            separate.root().as_path().join(".git"),
+            format!("gitdir: {}\n", moved.display()),
+        )?;
+        foreign(separate, "separate git directory").await
+    })
+    .await
+}
+
 #[tokio::test]
 async fn a_fifo_in_place_of_the_worktree_back_reference_is_refused_and_never_read() -> TestResult {
     guard(async {

@@ -71,6 +71,7 @@ pub(super) struct Facts {
     pub(super) exclude: Option<Vec<u8>>,
     pub(super) objects: HostPath,
     pub(super) git_dir: HostPath,
+    pub(super) own_dir: HostPath,
 }
 
 fn malformed(step: ProjectStep, message: &str) -> LaunchError {
@@ -83,6 +84,12 @@ fn malformed(step: ProjectStep, message: &str) -> LaunchError {
 fn host_path(step: ProjectStep, bytes: &[u8]) -> Result<HostPath, LaunchError> {
     HostPath::parse(&PathBuf::from(OsStr::from_bytes(bytes)))
         .map_err(|error| malformed(step, &error.to_string()))
+}
+
+async fn real(fs: &dyn FileSystem, path: HostPath) -> Result<HostPath, LaunchError> {
+    fs.canonicalize(&path)
+        .await?
+        .ok_or_else(|| malformed(ProjectStep::Describe, "the git directory does not exist"))
 }
 
 async fn head(git: &HostGit<'_>) -> Result<Head, LaunchError> {
@@ -177,12 +184,13 @@ pub(super) async fn read(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Facts
                 "--git-common-dir",
                 "--git-path",
                 "shallow",
+                "--absolute-git-dir",
             ]),
             Vec::new(),
         )
         .await?;
     let lines: Vec<&[u8]> = described.split(|byte| *byte == b'\n').collect();
-    let [format, shallow, objects, git_dir, shallow_file, ..] = lines.as_slice() else {
+    let [format, shallow, objects, git_dir, shallow_file, own_dir, ..] = lines.as_slice() else {
         return Err(malformed(
             ProjectStep::Describe,
             "rev-parse printed too few lines",
@@ -196,7 +204,8 @@ pub(super) async fn read(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Facts
     } else {
         None
     };
-    let git_dir = host_path(ProjectStep::Describe, git_dir)?;
+    let git_dir = real(fs, host_path(ProjectStep::Describe, git_dir)?).await?;
+    let own_dir = real(fs, host_path(ProjectStep::Describe, own_dir)?).await?;
     let exclude = regular_exclude(fs, &git_dir).await?;
     Ok(Facts {
         head: head(git).await?,
@@ -209,5 +218,6 @@ pub(super) async fn read(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Facts
         exclude,
         objects: host_path(ProjectStep::Describe, objects)?,
         git_dir,
+        own_dir,
     })
 }

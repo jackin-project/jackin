@@ -118,6 +118,24 @@ pub(super) async fn borrowed_objects(
             return Err(UnsupportedProject::Alternates(file).into());
         }
     }
+    let pack = at("objects/pack")?;
+    if matches!(fs.stat(&pack).await?, Some(kind) if kind != FileKind::Dir) {
+        return Err(UnsupportedProject::LinkedObjects(pack).into());
+    }
+    let mut pending = vec![objects];
+    while let Some(dir) = pending.pop() {
+        for entry in fs.list(&dir).await? {
+            let path = HostPath::resolve(Path::new(&entry.name), &dir)
+                .map_err(|error| malformed(&error.to_string()))?;
+            match entry.kind {
+                FileKind::Dir => pending.push(path),
+                FileKind::File => {}
+                FileKind::Symlink | FileKind::Socket => {
+                    return Err(UnsupportedProject::LinkedObjects(path).into());
+                }
+            }
+        }
+    }
     Ok(())
 }
 

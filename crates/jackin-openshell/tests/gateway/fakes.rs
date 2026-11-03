@@ -72,6 +72,9 @@ impl FileSystem for RegistryFs {
     async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
         self.stat(path).await
     }
+    async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
+        Ok(self.stat_following(path).await?.map(|_| path.clone()))
+    }
 
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
         Ok(self

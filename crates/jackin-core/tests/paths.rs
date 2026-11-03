@@ -8,7 +8,6 @@ use jackin_core::{
     Agent, HookKind, HostPath, LaunchId, PathError, ProjectRoot, RepoPath, SandboxPath,
     StdFileSystem, sandbox_layout,
 };
-use jackin_testkit::RepoFixture;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -173,8 +172,15 @@ async fn project_root_open_requires_a_directory_with_a_git_entry() -> TestResult
 
     std::fs::create_dir_all(dir.path().join("worktree"))?;
     std::fs::write(dir.path().join("worktree/.git"), "gitdir: /elsewhere\n")?;
+    ProjectRoot::open(&fs, &at("worktree")?).await?;
+
+    std::fs::create_dir_all(dir.path().join("linked"))?;
+    std::os::unix::fs::symlink(
+        dir.path().join("plain/.git"),
+        dir.path().join("linked/.git"),
+    )?;
     assert!(matches!(
-        ProjectRoot::open(&fs, &at("worktree")?).await,
+        ProjectRoot::open(&fs, &at("linked")?).await,
         Err(PathError::UnsupportedGitEntry(_))
     ));
 
@@ -194,143 +200,6 @@ async fn project_root_open_requires_a_directory_with_a_git_entry() -> TestResult
         Err(PathError::NotADirectory(_))
     ));
     Ok(())
-}
-
-async fn victim() -> Result<RepoFixture, Box<dyn std::error::Error>> {
-    let repo = RepoFixture::new().await?;
-    repo.file("private.txt", b"secret\n").await?;
-    repo.commit().await?;
-    Ok(repo)
-}
-
-fn gitfile_target(root: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    let text = std::fs::read_to_string(root.join(".git"))?;
-    let target = text
-        .strip_prefix("gitdir: ")
-        .ok_or("not a gitfile")?
-        .trim()
-        .to_owned();
-    Ok(target)
-}
-
-async fn refused(root: &Path, case: &str) -> TestResult {
-    let host = HostPath::parse(root)?;
-    match ProjectRoot::open(&StdFileSystem::default(), &host).await {
-        Err(PathError::UnsupportedGitEntry(named)) => {
-            assert_eq!(named, host, "{case}");
-            Ok(())
-        }
-        other => Err(format!("{case}: expected a refusal, saw {other:?}").into()),
-    }
-}
-
-async fn accepted(root: &Path, case: &str) -> TestResult {
-    let host = HostPath::parse(root)?;
-    ProjectRoot::open(&StdFileSystem::default(), &host)
-        .await
-        .map_err(|error| format!("{case}: {error}"))?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_git_entry_that_does_not_belong_to_the_directory_is_refused() -> TestResult {
-    let dir = tempfile::tempdir()?;
-    let base = std::fs::canonicalize(dir.path())?;
-    let victim = victim().await?;
-    let victim_git = victim.root().as_path().join(".git");
-
-    std::fs::create_dir(base.join("absolute"))?;
-    std::fs::write(
-        base.join("absolute/.git"),
-        format!("gitdir: {}\n", victim_git.display()),
-    )?;
-    refused(&base.join("absolute"), "gitfile naming another repository").await?;
-
-    let up = "../".repeat(base.components().count());
-    std::fs::create_dir(base.join("relative"))?;
-    std::fs::write(
-        base.join("relative/.git"),
-        format!(
-            "gitdir: {up}{}\n",
-            victim_git.display().to_string().trim_start_matches('/')
-        ),
-    )?;
-    refused(
-        &base.join("relative"),
-        "gitfile with a relative path to another repository",
-    )
-    .await?;
-
-    std::fs::create_dir(base.join("linked"))?;
-    std::os::unix::fs::symlink(&victim_git, base.join("linked/.git"))?;
-    refused(&base.join("linked"), "symlinked .git").await?;
-
-    let worktree = victim.linked_worktree("lw").await?;
-    let worktree_gitdir = gitfile_target(worktree.root().as_path())?;
-    std::fs::create_dir(base.join("forged-worktree"))?;
-    std::fs::write(
-        base.join("forged-worktree/.git"),
-        format!("gitdir: {worktree_gitdir}\n"),
-    )?;
-    refused(
-        &base.join("forged-worktree"),
-        "gitfile naming a linked worktree gitdir that points back elsewhere",
-    )
-    .await?;
-
-    let checkout = victim.submodule_checkout().await?;
-    let module_gitdir = gitfile_target(checkout.root().as_path())?;
-    let module_gitdir = checkout.root().as_path().join(module_gitdir);
-    std::fs::create_dir(base.join("forged-module"))?;
-    std::fs::write(
-        base.join("forged-module/.git"),
-        format!("gitdir: {}\n", module_gitdir.display()),
-    )?;
-    refused(
-        &base.join("forged-module"),
-        "gitfile naming a submodule gitdir whose work tree is elsewhere",
-    )
-    .await?;
-
-    let separate = base.join("separate");
-    victim
-        .git(&[
-            "init",
-            "-q",
-            "--separate-git-dir",
-            &base.join("separate.git").display().to_string(),
-            &separate.display().to_string(),
-        ])
-        .await?;
-    refused(&separate, "separate git directory").await
-}
-
-#[tokio::test]
-async fn a_git_entry_that_belongs_to_the_directory_is_accepted() -> TestResult {
-    let dir = tempfile::tempdir()?;
-    let base = std::fs::canonicalize(dir.path())?;
-    let repo = victim().await?;
-    accepted(repo.root().as_path(), "normal repository").await?;
-
-    let worktree = repo.linked_worktree("lw").await?;
-    accepted(worktree.root().as_path(), "linked worktree").await?;
-    let parent = worktree.root().as_path().parent().ok_or("no parent")?;
-    std::os::unix::fs::symlink(parent, base.join("via-link"))?;
-    accepted(
-        &base.join("via-link/tree"),
-        "linked worktree below a symlinked directory",
-    )
-    .await?;
-
-    let checkout = repo.submodule_checkout().await?;
-    accepted(checkout.root().as_path(), "submodule checkout").await?;
-    let outer = checkout.root().as_path().parent().ok_or("no parent")?;
-    std::os::unix::fs::symlink(outer, base.join("via-module"))?;
-    accepted(
-        &base.join("via-module/lib"),
-        "submodule checkout below a symlinked directory",
-    )
-    .await
 }
 
 #[test]

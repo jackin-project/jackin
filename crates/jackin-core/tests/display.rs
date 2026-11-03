@@ -108,7 +108,7 @@ fn file_and_process_errors_name_paths_programs_and_streams_plainly() -> TestResu
         ),
         (
             PathError::UnsupportedGitEntry(dir).to_string(),
-            "the .git of /home/me/my project does not belong to it (a symlink, a separate git directory, or a redirect to another repository); use a normal repository, a linked worktree, or a submodule checkout",
+            "the .git of /home/me/my project is a symlink or another kind of file; use a normal repository, a linked worktree, or a submodule checkout",
         ),
         (
             ProcessError::Spawn {

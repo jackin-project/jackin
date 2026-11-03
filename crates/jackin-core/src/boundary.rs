@@ -74,9 +74,7 @@ pub trait FileSystem: Send + Sync + Debug {
     async fn read(&self, path: &HostPath) -> Result<Option<Vec<u8>>, FsError>;
     async fn stat(&self, path: &HostPath) -> Result<Option<FileKind>, FsError>;
     async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError>;
-    async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
-        Ok(self.stat_following(path).await?.map(|_| path.clone()))
-    }
+    async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError>;
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError>;
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError>;
     async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError>;

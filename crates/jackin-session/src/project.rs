@@ -5,6 +5,7 @@ mod bundle;
 mod facts;
 mod gate;
 pub(crate) mod git;
+mod home;
 mod listing;
 mod refuse;
 mod sandbox;
@@ -124,7 +125,7 @@ pub enum UnsupportedProject {
     )]
     Alternates(HostPath),
     #[error(
-        "the object store {0} is a symlink, so its objects can come from another repository; replace it with a real directory"
+        "the object store entry {0} is a symlink or not a regular file or directory, so its objects can come from another repository; replace it with a real file or directory"
     )]
     LinkedObjects(HostPath),
 }
@@ -273,6 +274,7 @@ pub(crate) async fn stage(
     let fs = deps.host.fs.as_ref();
     refuse::check(&git, fs).await?;
     let facts = facts::read(&git, fs).await?;
+    home::belongs(&git, fs, project.path(), &facts).await?;
     refuse::borrowed_objects(fs, &facts.git_dir).await?;
     let listing = listing::read(&git).await?;
     refuse::symlinked_parents(fs, project.path(), &listing).await?;
