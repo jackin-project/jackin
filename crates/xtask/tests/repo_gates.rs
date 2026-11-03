@@ -87,11 +87,9 @@ impl Fixture {
     }
 
     fn git(&self, args: &[&str]) -> TestResult {
-        let status = Command::new("git")
+        let status = jackin_testkit::git_command()
             .args(args)
             .current_dir(self.dir.path())
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
             .status()?;
         if status.success() {
             Ok(())

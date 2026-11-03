@@ -9,7 +9,9 @@ fail_fast = false
 
 steps {
   ["mise"] = Builtins.mise
-  ["gitleaks"] = Builtins.gitleaks
+  ["gitleaks"] = (Builtins.gitleaks) {
+    check = "tree=$(mktemp -d) && trap 'rm -rf \"$tree\"' EXIT && git checkout-index --all --prefix=\"$tree/\" && cd \"$tree\" && gitleaks dir --redact --verbose --no-banner ."
+  }
   ["cargo_fmt"] {
     glob = List("**/*.rs", "rustfmt.toml")
     check = "cargo fmt --all --check"
@@ -51,7 +53,7 @@ hooks {
   }
   ["pre-push"] {
     steps {
-      ["betterleaks-history"] { check = "betterleaks git . --redact" }
+      ["betterleaks-history"] { check = "betterleaks git . --redact --log-opts=\"HEAD --not --remotes\"" }
       ["xtask-ci"] { check = "mise run ci:fast" }
     }
   }

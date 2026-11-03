@@ -160,7 +160,7 @@ OpenShell 0.1.6 does not reach a sandbox after its main process exits. Exit code
 - A second attachment is a read-only viewer, but it still resizes the shared PTY. The console opens one pane for each main process.
 - `jackin shell` opens a new process with `ExecSandboxInteractive` and a PTY. It has no detach and no replay. The process ends when the stream closes.
 - `jackin stop` and `jackin start` stop and start the sandbox. The main process starts again from the beginning and writes `waiting`.
-- There is no Capsule and no in-sandbox daemon. In the console, the tabs and panes of the `jackin-preview` demo run on the host (D28).
+- There is no in-sandbox daemon. Jackin Capsule, the multiplexer, runs on the host in the jackin process and gives the tabs and panes of the `jackin-preview` demo (D28).
 
 Evidence: `evidence/P0.2-gateway.md` steps 5, 7, 8; `evidence/P7.1-image.md` F3; `evidence/P0.6-panes.md`. Task P7.4 proves this supervisor live.
 
@@ -260,7 +260,7 @@ Delete these features. Do not rebuild them in this program:
 - OpenTelemetry export (keep `tracing` to stderr)
 - the jackin daemon and its notifications. The console shows OpenShell gateway health instead (D28).
 - workflows and repair loops
-- the in-sandbox Capsule daemon. The host console gives the tabs and panes (D28).
+- the in-sandbox Capsule daemon. Jackin Capsule, the host multiplexer, gives the tabs and panes (D28).
 - agent status inference
 - config migrations
 - the old Docker-in-Docker manager, Docker profiles, and Docker grants. D24 replaces them.
@@ -292,7 +292,7 @@ Delete these features. Do not rebuild them in this program:
 ### D20. Agent Smith and The Architect become Codex roles
 
 - Agent Smith is a Codex role for code review. Its policy allows only the Codex hosts and `github.com`.
-- The Architect is a Codex role with the Rust toolchain for jackin development. Its policy also allows the crates.io, GitHub, and mise download hosts.
+- The Architect is a Codex role with the Rust toolchain for jackin development, installed from a mise lock under root-owned `/usr/local` with the same pins as jackin. Its policy also allows `index.crates.io` and `static.crates.io` (read-only) and `github.com` git fetches only (`info/refs?service=git-upload-pack` and `git-upload-pack`). It allows no tool download host, because the image carries the toolchain; a live G-FAST in a sandbox of the role proves the list is enough.
 - Delete every Claude file, plugin, marketplace script, and hook from both roles.
 - The final stage of each role `Dockerfile` starts `FROM construct`. Jackin builds both images.
 
@@ -398,12 +398,19 @@ Evidence: `evidence/P0.5-docker.md`, `blockers/P0.5-docker-credentials.md`.
 
 The jackin console is visually identical to the `jackin-preview` app in `tailrocks/terminal-components-baseline`, called "the baseline" here. Jackin does not use `termrock`.
 
-- `jackin-tui` depends on the baseline library crate `junie-tui` as a git dependency at a pinned `rev`. The pin is a commit on the baseline branch `feature/openshell-native`.
+- Jackin Console and Jackin Capsule always come from `https://github.com/tailrocks/terminal-components-baseline`, branch `feature/openshell-native`: git dependencies with that URL and a pinned `rev` on that branch, never a path dependency and never a copy. The baseline is the visual prototype of jackin: it has no real agents, accounts, Docker, or OpenShell isolation. Jackin implements those with OpenShell and takes every screen, look, and flow from the baseline. The two crates are:
+  - `junie-tui`: the reusable components, widgets, blocks, containers, shells, and utilities.
+  - `jackin-console` (`apps/jackin`): the one jackin application. It owns every screen, every pixel, every key binding, the page router, the UI model `World`, the wording tables, and the fixed state. It talks to its data and actions only through its `Backend` interface and its external message input.
+- Jackin names them in its root `Cargo.toml` with `default-features = false`. The `xtask` step `baseline` fails on a path dependency, another URL, a branch or tag reference, a `[patch]`, a short rev, or two different revs.
+- The same `jackin-console` application runs in two ways:
+  1. The baseline demo: `jackin-preview` is `jackin-console` with the demo backend and the demo fixtures, which live in the baseline. It looks and works exactly as the approved baseline, and its tuiscotti baselines prove it. The demo data, the demo backend, and the demo-only code sit behind a baseline Cargo feature that is off by default. Jackin never enables it, so no demo data ships in jackin. A jackin gate fails if that feature, or any demo or fixture symbol, reaches the jackin build.
+  2. The jackin product: `jackin-tui` is `jackin-console` with `JackinBackend`, which implements the `Backend` interface with `jackin-session`, `jackin-core`, and the usage crates. `jackin-tui` draws nothing, defines no screen, and writes no user-visible text for a screen. It only projects jackin data into `World`, persists edits, performs effects, and bridges async events.
+- When jackin needs a screen, a control, a word, or a behavior that the demo lacks, the change goes into the baseline: the generic part into `junie-tui`, the jackin part into `jackin-console`, with the demo default unchanged. The baseline is refactored as needed so the one application serves both the demo and the product.
 - The baseline repository is `/Users/donbeave/Projects/jackin-project/terminal-components-baseline`. Its own `AGENTS.md` applies to every change in it. Read it before each baseline task.
 - On 2026-11-02 the `jackin-preview` screens exist only in the baseline binary. Move each screen pattern into a reusable block of the baseline library. Make `jackin-preview` use those blocks. Make jackin use the same blocks with real data.
 - If the baseline lacks what jackin needs, extend the baseline. Do not copy baseline code into jackin. The known extensions are:
   - the blocks for the jackin screens, behind a data interface
-  - a terminal pane block that renders a session from a byte stream with the `vt100` parser and encodes keys, behind a Cargo feature. It does no I/O.
+  - a terminal pane block that renders a session from a byte stream with the `termpane` screen-state emulator (`tailrocks/termpane`) and encodes keys, behind a Cargo feature. It does no I/O.
   - an input variant for external messages, for tokio events
   - a Cargo feature for `clap`, so the library does not always include it
 - A baseline change must never change its existing visual output. Each baseline task runs the full baseline test suite. All approved tuiscotti baselines under `tests/functional/baselines/` must pass unchanged. Never move the `visual-baseline` git tag.
@@ -418,7 +425,10 @@ The jackin console is visually identical to the `jackin-preview` app in `tailroc
 Jackin has the same screens, the same flows, the same key bindings, and the same navigation as the `jackin-preview` demo in the baseline. Each demo scenario and each key-driven demo state is an acceptance case for jackin.
 
 - The demo shows Docker and Capsule words in some screens. Jackin shows the same screen with OpenShell content. For example, the cockpit stages name the image build, the OpenShell provider, the sandbox, and the upload. The daemon health screen shows the OpenShell gateway health.
-- The session tabs and panes of the demo run in the host console. Each pane is an OpenShell terminal session in the jackin process (D03). The Codex pane attaches to the main process through `CreateSshSession`, `ForwardTcp`, and `russh`. A shell pane uses `ExecSandboxInteractive`. The console opens one pane for each main process, owns the detach and close keys, never sends Ctrl-D, and sends the pane size after each layout change. Each attach creates a fresh parser and runs the D09 redraw resize. Evidence: `evidence/P0.6-panes.md`.
+- Jackin has two surfaces, both from the one `jackin-console` application and both visually identical to the demo:
+  - **Jackin Console** manages workspaces, roles, accounts, bindings, the Docker setting, and usage, and launches sessions.
+  - **Jackin Capsule** is the multiplexer: the menu bar, the session tabs, the split panes, the status line, and the hint line of the demo capsule screen. It uses `termpane` under each pane for the terminal screen state. Codex is the agent in its panes.
+- The session tabs and panes of the demo run in Jackin Capsule on the host. A Capsule pane observes its agent: a bell or notification from an unfocused pane marks it as needing input, and exit code 0 marks it done. The Capsule accepts a clipboard write (OSC 52) only from the focused Codex pane within a short window after operator input, up to 100,000 bytes, with a visible status each time; it refuses clipboard reads and every write from a shell pane. The program title appears in the pane info dialog only. Copy joins soft-wrapped lines. The intro plays as in the demo and honours `JACKIN_NO_MOTION`. Each pane is an OpenShell terminal session in the jackin process (D03). The Codex pane attaches to the main process through `CreateSshSession`, `ForwardTcp`, and `russh`. A shell pane uses `ExecSandboxInteractive`. The console opens one pane for each main process, owns the detach and close keys, never sends Ctrl-D, and sends the pane size after each layout change. Each attach creates a fresh `termpane` screen and runs the D09 redraw resize. Evidence: `evidence/P0.6-panes.md`.
 - The 1Password flow of the demo stays. An account can name its credential as an `op://` reference. Jackin resolves it on the host with `op` for usage only, and never sends it to a sandbox or to an OpenShell provider. Only a ChatGPT login reaches an OpenShell provider (D10).
 - When a demo screen has no jackin data yet, build the data. Do not remove the screen. Never hide a demo control and never ship a control that accepts an edit and does nothing: each control is live (built), mapped to real jackin data, or fixed to its one true value with a visible reason (`Control::Fixed(Reason)`). Fixed in jackin: global mounts (empty), workspace mounts (one row: the project uploaded to `/sandbox/project`, read-write, never a bind mount), `git_pull` (off; D08 forbids host writes), `keep_awake` (off; the operator owns the gateway host), the dirty-exit policy (`ask`), the co-author trailer and DCO sign-off (off), global account enable (every account enabled), the GitHub Git-URL source, and the typed API-key account source. Built: env at global, workspace, and workspace-and-role scope (plain values only: a value that starts with `op://` or `openshell:resolve:`, in any letter case and after leading whitespace, is refused; names are not refused; no credential reference reaches the sandbox, D10), allowed roles per workspace, and role-source trust mapped from the configured sources. Demo text that would be false in jackin (the DCO preview identity, "opened on the host" messages) is data whose default is the demo text, so no approved baseline visual changes; each fixed visual gets its own new baseline.
 - The CLI commands in this document stay. The console is the main way to use jackin, as in the demo.

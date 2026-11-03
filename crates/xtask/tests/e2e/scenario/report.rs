@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::Path;
-use std::process::Command;
 
 use jackin_core::SandboxName;
 use serde_json::{Value, json};
@@ -14,7 +13,7 @@ use crate::support::{capture, hex};
 
 pub(crate) fn head_of(dir: &Path) -> String {
     let output = capture(
-        Command::new("git")
+        jackin_testkit::git_command()
             .args(["rev-parse", "HEAD"])
             .current_dir(dir),
     );
@@ -47,7 +46,7 @@ fn egress(code: u32, exit: u32) -> Value {
 
 fn project_files(dir: &Path) -> Vec<Value> {
     let listing = capture(
-        Command::new("git")
+        jackin_testkit::git_command()
             .args(["ls-files", "-co", "--exclude-standard", "-z"])
             .current_dir(dir),
     );

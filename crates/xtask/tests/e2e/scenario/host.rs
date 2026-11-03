@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::Path;
-use std::process::Command;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -44,7 +43,7 @@ fn done(code: i32, stdout: &str, stderr: &str) -> Result<HostOutput, HostError> 
 
 fn git(dir: &Path, args: &[&str]) -> String {
     let output = capture(
-        Command::new("git")
+        jackin_testkit::git_command()
             .args([
                 "-c",
                 "user.name=scenario",

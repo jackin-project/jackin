@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{Debug, Display};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::str::FromStr;
 
 use jackin_core::{
@@ -454,11 +454,9 @@ fn other_ids_reject_one_input_of_each_violated_class() -> TestResult {
 }
 
 fn git_accepts(candidate: &str, dir: &std::path::Path) -> Result<bool, Box<dyn Error>> {
-    let output = Command::new("git")
+    let output = jackin_testkit::git_command()
         .args(["check-ref-format", "--branch", candidate])
         .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?

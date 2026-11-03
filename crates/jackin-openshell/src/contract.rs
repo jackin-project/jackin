@@ -1099,12 +1099,15 @@ async fn host_git(dir: &Path, args: &[&str]) -> Outcome<()> {
         args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
     );
     let status = tokio::task::spawn_blocking(move || {
-        std::process::Command::new("/usr/bin/git")
+        let mut command = std::process::Command::new("/usr/bin/git");
+        for (name, _) in std::env::vars_os() {
+            if name.as_encoded_bytes().starts_with(b"GIT_") {
+                command.env_remove(name);
+            }
+        }
+        command
             .args(&args)
             .current_dir(&dir)
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("GIT_INDEX_FILE")
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .stdin(std::process::Stdio::null())

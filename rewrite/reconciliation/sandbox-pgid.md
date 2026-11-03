@@ -336,3 +336,34 @@ Unchanged from round 3, plus the new xtask rows and the patched lifecycle oracle
 `mise exec -- mbx +1.99.1 xtask ci --fast` (macOS arm64, this section in the tree, code at `cd2202524`): `Summary [76.987s] 1210 tests run: 1210 passed, 0 skipped`, then the REUSE line `Congratulations! Your project is compliant with version 3.3 of the REUSE Specification :-)`, exit code 0. `ps` after the run: no `sleep` that began after the gate started. Two `sleep 300` (pids 96790 and 97297, parent 1, started 17:22:46, cwd in a `jackin-openshell` test `TempDir`) began 85 s before the gate and are not from my runs (inferred: another session running the base `exec.rs`); they were left alone. The G-FAST in a sandbox has not run; the owed rows are listed above.
 
 With the three small fixes (decisions 9 to 11) in the tree: `Summary [57.380s] 1210 tests run: 1210 passed, 0 skipped`, then the REUSE compliance line, exit code 0.
+
+## Round 6: the forged-name fixture without `/bin/sleep`
+
+Branch `wt/uutils-fixture` from `79c974eee`. CI runs 41622876122 and 41624781035 (`ubuntu-26.04`) failed `process_group::tests::by_member_ends_every_live_member_of_a_group_it_does_not_leave_to_the_group_signal` at `tests.rs:226`: `/bin/sleep` there is a uutils multicall binary, which refuses to run under a link name that is not a utility name, so the bystander exited and `try_wait` returned `Some`.
+
+### Decisions
+
+1. Fixture. The link `x) S 1 <pgid> ` and the non-UTF-8 link now point to `/bin/sh`, and the bystander runs `exec "$0" -c 'read _'`. The kernel takes `comm` from the name passed to `execve`, so the shell runs under the forged name. A shell does not look at its own name, so the coreutils in use make no difference, and the bystander does not exec another program. No file is written, so there is no ETXTBSY window (the link target is the system's `/bin/sh`). I considered a `#!/bin/sh` script file; it needs a written, executable file and gives the same `comm`, so the symlink to the interpreter is the smaller change.
+2. The bystander blocks on its stdin, which is now a pipe the test holds. It ends by itself when the test drops the pipe, so a test that dies leaves no `sleep 60` behind.
+3. `Held::drop` in `tests/process_runner/group.rs` closes the stdin pipe before `kill` and `wait`. Reason, from a live OpenShell 0.1.6 sandbox: `hostile_neighbours::a_run_ends_ok_and_spares_neighbours_whose_names_try_to_confuse_the_scan` always took 60.0 s. The non-UTF-8 neighbour cannot be killed there: `kill(pid, SIGKILL)` on a process whose `comm` is not valid UTF-8 answers EPERM (`kill -9` from a shell: `Operation not permitted`; a valid non-ASCII name, `é`, and the forged ASCII name are killed normally). The test thread sat in `do_wait` inside `Held::drop` until `sleep 60` ended; `SigPnd` of the neighbour was 0. The cause is inferred, not read from a trace: `mediate_process_signal` (`openshell-sandbox/src/linux/process_signal.rs`) resolves the target with `std::fs::read_to_string("/proc/<tid>/status")`, which fails on a `Name:` line with invalid UTF-8. The fault is in OpenShell, not in the runner or the fixture. The runner's sweep did not wait on the neighbour (the forged neighbour was killed and reaped by the test within 2 s).
+4. Product note, not fixed here: in that sandbox, `by_member` on a group that holds a member whose `comm` is not valid UTF-8 gets EPERM from `kill_process` and returns `GroupFault::Unreachable`. That is the honest answer for a process the sandbox does not let the runner signal.
+
+### Red and green
+
+Linux binaries from `cargo zigbuild` (`aarch64-unknown-linux-gnu`), run on `jackin-engine` (Ubuntu 24.04) and in a live OpenShell 0.1.6 sandbox (Ubuntu 24.04). uutils: `rust-coreutils` 0.0.24 from apt, with `/usr/bin/coreutils` bind-mounted over `/usr/bin/sleep` (unmounted afterwards; `/bin/sleep` is the 67944-byte GNU file again). The 0.0.24 multicall binary answers `function/utility not found` for the forged name, where the CI image's answers `Security violation`; both exit at once.
+
+| Run | Old fixture | New fixture |
+|---|---|---|
+| `jackin-engine`, GNU | `process_group` 4 of 4, `group::` 4 of 4 | `process_group` 4 of 4, `group::` 4 of 4 |
+| `jackin-engine`, GNU, `kill(-pgid)` answers EPERM (seccomp filter through `prctl`) | hostile row ok, 0.97 s | hostile row ok, 0.97 s; `process_group` 4 of 4 |
+| `jackin-engine`, uutils as `/bin/sleep` | `tests.rs:226:5 a process of another group is untouched` (3 of 4); `group.rs:233:17 the non-UTF-8 name neighbour was killed` | `process_group` 4 of 4, `group::` 4 of 4 |
+| live OpenShell sandbox, GNU | hostile row ok after 60.04 s | `group::` 4 of 4 in 3.93 s; `process_group` 4 of 4 |
+
+`rposition` to `position` in `stat.rs`, new fixture, GNU: `tests.rs:94:5 a comm that is only parentheses: left Ok(false), right Ok(true)` and `tests.rs:214:5 three members before: left 4, right 3`. The integration row stays green under that break, as decision 9 of round 5 says. The file was restored from a copy and compared with `cmp`; the commit holds no break.
+
+The `by_member` unit rows ran in a live sandbox for the first time and passed.
+
+### Not proven
+
+- The CI image `ubuntu-26.04` itself. The red is reproduced with uutils 0.0.24 on Ubuntu 24.04, whose refusal text differs.
+- The OpenShell cause in decision 3 is inferred from the symptom matrix and the source, not from a trace of the supervisor.
