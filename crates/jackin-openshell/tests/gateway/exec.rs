@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU16;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -16,7 +17,9 @@ use tempfile::TempDir;
 use tokio::sync::Barrier;
 use tokio_util::sync::CancellationToken;
 
-use super::exec_rpc::{exit_event, host_shell, host_shell_aborting, host_shell_gated, out_event};
+use super::exec_rpc::{
+    Step, exit_event, host_shell, host_shell_aborting, host_shell_gated, out_event, scripted,
+};
 use super::harness::{Env, WORKSPACE, connect, env, guard, wait_until};
 use super::server::ExecCtx;
 use super::support::{SANDBOX, add_sandbox, sandbox_name};
@@ -343,6 +346,149 @@ async fn interrupted_write_leaves_the_old_file_intact() {
     );
     guard(env.server.shared.child_killed.notified()).await;
     assert_eq!(tokio::fs::read(&target).await.unwrap(), b"old bytes");
+}
+
+fn secret_file(target: &str) -> SandboxFile {
+    SandboxFile {
+        path: path(target),
+        mode: FileMode(0o600),
+        content: SecretBytes::new(SENTINEL.as_bytes().to_vec()),
+    }
+}
+
+#[tokio::test]
+async fn a_failed_write_names_the_path_and_the_exit_code_and_carries_no_sandbox_output() {
+    for code in [1, 73] {
+        let env = env().await;
+        env.server.state().exec = Some(scripted(move |_start, stdin| {
+            vec![
+                Step::Err(stdin.to_vec()),
+                Step::Out(stdin.to_vec()),
+                Step::Exit(code),
+            ]
+        }));
+        ready(&env);
+        let gateway = connect(&env, WORKSPACE).await;
+        let target = "/sandbox/.jackin/docker/key.pem";
+        let error = guard(gateway.write_file(&sandbox_name(SANDBOX), &secret_file(target)))
+            .await
+            .unwrap_err();
+        match (code, &error) {
+            (73, GatewayError::UnsafePath { path }) => assert_eq!(path.as_str(), target),
+            (1, GatewayError::Protocol { message }) => {
+                assert!(
+                    message.contains(target) && message.contains("exit code 1"),
+                    "{message}"
+                );
+            }
+            (_, other) => panic!("exit {code}: unexpected {other:?}"),
+        }
+        assert!(error.to_string().contains(target), "{error}");
+        assert_no_sentinel(&error.to_string());
+        assert_no_sentinel(&format!("{error:?}"));
+    }
+}
+
+#[tokio::test]
+async fn write_file_refuses_a_symlinked_directory_or_a_directory_target_and_replaces_a_link_leaf() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    ready(&env);
+    let gateway = connect(&env, WORKSPACE).await;
+    let sandbox = root.path().join("sandbox");
+    let project = sandbox.join("project");
+    tokio::fs::create_dir_all(&project).await.unwrap();
+    let refused = |target: &'static str, watched: PathBuf| {
+        let gateway = &gateway;
+        async move {
+            let result =
+                guard(gateway.write_file(&sandbox_name(SANDBOX), &secret_file(target))).await;
+            assert_eq!(
+                names_in(&watched).await,
+                Vec::<String>::new(),
+                "{target}: {result:?}"
+            );
+            match result {
+                Err(GatewayError::UnsafePath { path }) => assert_eq!(path.as_str(), target),
+                other => panic!("{target}: {other:?}"),
+            }
+        }
+    };
+    let link = |target: &str, at: PathBuf| std::os::unix::fs::symlink(target, at).unwrap();
+    let key = "/sandbox/.jackin/docker/key.pem";
+
+    link("project", sandbox.join(".jackin"));
+    for target in [
+        key,
+        "/sandbox/.jackin/key.pem",
+        "/sandbox/.jackin/docker/x/key.pem",
+    ] {
+        refused(target, project.clone()).await;
+    }
+    tokio::fs::remove_file(sandbox.join(".jackin"))
+        .await
+        .unwrap();
+
+    tokio::fs::create_dir(sandbox.join(".jackin"))
+        .await
+        .unwrap();
+    link("../project", sandbox.join(".jackin/docker"));
+    refused(key, project.clone()).await;
+    tokio::fs::remove_file(sandbox.join(".jackin/docker"))
+        .await
+        .unwrap();
+
+    link("missing", sandbox.join(".jackin/docker"));
+    refused(key, project.clone()).await;
+    tokio::fs::remove_file(sandbox.join(".jackin/docker"))
+        .await
+        .unwrap();
+
+    let leaf = sandbox.join(".jackin/docker/key.pem");
+    tokio::fs::create_dir_all(&leaf).await.unwrap();
+    refused(key, leaf.clone()).await;
+    tokio::fs::remove_dir(&leaf).await.unwrap();
+
+    let victim = project.join("victim");
+    tokio::fs::write(&victim, b"untouched").await.unwrap();
+    link("../../project/victim", leaf.clone());
+    guard(gateway.write_file(&sandbox_name(SANDBOX), &secret_file(key)))
+        .await
+        .unwrap();
+    let text = |bytes: Vec<u8>| String::from_utf8(bytes).unwrap();
+    assert_eq!(text(tokio::fs::read(&victim).await.unwrap()), "untouched");
+    assert_eq!(text(tokio::fs::read(&leaf).await.unwrap()), SENTINEL);
+    assert!(
+        !tokio::fs::symlink_metadata(&leaf)
+            .await
+            .unwrap()
+            .is_symlink()
+    );
+    assert_eq!(names_in(&project).await, vec!["victim".to_owned()]);
+    assert_eq!(
+        names_in(leaf.parent().unwrap()).await,
+        vec!["key.pem".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn write_file_refuses_a_target_outside_the_sandbox_home_without_running_anything() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    ready(&env);
+    let gateway = connect(&env, WORKSPACE).await;
+    for target in ["/tmp/key.pem", "/sandbox", "/sandboxes/key.pem", "/"] {
+        let error = guard(gateway.write_file(&sandbox_name(SANDBOX), &secret_file(target)))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, GatewayError::InvalidArgument { ref field, .. } if field == "path"),
+            "{target}: {error:?}"
+        );
+    }
+    assert!(env.server.state().exec_starts.is_empty());
 }
 
 #[tokio::test]

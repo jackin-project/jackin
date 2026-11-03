@@ -180,6 +180,7 @@ pub(crate) fn kind(error: &GatewayError) -> &'static str {
         GatewayError::DownloadTooLarge { .. } => "DownloadTooLarge",
         GatewayError::HostKeyMismatch => "HostKeyMismatch",
         GatewayError::TerminalRefused { .. } => "TerminalRefused",
+        GatewayError::UnsafePath { .. } => "UnsafePath",
         GatewayError::Protocol { .. } => "Protocol",
     }
 }

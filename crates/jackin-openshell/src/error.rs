@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use jackin_core::{
     FsError, GatewayName, HostPath, OpenShellWorkspace, OutputStream, Phase, ProcessError,
-    ProcessStatus, ProfileId, ProviderName, SandboxName, TerminalText, plain, plain_duration,
-    plain_list,
+    ProcessStatus, ProfileId, ProviderName, SandboxName, SandboxPath, TerminalText, plain,
+    plain_duration, plain_list,
 };
 use thiserror::Error;
 
@@ -66,6 +66,8 @@ pub enum GatewayError {
     HostKeyMismatch,
     #[error("the terminal was refused: {}", plain(.reason))]
     TerminalRefused { reason: String },
+    #[error("refused to write {}: a directory on its path below /sandbox is a symlink, or the target is a directory", plain(.path.as_str()))]
+    UnsafePath { path: SandboxPath },
     #[error("protocol error: {}", plain(.message))]
     Protocol { message: String },
 }
@@ -249,6 +251,7 @@ impl GatewayError {
             | GatewayError::DownloadTooLarge { .. }
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
+            | GatewayError::UnsafePath { .. }
             | GatewayError::Protocol { .. } => false,
         }
     }

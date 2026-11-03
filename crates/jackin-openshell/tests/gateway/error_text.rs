@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use jackin_core::{
     OpenShellWorkspace, OutputStream, Phase, ProcessStatus, ProfileId, ProviderName, SandboxName,
-    TerminalText,
+    SandboxPath, TerminalText,
 };
 use jackin_openshell::{
     ClosedPolicyError, ClosureViolation, DiscoveryError, GatewayError, GatewayOp, HostPattern,
@@ -271,6 +271,12 @@ fn text_supplied_by_the_gateway_is_shown_without_control_characters() {
         (
             GatewayError::TerminalRefused { reason: hostile() },
             "the terminal was refused: x\\u{1b}[2J\\ny",
+        ),
+        (
+            GatewayError::UnsafePath {
+                path: SandboxPath::parse(&format!("/sandbox/{}", hostile())).unwrap(),
+            },
+            "refused to write /sandbox/x\\u{1b}[2J\\ny: a directory on its path below /sandbox is a symlink, or the target is a directory",
         ),
         (
             GatewayError::Protocol { message: hostile() },

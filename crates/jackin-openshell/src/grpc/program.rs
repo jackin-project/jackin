@@ -21,9 +21,11 @@ pub(crate) const OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 const SHELL: &str = "/bin/sh";
 const MARKER_SCRIPT: &str = "marker=$1; shift; \"$@\"; code=$?; if [ \"$code\" -eq 0 ]; then touch -- \"$marker\" || exit 1; fi; exit \"$code\"";
 const NAME_MAX: usize = 255;
-const WRITE_SCRIPT: &str = "umask 077; target=$1; mode=$2; tmp=$3; trap 'rm -f -- \"$tmp\"' EXIT HUP INT TERM; mkdir -p -- \"$(dirname -- \"$target\")\" || exit 1; cat > \"$tmp\" || exit 1; chmod \"$mode\" \"$tmp\" || exit 1; mv -f -- \"$tmp\" \"$target\" || exit 1";
+const WRITE_SCRIPT: &str = "umask 077; anchor=$1; dir=$2; name=$3; mode=$4; tmp=$5; trap 'rm -f -- \"./$tmp\"' EXIT HUP INT TERM; cd -P -- \"$anchor\" || exit 1; here=$(pwd -P) || exit 1; set -f; IFS=/; set -- $dir; unset IFS; for part; do [ -L \"./$part\" ] && exit 73; [ -d \"./$part\" ] || mkdir -- \"./$part\" || [ -d \"./$part\" ] || exit 1; cd -P -- \"./$part\" || exit 1; here=$here/$part; [ \"$(pwd -P)\" = \"$here\" ] || exit 73; done; [ -d \"./$name\" ] && exit 73; cat > \"./$tmp\" || exit 1; chmod \"$mode\" \"./$tmp\" || exit 1; mv -f -- \"./$tmp\" \"./$name\" || exit 1";
 const READ_SCRIPT: &str = "[ -f \"$1\" ] || exit 66; exec cat -- \"$1\"";
 const MISSING_FILE: i32 = 66;
+const UNSAFE_PATH: i32 = 73;
+const WRITE_ANCHOR: &str = "/sandbox";
 
 pub(super) fn exec_start(
     scope: openshell_sdk::raw::proto::WorkspaceSelector,
@@ -78,20 +80,27 @@ fn command(run: &ProgramRun) -> Vec<String> {
     argv
 }
 
-fn temp_path(target: &SandboxPath) -> String {
+fn temp_name(base: &str) -> String {
     let token = format!("{:016x}", RandomState::new().hash_one(0_u8));
-    let (dir, base) = target
-        .as_str()
-        .rsplit_once('/')
-        .unwrap_or(("", target.as_str()));
     let suffix = format!(".jackin-{token}");
     let beside = format!(".{base}{suffix}");
-    let name = if beside.len() <= NAME_MAX {
+    if beside.len() <= NAME_MAX {
         beside
     } else {
         suffix
-    };
-    format!("{dir}/{name}")
+    }
+}
+
+fn write_split(target: &SandboxPath) -> Result<(&str, &str), GatewayError> {
+    let below = target
+        .as_str()
+        .strip_prefix(WRITE_ANCHOR)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .ok_or_else(|| GatewayError::InvalidArgument {
+            field: "path".to_owned(),
+            message: format!("{} is not below {WRITE_ANCHOR}", target.as_str()),
+        })?;
+    Ok(below.rsplit_once('/').unwrap_or(("", below)))
 }
 
 fn append(
@@ -185,14 +194,17 @@ impl Inner {
         sandbox: &SandboxName,
         file: &SandboxFile,
     ) -> Result<(), GatewayError> {
+        let (dir, name) = write_split(&file.path)?;
         let argv = [
             SHELL,
             "-c",
             WRITE_SCRIPT,
             "jackin-write",
-            file.path.as_str(),
+            WRITE_ANCHOR,
+            dir,
+            name,
             &format!("{:o}", file.mode.0),
-            &temp_path(&file.path),
+            &temp_name(name),
         ]
         .map(str::to_owned)
         .to_vec();
@@ -208,15 +220,15 @@ impl Inner {
                 &CancellationToken::new(),
             )
             .await?;
-        if outcome.exit_code == 0 {
-            Ok(())
-        } else {
-            Err(protocol(format!(
-                "writing {} failed with exit code {}: {}",
-                file.path.as_str(),
-                outcome.exit_code,
-                TerminalText::sanitize(&outcome.stderr).as_str()
-            )))
+        match outcome.exit_code {
+            0 => Ok(()),
+            UNSAFE_PATH => Err(GatewayError::UnsafePath {
+                path: file.path.clone(),
+            }),
+            code => Err(protocol(format!(
+                "writing {} failed with exit code {code}",
+                file.path.as_str()
+            ))),
         }
     }
 

@@ -435,6 +435,9 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
         GatewayError::TerminalRefused {
             reason: String::new(),
         },
+        GatewayError::UnsafePath {
+            path: SandboxPath::parse("/sandbox/a").unwrap(),
+        },
         GatewayError::Protocol {
             message: String::new(),
         },
@@ -461,9 +464,10 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
             | GatewayError::DownloadTooLarge { .. }
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
+            | GatewayError::UnsafePath { .. }
             | GatewayError::Protocol { .. } => false,
         };
         assert_eq!(error.is_retryable(), expected, "{}", kind(error));
     }
-    assert_eq!(errors.len(), 21);
+    assert_eq!(errors.len(), 22);
 }
