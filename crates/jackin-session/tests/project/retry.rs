@@ -130,9 +130,14 @@ const PROGRAM_RUNS: usize = 13;
 #[tokio::test]
 async fn the_cuts_cover_every_sandbox_program_run_of_a_clean_launch() -> TestResult {
     guard(async {
-        let clean = Rig::new(base().await?).await?;
-        ready(clean.launch(1).await?)?;
-        let handle = clean.handle(1).await?;
+        let rig = Rig::new(base().await?).await?;
+        rig.world.gateway.inject(Fault::FailAfter {
+            op: GatewayOp::Program,
+            calls: u32::try_from(PROGRAM_RUNS)?,
+            error: injected(),
+        });
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
         let (mkdir, find, rm) = (
             path("/usr/bin/mkdir")?,
             path("/usr/bin/find")?,
@@ -150,7 +155,7 @@ async fn the_cuts_cover_every_sandbox_program_run_of_a_clean_launch() -> TestRes
             .map(|program| handle.runs(program).len())
             .sum();
         assert_eq!(total, PROGRAM_RUNS);
-        arrived(clean.repo.root().as_path(), &handle.root(), &["?? u.txt"])
+        arrived(rig.repo.root().as_path(), &handle.root(), &["?? u.txt"])
     })
     .await
 }

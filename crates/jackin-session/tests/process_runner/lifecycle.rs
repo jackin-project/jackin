@@ -161,3 +161,66 @@ async fn a_clean_exit_kills_a_descendant_that_closed_its_pipes() -> TestResult {
     })
     .await
 }
+
+const GROUP_BODY: &str =
+    "d=$1\nfor n in 1 2 3 4 5 6 7 8; do ( while :; do sleep 0.05; done ) >/dev/null 2>&1 & done\n";
+
+const GROUP_ID: &str =
+    "ps -o pgid= -p $$ | tr -d ' ' > \"$d/pgid.tmp\"\nmv \"$d/pgid.tmp\" \"$d/pgid\"\n";
+
+fn group_is_empty(scratch: &Scratch) -> Result<bool, Box<dyn std::error::Error>> {
+    let raw: i32 = std::fs::read_to_string(scratch.root().join("pgid"))?
+        .trim()
+        .parse()?;
+    let group = rustix::process::Pid::from_raw(raw).ok_or("the group id is not a pid")?;
+    Ok(rustix::process::test_kill_process_group(group).is_err())
+}
+
+async fn exit_round(round: usize) -> TestResult {
+    let scratch = Scratch::new()?;
+    let body = format!("{GROUP_BODY}{GROUP_ID}exit 0\n");
+    let output = TokioProcessRunner
+        .run(&scratch.spec(&body, &[])?, None, &CancellationToken::new())
+        .await?;
+    assert_eq!(output.status, ProcessStatus::Exited(0));
+    assert!(group_is_empty(&scratch)?, "exit, round {round}");
+    Ok(())
+}
+
+async fn cancel_once_the_group_is_known(scratch: &Scratch, cancel: &CancellationToken) {
+    while !scratch.root().join("pgid").exists() {
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+    cancel.cancel();
+}
+
+async fn cancel_round(round: usize) -> TestResult {
+    let scratch = Scratch::new()?;
+    let body = format!("{GROUP_BODY}{GROUP_ID}sleep 30\n");
+    let spec = scratch.spec(&body, &[])?;
+    let cancel = CancellationToken::new();
+    let (result, ()) = tokio::join!(
+        TokioProcessRunner.run(&spec, None, &cancel),
+        cancel_once_the_group_is_known(&scratch, &cancel)
+    );
+    assert!(
+        matches!(result, Err(ProcessError::Cancelled { .. })),
+        "{result:?}"
+    );
+    assert!(group_is_empty(&scratch)?, "cancel, round {round}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_run_returns_only_after_no_process_of_its_group_is_left() -> TestResult {
+    guarded(async {
+        for round in 0..40 {
+            exit_round(round).await?;
+        }
+        for round in 0..40 {
+            cancel_round(round).await?;
+        }
+        Ok(())
+    })
+    .await
+}

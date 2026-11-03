@@ -14,7 +14,7 @@ use jackin_core::{
     Clock, EnvValue, FileSystem, LineSink, OutputLine, OutputStream, ProcessError, ProcessOutput,
     ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, SecretBytes, SecretOutput, Timestamp,
 };
-use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
+use rustix::process::{Pid, Signal, kill_process_group};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::time::{sleep, timeout};
@@ -166,7 +166,7 @@ async fn gone(group: Option<Pid>) {
         return;
     };
     let emptied = async {
-        while test_kill_process_group(group).is_ok() {
+        while kill_process_group(group, Signal::KILL).is_ok() {
             sleep(GROUP_POLL).await;
         }
     };
