@@ -78,7 +78,7 @@ git add -p && git commit -m "..."
 
 `mise exec -- hk check --all` runs every check step over all tracked files
 outside a commit. Bypass a hook for an emergency with
-`HK_SKIP_HOOK=pre-commit git commit`.
+`HK=0 git commit`.
 
 ## Branching
 
