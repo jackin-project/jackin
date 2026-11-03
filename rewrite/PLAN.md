@@ -519,7 +519,7 @@ This phase is the first end-to-end proof.
 - **Owner:** orchestrator runs `pstack:swarm` with three `verifier` lanes. **Depends:** P8.2.
 - **Steps:** Each lane starts from a fresh clone of the head SHA, a new workspace name, and no old sandboxes. Each lane runs G-E2E. With A1 source 3, the lanes run one after the other.
 - **Proof:** three PASS outputs in `evidence/P8.3-lanes.md`.
-- [ ] P8.3 done
+- [x] P8.3 done. Proof: evidence/P8.3-lanes.md, three verifier lanes from fresh clones of 8c1f604b0, each RESULT PASS=19 FAIL=0 SKIP=0 and exit 0 (181.1 s, 183.2 s, 182.6 s).
 
 ### Sentinel journey
 
