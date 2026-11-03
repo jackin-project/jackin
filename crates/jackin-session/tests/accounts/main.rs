@@ -4,5 +4,7 @@
 mod edit;
 mod lock;
 mod login;
+mod peers;
+mod race;
 mod support;
 mod sync;

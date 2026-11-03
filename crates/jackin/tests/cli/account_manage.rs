@@ -1,11 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
+
 use jackin::{AccountLs, ExitClass};
 use jackin_core::{
-    AccountName, Agent, Config, ConfigEdit, Provider, ProviderName, RoleName, WorkspaceName,
+    AccountName, Agent, Config, ConfigEdit, GatewayName, OpenShellWorkspace, Provider,
+    ProviderName, RoleName, WorkspaceName,
 };
-use jackin_testkit::{Rig, TestResult, World, guard};
+use jackin_session::{HostPorts, Session, SessionDeps};
+use jackin_testkit::{FakeGateway, Rig, TestResult, World, default_limits, guard};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{Failure, FixedConnector, GATEWAY_CONFIG, Harness, failed};
@@ -276,6 +280,142 @@ async fn rm_of_an_account_that_is_not_a_codex_login_never_connects_and_succeeds_
         let ran = harness.run(&["account", "rm", "four"]).await?;
         failed(&ran, ExitClass::Failure, &["fake-gateway", "unreachable"])?;
         assert_eq!(harness.config_bytes()?, before);
+        Ok(())
+    })
+    .await
+}
+
+const SECOND_GATEWAY: &str = "
+[gateways.second]
+openshell_workspace = \"default\"
+builder = \"jackin-builder\"
+platform = \"linux/arm64\"
+";
+
+fn second_gateway() -> Result<Arc<FakeGateway>, Failure> {
+    Ok(Arc::new(FakeGateway::new(
+        GatewayName::parse("second")?,
+        OpenShellWorkspace::parse("default")?,
+    )))
+}
+
+fn session_on(rig: &Rig, gateway: &Arc<FakeGateway>) -> Session {
+    Session::new(SessionDeps {
+        gateway: Arc::<FakeGateway>::clone(gateway),
+        engine: Arc::<jackin_testkit::FakeEngine>::clone(&rig.world.engine),
+        host: HostPorts {
+            clock: Arc::<jackin_testkit::FakeClock>::clone(&rig.world.clock),
+            fs: Arc::clone(&rig.world.fs),
+            runner: Arc::<jackin_testkit::TestRunner>::clone(&rig.world.runner),
+        },
+        cache_dir: rig.world.cache_dir().clone(),
+        limits: default_limits(),
+    })
+}
+
+struct Fleet {
+    harness: Harness,
+    second: Arc<FakeGateway>,
+    provider: ProviderName,
+}
+
+async fn on_two_gateways(rig: &Rig, second_holds_it: bool) -> Result<Fleet, Failure> {
+    let mut harness = Harness::new(&rig.world);
+    let second = second_gateway()?;
+    harness.connector = harness
+        .connector
+        .clone()
+        .with(Arc::<FakeGateway>::clone(&second));
+    harness.write_config(&format!("{}{SECOND_GATEWAY}", rig.config.render()))?;
+    let work = AccountName::parse("work")?;
+    let account = rig.config.account(&work).ok_or("no work account")?;
+    let cancel = CancellationToken::new();
+    rig.world.session.sync_account(account, &cancel).await?;
+    if second_holds_it {
+        session_on(rig, &second)
+            .sync_account(account, &cancel)
+            .await?;
+    }
+    let provider = ProviderName::for_account(&work, Agent::Codex);
+    assert!(rig.gateway().provider(&provider).is_some());
+    assert_eq!(second.provider(&provider).is_some(), second_holds_it);
+    Ok(Fleet {
+        harness,
+        second,
+        provider,
+    })
+}
+
+#[tokio::test]
+async fn rm_removes_the_provider_from_every_configured_gateway_and_then_the_account_is_unknown()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let fleet = on_two_gateways(&rig, true).await?;
+        fleet.harness.run(&["account", "rm", "work"]).await?.ok()?;
+        assert!(
+            rig.gateway().provider(&fleet.provider).is_none(),
+            "the home gateway still holds {}",
+            fleet.provider
+        );
+        assert!(
+            fleet.second.provider(&fleet.provider).is_none(),
+            "the second gateway still holds {}",
+            fleet.provider
+        );
+        assert!(
+            fleet
+                .harness
+                .stored()
+                .await?
+                .account(&AccountName::parse("work")?)
+                .is_none()
+        );
+
+        let again = fleet.harness.run(&["account", "rm", "work"]).await?;
+        failed(&again, ExitClass::Failure, &["work"])?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn rm_succeeds_when_a_gateway_never_held_the_provider() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let fleet = on_two_gateways(&rig, false).await?;
+        fleet.harness.run(&["account", "rm", "work"]).await?.ok()?;
+        assert!(rig.gateway().provider(&fleet.provider).is_none());
+        assert!(fleet.second.provider(&fleet.provider).is_none());
+        assert!(
+            fleet
+                .harness
+                .stored()
+                .await?
+                .account(&AccountName::parse("work")?)
+                .is_none()
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn rm_fails_closed_naming_a_gateway_it_cannot_reach_and_changes_nothing() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut fleet = on_two_gateways(&rig, true).await?;
+        fleet.harness.connector =
+            FixedConnector::empty().with(Arc::<FakeGateway>::clone(rig.gateway()));
+        let before = fleet.harness.config_bytes()?;
+        let ran = fleet.harness.run(&["account", "rm", "work"]).await?;
+        failed(&ran, ExitClass::Failure, &["second", "unreachable"])?;
+        assert_eq!(fleet.harness.config_bytes()?, before);
+        assert!(
+            rig.gateway().provider(&fleet.provider).is_some(),
+            "the reachable gateway lost its provider although the account stays"
+        );
+        assert!(fleet.second.provider(&fleet.provider).is_some());
         Ok(())
     })
     .await
