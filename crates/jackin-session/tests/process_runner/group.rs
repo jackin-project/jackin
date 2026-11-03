@@ -174,9 +174,9 @@ mod hostile_neighbours {
 
     fn bystander(link: &Path) -> Result<Held, Box<dyn Error>> {
         Ok(Held(
-            Command::new(link)
-                .arg0("sleep")
-                .arg("60")
+            Command::new("sh")
+                .args(["-c", "exec \"$0\" 60"])
+                .arg(link)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .process_group(0)
@@ -184,13 +184,16 @@ mod hostile_neighbours {
         ))
     }
 
-    fn named_like(comm: &[u8], neighbour: &Held) -> TestResult {
-        let stat = std::fs::read(format!("/proc/{}/stat", neighbour.0.id()))?;
-        if stat.windows(comm.len()).any(|window| window == comm) {
-            Ok(())
-        } else {
-            Err(format!("the neighbour is not named {comm:?}: {stat:?}").into())
+    async fn named_like(comm: &[u8], neighbour: &Held) -> TestResult {
+        let mut stat = Vec::new();
+        for _ in 0..500 {
+            stat = std::fs::read(format!("/proc/{}/stat", neighbour.0.id()))?;
+            if stat.windows(comm.len()).any(|window| window == comm) {
+                return Ok(());
+            }
+            sleep(Duration::from_millis(10)).await;
         }
+        Err(format!("the neighbour is not named {comm:?}: {stat:?}").into())
     }
 
     #[tokio::test]
@@ -207,12 +210,12 @@ mod hostile_neighbours {
                 let odd = scratch.root().join(raw);
                 std::os::unix::fs::symlink("/bin/sleep", &odd)?;
                 let non_utf8 = bystander(&odd)?;
-                named_like(b"(\xffx\xfe)", &non_utf8)?;
+                named_like(b"(\xffx\xfe)", &non_utf8).await?;
                 let fake = format!("x) S 1 {group} (");
                 let forged = scratch.root().join(&fake);
                 std::os::unix::fs::symlink("/bin/sleep", &forged)?;
                 let impostor = bystander(&forged)?;
-                named_like(fake.as_bytes(), &impostor)?;
+                named_like(fake.as_bytes(), &impostor).await?;
                 wait_for_beat(scratch.root()).await?;
                 std::fs::write(scratch.root().join("go"), b"")?;
                 Ok::<_, Box<dyn Error>>((non_utf8, impostor))

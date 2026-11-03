@@ -675,6 +675,7 @@ async fn buildx_find_reads_the_image_id_and_never_mistakes_a_failure_for_absence
         for (label, reply) in rows {
             let (engine, runner) = standalone(reply, sub)?;
             let result = engine.find(&tag).await;
+            let shown = result.as_ref().err().map(ToString::to_string);
             let call = only_call(&runner, sub)?;
             assert_eq!(
                 call.args.last(),
@@ -699,6 +700,10 @@ async fn buildx_find_reads_the_image_id_and_never_mistakes_a_failure_for_absence
                 ) => {}
                 ("cancelled with a fault", Err(EngineError::Cancelled { group })) => {
                     assert_eq!(group, Some(still_alive()), "{label}");
+                    assert_eq!(
+                        shown.as_deref(),
+                        Some("cancelled; processes of its group were still alive after 5s")
+                    );
                 }
                 (
                     "timeout with a fault",
