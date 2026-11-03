@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::{EnvFile, EnvName, EnvTable, PlainEnvValue, RoleManifest};
+use jackin_core::{EnvFile, EnvName, EnvTable, PlainEnvValue, RoleManifest, ScopedEnvName};
 use jackin_session::{EnvLayers, EnvQuestion, PlanError, Prompting, resolve_env};
 use jackin_testkit::RoleFixture;
 
@@ -12,7 +12,12 @@ use super::support::{Spec, TestResult, env_values, guard};
 fn table(pairs: &[(&str, &str)]) -> Result<EnvTable, Box<dyn std::error::Error>> {
     pairs
         .iter()
-        .map(|(name, value)| Ok((EnvName::parse(name)?, PlainEnvValue::parse(value)?)))
+        .map(|(name, value)| {
+            Ok((
+                ScopedEnvName::new(EnvName::parse(name)?)?,
+                PlainEnvValue::parse(value)?,
+            ))
+        })
         .collect()
 }
 

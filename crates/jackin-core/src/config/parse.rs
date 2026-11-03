@@ -7,7 +7,7 @@ use std::path::Path;
 
 use super::{
     Account, AllowedRoles, Config, ConfigError, CredentialSource, EnvTable, GatewayEntry,
-    PlainEnvValue, RoleEntry, RoleSet, RoleSource, Workspace,
+    PlainEnvValue, RoleEntry, RoleSet, RoleSource, ScopedEnvName, Workspace,
 };
 use crate::agent::Agent;
 use crate::docker::EngineConfig;
@@ -356,10 +356,13 @@ fn read_env(table: &mut Reader<'_, '_>) -> EnvTable {
                 continue;
             }
         };
-        if name.is_reserved() {
-            table.report_invalid(key, "reserved by jackin");
-            continue;
-        }
+        let name = match ScopedEnvName::new(name) {
+            Ok(name) => name,
+            Err(reserved) => {
+                table.report_invalid(key, &reserved.to_string());
+                continue;
+            }
+        };
         if let Some(text) = table.entry_parsed(key, value, PlainEnvValue::parse, |e| e.to_string())
         {
             out.insert(name, text);

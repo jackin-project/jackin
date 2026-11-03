@@ -16,6 +16,7 @@ fn file(path: &str, status: ChangeStatus, hunks: Vec<ChangeHunk>) -> ChangedFile
         path: t(path),
         status,
         hunks,
+        unread: None,
     }
 }
 
@@ -63,7 +64,13 @@ async fn changes_lists_tracked_edits_deletions_and_untracked_files_with_their_hu
         rig.launch(1).await?;
         let handle = rig.handle(1).await?;
         let name = handle.name();
-        assert_eq!(changes(&rig, &name).await?, ChangeSet { files: Vec::new() });
+        assert_eq!(
+            changes(&rig, &name).await?,
+            ChangeSet {
+                files: Vec::new(),
+                omitted: 0
+            }
+        );
 
         write(&handle, "README.md", b"readme\nsecond line\n")?;
         std::fs::remove_file(handle.root().join("project/src/main.rs"))?;

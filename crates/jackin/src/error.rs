@@ -105,7 +105,6 @@ impl From<AccountEditError> for CommandError {
         match error {
             AccountEditError::Config(error) => CommandError::Config(error),
             AccountEditError::Account(error) => CommandError::Account(error),
-            AccountEditError::GatewayRequired => CommandError::Session(error.to_string()),
         }
     }
 }

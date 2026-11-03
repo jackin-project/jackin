@@ -30,7 +30,7 @@ pub struct GithubOrigin {
 pub enum OriginError {
     #[error(transparent)]
     Process(#[from] ProcessError),
-    #[error("git config exited with code {exit_code}: {output}")]
+    #[error("git exited with code {exit_code}: {output}")]
     Git {
         exit_code: i32,
         output: TerminalText,
@@ -84,24 +84,49 @@ impl Session {
         cancel: &CancellationToken,
     ) -> Result<Option<GithubOrigin>, OriginError> {
         let git = host_git(&self.deps, project.path(), cancel);
-        let url = git
+        let configured = git
             .capture(
                 Pace::Quick,
-                words(&["config", "--get", "remote.origin.url"]),
+                words(&["config", "--get-all", "remote.origin.url"]),
                 Vec::new(),
             )
             .await?;
-        match url.status {
+        match configured.status {
             ProcessStatus::Exited(0) => {}
             ProcessStatus::Exited(1) => return Ok(None),
             status => {
                 return Err(OriginError::Git {
                     exit_code: exit_code(status),
-                    output: TerminalText::sanitize(&url.stderr),
+                    output: TerminalText::sanitize(&configured.stderr),
                 });
             }
         }
-        let text = String::from_utf8_lossy(&url.stdout);
+        if configured
+            .stdout
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .count()
+            > 1
+        {
+            return Ok(None);
+        }
+        let fetched = git
+            .capture(
+                Pace::Quick,
+                words(&["ls-remote", "--get-url", "origin"]),
+                Vec::new(),
+            )
+            .await?;
+        match fetched.status {
+            ProcessStatus::Exited(0) => {}
+            status => {
+                return Err(OriginError::Git {
+                    exit_code: exit_code(status),
+                    output: TerminalText::sanitize(&fetched.stderr),
+                });
+            }
+        }
+        let text = String::from_utf8_lossy(&fetched.stdout);
         let Some(repo) = GithubRepo::parse(text.trim()) else {
             return Ok(None);
         };

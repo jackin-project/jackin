@@ -1,9 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeSet;
+
 use jackin_core::{
     Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, ConfigStore,
-    CredentialSource, FileLock, Provider, ProviderName,
+    FileLock, Provider, ProviderName,
 };
 use jackin_openshell::{
     GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile, ProviderSpec,
@@ -50,82 +52,105 @@ pub enum AccountEditError {
     Config(#[from] ConfigError),
     #[error(transparent)]
     Account(#[from] AccountError),
-    #[error("the edit changes a gateway provider and needs a connected gateway")]
-    GatewayRequired,
 }
 
 #[derive(Clone, Debug)]
-pub struct AccountPlan {
+pub enum AccountPlan {
+    Offline(OfflinePlan),
+    Gateway(GatewayPlan),
+}
+
+#[derive(Clone, Debug)]
+pub struct OfflinePlan {
+    edits: Vec<ConfigEdit>,
+}
+
+#[derive(Clone, Debug)]
+pub struct GatewayPlan {
     forget: Vec<Account>,
     sync: Vec<Account>,
     edits: Vec<ConfigEdit>,
 }
 
-fn has_provider(account: &Account) -> bool {
-    matches!(account.credential(), CredentialSource::CodexLogin { .. })
+fn touched(edit: &ConfigEdit) -> Option<&AccountName> {
+    match edit {
+        ConfigEdit::AddAccount(account) => Some(account.name()),
+        ConfigEdit::RemoveAccount(name)
+        | ConfigEdit::RemoveAccountClearingBindings(name)
+        | ConfigEdit::SetAccountCredential { account: name, .. } => Some(name),
+        _ => None,
+    }
 }
 
 pub fn plan_account_edits(
     config: &Config,
     edits: Vec<ConfigEdit>,
 ) -> Result<AccountPlan, ConfigError> {
-    let mut trial = config.clone();
+    let mut after = config.clone();
+    for edit in &edits {
+        after.apply(edit.clone())?;
+    }
+    let names: BTreeSet<&AccountName> = edits.iter().filter_map(touched).collect();
     let mut forget = Vec::new();
     let mut sync = Vec::new();
-    for edit in &edits {
-        let before = match edit {
-            ConfigEdit::RemoveAccount(name)
-            | ConfigEdit::RemoveAccountClearingBindings(name)
-            | ConfigEdit::SetAccountCredential { account: name, .. } => {
-                trial.account(name).cloned()
-            }
-            _ => None,
-        };
-        trial.apply(edit.clone())?;
-        match edit {
-            ConfigEdit::AddAccount(account) if has_provider(account) => {
-                sync.push(account.clone());
-            }
-            ConfigEdit::RemoveAccount(_) | ConfigEdit::RemoveAccountClearingBindings(_) => {
-                forget.extend(before.filter(has_provider));
-            }
-            ConfigEdit::SetAccountCredential { account, .. } => {
-                let after = trial.account(account).cloned();
-                match (before.filter(has_provider), after.filter(has_provider)) {
-                    (_, Some(now)) => sync.push(now),
-                    (Some(old), None) => forget.push(old),
-                    (None, None) => {}
-                }
-            }
-            _ => {}
+    for name in names {
+        let before = config
+            .account(name)
+            .filter(|account| account.has_provider());
+        let now = after.account(name).filter(|account| account.has_provider());
+        match (before, now) {
+            (_, Some(account)) => sync.push(account.clone()),
+            (Some(account), None) => forget.push(account.clone()),
+            (None, None) => {}
         }
     }
-    Ok(AccountPlan {
-        forget,
-        sync,
-        edits,
+    Ok(if forget.is_empty() && sync.is_empty() {
+        AccountPlan::Offline(OfflinePlan { edits })
+    } else {
+        AccountPlan::Gateway(GatewayPlan {
+            forget,
+            sync,
+            edits,
+        })
     })
 }
 
 impl AccountPlan {
     pub fn needs_gateway(&self) -> bool {
-        !self.forget.is_empty() || !self.sync.is_empty()
+        matches!(self, AccountPlan::Gateway(_))
     }
 
     pub async fn apply(
         self,
-        session: Option<&Session>,
+        session: &Session,
         store: &ConfigStore,
         cancel: &CancellationToken,
     ) -> Result<Config, AccountEditError> {
-        if self.needs_gateway() {
-            let session = session.ok_or(AccountEditError::GatewayRequired)?;
-            for account in &self.forget {
-                session.forget_account(account, cancel).await?;
-            }
-            for account in &self.sync {
-                session.sync_account(account, cancel).await?;
-            }
+        match self {
+            AccountPlan::Offline(plan) => Ok(plan.apply(store).await?),
+            AccountPlan::Gateway(plan) => plan.apply(session, store, cancel).await,
+        }
+    }
+}
+
+impl OfflinePlan {
+    pub async fn apply(self, store: &ConfigStore) -> Result<Config, ConfigError> {
+        store.edit(self.edits).await
+    }
+}
+
+impl GatewayPlan {
+    pub async fn apply(
+        self,
+        session: &Session,
+        store: &ConfigStore,
+        cancel: &CancellationToken,
+    ) -> Result<Config, AccountEditError> {
+        for account in &self.forget {
+            session.forget_account(account, cancel).await?;
+        }
+        for account in &self.sync {
+            session.sync_account(account, cancel).await?;
         }
         Ok(store.edit(self.edits).await?)
     }
@@ -146,7 +171,7 @@ impl Session {
         account: &Account,
         cancel: &CancellationToken,
     ) -> Result<(), AccountError> {
-        if !matches!(account.credential(), CredentialSource::CodexLogin { .. }) {
+        if !account.has_provider() {
             return Ok(());
         }
         let _held = self.hold_account(account, cancel).await?;
@@ -187,18 +212,14 @@ impl Session {
             return Ok(AccountSync::HostOnly);
         }
         let spec = Agent::Codex.spec();
-        let CredentialSource::CodexLogin {
-            home,
-            chatgpt_account_id,
-        } = account.credential()
-        else {
+        let Some(stored) = account.chatgpt_login() else {
             return Err(AccountError::Unsupported {
                 account: account.name().clone(),
                 mode: CodexAuthMode::ApiKey,
             });
         };
-        let login = read_chatgpt_login(self.deps.host.fs.as_ref(), home).await?;
-        if login.account_id != *chatgpt_account_id {
+        let login = read_chatgpt_login(self.deps.host.fs.as_ref(), stored.home).await?;
+        if login.account_id != *stored.account_id {
             return Err(AccountError::AccountIdMismatch {
                 account: account.name().clone(),
             });

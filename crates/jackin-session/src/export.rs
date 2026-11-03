@@ -695,11 +695,11 @@ impl Session {
             .repository()
             .await
             .map_err(|error| changes_error(sandbox, error))?;
-        let files = remote
+        let (files, omitted) = remote
             .changes(&repository)
             .await
             .map_err(|error| changes_error(sandbox, error))?;
-        Ok(ChangeSet { files })
+        Ok(ChangeSet { files, omitted })
     }
 }
 

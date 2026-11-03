@@ -7,6 +7,7 @@ mod render;
 mod select;
 mod store;
 
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -59,6 +60,12 @@ pub struct Account {
     credential: CredentialSource,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChatgptLogin<'a> {
+    pub home: &'a HostPath,
+    pub account_id: &'a ChatgptAccountId,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CredentialSource {
     Env {
@@ -99,7 +106,44 @@ pub struct Workspace {
     pub role_env: BTreeMap<RoleName, EnvTable>,
 }
 
-pub type EnvTable = BTreeMap<EnvName, PlainEnvValue>;
+pub type EnvTable = BTreeMap<ScopedEnvName, PlainEnvValue>;
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ScopedEnvName(EnvName);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
+#[error("reserved by jackin")]
+pub struct ReservedEnvName;
+
+impl ScopedEnvName {
+    pub fn new(name: EnvName) -> Result<ScopedEnvName, ReservedEnvName> {
+        if name.is_reserved() {
+            Err(ReservedEnvName)
+        } else {
+            Ok(ScopedEnvName(name))
+        }
+    }
+
+    pub fn name(&self) -> &EnvName {
+        &self.0
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl Borrow<EnvName> for ScopedEnvName {
+    fn borrow(&self) -> &EnvName {
+        &self.0
+    }
+}
+
+impl fmt::Display for ScopedEnvName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PlainEnvValue(String);
@@ -108,14 +152,29 @@ pub struct PlainEnvValue(String);
 pub enum EnvValueError {
     #[error("a 1Password reference is not allowed; jackin keeps no secrets in env, use an account")]
     OnePassword,
+    #[error(
+        "a provider placeholder is not allowed; jackin keeps no secrets in env, use an account"
+    )]
+    Placeholder,
     #[error("expected text without a newline or a NUL")]
     Control,
 }
 
+const OP_SCHEME: &str = "op://";
+const PLACEHOLDER_SCHEME: &str = "openshell:resolve:";
+
+fn starts_with_scheme(text: &str, scheme: &str) -> bool {
+    text.get(..scheme.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(scheme))
+}
+
 impl PlainEnvValue {
     pub fn parse(text: &str) -> Result<PlainEnvValue, EnvValueError> {
-        if text.starts_with("op://") {
+        let head = text.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+        if starts_with_scheme(head, OP_SCHEME) {
             Err(EnvValueError::OnePassword)
+        } else if starts_with_scheme(head, PLACEHOLDER_SCHEME) {
+            Err(EnvValueError::Placeholder)
         } else if text.contains(['\n', '\0']) {
             Err(EnvValueError::Control)
         } else {
@@ -150,14 +209,6 @@ impl RoleSet {
     pub fn iter(&self) -> impl Iterator<Item = &RoleName> {
         self.0.iter()
     }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -181,6 +232,18 @@ pub enum EnvScope {
     Global,
     Workspace(WorkspaceName),
     WorkspaceRole(WorkspaceName, RoleName),
+}
+
+impl EnvScope {
+    pub(crate) fn key(&self, name: &EnvName) -> String {
+        match self {
+            EnvScope::Global => format!("env.{name}"),
+            EnvScope::Workspace(workspace) => format!("workspaces.{workspace}.env.{name}"),
+            EnvScope::WorkspaceRole(workspace, role) => {
+                format!("workspaces.{workspace}.role_env.{role}.{name}")
+            }
+        }
+    }
 }
 
 impl Workspace {
@@ -386,17 +449,6 @@ pub(crate) fn missing(kind: &'static str, name: impl fmt::Display) -> ConfigErro
     }
 }
 
-pub(crate) fn reserved_env_name(name: &EnvName) -> Result<(), ConfigError> {
-    if name.is_reserved() {
-        Err(ConfigError::InvalidValue {
-            key: format!("env.{name}"),
-            message: "reserved by jackin".to_owned(),
-        })
-    } else {
-        Ok(())
-    }
-}
-
 pub(crate) fn default_role_not_allowed(workspace: &WorkspaceName, role: &RoleName) -> ConfigError {
     ConfigError::InvalidValue {
         key: format!("workspaces.{workspace}.default_role"),
@@ -440,15 +492,33 @@ impl Account {
         &self.credential
     }
 
+    pub fn chatgpt_login(&self) -> Option<ChatgptLogin<'_>> {
+        match &self.credential {
+            CredentialSource::CodexLogin {
+                home,
+                chatgpt_account_id,
+            } => Some(ChatgptLogin {
+                home,
+                account_id: chatgpt_account_id,
+            }),
+            CredentialSource::Env { .. }
+            | CredentialSource::OnePassword { .. }
+            | CredentialSource::File { .. } => None,
+        }
+    }
+
+    pub fn has_provider(&self) -> bool {
+        self.chatgpt_login().is_some()
+    }
+
     pub fn codex_auth_mode(&self) -> Option<CodexAuthMode> {
         if self.provider != Provider::Codex {
             return None;
         }
-        Some(match self.credential {
-            CredentialSource::CodexLogin { .. } => CodexAuthMode::ChatgptLogin,
-            CredentialSource::Env { .. }
-            | CredentialSource::OnePassword { .. }
-            | CredentialSource::File { .. } => CodexAuthMode::ApiKey,
+        Some(if self.has_provider() {
+            CodexAuthMode::ChatgptLogin
+        } else {
+            CodexAuthMode::ApiKey
         })
     }
 }
@@ -596,9 +666,6 @@ impl Config {
         for (provider, account) in &self.defaults {
             self.check_binding(*provider, account)?;
         }
-        for name in self.env.keys() {
-            reserved_env_name(name)?;
-        }
         for (name, workspace) in &self.workspaces {
             self.check_workspace(name, workspace)?;
         }
@@ -646,14 +713,8 @@ impl Config {
                 self.require_configured_role(role)?;
             }
         }
-        for (role, table) in &workspace.role_env {
+        for role in workspace.role_env.keys() {
             self.require_configured_role(role)?;
-            for env_name in table.keys() {
-                reserved_env_name(env_name)?;
-            }
-        }
-        for env_name in workspace.env.keys() {
-            reserved_env_name(env_name)?;
         }
         Ok(())
     }

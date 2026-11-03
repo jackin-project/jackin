@@ -6,8 +6,8 @@ use std::collections::btree_map::Entry;
 use super::{
     Account, AllowedRoles, Config, ConfigEdit, ConfigError, ConfigReference, CredentialSource,
     EnvScope, EnvTable, GatewayEntry, KIND_ACCOUNT, KIND_GATEWAY, KIND_ROLE, KIND_WORKSPACE,
-    PlainEnvValue, RoleEntry, RoleSource, Workspace, default_role_not_allowed, duplicate, missing,
-    reserved_env_name,
+    PlainEnvValue, RoleEntry, RoleSource, ScopedEnvName, Workspace, default_role_not_allowed,
+    duplicate, missing,
 };
 use crate::agent::Agent;
 use crate::docker::EngineConfig;
@@ -343,7 +343,11 @@ impl Config {
         name: EnvName,
         value: Option<PlainEnvValue>,
     ) -> Result<(), ConfigError> {
-        reserved_env_name(&name)?;
+        let name =
+            ScopedEnvName::new(name.clone()).map_err(|reserved| ConfigError::InvalidValue {
+                key: scope.key(&name),
+                message: reserved.to_string(),
+            })?;
         match scope {
             EnvScope::Global => put(&mut self.env, name, value),
             EnvScope::Workspace(workspace) => {
@@ -363,7 +367,7 @@ impl Config {
     }
 }
 
-fn put(table: &mut EnvTable, name: EnvName, value: Option<PlainEnvValue>) {
+fn put(table: &mut EnvTable, name: ScopedEnvName, value: Option<PlainEnvValue>) {
     match value {
         Some(value) => {
             table.insert(name, value);

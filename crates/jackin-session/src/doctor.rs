@@ -10,9 +10,10 @@ use jackin_core::{
 use jackin_openshell::{Gateway, GatewayError, registered_gateways};
 use tokio_util::sync::CancellationToken;
 
-use crate::project::check_git;
+use crate::project::{HostGitError, check_git};
 
 const VERSION_TIMEOUT: Duration = Duration::from_secs(30);
+const GIT_UPGRADE_FIX: &str = "Upgrade git to the required version";
 
 #[derive(Clone, Debug)]
 pub struct DoctorInput<'a> {
@@ -95,6 +96,7 @@ pub struct Check {
     pub id: CheckId,
     pub status: CheckStatus,
     pub detail: String,
+    pub fix: &'static str,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -115,6 +117,7 @@ fn check(id: CheckId, status: CheckStatus, detail: impl Into<String>) -> Check {
         id,
         status,
         detail: detail.into(),
+        fix: id.fix(),
     }
 }
 
@@ -152,7 +155,13 @@ async fn binary(
 async fn git(runner: &dyn ProcessRunner, cancel: &CancellationToken) -> Check {
     match check_git(runner, cancel).await {
         Ok(version) => check(CheckId::GitBinary, CheckStatus::Pass, version.to_string()),
-        Err(error) => check(CheckId::GitBinary, CheckStatus::Fail, error.to_string()),
+        Err(error) => Check {
+            fix: match error {
+                HostGitError::TooOld { .. } => GIT_UPGRADE_FIX,
+                HostGitError::Unusable { .. } => CheckId::GitBinary.fix(),
+            },
+            ..check(CheckId::GitBinary, CheckStatus::Fail, error.to_string())
+        },
     }
 }
 

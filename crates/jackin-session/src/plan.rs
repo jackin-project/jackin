@@ -8,10 +8,10 @@ use std::time::Duration;
 
 use jackin_core::{
     Account, AccountName, AccountQuery, AccountSelection, Agent, ChatgptAccountId, CodexAuthMode,
-    Config, ConfigError, CredentialSource, DockerCapability, DockerError, DockerLabel, DockerLayer,
-    EnvFile, EnvFileError, EnvName, EnvTable, FileMode, GatewayName, LaunchId, NameSuffix,
-    PathError, PlannedLabels, ProjectRoot, Provider, ProviderName, RoleManifest, RoleName,
-    SandboxName, SandboxPath, SelectionError, Workspace, WorkspaceName, plain_list, sandbox_layout,
+    Config, ConfigError, DockerCapability, DockerError, DockerLabel, DockerLayer, EnvFile,
+    EnvFileError, EnvName, EnvTable, FileMode, GatewayName, LaunchId, NameSuffix, PathError,
+    PlannedLabels, ProjectRoot, Provider, ProviderName, RoleManifest, RoleName, SandboxName,
+    SandboxPath, SelectionError, Workspace, WorkspaceName, plain_list, sandbox_layout,
 };
 use jackin_image::{ImageError, ImageRequest, Rebuild};
 use jackin_openshell::{
@@ -253,7 +253,7 @@ pub fn resolve_env(
         values.extend(
             table
                 .iter()
-                .map(|(name, value)| (name.clone(), value.as_str().to_owned())),
+                .map(|(name, value)| (name.name().clone(), value.as_str().to_owned())),
         );
     }
     let mut questions = Vec::new();
@@ -367,20 +367,13 @@ pub fn plan_launch(
             account: selection.account.clone(),
             expected: Provider::Codex,
         })?;
-    let chatgpt_account = match (spec.profile_for(mode), account.credential()) {
-        (
-            Some(_),
-            CredentialSource::CodexLogin {
-                chatgpt_account_id, ..
-            },
-        ) => chatgpt_account_id.clone(),
-        _ => {
-            return Err(PlanError::Unsupported {
-                account: selection.account.clone(),
-                mode,
-            });
-        }
-    };
+    let chatgpt_account = account
+        .chatgpt_login()
+        .map(|login| login.account_id.clone())
+        .ok_or_else(|| PlanError::Unsupported {
+            account: selection.account.clone(),
+            mode,
+        })?;
     let docker = DockerCapability::resolve(
         role.manifest().docker.enabled,
         workspace.docker,

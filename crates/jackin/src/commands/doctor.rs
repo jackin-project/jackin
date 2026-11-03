@@ -87,7 +87,7 @@ pub(crate) async fn run(app: &mut App) -> Result<(), CommandError> {
     for check in &report.checks {
         let detail = check.detail.replace('\n', " ");
         let fix = match check.status {
-            CheckStatus::Warn | CheckStatus::Fail => format!("  fix: {}", check.id.fix()),
+            CheckStatus::Warn | CheckStatus::Fail => format!("  fix: {}", check.fix),
             CheckStatus::Pass | CheckStatus::Skip => String::new(),
         };
         app.io.line(&format!(

@@ -45,8 +45,10 @@ pub struct LoadedRole {
 
 #[derive(Debug, Error)]
 pub enum RoleError {
-    #[error("no role is selected and none is configured")]
+    #[error("no role is selected: set a default role or name one")]
     NoRole,
+    #[error("the workspace does not allow role {0}")]
+    NotAllowed(RoleName),
     #[error("unknown role {0}")]
     UnknownRole(RoleName),
     #[error("invalid role manifest at {path}")]
@@ -161,7 +163,9 @@ impl RoleCatalog {
         let name = if let Some(name) = role.or(workspace.default_role.as_ref()) {
             name.clone()
         } else {
-            let mut roles = config.roles();
+            let mut roles = config
+                .roles()
+                .filter(|(name, _)| workspace.roles.allows(name));
             match (roles.next(), roles.next()) {
                 (Some((only, _)), None) => only.clone(),
                 _ => return Err(RoleError::NoRole),
@@ -170,6 +174,9 @@ impl RoleCatalog {
         let entry = config
             .role(&name)
             .ok_or_else(|| RoleError::UnknownRole(name.clone()))?;
+        if !workspace.roles.allows(&name) {
+            return Err(RoleError::NotAllowed(name));
+        }
         let root = match &entry.source {
             RoleSource::Path(path) => path.clone(),
             RoleSource::Git { url, rev } => self.checkout(&name, url, rev.as_ref()).await?,

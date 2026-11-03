@@ -6,7 +6,7 @@ use jackin_core::{
     OpReference, Provider, ProviderName,
 };
 use jackin_openshell::{GatewayError, GatewayOp};
-use jackin_session::{AccountEditError, AccountError, plan_account_edits};
+use jackin_session::{AccountEditError, AccountError, AccountPlan, plan_account_edits};
 use jackin_testkit::{Fault, World};
 use tokio_util::sync::CancellationToken;
 
@@ -46,12 +46,8 @@ async fn run(
 ) -> Result<jackin_core::Config, AccountEditError> {
     let config = world.config.load().await?;
     let plan = plan_account_edits(&config, edits)?;
-    plan.apply(
-        Some(&world.session),
-        &world.config,
-        &CancellationToken::new(),
-    )
-    .await
+    plan.apply(&world.session, &world.config, &CancellationToken::new())
+        .await
 }
 
 #[tokio::test]
@@ -120,33 +116,13 @@ async fn accounts_without_a_chatgpt_login_never_need_the_gateway() -> TestResult
         ];
         let plan = plan_account_edits(&world.config.load().await?, edits)?;
         assert!(!plan.needs_gateway());
-        let config = plan
-            .apply(None, &world.config, &CancellationToken::new())
-            .await?;
+        let AccountPlan::Offline(offline) = plan else {
+            return Err("a plan without providers needs the gateway".into());
+        };
+        let config = offline.apply(&world.config).await?;
         assert_eq!(config.accounts().count(), 3);
         assert!(world.gateway.providers().is_empty());
         assert!(world.gateway.profiles().is_empty());
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn a_plan_that_changes_a_provider_refuses_to_run_without_a_gateway() -> TestResult {
-    guard(async {
-        let world = World::builder().build()?;
-        let home = Home::new(&login_json()).await?;
-        let work = codex_account(&home.path, super::support::ACCOUNT_ID)?;
-        let plan = plan_account_edits(
-            &world.config.load().await?,
-            vec![ConfigEdit::AddAccount(work)],
-        )?;
-        assert!(plan.needs_gateway());
-        let result = plan
-            .apply(None, &world.config, &CancellationToken::new())
-            .await;
-        assert!(matches!(result, Err(AccountEditError::GatewayRequired)));
-        assert_eq!(world.config.load().await?.accounts().count(), 0);
         Ok(())
     })
     .await

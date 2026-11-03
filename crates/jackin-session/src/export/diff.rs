@@ -33,11 +33,19 @@ pub struct ChangedFile {
     pub path: TerminalText,
     pub status: ChangeStatus,
     pub hunks: Vec<ChangeHunk>,
+    pub unread: Option<Unread>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unread {
+    TooLarge,
+    NotRegular,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChangeSet {
     pub files: Vec<ChangedFile>,
+    pub omitted: usize,
 }
 
 impl ChangedFile {
@@ -213,22 +221,16 @@ pub(super) fn parse_patch(output: &[u8]) -> Result<Vec<ChangedFile>, &'static st
             path: text(&draft.path),
             status: draft.status,
             hunks: draft.hunks,
+            unread: None,
         })
         .collect())
 }
 
-pub(super) fn added_file(path: &str, content: Option<&[u8]>) -> ChangedFile {
-    let lines: Option<Vec<ChangeLine>> = content
-        .filter(|bytes| !bytes.contains(&0))
-        .and_then(|bytes| std::str::from_utf8(bytes).ok())
-        .map(|body| {
-            body.strip_suffix('\n')
-                .unwrap_or(body)
-                .split('\n')
-                .filter(|_| !body.is_empty())
-                .map(|line| ChangeLine::Added(text(line)))
-                .collect()
-        });
+pub(super) fn added_file(path: &str, content: Result<&[u8], Unread>) -> ChangedFile {
+    let (lines, unread) = match content {
+        Ok(bytes) => (text_lines(bytes), None),
+        Err(unread) => (None, Some(unread)),
+    };
     let hunks = match lines {
         Some(lines) if !lines.is_empty() => vec![ChangeHunk {
             old_start: 0,
@@ -241,5 +243,21 @@ pub(super) fn added_file(path: &str, content: Option<&[u8]>) -> ChangedFile {
         path: text(path),
         status: ChangeStatus::Added,
         hunks,
+        unread,
     }
+}
+
+fn text_lines(bytes: &[u8]) -> Option<Vec<ChangeLine>> {
+    if bytes.contains(&0) {
+        return None;
+    }
+    let body = std::str::from_utf8(bytes).ok()?;
+    Some(
+        body.strip_suffix('\n')
+            .unwrap_or(body)
+            .split('\n')
+            .filter(|_| !body.is_empty())
+            .map(|line| ChangeLine::Added(text(line)))
+            .collect(),
+    )
 }

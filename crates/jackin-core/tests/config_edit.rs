@@ -777,7 +777,7 @@ fn env_rejected_rows() -> Fallible<Vec<RejectedRow>> {
                 name: var("JACKIN_LAUNCH_ID")?,
                 value: None,
             },
-            "invalid:env.JACKIN_LAUNCH_ID".to_owned(),
+            "invalid:workspaces.proj.env.JACKIN_LAUNCH_ID".to_owned(),
         ),
         (
             "a variable of a ghost workspace",

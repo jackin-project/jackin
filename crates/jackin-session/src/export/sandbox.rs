@@ -9,7 +9,7 @@ use jackin_core::{
     BranchName, CommitId, EnvName, SandboxName, SandboxPath, TerminalText, sandbox_layout,
 };
 
-use super::diff::{ChangedFile, added_file, parse_patch};
+use super::diff::{ChangedFile, Unread, added_file, parse_patch};
 use jackin_openshell::{Gateway, GatewayError, ProgramOutcome, ProgramRun, ProgramStdin};
 use tokio_util::sync::CancellationToken;
 
@@ -18,6 +18,8 @@ const NOT_A_REPOSITORY: &str = "not a git repository";
 const CLEANUP: Duration = Duration::from_secs(10);
 const UNTRACKED_FILES: usize = 500;
 const UNTRACKED_BYTES: usize = 256 * 1024;
+const NOT_READ: i32 = 66;
+static SH: SandboxPath = SandboxPath::from_static("/bin/sh");
 static MKDIR: SandboxPath = SandboxPath::from_static("/usr/bin/mkdir");
 static RM: SandboxPath = SandboxPath::from_static("/usr/bin/rm");
 
@@ -174,7 +176,10 @@ impl Remote<'_> {
     async fn git(&self, args: &[&str]) -> Result<ProgramOutcome, GatewayError> {
         self.exec(
             &sandbox_layout::GIT,
-            args.iter().map(|arg| (*arg).to_owned()).collect(),
+            std::iter::once("--no-optional-locks")
+                .chain(args.iter().copied())
+                .map(str::to_owned)
+                .collect(),
         )
         .await
     }
@@ -270,18 +275,17 @@ impl Remote<'_> {
     }
 
     pub(super) async fn uncommitted(&self, repository: &Repository) -> Result<usize, RemoteError> {
-        let stashed = self.require(&["stash", "list"]).await?;
-        let mut count = lines(&stashed);
+        let stash = self
+            .git(&["rev-parse", "--verify", "--quiet", "refs/stash"])
+            .await?;
+        let mut count = match stash.exit_code {
+            0 => lines(&self.require(&["stash", "list"]).await?).max(1),
+            1 => 0,
+            _ => return Err(failure(&stash)),
+        };
         for path in &repository.checkouts {
             let status = self
-                .require(&[
-                    "-C",
-                    path,
-                    "--no-optional-locks",
-                    "status",
-                    "--porcelain",
-                    "--untracked-files=all",
-                ])
+                .require(&["-C", path, "status", "--porcelain", "--untracked-files=all"])
                 .await?;
             count += lines(&status);
         }
@@ -291,7 +295,7 @@ impl Remote<'_> {
     pub(super) async fn changes(
         &self,
         repository: &Repository,
-    ) -> Result<Vec<ChangedFile>, RemoteError> {
+    ) -> Result<(Vec<ChangedFile>, usize), RemoteError> {
         let root = repository.checkouts.first().ok_or(RemoteError::Malformed(
             "git worktree list printed no checkout",
         ))?;
@@ -329,31 +333,46 @@ impl Remote<'_> {
                 "-z",
             ])
             .await?;
-        let names: Vec<String> = listed
+        let mut names = listed
             .split(|byte| *byte == 0)
             .filter(|name| !name.is_empty())
-            .take(UNTRACKED_FILES)
-            .map(|name| String::from_utf8_lossy(name).into_owned())
-            .collect();
-        let paths: Vec<Option<SandboxPath>> = names
-            .iter()
-            .map(|name| sandbox_layout::PROJECT.join(name).ok())
-            .collect();
-        let wanted: Vec<SandboxPath> = paths.iter().flatten().cloned().collect();
-        let mut contents = self
-            .gateway
-            .read_files(self.name, &wanted)
-            .await?
-            .into_iter();
-        for (name, path) in names.iter().zip(&paths) {
-            let content = path
-                .as_ref()
-                .and_then(|_| contents.next())
-                .flatten()
-                .filter(|bytes| bytes.len() <= UNTRACKED_BYTES);
-            files.push(added_file(name, content.as_deref()));
+            .map(|name| String::from_utf8_lossy(name).into_owned());
+        for name in names.by_ref().take(UNTRACKED_FILES) {
+            let content = self.read_untracked(root, &name).await?;
+            files.push(added_file(
+                &name,
+                content.as_deref().map_err(|unread| *unread),
+            ));
         }
-        Ok(files)
+        Ok((files, names.count()))
+    }
+
+    async fn read_untracked(
+        &self,
+        root: &str,
+        name: &str,
+    ) -> Result<Result<Vec<u8>, Unread>, RemoteError> {
+        let script = format!(
+            "[ -f \"$1\" ] && [ ! -L \"$1\" ] || exit {NOT_READ}; head -c {} -- \"$1\" 2>/dev/null || exit {NOT_READ}",
+            UNTRACKED_BYTES + 1
+        );
+        let outcome = self
+            .exec(
+                &SH,
+                vec![
+                    "-c".to_owned(),
+                    script,
+                    "jackin-read".to_owned(),
+                    format!("{root}/{name}"),
+                ],
+            )
+            .await?;
+        match outcome.exit_code {
+            0 if outcome.stdout.len() > UNTRACKED_BYTES => Ok(Err(Unread::TooLarge)),
+            0 => Ok(Ok(outcome.stdout)),
+            NOT_READ => Ok(Err(Unread::NotRegular)),
+            _ => Err(failure(&outcome)),
+        }
     }
 
     pub(super) async fn discard(&self, target: &SandboxPath) {

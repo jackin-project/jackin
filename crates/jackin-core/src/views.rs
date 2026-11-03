@@ -23,7 +23,7 @@ pub struct SandboxSummary {
     pub name: SandboxName,
     pub labels: SandboxLabels,
     pub phase: Phase,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<Timestamp>,
 }
 
