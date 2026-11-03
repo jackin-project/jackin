@@ -337,6 +337,8 @@ fn key_is_the_documented_sha256_encoding_including_the_embedded_digests() -> Tes
     let construct = format!("sha256:{}", "3".repeat(64));
     let dirty = Sha256::of(b"dirty").to_string();
     let second_args = planned_build_args(&second_request()?)?;
+    assert_eq!(second_args.len(), 14, "derived build args with the client");
+    assert!(second_args.contains(&"--build-arg=DOCKER_LAYER=client".to_owned()));
     let second = Expect {
         role: "Agent-Smith",
         revision: ("dirty", &"2".repeat(40), &dirty),

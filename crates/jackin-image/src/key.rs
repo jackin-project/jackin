@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Agent, DockerLayer, ImageId, InstallTarget, Platform, SandboxPath, Sha256};
+use jackin_core::{
+    Agent, DOCKER_CLIENT, DockerLayer, DockerPart, ImageId, InstallTarget, Platform, SandboxPath,
+    Sha256,
+};
 
 use crate::assets::{DERIVED_DOCKERFILE, JACKIN_START, SCAN};
 use crate::error::ImageError;
@@ -48,7 +51,38 @@ fn build_arg(name: &str, value: &str) -> String {
     format!("--build-arg={name}={value}")
 }
 
-pub(crate) fn derived_arguments(agent: Agent) -> Result<Vec<String>, ImageError> {
+fn docker_checksum(part: &DockerPart, platform: Platform) -> Result<&'static str, ImageError> {
+    part.target(platform)
+        .map(|target| target.sha256)
+        .ok_or(ImageError::MissingInstallTarget { platform })
+}
+
+fn docker_arguments(args: &mut Vec<String>) -> Result<(), ImageError> {
+    args.push(build_arg("DOCKER_LAYER", "client"));
+    let parts = [
+        ("CLI", &DOCKER_CLIENT.cli),
+        ("BUILDX", &DOCKER_CLIENT.buildx),
+        ("COMPOSE", &DOCKER_CLIENT.compose),
+    ];
+    for (name, part) in parts {
+        args.push(build_arg(&format!("DOCKER_{name}_VERSION"), part.version));
+    }
+    for (name, part) in parts {
+        for platform in PLATFORMS {
+            let arg = format!(
+                "DOCKER_{name}_SHA256_{}",
+                platform.target_arch().to_ascii_uppercase()
+            );
+            args.push(build_arg(&arg, docker_checksum(part, platform)?));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn derived_arguments(
+    agent: Agent,
+    docker: DockerLayer,
+) -> Result<Vec<String>, ImageError> {
     let spec = agent.spec();
     let mut args = vec![
         build_arg("CODEX_VERSION", spec.install.version),
@@ -62,12 +96,15 @@ pub(crate) fn derived_arguments(agent: Agent) -> Result<Vec<String>, ImageError>
         );
         args.push(build_arg(&name, target.sha256));
     }
+    if docker == DockerLayer::Client {
+        docker_arguments(&mut args)?;
+    }
     Ok(args)
 }
 
 impl ImageKey {
     pub fn derive(request: &ImageRequest, construct: &ImageId) -> Result<ImageKey, ImageError> {
-        let derived_args = derived_arguments(request.agent)?;
+        let derived_args = derived_arguments(request.agent, request.docker)?;
         Ok(ImageKey::compute(request, &derived_args, construct))
     }
 

@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use jackin_core::{
-    Agent, AttemptId, BuilderName, CommitId, DockerLayer, HookKind, HostPath, ImageId, Platform,
-    RepoPath, RoleName, SupervisorState, sandbox_layout,
+    Agent, AttemptId, BuilderName, CommitId, DOCKER_CLIENT, DockerLayer, HookKind, HostPath,
+    ImageId, Platform, RepoPath, RoleName, SupervisorState, sandbox_layout,
 };
 use jackin_image::{
     BuildStage, ContextSource, FinalBuilds, HookFiles, ImagePlan, ImageRequest, MaterializedFile,
@@ -29,7 +29,23 @@ const DERIVED_DOCKERFILE: &[u8] = include_bytes!(concat!(
 const JACKIN_START: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/jackin-start"));
 const SCAN: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/derived/scan"));
-const ARG_NAMES: [&str; 4] = [
+const ARG_NAMES: [&str; 14] = [
+    "CODEX_VERSION",
+    "CODEX_BIN_DIR",
+    "CODEX_SHA256_ARM64",
+    "CODEX_SHA256_AMD64",
+    "DOCKER_LAYER",
+    "DOCKER_CLI_VERSION",
+    "DOCKER_BUILDX_VERSION",
+    "DOCKER_COMPOSE_VERSION",
+    "DOCKER_CLI_SHA256_ARM64",
+    "DOCKER_CLI_SHA256_AMD64",
+    "DOCKER_BUILDX_SHA256_ARM64",
+    "DOCKER_BUILDX_SHA256_AMD64",
+    "DOCKER_COMPOSE_SHA256_ARM64",
+    "DOCKER_COMPOSE_SHA256_AMD64",
+];
+const CODEX_ARGS: [&str; 4] = [
     "CODEX_VERSION",
     "CODEX_BIN_DIR",
     "CODEX_SHA256_ARM64",
@@ -159,7 +175,12 @@ fn check_stages(request: &ImageRequest) -> TestResult {
         construct.tag
     ));
     assert_eq!(tokens(&derived_rest)?, sorted(derived), "derived {label}");
-    assert_eq!(build_args.len(), 4, "derived build args {label}");
+    let want_args = if request.docker == DockerLayer::Client {
+        14
+    } else {
+        4
+    };
+    assert_eq!(build_args.len(), want_args, "derived build args {label}");
     let all = [&construct.args, &built.role.args, &built.derived.args];
     let no_cache = all
         .iter()
@@ -366,8 +387,16 @@ fn is_sha256(text: &str) -> bool {
 }
 
 fn derived_args(platform: Platform) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
+    derived_args_with(platform, DockerLayer::Absent)
+}
+
+fn derived_args_with(
+    platform: Platform,
+    docker: DockerLayer,
+) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
     let mut request = base()?;
     request.platform = platform;
+    request.docker = docker;
     let plan = ImagePlan::new(&request)?;
     let built = plan.final_builds(&construct_id()?);
     assert!(build_arg_map(&plan.construct_build().args)?.is_empty());
@@ -382,7 +411,7 @@ fn derived_build_args_come_from_the_codex_row() -> TestResult {
     let amd = derived_args(Platform::LinuxAmd64)?;
     assert_eq!(arm, amd);
     let names: Vec<&str> = arm.keys().map(String::as_str).collect();
-    let mut want = ARG_NAMES.to_vec();
+    let mut want = CODEX_ARGS.to_vec();
     want.sort_unstable();
     assert_eq!(names, want);
     assert_eq!(arm["CODEX_VERSION"], spec.install.version);
@@ -410,6 +439,54 @@ fn derived_build_args_come_from_the_codex_row() -> TestResult {
             .lines()
             .any(|line| line.trim() == profile_line),
         "profile lacks {profile_line}"
+    );
+    Ok(())
+}
+
+fn derived_files(docker: DockerLayer) -> Result<Vec<MaterializedFile>, Box<dyn Error>> {
+    let mut request = base()?;
+    request.docker = docker;
+    let built = ImagePlan::new(&request)?.final_builds(&construct_id()?);
+    match built.derived.context {
+        ContextSource::Materialized(files) => Ok(files),
+        ContextSource::Listed { .. } => Err("derived context is listed".into()),
+    }
+}
+
+#[test]
+fn the_docker_layer_adds_only_build_args_from_the_core_row() -> TestResult {
+    for platform in [Platform::LinuxArm64, Platform::LinuxAmd64] {
+        let absent = derived_args_with(platform, DockerLayer::Absent)?;
+        assert!(
+            !absent.keys().any(|name| name.starts_with("DOCKER_")),
+            "{absent:?}"
+        );
+        let client = derived_args_with(platform, DockerLayer::Client)?;
+        let mut names: Vec<&str> = client.keys().map(String::as_str).collect();
+        names.sort_unstable();
+        let mut want = ARG_NAMES.to_vec();
+        want.sort_unstable();
+        assert_eq!(names, want);
+        assert_eq!(client["DOCKER_LAYER"], "client");
+        for (name, part) in [
+            ("CLI", &DOCKER_CLIENT.cli),
+            ("BUILDX", &DOCKER_CLIENT.buildx),
+            ("COMPOSE", &DOCKER_CLIENT.compose),
+        ] {
+            assert_eq!(client[&format!("DOCKER_{name}_VERSION")], part.version);
+            for target in part.targets {
+                let arg = format!(
+                    "DOCKER_{name}_SHA256_{}",
+                    target.platform.target_arch().to_ascii_uppercase()
+                );
+                assert_eq!(client[&arg], target.sha256, "{arg}");
+                assert!(is_sha256(&client[&arg]), "{arg}");
+            }
+        }
+    }
+    assert_eq!(
+        derived_files(DockerLayer::Absent)?,
+        derived_files(DockerLayer::Client)?
     );
     Ok(())
 }
@@ -700,6 +777,13 @@ fn words_after<'a>(words: &[&'a str], flag: &str) -> Vec<&'a str> {
         .collect()
 }
 
+fn fixed_pairs<'a>(words: &[&'a str]) -> Vec<&'a str> {
+    words_after(words, "--same-as")
+        .into_iter()
+        .filter(|word| !word.starts_with('"'))
+        .collect()
+}
+
 #[test]
 fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stage() -> TestResult {
     let spec = Agent::Codex.spec();
@@ -727,11 +811,16 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
         Some(&["/bin/sh", "/jackin-scan"][..]),
         "the scan RUN must run /bin/sh /jackin-scan: {body}"
     );
-    assert!(
-        words[..command]
-            .iter()
-            .all(|word| word.starts_with("--mount=") || *word == "RUN"),
-        "only mounts may precede the scan command: {body}"
+    let mounts = words
+        .iter()
+        .skip(1)
+        .take_while(|word| word.starts_with("--mount="))
+        .count();
+    assert_eq!(words.first(), Some(&"RUN"), "{body}");
+    assert_eq!(
+        words.get(mounts + 1),
+        Some(&"set"),
+        "only mounts may precede the argument setup: {body}"
     );
     assert_eq!(
         words.get(words.len() - 2..),
@@ -762,10 +851,14 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
         spec.code_mode_host.as_str().to_owned(),
     ];
     protected.sort();
-    let mut passed: Vec<String> = tail.iter().map(|word| (*word).to_owned()).collect();
+    let mut passed: Vec<String> = tail
+        .iter()
+        .filter(|word| **word != "$extra")
+        .map(|word| (*word).to_owned())
+        .collect();
     passed.sort();
     assert_eq!(passed, protected, "protected paths passed to the scan");
-    let mut same_as = words_after(&words, "--same-as");
+    let mut same_as = fixed_pairs(&words);
     same_as.sort_unstable();
     let mut wanted: Vec<String> = protected
         .iter()
@@ -1202,7 +1295,7 @@ fn the_scan_compares_the_five_protected_files_with_copies_the_role_cannot_write(
     ];
     protected.sort();
     let mut compared = Vec::new();
-    for pair in words_after(&words, "--same-as") {
+    for pair in fixed_pairs(&words) {
         let (path, expected) = pair.split_once('=').ok_or("a pair without =")?;
         let inside = expected
             .strip_prefix("/trusted")
@@ -1248,5 +1341,141 @@ fn the_scan_compares_the_five_protected_files_with_copies_the_role_cannot_write(
         "the layout copy: {:?}",
         assembled.lines
     );
+    Ok(())
+}
+
+fn docker_adds(lines: &[String]) -> BTreeMap<String, Vec<String>> {
+    archive_stage_adds(lines)
+}
+
+#[test]
+fn derived_dockerfile_installs_the_docker_client_from_pinned_checksummed_sources() -> TestResult {
+    let text = derived_text()?;
+    let lines = instructions(text);
+    let first_from = text.find("\nFROM ").ok_or("no FROM")?;
+    let layer = text
+        .find("ARG DOCKER_LAYER=absent")
+        .ok_or("no DOCKER_LAYER default")?;
+    assert!(
+        layer < first_from,
+        "DOCKER_LAYER default after the first FROM"
+    );
+    let adds = docker_adds(&lines);
+    for (stage, name, part, file) in [
+        (
+            "docker-cli-archive",
+            "CLI",
+            &DOCKER_CLIENT.cli,
+            "/docker.tgz",
+        ),
+        (
+            "docker-buildx",
+            "BUILDX",
+            &DOCKER_CLIENT.buildx,
+            "/docker-buildx",
+        ),
+        (
+            "docker-compose",
+            "COMPOSE",
+            &DOCKER_CLIENT.compose,
+            "/docker-compose",
+        ),
+    ] {
+        for target in part.targets {
+            let arch = target.platform.target_arch();
+            let url = part
+                .url_template
+                .replace("{version}", &format!("${{DOCKER_{name}_VERSION}}"))
+                .replace("{triple}", target.triple);
+            let want = format!(
+                "--checksum=sha256:${{DOCKER_{name}_SHA256_{}}} {url} {file}",
+                arch.to_ascii_uppercase()
+            );
+            assert_eq!(
+                adds.get(&format!("{stage}-{arch}")),
+                Some(&vec![want]),
+                "{stage}-{arch}"
+            );
+        }
+        let selector = format!("FROM {stage}-${{TARGETARCH}} AS {stage}");
+        assert!(lines.contains(&selector), "{selector}");
+        assert!(
+            !text.contains(part.version),
+            "literal version {}",
+            part.version
+        );
+        for target in part.targets {
+            assert!(!text.contains(target.sha256), "literal checksum");
+        }
+    }
+    let all = stages(&lines);
+    let build = stage_named(&all, "docker-client-build")?;
+    let extraction = build
+        .lines
+        .iter()
+        .flat_map(|line| line.split(" && "))
+        .map(str::trim)
+        .find(|command| command.split_whitespace().next() == Some("tar"))
+        .ok_or("no tar command")?;
+    let extracted: Vec<&str> = extraction
+        .split_whitespace()
+        .filter(|word| word.starts_with("docker/"))
+        .collect();
+    assert_eq!(extracted, DOCKER_CLIENT.cli_members);
+    for stage in all.iter().filter(|stage| stage.name.starts_with("docker-")) {
+        for line in &stage.lines {
+            for word in ["curl", "wget", "latest"] {
+                assert!(!line.contains(word), "{word} in {}: {line}", stage.name);
+            }
+        }
+    }
+    let words: BTreeSet<&str> = text
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+        .collect();
+    for engine in ["dockerd", "containerd", "runc", "ctr", "docker-proxy"] {
+        assert!(!words.contains(engine), "{engine} in the Dockerfile");
+    }
+    Ok(())
+}
+
+#[test]
+fn derived_dockerfile_copies_the_client_once_and_scans_it_against_the_client_stage() -> TestResult {
+    let all = stages(&instructions(derived_text()?));
+    let assembled = stage_named(&all, "assembled")?;
+    let copies: Vec<&String> = assembled
+        .lines
+        .iter()
+        .filter(|line| line.starts_with("COPY --from=docker-client "))
+        .collect();
+    assert_eq!(
+        copies,
+        ["COPY --from=docker-client --chown=root:root --chmod=0755 / /"]
+    );
+    let run = stage_named(&all, "scan")?
+        .lines
+        .iter()
+        .find(|line| line.starts_with("RUN "))
+        .ok_or("no scan RUN")?;
+    let mount = "--mount=type=bind,from=docker-client,source=/,target=/trusted-docker,ro";
+    assert!(run.split_whitespace().any(|word| word == mount), "{run}");
+    assert!(
+        !run.contains("from=assembled,source=/,target=/trusted-docker"),
+        "{run}"
+    );
+    let paths = [
+        "/usr/local/bin/docker",
+        "/usr/local/libexec/docker/cli-plugins/docker-buildx",
+        "/usr/local/libexec/docker/cli-plugins/docker-compose",
+    ];
+    let looped = run
+        .split("for path in ")
+        .nth(1)
+        .and_then(|rest| rest.split(';').next())
+        .ok_or("no loop over the client paths")?;
+    assert_eq!(looped.split_whitespace().collect::<Vec<_>>(), paths);
+    assert_eq!(run.matches("--allow-tool").count(), 1, "{run}");
+    assert!(run.contains(r#"--allow-tool "$path" --same-as "$path=/trusted-docker$path""#));
+    assert!(run.contains(r#"extra="$extra $path""#), "{run}");
+    assert!(run.contains(" $extra > /verdict"), "{run}");
     Ok(())
 }

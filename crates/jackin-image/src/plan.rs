@@ -79,7 +79,7 @@ impl ImagePlan {
         Ok(ImagePlan {
             request: request.clone(),
             construct: construct_build(request),
-            derived_args: derived_arguments(request.agent)?,
+            derived_args: derived_arguments(request.agent, request.docker)?,
         })
     }
 

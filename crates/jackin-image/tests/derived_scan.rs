@@ -35,6 +35,15 @@ const DIRECTORIES: [&str; 6] = [
     "usr/local/lib/jackin/hooks",
 ];
 const LEAVES: [&str; 5] = [START, CODEX, CODEX_HOST, SETUP, PREFLIGHT];
+const DOCKER: &str = "/usr/local/bin/docker";
+const BUILDX: &str = "/usr/local/libexec/docker/cli-plugins/docker-buildx";
+const COMPOSE: &str = "/usr/local/libexec/docker/cli-plugins/docker-compose";
+const CLIENT: [&str; 3] = [DOCKER, BUILDX, COMPOSE];
+const CLIENT_DIRECTORIES: [&str; 3] = [
+    "usr/local/libexec",
+    "usr/local/libexec/docker",
+    "usr/local/libexec/docker/cli-plugins",
+];
 const NO_GETCAP: &str = "exit 0\n";
 const PASSWD: &str = "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nsandbox:x:1000:1000::/sandbox:/bin/bash\nnobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n";
 const GROUP: &str = "root:x:0:\ndaemon:x:1:\nsandbox:x:1000:\nnogroup:x:65534:\n";
@@ -93,6 +102,7 @@ fn scan_script() -> Result<Vec<u8>, Box<dyn Error>> {
 
 struct Outcome {
     ok: bool,
+    code: Option<i32>,
     stdout: String,
     stderr: String,
 }
@@ -220,9 +230,41 @@ impl Fixture {
             .wait_with_output()?;
         Ok(Outcome {
             ok: output.status.success(),
+            code: output.status.code(),
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         })
+    }
+
+    fn client(&self) -> TestResult {
+        for directory in CLIENT_DIRECTORIES {
+            self.dir(directory, 0o755)?;
+        }
+        for leaf in CLIENT {
+            let bytes = format!("client {leaf}\n").into_bytes();
+            self.file(leaf, &bytes, 0o755)?;
+            fs::write(self.trusted(leaf), bytes)?;
+        }
+        Ok(())
+    }
+
+    fn client_arguments(&self) -> Vec<String> {
+        let mut args = vec!["--owner".to_owned(), format!("{}:{}", self.uid, self.gid)];
+        for leaf in LEAVES.iter().chain(&CLIENT) {
+            args.push("--same-as".to_owned());
+            args.push(format!("{leaf}={}", self.trusted(leaf).display()));
+        }
+        for leaf in CLIENT {
+            args.push("--allow-tool".to_owned());
+            args.push(leaf.to_owned());
+        }
+        args.push(self.top.join("image").display().to_string());
+        args.extend(LEAVES.iter().chain(&CLIENT).map(|leaf| (*leaf).to_owned()));
+        args
+    }
+
+    fn scan_client(&self) -> Result<Outcome, Box<dyn Error>> {
+        self.run(&self.client_arguments())
     }
 
     fn scan(&self) -> Result<Outcome, Box<dyn Error>> {
@@ -955,5 +997,93 @@ fn scan_refuses_block_and_character_device_nodes_anywhere_in_the_tree() -> TestR
         "{}",
         out.stderr
     );
+    Ok(())
+}
+
+fn sorted_lines(out: &Outcome) -> Vec<&str> {
+    let mut lines = out.lines();
+    lines.sort_unstable();
+    lines
+}
+
+fn forbidden(path: &str) -> String {
+    format!("forbidden tool in role image: {path}")
+}
+
+fn differs(path: &str) -> String {
+    format!("protected file differs from the trusted copy: {path}")
+}
+
+#[test]
+fn scan_exempts_only_the_exact_client_paths_that_hold_the_trusted_bytes() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.client()?;
+    let clean = fx.scan_client()?;
+    assert!(clean.ok, "{}", clean.stderr);
+    assert_eq!(clean.stdout, "jackin-image-scan 1\n");
+    assert_eq!(clean.stderr, "");
+
+    let fx = Fixture::new()?;
+    fx.client()?;
+    fx.file("/opt/x/docker", &fs::read(fx.trusted(DOCKER))?, 0o755)?;
+    let out = fx.scan_client()?;
+    assert!(!out.ok);
+    assert_eq!(out.lines(), [forbidden("/opt/x/docker")]);
+
+    for leaf in CLIENT {
+        let fx = Fixture::new()?;
+        fx.client()?;
+        fx.file(leaf, b"role bytes", 0o755)?;
+        let out = fx.scan_client()?;
+        assert!(!out.ok, "{leaf}");
+        let mut wanted = vec![differs(leaf)];
+        if leaf == DOCKER {
+            wanted.push(forbidden(leaf));
+        }
+        wanted.sort();
+        assert_eq!(sorted_lines(&out), wanted, "{leaf}");
+    }
+
+    let fx = Fixture::new()?;
+    fx.client()?;
+    fx.relink(DOCKER, true)?;
+    let out = fx.scan_client()?;
+    assert!(!out.ok);
+    let mut wanted = vec![
+        forbidden(DOCKER),
+        differs(DOCKER),
+        format!("protected path is not a real root-owned path: {DOCKER} (symlink)"),
+    ];
+    wanted.sort();
+    assert_eq!(sorted_lines(&out), wanted);
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_every_other_tool_and_a_missing_pair_in_the_client_form() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.client()?;
+    let mut args = fx.client_arguments();
+    args.insert(2, "--allow-tool".to_owned());
+    args.insert(3, "/usr/local/bin/other".to_owned());
+    let out = fx.run(&args)?;
+    assert_eq!(out.code, Some(64), "{}", out.stderr);
+
+    let fx = Fixture::new()?;
+    fx.client()?;
+    fx.file(DOCKER, b"x", 0o755)?;
+    let absent = fx.scan()?;
+    assert!(!absent.ok);
+    assert_eq!(absent.lines(), [forbidden(DOCKER)]);
+
+    for tool in ["containerd", "runc", "podman", "nerdctl"] {
+        let fx = Fixture::new()?;
+        fx.client()?;
+        let path = format!("/usr/local/bin/{tool}");
+        fx.file(&path, &fs::read(fx.trusted(DOCKER))?, 0o755)?;
+        let out = fx.scan_client()?;
+        assert!(!out.ok, "{tool}");
+        assert_eq!(out.lines(), [forbidden(&path)], "{tool}");
+    }
     Ok(())
 }

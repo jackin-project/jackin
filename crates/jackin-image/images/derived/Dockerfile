@@ -4,6 +4,16 @@ ARG CODEX_VERSION
 ARG CODEX_BIN_DIR
 ARG CODEX_SHA256_ARM64
 ARG CODEX_SHA256_AMD64
+ARG DOCKER_LAYER=absent
+ARG DOCKER_CLI_VERSION
+ARG DOCKER_BUILDX_VERSION
+ARG DOCKER_COMPOSE_VERSION
+ARG DOCKER_CLI_SHA256_ARM64
+ARG DOCKER_CLI_SHA256_AMD64
+ARG DOCKER_BUILDX_SHA256_ARM64
+ARG DOCKER_BUILDX_SHA256_AMD64
+ARG DOCKER_COMPOSE_SHA256_ARM64
+ARG DOCKER_COMPOSE_SHA256_AMD64
 
 FROM scratch AS codex-archive-arm64
 ARG CODEX_VERSION
@@ -33,6 +43,68 @@ RUN --mount=type=bind,from=codex-archive,source=/,target=/archive \
     && test "$(CODEX_HOME="$work/home" "${CODEX_BIN_DIR}/codex" --version)" = "codex-cli ${CODEX_VERSION}" \
     && rm -rf "$work"
 
+FROM scratch AS docker-cli-archive-arm64
+ARG DOCKER_CLI_VERSION
+ARG DOCKER_CLI_SHA256_ARM64
+ADD --checksum=sha256:${DOCKER_CLI_SHA256_ARM64} https://download.docker.com/linux/static/stable/aarch64/docker-${DOCKER_CLI_VERSION}.tgz /docker.tgz
+
+FROM scratch AS docker-cli-archive-amd64
+ARG DOCKER_CLI_VERSION
+ARG DOCKER_CLI_SHA256_AMD64
+ADD --checksum=sha256:${DOCKER_CLI_SHA256_AMD64} https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz /docker.tgz
+
+FROM docker-cli-archive-${TARGETARCH} AS docker-cli-archive
+
+FROM scratch AS docker-buildx-arm64
+ARG DOCKER_BUILDX_VERSION
+ARG DOCKER_BUILDX_SHA256_ARM64
+ADD --checksum=sha256:${DOCKER_BUILDX_SHA256_ARM64} https://github.com/docker/buildx/releases/download/v${DOCKER_BUILDX_VERSION}/buildx-v${DOCKER_BUILDX_VERSION}.linux-arm64 /docker-buildx
+
+FROM scratch AS docker-buildx-amd64
+ARG DOCKER_BUILDX_VERSION
+ARG DOCKER_BUILDX_SHA256_AMD64
+ADD --checksum=sha256:${DOCKER_BUILDX_SHA256_AMD64} https://github.com/docker/buildx/releases/download/v${DOCKER_BUILDX_VERSION}/buildx-v${DOCKER_BUILDX_VERSION}.linux-amd64 /docker-buildx
+
+FROM docker-buildx-${TARGETARCH} AS docker-buildx
+
+FROM scratch AS docker-compose-arm64
+ARG DOCKER_COMPOSE_VERSION
+ARG DOCKER_COMPOSE_SHA256_ARM64
+ADD --checksum=sha256:${DOCKER_COMPOSE_SHA256_ARM64} https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-linux-aarch64 /docker-compose
+
+FROM scratch AS docker-compose-amd64
+ARG DOCKER_COMPOSE_VERSION
+ARG DOCKER_COMPOSE_SHA256_AMD64
+ADD --checksum=sha256:${DOCKER_COMPOSE_SHA256_AMD64} https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64 /docker-compose
+
+FROM docker-compose-${TARGETARCH} AS docker-compose
+
+FROM construct AS docker-client-build
+ARG DOCKER_CLI_VERSION
+ARG DOCKER_BUILDX_VERSION
+ARG DOCKER_COMPOSE_VERSION
+
+USER root
+RUN --mount=type=bind,from=docker-cli-archive,source=/,target=/cli \
+    --mount=type=bind,from=docker-buildx,source=/,target=/buildx \
+    --mount=type=bind,from=docker-compose,source=/,target=/compose \
+    work="$(mktemp -d -p /root)" \
+    && tar -xzf /cli/docker.tgz --no-same-owner -C "$work" docker/docker \
+    && install -D -m 0755 -o root -g root "$work/docker/docker" /out/usr/local/bin/docker \
+    && install -D -m 0755 -o root -g root /buildx/docker-buildx /out/usr/local/libexec/docker/cli-plugins/docker-buildx \
+    && install -D -m 0755 -o root -g root /compose/docker-compose /out/usr/local/libexec/docker/cli-plugins/docker-compose \
+    && test "$(/out/usr/local/bin/docker --version | cut -d, -f1)" = "Docker version ${DOCKER_CLI_VERSION}" \
+    && test "$(/out/usr/local/libexec/docker/cli-plugins/docker-buildx version | cut -d' ' -f2)" = "v${DOCKER_BUILDX_VERSION}" \
+    && test "$(/out/usr/local/libexec/docker/cli-plugins/docker-compose version)" = "Docker Compose version v${DOCKER_COMPOSE_VERSION}" \
+    && rm -rf "$work"
+
+FROM scratch AS docker-client-client
+COPY --from=docker-client-build /out/ /
+
+FROM scratch AS docker-client-absent
+
+FROM docker-client-${DOCKER_LAYER} AS docker-client
+
 FROM construct AS trusted
 ARG CODEX_BIN_DIR
 
@@ -53,6 +125,7 @@ USER root
 COPY --from=layout --chown=root:root --chmod=0755 /layout/ /
 COPY --from=trusted --chown=root:root --chmod=0755 ${CODEX_BIN_DIR}/codex ${CODEX_BIN_DIR}/codex-code-mode-host ${CODEX_BIN_DIR}/
 COPY --from=codex --chown=root:root --chmod=u=rwX,go=rX /etc/codex/config.toml /etc/codex/config.toml
+COPY --from=docker-client --chown=root:root --chmod=0755 / /
 COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/bin/jackin-start /usr/local/bin/jackin-start
 COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/lib/jackin/hooks/setup /usr/local/lib/jackin/hooks/preflight /usr/local/lib/jackin/hooks/
 
@@ -63,18 +136,28 @@ USER root
 COPY scan /jackin-scan
 RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
     --mount=type=bind,from=trusted,source=/,target=/trusted,ro \
-    /bin/sh /jackin-scan --owner 0:0 \
+    --mount=type=bind,from=docker-client,source=/,target=/trusted-docker,ro \
+    set -- --owner 0:0 \
         --same-as /usr/local/bin/jackin-start=/trusted/usr/local/bin/jackin-start \
         --same-as /usr/local/lib/jackin/hooks/setup=/trusted/usr/local/lib/jackin/hooks/setup \
         --same-as /usr/local/lib/jackin/hooks/preflight=/trusted/usr/local/lib/jackin/hooks/preflight \
         --same-as ${CODEX_BIN_DIR}/codex=/trusted${CODEX_BIN_DIR}/codex \
         --same-as ${CODEX_BIN_DIR}/codex-code-mode-host=/trusted${CODEX_BIN_DIR}/codex-code-mode-host \
+    ; extra= \
+    ; if [ -e /trusted-docker/usr/local/bin/docker ]; then \
+        for path in /usr/local/bin/docker /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-compose; do \
+            set -- "$@" --allow-tool "$path" --same-as "$path=/trusted-docker$path"; \
+            extra="$extra $path"; \
+        done; \
+    fi \
+    ; /bin/sh /jackin-scan "$@" \
         /image \
         /usr/local/bin/jackin-start \
         /usr/local/lib/jackin/hooks/setup \
         /usr/local/lib/jackin/hooks/preflight \
         ${CODEX_BIN_DIR}/codex \
         ${CODEX_BIN_DIR}/codex-code-mode-host \
+        $extra \
     > /verdict
 
 FROM assembled

@@ -6,7 +6,7 @@ set -u
 tools="sudo su-exec gosu doas iptables ip6tables nft ufw docker podman nerdctl containerd runc"
 
 usage() {
-    echo "usage: scan --owner UID:GID [--same-as PATH=EXPECTED]... ROOT PROTECTED..." >&2
+    echo "usage: scan --owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... ROOT PROTECTED..." >&2
     exit 64
 }
 
@@ -177,8 +177,27 @@ check_accounts() {
     done
 }
 
+trusted_of() {
+    for pair in $pairs; do
+        if [ "${pair%%=*}" = "$1" ]; then
+            printf '%s' "${pair#*=}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+exempt() {
+    for allowed in $allow; do
+        [ "$1" = "$root$allowed" ] || continue
+        [ -f "$1" ] && [ ! -L "$1" ] && cmp -s "$1" "$(trusted_of "$allowed")" && return 0
+    done
+    return 1
+}
+
 owner=
 pairs=
+allow=
 while [ "$#" -gt 0 ]; do
     case $1 in
         --owner)
@@ -191,8 +210,23 @@ while [ "$#" -gt 0 ]; do
             pairs="$pairs $2"
             shift 2
             ;;
+        --allow-tool)
+            [ "$#" -ge 2 ] || usage
+            allow="$allow $2"
+            shift 2
+            ;;
         -*) usage ;;
         *) break ;;
+    esac
+done
+for allowed in $allow; do
+    case $allowed in
+        /*) ;;
+        *) usage ;;
+    esac
+    case " $pairs " in
+        *" $allowed="*) ;;
+        *) usage ;;
     esac
 done
 case $owner in
@@ -227,7 +261,20 @@ for tool in $tools; do
     set -- "$@" -name "$tool"
 done
 hits=$(find "$root" \( -type f \( -perm -100 -o -perm -010 -o -perm -001 \) -o -type l \) \( "$@" \)) || report "find failed while looking for forbidden tools"
-list "forbidden tool in role image: " "$hits"
+remaining=
+while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    exempt "$hit" && continue
+    if [ -z "$remaining" ]; then
+        remaining=$hit
+    else
+        remaining="$remaining
+$hit"
+    fi
+done <<EOF
+$hits
+EOF
+list "forbidden tool in role image: " "$remaining"
 
 nodes=$(find "$root" \( -type b -o -type c \)) || report "find failed while looking for device nodes"
 list "device node in role image: " "$nodes"
