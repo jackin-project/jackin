@@ -66,6 +66,56 @@ async fn gateway_rm_fails_closed_naming_a_gateway_it_cannot_reach_and_changes_no
 }
 
 #[tokio::test]
+async fn gateway_rm_offline_removes_an_unreachable_gateway_and_warns_on_stderr() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut fleet = on_two_gateways(&rig, true).await?;
+        fleet.harness.connector = FixedConnector::empty();
+
+        let ran = fleet
+            .harness
+            .run(&["gateway", "rm", "second", "--offline"])
+            .await?;
+
+        ran.ok()?;
+        assert!(ran.stdout.is_empty(), "stdout: {}", ran.stdout);
+        assert!(
+            ran.stderr.contains("warning: gateway second")
+                && ran.stderr.contains("OpenShell providers")
+                && ran.stderr.contains("until that gateway is reset"),
+            "stderr: {}",
+            ran.stderr
+        );
+        let stored = fleet.harness.stored().await?;
+        assert!(stored.gateway(&second()?).is_none());
+        assert!(stored.account(&AccountName::parse("work")?).is_some());
+        assert!(fleet.second.provider(&fleet.provider).is_some());
+        assert!(rig.gateway().provider(&fleet.provider).is_some());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_unreachable_gateway_error_names_the_offline_removal_as_the_way_out() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut fleet = on_two_gateways(&rig, true).await?;
+        fleet.harness.connector =
+            FixedConnector::empty().with(Arc::<FakeGateway>::clone(rig.gateway()));
+        let way_out = "jackin gateway rm second --offline";
+
+        let gateway_rm = fleet.harness.run(&["gateway", "rm", "second"]).await?;
+        let account_rm = fleet.harness.run(&["account", "rm", "work"]).await?;
+
+        failed(&gateway_rm, ExitClass::Failure, &["second", way_out])?;
+        failed(&account_rm, ExitClass::Failure, &["second", way_out])?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn gateway_rm_needs_no_gateway_but_the_one_it_removes() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
