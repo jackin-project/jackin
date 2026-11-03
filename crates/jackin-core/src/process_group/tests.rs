@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::os::unix::process::ExitStatusExt;
+use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -125,12 +126,14 @@ impl Cleanup {
     fn spawn(
         &mut self,
         script: &str,
+        name: Option<&Path>,
         group: Option<Pid>,
         stdout: Stdio,
     ) -> Result<(Pid, usize), Box<dyn std::error::Error>> {
         let mut command = Command::new("sh");
         command
             .args(["-c", script])
+            .args(name)
             .stdin(Stdio::null())
             .stdout(stdout)
             .process_group(group.map_or(0, Pid::as_raw_pid));
@@ -152,6 +155,22 @@ impl Drop for Cleanup {
             drop(child.start_kill());
         }
     }
+}
+
+async fn named_like(comm: &str, child: &Child) -> Result<(), Box<dyn std::error::Error>> {
+    let id = child.id().ok_or("the child has no pid")?;
+    let mut stat = Vec::new();
+    for _ in 0..500 {
+        stat = std::fs::read(format!("/proc/{id}/stat"))?;
+        if stat
+            .windows(comm.len())
+            .any(|window| window == comm.as_bytes())
+        {
+            return Ok(());
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+    Err(format!("the bystander is not named {comm:?}: {}", text(&stat)).into())
 }
 
 async fn emptied(group: Pid) -> Result<(), String> {
@@ -177,10 +196,15 @@ async fn emptied(group: Pid) -> Result<(), String> {
 async fn by_member_ends_every_live_member_of_a_group_it_does_not_leave_to_the_group_signal()
 -> Result<(), Box<dyn std::error::Error>> {
     let mut cleanup = Cleanup::new();
-    let (group, first) = cleanup.spawn("exec sleep 60", None, Stdio::null())?;
-    let (_, second) = cleanup.spawn("exec sleep 60", Some(group), Stdio::null())?;
-    let (_, third) = cleanup.spawn("exec sleep 60", Some(group), Stdio::null())?;
-    let (_, bystander) = cleanup.spawn("exec sleep 60", None, Stdio::null())?;
+    let (group, first) = cleanup.spawn("exec sleep 60", None, None, Stdio::null())?;
+    let (_, second) = cleanup.spawn("exec sleep 60", None, Some(group), Stdio::null())?;
+    let (_, third) = cleanup.spawn("exec sleep 60", None, Some(group), Stdio::null())?;
+    let links = tempfile::tempdir()?;
+    let forged = format!("x) S 1 {} (", group.as_raw_pid());
+    let link = links.path().join(&forged);
+    std::os::unix::fs::symlink("/bin/sleep", &link)?;
+    let (_, bystander) = cleanup.spawn("exec \"$0\" 60", Some(&link), None, Stdio::null())?;
+    named_like(&forged, &cleanup.children[bystander]).await?;
     assert_eq!(
         members(group).expect("listing").len(),
         3,
@@ -208,8 +232,9 @@ async fn by_member_ends_every_live_member_of_a_group_it_does_not_leave_to_the_gr
 async fn by_member_ends_the_orphans_of_a_group_whose_leader_is_gone()
 -> Result<(), Box<dyn std::error::Error>> {
     let mut cleanup = Cleanup::new();
-    let (group, leader) = cleanup.spawn("sleep 60 & sleep 60 & exit 0", None, Stdio::piped())?;
-    let (_, bystander) = cleanup.spawn("exec sleep 60", None, Stdio::null())?;
+    let (group, leader) =
+        cleanup.spawn("sleep 60 & sleep 60 & exit 0", None, None, Stdio::piped())?;
+    let (_, bystander) = cleanup.spawn("exec sleep 60", None, None, Stdio::null())?;
     timeout(LIMIT, cleanup.children[leader].wait())
         .await
         .expect("the leader exits")
