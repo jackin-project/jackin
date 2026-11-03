@@ -8,11 +8,11 @@ min_version = "2026.10.18"
 bun = "1.4.4"
 cargo-binstall = "1.26.2"
 cargo-deny = "0.20.2"
-"aqua:nextest-rs/nextest/cargo-nextest" = "0.9.150"
+"aqua:nextest-rs/nextest/cargo-nextest" = "0.9.151"
 "cargo:cargo-shear" = "1.14.0"
 gh = "2.103.3"
 "aqua:gitleaks/gitleaks" = "8.30.1"
-hk = "2.10.0"
+hk = "2.11.0"
 "github:mongodb/kingfisher" = { version = "2.16.0", matching_regex = "^kingfisher-(darwin|linux)-(arm64|x64)\\.tgz$|^kingfisher-windows-x64\\.zip$" }
 mr-boxington = { version = "1.29.1", workflow = "release.yml@refs/heads/main" }
 rust = { version = "1.99.1", profile = "minimal", components = [
@@ -29,7 +29,7 @@ uv = "0.13.6"
 node = "26.13.0"
 python = "3.15.2"
 "pipx:reuse" = { version = "6.3.0", extras = "charset-normalizer" }
-zizmor = "1.31.1"
+zizmor = "1.32.0"
 
 [settings]
 cargo.binstall = true

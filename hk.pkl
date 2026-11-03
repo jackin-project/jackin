@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-amends "package://github.com/jdx/hk/releases/download/v2.10.0/hk@2.10.0#/Config.pkl"
-import "package://github.com/jdx/hk/releases/download/v2.10.0/hk@2.10.0#/Builtins.pkl"
+amends "package://github.com/jdx/hk/releases/download/v2.11.0/hk@2.11.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.11.0/hk@2.11.0#/Builtins.pkl"
 
 jobs = 2
 fail_fast = false
