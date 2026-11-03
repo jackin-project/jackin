@@ -7,6 +7,7 @@ use std::io::{self, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, OpenOptionsExt, PermissionsExt, symlink};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, readlinkat, statat};
@@ -20,6 +21,8 @@ use crate::paths::{HostPath, RepoPath};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StdFileSystem {}
+
+static TEMP_WRITES: AtomicU64 = AtomicU64::new(0);
 
 async fn blocking<T, F>(path: &HostPath, work: F) -> Result<T, FsError>
 where
@@ -382,7 +385,11 @@ pub async fn write_atomic(
     };
     let mut temp_name = OsString::from(".");
     temp_name.push(name);
-    temp_name.push(".tmp");
+    temp_name.push(format!(
+        ".{}-{}.tmp",
+        std::process::id(),
+        TEMP_WRITES.fetch_add(1, Ordering::Relaxed)
+    ));
     if fs.stat(path).await? == Some(FileKind::Symlink) {
         return Err(FsError::SymlinkTarget(path.clone()));
     }

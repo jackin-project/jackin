@@ -74,7 +74,7 @@ impl HostUsage {
             }
             accounts.push(done.usage);
         }
-        cache.save(&self.deps).await?;
+        cache.save(&self.deps, cancel).await?;
         Ok(UsageReport {
             schema: SCHEMA,
             generated_at: now,

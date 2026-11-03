@@ -3,16 +3,25 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::time::Duration;
 
-use jackin_core::{CredentialSource, FileMode, HostPath, write_atomic};
+use jackin_core::{
+    CredentialSource, FileMode, FsError, HostPath, PollError, PollPlan, hold_lock, write_atomic,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tokio_util::sync::CancellationToken;
 
 use crate::deps::UsageDeps;
 use crate::model::{LimitWindow, UsageError};
 use crate::request::UsageAccount;
 
 const CACHE_FILE: &str = "usage.json";
+const LOCK_FILE: &str = "usage.json.lock";
+const LOCK_PLAN: PollPlan = PollPlan {
+    interval: Duration::from_millis(20),
+    timeout: Duration::from_secs(10),
+};
 const CACHE_MODE: FileMode = FileMode(0o600);
 const HEX: &[u8; 16] = b"0123456789abcdef";
 
@@ -39,21 +48,19 @@ struct CacheFile {
 pub(crate) struct Cache {
     path: HostPath,
     file: CacheFile,
+    edits: Vec<(String, Option<Entry>)>,
 }
 
 impl Cache {
     pub(crate) async fn load(deps: &UsageDeps) -> Result<Cache, UsageError> {
         let path = HostPath::resolve(Path::new(CACHE_FILE), &deps.state_dir)
             .map_err(|error| UsageError::Internal(error.to_string()))?;
-        let bytes = deps
-            .fs
-            .read(&path)
-            .await
-            .map_err(|error| store(&path, &error))?;
-        let file = bytes
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
-        Ok(Cache { path, file })
+        let file = read(deps, &path).await?;
+        Ok(Cache {
+            path,
+            file,
+            edits: Vec::new(),
+        })
     }
 
     pub(crate) fn entry(&self, account: &UsageAccount) -> Option<Entry> {
@@ -61,28 +68,62 @@ impl Cache {
     }
 
     pub(crate) fn put(&mut self, account: &UsageAccount, entry: Entry) {
-        let key = account.name.as_str().to_owned();
-        self.file.entries.insert(key, entry);
+        self.edits
+            .push((account.name.as_str().to_owned(), Some(entry)));
     }
 
     pub(crate) fn remove(&mut self, account: &UsageAccount) {
-        self.file.entries.remove(account.name.as_str());
+        self.edits.push((account.name.as_str().to_owned(), None));
     }
 
-    pub(crate) async fn save(&self, deps: &UsageDeps) -> Result<(), UsageError> {
-        let bytes = serde_json::to_vec(&self.file)
-            .map_err(|error| UsageError::Internal(error.to_string()))?;
+    pub(crate) async fn save(
+        &self,
+        deps: &UsageDeps,
+        cancel: &CancellationToken,
+    ) -> Result<(), UsageError> {
         deps.fs
             .create_private_dir_all(&deps.state_dir)
             .await
             .map_err(|error| store(&self.path, &error))?;
+        let lock_path = HostPath::resolve(Path::new(LOCK_FILE), &deps.state_dir)
+            .map_err(|error| UsageError::Internal(error.to_string()))?;
+        let _lock = hold_lock(&*deps.fs, &*deps.clock, &lock_path, LOCK_PLAN, cancel)
+            .await
+            .map_err(|error| match error {
+                PollError::Cancelled => UsageError::Cancelled,
+                PollError::Timeout { after } => UsageError::Store {
+                    path: lock_path.clone(),
+                    message: format!("timed out after {after:?} waiting for the cache lock"),
+                },
+                PollError::Probe(error) => store(&lock_path, &error),
+            })?;
+        let mut file = read(deps, &self.path).await?;
+        for (key, edit) in &self.edits {
+            match edit {
+                Some(entry) => file.entries.insert(key.clone(), entry.clone()),
+                None => file.entries.remove(key),
+            };
+        }
+        let bytes =
+            serde_json::to_vec(&file).map_err(|error| UsageError::Internal(error.to_string()))?;
         write_atomic(&*deps.fs, &self.path, &bytes, CACHE_MODE)
             .await
             .map_err(|error| store(&self.path, &error))
     }
 }
 
-fn store(path: &HostPath, error: &jackin_core::FsError) -> UsageError {
+async fn read(deps: &UsageDeps, path: &HostPath) -> Result<CacheFile, UsageError> {
+    let bytes = deps
+        .fs
+        .read(path)
+        .await
+        .map_err(|error| store(path, &error))?;
+    Ok(bytes
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default())
+}
+
+fn store(path: &HostPath, error: &FsError) -> UsageError {
     UsageError::Store {
         path: path.clone(),
         message: error.to_string(),
