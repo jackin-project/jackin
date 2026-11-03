@@ -283,3 +283,12 @@ rewrite/evidence/P0.5-docker-laneA.md:generic-api-key:114
 
 # Reason: P2.4 triage of a tree scan. Prose in a README, no value.
 crates/usage/jackin-usage-provider-kimi/README.md:generic-api-key:3
+
+# Reason: test fixture or placeholder, no credential, reviewed 2026-11-03
+# History fingerprints for gitleaks git: the jackin placeholder ID token, e2e world fixture tokens, and two fake test values later rewritten
+e6924803372013dd7a1245c9588b2ae94575c6ce:crates/jackin-core/src/agent.rs:jwt:165
+ddd296b40920dc19887107cca29f9204b4f8ae5e:crates/jackin-session/src/files.rs:jwt:7
+f7cfedabddc937daa7993cb93ed7c2fd9460e9cf:crates/xtask/tests/e2e/scenario/world.rs:jwt:9
+f7cfedabddc937daa7993cb93ed7c2fd9460e9cf:crates/xtask/tests/e2e/scenario/world.rs:jwt:11
+f7cfedabddc937daa7993cb93ed7c2fd9460e9cf:crates/xtask/tests/e2e/d_secrets.rs:generic-api-key:197
+57978a9933e18cf28214da75402fba80b6f948f3:crates/jackin-core/tests/config_schema.rs:generic-api-key:726
