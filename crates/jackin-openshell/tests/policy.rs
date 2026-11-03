@@ -1075,7 +1075,8 @@ fn endpoint_doc(host: &str, extra: &str) -> String {
 }
 
 #[test]
-fn role_check_gives_the_verdict_of_the_gateway_create_check_for_every_tcp_endpoint_host() {
+fn role_check_gives_the_policy_crate_verdict_of_the_gateway_create_check_for_every_tcp_endpoint_host()
+ {
     let tcp = "        protocol: tcp\n";
     let rows: Vec<(&str, String, bool)> = vec![
         ("198.18.0.2", endpoint_doc("198.18.0.2", tcp), true),
@@ -1103,6 +1104,17 @@ fn role_check_gives_the_verdict_of_the_gateway_create_check_for_every_tcp_endpoi
         ("0xc6120002", endpoint_doc("0xc6120002", tcp), false),
         ("198.18.2", endpoint_doc("198.18.2", tcp), false),
         ("example.com", endpoint_doc("example.com", tcp), false),
+        ("localhost", endpoint_doc("localhost", tcp), false),
+        (
+            "a 64 character label",
+            endpoint_doc(&format!("{}.example.com", "a".repeat(64)), tcp),
+            true,
+        ),
+        (
+            "a leading hyphen",
+            endpoint_doc("-a.example.com", tcp),
+            true,
+        ),
         (
             "198.18.0.2.nip.io",
             endpoint_doc("198.18.0.2.nip.io", tcp),

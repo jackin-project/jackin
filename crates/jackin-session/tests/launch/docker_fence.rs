@@ -226,7 +226,11 @@ async fn a_retry_with_another_ca_on_the_same_port_is_refused_and_changes_nothing
         assert_ne!(found_docker, wanted_docker);
         let shown = failed.error.to_string();
         for docker in [found_docker, wanted_docker] {
-            assert!(shown.contains(&docker.to_string()), "{docker}: {shown}");
+            let DockerLabel::Engine { ca, .. } = docker else {
+                return Err("a label without an engine".into());
+            };
+            assert_eq!(ca.to_string().len(), 16);
+            assert!(shown.contains(&ca.to_string()), "{ca}: {shown}");
         }
         assert_eq!(snapshot(&rig).await?, kept);
         assert_eq!(rig.gateway().sandboxes().len(), 1);

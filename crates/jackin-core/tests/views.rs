@@ -126,3 +126,27 @@ fn json_views_round_trip_and_keep_the_documented_keys() -> TestResult {
     assert_eq!(keys(&json)?, set(&["schema", "image", "id"]));
     Ok(())
 }
+
+#[test]
+fn the_docker_label_shows_as_off_or_an_engine_object_with_the_port_and_the_ca() -> TestResult {
+    let ca = jackin_core::CaFingerprint::parse("0123456789abcdef").ok_or("fingerprint")?;
+    let engine = jackin_core::DockerLabel::Engine {
+        port: std::num::NonZeroU16::new(2376).ok_or("port")?,
+        ca,
+    };
+    let image = ImageId::parse(&format!("sha256:{}", "ab".repeat(32)))?;
+    let json = |docker| -> Fallible<serde_json::Value> {
+        let mut view = summary(Phase::Ready)?;
+        view.labels = view.labels.planned.complete(&image, docker);
+        round_trip(&view)
+    };
+    assert_eq!(
+        json(jackin_core::DockerLabel::Off)?["labels"]["docker"],
+        "off"
+    );
+    assert_eq!(
+        json(engine)?["labels"]["docker"],
+        serde_json::json!({"engine": {"port": 2376, "ca": "0123456789abcdef"}})
+    );
+    Ok(())
+}
