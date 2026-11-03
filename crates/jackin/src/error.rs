@@ -126,7 +126,7 @@ impl CommandError {
             | CommandError::Purge(PurgeError::WorkNotExported { .. }) => ExitClass::Refused,
             CommandError::Cancelled(_)
             | CommandError::Usage(UsageError::Cancelled)
-            | CommandError::Image(ImageError::Cancelled)
+            | CommandError::Image(ImageError::Cancelled { .. })
             | CommandError::Export(ExportError::Cancelled { .. })
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. })) => {
                 ExitClass::Cancelled
