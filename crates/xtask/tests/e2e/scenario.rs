@@ -141,6 +141,9 @@ pub(crate) struct Knobs {
     pub self_signals: Vec<(String, i32)>,
     pub fail_delete_after: Option<(String, u32)>,
     pub stuck_provider: Option<String>,
+    pub create_env_unreadable: bool,
+    pub docker_label_off: bool,
+    pub create_env_extra: Option<(String, String)>,
 }
 
 #[derive(Clone, Debug)]

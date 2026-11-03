@@ -254,6 +254,30 @@ impl Gateway for ScenarioGateway {
         Ok(detail)
     }
 
+    async fn sandbox_environment(
+        &self,
+        name: &SandboxName,
+    ) -> Result<std::collections::BTreeMap<jackin_core::EnvName, String>, GatewayError> {
+        let knobs = self.shared.knobs().clone();
+        if knobs.create_env_unreadable {
+            return Err(GatewayError::Cancelled {
+                op: GatewayOp::Detail,
+            });
+        }
+        let model = self.model_of(name).ok_or_else(|| GatewayError::NotFound {
+            what: Missing::Sandbox(name.clone()),
+        })?;
+        let mut env = std::collections::BTreeMap::new();
+        let mut put = |key: &str, value: String| {
+            env.insert(jackin_core::EnvName::parse(key).expect("name"), value);
+        };
+        put("JACKIN_LAUNCH_ID", model.launch.clone());
+        if let Some((key, value)) = knobs.create_env_extra {
+            put(&key, value);
+        }
+        Ok(env)
+    }
+
     async fn set_power(
         &self,
         name: &SandboxName,

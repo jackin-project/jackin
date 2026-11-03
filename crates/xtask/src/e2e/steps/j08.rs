@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::SandboxPath;
+use std::collections::BTreeMap;
+
+use jackin_core::{EnvName, SandboxPath};
 use serde_json::Value;
 
 use crate::e2e::probe::FactsJ08;
@@ -15,6 +17,37 @@ const REFLECT: &str = "P=$CODEX_AUTH_ACCESS_TOKEN; test -n \"$P\" || exit 90; \
 exec /usr/local/bin/codex sandbox -- /bin/sh -c \
 \"curl -sS -i -m 25 'https://chatgpt.com/backend-api/e2e-reflect/'$P'?token='$P \
 -H 'X-E2E-Reflect: '$P -H 'Authorization: Bearer '$P\"";
+
+fn credential_name(name: &str) -> bool {
+    name.starts_with("CODEX_AUTH_")
+        || ["TOKEN", "KEY", "SECRET", "PASSWORD"]
+            .iter()
+            .any(|word| name.contains(word))
+}
+
+pub(crate) fn judge_create_env(
+    environment: &BTreeMap<EnvName, String>,
+    launch: &str,
+) -> Vec<String> {
+    let mut problems = Vec::new();
+    match environment
+        .iter()
+        .find(|(name, _)| name.as_str() == "JACKIN_LAUNCH_ID")
+    {
+        Some((_, value)) if value == launch => {}
+        Some(_) => problems
+            .push("JACKIN_LAUNCH_ID of the create request differs from the launch".to_owned()),
+        None => problems.push("the create request carries no JACKIN_LAUNCH_ID".to_owned()),
+    }
+    for (name, value) in environment {
+        if credential_name(name.as_str()) && !value.is_empty() && !value.starts_with(PLACEHOLDER) {
+            problems.push(format!(
+                "create-request variable {name} holds a real value (kind other)"
+            ));
+        }
+    }
+    problems
+}
 
 pub(crate) fn judge_kinds(facts: &FactsJ08) -> (Vec<String>, Option<String>) {
     let mut problems = Vec::new();
@@ -120,6 +153,7 @@ impl Run<'_> {
         let (kind_problems, skip) = judge_kinds(&facts);
         problems.extend(kind_problems);
         problems.extend(self.read_sandbox_files().await?);
+        problems.extend(self.create_environment(&sandbox).await);
         drop(self.inspect(&sandbox, "J08 inspect").await?);
         let record = self
             .openshell(
@@ -154,6 +188,25 @@ impl Run<'_> {
         }
     }
 
+    async fn create_environment(&mut self, sandbox: &jackin_core::SandboxName) -> Vec<String> {
+        let Some(launch) = self.w.l1.clone() else {
+            return vec!["no launch id".to_owned()];
+        };
+        match self.b.gateway.sandbox_environment(sandbox).await {
+            Ok(environment) => {
+                let joined: Vec<u8> = environment
+                    .values()
+                    .flat_map(|value| value.bytes().chain(std::iter::once(b'\n')))
+                    .collect();
+                self.scan("J08 create environment", &joined);
+                judge_create_env(&environment, launch.as_str())
+            }
+            Err(error) => vec![format!(
+                "the create-request environment is unreadable: {error}"
+            )],
+        }
+    }
+
     async fn reflection(&mut self, sandbox: &jackin_core::SandboxName) -> Vec<String> {
         let outcome = self
             .exec_with(
@@ -161,7 +214,7 @@ impl Run<'_> {
                 "J08 reflection",
                 "/bin/sh",
                 vec!["-c".to_owned(), REFLECT.to_owned()],
-                std::collections::BTreeMap::new(),
+                BTreeMap::new(),
             )
             .await;
         match outcome {

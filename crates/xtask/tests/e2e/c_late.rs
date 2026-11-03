@@ -164,6 +164,36 @@ async fn j08_credential_faults() {
                 Box::new(|s| s.exec_rule("codex sandbox", 127, "")),
             ),
             (
+                "the create request holds a real credential",
+                "create-request variable CODEX_AUTH_ACCESS_TOKEN holds a real value",
+                Box::new(|s| {
+                    s.knobs().create_env_extra = Some((
+                        "CODEX_AUTH_ACCESS_TOKEN".to_owned(),
+                        "plain-value-without-a-needle".to_owned(),
+                    ));
+                }),
+            ),
+            (
+                "a needle in the create request",
+                "needle found in J08 create environment",
+                Box::new(|s| {
+                    s.knobs().create_env_extra = Some(("NOTE".to_owned(), ACCESS.to_owned()));
+                }),
+            ),
+            (
+                "the launch id of the create request differs",
+                "JACKIN_LAUNCH_ID of the create request differs",
+                Box::new(|s| {
+                    s.knobs().create_env_extra =
+                        Some(("JACKIN_LAUNCH_ID".to_owned(), "another".to_owned()));
+                }),
+            ),
+            (
+                "the create request is unreadable",
+                "create-request environment is unreadable",
+                Box::new(|s| s.knobs().create_env_unreadable = true),
+            ),
+            (
                 "sandbox get is unreadable",
                 "sandbox get -o json is unreadable",
                 Box::new(|s| s.host_rule("sandbox get", None, 1, "no")),
@@ -171,6 +201,18 @@ async fn j08_credential_faults() {
         ],
     )
     .await;
+    let quiet = Scenario::new().await;
+    quiet.knobs().create_env_extra = Some((
+        "CODEX_AUTH_ACCESS_TOKEN".to_owned(),
+        "plain-value-without-a-needle".to_owned(),
+    ));
+    let ran = quiet.run().await;
+    assert!(
+        !ran.stdout.contains("plain-value-without-a-needle")
+            && !ran.stderr.contains("plain-value-without-a-needle"),
+        "J08 names a variable and never prints its value: {}",
+        ran.stdout
+    );
 }
 
 #[tokio::test]
@@ -425,6 +467,11 @@ async fn j15_docker_capability_faults() {
                 "the container is in the default engine",
                 "exists in the host default engine",
                 Box::new(|s| s.knobs().container_in_default_engine = true),
+            ),
+            (
+                "the docker label is not the engine port",
+                "expected the engine port 2376",
+                Box::new(|s| s.knobs().docker_label_off = true),
             ),
             (
                 "no warning text",

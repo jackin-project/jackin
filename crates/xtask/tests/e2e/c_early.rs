@@ -213,6 +213,18 @@ async fn j03_one_sandbox_per_launch_faults() {
             Box::new(|s| s.knobs().rename_on_retry = true),
         ),
         (
+            "the docker label is missing",
+            "label jackin.dev/docker is missing",
+            Box::new(|s| s.knobs().drop_labels.push("jackin.dev/docker".to_owned())),
+        ),
+        (
+            "the docker label is on for a sandbox without the capability",
+            "label jackin.dev/docker is",
+            Box::new(|s| {
+                s.knobs().set_labels = vec![("jackin.dev/docker".to_owned(), "2376".to_owned())];
+            }),
+        ),
+        (
             "a label is missing",
             "label jackin.dev/account is missing",
             Box::new(|s| s.knobs().drop_labels.push("jackin.dev/account".to_owned())),

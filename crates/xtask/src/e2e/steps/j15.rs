@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use super::j12::json_of;
 use crate::e2e::probe::{FactsJ04, FactsJ15, ProbeMode, ProbeReport, ProbeRequest};
-use crate::e2e::run::{ENGINE_HOST, Fail, PROBE, Res, Run, fail};
+use crate::e2e::run::{ENGINE_HOST, Fail, PROBE, Res, Run, fail, labels_of};
 use crate::e2e::verdict::Verdict;
 
 pub(crate) const WARNING: &str = "warning: the Docker capability is enabled for this sandbox";
@@ -31,6 +31,8 @@ pub(crate) struct DockerSeen<'a> {
     pub host_id: Option<&'a str>,
     pub host_names: &'a [String],
     pub container: &'a str,
+    pub label: Option<&'a str>,
+    pub port: u16,
 }
 
 pub(crate) fn blocker_present(repo_root: &std::path::Path) -> bool {
@@ -52,6 +54,12 @@ pub(crate) fn judge_docker(
     }
     if !facts.docker_binary.found {
         problems.push("no docker binary in the sandbox".to_owned());
+    }
+    if seen.label != Some(seen.port.to_string().as_str()) {
+        problems.push(format!(
+            "the sandbox label jackin.dev/docker is {:?}, expected the engine port {}",
+            seen.label, seen.port
+        ));
     }
     let env = &facts.environment;
     for (name, value) in [
@@ -163,10 +171,11 @@ impl Run<'_> {
             )));
         }
         let found = self.find_launch(&launch).await?;
-        let d = found
+        let first = found
             .first()
-            .map(|view| view.name.clone())
             .ok_or_else(|| fail("the Docker load created no sandbox"))?;
+        let d = first.name.clone();
+        let docker_label = labels_of(first).get("jackin.dev/docker").cloned();
         self.w.d = Some(d.clone());
         let container = self.names.container();
         self.w.container_created = true;
@@ -236,6 +245,8 @@ impl Run<'_> {
                 host_id: host_id.as_deref(),
                 host_names: &host_names,
                 container: &container,
+                label: docker_label.as_deref(),
+                port,
             },
         ));
         session.send(b"exit\n")?;

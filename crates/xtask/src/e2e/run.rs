@@ -157,11 +157,15 @@ impl Run<'_> {
         drop(std::fs::write(path, existing));
     }
 
-    pub(crate) fn capture(&mut self, channel: &str, bytes: &[u8]) {
+    pub(crate) fn scan(&mut self, channel: &str, bytes: &[u8]) {
         if let Some(offset) = self.redactor.scan(bytes) {
             self.leaks
                 .push(format!("needle found in {channel} at byte {offset}"));
         }
+    }
+
+    pub(crate) fn capture(&mut self, channel: &str, bytes: &[u8]) {
+        self.scan(channel, bytes);
         self.log(
             &channel.replace([' ', '/'], "-"),
             &String::from_utf8_lossy(bytes),

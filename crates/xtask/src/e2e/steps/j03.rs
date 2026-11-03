@@ -9,7 +9,7 @@ use crate::e2e::run::{Fail, Res, Run, fail, labels_of, text_of};
 use crate::e2e::verdict::Verdict;
 use crate::e2e::world::LoadObs;
 
-const KEYS: [&str; 7] = [
+const KEYS: [&str; 8] = [
     "jackin.dev/managed",
     "jackin.dev/workspace",
     "jackin.dev/role",
@@ -17,6 +17,7 @@ const KEYS: [&str; 7] = [
     "jackin.dev/account",
     "jackin.dev/image",
     "jackin.dev/launch",
+    "jackin.dev/docker",
 ];
 
 pub(crate) struct Expect<'a> {
@@ -24,6 +25,7 @@ pub(crate) struct Expect<'a> {
     pub account: &'a str,
     pub image_id: &'a str,
     pub launch: &'a str,
+    pub docker: &'a str,
 }
 
 pub(crate) fn image_label(image_id: &str) -> String {
@@ -80,6 +82,7 @@ pub(crate) fn judge_launch(
         ("jackin.dev/agent", "codex"),
         ("jackin.dev/account", expect.account),
         ("jackin.dev/launch", expect.launch),
+        ("jackin.dev/docker", expect.docker),
     ];
     for (key, value) in wanted {
         if labels.get(key).is_some_and(|found| found != value) {
@@ -202,6 +205,7 @@ impl Run<'_> {
             account: &self.names.a1,
             image_id: &image,
             launch: launch.as_str(),
+            docker: "off",
         };
         problems.extend(judge_launch(&first_names, &sandboxes2, &labels, &expect));
         if problems.is_empty() {

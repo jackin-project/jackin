@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use jackin_core::{
-    AccountName, Agent, Compatibility, ImageId, InspectView, LaunchId, Phase, PlannedLabels,
-    PolicyStatus, ProviderName, RoleName, SandboxName, SandboxSummary, SupervisorReading,
-    SupervisorState, WorkspaceName,
+    AccountName, Agent, Compatibility, DockerLabel, ImageId, InspectView, LaunchId, Phase,
+    PlannedLabels, PolicyStatus, ProviderName, RoleName, SandboxName, SandboxSummary,
+    SupervisorReading, SupervisorState, WorkspaceName,
 };
 use jackin_openshell::Gateway;
 use jackin_testkit::FakeGateway;
@@ -94,6 +94,20 @@ impl ScenarioHost {
         }
     }
 
+    fn docker_value(&self, workspace: &str) -> String {
+        let docker = self
+            .shared
+            .state()
+            .workspaces
+            .get(workspace)
+            .is_some_and(|(_, docker)| *docker);
+        if docker && !self.shared.knobs().docker_label_off {
+            "2376".to_owned()
+        } else {
+            "off".to_owned()
+        }
+    }
+
     fn labels_for(&self, workspace: &str, account: &str, launch: &str) -> Vec<(String, String)> {
         let first = self.shared.state().sandboxes.is_empty();
         let knobs = self.shared.knobs().clone();
@@ -105,6 +119,7 @@ impl ScenarioHost {
             ("jackin.dev/account".to_owned(), account.to_owned()),
             ("jackin.dev/image".to_owned(), IMAGE_ID[7..39].to_owned()),
             ("jackin.dev/launch".to_owned(), launch.to_owned()),
+            ("jackin.dev/docker".to_owned(), self.docker_value(workspace)),
         ];
         if first {
             pairs.retain(|(key, _)| !knobs.drop_labels.contains(key));
@@ -244,6 +259,10 @@ impl ScenarioHost {
             agent: Agent::Codex,
             account: AccountName::parse(&model.account).expect("account"),
             launch: LaunchId::parse(&model.launch).expect("launch"),
+            docker: self
+                .docker_value(&model.workspace)
+                .parse()
+                .map_or(DockerLabel::Off, DockerLabel::Engine),
         };
         let supervisor = SupervisorReading::Reported(
             SupervisorState::parse(&model.supervisor).expect("supervisor"),
