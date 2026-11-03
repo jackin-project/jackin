@@ -221,7 +221,10 @@ async fn j03_one_sandbox_per_launch_faults() {
             "the docker label is on for a sandbox without the capability",
             "label jackin.dev/docker is",
             Box::new(|s| {
-                s.knobs().set_labels = vec![("jackin.dev/docker".to_owned(), "2376".to_owned())];
+                s.knobs().set_labels = vec![(
+                    "jackin.dev/docker".to_owned(),
+                    "engine-2376-0123456789abcdef".to_owned(),
+                )];
             }),
         ),
         (

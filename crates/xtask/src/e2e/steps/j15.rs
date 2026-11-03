@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::LaunchId;
+use jackin_core::{CaFingerprint, LaunchId};
 use serde_json::Value;
 
 use super::j12::json_of;
@@ -55,10 +55,16 @@ pub(crate) fn judge_docker(
     if !facts.docker_binary.found {
         problems.push("no docker binary in the sandbox".to_owned());
     }
-    if seen.label != Some(seen.port.to_string().as_str()) {
+    let prefix = format!("engine-{}-", seen.port);
+    let engine_label = seen.label.is_some_and(|label| {
+        label
+            .strip_prefix(prefix.as_str())
+            .is_some_and(|ca| CaFingerprint::parse(ca).is_some())
+    });
+    if !engine_label {
         problems.push(format!(
-            "the sandbox label jackin.dev/docker is {:?}, expected the engine port {}",
-            seen.label, seen.port
+            "the sandbox label jackin.dev/docker is {:?}, expected {prefix}<16 hex digits of the engine CA>",
+            seen.label
         ));
     }
     let env = &facts.environment;

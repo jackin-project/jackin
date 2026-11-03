@@ -621,8 +621,8 @@ async fn j15_docker_capability_faults() {
                 Box::new(|s| s.knobs().container_in_default_engine = true),
             ),
             (
-                "the docker label is not the engine port",
-                "expected the engine port 2376",
+                "the docker label is not the engine label",
+                "expected engine-2376-<16 hex digits of the engine CA>",
                 Box::new(|s| s.knobs().docker_label_off = true),
             ),
             (
