@@ -162,6 +162,8 @@ impl AgentSpec {
     }
 }
 
+pub const CODEX_PLACEHOLDER_ID_TOKEN: &str = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJpc3MiOiJodHRwczovL2F1dGgub3BlbmFpLmNvbSIsImF1ZCI6ImNvZGV4Iiwic3ViIjoib3BlbnNoZWxsLWFwcC1zZXJ2ZXIifQ.placeholder";
+
 static CODEX_SPEC: AgentSpec = AgentSpec {
     agent: Agent::Codex,
     provider: Provider::Codex,

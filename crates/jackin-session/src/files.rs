@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{ChatgptAccountId, ModelName, SandboxPath, Timestamp};
+use jackin_core::{
+    CODEX_PLACEHOLDER_ID_TOKEN, ChatgptAccountId, ModelName, SandboxPath, Timestamp,
+};
 use serde_json::json;
 use toml::{Table, Value};
 
-const ID_TOKEN: &str = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJpc3MiOiJodHRwczovL2F1dGgub3BlbmFpLmNvbSIsImF1ZCI6ImNvZGV4Iiwic3ViIjoib3BlbnNoZWxsLWFwcC1zZXJ2ZXIifQ.placeholder";
 const AUTH_MODE: &str = "chatgptAuthTokens";
 
 pub(crate) fn render_codex_config(
@@ -36,7 +37,7 @@ pub(crate) fn render_auth_json(
         "auth_mode": AUTH_MODE,
         "OPENAI_API_KEY": null,
         "tokens": {
-            "id_token": ID_TOKEN,
+            "id_token": CODEX_PLACEHOLDER_ID_TOKEN,
             "access_token": access_token,
             "refresh_token": "",
             "account_id": account_id.as_str(),
