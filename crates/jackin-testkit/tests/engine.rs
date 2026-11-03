@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::error::Error;
+use std::sync::Arc;
+use std::time::Duration;
 
-use jackin_core::{BuilderName, ImageTag};
+use jackin_core::{BuilderName, ImageId, ImageTag};
 use jackin_image::{BuildStage, ContextSource, EngineError, ImageEngine, ImageEvent, PlannedBuild};
 use jackin_testkit::{BuildEffect, EngineMoment, FakeEngine};
 use tokio_util::sync::CancellationToken;
@@ -110,5 +112,129 @@ async fn a_cancel_at_the_end_of_a_build_still_returns_the_image_it_stored() -> T
     let id = engine.build(&build, &sink, &token).await?;
     assert!(token.is_cancelled());
     assert_eq!(engine.images().get(&build.tag), Some(&id));
+    Ok(())
+}
+
+const GUARD: Duration = Duration::from_secs(10);
+
+async fn until_waiters(engine: &FakeEngine, key: &ImageTag, waiters: usize) -> TestResult {
+    let waiting = async {
+        while engine.waiters(key) != waiters {
+            tokio::task::yield_now().await;
+        }
+    };
+    tokio::time::timeout(GUARD, waiting).await.map_err(|_| {
+        format!(
+            "waiting for {waiters} waiters of {key}; saw {}",
+            engine.waiters(key)
+        )
+    })?;
+    Ok(())
+}
+
+fn hold_in_task(
+    engine: &Arc<FakeEngine>,
+    key: &ImageTag,
+    cancel: &CancellationToken,
+) -> tokio::task::JoinHandle<Result<Option<jackin_core::FileLock>, EngineError>> {
+    let (engine, key, cancel) = (Arc::clone(engine), key.clone(), cancel.clone());
+    tokio::spawn(async move { engine.hold(&key, &cancel).await })
+}
+
+#[tokio::test]
+async fn a_second_hold_of_one_tag_waits_until_the_first_is_dropped_and_other_tags_do_not_wait()
+-> TestResult {
+    tokio::time::timeout(GUARD, async {
+        let engine = Arc::new(FakeEngine::new());
+        let (key, other) = (tag("final")?, tag("other")?);
+        let cancel = CancellationToken::new();
+        let first = engine
+            .hold(&key, &cancel)
+            .await?
+            .ok_or("the fake engine granted no lock")?;
+        assert_eq!(engine.waiters(&key), 0);
+
+        let different = engine.hold(&other, &cancel).await?;
+        assert!(different.is_some(), "a different key waited for the first");
+        assert_eq!((engine.waiters(&key), engine.waiters(&other)), (0, 0));
+
+        let second = hold_in_task(&engine, &key, &cancel);
+        until_waiters(&engine, &key, 1).await?;
+        assert!(!second.is_finished(), "the second hold did not wait");
+        drop(first);
+        let second = second.await??;
+        assert!(second.is_some());
+        assert_eq!(engine.waiters(&key), 0);
+        Ok(())
+    })
+    .await
+    .map_err(|_| "the test hung")?
+}
+
+#[tokio::test]
+async fn a_waiting_hold_honors_its_cancel_and_changes_nothing_for_the_holder() -> TestResult {
+    tokio::time::timeout(GUARD, async {
+        let engine = Arc::new(FakeEngine::new());
+        let key = tag("final")?;
+        let holder = CancellationToken::new();
+        let waiter = CancellationToken::new();
+        let first = engine
+            .hold(&key, &holder)
+            .await?
+            .ok_or("the fake engine granted no lock")?;
+
+        let cancelled = hold_in_task(&engine, &key, &waiter);
+        until_waiters(&engine, &key, 1).await?;
+        waiter.cancel();
+        let result = cancelled.await?;
+        assert!(
+            matches!(result, Err(EngineError::Cancelled { group: None })),
+            "{result:?}"
+        );
+        assert_eq!(engine.waiters(&key), 0);
+
+        let again = hold_in_task(&engine, &key, &holder);
+        until_waiters(&engine, &key, 1).await?;
+        assert!(
+            !again.is_finished(),
+            "the cancel released the holder's lock"
+        );
+        drop(first);
+        assert!(again.await??.is_some());
+        Ok(())
+    })
+    .await
+    .map_err(|_| "the test hung")?
+}
+
+fn other_id() -> Result<ImageId, Box<dyn Error>> {
+    Ok(ImageId::parse(&format!("sha256:{}", "ab".repeat(32)))?)
+}
+
+#[tokio::test]
+async fn a_new_id_effect_changes_the_id_of_the_next_build_of_its_stage_only() -> TestResult {
+    let engine = FakeEngine::new();
+    let (sink, _received) = tokio::sync::mpsc::channel::<ImageEvent>(8);
+    let token = CancellationToken::new();
+    let derived = planned(BuildStage::Derived, "derived")?;
+    let role = planned(BuildStage::Role, "role")?;
+    let original = engine.build(&derived, &sink, &token).await?;
+    assert_eq!(engine.build(&derived, &sink, &token).await?, original);
+
+    let other = other_id()?;
+    assert_ne!(original, other);
+    engine.at(EngineMoment::BuildFinished {
+        stage: BuildStage::Derived,
+        effect: BuildEffect::NewId(other.clone()),
+    });
+    let untouched = engine.build(&role, &sink, &token).await?;
+    assert_ne!(untouched, other, "another stage took the effect");
+    assert_eq!(engine.find(&derived.tag).await?, Some(original.clone()));
+
+    let rebuilt = engine.build(&derived, &sink, &token).await?;
+    assert_eq!(rebuilt, other);
+    assert_eq!(engine.find(&derived.tag).await?, Some(other));
+    assert_eq!(engine.build(&derived, &sink, &token).await?, original);
+    assert_eq!(engine.find(&derived.tag).await?, Some(original));
     Ok(())
 }
