@@ -32,10 +32,11 @@ allow_empty_test_suite = true
 [[stacks.rust.configurations]]
 name = "default"
 features = ["default"]
+all_features = true
 target = "host"
 
 [discovery]
-exclude = ["crates/usage/**", "docs/**"]
+exclude = ["docs/**"]
 
 [actions.overrides]
 
