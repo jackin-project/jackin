@@ -673,7 +673,7 @@ async fn jackin_start_applies_only_the_bytes_it_validated() -> TestResult {
 
 #[tokio::test]
 async fn jackin_start_refuses_every_malformed_env_file_and_runs_nothing() -> TestResult {
-    let rows: [(&str, &str, usize); 17] = [
+    let rows: [(&str, &str, usize); 19] = [
         ("bare command", "touch pwned\n", 1),
         ("no export", "A=1\n", 1),
         ("digit name", "export 1A='x'\n", 1),
@@ -691,6 +691,12 @@ async fn jackin_start_refuses_every_malformed_env_file_and_runs_nothing() -> Tes
         ("continuation", "export A='x'\n  exec evil\n", 2),
         ("third line", "export A='x'\nexport B='y'\nbad\n", 3),
         ("only no final newline", "export A='x'", 1),
+        ("supervisor namespace", "export JACKIN_RUN='x'\n", 1),
+        (
+            "supervisor namespace after a valid line",
+            "export A='x'\nexport JACKIN_PROJECT='y'\n",
+            2,
+        ),
     ];
     let mut setup = Setup::new();
     setup.env_file = Some("");
@@ -787,5 +793,110 @@ async fn jackin_start_reports_an_unreadable_env_file_and_accepts_a_missing_one()
         None,
         "a removed file left its variable"
     );
+    Ok(())
+}
+
+const HOSTILE: &str = "/definitely-not-present-jackin-review";
+const CONTROL: &str = "ROLE_NOTE";
+const RESET_BY_ANY_SHELL: [&str; 1] = ["IFS"];
+const GOLDEN_CODEX_LINES: &str = "codex AWS_SECRET_ACCESS_KEY other\ncodex GITHUB_TOKEN empty\ncodex MULTI_KEY other\ncodex OPENAI_API_KEY placeholder\n";
+const COLLISION_FLOOR: [&str; 21] = [
+    "project",
+    "run",
+    "bin_dir",
+    "environ_file",
+    "envfile",
+    "attempt_id",
+    "main_ok",
+    "main_lines",
+    "last",
+    "attempt",
+    "rc",
+    "bad",
+    "env_text",
+    "program",
+    "codex_lines",
+    "IFS",
+    "CDPATH",
+    "LC_ALL",
+    "TMPDIR",
+    "ENV",
+    "BASH_ENV",
+];
+
+fn shell_variables_of_the_script() -> Result<Vec<String>, regex::Error> {
+    let assigned = regex::Regex::new(
+        r"(?m)(?:^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=|\bread -r ([A-Za-z_][A-Za-z0-9_]*)|\bfor ([A-Za-z_][A-Za-z0-9_]*) in\b",
+    )?;
+    let mut names: std::collections::BTreeSet<String> = COLLISION_FLOOR
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect();
+    for captures in assigned.captures_iter(SCRIPT) {
+        if let Some(name) = captures.iter().skip(1).flatten().next() {
+            names.insert(name.as_str().to_owned());
+        }
+    }
+    names.retain(|name| !name.starts_with("JACKIN_"));
+    Ok(names.into_iter().collect())
+}
+
+async fn attempt_exporting(
+    supervisor: &Supervisor,
+    id: usize,
+    name: &str,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    for stale in ["dump", "dump.cwd"] {
+        drop(fs::remove_file(supervisor.root.join(stale)));
+    }
+    replace_env_file(&supervisor.root, &format!("export {name}='{HOSTILE}'\n"))?;
+    supervisor.request(&id.to_string())?;
+    let prefix = format!("exited {id} ");
+    supervisor
+        .wait_until(STEP, &prefix, |state| state.starts_with(&prefix))
+        .await?;
+    let mut problems = Vec::new();
+    let state = supervisor.state();
+    if state.trim_end() != format!("exited {id} 0") {
+        problems.push(format!("{name}: state {:?}", state.trim_end()));
+    }
+    let project = supervisor.root.join("sandbox/project");
+    let cwd = fs::read_to_string(supervisor.root.join("dump.cwd")).unwrap_or_default();
+    if cwd.trim_end() != project.display().to_string() {
+        problems.push(format!("{name}: Codex ran in {:?}", cwd.trim_end()));
+    }
+    let record = supervisor.record().unwrap_or_default();
+    let wanted = format!("jackin-env-kinds 1\nattempt {id}\n{MAIN_LINES}{GOLDEN_CODEX_LINES}");
+    if record != wanted {
+        problems.push(format!("{name}: record {record:?}"));
+    }
+    let applied = dump_value(supervisor, name).unwrap_or_default();
+    if applied.as_deref() != Some(HOSTILE) && !RESET_BY_ANY_SHELL.contains(&name) {
+        problems.push(format!("{name}: Codex received {applied:?}"));
+    }
+    Ok(problems)
+}
+
+#[tokio::test]
+async fn a_role_variable_name_cannot_change_what_the_supervisor_does() -> TestResult {
+    let mut setup = Setup::new();
+    setup.env = golden_env();
+    setup.env_file = Some("");
+    let (dir, root) = Supervisor::prepare(&setup)?;
+    install(
+        &root.join("bin/codex"),
+        &FAKE_CODEX.replace("exit 0\n", "pwd -P > \"$DUMP.cwd\"\nexit 0\n"),
+    )?;
+    let supervisor = Supervisor::spawn(setup, dir, root)?;
+    supervisor.wait_state("waiting").await?;
+    let control = attempt_exporting(&supervisor, 1, CONTROL).await?;
+    assert_eq!(control, Vec::<String>::new(), "the harmless name");
+    let names = shell_variables_of_the_script()?;
+    assert!(names.len() > COLLISION_FLOOR.len(), "{names:?}");
+    let mut problems = Vec::new();
+    for (index, name) in names.iter().enumerate() {
+        problems.extend(attempt_exporting(&supervisor, index + 2, name).await?);
+    }
+    assert_eq!(problems, Vec::<String>::new());
     Ok(())
 }
