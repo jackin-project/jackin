@@ -123,7 +123,7 @@ async fn a_cancel_during_the_first_read_of_a_long_walk_ends_the_export_with_noth
         let cancelled = session.export(&lab.rig.config, &lab.name, token).await;
 
         assert!(
-            matches!(cancelled, Err(ExportError::Cancelled)),
+            matches!(cancelled, Err(ExportError::Cancelled { group: None })),
             "{cancelled:?}"
         );
         let calls = lab.sees.since(mark);

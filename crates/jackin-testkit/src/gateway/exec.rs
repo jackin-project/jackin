@@ -110,9 +110,11 @@ async fn run_host(
         Err(Failure::Timeout) => Err(GatewayError::Timeout {
             op: GatewayOp::Program,
             after: run.timeout,
+            group: None,
         }),
         Err(Failure::Cancelled) => Err(GatewayError::Cancelled {
             op: GatewayOp::Program,
+            group: None,
         }),
     }
 }
@@ -137,11 +139,10 @@ async fn sha256sum(root: &Path, run: &ProgramRun) -> ProgramOutcome {
 
 async fn stall(run: &ProgramRun, cancel: &CancellationToken) -> GatewayError {
     tokio::select! {
-        () = cancel.cancelled() => GatewayError::Cancelled { op: GatewayOp::Program },
+        () = cancel.cancelled() => GatewayError::Cancelled { op: GatewayOp::Program, group: None },
         () = tokio::time::sleep(run.timeout) => GatewayError::Timeout {
             op: GatewayOp::Program,
-            after: run.timeout,
-        },
+            after: run.timeout, group: None },
     }
 }
 
@@ -178,6 +179,7 @@ pub(super) async fn run_program(
     if cancel.is_cancelled() {
         return Err(GatewayError::Cancelled {
             op: GatewayOp::Program,
+            group: None,
         });
     }
     if stalled {

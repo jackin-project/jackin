@@ -52,6 +52,7 @@ impl Inner {
             Code::DeadlineExceeded => GatewayError::Timeout {
                 op,
                 after: self.call_timeout,
+                group: None,
             },
             Code::Unavailable => match missing {
                 Some(Missing::Sandbox(sandbox))

@@ -86,6 +86,7 @@ impl Inner {
             Err(_) => Err(GatewayError::Timeout {
                 op,
                 after: self.call_timeout,
+                group: None,
             }),
             Ok(Ok(response)) => Ok(response.into_inner()),
             Ok(Err(status)) => Err(self.map_status(op, missing, &status)),

@@ -16,15 +16,17 @@ use super::RunRecord;
 use super::exec::host_path;
 use super::state::Cell;
 use crate::fixtures::{FixtureError, git};
+use crate::host::FakeClock;
 
 #[derive(Clone, Debug)]
 pub struct SandboxHandle {
     cell: Arc<Cell>,
+    clock: Option<Arc<FakeClock>>,
 }
 
 impl SandboxHandle {
-    pub(super) fn new(cell: Arc<Cell>) -> SandboxHandle {
-        SandboxHandle { cell }
+    pub(super) fn new(cell: Arc<Cell>, clock: Option<Arc<FakeClock>>) -> SandboxHandle {
+        SandboxHandle { cell, clock }
     }
 
     pub fn name(&self) -> SandboxName {
@@ -107,6 +109,7 @@ impl SandboxHandle {
     }
 
     pub async fn git(&self, args: &[&str]) -> Result<String, FixtureError> {
+        let _working = self.clock.as_ref().map(FakeClock::working);
         let project = self.root().join("project");
         Ok(String::from_utf8(git(&project, args).await?)?)
     }
@@ -117,6 +120,7 @@ impl SandboxHandle {
         content: &[u8],
         message: &str,
     ) -> Result<CommitId, FixtureError> {
+        let _working = self.clock.as_ref().map(FakeClock::working);
         let target = self.root().join("project").join(file);
         if let Some(parent) = target.parent() {
             tokio::fs::create_dir_all(parent).await?;

@@ -10,7 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use jackin_core::{
-    HostPath, ProcessError, ProcessStatus, Program, ProjectRoot, SandboxPath, Sha256, StdFileSystem,
+    GroupFault, HostPath, ProcessError, ProcessStatus, Program, ProjectRoot, SandboxPath, Sha256,
+    StdFileSystem,
 };
 use jackin_openshell::{Gateway, GatewayError, GatewayOp, TransferOp};
 use openshell_sdk::raw::proto::SandboxPhase;
@@ -398,12 +399,14 @@ async fn failed_tree_and_file_uploads_name_their_own_step_and_never_ask_for_a_di
             ProcessError::Timeout {
                 program: Program::Openshell,
                 after,
+                group: None,
             },
             0_u8,
         ),
         (
             ProcessError::Cancelled {
                 program: Program::Openshell,
+                group: None,
             },
             1,
         ),
@@ -427,12 +430,14 @@ async fn failed_tree_and_file_uploads_name_their_own_step_and_never_ask_for_a_di
                 GatewayError::Timeout {
                     op: GatewayOp::UploadFile,
                     after: got,
+                    ..
                 },
             ) => assert_eq!(got, after),
             (
                 1,
                 GatewayError::Cancelled {
                     op: GatewayOp::UploadFile,
+                    ..
                 },
             )
             | (2, GatewayError::Process(ProcessError::Spawn { .. })) => {}
@@ -442,6 +447,7 @@ async fn failed_tree_and_file_uploads_name_their_own_step_and_never_ask_for_a_di
     let runner = ScriptedRunner::new(|_| {
         Err(ProcessError::Cancelled {
             program: Program::Openshell,
+            group: None,
         })
     });
     let gateway = gateway_with(&env, runner).await;
@@ -452,7 +458,8 @@ async fn failed_tree_and_file_uploads_name_their_own_step_and_never_ask_for_a_di
         matches!(
             error,
             GatewayError::Cancelled {
-                op: GatewayOp::UploadTree
+                op: GatewayOp::UploadTree,
+                ..
             }
         ),
         "{error:?}"
@@ -693,7 +700,8 @@ fn scenarios() -> Vec<Scenario> {
                 matches!(
                     error,
                     GatewayError::Cancelled {
-                        op: GatewayOp::Download
+                        op: GatewayOp::Download,
+                        ..
                     }
                 )
             })
@@ -812,9 +820,11 @@ async fn a_failed_download_never_touches_the_destination_leaves_no_temp_and_the_
             CliReply::Timeout => Err(ProcessError::Timeout {
                 program: Program::Openshell,
                 after: Duration::from_secs(5),
+                group: None,
             }),
             CliReply::Cancelled => Err(ProcessError::Cancelled {
                 program: Program::Openshell,
+                group: None,
             }),
         }
     });
@@ -865,5 +875,136 @@ async fn a_failed_download_never_touches_the_destination_leaves_no_temp_and_the_
             }
             assert_eq!(runner.calls().len() - before, scenario.cli_calls, "{label}");
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Transfer {
+    UploadFile,
+    UploadTree,
+    Download,
+}
+
+impl Transfer {
+    fn op(self) -> GatewayOp {
+        match self {
+            Transfer::UploadFile => GatewayOp::UploadFile,
+            Transfer::UploadTree => GatewayOp::UploadTree,
+            Transfer::Download => GatewayOp::Download,
+        }
+    }
+}
+
+async fn failed_transfer(env: &Env, which: Transfer, reply: fn() -> ProcessError) -> GatewayError {
+    let gateway = gateway_with(env, ScriptedRunner::new(move |_| Err(reply()))).await;
+    let name = sandbox_name(TRANSFER_SANDBOX);
+    let cancel = CancellationToken::new();
+    let dest = SandboxPath::parse("/sandbox/project").unwrap();
+    let (_project_dir, project) = project().await;
+    let (_file_dir, file) = bundle_file(b"x");
+    let target_dir = TempDir::new().unwrap();
+    let target = HostPath::parse(&target_dir.path().join("export.bundle")).unwrap();
+    let error = match which {
+        Transfer::UploadFile => guard(gateway.upload_file(&name, &file, &dest, &cancel))
+            .await
+            .err(),
+        Transfer::UploadTree => guard(gateway.upload_tree(&name, &project, &dest, &cancel))
+            .await
+            .err(),
+        Transfer::Download => guard(gateway.download_file(&name, &dest, &target, &cancel))
+            .await
+            .err(),
+    };
+    error.expect("the transfer failed")
+}
+
+#[tokio::test]
+async fn a_group_fault_rides_through_each_transfer_and_a_missing_one_stays_missing() {
+    let env = env().await;
+    add_sandbox(
+        &mut env.server.state(),
+        TRANSFER_WORKSPACE,
+        TRANSFER_SANDBOX,
+        SandboxPhase::Ready,
+        None,
+        &[],
+    );
+    env.server.state().exec = Some(scripted(|_, _| {
+        vec![Step::Out(b"12\n".to_vec()), Step::Exit(0)]
+    }));
+    let alive = GroupFault::Alive {
+        after: Duration::from_secs(5),
+    };
+    let unreachable = GroupFault::Unreachable {
+        message: "cannot list /proc: x\ny\u{1b}[0m".to_owned(),
+    };
+    for which in [
+        Transfer::UploadFile,
+        Transfer::UploadTree,
+        Transfer::Download,
+    ] {
+        let timeout = failed_transfer(&env, which, || ProcessError::Timeout {
+            program: Program::Openshell,
+            after: Duration::from_secs(9),
+            group: Some(GroupFault::Alive {
+                after: Duration::from_secs(5),
+            }),
+        })
+        .await;
+        match timeout {
+            GatewayError::Timeout { op, after, group } => {
+                assert_eq!(op, which.op(), "{which:?}");
+                assert_eq!(after, Duration::from_secs(9), "{which:?}");
+                assert_eq!(group, Some(alive.clone()), "{which:?} timeout fault");
+            }
+            other => panic!("{which:?}: {other:?}"),
+        }
+        let cancelled = failed_transfer(&env, which, || ProcessError::Cancelled {
+            program: Program::Openshell,
+            group: Some(GroupFault::Unreachable {
+                message: "cannot list /proc: x\ny\u{1b}[0m".to_owned(),
+            }),
+        })
+        .await;
+        match cancelled {
+            GatewayError::Cancelled { op, group } => {
+                assert_eq!(op, which.op(), "{which:?}");
+                assert_eq!(group, Some(unreachable.clone()), "{which:?} cancel fault");
+            }
+            other => panic!("{which:?}: {other:?}"),
+        }
+        let timed_clean = failed_transfer(&env, which, || ProcessError::Timeout {
+            program: Program::Openshell,
+            after: Duration::from_secs(9),
+            group: None,
+        })
+        .await;
+        assert!(
+            matches!(timed_clean, GatewayError::Timeout { group: None, .. }),
+            "{which:?}: {timed_clean:?}"
+        );
+        let cancelled_clean = failed_transfer(&env, which, || ProcessError::Cancelled {
+            program: Program::Openshell,
+            group: None,
+        })
+        .await;
+        assert!(
+            matches!(cancelled_clean, GatewayError::Cancelled { group: None, .. }),
+            "{which:?}: {cancelled_clean:?}"
+        );
+        let stuck = failed_transfer(&env, which, || ProcessError::Group {
+            program: Program::Openshell,
+            fault: GroupFault::Alive {
+                after: Duration::from_secs(5),
+            },
+        })
+        .await;
+        assert!(
+            matches!(
+                stuck,
+                GatewayError::Process(ProcessError::Group { ref fault, .. }) if *fault == alive
+            ),
+            "{which:?}: {stuck:?}"
+        );
     }
 }

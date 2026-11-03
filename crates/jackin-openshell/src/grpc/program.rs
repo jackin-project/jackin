@@ -278,10 +278,10 @@ impl Inner {
         };
         let result = tokio::select! {
             biased;
-            () = cancel.cancelled() => Err(GatewayError::Cancelled { op }),
+            () = cancel.cancelled() => Err(GatewayError::Cancelled { op, group: None }),
             outcome = tokio::time::timeout(timeout, collect) => match outcome {
                 Ok(result) => result,
-                Err(_) => Err(GatewayError::Timeout { op, after: timeout }),
+                Err(_) => Err(GatewayError::Timeout { op, after: timeout, group: None }),
             },
         };
         match result {

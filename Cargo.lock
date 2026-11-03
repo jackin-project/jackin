@@ -2329,6 +2329,7 @@ dependencies = [
  "getrandom 0.4.3",
  "jackin-core",
  "jackin-openshell",
+ "jackin-session",
  "jackin-testkit",
  "jsonschema",
  "portable-pty",

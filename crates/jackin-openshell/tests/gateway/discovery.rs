@@ -115,6 +115,7 @@ async fn registered_gateways_failure_modes() {
         ProcessError::Timeout {
             program: Program::Openshell,
             after: Duration::from_secs(1),
+            group: None,
         },
     ] {
         let failure = std::sync::Mutex::new(Some(failure));

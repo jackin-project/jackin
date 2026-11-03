@@ -5,9 +5,9 @@ use std::fmt;
 use std::time::Duration;
 
 use jackin_core::{
-    FsError, GatewayName, HostPath, OpenShellWorkspace, OutputStream, Phase, ProcessError,
-    ProcessStatus, ProfileId, ProviderName, SandboxName, SandboxPath, TerminalText, plain,
-    plain_duration, plain_list,
+    FsError, GatewayName, GroupFault, HostPath, OpenShellWorkspace, OutputStream, Phase,
+    ProcessError, ProcessStatus, ProfileId, ProviderName, SandboxName, SandboxPath, TerminalText,
+    plain, plain_duration, plain_list,
 };
 use thiserror::Error;
 
@@ -42,10 +42,17 @@ pub enum GatewayError {
     ResourceExhausted { what: String },
     #[error("invalid argument {}: {}", plain(.field), plain(.message))]
     InvalidArgument { field: String, message: String },
-    #[error("{op} timed out after {}", plain_duration(.after))]
-    Timeout { op: GatewayOp, after: Duration },
-    #[error("{op} was cancelled")]
-    Cancelled { op: GatewayOp },
+    #[error("{op} timed out after {}{}", plain_duration(.after), GroupFault::note(.group.as_ref()))]
+    Timeout {
+        op: GatewayOp,
+        after: Duration,
+        group: Option<GroupFault>,
+    },
+    #[error("{op} was cancelled{}", GroupFault::note(.group.as_ref()))]
+    Cancelled {
+        op: GatewayOp,
+        group: Option<GroupFault>,
+    },
     #[error(transparent)]
     Process(#[from] ProcessError),
     #[error("{op} failed with {status}: {tail}")]

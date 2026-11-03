@@ -7,8 +7,9 @@ use std::io::Write;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use jackin_core::ProcessError;
-use jackin_core::{Config, ConfigStore, EnvSnapshot, GatewayEntry, GatewayName, HostPath};
+use jackin_core::{
+    Config, ConfigStore, EnvSnapshot, GatewayEntry, GatewayName, GroupFault, HostPath, ProcessError,
+};
 use jackin_image::ImageEngine;
 use jackin_openshell::{DiscoveryError, Gateway, GatewayError};
 use jackin_session::{HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps};
@@ -42,13 +43,18 @@ pub enum ConnectError {
 
 impl ConnectError {
     pub fn is_cancelled(&self) -> bool {
-        matches!(
-            self,
+        self.cancel().is_some()
+    }
+
+    pub(crate) fn cancel(&self) -> Option<Option<&GroupFault>> {
+        match self {
             ConnectError::Discovery {
-                source: DiscoveryError::Process(ProcessError::Cancelled { .. }),
+                source: DiscoveryError::Process(ProcessError::Cancelled { group, .. }),
                 ..
-            } | ConnectError::Gateway(GatewayError::Cancelled { .. })
-        )
+            }
+            | ConnectError::Gateway(GatewayError::Cancelled { group, .. }) => Some(group.as_ref()),
+            ConnectError::Discovery { .. } | ConnectError::Gateway(_) => None,
+        }
     }
 }
 

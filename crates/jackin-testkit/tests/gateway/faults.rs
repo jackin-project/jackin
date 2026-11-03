@@ -217,7 +217,7 @@ async fn stalled_program_times_out_with_the_runs_timeout_or_cancels() -> TestRes
         assert_eq!(before.elapsed(), Duration::from_secs(5));
         assert!(matches!(
             result,
-            Err(GatewayError::Timeout { op: GatewayOp::Program, after }) if after == Duration::from_secs(5)
+            Err(GatewayError::Timeout { op: GatewayOp::Program, after, .. }) if after == Duration::from_secs(5)
         ));
     }
     let cancel = CancellationToken::new();
@@ -230,7 +230,8 @@ async fn stalled_program_times_out_with_the_runs_timeout_or_cancels() -> TestRes
     assert!(matches!(
         result,
         Err(GatewayError::Cancelled {
-            op: GatewayOp::Program
+            op: GatewayOp::Program,
+            ..
         })
     ));
     let free = run(&fake, &program_run(&handle.name(), other.as_str(), &[])?).await?;
