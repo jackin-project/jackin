@@ -3,6 +3,7 @@
 
 mod exec;
 mod files;
+pub(crate) use self::files::apply_host_edit;
 mod handle;
 mod main_process;
 mod state;
@@ -96,6 +97,7 @@ pub enum UploadKind {
 pub enum HostEdit {
     Write { path: HostPath, bytes: Vec<u8> },
     Chmod { path: HostPath, mode: FileMode },
+    Symlink { path: HostPath, target: HostPath },
 }
 
 #[derive(Debug)]

@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    Clock, Config, EnvName, FileSystem, HookKind, HostPath, LabelSelector, LaunchId, ProcessRunner,
-    ProjectRoot, RoleName, SandboxName, sandbox_layout,
+    Clock, Config, EngineCert, EnvName, FileSystem, HookKind, HostPath, LabelSelector, LaunchId,
+    ProcessRunner, ProjectRoot, RoleName, SandboxName, sandbox_layout,
 };
 use jackin_image::{BuildStage, BuiltImage, ImageEngine, ImageSource};
 use jackin_openshell::{Gateway, SandboxQuery};
@@ -62,8 +62,23 @@ pub struct Outcome {
     pub events: Vec<LaunchEvent>,
 }
 
+pub const ENGINE_PORT: u16 = 2376;
+pub const KEY_MARKER: &str = "KEYMARKERc2VjcmV0LWVuZ2luZS1rZXk";
+
+pub fn engine_pem(cert: EngineCert) -> String {
+    let (label, body) = match cert {
+        EngineCert::Ca => ("CERTIFICATE", "Q0FDQ0FDQ0FDQ0FDQ0FDQ0FDQ0FDQ0E="),
+        EngineCert::Cert => ("CERTIFICATE", "Q0VSVENFUlRDRVJUQ0VSVENFUlRDRVI="),
+        EngineCert::Key => ("PRIVATE KEY", KEY_MARKER),
+    };
+    format!("-----BEGIN {label}-----\n{body}\n-----END {label}-----\n")
+}
+
 #[derive(Debug)]
 pub struct RigBuilder {
+    engine: Option<u16>,
+    workspace_docker: bool,
+    role_docker: bool,
     limits: LaunchLimits,
     repo: Option<RepoFixture>,
     role: Option<RoleFixture>,
@@ -109,6 +124,9 @@ async fn committed_repo() -> Result<RepoFixture, FixtureError> {
 impl Rig {
     pub fn builder() -> RigBuilder {
         RigBuilder {
+            engine: None,
+            workspace_docker: false,
+            role_docker: false,
             limits: default_limits(),
             repo: None,
             role: None,
@@ -137,6 +155,19 @@ impl Rig {
 
     pub fn plan(&self, id: u8) -> Result<LaunchPlan, FixtureError> {
         Ok(plan_launch(&self.config, &self.loaded, self.request(id)?)?)
+    }
+
+    pub fn engine_certs(&self) -> Result<HostPath, FixtureError> {
+        Ok(HostPath::parse(&self.home.as_path().join("engine-certs"))?)
+    }
+
+    pub async fn write_engine_certs(&self) -> Result<(), FixtureError> {
+        let directory = self.engine_certs()?;
+        tokio::fs::create_dir_all(directory.as_path()).await?;
+        for cert in EngineCert::ALL {
+            tokio::fs::write(directory.as_path().join(cert.file_name()), engine_pem(cert)).await?;
+        }
+        Ok(())
     }
 
     pub fn sandbox_name(&self, id: u8) -> Result<SandboxName, FixtureError> {
@@ -187,6 +218,15 @@ impl Rig {
         cancel: CancellationToken,
     ) -> Result<Outcome, FixtureError> {
         let plan = plan_launch(&self.config, &self.loaded, request)?;
+        Ok(self.run_planned(session, plan, cancel).await)
+    }
+
+    pub async fn run_planned(
+        &self,
+        session: &Session,
+        plan: LaunchPlan,
+        cancel: CancellationToken,
+    ) -> Outcome {
         let (events, mut feed) = launch_events(LineDelivery::Reliable);
         let collect = async {
             let mut seen = Vec::new();
@@ -196,7 +236,7 @@ impl Rig {
             seen
         };
         let (result, events) = tokio::join!(session.launch(plan, events, cancel), collect);
-        Ok(Outcome { result, events })
+        Outcome { result, events }
     }
 
     pub fn session_with(&self, limits: LaunchLimits) -> Session {
@@ -292,6 +332,24 @@ impl RigBuilder {
     }
 
     #[must_use]
+    pub fn engine(mut self, port: u16) -> RigBuilder {
+        self.engine = Some(port);
+        self
+    }
+
+    #[must_use]
+    pub fn workspace_docker(mut self, enabled: bool) -> RigBuilder {
+        self.workspace_docker = enabled;
+        self
+    }
+
+    #[must_use]
+    pub fn role_docker(mut self, enabled: bool) -> RigBuilder {
+        self.role_docker = enabled;
+        self
+    }
+
+    #[must_use]
     pub fn login(mut self, login: bool) -> RigBuilder {
         self.login = login;
         self
@@ -319,7 +377,8 @@ impl RigBuilder {
         let role = match self.role {
             Some(role) => role,
             None => default_role()?,
-        };
+        }
+        .docker(self.role_docker);
         role.commit().await?;
         let loaded = world.roles.load_path(role.root()).await?;
         let home_dir = tempfile::tempdir()?;
@@ -327,8 +386,19 @@ impl RigBuilder {
         if self.login {
             tokio::fs::write(home.as_path().join("auth.json"), login_text()).await?;
         }
+        let engine = self.engine.map_or_else(String::new, |port| {
+            format!(
+                "\n[gateways.fake-gateway.docker_engine]\nport = {port}\nclient_certs = \"{}/engine-certs\"\n",
+                home.as_path().display()
+            )
+        });
+        let workspace_docker = if self.workspace_docker {
+            "docker = true\n"
+        } else {
+            ""
+        };
         let config = Config::parse(&format!(
-            "default_gateway = \"fake-gateway\"\n\n[gateways.fake-gateway]\nopenshell_workspace = \"default\"\nbuilder = \"jackin-builder\"\nplatform = \"linux/arm64\"\n\n[accounts.work]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{ACCOUNT_ID}\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.platform-backend]\npath = \"{}\"\n",
+            "default_gateway = \"fake-gateway\"\n\n[gateways.fake-gateway]\nopenshell_workspace = \"default\"\nbuilder = \"jackin-builder\"\nplatform = \"linux/arm64\"\n{engine}\n[accounts.work]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{ACCOUNT_ID}\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.platform-backend]\npath = \"{}\"\n{workspace_docker}",
             home.as_path().display(),
             role.root().as_path().display(),
             repo.root().as_path().display(),

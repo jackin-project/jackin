@@ -67,7 +67,12 @@ pub(super) async fn write_file(cell: &Arc<Cell>, file: &SandboxFile) -> Result<(
         name.to_string_lossy(),
         TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
-    tokio::fs::create_dir_all(dir).await.map_err(protocol)?;
+    tokio::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .await
+        .map_err(protocol)?;
     tokio::fs::write(&temp, file.content.expose())
         .await
         .map_err(protocol)?;
@@ -330,17 +335,22 @@ pub(super) async fn upload_file(
     }
 }
 
-pub(super) async fn edit_host(edit: &super::HostEdit) -> Result<(), GatewayError> {
+pub(crate) async fn apply_host_edit(edit: &super::HostEdit) -> std::io::Result<()> {
     match edit {
-        super::HostEdit::Write { path, bytes } => tokio::fs::write(path.as_path(), bytes)
-            .await
-            .map_err(protocol),
+        super::HostEdit::Write { path, bytes } => tokio::fs::write(path.as_path(), bytes).await,
         super::HostEdit::Chmod { path, mode } => {
             tokio::fs::set_permissions(path.as_path(), std::fs::Permissions::from_mode(mode.0))
                 .await
-                .map_err(protocol)
+        }
+        super::HostEdit::Symlink { path, target } => {
+            tokio::fs::remove_file(path.as_path()).await?;
+            tokio::fs::symlink(target.as_path(), path.as_path()).await
         }
     }
+}
+
+pub(super) async fn edit_host(edit: &super::HostEdit) -> Result<(), GatewayError> {
+    apply_host_edit(edit).await.map_err(protocol)
 }
 
 pub(super) fn upload_absent(op: TransferOp) -> GatewayError {

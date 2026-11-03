@@ -9,6 +9,7 @@ use jackin_core::{BuilderName, ImageId, ImageTag, ProcessStatus, Sha256, Termina
 use jackin_image::{BuildStage, EngineError, ImageEngine, ImageEvent, PlannedBuild, ProgressSink};
 use tokio_util::sync::CancellationToken;
 
+use crate::gateway::{HostEdit, apply_host_edit};
 use crate::sync::locked;
 
 #[derive(Debug, Default)]
@@ -55,6 +56,7 @@ pub struct Retag {
 pub enum BuildEffect {
     Retag(Retag),
     Cancel,
+    EditHost(HostEdit),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -159,7 +161,7 @@ impl FakeEngine {
         &self,
         build: &PlannedBuild,
         cancel: &CancellationToken,
-    ) -> Result<ImageId, EngineError> {
+    ) -> Result<(ImageId, Option<HostEdit>), EngineError> {
         let mut state = locked(&self.state);
         let id = match state.pinned.get(&build.tag) {
             Some(id) => id.clone(),
@@ -173,13 +175,15 @@ impl FakeEngine {
         let due = state.take(|moment| {
             matches!(moment, EngineMoment::BuildFinished { stage, .. } if *stage == build.stage)
         });
+        let mut edit = None;
         if let Some(EngineMoment::BuildFinished { effect, .. }) = due {
             match effect {
                 BuildEffect::Retag(retag) => state.retag(retag),
                 BuildEffect::Cancel => cancel.cancel(),
+                BuildEffect::EditHost(found) => edit = Some(found),
             }
         }
-        Ok(id)
+        Ok((id, edit))
     }
 }
 
@@ -241,6 +245,16 @@ impl ImageEngine for FakeEngine {
                     .await,
             );
         }
-        self.finish(build, cancel)
+        let (id, edit) = self.finish(build, cancel)?;
+        if let Some(edit) = edit {
+            apply_host_edit(&edit)
+                .await
+                .map_err(|error| EngineError::BuildFailed {
+                    stage: build.stage,
+                    status: ProcessStatus::Exited(1),
+                    tail: TerminalText::sanitize(error.to_string().as_bytes()),
+                })?;
+        }
+        Ok(id)
     }
 }
