@@ -14,7 +14,6 @@ pub struct LayerRule {
     pub member: &'static str,
     pub depends: &'static [&'static str],
     pub dev_depends: &'static [&'static str],
-    pub optional: &'static [&'static str],
     pub imports: &'static [&'static str],
 }
 
@@ -56,7 +55,6 @@ const fn provider(member: &'static str) -> LayerRule {
         member,
         depends: &["jackin-usage-provider-core"],
         dev_depends: &[],
-        optional: &[],
         imports: &[],
     }
 }
@@ -66,28 +64,24 @@ pub const LAYERS: &[LayerRule] = &[
         member: "jackin-core",
         depends: &[],
         dev_depends: &["jackin-testkit"],
-        optional: &[],
         imports: &[],
     },
     LayerRule {
         member: "jackin-image",
         depends: &["jackin-core"],
         dev_depends: &["jackin-testkit"],
-        optional: &[],
         imports: &[],
     },
     LayerRule {
         member: "jackin-openshell",
         depends: &["jackin-core"],
         dev_depends: &["jackin-testkit"],
-        optional: &[],
         imports: GATEWAY_FAMILIES,
     },
     LayerRule {
         member: "jackin-session",
         depends: &["jackin-core", "jackin-image", "jackin-openshell"],
         dev_depends: &["jackin-testkit"],
-        optional: &[],
         imports: &[],
     },
     LayerRule {
@@ -99,7 +93,6 @@ pub const LAYERS: &[LayerRule] = &[
             "jackin-session",
         ],
         dev_depends: &["jackin-testkit"],
-        optional: &[],
         imports: &[],
     },
     LayerRule {
@@ -113,7 +106,6 @@ pub const LAYERS: &[LayerRule] = &[
             "jackin-usage",
         ],
         dev_depends: &[],
-        optional: &[],
         imports: &[],
     },
     LayerRule {
@@ -127,7 +119,6 @@ pub const LAYERS: &[LayerRule] = &[
             "jackin-usage",
         ],
         dev_depends: &["jackin-testkit"],
-        optional: &[],
         imports: &[],
     },
     LayerRule {
@@ -147,7 +138,6 @@ pub const LAYERS: &[LayerRule] = &[
             "jackin-usage-provider-zai",
         ],
         dev_depends: &["jackin-testkit"],
-        optional: &[],
         imports: &[],
     },
     provider(USAGE_PROVIDERS[0]),
@@ -164,14 +154,12 @@ pub const LAYERS: &[LayerRule] = &[
         member: "jackin-usage-provider-core",
         depends: &[],
         dev_depends: &[],
-        optional: &[],
         imports: &[],
     },
     LayerRule {
         member: "jackin-xtask",
-        depends: &[],
+        depends: &["jackin-core", "jackin-openshell"],
         dev_depends: &["jackin-testkit"],
-        optional: &["jackin-core", "jackin-openshell"],
         imports: &[],
     },
 ];
@@ -262,24 +250,10 @@ fn dependency_problem(
     }
     let listed = |list: &[&str]| list.contains(&name);
     let allowed = match dependency.kind() {
-        DependencyKind::Dev => {
-            listed(rule.dev_depends) || listed(rule.depends) || listed(rule.optional)
-        }
-        DependencyKind::Normal | DependencyKind::Build => {
-            listed(rule.depends) || listed(rule.optional)
-        }
+        DependencyKind::Dev => listed(rule.dev_depends) || listed(rule.depends),
+        DependencyKind::Normal | DependencyKind::Build => listed(rule.depends),
     };
-    if !allowed {
-        return Some(format!(
-            "{subject}, which its LAYERS row does not allow (D14)"
-        ));
-    }
-    let must_be_optional = dependency.kind() != DependencyKind::Dev
-        && listed(rule.optional)
-        && !listed(rule.depends)
-        && !dependency.optional();
-    must_be_optional
-        .then(|| format!("{subject}, which must be an optional dependency in the manifest"))
+    (!allowed).then(|| format!("{subject}, which its LAYERS row does not allow (D14)"))
 }
 
 fn import_violations(repo: &Repo, member: &Member, allowed: &[&str]) -> Vec<Violation> {

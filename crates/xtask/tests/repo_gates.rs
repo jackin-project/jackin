@@ -23,14 +23,13 @@ const OTHER: &str = "1.0.0";
 enum Dep {
     Normal(&'static str),
     Dev(&'static str),
-    Optional(&'static str),
     Renamed(&'static str, &'static str),
 }
 
 impl Dep {
     fn name(self) -> &'static str {
         match self {
-            Dep::Normal(name) | Dep::Dev(name) | Dep::Optional(name) => name,
+            Dep::Normal(name) | Dep::Dev(name) => name,
             Dep::Renamed(_, package) => package,
         }
     }
@@ -175,11 +174,6 @@ fn manifest(name: &str, deps: &[Dep]) -> String {
     for dep in deps {
         match dep {
             Dep::Normal(dep) => normal.push_str(&format!("{dep} = {{ workspace = true }}\n")),
-            Dep::Optional(dep) => {
-                normal.push_str(&format!(
-                    "{dep} = {{ workspace = true, optional = true }}\n"
-                ));
-            }
             Dep::Dev(dep) => dev.push_str(&format!("{dep} = {{ workspace = true }}\n")),
             Dep::Renamed(alias, package) => normal.push_str(&format!(
                 "{alias} = {{ package = \"{package}\", version = \"0.1.0\" }}\n"
@@ -242,14 +236,6 @@ fn add(specs: &mut Specs, member: &str, dep: Dep) {
     }
 }
 
-fn remove(specs: &mut Specs, member: &str, dep_name: &str) {
-    for (name, deps) in specs.iter_mut() {
-        if *name == member {
-            deps.retain(|dep| dep.name() != dep_name);
-        }
-    }
-}
-
 fn usage_provider() -> Vec<Dep> {
     vec![
         Dep::Normal("jackin-usage-provider-core"),
@@ -258,7 +244,7 @@ fn usage_provider() -> Vec<Dep> {
 }
 
 fn d14() -> Specs {
-    use Dep::{Dev, Normal, Optional};
+    use Dep::{Dev, Normal};
     let core = Normal("jackin-core");
     let image = Normal("jackin-image");
     let openshell = Normal("jackin-openshell");
@@ -335,8 +321,8 @@ fn d14() -> Specs {
         (
             "jackin-xtask",
             vec![
-                Optional("jackin-core"),
-                Optional("jackin-openshell"),
+                Normal("jackin-core"),
+                Normal("jackin-openshell"),
                 Normal("clap"),
                 testkit,
             ],
@@ -692,14 +678,14 @@ mod layers {
 
     #[test]
     fn edges_outside_the_row_are_reported() -> TestResult {
-        use Dep::{Dev, Normal, Optional};
+        use Dep::{Dev, Normal};
         let mut specs = d14();
         add(&mut specs, "jackin-image", Normal("jackin-openshell"));
         add(&mut specs, "jackin-openshell", Normal("jackin-image"));
         add(&mut specs, "jackin-core", Normal("jackin-session"));
         add(&mut specs, "jackin-session", Normal("jackin-usage"));
         add(&mut specs, "jackin", Normal("jackin-usage-provider-codex"));
-        add(&mut specs, "jackin-xtask", Optional("jackin-session"));
+        add(&mut specs, "jackin-xtask", Normal("jackin-session"));
         add(&mut specs, "jackin-tui", Normal("jackin-testkit"));
         add(&mut specs, "jackin-image", Dev("jackin-session"));
         let violations = run(&specs, &[])?;
@@ -959,32 +945,6 @@ mod layers {
                 &["jackin-image", "reqwest"],
                 &["jackin-session", "reqwest"],
                 &["jackin-tui", "reqwest"],
-            ],
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn optional_edges_must_be_optional_in_the_manifest() -> TestResult {
-        use Dep::Normal;
-        let mut specs = d14();
-        remove(&mut specs, "jackin-xtask", "jackin-openshell");
-        remove(&mut specs, "jackin-xtask", "jackin-core");
-        add(&mut specs, "jackin-xtask", Normal("jackin-openshell"));
-        add(&mut specs, "jackin-xtask", Normal("jackin-core"));
-        let violations = run(&specs, &[])?;
-        assert_eq!(
-            summary(&violations),
-            [
-                manifest_found(CiStep::Layers, "jackin-xtask"),
-                manifest_found(CiStep::Layers, "jackin-xtask"),
-            ]
-        );
-        assert_messages(
-            &violations,
-            &[
-                &["jackin-xtask", "jackin-core"],
-                &["jackin-xtask", "jackin-openshell"],
             ],
         );
         Ok(())
