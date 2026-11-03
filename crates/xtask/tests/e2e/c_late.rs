@@ -188,6 +188,21 @@ async fn j08_credential_faults() {
                 }),
             ),
             (
+                "sandbox get is unreadable",
+                "sandbox get -o json is unreadable",
+                Box::new(|s| s.host_rule("sandbox get", None, 1, "no")),
+            ),
+        ],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn j08_create_request_faults() {
+    table(
+        "J08",
+        vec![
+            (
                 "the create request holds a real credential",
                 "create-request variable CODEX_AUTH_ACCESS_TOKEN holds a real value",
                 Box::new(|s| {
@@ -213,18 +228,80 @@ async fn j08_credential_faults() {
                 }),
             ),
             (
+                "the create request carries no launch id",
+                "the create request carries no JACKIN_LAUNCH_ID",
+                Box::new(|s| s.knobs().create_env_drop_launch = true),
+            ),
+            (
+                "a CODEX_AUTH_ name without a credential word",
+                "create-request variable CODEX_AUTH_ACCOUNT holds a real value",
+                Box::new(|s| {
+                    s.knobs().create_env_extra =
+                        Some(("CODEX_AUTH_ACCOUNT".to_owned(), "plain".to_owned()));
+                }),
+            ),
+            (
+                "a TOKEN name",
+                "create-request variable SERVICE_TOKEN holds a real value",
+                Box::new(|s| {
+                    s.knobs().create_env_extra =
+                        Some(("SERVICE_TOKEN".to_owned(), "plain".to_owned()));
+                }),
+            ),
+            (
+                "a KEY name",
+                "create-request variable SERVICE_KEY holds a real value",
+                Box::new(|s| {
+                    s.knobs().create_env_extra =
+                        Some(("SERVICE_KEY".to_owned(), "plain".to_owned()));
+                }),
+            ),
+            (
+                "a SECRET name",
+                "create-request variable SERVICE_SECRET holds a real value",
+                Box::new(|s| {
+                    s.knobs().create_env_extra =
+                        Some(("SERVICE_SECRET".to_owned(), "plain".to_owned()));
+                }),
+            ),
+            (
+                "a PASSWORD name",
+                "create-request variable SERVICE_PASSWORD holds a real value",
+                Box::new(|s| {
+                    s.knobs().create_env_extra =
+                        Some(("SERVICE_PASSWORD".to_owned(), "plain".to_owned()));
+                }),
+            ),
+            (
+                "a placeholder only inside the value",
+                "create-request variable CODEX_AUTH_ACCESS_TOKEN holds a real value",
+                Box::new(|s| {
+                    s.knobs().create_env_extra = Some((
+                        "CODEX_AUTH_ACCESS_TOKEN".to_owned(),
+                        "x-openshell:resolve:y".to_owned(),
+                    ));
+                }),
+            ),
+            (
                 "the create request is unreadable",
                 "create-request environment is unreadable",
                 Box::new(|s| s.knobs().create_env_unreadable = true),
             ),
-            (
-                "sandbox get is unreadable",
-                "sandbox get -o json is unreadable",
-                Box::new(|s| s.host_rule("sandbox get", None, 1, "no")),
-            ),
         ],
     )
     .await;
+    for (name, value) in [
+        ("NOTE", "plain"),
+        (
+            "CODEX_AUTH_ACCESS_TOKEN",
+            "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN",
+        ),
+    ] {
+        let control = Scenario::new().await;
+        control.knobs().create_env_extra = Some((name.to_owned(), value.to_owned()));
+        let ran = control.run().await;
+        ran.expect(&format!("{name} is not a leak"), &[]);
+    }
     let quiet = Scenario::new().await;
     quiet.knobs().create_env_extra = Some((
         "CODEX_AUTH_ACCESS_TOKEN".to_owned(),
@@ -258,6 +335,11 @@ async fn j09_egress_faults() {
                 "provider host answers 204",
                 "answered HTTP 204",
                 patched("J09", None, "/facts/provider_host/http_code", json!(204)),
+            ),
+            (
+                "no provider host result",
+                "the probe reported no provider host result",
+                patched("J09", None, "/facts/provider_host", Value::Null),
             ),
             (
                 "chatgpt.com rule accepted",
@@ -446,6 +528,21 @@ async fn j14_lifecycle_faults() {
                 "the marker id changed",
                 "marker id changed",
                 patched("J14", Some(2), "/facts/marker/id", json!("other")),
+            ),
+            (
+                "the marker was created again",
+                "marker was not created once and kept",
+                patched("J14", Some(2), "/facts/marker/created", json!(true)),
+            ),
+            (
+                "the marker was never created",
+                "marker was not created once and kept",
+                patched("J14", Some(1), "/facts/marker/created", json!(false)),
+            ),
+            (
+                "the sandbox vanishes after a refused purge",
+                "vanished after a refused purge",
+                Box::new(|s| s.knobs().purge_vanishes = true),
             ),
             (
                 "the written file is missing",

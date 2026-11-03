@@ -266,6 +266,28 @@ fn skip_check(scenario: &Scenario, step: &str, check: &str) {
 }
 
 #[tokio::test]
+async fn a_failed_probe_check_fails_its_step_with_the_check_name() {
+    fault(
+        "a check FAIL",
+        "J10",
+        "probe check fs failed: broken by the scenario",
+        |scenario| {
+            scenario.patch("J10", None, "/checks/0/name", json!("fs"));
+            scenario.patch("J10", None, "/checks/0/result", json!("FAIL"));
+            scenario.patch(
+                "J10",
+                None,
+                "/checks/0/detail",
+                json!("broken by the scenario"),
+            );
+            scenario.patch("J10", None, "/result", json!("FAIL"));
+            scenario.patch("J10", None, "/reason", json!("broken by the scenario"));
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn probe_exit_status_and_stderr_decide_before_the_json_does() {
     let valid = Scenario::new()
         .await
