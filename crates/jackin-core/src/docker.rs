@@ -82,6 +82,15 @@ pub enum DockerLabel {
     Engine(NonZeroU16),
 }
 
+impl fmt::Display for DockerLabel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DockerLabel::Off => f.write_str("off"),
+            DockerLabel::Engine(port) => write!(f, "engine port {port}"),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DockerRisk {
     ClientKeyReadable,

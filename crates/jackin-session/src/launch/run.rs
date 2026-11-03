@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use jackin_core::{
-    Agent, FileMode, HookKind, HostPath, LabelSelector, SandboxLabels, SandboxName, SandboxPath,
-    SecretBytes, StartRequest, sandbox_layout,
+    Agent, DockerCapability, EngineCert, FileMode, HookKind, HostPath, LabelSelector,
+    SandboxLabels, SandboxName, SandboxPath, SecretBytes, StartRequest, sandbox_layout,
 };
 use jackin_image::{BuiltImage, ImageSource, ensure_image};
 use jackin_openshell::{
@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::accounts::AccountError;
 use crate::files::render_auth_json;
+use crate::launch::certs;
 use crate::launch::decide::{Act, Boot, Decision, Done, Finish, HookPlan, Observed, Wait, decide};
 use crate::launch::hooks::{self, HookRun};
 use crate::launch::probe;
@@ -27,7 +28,7 @@ use crate::launch::{
     RestoreCandidate, SkipReason,
 };
 use crate::lock::LockError;
-use crate::plan::LaunchPlan;
+use crate::plan::{LaunchPlan, PlannedFile};
 use crate::project;
 use crate::service::{POLL, Session};
 
@@ -104,6 +105,19 @@ impl Run<'_> {
                     error: Box::new(error),
                 });
             }
+        }
+        if let DockerCapability::Enabled(access) = self.plan.docker() {
+            if let Err(error) = certs::precheck(deps.host.fs.as_ref(), access).await {
+                return Err(LaunchFailure {
+                    launch_id: self.plan.launch_id().clone(),
+                    step: LaunchStep::Credentials,
+                    sandbox: None,
+                    error: Box::new(error),
+                });
+            }
+        }
+        for warning in self.plan.warnings() {
+            self.events.emit(LaunchEvent::Warning(*warning)).await;
         }
         self.drive().await
     }
@@ -494,17 +508,45 @@ impl Run<'_> {
         )
         .await?;
         let files = self.plan.files();
-        for file in [&files.codex_config, &files.env] {
-            self.write(
-                STEP,
-                sandbox,
-                &file.path,
-                file.mode,
-                file.text.clone().into_bytes(),
-            )
-            .await?;
-        }
+        self.write_planned(sandbox, &files.codex_config).await?;
+        self.engine_certs(sandbox).await?;
+        self.write_planned(sandbox, &files.env).await?;
         self.done.steps.insert(STEP);
+        Ok(())
+    }
+
+    async fn write_planned(&self, sandbox: &SandboxName, file: &PlannedFile) -> Result<(), Stop> {
+        self.write(
+            LaunchStep::Credentials,
+            sandbox,
+            &file.path,
+            file.mode,
+            file.text.clone().into_bytes(),
+        )
+        .await
+    }
+
+    async fn engine_certs(&self, sandbox: &SandboxName) -> Result<(), Stop> {
+        const STEP: LaunchStep = LaunchStep::Credentials;
+        let DockerCapability::Enabled(access) = self.plan.docker() else {
+            return Ok(());
+        };
+        let mut files = Vec::new();
+        for cert in EngineCert::ALL {
+            match certs::read(self.session.deps.host.fs.as_ref(), access, cert).await {
+                Ok(bytes) => files.push((cert, bytes)),
+                Err(error) => {
+                    for (_, bytes) in files {
+                        drop(SecretBytes::new(bytes));
+                    }
+                    return Err(failed(STEP, error));
+                }
+            }
+        }
+        for (cert, bytes) in files {
+            self.write(STEP, sandbox, &cert.sandbox_path(), cert.mode(), bytes)
+                .await?;
+        }
         Ok(())
     }
 

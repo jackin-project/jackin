@@ -4,7 +4,9 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use jackin_core::{AttemptId, Phase, SandboxName, SupervisorReading, SupervisorState};
+use jackin_core::{
+    AttemptId, Phase, SandboxLabels, SandboxName, SupervisorReading, SupervisorState,
+};
 use jackin_image::BuiltImage;
 use jackin_openshell::{Provisioning, SandboxView};
 
@@ -149,6 +151,9 @@ pub(super) fn decide(
     if !done.steps.contains(&LaunchStep::Provider) {
         return Decision::Run(Act::Provider);
     }
+    if let Some(stale) = stale(plan, image, observed) {
+        return Decision::Fail(LaunchStep::Sandbox, stale);
+    }
     match observed {
         Observed::Absent => Decision::Run(Act::Create(image.clone())),
         Observed::Ambiguous(sandboxes) => Decision::Fail(
@@ -161,6 +166,32 @@ pub(super) fn decide(
         Observed::Settling(view) => settling(view, done, limits),
         Observed::Ready(view, probe) => ready(view, probe, done, limits),
     }
+}
+
+fn stale(plan: &LaunchPlan, image: &BuiltImage, observed: &Observed) -> Option<LaunchError> {
+    let (Observed::Settling(view) | Observed::Ready(view, _)) = observed else {
+        return None;
+    };
+    let wanted = plan.draft().labels().clone().complete(&image.id);
+    let found = match SandboxLabels::from_labels(&view.labels) {
+        Ok(found) => found,
+        Err(error) => {
+            return Some(LaunchError::SandboxLabels {
+                sandbox: view.name.clone(),
+                error,
+            });
+        }
+    };
+    (found.image != wanted.image || found.planned.docker != wanted.planned.docker).then(|| {
+        LaunchError::StaleSandbox {
+            launch: plan.launch_id().clone(),
+            sandbox: view.name.clone(),
+            found_image: found.image,
+            wanted_image: wanted.image,
+            found_docker: found.planned.docker,
+            wanted_docker: wanted.planned.docker,
+        }
+    })
 }
 
 fn settling(view: &SandboxView, done: &Done, limits: &LaunchLimits) -> Decision {

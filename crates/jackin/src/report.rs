@@ -83,7 +83,8 @@ fn launch_failure(failure: &LaunchFailure) -> String {
         failure.step,
         launch_error(&failure.error)
     );
-    if let Some(sandbox) = &failure.sandbox {
+    let stale = matches!(*failure.error, LaunchError::StaleSandbox { .. });
+    if let Some(sandbox) = failure.sandbox.as_ref().filter(|_| !stale) {
         text.push_str(&format!(
             "\nsandbox {sandbox} remains; retry with: jackin load --launch-id {}",
             failure.launch_id

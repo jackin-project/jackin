@@ -15,7 +15,7 @@ use tempfile::TempDir;
 
 use super::support::{TestResult, catalog, guard};
 
-const HEADER: &str = "version: 1
+pub(super) const HEADER: &str = "version: 1
 filesystem_policy:
   include_workdir: true
   read_only:
@@ -31,7 +31,7 @@ process:
   run_as_group: sandbox
 ";
 
-fn rules(rows: &[(&str, &str, u16, &str)]) -> String {
+pub(super) fn rules(rows: &[(&str, &str, u16, &str)]) -> String {
     let mut text = format!("{HEADER}network_policies:\n");
     for (key, host, port, binary) in rows {
         text.push_str(&format!(
@@ -58,13 +58,13 @@ fn manifest(dockerfile: &str, policy: &str, hooks: &[(&str, &str)]) -> String {
     text
 }
 
-struct Scope {
-    catalog: RoleCatalog,
+pub(super) struct Scope {
+    pub(super) catalog: RoleCatalog,
     runner: Arc<TestRunner>,
     _cache: TempDir,
 }
 
-fn scope() -> Result<Scope, Box<dyn Error>> {
+pub(super) fn scope() -> Result<Scope, Box<dyn Error>> {
     let cache = tempfile::tempdir()?;
     let path = HostPath::parse(&std::fs::canonicalize(cache.path())?)?;
     let (catalog, runner) = catalog(&path);

@@ -9,6 +9,7 @@ mod errors;
 mod files;
 mod identity;
 mod image_request;
+mod role_engine;
 mod roles;
 mod roles_git;
 mod roles_load;

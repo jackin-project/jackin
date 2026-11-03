@@ -3,11 +3,11 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::{DockerRisk, EnvName, LaunchId, ProjectRoot};
+use jackin_core::{EnvName, LaunchId, ProjectRoot};
 use jackin_image::Rebuild;
 use jackin_session::{
-    AttachRequest, EnvQuestion, LaunchOutcome, LaunchPlan, LaunchRequest, LaunchWarning,
-    LineDelivery, PlanError, Prompting, RestoreCandidate, launch_events, plan_launch,
+    AttachRequest, EnvQuestion, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery, PlanError,
+    Prompting, RestoreCandidate, launch_events, plan_launch,
 };
 
 use super::progress::launch_event;
@@ -16,21 +16,6 @@ use crate::cli::LoadArgs;
 use crate::error::CommandError;
 use crate::paths::absolutize;
 use crate::term;
-
-const DOCKER_WARNING: &str = "warning: the Docker capability is enabled for this sandbox";
-
-fn risk_text(risk: DockerRisk) -> &'static str {
-    match risk {
-        DockerRisk::ClientKeyReadable => "the agent can read the engine client key",
-        DockerRisk::ContainersBypassPolicy => "containers bypass the sandbox network policy",
-        DockerRisk::BindMountsNameEngineHost => {
-            "a bind mount names a path on the engine host, not in the sandbox"
-        }
-        DockerRisk::EngineOutlivesSandbox => {
-            "the engine outlives the sandbox, and sandboxes that use one engine see each other's containers; remove them yourself"
-        }
-    }
-}
 
 async fn answer(app: &mut App, question: &EnvQuestion) -> Result<String, CommandError> {
     let label = question
@@ -119,12 +104,6 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
         .map(|assignment| (assignment.name, assignment.value))
         .collect();
     let plan = plan(app, &config, &role, &request, &mut values).await?;
-    if plan.warnings().contains(&LaunchWarning::DockerCapability) {
-        app.io.note(DOCKER_WARNING);
-        for risk in DockerRisk::ALL {
-            app.io.note(&format!("  {}", risk_text(risk)));
-        }
-    }
     let launch = plan.launch_id().clone();
     let session = app.session(&config).await?;
     let (events, mut feed) = launch_events(LineDelivery::Reliable);

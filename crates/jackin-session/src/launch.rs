@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+mod certs;
 mod decide;
 pub(crate) mod hooks;
 pub(crate) mod probe;
@@ -11,9 +12,9 @@ use std::fmt;
 use std::time::Duration;
 
 use jackin_core::{
-    AccountName, AttemptId, FsError, HookKind, LaunchId, PathError, Phase, ProcessError,
-    SandboxName, SupervisorReading, SupervisorState, TerminalText, plain, plain_duration,
-    plain_list,
+    AccountName, AttemptId, DockerLabel, EngineCert, EngineCertProblem, FsError, HookKind,
+    HostPath, ImageLabel, LabelError, LaunchId, PathError, Phase, ProcessError, SandboxName,
+    SupervisorReading, SupervisorState, TerminalText, plain, plain_duration, plain_list,
 };
 use jackin_image::{ImageError, ImageEvent};
 use jackin_openshell::GatewayError;
@@ -254,6 +255,28 @@ pub enum LaunchError {
         hook: HookKind,
         exit_code: i32,
         output: TerminalText,
+    },
+    #[error("the engine certificate {} in {directory} is unusable: {problem}", file.file_name())]
+    EngineCert {
+        file: EngineCert,
+        directory: HostPath,
+        problem: EngineCertProblem,
+    },
+    #[error(
+        "launch {launch} cannot continue sandbox {sandbox}: the sandbox has image {found_image} and Docker {found_docker}, this launch has image {wanted_image} and Docker {wanted_docker}; start a new launch with a new launch ID"
+    )]
+    StaleSandbox {
+        launch: LaunchId,
+        sandbox: SandboxName,
+        found_image: ImageLabel,
+        wanted_image: ImageLabel,
+        found_docker: DockerLabel,
+        wanted_docker: DockerLabel,
+    },
+    #[error("the labels of sandbox {sandbox} are unreadable: {error}")]
+    SandboxLabels {
+        sandbox: SandboxName,
+        error: LabelError,
     },
     #[error("the sandbox probe is invalid: {}", plain(.message))]
     ProbeInvalid { message: String },

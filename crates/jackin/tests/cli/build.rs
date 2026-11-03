@@ -87,3 +87,24 @@ async fn a_role_whose_final_stage_is_not_construct_fails_naming_the_base_and_bui
     })
     .await
 }
+
+#[tokio::test]
+async fn a_workspace_docker_flag_alone_does_not_change_the_image_that_build_makes() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let harness = built(&rig)?;
+        let plain = harness.run(&["build", "--json"]).await?;
+        plain.ok()?;
+        let text = rig
+            .config
+            .render()
+            .replace("docker = false", "docker = true");
+        assert_ne!(text, rig.config.render());
+        harness.write_config(&text)?;
+        let flagged = harness.run(&["build", "--json"]).await?;
+        flagged.ok()?;
+        assert_eq!(plain.stdout, flagged.stdout);
+        Ok(())
+    })
+    .await
+}

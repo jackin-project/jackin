@@ -5,13 +5,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use jackin_core::{
-    Agent, CommitId, Config, FileKind, FileSystem, FsError, HookKind, HostPath, LinkProblem,
-    ManifestError, PathError, ProcessError, ProcessOutput, ProcessRunner, ProcessStatus, RepoPath,
-    RoleManifest, RoleName, RoleRev, RoleSource, RoleUrl, Sha256, TerminalText, Workspace,
-    plain_list,
+    Agent, CommitId, Config, ENGINE_HOST, FileKind, FileSystem, FsError, HookKind, HostPath,
+    LinkProblem, ManifestError, PathError, ProcessError, ProcessOutput, ProcessRunner,
+    ProcessStatus, RepoPath, RoleManifest, RoleName, RoleRev, RoleSource, RoleUrl, Sha256,
+    TerminalText, Workspace, plain_list,
 };
 use jackin_image::{DockerfileError, HookFiles, RoleRevision, SourceFile, validate_dockerfile};
-use jackin_openshell::{ClosureViolation, PolicyDocument, PolicyError, ProviderProfile};
+use jackin_openshell::{ClosureViolation, PolicyDocument, PolicyError, ProviderProfile, RuleKey};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -70,6 +70,8 @@ pub enum RoleError {
     Policy(#[from] PolicyError),
     #[error("the role policy overlaps provider hosts: {}", plain_list(.0))]
     ProviderHostClosure(Vec<ClosureViolation>),
+    #[error("the role policy names the Docker engine host {ENGINE_HOST} in the rules {}", plain_list(.0))]
+    EngineHost(Vec<RuleKey>),
     #[error("git failed with {status}: {output}")]
     Git {
         status: ProcessStatus,
@@ -232,6 +234,7 @@ impl RoleCatalog {
             .await;
         if let Some(policy) = &policy {
             Self::check_closure(policy, &mut findings);
+            Self::check_engine_host(policy, &mut findings);
         }
         match (dockerfile, policy) {
             (Some(bytes), Some(policy)) if findings.is_empty() => Ok(Inspected {
@@ -335,6 +338,15 @@ impl RoleCatalog {
             path: path.clone(),
             bytes,
         })
+    }
+
+    fn check_engine_host(policy: &PolicyDocument, findings: &mut Vec<RoleError>) {
+        let mut rules = policy.engine_host_rules();
+        rules.sort();
+        rules.dedup();
+        if !rules.is_empty() {
+            findings.push(RoleError::EngineHost(rules));
+        }
     }
 
     fn check_closure(policy: &PolicyDocument, findings: &mut Vec<RoleError>) {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin::ExitClass;
-use jackin_testkit::{RoleFixture, TestResult, World, guard};
+use jackin_testkit::{Rig, RoleFixture, TestResult, World, guard};
 
 use super::support::{FixedConnector, Harness, failed};
 
@@ -398,6 +398,68 @@ async fn a_role_host_the_sandbox_would_match_to_a_provider_host_fails_in_every_d
             ran.ok()?;
             assert!(ran.stdout.is_empty());
         }
+        Ok(())
+    })
+    .await
+}
+
+const ENGINE_RULE: &str = "version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /bin
+  read_write:
+    - /tmp
+landlock:
+  compatibility: hard_requirement
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+network_policies:
+  engine-peek:
+    name: engine-peek
+    endpoints:
+      - host: host.openshell.internal
+        port: 8080
+    binaries:
+      - path: /usr/bin/curl
+";
+
+#[tokio::test]
+async fn role_check_and_load_refuse_a_policy_that_names_the_engine_host_on_any_port() -> TestResult
+{
+    guard(async {
+        let rule = RoleFixture::new("sentinel")?.policy_yaml(ENGINE_RULE);
+        let (ran, _, _) = checked(&rule, false).await?;
+        failed(
+            &ran,
+            ExitClass::Failure,
+            &["engine-peek", "host.openshell.internal"],
+        )?;
+        let clean = RoleFixture::new("sentinel")?;
+        let (ran, _, _) = checked(&clean, false).await?;
+        ran.ok()?;
+
+        let rig = Rig::new().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        let good = rig.loaded.root().as_path().display().to_string();
+        let bad = RoleFixture::new("sentinel")?.policy_yaml(ENGINE_RULE);
+        bad.commit().await?;
+        let swapped = rig
+            .config
+            .render()
+            .replace(&good, &bad.root().as_path().display().to_string());
+        harness.write_config(&swapped)?;
+        let ran = harness.run(&["load"]).await?;
+        failed(
+            &ran,
+            ExitClass::Failure,
+            &["engine-peek", "host.openshell.internal"],
+        )?;
+        assert!(rig.gateway().sandboxes().is_empty());
+        assert!(rig.gateway().providers().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
         Ok(())
     })
     .await
