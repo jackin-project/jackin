@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{plain, plain_duration};
+use jackin_session::ProcessGroup;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
-use rustix::process::{Pid, Signal, kill_process_group};
 use thiserror::Error;
 use tokio::sync::mpsc;
 
@@ -166,15 +166,8 @@ impl PtyLink for PortableLink {
     }
 
     fn kill(&mut self) {
-        if let Some(pid) = self
-            .child
-            .process_id()
-            .and_then(|raw| i32::try_from(raw).ok())
-            .and_then(Pid::from_raw)
-        {
-            match kill_process_group(pid, Signal::KILL) {
-                Ok(()) | Err(_) => {}
-            }
+        if let Some(group) = self.child.process_id().and_then(ProcessGroup::of_leader) {
+            drop(group.sweep());
         }
         drop(self.child.kill());
         drop(self.child.wait());

@@ -386,7 +386,7 @@ async fn interrupted_case(request: &ImageRequest, cancel_it: bool) -> TestResult
         cancel.cancel();
         let cancelled = running.await;
         assert!(
-            matches!(cancelled, Err(ImageError::Cancelled)),
+            matches!(cancelled, Err(ImageError::Cancelled { .. })),
             "{cancelled:?}"
         );
     } else {
@@ -428,7 +428,10 @@ async fn waiting_case(request: &ImageRequest) -> TestResult {
     };
     let (a, driver) = tokio::join!(a, driver);
     let (result, (builds, images)) = driver?;
-    assert!(matches!(result, Err(ImageError::Cancelled)), "{result:?}");
+    assert!(
+        matches!(result, Err(ImageError::Cancelled { .. })),
+        "{result:?}"
+    );
     assert_eq!((builds, images), (1, 1), "the waiter built or tagged");
     assert_eq!(a?.source, ImageSource::Built);
     Ok(())

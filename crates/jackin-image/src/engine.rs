@@ -5,8 +5,8 @@ use std::fmt::Debug;
 
 use async_trait::async_trait;
 use jackin_core::{
-    BuilderName, FileLock, FsError, ImageId, ImageTag, ProcessError, ProcessStatus, TerminalText,
-    plain,
+    BuilderName, FileLock, FsError, GroupFault, ImageId, ImageTag, ProcessError, ProcessStatus,
+    TerminalText, plain,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -79,6 +79,6 @@ pub enum EngineError {
     Fs(#[from] FsError),
     #[error("gave up waiting for another process to finish building {key}")]
     LockTimeout { key: ImageTag },
-    #[error("cancelled")]
-    Cancelled,
+    #[error("cancelled{}", GroupFault::note(.group.as_ref()))]
+    Cancelled { group: Option<GroupFault> },
 }

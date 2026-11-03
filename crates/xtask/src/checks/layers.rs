@@ -160,7 +160,7 @@ pub const LAYERS: &[LayerRule] = &[
     },
     LayerRule {
         member: "jackin-xtask",
-        depends: &["jackin-core", "jackin-openshell"],
+        depends: &["jackin-core", "jackin-openshell", "jackin-session"],
         dev_depends: &["jackin-testkit"],
         imports: &[],
     },

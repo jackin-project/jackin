@@ -61,7 +61,7 @@ fn child(parent: &HostPath, name: &str) -> Result<HostPath, EngineError> {
 
 fn from_process(error: ProcessError) -> EngineError {
     match error {
-        ProcessError::Cancelled { .. } => EngineError::Cancelled,
+        ProcessError::Cancelled { group, .. } => EngineError::Cancelled { group },
         other => EngineError::Process(other),
     }
 }
@@ -337,7 +337,7 @@ impl ImageEngine for BuildxEngine {
             }
             tokio::select! {
                 biased;
-                () = cancel.cancelled() => return Err(EngineError::Cancelled),
+                () = cancel.cancelled() => return Err(EngineError::Cancelled { group: None }),
                 () = sleep(LOCK_POLL) => {}
             }
         }

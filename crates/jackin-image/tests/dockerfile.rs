@@ -78,7 +78,7 @@ fn plan_verdict(result: Result<ImagePlan, ImageError>) -> Verdict {
             | ImageError::NotDelivered { .. }
             | ImageError::SourceMoved { .. }
             | ImageError::LockTimeout { .. }
-            | ImageError::Cancelled,
+            | ImageError::Cancelled { .. },
         ) => Verdict::Other,
     }
 }

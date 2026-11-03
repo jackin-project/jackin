@@ -229,6 +229,7 @@ pub(super) async fn upload_tree(
     if cancel.is_cancelled() {
         return Err(GatewayError::Cancelled {
             op: GatewayOp::UploadTree,
+            group: None,
         });
     }
     let dest = writable(root, dest)?;
@@ -296,6 +297,7 @@ pub(super) async fn upload_file(
     if cancel.is_cancelled() {
         return Err(GatewayError::Cancelled {
             op: GatewayOp::UploadFile,
+            group: None,
         });
     }
     let target = writable(root, dest)?;

@@ -379,14 +379,36 @@ pub enum FsError {
     SymlinkTarget(HostPath),
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Error)]
+pub enum GroupFault {
+    #[error("processes of its group were still alive after {}", plain_duration(.after))]
+    Alive { after: Duration },
+    #[error("cannot stop the processes of its group: {}", plain(.message))]
+    Unreachable { message: String },
+}
+
+impl GroupFault {
+    #[must_use]
+    pub fn note(group: Option<&GroupFault>) -> String {
+        group.map_or_else(String::new, |fault| format!("; {fault}"))
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ProcessError {
     #[error("failed to start {program}: {}", plain(.message))]
     Spawn { program: Program, message: String },
-    #[error("{program} timed out after {}", plain_duration(.after))]
-    Timeout { program: Program, after: Duration },
-    #[error("{program} was cancelled")]
-    Cancelled { program: Program },
+    #[error("{program} timed out after {}{}", plain_duration(.after), GroupFault::note(.group.as_ref()))]
+    Timeout {
+        program: Program,
+        after: Duration,
+        group: Option<GroupFault>,
+    },
+    #[error("{program} was cancelled{}", GroupFault::note(.group.as_ref()))]
+    Cancelled {
+        program: Program,
+        group: Option<GroupFault>,
+    },
     #[error("{program} wrote more than {limit} bytes to {stream}")]
     OutputTooLarge {
         program: Program,
@@ -399,4 +421,6 @@ pub enum ProcessError {
         stream: OutputStream,
         message: String,
     },
+    #[error("{program}: {fault}")]
+    Group { program: Program, fault: GroupFault },
 }

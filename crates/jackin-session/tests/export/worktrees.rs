@@ -227,7 +227,7 @@ async fn a_detached_head_in_a_linked_worktree_is_exported_under_the_unique_workt
         });
         let cancelled = rig.world.session.export(&rig.config, &name, token).await;
         assert!(
-            matches!(cancelled, Err(ExportError::Cancelled)),
+            matches!(cancelled, Err(ExportError::Cancelled { group: None })),
             "{cancelled:?}"
         );
         assert_eq!(sandbox_repository(&handle).await?, sandbox_before);

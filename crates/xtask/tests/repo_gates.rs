@@ -685,7 +685,7 @@ mod layers {
         add(&mut specs, "jackin-core", Normal("jackin-session"));
         add(&mut specs, "jackin-session", Normal("jackin-usage"));
         add(&mut specs, "jackin", Normal("jackin-usage-provider-codex"));
-        add(&mut specs, "jackin-xtask", Normal("jackin-session"));
+        add(&mut specs, "jackin-xtask", Normal("jackin-tui"));
         add(&mut specs, "jackin-tui", Normal("jackin-testkit"));
         add(&mut specs, "jackin-image", Dev("jackin-session"));
         let violations = run(&specs, &[])?;
@@ -712,7 +712,7 @@ mod layers {
                 &["jackin-openshell", "jackin-image"],
                 &["jackin-session", "jackin-usage"],
                 &["jackin-tui", "jackin-testkit"],
-                &["jackin-xtask", "jackin-session"],
+                &["jackin-xtask", "jackin-tui"],
                 &["jackin", "jackin-usage-provider-codex"],
             ],
         );

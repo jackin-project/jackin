@@ -39,9 +39,16 @@ fn setup(message: impl Into<String>) -> ProductionError {
 }
 
 #[derive(Debug)]
-struct ToolRunner {
+pub struct ToolRunner {
     host: Arc<dyn HostProcess>,
     env: BTreeMap<String, String>,
+}
+
+impl ToolRunner {
+    #[must_use]
+    pub fn new(host: Arc<dyn HostProcess>, env: BTreeMap<String, String>) -> ToolRunner {
+        ToolRunner { host, env }
+    }
 }
 
 fn spawn_error(spec: &ProcessSpec, message: &str) -> ProcessError {
@@ -104,12 +111,18 @@ impl ProcessRunner for ToolRunner {
                 stdout: output.stdout.to_vec(),
                 stderr: output.stderr.to_vec(),
             }),
-            Err(HostError::Timeout { after, .. }) => Err(ProcessError::Timeout {
+            Err(HostError::Timeout { after, group, .. }) => Err(ProcessError::Timeout {
                 program: spec.program,
                 after,
+                group,
             }),
-            Err(HostError::Cancelled { .. }) => Err(ProcessError::Cancelled {
+            Err(HostError::Cancelled { group, .. }) => Err(ProcessError::Cancelled {
                 program: spec.program,
+                group,
+            }),
+            Err(HostError::Group { fault, .. }) => Err(ProcessError::Group {
+                program: spec.program,
+                fault,
             }),
             Err(HostError::OutputTooLarge { limit, .. }) => Err(ProcessError::OutputTooLarge {
                 program: spec.program,
@@ -230,10 +243,10 @@ pub async fn production(args: &E2eArgs) -> Result<Boundaries, ProductionError> {
         .map_err(|error| setup(format!("the OpenShell registry path: {error}")))?;
     let name = GatewayName::parse(&args.gateway)
         .map_err(|error| setup(format!("the gateway name: {error}")))?;
-    let runner: Arc<dyn ProcessRunner> = Arc::new(ToolRunner {
-        host: Arc::clone(&host),
-        env: super::scratch::base_env(&env),
-    });
+    let runner: Arc<dyn ProcessRunner> = Arc::new(ToolRunner::new(
+        Arc::clone(&host),
+        super::scratch::base_env(&env),
+    ));
     let resolved = resolve_gateway(
         runner.as_ref(),
         &StdFileSystem::default(),

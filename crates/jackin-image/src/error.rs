@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{ImageId, ImageTag, Platform};
+use jackin_core::{GroupFault, ImageId, ImageTag, Platform};
 use thiserror::Error;
 
 use crate::dockerfile::DockerfileError;
@@ -29,8 +29,8 @@ pub enum ImageError {
     },
     #[error("gave up waiting for another process to finish building {key}")]
     LockTimeout { key: ImageTag },
-    #[error("cancelled")]
-    Cancelled,
+    #[error("cancelled{}", GroupFault::note(.group.as_ref()))]
+    Cancelled { group: Option<GroupFault> },
 }
 
 fn found_text(found: Option<&ImageId>) -> String {

@@ -72,11 +72,12 @@ fn temp_beside(target: &Path) -> Option<PathBuf> {
 
 fn process_error(error: ProcessError, op: GatewayOp) -> GatewayError {
     match error {
-        ProcessError::Timeout { after, .. } => GatewayError::Timeout { op, after },
-        ProcessError::Cancelled { .. } => GatewayError::Cancelled { op },
+        ProcessError::Timeout { after, group, .. } => GatewayError::Timeout { op, after, group },
+        ProcessError::Cancelled { group, .. } => GatewayError::Cancelled { op, group },
         failed @ (ProcessError::Spawn { .. }
         | ProcessError::OutputTooLarge { .. }
-        | ProcessError::Read { .. }) => GatewayError::Process(failed),
+        | ProcessError::Read { .. }
+        | ProcessError::Group { .. }) => GatewayError::Process(failed),
     }
 }
 

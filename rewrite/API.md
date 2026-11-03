@@ -139,7 +139,7 @@ The layer step of `xtask ci` reads one table, `LAYERS`, and fails when a workspa
 | `jackin-tui` | core, image, openshell, session, `junie-tui`; `jackin-usage` from U13; the terminal pane block of `junie-tui` from U14 | testkit | no gateway crates |
 | `jackin-testkit` | core, image, openshell, session, tui; `jackin-usage` from U13 | none | an HTTP server crate for `UsageServer` (from U13); no gateway crates |
 | `jackin` | core, image, openshell, session, tui; `jackin-usage` from U13 | testkit | no gateway crates |
-| `jackin-xtask` | none; optional (feature `e2e`): core, openshell, `jackin-usage` from U13 | testkit | `portable-pty` and `schemars`, optional (feature `e2e`) |
+| `jackin-xtask` | none; optional (feature `e2e`): core, openshell, session, `jackin-usage` from U13 | testkit | `portable-pty` and `schemars`, optional (feature `e2e`) |
 
 The gateway crates are `openshell-sdk`, `openshell-policy`, `tonic`, and `russh`; the common set is `serde`, `thiserror`, `tokio`, `tokio-util`, `async-trait`, and `clap` where a crate has a CLI. Rules that follow from the table. `image` and `openshell` never depend on each other. `session` never depends on `jackin-usage`, and no crate outside `crates/usage/` names a `jackin-usage-*` crate other than the `jackin-usage` facade. `docker` is started only from `jackin-image`; the `containers` step enforces it, and the layer table does not. `Secret::expose` is called only from an allowlist of files. `jackin-testkit` depends on `jackin-tui`, and `jackin-tui` dev-depends on `jackin-testkit`: Cargo allows this cycle for dev-dependencies, which is why every test is an integration test (below).
 
@@ -278,7 +278,7 @@ An independent review of the first synthesis found 16 problems. The orchestrator
 | 10 | A string rule for `docker` in the layer step | deleted; the `containers` step alone guards the crate boundary of `Program::Docker` and `DockerSubcommand` and flags `Command::new` of container programs and computed programs; the subcommand rule is the `DockerSubcommand` type | 9 Rules, tests |
 | 11 | The contract suite needs infrastructure the in-process server lacks | groups `Core`, `Transfer`, `Terminal`; all against the fake and the live gateway; `Core` only in process; name length moves to `SandboxName::parse` tests and a raw adapter test | 3 Contract suite |
 | 12 | The 0.1.6 input lease is not modeled | `Lease` event and the lease rules in the `open_terminal` contract; the fake models them; the Terminal group checks them | 3 Terminal sessions; 7 `open_terminal` |
-| 13 | The `ToolRunner` seam fakes the repository's own tools | deleted; the run tests drive the shipped `jackin-xtask` binary with scripted `cargo`, `reuse`, and `bun` on `PATH` and assert the log of tool calls and the exit status (U1 fix round) | 9 Types, Rules, tests |
+| 13 | A seam in `xtask ci` fakes the repository's own tools | deleted (it was also named `ToolRunner`; that name now belongs to the public `ProcessRunner` of the e2e runner in `crates/xtask/src/e2e/production.rs`, built with `ToolRunner::new(host, env)` over `HostProcess`, which is a different type); the run tests drive the shipped `jackin-xtask` binary with scripted `cargo`, `reuse`, and `bun` on `PATH` and assert the log of tool calls and the exit status (U1 fix round) | 9 Types, Rules, tests |
 | 14 | Decisions are not cited accurately | the citation names DESIGN anchors and says `decisions.tsv` has no rows yet | Synthesis decision |
 | 15 | Argument structs are missing | all structs and enums defined; `account add --name`; `build` prints the image ID and `--json` writes `BuildOutput` | 8 Commands, Output |
 | 16 | Minor findings | `Suspending` and `Suspended` rows; private `SandboxCreate` fields with a constructor; `LineDelivery`; `Prompting` with defaults pre-filled; reserved credential keys and `CODEX_HOME`; three call-asserting tests rewritten; `boot` guards a stale `running`; profile update through `UpdateProviderProfiles`; U5 and U7 merged to follow PLAN P4.1 then P4.2; `capture_env` moved to `jackin-session::host`; xtask `e2e` feature | 1; 3; 4; 5; 9; 10 |
@@ -290,7 +290,7 @@ An independent review of the first synthesis found 16 problems. The orchestrator
 - We accept that `Config` changes go through one `ConfigEdit` enum in exchange for invariants held in one place. A new config feature adds a variant, and the compiler lists every match site.
 - We accept a 16-method `Gateway` in exchange for a fake that implements semantics, not argv.
 - We accept polling with the `Clock` for "wait until Ready" and "wait until the state file exists" instead of SDK `wait_ready`, in exchange for tests that run under a fake clock with no real sleeping.
-- We accept that `jackin-session::host` holds the real `ProcessRunner` and `Clock` (PLAN P5.2) and that `jackin-core` holds only `StdFileSystem`, so D14's "no I/O except config files" stays true. `xtask` cannot use `jackin-session`, so it carries a private runner of about 50 lines for the `openshell` calls of its `GrpcGateway` and a plain `tokio::process` call for the `jackin` binary.
+- We accept that `jackin-session::host` holds the real `ProcessRunner` and `Clock` (PLAN P5.2) and that `jackin-session::process_group` holds `ProcessGroup` (process-group signals and `/proc` reads), the host process runner's group stop. `xtask` is a top-level tooling binary and depends on `jackin-session`, and the `LAYERS` row of `jackin-xtask` allows that edge, so the stop of a process group has one implementation (`rewrite/reconciliation/sandbox-pgid.md`). `GroupFault` stays in `jackin-core` because `ProcessError` holds it and it does no I/O. `xtask` carries a private runner of about 50 lines for the `openshell` calls of its `GrpcGateway` and a plain `tokio::process` call for the `jackin` binary, and both stop their children through `ProcessGroup`.
 - We accept a sandbox-name suffix derived from the launch ID in exchange for a creation fence. A suffix collision between two different launches is a `NameCollision` error: the operator retries with a new launch ID. There is no salted retry.
 - We accept truncating the workspace slug to 7 characters in the sandbox name. The full workspace name is a label.
 - We accept the lib targets of `jackin` and `jackin-xtask` in exchange for integration tests that call the real entry point (D14 names them). Each package still ships one binary.
@@ -1017,7 +1017,7 @@ where
     Fut: Future<Output = Result<Poll<T>, E>> + Send;
 ```
 
-`ProcessStdin::Bytes` carries a secret, so a secret never sits in `args` (D10). With `lines` set, the runner streams complete lines to the sink and returns a stdout and stderr tail of at most 64 KiB; with `lines` unset it returns all output. Cancellation kills the child and returns `ProcessError::Cancelled`. The runner always applies `spec.timeout` and takes stdin from `/dev/null` for `ProcessStdin::Null` (D03, P0.2 G1). The real `ProcessRunner` and `Clock` live in `jackin-session::host`, and so does `capture_env`, the only reader of the process environment; `StdFileSystem` lives here.
+`ProcessStdin::Bytes` carries a secret, so a secret never sits in `args` (D10). With `lines` set, the runner streams complete lines to the sink and returns a stdout and stderr tail of at most 64 KiB; with `lines` unset it returns all output. Cancellation kills the child and returns `ProcessError::Cancelled`. The runner ends the whole process group of the child through `ProcessGroup::stop` and does not return until the group holds no live process: it sends SIGKILL to the group, and where the group signal is denied (an OpenShell workload filters `kill` with a negative pid) it lists the group in `/proc` and sends SIGKILL to each live member. A zombie is not a member, and a `/proc/<pid>/stat` line that cannot be parsed is `GroupFault::Unreachable`, not a non-member. A group that is still alive after 5 s is `GroupFault::Alive`. The fault rides on `Timeout` and `Cancelled` (field `group`), so a caller that matches `Cancelled { .. }` still sees the cancel; for the other errors, and for a clean exit, it becomes `ProcessError::Group`. `GatewayError::{Timeout, Cancelled}`, `EngineError::Cancelled` and `ExportError::Cancelled` carry the same `group`, and their `Display` appends `; <fault>`. `ProcessGroup` lives in `jackin-session` (`process_group.rs`), and `xtask` stops its children through it; `GroupFault` stays in `jackin-core`. `ImageError::Cancelled` carries the `group` of the `EngineError::Cancelled` it comes from. The runner always applies `spec.timeout` and takes stdin from `/dev/null` for `ProcessStdin::Null` (D03, P0.2 G1). The real `ProcessRunner` and `Clock` live in `jackin-session::host`, and so does `capture_env`, the only reader of the process environment; `StdFileSystem` lives here.
 
 `FileSystem` rules. `stat` does not follow a symlink, and `stat_following` does; both report a socket as `FileKind::Socket`. `create_private_dir_all` creates every missing level with mode 0700. `file_len` returns the length of the file behind the path, or `None` when it is absent. `read_at(path, offset, len)` returns at most `len` bytes from `offset`, never pads a short read, and fails with `Io` for a missing file or a directory. `ProcessStdin::File { path, offset }` feeds the file from `offset` to the end of the input. The runner opens and seeks the file before it starts the child, so a missing file or a path that is not a regular file refuses the run and starts nothing.
 
@@ -1112,9 +1112,14 @@ pub enum SelectionError {
 pub enum FsError { Io { path: HostPath, kind: std::io::ErrorKind, message: String }, AlreadyExists(HostPath), LockHeld(HostPath) }
 pub enum ProcessError {
     Spawn { program: Program, message: String },
-    Timeout { program: Program, after: Duration },
-    Cancelled { program: Program },
+    Timeout { program: Program, after: Duration, group: Option<GroupFault> },
+    Cancelled { program: Program, group: Option<GroupFault> },
+    OutputTooLarge { program: Program, stream: OutputStream, limit: usize },
+    Read { program: Program, stream: OutputStream, message: String },
+    Group { program: Program, fault: GroupFault },
 }
+pub enum GroupFault { Alive { after: Duration }, Unreachable { message: String } }
+impl GroupFault { pub fn note(group: Option<&GroupFault>) -> String }
 pub enum PollError<E> { Timeout { after: Duration }, Cancelled, Probe(E) }
 ```
 
@@ -1286,7 +1291,7 @@ pub enum EngineError {
     DigestUnreadable { tag: ImageTag, output: TerminalText },
     Process(ProcessError),
     Fs(FsError),
-    Cancelled,
+    Cancelled { group: Option<GroupFault> },
 }
 pub enum ImageError {
     Dockerfile(DockerfileError),
@@ -1295,7 +1300,7 @@ pub enum ImageError {
     NotDelivered { tag: ImageTag, built: ImageId, found: Option<ImageId> },
     SourceMoved { tag: ImageTag, expected: ImageId, found: Option<ImageId> },
     LockTimeout { key: ImageTag },
-    Cancelled,
+    Cancelled { group: Option<GroupFault> },
 }
 ```
 
@@ -1639,8 +1644,8 @@ pub enum GatewayError {
     FailedPrecondition { message: String },
     ResourceExhausted { what: String },
     InvalidArgument { field: String, message: String },
-    Timeout { op: GatewayOp, after: Duration },
-    Cancelled { op: GatewayOp },
+    Timeout { op: GatewayOp, after: Duration, group: Option<GroupFault> },
+    Cancelled { op: GatewayOp, group: Option<GroupFault> },
     Process(ProcessError),
     Transfer { op: TransferOp, status: ProcessStatus, tail: TerminalText },
     DownloadTooLarge { size: u64, limit: u64 },
@@ -1724,6 +1729,7 @@ crates/jackin-session/src/
   lib.rs
   service.rs        Session, SessionDeps, HostPorts
   host.rs           SystemClock, TokioProcessRunner, capture_env
+  process_group.rs  ProcessGroup, Sweep (Linux-only test module and stat parser beneath it)
   roles.rs          RoleCatalog, LoadedRole, RoleError
   credentials.rs    read_chatgpt_login, ChatgptLogin, CredentialError
   accounts.rs       AccountSync, AccountError
@@ -1780,6 +1786,15 @@ impl Session {
 
 pub struct SystemClock;
 pub struct TokioProcessRunner;
+
+pub struct ProcessGroup(/* private */);
+pub enum Sweep { Empty, Signalled }
+impl ProcessGroup {
+    pub fn of_leader(id: u32) -> Option<ProcessGroup>;
+    pub fn strike(self);
+    pub fn sweep(self) -> Result<Sweep, GroupFault>;
+    pub async fn stop(self) -> Result<(), GroupFault>;
+}
 
 impl HostPorts {
     pub fn system(fs: Arc<dyn FileSystem>) -> HostPorts;
@@ -2169,7 +2184,7 @@ pub enum ExportError {
     BundleRefused(BundleRefusal),
     BundleTooLarge { size: u64, limit: u64 },
     TipMismatch { host_ref: String, expected: CommitId, found: Option<CommitId> },
-    Cancelled,
+    Cancelled { group: Option<GroupFault> },
 }
 pub enum BundleRefusal {
     Header,
@@ -3074,7 +3089,7 @@ Location: `crates/jackin/tests/*.rs`. Boundaries faked: the gateway through `Gat
 
 ## 9. jackin-xtask
 
-Role: repository gates and the live journey runner. Package `jackin-xtask`, alias `cargo xtask`. A binary plus a lib target, with pure check modules, so each gate step is tested on fixture repositories and also run on the repository. With the default features it depends on no product crate, so a compile error in a product crate cannot stop `xtask ci` from building and reporting the other gates. The cargo feature `e2e` adds `jackin-core` (typed views), `jackin-openshell` (a `Gateway` to run the sentinel probe and read files, decision 12), the `jackin-usage` facade (`UsageReport` for J17, from U13), `portable-pty`, and `schemars`, and no other product crate. The `clippy` and `nextest` steps pass `--all-features`, so they still build and test the `e2e` items.
+Role: repository gates and the live journey runner. Package `jackin-xtask`, alias `cargo xtask`. A binary plus a lib target, with pure check modules, so each gate step is tested on fixture repositories and also run on the repository. It depends on three product crates: `jackin-core` (typed views), `jackin-openshell` (a `Gateway` to run the sentinel probe and read files, decision 12) and `jackin-session` (`ProcessGroup`, the group stop that `RealHost` and `PortableLink` share with the host process runner). The `layers` row allows those three and the dev-dependency `jackin-testkit`, and no other product crate. A compile error in one of them stops `xtask ci` from building. It also depends on `portable-pty`.
 
 ### Module map
 
@@ -3216,7 +3231,7 @@ Rules.
 - `layers` reads `cargo metadata` and checks `LAYERS` against every workspace member. It fails for a member with no row, for a dependency or dev-dependency the row does not list, for a dependency the row lists as `optional` that is not optional in the manifest, for a banned import, and for a `Secret::expose` call outside the allowlist. It does not look for container programs: `containers` does. `LAYERS` is the table in the Shape section; the `crates/usage/` crates are rows with a `jackin-usage-*` pattern, added in U13. Adding a crate without a row fails the gate, so a new crate cannot skip the rule. One table drives the D14 order, the usage rules, and the import rules.
 - `errors` lexes every `.rs` file that `Repo::files()` returns (`crates/usage/` stays skipped by `PENDING_PORT_PATHS`) and checks each `#[error(...)]` attribute: every string literal inside it and its argument tokens. It reports one violation per literal and names every offending placeholder. It refuses three things. The first is a Debug placeholder, which is a format spec that ends in `?`. The second is a placeholder or an argument (`{error}`, `{0}`, `{source:#}`, `.error`, `.0`, `.source`) that names a field marked `#[source]` or `#[from]`, or the field named `source`, of the same variant or struct. A member access such as `.inner.error` is not the field and passes. The third is a bare placeholder (`{field}` or `{0}`, with or without a spec) or an argument that is exactly `.field` between commas, for a field whose whole type is the single identifier `String`. `plain(.field)`, `plain_list(.items)`, and any other call pass, because the argument is no longer a bare field. The token reading cannot see a `String` behind a type alias or a path, or a named format argument that shadows a field. `TerminalText` is outside the third rule: `sanitize` keeps `\n` and `\t` on purpose. The step runs after `containers` and before `reuse`; `mise.toml` (`check:repository-steps`) and `hk.pkl` list it.
 - `containers` is the only step that looks for container programs (D01). The subcommand rule is the `DockerSubcommand` type in `jackin-core`, so the step guards the crate boundary: it flags `Program::Docker`, `DockerSubcommand`, and the aliases, globs, and groups that reach them outside `jackin-image`, `jackin-core`, and `jackin-testkit`; any `Command::new` with a program that is not one string literal outside `COMPUTED_COMMAND_DIRS` (`crates/xtask`, `crates/jackin-session/src/host.rs`, and `crates/jackin/tests/process/main.rs`, which runs the built binary; another file of those crates is still flagged); and any literal `docker`, `podman`, or `container`. U1 fix round P4 has the exact rules.
-- `Journey::start` connects a `GrpcGateway` through the private `e2e/runner.rs` runner (about 50 lines over `tokio::process`: stdin from `/dev/null`, a timeout, kill on cancel), because `xtask` cannot use `jackin-session::host`. It then runs `contract::run` against the live gateway and fails with `E2eError::Contract` on a failed check. The journey runs the `jackin` binary as a subprocess, runs `/usr/local/bin/jackin-sentinel-probe` in the sandbox through `Gateway::run_program`, parses `ls --json`, `inspect --json`, and `usage --json` into the `jackin-core` and `jackin-usage` types, and compares the host observation with the probe report per step.
+- `Journey::start` connects a `GrpcGateway` through the private `e2e/runner.rs` runner (about 50 lines over `tokio::process`: stdin from `/dev/null`, a timeout, kill on cancel), and it stops its children through `jackin-session::ProcessGroup`. It then runs `contract::run` against the live gateway and fails with `E2eError::Contract` on a failed check. The journey runs the `jackin` binary as a subprocess, runs `/usr/local/bin/jackin-sentinel-probe` in the sandbox through `Gateway::run_program`, parses `ls --json`, `inspect --json`, and `usage --json` into the `jackin-core` and `jackin-usage` types, and compares the host observation with the probe report per step.
 - J17 observes the account selection through the `jackin.dev/account` label in `ls --json` and the OpenShell provider names in `inspect --json`. The Codex accounts other than the A1 account are `CodexLogin` sources whose fixture `auth.json` holds a refresh token that does not work, written by xtask into a temporary Codex home, so they never rotate the A1 token (D10); their usage record is a typed `Unavailable` reason.
 - A step without credentials returns `Skip`. There is no conversion from `Skip` to `Pass`. `JourneyReport::exit_code` is non-zero when any step is `Fail`, and also when any step is `Skip` unless `--allow-skip` names it, so a green run cannot hide a skipped credential step (D19, PLAN P8.2: every step prints `PASS`).
 - `ProbeReport` is a serde type. A test generates its JSON schema and requires equality with `rewrite/probe-schema.json`, so the sentinel probe and xtask cannot drift.
@@ -3741,7 +3756,7 @@ This file records where U7 (`jackin-image` engine and `ensure_image`) and the mo
 - U7-B2. Scripted child. The program is `Program::Git` with args `["-c", "alias.t=!sh", "t", <script path>, <script args>]`. The helper writes each script from a Rust `const &str` into the `TempDir` of the test. Scripts contain no `#`. Every spec sets `env_remove_prefixes = ["GIT_"]` and `GIT_CEILING_DIRECTORIES` to the canonical parent of the `TempDir`. All paths are canonicalized. There is no test-only `Program` variant.
 - U7-B3. `PATH` is overridden only through `ProcessSpec.env` (TR11 and TD1); `set_var` is never used. All other tests inherit `PATH`. Contract: the runner passes `spec.env` to the child, so the program lookup uses the `PATH` of the spec.
 - U7-B4. No `set_var`. TR7 uses the variables that cargo and nextest set for every test; its first phase is a positive control that shows the child sees them.
-- U7-B5. Contracts of the runner. (a) A line is the bytes up to `\n`; the `\n` is stripped; `\r` is kept; a trailing partial line at EOF is delivered; invalid UTF-8 is decoded lossily. (b) The runner awaits `send` and never drops a line; a closed sink is not an error, and the runner keeps draining and discards. (c) With a sink, `ProcessOutput.stdout` and `stderr` are each at most 65536 raw bytes, the true suffix of that stream (the runner keeps exactly the last 65536 bytes); without a sink all output is returned, uncapped (orchestrator decision 4). (d) A nonzero exit or a signal is `Ok(status)`. (e) `Null` stdin is `/dev/null`; `Bytes` is written while output is read, then stdin is closed; a broken pipe is ignored. (f) `Timeout { program, after: spec.timeout }`; the clock starts at spawn and covers the whole call. (g) `Cancelled { program }`, including for a token that is already cancelled (the child is not started then). (h) Timeout and cancel kill the process group of the child (`process_group(0)` and `rustix::process::kill_process_group`), then reap the direct child before returning; the runner returns even when a descendant holds the pipes. (i) `run_secret` shares one spawn, timeout, cancel and kill core with `run`, takes no sink, puts stdout only into `SecretBytes` (the buffer grows by allocating the next buffer and zeroizing the old one), and returns stderr as plain bytes. (j) A spawn failure is `Spawn { program, message }` where the message is the OS error only. (k) The runner removes inherited variables that match a non-empty prefix first, then applies `spec.env`; `EnvValue::Secret` is exposed only at the spawn call.
+- U7-B5. Contracts of the runner. (a) A line is the bytes up to `\n`; the `\n` is stripped; `\r` is kept; a trailing partial line at EOF is delivered; invalid UTF-8 is decoded lossily. (b) The runner awaits `send` and never drops a line; a closed sink is not an error, and the runner keeps draining and discards. (c) With a sink, `ProcessOutput.stdout` and `stderr` are each at most 65536 raw bytes, the true suffix of that stream (the runner keeps exactly the last 65536 bytes); without a sink all output is returned, uncapped (orchestrator decision 4). (d) A nonzero exit or a signal is `Ok(status)`. (e) `Null` stdin is `/dev/null`; `Bytes` is written while output is read, then stdin is closed; a broken pipe is ignored. (f) `Timeout { program, after: spec.timeout }`; the clock starts at spawn and covers the whole call. (g) `Cancelled { program }`, including for a token that is already cancelled (the child is not started then). (h) Timeout and cancel kill the process group of the child (`process_group(0)` and `ProcessGroup::stop`), then reap the direct child before returning; the runner returns even when a descendant holds the pipes. (i) `run_secret` shares one spawn, timeout, cancel and kill core with `run`, takes no sink, puts stdout only into `SecretBytes` (the buffer grows by allocating the next buffer and zeroizing the old one), and returns stderr as plain bytes. (j) A spawn failure is `Spawn { program, message }` where the message is the OS error only. (k) The runner removes inherited variables that match a non-empty prefix first, then applies `spec.env`; `EnvValue::Secret` is exposed only at the spawn call.
 - Orchestrator decisions on the open questions of the runner plan (binding). (1) A descendant that keeps the pipes open after the direct child exited cleanly: the runner reaps the child, drains for a grace of 2 s, then kills the process group, drops the pipes and returns `Ok(status)` with what it read. (2) Dropping the `run` future kills the process group (a drop guard); a call that completes normally disarms the guard, so a daemon that detached its output survives a clean exit. (3) An empty string in `env_remove_prefixes` matches nothing. (4) Unstreamed output is uncapped.
 - U7-B6. Dependencies of `jackin-session`: runtime `async-trait`, `rustix` (feature `process`, `1.1.6`, already in `Cargo.lock`), `tokio` (`io-util macros process rt sync time`), `tokio-util`, `zeroize`; dev-dependencies `tempfile` and `tokio` (`macros rt time`). `rustix` joins `[workspace.dependencies]`.
 - U7-B7. Layout. The target is `crates/jackin-session/tests/process_runner/main.rs` with modules `support`, `streaming`, `exit`, `stdin`, `env`, `lifecycle` and `secret`. No comments. Tests return `Result<(), Box<dyn Error>>`, every async test has a 30 s guard, every `recv` its own 10 s guard with a message that names the behavior, and each test is under 150 lines. `OutputLine` and `ProcessOutput` hide their content in `Debug`, so the tests compare `(OutputStream, String)` tuples and byte slices; large vectors are compared by length, then by the first diverging index.

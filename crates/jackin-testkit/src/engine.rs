@@ -233,7 +233,7 @@ impl ImageEngine for FakeEngine {
         cancel: &CancellationToken,
     ) -> Result<ImageId, EngineError> {
         if cancel.is_cancelled() {
-            return Err(EngineError::Cancelled);
+            return Err(EngineError::Cancelled { group: None });
         }
         for line in self.begin(build)? {
             drop(

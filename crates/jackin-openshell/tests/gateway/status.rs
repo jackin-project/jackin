@@ -343,7 +343,7 @@ async fn call_timeouts_report_the_operation_and_the_configured_duration() {
         .unwrap_err();
     assert!(matches!(
         error,
-        GatewayError::Timeout { op: GatewayOp::Detail, after } if after == Duration::from_secs(60)
+        GatewayError::Timeout { op: GatewayOp::Detail, after, .. } if after == Duration::from_secs(60)
     ));
 
     let short = {
@@ -365,7 +365,7 @@ async fn call_timeouts_report_the_operation_and_the_configured_duration() {
     let error = call.await.unwrap().unwrap_err();
     assert!(matches!(
         error,
-        GatewayError::Timeout { op: GatewayOp::Create, after } if after == SHORT
+        GatewayError::Timeout { op: GatewayOp::Create, after, .. } if after == SHORT
     ));
 }
 
@@ -412,9 +412,11 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
         GatewayError::Timeout {
             op: GatewayOp::Health,
             after: Duration::ZERO,
+            group: None,
         },
         GatewayError::Cancelled {
             op: GatewayOp::Health,
+            group: None,
         },
         GatewayError::Process(ProcessError::Spawn {
             program: Program::Openshell,

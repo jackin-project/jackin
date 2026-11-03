@@ -38,7 +38,10 @@ async fn a_pre_cancelled_build_is_cancelled_before_it_fails_prints_or_stores_any
     let cancelled = CancellationToken::new();
     cancelled.cancel();
     let result = engine.build(&build, &sink, &cancelled).await;
-    assert!(matches!(result, Err(EngineError::Cancelled)), "{result:?}");
+    assert!(
+        matches!(result, Err(EngineError::Cancelled { group: None })),
+        "{result:?}"
+    );
     assert!(engine.images().is_empty());
     assert!(engine.builds().is_empty());
     assert!(matches!(

@@ -213,6 +213,7 @@ impl Gateway for Tap {
                 return Err(GatewayError::Timeout {
                     op: GatewayOp::Program,
                     after: run.timeout,
+                    group: None,
                 });
             }
         }

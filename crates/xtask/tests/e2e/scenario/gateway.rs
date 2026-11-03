@@ -248,6 +248,7 @@ impl Gateway for ScenarioGateway {
         {
             return Err(GatewayError::Cancelled {
                 op: GatewayOp::Provider,
+                group: None,
             });
         }
         self.fake.delete_provider(name).await
@@ -285,6 +286,7 @@ impl Gateway for ScenarioGateway {
         if knobs.create_env_unreadable {
             return Err(GatewayError::Cancelled {
                 op: GatewayOp::Detail,
+                group: None,
             });
         }
         let model = self.model_of(name).ok_or_else(|| GatewayError::NotFound {
@@ -348,6 +350,7 @@ impl Gateway for ScenarioGateway {
             return Err(GatewayError::Timeout {
                 op: GatewayOp::Program,
                 after: run.timeout,
+                group: None,
             });
         }
         if let Some(message) = self.shared.knobs().panic_in_probe.clone() {

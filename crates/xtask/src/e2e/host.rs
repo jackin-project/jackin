@@ -9,17 +9,15 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use jackin_core::{plain, plain_duration};
-use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
+use jackin_core::{GroupFault, plain, plain_duration};
+use jackin_session::ProcessGroup;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt};
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
 const DEFAULT_OUTPUT_CAP: usize = 64 * 1024 * 1024;
-const GROUP_KILL_ROUNDS: u32 = 100;
-const GROUP_KILL_PAUSE: Duration = Duration::from_millis(20);
 
 #[derive(Clone, Debug)]
 pub struct HostCommand {
@@ -137,10 +135,17 @@ impl HostOutput {
 pub enum HostError {
     #[error("cannot start {}: {}", plain(.program), plain(.message))]
     Spawn { program: String, message: String },
-    #[error("{} timed out after {}", plain(.program), plain_duration(.after))]
-    Timeout { program: String, after: Duration },
-    #[error("{} was cancelled", plain(.program))]
-    Cancelled { program: String },
+    #[error("{} timed out after {}{}", plain(.program), plain_duration(.after), GroupFault::note(.group.as_ref()))]
+    Timeout {
+        program: String,
+        after: Duration,
+        group: Option<GroupFault>,
+    },
+    #[error("{} was cancelled{}", plain(.program), GroupFault::note(.group.as_ref()))]
+    Cancelled {
+        program: String,
+        group: Option<GroupFault>,
+    },
     #[error("{} wrote more than {limit} bytes to {stream}", plain(.program))]
     OutputTooLarge {
         program: String,
@@ -153,6 +158,8 @@ pub enum HostError {
         stream: &'static str,
         message: String,
     },
+    #[error("{}: {fault}", plain(.program))]
+    Group { program: String, fault: GroupFault },
 }
 
 #[async_trait]
@@ -201,21 +208,15 @@ async fn read_capped<R: AsyncRead + Unpin>(
     }
 }
 
-async fn kill_group(pid: Option<u32>) {
-    let Some(pid) = pid
-        .and_then(|raw| i32::try_from(raw).ok())
-        .and_then(Pid::from_raw)
-    else {
-        return;
-    };
-    for _ in 0..GROUP_KILL_ROUNDS {
-        if kill_process_group(pid, Signal::KILL).is_err() {
-            return;
-        }
-        if test_kill_process_group(pid).is_err() {
-            return;
-        }
-        tokio::time::sleep(GROUP_KILL_PAUSE).await;
+async fn stop_group(child: &mut Child) -> Result<(), GroupFault> {
+    let group = child.id().and_then(ProcessGroup::of_leader);
+    if let Some(group) = group {
+        group.strike();
+    }
+    drop(child.kill().await);
+    match group {
+        Some(group) => group.stop().await,
+        None => Ok(()),
     }
 }
 
@@ -249,7 +250,6 @@ impl HostProcess for RealHost {
             program: program.clone(),
             message: error.to_string(),
         })?;
-        let pid = child.id();
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
         let cap = command.output_cap;
@@ -279,20 +279,19 @@ impl HostProcess for RealHost {
                     .unwrap_or(Exit::Code(-1));
                 Ok(HostOutput::new(exit, out, err))
             }
-            Ok(Err(error)) => {
-                kill_group(pid).await;
-                drop(child.wait().await);
-                Err(error)
-            }
+            Ok(Err(error)) => Err(match stop_group(&mut child).await {
+                Ok(()) => error,
+                Err(fault) => HostError::Group { program, fault },
+            }),
             Err(interrupted) => {
-                kill_group(pid).await;
-                drop(child.wait().await);
+                let group = stop_group(&mut child).await.err();
                 Err(match interrupted {
                     Interrupted::Timeout => HostError::Timeout {
                         program,
                         after: command.timeout,
+                        group,
                     },
-                    Interrupted::Cancelled => HostError::Cancelled { program },
+                    Interrupted::Cancelled => HostError::Cancelled { program, group },
                 })
             }
         }

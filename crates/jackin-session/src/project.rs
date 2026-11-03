@@ -212,6 +212,7 @@ pub(crate) async fn hold(
         .map_err(|error| match error {
             LockError::Cancelled => GatewayError::Cancelled {
                 op: GatewayOp::UploadTree,
+                group: None,
             }
             .into(),
             LockError::Fs(error) => LaunchError::Fs(error),
