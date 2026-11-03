@@ -841,6 +841,8 @@ pub enum ConfigEdit {
     SetDefaultGateway(Option<GatewayName>),
     AddAccount(Account),
     RemoveAccount(AccountName),
+    RemoveAccountClearingBindings(AccountName),
+    SetAccountCredential { account: AccountName, credential: CredentialSource },
     SetDefaultAccount { account: AccountName },
     ClearDefaultAccount { provider: Provider },
     BindWorkspaceAccount { workspace: WorkspaceName, account: AccountName },
@@ -938,6 +940,7 @@ impl EnvSnapshot {
 #[async_trait]
 pub trait Clock: Send + Sync + Debug {
     fn now(&self) -> Timestamp;
+    fn utc_offset_secs(&self) -> i32;
     async fn sleep(&self, duration: Duration);
 }
 
@@ -1025,7 +1028,13 @@ where
 
 ```rust
 pub struct LsOutput { pub schema: u32, pub sandboxes: Vec<SandboxSummary> }
-pub struct SandboxSummary { pub name: SandboxName, pub labels: SandboxLabels, pub phase: Phase }
+pub struct SandboxSummary {
+    pub name: SandboxName,
+    pub labels: SandboxLabels,
+    pub phase: Phase,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<Timestamp>,
+}
 pub struct InspectView {
     pub schema: u32,
     pub summary: SandboxSummary,
@@ -1393,7 +1402,7 @@ pub enum ProviderMaterial {
 }
 pub struct MainProcess { pub program: SandboxPath, pub args: Vec<String> }
 pub struct SandboxCreate { }
-pub struct SandboxView { pub name: SandboxName, pub phase: Phase, pub labels: Labels, pub provisioning: Provisioning }
+pub struct SandboxView { pub name: SandboxName, pub phase: Phase, pub labels: Labels, pub provisioning: Provisioning, pub created_at: Option<Timestamp> }
 pub enum Provisioning { Normal, Failed { message: TerminalText } }
 pub enum SandboxQuery { Name(SandboxName), Labels(LabelSelector) }
 pub struct SandboxDetail {
@@ -1617,9 +1626,11 @@ pub struct ContractCheck { pub name: &'static str, pub outcome: Result<(), Strin
 
 The suite has three groups, because the three need different infrastructure.
 
-- `Core` (gRPC only): create then find by label, `AlreadyExists` on a repeated name, `Provisioning::Failed` reporting, program exit code and stdin, `touch_on_success` on exit 0 and not on exit 1, `write_file` mode and atomicity, `read_files` of a missing file, `Imported`, `Unchanged`, and `Updated` for a profile, provider put and delete, power transitions, `Stop` and `Start` on an ended main process, and delete.
+- `Core` (gRPC only): create then find by label, `created_at_is_reported_and_stable` (a created sandbox reports a creation time that does not change when it becomes `Ready`), `AlreadyExists` on a repeated name, `Provisioning::Failed` reporting, program exit code and stdin, `touch_on_success` on exit 0 and not on exit 1, `write_file` mode and atomicity, `read_files` of a missing file, `Imported`, `Unchanged`, and `Updated` for a profile, provider put and delete, power transitions, `Stop` and `Start` on an ended main process, and delete.
 - `Transfer`: upload then download with the digest check. A failed or cancelled download leaves an existing local file as it was. A tree upload and a file upload to an absent sandbox or to a `Stopped` one are `Transfer` errors with exit code 1; the absent sandbox says `found` and not `ready`, and the stopped one says `ready` and not `found`. A tree upload whose listed path lies below a symlink that the same upload created is a `Transfer` error with exit code 1 and `tar` in the tail, and the file does not land in the sandbox. The group needs the `openshell` CLI and a real sandbox filesystem.
 - `Terminal`: a main-process terminal with detach and re-attach replay, the input lease rules, `Viewer` input ignored, and a shell terminal exit code. It needs the SSH relay.
+
+`contract::NUDGE_CASES` is the shared oracle of the D09 redraw nudge (`RepaintPolicy::NudgeAfter`). Each case gives the attach size, the resizes sent before the nudge, whether the policy nudges, and the window changes that must follow. `crates/jackin-openshell/tests/gateway/attach_ssh.rs` runs every case against `GrpcGateway` and the in-process SSH server with paused tokio time and explicit `advance`; `crates/jackin-testkit/tests/gateway/witnesses.rs` runs the same cases against `FakeGateway` with `SandboxHandle::advance_repaint()`. Both read the window history the transport sent, and neither counts the attach size as a change.
 
 `jackin-testkit` runs all three groups against `FakeGateway` in nextest (`crates/jackin-testkit/tests/contract.rs`). `crates/jackin-openshell/tests/contract.rs` runs only `Core` against `GrpcGateway` and an in-process tonic server, because that server implements the gRPC subset only. `xtask e2e` runs all three groups against the live gateway before J00 and fails the run on a failed check. Name length is not a suite check: `SandboxName` makes a 20-character name unrepresentable, so `SandboxName::parse` unit tests in `jackin-core` cover the rule, and `crates/jackin-openshell/tests/raw_names.rs` sends a raw 20-character name through the tonic client to the in-process server and requires `GatewayError::InvalidArgument { field: "name" }`. The real v0.1.6 rejection is recorded in the P4.1 evidence.
 
@@ -2137,7 +2148,7 @@ pub struct ExportReport {
 }
 pub enum UnknownReason { NotRunning(Phase), WorkspaceUnknown(WorkspaceName), NoRepository, InspectionFailed }
 pub struct Unexported {
-    pub uncommitted: bool,
+    pub uncommitted: usize,
     pub branches: Vec<BranchName>,
     pub detached: Option<CommitId>,
     pub worktrees: Vec<BranchName>,
@@ -2239,6 +2250,11 @@ pub enum GatewayAccess<'a> {
     Failed { name: &'a GatewayName, error: &'a GatewayError },
 }
 pub enum CheckId { OpenshellBinary, SshBinary, GitBinary, GatewayRegistered, GatewayHealth, PinnedVersion, EngineSocket }
+impl CheckId {
+    pub const ALL: [CheckId; 7];
+    pub fn label(self) -> &'static str;
+    pub fn fix(self) -> &'static str;
+}
 pub enum CheckStatus { Pass, Warn, Fail, Skip }
 pub struct Check { pub id: CheckId, pub status: CheckStatus, pub detail: String }
 pub struct DoctorReport { pub checks: Vec<Check> }
@@ -2251,6 +2267,74 @@ pub async fn doctor(input: &DoctorInput<'_>, cancel: &CancellationToken) -> Doct
 ```
 
 `doctor` never fails and never repairs (D13). It runs `openshell --version`, `ssh -V`, and `git --version` through the runner, calls `registered_gateways`, calls `Gateway::health` when the access is `Connected`, compares the versions with `Compatibility`, and checks the engine socket with `stat_following`. Only a socket, or a symlink to one, passes. A missing path, a dangling symlink, a symlink loop, and any other kind of file are `Warn` for the `EngineSocket` check, and `is_healthy` stays true. Version text from the tools and from the gateway passes through `TerminalText::sanitize`, so terminal control and bidirectional characters never reach a detail line. With `NotChosen` or `Failed`, the gateway checks report `Skip` or `Fail` and the other checks still run. One `CheckId` per D13 item, matched exhaustively by the CLI and the console doctor panel.
+
+### P9.3 J0a additions (prerequisites P-1 to P-8, P-11; see rewrite/reconciliation/P9.3.md)
+
+```rust
+// export.rs
+impl Unexported { pub fn unpushed(&self) -> usize }   // branches + worktrees + detached head
+pub struct ChangeSet { pub files: Vec<ChangedFile> }
+pub struct ChangedFile { pub path: TerminalText, pub status: ChangeStatus, pub hunks: Vec<ChangeHunk> }
+pub enum ChangeStatus { Added, Modified, Deleted, Renamed { from: TerminalText } }
+pub struct ChangeHunk { pub old_start: usize, pub new_start: usize, pub lines: Vec<ChangeLine> }
+pub enum ChangeLine { Context(TerminalText), Added(TerminalText), Removed(TerminalText) }
+pub enum ChangesError { Gateway(GatewayError), NotFound(SandboxName), NotRunning { sandbox: SandboxName, phase: Phase },
+                        NoRepository { sandbox: SandboxName }, Git { exit_code: i32, output: TerminalText },
+                        Output { sandbox: SandboxName, what: &'static str } }
+impl Session { pub async fn changes(&self, sandbox: &SandboxName, cancel: &CancellationToken) -> Result<ChangeSet, ChangesError> }
+
+// origin.rs
+pub struct GithubRepo { }                              // owner(), name(), Display = https://github.com/{owner}/{name}
+impl GithubRepo { pub fn parse(url: &str) -> Option<GithubRepo> }
+pub struct GithubOrigin { pub repo: GithubRepo, pub default_branch: Option<BranchName> }
+pub enum OriginError { Process(ProcessError), Git { exit_code: i32, output: TerminalText } }
+impl Session { pub async fn project_origin(&self, project: &ProjectRoot, cancel: &CancellationToken) -> Result<Option<GithubOrigin>, OriginError> }
+
+// accounts.rs: one account add, remove and credential-change sequence for the CLI and the console
+pub struct AccountPlan { }
+pub fn plan_account_edits(config: &Config, edits: Vec<ConfigEdit>) -> Result<AccountPlan, ConfigError>;
+impl AccountPlan {
+    pub fn needs_gateway(&self) -> bool;
+    pub async fn apply(self, session: Option<&Session>, store: &ConfigStore, cancel: &CancellationToken) -> Result<Config, AccountEditError>;
+}
+pub enum AccountEditError { Config(ConfigError), Account(AccountError), GatewayRequired }
+
+// build.rs: the `jackin build` path, shared with the console
+pub struct BuildRequest<'a> { pub gateway: Option<&'a GatewayName>, pub role: Option<&'a RoleName>, pub path: &'a HostPath, pub rebuild: Rebuild }
+pub enum BuildError { Config(ConfigError), Role(RoleError), Plan(PlanError), Image(ImageError) }
+pub async fn build_for_workspace(engine: &dyn ImageEngine, catalog: &RoleCatalog, config: &Config,
+    request: &BuildRequest<'_>, progress: &ProgressSink, cancel: &CancellationToken) -> Result<BuiltImage, BuildError>;
+
+// workspace.rs
+pub enum WorkspaceLookup { Saved { name: WorkspaceName, workspace: Workspace }, Unsaved { path: HostPath } }
+pub fn lookup_workspace(config: &Config, path: &HostPath) -> WorkspaceLookup;
+impl WorkspaceLookup { pub fn workspace(self) -> Workspace; pub fn require_saved(self) -> Result<(WorkspaceName, Workspace), ConfigError> }
+
+// connect.rs (moved from the `jackin` crate so the testkit can script it)
+pub enum ConnectError { Discovery { gateway: GatewayName, source: DiscoveryError }, Gateway(GatewayError) }
+pub trait GatewayConnector: Send + Sync + Debug {
+    async fn connect(&self, name: &GatewayName, entry: &GatewayEntry, cancel: &CancellationToken) -> Result<Arc<dyn Gateway>, ConnectError>;
+}
+
+// report.rs: failure text shared by the CLI and the console
+pub enum LaunchNextStep { Retry { sandbox: SandboxName, launch: LaunchId } }
+impl LaunchFailure { pub fn summary(&self) -> String; pub fn next_step(&self) -> Option<LaunchNextStep> }
+impl LaunchError { pub fn text(&self) -> String }
+pub fn error_chain(error: &dyn Error) -> String;
+pub fn main_process_ended(sandbox: &SandboxName, phase: Phase) -> String;
+pub fn sandbox_missing(sandbox: &SandboxName) -> String;
+pub fn env_file_problem(sandbox: &SandboxName, problem: &EnvFileProblem) -> String;
+pub fn hook_failure(hook: HookKind, exit_code: i32, output: &TerminalText) -> String;
+```
+
+- `Unexported.uncommitted` is a count: the entries of `git status --porcelain --untracked-files=all` in every checkout plus the entries of `git stash list`. `Display` still reads `uncommitted changes` when the count is above zero, so the CLI text does not change.
+- `Session::changes` needs a `Ready` sandbox with a repository. It reads the main checkout: `git diff HEAD` for tracked files (renames detected, no external diff or textconv), and each untracked file that is not ignored through `read_files`, as an added file with one hunk. A binary or larger-than-256 KiB untracked file has no hunks; at most 500 untracked files are listed. Counts of unexported refs come from `WorkState`, not from `ChangeSet`.
+- `Session::project_origin` reads `remote.origin.url` and `refs/remotes/origin/HEAD` with the D08 host git runner. Only `origin` counts. A URL is GitHub when it is `git@github.com:o/r`, `https://github.com/o/r`, or `ssh://git@github.com/o/r`, with an optional `.git`; any other host, including `github.com.evil.example`, gives `None`. An absent `origin/HEAD` gives `default_branch: None`.
+- `plan_account_edits` validates the whole edit list on a copy of the config, then `AccountPlan::apply` forgets the provider of each removed or replaced ChatGPT-login account, syncs the provider of each added or replaced one, and writes the config last. An account with no ChatGPT login (any other Codex source, or any other provider) has no OpenShell provider, so the plan does not need a gateway and `jackin account add codex --credential ...` stores it as a usage-only account (it was `AccountError::Unsupported` before).
+- `jackin ls --json` and `jackin inspect --json` print `created_at` in each summary when the gateway recorded one.
+- `CheckId::label` and `fix` are the texts of the console doctor panel. `jackin doctor` appends `  fix: <text>` to each `warn` and `fail` line.
+- `Clock::utc_offset_secs` is the local UTC offset in seconds. `SystemClock` reads it from `chrono::Local`; `FakeClock::set_utc_offset` sets it for tests.
+- `ConfigEdit::SetAccountCredential` replaces the credential of an existing account and keeps its bindings and default. `Account::new` still rejects a ChatGPT login on a non-Codex account.
 
 ### Remaining error enums
 
@@ -2400,6 +2484,8 @@ Rules.
 - Callers build the account set from config: all accounts for `jackin usage` and the usage panel, `Config::workspace_accounts(name)` for the per-workspace view (D26).
 - Credentials are read inside the usage crates from the account's `CredentialSource`: an environment variable from the snapshot, `op read` through the runner, a file, or the Codex home `auth.json`. They are never returned in a report and never logged.
 - `ProviderEndpoints::with` is the network fake point. Production uses `real()`. The layer rules for this subtree are rows of the layer table in the Shape section.
+
+- `Percent`, `UnavailableReason` and `LimitWindow` carry the usage text, so the CLI and the console print the same words. `Percent` displays with at most two decimals and no trailing zeros, followed by `%`. `UnavailableReason` displays the sentences the CLI always printed (`no credentials`, `login expired or rejected`, `not supported for this provider`, `rate limited, retry at ...`, `network error: ...`, `provider error: ...`). `LimitWindow::used_text`, `remaining_text` and `reset_text(now)` return `12.5% used`, `87.5% left` or `4.20 USD left`, and `resets <rfc3339> (in 2h3m)`, each with `-` where the provider gave nothing.
 
 ### Test plan outline (mark for `test-reviewer`; written in P6.3)
 
@@ -2716,6 +2802,7 @@ Semantics the fakes must match (each is also a contract-suite case or a journey 
 - `MemFs` supports `lock`, `write_new` with `AlreadyExists`, and fault injection at the n-th call of an operation, so the atomic config write is tested at every step.
 - `FakeEngine` is an in-memory image store. `find` returns the ID of a built tag. `build` records the stage and tag and returns a deterministic ID derived from the tag, unless `pin_id` set one, which is how a test changes the construct image ID (decision 3). It never interprets build arguments.
 - `UsageServer` (from U13) serves canned HTTP bodies per provider on a local port, and `endpoints()` returns the override that points `HostUsage` at it.
+- P9.3 J0a additions. `FakeClock::set_utc_offset(i32)` sets `Clock::utc_offset_secs` (0 by default). `FakeGateway` stamps `created_at` from its own clock, or from `link_clock(Arc<dyn Clock>)` (`World` links its `FakeClock`). `SandboxHandle` gains `created_at()`, `resizes()` (each `Resize` the transport received, without the attach size), `raw_input()` (the bytes an `Owner` attachment sent, before the fake supervisor interprets them: `0x04` and `0x10 0x11` stay visible), `advance_repaint()` (fires the pending `NudgeAfter` nudge of every attachment once: `rows-1`, then `rows`, at the attachment's current size), `set_replay_window(Option<usize>)` (a new attachment replays only the last n bytes, which can start inside an escape sequence), `set_stream_exit_status(Option<i32>)` (the `Exited` event of `exit_main` carries this status while the phase keeps the real code), and `shells()`, a `ShellWitness { workdir, env, input, sizes, closed }` for each shell terminal opened. The fake refuses the 21st main-process attachment with `GatewayError::ResourceExhausted` (the cap of OpenShell `MAX_CONNECTIONS_PER_SANDBOX`; `FakeGateway::set_attachment_cap` changes it). `Fault::HoldAt { trigger }` holds the first call that matches a `Trigger` until `FakeGateway::release(&trigger)` or until the call's cancel token fires; `held()` lists the triggers that are held now and `until_held(&trigger)` waits for a call to arrive. `ScriptedConnector` is a `GatewayConnector` with one script per gateway: `Some(error)` fails that call, `None` and an empty script connect; `calls(&name)` counts the attempts.
 - The testkit defines no error enum. Fakes return the real error types of the trait they implement (`GatewayError`, `EngineError`, `FsError`, `ProcessError`), so a test sees what production code sees.
 
 ### Test plan outline (mark for `test-reviewer`)
@@ -2745,7 +2832,7 @@ Role: clap commands, wiring, the CLI terminal hand-off, and human and JSON outpu
 crates/jackin/src/
   main.rs           fn main: builds the system dependencies, runs `run`, returns ExitCode::from(class.code())
   lib.rs            run
-  app.rs            AppEnv, Deps, GatewayConnector, ConnectError; pub(crate) App
+  app.rs            AppEnv, Deps; pub(crate) App (`GatewayConnector` and `ConnectError` live in jackin-session since P9.3)
   cli.rs            Cli, Command, argument structs (clap derive, help in attributes)
   commands/{account,attach,build,doctor,export,gateway,inspect,load,ls,power,progress,purge,role,shell,workspace}.rs
   error.rs          CommandError, ExitClass
