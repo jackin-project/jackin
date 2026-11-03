@@ -134,7 +134,7 @@ impl Cleanup {
         command
             .args(["-c", script])
             .args(name)
-            .stdin(Stdio::null())
+            .stdin(Stdio::piped())
             .stdout(stdout)
             .process_group(group.map_or(0, Pid::as_raw_pid));
         let child = command.spawn()?;
@@ -207,8 +207,9 @@ async fn by_member_ends_every_live_member_of_a_group_it_does_not_leave_to_the_gr
     let links = tempfile::tempdir()?;
     let forged = format!("x) S 1 {} ", group.as_raw_pid());
     let link = links.path().join(&forged);
-    std::os::unix::fs::symlink("/bin/sleep", &link)?;
-    let (_, bystander) = cleanup.spawn("exec \"$0\" 60", Some(&link), None, Stdio::null())?;
+    std::os::unix::fs::symlink("/bin/sh", &link)?;
+    let (_, bystander) =
+        cleanup.spawn("exec \"$0\" -c 'read _'", Some(&link), None, Stdio::null())?;
     named_like(&forged, &cleanup.children[bystander]).await?;
     assert_eq!(
         members(group).expect("listing").len(),
