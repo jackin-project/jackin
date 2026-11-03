@@ -3,10 +3,13 @@
 
 use std::convert::Infallible;
 use std::error::Error;
+use std::future::Future;
 use std::io::ErrorKind;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::task::{Context, Wake, Waker};
 use std::time::Duration;
 
 use jackin_core::{
@@ -355,6 +358,139 @@ async fn write_atomic_crash_at_every_step_keeps_the_old_file_or_the_complete_new
     crash(&[(FsOp::Rename, 1)], false, false).await?;
     crash(&[(FsOp::Rename, 1), (FsOp::RemoveFile, 2)], false, true).await?;
     crash(&[(FsOp::SyncDir, 1)], true, false).await
+}
+
+#[derive(Default)]
+struct Wakes(AtomicUsize);
+
+impl Wake for Wakes {
+    fn wake(self: Arc<Self>) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+type Sleeper = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+fn sleeper(clock: &Arc<FakeClock>) -> Sleeper {
+    let clock = Arc::clone(clock);
+    Box::pin(async move { clock.sleep(Duration::from_secs(10)).await })
+}
+
+fn poll_n(future: &mut Sleeper, waker: &Waker, polls: usize) -> Option<usize> {
+    let mut cx = Context::from_waker(waker);
+    (1..=polls).find(|_| future.as_mut().poll(&mut cx).is_ready())
+}
+
+fn polls_to_wake_unheld() -> Option<usize> {
+    let clock = Arc::new(FakeClock::new());
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    poll_n(&mut sleeper(&clock), &waker, 10_000)
+}
+
+#[tokio::test]
+async fn a_guard_taken_one_poll_before_a_sleep_wakes_holds_time_until_it_drops() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let start = clock.now();
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, wake_at - 1),
+        None,
+        "not yet awake"
+    );
+    let guard = clock.working();
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 1_000),
+        None,
+        "woke under a guard"
+    );
+    assert_eq!(clock.now(), start, "time moved under a guard");
+    drop(guard);
+    assert!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at).is_some(),
+        "never woke"
+    );
+    assert_eq!(clock.now(), Timestamp(start.0 + 10));
+}
+
+#[tokio::test]
+async fn a_sleep_begun_under_a_guard_stays_asleep_until_the_guard_drops() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let start = clock.now();
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    let guard = clock.working();
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 1_000),
+        None,
+        "woke under a guard"
+    );
+    assert_eq!(clock.now(), start, "time moved under a guard");
+    drop(guard);
+    assert!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at).is_some(),
+        "never woke"
+    );
+    assert_eq!(clock.now(), Timestamp(start.0 + 10));
+}
+
+#[tokio::test]
+async fn a_sleep_waits_for_the_last_of_two_guards() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    let first = clock.working();
+    let second = clock.working();
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 500),
+        None,
+        "woke under two guards"
+    );
+    drop(first);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 1_000),
+        None,
+        "woke under one guard"
+    );
+    drop(second);
+    assert!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at).is_some(),
+        "never woke"
+    );
+}
+
+#[tokio::test]
+async fn a_sleep_blocked_by_a_guard_does_not_wake_itself_and_wakes_when_the_guard_drops() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let wakes = Arc::new(Wakes::default());
+    let waker = Waker::from(Arc::clone(&wakes));
+    let guard = clock.working();
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(poll_n(&mut sleeping, &waker, 1), None);
+    let settled = wakes.0.load(Ordering::SeqCst);
+    assert_eq!(poll_n(&mut sleeping, &waker, 100), None);
+    assert_eq!(
+        wakes.0.load(Ordering::SeqCst),
+        settled,
+        "a blocked sleep woke its own task"
+    );
+    drop(guard);
+    assert!(
+        wakes.0.load(Ordering::SeqCst) > settled,
+        "dropping the last guard did not wake the sleep"
+    );
+    assert!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at).is_some(),
+        "never woke"
+    );
 }
 
 #[tokio::test]
