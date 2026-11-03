@@ -124,6 +124,37 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
+  check-secrets-scan:
+    name: Check / secrets-scan
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    env: *m1
+    permissions:
+      contents: read
+    needs:
+      - plan
+    steps:
+      - *s1
+      - *s2
+      - *s3
+      - *s4
+      - name: Execute named check
+        env:
+          VELNOR_CHECK_ID: secrets-scan
+          VELNOR_CHECK_JOB_ID: check-secrets-scan
+          VELNOR_CHECK_LANE_VARIANT: single
+          VELNOR_INTERNAL_OP: execute-check-v1
+          VELNOR_TASK_ID: stack/mise/secrets-scan/check/default
+        run: *r2
+      - name: Upload crate reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          if-no-files-found: error
+          name: velnor-crate-r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}-check-secrets-scan
+          overwrite: "true"
+          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
+          retention-days: "30"
   dependency-seed:
     name: Dependency seed
     runs-on: ubuntu-26.04
@@ -397,7 +428,7 @@ jobs:
         env:
           VELNOR_INTERNAL_OP: write-request-v1
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/plan-v1-request.json
-          VELNOR_NAMED_CHECK_LANES_JSON: "{\"check-dependency-usage\":[{\"job_id\":\"check-dependency-usage\"}],\"check-repository-steps\":[{\"job_id\":\"check-repository-steps\"}]}"
+          VELNOR_NAMED_CHECK_LANES_JSON: "{\"check-dependency-usage\":[{\"job_id\":\"check-dependency-usage\"}],\"check-repository-steps\":[{\"job_id\":\"check-repository-steps\"}],\"check-secrets-scan\":[{\"job_id\":\"check-secrets-scan\"}]}"
         run: &r15 "\"$RUNNER_TEMP\"'/velnor/bin/velnor-actions-0.1.72'"
       - name: Check generated files
         env: *m8
@@ -460,6 +491,7 @@ jobs:
       - plan
       - check-dependency-usage
       - check-repository-steps
+      - check-secrets-scan
       - rust-jackin
       - rust-jackin-core
       - rust-jackin-image
@@ -507,7 +539,7 @@ jobs:
         env:
           VELNOR_INTERNAL_OP: write-request-v1
           VELNOR_NEEDS_JSON: ${{ toJSON(needs) }}
-          VELNOR_NEEDS_EXPECTED: "[\"check-dependency-usage\",\"check-repository-steps\",\"jactionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-core\",\"rust-jackin-image\",\"rust-jackin-openshell\",\"rust-jackin-session\",\"rust-jackin-testkit\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-provider-claude\",\"rust-jackin-usage-provider-codex\",\"rust-jackin-usage-provider-core\",\"rust-jackin-usage-provider-cursor\",\"rust-jackin-usage-provider-gemini\",\"rust-jackin-usage-provider-grok\",\"rust-jackin-usage-provider-kimi\",\"rust-jackin-usage-provider-minimax\",\"rust-jackin-usage-provider-opencode\",\"rust-jackin-usage-provider-openrouter\",\"rust-jackin-usage-provider-zai\",\"rust-jackin-xtask\"]"
+          VELNOR_NEEDS_EXPECTED: "[\"check-dependency-usage\",\"check-repository-steps\",\"check-secrets-scan\",\"jactionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-core\",\"rust-jackin-image\",\"rust-jackin-openshell\",\"rust-jackin-session\",\"rust-jackin-testkit\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-provider-claude\",\"rust-jackin-usage-provider-codex\",\"rust-jackin-usage-provider-core\",\"rust-jackin-usage-provider-cursor\",\"rust-jackin-usage-provider-gemini\",\"rust-jackin-usage-provider-grok\",\"rust-jackin-usage-provider-kimi\",\"rust-jackin-usage-provider-minimax\",\"rust-jackin-usage-provider-opencode\",\"rust-jackin-usage-provider-openrouter\",\"rust-jackin-usage-provider-zai\",\"rust-jackin-xtask\"]"
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/merge-v1-request.json
         run: *r15
       - name: Merge reports
@@ -515,7 +547,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VELNOR_INTERNAL_OP: merge-v1
           VELNOR_NEEDS_JSON: ${{ toJSON(needs) }}
-          VELNOR_NEEDS_EXPECTED: "[\"check-dependency-usage\",\"check-repository-steps\",\"jactionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-core\",\"rust-jackin-image\",\"rust-jackin-openshell\",\"rust-jackin-session\",\"rust-jackin-testkit\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-provider-claude\",\"rust-jackin-usage-provider-codex\",\"rust-jackin-usage-provider-core\",\"rust-jackin-usage-provider-cursor\",\"rust-jackin-usage-provider-gemini\",\"rust-jackin-usage-provider-grok\",\"rust-jackin-usage-provider-kimi\",\"rust-jackin-usage-provider-minimax\",\"rust-jackin-usage-provider-opencode\",\"rust-jackin-usage-provider-openrouter\",\"rust-jackin-usage-provider-zai\",\"rust-jackin-xtask\"]"
+          VELNOR_NEEDS_EXPECTED: "[\"check-dependency-usage\",\"check-repository-steps\",\"check-secrets-scan\",\"jactionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-core\",\"rust-jackin-image\",\"rust-jackin-openshell\",\"rust-jackin-session\",\"rust-jackin-testkit\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-provider-claude\",\"rust-jackin-usage-provider-codex\",\"rust-jackin-usage-provider-core\",\"rust-jackin-usage-provider-cursor\",\"rust-jackin-usage-provider-gemini\",\"rust-jackin-usage-provider-grok\",\"rust-jackin-usage-provider-kimi\",\"rust-jackin-usage-provider-minimax\",\"rust-jackin-usage-provider-opencode\",\"rust-jackin-usage-provider-openrouter\",\"rust-jackin-usage-provider-zai\",\"rust-jackin-xtask\"]"
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/merge-v1-request.json
         run: *r15
       - name: Publish final report

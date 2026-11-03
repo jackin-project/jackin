@@ -55,3 +55,16 @@ run = "mbx +1.99.1 xtask ci --fast"
 [tasks."ci:full"]
 description = "Run the repository gates; the docs build joins at P12.1"
 run = "mbx +1.99.1 xtask ci --no-docs"
+
+[tasks."check:secrets-scan"]
+description = "Scan the tracked tree and the history reachable from HEAD with gitleaks, betterleaks and Kingfisher"
+run = """
+status=0
+gitleaks dir . --redact --no-banner || status=1
+gitleaks git . --redact --no-banner --log-opts=HEAD || status=1
+betterleaks dir . --redact --no-banner || status=1
+betterleaks git . --redact --no-banner --log-opts=HEAD || status=1
+kingfisher scan . --git-history none --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml || status=1
+kingfisher scan . --git-history full --branch HEAD --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml || status=1
+exit "$status"
+"""

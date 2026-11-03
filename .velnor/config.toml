@@ -57,6 +57,36 @@ labels = ["velnor", "ubuntu-26.04-scale-set"]
 platform = "linux/amd64"
 
 [[qualified_tools]]
+depends_on = []
+id = "betterleaks"
+version = "1.9.0"
+
+[qualified_tools.backend]
+kind = "aqua"
+package = "betterleaks/betterleaks"
+
+[qualified_tools.options]
+kind = "default"
+
+[[qualified_tools.platforms]]
+platform = "linux_x64"
+dependency_artifacts = []
+install_tree_sha256 = "40899fd0c8b1b63338c41e64971b2529049ce71b2e7eb770ad9e6846f67e455f"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://github.com/betterleaks/betterleaks/releases/download/v1.9.0/betterleaks_1.9.0_linux_x64.tar.gz"
+sha256 = "f8b185a39ffcece2a1ca82bf3a4e7435cd81963ffd16b7a9128daf75f35f6de7"
+
+[[qualified_tools.platforms.executables]]
+name = "betterleaks"
+path = "betterleaks"
+sha256 = "0ace40b41652344608f89967fe93c6caf4faae9a4df20423632c7efb02a4d4e1"
+
+[qualified_tools.platforms.executables.probe]
+kind = "version_subcommand"
+expected = "1.9.0"
+
+[[qualified_tools]]
 depends_on = ["rust"]
 id = "cargo-shear"
 version = "1.14.0"
@@ -109,6 +139,66 @@ sha256 = "34edccc283039ed8c2351c72c45c21a13ed65cf1fdde915f689ac97b060150c5"
 [qualified_tools.platforms.executables.probe]
 expected = "Version: 1.14.0"
 kind = "version"
+
+[[qualified_tools]]
+depends_on = []
+id = "gitleaks"
+version = "8.30.1"
+
+[qualified_tools.backend]
+kind = "aqua"
+package = "gitleaks/gitleaks"
+
+[qualified_tools.options]
+kind = "default"
+
+[[qualified_tools.platforms]]
+platform = "linux_x64"
+dependency_artifacts = []
+install_tree_sha256 = "190de9c53cd8ebd743ac1e75eb94cf2b758b586889451021394bcbaa52f68c54"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+sha256 = "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+
+[[qualified_tools.platforms.executables]]
+name = "gitleaks"
+path = "gitleaks"
+sha256 = "88f91962aa2f93ac6ab281d553b9e125f5197bbbce38f9f2437f7299c32e5509"
+
+[qualified_tools.platforms.executables.probe]
+kind = "version_subcommand"
+expected = "8.30.1"
+
+[[qualified_tools]]
+depends_on = []
+id = "kingfisher"
+version = "2.16.0"
+
+[qualified_tools.backend]
+kind = "aqua"
+package = "mongodb/kingfisher"
+
+[qualified_tools.options]
+kind = "default"
+
+[[qualified_tools.platforms]]
+platform = "linux_x64"
+dependency_artifacts = []
+install_tree_sha256 = "af6de8186a2a6fac62afd98c8c82eacddd726c11db9dd3d7225a8c3aa4d74461"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://github.com/mongodb/kingfisher/releases/download/v2.16.0/kingfisher-linux-x64.tgz"
+sha256 = "97cdbe7706a722ea085d1e83a00a98b0e9432fc58b21c9a3e36f591b5c1446d7"
+
+[[qualified_tools.platforms.executables]]
+name = "kingfisher"
+path = "kingfisher"
+sha256 = "ac833b78390d21c96cea8b0b676ef6ee4b0b7d0bfdb287c60a73f3658e35014d"
+
+[qualified_tools.platforms.executables.probe]
+kind = "version"
+expected = "kingfisher 2.16.0"
 
 [[qualified_tools]]
 id = "rust"
@@ -289,6 +379,19 @@ task = "check:repository-steps"
 directory = "."
 inputs = [".cargo/config.toml", ".velnor/config.toml", "Cargo.lock", "Cargo.toml", "mise.lock", "mise.toml", "rust-toolchain.toml"]
 tools = ["rust"]
+timeout_minutes = 10
+
+[checks.runner]
+label = "ubuntu-26.04"
+platform = "linux_x64"
+executor = "hosted"
+
+[[checks]]
+id = "secrets-scan"
+task = "check:secrets-scan"
+directory = "."
+inputs = [".betterleaksignore", ".gitleaks.toml", ".gitleaksignore", ".kingfisher-baseline.yml", ".velnor/config.toml", "mise.lock", "mise.toml"]
+tools = ["betterleaks", "gitleaks", "kingfisher"]
 timeout_minutes = 10
 
 [checks.runner]
