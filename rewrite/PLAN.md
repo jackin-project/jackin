@@ -512,7 +512,7 @@ This phase is the first end-to-end proof.
 - **Owner:** orchestrator. **Depends:** P8.1, A1.
 - **Steps:** Run G-E2E. Fix each `FAIL` through the code task pipeline. Run G-E2E again.
 - **Proof:** every journey step prints `PASS`. Copy the full output into `evidence/P8.2-journey.md` and into the chat.
-- [ ] P8.2 done
+- [x] P8.2 done. Proof: evidence/P8.2-journey.md, G-E2E at 483bc5ab8: J00-J17 PASS, RESULT PASS=19 FAIL=0 SKIP=0, CLEAN PASS, A1 host login unchanged, exit 0.
 
 ### P8.3 Repeat the journey independently
 
