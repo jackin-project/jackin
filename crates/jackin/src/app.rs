@@ -8,8 +8,9 @@ use std::sync::Arc;
 
 use jackin_core::{Config, ConfigStore, EnvSnapshot, GatewayName, HostPath};
 use jackin_image::ImageEngine;
+use jackin_openshell::Gateway;
 use jackin_session::{
-    GatewayConnector, HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps,
+    GatewayConnector, Gateways, HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps,
 };
 use jackin_usage::ProviderEndpoints;
 use tokio_util::sync::CancellationToken;
@@ -80,12 +81,22 @@ impl App {
     pub(crate) async fn session(&self, config: &Config) -> Result<Session, CommandError> {
         let (name, entry) = config.resolve_gateway(self.gateway.as_ref())?;
         let gateway = self.deps.connect.connect(name, entry, &self.cancel).await?;
-        Ok(Session::new(SessionDeps {
+        Ok(self.session_of(gateway))
+    }
+
+    pub(crate) fn session_of(&self, gateway: Arc<dyn Gateway>) -> Session {
+        Session::new(SessionDeps {
             gateway,
             engine: Arc::clone(&self.deps.engine),
             host: self.deps.host.clone(),
             cache_dir: self.cache_dir.clone(),
+            config: self.store.clone(),
             limits: self.deps.limits,
-        }))
+        })
+    }
+
+    pub(crate) async fn gateways(&self, config: &Config) -> Result<Gateways, CommandError> {
+        let home = self.session(config).await?;
+        Ok(Gateways::with_peers(home, config, self.deps.connect.as_ref(), &self.cancel).await?)
     }
 }

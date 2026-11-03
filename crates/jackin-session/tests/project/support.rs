@@ -88,6 +88,7 @@ impl Rig {
             role.root().as_path().display(),
             repo.root().as_path().display(),
         ))?;
+        world.seed_config(&config).await?;
         let project = repo.project().await?;
         world.gateway.script_program(
             &sandbox_layout::PRINTENV,
@@ -160,6 +161,7 @@ impl Rig {
                 runner,
             },
             cache_dir: world.cache_dir().clone(),
+            config: world.config.clone(),
             limits: jackin_testkit::default_limits(),
         });
         let plan = self.plan(id)?;

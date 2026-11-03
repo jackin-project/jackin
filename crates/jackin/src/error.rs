@@ -67,6 +67,8 @@ pub enum CommandError {
     Purge(#[from] PurgeError),
     #[error(transparent)]
     Account(#[from] AccountError),
+    #[error(transparent)]
+    Accounts(AccountEditError),
     #[error("cannot import the ChatGPT login from {}", .home.as_path().display())]
     Login {
         home: HostPath,
@@ -105,6 +107,7 @@ impl From<AccountEditError> for CommandError {
         match error {
             AccountEditError::Config(error) => CommandError::Config(error),
             AccountEditError::Account(error) => CommandError::Account(error),
+            other => CommandError::Accounts(other),
         }
     }
 }
@@ -163,6 +166,7 @@ impl CommandError {
             | CommandError::Export(_)
             | CommandError::Purge(_)
             | CommandError::Account(_)
+            | CommandError::Accounts(_)
             | CommandError::Login { .. }
             | CommandError::Image(_)
             | CommandError::Connect(_)

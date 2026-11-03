@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    Clock, ConfigStore, FileSystem, GatewayName, HostPath, OpenShellWorkspace, ProcessRunner,
-    StdFileSystem,
+    Clock, Config, ConfigEdit, ConfigError, ConfigStore, FileSystem, GatewayName, HostPath,
+    OpenShellWorkspace, ProcessRunner, StdFileSystem,
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::Gateway;
@@ -73,6 +73,19 @@ impl World {
     pub fn home(&self) -> &HostPath {
         &self.home
     }
+
+    pub async fn seed_config(&self, config: &Config) -> Result<(), ConfigError> {
+        let mut edits: Vec<ConfigEdit> = config
+            .gateways()
+            .map(|(name, entry)| ConfigEdit::AddGateway {
+                name: name.clone(),
+                entry: entry.clone(),
+            })
+            .collect();
+        edits.extend(config.accounts().cloned().map(ConfigEdit::AddAccount));
+        self.config.edit(edits).await?;
+        Ok(())
+    }
 }
 
 impl WorldBuilder {
@@ -106,6 +119,7 @@ impl WorldBuilder {
         let engine_port: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&engine);
         let clock_port: Arc<dyn Clock> = Arc::<FakeClock>::clone(&clock);
         let runner_port: Arc<dyn ProcessRunner> = Arc::<TestRunner>::clone(&runner);
+        let config = ConfigStore::new(Arc::clone(&fs), Arc::clone(&clock_port), config_path);
         let session = Session::new(SessionDeps {
             gateway: gateway_port,
             engine: engine_port,
@@ -115,6 +129,7 @@ impl WorldBuilder {
                 runner: Arc::clone(&runner_port),
             },
             cache_dir: cache_dir.clone(),
+            config: config.clone(),
             limits: self.limits,
         });
         Ok(World {
@@ -124,7 +139,7 @@ impl WorldBuilder {
                 Arc::clone(&clock_port),
                 cache_dir.clone(),
             )),
-            config: ConfigStore::new(Arc::clone(&fs), clock_port, config_path),
+            config,
             usage: LazyUsageServer::default(),
             gateway,
             engine,

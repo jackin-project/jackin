@@ -8,7 +8,7 @@ use jackin_core::{
     HostPath, OpReference, Provider, ProviderName,
 };
 use jackin_openshell::{GatewayError, GatewayOp};
-use jackin_session::{AccountEditError, AccountError, AccountPlan, plan_account_edits};
+use jackin_session::{AccountEditError, AccountPlan, Gateways, plan_account_edits};
 use jackin_testkit::{Fault, World};
 use tokio_util::sync::CancellationToken;
 
@@ -45,8 +45,12 @@ fn file(path: &str) -> Result<CredentialSource, Box<dyn std::error::Error>> {
 async fn run(world: &World, edits: Vec<ConfigEdit>) -> Result<Config, AccountEditError> {
     let config = world.config.load().await?;
     let plan = plan_account_edits(&config, edits)?;
-    plan.apply(&world.session, &world.config, &CancellationToken::new())
-        .await
+    plan.apply(
+        &Gateways::single(world.session.clone()),
+        &world.config,
+        &CancellationToken::new(),
+    )
+    .await
 }
 
 #[tokio::test]
@@ -86,10 +90,7 @@ async fn a_chatgpt_login_account_gets_its_provider_before_it_reaches_the_config(
         )?;
         let failed = run(&world, vec![ConfigEdit::AddAccount(second)]).await;
         assert!(
-            matches!(
-                failed,
-                Err(AccountEditError::Account(AccountError::Gateway(_)))
-            ),
+            matches!(failed, Err(AccountEditError::OnGateway { .. })),
             "{failed:?}"
         );
         assert_eq!(world.config.load().await?, config);
@@ -189,10 +190,7 @@ async fn removing_a_login_account_deletes_its_provider_first_and_a_refusal_keeps
         )
         .await;
         assert!(
-            matches!(
-                refused,
-                Err(AccountEditError::Account(AccountError::Gateway(_)))
-            ),
+            matches!(refused, Err(AccountEditError::OnGateway { .. })),
             "{refused:?}"
         );
         assert_eq!(world.config.load().await?, before);
@@ -354,8 +352,12 @@ async fn after_two_edits(
         assert_eq!(providers_of(&world), start_providers, "{case}");
         return Ok(false);
     };
-    plan.apply(&world.session, &world.config, &CancellationToken::new())
-        .await?;
+    plan.apply(
+        &Gateways::single(world.session.clone()),
+        &world.config,
+        &CancellationToken::new(),
+    )
+    .await?;
     let finished = world.config.load().await?;
     assert_eq!(providers_of(&world), logins_of(&finished), "{case}");
     Ok(true)

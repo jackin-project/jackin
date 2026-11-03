@@ -258,6 +258,7 @@ impl Rig {
             engine,
             host: HostPorts { clock, fs, runner },
             cache_dir: world.cache_dir().clone(),
+            config: world.config.clone(),
             limits,
         })
     }
@@ -403,6 +404,7 @@ impl RigBuilder {
             role.root().as_path().display(),
             repo.root().as_path().display(),
         ))?;
+        world.seed_config(&config).await?;
         let project = repo.project().await?;
         let gateway = &world.gateway;
         gateway.script_program(

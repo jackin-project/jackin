@@ -62,8 +62,8 @@ async fn apply(app: &App, config: &Config, edits: Vec<ConfigEdit>) -> Result<(),
             plan.apply(&app.store).await?;
         }
         AccountPlan::Gateway(plan) => {
-            let session = app.session(config).await?;
-            plan.apply(&session, &app.store, &app.cancel).await?;
+            let gateways = app.gateways(config).await?;
+            plan.apply(&gateways, &app.store, &app.cancel).await?;
         }
     }
     Ok(())
