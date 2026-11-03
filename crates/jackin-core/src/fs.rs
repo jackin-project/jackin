@@ -327,7 +327,7 @@ impl FileSystem for StdFileSystem {
 
     async fn lock(&self, path: &HostPath) -> Result<FileLock, FsError> {
         match blocking(path, lock_file).await? {
-            Ok(file) => Ok(FileLock::new(file)),
+            Ok(file) => Ok(FileLock::new(path.clone(), file)),
             Err(()) => Err(FsError::LockHeld(path.clone())),
         }
     }
@@ -370,13 +370,32 @@ impl FileSystem for StdFileSystem {
     }
 }
 
+pub fn lock_path(target: &HostPath) -> Result<HostPath, FsError> {
+    let Some(name) = target.file_name() else {
+        return Err(FsError::Io {
+            path: target.clone(),
+            kind: ErrorKind::InvalidInput,
+            message: "path has no file name".to_owned(),
+        });
+    };
+    let mut lock_name = name.to_os_string();
+    lock_name.push(".lock");
+    Ok(target.with_file_name(&lock_name))
+}
+
 pub async fn write_atomic_locked(
     fs: &dyn FileSystem,
     path: &HostPath,
     bytes: &[u8],
     mode: FileMode,
-    _held: &FileLock,
+    held: &FileLock,
 ) -> Result<(), FsError> {
+    if *held.path() != lock_path(path)? {
+        return Err(FsError::WrongLock {
+            lock: held.path().clone(),
+            target: path.clone(),
+        });
+    }
     sweep_stale_temps(fs, path).await;
     write_atomic(fs, path, bytes, mode).await
 }

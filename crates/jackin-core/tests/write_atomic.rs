@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use async_trait::async_trait;
 use jackin_core::{
     DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LinkProblem,
-    RegularFile, RegularFileProblem, RepoPath, StdFileSystem, write_atomic,
+    RegularFile, RegularFileProblem, RepoPath, StdFileSystem, write_atomic, write_atomic_locked,
 };
 use tokio::sync::Notify;
 
@@ -292,5 +292,29 @@ async fn two_writers_of_one_target_both_succeed_and_leave_one_whole_file() -> Te
     write_atomic(&*fs, &target, b"third", FileMode(0o600)).await?;
     assert_eq!(fs.read(&target).await?, Some(b"third".to_vec()));
     assert_eq!(names(fs.list(&root).await?), ["usage.json"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_locked_write_refuses_a_lock_that_is_not_the_targets_own() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let root = dir.path();
+    let fs = StdFileSystem::default();
+    let target = HostPath::parse(&root.join("data.json"))?;
+    let foreign_path = HostPath::parse(&root.join("other.json.lock"))?;
+    let foreign = fs.lock(&foreign_path).await?;
+
+    let outcome = write_atomic_locked(&fs, &target, b"new", FileMode(0o600), &foreign).await;
+    assert!(
+        matches!(&outcome, Err(FsError::WrongLock { lock, target: refused }) if *lock == foreign_path && *refused == target),
+        "{outcome:?}"
+    );
+    assert!(!root.join("data.json").exists());
+
+    let own = fs
+        .lock(&HostPath::parse(&root.join("data.json.lock"))?)
+        .await?;
+    write_atomic_locked(&fs, &target, b"new", FileMode(0o600), &own).await?;
+    assert_eq!(std::fs::read(root.join("data.json"))?, b"new");
     Ok(())
 }

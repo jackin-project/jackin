@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use jackin_core::{BuilderName, FileLock, ImageId, ImageTag, ProcessStatus, Sha256, TerminalText};
+use jackin_core::{
+    BuilderName, FileLock, HostPath, ImageId, ImageTag, ProcessStatus, Sha256, TerminalText,
+};
 use jackin_image::{BuildStage, EngineError, ImageEngine, ImageEvent, PlannedBuild, ProgressSink};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
@@ -56,6 +59,12 @@ impl Exclusion {
     fn waiters(&self, key: &ImageTag) -> usize {
         locked(&self.state).waiting.get(key).copied().unwrap_or(0)
     }
+}
+
+fn lock_file(key: &ImageTag) -> Result<HostPath, EngineError> {
+    let digest = Sha256::of(key.to_string().as_bytes());
+    let path = Path::new("/fake-engine/locks").join(format!("{}.lock", digest.as_str()));
+    HostPath::parse(&path).map_err(|_| EngineError::LockTimeout { key: key.clone() })
 }
 
 struct Held {
@@ -310,10 +319,13 @@ impl ImageEngine for FakeEngine {
             let mut released = std::pin::pin!(released);
             released.as_mut().enable();
             if self.exclusion.take(key) {
-                return Ok(Some(FileLock::from_guard(Held {
-                    exclusion: Arc::clone(&self.exclusion),
-                    key: key.clone(),
-                })));
+                return Ok(Some(FileLock::from_guard(
+                    lock_file(key)?,
+                    Held {
+                        exclusion: Arc::clone(&self.exclusion),
+                        key: key.clone(),
+                    },
+                )));
             }
             waiting.get_or_insert_with(|| Waiting::enter(&self.exclusion, key));
             tokio::select! {

@@ -345,10 +345,13 @@ impl FileSystem for MemFs {
                 bytes: Vec::new(),
                 mode: FileMode(0o600),
             });
-        Ok(FileLock::from_guard(Held {
-            state: Arc::clone(&self.state),
-            path: path.as_path().to_path_buf(),
-        }))
+        Ok(FileLock::from_guard(
+            path.clone(),
+            Held {
+                state: Arc::clone(&self.state),
+                path: path.as_path().to_path_buf(),
+            },
+        ))
     }
 
     async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {

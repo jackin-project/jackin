@@ -6,7 +6,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use jackin_core::{
-    CredentialSource, FileMode, FsError, HostPath, PollError, PollPlan, hold_lock,
+    CredentialSource, FileMode, FsError, HostPath, PollError, PollPlan, hold_lock, lock_path,
     write_atomic_locked,
 };
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,6 @@ use crate::model::{LimitWindow, UsageError};
 use crate::request::UsageAccount;
 
 const CACHE_FILE: &str = "usage.json";
-const LOCK_FILE: &str = "usage.json.lock";
 const LOCK_PLAN: PollPlan = PollPlan {
     interval: Duration::from_millis(20),
     timeout: Duration::from_secs(10),
@@ -86,8 +85,7 @@ impl Cache {
             .create_private_dir_all(&deps.state_dir)
             .await
             .map_err(|error| store(&self.path, &error))?;
-        let lock_path = HostPath::resolve(Path::new(LOCK_FILE), &deps.state_dir)
-            .map_err(|error| UsageError::Internal(error.to_string()))?;
+        let lock_path = lock_path(&self.path).map_err(|error| store(&self.path, &error))?;
         let lock = hold_lock(&*deps.fs, &*deps.clock, &lock_path, LOCK_PLAN, cancel)
             .await
             .map_err(|error| match error {
