@@ -10,7 +10,7 @@ use jackin_xtask::{
     Exit, HostCommand, HostError, HostOutput, HostProcess, RealHost, Scratch, child_env,
     snapshot_tree,
 };
-use rustix::process::{Pid, test_kill_process};
+use rustix::process::{Pid, Signal, kill_process, test_kill_process};
 use tokio_util::sync::CancellationToken;
 
 use super::scenario::Scenario;
@@ -231,6 +231,20 @@ fn sh(script: &str, timeout: Duration) -> HostCommand {
         .env(env)
 }
 
+struct KillRecorded(std::path::PathBuf);
+
+impl Drop for KillRecorded {
+    fn drop(&mut self) {
+        let recorded = fs::read_to_string(&self.0)
+            .ok()
+            .and_then(|text| text.trim().parse::<i32>().ok())
+            .and_then(Pid::from_raw);
+        if let Some(pid) = recorded {
+            kill_process(pid, Signal::KILL).unwrap_or_default();
+        }
+    }
+}
+
 async fn bounded_run(
     host: &RealHost,
     command: &HostCommand,
@@ -250,6 +264,7 @@ async fn bounded_run(
 async fn real_host_kills_the_whole_process_group_on_timeout() {
     let dir = tempfile::tempdir().expect("tempdir");
     let pidfile = dir.path().join("pid");
+    let _reap = KillRecorded(pidfile.clone());
     let script = format!("sleep 600 & echo $! > {}; sleep 600", pidfile.display());
     let started = tokio::time::Instant::now();
     let result = bounded_run(

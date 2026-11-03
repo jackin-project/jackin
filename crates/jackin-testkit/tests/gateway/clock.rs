@@ -64,6 +64,44 @@ impl Sleeper {
     }
 }
 
+struct ReleaseFlag(std::path::PathBuf);
+
+impl Drop for ReleaseFlag {
+    fn drop(&mut self) {
+        drop(std::fs::write(&self.0, b""));
+    }
+}
+
+struct ReleaseFifo {
+    path: std::path::PathBuf,
+    armed: bool,
+}
+
+impl ReleaseFifo {
+    fn new(path: &std::path::Path) -> ReleaseFifo {
+        ReleaseFifo {
+            path: path.to_path_buf(),
+            armed: true,
+        }
+    }
+
+    async fn read(&mut self) -> TestResult {
+        self.armed = false;
+        let path = self.path.clone();
+        tokio::task::spawn_blocking(move || std::fs::read(path)).await??;
+        Ok(())
+    }
+}
+
+impl Drop for ReleaseFifo {
+    fn drop(&mut self) {
+        if self.armed {
+            let path = self.path.clone();
+            drop(std::thread::spawn(move || drop(std::fs::read(path))));
+        }
+    }
+}
+
 async fn prepared(fake: &FakeGateway) -> Result<SandboxHandle, Box<dyn Error>> {
     let handle = ready(fake, sh("sleep 3600")?).await?;
     tokio::fs::create_dir_all(handle.root().join("project")).await?;
@@ -91,6 +129,7 @@ async fn held_until_the_git_call_returns(
     clock: Arc<FakeClock>,
 ) -> TestResult {
     let release = handle.root().join("release");
+    let _flag = ReleaseFlag(release.clone());
     let start = clock.now();
     let finished = AtomicBool::new(false);
     let call = async {
@@ -156,6 +195,7 @@ async fn a_commit_blocked_on_a_file_write_holds_the_clock_until_it_returns() -> 
         tokio::fs::write(project.join(".git/info/exclude"), b"blocker\n").await?;
         tokio::fs::write(project.join("staged.txt"), b"staged").await?;
         handle.git(&["add", "staged.txt"]).await?;
+        let mut release = ReleaseFifo::new(&fifo);
         let start = clock.now();
         let finished = AtomicBool::new(false);
         let call = async {
@@ -173,8 +213,7 @@ async fn a_commit_blocked_on_a_file_write_holds_the_clock_until_it_returns() -> 
             );
             assert!(!finished.load(Ordering::SeqCst), "the commit ended early");
             assert_eq!(clock.now(), start, "time moved during the commit");
-            let reader = fifo.clone();
-            tokio::task::spawn_blocking(move || std::fs::read(reader)).await??;
+            release.read().await?;
             assert!(
                 sleeping.finishes_within(100_000).await,
                 "the clock stayed held after the commit returned"
@@ -196,6 +235,7 @@ async fn a_handle_of_a_gateway_without_a_linked_clock_does_not_hold_it() -> Test
         let handle = prepared(&fake).await?;
         let clock = Arc::new(FakeClock::new());
         let release = handle.root().join("release");
+        let _flag = ReleaseFlag(release.clone());
         let finished = AtomicBool::new(false);
         let call = async {
             let result = blocked_git(&handle, &release).await;
