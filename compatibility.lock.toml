@@ -14,3 +14,11 @@ repository = "https://github.com/NVIDIA/OpenShell"
 version = "0.166.0"
 package = "@openai/codex"
 date = "2026-10-29"
+
+[docker]
+cli_version = "29.9.2"
+cli_date = "2026-10-20"
+buildx_version = "0.38.1"
+buildx_date = "2026-10-20"
+compose_version = "5.7.0"
+compose_date = "2026-11-02"

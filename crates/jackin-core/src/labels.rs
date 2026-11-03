@@ -9,6 +9,7 @@ use thiserror::Error;
 
 use crate::agent::Agent;
 use crate::display::plain;
+use crate::docker::DockerLabel;
 use crate::ids::{AccountName, IdError, ImageId, ImageLabel, LaunchId, RoleName, WorkspaceName};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -27,6 +28,7 @@ pub struct PlannedLabels {
     pub agent: Agent,
     pub account: AccountName,
     pub launch: LaunchId,
+    pub docker: DockerLabel,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,6 +63,7 @@ const AGENT: &str = "jackin.dev/agent";
 const ACCOUNT: &str = "jackin.dev/account";
 const IMAGE: &str = "jackin.dev/image";
 const LAUNCH: &str = "jackin.dev/launch";
+const DOCKER: &str = "jackin.dev/docker";
 
 impl fmt::Display for LabelKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -98,6 +101,7 @@ impl SandboxLabels {
             pair(ACCOUNT, planned.account.as_str()),
             pair(IMAGE, self.image.as_str()),
             pair(LAUNCH, planned.launch.as_str()),
+            pair(DOCKER, &docker_value(planned.docker)),
         ]))
     }
 
@@ -114,10 +118,33 @@ impl SandboxLabels {
                 agent,
                 account: labels.parsed(ACCOUNT, AccountName::parse)?,
                 launch: labels.parsed(LAUNCH, LaunchId::parse)?,
+                docker: docker_label(labels.value(DOCKER)?)?,
             },
             image: labels.parsed(IMAGE, ImageLabel::parse)?,
         })
     }
+}
+
+fn docker_value(label: DockerLabel) -> String {
+    match label {
+        DockerLabel::Off => "off".to_owned(),
+        DockerLabel::Engine(port) => port.to_string(),
+    }
+}
+
+fn docker_label(value: &str) -> Result<DockerLabel, LabelError> {
+    if value == "off" {
+        return Ok(DockerLabel::Off);
+    }
+    let canonical = !value.starts_with('0') && value.bytes().all(|byte| byte.is_ascii_digit());
+    canonical
+        .then(|| value.parse().ok())
+        .flatten()
+        .map(DockerLabel::Engine)
+        .ok_or_else(|| LabelError::InvalidValue {
+            key: DOCKER.to_owned(),
+            reason: "is neither off nor an engine port",
+        })
 }
 
 fn label_name_problem(name: &str) -> Option<&'static str> {

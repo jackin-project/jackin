@@ -253,7 +253,10 @@ pub fn plan_image(
     let entry = config
         .gateway(gateway)
         .ok_or_else(|| ConfigError::UnknownGateway(gateway.clone()))?;
-    let enabled = role.manifest().docker.enabled || workspace.is_some_and(|found| found.docker);
+    let layer = DockerLayer::from_flags(
+        role.manifest().docker.enabled,
+        workspace.is_some_and(|found| found.docker),
+    );
     Ok(ImageRequest {
         role: role.name().clone(),
         context: role.root().clone(),
@@ -264,11 +267,7 @@ pub fn plan_image(
         agent: Agent::Codex,
         platform: entry.platform,
         builder: entry.builder.clone(),
-        docker: if enabled {
-            DockerLayer::Client
-        } else {
-            DockerLayer::Absent
-        },
+        docker: layer,
         rebuild,
     })
 }
@@ -369,6 +368,7 @@ pub fn plan_launch(
             agent,
             account: selection.account.clone(),
             launch: request.launch.clone(),
+            docker: docker.label(),
         },
         provider: ProviderName::for_account(&selection.account, agent),
         policy,

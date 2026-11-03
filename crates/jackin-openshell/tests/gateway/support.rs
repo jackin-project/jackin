@@ -89,6 +89,7 @@ pub(crate) fn planned(workspace: &str, role: &str, account: &str, launch: &str) 
         agent: Agent::Codex,
         account: AccountName::parse(account).unwrap(),
         launch: LaunchId::parse(launch).unwrap(),
+        docker: jackin_core::DockerLabel::Off,
     }
 }
 

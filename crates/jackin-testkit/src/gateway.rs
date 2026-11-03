@@ -424,6 +424,7 @@ fn foreign_spec(name: &SandboxName) -> Result<SandboxCreate, GatewayError> {
         agent: Agent::Codex,
         account: AccountName::parse("foreign").map_err(protocol)?,
         launch: LaunchId::from_entropy(&[0; 26]),
+        docker: jackin_core::DockerLabel::Off,
     };
     let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64))).map_err(protocol)?;
     Ok(SandboxCreate::new(

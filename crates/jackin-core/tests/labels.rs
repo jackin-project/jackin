@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 
 use jackin_core::{
-    AccountName, Agent, ImageId, LabelError, Labels, LaunchId, PlannedLabels, RoleName,
-    SandboxLabels, WorkspaceName,
+    AccountName, Agent, DockerLabel, ImageId, LabelError, Labels, LaunchId, PlannedLabels,
+    RoleName, SandboxLabels, WorkspaceName,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -20,6 +20,7 @@ fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
         launch: launch.clone(),
+        docker: DockerLabel::Off,
     };
     let image = ImageId::parse(&format!("sha256:{digest}"))?;
     let labels = planned.complete(&image);
@@ -36,6 +37,7 @@ fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
         ("jackin.dev/account", "work".to_owned()),
         ("jackin.dev/image", digest[..32].to_owned()),
         ("jackin.dev/launch", launch.to_string()),
+        ("jackin.dev/docker", "off".to_owned()),
     ]
     .into_iter()
     .map(|(key, value)| (key.to_owned(), value))
@@ -43,6 +45,54 @@ fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
     assert_eq!(actual, expected);
     assert!(set.is_managed());
     assert_eq!(SandboxLabels::from_labels(&set)?, labels);
+    Ok(())
+}
+
+#[test]
+fn docker_label_holds_off_or_the_engine_port_and_refuses_anything_else() -> TestResult {
+    let planned = PlannedLabels {
+        workspace: WorkspaceName::parse("proj")?,
+        role: RoleName::parse("backend")?,
+        agent: Agent::Codex,
+        account: AccountName::parse("work")?,
+        launch: LaunchId::parse("01hzy3k5m7p9r2t4v6w8x0abcd")?,
+        docker: DockerLabel::Engine(std::num::NonZeroU16::new(2376).ok_or("port")?),
+    };
+    let image = ImageId::parse(&format!("sha256:{}", "ab".repeat(32)))?;
+    let labels = planned.complete(&image);
+    let set = labels.to_labels();
+    let value = |set: &Labels| {
+        set.iter()
+            .find(|(key, _)| key.to_string() == "jackin.dev/docker")
+            .map(|(_, value)| value.to_string())
+    };
+    assert_eq!(value(&set), Some("2376".to_owned()));
+    assert_eq!(SandboxLabels::from_labels(&set)?, labels);
+    let rebuilt = |docker: Option<&str>| {
+        Labels::from_pairs(
+            set.iter()
+                .filter(|(key, _)| key.to_string() != "jackin.dev/docker")
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .chain(docker.map(|v| ("jackin.dev/docker".to_owned(), v.to_owned()))),
+        )
+    };
+    assert_eq!(
+        SandboxLabels::from_labels(&rebuilt(Some("off"))?)?
+            .planned
+            .docker,
+        DockerLabel::Off
+    );
+    assert!(matches!(
+        SandboxLabels::from_labels(&rebuilt(None)?),
+        Err(LabelError::Missing { .. })
+    ));
+    for bad in ["0", "65536", "abc", "02376", ""] {
+        let error = SandboxLabels::from_labels(&rebuilt(Some(bad))?).unwrap_err();
+        assert!(
+            matches!(error, LabelError::InvalidValue { .. }),
+            "{bad:?}: {error:?}"
+        );
+    }
     Ok(())
 }
 

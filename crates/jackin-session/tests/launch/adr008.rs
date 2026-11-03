@@ -88,6 +88,7 @@ async fn foreign(
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
         launch: launch_id(launch),
+        docker: jackin_core::DockerLabel::Off,
     }
     .complete(&image.id);
     rig.gateway().add_image(&image.tag);

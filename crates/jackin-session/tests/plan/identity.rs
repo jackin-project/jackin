@@ -29,6 +29,7 @@ async fn the_plan_derives_name_labels_and_draft_from_the_launch_id() -> TestResu
             agent: Agent::Codex,
             account: AccountName::parse("work")?,
             launch: launch_id(1),
+            docker: jackin_core::DockerLabel::Off,
         };
         assert_eq!(plan.draft().labels(), &expected);
         assert_eq!(plan.draft().name(), plan.sandbox_name());

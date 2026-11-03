@@ -107,6 +107,7 @@ pub(crate) fn spec_with(
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
         launch: launch.clone(),
+        docker: jackin_core::DockerLabel::Off,
     };
     let image_id = ImageId::parse(&format!("sha256:{}", "ba7816bf".repeat(8)))?;
     let name = SandboxName::new(

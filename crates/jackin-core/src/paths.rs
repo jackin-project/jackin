@@ -240,6 +240,10 @@ pub mod sandbox_layout {
         under(&JACKIN_DIR, format!("env-{launch}"))
     }
 
+    pub fn docker_file(name: &str) -> SandboxPath {
+        under(&DOCKER_DIR, name.to_owned())
+    }
+
     pub fn hook_path(kind: HookKind) -> SandboxPath {
         let name = match kind {
             HookKind::Setup => "setup",

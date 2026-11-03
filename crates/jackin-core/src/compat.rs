@@ -11,6 +11,9 @@ pub struct Compatibility {
     pub openshell_tag: String,
     pub openshell_commit: String,
     pub codex_version: String,
+    pub docker_cli_version: String,
+    pub docker_buildx_version: String,
+    pub docker_compose_version: String,
 }
 
 #[derive(Debug, Error)]
@@ -48,6 +51,9 @@ impl Compatibility {
             openshell_tag: field(&table, "openshell", "tag")?,
             openshell_commit: field(&table, "openshell", "commit")?,
             codex_version: field(&table, "codex", "version")?,
+            docker_cli_version: field(&table, "docker", "cli_version")?,
+            docker_buildx_version: field(&table, "docker", "buildx_version")?,
+            docker_compose_version: field(&table, "docker", "compose_version")?,
         })
     }
 }
