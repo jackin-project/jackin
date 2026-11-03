@@ -4,14 +4,15 @@
 use std::error::Error;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    DockerSubcommand, EnvValue, OutputLine, OutputStream, ProcessOutput, ProcessRunner,
-    ProcessSpec, ProcessStatus, ProcessStdin, Program,
+    DockerSubcommand, EnvValue, OutputLine, OutputStream, ProcessError, ProcessOutput,
+    ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program,
 };
 use jackin_session::TokioProcessRunner;
-use jackin_testkit::{ProcessReply, ScriptedProcessRunner, ScriptedProgram};
+use jackin_testkit::{CancelsOn, PausesOn, ProcessReply, ScriptedProcessRunner, ScriptedProgram};
 use tokio_util::sync::CancellationToken;
 
 type TestResult = Result<(), Box<dyn Error>>;
@@ -134,4 +135,130 @@ async fn the_scripted_runner_returns_the_same_tail_as_the_live_runner_for_a_long
     })
     .await
     .map_err(|_| "the test exceeded its 60 s guard")?
+}
+
+fn inspecting(word: &str) -> ProcessSpec {
+    docker_spec(
+        DockerSubcommand::ImageInspect,
+        "/usr/bin",
+        &["--format", "{{.Id}}", word],
+    )
+}
+
+fn inspector() -> Arc<ScriptedProcessRunner> {
+    let runner = Arc::new(ScriptedProcessRunner::new());
+    runner.expect_docker(
+        DockerSubcommand::ImageInspect,
+        &[],
+        ProcessReply::exited(0, b"sha256:0\n", b""),
+    );
+    runner
+}
+
+fn cancelled(result: &Result<ProcessOutput, ProcessError>) -> bool {
+    matches!(
+        result,
+        Err(ProcessError::Cancelled {
+            program: Program::Docker(DockerSubcommand::ImageInspect),
+            group: None
+        })
+    )
+}
+
+#[tokio::test]
+async fn cancels_on_cancels_the_shared_token_at_its_word_and_ends_the_call_of_that_token()
+-> TestResult {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let runner = inspector();
+        let shared = CancellationToken::new();
+        let wrapper = CancelsOn::new(&runner, "marked", &shared);
+
+        let plain = wrapper.run(&inspecting("plain"), None, &shared).await?;
+        assert_eq!(plain.status, ProcessStatus::Exited(0));
+        assert!(!shared.is_cancelled(), "a call without the word cancelled");
+
+        let elsewhere = CancellationToken::new();
+        let unrelated = wrapper.run(&inspecting("marked"), None, &elsewhere).await?;
+        assert_eq!(unrelated.status, ProcessStatus::Exited(0));
+        assert!(
+            shared.is_cancelled(),
+            "the word did not cancel the shared token"
+        );
+        assert!(!elsewhere.is_cancelled());
+
+        let handed = wrapper.run(&inspecting("plain"), None, &shared).await;
+        assert!(cancelled(&handed), "{handed:?}");
+
+        let fresh = CancellationToken::new();
+        let wrapper = CancelsOn::new(&runner, "marked", &fresh);
+        let at_the_word = wrapper.run(&inspecting("marked"), None, &fresh).await;
+        assert!(cancelled(&at_the_word), "{at_the_word:?}");
+        Ok(())
+    })
+    .await
+    .map_err(|_| "the test exceeded its 30 s guard")?
+}
+
+#[tokio::test]
+async fn pauses_on_parks_the_first_call_at_its_word_until_release_and_lets_the_rest_pass()
+-> TestResult {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let runner = inspector();
+        let pause = Arc::new(PausesOn::new(&runner, "marked"));
+        let token = CancellationToken::new();
+        let parked = tokio::spawn({
+            let (pause, token) = (Arc::clone(&pause), token.clone());
+            async move { pause.run(&inspecting("marked"), None, &token).await }
+        });
+
+        pause.reached().await;
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
+        assert!(!parked.is_finished(), "the call did not park");
+        assert!(
+            runner.seen().is_empty(),
+            "the parked call reached the runner"
+        );
+        let passing = pause.run(&inspecting("plain"), None, &token).await?;
+        assert_eq!(passing.status, ProcessStatus::Exited(0));
+
+        pause.release();
+        let released = parked.await??;
+        assert_eq!(released.status, ProcessStatus::Exited(0));
+        assert!(
+            runner
+                .seen()
+                .iter()
+                .any(|call| call.args.iter().any(|arg| arg == "marked")),
+            "the released call never ran"
+        );
+
+        let second = pause.run(&inspecting("marked"), None, &token).await?;
+        assert_eq!(second.status, ProcessStatus::Exited(0));
+        Ok(())
+    })
+    .await
+    .map_err(|_| "the test exceeded its 30 s guard")?
+}
+
+#[tokio::test]
+async fn a_cancel_of_the_token_a_parked_call_was_handed_ends_the_pause_with_a_cancelled_call()
+-> TestResult {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let runner = inspector();
+        let pause = Arc::new(PausesOn::new(&runner, "marked"));
+        let token = CancellationToken::new();
+        let parked = tokio::spawn({
+            let (pause, token) = (Arc::clone(&pause), token.clone());
+            async move { pause.run(&inspecting("marked"), None, &token).await }
+        });
+        pause.reached().await;
+        token.cancel();
+        let result = parked.await?;
+        assert!(cancelled(&result), "{result:?}");
+        Ok(())
+    })
+    .await
+    .map_err(|_| "the test exceeded its 30 s guard")?
 }
