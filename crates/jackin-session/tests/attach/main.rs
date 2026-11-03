@@ -8,6 +8,7 @@ mod replies;
 mod restart;
 mod shell;
 mod support;
+mod terminals;
 
 #[expect(dead_code, reason = "each test binary uses part of the shared tap")]
 #[path = "../common/tap.rs"]

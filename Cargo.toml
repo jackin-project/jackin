@@ -53,6 +53,7 @@ jackin-usage-provider-minimax = { path = "crates/usage/jackin-usage-provider-min
 jackin-usage-provider-opencode = { path = "crates/usage/jackin-usage-provider-opencode", version = "0.1.0" }
 jackin-usage-provider-openrouter = { path = "crates/usage/jackin-usage-provider-openrouter", version = "0.1.0" }
 jackin-usage-provider-zai = { path = "crates/usage/jackin-usage-provider-zai", version = "0.1.0" }
+alacritty_terminal = { version = "0.26.0", default-features = false }
 async-trait = "0.1.92"
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
@@ -78,6 +79,7 @@ sha1 = "0.11.0"
 sha2 = "0.11.1"
 static_assertions = "1.1.0"
 tempfile = "3.27.0"
+termwiz = { version = "0.23.3", default-features = false }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", default-features = false, features = ["sync"] }
 toml = { version = "1.1.8", default-features = false, features = ["display", "parse", "serde"] }
