@@ -467,6 +467,31 @@ async fn a_sleep_waits_for_the_last_of_two_guards() {
 }
 
 #[tokio::test]
+async fn a_sleep_interrupted_by_a_guard_counts_its_quiet_yields_again_from_zero() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, wake_at - 20),
+        None,
+        "not yet awake"
+    );
+    let guard = clock.working();
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 100),
+        None,
+        "woke under a guard"
+    );
+    drop(guard);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at),
+        Some(wake_at),
+        "the quiet yields before the guard still counted"
+    );
+}
+
+#[tokio::test]
 async fn a_sleep_blocked_by_a_guard_does_not_wake_itself_and_wakes_when_the_guard_drops() {
     let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
     let clock = Arc::new(FakeClock::new());
