@@ -174,6 +174,11 @@ async fn named_like(comm: &str, child: &Child) -> Result<(), Box<dyn std::error:
 }
 
 async fn emptied(group: Pid) -> Result<(), String> {
+    assert_eq!(
+        by_member(group),
+        Ok(Sweep::Signalled),
+        "the first sweep, while the group has live members, reports that it signalled them"
+    );
     timeout(LIMIT, async {
         loop {
             match by_member(group) {
