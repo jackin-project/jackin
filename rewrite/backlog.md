@@ -31,3 +31,12 @@ Each row is a LOW finding that a review raised and the orchestrator deferred. A 
 | PR 1264 wave 2 LOW-1 | U4b tests have no `refs/headsx/...` target, so a prefix check without the slash passes. | Add the row. |
 | PR 1264 wave 2 LOW-2, LOW-3, LOW-4 | U8: the recheck-before-bundle order is not pinned; no linked-worktree-with-alternates row; the hostile tests drop the alternates. | Add the rows; keep the alternates in `hostile_launch`. |
 | PR 1264 wave 2 LOW-5 | U10: no CLI row sends a lone Esc key. | Add a CLI row that expects `\x1b` in the main input. |
+| PR 1264 N31 residual | Same-account stale overwrite in the usage cache. | In `Cache::save`, keep the entry with the larger `good.fetched_at`. |
+| PR 1264 N36 residual | Host worktree occupancy is checked only before the download (`export.rs`). | Run the worktree half of `guard()` again just before `publish`. |
+| PR 1264 wave 3 F2 | The final-tag lock is exclusive and taken before the cache lookup, so launches of one image take turns until the first is `Ready`, with no progress event. | A shared lock for launches, exclusive for `--rebuild`; emit an `ImageEvent` on a lock wait. |
+| PR 1264 wave 3 F3 | `git remote set-head origin --auto` fails on a cached load when the origin HEAD dangles, even for a rev-pinned role. | Ignore the set-head failure when the role pins a rev. |
+| PR 1264 wave 3 F5 | Role `a` locks `roles/a.lock`, which is the clone path of a role named `a.lock`. | Put locks in a separate directory. |
+| PR 1264 wave 3 F7, F9 | An existing 0755 `roles/` is not repaired; `role check` skips the size and name checks of `load`. | Repair the mode; share the load checks. |
+| PR 1264 wave 3 F10, LOW-4 | `power` and the `find`/`check_builder` path observe the token only in some calls; `FakeEngine` ignores the token. | Thread the token (cancellation family with N7, N16). |
+| PR 1264 wave 3 LOW-1, LOW-2, LOW-3 | No row pins "staged bytes equal hashed bytes"; the N21 row asserts only the parsed policy; the cache-hit final-tag hold has no row. | Add the rows (patch in the wave 3 red/green report). |
+| PR 1264 wave 3 LOW-8 | The manifest, policy, Dockerfile and hooks are read twice (`inspect`, then `snapshot`); the hashed bytes are the staged bytes, but parsing reads separately. | Parse from the snapshot bytes. |
