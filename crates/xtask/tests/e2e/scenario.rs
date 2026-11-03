@@ -132,6 +132,8 @@ pub(crate) struct Knobs {
     pub error_phase_after_failed_load: bool,
     pub stopped_after_quit: bool,
     pub restart_same_pid: bool,
+    pub quit_supervisor: Option<String>,
+    pub restart_supervisor: Option<String>,
     pub j05_fault: Option<J05Fault>,
     pub cancel_at: Option<String>,
     pub advance: Vec<(String, Duration)>,

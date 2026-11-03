@@ -54,6 +54,27 @@ async fn j06_hook_faults() {
                 Box::new(|s| s.knobs().hook_error_text = Some("launch failed: boom".to_owned())),
             ),
             (
+                "another hook exits 17",
+                "did not report the preflight hook exiting with code 17",
+                Box::new(|s| {
+                    s.knobs().hook_error_text = Some("launch failed at step hooks: the setup hook exited with code 17 SENTINEL_FAIL_PREFLIGHT=1".to_owned());
+                }),
+            ),
+            (
+                "the preflight hook exits 3",
+                "did not report the preflight hook exiting with code 17",
+                Box::new(|s| {
+                    s.knobs().hook_error_text = Some("launch failed at step hooks: the preflight hook exited with code 3 SENTINEL_FAIL_PREFLIGHT=1".to_owned());
+                }),
+            ),
+            (
+                "the failure is not at the hooks step",
+                "did not fail at the hooks step",
+                Box::new(|s| {
+                    s.knobs().hook_error_text = Some("launch failed at step mounts: the preflight hook exited with code 17 SENTINEL_FAIL_PREFLIGHT=1".to_owned());
+                }),
+            ),
+            (
                 "phase Error",
                 "not Ready after the failed preflight",
                 Box::new(|s| s.knobs().error_phase_after_failed_load = true),
@@ -95,6 +116,16 @@ async fn j07_codex_process_faults() {
             "phase Stopped after quit",
             "phase after quit is not Ready",
             Box::new(|s| s.knobs().stopped_after_quit = true),
+        ),
+        (
+            "supervisor still running after quit",
+            "not `exited 1 <code>`",
+            Box::new(|s| s.knobs().quit_supervisor = Some("running 1".to_owned())),
+        ),
+        (
+            "supervisor not running 2 after restart",
+            "not running 2",
+            Box::new(|s| s.knobs().restart_supervisor = Some("running 1".to_owned())),
         ),
         (
             "pid unchanged after restart",

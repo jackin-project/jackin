@@ -85,6 +85,7 @@ async fn cleanup_also_runs_after_timeout_panic_interrupt_and_signals() {
         assert_eq!(ran.status_of(id), "SKIP", "{id}");
         assert_eq!(ran.reason_of(id), "interrupted", "{id}");
     }
+    assert!(clean_line(&ran).starts_with("CLEAN PASS"), "{}", ran.stdout);
     only_foreign("after the token fired", &interrupted).await;
 }
 
@@ -296,6 +297,24 @@ fn init_role_repo(scenario: &Scenario) {
             .expect("git");
         assert!(status.success());
     }
+}
+
+#[tokio::test]
+async fn an_unreadable_role_repository_stops_the_run_before_the_journey() {
+    let scenario = Scenario::new().await;
+    init_role_repo(&scenario);
+    scenario.knobs().git_fail = Some((
+        "--format=%(refname) refs/heads/jackin".to_owned(),
+        "role".to_owned(),
+    ));
+    let ran = scenario.run().await;
+    assert_eq!(ran.status.code(), 2, "{}", ran.stderr);
+    assert!(
+        ran.stderr
+            .contains("cannot list the refs of the role repository"),
+        "{}",
+        ran.stderr
+    );
 }
 
 #[tokio::test]

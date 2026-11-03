@@ -124,7 +124,12 @@ impl Link {
                     jackin_core::Phase::Ready,
                 );
                 if let Some(model) = self.shared.state().sandboxes.get_mut(&self.sandbox) {
-                    model.supervisor = "running 2".to_owned();
+                    model.supervisor = self
+                        .shared
+                        .knobs()
+                        .restart_supervisor
+                        .clone()
+                        .unwrap_or_else(|| "running 2".to_owned());
                     if !same {
                         model.codex_pid = 4243;
                     }
@@ -163,7 +168,12 @@ impl Link {
         self.out
             .push_back(b"\r\njackin-start: codex exited with code 0 (attempt 1)\r\n".to_vec());
         if let Some(model) = self.shared.state().sandboxes.get_mut(&self.sandbox) {
-            model.supervisor = "exited 1 0".to_owned();
+            model.supervisor = self
+                .shared
+                .knobs()
+                .quit_supervisor
+                .clone()
+                .unwrap_or_else(|| "exited 1 0".to_owned());
         }
         if self.shared.knobs().stopped_after_quit {
             self.gateway.fake.force_phase(

@@ -122,6 +122,55 @@ async fn j17_usage_content_faults() {
         usage(vec![script(windows(), unavailable("weird"))]),
     )
     .await;
+    fault(
+        "a credits amount that is not a number",
+        "J17",
+        "has no remaining amount",
+        usage(vec![script(
+            json!({"state": "windows", "windows": [{"kind": "weekly", "label": "w", "used_percent": 1.0, "resets_at": 1}, {"kind": "credits", "label": "c", "used_percent": null, "remaining": {"kind": "amount", "value": "lots", "unit": "USD"}, "resets_at": null}]}),
+            expired.clone(),
+        )]),
+    )
+    .await;
+    fault(
+        "a credits amount without a unit",
+        "J17",
+        "has no remaining amount",
+        usage(vec![script(
+            json!({"state": "windows", "windows": [{"kind": "weekly", "label": "w", "used_percent": 1.0, "resets_at": 1}, {"kind": "credits", "label": "c", "used_percent": null, "remaining": {"kind": "amount", "value": "5", "unit": ""}, "resets_at": null}]}),
+            expired.clone(),
+        )]),
+    )
+    .await;
+    fault(
+        "an unknown window kind",
+        "J17",
+        "is unknown",
+        usage(vec![script(
+            json!({"state": "windows", "windows": [{"kind": "weekly", "label": "w", "used_percent": 1.0, "resets_at": 1}, {"kind": "yearly", "label": "y", "used_percent": 1.0, "resets_at": 1}]}),
+            expired.clone(),
+        )]),
+    )
+    .await;
+    fault(
+        "an other window with neither a percentage nor an amount",
+        "J17",
+        "has no",
+        usage(vec![script(
+            json!({"state": "windows", "windows": [{"kind": "weekly", "label": "w", "used_percent": 1.0, "resets_at": 1}, {"kind": "other", "label": "o", "used_percent": null, "remaining": null, "resets_at": null}]}),
+            expired.clone(),
+        )]),
+    )
+    .await;
+    let other_rate = Scenario::new().await;
+    usage(vec![script(
+        json!({"state": "windows", "windows": [{"kind": "other", "label": "o", "used_percent": 3.0, "resets_at": 1}]}),
+        expired.clone(),
+    )])(&other_rate);
+    other_rate
+        .run()
+        .await
+        .expect("an other window with a percentage only passes", &[]);
     let weekly_only = Scenario::new().await;
     usage(vec![script(windows(), expired)])(&weekly_only);
     weekly_only
