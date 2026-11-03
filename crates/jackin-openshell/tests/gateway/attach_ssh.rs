@@ -470,9 +470,34 @@ fn pairs(cases: &[(u16, u16)]) -> Vec<(u32, u32)> {
         .collect()
 }
 
+async fn arrived(what: &str, model: &Arc<SshModel>, windows: usize) {
+    let model = Arc::clone(model);
+    let found = tokio::task::spawn_blocking(move || {
+        let (_open, idle) = std::sync::mpsc::channel::<()>();
+        let deadline = Instant::now() + EVENTUALLY;
+        while model.log().windows.len() < windows {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            assert_eq!(
+                idle.recv_timeout(Duration::from_millis(5)),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            );
+        }
+        true
+    })
+    .await
+    .unwrap();
+    assert!(
+        found,
+        "{what}: the nudge did not arrive when the delay had passed"
+    );
+}
+
 #[tokio::test]
 async fn the_repaint_nudge_follows_tokio_time_for_every_shared_case() {
-    let delay = Duration::from_millis(600);
+    let delay = Duration::from_secs(2);
+    let step = delay / 2 + Duration::from_millis(5);
     for case in NUDGE_CASES {
         let rig = good(Script::default()).await;
         let policy = if case.nudge {
@@ -491,11 +516,12 @@ async fn the_repaint_nudge_follows_tokio_time_for_every_shared_case() {
         eventually(case.name, || rig.windows().len() >= before.len()).await;
 
         tokio::time::pause();
-        tokio::time::advance(Duration::from_millis(10)).await;
+        settled().await;
+        tokio::time::advance(step).await;
         settled().await;
         assert_eq!(rig.windows(), before, "{}: the nudge came early", case.name);
-        tokio::time::advance(delay).await;
-        eventually(case.name, || rig.windows().len() >= case.windows.len()).await;
+        tokio::time::advance(step).await;
+        arrived(case.name, &rig.model, case.windows.len()).await;
         assert_eq!(rig.windows(), pairs(case.windows), "{}", case.name);
         tokio::time::advance(delay * 3).await;
         settled().await;
