@@ -106,6 +106,23 @@ pub enum UnsupportedProject {
         drivers: Vec<String>,
         paths: Vec<RepoPath>,
     },
+    #[error(
+        "the project files changed while the upload ran{}{}; run the launch again once the project is quiet",
+        sample("added", .added),
+        sample("removed", .removed)
+    )]
+    ChangedDuringUpload {
+        added: Vec<RepoPath>,
+        removed: Vec<RepoPath>,
+    },
+    #[error(
+        "the object store borrows objects from other repositories through {0}; run `git repack -a -d`, then remove the file"
+    )]
+    Alternates(HostPath),
+    #[error(
+        "the object store {0} is a symlink, so its objects can come from another repository; replace it with a real directory"
+    )]
+    LinkedObjects(HostPath),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

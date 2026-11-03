@@ -39,6 +39,10 @@ pub enum PathError {
     NotADirectory(HostPath),
     #[error("not a git work tree: {0}")]
     NotAGitWorkTree(HostPath),
+    #[error(
+        "the .git of {0} does not belong to it (a symlink, a separate git directory, or a redirect to another repository); use a normal repository, a linked worktree, or a submodule checkout"
+    )]
+    UnsupportedGitEntry(HostPath),
     #[error(transparent)]
     Fs(#[from] FsError),
 }
