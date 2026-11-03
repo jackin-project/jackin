@@ -102,7 +102,13 @@ fn login_accounts(config: &Config) -> BTreeSet<AccountName> {
 fn unreachable_text(gateways: &[UnreachableGateway]) -> String {
     gateways
         .iter()
-        .map(|gateway| error_chain(gateway))
+        .map(|gateway| {
+            format!(
+                "{}; if it is gone for good, run `jackin gateway rm {} --offline`",
+                error_chain(gateway),
+                gateway.gateway()
+            )
+        })
         .collect::<Vec<_>>()
         .join("; ")
 }
