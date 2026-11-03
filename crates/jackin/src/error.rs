@@ -107,9 +107,7 @@ impl From<AccountEditError> for CommandError {
         match error {
             AccountEditError::Config(error) => CommandError::Config(error),
             AccountEditError::Account(error) => CommandError::Account(error),
-            other @ (AccountEditError::OnGateway { .. } | AccountEditError::Unreachable(_)) => {
-                CommandError::Accounts(other)
-            }
+            other => CommandError::Accounts(other),
         }
     }
 }

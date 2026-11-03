@@ -61,6 +61,13 @@ pub enum AccountEditError {
     },
     #[error("{}", unreachable_text(.0))]
     Unreachable(Vec<UnreachableGateway>),
+    #[error("{original}; the provider of account {account} stays on gateway {gateway}")]
+    RollbackFailed {
+        account: AccountName,
+        gateway: GatewayName,
+        original: Box<AccountEditError>,
+        rollback: AccountError,
+    },
 }
 
 fn unreachable_text(gateways: &[UnreachableGateway]) -> String {
@@ -84,9 +91,29 @@ pub struct OfflinePlan {
 
 #[derive(Clone, Debug)]
 pub struct GatewayPlan {
-    forget: Vec<Account>,
-    sync: Vec<Account>,
     edits: Vec<ConfigEdit>,
+}
+
+#[derive(Debug)]
+struct Publish {
+    account: Account,
+    renew: bool,
+}
+
+#[derive(Debug)]
+struct Effects {
+    forget: Vec<Account>,
+    publish: Vec<Publish>,
+}
+
+impl Effects {
+    fn is_empty(&self) -> bool {
+        self.forget.is_empty() && self.publish.is_empty()
+    }
+
+    fn needs_every_gateway(&self) -> bool {
+        !self.forget.is_empty() || self.publish.iter().any(|publish| publish.renew)
+    }
 }
 
 fn touched(edit: &ConfigEdit) -> Option<&AccountName> {
@@ -99,36 +126,39 @@ fn touched(edit: &ConfigEdit) -> Option<&AccountName> {
     }
 }
 
-pub fn plan_account_edits(
-    config: &Config,
-    edits: Vec<ConfigEdit>,
-) -> Result<AccountPlan, ConfigError> {
+fn effects(config: &Config, edits: &[ConfigEdit]) -> Result<Effects, ConfigError> {
     let mut after = config.clone();
-    for edit in &edits {
+    for edit in edits {
         after.apply(edit.clone())?;
     }
     let names: BTreeSet<&AccountName> = edits.iter().filter_map(touched).collect();
     let mut forget = Vec::new();
-    let mut sync = Vec::new();
+    let mut publish = Vec::new();
     for name in names {
         let before = config
             .account(name)
             .filter(|account| account.has_provider());
         let now = after.account(name).filter(|account| account.has_provider());
         match (before, now) {
-            (_, Some(account)) => sync.push(account.clone()),
+            (before, Some(account)) => publish.push(Publish {
+                account: account.clone(),
+                renew: before.is_some(),
+            }),
             (Some(account), None) => forget.push(account.clone()),
             (None, None) => {}
         }
     }
-    Ok(if forget.is_empty() && sync.is_empty() {
+    Ok(Effects { forget, publish })
+}
+
+pub fn plan_account_edits(
+    config: &Config,
+    edits: Vec<ConfigEdit>,
+) -> Result<AccountPlan, ConfigError> {
+    Ok(if effects(config, &edits)?.is_empty() {
         AccountPlan::Offline(OfflinePlan { edits })
     } else {
-        AccountPlan::Gateway(GatewayPlan {
-            forget,
-            sync,
-            edits,
-        })
+        AccountPlan::Gateway(GatewayPlan { edits })
     })
 }
 
@@ -156,6 +186,16 @@ impl OfflinePlan {
     }
 }
 
+fn on_gateway(session: &Session, error: AccountError) -> AccountEditError {
+    match error {
+        AccountError::Gateway(source) => AccountEditError::OnGateway {
+            gateway: session.gateway_name().clone(),
+            source,
+        },
+        other => AccountEditError::Account(other),
+    }
+}
+
 impl GatewayPlan {
     pub async fn apply(
         self,
@@ -163,15 +203,82 @@ impl GatewayPlan {
         store: &ConfigStore,
         cancel: &CancellationToken,
     ) -> Result<Config, AccountEditError> {
-        let session = gateways.home();
-        for account in &self.forget {
-            session.forget_account(account, cancel).await?;
+        let home = gateways.home();
+        let names: BTreeSet<&AccountName> = self.edits.iter().filter_map(touched).collect();
+        let _held = home.hold_accounts(names, cancel).await?;
+        let effects = effects(&store.load().await?, &self.edits)?;
+        if effects.is_empty() {
+            return Ok(store.edit(self.edits).await?);
         }
-        for account in &self.sync {
-            session.sync_account(account, cancel).await?;
+        let sessions = if effects.needs_every_gateway() {
+            gateways.every().map_err(AccountEditError::Unreachable)?
+        } else {
+            vec![home]
+        };
+        for account in &effects.forget {
+            for session in &sessions {
+                session
+                    .forget_locked(account)
+                    .await
+                    .map_err(|error| on_gateway(session, error))?;
+            }
         }
-        Ok(store.edit(self.edits).await?)
+        let mut created = Vec::new();
+        let written = match publish(&sessions, &effects.publish, &mut created).await {
+            Ok(()) => store.edit(self.edits).await.map_err(AccountEditError::from),
+            Err(error) => Err(error),
+        };
+        match written {
+            Ok(config) => Ok(config),
+            Err(original) => {
+                for account in created {
+                    if let Err(rollback) = home.forget_locked(account).await {
+                        return Err(AccountEditError::RollbackFailed {
+                            account: account.name().clone(),
+                            gateway: home.gateway_name().clone(),
+                            original: Box::new(original),
+                            rollback,
+                        });
+                    }
+                }
+                Err(original)
+            }
+        }
     }
+}
+
+async fn publish<'a>(
+    sessions: &[&Session],
+    publish: &'a [Publish],
+    created: &mut Vec<&'a Account>,
+) -> Result<(), AccountEditError> {
+    let Some((home, peers)) = sessions.split_first() else {
+        return Ok(());
+    };
+    for entry in publish {
+        home.sync_locked(&entry.account)
+            .await
+            .map_err(|error| on_gateway(home, error))?;
+        if !entry.renew {
+            created.push(&entry.account);
+            continue;
+        }
+        let provider = ProviderName::for_account(entry.account.name(), Agent::Codex);
+        for peer in peers {
+            let state = peer
+                .deps
+                .gateway
+                .provider_state(&provider)
+                .await
+                .map_err(|error| on_gateway(peer, error.into()))?;
+            if state == ProviderState::Present {
+                peer.sync_locked(&entry.account)
+                    .await
+                    .map_err(|error| on_gateway(peer, error))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 impl Session {
@@ -180,19 +287,14 @@ impl Session {
         account: &Account,
         cancel: &CancellationToken,
     ) -> Result<AccountSync, AccountError> {
-        let _held = self.hold_account(account, cancel).await?;
+        let _held = self.hold_account(account.name(), cancel).await?;
         self.sync_locked(account).await
     }
 
-    pub async fn forget_account(
-        &self,
-        account: &Account,
-        cancel: &CancellationToken,
-    ) -> Result<(), AccountError> {
+    async fn forget_locked(&self, account: &Account) -> Result<(), AccountError> {
         if !account.has_provider() {
             return Ok(());
         }
-        let _held = self.hold_account(account, cancel).await?;
         let provider = ProviderName::for_account(account.name(), Agent::Codex);
         self.deps.gateway.delete_provider(&provider).await?;
         Ok(())
@@ -204,7 +306,7 @@ impl Session {
         provider: &ProviderName,
         cancel: &CancellationToken,
     ) -> Result<bool, AccountError> {
-        let _held = self.hold_account(account, cancel).await?;
+        let _held = self.hold_account(account.name(), cancel).await?;
         if self.deps.gateway.provider_state(provider).await? == ProviderState::Present {
             return Ok(false);
         }
@@ -212,17 +314,24 @@ impl Session {
         Ok(true)
     }
 
+    async fn hold_accounts(
+        &self,
+        names: BTreeSet<&AccountName>,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<FileLock>, AccountError> {
+        let mut held = Vec::new();
+        for name in names {
+            held.push(self.hold_account(name, cancel).await?);
+        }
+        Ok(held)
+    }
+
     async fn hold_account(
         &self,
-        account: &Account,
+        name: &AccountName,
         cancel: &CancellationToken,
     ) -> Result<FileLock, AccountError> {
-        Ok(lock::hold(
-            &self.deps,
-            &format!("account-{}.lock", account.name()),
-            cancel,
-        )
-        .await?)
+        Ok(lock::hold(&self.deps, &format!("account-{name}.lock"), cancel).await?)
     }
 
     async fn sync_locked(&self, account: &Account) -> Result<AccountSync, AccountError> {

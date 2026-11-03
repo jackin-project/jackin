@@ -73,6 +73,18 @@ impl Gateways {
         &self.home
     }
 
+    pub(crate) fn every(&self) -> Result<Vec<&Session>, Vec<UnreachableGateway>> {
+        let mut up = vec![&self.home];
+        let mut down = Vec::new();
+        for peer in &self.peers {
+            match peer {
+                Peer::Up(session) => up.push(session),
+                Peer::Down(gateway) => down.push(gateway.clone()),
+            }
+        }
+        if down.is_empty() { Ok(up) } else { Err(down) }
+    }
+
     pub fn names(&self) -> Vec<&GatewayName> {
         let peers = self.peers.iter().map(|peer| match peer {
             Peer::Up(session) => session.gateway_name(),

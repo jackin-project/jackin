@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{Account, AccountName, Agent, Config, ConfigEdit, ConfigError, CredentialSource};
-use jackin_session::{AccountPlan, Gateways, plan_account_edits, read_chatgpt_login};
+use jackin_session::{AccountPlan, plan_account_edits, read_chatgpt_login};
 
 use crate::app::App;
 use crate::cli::{
@@ -62,7 +62,7 @@ async fn apply(app: &App, config: &Config, edits: Vec<ConfigEdit>) -> Result<(),
             plan.apply(&app.store).await?;
         }
         AccountPlan::Gateway(plan) => {
-            let gateways = Gateways::single(app.session(config).await?);
+            let gateways = app.gateways(config).await?;
             plan.apply(&gateways, &app.store, &app.cancel).await?;
         }
     }

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use jackin_core::{Config, ConfigStore, EnvSnapshot, GatewayName, HostPath};
 use jackin_image::ImageEngine;
 use jackin_session::{
-    GatewayConnector, HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps,
+    GatewayConnector, Gateways, HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps,
 };
 use jackin_usage::ProviderEndpoints;
 use tokio_util::sync::CancellationToken;
@@ -87,5 +87,10 @@ impl App {
             cache_dir: self.cache_dir.clone(),
             limits: self.deps.limits,
         }))
+    }
+
+    pub(crate) async fn gateways(&self, config: &Config) -> Result<Gateways, CommandError> {
+        let home = self.session(config).await?;
+        Ok(Gateways::with_peers(home, config, self.deps.connect.as_ref(), &self.cancel).await?)
     }
 }
