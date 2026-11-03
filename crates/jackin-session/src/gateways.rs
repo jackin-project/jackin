@@ -18,6 +18,13 @@ pub struct UnreachableGateway {
 }
 
 impl UnreachableGateway {
+    pub fn new(gateway: GatewayName, source: ConnectError) -> UnreachableGateway {
+        UnreachableGateway {
+            gateway,
+            source: Arc::new(source),
+        }
+    }
+
     pub fn gateway(&self) -> &GatewayName {
         &self.gateway
     }
@@ -60,10 +67,7 @@ impl Gateways {
                     ..home.deps.clone()
                 })))),
                 Err(error) if error.is_cancelled() => return Err(error),
-                Err(error) => peers.push(Peer::Down(UnreachableGateway {
-                    gateway: name.clone(),
-                    source: Arc::new(error),
-                })),
+                Err(error) => peers.push(Peer::Down(UnreachableGateway::new(name.clone(), error))),
             }
         }
         Ok(Gateways { home, peers })

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{ConfigEdit, EngineConfig, GatewayEntry, Platform};
+use jackin_session::{AccountEditError, UnreachableGateway, gateway_holds_providers};
 
 use crate::app::App;
 use crate::cli::{GatewayAddArgs, GatewayCommand, GatewayNameArg, JsonArg};
@@ -66,8 +67,33 @@ async fn ls(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
 }
 
 async fn rm(app: &App, arg: GatewayNameArg) -> Result<(), CommandError> {
-    app.store
-        .edit(vec![ConfigEdit::RemoveGateway(arg.name)])
+    let config = app.store.load().await?;
+    let entry = config
+        .gateway(&arg.name)
+        .filter(|_| gateway_holds_providers(&config));
+    let Some(entry) = entry else {
+        app.store
+            .edit(vec![ConfigEdit::RemoveGateway(arg.name)])
+            .await?;
+        return Ok(());
+    };
+    let gateway = match app
+        .deps
+        .connect
+        .connect(&arg.name, entry, &app.cancel)
+        .await
+    {
+        Ok(gateway) => gateway,
+        Err(error) if error.is_cancelled() => return Err(error.into()),
+        Err(error) => {
+            return Err(AccountEditError::Unreachable(vec![UnreachableGateway::new(
+                arg.name, error,
+            )])
+            .into());
+        }
+    };
+    app.session_of(gateway)
+        .remove_gateway(&app.store, &app.cancel)
         .await?;
     Ok(())
 }

@@ -88,6 +88,7 @@ impl Rig {
             role.root().as_path().display(),
             repo.root().as_path().display(),
         ))?;
+        world.seed_config(&config).await?;
         let project = repo.project().await?;
         world.gateway.script_program(
             &sandbox_layout::PRINTENV,

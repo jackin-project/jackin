@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use jackin_core::{
     AccountName, Config, ConfigEdit, CredentialSource, EnvName, GatewayName, ProviderName,
 };
@@ -170,6 +172,55 @@ async fn a_launch_planned_before_gateway_rm_fails_and_creates_no_provider() -> T
 
         assert!(
             matches!(&refused, AccountError::GatewayRemoved { gateway } if gateway.as_str() == "fake-gateway"),
+            "{refused:?}"
+        );
+        assert_nothing_created(&rig);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_launch_waiting_on_the_lock_of_a_running_gateway_rm_fails_and_creates_no_provider()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let plan = rig.plan(1)?;
+        let trigger = Trigger::Op(GatewayOp::Provider);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: trigger.clone(),
+        });
+        let store = rig.world.config.clone();
+        let session = rig.world.session.clone();
+        let removal = tokio::spawn(async move {
+            session
+                .remove_gateway(&store, &CancellationToken::new())
+                .await
+        });
+        assert!(
+            rig.gateway().until_held(&trigger).await,
+            "the gateway removal never reached the gateway"
+        );
+
+        let finished = AtomicBool::new(false);
+        let launching = async {
+            let outcome = launch(&rig, plan).await;
+            finished.store(true, Ordering::SeqCst);
+            outcome
+        };
+        let release = async {
+            while rig.world.clock.sleepers() == 0 && !finished.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+            rig.gateway().release(&trigger);
+            removal.await
+        };
+        let (outcome, removed) = tokio::join!(launching, release);
+        removed??;
+
+        let refused = refusal(&rig, outcome)?;
+        assert!(
+            matches!(&refused, AccountError::GatewayRemoved { .. }),
             "{refused:?}"
         );
         assert_nothing_created(&rig);

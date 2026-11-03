@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    Clock, ConfigStore, FileSystem, GatewayName, HostPath, OpenShellWorkspace, ProcessRunner,
-    StdFileSystem,
+    Clock, Config, ConfigEdit, ConfigError, ConfigStore, FileSystem, GatewayName, HostPath,
+    OpenShellWorkspace, ProcessRunner, StdFileSystem,
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::Gateway;
@@ -72,6 +72,19 @@ impl World {
 
     pub fn home(&self) -> &HostPath {
         &self.home
+    }
+
+    pub async fn seed_config(&self, config: &Config) -> Result<(), ConfigError> {
+        let mut edits: Vec<ConfigEdit> = config
+            .gateways()
+            .map(|(name, entry)| ConfigEdit::AddGateway {
+                name: name.clone(),
+                entry: entry.clone(),
+            })
+            .collect();
+        edits.extend(config.accounts().cloned().map(ConfigEdit::AddAccount));
+        self.config.edit(edits).await?;
+        Ok(())
     }
 }
 

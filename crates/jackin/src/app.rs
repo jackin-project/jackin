@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use jackin_core::{Config, ConfigStore, EnvSnapshot, GatewayName, HostPath};
 use jackin_image::ImageEngine;
+use jackin_openshell::Gateway;
 use jackin_session::{
     GatewayConnector, Gateways, HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps,
 };
@@ -80,14 +81,18 @@ impl App {
     pub(crate) async fn session(&self, config: &Config) -> Result<Session, CommandError> {
         let (name, entry) = config.resolve_gateway(self.gateway.as_ref())?;
         let gateway = self.deps.connect.connect(name, entry, &self.cancel).await?;
-        Ok(Session::new(SessionDeps {
+        Ok(self.session_of(gateway))
+    }
+
+    pub(crate) fn session_of(&self, gateway: Arc<dyn Gateway>) -> Session {
+        Session::new(SessionDeps {
             gateway,
             engine: Arc::clone(&self.deps.engine),
             host: self.deps.host.clone(),
             cache_dir: self.cache_dir.clone(),
             config: self.store.clone(),
             limits: self.deps.limits,
-        }))
+        })
     }
 
     pub(crate) async fn gateways(&self, config: &Config) -> Result<Gateways, CommandError> {

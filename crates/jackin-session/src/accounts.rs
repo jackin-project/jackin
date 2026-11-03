@@ -41,6 +41,15 @@ pub enum AccountError {
     Lock(#[from] LockError),
     #[error(transparent)]
     Config(#[from] ConfigError),
+    #[error(
+        "the provider of account {account} stays on the gateway, because removing it failed: {rollback}"
+    )]
+    RollbackFailed {
+        account: AccountName,
+        #[source]
+        original: Box<AccountError>,
+        rollback: Box<AccountError>,
+    },
     #[error("account {account} was removed after the launch was planned")]
     Removed { account: AccountName },
     #[error("account {account} changed after the launch was planned")]
@@ -76,6 +85,18 @@ pub enum AccountEditError {
         original: Box<AccountEditError>,
         rollback: AccountError,
     },
+}
+
+pub fn gateway_holds_providers(config: &Config) -> bool {
+    !login_accounts(config).is_empty()
+}
+
+fn login_accounts(config: &Config) -> BTreeSet<AccountName> {
+    config
+        .accounts()
+        .filter(|account| account.has_provider())
+        .map(|account| account.name().clone())
+        .collect()
 }
 
 fn unreachable_text(gateways: &[UnreachableGateway]) -> String {
@@ -264,11 +285,13 @@ async fn publish<'a>(
         return Ok(());
     };
     for entry in publish {
+        if !entry.renew {
+            created.push(&entry.account);
+        }
         home.sync_locked(&entry.account)
             .await
             .map_err(|error| on_gateway(home, error))?;
         if !entry.renew {
-            created.push(&entry.account);
             continue;
         }
         let provider = ProviderName::for_account(entry.account.name(), Agent::Codex);
@@ -314,12 +337,62 @@ impl Session {
         provider: &ProviderName,
         cancel: &CancellationToken,
     ) -> Result<bool, AccountError> {
-        let _held = self.hold_account(account.name(), cancel).await?;
+        let _held = self.hold_current(account, cancel).await?;
         if self.deps.gateway.provider_state(provider).await? == ProviderState::Present {
             return Ok(false);
         }
-        self.sync_locked(account).await?;
+        if let Err(original) = self.sync_locked(account).await {
+            return Err(match self.forget_locked(account).await {
+                Ok(()) => original,
+                Err(rollback) => AccountError::RollbackFailed {
+                    account: account.name().clone(),
+                    original: Box::new(original),
+                    rollback: Box::new(rollback),
+                },
+            });
+        }
         Ok(true)
+    }
+
+    async fn hold_current(
+        &self,
+        account: &Account,
+        cancel: &CancellationToken,
+    ) -> Result<FileLock, AccountError> {
+        let held = self.hold_account(account.name(), cancel).await?;
+        let config = self.deps.config.load().await?;
+        if config.gateway(self.gateway_name()).is_none() {
+            return Err(AccountError::GatewayRemoved {
+                gateway: self.gateway_name().clone(),
+            });
+        }
+        match config.account(account.name()) {
+            None => Err(AccountError::Removed {
+                account: account.name().clone(),
+            }),
+            Some(current) if current != account => Err(AccountError::Changed {
+                account: account.name().clone(),
+            }),
+            Some(_) => Ok(held),
+        }
+    }
+
+    pub async fn remove_gateway(
+        &self,
+        store: &ConfigStore,
+        cancel: &CancellationToken,
+    ) -> Result<Config, AccountEditError> {
+        let edit = ConfigEdit::RemoveGateway(self.gateway_name().clone());
+        let named = login_accounts(&store.load().await?);
+        let _held = self.hold_accounts(named.iter().collect(), cancel).await?;
+        let config = store.load().await?;
+        config.clone().apply(edit.clone())?;
+        for account in config.accounts().filter(|account| account.has_provider()) {
+            self.forget_locked(account)
+                .await
+                .map_err(|error| on_gateway(self, error))?;
+        }
+        Ok(store.edit(vec![edit]).await?)
     }
 
     async fn hold_accounts(
