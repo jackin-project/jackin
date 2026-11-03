@@ -367,7 +367,7 @@ If no rule selects an account, the launch stops with an error that names the mis
 Some workspaces must start Docker containers during implementation and tests. The Docker capability gives the agent in a sandbox a Docker engine.
 
 - The capability is disabled by default. A launch enables it when the role manifest has `[docker] enabled = true` or the workspace has `docker = true`.
-- When the capability is disabled, the image has no Docker client, the policy permits no engine endpoint, and the sandbox gets no engine file or variable. A role policy never names `host.openshell.internal` on any port; `role check` refuses it, so only jackin's engine rule can reach the engine.
+- When the capability is disabled, the image has no Docker client, the policy permits no engine endpoint, and the sandbox gets no engine file or variable. A role policy never names a host-gateway alias on any port: `host.openshell.internal`, `host.docker.internal`, or `host.containers.internal` (OpenShell 0.1.6 maps all three to the gateway host), in any case and through any wildcard; `role check` refuses it, so only jackin's engine rule can reach the engine or any other service on the gateway host loopback. The engine port is never 2375, the plaintext Docker port.
 - When the capability is enabled, the agent starts its containers through the engine. Jackin does not start containers.
 - Jackin never starts or stops an engine itself.
 
