@@ -23,7 +23,7 @@ rust = { version = "1.99.1", profile = "minimal", components = [
   "x86_64-unknown-linux-gnu",
 ], mr_boxington = true }
 shellcheck = "0.11.0"
-jactionlint = "2.4.0"
+jactionlint = "2.3.0"
 rumdl = "0.3.2"
 uv = "0.13.6"
 node = "26.13.0"
