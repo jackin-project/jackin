@@ -434,6 +434,55 @@ async fn different_final_keys_share_only_the_construct_lock_and_both_build() -> 
     .await
 }
 
+#[tokio::test]
+async fn a_cached_role_is_served_without_waiting_for_a_peers_role_build() -> TestResult {
+    guarded(async {
+        let mut rig = Rig::new()?;
+        let cached_request = rig.fixture.request()?;
+        let mut building_request = cached_request.clone();
+        building_request.revision = RoleRevision {
+            commit: CommitId::parse(&"2".repeat(40))?,
+            digest: Sha256::of(b"clean"),
+        };
+        let cancel = CancellationToken::new();
+        let warm = call(&rig.engine(), &cached_request, &cancel).await?;
+        assert_eq!(warm.source, ImageSource::Built);
+        rig.close();
+        let (first, second) = (rig.engine(), rig.engine());
+        let a = call(&first, &building_request, &cancel);
+        let driver = async {
+            rig.arrivals
+                .recv()
+                .await
+                .ok_or("the first call never reached the role build")?;
+            let mut b = Box::pin(call(&second, &cached_request, &cancel));
+            let verdict = tokio::select! {
+                finished = b.as_mut() => Ok(finished),
+                held = rig.contended.recv() => Err(held),
+            };
+            let role_builds = rig.builds_of(ROLE_TAGS);
+            rig.release();
+            match verdict {
+                Ok(finished) => Ok::<_, Box<dyn Error>>((role_builds, finished)),
+                Err(_) => Err(format!(
+                    "the cached role waited on a lock while the peer built; {:?}",
+                    b.await.map(|built| built.source)
+                )
+                .into()),
+            }
+        };
+        let (a, driver) = tokio::join!(a, driver);
+        let (role_builds, b) = driver?;
+        assert_eq!(a?.source, ImageSource::Built);
+        let b = b?;
+        assert_eq!(b.source, ImageSource::Cache);
+        assert_eq!(b.id, warm.id);
+        assert_eq!(role_builds, 2, "role builds when the cached call finished");
+        Ok(())
+    })
+    .await
+}
+
 async fn following_call_completes(rig: &Rig, case: &str) -> TestResult {
     let request = rig.fixture.request()?;
     let engine = rig.engine();
