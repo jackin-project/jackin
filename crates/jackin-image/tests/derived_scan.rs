@@ -421,6 +421,23 @@ fn scan_fails_closed_when_getcap_or_find_is_missing_or_fails() -> TestResult {
     );
     let fx = Fixture::new()?;
     fx.drop_tool("find")?;
+    fx.stub(
+        "find",
+        "n=0\n[ ! -f \"$0.count\" ] || read n < \"$0.count\"\necho $((n + 1)) > \"$0.count\"\nif [ \"$n\" -eq 3 ]; then exit 1; fi\nexec /usr/bin/find \"$@\"\n",
+    )?;
+    let out = fx.scan()?;
+    assert!(
+        !out.ok,
+        "a failing control-character find must fail the scan"
+    );
+    assert!(
+        out.stderr
+            .contains("find failed while looking for control characters in names"),
+        "{}",
+        out.stderr
+    );
+    let fx = Fixture::new()?;
+    fx.drop_tool("find")?;
     fx.stub("find", "exit 1\n")?;
     let out = fx.scan()?;
     assert!(!out.ok, "a failing find must fail the scan");
@@ -442,20 +459,24 @@ fn construct_tools() -> Result<Vec<String>, Box<dyn Error>> {
     Ok(tools.split_whitespace().map(str::to_owned).collect())
 }
 
-fn script_tools() -> Result<Vec<String>, Box<dyn Error>> {
+fn script_list(name: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let script = String::from_utf8(scan_script()?)?;
+    let prefix = format!("{name}=\"");
     let line = script
         .lines()
-        .find_map(|line| line.strip_prefix("tools=\""))
+        .find_map(|line| line.strip_prefix(prefix.as_str()))
         .and_then(|rest| rest.strip_suffix('"'))
-        .ok_or("no tools= line in the scan")?;
+        .ok_or_else(|| format!("no {name}= line in the scan"))?;
     Ok(line.split_whitespace().map(str::to_owned).collect())
 }
+
+const CLIENT_NAMES: [&str; 4] = ["docker-compose", "docker-buildx", "buildctl", "ctr"];
+const DAEMON_NAMES: [&str; 2] = ["docker-proxy", "dockerd-rootless.sh"];
 
 #[test]
 fn scan_refuses_forbidden_tools_by_name_anywhere_in_the_tree() -> TestResult {
     let tools = construct_tools()?;
-    assert_eq!(tools.len(), 19, "{tools:?}");
+    assert_eq!(tools.len(), 25, "{tools:?}");
     for engine in [
         "dockerd",
         "containerd",
@@ -465,17 +486,23 @@ fn scan_refuses_forbidden_tools_by_name_anywhere_in_the_tree() -> TestResult {
         "crun",
         "buildkitd",
         "rootlesskit",
-    ] {
+    ]
+    .into_iter()
+    .chain(DAEMON_NAMES)
+    .chain(CLIENT_NAMES)
+    {
         assert!(
             tools.iter().any(|tool| tool == engine),
             "{engine} is not forbidden"
         );
     }
-    let mut from_script = script_tools()?;
+    let mut from_script = script_list("tools")?;
+    from_script.extend(script_list("client_tools")?);
     from_script.sort();
     let mut from_construct = tools.clone();
     from_construct.sort();
     assert_eq!(from_script, from_construct, "scan list against construct");
+    assert_eq!(script_list("client_tools")?, CLIENT_NAMES);
     for tool in &tools {
         let fx = Fixture::new()?;
         fx.file(&format!("/usr/bin/{tool}"), b"x", 0o755)?;
@@ -498,7 +525,10 @@ fn scan_refuses_forbidden_tools_by_name_anywhere_in_the_tree() -> TestResult {
     fx.file("/usr/share/completions/docker", b"x", 0o644)?;
     fx.file("/usr/share/doc/docker/README", b"x", 0o644)?;
     fx.file("/etc/sudoers", b"x", 0o440)?;
-    fx.file("/usr/lib/x/docker/docker-compose", b"x", 0o755)?;
+    fx.file("/usr/lib/x/docker/compose-notes.txt", b"x", 0o755)?;
+    for name in ["ctr", "docker-compose", "docker-buildx", "buildctl"] {
+        fx.file(&format!("/usr/share/{name}"), b"x", 0o644)?;
+    }
     let out = fx.scan()?;
     assert!(out.ok, "names that are not tools must pass: {}", out.stderr);
     Ok(())
@@ -996,6 +1026,7 @@ fn scan_refuses_block_and_character_device_nodes_anywhere_in_the_tree() -> TestR
             "device node in role image: /sandbox/rawmem.chr",
             "device node in role image: /usr/lib/t?ab.blk",
             "device node in role image: /usr/lib/x y/tty.chr",
+            "path with a control character in role image: /usr/lib/t?ab.blk",
         ]
     );
     fx = Fixture::new()?;
@@ -1089,7 +1120,9 @@ fn scan_refuses_every_other_tool_and_a_missing_pair_in_the_client_form() -> Test
     fx.file(DOCKER, b"x", 0o755)?;
     let absent = fx.scan()?;
     assert!(!absent.ok);
-    assert_eq!(absent.lines(), [forbidden(DOCKER)]);
+    let mut wanted: Vec<String> = CLIENT.iter().map(|leaf| forbidden(leaf)).collect();
+    wanted.sort();
+    assert_eq!(sorted_lines(&absent), wanted);
 
     for tool in [
         "dockerd",
@@ -1102,6 +1135,8 @@ fn scan_refuses_every_other_tool_and_a_missing_pair_in_the_client_form() -> Test
         "rootlesskit",
         "podman",
         "nerdctl",
+        "docker-proxy",
+        "dockerd-rootless.sh",
     ] {
         let fx = Fixture::new()?;
         fx.client()?;
@@ -1111,5 +1146,71 @@ fn scan_refuses_every_other_tool_and_a_missing_pair_in_the_client_form() -> Test
         assert!(!out.ok, "{tool}");
         assert_eq!(out.lines(), [forbidden(&path)], "{tool}");
     }
+    Ok(())
+}
+
+const CONTROL: &str = "path with a control character in role image: ";
+
+fn hidden_below_a_newline_directory(fx: &Fixture) -> TestResult {
+    let nested = format!(
+        "/usr/local/bin/docker\n{}/usr/local/bin/docker",
+        fx.top.join("image").display()
+    );
+    fx.file(&nested, b"role bytes", 0o755)
+}
+
+#[test]
+fn scan_refuses_a_path_with_a_control_character_instead_of_splitting_it_into_lines() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.client()?;
+    let clean = fx.scan_client()?;
+    assert!(clean.ok, "{}", clean.stderr);
+    hidden_below_a_newline_directory(&fx)?;
+    let out = fx.scan_client()?;
+    assert!(!out.ok, "a newline in a directory name hid a docker binary");
+    assert!(out.stderr.contains(CONTROL), "{}", out.stderr);
+
+    let fx = Fixture::new()?;
+    hidden_below_a_newline_directory(&fx)?;
+    let out = fx.scan()?;
+    assert!(!out.ok);
+    assert!(out.stderr.contains(CONTROL), "{}", out.stderr);
+
+    for (name, shown) in [("x\ty", "x?y"), ("\u{1b}[2J", "?[2J"), ("a\rb", "a?b")] {
+        let fx = Fixture::new()?;
+        fx.file(&format!("/opt/{name}"), b"x", 0o644)?;
+        let out = fx.scan()?;
+        assert!(!out.ok, "{name:?}");
+        assert_eq!(out.lines(), [format!("{CONTROL}/opt/{shown}")], "{name:?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn scan_accepts_non_ascii_names_that_hold_no_control_character() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.client()?;
+    fx.file("/usr/share/caf\u{e9}/\u{65e5}\u{672c}.txt", b"x", 0o644)?;
+    fx.file("/opt/with space/and'quote", b"x", 0o644)?;
+    let out = fx.scan_client()?;
+    assert!(out.ok, "{}", out.stderr);
+    assert_eq!(out.stdout, "jackin-image-scan 1\n");
+    let fx = Fixture::new()?;
+    fx.file("/usr/share/caf\u{e9}/\u{65e5}\u{672c}.txt", b"x", 0o644)?;
+    let out = fx.scan()?;
+    assert!(out.ok, "{}", out.stderr);
+    Ok(())
+}
+
+#[test]
+fn scan_leaves_the_client_names_alone_when_the_capability_is_on() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.client()?;
+    for name in CLIENT_NAMES {
+        fx.file(&format!("/opt/x/{name}"), b"role bytes", 0o755)?;
+        symlink("/bin/true", fx.image(&format!("/opt/y-{name}")))?;
+    }
+    let out = fx.scan_client()?;
+    assert!(out.ok, "{}", out.stderr);
     Ok(())
 }

@@ -967,6 +967,12 @@ fn construct_dockerfile_removes_setuid_and_rejects_file_capabilities() -> TestRe
         "crun",
         "buildkitd",
         "rootlesskit",
+        "docker-proxy",
+        "dockerd-rootless.sh",
+        "docker-compose",
+        "docker-buildx",
+        "buildctl",
+        "ctr",
     ]
     .into();
     assert_eq!(scan, wanted, "forbidden tools");
