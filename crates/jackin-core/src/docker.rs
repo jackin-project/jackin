@@ -77,6 +77,7 @@ impl DockerLayer {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DockerLabel {
     Off,
     Engine(NonZeroU16),
