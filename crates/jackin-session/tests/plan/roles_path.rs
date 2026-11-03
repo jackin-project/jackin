@@ -21,7 +21,9 @@ async fn loading_a_path_role_runs_no_program_named_by_its_repository_config() ->
         trap.prove_armed(role.root().as_path()).await?;
         let (cache, _keep) = cache()?;
         let (catalog, _runner) = catalog(&cache);
-        catalog.load_path(role.root()).await?;
+        catalog
+            .load_path(role.root(), &tokio_util::sync::CancellationToken::new())
+            .await?;
         assert_eq!(trap.fired(), "");
         Ok(())
     })

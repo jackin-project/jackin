@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_core::Sha256;
+use jackin_image::ContextEntry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs;
@@ -8,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use jackin_core::{
-    Agent, AttemptId, BuilderName, CommitId, DOCKER_CLIENT, DockerLayer, HookKind, HostPath,
-    ImageId, Platform, RepoPath, RoleName, SupervisorState, sandbox_layout,
+    Agent, AttemptId, BuilderName, CommitId, DOCKER_CLIENT, DockerLayer, HookKind, ImageId,
+    Platform, RepoPath, RoleName, SupervisorState, sandbox_layout,
 };
 use jackin_image::{
     BuildStage, ContextSource, FinalBuilds, HookFiles, ImagePlan, ImageRequest, MaterializedFile,
@@ -63,6 +65,14 @@ const FLAG_PREFIXES: [&str; 9] = [
     "--build-arg=",
 ];
 
+fn entry(path: &str) -> Result<ContextEntry, Box<dyn Error>> {
+    Ok(ContextEntry::File {
+        path: RepoPath::parse(path)?,
+        bytes: path.as_bytes().to_vec(),
+        executable: false,
+    })
+}
+
 fn construct_id() -> Result<ImageId, Box<dyn Error>> {
     Ok(ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?)
 }
@@ -77,15 +87,15 @@ fn source(path: &str, bytes: &[u8]) -> Result<SourceFile, Box<dyn Error>> {
 fn base() -> Result<ImageRequest, Box<dyn Error>> {
     Ok(ImageRequest {
         role: RoleName::parse("sentinel")?,
-        context: HostPath::parse(Path::new("/work/role"))?,
-        context_files: vec![RepoPath::parse("Dockerfile")?],
+        context_files: vec![entry("Dockerfile")?],
         dockerfile: source("Dockerfile", b"FROM construct AS role\n")?,
         hooks: HookFiles {
             setup: Some(source("hooks/setup.sh", b"#!/bin/sh\necho setup\n")?),
             preflight: None,
         },
-        revision: RoleRevision::Clean {
+        revision: RoleRevision {
             commit: CommitId::parse(&"1".repeat(40))?,
+            digest: Sha256::of(b"clean"),
         },
         agent: Agent::Codex,
         platform: Platform::LinuxArm64,
@@ -266,7 +276,7 @@ fn buildx_arguments_are_explicit_single_tokens_for_all_three_stages() -> TestRes
 fn materialized(build: &PlannedBuild) -> Result<&[MaterializedFile], Box<dyn Error>> {
     match &build.context {
         ContextSource::Materialized(files) => Ok(files),
-        ContextSource::Listed { root, .. } => Err(format!("listed context {root:?}").into()),
+        ContextSource::Entries(entries) => Err(format!("entries context {entries:?}").into()),
     }
 }
 
@@ -305,7 +315,7 @@ fn build_contexts_hold_exactly_the_documented_files() -> TestResult {
             .transpose()?;
         request.context_files = ["src/a.rs", "Dockerfile", "src/a.rs", "src/b.rs"]
             .into_iter()
-            .map(RepoPath::parse)
+            .map(entry)
             .collect::<Result<_, _>>()?;
         let plan = ImagePlan::new(&request)?;
         let label = format!("{declared_setup:?} {declared_preflight:?}");
@@ -316,17 +326,16 @@ fn build_contexts_hold_exactly_the_documented_files() -> TestResult {
         assert_eq!(construct[0].bytes, CONSTRUCT_DOCKERFILE, "{label}");
 
         let built = plan.final_builds(&construct_id()?);
-        let ContextSource::Listed {
-            root,
-            files: listed,
-        } = &built.role.context
-        else {
+        let ContextSource::Entries(listed) = &built.role.context else {
             return Err(format!("role context {:?}", built.role.context).into());
         };
-        assert_eq!(root, &request.context, "role context root {label}");
-        let listed_set: BTreeSet<&RepoPath> = listed.iter().collect();
+        let listed_set: BTreeSet<&RepoPath> = listed.iter().map(ContextEntry::path).collect();
         assert_eq!(listed_set.len(), listed.len(), "duplicate file {label}");
-        let wanted_set: BTreeSet<&RepoPath> = request.context_files.iter().collect();
+        let wanted_set: BTreeSet<&RepoPath> = request
+            .context_files
+            .iter()
+            .map(ContextEntry::path)
+            .collect();
         assert_eq!(listed_set, wanted_set, "role context files {label}");
 
         let files = materialized(&built.derived)?;
@@ -449,7 +458,7 @@ fn derived_files(docker: DockerLayer) -> Result<Vec<MaterializedFile>, Box<dyn E
     let built = ImagePlan::new(&request)?.final_builds(&construct_id()?);
     match built.derived.context {
         ContextSource::Materialized(files) => Ok(files),
-        ContextSource::Listed { .. } => Err("derived context is listed".into()),
+        ContextSource::Entries(_) => Err("derived context is listed".into()),
     }
 }
 
@@ -689,7 +698,7 @@ fn role_build_is_planned_with_the_dockerfile_on_stdin_and_the_listed_context() -
     request.dockerfile = source("docker/Role.Dockerfile", dockerfile)?;
     request.context_files = ["src/a.rs", "docker/Role.Dockerfile", "src/a.rs", "src/b.rs"]
         .into_iter()
-        .map(RepoPath::parse)
+        .map(entry)
         .collect::<Result<_, _>>()?;
     let plan = ImagePlan::new(&request)?;
     let built = plan.final_builds(&construct_id()?);
@@ -700,12 +709,15 @@ fn role_build_is_planned_with_the_dockerfile_on_stdin_and_the_listed_context() -
     );
     assert_eq!(plan.construct_build().stdin, None, "construct stdin");
     assert_eq!(built.derived.stdin, None, "derived stdin");
-    let ContextSource::Listed { root, files } = &built.role.context else {
+    let ContextSource::Entries(files) = &built.role.context else {
         return Err(format!("role context {:?}", built.role.context).into());
     };
-    assert_eq!(root, &request.context, "role context root");
-    let listed: BTreeSet<&RepoPath> = files.iter().collect();
-    let wanted: BTreeSet<&RepoPath> = request.context_files.iter().collect();
+    let listed: BTreeSet<&RepoPath> = files.iter().map(ContextEntry::path).collect();
+    let wanted: BTreeSet<&RepoPath> = request
+        .context_files
+        .iter()
+        .map(ContextEntry::path)
+        .collect();
     assert_eq!(listed.len(), files.len(), "duplicate file in {files:?}");
     assert_eq!(listed, wanted, "role context files");
     assert_eq!(

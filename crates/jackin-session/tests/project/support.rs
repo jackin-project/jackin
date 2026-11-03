@@ -62,7 +62,10 @@ impl Rig {
         let world = World::builder().build()?;
         let role = RoleFixture::new("sentinel")?;
         role.commit().await?;
-        let loaded = world.roles.load_path(role.root()).await?;
+        let loaded = world
+            .roles
+            .load_path(role.root(), &CancellationToken::new())
+            .await?;
         let home_dir = tempfile::tempdir()?;
         let home = HostPath::parse(&std::fs::canonicalize(home_dir.path())?)?;
         let login = json!({

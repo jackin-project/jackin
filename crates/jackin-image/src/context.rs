@@ -4,12 +4,12 @@
 use std::path::Path;
 
 use jackin_core::{
-    FileMode, FileSystem, HostPath, LinkProblem, RegularFile, RegularFileProblem, RepoPath,
-    UNBOUNDED_READ,
+    FileMode, FileSystem, HostPath, RegularFile, RegularFileProblem, RepoPath, UNBOUNDED_READ,
 };
 
 use crate::engine::{ContextProblem, EngineError};
 use crate::plan::{ContextSource, MaterializedFile};
+use crate::request::ContextEntry;
 
 const EXECUTABLE: FileMode = FileMode(0o755);
 const PLAIN: FileMode = FileMode(0o644);
@@ -65,15 +65,6 @@ fn regular_problem(problem: RegularFileProblem) -> ContextProblem {
     }
 }
 
-fn link_problem(problem: LinkProblem) -> ContextProblem {
-    match problem {
-        LinkProblem::Symlink => ContextProblem::Symlink,
-        LinkProblem::NotALink => ContextProblem::NotARegularFile,
-        LinkProblem::Missing => ContextProblem::Missing,
-        LinkProblem::NonUtf8 => ContextProblem::Escapes,
-    }
-}
-
 fn stays_in_root(target: &str, depth: usize) -> bool {
     let mut segments = target.split('/').peekable();
     let mut ups = 0;
@@ -111,40 +102,29 @@ pub async fn read_regular_file(
     }
 }
 
-async fn stage_link(
+async fn stage_entries(
     fs: &dyn FileSystem,
-    root: &HostPath,
-    file: &RepoPath,
+    entries: &[ContextEntry],
     target: &HostPath,
 ) -> Result<(), EngineError> {
-    let shown = file.as_str();
-    let text = fs
-        .read_link(root, file)
-        .await?
-        .map_err(|problem| refuse(shown, link_problem(problem)))?;
-    let depth = shown.matches('/').count();
-    if !stays_in_root(&text, depth) {
-        return Err(refuse(shown, ContextProblem::Escapes));
-    }
-    let link = place(fs, target, shown).await?;
-    fs.write_symlink(&link, &text).await?;
-    Ok(())
-}
-
-async fn stage_listed(
-    fs: &dyn FileSystem,
-    root: &HostPath,
-    files: &[RepoPath],
-    target: &HostPath,
-) -> Result<(), EngineError> {
-    for file in files {
-        match fs.read_regular(root, file, UNBOUNDED_READ).await? {
-            Ok(regular) => {
-                let regular = staged_mode(regular);
-                put(fs, target, file.as_str(), &regular.bytes, regular.mode).await?;
+    for entry in entries {
+        match entry {
+            ContextEntry::File {
+                path,
+                bytes,
+                executable,
+            } => {
+                let mode = if *executable { EXECUTABLE } else { PLAIN };
+                put(fs, target, path.as_str(), bytes, mode).await?;
             }
-            Err(RegularFileProblem::Symlink) => stage_link(fs, root, file, target).await?,
-            Err(problem) => return Err(refuse(file.as_str(), regular_problem(problem))),
+            ContextEntry::Link { path, target: text } => {
+                let depth = path.as_str().matches('/').count();
+                if !stays_in_root(text, depth) {
+                    return Err(refuse(path.as_str(), ContextProblem::Escapes));
+                }
+                let link = place(fs, target, path.as_str()).await?;
+                fs.write_symlink(&link, text).await?;
+            }
         }
     }
     Ok(())
@@ -170,7 +150,7 @@ pub(crate) async fn stage(
     target: &HostPath,
 ) -> Result<(), EngineError> {
     match source {
-        ContextSource::Listed { root, files } => stage_listed(fs, root, files, target).await,
+        ContextSource::Entries(entries) => stage_entries(fs, entries, target).await,
         ContextSource::Materialized(files) => stage_materialized(fs, files, target).await,
     }
 }

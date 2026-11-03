@@ -1,10 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::path::Path;
+use std::sync::Arc;
+
 use jackin::ExitClass;
-use jackin_core::{HookKind, sandbox_layout};
+use jackin_core::{HookKind, ProcessRunner, sandbox_layout};
 use jackin_openshell::GatewayOp;
-use jackin_testkit::{Fault, HostSnapshot, Rig, TestResult, Trigger, guard, launch_id};
+use jackin_testkit::{CancelsOn, Fault, HostSnapshot, Rig, TestResult, Trigger, guard, launch_id};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{Failure, Harness, ScriptedTerminal, Step};
@@ -134,6 +137,79 @@ async fn a_restart_cancelled_after_preflight_exits_cancelled_and_leaves_the_star
             .await?;
         assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
         assert_eq!(handle.file(&sandbox_layout::RUN_START), start);
+        Ok(())
+    })
+    .await
+}
+
+async fn git_in(dir: &Path, args: &[&str]) -> Result<String, Failure> {
+    let output = tokio::process::Command::new("/usr/bin/git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .await?;
+    if !output.status.success() {
+        return Err(format!("git {args:?}: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
+    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+}
+
+#[tokio::test]
+async fn a_cancel_during_the_role_fetch_ends_load_and_build_and_leaves_the_cache_at_the_old_commit()
+-> TestResult {
+    guard(async {
+        for command in ["load", "build"] {
+            let (rig, harness) = rigged().await?;
+            let origin = rig.loaded.root().as_path().to_path_buf();
+            let url = "https://example.invalid/role.git";
+            std::fs::write(
+                rig.world.home().as_path().join(".gitconfig"),
+                format!(
+                    "[url \"file://{}\"]\n\tinsteadOf = {url}\n",
+                    origin.display()
+                ),
+            )?;
+            let path_source = format!("source = {{ path = \"{}\" }}", origin.display());
+            let config = rig.config.render();
+            assert!(config.contains(&path_source));
+            harness.write_config(
+                &config.replace(&path_source, &format!("source = {{ git = \"{url}\" }}")),
+            )?;
+            let first = harness.run(&[command]).await?;
+            assert_eq!(first.exit, ExitClass::Ok, "{}", first.stderr);
+            let cached = rig.world.cache_dir().as_path().join("roles/sentinel");
+            let old = git_in(&cached, &["rev-parse", "HEAD"]).await?;
+
+            git_in(&origin, &["commit", "-q", "--allow-empty", "-m", "advance"]).await?;
+            let token = CancellationToken::new();
+            let world_runner = Arc::clone(&rig.world.runner);
+            let cancelling: Arc<dyn ProcessRunner> =
+                Arc::new(CancelsOn::new(&world_runner, "fetch", &token));
+            let ran = harness
+                .runner(cancelling)
+                .command(&[command])
+                .cancel(token)
+                .run()
+                .await?;
+            assert_eq!(ran.exit, ExitClass::Cancelled, "{command}: {}", ran.stderr);
+            assert_eq!(
+                git_in(&cached, &["rev-parse", "HEAD"]).await?,
+                old,
+                "{command}"
+            );
+
+            let again = harness.run(&[command]).await?;
+            assert_eq!(again.exit, ExitClass::Ok, "{command}: {}", again.stderr);
+            assert_ne!(
+                git_in(&cached, &["rev-parse", "HEAD"]).await?,
+                old,
+                "{command}"
+            );
+        }
         Ok(())
     })
     .await

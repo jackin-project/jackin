@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    Agent, BuilderName, CommitId, DockerLayer, HostPath, Platform, RepoPath, RoleName, Sha256,
+    Agent, BuilderName, CommitId, DockerLayer, Platform, RepoPath, RoleName, Sha256,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -18,9 +18,30 @@ pub struct HookFiles {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RoleRevision {
-    Clean { commit: CommitId },
-    Dirty { commit: CommitId, digest: Sha256 },
+pub struct RoleRevision {
+    pub commit: CommitId,
+    pub digest: Sha256,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ContextEntry {
+    File {
+        path: RepoPath,
+        bytes: Vec<u8>,
+        executable: bool,
+    },
+    Link {
+        path: RepoPath,
+        target: String,
+    },
+}
+
+impl ContextEntry {
+    pub fn path(&self) -> &RepoPath {
+        match self {
+            ContextEntry::File { path, .. } | ContextEntry::Link { path, .. } => path,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,8 +59,7 @@ impl From<bool> for Rebuild {
 #[derive(Clone, Debug)]
 pub struct ImageRequest {
     pub role: RoleName,
-    pub context: HostPath,
-    pub context_files: Vec<RepoPath>,
+    pub context_files: Vec<ContextEntry>,
     pub dockerfile: SourceFile,
     pub hooks: HookFiles,
     pub revision: RoleRevision,

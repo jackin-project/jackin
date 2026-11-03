@@ -8,7 +8,7 @@ use std::sync::Arc;
 use jackin_core::{Config, FileSystem, HostPath, RoleName, StdFileSystem, WorkspaceName};
 use jackin_image::RoleRevision;
 use jackin_session::{RoleCatalog, RoleError};
-use jackin_testkit::{FakeClock, RoleFixture, TestRunner};
+use jackin_testkit::{FakeClock, RoleFixture, TestRunner, WorkingFs};
 
 pub(crate) const URL: &str = "https://example.invalid/role.git";
 
@@ -93,22 +93,26 @@ impl Origin {
         rev: Option<&str>,
     ) -> Result<Result<(String, Option<String>), RoleError>, Box<dyn Error>> {
         let runner = Arc::new(TestRunner::with_home(&self.home));
-        let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
-        let catalog = RoleCatalog::new(fs, runner, Arc::new(FakeClock::new()), cache.clone());
+        let clock = Arc::new(FakeClock::new());
+        let fs: Arc<dyn FileSystem> =
+            Arc::new(WorkingFs::new(Arc::new(StdFileSystem::default()), &clock));
+        let catalog = RoleCatalog::new(fs, runner, clock, cache.clone());
         let config = self.config(rev)?;
         let workspace = config
             .workspace(&WorkspaceName::parse("w")?)
             .ok_or("no workspace")?;
         let name = RoleName::parse("sentinel")?;
         Ok(catalog
-            .load(&config, Some(&name), workspace)
+            .load(
+                &config,
+                Some(&name),
+                workspace,
+                &tokio_util::sync::CancellationToken::new(),
+            )
             .await
             .map(|loaded| {
-                let commit = match loaded.revision() {
-                    RoleRevision::Clean { commit } | RoleRevision::Dirty { commit, .. } => {
-                        commit.as_str().to_owned()
-                    }
-                };
+                let RoleRevision { commit, .. } = loaded.revision();
+                let commit = commit.as_str().to_owned();
                 (
                     commit,
                     loaded

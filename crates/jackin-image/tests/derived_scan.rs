@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_core::Sha256;
+use jackin_image::ContextEntry;
 use std::error::Error;
 use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
@@ -8,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use jackin_core::{
-    Agent, BuilderName, CommitId, DockerLayer, HostPath, ImageId, Platform, RepoPath, RoleName,
+    Agent, BuilderName, CommitId, DockerLayer, ImageId, Platform, RepoPath, RoleName,
 };
 use jackin_image::{
     ContextSource, HookFiles, ImagePlan, ImageRequest, Rebuild, RoleRevision, SourceFile,
@@ -54,6 +56,14 @@ const WRONG_PASSWD: &str = "sandbox account is not 1000:1000 in /etc/passwd";
 const MISSING_GROUP: &str = "sandbox group is missing or duplicated in /etc/group";
 const WRONG_GROUP: &str = "sandbox group is not gid 1000 in /etc/group";
 
+fn entry(path: &str) -> Result<ContextEntry, Box<dyn Error>> {
+    Ok(ContextEntry::File {
+        path: RepoPath::parse(path)?,
+        bytes: path.as_bytes().to_vec(),
+        executable: false,
+    })
+}
+
 fn leaf_bytes(leaf: &str) -> Vec<u8> {
     if leaf == CODEX || leaf == CODEX_HOST {
         vec![7u8; 256 * 1024]
@@ -69,8 +79,7 @@ fn trusted_name(leaf: &str) -> &str {
 fn scan_script() -> Result<Vec<u8>, Box<dyn Error>> {
     let request = ImageRequest {
         role: RoleName::parse("sentinel")?,
-        context: HostPath::parse(Path::new("/work/role"))?,
-        context_files: vec![RepoPath::parse("Dockerfile")?],
+        context_files: vec![entry("Dockerfile")?],
         dockerfile: SourceFile {
             path: RepoPath::parse("Dockerfile")?,
             bytes: b"FROM construct AS role\n".to_vec(),
@@ -79,8 +88,9 @@ fn scan_script() -> Result<Vec<u8>, Box<dyn Error>> {
             setup: None,
             preflight: None,
         },
-        revision: RoleRevision::Clean {
+        revision: RoleRevision {
             commit: CommitId::parse(&"1".repeat(40))?,
+            digest: Sha256::of(b"clean"),
         },
         agent: Agent::Codex,
         platform: Platform::LinuxArm64,

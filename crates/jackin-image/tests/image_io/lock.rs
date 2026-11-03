@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_core::Sha256;
 use std::error::Error;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -306,8 +307,9 @@ async fn different_final_keys_do_not_wait_for_each_other() -> TestResult {
         rig.close();
         let first_request = rig.fixture.request()?;
         let mut second_request = first_request.clone();
-        second_request.revision = RoleRevision::Clean {
+        second_request.revision = RoleRevision {
             commit: CommitId::parse(&"2".repeat(40))?,
+            digest: Sha256::of(b"clean"),
         };
         let (first, second) = (rig.engine(), rig.engine());
         let cancel = CancellationToken::new();

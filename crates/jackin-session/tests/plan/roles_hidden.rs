@@ -17,7 +17,12 @@ async fn setup() -> Result<Setup, Box<dyn std::error::Error>> {
 
 async fn tag(setup: &Setup) -> Result<String, Box<dyn std::error::Error>> {
     let (catalog, _runner) = super::support::catalog(&setup.cache);
-    let loaded = catalog.load_path(setup.role_fixture.root()).await?;
+    let loaded = catalog
+        .load_path(
+            setup.role_fixture.root(),
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
     let request = plan_image(&setup.config, &loaded, &setup.gateway, None, Rebuild::No)?;
     let construct = ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
     Ok(ImagePlan::new(&request)?.final_tag(&construct).to_string())

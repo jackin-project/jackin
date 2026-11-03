@@ -15,8 +15,8 @@ use jackin_core::{
     ProcessError, ProcessRunner, ProcessStatus, Program, RepoPath, StdFileSystem,
 };
 use jackin_image::{
-    BuildStage, BuildxEngine, ContextProblem, ContextSource, EngineError, ImageEngine, ImageEvent,
-    ImagePlan, MaterializedFile, PlannedBuild,
+    BuildStage, BuildxEngine, ContextEntry, ContextProblem, ContextSource, EngineError,
+    ImageEngine, ImageEvent, ImagePlan, MaterializedFile, PlannedBuild,
 };
 use jackin_testkit::{CapturedFile, ProcessReply, ScriptedProcessRunner, SeenCall, SeenStdin};
 use tokio::sync::mpsc;
@@ -165,8 +165,14 @@ async fn buildx_context_holds_exactly_the_planned_files_with_normalized_modes() 
         let mut request = stack.fixture.request()?;
         request.context_files = modes
             .iter()
-            .map(|(name, _, _)| RepoPath::parse(name))
-            .collect::<Result<_, _>>()?;
+            .map(|(name, mode, _)| {
+                Ok(ContextEntry::File {
+                    path: RepoPath::parse(name)?,
+                    bytes: format!("body of {name}").into_bytes(),
+                    executable: mode & 0o111 != 0,
+                })
+            })
+            .collect::<Result<_, Box<dyn Error>>>()?;
         let plan = ImagePlan::new(&request)?;
         let finals = plan.final_builds(&ImageId::parse(&tag_id("construct"))?);
         let (tx, _rx) = mpsc::channel(256);
@@ -269,17 +275,12 @@ async fn buildx_refuses_unsafe_context_entries_before_docker_runs() -> TestResul
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .collect();
         let (_, finals) = plan_for(&stack)?;
-        let listed = |name: &str| -> Result<ContextSource, Box<dyn Error>> {
-            Ok(ContextSource::Listed {
-                root: stack.fixture.role.clone(),
-                files: vec![RepoPath::parse(name)?],
-            })
-        };
+        let link = ContextSource::Entries(vec![ContextEntry::Link {
+            path: RepoPath::parse("link")?,
+            target: "/etc/hosts".to_owned(),
+        }]);
         let rows: Vec<(String, ContextSource, ContextProblem)> = vec![
-            ("link".into(), listed("link")?, ContextProblem::Escapes),
-            ("dir/x".into(), listed("dir/x")?, ContextProblem::Symlink),
-            ("d".into(), listed("d")?, ContextProblem::NotARegularFile),
-            ("gone".into(), listed("gone")?, ContextProblem::Missing),
+            ("link".into(), link, ContextProblem::Escapes),
             (
                 "../escape".into(),
                 materialized("../escape"),

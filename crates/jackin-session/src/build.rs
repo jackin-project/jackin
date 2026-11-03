@@ -40,7 +40,9 @@ pub async fn build_for_workspace(
 ) -> Result<BuiltImage, BuildError> {
     let (gateway, _) = config.resolve_gateway(request.gateway)?;
     let workspace = lookup_workspace(config, request.path).workspace();
-    let role = catalog.load(config, request.role, &workspace).await?;
+    let role = catalog
+        .load(config, request.role, &workspace, cancel)
+        .await?;
     let image = plan_image(config, &role, gateway, Some(&workspace), request.rebuild)?;
     Ok(ensure_image(engine, &image, progress, cancel).await?)
 }

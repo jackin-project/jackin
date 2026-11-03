@@ -329,6 +329,24 @@ impl Harness {
         }
     }
 
+    pub(crate) fn runner(&self, runner: Arc<dyn ProcessRunner>) -> Harness {
+        Harness {
+            connector: self.connector.clone(),
+            custom: self.custom.clone(),
+            cwd: self.cwd.clone(),
+            config_path: self.config_path.clone(),
+            cache_dir: self.cache_dir.clone(),
+            env: self.env.clone(),
+            usage_endpoints: self.usage_endpoints.clone(),
+            host: HostPorts {
+                clock: Arc::clone(&self.host.clock),
+                fs: Arc::clone(&self.host.fs),
+                runner,
+            },
+            engine: Arc::clone(&self.engine),
+        }
+    }
+
     pub(crate) fn write_config(&self, text: &str) -> Result<(), Failure> {
         let path = self.config_path.as_path();
         if let Some(dir) = path.parent() {

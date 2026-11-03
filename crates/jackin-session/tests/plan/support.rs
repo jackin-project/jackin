@@ -126,7 +126,12 @@ impl Spec {
         let cache_dir = tempfile::tempdir()?;
         let cache = HostPath::parse(&std::fs::canonicalize(cache_dir.path())?)?;
         let (catalog, _runner) = catalog(&cache);
-        let role = catalog.load_path(role_fixture.root()).await?;
+        let role = catalog
+            .load_path(
+                role_fixture.root(),
+                &tokio_util::sync::CancellationToken::new(),
+            )
+            .await?;
         let config = Config::parse(&self.text(repo.root(), role_fixture.root()))?;
         let project = repo.project().await?;
         Ok(Setup {

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_image::ContextEntry;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::fs;
@@ -82,18 +83,26 @@ impl Fixture {
         })
     }
 
+    fn entry(&self, path: &str) -> Result<ContextEntry, Box<dyn Error>> {
+        Ok(ContextEntry::File {
+            path: RepoPath::parse(path)?,
+            bytes: fs::read(self.role.as_path().join(path))?,
+            executable: false,
+        })
+    }
+
     pub(crate) fn request(&self) -> Result<ImageRequest, Box<dyn Error>> {
         Ok(ImageRequest {
             role: RoleName::parse("sentinel")?,
-            context: self.role.clone(),
-            context_files: vec![RepoPath::parse("Dockerfile")?, RepoPath::parse("src/a.rs")?],
+            context_files: vec![self.entry("Dockerfile")?, self.entry("src/a.rs")?],
             dockerfile: source("Dockerfile", ROLE_DOCKERFILE)?,
             hooks: HookFiles {
                 setup: Some(source("hooks/setup.sh", b"#!/bin/sh\necho setup\n")?),
                 preflight: None,
             },
-            revision: RoleRevision::Clean {
+            revision: RoleRevision {
                 commit: CommitId::parse(&"1".repeat(40))?,
+                digest: Sha256::of(b"clean"),
             },
             agent: Agent::Codex,
             platform: Platform::LinuxArm64,

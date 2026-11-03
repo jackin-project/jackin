@@ -119,7 +119,6 @@ impl ImageKey {
     ) -> ImageKey {
         let ImageRequest {
             role,
-            context: _,
             context_files: _,
             dockerfile,
             hooks,
@@ -138,18 +137,9 @@ impl ImageKey {
         let mut fields = Fields::default();
         fields.push(role.as_str());
         fields.push(agent.as_str());
-        match revision {
-            RoleRevision::Clean { commit } => {
-                fields.push("clean");
-                fields.push(commit.as_str());
-                fields.push("");
-            }
-            RoleRevision::Dirty { commit, digest } => {
-                fields.push("dirty");
-                fields.push(commit.as_str());
-                fields.push(digest.as_str());
-            }
-        }
+        let RoleRevision { commit, digest } = revision;
+        fields.push(commit.as_str());
+        fields.push(digest.as_str());
         fields.push(Sha256::of(dockerfile_bytes).as_str());
         fields.push(construct.to_string());
         fields.push(derived_args.len().to_string());

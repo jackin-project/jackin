@@ -88,7 +88,7 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
     let (gateway, _) = config.resolve_gateway(app.gateway.as_ref())?;
     let role = app
         .catalog()
-        .load(&config, args.role.as_ref(), &workspace)
+        .load(&config, args.role.as_ref(), &workspace, &app.cancel)
         .await?;
     let launch = match args.launch_id {
         Some(launch) => launch,

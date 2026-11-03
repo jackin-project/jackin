@@ -299,7 +299,6 @@ pub fn plan_image(
     );
     Ok(ImageRequest {
         role: role.name().clone(),
-        context: role.root().clone(),
         context_files: role.files().to_vec(),
         dockerfile: role.dockerfile().clone(),
         hooks: role.hooks().clone(),

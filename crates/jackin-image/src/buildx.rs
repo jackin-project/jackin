@@ -207,7 +207,7 @@ impl BuildxEngine {
         self.fs.remove_dir_all(call).await?;
         let context = child(call, "context")?;
         let iid = child(call, "iid")?;
-        self.fs.create_dir_all(&context).await?;
+        self.fs.create_private_dir_all(&context).await?;
         stage(self.fs.as_ref(), &build.context, &context).await?;
         let mut args = build.args.clone();
         args.push(format!("--iidfile={}", path_text(&iid)?));

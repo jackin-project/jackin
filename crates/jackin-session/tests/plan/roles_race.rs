@@ -2,20 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use jackin_core::{FileSystem, HostPath, RoleName, StdFileSystem, WorkspaceName};
 use jackin_image::RoleRevision;
 use jackin_session::{LoadedRole, RoleCatalog, RoleError};
-use jackin_testkit::{FakeClock, PausesOn, TestRunner};
+use jackin_testkit::{FakeClock, PausesOn, TestRunner, WorkingFs};
+use tokio_util::sync::CancellationToken;
 
-use super::roles_origin::{Origin, cache};
+use super::hook_fs::HookFs;
+use super::roles_origin::{Origin, cache, git};
 use super::support::{TestResult, guard};
 
 type Loaded = Result<(String, Option<String>), RoleError>;
 
 fn summary(loaded: &LoadedRole) -> (String, Option<String>) {
-    let (RoleRevision::Clean { commit } | RoleRevision::Dirty { commit, .. }) = loaded.revision();
+    let RoleRevision { commit, .. } = loaded.revision();
     (
         commit.as_str().to_owned(),
         loaded
@@ -32,13 +35,32 @@ struct Pair {
     second: RoleCatalog,
     pause: Arc<PausesOn>,
     clock: Arc<FakeClock>,
+    contended: Arc<AtomicUsize>,
+}
+
+impl Pair {
+    async fn until_second_waits(&self) {
+        while self.contended.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+    }
 }
 
 fn pair(origin: &Origin, cache: &HostPath, word: &'static str) -> Pair {
     let runner = Arc::new(TestRunner::with_home(&origin.home));
     let pause = Arc::new(PausesOn::new(&runner, word));
     let clock = Arc::new(FakeClock::new());
-    let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
+    let fs: Arc<dyn FileSystem> =
+        Arc::new(WorkingFs::new(Arc::new(StdFileSystem::default()), &clock));
+    let contended = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&contended);
+    let waiting: Arc<dyn FileSystem> = Arc::new(HookFs::new(
+        Arc::clone(&fs),
+        Box::new(|_| Ok(())),
+        Box::new(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+        }),
+    ));
     Pair {
         first: RoleCatalog::new(
             Arc::clone(&fs),
@@ -46,9 +68,15 @@ fn pair(origin: &Origin, cache: &HostPath, word: &'static str) -> Pair {
             Arc::<FakeClock>::clone(&clock),
             cache.clone(),
         ),
-        second: RoleCatalog::new(fs, runner, Arc::<FakeClock>::clone(&clock), cache.clone()),
+        second: RoleCatalog::new(
+            waiting,
+            runner,
+            Arc::<FakeClock>::clone(&clock),
+            cache.clone(),
+        ),
         pause,
         clock,
+        contended,
     }
 }
 
@@ -56,6 +84,7 @@ async fn load(
     catalog: &RoleCatalog,
     origin: &Origin,
     rev: Option<&str>,
+    cancel: &CancellationToken,
 ) -> Result<Loaded, Box<dyn std::error::Error>> {
     let config = origin.config(rev)?;
     let workspace = config
@@ -63,7 +92,7 @@ async fn load(
         .ok_or("no workspace")?;
     let name = RoleName::parse("sentinel")?;
     Ok(catalog
-        .load(&config, Some(&name), workspace)
+        .load(&config, Some(&name), workspace, cancel)
         .await
         .map(|loaded| summary(&loaded)))
 }
@@ -76,19 +105,16 @@ async fn race(
 ) -> Result<(Loaded, Loaded), Box<dyn std::error::Error>> {
     let (cache, _keep) = cache()?;
     let pair = pair(origin, &cache, word);
-    let first = load(&pair.first, origin, first_rev);
+    let never = CancellationToken::new();
+    let first = load(&pair.first, origin, first_rev, &never);
     let driver = async {
         pair.pause.reached().await;
-        let second = load(&pair.second, origin, second_rev);
+        let second = load(&pair.second, origin, second_rev, &never);
         tokio::pin!(second);
         let early = tokio::select! {
             biased;
             result = &mut second => Some(result),
-            () = async {
-                while pair.clock.sleepers() == 0 {
-                    tokio::task::yield_now().await;
-                }
-            } => None,
+            () = pair.until_second_waits() => None,
         };
         pair.pause.release();
         if let Some(result) = early {
@@ -136,6 +162,47 @@ async fn two_first_loads_of_one_role_both_succeed() -> TestResult {
         let second = second.map_err(|e| format!("{e:?}"))?;
         assert_eq!(first, second);
         assert_eq!(first.0, origin.commits[0]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_load_cancelled_while_it_waits_for_the_cache_lock_changes_nothing() -> TestResult {
+    guard(async {
+        let origin = Origin::new().await?;
+        let (cache, _keep) = cache()?;
+        let pair = pair(&origin, &cache, "HEAD");
+        let never = CancellationToken::new();
+        let token = CancellationToken::new();
+        let first = load(&pair.first, &origin, Some("v1"), &never);
+        let driver = async {
+            pair.pause.reached().await;
+            let third = load(&pair.second, &origin, Some("dev"), &token);
+            tokio::pin!(third);
+            let cancelled = tokio::select! {
+                result = &mut third => result,
+                () = async {
+                    pair.until_second_waits().await;
+                    token.cancel();
+                } => third.await,
+            };
+            let head = git(
+                &cache.as_path().join("roles/sentinel"),
+                &["rev-parse", "HEAD"],
+            )
+            .await;
+            pair.pause.release();
+            (cancelled, head)
+        };
+        let (first, (third, head)) = tokio::join!(first, driver);
+        let third = third?;
+        assert!(matches!(third, Err(RoleError::Cancelled)), "{third:?}");
+        assert_eq!(head?, origin.commits[0]);
+        assert_eq!(
+            first?.map_err(|e| format!("{e:?}"))?,
+            (origin.commits[0].clone(), Some("model-1".to_owned()))
+        );
         Ok(())
     })
     .await

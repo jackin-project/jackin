@@ -74,7 +74,12 @@ impl Roles {
             .ok_or("no workspace")?;
         let role = role.map(RoleName::parse).transpose()?;
         Ok(catalog
-            .load(&self.config, role.as_ref(), workspace)
+            .load(
+                &self.config,
+                role.as_ref(),
+                workspace,
+                &tokio_util::sync::CancellationToken::new(),
+            )
             .await
             .map(|loaded| loaded.name().as_str().to_owned()))
     }
@@ -164,7 +169,7 @@ async fn a_git_role_outside_the_allowed_roles_is_refused_before_anything_is_chec
             .workspace(&WorkspaceName::parse("w")?)
             .ok_or("no workspace")?;
         let first = RoleName::parse("first")?;
-        let refused = catalog.load(&config, Some(&first), workspace).await;
+        let refused = catalog.load(&config, Some(&first), workspace, &tokio_util::sync::CancellationToken::new()).await;
         assert_eq!(std::fs::read_dir(keep.path())?.count(), 0);
         assert!(
             matches!(&refused, Err(RoleError::NotAllowed(name)) if *name == first),
