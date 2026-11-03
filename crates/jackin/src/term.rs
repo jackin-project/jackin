@@ -3,7 +3,7 @@
 
 use jackin_core::{SandboxName, SupervisorReading, SupervisorState};
 use jackin_openshell::{EndReason, SessionClosed, TermSize, TerminalEvent, TerminalSession};
-use jackin_session::{AttachRequest, AttachedTerminal, Session, ShellRequest};
+use jackin_session::{AttachRequest, AttachedTerminal, ClipboardGuard, Session, ShellRequest};
 
 use crate::app::App;
 use crate::error::CommandError;
@@ -61,11 +61,13 @@ pub(crate) async fn pump(app: &mut App, remote: &mut Remote) -> Result<Ended, Co
     let terminal = terminal.as_mut().ok_or(CommandError::NoTerminal)?;
     let raw = terminal.enter_raw().map_err(CommandError::Terminal)?;
     let mut exit = None;
+    let mut clipboard = ClipboardGuard::default();
     let (reason, interrupted) = loop {
         tokio::select! {
             input = terminal.next_input() => match input {
                 TerminalInput::Bytes(bytes) => {
-                    if remote.input(bytes).await.is_err() {
+                    let bytes = clipboard.from_operator(&bytes);
+                    if !bytes.is_empty() && remote.input(bytes).await.is_err() {
                         break (EndReason::StreamClosed, false);
                     }
                 }
@@ -81,7 +83,12 @@ pub(crate) async fn pump(app: &mut App, remote: &mut Remote) -> Result<Ended, Co
             },
             event = remote.next() => match event {
                 None => break (EndReason::StreamClosed, false),
-                Some(TerminalEvent::Output(bytes)) => io.bytes(&bytes)?,
+                Some(TerminalEvent::Output(bytes)) => {
+                    let bytes = clipboard.from_sandbox(&bytes);
+                    if !bytes.is_empty() {
+                        io.bytes(&bytes)?;
+                    }
+                }
                 Some(TerminalEvent::Notice(text)) => io.note(&text),
                 Some(TerminalEvent::Ended(reason)) => break (reason, false),
                 Some(TerminalEvent::Exited(code)) => exit = code,
