@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::num::NonZeroU16;
 
-use jackin_core::{Agent, ProfileAsset, ProfileId, ProviderName, SandboxPath, plain};
+use jackin_core::{Agent, ENGINE_HOST, ProfileAsset, ProfileId, ProviderName, SandboxPath, plain};
 use openshell_core::host_pattern;
 use openshell_sdk::raw::proto::SandboxPolicy;
 
@@ -151,6 +151,21 @@ impl PolicyDocument {
         found.into_iter().collect()
     }
 
+    pub fn engine_host_rules(&self) -> Vec<RuleKey> {
+        let engine = HostPattern(ENGINE_HOST.to_owned());
+        yaml::scan(&self.proto)
+            .into_iter()
+            .filter(|scanned| {
+                scanned
+                    .rule
+                    .endpoints
+                    .iter()
+                    .any(|endpoint| endpoint.host.overlaps(&engine))
+            })
+            .map(|scanned| scanned.rule.key)
+            .collect()
+    }
+
     pub fn with_rule(&self, rule: NetworkRule) -> Result<PolicyDocument, PolicyError> {
         yaml::with_rule(&self.value, &rule)
     }
@@ -276,7 +291,7 @@ impl NetworkRule {
         NetworkRule {
             key: RuleKey("docker_engine".to_owned()),
             endpoints: vec![RuleEndpoint {
-                host: HostPattern("host.openshell.internal".to_owned()),
+                host: HostPattern(ENGINE_HOST.to_owned()),
                 port: port.get(),
                 protocol: EndpointProtocol::Tcp,
                 tls: TlsMode::Skip,

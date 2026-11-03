@@ -598,7 +598,7 @@ async fn write_file_mode_and_atomicity(ctx: &Ctx<'_>) -> Outcome<()> {
         let listing = ctx
             .exec(
                 &sandbox,
-                "find \"$1\" -perm 600 -type f; ls -A \"$1\"",
+                "find \"$1\" -perm 600 -type f; find \"$1\" -maxdepth 0 -perm 700 -type d; ls -A \"$1\"",
                 &["/sandbox/.contract"],
                 ProgramStdin::Closed,
                 None,
@@ -607,12 +607,16 @@ async fn write_file_mode_and_atomicity(ctx: &Ctx<'_>) -> Outcome<()> {
         let listing = String::from_utf8_lossy(&listing.stdout).into_owned();
         expect(listing.contains("secret.json"), "the mode is not 0600")?;
         expect(
+            listing.lines().any(|line| line.ends_with("/.contract")),
+            "the new parent directory is not 0700",
+        )?;
+        expect(
             listing
                 .lines()
                 .filter(|line| line.contains("secret.json"))
                 .count()
                 == 2
-                && listing.lines().count() == 2,
+                && listing.lines().count() == 3,
             "a temporary file is left behind",
         )
     }

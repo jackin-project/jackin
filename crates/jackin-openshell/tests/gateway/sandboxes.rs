@@ -55,6 +55,7 @@ async fn create_then_find_by_launch_label_round_trips_the_server_state() {
             ("jackin.dev/account", "work"),
             ("jackin.dev/image", &IMAGE_DIGEST[..32]),
             ("jackin.dev/launch", LAUNCH),
+            ("jackin.dev/docker", "off"),
         ]
         .into_iter()
         .collect();
