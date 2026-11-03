@@ -15,7 +15,7 @@ use jackin_core::{
 };
 use jackin_image::{
     BuildStage, BuildxEngine, BuiltImage, ImageEngine, ImageError, ImageEvent, ImagePlan,
-    ImageRequest, ImageSource, RoleRevision, ensure_image,
+    ImageRequest, ImageSource, Rebuild, RoleRevision, ensure_image,
 };
 use jackin_testkit::ScriptedProcessRunner;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -295,6 +295,51 @@ async fn two_calls_for_one_final_key_build_once_and_the_second_is_served_from_ca
             rig.fixture.work_entries().is_empty(),
             "per-call directories"
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_peer_rebuild_waits_while_the_role_and_derived_builds_read_the_construct() -> TestResult {
+    guarded(async {
+        let mut rig = Rig::new()?;
+        rig.close();
+        let request = rig.fixture.request()?;
+        let mut rebuild = request.clone();
+        rebuild.rebuild = Rebuild::Yes;
+        let (first, second) = (rig.engine(), rig.engine());
+        let cancel = CancellationToken::new();
+        let a = call(&first, &request, &cancel);
+        let driver = async {
+            rig.arrivals
+                .recv()
+                .await
+                .ok_or("the first call never reached the role build")?;
+            let mut b = Box::pin(call(&second, &rebuild, &cancel));
+            let waited = tokio::select! {
+                finished = b.as_mut() => Err(finished),
+                held = rig.contended.recv() => Ok(held),
+            };
+            let constructs = rig.builds_of(CONSTRUCT_TAGS);
+            rig.release();
+            match waited {
+                Err(finished) => Err(format!(
+                    "the rebuild did not wait for the role build: {:?} after {constructs} construct builds",
+                    finished.map(|built| built.source)
+                )
+                .into()),
+                Ok(held) => {
+                    held.ok_or("the signal closed")?;
+                    Ok::<_, Box<dyn Error>>((constructs, b.await))
+                }
+            }
+        };
+        let (a, driver) = tokio::join!(a, driver);
+        let (constructs, b) = driver?;
+        assert_eq!(constructs, 1, "construct builds while the role build ran");
+        assert_eq!(a?.source, ImageSource::Built);
+        assert_eq!(b?.source, ImageSource::Built);
         Ok(())
     })
     .await

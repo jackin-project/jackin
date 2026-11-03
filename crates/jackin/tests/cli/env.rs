@@ -141,3 +141,39 @@ async fn a_missing_value_undeclared_name_or_closed_input_stops_before_anything_i
     })
     .await
 }
+
+#[tokio::test]
+async fn a_prompt_and_a_default_from_the_role_reach_the_terminal_as_printable_text() -> TestResult {
+    guard(async {
+        let role = RoleFixture::new("sentinel")?
+            .env(
+                "GREETING",
+                Some("hello\x1b[2Jthere\x1b]0;owned\x07"),
+                Some("\x1b]52;c;ZXZpbA==\x07Deploy\x1b[31m key\u{9b}2J"),
+            )
+            .env("TOKENISH", None, None);
+        let rig = Rig::builder().role(role).build().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        harness.write_config(&rig.config.render())?;
+        let ran = harness
+            .command(&["load"])
+            .terminal(lines(&["", "typed"])?)
+            .run()
+            .await?;
+        ran.ok()?;
+        assert!(
+            ran.stderr.contains("Deploy key [hellothere]: "),
+            "{:?}",
+            ran.stderr
+        );
+        let controls: Vec<char> = ran
+            .stderr
+            .chars()
+            .filter(|c| c.is_control() && !matches!(c, '\n' | '\t'))
+            .collect();
+        assert!(controls.is_empty(), "{controls:?} in {:?}", ran.stderr);
+        Ok(())
+    })
+    .await
+}

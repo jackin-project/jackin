@@ -24,6 +24,7 @@ use jackin_testkit::{ProcessReply, ScriptedProgram, World, default_limits};
 use jackin_usage::ProviderEndpoints;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 pub(crate) type Failure = Box<dyn std::error::Error>;
@@ -160,12 +161,19 @@ pub(crate) enum Step {
     Close,
 }
 
-#[derive(Clone, Debug, Default)]
-pub(crate) struct RawProbe(Arc<AtomicBool>);
+#[derive(Clone, Debug)]
+pub(crate) struct RawProbe {
+    raw: Arc<AtomicBool>,
+    reading: Arc<watch::Sender<bool>>,
+}
 
 impl RawProbe {
     pub(crate) fn raw(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
+        self.raw.load(Ordering::SeqCst)
+    }
+
+    pub(crate) async fn pending_read(&self) {
+        drop(self.reading.subscribe().wait_for(|reading| *reading).await);
     }
 }
 
@@ -182,6 +190,7 @@ pub(crate) struct ScriptedTerminal {
     script: VecDeque<Step>,
     size: TermSize,
     raw: Arc<AtomicBool>,
+    reading: Arc<watch::Sender<bool>>,
 }
 
 pub(crate) fn term_size(cols: u16, rows: u16) -> Result<TermSize, Failure> {
@@ -194,13 +203,15 @@ pub(crate) fn term_size(cols: u16, rows: u16) -> Result<TermSize, Failure> {
 impl ScriptedTerminal {
     pub(crate) fn new(steps: Vec<Step>) -> Result<(ScriptedTerminal, RawProbe), Failure> {
         let raw = Arc::new(AtomicBool::new(false));
+        let reading = Arc::new(watch::channel(false).0);
         Ok((
             ScriptedTerminal {
                 script: steps.into(),
                 size: term_size(100, 30)?,
                 raw: Arc::clone(&raw),
+                reading: Arc::clone(&reading),
             },
-            RawProbe(raw),
+            RawProbe { raw, reading },
         ))
     }
 }
@@ -226,7 +237,10 @@ impl Terminal for ScriptedTerminal {
                 self.script.pop_front();
                 Ok(None)
             }
-            _ => std::future::pending().await,
+            _ => {
+                self.reading.send_replace(true);
+                std::future::pending().await
+            }
         }
     }
 

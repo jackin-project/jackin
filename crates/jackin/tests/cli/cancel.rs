@@ -7,7 +7,9 @@ use std::sync::Arc;
 use jackin::ExitClass;
 use jackin_core::{HookKind, ProcessRunner, sandbox_layout};
 use jackin_openshell::GatewayOp;
-use jackin_testkit::{CancelsOn, Fault, HostSnapshot, Rig, TestResult, Trigger, guard, launch_id};
+use jackin_testkit::{
+    CancelsOn, Fault, HostSnapshot, Rig, RoleFixture, TestResult, Trigger, guard, launch_id,
+};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{Failure, Harness, ScriptedTerminal, Step};
@@ -210,6 +212,36 @@ async fn a_cancel_during_the_role_fetch_ends_load_and_build_and_leaves_the_cache
                 "{command}"
             );
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn cancelling_load_while_it_waits_for_an_environment_value_ends_the_command() -> TestResult {
+    guard(async {
+        let role = RoleFixture::new("sentinel")?.env("TOKENISH", None, None);
+        let rig = Rig::builder().role(role).build().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        harness.write_config(&rig.config.render())?;
+        let (terminal, probe) = ScriptedTerminal::new(Vec::new())?;
+        let token = CancellationToken::new();
+        let running = harness
+            .command(&["load"])
+            .terminal(terminal)
+            .cancel(token.clone())
+            .run();
+        let driver = async {
+            probe.pending_read().await;
+            token.cancel();
+        };
+        let (ran, ()) = tokio::join!(running, driver);
+        let ran = ran?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert!(ran.stdout.is_empty());
+        assert!(rig.world.gateway.sandboxes().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
         Ok(())
     })
     .await
