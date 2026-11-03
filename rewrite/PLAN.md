@@ -618,7 +618,7 @@ P11.1 and P11.2 run in parallel.
 - **Repo:** jackin-agent-smith. **Owner:** `agent-sandbox-engineer`. **Depends:** P8.2.
 - **Steps:** Apply D20. Delete every Claude file and the marketplace scripts. Write the Dockerfile, manifest, policy, review instructions for Codex, and README.
 - **Proof:** G-ROLE passes. `evidence/P11.1-smith.md` shows that `jackin load agent-smith` builds the image and starts Codex.
-- [ ] P11.1 done
+- [x] P11.1 done. Proof: jackin-agent-smith feature/openshell-native (Codex role, FROM construct, github.com-only git policy, review AGENTS.md installed by preflight); G-ROLE exit 0; repo gates pass; evidence/P11.1-smith.md shows `jackin load agent-smith` building the image and starting Codex 0.166.0, instructions loaded, A1 login unchanged.
 
 ### P11.2 Rewrite The Architect
 
