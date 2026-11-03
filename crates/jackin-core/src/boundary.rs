@@ -150,18 +150,24 @@ pub struct DirEntry {
 
 #[derive(Debug)]
 pub struct FileLock {
+    path: HostPath,
     _guard: Box<dyn Any + Send + Sync>,
 }
 
 impl FileLock {
-    pub fn from_guard<G: Send + Sync + 'static>(guard: G) -> FileLock {
+    pub fn from_guard<G: Send + Sync + 'static>(path: HostPath, guard: G) -> FileLock {
         FileLock {
+            path,
             _guard: Box::new(guard),
         }
     }
 
-    pub(crate) fn new(file: std::fs::File) -> FileLock {
-        FileLock::from_guard(file)
+    pub(crate) fn new(path: HostPath, file: std::fs::File) -> FileLock {
+        FileLock::from_guard(path, file)
+    }
+
+    pub fn path(&self) -> &HostPath {
+        &self.path
     }
 }
 
@@ -376,6 +382,8 @@ pub enum FsError {
     AlreadyExists(HostPath),
     #[error("lock held: {0}")]
     LockHeld(HostPath),
+    #[error("the lock {lock} does not guard {target}")]
+    WrongLock { lock: HostPath, target: HostPath },
     #[error("refusing to replace the symbolic link {0}")]
     SymlinkTarget(HostPath),
 }

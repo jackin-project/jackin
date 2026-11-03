@@ -20,7 +20,7 @@ use tempfile::TempDir;
 use crate::engine::FakeEngine;
 use crate::fixtures::FixtureError;
 use crate::gateway::FakeGateway;
-use crate::host::{FakeClock, TestRunner};
+use crate::host::{FakeClock, TestRunner, WorkingFs};
 use crate::usage::LazyUsageServer;
 
 #[derive(Debug)]
@@ -100,7 +100,8 @@ impl WorldBuilder {
         let clock = Arc::new(FakeClock::new());
         gateway.link_clock(Arc::clone(&clock));
         let runner = Arc::new(TestRunner::with_home(&home));
-        let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
+        let fs: Arc<dyn FileSystem> =
+            Arc::new(WorkingFs::new(Arc::new(StdFileSystem::default()), &clock));
         let gateway_port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&gateway);
         let engine_port: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&engine);
         let clock_port: Arc<dyn Clock> = Arc::<FakeClock>::clone(&clock);

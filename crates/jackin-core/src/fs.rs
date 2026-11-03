@@ -7,6 +7,7 @@ use std::io::{self, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, OpenOptionsExt, PermissionsExt, symlink};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, readlinkat, statat};
@@ -20,6 +21,8 @@ use crate::paths::{HostPath, RepoPath};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StdFileSystem {}
+
+static TEMP_WRITES: AtomicU64 = AtomicU64::new(0);
 
 async fn blocking<T, F>(path: &HostPath, work: F) -> Result<T, FsError>
 where
@@ -324,7 +327,7 @@ impl FileSystem for StdFileSystem {
 
     async fn lock(&self, path: &HostPath) -> Result<FileLock, FsError> {
         match blocking(path, lock_file).await? {
-            Ok(file) => Ok(FileLock::new(file)),
+            Ok(file) => Ok(FileLock::new(path.clone(), file)),
             Err(()) => Err(FsError::LockHeld(path.clone())),
         }
     }
@@ -367,6 +370,68 @@ impl FileSystem for StdFileSystem {
     }
 }
 
+pub fn lock_path(target: &HostPath) -> Result<HostPath, FsError> {
+    let Some(name) = target.file_name() else {
+        return Err(FsError::Io {
+            path: target.clone(),
+            kind: ErrorKind::InvalidInput,
+            message: "path has no file name".to_owned(),
+        });
+    };
+    let mut lock_name = name.to_os_string();
+    lock_name.push(".lock");
+    Ok(target.with_file_name(&lock_name))
+}
+
+pub async fn write_atomic_locked(
+    fs: &dyn FileSystem,
+    path: &HostPath,
+    bytes: &[u8],
+    mode: FileMode,
+    held: &FileLock,
+) -> Result<(), FsError> {
+    if *held.path() != lock_path(path)? {
+        return Err(FsError::WrongLock {
+            lock: held.path().clone(),
+            target: path.clone(),
+        });
+    }
+    sweep_stale_temps(fs, path).await;
+    write_atomic(fs, path, bytes, mode).await
+}
+
+async fn sweep_stale_temps(fs: &dyn FileSystem, path: &HostPath) {
+    let (Some(dir), Some(name)) = (
+        path.parent(),
+        path.file_name().and_then(|name| name.to_str()),
+    ) else {
+        return;
+    };
+    let Ok(entries) = fs.list(&dir).await else {
+        return;
+    };
+    for entry in entries {
+        if entry.kind == FileKind::File && is_temp_of(name, &entry.name) {
+            let _swept = fs.remove_file(&dir.join_name(&entry.name)).await;
+        }
+    }
+}
+
+fn is_temp_of(target: &str, candidate: &str) -> bool {
+    let counters = candidate
+        .strip_prefix('.')
+        .and_then(|rest| rest.strip_prefix(target))
+        .and_then(|rest| rest.strip_prefix('.'))
+        .and_then(|rest| rest.strip_suffix(".tmp"));
+    counters
+        .and_then(|counters| counters.split_once('-'))
+        .is_some_and(|(pid, count)| all_digits(pid) && all_digits(count))
+}
+
+fn all_digits(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 pub async fn write_atomic(
     fs: &dyn FileSystem,
     path: &HostPath,
@@ -382,7 +447,11 @@ pub async fn write_atomic(
     };
     let mut temp_name = OsString::from(".");
     temp_name.push(name);
-    temp_name.push(".tmp");
+    temp_name.push(format!(
+        ".{}-{}.tmp",
+        std::process::id(),
+        TEMP_WRITES.fetch_add(1, Ordering::Relaxed)
+    ));
     if fs.stat(path).await? == Some(FileKind::Symlink) {
         return Err(FsError::SymlinkTarget(path.clone()));
     }

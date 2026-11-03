@@ -359,7 +359,7 @@ crates/jackin-core/src/
   config/{select,store}.rs   account selection (D26); ConfigStore
   boundary.rs       Clock, FileSystem, ProcessRunner and their data types
   fs.rs             StdFileSystem, write_atomic
-  wait.rs           poll_until
+  wait.rs           poll_until, hold_lock
   display.rs        plain, plain_list, plain_duration: text for #[error] messages
   tomlkit.rs        private: TOML reader and quoting helpers for config parse and render
   views.rs          SandboxSummary, InspectView, LsOutput, BuildOutput (serde views printed by --json)
@@ -1047,7 +1047,17 @@ pub async fn poll_until<T, E, Fut, F>(
 where
     F: FnMut() -> Fut + Send,
     Fut: Future<Output = Result<Poll<T>, E>> + Send;
+
+pub async fn hold_lock(
+    fs: &dyn FileSystem,
+    clock: &dyn Clock,
+    path: &HostPath,
+    plan: PollPlan,
+    cancel: &CancellationToken,
+) -> Result<FileLock, PollError<FsError>>;
 ```
+
+`hold_lock` is the one polling lock helper. It calls `FileSystem::lock(path)` as the `poll_until` probe: a `LockHeld` is `Poll::Pending`, a granted lock is `Poll::Ready`, any other `FsError` is `PollError::Probe`. It waits through `Clock::sleep`, so a fake clock drives it, and it honors `plan.timeout` (`PollError::Timeout`) and `cancel` (`PollError::Cancelled`). The caller keeps the returned `FileLock` for the span it must exclude and drops it to release. New code that waits on a host lock calls `hold_lock` and does not write another loop. `ConfigStore::lock`, `jackin-session` `lock::hold`, and `BuildxEngine::hold` predate it and still carry their own loops; U3 moves `lock::hold` onto it.
 
 `ProcessStdin::Bytes` carries a secret, so a secret never sits in `args` (D10). With `lines` set, the runner streams complete lines to the sink and returns a stdout and stderr tail of at most 64 KiB; with `lines` unset it returns all output. Cancellation kills the child and returns `ProcessError::Cancelled`. The runner ends the whole process group of the child through `ProcessGroup::stop` and does not return until the group holds no live process: it sends SIGKILL to the group, and where the group signal is denied (an OpenShell workload filters `kill` with a negative pid) it lists the group in `/proc` and sends SIGKILL to each live member. A zombie is not a member, and a `/proc/<pid>/stat` line that cannot be parsed is `GroupFault::Unreachable`, not a non-member. A group that is still alive after 5 s is `GroupFault::Alive`. The fault rides on `Timeout` and `Cancelled` (field `group`), so a caller that matches `Cancelled { .. }` still sees the cancel; for the other errors, and for a clean exit, it becomes `ProcessError::Group`. `GatewayError::{Timeout, Cancelled}`, `EngineError::Cancelled` and `ExportError::Cancelled` carry the same `group`, and their `Display` appends `; <fault>`. `ProcessGroup` lives in `jackin-session` (`process_group.rs`), and `xtask` stops its children through it; `GroupFault` stays in `jackin-core`. `ImageError::Cancelled` carries the `group` of the `EngineError::Cancelled` it comes from. The runner always applies `spec.timeout` and takes stdin from `/dev/null` for `ProcessStdin::Null` (D03, P0.2 G1). The real `ProcessRunner` and `Clock` live in `jackin-session::host`, and so does `capture_env`, the only reader of the process environment; `StdFileSystem` lives here.
 
@@ -1198,6 +1208,7 @@ Location: `crates/jackin-core/tests/*.rs`, integration tests through the public 
 | Store | `edit` writes once, and a second concurrent `edit` on the same `MemFs` serializes and keeps both changes | a fault in `write_new`, `rename`, or `sync_dir` leaves the old bytes readable and no temporary file listed after the next `load` |
 | Supervisor state and phase | `waiting`, `running 1`, `exited 1 3` parse and render identically; `next_attempt` is `FIRST` for `waiting`, 4 for `exited 3 0`, and `None` for `running 1` and for `exited` at the 18-digit maximum; `Completed { exit_code: 0 }` and `Error { exit_code: Some(3) }` report `main_process_ended` and the code; only `Ready` accepts exec | empty, `running`, `exited 1`, `exited 1 x`, `running a1`, `running 0`, `running 01`, trailing text, and an uppercase word are rejected; `Error { exit_code: None }` has no code |
 | Poll | `poll_until` returns when the probe turns ready, under the fake clock with no real sleep | timeout after exactly `timeout` of fake time; cancel returns `Cancelled` |
+| Concurrent atomic writes | two `write_atomic` calls on one target, the first parked at its `rename` until the second ends, both return `Ok` and the directory lists only the target (`write_atomic.rs`) | none |
 
 ---
 
@@ -2548,6 +2559,7 @@ Rules.
 - Dispatch from `Provider` to a provider crate is one exhaustive `match` in `jackin-usage/src/dispatch.rs` (decision 10). Adding a `Provider` variant to `jackin-core` fails the build until the arm exists. No second provider list exists.
 - Callers build the account set from config: all accounts for `jackin usage` and the usage panel, `Config::workspace_accounts(name)` for the per-workspace view (D26).
 - Credentials are read inside the usage crates from the account's `CredentialSource`: an environment variable from the snapshot, `op read` through the runner, a file, or the Codex home `auth.json`. They are never returned in a report and never logged.
+- The cache is `usage.json` in `state_dir`, written by `write_atomic` under `usage.json.lock`. `report` reads the cache without a lock at its start and fetches without a lock, because a provider call can run up to the 30 s timeout. At the end it takes the lock through `hold_lock` (20 ms interval, 10 s bound, the request's cancel token), re-reads the file, applies only this run's `Set` and `Remove` edits, and writes. A run therefore never drops the entry of a run that finished while it fetched, and never brings back an entry another run removed. A lock that is not granted in 10 s is `UsageError::Store` naming the lock file.
 - `ProviderEndpoints::with` is the network fake point. Production uses `real()`. The layer rules for this subtree are rows of the layer table in the Shape section.
 
 - `Percent`, `UnavailableReason` and `LimitWindow` carry the usage text, so the CLI and the console print the same words. `Percent` displays with at most two decimals and no trailing zeros, followed by `%`. `UnavailableReason` displays the sentences the CLI always printed (`no credentials`, `login expired or rejected`, `not supported for this provider`, `rate limited, retry at ...`, `network error: ...`, `provider error: ...`). `LimitWindow::used_text`, `remaining_text` and `reset_text(now)` return `12.5% used`, `87.5% left` or `4.20 USD left`, and `resets <rfc3339> (in 2h3m)`, each with `-` where the provider gave nothing.
@@ -3425,7 +3437,7 @@ U5 comes before U6 because PLAN P4.2 depends on P4.1. The session units (U8 to U
 - R3. `CredentialKeys` gains `id_token`, because `codex-provider.yaml` declares `CODEX_AUTH_ID_TOKEN` beside the other three credential variables. `EnvName::is_reserved` covers `access_token`, `refresh_token`, `account_id`, and `id_token` of every `Agent`, plus every `reserved_env` name. `reserved_env` stays `["CODEX_HOME"]`.
 - R4. `NameSuffix::for_launch` hashes the launch ID bytes with SHA-256, reads the first 8 digest bytes as a big-endian `u64` `n`, and writes `n mod 36^4` as exactly 4 base-36 digits (`0-9a-z`, most significant first, zero padded).
 - R5. `poll_until` bounds time by summing the durations it passes to `Clock::sleep` and never calls `Clock::now`. The last sleep is clamped to the time left, a zero interval counts as 1 ms, and the probe runs once more after the last sleep. `Timestamp` keeps no unit in U2. U5 R8 adds the probe bound: each probe is raced against the remaining time and against cancel.
-- R6. `write_atomic` writes `.<file name>.tmp` in the target directory, removes a leftover temporary file first, removes its own temporary file on any error (best effort), and returns the original error. Callers serialize concurrent writers with `FileSystem::lock`. `FileSystem::remove_file` of a missing file is `Ok`.
+- R6. `write_atomic` writes `.<file name>.<pid>-<n>.tmp` in the target directory, where `<n>` is a process-wide counter, so two writers of one target, in one process or in two, never share a temporary file. It removes a leftover file of that exact name first, removes its own temporary file on any error (best effort), and returns the original error. A crash leaves its temporary file behind; no later write removes it. The rename is atomic, so every reader sees one writer's whole bytes. Two writers still race on which bytes win; a caller that must not lose an update holds a `FileSystem::lock` around its read, modify, and write (`ConfigStore::edit`, the usage cache). `FileSystem::remove_file` of a missing file is `Ok`.
 - R7. `LabelKey` and `LabelValue` implement `Display`. The negative `from_labels` cases, `is_managed()` false, and `LabelSelector::render` wait for U5, which adds a `Labels` constructor when the adapter needs it.
 - R8. The `ws` result of `WorkspaceName::slug` is unreachable, because a valid name starts with an alphanumeric. It stays as the internal fallback of the infallible constructor, and no public path reaches it.
 - R9. A wrong length on an exact-length id (`NameSuffix`, `Sha256`, `CommitId`, `ImageId`, `ImageTag`) is `BadFormat`. `TooLong` is for max-length grammars only. An empty `OpReference` is `BadFormat`, because its format rule covers it; every other empty id is `Empty`.

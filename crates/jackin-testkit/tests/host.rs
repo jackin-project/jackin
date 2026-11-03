@@ -339,14 +339,18 @@ async fn crash(faults: &[(FsOp, u32)], expect_new: bool, expect_temp: bool) -> T
     let expected: &[u8] = if expect_new { b"new" } else { b"old" };
     assert_eq!(fs.read(&target).await?.as_deref(), Some(expected));
     let listing = names(&fs, &root).await?;
-    assert_eq!(
-        listing.contains(&".f.tmp".to_owned()),
-        expect_temp,
-        "{listing:?}"
-    );
+    let temps = |listing: &[String]| {
+        listing
+            .iter()
+            .filter(|name| name.starts_with(".f.") && name.rsplit('.').next() == Some("tmp"))
+            .count()
+    };
+    assert_eq!(temps(&listing), usize::from(expect_temp), "{listing:?}");
     if expect_temp {
         write_atomic(&fs, &target, b"new", FileMode(0o600)).await?;
-        assert_eq!(names(&fs, &root).await?, ["f"]);
+        assert_eq!(fs.read(&target).await?.as_deref(), Some(&b"new"[..]));
+        let after = names(&fs, &root).await?;
+        assert_eq!(temps(&after), 1, "{after:?}");
     }
     Ok(())
 }

@@ -175,6 +175,7 @@ async fn the_cache_file_holds_no_secret_and_the_credential_files_are_unchanged()
             let text = String::from_utf8(bytes)?;
             match path.as_str() {
                 "/state/usage/usage.json" => assert_clean(&path, &text),
+                "/state/usage/usage.json.lock" => assert_eq!(text, "", "{path} holds text"),
                 "/keys/router" => assert_eq!(text, "SECRET_TOKEN_FILE\n", "{path} changed"),
                 _ => assert_eq!(text, AUTH, "{path} changed"),
             }

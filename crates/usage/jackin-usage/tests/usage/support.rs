@@ -320,6 +320,7 @@ pub(crate) async fn assert_only_state_written(
     let files = harness.all_files().await?;
     let mut expected: Vec<String> = setup.iter().map(|(path, _)| (*path).to_owned()).collect();
     expected.push("/state/usage/usage.json".to_owned());
+    expected.push("/state/usage/usage.json.lock".to_owned());
     expected.sort();
     let names: Vec<String> = files.iter().map(|(path, _)| path.clone()).collect();
     assert_eq!(names, expected, "paths in the filesystem");
