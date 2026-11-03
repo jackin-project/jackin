@@ -23,6 +23,7 @@ struct Held(Child);
 
 impl Drop for Held {
     fn drop(&mut self) {
+        drop(self.0.stdin.take());
         drop(self.0.kill());
         drop(self.0.wait());
     }
@@ -175,9 +176,9 @@ mod hostile_neighbours {
     fn bystander(link: &Path) -> Result<Held, Box<dyn Error>> {
         Ok(Held(
             Command::new("sh")
-                .args(["-c", "exec \"$0\" 60"])
+                .args(["-c", "exec \"$0\" -c 'read _'"])
                 .arg(link)
-                .stdin(Stdio::null())
+                .stdin(Stdio::piped())
                 .stdout(Stdio::null())
                 .process_group(0)
                 .spawn()?,
@@ -208,12 +209,12 @@ mod hostile_neighbours {
                 let group = group_id(&scratch).await?;
                 let raw = std::ffi::OsStr::from_bytes(b"\xffx\xfe");
                 let odd = scratch.root().join(raw);
-                std::os::unix::fs::symlink("/bin/sleep", &odd)?;
+                std::os::unix::fs::symlink("/bin/sh", &odd)?;
                 let non_utf8 = bystander(&odd)?;
                 named_like(b"(\xffx\xfe)", &non_utf8).await?;
                 let fake = format!("x) S 1 {group} ");
                 let forged = scratch.root().join(&fake);
-                std::os::unix::fs::symlink("/bin/sleep", &forged)?;
+                std::os::unix::fs::symlink("/bin/sh", &forged)?;
                 let impostor = bystander(&forged)?;
                 named_like(fake.as_bytes(), &impostor).await?;
                 wait_for_beat(scratch.root()).await?;
