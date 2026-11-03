@@ -398,7 +398,7 @@ Evidence: `evidence/P0.5-docker.md`, `blockers/P0.5-docker-credentials.md`.
 
 The jackin console is visually identical to the `jackin-preview` app in `tailrocks/terminal-components-baseline`, called "the baseline" here. Jackin does not use `termrock`.
 
-- The jackin console is built only from `tailrocks/terminal-components-baseline` crates, used as git dependencies at a pinned `rev` on the baseline branch `feature/openshell-native`. Jackin never copies baseline code. The two crates are:
+- Jackin Console and Jackin Capsule always come from `https://github.com/tailrocks/terminal-components-baseline`, branch `feature/openshell-native`: git dependencies with that URL and a pinned `rev` on that branch, never a path dependency and never a copy. The baseline is the visual prototype of jackin: it has no real agents, accounts, Docker, or OpenShell isolation. Jackin implements those with OpenShell and takes every screen, look, and flow from the baseline. The two crates are:
   - `junie-tui`: the reusable components, widgets, blocks, containers, shells, and utilities.
   - `jackin-console` (`apps/jackin`): the one jackin application. It owns every screen, every pixel, every key binding, the page router, the UI model `World`, the wording tables, and the fixed state. It talks to its data and actions only through its `Backend` interface and its external message input.
 - The same `jackin-console` application runs in two ways:
