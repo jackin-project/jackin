@@ -38,11 +38,16 @@ pub(crate) struct Origin {
     pub(crate) role: RoleFixture,
     pub(crate) commits: Vec<String>,
     pub(crate) home: HostPath,
+    pub(crate) url: String,
     _home: tempfile::TempDir,
 }
 
 impl Origin {
     pub(crate) async fn new() -> Result<Origin, Box<dyn Error>> {
+        Origin::at(URL).await
+    }
+
+    pub(crate) async fn at(url: &str) -> Result<Origin, Box<dyn Error>> {
         let role = RoleFixture::new("sentinel")?.model("model-1");
         role.commit().await?;
         let root = role.root().as_path();
@@ -56,13 +61,14 @@ impl Origin {
         let home = HostPath::parse(&std::fs::canonicalize(home_dir.path())?)?;
         tokio::fs::write(
             home.as_path().join(".gitconfig"),
-            format!("[url \"file://{}\"]\n\tinsteadOf = {URL}\n", root.display()),
+            format!("[url \"file://{}\"]\n\tinsteadOf = {url}\n", root.display()),
         )
         .await?;
         Ok(Origin {
             role,
             commits: vec![first, dev],
             home,
+            url: url.to_owned(),
             _home: home_dir,
         })
     }
@@ -70,6 +76,15 @@ impl Origin {
     pub(crate) async fn advance(&self, model: &str) -> Result<String, Box<dyn Error>> {
         self.role.clone().model(model).commit().await?;
         git(self.role.root().as_path(), &["rev-parse", "HEAD"]).await
+    }
+
+    pub(crate) fn config(&self, rev: Option<&str>) -> Result<Config, Box<dyn Error>> {
+        let rev = rev.map_or_else(String::new, |rev| format!(", rev = \"{rev}\""));
+        Ok(Config::parse(&format!(
+            "[roles.sentinel]\nsource = {{ git = \"{}\"{rev} }}\n\n[workspaces.w]\npath = \"{}\"\n",
+            self.url,
+            self.home.as_path().display()
+        ))?)
     }
 
     pub(crate) async fn load(
@@ -80,11 +95,7 @@ impl Origin {
         let runner = Arc::new(TestRunner::with_home(&self.home));
         let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
         let catalog = RoleCatalog::new(fs, runner, Arc::new(FakeClock::new()), cache.clone());
-        let rev = rev.map_or_else(String::new, |rev| format!(", rev = \"{rev}\""));
-        let config = Config::parse(&format!(
-            "[roles.sentinel]\nsource = {{ git = \"{URL}\"{rev} }}\n\n[workspaces.w]\npath = \"{}\"\n",
-            self.home.as_path().display()
-        ))?;
+        let config = self.config(rev)?;
         let workspace = config
             .workspace(&WorkspaceName::parse("w")?)
             .ok_or("no workspace")?;

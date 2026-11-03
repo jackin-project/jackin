@@ -13,9 +13,13 @@ mod image_request;
 mod role_engine;
 mod roles;
 mod roles_git;
+mod roles_hidden;
+mod roles_inputs;
 mod roles_load;
 mod roles_origin;
 mod roles_path;
+mod roles_race;
+mod roles_url;
 mod scoped_env;
 mod support;
 
