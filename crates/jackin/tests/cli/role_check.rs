@@ -514,3 +514,37 @@ async fn role_check_and_load_refuse_a_dockerfile_env_that_names_the_docker_engin
     })
     .await
 }
+
+fn tcp_rule(host: &str) -> String {
+    ENGINE_RULE.replace("HOST", host).replace(
+        "port: 8080",
+        "port: 2376\n        protocol: tcp\n        tls: skip",
+    )
+}
+
+#[tokio::test]
+async fn role_check_refuses_a_tcp_endpoint_host_that_is_an_ip_literal_as_the_gateway_does()
+-> TestResult {
+    guard(async {
+        let literal = RoleFixture::new("sentinel")?.policy_yaml(&tcp_rule("198.18.0.2"));
+        let (ran, _, _) = checked(&literal, false).await?;
+        failed(&ran, ExitClass::Failure, &[])?;
+        assert_eq!(
+            ran.stderr,
+            "error: the gateway would refuse the policy: network policy 'engine-peek': protocol tcp endpoint '198.18.0.2' must use a DNS hostname, not an IP literal; direct IP connections bypass policy DNS and are blocked\n"
+        );
+        for host in [
+            "\"3323068418\"",
+            "\"0xc6120002\"",
+            "\"198.18.2\"",
+            "example.com",
+            "198.18.0.2.nip.io",
+        ] {
+            let accepted = RoleFixture::new("sentinel")?.policy_yaml(&tcp_rule(host));
+            let (ran, _, _) = checked(&accepted, false).await?;
+            ran.ok()?;
+        }
+        Ok(())
+    })
+    .await
+}

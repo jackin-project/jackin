@@ -15,7 +15,10 @@ use jackin_openshell::{
     PolicyDocument, PolicyError, RuleKey, TlsMode,
 };
 use openshell_core::host_pattern::host_matches;
-use openshell_policy::{PolicyViolation, parse_sandbox_policy, validate_sandbox_policy};
+use openshell_policy::{
+    PolicyViolation, parse_sandbox_policy, validate_and_canonicalize_sandbox_policy,
+    validate_sandbox_policy,
+};
 
 mod common;
 
@@ -1053,4 +1056,92 @@ fn every_read_write_entry_is_checked_not_only_the_first() {
         PolicyDocument::parse_authored(&doc(&["/tmp", "/sandbox", "/./sys/kernel"])),
         Err(PolicyError::ReadWriteAlias { .. })
     ));
+}
+
+fn gateway_create_violations(text: &str) -> Vec<PolicyViolation> {
+    let proto = parse_sandbox_policy(text).unwrap();
+    match validate_and_canonicalize_sandbox_policy(proto) {
+        Err(error) => error.violations().to_vec(),
+        Ok(canonical) => validate_sandbox_policy(&canonical)
+            .err()
+            .unwrap_or_default(),
+    }
+}
+
+fn endpoint_doc(host: &str, extra: &str) -> String {
+    format!(
+        "version: 1\nfilesystem_policy:\n  read_only:\n    - /bin\n{HARD}network_policies:\n  peek:\n    name: peek\n    endpoints:\n      - host: '{host}'\n        port: 2376\n{extra}    binaries:\n      - path: /usr/bin/curl\n"
+    )
+}
+
+#[test]
+fn role_check_gives_the_verdict_of_the_gateway_create_check_for_every_tcp_endpoint_host() {
+    let tcp = "        protocol: tcp\n";
+    let rows: Vec<(&str, String, bool)> = vec![
+        ("198.18.0.2", endpoint_doc("198.18.0.2", tcp), true),
+        (
+            "198.18.0.2 tls skip",
+            endpoint_doc("198.18.0.2", &format!("{tcp}        tls: skip\n")),
+            true,
+        ),
+        (
+            "198.18.0.2 upper case protocol",
+            endpoint_doc("198.18.0.2", "        protocol: TCP\n"),
+            true,
+        ),
+        ("127.0.0.1", endpoint_doc("127.0.0.1", tcp), true),
+        ("10.0.0.1", endpoint_doc("10.0.0.1", tcp), true),
+        ("::1", endpoint_doc("::1", tcp), true),
+        (
+            "::ffff:198.18.0.2",
+            endpoint_doc("::ffff:198.18.0.2", tcp),
+            true,
+        ),
+        ("[::1]", endpoint_doc("[::1]", tcp), true),
+        ("198.18.0.2 dot", endpoint_doc("198.18.0.2.", tcp), true),
+        ("3323068418", endpoint_doc("3323068418", tcp), false),
+        ("0xc6120002", endpoint_doc("0xc6120002", tcp), false),
+        ("198.18.2", endpoint_doc("198.18.2", tcp), false),
+        ("example.com", endpoint_doc("example.com", tcp), false),
+        (
+            "198.18.0.2.nip.io",
+            endpoint_doc("198.18.0.2.nip.io", tcp),
+            false,
+        ),
+        ("wildcard", endpoint_doc("*.example.com", tcp), false),
+        (
+            "198.18.0.2 without a protocol",
+            endpoint_doc("198.18.0.2", ""),
+            false,
+        ),
+        (
+            "198.18.0.2 on a rest endpoint",
+            endpoint_doc(
+                "198.18.0.2",
+                "        protocol: rest\n        access: read-only\n",
+            ),
+            false,
+        ),
+    ];
+    for (label, text, refused) in &rows {
+        let violations = gateway_create_violations(text);
+        assert_eq!(!violations.is_empty(), *refused, "{label}: the gateway");
+        let jackin = PolicyDocument::parse_authored(text);
+        assert_eq!(jackin.is_err(), *refused, "{label}: role check");
+    }
+    let literal = PolicyDocument::parse_authored(&endpoint_doc("198.18.0.2", tcp));
+    let Err(PolicyError::Gateway { violations }) = literal else {
+        panic!("{literal:?}");
+    };
+    assert!(
+        violations.iter().any(|found| matches!(
+            found,
+            PolicyViolation::TcpEndpointIpLiteral { host, .. } if host == "198.18.0.2"
+        )),
+        "{violations:?}"
+    );
+    assert!(
+        PolicyDocument::parse(&endpoint_doc("198.18.0.2", tcp)).is_ok(),
+        "the live parse of a stored policy stays lenient"
+    );
 }
