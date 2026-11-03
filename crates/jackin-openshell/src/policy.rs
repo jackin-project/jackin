@@ -181,7 +181,7 @@ impl PolicyDocument {
                             .any(|endpoint| endpoint.host.overlaps(&alias))
                     })
                     .collect();
-                (!aliases.is_empty()).then(|| EngineHostViolation {
+                (!aliases.is_empty()).then_some(EngineHostViolation {
                     rule: scanned.rule.key,
                     aliases,
                 })
