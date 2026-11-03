@@ -477,6 +477,7 @@ async fn a_sleep_blocked_by_a_guard_does_not_wake_itself_and_wakes_when_the_guar
     assert_eq!(poll_n(&mut sleeping, &waker, 1), None);
     let settled = wakes.0.load(Ordering::SeqCst);
     assert_eq!(poll_n(&mut sleeping, &waker, 100), None);
+    tokio::task::yield_now().await;
     assert_eq!(
         wakes.0.load(Ordering::SeqCst),
         settled,
