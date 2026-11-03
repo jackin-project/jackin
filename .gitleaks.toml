@@ -32,3 +32,23 @@ paths = ['''^crates/jackin-core/src/agent\.rs$''']
 description = "e2e world fixture tokens: base64 of readable text as the signature, no key behind them"
 targetRules = ["jwt"]
 paths = ['''^crates/xtask/tests/e2e/scenario/world\.rs$''']
+
+[[allowlists]]
+description = "credential-shaped URLs in session and openshell tests: marker password on a reserved or one-letter test host"
+condition = "AND"
+regexTarget = "match"
+regexes = ['''://[A-Za-z0-9]+:(?:SECRET[A-Za-z0-9-]*|IGNORED-[A-Z]+|hunt[a-z0-9]{3})@(?:example\.invalid|proxy\.example|h\.example|h)(?:[:/\\"']|$)''']
+paths = ['''^crates/jackin-(session|openshell)/tests/''']
+
+[[allowlists]]
+description = "evidence docs: sandbox gateway-token-id annotation (a record id) and the x password field of an /etc/passwd listing"
+condition = "AND"
+regexTarget = "line"
+regexes = ['''internal\.openshell\.ai/gateway-token-id: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s*$''', '''^/etc/passwd:\d+:[a-z_][a-z0-9_-]*:x:\d+:\d+:''']
+paths = ['''^rewrite/evidence/.*\.md$''']
+
+[[allowlists]]
+description = "config schema test: fake role-URL password that must not reach an error message"
+condition = "AND"
+regexes = ['''^TEST-ONLY-[A-Za-z0-9-]+$''', '''^ghp_[A-Za-z0-9]{9}$''']
+paths = ['''^crates/jackin-core/tests/config_schema\.rs$''']
