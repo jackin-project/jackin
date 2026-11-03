@@ -67,6 +67,7 @@ pub const TERMINAL_CHECKS: [&str; 6] = [
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const POLL_ATTEMPTS: usize = 240;
 const PROGRAM_TIMEOUT: Duration = Duration::from_secs(60);
+pub const SHELL_END_TIMEOUT: Duration = Duration::from_secs(60);
 const MISSING_IMAGE: &str = "jackin.invalid/contract-missing:0000000000000000";
 const BANNER: &str = "contract-banner";
 const CTRL_C: u8 = 0x03;
@@ -159,6 +160,7 @@ pub struct ContractFixture {
     pub image: ImageTag,
     pub project: ProjectRoot,
     pub name_prefix: SandboxSlug,
+    pub shell_end_timeout: Duration,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1450,7 +1452,7 @@ async fn shell_exit_code(ctx: &Ctx<'_>) -> Outcome<()> {
         };
         let mut session = ctx.gateway.open_terminal(&request).await.map_err(text)?;
         session.input(b"exit 3\n".to_vec()).await.map_err(text)?;
-        let exit = tokio::time::timeout(PROGRAM_TIMEOUT, async {
+        let exit = tokio::time::timeout(ctx.fixture.shell_end_timeout, async {
             let mut exit = None;
             while let Some(event) = session.next_event().await {
                 if let TerminalEvent::Exited(code) = event {

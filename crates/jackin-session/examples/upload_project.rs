@@ -15,7 +15,7 @@ use jackin_core::{
     ProcessStatus, ProcessStdin, Program, ProjectRoot, RoleName, SandboxName, SandboxPath,
     SandboxSlug, SecretBytes, StdFileSystem, WorkspaceName,
 };
-use jackin_openshell::contract::{ContractFixture, ContractGroup, run};
+use jackin_openshell::contract::{ContractFixture, ContractGroup, SHELL_END_TIMEOUT, run};
 use jackin_openshell::{
     ClosedPolicy, Gateway, GrpcGateway, GrpcGatewayConfig, MainProcess, ProgramRun, ProgramStdin,
     SandboxCreate, SandboxFile, SandboxQuery, resolve_gateway,
@@ -592,6 +592,7 @@ impl Live {
             image: ImageTag::parse(&self.options.image)?,
             project: self.project.clone(),
             name_prefix: SandboxSlug::parse("ctr")?,
+            shell_end_timeout: SHELL_END_TIMEOUT,
         };
         for (label, group) in [
             ("Core", ContractGroup::Core),
