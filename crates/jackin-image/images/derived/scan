@@ -166,7 +166,11 @@ check_accounts() {
     fi
     for account in passwd group; do
         if good_data "$root/etc/$account"; then
-            "check_$account"
+            if tr -d '\0' <"$root/etc/$account" | cmp -s - "$root/etc/$account"; then
+                "check_$account"
+            else
+                report "account file holds a NUL byte or cannot be read: /etc/$account"
+            fi
         else
             report "account file is not a real root-owned file: /etc/$account ($(reason "$root/etc/$account" f data))"
         fi

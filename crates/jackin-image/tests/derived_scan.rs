@@ -762,6 +762,64 @@ fn scan_requires_the_sandbox_account_at_1000_and_no_other_uid_0_account() -> Tes
 }
 
 #[test]
+fn scan_reads_an_unterminated_final_line_of_each_account_file() -> TestResult {
+    let rows: [(&str, &str, &str, Vec<&str>); 6] = [
+        (
+            "/etc/passwd",
+            PASSWD,
+            "toor:x:0:0::/:/bin/sh",
+            vec!["uid 0 account other than root in /etc/passwd: toor"],
+        ),
+        (
+            "/etc/passwd",
+            &PASSWD.replace(SANDBOX_PASSWD, ""),
+            "sandbox:x:1001:1001::/sandbox:/bin/bash",
+            vec![WRONG_PASSWD],
+        ),
+        (
+            "/etc/passwd",
+            PASSWD,
+            "toor:x:00:0::/:/bin/sh",
+            vec!["malformed line 5 in /etc/passwd"],
+        ),
+        ("/etc/group", GROUP, "sandbox:x:1000:", vec![MISSING_GROUP]),
+        (
+            "/etc/group",
+            GROUP,
+            "sandbox:x:0:",
+            vec![MISSING_GROUP, WRONG_GROUP],
+        ),
+        (
+            "/etc/group",
+            &GROUP.replace(SANDBOX_GROUP, ""),
+            "sandbox:x:1001:",
+            vec![WRONG_GROUP],
+        ),
+    ];
+    for (path, head, last, wanted) in rows {
+        let fx = Fixture::new()?;
+        fx.file(path, format!("{head}{last}").as_bytes(), 0o644)?;
+        expect_lines(&fx, &format!("{path} ends with {last}"), &wanted)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_an_account_file_that_holds_a_nul_byte() -> TestResult {
+    for (path, text) in [("/etc/passwd", PASSWD), ("/etc/group", GROUP)] {
+        let name = path.trim_start_matches("/etc/");
+        let mut bytes = text.as_bytes().to_vec();
+        let at = text.find("sandbox").map_or(0, |index| index + 3);
+        bytes.insert(at, 0);
+        let fx = Fixture::new()?;
+        fx.file(path, &bytes, 0o644)?;
+        let wanted = format!("account file holds a NUL byte or cannot be read: /etc/{name}");
+        expect_lines(&fx, &format!("{path} with a NUL"), &[&wanted])?;
+    }
+    Ok(())
+}
+
+#[test]
 fn scan_refuses_account_files_that_are_not_real_root_owned_files() -> TestResult {
     let reason_dir = |reason: &str| {
         format!("account directory is not a real root-owned directory: /etc ({reason})")
@@ -833,10 +891,7 @@ fn scan_never_passes_when_one_of_its_tools_is_missing() -> TestResult {
         let fx = Fixture::new()?;
         fx.drop_tool(tool)?;
         let out = fx.scan()?;
-        assert_eq!(out.ok, out.stderr.is_empty(), "{tool}: {}", out.stderr);
-        if tool != "tr" {
-            assert!(!out.ok, "{tool} missing: the scan passed");
-        }
+        assert!(!out.ok, "{tool} missing: the scan passed");
         let fx = Fixture::new()?;
         fx.file(
             "/etc/passwd",

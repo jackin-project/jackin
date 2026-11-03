@@ -1030,3 +1030,27 @@ fn the_live_parse_still_accepts_the_same_paths() {
         }
     }
 }
+
+#[test]
+fn every_read_write_entry_is_checked_not_only_the_first() {
+    let doc = |paths: &[&str]| {
+        let list: String = paths
+            .iter()
+            .map(|path| format!("    - '{path}'\n"))
+            .collect();
+        format!("version: 1\nfilesystem_policy:\n  read_write:\n{list}{HARD}")
+    };
+    PolicyDocument::parse_authored(&doc(&["/tmp", "/sandbox"])).unwrap();
+    assert!(matches!(
+        PolicyDocument::parse_authored(&doc(&["/tmp", "/."])),
+        Err(PolicyError::ReadWriteRoot { ref path }) if path == "/."
+    ));
+    assert!(matches!(
+        PolicyDocument::parse_authored(&doc(&["/tmp", "/proc"])),
+        Err(PolicyError::ReadWriteAlias { ref path }) if path == "/proc"
+    ));
+    assert!(matches!(
+        PolicyDocument::parse_authored(&doc(&["/tmp", "/sandbox", "/./sys/kernel"])),
+        Err(PolicyError::ReadWriteAlias { .. })
+    ));
+}

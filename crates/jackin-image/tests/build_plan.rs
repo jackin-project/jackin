@@ -1219,5 +1219,34 @@ fn the_scan_compares_the_five_protected_files_with_copies_the_role_cannot_write(
     }
     compared.sort();
     assert_eq!(compared, protected, "files compared with a trusted copy");
+    let layout = stage_named(&all, "layout")?;
+    assert_eq!(layout.from, "construct", "layout stage base");
+    let install = layout
+        .lines
+        .iter()
+        .find_map(|line| line.strip_prefix("RUN install -d -m 0755 -o root -g root "))
+        .ok_or("the layout stage does not create its directories 0755 root")?;
+    let made: Vec<&str> = install.split_whitespace().collect();
+    for dir in [
+        "usr",
+        "usr/local",
+        "usr/local/bin",
+        "usr/local/lib",
+        "usr/local/lib/jackin",
+        sandbox_layout::HOOKS_DIR.as_str().trim_start_matches('/'),
+    ] {
+        assert!(
+            made.contains(&format!("/layout/{dir}").as_str()),
+            "{dir}: {made:?}"
+        );
+    }
+    let assembled = stage_named(&all, "assembled")?;
+    assert!(
+        assembled
+            .lines
+            .contains(&"COPY --from=layout --chown=root:root --chmod=0755 /layout/ /".to_owned()),
+        "the layout copy: {:?}",
+        assembled.lines
+    );
     Ok(())
 }
