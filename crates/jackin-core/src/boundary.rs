@@ -399,4 +399,8 @@ pub enum ProcessError {
         stream: OutputStream,
         message: String,
     },
+    #[error("processes of the group of {program} were still alive after {}", plain_duration(.after))]
+    GroupAlive { program: Program, after: Duration },
+    #[error("cannot stop the processes of the group of {program}: {}", plain(.message))]
+    GroupUnreachable { program: Program, message: String },
 }

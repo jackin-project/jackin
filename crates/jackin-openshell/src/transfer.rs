@@ -76,7 +76,9 @@ fn process_error(error: ProcessError, op: GatewayOp) -> GatewayError {
         ProcessError::Cancelled { .. } => GatewayError::Cancelled { op },
         failed @ (ProcessError::Spawn { .. }
         | ProcessError::OutputTooLarge { .. }
-        | ProcessError::Read { .. }) => GatewayError::Process(failed),
+        | ProcessError::Read { .. }
+        | ProcessError::GroupAlive { .. }
+        | ProcessError::GroupUnreachable { .. }) => GatewayError::Process(failed),
     }
 }
 

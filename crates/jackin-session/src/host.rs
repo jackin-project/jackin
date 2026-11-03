@@ -12,9 +12,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use jackin_core::{
     Clock, EnvValue, FileSystem, LineSink, OutputLine, OutputStream, ProcessError, ProcessOutput,
-    ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, SecretBytes, SecretOutput, Timestamp,
+    ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program, SecretBytes, SecretOutput,
+    Timestamp,
 };
-use rustix::process::{Pid, Signal, kill_process_group};
+use rustix::process::Pid;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::time::{sleep, timeout};
@@ -22,6 +23,10 @@ use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
 use crate::service::HostPorts;
+
+mod group;
+
+use group::{Fault, Sweep, sweep};
 
 const TAIL_LIMIT: usize = 65536;
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
@@ -150,7 +155,9 @@ struct GroupGuard {
 impl GroupGuard {
     fn fire(&mut self) -> Option<Pid> {
         let group = self.group.take();
-        kill_group(group);
+        if let Some(group) = group {
+            drop(sweep(group));
+        }
         group
     }
 }
@@ -161,23 +168,25 @@ impl Drop for GroupGuard {
     }
 }
 
-async fn gone(group: Option<Pid>) {
+async fn gone(program: Program, group: Option<Pid>) -> Result<(), ProcessError> {
     let Some(group) = group else {
-        return;
+        return Ok(());
     };
     let emptied = async {
-        while kill_process_group(group, Signal::KILL).is_ok() {
-            sleep(GROUP_POLL).await;
+        loop {
+            match sweep(group)? {
+                Sweep::Empty => return Ok(()),
+                Sweep::Signalled => sleep(GROUP_POLL).await,
+            }
         }
     };
-    drop(timeout(GROUP_GRACE, emptied).await);
-}
-
-fn kill_group(group: Option<Pid>) {
-    if let Some(group) = group {
-        match kill_process_group(group, Signal::KILL) {
-            Ok(()) | Err(_) => {}
-        }
+    match timeout(GROUP_GRACE, emptied).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(Fault(message))) => Err(ProcessError::GroupUnreachable { program, message }),
+        Err(_) => Err(ProcessError::GroupAlive {
+            program,
+            after: GROUP_GRACE,
+        }),
     }
 }
 
@@ -418,7 +427,7 @@ async fn execute(
     };
     let timer = sleep(spec.timeout);
     let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
-        gone(guard.fire()).await;
+        gone(program, guard.fire()).await?;
         return Err(spawn_error("the output pipes are missing".to_owned()));
     };
     let pipes = Pipes {
@@ -450,13 +459,13 @@ async fn execute(
     };
     match outcome {
         Ok(status) => {
-            gone(guard.fire()).await;
+            gone(program, guard.fire()).await?;
             Ok((status_of(status), out, err))
         }
         Err(error) => {
             let group = guard.fire();
             drop(child.kill().await);
-            gone(group).await;
+            gone(program, group).await?;
             Err(error)
         }
     }
