@@ -61,6 +61,9 @@ fn classify(error: &DockerfileError) -> Verdict {
         DockerfileError::ExpandingEnvName { line, name } => {
             Verdict::ExpandingEnvName(*line, name.clone())
         }
+        DockerfileError::ForeignFrontend { line, frontend } => {
+            Verdict::ForeignFrontend(*line, frontend.clone())
+        }
         DockerfileError::NotUtf8 => Verdict::NotUtf8,
     }
 }
