@@ -398,12 +398,14 @@ async fn failed_tree_and_file_uploads_name_their_own_step_and_never_ask_for_a_di
             ProcessError::Timeout {
                 program: Program::Openshell,
                 after,
+                group: None,
             },
             0_u8,
         ),
         (
             ProcessError::Cancelled {
                 program: Program::Openshell,
+                group: None,
             },
             1,
         ),
@@ -442,6 +444,7 @@ async fn failed_tree_and_file_uploads_name_their_own_step_and_never_ask_for_a_di
     let runner = ScriptedRunner::new(|_| {
         Err(ProcessError::Cancelled {
             program: Program::Openshell,
+            group: None,
         })
     });
     let gateway = gateway_with(&env, runner).await;
@@ -812,9 +815,11 @@ async fn a_failed_download_never_touches_the_destination_leaves_no_temp_and_the_
             CliReply::Timeout => Err(ProcessError::Timeout {
                 program: Program::Openshell,
                 after: Duration::from_secs(5),
+                group: None,
             }),
             CliReply::Cancelled => Err(ProcessError::Cancelled {
                 program: Program::Openshell,
+                group: None,
             }),
         }
     });

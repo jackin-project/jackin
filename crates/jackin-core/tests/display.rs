@@ -117,12 +117,17 @@ fn file_and_process_errors_name_paths_programs_and_streams_plainly() -> TestResu
             ProcessError::Timeout {
                 program: git,
                 after: Duration::from_secs(5),
+                group: None,
             }
             .to_string(),
             "git timed out after 5s",
         ),
         (
-            ProcessError::Cancelled { program: git }.to_string(),
+            ProcessError::Cancelled {
+                program: git,
+                group: None,
+            }
+            .to_string(),
             "git was cancelled",
         ),
         (

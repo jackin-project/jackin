@@ -431,6 +431,7 @@ impl ScriptedProcessRunner {
         if cancel.is_cancelled() {
             return Err(ProcessError::Cancelled {
                 program: spec.program,
+                group: None,
             });
         }
         let (call, replier) = self.choose(spec)?;
@@ -471,14 +472,17 @@ impl ScriptedProcessRunner {
                 cancel.cancelled().await;
                 Err(ProcessError::Cancelled {
                     program: spec.program,
+                    group: None,
                 })
             }
             ReplyBody::Timeout => Err(ProcessError::Timeout {
                 program: spec.program,
                 after: spec.timeout,
+                group: None,
             }),
             ReplyBody::Cancelled => Err(ProcessError::Cancelled {
                 program: spec.program,
+                group: None,
             }),
             ReplyBody::Spawn { message } => Err(ProcessError::Spawn {
                 program: spec.program,
@@ -649,6 +653,7 @@ impl TestRunner {
         if cancel.is_cancelled() {
             return Err(ProcessError::Cancelled {
                 program: Program::Git,
+                group: None,
             });
         }
         let mut command = HostProgram::Git.command();
@@ -700,9 +705,11 @@ impl TestRunner {
             Err(Failure::Timeout) => Err(ProcessError::Timeout {
                 program: Program::Git,
                 after: spec.timeout,
+                group: None,
             }),
             Err(Failure::Cancelled) => Err(ProcessError::Cancelled {
                 program: Program::Git,
+                group: None,
             }),
         }
     }

@@ -77,8 +77,7 @@ fn process_error(error: ProcessError, op: GatewayOp) -> GatewayError {
         failed @ (ProcessError::Spawn { .. }
         | ProcessError::OutputTooLarge { .. }
         | ProcessError::Read { .. }
-        | ProcessError::GroupAlive { .. }
-        | ProcessError::GroupUnreachable { .. }) => GatewayError::Process(failed),
+        | ProcessError::Group { .. }) => GatewayError::Process(failed),
     }
 }
 

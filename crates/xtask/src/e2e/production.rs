@@ -107,9 +107,11 @@ impl ProcessRunner for ToolRunner {
             Err(HostError::Timeout { after, .. }) => Err(ProcessError::Timeout {
                 program: spec.program,
                 after,
+                group: None,
             }),
             Err(HostError::Cancelled { .. }) => Err(ProcessError::Cancelled {
                 program: spec.program,
+                group: None,
             }),
             Err(HostError::OutputTooLarge { limit, .. }) => Err(ProcessError::OutputTooLarge {
                 program: spec.program,

@@ -40,7 +40,11 @@ async fn a_timeout_kills_the_child_and_every_descendant_and_reports_the_configur
         let (result, seen) = tokio::join!(run, collect);
         let elapsed = started.elapsed();
         match result {
-            Err(ProcessError::Timeout { program, after }) => {
+            Err(ProcessError::Timeout {
+                program,
+                after,
+                group: None,
+            }) => {
                 assert_eq!(program, Program::Git);
                 assert_eq!(after, Duration::from_secs(3), "the configured limit");
             }
@@ -93,7 +97,10 @@ async fn cancel_kills_the_child_and_every_descendant_and_reports_cancelled() -> 
         let (result, driven) = tokio::join!(run, driver);
         driven?;
         match result {
-            Err(ProcessError::Cancelled { program }) => assert_eq!(program, Program::Git),
+            Err(ProcessError::Cancelled {
+                program,
+                group: None,
+            }) => assert_eq!(program, Program::Git),
             other => return Err(format!("expected Cancelled, got {other:?}").into()),
         }
         assert_no_leftover(scratch.root()).await?;
@@ -104,7 +111,10 @@ async fn cancel_kills_the_child_and_every_descendant_and_reports_cancelled() -> 
         let cancelled = CancellationToken::new();
         cancelled.cancel();
         match TokioProcessRunner.run(&spec, None, &cancelled).await {
-            Err(ProcessError::Cancelled { program }) => assert_eq!(program, Program::Git),
+            Err(ProcessError::Cancelled {
+                program,
+                group: None,
+            }) => assert_eq!(program, Program::Git),
             other => return Err(format!("expected Cancelled, got {other:?}").into()),
         }
         match TokioProcessRunner

@@ -1,34 +1,62 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_core::GroupFault;
 use rustix::io::Errno;
 use rustix::process::{Pid, Signal, kill_process_group};
+
+#[cfg(target_os = "linux")]
+mod stat;
 
 pub(super) enum Sweep {
     Empty,
     Signalled,
 }
 
-pub(super) struct Fault(pub(super) String);
+pub(super) fn strike(group: Pid) {
+    kill_process_group(group, Signal::KILL).unwrap_or_default();
+}
 
-pub(super) fn sweep(group: Pid) -> Result<Sweep, Fault> {
+pub(super) fn sweep(group: Pid) -> Result<Sweep, GroupFault> {
     match kill_process_group(group, Signal::KILL) {
-        Ok(()) => Ok(Sweep::Signalled),
+        Ok(()) => survivors(group),
         Err(Errno::SRCH) => Ok(Sweep::Empty),
         Err(Errno::PERM) => denied(group),
-        Err(errno) => Err(Fault(format!("signalling it failed: {errno}"))),
+        Err(errno) => Err(cannot_stop(format!("signalling it failed: {errno}"))),
     }
 }
 
+fn cannot_stop(message: String) -> GroupFault {
+    GroupFault::Unreachable { message }
+}
+
 #[cfg(not(target_os = "linux"))]
-fn denied(_group: Pid) -> Result<Sweep, Fault> {
-    Ok(Sweep::Empty)
+fn survivors(_group: Pid) -> Result<Sweep, GroupFault> {
+    Ok(Sweep::Signalled)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn denied(_group: Pid) -> Result<Sweep, GroupFault> {
+    Ok(Sweep::Signalled)
 }
 
 #[cfg(target_os = "linux")]
-fn denied(group: Pid) -> Result<Sweep, Fault> {
-    let members =
-        members(group).map_err(|error| Fault(format!("listing its members failed: {error}")))?;
+fn survivors(group: Pid) -> Result<Sweep, GroupFault> {
+    if live_members(group)?.is_empty() {
+        Ok(Sweep::Empty)
+    } else {
+        Ok(Sweep::Signalled)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn denied(group: Pid) -> Result<Sweep, GroupFault> {
+    by_member(group)
+}
+
+#[cfg(target_os = "linux")]
+pub(super) fn by_member(group: Pid) -> Result<Sweep, GroupFault> {
+    let members = live_members(group)?;
     if members.is_empty() {
         return Ok(Sweep::Empty);
     }
@@ -36,7 +64,7 @@ fn denied(group: Pid) -> Result<Sweep, Fault> {
         match rustix::process::kill_process(member, Signal::KILL) {
             Ok(()) | Err(Errno::SRCH) => {}
             Err(errno) => {
-                return Err(Fault(format!(
+                return Err(cannot_stop(format!(
                     "signalling process {} failed: {errno}",
                     member.as_raw_pid()
                 )));
@@ -44,6 +72,11 @@ fn denied(group: Pid) -> Result<Sweep, Fault> {
         }
     }
     Ok(Sweep::Signalled)
+}
+
+#[cfg(target_os = "linux")]
+fn live_members(group: Pid) -> Result<Vec<Pid>, GroupFault> {
+    members(group).map_err(|error| cannot_stop(format!("listing its members failed: {error}")))
 }
 
 #[cfg(target_os = "linux")]
@@ -59,12 +92,12 @@ fn members(group: Pid) -> std::io::Result<Vec<Pid>> {
         else {
             continue;
         };
-        let stat = match std::fs::read_to_string(entry.path().join("stat")) {
+        let stat = match std::fs::read(entry.path().join("stat")) {
             Ok(stat) => stat,
             Err(error) if vanished(&error) => continue,
             Err(error) => return Err(error),
         };
-        if lives_in(&stat, group) {
+        if stat::is_live_member(&stat, group) {
             found.push(pid);
         }
     }
@@ -75,15 +108,4 @@ fn members(group: Pid) -> std::io::Result<Vec<Pid>> {
 fn vanished(error: &std::io::Error) -> bool {
     error.kind() == std::io::ErrorKind::NotFound
         || error.raw_os_error() == Some(Errno::SRCH.raw_os_error())
-}
-
-#[cfg(target_os = "linux")]
-fn lives_in(stat: &str, group: Pid) -> bool {
-    let Some((_, after_name)) = stat.rsplit_once(')') else {
-        return false;
-    };
-    let mut fields = after_name.split_whitespace();
-    let state = fields.next();
-    let pgrp = fields.nth(1).and_then(|field| field.parse::<i32>().ok());
-    !matches!(state, Some("Z" | "X")) && pgrp == Some(group.as_raw_pid())
 }

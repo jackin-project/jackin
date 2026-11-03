@@ -11,9 +11,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    Clock, EnvValue, FileSystem, LineSink, OutputLine, OutputStream, ProcessError, ProcessOutput,
-    ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program, SecretBytes, SecretOutput,
-    Timestamp,
+    Clock, EnvValue, FileSystem, GroupFault, LineSink, OutputLine, OutputStream, ProcessError,
+    ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program, SecretBytes,
+    SecretOutput, Timestamp,
 };
 use rustix::process::Pid;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -26,7 +26,7 @@ use crate::service::HostPorts;
 
 mod group;
 
-use group::{Fault, Sweep, sweep};
+use group::{Sweep, strike, sweep};
 
 const TAIL_LIMIT: usize = 65536;
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
@@ -156,7 +156,7 @@ impl GroupGuard {
     fn fire(&mut self) -> Option<Pid> {
         let group = self.group.take();
         if let Some(group) = group {
-            drop(sweep(group));
+            strike(group);
         }
         group
     }
@@ -164,29 +164,61 @@ impl GroupGuard {
 
 impl Drop for GroupGuard {
     fn drop(&mut self) {
-        self.fire();
+        if let Some(group) = self.group.take() {
+            drop(sweep(group));
+        }
     }
 }
 
-async fn gone(program: Program, group: Option<Pid>) -> Result<(), ProcessError> {
+async fn swept(group: Pid) -> Result<Sweep, GroupFault> {
+    tokio::task::spawn_blocking(move || sweep(group))
+        .await
+        .unwrap_or_else(|error| {
+            Err(GroupFault::Unreachable {
+                message: format!("the sweep did not finish: {error}"),
+            })
+        })
+}
+
+async fn gone(group: Option<Pid>) -> Result<(), GroupFault> {
     let Some(group) = group else {
         return Ok(());
     };
     let emptied = async {
         loop {
-            match sweep(group)? {
+            match swept(group).await? {
                 Sweep::Empty => return Ok(()),
                 Sweep::Signalled => sleep(GROUP_POLL).await,
             }
         }
     };
-    match timeout(GROUP_GRACE, emptied).await {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(Fault(message))) => Err(ProcessError::GroupUnreachable { program, message }),
-        Err(_) => Err(ProcessError::GroupAlive {
+    timeout(GROUP_GRACE, emptied)
+        .await
+        .unwrap_or(Err(GroupFault::Alive { after: GROUP_GRACE }))
+}
+
+fn left_running(program: Program) -> impl FnOnce(GroupFault) -> ProcessError {
+    move |fault| ProcessError::Group { program, fault }
+}
+
+fn with_group(error: ProcessError, stopped: Result<(), GroupFault>) -> ProcessError {
+    let Err(fault) = stopped else {
+        return error;
+    };
+    match error {
+        ProcessError::Timeout { program, after, .. } => ProcessError::Timeout {
             program,
-            after: GROUP_GRACE,
-        }),
+            after,
+            group: Some(fault),
+        },
+        ProcessError::Cancelled { program, .. } => ProcessError::Cancelled {
+            program,
+            group: Some(fault),
+        },
+        ProcessError::Spawn { program, .. }
+        | ProcessError::OutputTooLarge { program, .. }
+        | ProcessError::Read { program, .. }
+        | ProcessError::Group { program, .. } => ProcessError::Group { program, fault },
     }
 }
 
@@ -413,7 +445,10 @@ async fn execute(
     let program = spec.program;
     let spawn_error = |message: String| ProcessError::Spawn { program, message };
     if cancel.is_cancelled() {
-        return Err(ProcessError::Cancelled { program });
+        return Err(ProcessError::Cancelled {
+            program,
+            group: None,
+        });
     }
     let input = open_input(spec).await?;
     let mut child = command_for(spec)
@@ -427,8 +462,11 @@ async fn execute(
     };
     let timer = sleep(spec.timeout);
     let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
-        gone(program, guard.fire()).await?;
-        return Err(spawn_error("the output pipes are missing".to_owned()));
+        let stopped = gone(guard.fire()).await;
+        return Err(with_group(
+            spawn_error("the output pipes are missing".to_owned()),
+            stopped,
+        ));
     };
     let pipes = Pipes {
         stdin: child.stdin.take(),
@@ -441,8 +479,8 @@ async fn execute(
     };
     let outcome = tokio::select! {
         biased;
-        () = cancel.cancelled() => Err(ProcessError::Cancelled { program }),
-        () = timer => Err(ProcessError::Timeout { program, after: spec.timeout }),
+        () = cancel.cancelled() => Err(ProcessError::Cancelled { program, group: None }),
+        () = timer => Err(ProcessError::Timeout { program, after: spec.timeout, group: None }),
         result = drive(&mut child, pipes) => result.map_err(|fault| match fault {
             DriveFault::Wait(error) => spawn_error(error.to_string()),
             DriveFault::Stream(stream, StreamFault::Read(error)) => ProcessError::Read {
@@ -459,14 +497,13 @@ async fn execute(
     };
     match outcome {
         Ok(status) => {
-            gone(program, guard.fire()).await?;
+            gone(guard.fire()).await.map_err(left_running(program))?;
             Ok((status_of(status), out, err))
         }
         Err(error) => {
             let group = guard.fire();
             drop(child.kill().await);
-            gone(program, group).await?;
-            Err(error)
+            Err(with_group(error, gone(group).await))
         }
     }
 }

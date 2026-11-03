@@ -502,12 +502,13 @@ async fn scripted_runner_answers_in_order_records_every_spec_and_returns_each_re
     ));
     assert!(matches!(
         stdout(&runner, &call(Program::Openshell, &["timeout"])).await,
-        Err(ProcessError::Timeout { program: Program::Openshell, after }) if after == Duration::from_secs(5)
+        Err(ProcessError::Timeout { program: Program::Openshell, after, group: None }) if after == Duration::from_secs(5)
     ));
     assert!(matches!(
         stdout(&runner, &call(Program::Openshell, &["cancel"])).await,
         Err(ProcessError::Cancelled {
-            program: Program::Openshell
+            program: Program::Openshell,
+            group: None
         })
     ));
     assert!(matches!(
@@ -837,7 +838,8 @@ async fn scripted_runner_streams_lines_applies_effects_and_holds_until_cancel() 
     assert!(matches!(
         pending.await,
         Err(ProcessError::Cancelled {
-            program: Program::Ssh
+            program: Program::Ssh,
+            group: None
         })
     ));
     Ok(())
@@ -941,7 +943,8 @@ async fn a_pre_cancelled_git_call_is_cancelled_before_git_is_started() -> TestRe
         matches!(
             plain,
             Err(ProcessError::Cancelled {
-                program: Program::Git
+                program: Program::Git,
+                group: None
             })
         ),
         "{plain:?}"
@@ -951,7 +954,8 @@ async fn a_pre_cancelled_git_call_is_cancelled_before_git_is_started() -> TestRe
         matches!(
             secret,
             Err(ProcessError::Cancelled {
-                program: Program::Git
+                program: Program::Git,
+                group: None
             })
         ),
         "{secret:?}"
@@ -989,7 +993,8 @@ async fn a_pre_cancelled_call_is_cancelled_before_any_reply_is_chosen_or_any_eff
         matches!(
             run,
             Err(ProcessError::Cancelled {
-                program: Program::Docker(_)
+                program: Program::Docker(_),
+                group: None
             })
         ),
         "{run:?}"
@@ -999,7 +1004,8 @@ async fn a_pre_cancelled_call_is_cancelled_before_any_reply_is_chosen_or_any_eff
         matches!(
             secret,
             Err(ProcessError::Cancelled {
-                program: Program::Docker(_)
+                program: Program::Docker(_),
+                group: None
             })
         ),
         "{secret:?}"
