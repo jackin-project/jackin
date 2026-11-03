@@ -42,6 +42,9 @@ impl FileSystem for RecordsCaps {
     async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
         self.inner.stat_following(path).await
     }
+    async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.inner.canonicalize(path).await
+    }
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(path).await
     }

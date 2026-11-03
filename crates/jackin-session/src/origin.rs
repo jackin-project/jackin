@@ -3,12 +3,14 @@
 
 use std::fmt;
 
-use jackin_core::{BranchName, ProcessError, ProcessStatus, ProjectRoot, TerminalText};
+use jackin_core::{
+    BranchName, FsError, PathError, ProcessError, ProcessStatus, ProjectRoot, TerminalText, plain,
+};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::project::git::{Pace, exit_code, words};
-use crate::project::host_git;
+use crate::project::{HostProject, HostProjectError, UnsupportedProject};
 use crate::service::Session;
 
 const GITHUB: &str = "github.com";
@@ -30,11 +32,35 @@ pub struct GithubOrigin {
 pub enum OriginError {
     #[error(transparent)]
     Process(#[from] ProcessError),
+    #[error(transparent)]
+    Fs(#[from] FsError),
+    #[error(transparent)]
+    Path(#[from] PathError),
+    #[error(transparent)]
+    Unsupported(#[from] UnsupportedProject),
     #[error("git exited with code {exit_code}: {output}")]
     Git {
         exit_code: i32,
         output: TerminalText,
     },
+    #[error("git printed unusable output: {}", plain(.message))]
+    Output { message: String },
+}
+
+impl From<HostProjectError> for OriginError {
+    fn from(error: HostProjectError) -> OriginError {
+        match error {
+            HostProjectError::Unsupported(error) => OriginError::Unsupported(error),
+            HostProjectError::Fs(error) => OriginError::Fs(error),
+            HostProjectError::Process(error) => OriginError::Process(error),
+            HostProjectError::Path(error) => OriginError::Path(error),
+            HostProjectError::Git { status, output } => OriginError::Git {
+                exit_code: exit_code(status),
+                output,
+            },
+            HostProjectError::Output { message } => OriginError::Output { message },
+        }
+    }
 }
 
 fn segment(text: &str, allow_dot: bool) -> bool {
@@ -83,7 +109,7 @@ impl Session {
         project: &ProjectRoot,
         cancel: &CancellationToken,
     ) -> Result<Option<GithubOrigin>, OriginError> {
-        let git = host_git(&self.deps, project.path(), cancel);
+        let git = HostProject::open(&self.deps, project, cancel).await?.git();
         let configured = git
             .capture(
                 Pace::Quick,

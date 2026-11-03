@@ -11,6 +11,7 @@ use jackin_core::{CommitId, FileSystem, HostPath, ProcessStatus, RepoPath, UNBOU
 use crate::launch::LaunchError;
 use crate::project::ProjectStep;
 use crate::project::git::{HostGit, Pace, failure, words};
+use crate::project::home::HostProject;
 
 const JACKIN_HEADS: &str = "refs/heads/jackin/";
 
@@ -162,7 +163,11 @@ async fn regular_exclude(
         .map(|file| file.bytes))
 }
 
-pub(super) async fn read(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Facts, LaunchError> {
+pub(super) async fn read(
+    project: &HostProject<'_>,
+    fs: &dyn FileSystem,
+) -> Result<Facts, LaunchError> {
+    let git = &project.git();
     let described = git
         .require(
             ProjectStep::Describe,
@@ -174,7 +179,6 @@ pub(super) async fn read(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Facts
                 "--is-shallow-repository",
                 "--git-path",
                 "objects",
-                "--git-common-dir",
                 "--git-path",
                 "shallow",
             ]),
@@ -182,7 +186,7 @@ pub(super) async fn read(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Facts
         )
         .await?;
     let lines: Vec<&[u8]> = described.split(|byte| *byte == b'\n').collect();
-    let [format, shallow, objects, git_dir, shallow_file, ..] = lines.as_slice() else {
+    let [format, shallow, objects, shallow_file, ..] = lines.as_slice() else {
         return Err(malformed(
             ProjectStep::Describe,
             "rev-parse printed too few lines",
@@ -196,7 +200,7 @@ pub(super) async fn read(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Facts
     } else {
         None
     };
-    let git_dir = host_path(ProjectStep::Describe, git_dir)?;
+    let git_dir = project.location.git_dir.clone();
     let exclude = regular_exclude(fs, &git_dir).await?;
     Ok(Facts {
         head: head(git).await?,

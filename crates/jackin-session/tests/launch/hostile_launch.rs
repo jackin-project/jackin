@@ -14,6 +14,7 @@ async fn a_launch_runs_no_program_named_by_the_project_repository_config() -> Te
         let root = rig.repo.root().as_path();
         trap.arm_hostile(root).await?;
         trap.prove_armed(root).await?;
+        std::fs::remove_file(root.join(".git/objects/info/alternates"))?;
         ready(rig.launch_observed(1).await?)?;
         assert_eq!(trap.fired(), "");
         let handle = rig.handle(1).await?;

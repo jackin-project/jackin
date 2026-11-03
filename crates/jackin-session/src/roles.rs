@@ -407,11 +407,7 @@ impl RoleCatalog {
 
     async fn capture(&self, root: &HostPath, args: &[&str]) -> Result<ProcessOutput, RoleError> {
         let cancel = CancellationToken::new();
-        let git = HostGit {
-            runner: self.runner.as_ref(),
-            root,
-            cancel: &cancel,
-        };
+        let git = HostGit::role_checkout(self.runner.as_ref(), root, &cancel);
         Ok(git.capture(Pace::Quick, words(args), Vec::new()).await?)
     }
 

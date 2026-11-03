@@ -174,6 +174,16 @@ async fn project_root_open_requires_a_directory_with_a_git_entry() -> TestResult
     std::fs::write(dir.path().join("worktree/.git"), "gitdir: /elsewhere\n")?;
     ProjectRoot::open(&fs, &at("worktree")?).await?;
 
+    std::fs::create_dir_all(dir.path().join("linked"))?;
+    std::os::unix::fs::symlink(
+        dir.path().join("plain/.git"),
+        dir.path().join("linked/.git"),
+    )?;
+    assert!(matches!(
+        ProjectRoot::open(&fs, &at("linked")?).await,
+        Err(PathError::UnsupportedGitEntry(_))
+    ));
+
     std::fs::create_dir_all(dir.path().join("bare"))?;
     assert!(matches!(
         ProjectRoot::open(&fs, &at("bare")?).await,

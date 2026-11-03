@@ -43,6 +43,11 @@ impl FileSystem for WorkingFs {
         self.inner.stat_following(path).await
     }
 
+    async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
+        let _working = self.clock.working();
+        self.inner.canonicalize(path).await
+    }
+
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
         let _working = self.clock.working();
         self.inner.file_len(path).await

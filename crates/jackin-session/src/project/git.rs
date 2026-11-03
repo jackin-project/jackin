@@ -57,12 +57,36 @@ pub(crate) enum Pace {
 
 #[derive(Clone, Copy)]
 pub(crate) struct HostGit<'a> {
-    pub(crate) runner: &'a dyn ProcessRunner,
-    pub(crate) root: &'a HostPath,
-    pub(crate) cancel: &'a CancellationToken,
+    runner: &'a dyn ProcessRunner,
+    root: &'a HostPath,
+    cancel: &'a CancellationToken,
 }
 
-impl HostGit<'_> {
+impl<'a> HostGit<'a> {
+    pub(super) fn unauthenticated(
+        runner: &'a dyn ProcessRunner,
+        root: &'a HostPath,
+        cancel: &'a CancellationToken,
+    ) -> HostGit<'a> {
+        HostGit {
+            runner,
+            root,
+            cancel,
+        }
+    }
+
+    pub(crate) fn role_checkout(
+        runner: &'a dyn ProcessRunner,
+        root: &'a HostPath,
+        cancel: &'a CancellationToken,
+    ) -> HostGit<'a> {
+        HostGit::unauthenticated(runner, root, cancel)
+    }
+
+    pub(super) fn root(&self) -> &'a HostPath {
+        self.root
+    }
+
     pub(crate) async fn capture(
         &self,
         pace: Pace,

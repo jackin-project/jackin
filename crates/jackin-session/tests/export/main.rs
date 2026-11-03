@@ -18,6 +18,7 @@ mod lab;
 mod nesting;
 mod pack;
 mod purge;
+mod redirect;
 mod refs;
 mod refuse;
 mod replies;
