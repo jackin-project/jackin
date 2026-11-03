@@ -89,11 +89,11 @@ pub(super) async fn check(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<(), 
     if listing.skipped {
         return Err(UnsupportedProject::SparseCheckout.into());
     }
-    let submodules = populated(fs, git.root, &listing.gitlinks).await?;
+    let submodules = populated(fs, git.root(), &listing.gitlinks).await?;
     if !submodules.is_empty() {
         return Err(UnsupportedProject::PopulatedSubmodules(submodules).into());
     }
-    let nested = populated(fs, git.root, &listing.untracked_dirs).await?;
+    let nested = populated(fs, git.root(), &listing.untracked_dirs).await?;
     if nested.is_empty() {
         Ok(())
     } else {

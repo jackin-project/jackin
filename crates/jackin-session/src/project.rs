@@ -28,12 +28,12 @@ use crate::launch::LaunchError;
 use crate::lock::{self, LockError};
 use crate::project::facts::Facts;
 use crate::project::gate::HostGate;
-use crate::project::git::HostGit;
 use crate::project::listing::Listing;
 use crate::project::sandbox::Sandbox;
 use crate::service::{Session, SessionDeps};
 
 pub use facts::ObjectFormat;
+pub(crate) use home::{HostProject, HostProjectError};
 pub use version::{GitVersion, HostGitError, check_git};
 
 const LISTED_PATHS: usize = 5;
@@ -212,18 +212,6 @@ pub(crate) struct Staged {
     listing: Listing,
 }
 
-pub(crate) fn host_git<'a>(
-    deps: &'a SessionDeps,
-    root: &'a HostPath,
-    cancel: &'a CancellationToken,
-) -> HostGit<'a> {
-    HostGit {
-        runner: deps.host.runner.as_ref(),
-        root,
-        cancel,
-    }
-}
-
 pub(crate) async fn hold(
     deps: &SessionDeps,
     launch: &LaunchId,
@@ -270,11 +258,11 @@ pub(crate) async fn stage(
     dir: &HostPath,
     cancel: &CancellationToken,
 ) -> Result<Staged, LaunchError> {
-    let git = host_git(deps, project.path(), cancel);
+    let host = HostProject::open(deps, project, cancel).await?;
+    let git = host.git();
     let fs = deps.host.fs.as_ref();
     refuse::check(&git, fs).await?;
-    let facts = facts::read(&git, fs).await?;
-    home::belongs(&git, fs, project.path(), &facts).await?;
+    let facts = facts::read(&host, fs).await?;
     refuse::borrowed_objects(fs, &facts.git_dir).await?;
     let listing = listing::read(&git).await?;
     refuse::symlinked_parents(fs, project.path(), &listing).await?;
@@ -313,8 +301,8 @@ impl Staged {
         deps.gateway
             .upload_tree(sandbox, project, &sandbox_layout::PROJECT, cancel)
             .await?;
-        let git = host_git(deps, project.path(), cancel);
-        refuse::unchanged(&self.listing, &listing::read(&git).await?)?;
+        let authenticated = HostProject::open(deps, project, cancel).await?;
+        refuse::unchanged(&self.listing, &listing::read(&authenticated.git()).await?)?;
         let landed = self.send_bundle(deps, sandbox, launch, cancel).await?;
         remote.repository(&self.facts, landed.as_ref()).await?;
         self.verify(deps, project, &remote, launch, cancel).await
@@ -354,7 +342,7 @@ impl Staged {
             .fs
             .write_new(&paths, self.listing.as_bytes(), FileMode(0o600))
             .await?;
-        let git = host_git(deps, project.path(), cancel);
+        let git = HostProject::open(deps, project, cancel).await?.git();
         let shadow = shadow::create(&git, deps.host.fs.as_ref(), &self.dir, &self.facts).await?;
         let host = HostGate {
             git,

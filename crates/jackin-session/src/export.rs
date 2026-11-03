@@ -26,7 +26,7 @@ pub use self::bundle::{BundleRefusal, EntryKind};
 use self::bundle::{Limits, MAX_HEADS};
 use self::host::{HEAD, Host, HostRefs, Update, exported_prefix};
 use self::sandbox::{Remote, RemoteError, Repository};
-use crate::project::host_git;
+use crate::project::{HostProject, HostProjectError, UnsupportedProject};
 use crate::service::Session;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -158,6 +158,8 @@ pub enum ExportError {
     #[error(transparent)]
     Project(#[from] PathError),
     #[error(transparent)]
+    Unsupported(#[from] UnsupportedProject),
+    #[error(transparent)]
     Entropy(#[from] EntropyError),
     #[error("sandbox {sandbox} has no project repository")]
     NoRepository { sandbox: SandboxName },
@@ -231,6 +233,19 @@ impl From<ProcessError> for ExportError {
         match error {
             ProcessError::Cancelled { group, .. } => ExportError::Cancelled { group },
             other => ExportError::Process(other),
+        }
+    }
+}
+
+impl From<HostProjectError> for ExportError {
+    fn from(error: HostProjectError) -> ExportError {
+        match error {
+            HostProjectError::Unsupported(error) => ExportError::Unsupported(error),
+            HostProjectError::Fs(error) => ExportError::Fs(error),
+            HostProjectError::Process(error) => error.into(),
+            HostProjectError::Path(error) => ExportError::Project(error),
+            HostProjectError::Git { status, output } => ExportError::HostGit { status, output },
+            HostProjectError::Output { message } => ExportError::HostOutput { message },
         }
     }
 }
@@ -439,6 +454,7 @@ impl Session {
                 source,
             })?;
         let project = self.resolve_project(config, &labels).await?;
+        let authenticated = HostProject::open(&self.deps, &project, &cancel).await?;
         let repository = self
             .remote(sandbox, &cancel)
             .repository()
@@ -450,7 +466,7 @@ impl Session {
             });
         }
         let host = Host {
-            git: host_git(&self.deps, project.path(), &cancel),
+            git: authenticated.git(),
         };
         let refs = host.refs(sandbox).await?;
         let wanted = changed(&repository, &refs);
@@ -792,8 +808,11 @@ impl Session {
         let project = ProjectRoot::open(self.deps.host.fs.as_ref(), &entry.path)
             .await
             .map_err(|_| UnknownReason::InspectionFailed)?;
+        let authenticated = HostProject::open(&self.deps, &project, &cancel)
+            .await
+            .map_err(|_| UnknownReason::InspectionFailed)?;
         let host = Host {
-            git: host_git(&self.deps, project.path(), &cancel),
+            git: authenticated.git(),
         };
         let refs = host
             .refs(sandbox)
