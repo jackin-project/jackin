@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use jackin_core::{
     ChatgptAccountId, CredentialKeys, EnvName, FileMode, GatewayName, HostPath, ImageTag,
     LabelSelector, Labels, Phase, ProfileId, ProjectRoot, ProviderName, SandboxLabels, SandboxName,
-    SandboxPath, Secret, SecretBytes, Sha256, TerminalText,
+    SandboxPath, Secret, SecretBytes, Sha256, TerminalText, Timestamp,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -199,6 +199,7 @@ pub struct SandboxView {
     pub phase: Phase,
     pub labels: Labels,
     pub provisioning: Provisioning,
+    pub created_at: Option<Timestamp>,
 }
 
 #[derive(Clone, Debug)]

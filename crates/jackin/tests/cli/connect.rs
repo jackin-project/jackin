@@ -1,10 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin::{ConnectError, ExitClass, GatewayConnector};
 use std::time::Duration;
 
+use jackin::ExitClass;
 use jackin_core::{GatewayName, GroupFault};
+use jackin_session::{ConnectError, GatewayConnector};
 use jackin_testkit::{ProcessReply, TestResult, World, guard};
 use tokio_util::sync::CancellationToken;
 

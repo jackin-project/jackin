@@ -48,6 +48,10 @@ pub(crate) fn login_json() -> Value {
     })
 }
 
+pub(crate) fn chatgpt(id: &str) -> Result<ChatgptAccountId, Box<dyn Error>> {
+    Ok(ChatgptAccountId::parse(id)?)
+}
+
 pub(crate) fn host(path: &str) -> Result<HostPath, Box<dyn Error>> {
     Ok(HostPath::parse(std::path::Path::new(path))?)
 }

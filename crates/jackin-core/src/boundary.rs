@@ -63,6 +63,7 @@ impl Debug for EnvSnapshot {
 #[async_trait]
 pub trait Clock: Send + Sync + Debug {
     fn now(&self) -> Timestamp;
+    fn utc_offset_secs(&self) -> i32;
     async fn sleep(&self, duration: Duration);
 }
 

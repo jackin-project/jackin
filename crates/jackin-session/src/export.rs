@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod bundle;
+mod diff;
 mod host;
 mod sandbox;
+
+pub use diff::*;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -81,11 +84,17 @@ impl fmt::Display for UnknownReason {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unexported {
-    pub uncommitted: bool,
+    pub uncommitted: usize,
     pub branches: Vec<BranchName>,
     pub detached: Option<CommitId>,
     pub worktrees: Vec<BranchName>,
     pub unusable: Vec<TerminalText>,
+}
+
+impl Unexported {
+    pub fn unpushed(&self) -> usize {
+        self.branches.len() + self.worktrees.len() + usize::from(self.detached.is_some())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -101,7 +110,7 @@ impl fmt::Display for WorkState {
             WorkState::Exported => f.write_str("exported"),
             WorkState::Unexported(found) => {
                 let mut parts = Vec::new();
-                if found.uncommitted {
+                if found.uncommitted > 0 {
                     parts.push("uncommitted changes".to_owned());
                 }
                 for branch in &found.branches {
@@ -305,7 +314,7 @@ fn pending(repository: &Repository, refs: &HostRefs) -> Vec<(Wanted, CommitId)> 
         .collect()
 }
 
-fn classify(repository: &Repository, uncommitted: bool, refs: &HostRefs) -> WorkState {
+fn classify(repository: &Repository, uncommitted: usize, refs: &HostRefs) -> WorkState {
     let mut state = Unexported {
         uncommitted,
         branches: Vec::new(),
@@ -320,7 +329,7 @@ fn classify(repository: &Repository, uncommitted: bool, refs: &HostRefs) -> Work
             Wanted::Worktree(name) => state.worktrees.push(name),
         }
     }
-    if state.uncommitted
+    if state.uncommitted > 0
         || !state.branches.is_empty()
         || state.detached.is_some()
         || !state.worktrees.is_empty()
@@ -642,6 +651,71 @@ fn report(
         }
     }
     Ok(report)
+}
+
+#[derive(Debug, Error)]
+pub enum ChangesError {
+    #[error(transparent)]
+    Gateway(#[from] GatewayError),
+    #[error("sandbox {0} was not found")]
+    NotFound(SandboxName),
+    #[error("sandbox {sandbox} is not running ({phase})")]
+    NotRunning { sandbox: SandboxName, phase: Phase },
+    #[error("sandbox {sandbox} has no git repository")]
+    NoRepository { sandbox: SandboxName },
+    #[error("git in the sandbox exited with code {exit_code}: {output}")]
+    Git {
+        exit_code: i32,
+        output: TerminalText,
+    },
+    #[error("sandbox {sandbox}: {what}")]
+    Output {
+        sandbox: SandboxName,
+        what: &'static str,
+    },
+}
+
+impl Session {
+    pub async fn changes(
+        &self,
+        sandbox: &SandboxName,
+        cancel: &CancellationToken,
+    ) -> Result<ChangeSet, ChangesError> {
+        let view = self
+            .find_managed(sandbox)
+            .await?
+            .ok_or_else(|| ChangesError::NotFound(sandbox.clone()))?;
+        if view.phase != Phase::Ready {
+            return Err(ChangesError::NotRunning {
+                sandbox: sandbox.clone(),
+                phase: view.phase,
+            });
+        }
+        let remote = self.remote(sandbox, cancel);
+        let repository = remote
+            .repository()
+            .await
+            .map_err(|error| changes_error(sandbox, error))?;
+        let (files, omitted) = remote
+            .changes(&repository)
+            .await
+            .map_err(|error| changes_error(sandbox, error))?;
+        Ok(ChangeSet { files, omitted })
+    }
+}
+
+fn changes_error(sandbox: &SandboxName, error: RemoteError) -> ChangesError {
+    match error {
+        RemoteError::Gateway(error) => error.into(),
+        RemoteError::NoRepository => ChangesError::NoRepository {
+            sandbox: sandbox.clone(),
+        },
+        RemoteError::Git { exit_code, output } => ChangesError::Git { exit_code, output },
+        RemoteError::Malformed(what) => ChangesError::Output {
+            sandbox: sandbox.clone(),
+            what,
+        },
+    }
 }
 
 impl Session {

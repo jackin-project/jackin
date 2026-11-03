@@ -39,7 +39,7 @@ async fn commit_in(
 
 fn dirty() -> WorkState {
     WorkState::Unexported(Unexported {
-        uncommitted: true,
+        uncommitted: 1,
         branches: Vec::new(),
         detached: None,
         worktrees: Vec::new(),

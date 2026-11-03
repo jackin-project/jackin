@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use jackin_core::{EnvName, Labels, Phase, ProviderName, SandboxName, TerminalText};
+use jackin_core::{EnvName, Labels, Phase, ProviderName, SandboxName, TerminalText, Timestamp};
 use openshell_sdk::raw::proto::GetSandboxConfigRequest;
 use openshell_sdk::raw::proto::{
     CreateSandboxRequest, DeleteSandboxRequest, GetSandboxPolicyStatusRequest, GetSandboxRequest,
@@ -75,6 +75,10 @@ pub(super) fn view_of(sandbox: &Sandbox) -> Result<SandboxView, GatewayError> {
         phase: phase_of(sandbox),
         labels,
         provisioning: provisioning_of(sandbox),
+        created_at: metadata
+            .created_time
+            .as_ref()
+            .map(|created| Timestamp(created.seconds)),
     })
 }
 

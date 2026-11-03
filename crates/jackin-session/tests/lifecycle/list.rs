@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
 
 use jackin_core::{Labels, Phase, SandboxLabels, SandboxName, SandboxPath, Sha256, sandbox_layout};
 use jackin_openshell::PowerAction;
@@ -127,6 +128,38 @@ async fn a_managed_sandbox_with_unreadable_labels_is_reported_apart_and_the_rest
         assert_eq!(listed, vec![rig.sandbox_name(1)?]);
         let unreadable: Vec<_> = listing.unreadable.iter().map(|u| u.name.clone()).collect();
         assert_eq!(unreadable, vec![broken]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn list_and_inspect_carry_the_creation_time_the_gateway_recorded() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        rig.world.clock.advance(Duration::from_secs(3_600));
+        rig.launch(2).await?;
+        let first = rig.handle(1).await?;
+        let second = rig.handle(2).await?;
+        let (early, late) = (
+            first.created_at().ok_or("no creation time")?,
+            second.created_at().ok_or("no creation time")?,
+        );
+        assert!(late.0 - early.0 >= 3_600, "{early:?} {late:?}");
+
+        let listing = rig.world.session.list().await?;
+        let listed: BTreeMap<SandboxName, Option<jackin_core::Timestamp>> = listing
+            .sandboxes
+            .iter()
+            .map(|summary| (summary.name.clone(), summary.created_at))
+            .collect();
+        assert_eq!(
+            listed,
+            BTreeMap::from([(first.name(), Some(early)), (second.name(), Some(late)),])
+        );
+        let inspected = rig.world.session.inspect(&second.name()).await?;
+        assert_eq!(inspected.summary.created_at, Some(late));
         Ok(())
     })
     .await

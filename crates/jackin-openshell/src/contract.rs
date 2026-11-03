@@ -7,13 +7,13 @@ use std::time::Duration;
 
 use jackin_core::{
     AccountName, Agent, ChatgptAccountId, CredentialKeys, EnvName, FileMode, HostPath, ImageId,
-    ImageTag, LabelSelector, LaunchId, NameSuffix, Phase, PlannedLabels, ProcessStatus,
-    ProfileAsset, ProfileId, ProjectRoot, ProviderName, RoleName, SandboxName, SandboxPath,
-    SandboxSlug, Secret, SecretBytes, Sha256, StdFileSystem, WorkspaceName,
+    ImageTag, LabelSelector, LaunchId, NameSuffix, OutputStream, Phase, PlannedLabels,
+    ProcessStatus, ProfileAsset, ProfileId, ProjectRoot, ProviderName, RoleName, SandboxName,
+    SandboxPath, SandboxSlug, Secret, SecretBytes, Sha256, StdFileSystem, WorkspaceName,
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::error::{GatewayError, Missing, TransferOp};
+use crate::error::{GatewayError, GatewayOp, Missing, TransferOp};
 use crate::gateway::{
     Gateway, MainProcess, PowerAction, ProfileSync, ProgramRun, ProgramStdin, ProviderMaterial,
     ProviderSpec, ProviderState, Provisioning, SandboxCreate, SandboxFile, SandboxQuery,
@@ -25,8 +25,9 @@ use crate::terminal::{
     TerminalRequest, TerminalSession,
 };
 
-pub const CORE_CHECKS: [&str; 16] = [
+pub const CORE_CHECKS: [&str; 18] = [
     "create_find_by_label",
+    "created_at_is_reported_and_stable",
     "create_duplicate_name",
     "sandbox_environment_is_the_create_request",
     "absent_sandbox_is_not_found",
@@ -35,6 +36,7 @@ pub const CORE_CHECKS: [&str; 16] = [
     "touch_on_success",
     "write_file_mode_and_atomicity",
     "read_missing_file",
+    "output_over_the_limit_is_an_error",
     "profile_import_unchanged_updated",
     "provider_put_and_delete",
     "delete_provider_while_attached_is_refused",
@@ -64,6 +66,47 @@ pub const TERMINAL_CHECKS: [&str; 6] = [
     "main_ended_is_refused",
 ];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NudgeCase {
+    pub name: &'static str,
+    pub open: (u16, u16),
+    pub resize_before: &'static [(u16, u16)],
+    pub nudge: bool,
+    pub windows: &'static [(u16, u16)],
+}
+
+pub const NUDGE_CASES: [NudgeCase; 4] = [
+    NudgeCase {
+        name: "the nudge shrinks one row and restores it at the attach size",
+        open: (100, 30),
+        resize_before: &[],
+        nudge: true,
+        windows: &[(100, 29), (100, 30)],
+    },
+    NudgeCase {
+        name: "a resize before the nudge is not overwritten",
+        open: (100, 30),
+        resize_before: &[(80, 20)],
+        nudge: true,
+        windows: &[(80, 20), (80, 19), (80, 20)],
+    },
+    NudgeCase {
+        name: "a one-row terminal is not nudged",
+        open: (100, 1),
+        resize_before: &[],
+        nudge: true,
+        windows: &[],
+    },
+    NudgeCase {
+        name: "a policy of never repaints nothing",
+        open: (100, 30),
+        resize_before: &[(90, 25)],
+        nudge: false,
+        windows: &[(90, 25)],
+    },
+];
+
+const OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const POLL_ATTEMPTS: usize = 240;
 const PROGRAM_TIMEOUT: Duration = Duration::from_secs(60);
@@ -337,6 +380,19 @@ impl Ctx<'_> {
         stdin: ProgramStdin,
         touch: Option<SandboxPath>,
     ) -> Outcome<crate::gateway::ProgramOutcome> {
+        self.exec_typed(sandbox, script, arguments, stdin, touch)
+            .await?
+            .map_err(text)
+    }
+
+    async fn exec_typed(
+        &self,
+        sandbox: &SandboxName,
+        script: &str,
+        arguments: &[&str],
+        stdin: ProgramStdin,
+        touch: Option<SandboxPath>,
+    ) -> Outcome<Result<crate::gateway::ProgramOutcome, GatewayError>> {
         let mut args = vec!["-c".to_owned(), script.to_owned(), "contract".to_owned()];
         args.extend(arguments.iter().map(|argument| (*argument).to_owned()));
         let run = ProgramRun {
@@ -349,10 +405,10 @@ impl Ctx<'_> {
             touch_on_success: touch,
             timeout: PROGRAM_TIMEOUT,
         };
-        self.gateway
+        Ok(self
+            .gateway
             .run_program(&run, &CancellationToken::new())
-            .await
-            .map_err(text)
+            .await)
     }
 }
 
@@ -383,6 +439,29 @@ async fn create_find_by_label(ctx: &Ctx<'_>) -> Outcome<()> {
         jackin_core::SandboxLabels::from_labels(&found[0].labels)
             .is_ok_and(|labels| labels == *spec.labels()),
         "the stored labels differ from the requested labels",
+    )
+}
+
+async fn created_at_is_reported_and_stable(ctx: &Ctx<'_>) -> Outcome<()> {
+    let launch = fresh_launch()?;
+    let spec = ctx.spec(
+        &launch,
+        &ctx.fixture.image,
+        Ctx::main("/bin/sh", &["-c", "sleep 3600"])?,
+    )?;
+    let made = ctx.gateway.create_sandbox(&spec).await.map_err(text)?;
+    let ready = ctx
+        .wait_for(spec.name(), "Ready", |view| view.phase == Phase::Ready)
+        .await;
+    ctx.cleanup(spec.name()).await;
+    let ready = ready?;
+    expect(
+        made.created_at.is_some_and(|created| created.0 > 0),
+        "a created sandbox reports no creation time",
+    )?;
+    expect(
+        ready.created_at == made.created_at,
+        "the creation time changed between the create reply and the Ready view",
     )
 }
 
@@ -660,6 +739,113 @@ async fn read_missing_file(ctx: &Ctx<'_>) -> Outcome<()> {
         read? == vec![None],
         "a missing file is not reported as None",
     )
+}
+
+fn output_too_large(
+    found: &Result<impl std::fmt::Debug, GatewayError>,
+    op: GatewayOp,
+    stream: OutputStream,
+) -> Outcome<()> {
+    expect(
+        matches!(
+            found,
+            Err(GatewayError::OutputTooLarge { op: seen, stream: seen_stream, limit })
+                if *seen == op && *seen_stream == stream && *limit == OUTPUT_LIMIT
+        ),
+        &format!(
+            "an output over {OUTPUT_LIMIT} bytes is not an OutputTooLarge error of {op:?} on {stream:?}"
+        ),
+    )
+}
+
+async fn output_over_the_limit_is_an_error(ctx: &Ctx<'_>) -> Outcome<()> {
+    let sandbox = ctx.sleeper().await?;
+    let result = async {
+        let emit = |bytes: usize| format!("yes | head -c {bytes}");
+        let at_limit = ctx
+            .exec(
+                &sandbox,
+                &emit(OUTPUT_LIMIT),
+                &[],
+                ProgramStdin::Closed,
+                None,
+            )
+            .await?;
+        expect(
+            at_limit.stdout.len() == OUTPUT_LIMIT,
+            "an output of exactly the limit is not returned whole",
+        )?;
+        let over = ctx
+            .exec_typed(
+                &sandbox,
+                &emit(OUTPUT_LIMIT + 1),
+                &[],
+                ProgramStdin::Closed,
+                None,
+            )
+            .await?;
+        output_too_large(&over, GatewayOp::Program, OutputStream::Stdout)?;
+
+        let emit_err = |bytes: usize| format!("yes | head -c {bytes} >&2");
+        let err_at_limit = ctx
+            .exec(
+                &sandbox,
+                &emit_err(OUTPUT_LIMIT),
+                &[],
+                ProgramStdin::Closed,
+                None,
+            )
+            .await?;
+        expect(
+            err_at_limit.stderr.len() == OUTPUT_LIMIT,
+            "a stderr of exactly the limit is not returned whole",
+        )?;
+        let err_over = ctx
+            .exec_typed(
+                &sandbox,
+                &emit_err(OUTPUT_LIMIT + 1),
+                &[],
+                ProgramStdin::Closed,
+                None,
+            )
+            .await?;
+        output_too_large(&err_over, GatewayOp::Program, OutputStream::Stderr)?;
+
+        let big = path("/sandbox/.contract/big")?;
+        ctx.exec(
+            &sandbox,
+            &format!("mkdir -p \"${{1%/*}}\" && {} > \"$1\"", emit(OUTPUT_LIMIT)),
+            &[big.as_str()],
+            ProgramStdin::Closed,
+            None,
+        )
+        .await?;
+        let whole = ctx
+            .gateway
+            .read_files(&sandbox, std::slice::from_ref(&big))
+            .await
+            .map_err(text)?;
+        expect(
+            whole.first().and_then(Option::as_ref).map(Vec::len) == Some(OUTPUT_LIMIT),
+            "a file of exactly the limit is not read whole",
+        )?;
+        ctx.exec(
+            &sandbox,
+            "printf x >> \"$1\"",
+            &[big.as_str()],
+            ProgramStdin::Closed,
+            None,
+        )
+        .await?;
+        let over = ctx
+            .gateway
+            .read_files(&sandbox, std::slice::from_ref(&big))
+            .await;
+        output_too_large(&over, GatewayOp::ReadFiles, OutputStream::Stdout)
+    }
+    .await;
+    ctx.cleanup(&sandbox).await;
+    result
 }
 
 fn contract_profile() -> Outcome<ProfileId> {
@@ -1745,6 +1931,12 @@ pub async fn run(
     match group {
         ContractGroup::Core => {
             check!(checks, ctx, "create_find_by_label", create_find_by_label);
+            check!(
+                checks,
+                ctx,
+                "created_at_is_reported_and_stable",
+                created_at_is_reported_and_stable
+            );
             check!(checks, ctx, "create_duplicate_name", create_duplicate_name);
             check!(
                 checks,
@@ -1778,6 +1970,12 @@ pub async fn run(
                 write_file_mode_and_atomicity
             );
             check!(checks, ctx, "read_missing_file", read_missing_file);
+            check!(
+                checks,
+                ctx,
+                "output_over_the_limit_is_an_error",
+                output_over_the_limit_is_an_error
+            );
             check!(
                 checks,
                 ctx,

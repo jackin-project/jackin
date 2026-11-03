@@ -96,23 +96,11 @@ async fn a_chatgpt_account_syncs_the_provider_first_and_other_providers_never_co
 }
 
 #[tokio::test]
-async fn an_unsupported_mismatched_or_unreadable_account_fails_and_changes_nothing() -> TestResult {
+async fn a_mismatched_or_unreadable_account_fails_and_changes_nothing() -> TestResult {
     guard(async {
         let (rig, harness, home) = rigged().await?;
         let before = harness.config_bytes()?;
-        let cases: [(&[&str], &str); 3] = [
-            (
-                &[
-                    "account",
-                    "add",
-                    "codex",
-                    "--name",
-                    "api",
-                    "--credential",
-                    "env:X",
-                ],
-                "api",
-            ),
+        let cases: [(&[&str], &str); 2] = [
             (
                 &[
                     "account",
@@ -158,6 +146,47 @@ async fn an_unsupported_mismatched_or_unreadable_account_fails_and_changes_nothi
         failed(&broken, ExitClass::Failure, &[&home])?;
         assert_eq!(harness.config_bytes()?, before);
         assert!(rig.gateway().providers().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_codex_account_without_a_chatgpt_login_is_stored_for_usage_and_never_reaches_the_gateway()
+-> TestResult {
+    guard(async {
+        let (rig, mut harness, _home) = rigged().await?;
+        harness.connector = FixedConnector::empty();
+        for (name, credential) in [("api", "env:OPENAI_KEY"), ("vault", "op://Dev/OpenAI/key")] {
+            harness
+                .run(&[
+                    "account",
+                    "add",
+                    "codex",
+                    "--name",
+                    name,
+                    "--credential",
+                    credential,
+                ])
+                .await?
+                .ok()?;
+        }
+        let config = harness.stored().await?;
+        assert!(matches!(
+            config.account(&account("api")?).ok_or("no api")?.credential(),
+            CredentialSource::Env { var } if var.as_str() == "OPENAI_KEY"
+        ));
+        assert!(matches!(
+            config
+                .account(&account("vault")?)
+                .ok_or("no vault")?
+                .credential(),
+            CredentialSource::OnePassword { .. }
+        ));
+        assert!(rig.gateway().providers().is_empty());
+        assert!(rig.gateway().profiles().is_empty());
+        harness.run(&["account", "rm", "api"]).await?.ok()?;
+        assert!(harness.stored().await?.account(&account("api")?).is_none());
         Ok(())
     })
     .await

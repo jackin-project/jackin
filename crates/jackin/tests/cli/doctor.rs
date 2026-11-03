@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin::ExitClass;
+use jackin_session::CheckId;
 use jackin_testkit::{ProcessReply, ScriptedProgram, TestResult, World, guard};
 use tokio_util::sync::CancellationToken;
 
@@ -48,6 +49,18 @@ struct Fixture {
 }
 
 fn fixture(socket: bool, openshell: ProcessReply) -> Result<Fixture, Failure> {
+    fixture_with_git(
+        socket,
+        openshell,
+        ProcessReply::exited(0, b"git version 2.50.1 (Apple Git-155)\n", b""),
+    )
+}
+
+fn fixture_with_git(
+    socket: bool,
+    openshell: ProcessReply,
+    git: ProcessReply,
+) -> Result<Fixture, Failure> {
     let world = World::builder().build()?;
     let mut harness = Harness::new(&world);
     let scripted = world.runner.scripted();
@@ -57,11 +70,7 @@ fn fixture(socket: bool, openshell: ProcessReply) -> Result<Fixture, Failure> {
         &["-V"],
         ProcessReply::exited(0, b"", b"OpenSSH_9.9p1\n"),
     );
-    scripted.expect_git_version(ProcessReply::exited(
-        0,
-        b"git version 2.50.1 (Apple Git-155)\n",
-        b"",
-    ));
+    scripted.expect_git_version(git);
     scripted.expect(
         ScriptedProgram::Openshell,
         &["gateway", "list", "-o", "json"],
@@ -97,6 +106,9 @@ async fn healthy_fakes_exit_ok_and_print_one_line_per_check_id_on_stdout_only() 
         let ran = harness.run(&["doctor"]).await?;
         ran.ok()?;
         assert!(ran.stderr.is_empty(), "{}", ran.stderr);
+        for line in ran.stdout.lines().filter(|line| line.starts_with("pass")) {
+            assert!(!line.contains("fix:"), "{line}");
+        }
         reported(&ran, ExitClass::Ok, &IDS, &[])
     })
     .await
@@ -113,6 +125,18 @@ async fn a_missing_engine_socket_is_only_a_warning() -> TestResult {
         ran.ok()?;
         assert!(ran.stderr.is_empty(), "{}", ran.stderr);
         assert!(ran.stdout.contains("warn"), "{}", ran.stdout);
+        assert_eq!(
+            ran.stdout.matches("fix:").count(),
+            1,
+            "only the warning carries a fix: {}",
+            ran.stdout
+        );
+        assert!(
+            ran.stdout
+                .contains(&format!("fix: {}", CheckId::EngineSocket.fix())),
+            "{}",
+            ran.stdout
+        );
         reported(&ran, ExitClass::Ok, &IDS, &[])
     })
     .await
@@ -125,6 +149,15 @@ async fn a_failed_check_fails_the_run_names_its_id_and_never_hides_the_others() 
         world.gateway.set_serving(false);
         let ran = harness.run(&["doctor"]).await?;
         reported(&ran, ExitClass::Failure, &IDS, &["error:"])?;
+        let health = ran
+            .stdout
+            .lines()
+            .find(|line| line.contains("gateway-health"))
+            .ok_or("no gateway-health line")?;
+        assert!(
+            health.ends_with(&format!("fix: {}", CheckId::GatewayHealth.fix())),
+            "{health}"
+        );
 
         let Fixture {
             mut harness,
@@ -166,6 +199,43 @@ async fn doctor_without_a_gateway_fails_and_names_the_command_that_adds_one() ->
             &["openshell-binary", "git-binary"],
             &["jackin gateway add"],
         )?;
+        let skipped: Vec<&str> = ran
+            .stdout
+            .lines()
+            .filter(|line| line.starts_with("skip"))
+            .collect();
+        assert_eq!(skipped.len(), 3, "{}", ran.stdout);
+        for line in skipped {
+            assert!(!line.contains("fix:"), "{line}");
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_git_that_is_too_old_prints_the_upgrade_fix_and_not_the_install_fix() -> TestResult {
+    guard(async {
+        let Fixture {
+            harness,
+            world: _world,
+        } = fixture_with_git(
+            true,
+            ProcessReply::exited(0, b"openshell 0.1.6\n", b""),
+            ProcessReply::exited(0, b"git version 2.0.0\n", b""),
+        )?;
+        let ran = harness.run(&["doctor"]).await?;
+        reported(&ran, ExitClass::Failure, &IDS, &["error:"])?;
+        let git = ran
+            .stdout
+            .lines()
+            .find(|line| line.contains("git-binary"))
+            .ok_or("no git-binary line")?;
+        assert!(git.starts_with("fail"), "{git}");
+        assert!(
+            git.ends_with("fix: Upgrade git to the required version"),
+            "{git}"
+        );
         Ok(())
     })
     .await

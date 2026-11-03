@@ -1,14 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use jackin_core::{EnvName, ProcessStatus};
+use jackin_core::ProcessStatus;
 use jackin_openshell::{
-    EndReason, GatewayError, InputMode, TermSize, TerminalCommand, TerminalDriver, TerminalEvent,
+    EndReason, GatewayError, TermSize, TerminalCommand, TerminalDriver, TerminalEvent,
     TerminalKind, TerminalSession,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
@@ -16,24 +15,41 @@ use tokio::process::Child;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_util::sync::CancellationToken;
 
+use super::ShellWitness;
 use super::main_process::Seat;
 use super::state::Cell;
 use crate::exec::{HostProgram, status_of};
+use crate::sync::locked;
 
 const CAPACITY: usize = 256;
 const CHUNK: usize = 4096;
+const LIMIT_NOTICE: &str = "sandbox SSH connection limit reached";
 const ENDED_NOTICE: &str = "openshell: cannot connect to the canonical main process: canonical main process already finished";
 
 pub(super) fn attach_main(
     cell: &Arc<Cell>,
     kind: TerminalKind,
-    input: InputMode,
     size: TermSize,
-) -> TerminalSession {
+    cap: usize,
+) -> Result<TerminalSession, GatewayError> {
+    let TerminalKind::MainProcess { input, repaint } = kind.clone() else {
+        return Err(GatewayError::Protocol {
+            message: "the fake attached a shell as the main process".to_owned(),
+        });
+    };
     let (session, driver) = TerminalSession::pair(CAPACITY, kind);
-    let (seat, queued) = cell.state().main.attach(input, size);
+    let (seat, queued) = {
+        let mut state = cell.state();
+        if state.main.attachments() >= cap {
+            return Err(GatewayError::ResourceExhausted {
+                what: LIMIT_NOTICE.to_owned(),
+            });
+        }
+        let window = state.replay_window;
+        state.main.attach(input, size, repaint, window)
+    };
     tokio::spawn(pump_main(Arc::clone(cell), seat, driver, queued));
-    session
+    Ok(session)
 }
 
 pub(super) fn refuse_main(kind: TerminalKind) -> TerminalSession {
@@ -82,8 +98,17 @@ pub(super) fn spawn_shell(
     cell: &Arc<Cell>,
     kind: TerminalKind,
     workdir: PathBuf,
-    env: &BTreeMap<EnvName, String>,
+    size: TermSize,
 ) -> Result<TerminalSession, GatewayError> {
+    let TerminalKind::Shell {
+        workdir: sandbox_workdir,
+        env,
+    } = kind.clone()
+    else {
+        return Err(GatewayError::Protocol {
+            message: "the fake attached the main process as a shell".to_owned(),
+        });
+    };
     let mut command = HostProgram::Shell.command();
     command
         .current_dir(workdir)
@@ -96,8 +121,24 @@ pub(super) fn spawn_shell(
         message: format!("the fake cannot start /bin/sh: {error}"),
     })?;
     let (session, driver) = TerminalSession::pair(CAPACITY, kind);
-    tokio::spawn(pump_shell(cell.closed.clone(), child, driver));
+    let witness = Arc::new(Mutex::new(ShellWitness {
+        workdir: sandbox_workdir,
+        env,
+        input: Vec::new(),
+        sizes: vec![size],
+        closed: false,
+    }));
+    cell.state().shells.push(Arc::clone(&witness));
+    tokio::spawn(pump_shell(cell.closed.clone(), child, driver, witness));
     Ok(session)
+}
+
+struct Closed(Arc<Mutex<ShellWitness>>);
+
+impl Drop for Closed {
+    fn drop(&mut self) {
+        locked(&self.0).closed = true;
+    }
 }
 
 async fn read_chunk<R: AsyncRead + Unpin>(pipe: &mut Option<R>, buffer: &mut [u8]) -> usize {
@@ -107,7 +148,13 @@ async fn read_chunk<R: AsyncRead + Unpin>(pipe: &mut Option<R>, buffer: &mut [u8
     }
 }
 
-async fn pump_shell(closed: CancellationToken, mut child: Child, driver: TerminalDriver) {
+async fn pump_shell(
+    closed: CancellationToken,
+    mut child: Child,
+    driver: TerminalDriver,
+    witness: Arc<Mutex<ShellWitness>>,
+) {
+    let _closed = Closed(Arc::clone(&witness));
     let TerminalDriver {
         mut commands,
         events,
@@ -129,11 +176,12 @@ async fn pump_shell(closed: CancellationToken, mut child: Child, driver: Termina
             command = commands.recv() => {
                 match command {
                     Some(TerminalCommand::Input(bytes)) => {
+                        locked(&witness).input.extend_from_slice(&bytes);
                         if let Some(pipe) = stdin.as_mut() {
                             drop(pipe.write_all(&bytes).await);
                         }
                     }
-                    Some(TerminalCommand::Resize(_)) => {}
+                    Some(TerminalCommand::Resize(size)) => locked(&witness).sizes.push(size),
                     Some(TerminalCommand::Detach) | None => break Some(EndReason::Detached),
                 }
                 continue;

@@ -276,6 +276,7 @@ impl ScenarioHost {
                 name: SandboxName::parse(name).expect("name"),
                 labels: planned.complete(&ImageId::parse(IMAGE_ID).expect("image"), docker),
                 phase: Phase::Ready,
+                created_at: None,
             },
             providers: Vec::new(),
             policy: PolicyStatus {
