@@ -890,7 +890,7 @@ impl Gateway for FakeGateway {
         tokio::task::yield_now().await;
         let cell = self.exec_cell(GatewayOp::ReadFiles, sandbox)?;
         let installed = self.registry().installed.clone();
-        Ok(files::read_files(&cell.root(), &installed, paths).await)
+        files::read_files(&cell.root(), &installed, paths).await
     }
 
     async fn write_file(

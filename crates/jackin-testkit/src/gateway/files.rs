@@ -9,13 +9,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use jackin_core::{
-    HostPath, ProcessStatus, ProjectRoot, SandboxPath, Sha256, TerminalText,
+    HostPath, OutputStream, ProcessStatus, ProjectRoot, SandboxPath, Sha256, TerminalText,
     sandbox_layout::RUN_START,
 };
 use jackin_openshell::{GatewayError, GatewayOp, SandboxFile, TransferOp};
 use tokio_util::sync::CancellationToken;
 
-use super::exec::host_path;
+use super::exec::{OUTPUT_LIMIT, host_path};
 use super::state::Cell;
 use crate::exec::HostProgram;
 
@@ -37,7 +37,7 @@ pub(super) async fn read_files(
     root: &Path,
     installed: &BTreeMap<SandboxPath, Vec<u8>>,
     paths: &[SandboxPath],
-) -> Vec<Option<Vec<u8>>> {
+) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
     let mut files = Vec::with_capacity(paths.len());
     for path in paths {
         if let Some(bytes) = installed.get(path) {
@@ -51,9 +51,19 @@ pub(super) async fn read_files(
             },
             None => None,
         };
+        if found
+            .as_ref()
+            .is_some_and(|bytes| bytes.len() > OUTPUT_LIMIT)
+        {
+            return Err(GatewayError::OutputTooLarge {
+                op: GatewayOp::ReadFiles,
+                stream: OutputStream::Stdout,
+                limit: OUTPUT_LIMIT,
+            });
+        }
         files.push(found);
     }
-    files
+    Ok(files)
 }
 
 pub(super) async fn write_file(cell: &Arc<Cell>, file: &SandboxFile) -> Result<(), GatewayError> {
