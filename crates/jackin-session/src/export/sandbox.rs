@@ -59,7 +59,7 @@ pub(super) struct Repository {
 struct Checkout {
     path: String,
     head: Option<CommitId>,
-    detached: bool,
+    off_heads: bool,
     prunable: bool,
 }
 
@@ -113,7 +113,7 @@ fn checkouts(listed: &[u8]) -> Result<Vec<Checkout>, RemoteError> {
             found.push(Checkout {
                 path: path.to_owned(),
                 head: None,
-                detached: false,
+                off_heads: false,
                 prunable: false,
             });
             continue;
@@ -122,7 +122,9 @@ fn checkouts(listed: &[u8]) -> Result<Vec<Checkout>, RemoteError> {
         if let Some(head) = text.strip_prefix("HEAD ") {
             current.head = CommitId::parse(head).ok();
         } else if text == "detached" {
-            current.detached = true;
+            current.off_heads = true;
+        } else if let Some(branch) = text.strip_prefix("branch ") {
+            current.off_heads = !branch.starts_with(HEADS);
         } else if text == "prunable" || text.starts_with("prunable ") {
             current.prunable = true;
         }
@@ -233,11 +235,11 @@ impl Remote<'_> {
                 continue;
             }
             repository.checkouts.push(checkout.path.clone());
-            if !checkout.detached {
+            if !checkout.off_heads {
                 continue;
             }
             let tip = checkout.head.ok_or(RemoteError::Malformed(
-                "git worktree list printed a detached worktree without a commit",
+                "git worktree list printed a worktree outside refs/heads without a commit",
             ))?;
             if index == 0 {
                 repository.detached = Some(tip);

@@ -309,3 +309,56 @@ async fn targets_that_collide_or_nest_are_refused_before_any_import_and_a_retry_
     })
     .await
 }
+
+#[tokio::test]
+async fn a_linked_worktree_whose_head_is_symbolic_outside_heads_is_unexported_work() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let linked = add_detached(&handle, "w2").await?;
+        handle
+            .git(&["-C", &linked, "update-ref", "refs/remotes/origin/y", "HEAD"])
+            .await?;
+        handle
+            .git(&[
+                "-C",
+                &linked,
+                "symbolic-ref",
+                "HEAD",
+                "refs/remotes/origin/y",
+            ])
+            .await?;
+        assert_eq!(state(&rig, &name).await, WorkState::Exported);
+
+        let commit = commit_in(&handle, &linked, "w.txt").await?;
+
+        let found = state(&rig, &name).await;
+        let WorkState::Unexported(found) = found else {
+            return Err(format!("{found:?}").into());
+        };
+        assert_eq!(found.worktrees.len(), 1, "{found:?}");
+        let purge = rig
+            .world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .await;
+        assert!(
+            matches!(purge, Err(PurgeError::WorkNotExported { .. })),
+            "{purge:?}"
+        );
+
+        let report = export(&rig, &name).await?;
+
+        let tips: Vec<&str> = report
+            .worktrees
+            .iter()
+            .map(|worktree| worktree.tip.as_str())
+            .collect();
+        assert_eq!(tips, [commit.as_str()]);
+        assert_eq!(state(&rig, &name).await, WorkState::Exported);
+        Ok(())
+    })
+    .await
+}
