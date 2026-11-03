@@ -390,7 +390,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 - **Scope:** the D24 parts of `crates/jackin-core/`, `crates/jackin-image/`, and `crates/jackin-session/`.
 - **Steps:** If P0.5 is `BLOCKED`, build only the settings and a launch error that names the blocker. Otherwise, build D24 with the engine source that P0.5 chose. Resolve the capability from the role and the workspace. Add the Docker layer to the derived image only when the capability is enabled. Add the engine policy rule only when the capability is enabled. Show the D24 warning.
 - **Proof:** G-FAST passes. Tests show that the capability is disabled by default. Tests show that the role or the workspace can enable it. Tests show that the cache key changes with it.
-- [ ] P5.4 done
+- [x] P5.4 done. Proof: merged at 9666419c9; G-FAST 1083 passed; red/green APPROVE (/private/tmp/claude-501/plans/P5.4-redgreen.md) with the four follow-ups proven red; live L1-L4 and L7-L9 against the rootless test engine in evidence/P5.4-docker.md (hello-world from a preflight hook, docker build, run -i, exec, compose; key 0600 in 0700 and absent from output; disabled has no client, file, variable, or rule; StaleSandbox on a flipped capability or engine port); engine binaries forbidden in every image.
 
 ### P5.5 Review the Docker capability
 
