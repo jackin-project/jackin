@@ -70,6 +70,7 @@ impl App {
         RoleCatalog::new(
             Arc::clone(&self.deps.host.fs),
             Arc::clone(&self.deps.host.runner),
+            Arc::clone(&self.deps.host.clock),
             self.cache_dir.clone(),
         )
     }

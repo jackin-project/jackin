@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use jackin_core::{Config, RoleName, StdFileSystem, WorkspaceName};
 use jackin_session::{RoleCatalog, RoleError};
-use jackin_testkit::{RoleFixture, TestRunner};
+use jackin_testkit::{FakeClock, RoleFixture, TestRunner};
 
 use super::roles_origin::{Origin, URL, cache};
 use super::support::{TestResult, catalog, guard};
@@ -157,6 +157,7 @@ async fn a_git_role_outside_the_allowed_roles_is_refused_before_anything_is_chec
         let catalog = RoleCatalog::new(
             Arc::new(StdFileSystem::default()),
             Arc::new(TestRunner::with_home(&origin.home)),
+            Arc::new(FakeClock::new()),
             cache,
         );
         let workspace = config

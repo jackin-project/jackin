@@ -12,7 +12,7 @@ use jackin_core::{
 };
 use jackin_image::{BuiltImage, ImageSource};
 use jackin_session::{LaunchPlan, LaunchRequest, LoadedRole, PlanError, RoleCatalog, plan_launch};
-use jackin_testkit::{RepoFixture, RoleFixture, TestRunner};
+use jackin_testkit::{FakeClock, RepoFixture, RoleFixture, TestRunner};
 
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
@@ -32,7 +32,12 @@ pub(crate) fn launch_id(byte: u8) -> LaunchId {
 pub(crate) fn catalog(cache: &HostPath) -> (RoleCatalog, Arc<TestRunner>) {
     let runner = Arc::new(TestRunner::new());
     let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
-    let catalog = RoleCatalog::new(fs, Arc::<TestRunner>::clone(&runner), cache.clone());
+    let catalog = RoleCatalog::new(
+        fs,
+        Arc::<TestRunner>::clone(&runner),
+        Arc::new(FakeClock::new()),
+        cache.clone(),
+    );
     (catalog, runner)
 }
 

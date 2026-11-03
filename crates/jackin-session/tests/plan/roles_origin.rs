@@ -8,7 +8,7 @@ use std::sync::Arc;
 use jackin_core::{Config, FileSystem, HostPath, RoleName, StdFileSystem, WorkspaceName};
 use jackin_image::RoleRevision;
 use jackin_session::{RoleCatalog, RoleError};
-use jackin_testkit::{RoleFixture, TestRunner};
+use jackin_testkit::{FakeClock, RoleFixture, TestRunner};
 
 pub(crate) const URL: &str = "https://example.invalid/role.git";
 
@@ -79,7 +79,7 @@ impl Origin {
     ) -> Result<Result<(String, Option<String>), RoleError>, Box<dyn Error>> {
         let runner = Arc::new(TestRunner::with_home(&self.home));
         let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
-        let catalog = RoleCatalog::new(fs, runner, cache.clone());
+        let catalog = RoleCatalog::new(fs, runner, Arc::new(FakeClock::new()), cache.clone());
         let rev = rev.map_or_else(String::new, |rev| format!(", rev = \"{rev}\""));
         let config = Config::parse(&format!(
             "[roles.sentinel]\nsource = {{ git = \"{URL}\"{rev} }}\n\n[workspaces.w]\npath = \"{}\"\n",

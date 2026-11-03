@@ -120,6 +120,7 @@ impl WorldBuilder {
             roles: Arc::new(RoleCatalog::new(
                 Arc::clone(&fs),
                 runner_port,
+                Arc::clone(&clock_port),
                 cache_dir.clone(),
             )),
             config: ConfigStore::new(Arc::clone(&fs), clock_port, config_path),
