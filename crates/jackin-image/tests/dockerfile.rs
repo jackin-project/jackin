@@ -23,6 +23,7 @@ enum Verdict {
     Unreadable(usize),
     EngineClientEnv(usize, String),
     ExpandingEnvName(usize, String),
+    ForeignFrontend(usize, String),
     NotUtf8,
     Other,
 }
@@ -59,6 +60,9 @@ fn classify(error: &DockerfileError) -> Verdict {
         }
         DockerfileError::ExpandingEnvName { line, name } => {
             Verdict::ExpandingEnvName(*line, name.clone())
+        }
+        DockerfileError::ForeignFrontend { line, frontend } => {
+            Verdict::ForeignFrontend(*line, frontend.clone())
         }
         DockerfileError::NotUtf8 => Verdict::NotUtf8,
     }
@@ -417,6 +421,350 @@ fn env_may_not_name_the_docker_engine_client_in_the_final_stage() -> TestResult 
     Ok(())
 }
 
+fn engine_client(label: &'static str, text: &str, line: usize, name: &str) -> Row {
+    row(label, text, Verdict::EngineClientEnv(line, name.to_owned()))
+}
+
+fn onbuild_env_refused() -> Vec<Row> {
+    let expands = |label, text: &str, line, name: &str| {
+        row(
+            label,
+            text,
+            Verdict::ExpandingEnvName(line, name.to_owned()),
+        )
+    };
+    vec![
+        engine_client(
+            "deferred docker context",
+            "FROM construct\nONBUILD ENV DOCKER_CONTEXT=evil\n",
+            2,
+            "DOCKER_CONTEXT",
+        ),
+        engine_client(
+            "lower case",
+            "FROM construct\nonbuild env BUILDX_BUILDER=evil\n",
+            2,
+            "BUILDX_BUILDER",
+        ),
+        engine_client(
+            "mixed case",
+            "FROM construct\nOnBuild Env DOCKER_HOST=x\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        engine_client(
+            "legacy form",
+            "FROM construct\nONBUILD ENV DOCKER_HOST tcp://x\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        engine_client(
+            "nested onbuild",
+            "FROM construct\nONBUILD ONBUILD ENV DOCKER_HOST=tcp://x\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        engine_client(
+            "tabs",
+            "FROM construct\nONBUILD\tENV\tDOCKER_HOST=x\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        engine_client(
+            "second pair",
+            "FROM construct\nONBUILD ENV A=1 DOCKER_CERT_PATH=/x\n",
+            2,
+            "DOCKER_CERT_PATH",
+        ),
+        engine_client(
+            "quoted key",
+            "FROM construct\nONBUILD ENV \"DOCKER_HOST\"=x\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        engine_client(
+            "continuation after onbuild",
+            "FROM construct\nONBUILD \\\nENV DOCKER_HOST=x\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        engine_client(
+            "continuation inside the payload",
+            "FROM construct\nONBUILD ENV A=1 \\\n    DOCKER_CONFIG=/x\n",
+            2,
+            "DOCKER_CONFIG",
+        ),
+        engine_client(
+            "comment inside the continuation",
+            "FROM construct\nONBUILD \\\n# note\nENV DOCKER_HOST=x\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        engine_client(
+            "escape directive",
+            "# escape=`\nFROM construct\nONBUILD ENV A=1 `\n    DOCKER_HOST=x\n",
+            3,
+            "DOCKER_HOST",
+        ),
+        engine_client(
+            "final stage after a clean earlier one",
+            "FROM construct AS a\nONBUILD ENV X=1\nFROM construct\nONBUILD ENV DOCKER_HOST=x\n",
+            4,
+            "DOCKER_HOST",
+        ),
+        engine_client(
+            "after a deferred run with a heredoc",
+            "FROM construct\nONBUILD RUN <<EOF\nx\nEOF\nONBUILD ENV DOCKER_HOST=x\n",
+            5,
+            "DOCKER_HOST",
+        ),
+        expands(
+            "expanding key",
+            "FROM construct\nONBUILD ENV $NAME=x\n",
+            2,
+            "$NAME",
+        ),
+        expands(
+            "braced key after a pair",
+            "FROM construct\nONBUILD ENV A=1 ${NAME}=x\n",
+            2,
+            "${NAME}",
+        ),
+        expands(
+            "expanding legacy key",
+            "FROM construct\nONBUILD ENV $NAME x\n",
+            2,
+            "$NAME",
+        ),
+    ]
+}
+
+#[test]
+fn an_onbuild_env_is_checked_as_the_env_it_defers() -> TestResult {
+    check(&onbuild_env_refused());
+    Ok(())
+}
+
+fn onbuild_heredoc_rows() -> Vec<Row> {
+    let ok = |label, text: &str| row(label, text, Verdict::Accepted);
+    vec![
+        engine_client(
+            "a deferred heredoc body cannot start a stage that hides an env",
+            "FROM construct\nENV DOCKER_HOST=x\nONBUILD RUN <<EOF\nFROM construct\nEOF\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        engine_client(
+            "a deferred copy heredoc body cannot start a stage that hides an env",
+            "FROM construct\nENV DOCKER_HOST=x\nONBUILD COPY <<-EOT /etc/motd\n\tFROM construct\n\tEOT\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        ok(
+            "a deferred heredoc body is not a stage",
+            "FROM construct\nONBUILD RUN <<EOF\nFROM ubuntu\nEOF\n",
+        ),
+        ok(
+            "a deferred heredoc body is not an env",
+            "FROM construct\nONBUILD RUN <<EOF\nENV DOCKER_HOST=x\nEOF\n",
+        ),
+        ok(
+            "a deferred add heredoc body is not an env",
+            "FROM construct\nONBUILD ADD <<EOF /x\nENV DOCKER_HOST=x\nEOF\n",
+        ),
+    ]
+}
+
+#[test]
+fn an_onbuild_heredoc_body_is_data_for_the_parser() -> TestResult {
+    check(&onbuild_heredoc_rows());
+    Ok(())
+}
+
+fn frontend_rows() -> Vec<Row> {
+    let foreign = |label, text: &str, line, frontend: &str| {
+        row(
+            label,
+            text,
+            Verdict::ForeignFrontend(line, frontend.to_owned()),
+        )
+    };
+    vec![
+        foreign(
+            "another image",
+            "# syntax=evil/frontend:1\nFROM construct\n",
+            1,
+            "evil/frontend:1",
+        ),
+        foreign(
+            "spaces around the equals sign",
+            "# syntax = evil/frontend\nFROM construct\n",
+            1,
+            "evil/frontend",
+        ),
+        foreign(
+            "upper case key",
+            "# SYNTAX=evil/frontend\nFROM construct\n",
+            1,
+            "evil/frontend",
+        ),
+        foreign(
+            "c style directive",
+            "// syntax=evil/frontend\nFROM construct\n",
+            1,
+            "evil/frontend",
+        ),
+        foreign(
+            "after a shebang line",
+            "#!/bin/sh\n# syntax=evil/frontend\nFROM construct\n",
+            2,
+            "evil/frontend",
+        ),
+        foreign(
+            "after another directive",
+            "# escape=`\n# syntax=evil/frontend\nFROM construct\n",
+            2,
+            "evil/frontend",
+        ),
+        foreign(
+            "after a byte order mark",
+            "\u{feff}# syntax=evil/frontend\nFROM construct\n",
+            1,
+            "evil/frontend",
+        ),
+        foreign(
+            "command line after the image",
+            "# syntax=evil/frontend --flag\nFROM construct\n",
+            1,
+            "evil/frontend",
+        ),
+        foreign(
+            "the second syntax directive",
+            "# syntax=docker/dockerfile:1\n# syntax=evil/frontend\nFROM construct\n",
+            2,
+            "evil/frontend",
+        ),
+        foreign(
+            "upstream frontend",
+            "# syntax=docker/dockerfile-upstream:master\nFROM construct\n",
+            1,
+            "docker/dockerfile-upstream:master",
+        ),
+        foreign(
+            "look alike name",
+            "# syntax=docker/dockerfile.evil:1\nFROM construct\n",
+            1,
+            "docker/dockerfile.evil:1",
+        ),
+        foreign(
+            "other registry",
+            "# syntax=registry.example.com/docker/dockerfile:1\nFROM construct\n",
+            1,
+            "registry.example.com/docker/dockerfile:1",
+        ),
+        foreign(
+            "registry with a port",
+            "# syntax=localhost:5000/docker/dockerfile:1\nFROM construct\n",
+            1,
+            "localhost:5000/docker/dockerfile:1",
+        ),
+    ]
+}
+
+#[test]
+fn a_role_dockerfile_may_name_only_the_docker_dockerfile_frontend() -> TestResult {
+    check(&frontend_rows());
+    Ok(())
+}
+
+fn onbuild_and_frontend_accepted() -> Vec<Row> {
+    let ok = |label, text: &str| row(label, text, Verdict::Accepted);
+    let digest = format!(
+        "# syntax=docker/dockerfile:1.28.0@sha256:{}\nFROM construct\n",
+        "0".repeat(64)
+    );
+    vec![
+        ok(
+            "onbuild in an earlier stage",
+            "FROM golang AS build\nONBUILD ENV DOCKER_HOST=x\nFROM construct AS role\nENV FOO=1\n",
+        ),
+        ok(
+            "a commented onbuild",
+            "FROM construct\n# ONBUILD ENV DOCKER_HOST=x\n",
+        ),
+        ok(
+            "onbuild text inside a run",
+            "FROM construct\nRUN echo ONBUILD ENV DOCKER_HOST=x\n",
+        ),
+        ok(
+            "onbuild as a variable name",
+            "FROM construct\nENV ONBUILD=1\n",
+        ),
+        ok(
+            "onbuild line inside a heredoc",
+            "FROM construct\nRUN <<EOF\nONBUILD ENV DOCKER_HOST=x\nEOF\n",
+        ),
+        ok(
+            "the text only in a deferred value",
+            "FROM construct\nONBUILD ENV A=\"DOCKER_HOST=x\" B='BUILDX_BUILDER'\nONBUILD ENV C DOCKER_HOST\n",
+        ),
+        ok(
+            "names that merely contain the text",
+            "FROM construct\nONBUILD ENV MY_DOCKER_HOST=x DOCKERHOST=x BUILDX=x\n",
+        ),
+        ok(
+            "deferred path",
+            "FROM construct\nONBUILD ENV PATH=/opt/bin:$PATH\n",
+        ),
+        ok("deferred user", "FROM construct\nONBUILD USER root\n"),
+        ok("deferred run", "FROM construct\nONBUILD RUN true\n"),
+        ok(
+            "a word that only starts with env",
+            "FROM construct\nONBUILD ENVIRON DOCKER_HOST=x\n",
+        ),
+        ok(
+            "a word that only starts with onbuild",
+            "FROM construct\nONBUILDENV DOCKER_HOST=x\n",
+        ),
+        ok("official frontend with a digest", &digest),
+        ok(
+            "official frontend on its registry host",
+            "# syntax=docker.io/docker/dockerfile:1\nFROM construct\n",
+        ),
+        ok(
+            "official frontend without a tag",
+            "# syntax=docker/dockerfile\n# check=skip=JSONArgsRecommended\nFROM construct\n",
+        ),
+        ok(
+            "a syntax text after a comment is a comment",
+            "# note\n# syntax=evil/frontend\nFROM construct\n",
+        ),
+        ok(
+            "a syntax text after a blank line is a comment",
+            "\n# syntax=evil/frontend\nFROM construct\n",
+        ),
+        ok(
+            "a syntax text after the first instruction is a comment",
+            "FROM construct\n# syntax=evil/frontend\n",
+        ),
+        ok(
+            "a shebang that is not on the first line is a comment",
+            "# note\n#!/bin/sh\n# syntax=evil/frontend\nFROM construct\n",
+        ),
+        row(
+            "a json file has no stage",
+            "{\"syntax\": \"evil/frontend\"}\n",
+            Verdict::NoStages,
+        ),
+    ]
+}
+
+#[test]
+fn onbuild_and_syntax_text_that_does_not_defer_or_select_anything_is_unchanged() -> TestResult {
+    check(&onbuild_and_frontend_accepted());
+    Ok(())
+}
+
 #[test]
 fn parser_noise_never_changes_the_verdict() -> TestResult {
     check(&noise_accepted());
@@ -463,7 +811,7 @@ fn directive_rows() -> Vec<Row> {
         ),
         row(
             "BOM on line 2 is data",
-            "# syntax=x\n\u{feff}FROM construct\n",
+            "# syntax=docker/dockerfile:1\n\u{feff}FROM construct\n",
             Verdict::NoStages,
         ),
         ok(
@@ -519,6 +867,16 @@ fn plan_new_applies_the_same_validation_to_the_request_bytes() -> TestResult {
         ),
         ("empty", "", Verdict::NoStages),
         ("valid", "FROM construct\n", Verdict::Accepted),
+        (
+            "deferred env",
+            "FROM construct\nONBUILD ENV DOCKER_HOST=x\n",
+            Verdict::EngineClientEnv(2, "DOCKER_HOST".to_owned()),
+        ),
+        (
+            "foreign frontend",
+            "# syntax=evil/frontend:1\nFROM construct\n",
+            Verdict::ForeignFrontend(1, "evil/frontend:1".to_owned()),
+        ),
     ];
     for (label, text, want) in texts {
         let planned = plan_verdict(ImagePlan::new(&request(text.as_bytes())?));
