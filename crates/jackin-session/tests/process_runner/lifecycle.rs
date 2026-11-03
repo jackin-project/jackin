@@ -175,12 +175,58 @@ async fn a_clean_exit_kills_a_descendant_that_closed_its_pipes() -> TestResult {
 const GROUP_BODY: &str =
     "d=$1\nfor n in 1 2 3 4 5 6 7 8; do ( while :; do sleep 0.05; done ) >/dev/null 2>&1 & done\n";
 
-fn group_is_empty(scratch: &Scratch) -> Result<bool, Box<dyn std::error::Error>> {
-    let raw: i32 = std::fs::read_to_string(scratch.root().join("pgid"))?
+fn group_id(scratch: &Scratch) -> Result<i32, Box<dyn std::error::Error>> {
+    Ok(std::fs::read_to_string(scratch.root().join("pgid"))?
         .trim()
-        .parse()?;
-    let group = rustix::process::Pid::from_raw(raw).ok_or("the group id is not a pid")?;
+        .parse()?)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn group_is_empty(scratch: &Scratch) -> Result<bool, Box<dyn std::error::Error>> {
+    let group =
+        rustix::process::Pid::from_raw(group_id(scratch)?).ok_or("the group id is not a pid")?;
     Ok(rustix::process::test_kill_process_group(group).is_err())
+}
+
+#[cfg(target_os = "linux")]
+fn group_is_empty(scratch: &Scratch) -> Result<bool, Box<dyn std::error::Error>> {
+    let group = group_id(scratch)?.to_string();
+    for entry in std::fs::read_dir("/proc")? {
+        let path = entry?.path();
+        let numeric = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.bytes().all(|byte| byte.is_ascii_digit()));
+        if !numeric {
+            continue;
+        }
+        let stat = match std::fs::read(path.join("stat")) {
+            Ok(stat) => stat,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound
+                    || error.raw_os_error() == Some(rustix::io::Errno::SRCH.raw_os_error()) =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let end = stat
+            .iter()
+            .rposition(|byte| *byte == b')')
+            .ok_or("a stat line has no command name")?;
+        let fields: Vec<&[u8]> = stat[end + 1..]
+            .split(u8::is_ascii_whitespace)
+            .filter(|field| !field.is_empty())
+            .collect();
+        let in_group = fields
+            .get(2)
+            .is_some_and(|field| *field == group.as_bytes());
+        let state = fields.first().and_then(|field| field.first());
+        if in_group && !matches!(state, Some(b'Z' | b'X')) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 async fn exit_round(round: usize) -> TestResult {
