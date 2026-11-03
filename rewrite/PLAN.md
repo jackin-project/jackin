@@ -464,7 +464,7 @@ P7.1 can start after P0.3. It runs in parallel with P2 to P6. The image drafts t
 
 - **Owner:** `security-reviewer`, then the orchestrator runs `pstack:interrogate`. **Depends:** P7.2.
 - **Proof:** the verdicts in the chat. No open blocking finding.
-- [ ] P7.3 done
+- [x] P7.3 done. Proof: security-reviewer CHANGES_REQUIRED (/private/tmp/claude-501/plans/P7.3-security.md, F1 blocking) with the policy fix (66602557) and the image fix (b3087a4e), each red/green KEEP; pstack interrogate (Sonnet, Opus; Haiku stopped) with five verified findings I1-I5 (/private/tmp/claude-501/plans/P7.3-interrogate.md) fixed at bdedc47b with red/green KEEP after R1 and R2; the role-context symlink fix (32f89501); live BuildKit proofs and the real sentinel build in evidence/P7.3-image.md; G-FAST 1054 passed.
 
 ### P7.4 Prove the jackin-start supervisor
 
