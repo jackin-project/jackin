@@ -809,8 +809,20 @@ bindings = { codex = "work" }
 path = "/Users/me/Projects/myproj"
 docker = false
 default_role = "sentinel"
+roles = ["sentinel"]                        # optional; absent allows every role; default_role must be in it
 bindings = { codex = "work" }
+
+[env]                                       # plain text only (D10); an op:// value is a parse error
+REGION = "eu"
+
+[workspaces.myproj.env]
+REGION = "us"
+
+[workspaces.myproj.role_env.sentinel]
+REGION = "ap"
 ```
+
+Env names use the variable alphabet and must not be reserved (`EnvName::is_reserved`). A role named in `roles` or `role_env` must be a configured role, and `RemoveRole` refuses a role that a workspace default, allow-list or `role_env` still names (`ConfigReference::{WorkspaceRoles, WorkspaceRoleEnv}`). `SetEnv` with `None` unsets, and an emptied `role_env` table is dropped. Moving a variable between scopes is an unset and a set in one edit list.
 
 ```rust
 pub struct Config { }
@@ -834,7 +846,17 @@ pub struct Workspace {
     pub docker: bool,
     pub default_role: Option<RoleName>,
     pub bindings: BTreeMap<Provider, AccountName>,
+    pub roles: AllowedRoles,                       // absent key = All; [] is a parse error
+    pub env: EnvTable,                             // [workspaces.<n>.env]
+    pub role_env: BTreeMap<RoleName, EnvTable>,    // [workspaces.<n>.role_env.<r>]
 }
+impl Workspace { pub fn new(path: HostPath, docker: bool) -> Workspace }
+pub type EnvTable = BTreeMap<EnvName, PlainEnvValue>;
+pub struct PlainEnvValue { }                       // parse() refuses op:// at the start, a newline and NUL
+pub enum EnvValueError { OnePassword, Control }
+pub struct RoleSet { }                             // never empty: RoleSet::new(..) -> Option<RoleSet>
+pub enum AllowedRoles { All, Only(RoleSet) }       // allows(&RoleName) -> bool
+pub enum EnvScope { Global, Workspace(WorkspaceName), WorkspaceRole(WorkspaceName, RoleName) }
 pub enum ConfigEdit {
     AddGateway { name: GatewayName, entry: GatewayEntry },
     RemoveGateway(GatewayName),
@@ -855,6 +877,8 @@ pub enum ConfigEdit {
     RemoveWorkspace(WorkspaceName),
     SetWorkspaceDocker { workspace: WorkspaceName, docker: bool },
     SetWorkspaceDefaultRole { workspace: WorkspaceName, role: Option<RoleName> },
+    SetWorkspaceRoles { workspace: WorkspaceName, roles: AllowedRoles },
+    SetEnv { scope: EnvScope, name: EnvName, value: Option<PlainEnvValue> },   // None unsets
 }
 
 impl Config {
@@ -864,6 +888,7 @@ impl Config {
     pub fn apply(&mut self, edit: ConfigEdit) -> Result<(), ConfigError>;
 
     pub fn default_gateway(&self) -> Option<&GatewayName>;
+    pub fn env(&self) -> &EnvTable;
     pub fn gateway(&self, name: &GatewayName) -> Option<&GatewayEntry>;
     pub fn gateways(&self) -> impl Iterator<Item = (&GatewayName, &GatewayEntry)>;
     pub fn account(&self, name: &AccountName) -> Option<&Account>;
@@ -1112,6 +1137,8 @@ pub enum ConfigReference {
     WorkspaceBinding(WorkspaceName),
     RoleBinding(RoleName),
     WorkspaceDefaultRole(WorkspaceName),
+    WorkspaceRoles(WorkspaceName),
+    WorkspaceRoleEnv(WorkspaceName),
 }
 pub enum SelectionError {
     UnknownFlagAccount(AccountName),
@@ -1923,6 +1950,7 @@ pub enum PlanError {
     Docker(DockerError),
     EnvNeeded(Vec<EnvQuestion>),
     EnvUndeclared(Vec<EnvName>),
+    RoleNotAllowed { workspace: WorkspaceName, role: RoleName },
     EnvFile(EnvFileError),
     Unsupported { account: AccountName, mode: CodexAuthMode },
 }
@@ -1930,7 +1958,7 @@ pub enum PlanError {
 
 `bundle_bytes` caps the sandbox bundle that `export` downloads (`DEFAULT_BUNDLE_BYTES`, 4 GiB, the download limit of the adapter). `export_entry_bytes` (`DEFAULT_EXPORT_ENTRY_BYTES`, 512 MiB), `export_objects` (`DEFAULT_EXPORT_OBJECTS`, 5,000,000, the pack header holds a `u32`), and `export_total_bytes` (`DEFAULT_EXPORT_TOTAL_BYTES`, 64 GiB) cap the pack walker. The library holds no other timing or size constants; the binary builds the value in `launch_limits()`.
 
-`plan_launch` and `plan_image` are pure: no I/O, no clock, no randomness. The caller supplies the `LaunchId` (`LaunchId::generate()` in the binary, `--launch-id` or a fixed value in tests). `plan_launch` does, in order: resolve the gateway entry (platform, builder, engine); resolve the workspace from the project path; select the account with `Config::select_account`; derive the Codex auth mode and require `AgentSpec::profile_for(mode)` (else `PlanError::Unsupported`); resolve `DockerCapability::resolve(manifest.docker.enabled, workspace.docker, gateway.docker_engine)`, and when enabled merge `NetworkRule::docker_engine(port)` into the role policy with `with_rule`; resolve `[env]` (a `--env` value wins; with `Prompting::Interactive` every other entry becomes an `EnvQuestion` that carries its prompt and its default, so the TTY prompt shows the default pre-filled; with `Prompting::Never` an entry uses its default, and an entry with neither becomes an `EnvQuestion`; a `--env` name the manifest does not declare is `EnvUndeclared`); render the files (below); build the `ImageRequest` through `plan_image`; build `PlannedLabels`; derive `SandboxName::new(workspace.slug(), NameSuffix::for_launch(launch))`; and build the `SandboxDraft`.
+`plan_launch` and `plan_image` are pure: no I/O, no clock, no randomness. The caller supplies the `LaunchId` (`LaunchId::generate()` in the binary, `--launch-id` or a fixed value in tests). `plan_launch` does, in order: resolve the gateway entry (platform, builder, engine); resolve the workspace from the project path; select the account with `Config::select_account`; derive the Codex auth mode and require `AgentSpec::profile_for(mode)` (else `PlanError::Unsupported`); resolve `DockerCapability::resolve(manifest.docker.enabled, workspace.docker, gateway.docker_engine)`, and when enabled merge `NetworkRule::docker_engine(port)` into the role policy with `with_rule`; refuse a role the workspace does not allow (`RoleNotAllowed`, before the account is selected); resolve `[env]` through the public `resolve_env(&EnvLayers, &RoleManifest, &answers, Prompting)` (precedence, highest first: a `--env` or prompt answer, the workspace-and-role table, the workspace table, the global table, the manifest default; a scoped name needs no manifest declaration, and a scoped value means the manifest entry is not asked; with `Prompting::Interactive` every other entry becomes an `EnvQuestion` that carries its prompt and its default, so the TTY prompt shows the default pre-filled; with `Prompting::Never` an entry uses its default, and an entry with neither becomes an `EnvQuestion`; a `--env` name the manifest does not declare is `EnvUndeclared`); render the files (below); build the `ImageRequest` through `plan_image`; build `PlannedLabels`; derive `SandboxName::new(workspace.slug(), NameSuffix::for_launch(launch))`; and build the `SandboxDraft`.
 
 The `SandboxDraft` holds the name, the `PlannedLabels` (no image label), the providers `[ProviderName::for_account]`, the merged policy, and the main process `/usr/local/bin/jackin-start` with `AgentSpec::launch_argv`. It holds no environment: `SandboxCreate::new` derives the spec environment, which is `JACKIN_LAUNCH_ID` only. It does not hold the image tag, which depends on the built construct image ID. `complete(&BuiltImage)` is the only way to a `SandboxCreate`: it sets the image tag from `BuiltImage.tag` and the image label from `PlannedLabels::complete(&BuiltImage.id)`.
 
@@ -2335,6 +2363,17 @@ pub fn hook_failure(hook: HookKind, exit_code: i32, output: &TerminalText) -> St
 - `CheckId::label` and `fix` are the texts of the console doctor panel. `jackin doctor` appends `  fix: <text>` to each `warn` and `fail` line.
 - `Clock::utc_offset_secs` is the local UTC offset in seconds. `SystemClock` reads it from `chrono::Local`; `FakeClock::set_utc_offset` sets it for tests.
 - `ConfigEdit::SetAccountCredential` replaces the credential of an existing account and keeps its bindings and default. `Account::new` still rejects a ChatGPT login on a non-Codex account.
+
+### P9.3 J0b additions (prerequisite P-9)
+
+```rust
+pub struct EnvLayers<'a> { pub global: &'a EnvTable, pub workspace: &'a EnvTable, pub workspace_role: Option<&'a EnvTable> }
+impl<'a> EnvLayers<'a> { pub fn of(config: &'a Config, workspace: &'a Workspace, role: &RoleName) -> EnvLayers<'a> }
+pub fn resolve_env(layers: &EnvLayers<'_>, manifest: &RoleManifest, answers: &BTreeMap<EnvName, String>,
+                   prompting: Prompting) -> Result<BTreeMap<EnvName, String>, PlanError>;
+```
+
+`plan_launch` and the console call the same `resolve_env`. `EnvUndeclared` stays for answers (`--env`) only. The config types are in section 1.
 
 ### Remaining error enums
 
