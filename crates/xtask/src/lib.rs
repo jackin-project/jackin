@@ -3,6 +3,7 @@
 
 mod checks;
 mod ci;
+mod e2e;
 mod lex;
 mod repo;
 mod text;
@@ -10,5 +11,6 @@ mod violation;
 
 pub use checks::*;
 pub use ci::*;
+pub use e2e::*;
 pub use repo::*;
 pub use violation::*;

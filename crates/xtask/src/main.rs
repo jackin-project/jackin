@@ -7,7 +7,14 @@ use std::io::{self, Write};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use jackin_xtask::{CiArgs, CiFailure, Repo, run_ci};
+use jackin_xtask::{CiArgs, CiFailure, E2eArgs, Repo, production, run_ci, run_e2e};
+
+const E2E_HELP: &str = "J15 and J16 need the operator's D24 test engine: a rootless dockerd at \
+host.openshell.internal:2376 (localhost:2376 on the Mac) with client certificates in \
+~/.local/share/jackin-e2e-engine/client/. Start and stop it yourself; the runner never does. \
+Pass --engine-port 2376 --engine-certs ~/.local/share/jackin-e2e-engine/client.\n\n\
+Exit codes: 0 every step PASS, 1 a FAIL (CLEAN FAIL included), 2 the run could not start, \
+3 no FAIL and a SKIP, 130 interrupted.";
 
 #[derive(Parser)]
 #[command(name = "xtask", about = "Repository gates for jackin")]
@@ -20,17 +27,28 @@ struct Cli {
 enum Command {
     #[command(about = "Run the repository gates in order and stop at the first failure")]
     Ci(CiArgs),
-    #[command(about = "Run the live journey against a gateway (not built yet)")]
-    E2e {
-        #[arg(hide = true, num_args = 0.., trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    #[command(
+        about = "Run the sentinel journey J00 to J17 against a gateway",
+        after_help = E2E_HELP
+    )]
+    E2e(E2eArgs),
 }
 
-fn main() -> ExitCode {
+#[tokio::main]
+async fn main() -> ExitCode {
     match Cli::parse().command {
         Command::Ci(args) => ci(args),
-        Command::E2e { .. } => fail("e2e is not built yet; PLAN P8.1 builds it"),
+        Command::E2e(args) => e2e(&args).await,
+    }
+}
+
+async fn e2e(args: &E2eArgs) -> ExitCode {
+    match production(args).await {
+        Ok(boundaries) => ExitCode::from(run_e2e(args, boundaries).await.code()),
+        Err(error) => {
+            fail(&error);
+            ExitCode::from(2)
+        }
     }
 }
 
