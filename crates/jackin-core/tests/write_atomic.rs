@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::io::ErrorKind;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use jackin_core::{
     DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LinkProblem,
     RegularFile, RegularFileProblem, RepoPath, StdFileSystem, write_atomic,
 };
+use tokio::sync::Notify;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -19,11 +22,19 @@ enum Fault {
     SyncDir,
 }
 
+#[derive(Debug, Default)]
+struct Gate {
+    taken: AtomicBool,
+    parked: Notify,
+    release: Notify,
+}
+
 #[derive(Debug)]
 struct FaultFs {
     inner: StdFileSystem,
     fault: Fault,
     kind: ErrorKind,
+    gate: Option<Gate>,
 }
 
 impl FaultFs {
@@ -101,6 +112,12 @@ impl FileSystem for FaultFs {
     }
     async fn rename(&self, f: &HostPath, t: &HostPath) -> Result<(), FsError> {
         self.fail(Fault::Rename, f)?;
+        if let Some(gate) = &self.gate
+            && !gate.taken.swap(true, Ordering::SeqCst)
+        {
+            gate.parked.notify_one();
+            gate.release.notified().await;
+        }
         self.inner.rename(f, t).await
     }
     async fn remove_dir_all(&self, p: &HostPath) -> Result<(), FsError> {
@@ -120,7 +137,15 @@ fn faulty(fault: Fault) -> FaultFs {
         inner: StdFileSystem::default(),
         fault,
         kind: ErrorKind::StorageFull,
+        gate: None,
     }
+}
+
+fn gated() -> Arc<FaultFs> {
+    Arc::new(FaultFs {
+        gate: Some(Gate::default()),
+        ..faulty(Fault::None)
+    })
 }
 
 fn names(entries: Vec<DirEntry>) -> Vec<String> {
@@ -231,5 +256,41 @@ async fn write_atomic_refuses_a_symlink_target_and_replaces_a_regular_file() -> 
     std::os::unix::fs::symlink(root.join("real_dir"), root.join("link_dir"))?;
     write_atomic(&fs, &at("link_dir/config.toml")?, b"in", FileMode(0o600)).await?;
     assert_eq!(std::fs::read(root.join("real_dir/config.toml"))?, b"in");
+    Ok(())
+}
+
+#[tokio::test]
+async fn two_writers_of_one_target_both_succeed_and_leave_one_whole_file() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let root = HostPath::parse(dir.path())?;
+    let target = HostPath::parse(&dir.path().join("usage.json"))?;
+    let fs = gated();
+    let (a_bytes, b_bytes) = (vec![b'a'; 4096], vec![b'b'; 8192]);
+
+    let mut first = tokio::spawn({
+        let (fs, target, bytes) = (Arc::clone(&fs), target.clone(), a_bytes.clone());
+        async move { write_atomic(&*fs, &target, &bytes, FileMode(0o600)).await }
+    });
+    let gate = fs.gate.as_ref().ok_or("no gate")?;
+    tokio::select! {
+        () = gate.parked.notified() => {}
+        done = &mut first => return Err(format!("the first writer ended before its rename: {done:?}").into()),
+    }
+    let second = write_atomic(&*fs, &target, &b_bytes, FileMode(0o600)).await;
+    gate.release.notify_one();
+    let first = first.await?;
+
+    assert!(second.is_ok(), "second writer: {second:?}");
+    assert!(first.is_ok(), "first writer: {first:?}");
+    assert_eq!(names(fs.list(&root).await?), ["usage.json"]);
+    let after = fs.read(&target).await?;
+    assert!(
+        after == Some(a_bytes) || after == Some(b_bytes),
+        "the file is neither writer's bytes"
+    );
+
+    write_atomic(&*fs, &target, b"third", FileMode(0o600)).await?;
+    assert_eq!(fs.read(&target).await?, Some(b"third".to_vec()));
+    assert_eq!(names(fs.list(&root).await?), ["usage.json"]);
     Ok(())
 }

@@ -4,9 +4,10 @@
 use std::io::ErrorKind;
 
 use jackin_core::{FileMode, FileSystem, FsError, Provider, Timestamp};
-use jackin_testkit::{FsOp, Method, Route};
+use jackin_testkit::{FsOp, Held, Method, Route};
 use jackin_usage::{
     AccountUsage, Freshness, Percent, Refresh, UnavailableReason, UsageAccount, UsageError,
+    UsageOutcome,
 };
 
 use crate::support::{
@@ -548,6 +549,107 @@ async fn the_same_account_name_under_another_provider_is_fetched_again() -> Test
         );
         let usage = harness.one(&kimi, Refresh::Cached).await?;
         assert_eq!(windows_of(&usage.outcome).len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+const OPENROUTER_KEY_PATH: &str = "/api/v1/key";
+const ROUTER_KEY: &str = "ROUTER_TEST_KEY";
+
+async fn start_two()
+-> Result<(UsageHarness, UsageAccount, UsageAccount), Box<dyn std::error::Error>> {
+    let (mut harness, codex) = start(10).await?;
+    harness.env("OPENROUTER_TEST_KEY", ROUTER_KEY);
+    crate::providers::openrouter_serve(&harness, ROUTER_KEY);
+    let router = crate::support::account(
+        "router",
+        Provider::Openrouter,
+        crate::support::env_source("OPENROUTER_TEST_KEY"),
+    );
+    Ok((harness, codex, router))
+}
+
+async fn two_runs(
+    harness: &UsageHarness,
+    parked: (&UsageAccount, Refresh),
+    other: (&UsageAccount, Refresh),
+    held: Held,
+) -> TestResult {
+    let (first, second) = (harness.host(), harness.host());
+    let parked_run = harness.report_on(&first, std::slice::from_ref(parked.0), parked.1);
+    let other_run = async {
+        held.arrived().await;
+        let done = harness
+            .report_on(&second, std::slice::from_ref(other.0), other.1)
+            .await;
+        held.release();
+        done
+    };
+    let (parked_done, other_done) = tokio::join!(parked_run, other_run);
+    parked_done?;
+    other_done?;
+    Ok(())
+}
+
+async fn a_second_run_keeps_the_entry_of_the_first() -> TestResult {
+    let (harness, codex, router) = start_two().await?;
+    let held = harness
+        .server
+        .hold(Provider::Codex, Method::Get, CODEX_PATH);
+    two_runs(
+        &harness,
+        (&codex, Refresh::Cached),
+        (&router, Refresh::Cached),
+        held,
+    )
+    .await?;
+    harness.server.shutdown().await;
+    for account in [&codex, &router] {
+        let usage = harness.one(account, Refresh::Cached).await?;
+        if !matches!(usage.outcome, UsageOutcome::Windows(_)) {
+            return Err(format!(
+                "{} was not served from the cache: {:?}",
+                account.name.as_str(),
+                usage.outcome
+            )
+            .into());
+        }
+    }
+    Ok(())
+}
+
+async fn a_stale_save_does_not_bring_back_a_removed_entry() -> TestResult {
+    let (harness, codex, router) = start_two().await?;
+    harness.one(&codex, Refresh::Cached).await?;
+    let held = harness
+        .server
+        .hold(Provider::Openrouter, Method::Get, OPENROUTER_KEY_PATH);
+    serve(&harness, Route::status(401));
+    two_runs(
+        &harness,
+        (&router, Refresh::Cached),
+        (&codex, Refresh::Force),
+        held,
+    )
+    .await?;
+    serve(&harness, Route::status(500));
+    let usage = harness.one(&codex, Refresh::Cached).await?;
+    if !matches!(usage.outcome, UsageOutcome::Unavailable(_)) {
+        return Err(format!("the removed entry came back: {:?}", usage.outcome).into());
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_reports_neither_drop_nor_bring_back_cache_entries() -> TestResult {
+    guard(async {
+        let kept = a_second_run_keeps_the_entry_of_the_first().await;
+        let removed = a_stale_save_does_not_bring_back_a_removed_entry().await;
+        assert!(
+            kept.is_ok() && removed.is_ok(),
+            "kept: {kept:?}; removed: {removed:?}"
+        );
         Ok(())
     })
     .await
