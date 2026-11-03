@@ -34,7 +34,7 @@ RUN if getent passwd ubuntu >/dev/null; then userdel --remove ubuntu; fi \
     && useradd --uid "${SANDBOX_UID}" --gid "${SANDBOX_GID}" --home-dir /sandbox --create-home --shell /bin/bash sandbox \
     && chown "${SANDBOX_UID}:${SANDBOX_GID}" /sandbox
 
-RUN for tool in sudo su-exec gosu doas iptables ip6tables nft ufw docker podman nerdctl containerd runc; do \
+RUN for tool in sudo su-exec gosu doas iptables ip6tables nft ufw docker podman nerdctl dockerd containerd containerd-shim containerd-shim-runc-v2 runc crun buildkitd rootlesskit; do \
         if command -v "$tool" >/dev/null; then echo "forbidden tool in construct: $tool" >&2; exit 1; fi; \
     done \
     && find / -xdev -type f -perm /6000 -print -exec chmod a-s {} + \

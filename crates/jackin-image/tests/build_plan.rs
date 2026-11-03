@@ -959,8 +959,14 @@ fn construct_dockerfile_removes_setuid_and_rejects_file_capabilities() -> TestRe
         "docker",
         "podman",
         "nerdctl",
+        "dockerd",
         "containerd",
+        "containerd-shim",
+        "containerd-shim-runc-v2",
         "runc",
+        "crun",
+        "buildkitd",
+        "rootlesskit",
     ]
     .into();
     assert_eq!(scan, wanted, "forbidden tools");

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 set -u
 
-tools="sudo su-exec gosu doas iptables ip6tables nft ufw docker podman nerdctl containerd runc"
+tools="sudo su-exec gosu doas iptables ip6tables nft ufw docker podman nerdctl dockerd containerd containerd-shim containerd-shim-runc-v2 runc crun buildkitd rootlesskit"
 
 usage() {
     echo "usage: scan --owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... ROOT PROTECTED..." >&2

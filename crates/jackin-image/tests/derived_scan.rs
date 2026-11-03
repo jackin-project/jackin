@@ -455,7 +455,22 @@ fn script_tools() -> Result<Vec<String>, Box<dyn Error>> {
 #[test]
 fn scan_refuses_forbidden_tools_by_name_anywhere_in_the_tree() -> TestResult {
     let tools = construct_tools()?;
-    assert_eq!(tools.len(), 13, "{tools:?}");
+    assert_eq!(tools.len(), 19, "{tools:?}");
+    for engine in [
+        "dockerd",
+        "containerd",
+        "containerd-shim",
+        "containerd-shim-runc-v2",
+        "runc",
+        "crun",
+        "buildkitd",
+        "rootlesskit",
+    ] {
+        assert!(
+            tools.iter().any(|tool| tool == engine),
+            "{engine} is not forbidden"
+        );
+    }
     let mut from_script = script_tools()?;
     from_script.sort();
     let mut from_construct = tools.clone();
@@ -1076,7 +1091,18 @@ fn scan_refuses_every_other_tool_and_a_missing_pair_in_the_client_form() -> Test
     assert!(!absent.ok);
     assert_eq!(absent.lines(), [forbidden(DOCKER)]);
 
-    for tool in ["containerd", "runc", "podman", "nerdctl"] {
+    for tool in [
+        "dockerd",
+        "containerd",
+        "containerd-shim",
+        "containerd-shim-runc-v2",
+        "runc",
+        "crun",
+        "buildkitd",
+        "rootlesskit",
+        "podman",
+        "nerdctl",
+    ] {
         let fx = Fixture::new()?;
         fx.client()?;
         let path = format!("/usr/local/bin/{tool}");
