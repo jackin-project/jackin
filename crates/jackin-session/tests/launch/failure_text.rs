@@ -1,11 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::error::Error;
+use std::fmt;
+
 use jackin_core::{DockerLabel, HookKind, ImageLabel, LaunchId, Phase, SandboxName, TerminalText};
 use jackin_openshell::GatewayError;
-use jackin_session::{LaunchError, LaunchFailure, LaunchNextStep, LaunchStep};
+use jackin_session::{LaunchError, LaunchFailure, LaunchNextStep, LaunchStep, error_chain};
 
-type Fallible<T> = Result<T, Box<dyn std::error::Error>>;
+type Fallible<T> = Result<T, Box<dyn Error>>;
 
 fn launch() -> Fallible<LaunchId> {
     Ok(LaunchId::parse("01hzy3k5m7p9r2t4v6w8x0abcd")?)
@@ -112,5 +115,52 @@ fn a_stale_sandbox_is_never_offered_a_retry_under_the_same_launch() -> Fallible<
         "{}",
         stale.summary()
     );
+    Ok(())
+}
+
+#[derive(Debug)]
+struct Link {
+    text: &'static str,
+    cause: Option<Box<Link>>,
+}
+
+impl fmt::Display for Link {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.text)
+    }
+}
+
+impl Error for Link {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.cause
+            .as_deref()
+            .map(|cause| -> &(dyn Error + 'static) { cause })
+    }
+}
+
+fn chain(texts: &[&'static str]) -> Option<Link> {
+    texts.iter().rev().fold(None, |cause, text| {
+        Some(Link {
+            text,
+            cause: cause.map(Box::new),
+        })
+    })
+}
+
+#[test]
+fn an_error_chain_prints_each_cause_once_and_drops_only_a_repeat_of_the_line_before() -> Fallible<()>
+{
+    let cases: [(&[&'static str], &str); 6] = [
+        (&["x"], "x"),
+        (&["x", "x"], "x"),
+        (&["a", "a", "a"], "a"),
+        (&["a", "b", "c"], "a: b: c"),
+        (&["x", "x", "y"], "x: y"),
+        (&["x", "y", "x"], "x: y: x"),
+    ];
+    for (texts, expected) in cases {
+        let error = chain(texts).ok_or("an empty chain")?;
+        assert_eq!(error_chain(&error), expected, "{texts:?}");
+    }
     Ok(())
 }

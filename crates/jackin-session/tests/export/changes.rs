@@ -1,11 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Phase, SandboxName, TerminalText};
+use std::time::{Duration, UNIX_EPOCH};
+
+use jackin_core::{Phase, SandboxName, Sha256, TerminalText};
 use jackin_openshell::PowerAction;
-use jackin_session::{ChangeHunk, ChangeLine, ChangeSet, ChangeStatus, ChangedFile, ChangesError};
+use jackin_session::{
+    ChangeHunk, ChangeLine, ChangeSet, ChangeStatus, ChangedFile, ChangesError, Unread,
+};
 use jackin_testkit::{Rig, SandboxHandle, TestResult, guard};
 use tokio_util::sync::CancellationToken;
+
+use super::support::state;
 
 fn t(text: &str) -> TerminalText {
     TerminalText::sanitize(text.as_bytes())
@@ -168,6 +174,127 @@ async fn changes_refuses_a_stopped_or_absent_sandbox_and_a_project_that_is_not_a
                 ..
             })
         ));
+        Ok(())
+    })
+    .await
+}
+
+const LIMIT: usize = 256 * 1024;
+const LINE: &str = "0123456789abcde";
+
+#[tokio::test]
+async fn an_untracked_file_over_the_read_limit_is_listed_unread_even_when_it_is_larger_than_the_output_limit()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+
+        let at_limit = format!("{LINE}\n").repeat(LIMIT / (LINE.len() + 1));
+        assert_eq!(at_limit.len(), LIMIT);
+        write(&handle, "a-at-limit.txt", at_limit.as_bytes())?;
+        write(
+            &handle,
+            "b-over-by-one.txt",
+            format!("{at_limit}x").as_bytes(),
+        )?;
+        write(&handle, "c-300-kib.txt", &vec![b'c'; 300 * 1024])?;
+        write(&handle, "d-17-mib.bin", &vec![b'd'; 17 * 1024 * 1024])?;
+        let outside = tempfile::tempdir()?;
+        let target = outside.path().join("target.txt");
+        std::fs::write(&target, b"SENTINEL-BEHIND-THE-LINK\n")?;
+        std::os::unix::fs::symlink(&target, handle.root().join("project/e-link"))?;
+
+        let found = changes(&rig, &name).await?;
+        let summary: Vec<(&str, usize, Option<Unread>)> = found
+            .files
+            .iter()
+            .map(|changed| {
+                (
+                    changed.path.as_str(),
+                    changed.hunks.iter().map(|hunk| hunk.lines.len()).sum(),
+                    changed.unread,
+                )
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("a-at-limit.txt", LIMIT / (LINE.len() + 1), None),
+                ("b-over-by-one.txt", 0, Some(Unread::TooLarge)),
+                ("c-300-kib.txt", 0, Some(Unread::TooLarge)),
+                ("d-17-mib.bin", 0, Some(Unread::TooLarge)),
+                ("e-link", 0, Some(Unread::NotRegular)),
+            ]
+        );
+        assert_eq!(found.omitted, 0);
+        let kept = found.files.first().ok_or("no files")?;
+        assert!(
+            kept.hunks
+                .iter()
+                .flat_map(|hunk| &hunk.lines)
+                .all(|line| *line == added(LINE))
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn untracked_files_beyond_the_first_five_hundred_are_counted_not_listed() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        for index in 0..501 {
+            write(&handle, &format!("f{index:03}.txt"), b"x\n")?;
+        }
+        let more = changes(&rig, &name).await?;
+        let listed: Vec<String> = more
+            .files
+            .iter()
+            .map(|found| found.path.as_str().to_owned())
+            .collect();
+        let first: Vec<String> = (0..500).map(|index| format!("f{index:03}.txt")).collect();
+        assert_eq!(
+            (
+                listed.len(),
+                listed.last().map(String::as_str),
+                more.omitted
+            ),
+            (500, Some("f499.txt"), 1)
+        );
+        assert!(listed == first, "the listed paths are not the first 500");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn asking_for_the_work_state_never_rewrites_the_sandbox_index() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let readme = handle.root().join("project/README.md");
+        tokio::fs::OpenOptions::new()
+            .write(true)
+            .open(&readme)
+            .await?
+            .into_std()
+            .await
+            .set_modified(UNIX_EPOCH + Duration::from_secs(1_700_000_000))?;
+        let index = handle.root().join("project/.git/index");
+        let before = Sha256::of(&std::fs::read(&index)?);
+
+        state(&rig, &name).await;
+        assert_eq!(Sha256::of(&std::fs::read(&index)?), before);
+
+        handle.git(&["status", "--porcelain"]).await?;
+        assert_ne!(Sha256::of(&std::fs::read(&index)?), before);
         Ok(())
     })
     .await

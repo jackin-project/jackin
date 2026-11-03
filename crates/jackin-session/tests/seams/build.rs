@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{Config, ConfigError, GatewayName, HostPath, RoleName};
-use jackin_image::Rebuild;
+use jackin_image::{BuiltImage, ImageError, ImageRequest, ImageSource, Rebuild, ensure_image};
 use jackin_session::{
-    BuildError, BuildRequest, LAUNCH_EVENT_CAPACITY, RoleError, build_for_workspace,
+    BuildError, BuildRequest, LAUNCH_EVENT_CAPACITY, RoleError, build_for_workspace, plan_image,
+    plan_launch,
 };
-use jackin_testkit::{Rig, TestResult, guard};
+use jackin_testkit::{ENGINE_PORT, Rig, TestResult, guard};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -14,7 +15,7 @@ async fn build(
     rig: &Rig,
     config: &Config,
     request: &BuildRequest<'_>,
-) -> Result<jackin_image::BuiltImage, BuildError> {
+) -> Result<BuiltImage, BuildError> {
     let (progress, mut events) = mpsc::channel(LAUNCH_EVENT_CAPACITY);
     let drain = tokio::spawn(async move { while events.recv().await.is_some() {} });
     let built = build_for_workspace(
@@ -146,6 +147,101 @@ async fn an_unknown_gateway_is_refused_before_any_role_is_read() -> TestResult {
             Err(BuildError::Config(ConfigError::UnknownGateway(name))) if name == ghost
         ));
         assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+async fn reuse(rig: &Rig, image: &ImageRequest) -> Result<BuiltImage, ImageError> {
+    let (progress, mut events) = mpsc::channel(LAUNCH_EVENT_CAPACITY);
+    let drain = tokio::spawn(async move { while events.recv().await.is_some() {} });
+    let found = ensure_image(
+        rig.world.engine.as_ref(),
+        image,
+        &progress,
+        &CancellationToken::new(),
+    )
+    .await;
+    drop(progress);
+    drop(drain.await);
+    found
+}
+
+#[tokio::test]
+async fn a_build_makes_the_image_that_a_launch_of_the_same_workspace_finds_already_built()
+-> TestResult {
+    guard(async {
+        for role_docker in [false, true] {
+            let rig = Rig::builder()
+                .role_docker(role_docker)
+                .engine(ENGINE_PORT)
+                .build()
+                .await?;
+            let flagged_text = rig
+                .config
+                .render()
+                .replace("docker = false", "docker = true");
+            assert_ne!(flagged_text, rig.config.render());
+            let flagged = Config::parse(&flagged_text)?;
+            let path = here(&rig);
+            let mut tags = Vec::new();
+            for (label, config) in [("workspace docker off", &rig.config), ("on", &flagged)] {
+                let built = build(&rig, config, &request_for(None, &path)).await?;
+                let builds = rig.world.engine.builds().len();
+                let plan = plan_launch(config, &rig.loaded, rig.request(1)?)?;
+                let found = reuse(&rig, plan.image_request()).await?;
+                assert_eq!(
+                    (&found.tag, &found.id, found.source),
+                    (&built.tag, &built.id, ImageSource::Cache),
+                    "role docker {role_docker}, {label}"
+                );
+                assert_eq!(rig.world.engine.builds().len(), builds);
+                tags.push(built.tag);
+            }
+            assert_eq!(tags[0] == tags[1], role_docker);
+
+            let unsaved_dir = tempfile::tempdir()?;
+            let unsaved = HostPath::parse(&std::fs::canonicalize(unsaved_dir.path())?)?;
+            let elsewhere = build(&rig, &flagged, &request_for(None, &unsaved)).await?;
+            let (gateway, _) = flagged.resolve_gateway(None)?;
+            let role_only = plan_image(&flagged, &rig.loaded, gateway, None, Rebuild::No)?;
+            let found = reuse(&rig, &role_only).await?;
+            assert_eq!(
+                (&found.tag, found.source),
+                (&elsewhere.tag, ImageSource::Cache),
+                "role docker {role_docker}, an unsaved directory"
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_role_the_workspace_does_not_allow_is_refused_before_anything_is_built() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let root = rig.loaded.root().as_path().display().to_string();
+        let saved = rig.project.path().as_path().display().to_string();
+        let restricted = Config::parse(&format!(
+            "{}\n[roles.second]\nsource = {{ path = \"{root}\" }}\n",
+            rig.config.render().replace(
+                &format!("path = \"{saved}\"\n"),
+                &format!("path = \"{saved}\"\nroles = [\"second\"]\n")
+            )
+        ))?;
+        let path = here(&rig);
+        let sentinel = RoleName::parse("sentinel")?;
+        let refused = build(&rig, &restricted, &request_for(Some(&sentinel), &path)).await;
+        assert!(
+            matches!(&refused, Err(BuildError::Role(RoleError::NotAllowed(name))) if *name == sentinel),
+            "{:?}",
+            refused.err()
+        );
+        assert!(rig.world.engine.builds().is_empty());
+
+        build(&rig, &restricted, &request_for(None, &path)).await?;
+        assert!(!rig.world.engine.builds().is_empty());
         Ok(())
     })
     .await

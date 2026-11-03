@@ -59,3 +59,44 @@ async fn a_role_outside_the_allowed_roles_is_refused_naming_the_workspace_and_th
     })
     .await
 }
+
+#[tokio::test]
+async fn a_refused_role_wins_over_an_account_that_cannot_launch() -> TestResult {
+    guard(async {
+        let unusable = [
+            ("no account at all", String::new()),
+            (
+                "a key account",
+                "[accounts.work]\nprovider = \"codex\"\ncredential = { source = \"env\", var = \"OPENAI_KEY\" }\n".to_owned(),
+            ),
+        ];
+        for (label, accounts) in unusable {
+            let mut refused = Spec::new(RoleFixture::new("sentinel")?);
+            refused.accounts.clone_from(&accounts);
+            refused.workspace_keys = "roles = [\"other\"]\n".to_owned();
+            refused.tables = "\n[roles.other]\nsource = { path = \"/somewhere/else\" }\n".to_owned();
+            let setup = refused.build().await?;
+            let result = setup.plan(setup.request(1)?);
+            assert!(
+                matches!(&result, Err(PlanError::RoleNotAllowed { .. })),
+                "{label}: {:?}",
+                result.err()
+            );
+
+            let mut allowed = Spec::new(RoleFixture::new("sentinel")?);
+            allowed.accounts = accounts;
+            let setup = allowed.build().await?;
+            let result = setup.plan(setup.request(1)?);
+            assert!(
+                matches!(
+                    &result,
+                    Err(PlanError::Selection(_) | PlanError::Unsupported { .. })
+                ),
+                "{label}: {:?}",
+                result.err()
+            );
+        }
+        Ok(())
+    })
+    .await
+}

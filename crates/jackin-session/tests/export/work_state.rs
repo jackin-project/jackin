@@ -3,7 +3,7 @@
 
 use jackin_core::{BranchName, Config, Phase, SandboxName};
 use jackin_openshell::{GatewayError, GatewayOp};
-use jackin_session::{Unexported, UnknownReason, WorkState};
+use jackin_session::{PurgeError, PurgeMode, Unexported, UnknownReason, WorkState};
 use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard};
 use tokio_util::sync::CancellationToken;
 
@@ -237,13 +237,49 @@ async fn a_corrupt_sandbox_index_still_exports_the_branches_but_the_work_state_i
         let purge = rig
             .world
             .session
-            .purge(&rig.config, &name, jackin_session::PurgeMode::Guarded)
+            .purge(&rig.config, &name, PurgeMode::Guarded)
             .await;
         assert!(
-            matches!(
-                purge,
-                Err(jackin_session::PurgeError::WorkNotExported { .. })
-            ),
+            matches!(purge, Err(PurgeError::WorkNotExported { .. })),
+            "{purge:?}"
+        );
+        assert!(rig.world.gateway.sandbox(&name).is_some());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_stash_counts_from_its_ref_so_an_expired_reflog_still_blocks_a_guarded_purge()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        assert_eq!(state(&rig, &name).await, WorkState::Exported);
+
+        std::fs::write(handle.root().join("project/README.md"), b"first\n")?;
+        handle.git(&["stash", "push", "-q"]).await?;
+        assert_eq!(state(&rig, &name).await, unexported(1, &[])?);
+
+        std::fs::write(handle.root().join("project/README.md"), b"second\n")?;
+        handle.git(&["stash", "push", "-q"]).await?;
+        assert_eq!(state(&rig, &name).await, unexported(2, &[])?);
+
+        handle
+            .git(&["reflog", "expire", "--expire=now", "--all"])
+            .await?;
+        assert_eq!(handle.git(&["stash", "list"]).await?, "");
+        assert_eq!(state(&rig, &name).await, unexported(1, &[])?);
+
+        let purge = rig
+            .world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .await;
+        assert!(
+            matches!(purge, Err(PurgeError::WorkNotExported { .. })),
             "{purge:?}"
         );
         assert!(rig.world.gateway.sandbox(&name).is_some());
