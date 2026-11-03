@@ -27,7 +27,7 @@ const IMAGE: &str = "jackin.invalid/contract:0123456789abcdef";
 
 async fn fixture() -> (TempDir, ContractFixture) {
     let dir = TempDir::new().unwrap();
-    let status = tokio::process::Command::new("git")
+    let status = tokio::process::Command::from(jackin_testkit::git_command())
         .arg("init")
         .arg("--quiet")
         .arg(dir.path())

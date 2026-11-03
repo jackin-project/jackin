@@ -291,16 +291,21 @@ fn is_generated(text: &str) -> bool {
 }
 
 fn read_files(root: &Path) -> Result<Vec<RepoFile>, CiError> {
+    let mut git = Command::new("git");
+    for (name, _) in std::env::vars_os() {
+        if name.as_encoded_bytes().starts_with(b"GIT_") {
+            git.env_remove(name);
+        }
+    }
     let output = capture(
-        Command::new("git")
-            .args([
-                "ls-files",
-                "-z",
-                "--cached",
-                "--others",
-                "--exclude-standard",
-            ])
-            .current_dir(root),
+        git.args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ])
+        .current_dir(root),
     )?;
     if !output.status.success() {
         return Err(CiError::ListFiles(

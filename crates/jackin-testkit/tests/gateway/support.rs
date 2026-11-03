@@ -292,13 +292,11 @@ pub(crate) async fn eventually<T: PartialEq + Debug>(
 }
 
 pub(crate) async fn git(dir: &std::path::Path, args: &[&str]) -> TestResult {
-    let status = Command::new("/usr/bin/git")
+    let status = Command::from(jackin_testkit::git_command())
         .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
         .args(["-c", "commit.gpgsign=false"])
         .args(args)
         .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
         .status()
         .await?;
     if status.success() {

@@ -410,7 +410,7 @@ impl Scenario {
                     "x",
                 ],
             ] {
-                let status = std::process::Command::new("git")
+                let status = jackin_testkit::git_command()
                     .args(&args)
                     .current_dir(&repo)
                     .status()
