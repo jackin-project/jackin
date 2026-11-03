@@ -269,6 +269,7 @@ pub(crate) async fn stage(
     let fs = deps.host.fs.as_ref();
     refuse::check(&git, fs).await?;
     let facts = facts::read(&git, fs).await?;
+    refuse::borrowed_objects(fs, &facts.git_dir).await?;
     let listing = listing::read(&git).await?;
     refuse::symlinked_parents(fs, project.path(), &listing).await?;
     refuse::filters(&git, &listing).await?;
@@ -306,6 +307,8 @@ impl Staged {
         deps.gateway
             .upload_tree(sandbox, project, &sandbox_layout::PROJECT, cancel)
             .await?;
+        let git = host_git(deps, project.path(), cancel);
+        refuse::unchanged(&self.listing, &listing::read(&git).await?)?;
         let landed = self.send_bundle(deps, sandbox, launch, cancel).await?;
         remote.repository(&self.facts, landed.as_ref()).await?;
         self.verify(deps, project, &remote, launch, cancel).await

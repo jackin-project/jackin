@@ -241,6 +241,15 @@ impl FileSystem for StdFileSystem {
         .await
     }
 
+    async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
+        blocking(path, |p| {
+            missing_is_none(fs::canonicalize(p))?
+                .map(|real| HostPath::parse(&real).map_err(io::Error::other))
+                .transpose()
+        })
+        .await
+    }
+
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
         blocking(path, |p| {
             missing_is_none(fs::metadata(p)).map(|meta| meta.map(|m| m.len()))

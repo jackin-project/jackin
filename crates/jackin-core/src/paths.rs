@@ -182,15 +182,114 @@ impl ProjectRoot {
         if fs.stat(path).await? != Some(FileKind::Dir) {
             return Err(PathError::NotADirectory(path.clone()));
         }
-        if fs.stat(&path.join_name(".git")).await?.is_none() {
-            return Err(PathError::NotAGitWorkTree(path.clone()));
+        let git = path.join_name(".git");
+        match fs.stat(&git).await? {
+            None => Err(PathError::NotAGitWorkTree(path.clone())),
+            Some(FileKind::Dir) => Ok(ProjectRoot(path.clone())),
+            Some(FileKind::File) if owns_gitfile(fs, path, &git).await? => {
+                Ok(ProjectRoot(path.clone()))
+            }
+            Some(_) => Err(PathError::UnsupportedGitEntry(path.clone())),
         }
-        Ok(ProjectRoot(path.clone()))
     }
 
     pub fn path(&self) -> &HostPath {
         &self.0
     }
+}
+
+fn resolve_lexically(base: &HostPath, target: &str) -> Option<HostPath> {
+    let mut out = PathBuf::new();
+    for component in base.as_path().join(target).components() {
+        match component {
+            Component::ParentDir => {
+                if !out.pop() {
+                    return None;
+                }
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    HostPath::parse(&out).ok()
+}
+
+async fn first_line(fs: &dyn FileSystem, path: &HostPath) -> Result<Option<String>, PathError> {
+    Ok(fs
+        .read(path)
+        .await?
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .and_then(|text| text.lines().next().map(|line| line.trim().to_owned())))
+}
+
+fn core_worktree(config: &str) -> Option<String> {
+    let mut in_core = false;
+    for line in config.lines().map(str::trim) {
+        if let Some(section) = line.strip_prefix('[') {
+            in_core = section
+                .trim_end_matches(']')
+                .trim()
+                .eq_ignore_ascii_case("core");
+        } else if in_core
+            && let Some((key, value)) = line.split_once('=')
+            && key.trim().eq_ignore_ascii_case("worktree")
+        {
+            let value = value.trim();
+            return Some(match value.strip_prefix('"') {
+                Some(quoted) => quoted.split('"').next().unwrap_or_default().to_owned(),
+                None => value
+                    .split(['#', ';'])
+                    .next()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_owned(),
+            });
+        }
+    }
+    None
+}
+
+async fn owns_gitfile(
+    fs: &dyn FileSystem,
+    root: &HostPath,
+    gitfile: &HostPath,
+) -> Result<bool, PathError> {
+    let Some(line) = first_line(fs, gitfile).await? else {
+        return Ok(false);
+    };
+    let Some(gitdir) = line
+        .strip_prefix("gitdir:")
+        .and_then(|target| resolve_lexically(root, target.trim()))
+    else {
+        return Ok(false);
+    };
+    if let Some(back) = first_line(fs, &gitdir.join_name("gitdir")).await?
+        && let Some(named) = resolve_lexically(&gitdir, &back)
+        && let (Some(named), Some(own)) = (
+            fs.canonicalize(&named).await?,
+            fs.canonicalize(gitfile).await?,
+        )
+        && named == own
+    {
+        return Ok(true);
+    }
+    let Some(config) = fs.read(&gitdir.join_name("config")).await? else {
+        return Ok(false);
+    };
+    let Some(work_tree) = core_worktree(&String::from_utf8_lossy(&config))
+        .and_then(|target| resolve_lexically(&gitdir, &target))
+    else {
+        return Ok(false);
+    };
+    Ok(
+        match (
+            fs.canonicalize(&work_tree).await?,
+            fs.canonicalize(root).await?,
+        ) {
+            (Some(named), Some(own)) => named == own,
+            _ => false,
+        },
+    )
 }
 
 pub mod sandbox_layout {
