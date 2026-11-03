@@ -309,3 +309,34 @@ async fn a_stalled_program_run_holds_the_clock_until_the_cancel_and_an_unlinked_
     })
     .await
 }
+
+#[tokio::test]
+async fn sleepers_counts_the_tasks_blocked_in_sleep_now_and_not_the_ones_that_left() -> TestResult {
+    guard(async {
+        let clock = Arc::new(FakeClock::new());
+        assert_eq!(clock.sleepers(), 0);
+
+        let mut first = Sleeper::new(&clock);
+        assert!(!first.done().await);
+        assert_eq!(clock.sleepers(), 1);
+        let mut second = Sleeper::new(&clock);
+        assert!(!second.done().await);
+        assert_eq!(clock.sleepers(), 2);
+
+        drop(first);
+        assert_eq!(clock.sleepers(), 1, "a dropped sleep still counts");
+        drop(second);
+        assert_eq!(clock.sleepers(), 0, "a dropped sleep still counts");
+        assert!(clock.slept().is_empty(), "a dropped sleep is not a sleep");
+
+        let mut finishing = Sleeper::new(&clock);
+        assert!(!finishing.done().await);
+        assert_eq!(clock.sleepers(), 1);
+        clock.advance(Duration::from_secs(10));
+        assert!(finishing.finishes_within(1_000).await);
+        assert_eq!(clock.sleepers(), 0, "a finished sleep still counts");
+        assert_eq!(clock.slept(), [Duration::from_secs(10)]);
+        Ok(())
+    })
+    .await
+}

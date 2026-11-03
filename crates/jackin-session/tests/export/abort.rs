@@ -7,10 +7,11 @@ use std::time::Duration;
 use jackin_core::{Clock, GroupFault, ProcessError, Program};
 use jackin_openshell::{GatewayError, GatewayOp, TransferOp};
 use jackin_session::ExportError;
-use jackin_testkit::{FakeClock, Fault, Rig, TestResult, Trigger, default_limits, guard};
+use jackin_testkit::{
+    CancelsOn, FakeClock, Fault, Rig, TestResult, Trigger, default_limits, guard,
+};
 use tokio_util::sync::CancellationToken;
 
-use super::cancels::CancelsOn;
 use super::replies::RepliesOn;
 use super::support::{bundles_left, export, exports, ref_of, snapshot, staging_left};
 use super::tap::{RmRun, Tap};

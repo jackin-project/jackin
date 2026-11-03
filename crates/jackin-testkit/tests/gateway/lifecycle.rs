@@ -3,16 +3,17 @@
 
 use std::collections::BTreeSet;
 use std::error::Error;
+use std::sync::Arc;
 
 use jackin_core::{
-    AccountName, Agent, ChatgptAccountId, EnvName, LabelSelector, Labels, LaunchId, Phase,
-    ProfileId, ProviderName, SandboxLabels, SandboxName, Secret,
+    AccountName, Agent, ChatgptAccountId, EnvName, ImageId, ImageTag, LabelSelector, Labels,
+    LaunchId, Phase, ProfileId, ProviderName, SandboxLabels, SandboxName, Secret,
 };
 use jackin_openshell::{
     Gateway, GatewayError, GatewayOp, Missing, ProfileSync, ProviderMaterial, ProviderProfile,
     ProviderSpec, ProviderState, Provisioning, SandboxQuery,
 };
-use jackin_testkit::{FakeGateway, Fault};
+use jackin_testkit::{FakeEngine, FakeGateway, Fault};
 
 use super::support::{IMAGE, TestResult, fake, guard, observe, sh, spec_with};
 
@@ -101,7 +102,10 @@ async fn create_find_and_delete_round_trip_the_sandbox_state() -> TestResult {
     .await
 }
 
-fn login(profile: &ProfileId, name: &ProviderName) -> Result<ProviderSpec, Box<dyn Error>> {
+pub(crate) fn login(
+    profile: &ProfileId,
+    name: &ProviderName,
+) -> Result<ProviderSpec, Box<dyn Error>> {
     Ok(ProviderSpec {
         name: name.clone(),
         profile: profile.clone(),
@@ -356,6 +360,69 @@ async fn inserting_an_unmanaged_sandbox_over_an_existing_name_is_already_exists_
 
         fake.insert_unmanaged(&other, Labels::from_pairs([])?, Phase::Ready)?;
         assert_eq!(fake.sandboxes().len(), 3);
+        Ok(())
+    })
+    .await
+}
+
+fn image_id(digit: char) -> Result<ImageId, Box<dyn Error>> {
+    Ok(ImageId::parse(&format!(
+        "sha256:{}",
+        digit.to_string().repeat(64)
+    ))?)
+}
+
+#[tokio::test]
+async fn a_sandbox_keeps_the_image_id_its_tag_resolved_to_when_it_was_created() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let engine = Arc::new(FakeEngine::new());
+        fake.link_engine(Arc::clone(&engine));
+        let tag = ImageTag::parse("jackin.invalid/rebuilt:0123456789abcdef")?;
+        let (old, new) = (image_id('a')?, image_id('b')?);
+        engine.pin_id(&tag, old.clone());
+
+        let first = spec_with(
+            &LaunchId::generate()?,
+            tag.as_str(),
+            Vec::new(),
+            sh("sleep 3600")?,
+        )?;
+        fake.create_sandbox(&first).await?;
+        let handle = fake
+            .sandbox(first.name())
+            .ok_or("the sandbox is not listed")?;
+        assert_eq!(handle.image_id(), Some(old.clone()));
+
+        engine.pin_id(&tag, new.clone());
+        assert_eq!(
+            handle.image_id(),
+            Some(old),
+            "a retag moved a created sandbox"
+        );
+
+        let second = spec_with(
+            &LaunchId::generate()?,
+            tag.as_str(),
+            Vec::new(),
+            sh("sleep 3600")?,
+        )?;
+        fake.create_sandbox(&second).await?;
+        let later = fake
+            .sandbox(second.name())
+            .ok_or("the sandbox is not listed")?;
+        assert_eq!(later.image_id(), Some(new));
+
+        let known = spec_with(&LaunchId::generate()?, IMAGE, Vec::new(), sh("sleep 3600")?)?;
+        fake.create_sandbox(&known).await?;
+        let unresolved = fake
+            .sandbox(known.name())
+            .ok_or("the sandbox is not listed")?;
+        assert_eq!(
+            unresolved.image_id(),
+            None,
+            "an image the engine never built"
+        );
         Ok(())
     })
     .await

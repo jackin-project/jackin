@@ -94,6 +94,10 @@ impl FakeClock {
     pub fn slept(&self) -> Vec<Duration> {
         locked(&self.state).slept.clone()
     }
+
+    pub fn sleepers(&self) -> usize {
+        locked(&self.state).waiting.len()
+    }
 }
 
 impl Default for FakeClock {

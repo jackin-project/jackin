@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use jackin_core::{
-    CommitId, EnvName, FileMode, Labels, Phase, SandboxName, SandboxPath, SupervisorState,
+    CommitId, EnvName, FileMode, ImageId, Labels, Phase, SandboxName, SandboxPath, SupervisorState,
     Timestamp, sandbox_layout,
 };
 use jackin_openshell::TermSize;
@@ -40,6 +40,10 @@ impl SandboxHandle {
 
     pub fn created_at(&self) -> Option<Timestamp> {
         self.cell.state().created_at
+    }
+
+    pub fn image_id(&self) -> Option<ImageId> {
+        self.cell.state().image_id.clone()
     }
 
     pub fn phase(&self) -> Phase {

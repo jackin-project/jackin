@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use jackin_core::{
-    Agent, CommitId, Config, FileKind, FileSystem, FsError, HookKind, HostPath, LinkProblem,
+    Agent, Clock, CommitId, Config, FileKind, FileSystem, FsError, HookKind, HostPath, LinkProblem,
     ManifestError, PathError, ProcessError, ProcessOutput, ProcessRunner, ProcessStatus, RepoPath,
     RoleManifest, RoleName, RoleRev, RoleSource, RoleUrl, Sha256, TerminalText, Workspace,
     plain_list,
@@ -28,6 +28,11 @@ const KIND_OTHER: u8 = b'o';
 pub struct RoleCatalog {
     fs: Arc<dyn FileSystem>,
     runner: Arc<dyn ProcessRunner>,
+    #[expect(
+        dead_code,
+        reason = "the role cache lock of the next change waits on it"
+    )]
+    clock: Arc<dyn Clock>,
     cache_dir: HostPath,
 }
 
@@ -145,11 +150,13 @@ impl RoleCatalog {
     pub fn new(
         fs: Arc<dyn FileSystem>,
         runner: Arc<dyn ProcessRunner>,
+        clock: Arc<dyn Clock>,
         cache_dir: HostPath,
     ) -> RoleCatalog {
         RoleCatalog {
             fs,
             runner,
+            clock,
             cache_dir,
         }
     }

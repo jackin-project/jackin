@@ -6,10 +6,9 @@ use std::sync::Arc;
 
 use jackin_core::sandbox_layout;
 use jackin_openshell::GatewayOp;
-use jackin_testkit::{Fault, RepoFixture, Trigger};
+use jackin_testkit::{CancelsOn, Fault, RepoFixture, Trigger};
 use tokio_util::sync::CancellationToken;
 
-use super::cancels::CancelsOn;
 use super::support::{Rig, TestResult, failure, guard, ready, tree_of};
 
 async fn rig() -> Result<Rig, Box<dyn std::error::Error>> {
