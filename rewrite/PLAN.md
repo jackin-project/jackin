@@ -505,7 +505,7 @@ This phase is the first end-to-end proof.
 - **Scope:** `crates/xtask/src/e2e/`. Drive the PTY steps J11 and J12 with the `portable-pty` crate. Validate the probe output against `rewrite/probe-schema.json`.
 - **Steps:** Run each journey step in order. Compare the host observation with the probe output. Print one line for each step. The line has the ID, `PASS`, `FAIL`, or `SKIP`, and the reason. Exit non-zero if a step fails.
 - **Proof:** a run against `jackin-local`.
-- [ ] P8.1 done
+- [x] P8.1 done. Proof: merged at 8ccca7f60; G-FAST 1164 passed; red/green by test-reviewer in two rounds (/private/tmp/claude-501/plans/P8.1-redgreen.md, 181 named breaks) with `Gateway::sandbox_environment` (SandboxSpec.environment, proto field 5); live run against jackin-local with every step J00-J17 PASS (/private/tmp/claude-501/e2e/run5.out).
 
 ### P8.2 Run the journey
 
