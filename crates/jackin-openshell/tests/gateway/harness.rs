@@ -8,7 +8,6 @@ use std::time::Duration;
 
 use jackin_core::{GatewayName, HostPath, OpenShellWorkspace};
 use jackin_openshell::{GrpcGateway, GrpcGatewayConfig, resolve_gateway};
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use super::fakes::{RegistryFs, ScriptedRunner, exited};
@@ -31,35 +30,6 @@ pub(crate) async fn guard<T>(future: impl Future<Output = T>) -> T {
     tokio::time::timeout(HANG_GUARD, future)
         .await
         .expect("the operation hung")
-}
-
-pub(crate) async fn drive_paused<T>(task: JoinHandle<T>, limit: Duration) -> Option<T> {
-    const STEP: Duration = Duration::from_secs(2);
-    const SETTLE: Duration = Duration::from_millis(20);
-    tokio::time::pause();
-    let mut elapsed = Duration::ZERO;
-    let outcome = loop {
-        if task.is_finished() {
-            break Some(task.await.unwrap());
-        }
-        if elapsed >= limit {
-            task.abort();
-            break None;
-        }
-        tokio::task::spawn_blocking(|| {
-            let (_open, idle) = std::sync::mpsc::channel::<()>();
-            assert_eq!(
-                idle.recv_timeout(SETTLE),
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-            );
-        })
-        .await
-        .unwrap();
-        tokio::time::advance(STEP).await;
-        elapsed += STEP;
-    };
-    tokio::time::resume();
-    outcome
 }
 
 pub(crate) fn host(path: &str) -> HostPath {

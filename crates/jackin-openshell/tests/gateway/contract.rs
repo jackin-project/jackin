@@ -8,8 +8,8 @@ use std::time::Duration;
 use jackin_core::{HostPath, ImageTag, ProjectRoot, SandboxSlug, StdFileSystem};
 use jackin_openshell::GrpcGateway;
 use jackin_openshell::contract::{
-    CORE_CHECKS, ContractFixture, ContractGroup, ContractReport, TERMINAL_CHECKS, TRANSFER_CHECKS,
-    run,
+    CORE_CHECKS, ContractFixture, ContractGroup, ContractReport, SHELL_END_TIMEOUT,
+    TERMINAL_CHECKS, TRANSFER_CHECKS, run,
 };
 use openshell_sdk::raw::proto::{ObjectMeta, Provider, ProviderProfile, exec_sandbox_input};
 use tempfile::TempDir;
@@ -17,7 +17,7 @@ use tonic::Code;
 
 use super::exec_rpc::{Step, exit_event, host_shell, host_tools, scripted};
 use super::fakes::{Recorded, ScriptedRunner, exited};
-use super::harness::{Env, WORKSPACE, config, connect, drive_paused, env, guard, resolved};
+use super::harness::{Env, WORKSPACE, config, connect, env, guard, resolved};
 use super::server::{Broken, ExecBackend, ExecCtx, Fault};
 use super::ssh_server::{
     Action, REFUSED_NOTICE, RIGHT_FINGERPRINT, RIGHT_SEED, Script, SshModel, host_key,
@@ -47,6 +47,7 @@ async fn fixture() -> (TempDir, ContractFixture) {
             image: ImageTag::parse(IMAGE).unwrap(),
             project,
             name_prefix: SandboxSlug::parse("ctr").unwrap(),
+            shell_end_timeout: SHELL_END_TIMEOUT,
         },
     )
 }
@@ -283,16 +284,13 @@ async fn shell_exit_code_cannot_hang_the_run() {
     let root = TempDir::new().unwrap();
     prepare(&env, &root);
     env.server.state().exec = Some(hang_after_exit());
-    let (_project, fixture) = fixture().await;
-    let mut settings = config(&env, resolved(&env).await, WORKSPACE, env.runner.clone());
-    settings.call_timeout = Duration::from_secs(300);
-    let gateway = guard(GrpcGateway::connect(settings)).await.unwrap();
+    let (_project, mut fixture) = fixture().await;
+    fixture.shell_end_timeout = Duration::from_secs(1);
+    let gateway = connect(&env, WORKSPACE).await;
     let running =
         tokio::spawn(async move { run(&gateway, &fixture, ContractGroup::Terminal).await });
     guard(env.server.shared.child_started.notified()).await;
-    let report = drive_paused(running, Duration::from_secs(120))
-        .await
-        .expect("the shell_exit_code check did not end");
+    let report = guard(running).await.unwrap();
     let check = report
         .checks
         .iter()
