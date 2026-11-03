@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    DockerSubcommand, EnvValue, FileKind, FileMode, FileSystem, FsError, HostPath, LineSink,
-    OutputLine, OutputStream, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec,
+    DockerSubcommand, EnvValue, FileKind, FileMode, FileSystem, FsError, GroupFault, HostPath,
+    LineSink, OutputLine, OutputStream, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec,
     ProcessStatus, ProcessStdin, Program, RepoPath, SecretBytes, SecretOutput, StdFileSystem,
     write_atomic,
 };
@@ -55,8 +55,15 @@ enum ReplyBody {
     UntilCancelled {
         lines: Vec<(OutputStream, String)>,
     },
-    Timeout,
-    Cancelled,
+    Timeout {
+        group: Option<GroupFault>,
+    },
+    Cancelled {
+        group: Option<GroupFault>,
+    },
+    Group {
+        fault: GroupFault,
+    },
     Spawn {
         message: String,
     },
@@ -99,11 +106,23 @@ impl ProcessReply {
     }
 
     pub fn timeout() -> ProcessReply {
-        ProcessReply::of(ReplyBody::Timeout)
+        ProcessReply::of(ReplyBody::Timeout { group: None })
+    }
+
+    pub fn timeout_with(fault: GroupFault) -> ProcessReply {
+        ProcessReply::of(ReplyBody::Timeout { group: Some(fault) })
     }
 
     pub fn cancelled() -> ProcessReply {
-        ProcessReply::of(ReplyBody::Cancelled)
+        ProcessReply::of(ReplyBody::Cancelled { group: None })
+    }
+
+    pub fn cancelled_with(fault: GroupFault) -> ProcessReply {
+        ProcessReply::of(ReplyBody::Cancelled { group: Some(fault) })
+    }
+
+    pub fn group(fault: GroupFault) -> ProcessReply {
+        ProcessReply::of(ReplyBody::Group { fault })
     }
 
     pub fn spawn(message: &str) -> ProcessReply {
@@ -475,14 +494,18 @@ impl ScriptedProcessRunner {
                     group: None,
                 })
             }
-            ReplyBody::Timeout => Err(ProcessError::Timeout {
+            ReplyBody::Timeout { group } => Err(ProcessError::Timeout {
                 program: spec.program,
                 after: spec.timeout,
-                group: None,
+                group,
             }),
-            ReplyBody::Cancelled => Err(ProcessError::Cancelled {
+            ReplyBody::Cancelled { group } => Err(ProcessError::Cancelled {
                 program: spec.program,
-                group: None,
+                group,
+            }),
+            ReplyBody::Group { fault } => Err(ProcessError::Group {
+                program: spec.program,
+                fault,
             }),
             ReplyBody::Spawn { message } => Err(ProcessError::Spawn {
                 program: spec.program,

@@ -87,6 +87,7 @@ impl Inner {
                 return Err(GatewayError::Timeout {
                     op: GatewayOp::Terminal,
                     after: self.call_timeout,
+                    group: None,
                 });
             }
             Ok(Err(status)) => {

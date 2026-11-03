@@ -387,21 +387,24 @@ pub enum GroupFault {
     Unreachable { message: String },
 }
 
-fn group_note(group: Option<&GroupFault>) -> String {
-    group.map_or_else(String::new, |fault| format!("; {fault}"))
+impl GroupFault {
+    #[must_use]
+    pub fn note(group: Option<&GroupFault>) -> String {
+        group.map_or_else(String::new, |fault| format!("; {fault}"))
+    }
 }
 
 #[derive(Debug, Error)]
 pub enum ProcessError {
     #[error("failed to start {program}: {}", plain(.message))]
     Spawn { program: Program, message: String },
-    #[error("{program} timed out after {}{}", plain_duration(.after), group_note(.group.as_ref()))]
+    #[error("{program} timed out after {}{}", plain_duration(.after), GroupFault::note(.group.as_ref()))]
     Timeout {
         program: Program,
         after: Duration,
         group: Option<GroupFault>,
     },
-    #[error("{program} was cancelled{}", group_note(.group.as_ref()))]
+    #[error("{program} was cancelled{}", GroupFault::note(.group.as_ref()))]
     Cancelled {
         program: Program,
         group: Option<GroupFault>,

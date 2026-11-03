@@ -156,7 +156,8 @@ async fn a_program_run_with_a_cancelled_token_ends_cancelled_and_records_nothing
         assert!(matches!(
             result,
             Err(GatewayError::Cancelled {
-                op: GatewayOp::Program
+                op: GatewayOp::Program,
+                ..
             })
         ));
         assert!(handle.runs(&path("/bin/sh")?).is_empty());

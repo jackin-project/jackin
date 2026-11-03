@@ -10,9 +10,10 @@ use std::fmt;
 use std::path::Path;
 
 use jackin_core::{
-    BranchName, CommitId, Config, EntropyError, FsError, HostPath, LabelError, LaunchId, PathError,
-    Phase, ProcessError, ProcessStatus, ProjectRoot, SandboxLabels, SandboxName, SandboxPath,
-    Sha256, TerminalText, WorkspaceName, plain, plain_list, sandbox_layout,
+    BranchName, CommitId, Config, EntropyError, FsError, GroupFault, HostPath, LabelError,
+    LaunchId, PathError, Phase, ProcessError, ProcessStatus, ProjectRoot, SandboxLabels,
+    SandboxName, SandboxPath, Sha256, TerminalText, WorkspaceName, plain, plain_list,
+    sandbox_layout,
 };
 use jackin_openshell::GatewayError;
 use thiserror::Error;
@@ -197,14 +198,14 @@ pub enum ExportError {
         expected: CommitId,
         found: Option<CommitId>,
     },
-    #[error("cancelled")]
-    Cancelled,
+    #[error("cancelled{}", GroupFault::note(.group.as_ref()))]
+    Cancelled { group: Option<GroupFault> },
 }
 
 impl From<GatewayError> for ExportError {
     fn from(error: GatewayError) -> ExportError {
         match error {
-            GatewayError::Cancelled { .. } => ExportError::Cancelled,
+            GatewayError::Cancelled { group, .. } => ExportError::Cancelled { group },
             other => ExportError::Gateway(other),
         }
     }
@@ -213,7 +214,7 @@ impl From<GatewayError> for ExportError {
 impl From<ProcessError> for ExportError {
     fn from(error: ProcessError) -> ExportError {
         match error {
-            ProcessError::Cancelled { .. } => ExportError::Cancelled,
+            ProcessError::Cancelled { group, .. } => ExportError::Cancelled { group },
             other => ExportError::Process(other),
         }
     }
@@ -400,7 +401,7 @@ impl Session {
         cancel: CancellationToken,
     ) -> Result<ExportReport, ExportError> {
         if cancel.is_cancelled() {
-            return Err(ExportError::Cancelled);
+            return Err(ExportError::Cancelled { group: None });
         }
         let view = self
             .find_managed(sandbox)

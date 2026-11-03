@@ -259,6 +259,7 @@ impl Inner {
             Err(_) => Err(GatewayError::Timeout {
                 op: GatewayOp::Terminal,
                 after: self.call_timeout,
+                group: None,
             }),
         };
         let (attach, early) = match result {

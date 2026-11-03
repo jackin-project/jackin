@@ -37,7 +37,7 @@ pub type ProgressSink = tokio::sync::mpsc::Sender<ImageEvent>;
 
 fn from_engine(error: EngineError) -> ImageError {
     match error {
-        EngineError::Cancelled => ImageError::Cancelled,
+        EngineError::Cancelled { .. } => ImageError::Cancelled,
         EngineError::LockTimeout { key } => ImageError::LockTimeout { key },
         other => ImageError::Engine(other),
     }

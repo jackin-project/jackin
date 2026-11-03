@@ -151,7 +151,7 @@ async fn program_timeout_and_cancel_stop_the_remote_process() {
     tokio::time::resume();
     assert!(matches!(
         error,
-        GatewayError::Timeout { op: GatewayOp::Program, after } if after == Duration::from_secs(5)
+        GatewayError::Timeout { op: GatewayOp::Program, after, .. } if after == Duration::from_secs(5)
     ));
     guard(env.server.shared.child_killed.notified()).await;
 
@@ -168,7 +168,8 @@ async fn program_timeout_and_cancel_stop_the_remote_process() {
     assert!(matches!(
         error,
         GatewayError::Cancelled {
-            op: GatewayOp::Program
+            op: GatewayOp::Program,
+            ..
         }
     ));
     guard(env.server.shared.child_killed.notified()).await;

@@ -7,8 +7,9 @@ use std::time::Duration;
 
 use jackin_core::{
     CodexAuthMode, CompatibilityError, ConfigError, DockerSource, DockerSubcommand, FsError,
-    HookKind, HostPath, LabelError, ManifestError, OutputStream, PathError, Platform, ProcessError,
-    ProcessStatus, Program, SupervisorReading, SupervisorState, plain, plain_duration, plain_list,
+    GroupFault, HookKind, HostPath, LabelError, ManifestError, OutputStream, PathError, Platform,
+    ProcessError, ProcessStatus, Program, SupervisorReading, SupervisorState, plain,
+    plain_duration, plain_list,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -129,6 +130,47 @@ fn file_and_process_errors_name_paths_programs_and_streams_plainly() -> TestResu
             }
             .to_string(),
             "git was cancelled",
+        ),
+        (
+            ProcessError::Group {
+                program: git,
+                fault: GroupFault::Alive {
+                    after: Duration::from_secs(5),
+                },
+            }
+            .to_string(),
+            "git: processes of its group were still alive after 5s",
+        ),
+        (
+            ProcessError::Group {
+                program: git,
+                fault: GroupFault::Unreachable {
+                    message: "x\ny\u{1b}[31m".to_owned(),
+                },
+            }
+            .to_string(),
+            "git: cannot stop the processes of its group: x\\ny\\u{1b}[31m",
+        ),
+        (
+            ProcessError::Cancelled {
+                program: git,
+                group: Some(GroupFault::Alive {
+                    after: Duration::from_secs(5),
+                }),
+            }
+            .to_string(),
+            "git was cancelled; processes of its group were still alive after 5s",
+        ),
+        (
+            ProcessError::Timeout {
+                program: git,
+                after: Duration::from_secs(5),
+                group: Some(GroupFault::Unreachable {
+                    message: "nope".to_owned(),
+                }),
+            }
+            .to_string(),
+            "git timed out after 5s; cannot stop the processes of its group: nope",
         ),
         (
             ProcessError::OutputTooLarge {

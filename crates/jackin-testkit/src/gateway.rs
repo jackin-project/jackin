@@ -884,6 +884,7 @@ impl Gateway for FakeGateway {
         if cancel.is_cancelled() {
             return Err(GatewayError::Cancelled {
                 op: GatewayOp::Download,
+                group: None,
             });
         }
         let cell = found.ok_or_else(|| GatewayError::NotFound {

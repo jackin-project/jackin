@@ -454,6 +454,7 @@ impl Session {
         if cancel.is_cancelled() {
             return Err(GatewayError::Cancelled {
                 op: GatewayOp::WriteFile,
+                group: None,
             }
             .into());
         }
@@ -499,7 +500,7 @@ impl Session {
             tokio::select! {
                 biased;
                 () = cancel.cancelled() => {
-                    return Err(GatewayError::Cancelled { op: GatewayOp::ReadFiles }.into());
+                    return Err(GatewayError::Cancelled { op: GatewayOp::ReadFiles, group: None }.into());
                 }
                 () = self.deps.host.clock.sleep(POLL) => {}
             }
