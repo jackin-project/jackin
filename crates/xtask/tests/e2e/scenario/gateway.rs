@@ -109,11 +109,12 @@ impl ScenarioGateway {
 
     fn answer_probe(&self, run: &ProgramRun) -> Result<ProgramOutcome, GatewayError> {
         let young = self.shared.knobs().codex_young_polls;
-        if run.args.join(" ").contains("J04") && self.shared.state().age_polls <= young {
-            if let Some(model) = self.shared.state().sandboxes.get_mut(run.sandbox.as_str()) {
-                model.crashed = true;
-                model.supervisor = "exited 1 1".to_owned();
-            }
+        if run.args.join(" ").contains("J04")
+            && self.shared.state().age_polls <= young
+            && let Some(model) = self.shared.state().sandboxes.get_mut(run.sandbox.as_str())
+        {
+            model.crashed = true;
+            model.supervisor = "exited 1 1".to_owned();
         }
         let model = self
             .model_of(&run.sandbox)
