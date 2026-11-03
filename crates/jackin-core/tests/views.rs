@@ -5,9 +5,9 @@ use std::collections::BTreeSet;
 
 use jackin_core::{
     AccountName, Agent, AttemptId, BuildOutput, ClosureViolationView, ImageId, ImageTag,
-    InspectView, LaunchId, LsOutput, NameSuffix, Phase, PlannedLabels, PolicyStatus, ProviderName,
-    RoleName, SandboxLabels, SandboxName, SandboxSlug, SandboxSummary, Sha256, SupervisorReading,
-    SupervisorState, Timestamp, WorkspaceName,
+    InspectView, LaunchId, LsOutput, NameSuffix, Phase, PlannedLabels, PolicyLabel, PolicyStatus,
+    ProviderName, RoleName, SandboxLabels, SandboxName, SandboxSlug, SandboxSummary, Sha256,
+    SupervisorReading, SupervisorState, Timestamp, WorkspaceName,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -22,6 +22,7 @@ fn summary(phase: Phase) -> Fallible<SandboxSummary> {
         role: RoleName::parse("sentinel")?,
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
+        policy: PolicyLabel::of("policy"),
         launch: LaunchId::parse("01hzy3k5m7p9r2t4v6w8x0abcd")?,
     };
     let labels: SandboxLabels = planned.complete(&image, jackin_core::DockerLabel::Off);

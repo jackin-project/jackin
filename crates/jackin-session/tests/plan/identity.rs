@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 
 use jackin_core::{
-    AccountName, Agent, EnvName, PlannedLabels, ProviderName, RoleName, SandboxLabels, SandboxPath,
-    WorkspaceName,
+    AccountName, Agent, EnvName, PlannedLabels, PolicyLabel, ProviderName, RoleName, SandboxLabels,
+    SandboxPath, WorkspaceName,
 };
 use jackin_openshell::MainProcess;
 use jackin_testkit::RoleFixture;
@@ -28,6 +28,7 @@ async fn the_plan_derives_name_labels_and_draft_from_the_launch_id() -> TestResu
             role: RoleName::parse("sentinel")?,
             agent: Agent::Codex,
             account: AccountName::parse("work")?,
+            policy: PolicyLabel::of(&setup.role.policy().render()?),
             launch: launch_id(1),
         };
         assert_eq!(plan.draft().labels(), &expected);

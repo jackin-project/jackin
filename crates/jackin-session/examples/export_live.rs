@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use jackin_core::{
     AccountName, Agent, Config, FileSystem, GatewayName, HostPath, ImageId, ImageTag, LaunchId,
-    NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, ProcessRunner, ProcessSpec,
+    NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, PolicyLabel, ProcessRunner, ProcessSpec,
     ProcessStatus, ProcessStdin, Program, ProjectRoot, RoleName, SandboxName, SandboxPath,
     SandboxSlug, StdFileSystem, WorkspaceName,
 };
@@ -252,6 +252,7 @@ impl Live {
             role: RoleName::parse("p52")?,
             agent: Agent::Codex,
             account: AccountName::parse("p52")?,
+            policy: PolicyLabel::of("policy"),
             launch: launch.clone(),
         };
         let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64)))?;

@@ -10,7 +10,9 @@ use thiserror::Error;
 use crate::agent::Agent;
 use crate::display::plain;
 use crate::docker::{CaFingerprint, DockerLabel};
-use crate::ids::{AccountName, IdError, ImageId, ImageLabel, LaunchId, RoleName, WorkspaceName};
+use crate::ids::{
+    AccountName, IdError, ImageId, ImageLabel, LaunchId, PolicyLabel, RoleName, WorkspaceName,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LabelKey(String);
@@ -27,6 +29,7 @@ pub struct PlannedLabels {
     pub role: RoleName,
     pub agent: Agent,
     pub account: AccountName,
+    pub policy: PolicyLabel,
     pub launch: LaunchId,
 }
 
@@ -35,6 +38,13 @@ pub struct SandboxLabels {
     pub planned: PlannedLabels,
     pub image: ImageLabel,
     pub docker: DockerLabel,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LabelDifference {
+    pub key: LabelKey,
+    pub found: LabelValue,
+    pub wanted: LabelValue,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -61,6 +71,7 @@ const WORKSPACE: &str = "jackin.dev/workspace";
 const ROLE: &str = "jackin.dev/role";
 const AGENT: &str = "jackin.dev/agent";
 const ACCOUNT: &str = "jackin.dev/account";
+const POLICY: &str = "jackin.dev/policy";
 const IMAGE: &str = "jackin.dev/image";
 const LAUNCH: &str = "jackin.dev/launch";
 const DOCKER: &str = "jackin.dev/docker";
@@ -75,6 +86,16 @@ impl fmt::Display for LabelKey {
 impl fmt::Display for LabelValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+impl fmt::Display for LabelDifference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} is {} on the sandbox and {} in this launch",
+            self.key, self.found, self.wanted
+        )
     }
 }
 
@@ -101,10 +122,27 @@ impl SandboxLabels {
             pair(ROLE, planned.role.as_str()),
             pair(AGENT, planned.agent.as_str()),
             pair(ACCOUNT, planned.account.as_str()),
+            pair(POLICY, planned.policy.as_str()),
             pair(IMAGE, self.image.as_str()),
             pair(LAUNCH, planned.launch.as_str()),
             pair(DOCKER, &docker_value(self.docker)),
         ]))
+    }
+
+    pub fn differences(&self, wanted: &SandboxLabels) -> Vec<LabelDifference> {
+        let wanted = wanted.to_labels();
+        self.to_labels()
+            .0
+            .into_iter()
+            .filter_map(|(key, found)| {
+                let wanted = wanted.0.get(&key).filter(|value| **value != found)?;
+                Some(LabelDifference {
+                    key,
+                    found,
+                    wanted: wanted.clone(),
+                })
+            })
+            .collect()
     }
 
     pub fn from_labels(labels: &Labels) -> Result<SandboxLabels, LabelError> {
@@ -119,6 +157,7 @@ impl SandboxLabels {
                 role: labels.parsed(ROLE, RoleName::parse)?,
                 agent,
                 account: labels.parsed(ACCOUNT, AccountName::parse)?,
+                policy: labels.parsed(POLICY, PolicyLabel::parse)?,
                 launch: labels.parsed(LAUNCH, LaunchId::parse)?,
             },
             image: labels.parsed(IMAGE, ImageLabel::parse)?,

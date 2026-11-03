@@ -7,8 +7,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use jackin_core::{
     AccountName, Agent, CaFingerprint, Compatibility, DockerLabel, ImageId, InspectView, LaunchId,
-    Phase, PlannedLabels, PolicyStatus, ProviderName, RoleName, SandboxName, SandboxSummary,
-    SupervisorReading, SupervisorState, WorkspaceName,
+    Phase, PlannedLabels, PolicyLabel, PolicyStatus, ProviderName, RoleName, SandboxName,
+    SandboxSummary, SupervisorReading, SupervisorState, WorkspaceName,
 };
 use jackin_openshell::Gateway;
 use jackin_testkit::FakeGateway;
@@ -257,6 +257,7 @@ impl ScenarioHost {
             role: RoleName::parse("sentinel").expect("role"),
             agent: Agent::Codex,
             account: AccountName::parse(&model.account).expect("account"),
+            policy: PolicyLabel::of("policy"),
             launch: LaunchId::parse(&model.launch).expect("launch"),
         };
         let docker = if self.docker_value(&model.workspace) == "off" {
